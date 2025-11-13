@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="PdfLibrary.Examples/PdfLibrary.Examples.csproj" />
+  <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
+  <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />
+  <Project Path="PdfLibrary/PdfLibrary.csproj" />
+</Solution>

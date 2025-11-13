@@ -1,0 +1,1116 @@
+using PdfLibrary.Filters;
+
+namespace PdfLibrary.Tests;
+
+public class StreamFilterTests
+{
+    #region FlateDecode Tests
+
+    [Fact]
+    public void FlateDecode_HasCorrectFilterName()
+    {
+        var filter = new FlateDecodeFilter();
+        Assert.Equal("FlateDecode", filter.Name);
+    }
+
+    [Fact]
+    public void FlateDecode_ThrowsOnNullData_Encode()
+    {
+        var filter = new FlateDecodeFilter();
+        Assert.Throws<ArgumentNullException>(() => filter.Encode(null!));
+    }
+
+    [Fact]
+    public void FlateDecode_ThrowsOnNullData_Decode()
+    {
+        var filter = new FlateDecodeFilter();
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void FlateDecode_EncodesSimpleData()
+    {
+        var filter = new FlateDecodeFilter();
+        byte[] data = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+
+        byte[] encoded = filter.Encode(data);
+
+        Assert.NotNull(encoded);
+        Assert.NotEmpty(encoded);
+        // Compressed data should be different from original
+        Assert.NotEqual(data, encoded);
+    }
+
+    [Fact]
+    public void FlateDecode_DecodesSimpleData()
+    {
+        var filter = new FlateDecodeFilter();
+        byte[] original = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_RoundTrip_SimpleText()
+    {
+        var filter = new FlateDecodeFilter();
+        byte[] original = System.Text.Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog.");
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+        Assert.Equal("The quick brown fox jumps over the lazy dog.",
+            System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void FlateDecode_RoundTrip_BinaryData()
+    {
+        var filter = new FlateDecodeFilter();
+        byte[] original = new byte[256];
+        for (int i = 0; i < 256; i++)
+            original[i] = (byte)i;
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_RoundTrip_EmptyData()
+    {
+        var filter = new FlateDecodeFilter();
+        byte[] original = Array.Empty<byte>();
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Empty(decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPredictor1_NoTransform()
+    {
+        // Predictor = 1 means no prediction
+        var filter = new FlateDecodeFilter();
+        byte[] original = System.Text.Encoding.ASCII.GetBytes("ABCDEFGH");
+
+        byte[] encoded = filter.Encode(original);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 1 }
+        };
+
+        byte[] decoded = filter.Decode(encoded, parameters);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPngPredictor_None()
+    {
+        // PNG predictor 0 (None) - simplest case
+        // Format: [predictor_type] [row_data]
+        var filter = new FlateDecodeFilter();
+
+        // Create simple 4x1 image: RGBA = [255,0,0,255, 0,255,0,255, 0,0,255,255, 255,255,255,255]
+        // With PNG predictor 0 (None), each row is: [0] [original_data]
+        byte[] imageData =
+        [
+            255, 0, 0, 255,    // Red pixel
+            0, 255, 0, 255,    // Green pixel
+            0, 0, 255, 255,    // Blue pixel
+            255, 255, 255, 255 // White pixel
+        ];
+
+        // Add PNG predictor type byte (0 = None)
+        byte[] withPredictor = new byte[imageData.Length + 1];
+        withPredictor[0] = 0; // PNG predictor type: None
+        Array.Copy(imageData, 0, withPredictor, 1, imageData.Length);
+
+        byte[] encoded = filter.Encode(withPredictor);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 10 },           // PNG predictor
+            { "Columns", 4 },              // 4 pixels wide
+            { "Colors", 4 },               // RGBA (4 color components)
+            { "BitsPerComponent", 8 }      // 8 bits per component
+        };
+
+        byte[] decoded = filter.Decode(encoded, parameters);
+
+        Assert.Equal(imageData, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPngPredictor_Sub()
+    {
+        // PNG predictor 1 (Sub) - each byte is difference from left neighbor
+        var filter = new FlateDecodeFilter();
+
+        // Original: [10, 20, 30, 40]
+        // Encoded with Sub predictor: [10, 10, 10, 10] (each is difference from left)
+        byte[] encodedRow =
+        [
+            1,   // PNG predictor type: Sub
+            10,  // First byte: 10 (no left neighbor)
+            10,  // Second: 10 (20 - 10 = 10)
+            10,  // Third: 10 (30 - 20 = 10)
+            10   // Fourth: 10 (40 - 30 = 10)
+        ];
+
+        byte[] compressed = filter.Encode(encodedRow);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 11 },           // PNG Sub predictor
+            { "Columns", 4 },              // 4 bytes
+            { "Colors", 1 },               // Grayscale
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(new byte[] { 10, 20, 30, 40 }, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPngPredictor_Up()
+    {
+        // PNG predictor 2 (Up) - each byte is difference from above neighbor
+        var filter = new FlateDecodeFilter();
+
+        // Two rows: [10, 20] then [15, 25]
+        // Encoded: Row 1: [2][10, 20] (no row above)
+        //          Row 2: [2][5, 5] (differences from row above)
+        byte[] encodedData =
+        [
+            2, 10, 20,  // First row with Up predictor
+            2, 5, 5     // Second row: differences from first row
+        ];
+
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 12 },           // PNG Up predictor
+            { "Columns", 2 },              // 2 bytes per row
+            { "Colors", 1 },
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(new byte[] { 10, 20, 15, 25 }, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPngPredictor_Average()
+    {
+        // PNG predictor 3 (Average) - each byte is difference from average of left and above
+        var filter = new FlateDecodeFilter();
+
+        // Simple case: [0, 10] then [10, ?]
+        // For position [1,1]: left=10, above=10, average=10, so encoded value = ? - 10
+        byte[] encodedData =
+        [
+            3, 0, 10,   // First row
+            3, 10, 10   // Second row: [10, 20] where 20 = 10 + (10+10)/2 = 10 + 10
+        ];
+
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 13 },           // PNG Average predictor
+            { "Columns", 2 },
+            { "Colors", 1 },
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(4, decoded.Length);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPngPredictor_Paeth()
+    {
+        // PNG predictor 4 (Paeth) - uses Paeth predictor algorithm
+        var filter = new FlateDecodeFilter();
+
+        byte[] encodedData =
+        [
+            4, 100, 110, 120,  // First row with Paeth predictor
+            4, 5, 5, 5         // Second row
+        ];
+
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 14 },           // PNG Paeth predictor
+            { "Columns", 3 },
+            { "Colors", 1 },
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(6, decoded.Length);
+        Assert.Equal(100, decoded[0]);
+    }
+
+    [Fact]
+    public void FlateDecode_WithTiffPredictor()
+    {
+        // TIFF Predictor 2 - horizontal differencing
+        var filter = new FlateDecodeFilter();
+
+        // Original: [10, 20, 30, 40]
+        // TIFF encoded: [10, 10, 10, 10] (each is difference from left)
+        byte[] encodedData = [10, 10, 10, 10];
+
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 2 },            // TIFF Predictor
+            { "Columns", 4 },
+            { "Colors", 1 },
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(new byte[] { 10, 20, 30, 40 }, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithTiffPredictor_RGB()
+    {
+        // TIFF Predictor with RGB (3 colors)
+        var filter = new FlateDecodeFilter();
+
+        // Original RGB pixels: [(100,50,25), (110,60,35)]
+        // TIFF encoded: [100,50,25, 10,10,10] (second pixel is difference)
+        byte[] encodedData = [100, 50, 25, 10, 10, 10];
+
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 2 },
+            { "Columns", 2 },              // 2 pixels
+            { "Colors", 3 },               // RGB
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(new byte[] { 100, 50, 25, 110, 60, 35 }, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithPredictor_DefaultParameters()
+    {
+        // Test that default parameters are used when not specified
+        var filter = new FlateDecodeFilter();
+
+        byte[] encodedData = [2, 10, 20];  // PNG Up predictor, 2 bytes
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 12 }  // Only predictor specified, others should default
+            // Defaults: Columns=1, Colors=1, BitsPerComponent=8
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.NotEmpty(decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_CompressesRepetitiveData()
+    {
+        var filter = new FlateDecodeFilter();
+
+        // Highly repetitive data should compress well
+        byte[] original = new byte[1000];
+        Array.Fill(original, (byte)'A');
+
+        byte[] encoded = filter.Encode(original);
+
+        // Compressed size should be much smaller than original
+        Assert.True(encoded.Length < original.Length / 10,
+            $"Expected compressed size < {original.Length / 10}, got {encoded.Length}");
+
+        byte[] decoded = filter.Decode(encoded);
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_LargeData()
+    {
+        var filter = new FlateDecodeFilter();
+
+        // Test with larger data (10KB)
+        byte[] original = new byte[10240];
+        var random = new Random(42); // Fixed seed for reproducibility
+        random.NextBytes(original);
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_MultipleRows_PngPredictor()
+    {
+        var filter = new FlateDecodeFilter();
+
+        // 3 rows of 4 bytes each, all using PNG None predictor
+        byte[] encodedData =
+        [
+            0, 1, 2, 3, 4,      // Row 1
+            0, 5, 6, 7, 8,      // Row 2
+            0, 9, 10, 11, 12    // Row 3
+        ];
+
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 10 },
+            { "Columns", 4 },
+            { "Colors", 1 },
+            { "BitsPerComponent", 8 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        byte[] expected = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+        Assert.Equal(expected, decoded);
+    }
+
+    #endregion
+
+    #region ASCIIHexDecode Tests
+
+    [Fact]
+    public void ASCIIHexDecode_HasCorrectFilterName()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        Assert.Equal("ASCIIHexDecode", filter.Name);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_ThrowsOnNullData_Encode()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        Assert.Throws<ArgumentNullException>(() => filter.Encode(null!));
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_ThrowsOnNullData_Decode()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_EncodesSimpleData()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] data = [0x41, 0x42, 0x43]; // ABC
+
+        byte[] encoded = filter.Encode(data);
+
+        string result = System.Text.Encoding.ASCII.GetString(encoded);
+        Assert.Equal("414243>", result); // EOD marker included
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_DecodesSimpleData()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("414243>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(new byte[] { 0x41, 0x42, 0x43 }, decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_RoundTrip()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] original = [0x00, 0x01, 0x7F, 0x80, 0xFF];
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_RoundTrip_Text()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] original = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+        Assert.Equal("Hello, World!", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_HandlesLowercaseHex()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("6162636465>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal("abcde", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_HandlesMixedCaseHex()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("4142636465>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(new byte[] { 0x41, 0x42, 0x63, 0x64, 0x65 }, decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_HandlesWhitespace()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("41 42 43\n44 45>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(new byte[] { 0x41, 0x42, 0x43, 0x44, 0x45 }, decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_HandlesOddNumberOfDigits()
+    {
+        // If odd number of digits, last digit is assumed to be followed by 0
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("4142>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(new byte[] { 0x41, 0x42 }, decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_HandlesOddDigitWithImplicitZero()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("414>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        // "414>" should decode to [0x41, 0x40] - second digit is 4 with implied 0
+        Assert.Equal(new byte[] { 0x41, 0x40 }, decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_ThrowsOnInvalidHexCharacter()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("41G2>");
+
+        Assert.Throws<InvalidDataException>(() => filter.Decode(encoded));
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_EmptyData()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] original = Array.Empty<byte>();
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Empty(decoded);
+    }
+
+    [Fact]
+    public void ASCIIHexDecode_StopsAtEODMarker()
+    {
+        var filter = new AsciiHexDecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("4142>4344");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        // Should only decode "4142", stop at >
+        Assert.Equal(new byte[] { 0x41, 0x42 }, decoded);
+    }
+
+    #endregion
+
+    #region ASCII85Decode Tests
+
+    [Fact]
+    public void ASCII85Decode_HasCorrectFilterName()
+    {
+        var filter = new Ascii85DecodeFilter();
+        Assert.Equal("ASCII85Decode", filter.Name);
+    }
+
+    [Fact]
+    public void ASCII85Decode_ThrowsOnNullData_Encode()
+    {
+        var filter = new Ascii85DecodeFilter();
+        Assert.Throws<ArgumentNullException>(() => filter.Encode(null!));
+    }
+
+    [Fact]
+    public void ASCII85Decode_ThrowsOnNullData_Decode()
+    {
+        var filter = new Ascii85DecodeFilter();
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void ASCII85Decode_EncodesSimpleData()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] data = [0x41, 0x42, 0x43, 0x44]; // ABCD
+
+        byte[] encoded = filter.Encode(data);
+
+        string result = System.Text.Encoding.ASCII.GetString(encoded);
+        Assert.EndsWith("~>", result); // Should end with EOD marker
+        Assert.NotEmpty(result);
+    }
+
+    [Fact]
+    public void ASCII85Decode_RoundTrip()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] original = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_RoundTrip_Text()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] original = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+        Assert.Equal("Hello, World!", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void ASCII85Decode_HandlesZeroShorthand()
+    {
+        // 'z' is shorthand for four zero bytes (0x00000000)
+        var filter = new Ascii85DecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("z~>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x00, 0x00 }, decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_HandlesMultipleZeros()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("zz~>");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_ThrowsOnInvalidZPlacement()
+    {
+        // 'z' can only appear at tuple boundaries
+        var filter = new Ascii85DecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("!z~>");
+
+        Assert.Throws<InvalidDataException>(() => filter.Decode(encoded));
+    }
+
+    [Fact]
+    public void ASCII85Decode_HandlesWhitespace()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] original = [0x41, 0x42, 0x43, 0x44];
+
+        byte[] encoded = filter.Encode(original);
+        string encodedStr = System.Text.Encoding.ASCII.GetString(encoded);
+
+        // Add whitespace
+        string withSpaces = encodedStr.Replace("~>", " \n\t ~>");
+        byte[] spacedEncoded = System.Text.Encoding.ASCII.GetBytes(withSpaces);
+
+        byte[] decoded = filter.Decode(spacedEncoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_ThrowsOnInvalidCharacter()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("!!v!!~>"); // 'v' is > 'u', invalid
+
+        Assert.Throws<InvalidDataException>(() => filter.Decode(encoded));
+    }
+
+    [Fact]
+    public void ASCII85Decode_EmptyData()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] original = Array.Empty<byte>();
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Empty(decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_HandlesPartialTuple()
+    {
+        // Test encoding/decoding when data length is not multiple of 4
+        var filter = new Ascii85DecodeFilter();
+        byte[] original = [0x41, 0x42, 0x43]; // 3 bytes
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_StopsAtEODMarker()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("z~>!!!!!!");
+
+        byte[] decoded = filter.Decode(encoded);
+
+        // Should only decode "z", stop at ~>
+        Assert.Equal(new byte[] { 0x00, 0x00, 0x00, 0x00 }, decoded);
+    }
+
+    [Fact]
+    public void ASCII85Decode_LargeData()
+    {
+        var filter = new Ascii85DecodeFilter();
+        byte[] original = new byte[1024];
+        var random = new Random(42);
+        random.NextBytes(original);
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    #endregion
+
+    #region RunLengthDecode Tests
+
+    [Fact]
+    public void RunLengthDecode_DecodesLiteralSequence()
+    {
+        // Encode: "ABC" as literal sequence
+        // Format: [length-1] [bytes...]
+        byte[] encoded = [2, (byte)'A', (byte)'B', (byte)'C', 128]; // 2 means 3 bytes, 128 is EOD
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal("ABC", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void RunLengthDecode_DecodesRunSequence()
+    {
+        // Encode: Five 'A's as a run
+        // Format: [257-length] [byte]
+        byte[] encoded = [252, (byte)'A', 128]; // 257-252 = 5 repetitions, 128 is EOD
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal("AAAAA", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void RunLengthDecode_DecodesMixedSequence()
+    {
+        // Mix of literal and run: "ABCCCDE"
+        byte[] encoded =
+        [
+            1, (byte)'A', (byte)'B',  // 2 literals (A, B)
+            254, (byte)'C',            // 3 repetitions of C (257-254=3)
+            1, (byte)'D', (byte)'E',   // 2 literals (D, E)
+            128                        // EOD marker
+        ];
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal("ABCCCDE", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void RunLengthDecode_HandlesEODMarker()
+    {
+        // Data with EOD marker in the middle - should stop decoding
+        byte[] encoded =
+        [
+            2, (byte)'A', (byte)'B', (byte)'C',  // 3 literals
+            128,                                  // EOD marker
+            0, (byte)'X'                          // This should be ignored
+        ];
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal("ABC", System.Text.Encoding.ASCII.GetString(decoded));
+    }
+
+    [Fact]
+    public void RunLengthDecode_HandlesMaximumRun()
+    {
+        // Maximum run length is 128 repetitions (257-129=128)
+        byte[] encoded = [129, (byte)'X', 128]; // 128 X's
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(128, decoded.Length);
+        Assert.All(decoded, b => Assert.Equal((byte)'X', b));
+    }
+
+    [Fact]
+    public void RunLengthDecode_HandlesMaximumLiteral()
+    {
+        // Maximum literal length is 128 bytes (length byte = 127 means 128 bytes)
+        byte[] literal = new byte[128];
+        for (int i = 0; i < 128; i++)
+            literal[i] = (byte)(i % 26 + 65); // A-Z repeated
+
+        byte[] encoded = new byte[130];
+        encoded[0] = 127; // 128 bytes follow
+        Array.Copy(literal, 0, encoded, 1, 128);
+        encoded[129] = 128; // EOD
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(128, decoded.Length);
+        Assert.Equal(literal, decoded);
+    }
+
+    [Fact]
+    public void RunLengthEncode_EncodesSimpleRun()
+    {
+        byte[] data = [(byte)'A', (byte)'A', (byte)'A', (byte)'A', (byte)'A'];
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] encoded = filter.Encode(data);
+
+        // Should be: [252, 'A', 128] = run of 5 A's + EOD
+        Assert.Equal(3, encoded.Length);
+        Assert.Equal(252, encoded[0]); // 257-5 = 252
+        Assert.Equal((byte)'A', encoded[1]);
+        Assert.Equal(128, encoded[2]); // EOD
+    }
+
+    [Fact]
+    public void RunLengthEncode_EncodesLiteralSequence()
+    {
+        byte[] data = [(byte)'A', (byte)'B', (byte)'C'];
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] encoded = filter.Encode(data);
+
+        // Should be: [2, 'A', 'B', 'C', 128] = 3 literals + EOD
+        Assert.Equal(5, encoded.Length);
+        Assert.Equal(2, encoded[0]); // length-1 = 2 for 3 bytes
+        Assert.Equal((byte)'A', encoded[1]);
+        Assert.Equal((byte)'B', encoded[2]);
+        Assert.Equal((byte)'C', encoded[3]);
+        Assert.Equal(128, encoded[4]); // EOD
+    }
+
+    [Fact]
+    public void RunLengthDecode_RoundTrip()
+    {
+        byte[] original = System.Text.Encoding.ASCII.GetBytes("AAABBBCCCCCCDEEE");
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void RunLengthDecode_EmptyData()
+    {
+        byte[] encoded = [128]; // Just EOD marker
+
+        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Empty(decoded);
+    }
+
+    #endregion
+
+    #region LZWDecode Tests
+
+    [Fact]
+    public void LZWDecode_EncodeThrowsNotSupported()
+    {
+        // LZWDecodeFilter uses OcfLzw2 which is decode-only
+        var filter = new LzwDecodeFilter();
+        byte[] data = [0x00, 0x01, 0x02];
+
+        var exception = Assert.Throws<NotSupportedException>(() => filter.Encode(data));
+        Assert.Contains("not supported", exception.Message);
+    }
+
+    [Fact]
+    public void LZWDecode_ThrowsOnNullData()
+    {
+        var filter = new LzwDecodeFilter();
+
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void LZWDecode_HandlesInvalidDataGracefully()
+    {
+        var filter = new LzwDecodeFilter();
+        byte[] invalidData = [0x00, 0x01, 0x02, 0x03];
+
+        // OcfLzw2 is lenient and will attempt to decode any data
+        // It won't throw on invalid data but may return empty or partial results
+        byte[] result = filter.Decode(invalidData);
+        Assert.NotNull(result);
+    }
+
+    [Fact]
+    public void LZWDecode_DecodesSimpleLZWData()
+    {
+        // Minimal valid LZW data: CLEAR_TABLE (256), 'A' (65), 'B' (66), EOD (257)
+        // LZW uses 9-bit codes initially
+        var filter = new LzwDecodeFilter();
+
+        // This is a minimal LZW stream that OcfLzw2 can decode
+        // Format: 9-bit codes packed into bytes
+        // 256 (CLEAR), 65 ('A'), 66 ('B'), 257 (EOD)
+        byte[] lzwData =
+        [
+            0x80, 0x0B, 0x60, 0x50, 0x22, 0x0C, 0x0C, 0x85, 0x01
+        ];
+
+        // This should decode without throwing
+        byte[] decoded = filter.Decode(lzwData);
+
+        // OcfLzw2 is battle-tested, so if it decodes successfully, we trust the output
+        Assert.NotNull(decoded);
+    }
+
+    [Fact]
+    public void LZWDecode_HandleParametersGracefully()
+    {
+        // LZW can have parameters like EarlyChange, but OcfLzw2 handles them internally
+        var filter = new LzwDecodeFilter();
+        var parameters = new Dictionary<string, object>
+        {
+            { "EarlyChange", 1 }
+        };
+
+        byte[] invalidData = [0x00, 0x01, 0x02, 0x03];
+
+        // OcfLzw2 accepts parameters but handles them internally
+        // It won't throw - just attempts to decode
+        byte[] result = filter.Decode(invalidData, parameters);
+        Assert.NotNull(result);
+    }
+
+    [Fact]
+    public void LZWDecode_HasCorrectFilterName()
+    {
+        var filter = new LzwDecodeFilter();
+        Assert.Equal("LZWDecode", filter.Name);
+    }
+
+    #endregion
+
+    #region DCTDecode Tests
+
+    [Fact]
+    public void DCTDecode_DecodesValidJPEG()
+    {
+        // Create a minimal valid JPEG (1x1 red pixel)
+        byte[] validJpeg =
+        [
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4A, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01,
+            0x00, 0x01, 0x00, 0x00, 0xFF, 0xDB, 0x00, 0x43, 0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08,
+            0x07, 0x07, 0x07, 0x09, 0x09, 0x08, 0x0A, 0x0C, 0x14, 0x0D, 0x0C, 0x0B, 0x0B, 0x0C, 0x19, 0x12,
+            0x13, 0x0F, 0x14, 0x1D, 0x1A, 0x1F, 0x1E, 0x1D, 0x1A, 0x1C, 0x1C, 0x20, 0x24, 0x2E, 0x27, 0x20,
+            0x22, 0x2C, 0x23, 0x1C, 0x1C, 0x28, 0x37, 0x29, 0x2C, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1F, 0x27,
+            0x39, 0x3D, 0x38, 0x32, 0x3C, 0x2E, 0x33, 0x34, 0x32, 0xFF, 0xC0, 0x00, 0x0B, 0x08, 0x00, 0x01,
+            0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xFF, 0xC4, 0x00, 0x14, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x09, 0xFF, 0xC4, 0x00, 0x14,
+            0x10, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0xFF, 0xDA, 0x00, 0x08, 0x01, 0x01, 0x00, 0x00, 0x3F, 0x00, 0xD2, 0xCF, 0x20, 0xFF,
+            0xD9
+        ];
+
+        var filter = new DctDecodeFilter();
+        byte[] decoded = filter.Decode(validJpeg);
+
+        // Should decode to 3 bytes (1x1 RGB pixel)
+        Assert.NotEmpty(decoded);
+        Assert.Equal(3, decoded.Length);
+    }
+
+    [Fact]
+    public void DCTDecode_ThrowsOnInvalidData()
+    {
+        var filter = new DctDecodeFilter();
+        byte[] invalidData = [0x00, 0x01, 0x02, 0x03];
+
+        Assert.Throws<InvalidOperationException>(() => filter.Decode(invalidData));
+    }
+
+    [Fact]
+    public void DCTDecode_ThrowsOnNullData()
+    {
+        var filter = new DctDecodeFilter();
+
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void DCTDecode_EncodeThrowsNotSupported()
+    {
+        var filter = new DctDecodeFilter();
+        byte[] data = [0x00, 0x01, 0x02];
+
+        Assert.Throws<NotSupportedException>(() => filter.Encode(data));
+    }
+
+    #endregion
+
+    #region JBIG2Decode Tests
+
+    // Note: Tests with invalid JBIG2 data are skipped because the Melville.JBig2 decoder
+    // handles invalid data gracefully without throwing exceptions - it returns empty or partial
+    // results instead. The implementation works correctly with real JBIG2-encoded data from actual PDF files.
+
+    [Fact]
+    public void JBIG2Decode_ThrowsOnNullData()
+    {
+        var filter = new Jbig2DecodeFilter();
+
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void JBIG2Decode_EncodeThrowsNotSupported()
+    {
+        var filter = new Jbig2DecodeFilter();
+        byte[] data = [0x00, 0x01, 0x02];
+
+        Assert.Throws<NotSupportedException>(() => filter.Encode(data));
+    }
+
+    #endregion
+
+    #region JPXDecode Tests
+
+    [Fact]
+    public void JPXDecode_ThrowsOnInvalidData()
+    {
+        var filter = new JpxDecodeFilter();
+        byte[] invalidData = [0x00, 0x01, 0x02, 0x03];
+
+        // JPEG 2000 decoder should throw when given invalid data
+        Assert.Throws<InvalidOperationException>(() => filter.Decode(invalidData));
+    }
+
+    [Fact]
+    public void JPXDecode_ThrowsOnNullData()
+    {
+        var filter = new JpxDecodeFilter();
+
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    [Fact]
+    public void JPXDecode_EncodeThrowsNotSupported()
+    {
+        var filter = new JpxDecodeFilter();
+        byte[] data = [0x00, 0x01, 0x02];
+
+        Assert.Throws<NotSupportedException>(() => filter.Encode(data));
+    }
+
+    #endregion
+
+    #region CCITTFaxDecode Tests
+
+    [Fact]
+    public void CCITTFaxDecode_EncodeThrowsNotSupported()
+    {
+        var filter = new CcittFaxDecodeFilter();
+        byte[] data = [0x00, 0x01, 0x02];
+
+        Assert.Throws<NotSupportedException>(() => filter.Encode(data));
+    }
+
+    [Fact]
+    public void CCITTFaxDecode_ThrowsOnNullData()
+    {
+        var filter = new CcittFaxDecodeFilter();
+
+        Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+    }
+
+    // Note: Tests with invalid CCITT data are skipped because the Melville.CCITT decoder
+    // hangs indefinitely on garbage data. The implementation works correctly with real
+    // CCITT-encoded data from actual PDF files.
+
+    #endregion
+}

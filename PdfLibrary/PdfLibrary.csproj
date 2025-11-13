@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Melville.CCITT" Version="0.6.4" />
+      <PackageReference Include="Melville.CSJ2K" Version="0.6.4" />
+      <PackageReference Include="Melville.JBig2" Version="0.6.4" />
+      <PackageReference Include="Melville.Parsing" Version="0.6.4" />
+      <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+      <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+    </ItemGroup>
+
+</Project>
