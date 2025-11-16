@@ -187,7 +187,7 @@ public class PdfXrefParser
             {
                 throw new PdfParseException("XRef stream missing /Size");
             }
-            index = new int[] { 0, size.Value };
+            index = [0, size.Value];
         }
 
         // Decode the stream data

@@ -1,6 +1,7 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
+using PdfLibrary.Fonts.Embedded;
 
 namespace PdfLibrary.Fonts;
 
@@ -11,12 +12,14 @@ namespace PdfLibrary.Fonts;
 public class Type0Font : PdfFont
 {
     private PdfFont? _descendantFont;
+    private EmbeddedFontExtractor? _embeddedFont;
 
     public Type0Font(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
     {
         LoadToUnicodeCMap(); // ToUnicode is critical for Type 0 fonts
         LoadDescendantFont();
+        LoadEmbeddedFont();  // Load embedded font for glyph name fallback
     }
 
     public override PdfFontType FontType => PdfFontType.Type0;
@@ -37,12 +40,38 @@ public class Type0Font : PdfFont
 
     public override string DecodeCharacter(int charCode)
     {
-        // Type 0 fonts MUST use ToUnicode CMap or CIDToGIDMap
-        if (ToUnicode == null) return char.ConvertFromUtf32(charCode);
-        string? unicode = ToUnicode.Lookup(charCode);
-        return unicode ??
-               // Fall back to character code
-               char.ConvertFromUtf32(charCode);
+        // 3-step fallback chain for Type 0 fonts:
+        // 1. Try ToUnicode CMap (standard, correct approach)
+        string? unicode = ToUnicode?.Lookup(charCode);
+        if (unicode != null)
+            return unicode;
+
+        // 2. Try embedded font glyph name → Unicode (handles broken PDFs)
+        if (_embeddedFont is not { IsValid: true }) return char.ConvertFromUtf32(charCode);
+        string? unicodeFromGlyph = _embeddedFont.GetUnicodeFromGlyphName(charCode);
+        if (unicodeFromGlyph is null) return char.ConvertFromUtf32(charCode);
+        // Log fallback usage for debugging
+        System.Diagnostics.Debug.WriteLine(
+            $"Type0Font: Using embedded font fallback for charCode 0x{charCode:X4} → '{unicodeFromGlyph}'");
+        return unicodeFromGlyph;
+
+        // 3. Fall back to character code as Unicode (last resort)
+    }
+
+    /// <summary>
+    /// Load embedded font for glyph name fallback
+    /// Handles broken PDFs with missing ToUnicode mappings
+    /// </summary>
+    private void LoadEmbeddedFont()
+    {
+        // Get font descriptor from descendant CIDFont
+        // Try to get descriptor from Type0 font dict (rare but valid)
+        PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
+
+        if (descriptor is not null)
+        {
+            _embeddedFont = new EmbeddedFontExtractor(descriptor);
+        }
     }
 
     private void LoadDescendantFont()
@@ -87,7 +116,7 @@ internal class CidFont : PdfFont
 
     public override double GetCharacterWidth(int charCode)
     {
-        if (_widths != null && _widths.TryGetValue(charCode, out double width))
+        if (_widths is not null && _widths.TryGetValue(charCode, out double width))
             return width;
 
         return _defaultWidth;

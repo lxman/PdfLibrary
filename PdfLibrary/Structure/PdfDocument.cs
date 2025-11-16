@@ -387,7 +387,7 @@ public class PdfDocument : IDisposable
                 {
                     document.Trailer.Dictionary.Clear();
 
-                    if (xrefResult.IsXRefStream && xrefResult.TrailerDictionary != null)
+                    if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
                     {
                         // Cross-reference stream - trailer is embedded in the stream dictionary
                         foreach (KeyValuePair<PdfName, PdfObject> kvp in xrefResult.TrailerDictionary)
@@ -412,7 +412,7 @@ public class PdfDocument : IDisposable
                 else
                 {
                     // For subsequent xrefs in the chain, get the trailer to check for /Prev
-                    if (xrefResult.IsXRefStream && xrefResult.TrailerDictionary != null)
+                    if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
                     {
                         currentTrailer = xrefResult.TrailerDictionary;
                     }

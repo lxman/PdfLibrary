@@ -73,12 +73,9 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     public virtual string DecodeCharacter(int charCode)
     {
         // Try ToUnicode CMap first (most reliable)
-        if (ToUnicode != null)
-        {
-            string? unicode = ToUnicode.Lookup(charCode);
-            if (unicode != null)
-                return unicode;
-        }
+        string? unicode = ToUnicode?.Lookup(charCode);
+        if (unicode != null)
+            return unicode;
 
         // Fall back to encoding
         if (Encoding != null)

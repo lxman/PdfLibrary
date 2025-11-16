@@ -214,7 +214,7 @@ public class PdfTextExtractor : PdfContentProcessor
     {
         if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
             return false;
-        return obj is PdfName subtype && subtype.Value == "Form";
+        return obj is PdfName { Value: "Form" };
     }
 
     /// <summary>
@@ -264,11 +264,35 @@ public class PdfTextExtractor : PdfContentProcessor
         if (font != null)
         {
             var sb = new StringBuilder();
-            foreach (byte b in bytes)
+
+            // Type0 fonts use multi-byte character codes (typically 2 bytes)
+            if (font.FontType == PdfFontType.Type0)
             {
-                string decoded = font.DecodeCharacter(b);
-                sb.Append(decoded);
+                // Read 2 bytes at a time for Type0 fonts
+                for (int i = 0; i < bytes.Length - 1; i += 2)
+                {
+                    int charCode = (bytes[i] << 8) | bytes[i + 1];
+                    string decoded = font.DecodeCharacter(charCode);
+                    sb.Append(decoded);
+                }
+
+                // Handle odd byte at end (shouldn't happen in well-formed PDFs)
+                if (bytes.Length % 2 == 1)
+                {
+                    string decoded = font.DecodeCharacter(bytes[^1]);
+                    sb.Append(decoded);
+                }
             }
+            else
+            {
+                // Type1, Type3, TrueType fonts use single-byte character codes
+                foreach (byte b in bytes)
+                {
+                    string decoded = font.DecodeCharacter(b);
+                    sb.Append(decoded);
+                }
+            }
+
             return sb.ToString();
         }
 

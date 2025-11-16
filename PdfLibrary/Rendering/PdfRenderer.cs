@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Numerics;
 using System.Text;
 using PdfLibrary.Content;
@@ -174,19 +173,46 @@ public class PdfRenderer : PdfContentProcessor
 
         System.Diagnostics.Debug.WriteLine($"  Font: {CurrentState.FontName}, Size: {CurrentState.FontSize}");
 
-        // Decode the text byte by byte
+        // Decode the text - handle multi-byte encodings for Type0 fonts
         byte[] bytes = text.Bytes;
         var decodedText = new StringBuilder();
         var glyphWidths = new List<double>();
 
-        foreach (byte b in bytes)
+        // Type0 fonts use multi-byte character codes (typically 2 bytes)
+        bool isType0 = font.FontType == PdfFontType.Type0;
+        int bytesPerChar = isType0 ? 2 : 1;
+
+        int i = 0;
+        while (i < bytes.Length)
         {
+            int charCode;
+
+            if (isType0 && i + 1 < bytes.Length)
+            {
+                // Read 2 bytes for Type0 fonts (big-endian)
+                charCode = (bytes[i] << 8) | bytes[i + 1];
+                i += 2;
+            }
+            else
+            {
+                // Read single byte for simple fonts
+                charCode = bytes[i];
+                i++;
+            }
+
             // Decode character
-            string decoded = font.DecodeCharacter(b);
+            string decoded = font.DecodeCharacter(charCode);
+
+            // Debug logging for specific character codes
+            if (charCode == 0x03 || charCode == 0x0003 || charCode == 0x0766 || charCode is >= 0x0700 and <= 0x0800)
+            {
+                System.Diagnostics.Debug.WriteLine($"  DEBUG: charCode=0x{charCode:X4} → '{decoded}' (U+{((int)decoded[0]):X4})");
+            }
+
             decodedText.Append(decoded);
 
             // Get character width in glyph space (typically 1000 units)
-            double glyphWidth = font.GetCharacterWidth(b);
+            double glyphWidth = font.GetCharacterWidth(charCode);
 
             // Convert to text space: width * fontSize / 1000
             double advance = glyphWidth * CurrentState.FontSize / 1000.0;
@@ -239,10 +265,8 @@ public class PdfRenderer : PdfContentProcessor
             return;
 
         // Try to resolve named color space from resources
-        if (_resources == null)
-            return;
 
-        var colorSpaces = _resources.GetColorSpaces();
+        var colorSpaces = _resources?.GetColorSpaces();
         if (colorSpaces == null)
             return;
 
@@ -255,7 +279,7 @@ public class PdfRenderer : PdfContentProcessor
 
         // Parse color space array
         // Can be: [/ICCBased stream] or [/Separation name alternateSpace tintTransform]
-        if (csObj is PdfArray csArray && csArray.Count >= 2)
+        if (csObj is PdfArray { Count: >= 2 } csArray)
         {
             if (csArray[0] is not PdfName csType)
                 return;
@@ -310,39 +334,36 @@ public class PdfRenderer : PdfContentProcessor
                 }
             }
             // Handle Separation color space: [/Separation name alternateSpace tintTransform]
-            else if (csType.Value == "Separation" && csArray.Count >= 3)
-            {
+            else if (csType.Value == "Separation" && csArray is [_, _, PdfName alternateName, ..])
                 // Get alternate color space (usually /DeviceRGB or /DeviceCMYK)
-                if (csArray[2] is PdfName alternateName)
+            {
+                string altSpace = alternateName.Value;
+
+                // For now, simple heuristic: if alternate is DeviceRGB, map tint to grayscale in that space
+                // A tint of 0 typically means "no ink" (white) and 1 means "full ink"
+                // But Separation colors are usually inverted: 0 = full color, 1 = no color
+                if (color.Count == 1)
                 {
-                    string altSpace = alternateName.Value;
+                    double tint = color[0];
 
-                    // For now, simple heuristic: if alternate is DeviceRGB, map tint to grayscale in that space
-                    // A tint of 0 typically means "no ink" (white) and 1 means "full ink"
-                    // But Separation colors are usually inverted: 0 = full color, 1 = no color
-                    if (color.Count == 1)
+                    // Most Separation spaces use tint where 0 = full color, 1 = no color
+                    // The tint transform function would normally handle this, but as a simple
+                    // approximation, we'll use: output = 1 - tint for each component
+                    if (altSpace == "DeviceRGB")
                     {
-                        double tint = color[0];
-
-                        // Most Separation spaces use tint where 0 = full color, 1 = no color
-                        // The tint transform function would normally handle this, but as a simple
-                        // approximation, we'll use: output = 1 - tint for each component
-                        if (altSpace == "DeviceRGB")
-                        {
-                            // For a typical spot color, full tint (0) produces the spot color
-                            // We need the actual tint transform, but as an approximation:
-                            // Assume the separation is a spot color that maps to a pure hue
-                            // For now, just convert to grayscale: 0 = black, 1 = white
-                            double value = 1.0 - tint; // Invert: 0 becomes 1 (white), 1 becomes 0 (black)
-                            color = [value, value, value];
-                            colorSpaceName = "DeviceRGB";
-                        }
-                        else if (altSpace == "DeviceGray")
-                        {
-                            double value = 1.0 - tint;
-                            color = [value];
-                            colorSpaceName = "DeviceGray";
-                        }
+                        // For a typical spot color, full tint (0) produces the spot color
+                        // We need the actual tint transform, but as an approximation:
+                        // Assume the separation is a spot color that maps to a pure hue
+                        // For now, just convert to grayscale: 0 = black, 1 = white
+                        double value = 1.0 - tint; // Invert: 0 becomes 1 (white), 1 becomes 0 (black)
+                        color = [value, value, value];
+                        colorSpaceName = "DeviceRGB";
+                    }
+                    else if (altSpace == "DeviceGray")
+                    {
+                        double value = 1.0 - tint;
+                        color = [value];
+                        colorSpaceName = "DeviceGray";
                     }
                 }
             }
@@ -471,7 +492,7 @@ public class PdfRenderer : PdfContentProcessor
         if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
             return false;
 
-        return obj is PdfName subtype && subtype.Value == "Form";
+        return obj is PdfName { Value: "Form" };
     }
 
     /// <summary>

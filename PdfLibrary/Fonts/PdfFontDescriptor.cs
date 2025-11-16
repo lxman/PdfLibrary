@@ -248,6 +248,43 @@ public class PdfFontDescriptor(PdfDictionary dictionary)
         }
     }
 
+    /// <summary>
+    /// Gets the FontFile2 stream (TrueType font program)
+    /// Used for extracting glyph names when ToUnicode CMap is incomplete
+    /// </summary>
+    public byte[]? GetFontFile2()
+    {
+        if (_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject obj) && obj is PdfStream stream)
+        {
+            return stream.GetDecodedData();
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the FontFile3 stream (CFF/OpenType font program)
+    /// </summary>
+    public byte[]? GetFontFile3()
+    {
+        if (_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject obj) && obj is PdfStream stream)
+        {
+            return stream.GetDecodedData();
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the FontFile stream (Type1 font program)
+    /// </summary>
+    public byte[]? GetFontFile()
+    {
+        if (_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject obj) && obj is PdfStream stream)
+        {
+            return stream.GetDecodedData();
+        }
+        return null;
+    }
+
     private static double GetNumber(PdfObject obj)
     {
         return obj switch

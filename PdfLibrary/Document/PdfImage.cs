@@ -90,7 +90,7 @@ public class PdfImage
             return obj switch
             {
                 PdfName name => name.Value,
-                PdfArray array when array.Count > 0 && array[0] is PdfName arrayName => arrayName.Value,
+                PdfArray { Count: > 0 } array when array[0] is PdfName arrayName => arrayName.Value,
                 _ => "Unknown"
             };
         }
@@ -227,7 +227,7 @@ public class PdfImage
         if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
             return false;
 
-        return obj is PdfName subtype && subtype.Value == "Image";
+        return obj is PdfName { Value: "Image" };
     }
 
     /// <summary>
@@ -262,7 +262,7 @@ public class PdfImage
         {
             baseColorSpace = baseName.Value;
         }
-        else if (csArray[1] is PdfArray baseArray && baseArray.Count > 0 && baseArray[0] is PdfName baseArrayName)
+        else if (csArray[1] is PdfArray { Count: > 0 } baseArray && baseArray[0] is PdfName baseArrayName)
         {
             baseColorSpace = baseArrayName.Value;
         }

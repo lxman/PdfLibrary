@@ -37,8 +37,8 @@ public partial class ToUnicodeCMap
         return cmap;
     }
 
-    // Regex for bfchar: <charcode> <unicode>
-    [GeneratedRegex(@"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>")]
+    // Regex for bfchar: <charcode> <unicode> (unicode may contain spaces for multi-char sequences)
+    [GeneratedRegex(@"<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f\s]+)>")]
     private static partial Regex BfCharRegex();
 
     // Regex for bfrange: <start> <end> <unicode_start> or <start> <end> [<unicode> ...]
@@ -152,24 +152,49 @@ public partial class ToUnicodeCMap
     /// <summary>
     /// Converts hex string to Unicode string
     /// Handles both 16-bit (4 hex digits) and 32-bit (8 hex digits) Unicode
+    /// Also handles space-separated multi-character sequences like "0066 0069" for "fi"
     /// </summary>
     private static string HexToUnicode(string hex)
     {
-        // Remove any whitespace
-        hex = hex.Trim();
+        // Remove ALL whitespace (including spaces between hex values)
+        hex = hex.Replace(" ", "").Replace("\t", "").Replace("\r", "").Replace("\n", "").Trim();
 
         switch (hex.Length)
         {
-            // Handle multi-byte sequences (e.g., UTF-16 surrogate pairs)
-            // Try as single 32-bit code point
-            case 8 when int.TryParse(hex, NumberStyles.HexNumber, null, out int codePoint):
-                return char.ConvertFromUtf32(codePoint);
-            // Try as two 16-bit values (UTF-16 surrogate pair)
-            case 8 when int.TryParse(hex[..4], NumberStyles.HexNumber, null, out int high) &&
-                        int.TryParse(hex[4..], NumberStyles.HexNumber, null, out int low):
-                return new string([(char)high, (char)low]);
             case 8:
+            {
+                // Parse the 8-digit hex into two 16-bit parts
+                if (int.TryParse(hex[..4], NumberStyles.HexNumber, null, out int high) &&
+                    int.TryParse(hex[4..], NumberStyles.HexNumber, null, out int low))
+                {
+                    // Check if this is a UTF-16 surrogate pair (high: D800-DBFF, low: DC00-DFFF)
+                    if (high is >= 0xD800 and <= 0xDBFF && low is >= 0xDC00 and <= 0xDFFF)
+                    {
+                        // Valid surrogate pair - combine them
+                        return new string([(char)high, (char)low]);
+                    }
+
+                    // Check if this looks like zero-padded data (high part is 0x0000)
+                    // Many PDFs use 8-digit hex with leading zeros like 0x00450000 for 'E'
+                    if (high == 0x0000)
+                    {
+                        // Just use the low part as a single character
+                        return char.ConvertFromUtf32(low);
+                    }
+
+                    // Try the entire 8-digit value as a single code point (only if in valid Unicode range)
+                    if (int.TryParse(hex, NumberStyles.HexNumber, null, out int codePoint) &&
+                        codePoint is >= 0 and <= 0x10FFFF)
+                    {
+                        return char.ConvertFromUtf32(codePoint);
+                    }
+
+                    // If none of the above worked, treat as two separate 4-digit characters
+                    // This handles cases like "00660069" which is "fi" (U+0066 U+0069)
+                    return char.ConvertFromUtf32(high) + char.ConvertFromUtf32(low);
+                }
                 break;
+            }
             case 4:
             {
                 // Single 16-bit value

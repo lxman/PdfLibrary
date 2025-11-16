@@ -10,7 +10,7 @@ namespace PdfLibrary.Document;
 /// </summary>
 public class OptionalContentManager
 {
-    private readonly HashSet<string> _disabledOCGs = new();
+    private readonly HashSet<string> _disabledOCGs = [];
     private readonly PdfDocument? _document;
 
     /// <summary>
@@ -103,7 +103,7 @@ public class OptionalContentManager
             // Get the /OCGs array which contains all OCGs in the document
             if (ocProperties.TryGetValue(new PdfName("OCGs"), out PdfObject? ocgsObj) && ocgsObj is PdfArray ocgsArray)
             {
-                HashSet<string> enabledOCGs = new();
+                HashSet<string> enabledOCGs = [];
 
                 // First, collect all enabled OCGs from /ON array
                 if (defaultConfig.TryGetValue(new PdfName("ON"), out PdfObject? onObj) && onObj is PdfArray onArray)
@@ -179,7 +179,7 @@ public class OptionalContentManager
                     string ocgKey = $"{ocgRef.ObjectNumber} {ocgRef.GenerationNumber} R";
                     return !_disabledOCGs.Contains(ocgKey);
                 }
-                else if (ocgsObj is PdfArray ocgsArray && ocgsArray.Count > 0)
+                else if (ocgsObj is PdfArray { Count: > 0 } ocgsArray)
                 {
                     // For simplicity, if ANY referenced OCG is disabled, hide the content
                     // A full implementation would check the /P (policy) entry
