@@ -171,19 +171,43 @@ public class PdfLexer(Stream stream)
         }
 
         // Hexadecimal string
-        var sb = new StringBuilder();
+        // Hex strings contain pairs of hex digits that should be converted to bytes
+        // E.g., <01> should become byte 0x01, not the characters '0' and '1'
+        var hexDigits = new StringBuilder();
 
+        // Collect all hex digits (ignoring whitespace)
         while (TryPeek(out byte ch) && ch != (byte)'>')
         {
             Read();
             if (!WhiteSpace.Contains(ch))
-                sb.Append((char)ch);
+                hexDigits.Append((char)ch);
         }
 
         if (TryPeek(out _))
             Read(); // Skip closing >
 
-        return new PdfToken(PdfTokenType.String, sb.ToString(), position);
+        // Convert hex digit pairs to bytes
+        string hexString = hexDigits.ToString();
+        var bytes = new List<byte>();
+
+        for (int i = 0; i < hexString.Length; i += 2)
+        {
+            // Get two hex digits (or one if odd length, pad with 0)
+            string hexPair = i + 1 < hexString.Length
+                ? hexString.Substring(i, 2)
+                : hexString[i] + "0";
+
+            // Convert hex pair to byte
+            if (byte.TryParse(hexPair, System.Globalization.NumberStyles.HexNumber, null, out byte b))
+            {
+                bytes.Add(b);
+            }
+        }
+
+        // Convert bytes to string for the token value
+        // This will be parsed later by PdfParser into a PdfString with the correct bytes
+        string value = System.Text.Encoding.Latin1.GetString(bytes.ToArray());
+        return new PdfToken(PdfTokenType.String, value, position);
     }
 
     private PdfToken ReadDictionaryEnd()

@@ -254,6 +254,54 @@ public class PdfPage
 
         return (allText.ToString(), allFragments);
     }
+
+    /// <summary>
+    /// Gets all images on this page
+    /// </summary>
+    public List<PdfImage> GetImages()
+    {
+        var images = new List<PdfImage>();
+        PdfResources? resources = GetResources();
+
+        if (resources == null)
+            return images;
+
+        // Get all XObject names
+        List<string> xobjectNames = resources.GetXObjectNames();
+
+        // Check each XObject to see if it's an image
+        foreach (string name in xobjectNames)
+        {
+            PdfStream? xobject = resources.GetXObject(name);
+            if (xobject == null)
+                continue;
+
+            // Check if this XObject is an image
+            if (PdfImage.IsImageXObject(xobject))
+            {
+                try
+                {
+                    var image = new PdfImage(xobject, _document);
+                    images.Add(image);
+                }
+                catch (Exception)
+                {
+                    // Skip malformed images
+                    continue;
+                }
+            }
+        }
+
+        return images;
+    }
+
+    /// <summary>
+    /// Gets the number of images on this page
+    /// </summary>
+    public int GetImageCount()
+    {
+        return GetImages().Count;
+    }
 }
 
 /// <summary>

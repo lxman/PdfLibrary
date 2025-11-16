@@ -10,9 +10,18 @@ public class PdfParser(PdfLexer lexer)
 {
     private readonly PdfLexer _lexer = lexer ?? throw new ArgumentNullException(nameof(lexer));
     private readonly Queue<PdfToken> _tokenBuffer = new();
+    private Func<PdfIndirectReference, PdfObject?>? _referenceResolver;
 
     public PdfParser(Stream stream) : this(new PdfLexer(stream))
     {
+    }
+
+    /// <summary>
+    /// Sets a function to resolve indirect references during parsing
+    /// </summary>
+    public void SetReferenceResolver(Func<PdfIndirectReference, PdfObject?> resolver)
+    {
+        _referenceResolver = resolver;
     }
 
     /// <summary>
@@ -261,30 +270,36 @@ public class PdfParser(PdfLexer lexer)
         return dict;
     }
 
+    /// <summary>
+    /// Resolves an indirect reference to get the stream length
+    /// </summary>
+    private int ResolveStreamLength(PdfIndirectReference reference)
+    {
+        if (_referenceResolver == null)
+            throw new PdfParseException("Cannot resolve indirect reference for stream length: no reference resolver set");
+
+        PdfObject? resolvedObj = _referenceResolver(reference);
+        return resolvedObj is PdfInteger resolvedInt
+            ? resolvedInt.Value
+            : throw new PdfParseException($"Resolved stream length is not an integer: {resolvedObj?.Type}");
+    }
+
     private PdfStream ParseStream(PdfDictionary dictionary)
     {
-        NextToken(); // Consume 'stream' keyword
+        NextToken(); // Consume a 'stream' keyword
 
-        // Get stream length from dictionary
+        // Get stream length from the dictionary
         if (!dictionary.TryGetValue(PdfName.Length, out PdfObject lengthObj))
             throw new PdfParseException("Stream dictionary missing Length entry");
 
-        int length;
-        if (lengthObj is PdfInteger lengthInt)
+        int length = lengthObj switch
         {
-            length = lengthInt.Value;
-        }
-        else if (lengthObj is PdfIndirectReference)
-        {
-            // TODO: Resolve indirect reference to get length
-            throw new PdfParseException("Indirect reference for stream length not yet supported");
-        }
-        else
-        {
-            throw new PdfParseException($"Invalid stream length type: {lengthObj.Type}");
-        }
+            PdfInteger lengthInt => lengthInt.Value,
+            PdfIndirectReference lengthRef => ResolveStreamLength(lengthRef),
+            _ => throw new PdfParseException($"Invalid stream length type: {lengthObj.Type}")
+        };
 
-        // Skip EOL after 'stream' keyword (ISO 32000-1 section 7.3.8.1)
+        // Skip EOL after a 'stream' keyword (ISO 32000-1 section 7.3.8.1)
         _lexer.SkipEOL();
 
         // Read stream data

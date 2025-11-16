@@ -119,20 +119,18 @@ public sealed class PdfStream : PdfObject
             decodeParams = ConvertToDecodeParams(decodeParmDict);
         }
 
-        // Handle single filter
-        if (filterObj is PdfName filterName)
+        switch (filterObj)
         {
-            return ApplyFilter(data, filterName.Value, decodeParams);
-        }
-
-        // Handle array of filters (applied in sequence)
-        if (filterObj is PdfArray filterArray)
-        {
-            for (var i = 0; i < filterArray.Count; i++)
+            // Handle a single filter
+            case PdfName filterName:
+                return ApplyFilter(data, filterName.Value, decodeParams);
+            // Handle array of filters (applied in sequence)
+            case PdfArray filterArray:
             {
-                if (filterArray[i] is PdfName name)
+                for (var i = 0; i < filterArray.Count; i++)
                 {
-                    // Get corresponding decode params if it's an array
+                    if (filterArray[i] is not PdfName name) continue;
+                    // Get the corresponding decode params if it's an array
                     Dictionary<string, object>? currentParams = null;
                     if (Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject dpObj) && dpObj is PdfArray dpArray && i < dpArray.Count)
                     {
@@ -142,6 +140,8 @@ public sealed class PdfStream : PdfObject
 
                     data = ApplyFilter(data, name.Value, currentParams ?? decodeParams);
                 }
+
+                break;
             }
         }
 
@@ -154,10 +154,9 @@ public sealed class PdfStream : PdfObject
     private byte[] ApplyFilter(byte[] data, string filterName, Dictionary<string, object>? decodeParams)
     {
         IStreamFilter? filter = StreamFilterFactory.CreateFilter(filterName);
-        if (filter == null)
-            throw new NotSupportedException($"Unsupported filter: {filterName}");
-
-        return filter.Decode(data, decodeParams);
+        return filter == null
+            ? throw new NotSupportedException($"Unsupported filter: {filterName}")
+            : filter.Decode(data, decodeParams);
     }
 
     /// <summary>

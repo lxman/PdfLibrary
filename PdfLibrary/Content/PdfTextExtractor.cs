@@ -111,6 +111,15 @@ public class PdfTextExtractor : PdfContentProcessor
         // Decode text using font
         string decodedText = DecodeText(text, font);
 
+        // Calculate effective font size by extracting scale from TextMatrix
+        // The TextMatrix contains scaling factors that affect the actual rendered size
+        // Extract Y-scale from the second column vector: sqrt(M12^2 + M22^2)
+        var scaleY = Math.Sqrt(
+            CurrentState.TextMatrix.M12 * CurrentState.TextMatrix.M12 +
+            CurrentState.TextMatrix.M22 * CurrentState.TextMatrix.M22
+        );
+        double effectiveFontSize = CurrentState.FontSize * scaleY;
+
         _textBuilder.Append(decodedText);
         _fragments.Add(new TextFragment
         {
@@ -118,7 +127,7 @@ public class PdfTextExtractor : PdfContentProcessor
             X = position.X,
             Y = position.Y,
             FontName = CurrentState.FontName,
-            FontSize = CurrentState.FontSize
+            FontSize = effectiveFontSize  // Use effective (scaled) font size
         });
 
         // Calculate actual text advance using font metrics

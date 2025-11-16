@@ -1,19 +1,75 @@
 using System.Text;
+using PdfLibrary.Core;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Parsing;
 
 /// <summary>
-/// Parses PDF cross-reference tables (ISO 32000-1:2008 section 7.5.4)
+/// Result from parsing cross-reference data
 /// </summary>
-public class PdfXrefParser(Stream stream)
+public class PdfXrefParseResult
 {
-    private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+    public PdfXrefTable Table { get; }
+    public PdfDictionary? TrailerDictionary { get; }
+    public bool IsXRefStream { get; }
+
+    public PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictionary, bool isXRefStream)
+    {
+        Table = table;
+        TrailerDictionary = trailerDictionary;
+        IsXRefStream = isXRefStream;
+    }
+}
+
+/// <summary>
+/// Parses PDF cross-reference tables (ISO 32000-1:2008 section 7.5.4)
+/// and cross-reference streams (ISO 32000-1:2008 section 7.5.8)
+/// </summary>
+public class PdfXrefParser
+{
+    private readonly Stream _stream;
+    private readonly PdfDocument? _document;
+
+    public PdfXrefParser(Stream stream, PdfDocument? document = null)
+    {
+        _stream = stream ?? throw new ArgumentNullException(nameof(stream));
+        _document = document;
+    }
 
     /// <summary>
-    /// Parses a cross-reference table starting at the current stream position
+    /// Parses a cross-reference table or stream starting at the current stream position
+    /// Returns the xref table and trailer dictionary (if available)
     /// </summary>
-    public PdfXrefTable Parse()
+    public PdfXrefParseResult Parse()
+    {
+        // Peek at the first line to determine format
+        long startPosition = _stream.Position;
+        string? firstLine = ReadLine();
+        _stream.Position = startPosition;
+
+        if (string.IsNullOrEmpty(firstLine))
+            throw new PdfParseException("Empty xref section");
+
+        // Check if this is a cross-reference stream (starts with object number)
+        // or traditional xref table (starts with "xref" keyword)
+        if (char.IsDigit(firstLine.TrimStart()[0]))
+        {
+            // Cross-reference stream (PDF 1.5+)
+            return ParseXRefStream();
+        }
+        else
+        {
+            // Traditional xref table (trailer comes separately)
+            var table = ParseTraditionalXRef();
+            return new PdfXrefParseResult(table, null, false);
+        }
+    }
+
+    /// <summary>
+    /// Parses a traditional cross-reference table
+    /// </summary>
+    private PdfXrefTable ParseTraditionalXRef()
     {
         var table = new PdfXrefTable();
 
@@ -60,6 +116,149 @@ public class PdfXrefParser(Stream stream)
         }
 
         return table;
+    }
+
+    /// <summary>
+    /// Parses a cross-reference stream (PDF 1.5+)
+    /// ISO 32000-1:2008 section 7.5.8
+    /// </summary>
+    private PdfXrefParseResult ParseXRefStream()
+    {
+        var table = new PdfXrefTable();
+
+        // Parse the XRef stream object
+        var parser = new PdfParser(_stream);
+
+        // Set up reference resolver if we have a document
+        if (_document != null)
+        {
+            parser.SetReferenceResolver(reference => _document.GetObject(reference.ObjectNumber));
+        }
+
+        PdfObject? obj = parser.ReadObject();
+
+        if (obj is not PdfStream xrefStream)
+            throw new PdfParseException("Expected XRef stream object");
+
+        // Verify this is a cross-reference stream
+        if (!xrefStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject? typeObj) ||
+            typeObj is not PdfName typeName ||
+            typeName.Value != "XRef")
+        {
+            throw new PdfParseException("Stream is not a cross-reference stream (/Type /XRef missing)");
+        }
+
+        // Get /W array - specifies field widths [type, field2, field3]
+        if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out PdfObject? wObj) ||
+            wObj is not PdfArray wArray ||
+            wArray.Count != 3)
+        {
+            throw new PdfParseException("XRef stream missing or invalid /W array");
+        }
+
+        int[] fieldWidths = new int[3];
+        for (int i = 0; i < 3; i++)
+        {
+            if (wArray[i] is PdfInteger wInt)
+                fieldWidths[i] = wInt.Value;
+            else
+                throw new PdfParseException($"Invalid /W array element at index {i}");
+        }
+
+        // Get /Index array (or default to [0, Size])
+        int[] index;
+        if (xrefStream.Dictionary.TryGetValue(new PdfName("Index"), out PdfObject? indexObj) &&
+            indexObj is PdfArray indexArray)
+        {
+            index = new int[indexArray.Count];
+            for (int i = 0; i < indexArray.Count; i++)
+            {
+                if (indexArray[i] is PdfInteger indexInt)
+                    index[i] = indexInt.Value;
+                else
+                    throw new PdfParseException($"Invalid /Index array element at index {i}");
+            }
+        }
+        else
+        {
+            // Default: [0, Size]
+            if (!xrefStream.Dictionary.TryGetValue(new PdfName("Size"), out PdfObject? sizeObj) ||
+                sizeObj is not PdfInteger size)
+            {
+                throw new PdfParseException("XRef stream missing /Size");
+            }
+            index = new int[] { 0, size.Value };
+        }
+
+        // Decode the stream data
+        byte[] decodedData = xrefStream.GetDecodedData();
+
+        // Parse binary xref entries
+        ParseXRefStreamEntries(table, decodedData, fieldWidths, index);
+
+        // The XRef stream's dictionary contains the trailer information
+        // (Root, Info, Size, etc. per ISO 32000-1 section 7.5.8)
+        return new PdfXrefParseResult(table, xrefStream.Dictionary, true);
+    }
+
+    /// <summary>
+    /// Parses binary cross-reference entries from decoded stream data
+    /// </summary>
+    private void ParseXRefStreamEntries(PdfXrefTable table, byte[] data, int[] fieldWidths, int[] index)
+    {
+        int bytesPerEntry = fieldWidths[0] + fieldWidths[1] + fieldWidths[2];
+        int dataOffset = 0;
+
+        // Process each subsection specified in /Index
+        for (int i = 0; i < index.Length; i += 2)
+        {
+            int firstObjectNumber = index[i];
+            int count = index[i + 1];
+
+            for (int j = 0; j < count; j++)
+            {
+                int objectNumber = firstObjectNumber + j;
+
+                if (dataOffset + bytesPerEntry > data.Length)
+                    throw new PdfParseException("XRef stream data truncated");
+
+                // Read fields
+                long field1 = ReadBigEndianInt(data, dataOffset, fieldWidths[0]);
+                dataOffset += fieldWidths[0];
+
+                long field2 = ReadBigEndianInt(data, dataOffset, fieldWidths[1]);
+                dataOffset += fieldWidths[1];
+
+                long field3 = ReadBigEndianInt(data, dataOffset, fieldWidths[2]);
+                dataOffset += fieldWidths[2];
+
+                // Determine entry type (default to 1 if not specified)
+                int entryType = fieldWidths[0] == 0 ? 1 : (int)field1;
+
+                PdfXrefEntry entry = entryType switch
+                {
+                    0 => new PdfXrefEntry(objectNumber, field2, (int)field3, false, PdfXrefEntryType.Free),
+                    1 => new PdfXrefEntry(objectNumber, field2, (int)field3, true, PdfXrefEntryType.Uncompressed),
+                    2 => new PdfXrefEntry(objectNumber, field2, (int)field3, true, PdfXrefEntryType.Compressed),
+                    _ => throw new PdfParseException($"Invalid XRef entry type: {entryType}")
+                };
+
+                table.Add(entry);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads a big-endian integer from a byte array
+    /// </summary>
+    private long ReadBigEndianInt(byte[] data, int offset, int length)
+    {
+        long value = 0;
+        for (int i = 0; i < length; i++)
+        {
+            value = (value << 8) | data[offset + i];
+        }
+        return value;
     }
 
     /// <summary>

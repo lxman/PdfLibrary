@@ -1,4 +1,5 @@
 using System.Numerics;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Content;
 
@@ -67,6 +68,73 @@ public class PdfGraphicsState
     /// <summary>Flatness tolerance</summary>
     public double Flatness { get; set; } = 1.0;
 
+    // Color state
+    /// <summary>Stroke color space (default: DeviceGray)</summary>
+    public string StrokeColorSpace { get; set; } = "DeviceGray";
+
+    /// <summary>Fill color space (default: DeviceGray)</summary>
+    public string FillColorSpace { get; set; } = "DeviceGray";
+
+    /// <summary>Stroke color components (default: black)</summary>
+    public List<double> StrokeColor { get; set; } = [0.0];
+
+    /// <summary>Fill color components (default: black)</summary>
+    public List<double> FillColor { get; set; } = [0.0];
+
+    /// <summary>
+    /// Sets stroke color to grayscale
+    /// </summary>
+    public void SetStrokeGray(double gray)
+    {
+        StrokeColorSpace = "DeviceGray";
+        StrokeColor = [gray];
+    }
+
+    /// <summary>
+    /// Sets fill color to grayscale
+    /// </summary>
+    public void SetFillGray(double gray)
+    {
+        FillColorSpace = "DeviceGray";
+        FillColor = [gray];
+    }
+
+    /// <summary>
+    /// Sets stroke color to RGB
+    /// </summary>
+    public void SetStrokeRgb(double r, double g, double b)
+    {
+        StrokeColorSpace = "DeviceRGB";
+        StrokeColor = [r, g, b];
+    }
+
+    /// <summary>
+    /// Sets fill color to RGB
+    /// </summary>
+    public void SetFillRgb(double r, double g, double b)
+    {
+        FillColorSpace = "DeviceRGB";
+        FillColor = [r, g, b];
+    }
+
+    /// <summary>
+    /// Sets stroke color to CMYK
+    /// </summary>
+    public void SetStrokeCmyk(double c, double m, double y, double k)
+    {
+        StrokeColorSpace = "DeviceCMYK";
+        StrokeColor = [c, m, y, k];
+    }
+
+    /// <summary>
+    /// Sets fill color to CMYK
+    /// </summary>
+    public void SetFillCmyk(double c, double m, double y, double k)
+    {
+        FillColorSpace = "DeviceCMYK";
+        FillColor = [c, m, y, k];
+    }
+
     /// <summary>
     /// Creates a deep copy of this graphics state for the graphics state stack
     /// </summary>
@@ -89,7 +157,11 @@ public class PdfGraphicsState
             LineCap = LineCap,
             LineJoin = LineJoin,
             MiterLimit = MiterLimit,
-            Flatness = Flatness
+            Flatness = Flatness,
+            StrokeColorSpace = StrokeColorSpace,
+            FillColorSpace = FillColorSpace,
+            StrokeColor = [..StrokeColor],
+            FillColor = [..FillColor]
         };
     }
 
@@ -131,6 +203,17 @@ public class PdfGraphicsState
     }
 
     /// <summary>
+    /// Advances the text matrix (used after showing text)
+    /// Only updates TextMatrix, not TextLineMatrix
+    /// </summary>
+    public void AdvanceTextMatrix(double tx, double ty)
+    {
+        var translation = Matrix3x2.CreateTranslation((float)tx, (float)ty);
+        TextMatrix = translation * TextMatrix;
+        // Do NOT update TextLineMatrix - it stays at the start of the line
+    }
+
+    /// <summary>
     /// Moves to next line (T* operator) - uses leading
     /// </summary>
     public void MoveToNextLine()
@@ -164,5 +247,25 @@ public class PdfGraphicsState
         if (isSpace)
             advance += WordSpacing;
         return advance * HorizontalScaling / 100.0;
+    }
+
+    /// <summary>
+    /// Gets the rectangle for an image XObject
+    /// In PDF, images are mapped to a 1x1 unit square, and the CTM provides the final dimensions
+    /// ISO 32000-1:2008 section 8.9.5
+    /// </summary>
+    public PdfRectangle GetImageRectangle()
+    {
+        // In the CTM:
+        // M11 = width (scale in X direction)
+        // M22 = height (scale in Y direction)
+        // M31 = x translation
+        // M32 = y translation
+        double x = Ctm.M31;
+        double y = Ctm.M32;
+        double width = Ctm.M11;
+        double height = Ctm.M22;
+
+        return new PdfRectangle(x, y, x + width, y + height);
     }
 }

@@ -165,9 +165,38 @@ public class PdfContentParser
                 "f" or "F" => new FillOperator(),
                 "f*" => new FillEvenOddOperator(),
                 "B" => new FillAndStrokeOperator(),
+                "B*" => new FillAndStrokeEvenOddOperator(),
+                "b" => new CloseAndFillAndStrokeOperator(),
+                "b*" => new CloseAndFillAndStrokeEvenOddOperator(),
                 "n" => new EndPathOperator(),
                 "W" => new ClipOperator(),
                 "W*" => new ClipEvenOddOperator(),
+
+                // Color operators - Grayscale
+                "g" when operands.Count >= 1 => new SetFillGrayOperator(GetNumber(operands[0])),
+                "G" when operands.Count >= 1 => new SetStrokeGrayOperator(GetNumber(operands[0])),
+
+                // Color operators - RGB
+                "rg" when operands.Count >= 3 => new SetFillRgbOperator(
+                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2])),
+                "RG" when operands.Count >= 3 => new SetStrokeRgbOperator(
+                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2])),
+
+                // Color operators - CMYK
+                "k" when operands.Count >= 4 => new SetFillCmykOperator(
+                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]), GetNumber(operands[3])),
+                "K" when operands.Count >= 4 => new SetStrokeCmykOperator(
+                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]), GetNumber(operands[3])),
+
+                // Color operators - Color space
+                "cs" when operands is [PdfName colorSpace, ..] => new SetFillColorSpaceOperator(colorSpace),
+                "CS" when operands is [PdfName colorSpace, ..] => new SetStrokeColorSpaceOperator(colorSpace),
+
+                // Color operators - Generic color
+                "sc" => new SetFillColorOperator(operands),
+                "SC" => new SetStrokeColorOperator(operands),
+                "scn" => new SetFillColorExtendedOperator(operands),
+                "SCN" => new SetStrokeColorExtendedOperator(operands),
 
                 // XObject operator
                 "Do" when operands is [PdfName xobjName, ..] => new InvokeXObjectOperator(xobjName),

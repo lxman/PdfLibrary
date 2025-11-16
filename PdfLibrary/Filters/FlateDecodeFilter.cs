@@ -15,9 +15,9 @@ public class FlateDecodeFilter : IStreamFilter
         ArgumentNullException.ThrowIfNull(data);
 
         using var outputStream = new MemoryStream();
-        using (var deflateStream = new DeflateStream(outputStream, CompressionLevel.Optimal))
+        using (var zlibStream = new ZLibStream(outputStream, CompressionLevel.Optimal))
         {
-            deflateStream.Write(data, 0, data.Length);
+            zlibStream.Write(data, 0, data.Length);
         }
 
         return outputStream.ToArray();
@@ -33,10 +33,10 @@ public class FlateDecodeFilter : IStreamFilter
         ArgumentNullException.ThrowIfNull(data);
 
         using var inputStream = new MemoryStream(data);
-        using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
+        using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
         using var outputStream = new MemoryStream();
 
-        deflateStream.CopyTo(outputStream);
+        zlibStream.CopyTo(outputStream);
         byte[] decoded = outputStream.ToArray();
 
         // Apply predictor if specified in decode parameters

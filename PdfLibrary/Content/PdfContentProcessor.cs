@@ -176,6 +176,11 @@ public abstract class PdfContentProcessor
                 OnStroke();
                 break;
 
+            case CloseAndStrokeOperator:
+                OnClosePath();
+                OnStroke();
+                break;
+
             case FillOperator:
                 OnFill(evenOdd: false);
                 break;
@@ -188,6 +193,20 @@ public abstract class PdfContentProcessor
                 OnFillAndStroke();
                 break;
 
+            case FillAndStrokeEvenOddOperator:
+                OnFillAndStroke();
+                break;
+
+            case CloseAndFillAndStrokeOperator:
+                OnClosePath();
+                OnFillAndStroke();
+                break;
+
+            case CloseAndFillAndStrokeEvenOddOperator:
+                OnClosePath();
+                OnFillAndStroke();
+                break;
+
             case EndPathOperator:
                 OnEndPath();
                 break;
@@ -195,6 +214,71 @@ public abstract class PdfContentProcessor
             // XObject operators
             case InvokeXObjectOperator xobj:
                 OnInvokeXObject(xobj.XObjectName);
+                break;
+
+            // Color operators - Grayscale
+            case SetStrokeGrayOperator g:
+                CurrentState.SetStrokeGray(g.Gray);
+                OnColorChanged();
+                break;
+
+            case SetFillGrayOperator g:
+                CurrentState.SetFillGray(g.Gray);
+                OnColorChanged();
+                break;
+
+            // Color operators - RGB
+            case SetStrokeRgbOperator rg:
+                CurrentState.SetStrokeRgb(rg.R, rg.G, rg.B);
+                OnColorChanged();
+                break;
+
+            case SetFillRgbOperator rg:
+                CurrentState.SetFillRgb(rg.R, rg.G, rg.B);
+                OnColorChanged();
+                break;
+
+            // Color operators - CMYK
+            case SetStrokeCmykOperator cmyk:
+                CurrentState.SetStrokeCmyk(cmyk.C, cmyk.M, cmyk.Y, cmyk.K);
+                OnColorChanged();
+                break;
+
+            case SetFillCmykOperator cmyk:
+                CurrentState.SetFillCmyk(cmyk.C, cmyk.M, cmyk.Y, cmyk.K);
+                OnColorChanged();
+                break;
+
+            // Color space operators
+            case SetStrokeColorSpaceOperator cs:
+                CurrentState.StrokeColorSpace = cs.ColorSpace;
+                OnColorChanged();
+                break;
+
+            case SetFillColorSpaceOperator cs:
+                CurrentState.FillColorSpace = cs.ColorSpace;
+                OnColorChanged();
+                break;
+
+            // Generic color operators
+            case SetStrokeColorOperator sc:
+                CurrentState.StrokeColor = sc.Components;
+                OnColorChanged();
+                break;
+
+            case SetFillColorOperator sc:
+                CurrentState.FillColor = sc.Components;
+                OnColorChanged();
+                break;
+
+            case SetStrokeColorExtendedOperator scn:
+                CurrentState.StrokeColor = scn.Components;
+                OnColorChanged();
+                break;
+
+            case SetFillColorExtendedOperator scn:
+                CurrentState.FillColor = scn.Components;
+                OnColorChanged();
                 break;
 
             // Generic operators
@@ -223,5 +307,6 @@ public abstract class PdfContentProcessor
     protected virtual void OnFillAndStroke() { }
     protected virtual void OnEndPath() { }
     protected virtual void OnInvokeXObject(string name) { }
+    protected virtual void OnColorChanged() { }
     protected virtual void OnGenericOperator(GenericOperator op) { }
 }

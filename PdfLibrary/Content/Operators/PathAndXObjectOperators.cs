@@ -103,9 +103,33 @@ public class FillEvenOddOperator() : PdfOperator("f*", [])
 }
 
 /// <summary>
-/// B - Fill and stroke path
+/// B - Fill and stroke path using nonzero winding number rule
 /// </summary>
 public class FillAndStrokeOperator() : PdfOperator("B", [])
+{
+    public override OperatorCategory Category => OperatorCategory.PathPainting;
+}
+
+/// <summary>
+/// B* - Fill and stroke path using even-odd rule
+/// </summary>
+public class FillAndStrokeEvenOddOperator() : PdfOperator("B*", [])
+{
+    public override OperatorCategory Category => OperatorCategory.PathPainting;
+}
+
+/// <summary>
+/// b - Close, fill, and stroke path using nonzero winding number rule
+/// </summary>
+public class CloseAndFillAndStrokeOperator() : PdfOperator("b", [])
+{
+    public override OperatorCategory Category => OperatorCategory.PathPainting;
+}
+
+/// <summary>
+/// b* - Close, fill, and stroke path using even-odd rule
+/// </summary>
+public class CloseAndFillAndStrokeEvenOddOperator() : PdfOperator("b*", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
