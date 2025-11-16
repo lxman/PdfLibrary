@@ -167,6 +167,87 @@ public class PdfTextExtractor : PdfContentProcessor
     }
 
     /// <summary>
+    /// Handles XObject invocation (Do operator) to extract text from Form XObjects
+    /// </summary>
+    protected override void OnInvokeXObject(string name)
+    {
+        Console.WriteLine($"[DEBUG] OnInvokeXObject called for: {name}");
+
+        // Get the XObject from resources
+        if (_resources == null)
+        {
+            Console.WriteLine($"[DEBUG] No resources available");
+            return;
+        }
+
+        PdfStream? xobject = _resources.GetXObject(name);
+        if (xobject == null)
+        {
+            Console.WriteLine($"[DEBUG] XObject '{name}' not found in resources");
+            return;
+        }
+
+        // Skip image XObjects - we only care about Form XObjects
+        if (PdfImage.IsImageXObject(xobject))
+        {
+            Console.WriteLine($"[DEBUG] XObject '{name}' is an image, skipping");
+            return;
+        }
+
+        // Check if this is a Form XObject
+        if (!IsFormXObject(xobject))
+        {
+            Console.WriteLine($"[DEBUG] XObject '{name}' is not a Form XObject");
+            return;
+        }
+
+        Console.WriteLine($"[DEBUG] Extracting text from Form XObject '{name}'");
+
+        // Extract text from the Form XObject
+        ExtractTextFromFormXObject(xobject);
+    }
+
+    /// <summary>
+    /// Checks if a stream is a Form XObject
+    /// </summary>
+    private static bool IsFormXObject(PdfStream stream)
+    {
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
+            return false;
+        return obj is PdfName subtype && subtype.Value == "Form";
+    }
+
+    /// <summary>
+    /// Recursively extracts text from a Form XObject
+    /// </summary>
+    private void ExtractTextFromFormXObject(PdfStream formStream)
+    {
+        // Get the Form XObject's content data
+        byte[] contentData = formStream.GetDecodedData();
+
+        // Get the Form's Resources dictionary if present
+        PdfResources? formResources = _resources;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resourcesObj))
+        {
+            if (resourcesObj is PdfDictionary resourcesDict)
+            {
+                formResources = new PdfResources(resourcesDict);
+            }
+        }
+
+        // Create a new extractor for the form content
+        var formExtractor = new PdfTextExtractor(formResources ?? _resources);
+
+        // Parse and process the Form XObject's content stream
+        var operators = PdfContentParser.Parse(contentData);
+        formExtractor.ProcessOperators(operators);
+
+        // Append the extracted text and fragments to our results
+        _textBuilder.Append(formExtractor.GetText());
+        _fragments.AddRange(formExtractor.GetTextFragments());
+    }
+
+    /// <summary>
     /// Decodes PDF string to readable text using font information
     /// </summary>
     private static string DecodeText(PdfString pdfString, PdfFont? font)
