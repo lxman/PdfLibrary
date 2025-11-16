@@ -1,8 +1,6 @@
-using System.IO.Compression;
 using System.Text;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Filters;
-using Xunit;
 
 namespace PdfLibrary.Tests;
 
@@ -462,7 +460,7 @@ public class PdfStreamDecodeTests
     [Fact]
     public void GetDecodedData_EmptyRawData_ReturnsEmpty()
     {
-        byte[] emptyData = Array.Empty<byte>();
+        byte[] emptyData = [];
         var filter = new FlateDecodeFilter();
         byte[] compressedEmpty = filter.Encode(emptyData);
 

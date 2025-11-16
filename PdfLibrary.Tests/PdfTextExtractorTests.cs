@@ -1,6 +1,5 @@
 using System.Text;
 using PdfLibrary.Content;
-using Xunit;
 
 namespace PdfLibrary.Tests;
 
@@ -50,7 +49,7 @@ ET";
     [Fact]
     public void ExtractText_EmptyContent_ReturnsEmpty()
     {
-        byte[] emptyContent = Array.Empty<byte>();
+        byte[] emptyContent = [];
 
         string text = PdfTextExtractor.ExtractText(emptyContent);
 
@@ -154,7 +153,7 @@ ET";
     [Fact]
     public void ExtractTextWithFragments_EmptyContent_ReturnsEmpty()
     {
-        byte[] emptyContent = Array.Empty<byte>();
+        byte[] emptyContent = [];
 
         var (text, fragments) = PdfTextExtractor.ExtractTextWithFragments(emptyContent);
 

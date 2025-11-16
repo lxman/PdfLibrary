@@ -1,7 +1,6 @@
 using System.Text;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using Xunit;
 
 namespace PdfLibrary.Tests;
 
@@ -318,7 +317,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Hexadecimal_AllBytes()
     {
-        byte[] bytes = { 0x01, 0x02, 0xFF, 0xFE };
+        byte[] bytes = [0x01, 0x02, 0xFF, 0xFE];
         var pdfString = new PdfString(bytes, PdfStringFormat.Hexadecimal);
         Assert.Equal("<0102FFFE>", pdfString.ToPdfString());
     }

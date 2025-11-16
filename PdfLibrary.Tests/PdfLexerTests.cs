@@ -285,7 +285,7 @@ public class PdfLexerTests
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
-        Assert.Equal("48656C6C6F", token.Value);
+        Assert.Equal("Hello", token.Value); // <48656C6C6F> = "Hello" in hex
     }
 
     [Fact]
@@ -295,7 +295,7 @@ public class PdfLexerTests
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
-        Assert.Equal("48656C6C6F", token.Value);
+        Assert.Equal("Hello", token.Value); // Whitespace is ignored in hex strings
     }
 
     [Fact]
@@ -315,7 +315,7 @@ public class PdfLexerTests
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
-        Assert.Equal("4A6b", token.Value);
+        Assert.Equal("Jk", token.Value); // <4A6b> = "Jk" (0x4A='J', 0x6b='k')
     }
 
     #endregion

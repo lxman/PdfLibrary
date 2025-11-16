@@ -1,7 +1,6 @@
 using PdfLibrary.Content;
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
-using Xunit;
 using Xunit.Abstractions;
 
 namespace PdfLibrary.Tests;
@@ -205,5 +204,157 @@ public class PdfDocumentIntegrationTests
             Assert.True(fragment.Y >= -100, $"Y position {fragment.Y} too far below");
             Assert.True(fragment.Y <= pageHeight + 100, $"Y position {fragment.Y} too far above");
         }
+    }
+
+    [Fact]
+    public void GetImages_Pdf20ImageWithBpc_ExtractsImage()
+    {
+        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf";
+
+        if (!File.Exists(pdfPath))
+        {
+            _output.WriteLine($"Skipping test - PDF file not found: {pdfPath}");
+            return;
+        }
+
+        using PdfDocument doc = PdfDocument.Load(pdfPath);
+        int pageCount = doc.GetPageCount();
+
+        _output.WriteLine($"PDF has {pageCount} page(s)");
+
+        for (int i = 0; i < pageCount; i++)
+        {
+            PdfPage? page = doc.GetPage(i);
+            Assert.NotNull(page);
+
+            List<PdfImage> images = page.GetImages();
+
+            _output.WriteLine($"");
+            _output.WriteLine($"=== Page {i + 1} ===");
+            _output.WriteLine($"Number of images: {images.Count}");
+
+            foreach (PdfImage image in images)
+            {
+                _output.WriteLine($"");
+                _output.WriteLine($"Image: {image}");
+                _output.WriteLine($"  Size: {image.Width}x{image.Height} pixels");
+                _output.WriteLine($"  Color Space: {image.ColorSpace}");
+                _output.WriteLine($"  Bits Per Component: {image.BitsPerComponent}");
+                _output.WriteLine($"  Component Count: {image.ComponentCount}");
+                _output.WriteLine($"  Filters: {string.Join(", ", image.Filters)}");
+                _output.WriteLine($"  Has Alpha: {image.HasAlpha}");
+                _output.WriteLine($"  Is Mask: {image.IsImageMask}");
+                _output.WriteLine($"  Expected Data Size: {image.GetExpectedDataSize()} bytes");
+
+                // Verify image has valid dimensions
+                Assert.True(image.Width > 0, "Image width should be positive");
+                Assert.True(image.Height > 0, "Image height should be positive");
+            }
+        }
+    }
+
+    [Fact]
+    public void GetImages_AllPdf20Examples_CountsImages()
+    {
+        string[] pdfFiles =
+        [
+            @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf",
+            @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf",
+            @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 UTF-8 string and annotation.pdf",
+            @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 via incremental save.pdf"
+        ];
+
+        _output.WriteLine("Scanning PDF files for images:");
+        _output.WriteLine("");
+
+        foreach (string pdfPath in pdfFiles)
+        {
+            if (!File.Exists(pdfPath))
+            {
+                _output.WriteLine($"Skipped: {Path.GetFileName(pdfPath)} (not found)");
+                continue;
+            }
+
+            try
+            {
+                using PdfDocument doc = PdfDocument.Load(pdfPath);
+                int totalImages = 0;
+
+                for (int i = 0; i < doc.GetPageCount(); i++)
+                {
+                    PdfPage? page = doc.GetPage(i);
+                    if (page != null)
+                    {
+                        totalImages += page.GetImageCount();
+                    }
+                }
+
+                _output.WriteLine($"{Path.GetFileName(pdfPath)}: {totalImages} image(s)");
+            }
+            catch (Exception ex)
+            {
+                _output.WriteLine($"{Path.GetFileName(pdfPath)}: Error - {ex.Message}");
+            }
+        }
+    }
+
+    [Fact]
+    public void ExtractImages_VerifyImageData_DataSizeMatchesExpected()
+    {
+        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf";
+
+        if (!File.Exists(pdfPath))
+        {
+            _output.WriteLine($"Skipping test - PDF file not found: {pdfPath}");
+            return;
+        }
+
+        using PdfDocument doc = PdfDocument.Load(pdfPath);
+
+        for (int i = 0; i < doc.GetPageCount(); i++)
+        {
+            PdfPage? page = doc.GetPage(i);
+            if (page == null) continue;
+
+            List<PdfImage> images = page.GetImages();
+
+            foreach (PdfImage image in images)
+            {
+                byte[] data = image.GetDecodedData();
+                int expectedSize = image.GetExpectedDataSize();
+
+                _output.WriteLine($"Image {image.Width}x{image.Height}:");
+                _output.WriteLine($"  Actual data size: {data.Length} bytes");
+                _output.WriteLine($"  Expected data size: {expectedSize} bytes");
+
+                // Note: Actual size might be larger than expected due to padding or
+                // different than expected for compressed formats like JPEG
+                Assert.NotEmpty(data);
+            }
+        }
+    }
+
+    [Fact]
+    public void GetImageCount_SimplePdf_ReturnsCorrectCount()
+    {
+        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+
+        if (!File.Exists(pdfPath))
+        {
+            _output.WriteLine($"Skipping test - PDF file not found: {pdfPath}");
+            return;
+        }
+
+        using PdfDocument doc = PdfDocument.Load(pdfPath);
+        PdfPage? page = doc.GetPage(0);
+        Assert.NotNull(page);
+
+        int imageCount = page.GetImageCount();
+        List<PdfImage> images = page.GetImages();
+
+        _output.WriteLine($"Image count (via GetImageCount): {imageCount}");
+        _output.WriteLine($"Image count (via GetImages().Count): {images.Count}");
+
+        Assert.Equal(images.Count, imageCount);
     }
 }

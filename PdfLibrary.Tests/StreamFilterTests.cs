@@ -85,7 +85,7 @@ public class StreamFilterTests
     public void FlateDecode_RoundTrip_EmptyData()
     {
         var filter = new FlateDecodeFilter();
-        byte[] original = Array.Empty<byte>();
+        byte[] original = [];
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
@@ -545,7 +545,7 @@ public class StreamFilterTests
     public void ASCIIHexDecode_EmptyData()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] original = Array.Empty<byte>();
+        byte[] original = [];
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
@@ -692,7 +692,7 @@ public class StreamFilterTests
     public void ASCII85Decode_EmptyData()
     {
         var filter = new Ascii85DecodeFilter();
-        byte[] original = Array.Empty<byte>();
+        byte[] original = [];
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);

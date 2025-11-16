@@ -2,7 +2,6 @@ using System.Text;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Parsing;
-using Xunit;
 
 namespace PdfLibrary.Tests;
 
