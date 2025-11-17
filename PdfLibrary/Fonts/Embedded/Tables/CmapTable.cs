@@ -47,13 +47,17 @@ namespace PdfLibrary.Fonts.Embedded.Tables
                 ICmapSubtable? subTable = null;
                 switch (format)
                 {
+                    case 0:
+                        subTable = new CmapSubtablesFormat0(reader);
+                        SubTables.Add(subTable);
+                        break;
+
                     case 4:
                         subTable = new CmapSubtablesFormat4(reader);
                         SubTables.Add(subTable);
                         break;
 
-                    // Add more formats here as needed (0, 6, 12 are common)
-                    // For now, Format 4 is sufficient for most PDFs
+                    // Add more formats here as needed (6, 12 are common)
                     default:
                         // Skip unsupported formats
                         break;

@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
@@ -103,9 +104,21 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfDictionary descriptorDict)
-                return new PdfFontDescriptor(descriptorDict);
+                return new PdfFontDescriptor(descriptorDict, _document);
         }
 
+        return null;
+    }
+
+    /// <summary>
+    /// Gets embedded font metrics from TrueType/OpenType font data
+    /// Only available for fonts with embedded TrueType data
+    /// </summary>
+    /// <returns>EmbeddedFontMetrics if font has embedded TrueType data, null otherwise</returns>
+    public virtual EmbeddedFontMetrics? GetEmbeddedMetrics()
+    {
+        // Default implementation: no embedded metrics
+        // Overridden in TrueTypeFont and Type0Font
         return null;
     }
 

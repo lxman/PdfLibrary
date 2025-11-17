@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
@@ -11,6 +12,8 @@ public class TrueTypeFont : PdfFont
 {
     private double[]? _widths;
     private double _defaultWidth;
+    private EmbeddedFontMetrics? _embeddedMetrics;
+    private bool _metricsLoaded;
 
     public TrueTypeFont(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
@@ -24,12 +27,58 @@ public class TrueTypeFont : PdfFont
 
     public override double GetCharacterWidth(int charCode)
     {
-        // Check if character code is in range
+        // Get width from Widths array for comparison
+        double widthsArrayValue = 0;
         if (_widths != null && charCode >= FirstChar && charCode <= LastChar)
         {
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
+            {
+                widthsArrayValue = _widths[index];
+            }
+        }
+
+        // Try to use embedded font metrics first for more accurate widths
+        var embeddedMetrics = GetEmbeddedMetrics();
+        if (embeddedMetrics != null && embeddedMetrics.IsValid)
+        {
+            ushort glyphWidth = embeddedMetrics.GetCharacterAdvanceWidth((ushort)charCode);
+            if (glyphWidth > 0)
+            {
+                // Compare with Widths array - PDF convention is 1000 units per em
+                // Embedded font may have different UnitsPerEm (e.g., 2048)
+                // Scale embedded width to PDF's 1000-unit coordinate system
+                double scaledWidth = (double)glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                if (charCode >= 1 && charCode <= 10)
+                {
+                    Console.WriteLine($"[DEBUG] GetCharacterWidth({charCode}): embeddedWidth={glyphWidth}, scaledTo1000={scaledWidth:F2}, Widths[{charCode}]={widthsArrayValue}");
+                }
+                return scaledWidth; // Return in PDF's 1000-unit coordinate system
+            }
+            else
+            {
+                if (charCode >= 1 && charCode <= 10)
+                {
+                    Console.WriteLine($"[DEBUG] GetCharacterWidth({charCode}): embedded metrics returned 0, using Widths[{charCode}]={widthsArrayValue}");
+                }
+            }
+        }
+        else
+        {
+            if (charCode >= 1 && charCode <= 10)
+            {
+                Console.WriteLine($"[DEBUG] GetCharacterWidth({charCode}): no embedded metrics, using Widths[{charCode}]={widthsArrayValue}");
+            }
+        }
+
+        // Fallback to widths array from PDF
+        if (_widths != null && charCode >= FirstChar && charCode <= LastChar)
+        {
+            int index = charCode - FirstChar;
+            if (index >= 0 && index < _widths.Length)
+            {
                 return _widths[index];
+            }
         }
 
         // Try to get from font descriptor
@@ -44,6 +93,42 @@ public class TrueTypeFont : PdfFont
 
         // Last resort: use default width
         return _defaultWidth > 0 ? _defaultWidth : 500;
+    }
+
+    public override EmbeddedFontMetrics? GetEmbeddedMetrics()
+    {
+        if (_metricsLoaded)
+            return _embeddedMetrics;
+
+        _metricsLoaded = true;
+
+        try
+        {
+            // Get font descriptor
+            PdfFontDescriptor? descriptor = GetDescriptor();
+            if (descriptor == null)
+                return null;
+
+            // Try to get embedded TrueType data (FontFile2)
+            byte[]? fontData = descriptor.GetFontFile2();
+            if (fontData == null)
+            {
+                // Try OpenType/CFF (FontFile3)
+                fontData = descriptor.GetFontFile3();
+            }
+
+            if (fontData == null)
+                return null;
+
+            // Parse embedded font metrics
+            _embeddedMetrics = new EmbeddedFontMetrics(fontData);
+            return _embeddedMetrics;
+        }
+        catch
+        {
+            // If parsing fails, return null and fall back to PDF widths
+            return null;
+        }
     }
 
     private void LoadEncoding()

@@ -322,7 +322,7 @@ public class PdfDocument : IDisposable
             throw new FileNotFoundException($"PDF file not found: {filePath}", filePath);
 
         FileStream stream = File.OpenRead(filePath);
-        return Load(stream, true);
+        return Load(stream, leaveOpen: false);  // We own this stream, so don't leave it open
     }
 
     /// <summary>

@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
 
@@ -7,9 +8,10 @@ namespace PdfLibrary.Fonts;
 /// Represents a PDF font descriptor (ISO 32000-1:2008 section 9.8)
 /// Contains font metrics and other font-specific information
 /// </summary>
-public class PdfFontDescriptor(PdfDictionary dictionary)
+public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document = null)
 {
     private readonly PdfDictionary _dictionary = dictionary ?? throw new ArgumentNullException(nameof(dictionary));
+    private readonly PdfDocument? _document = document;
 
     /// <summary>
     /// Gets the font name
@@ -254,9 +256,14 @@ public class PdfFontDescriptor(PdfDictionary dictionary)
     /// </summary>
     public byte[]? GetFontFile2()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject obj) && obj is PdfStream stream)
+        if (_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject? obj))
         {
-            return stream.GetDecodedData();
+            // Resolve indirect reference if needed
+            if (obj is PdfIndirectReference reference && _document != null)
+                obj = _document.ResolveReference(reference);
+
+            if (obj is PdfStream stream)
+                return stream.GetDecodedData();
         }
         return null;
     }
@@ -266,9 +273,14 @@ public class PdfFontDescriptor(PdfDictionary dictionary)
     /// </summary>
     public byte[]? GetFontFile3()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject obj) && obj is PdfStream stream)
+        if (_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject? obj))
         {
-            return stream.GetDecodedData();
+            // Resolve indirect reference if needed
+            if (obj is PdfIndirectReference reference && _document != null)
+                obj = _document.ResolveReference(reference);
+
+            if (obj is PdfStream stream)
+                return stream.GetDecodedData();
         }
         return null;
     }
@@ -278,9 +290,14 @@ public class PdfFontDescriptor(PdfDictionary dictionary)
     /// </summary>
     public byte[]? GetFontFile()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject obj) && obj is PdfStream stream)
+        if (_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject? obj))
         {
-            return stream.GetDecodedData();
+            // Resolve indirect reference if needed
+            if (obj is PdfIndirectReference reference && _document != null)
+                obj = _document.ResolveReference(reference);
+
+            if (obj is PdfStream stream)
+                return stream.GetDecodedData();
         }
         return null;
     }

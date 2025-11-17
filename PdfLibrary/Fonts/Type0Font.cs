@@ -13,6 +13,8 @@ public class Type0Font : PdfFont
 {
     private PdfFont? _descendantFont;
     private EmbeddedFontExtractor? _embeddedFont;
+    private EmbeddedFontMetrics? _embeddedMetrics;
+    private bool _metricsLoaded;
 
     public Type0Font(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
@@ -56,6 +58,42 @@ public class Type0Font : PdfFont
         return unicodeFromGlyph;
 
         // 3. Fall back to character code as Unicode (last resort)
+    }
+
+    public override EmbeddedFontMetrics? GetEmbeddedMetrics()
+    {
+        if (_metricsLoaded)
+            return _embeddedMetrics;
+
+        _metricsLoaded = true;
+
+        try
+        {
+            // Get font descriptor from descendant CIDFont or Type0 font
+            PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
+            if (descriptor == null)
+                return null;
+
+            // Try to get embedded TrueType data (FontFile2)
+            byte[]? fontData = descriptor.GetFontFile2();
+            if (fontData == null)
+            {
+                // Try OpenType/CFF (FontFile3)
+                fontData = descriptor.GetFontFile3();
+            }
+
+            if (fontData == null)
+                return null;
+
+            // Parse embedded font metrics
+            _embeddedMetrics = new EmbeddedFontMetrics(fontData);
+            return _embeddedMetrics;
+        }
+        catch
+        {
+            // If parsing fails, return null and fall back to CID widths
+            return null;
+        }
     }
 
     /// <summary>

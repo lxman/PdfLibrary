@@ -211,30 +211,33 @@ public class PdfRenderer : PdfContentProcessor
 
             decodedText.Append(decoded);
 
-            // Get character width in glyph space (typically 1000 units)
+            // Get character width in text space (1000-unit system) and convert to USER SPACE
+            // The width is in the font's coordinate system (typically 1000 units = 1 em)
+            // We need to scale by fontSize to get user space units
             double glyphWidth = font.GetCharacterWidth(charCode);
-
-            // Convert to text space: width * fontSize / 1000
             double advance = glyphWidth * CurrentState.FontSize / 1000.0;
-
-            // Apply character spacing and word spacing
-            advance += CurrentState.CharacterSpacing;
-            if (decoded == " ")
-                advance += CurrentState.WordSpacing;
 
             // Apply horizontal scaling
             advance *= CurrentState.HorizontalScaling / 100.0;
+
+            // Add character spacing (already in user space)
+            if (CurrentState.CharacterSpacing != 0)
+                advance += CurrentState.CharacterSpacing;
+
+            // Add word spacing for spaces (already in user space)
+            if (decoded == " " && CurrentState.WordSpacing != 0)
+                advance += CurrentState.WordSpacing;
 
             glyphWidths.Add(advance);
         }
 
         // Render the text
-        System.Diagnostics.Debug.WriteLine($"  Calling _target.DrawText with '{decodedText}', {glyphWidths.Count} glyph widths");
-        _target.DrawText(decodedText.ToString(), glyphWidths, CurrentState);
-        System.Diagnostics.Debug.WriteLine($"  _target.DrawText completed");
+        string textToRender = decodedText.ToString();
+        Console.WriteLine($"[OnShowText] Rendering '{textToRender}' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
+        Console.WriteLine($"  FontSize={CurrentState.FontSize:F2}, Widths={string.Join(",", glyphWidths.Take(3).Select(w => w.ToString("F2")))}...");
+        _target.DrawText(textToRender, glyphWidths, CurrentState);
 
-        // Advance text position by the total width of rendered text
-        // According to PDF spec, after showing text, TextMatrix advances but TextLineMatrix stays at line start
+        // Advance text position by the total width
         double totalAdvance = glyphWidths.Sum();
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
@@ -372,32 +375,107 @@ public class PdfRenderer : PdfContentProcessor
 
     protected override void OnShowTextWithPositioning(PdfArray array)
     {
-        // TJ operator: array of strings and position adjustments
-        // Example: [(Hello) -250 (World)]
-        // Strings are shown, numbers adjust position
-
+        // TJ operator: combine all strings and adjustments into a single DrawText call
         if (_resources == null || CurrentState.FontName == null)
             return;
 
-        foreach (var item in array)
+        PdfFont? font = _resources.GetFontObject(CurrentState.FontName);
+        if (font == null) return;
+
+        bool isType0 = font.FontType == PdfFontType.Type0;
+        var combinedText = new StringBuilder();
+        var combinedWidths = new List<double>();
+
+        // Process all items in the TJ array
+        foreach (PdfObject item in array)
         {
-            if (item is PdfString str)
+            switch (item)
             {
-                // Show the string
-                OnShowText(str);
+                case PdfString str:
+                {
+                    // Decode characters from this string segment
+                    byte[] bytes = str.Bytes;
+                    int i = 0;
+                    while (i < bytes.Length)
+                    {
+                        int charCode;
+                        if (isType0 && i + 1 < bytes.Length)
+                        {
+                            charCode = (bytes[i] << 8) | bytes[i + 1];
+                            i += 2;
+                        }
+                        else
+                        {
+                            charCode = bytes[i];
+                            i++;
+                        }
+
+                        string decoded = font.DecodeCharacter(charCode);
+                        combinedText.Append(decoded);
+
+                        // Get character width and convert to USER SPACE
+                        double glyphWidth = font.GetCharacterWidth(charCode);
+                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        advance *= CurrentState.HorizontalScaling / 100.0;
+
+                        // Add character spacing
+                        if (CurrentState.CharacterSpacing != 0)
+                            advance += CurrentState.CharacterSpacing;
+
+                        // Add word spacing for spaces
+                        if (decoded == " " && CurrentState.WordSpacing != 0)
+                            advance += CurrentState.WordSpacing;
+
+                        combinedWidths.Add(advance);
+                    }
+                    break;
+                }
+                case PdfInteger intVal:
+                {
+                    // Kerning adjustment: modify the width of the previous character
+                    // Adjustment is in thousandths of text space, convert to user space
+                    if (combinedWidths.Count > 0)
+                    {
+                        double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                        adjustment *= CurrentState.HorizontalScaling / 100.0;
+                        combinedWidths[^1] += adjustment;
+                    }
+                    break;
+                }
+                case PdfReal realVal:
+                {
+                    if (combinedWidths.Count > 0)
+                    {
+                        double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                        adjustment *= CurrentState.HorizontalScaling / 100.0;
+                        combinedWidths[^1] += adjustment;
+                    }
+                    break;
+                }
             }
-            else if (item is PdfInteger intAdj)
+        }
+
+        // Render all text in a single DrawText call
+        if (combinedText.Length > 0)
+        {
+            string textPreview = combinedText.ToString().Substring(0, Math.Min(20, combinedText.Length));
+            Console.WriteLine($"[TJ] Rendering '{textPreview}...' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
+
+            // DIAGNOSTIC: Log first few widths and check for zeros
+            if (combinedWidths.Count > 0)
             {
-                // Adjust position (negative values move right, positive move left)
-                // Value is in thousandths of a unit of text space
-                double adjustment = -intAdj.Value / 1000.0 * CurrentState.FontSize;
-                CurrentState.AdvanceTextMatrix(adjustment, 0);
+                string widthsPreview = string.Join(", ", combinedWidths.Take(5).Select(w => $"{w:F4}"));
+                Console.WriteLine($"     Widths: [{widthsPreview}...] Total: {combinedWidths.Sum():F4}");
+
+                if (combinedWidths.Take(5).All(w => w == 0))
+                    Console.WriteLine($"     WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
             }
-            else if (item is PdfReal realAdj)
-            {
-                double adjustment = -realAdj.Value / 1000.0 * CurrentState.FontSize;
-                CurrentState.AdvanceTextMatrix(adjustment, 0);
-            }
+
+            _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState);
+
+            // Advance text position by total width
+            double totalAdvance = combinedWidths.Sum();
+            CurrentState.AdvanceTextMatrix(totalAdvance, 0);
         }
     }
 
