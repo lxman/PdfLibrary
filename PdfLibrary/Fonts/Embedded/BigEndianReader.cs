@@ -6,7 +6,7 @@ namespace PdfLibrary.Fonts.Embedded
     /// Binary reader for big-endian font data (TrueType, OpenType, etc.)
     /// Adapted from FontManager.NET for PdfLibrary use
     /// </summary>
-    internal class BigEndianReader : IDisposable
+    public class BigEndianReader : IDisposable
     {
         public long BytesRemaining => _data.Length - Position;
         public long Position { get; private set; }

@@ -4,11 +4,14 @@ using System.Collections.Generic;
 namespace PdfLibrary.Fonts.Embedded
 {
     /// <summary>
-    /// Minimal TrueType font parser to extract glyph names from 'post' table
-    /// Supports TrueType (FontFile2) embedded fonts from PDFs
+    /// TrueType font parser for extracting tables from embedded fonts
+    /// Supports TrueType (FontFile2) and OpenType embedded fonts from PDFs
     /// </summary>
     public class TrueTypeParser
     {
+        private readonly Dictionary<string, TableRecord> _tables;
+        private readonly byte[] _fontData;
+
         private class TableRecord
         {
             public string Tag { get; set; } = string.Empty;
@@ -18,12 +21,53 @@ namespace PdfLibrary.Fonts.Embedded
         }
 
         /// <summary>
-        /// Parse TrueType font and extract glyph names from 'post' table
+        /// Creates a parser for the given TrueType/OpenType font data
         /// </summary>
-        /// <param name="fontData">Raw TrueType font data from PDF FontFile2 stream</param>
-        /// <returns>PostTable with glyph name mappings, or null if parsing fails</returns>
-        public static PostTable? ParsePostTable(byte[] fontData)
+        public TrueTypeParser(byte[] fontData)
         {
+            _fontData = fontData ?? throw new ArgumentNullException(nameof(fontData));
+            _tables = ParseTableDirectory(fontData);
+        }
+
+        /// <summary>
+        /// Gets the raw data for a specific table by tag
+        /// </summary>
+        /// <param name="tag">Four-character table tag (e.g., "head", "hhea", "hmtx")</param>
+        /// <returns>Table data bytes, or null if table not found</returns>
+        public byte[]? GetTable(string tag)
+        {
+            if (!_tables.TryGetValue(tag, out TableRecord? record))
+                return null;
+
+            try
+            {
+                using var reader = new BigEndianReader(_fontData);
+                reader.Seek(record.Offset);
+                return reader.ReadBytes(record.Length);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Checks if a specific table exists in the font
+        /// </summary>
+        public bool HasTable(string tag) => _tables.ContainsKey(tag);
+
+        /// <summary>
+        /// Gets all available table tags
+        /// </summary>
+        public IEnumerable<string> GetTableTags() => _tables.Keys;
+
+        /// <summary>
+        /// Parses the TrueType table directory
+        /// </summary>
+        private static Dictionary<string, TableRecord> ParseTableDirectory(byte[] fontData)
+        {
+            var tables = new Dictionary<string, TableRecord>();
+
             try
             {
                 using var reader = new BigEndianReader(fontData);
@@ -31,24 +75,19 @@ namespace PdfLibrary.Fonts.Embedded
                 // Read font header (TrueType or OpenType)
                 uint sfntVersion = reader.ReadUInt32();
 
-                // Check for TrueType (0x00010000) or OpenType (0x4F54544F = "OTTO")
-                bool isTrueType = (sfntVersion == 0x00010000 || sfntVersion == 0x74727565); // 'true'
-                bool isOpenType = (sfntVersion == 0x4F54544F); // 'OTTO'
+                // Check for TrueType (0x00010000) or OpenType (0x4F54544F = "OTTO") or 'true'
+                bool isValid = (sfntVersion == 0x00010000 || sfntVersion == 0x74727565 || sfntVersion == 0x4F54544F);
 
-                if (!isTrueType && !isOpenType)
-                {
-                    // Not a valid TrueType/OpenType font
-                    return null;
-                }
+                if (!isValid)
+                    return tables; // Not a valid font
 
-                // Read table directory
+                // Read table directory header
                 ushort numTables = reader.ReadUShort();
                 reader.ReadUShort(); // searchRange
                 reader.ReadUShort(); // entrySelector
                 reader.ReadUShort(); // rangeShift
 
                 // Read table records
-                var tables = new Dictionary<string, TableRecord>();
                 for (int i = 0; i < numTables; i++)
                 {
                     var record = new TableRecord
@@ -60,24 +99,30 @@ namespace PdfLibrary.Fonts.Embedded
                     };
                     tables[record.Tag] = record;
                 }
-
-                // Find 'post' table
-                if (!tables.TryGetValue("post", out TableRecord? postRecord))
-                {
-                    // No 'post' table found
-                    return null;
-                }
-
-                // Extract 'post' table data
-                reader.Seek(postRecord.Offset);
-                byte[] postData = reader.ReadBytes(postRecord.Length);
-
-                // Parse 'post' table
-                return new PostTable(postData);
             }
             catch
             {
-                // Font parsing failed
+                // Failed to parse table directory
+            }
+
+            return tables;
+        }
+
+        /// <summary>
+        /// Parse TrueType font and extract glyph names from 'post' table
+        /// </summary>
+        /// <param name="fontData">Raw TrueType font data from PDF FontFile2 stream</param>
+        /// <returns>PostTable with glyph name mappings, or null if parsing fails</returns>
+        public static PostTable? ParsePostTable(byte[] fontData)
+        {
+            try
+            {
+                var parser = new TrueTypeParser(fontData);
+                byte[]? postData = parser.GetTable("post");
+                return postData != null ? new PostTable(postData) : null;
+            }
+            catch
+            {
                 return null;
             }
         }
