@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Generic;
+using FontParser.Reader;
 
 namespace PdfLibrary.Fonts.Embedded
 {

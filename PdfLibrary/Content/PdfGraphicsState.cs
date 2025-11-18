@@ -68,6 +68,12 @@ public class PdfGraphicsState
     /// <summary>Flatness tolerance</summary>
     public double Flatness { get; set; } = 1.0;
 
+    /// <summary>Dash pattern array - defines the pattern of dashes and gaps for stroked paths</summary>
+    public double[]? DashPattern { get; set; }
+
+    /// <summary>Dash phase - the distance into the dash pattern at which to start</summary>
+    public double DashPhase { get; set; }
+
     // Color state
     /// <summary>Stroke color space (default: DeviceGray)</summary>
     public string StrokeColorSpace { get; set; } = "DeviceGray";
@@ -158,6 +164,8 @@ public class PdfGraphicsState
             LineJoin = LineJoin,
             MiterLimit = MiterLimit,
             Flatness = Flatness,
+            DashPattern = DashPattern != null ? [..DashPattern] : null,
+            DashPhase = DashPhase,
             StrokeColorSpace = StrokeColorSpace,
             FillColorSpace = FillColorSpace,
             StrokeColor = [..StrokeColor],

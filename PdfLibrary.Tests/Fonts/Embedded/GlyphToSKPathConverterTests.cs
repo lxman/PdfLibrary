@@ -1,5 +1,4 @@
 using PdfLibrary.Fonts.Embedded;
-using SkiaSharp;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
 

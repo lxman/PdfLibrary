@@ -63,7 +63,7 @@ public class MockRenderTarget : IRenderTarget
         _stateDepth--;
     }
 
-    public void SetClippingPath(IPathBuilder path, bool evenOdd)
+    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
         Operations.Add($"SetClippingPath: {GetPathDescription(path)}, EvenOdd={evenOdd}");
     }

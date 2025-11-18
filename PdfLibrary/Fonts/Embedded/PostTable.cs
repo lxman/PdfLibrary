@@ -1,4 +1,5 @@
 using System.Text;
+using FontParser.Reader;
 
 namespace PdfLibrary.Fonts.Embedded
 {

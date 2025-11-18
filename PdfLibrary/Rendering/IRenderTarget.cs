@@ -64,7 +64,10 @@ public interface IRenderTarget
     /// <summary>
     /// Set clipping path for subsequent operations.
     /// </summary>
-    void SetClippingPath(IPathBuilder path, bool evenOdd);
+    /// <param name="path">The clipping path</param>
+    /// <param name="state">Current graphics state for coordinate transformation</param>
+    /// <param name="evenOdd">True for even-odd fill rule, false for non-zero winding</param>
+    void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd);
 
     // ==================== CONTENT OPERATIONS ====================
 

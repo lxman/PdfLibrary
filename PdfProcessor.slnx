@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="FontParser/FontParser.csproj" />
   <Project Path="ImageComparisonTool/ImageComparisonTool.csproj" />
   <Project Path="PdfLibrary.Examples/PdfLibrary.Examples.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />

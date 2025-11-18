@@ -1,4 +1,4 @@
-using PdfLibrary.Fonts.Embedded;
+using FontParser.Reader;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
 

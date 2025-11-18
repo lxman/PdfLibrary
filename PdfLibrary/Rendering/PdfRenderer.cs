@@ -165,7 +165,7 @@ public class PdfRenderer : PdfContentProcessor
         // End path without painting (used for clipping)
         if (!_currentPath.IsEmpty)
         {
-            _target.SetClippingPath(_currentPath, evenOdd: false);
+            _target.SetClippingPath(_currentPath, CurrentState, evenOdd: false);
             _currentPath.Clear();
         }
     }

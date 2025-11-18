@@ -1,6 +1,5 @@
 using System.Numerics;
 using PdfLibrary.Content;
-using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
@@ -308,26 +307,289 @@ public class SkiaSharpRenderTarget : IRenderTarget
         return SKColors.Black;
     }
 
-    // ==================== PATH OPERATIONS (Placeholder implementations) ====================
+    // ==================== PATH OPERATIONS ====================
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
     {
-        // TODO: Implement path stroking
+        if (path.IsEmpty)
+            return;
+
+        _canvas.Save();
+        try
+        {
+            // Apply transformation matrix
+            ApplyPathTransformationMatrix(state);
+
+            // Convert IPathBuilder to SKPath
+            var skPath = ConvertToSKPath(path);
+
+            // Create stroke paint
+            var strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+            using var paint = new SKPaint
+            {
+                Color = strokeColor,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = (float)state.LineWidth,
+                StrokeCap = ConvertLineCap(state.LineCap),
+                StrokeJoin = ConvertLineJoin(state.LineJoin),
+                StrokeMiter = (float)state.MiterLimit
+            };
+
+            // Apply dash pattern if present
+            if (state.DashPattern != null && state.DashPattern.Length > 0)
+            {
+                var dashIntervals = state.DashPattern.Select(d => (float)d).ToArray();
+                paint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)state.DashPhase);
+            }
+
+            _canvas.DrawPath(skPath, paint);
+            skPath.Dispose();
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
     }
 
     public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
-        // TODO: Implement path filling
+        if (path.IsEmpty)
+            return;
+
+        _canvas.Save();
+        try
+        {
+            // Apply transformation matrix
+            ApplyPathTransformationMatrix(state);
+
+            // Convert IPathBuilder to SKPath
+            var skPath = ConvertToSKPath(path);
+
+            // Set fill rule
+            skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+            // Create fill paint
+            var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            using var paint = new SKPaint
+            {
+                Color = fillColor,
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            };
+
+            _canvas.DrawPath(skPath, paint);
+            skPath.Dispose();
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
     }
 
     public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
-        // TODO: Implement fill and stroke
+        if (path.IsEmpty)
+            return;
+
+        _canvas.Save();
+        try
+        {
+            // Apply transformation matrix (once for both operations)
+            ApplyPathTransformationMatrix(state);
+
+            // Convert IPathBuilder to SKPath
+            var skPath = ConvertToSKPath(path);
+
+            // Set fill rule
+            skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+            // Fill first
+            var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            using (var fillPaint = new SKPaint
+            {
+                Color = fillColor,
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            })
+            {
+                _canvas.DrawPath(skPath, fillPaint);
+            }
+
+            // Then stroke
+            var strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+            using (var strokePaint = new SKPaint
+            {
+                Color = strokeColor,
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = (float)state.LineWidth,
+                StrokeCap = ConvertLineCap(state.LineCap),
+                StrokeJoin = ConvertLineJoin(state.LineJoin),
+                StrokeMiter = (float)state.MiterLimit
+            })
+            {
+                // Apply dash pattern if present
+                if (state.DashPattern != null && state.DashPattern.Length > 0)
+                {
+                    var dashIntervals = state.DashPattern.Select(d => (float)d).ToArray();
+                    strokePaint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)state.DashPhase);
+                }
+
+                _canvas.DrawPath(skPath, strokePaint);
+            }
+
+            skPath.Dispose();
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
     }
 
-    public void SetClippingPath(IPathBuilder path, bool evenOdd)
+    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
-        // TODO: Implement clipping path
+        if (path.IsEmpty)
+            return;
+
+        // Convert IPathBuilder to SKPath in PDF coordinates
+        var skPath = ConvertToSKPath(path);
+
+        // Set fill rule for clipping
+        skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+        // Transform the path to device coordinates
+        var pdfMatrix = state.Ctm;
+        var displayMatrix = new Matrix3x2(
+            1, 0,
+            0, -1,
+            0, (float)_pageHeight
+        );
+        var deviceMatrix = pdfMatrix * displayMatrix;
+
+        var skMatrix = new SKMatrix
+        {
+            ScaleX = deviceMatrix.M11,
+            SkewY = deviceMatrix.M12,
+            SkewX = deviceMatrix.M21,
+            ScaleY = deviceMatrix.M22,
+            TransX = deviceMatrix.M31,
+            TransY = deviceMatrix.M32,
+            Persp0 = 0,
+            Persp1 = 0,
+            Persp2 = 1
+        };
+
+        skPath.Transform(skMatrix);
+
+        // Apply clipping path (persists until RestoreState is called)
+        _canvas.ClipPath(skPath, SKClipOperation.Intersect, antialias: true);
+        skPath.Dispose();
+    }
+
+    // ==================== PATH CONVERSION HELPERS ====================
+
+    /// <summary>
+    /// Convert IPathBuilder to SkiaSharp SKPath
+    /// </summary>
+    private SKPath ConvertToSKPath(IPathBuilder pathBuilder)
+    {
+        var skPath = new SKPath();
+
+        if (pathBuilder is not PathBuilder builder)
+            return skPath;
+
+        foreach (var segment in builder.Segments)
+        {
+            switch (segment)
+            {
+                case MoveToSegment moveTo:
+                    skPath.MoveTo((float)moveTo.X, (float)moveTo.Y);
+                    break;
+
+                case LineToSegment lineTo:
+                    skPath.LineTo((float)lineTo.X, (float)lineTo.Y);
+                    break;
+
+                case CurveToSegment curveTo:
+                    // PDF uses cubic Bézier curves (4 control points)
+                    skPath.CubicTo(
+                        (float)curveTo.X1, (float)curveTo.Y1,
+                        (float)curveTo.X2, (float)curveTo.Y2,
+                        (float)curveTo.X3, (float)curveTo.Y3
+                    );
+                    break;
+
+                case ClosePathSegment:
+                    skPath.Close();
+                    break;
+            }
+        }
+
+        return skPath;
+    }
+
+    /// <summary>
+    /// Apply transformation matrix for path operations
+    /// (Different from text transformation - no glyph flip needed)
+    /// </summary>
+    private void ApplyPathTransformationMatrix(PdfGraphicsState state)
+    {
+        var pdfMatrix = state.Ctm;
+
+        // Create page-to-device display matrix
+        var displayMatrix = new Matrix3x2(
+            1, 0,
+            0, -1,
+            0, (float)_pageHeight
+        );
+
+        // Concatenate transformations
+        var deviceMatrix = pdfMatrix * displayMatrix;
+
+        // Convert to SKMatrix
+        var skMatrix = new SKMatrix
+        {
+            ScaleX = deviceMatrix.M11,
+            SkewY = deviceMatrix.M12,
+            SkewX = deviceMatrix.M21,
+            ScaleY = deviceMatrix.M22,
+            TransX = deviceMatrix.M31,
+            TransY = deviceMatrix.M32,
+            Persp0 = 0,
+            Persp1 = 0,
+            Persp2 = 1
+        };
+
+        _canvas.Concat(in skMatrix);
+    }
+
+    /// <summary>
+    /// Convert PDF line cap style to SkiaSharp
+    /// </summary>
+    private SKStrokeCap ConvertLineCap(int lineCap)
+    {
+        return lineCap switch
+        {
+            0 => SKStrokeCap.Butt,      // Butt cap
+            1 => SKStrokeCap.Round,     // Round cap
+            2 => SKStrokeCap.Square,    // Projecting square cap
+            _ => SKStrokeCap.Butt
+        };
+    }
+
+    /// <summary>
+    /// Convert PDF line join style to SkiaSharp
+    /// </summary>
+    private SKStrokeJoin ConvertLineJoin(int lineJoin)
+    {
+        return lineJoin switch
+        {
+            0 => SKStrokeJoin.Miter,    // Miter join
+            1 => SKStrokeJoin.Round,    // Round join
+            2 => SKStrokeJoin.Bevel,    // Bevel join
+            _ => SKStrokeJoin.Miter
+        };
     }
 
     public void DrawImage(PdfImage image, PdfGraphicsState state)
@@ -392,14 +654,18 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // The transformation matrix will position/scale/rotate it correctly
                 var unitRect = new SKRect(0, 0, 1, 1);
 
-#pragma warning disable CS0618 // Type or member is obsolete
+                // Use high-quality sampling for image scaling
                 using var paint = new SKPaint
                 {
-                    IsAntialias = true,
-                    FilterQuality = SKFilterQuality.High
+                    IsAntialias = true
                 };
-#pragma warning restore CS0618
-                _canvas.DrawBitmap(bitmap, unitRect, paint);
+
+                // Convert bitmap to image for better sampling options support
+                using var skImage = SKImage.FromBitmap(bitmap);
+
+                // Use bilinear filtering for downscaling
+                var samplingOptions = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+                _canvas.DrawImage(skImage, unitRect, samplingOptions, paint);
                 Console.WriteLine($"[DrawImage] Bitmap drawn successfully");
             }
             finally
@@ -465,8 +731,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     return null;
                 }
 
-                // Use Premul alpha type if we have an SMask, otherwise Opaque
-                var alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
+                // Use Unpremul alpha type for SMask (we set colors without premultiplying)
+                var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                 bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
 
                 int componentsPerEntry = baseColorSpace switch
@@ -532,7 +798,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             }
             else if (colorSpace == "DeviceRGB" && bitsPerComponent == 8)
             {
-                var alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
+                var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                 bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                 int expectedSize = width * height * 3;
                 if (imageData.Length < expectedSize)
@@ -563,7 +829,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             }
             else if (colorSpace == "DeviceGray" && bitsPerComponent == 8)
             {
-                var alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
+                var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                 bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                 int expectedSize = width * height;
                 if (imageData.Length < expectedSize)

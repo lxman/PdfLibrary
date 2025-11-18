@@ -1,7 +1,3 @@
-using PdfLibrary.Core.Primitives;
-using System;
-using System.Collections.Generic;
-
 namespace PdfLibrary.Fonts.Embedded
 {
     /// <summary>

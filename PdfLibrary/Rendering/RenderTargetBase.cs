@@ -72,7 +72,7 @@ public abstract class RenderTargetBase : IRenderTarget
     /// <summary>
     /// Set clipping path for subsequent operations.
     /// </summary>
-    public abstract void SetClippingPath(IPathBuilder path, bool evenOdd);
+    public abstract void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd);
 
     /// <summary>
     /// Render text string with specified glyph widths.

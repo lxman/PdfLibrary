@@ -1,6 +1,8 @@
-using PdfLibrary.Fonts.Embedded.Tables;
-using PdfLibrary.Fonts.Embedded.Tables.TtTables;
-using PdfLibrary.Fonts.Embedded.Tables.TtTables.Glyf;
+using FontParser.Tables.Head;
+using FontParser.Tables.Hhea;
+using FontParser.Tables.Hmtx;
+using FontParser.Tables.TtTables;
+using FontParser.Tables.TtTables.Glyf;
 
 namespace PdfLibrary.Fonts.Embedded
 {
@@ -39,7 +41,8 @@ namespace PdfLibrary.Fonts.Embedded
                 throw new InvalidOperationException("Font missing required 'loca' table");
 
             _locaTable = new LocaTable(locaData);
-            _locaTable.Process(_numGlyphs, _headTable.IndexToLocFormat == 0);
+            bool isShortFormat = _headTable.IndexToLocFormat == IndexToLocFormat.Offset16;
+            _locaTable.Process(_numGlyphs, isShortFormat);
 
             byte[]? glyfData = parser.GetTable("glyf");
             if (glyfData == null)
@@ -119,7 +122,8 @@ namespace PdfLibrary.Fonts.Embedded
             }
 
             // Get horizontal metrics
-            (int advanceWidth, int lsb) = _hmtxTable.GetMetrics(glyphId);
+            ushort advanceWidth = _hmtxTable.GetAdvanceWidth((ushort)glyphId);
+            short lsb = _hmtxTable.GetLeftSideBearing((ushort)glyphId);
 
             // Get bounding box from glyph data
             GlyphData? glyphData = _glyfTable.GetGlyphData(glyphId);

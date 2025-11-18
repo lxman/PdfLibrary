@@ -1,8 +1,11 @@
-using PdfLibrary.Fonts.Embedded.Tables;
-using PdfLibrary.Fonts.Embedded.Tables.Cmap;
-using PdfLibrary.Fonts.Embedded.Tables.Name;
-using PdfLibrary.Fonts.Embedded.Tables.TtTables;
-using PdfLibrary.Fonts.Embedded.Tables.TtTables.Glyf;
+using FontParser.Tables;
+using FontParser.Tables.Cmap;
+using FontParser.Tables.Head;
+using FontParser.Tables.Hhea;
+using FontParser.Tables.Hmtx;
+using FontParser.Tables.Name;
+using FontParser.Tables.TtTables;
+using FontParser.Tables.TtTables.Glyf;
 
 namespace PdfLibrary.Fonts.Embedded;
 
@@ -15,7 +18,7 @@ public class EmbeddedFontMetrics
     private readonly TrueTypeParser _parser;
     private readonly HeadTable? _headTable;
     private readonly HheaTable? _hheaTable;
-    private readonly MaxpTable? _maxpTable;
+    private readonly MaxPTable? _maxpTable;
     private readonly HmtxTable? _hmtxTable;
     private readonly NameTable? _nameTable;
     private readonly CmapTable? _cmapTable;
@@ -82,7 +85,7 @@ public class EmbeddedFontMetrics
         byte[]? maxpData = _parser.GetTable("maxp");
         if (maxpData != null)
         {
-            _maxpTable = new MaxpTable(maxpData);
+            _maxpTable = new MaxPTable(maxpData);
             NumGlyphs = _maxpTable.NumGlyphs;
         }
 
@@ -235,7 +238,7 @@ public class EmbeddedFontMetrics
         var componentIds = new List<int>();
 
         // Recursively extract and transform each component
-        foreach (var component in compositeGlyph.Components)
+        foreach (CompositeGlyphComponent component in compositeGlyph.Components)
         {
             componentIds.Add(component.GlyphIndex);
 
@@ -286,7 +289,7 @@ public class EmbeddedFontMetrics
                 return;
 
             _locaTable = new LocaTable(locaData);
-            bool isShortFormat = _headTable.IndexToLocFormat == 0;
+            bool isShortFormat = _headTable.IndexToLocFormat == IndexToLocFormat.Offset16;
             _locaTable.Process(NumGlyphs, isShortFormat);
 
             // Parse glyf table (contains glyph outlines)
