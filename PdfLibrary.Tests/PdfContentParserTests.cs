@@ -31,7 +31,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_TextObject_BeginAndEnd()
     {
-        string content = "BT ET";
+        var content = "BT ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -46,7 +46,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_GraphicsState_SaveAndRestore()
     {
-        string content = "q Q";
+        var content = "q Q";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -61,7 +61,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_PathOperators_MoveLineClose()
     {
-        string content = "100 200 m 150 250 l h";
+        var content = "100 200 m 150 250 l h";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -78,7 +78,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_RectangleOperator_FourOperands()
     {
-        string content = "100 200 50 75 re";
+        var content = "100 200 50 75 re";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -92,7 +92,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_ConcatenateMatrix_SixOperands()
     {
-        string content = "1 0 0 1 100 200 cm";
+        var content = "1 0 0 1 100 200 cm";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -106,7 +106,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_PathPaintingOperators_StrokeAndFill()
     {
-        string content = "S f B n";
+        var content = "S f B n";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -121,7 +121,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_ClipOperators_WindingAndEvenOdd()
     {
-        string content = "W W*";
+        var content = "W W*";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -140,7 +140,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_ShowText_WithStringOperand()
     {
-        string content = "(Hello, World!) Tj";
+        var content = "(Hello, World!) Tj";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -156,7 +156,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_ShowTextWithPositioning_WithArray()
     {
-        string content = "[(Hello) -250 (World)] TJ";
+        var content = "[(Hello) -250 (World)] TJ";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -180,7 +180,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_MoveToNextLineAndShowText_SingleQuote()
     {
-        string content = "(Next line text) '";
+        var content = "(Next line text) '";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -193,7 +193,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_SetSpacingAndShowText_DoubleQuote()
     {
-        string content = "1.0 2.0 (Text with spacing) \"";
+        var content = "1.0 2.0 (Text with spacing) \"";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -207,7 +207,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_SetTextFont_NameAndSize()
     {
-        string content = "/F1 12 Tf";
+        var content = "/F1 12 Tf";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -223,7 +223,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_TextPositioning_MoveTextPosition()
     {
-        string content = "100 700 Td";
+        var content = "100 700 Td";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -237,7 +237,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_SetTextMatrix_SixOperands()
     {
-        string content = "1 0 0 1 100 200 Tm";
+        var content = "1 0 0 1 100 200 Tm";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -251,7 +251,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_MoveToNextLine_NoOperands()
     {
-        string content = "T*";
+        var content = "T*";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -265,7 +265,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_TextStateOperators_Various()
     {
-        string content = "1.5 Tc 2.0 Tw 100 Tz 14 TL 0 Tr 5 Ts";
+        var content = "1.5 Tc 2.0 Tw 100 Tz 14 TL 0 Tr 5 Ts";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -286,7 +286,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_IntegerOperands_ParsedCorrectly()
     {
-        string content = "100 200 m";
+        var content = "100 200 m";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -302,7 +302,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_RealNumberOperands_ParsedCorrectly()
     {
-        string content = "3.14 2.718 1.414 cm";
+        var content = "3.14 2.718 1.414 cm";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -316,7 +316,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_StringOperands_LiteralString()
     {
-        string content = "(This is a test) Tj";
+        var content = "(This is a test) Tj";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -330,7 +330,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_NameOperands_ParsedCorrectly()
     {
-        string content = "/XObject Do";
+        var content = "/XObject Do";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -345,7 +345,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_ArrayOperands_ParsedCorrectly()
     {
-        string content = "[1 2 3] 0 d";
+        var content = "[1 2 3] 0 d";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -363,7 +363,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_DictionaryOperands_ParsedCorrectly()
     {
-        string content = "<</Type /Font /Subtype /Type1>> unknown_op";
+        var content = "<</Type /Font /Subtype /Type1>> unknown_op";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -378,7 +378,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_BooleanOperands_TrueAndFalse()
     {
-        string content = "true false unknown_op";
+        var content = "true false unknown_op";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -395,7 +395,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_NullOperand_ParsedCorrectly()
     {
-        string content = "null unknown_op";
+        var content = "null unknown_op";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -408,7 +408,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_MixedOperandTypes_ParsedCorrectly()
     {
-        string content = "100 3.14 /Name (String) [1 2] true null unknown_op";
+        var content = "100 3.14 /Name (String) [1 2] true null unknown_op";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -431,7 +431,7 @@ public class PdfContentParserTests
     [Fact]
     public void Parse_SimpleTextStream_CompleteSequence()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -452,7 +452,7 @@ ET";
     [Fact]
     public void Parse_MultiLineText_WithPositioning()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -477,7 +477,7 @@ ET";
     [Fact]
     public void Parse_TextWithArrayPositioning_TJOperator()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -501,7 +501,7 @@ ET";
     [Fact]
     public void Parse_GraphicsPath_Rectangle()
     {
-        string content = @"
+        var content = @"
 q
 1 0 0 1 100 200 cm
 50 50 200 100 re
@@ -522,7 +522,7 @@ Q";
     [Fact]
     public void Parse_ComplexPath_MoveLineCurve()
     {
-        string content = @"
+        var content = @"
 100 200 m
 150 200 l
 150 100 200 100 200 150 c
@@ -543,7 +543,7 @@ f";
     [Fact]
     public void Parse_CombinedTextAndGraphics_Mixed()
     {
-        string content = @"
+        var content = @"
 q
 1 w
 100 100 200 50 re
@@ -576,7 +576,7 @@ ET";
     [Fact]
     public void Parse_GraphicsStateParameters_LineCapJoinMiter()
     {
-        string content = @"
+        var content = @"
 1 J
 2 j
 10 M
@@ -595,7 +595,7 @@ ET";
     [Fact]
     public void Parse_DashPattern_ArrayAndPhase()
     {
-        string content = "[3 2] 0 d";
+        var content = "[3 2] 0 d";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -610,7 +610,7 @@ ET";
     [Fact]
     public void Parse_XObjectInvocation_DoOperator()
     {
-        string content = "/Im1 Do";
+        var content = "/Im1 Do";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -630,7 +630,7 @@ ET";
     [Fact]
     public void Parse_UnknownOperator_CreatesGenericOperator()
     {
-        string content = "100 200 UNKNOWN_OP";
+        var content = "100 200 UNKNOWN_OP";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -645,7 +645,7 @@ ET";
     public void Parse_OperatorWithoutRequiredOperands_CreatesGenericOperator()
     {
         // Tj requires a string operand, but none provided
-        string content = "Tj";
+        var content = "Tj";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -660,7 +660,7 @@ ET";
     public void Parse_OperatorWithWrongOperandType_CreatesGenericOperator()
     {
         // Tf expects name then number, but we provide two numbers
-        string content = "12 14 Tf";
+        var content = "12 14 Tf";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -674,7 +674,7 @@ ET";
     [Fact]
     public void Parse_MalformedArray_HandlesGracefully()
     {
-        string content = "[1 2 3 unknown_op"; // Missing closing bracket
+        var content = "[1 2 3 unknown_op"; // Missing closing bracket
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -687,7 +687,7 @@ ET";
     [Fact]
     public void Parse_NestedArrays_ParsedCorrectly()
     {
-        string content = "[[1 2] [3 4]] unknown_op";
+        var content = "[[1 2] [3 4]] unknown_op";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -705,7 +705,7 @@ ET";
     [Fact]
     public void Parse_NestedDictionaries_ParsedCorrectly()
     {
-        string content = "<</Outer <</Inner /Value>> >> unknown_op";
+        var content = "<</Outer <</Inner /Value>> >> unknown_op";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -723,7 +723,7 @@ ET";
     public void Parse_WhitespaceVariations_HandleCorrectly()
     {
         // Various whitespace types: space, tab, newline, carriage return
-        string content = "100\t200\n300\r400 m";
+        var content = "100\t200\n300\r400 m";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -737,7 +737,7 @@ ET";
     [Fact]
     public void Parse_NoWhitespaceBetweenTokens_StillParses()
     {
-        string content = "100 200m"; // No space before 'm'
+        var content = "100 200m"; // No space before 'm'
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);
@@ -749,7 +749,7 @@ ET";
     [Fact]
     public void Parse_CommentsInStream_IgnoredCorrectly()
     {
-        string content = @"
+        var content = @"
 % This is a comment
 100 200 m
 % Another comment
@@ -768,7 +768,7 @@ ET";
     {
         // Create a large content stream with many operators
         var sb = new StringBuilder();
-        for (int i = 0; i < 1000; i++)
+        for (var i = 0; i < 1000; i++)
         {
             sb.AppendLine($"{i} {i + 100} m");
         }
@@ -787,7 +787,7 @@ ET";
     [Fact]
     public void Parse_OperatorCategories_AssignedCorrectly()
     {
-        string content = "q Q BT ET 100 200 m 150 250 l S";
+        var content = "q Q BT ET 100 200 m 150 250 l S";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
         List<PdfOperator> operators = PdfContentParser.Parse(bytes);

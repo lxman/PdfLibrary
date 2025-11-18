@@ -1,4 +1,4 @@
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Cmap
 {
     /// <summary>
     /// Encoding record from cmap table header

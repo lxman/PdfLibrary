@@ -1,5 +1,4 @@
 <Solution>
-  <Project Path="ComparisonTool/ComparisonTool.csproj" />
   <Project Path="PdfLibrary.Examples/PdfLibrary.Examples.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
   <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />

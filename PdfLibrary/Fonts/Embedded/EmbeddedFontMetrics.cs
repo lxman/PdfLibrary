@@ -1,4 +1,6 @@
 using PdfLibrary.Fonts.Embedded.Tables;
+using PdfLibrary.Fonts.Embedded.Tables.Cmap;
+using PdfLibrary.Fonts.Embedded.Tables.Name;
 
 namespace PdfLibrary.Fonts.Embedded;
 

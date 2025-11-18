@@ -71,8 +71,8 @@ public class StreamFilterTests
     public void FlateDecode_RoundTrip_BinaryData()
     {
         var filter = new FlateDecodeFilter();
-        byte[] original = new byte[256];
-        for (int i = 0; i < 256; i++)
+        var original = new byte[256];
+        for (var i = 0; i < 256; i++)
             original[i] = (byte)i;
 
         byte[] encoded = filter.Encode(original);
@@ -130,7 +130,7 @@ public class StreamFilterTests
         ];
 
         // Add PNG predictor type byte (0 = None)
-        byte[] withPredictor = new byte[imageData.Length + 1];
+        var withPredictor = new byte[imageData.Length + 1];
         withPredictor[0] = 0; // PNG predictor type: None
         Array.Copy(imageData, 0, withPredictor, 1, imageData.Length);
 
@@ -344,7 +344,7 @@ public class StreamFilterTests
         var filter = new FlateDecodeFilter();
 
         // Highly repetitive data should compress well
-        byte[] original = new byte[1000];
+        var original = new byte[1000];
         Array.Fill(original, (byte)'A');
 
         byte[] encoded = filter.Encode(original);
@@ -363,7 +363,7 @@ public class StreamFilterTests
         var filter = new FlateDecodeFilter();
 
         // Test with larger data (10KB)
-        byte[] original = new byte[10240];
+        var original = new byte[10240];
         var random = new Random(42); // Fixed seed for reproducibility
         random.NextBytes(original);
 
@@ -447,7 +447,7 @@ public class StreamFilterTests
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal(new byte[] { 0x41, 0x42, 0x43 }, decoded);
+        Assert.Equal("ABC"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -494,7 +494,7 @@ public class StreamFilterTests
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal(new byte[] { 0x41, 0x42, 0x63, 0x64, 0x65 }, decoded);
+        Assert.Equal("ABcde"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -505,7 +505,7 @@ public class StreamFilterTests
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal(new byte[] { 0x41, 0x42, 0x43, 0x44, 0x45 }, decoded);
+        Assert.Equal("ABCDE"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -517,7 +517,7 @@ public class StreamFilterTests
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal(new byte[] { 0x41, 0x42 }, decoded);
+        Assert.Equal("AB"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -529,7 +529,7 @@ public class StreamFilterTests
         byte[] decoded = filter.Decode(encoded);
 
         // "414>" should decode to [0x41, 0x40] - second digit is 4 with implied 0
-        Assert.Equal(new byte[] { 0x41, 0x40 }, decoded);
+        Assert.Equal("A@"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -562,7 +562,7 @@ public class StreamFilterTests
         byte[] decoded = filter.Decode(encoded);
 
         // Should only decode "4142", stop at >
-        Assert.Equal(new byte[] { 0x41, 0x42 }, decoded);
+        Assert.Equal("AB"u8.ToArray(), decoded);
     }
 
     #endregion
@@ -637,7 +637,7 @@ public class StreamFilterTests
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal(new byte[] { 0x00, 0x00, 0x00, 0x00 }, decoded);
+        Assert.Equal("\0\0\0\0"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -648,7 +648,7 @@ public class StreamFilterTests
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal(new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 }, decoded);
+        Assert.Equal("\0\0\0\0\0\0\0\0"u8.ToArray(), decoded);
     }
 
     [Fact]
@@ -722,14 +722,14 @@ public class StreamFilterTests
         byte[] decoded = filter.Decode(encoded);
 
         // Should only decode "z", stop at ~>
-        Assert.Equal(new byte[] { 0x00, 0x00, 0x00, 0x00 }, decoded);
+        Assert.Equal("\0\0\0\0"u8.ToArray(), decoded);
     }
 
     [Fact]
     public void ASCII85Decode_LargeData()
     {
         var filter = new Ascii85DecodeFilter();
-        byte[] original = new byte[1024];
+        var original = new byte[1024];
         var random = new Random(42);
         random.NextBytes(original);
 
@@ -750,7 +750,7 @@ public class StreamFilterTests
         // Format: [length-1] [bytes...]
         byte[] encoded = [2, (byte)'A', (byte)'B', (byte)'C', 128]; // 2 means 3 bytes, 128 is EOD
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal("ABC", System.Text.Encoding.ASCII.GetString(decoded));
@@ -763,7 +763,7 @@ public class StreamFilterTests
         // Format: [257-length] [byte]
         byte[] encoded = [252, (byte)'A', 128]; // 257-252 = 5 repetitions, 128 is EOD
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal("AAAAA", System.Text.Encoding.ASCII.GetString(decoded));
@@ -781,7 +781,7 @@ public class StreamFilterTests
             128                        // EOD marker
         ];
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal("ABCCCDE", System.Text.Encoding.ASCII.GetString(decoded));
@@ -798,7 +798,7 @@ public class StreamFilterTests
             0, (byte)'X'                          // This should be ignored
         ];
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal("ABC", System.Text.Encoding.ASCII.GetString(decoded));
@@ -810,7 +810,7 @@ public class StreamFilterTests
         // Maximum run length is 128 repetitions (257-129=128)
         byte[] encoded = [129, (byte)'X', 128]; // 128 X's
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal(128, decoded.Length);
@@ -821,16 +821,16 @@ public class StreamFilterTests
     public void RunLengthDecode_HandlesMaximumLiteral()
     {
         // Maximum literal length is 128 bytes (length byte = 127 means 128 bytes)
-        byte[] literal = new byte[128];
-        for (int i = 0; i < 128; i++)
+        var literal = new byte[128];
+        for (var i = 0; i < 128; i++)
             literal[i] = (byte)(i % 26 + 65); // A-Z repeated
 
-        byte[] encoded = new byte[130];
+        var encoded = new byte[130];
         encoded[0] = 127; // 128 bytes follow
         Array.Copy(literal, 0, encoded, 1, 128);
         encoded[129] = 128; // EOD
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal(128, decoded.Length);
@@ -842,7 +842,7 @@ public class StreamFilterTests
     {
         byte[] data = [(byte)'A', (byte)'A', (byte)'A', (byte)'A', (byte)'A'];
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] encoded = filter.Encode(data);
 
         // Should be: [252, 'A', 128] = run of 5 A's + EOD
@@ -857,7 +857,7 @@ public class StreamFilterTests
     {
         byte[] data = [(byte)'A', (byte)'B', (byte)'C'];
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] encoded = filter.Encode(data);
 
         // Should be: [2, 'A', 'B', 'C', 128] = 3 literals + EOD
@@ -874,7 +874,7 @@ public class StreamFilterTests
     {
         byte[] original = System.Text.Encoding.ASCII.GetBytes("AAABBBCCCCCCDEEE");
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
 
@@ -886,7 +886,7 @@ public class StreamFilterTests
     {
         byte[] encoded = [128]; // Just EOD marker
 
-        RunLengthDecodeFilter filter = new RunLengthDecodeFilter();
+        var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Empty(decoded);

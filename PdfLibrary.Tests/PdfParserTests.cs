@@ -23,7 +23,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesNull()
     {
-        var parser = CreateParser("null");
+        PdfParser parser = CreateParser("null");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -33,7 +33,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesBooleanTrue()
     {
-        var parser = CreateParser("true");
+        PdfParser parser = CreateParser("true");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -44,7 +44,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesBooleanFalse()
     {
-        var parser = CreateParser("false");
+        PdfParser parser = CreateParser("false");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -55,7 +55,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesInteger()
     {
-        var parser = CreateParser("42");
+        PdfParser parser = CreateParser("42");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -66,7 +66,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesNegativeInteger()
     {
-        var parser = CreateParser("-123");
+        PdfParser parser = CreateParser("-123");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -77,7 +77,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesReal()
     {
-        var parser = CreateParser("3.14");
+        PdfParser parser = CreateParser("3.14");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -88,7 +88,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesNegativeReal()
     {
-        var parser = CreateParser("-2.5");
+        PdfParser parser = CreateParser("-2.5");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -99,7 +99,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesLiteralString()
     {
-        var parser = CreateParser("(Hello World)");
+        PdfParser parser = CreateParser("(Hello World)");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -110,7 +110,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesHexString()
     {
-        var parser = CreateParser("<48656C6C6F>"); // "Hello" in hex
+        PdfParser parser = CreateParser("<48656C6C6F>"); // "Hello" in hex
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -121,7 +121,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesName()
     {
-        var parser = CreateParser("/Type");
+        PdfParser parser = CreateParser("/Type");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -136,7 +136,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesEmptyArray()
     {
-        var parser = CreateParser("[]");
+        PdfParser parser = CreateParser("[]");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -147,7 +147,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesArrayWithIntegers()
     {
-        var parser = CreateParser("[1 2 3 4 5]");
+        PdfParser parser = CreateParser("[1 2 3 4 5]");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -161,7 +161,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesArrayWithMixedTypes()
     {
-        var parser = CreateParser("[1 true (text) /Name 3.14]");
+        PdfParser parser = CreateParser("[1 true (text) /Name 3.14]");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -178,7 +178,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesNestedArray()
     {
-        var parser = CreateParser("[1 [2 3] 4]");
+        PdfParser parser = CreateParser("[1 [2 3] 4]");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -198,7 +198,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesArrayWithIndirectReference()
     {
-        var parser = CreateParser("[1 2 0 R 3]");
+        PdfParser parser = CreateParser("[1 2 0 R 3]");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -217,7 +217,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ThrowsOnUnterminatedArray()
     {
-        var parser = CreateParser("[1 2 3");
+        PdfParser parser = CreateParser("[1 2 3");
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 
@@ -228,7 +228,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesEmptyDictionary()
     {
-        var parser = CreateParser("<<>>");
+        PdfParser parser = CreateParser("<<>>");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -239,7 +239,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesDictionaryWithSingleEntry()
     {
-        var parser = CreateParser("<</Type /Page>>");
+        PdfParser parser = CreateParser("<</Type /Page>>");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -254,7 +254,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesDictionaryWithMultipleEntries()
     {
-        var parser = CreateParser("<</Type /Page /Count 10 /Title (Test)>>");
+        PdfParser parser = CreateParser("<</Type /Page /Count 10 /Title (Test)>>");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -269,7 +269,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesDictionaryWithArrayValue()
     {
-        var parser = CreateParser("<</Kids [1 0 R 2 0 R]>>");
+        PdfParser parser = CreateParser("<</Kids [1 0 R 2 0 R]>>");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -286,7 +286,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesNestedDictionary()
     {
-        var parser = CreateParser("<</Outer <</Inner 42>>>>");
+        PdfParser parser = CreateParser("<</Outer <</Inner 42>>>>");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -303,14 +303,14 @@ public class PdfParserTests
     [Fact]
     public void Parser_ThrowsOnDictionaryKeyNotName()
     {
-        var parser = CreateParser("<<42 /Value>>");
+        PdfParser parser = CreateParser("<<42 /Value>>");
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 
     [Fact]
     public void Parser_ThrowsOnUnterminatedDictionary()
     {
-        var parser = CreateParser("<</Type /Page");
+        PdfParser parser = CreateParser("<</Type /Page");
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 
@@ -321,7 +321,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesIndirectReference()
     {
-        var parser = CreateParser("5 0 R");
+        PdfParser parser = CreateParser("5 0 R");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -334,7 +334,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesIndirectReferenceWithNonZeroGeneration()
     {
-        var parser = CreateParser("10 5 R");
+        PdfParser parser = CreateParser("10 5 R");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -347,7 +347,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesTwoIntegersNotFollowedByR()
     {
-        var parser = CreateParser("10 20");
+        PdfParser parser = CreateParser("10 20");
         PdfObject? obj1 = parser.ReadObject();
         PdfObject? obj2 = parser.ReadObject();
 
@@ -367,7 +367,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesIndirectObjectDefinition()
     {
-        var parser = CreateParser("5 0 obj\n42\nendobj");
+        PdfParser parser = CreateParser("5 0 obj\n42\nendobj");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -381,7 +381,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesIndirectObjectWithDictionary()
     {
-        var parser = CreateParser("3 0 obj\n<</Type /Page>>\nendobj");
+        PdfParser parser = CreateParser("3 0 obj\n<</Type /Page>>\nendobj");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -398,7 +398,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesIndirectObjectWithArray()
     {
-        var parser = CreateParser("7 2 obj\n[1 2 3]\nendobj");
+        PdfParser parser = CreateParser("7 2 obj\n[1 2 3]\nendobj");
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -414,7 +414,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ThrowsOnMissingEndobj()
     {
-        var parser = CreateParser("5 0 obj\n42");
+        PdfParser parser = CreateParser("5 0 obj\n42");
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 
@@ -426,7 +426,7 @@ public class PdfParserTests
     public void Parser_ParsesSimpleStream()
     {
         var content = "<</Length 5>>\nstream\nHello\nendstream";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -440,7 +440,7 @@ public class PdfParserTests
     public void Parser_ParsesStreamWithFilter()
     {
         var content = "<</Length 10 /Filter /FlateDecode>>\nstream\n0123456789\nendstream";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -454,7 +454,7 @@ public class PdfParserTests
     public void Parser_ParsesStreamWithMultipleFilters()
     {
         var content = "<</Length 4 /Filter [/ASCII85Decode /FlateDecode]>>\nstream\ndata\nendstream";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -468,7 +468,7 @@ public class PdfParserTests
     public void Parser_ThrowsOnStreamMissingLength()
     {
         var content = "<<>>\nstream\ndata\nendstream";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 
@@ -476,7 +476,7 @@ public class PdfParserTests
     public void Parser_ThrowsOnStreamWithIndirectLength()
     {
         var content = "<</Length 5 0 R>>\nstream\ndata\nendstream";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 
@@ -487,7 +487,7 @@ public class PdfParserTests
     [Fact]
     public void Parser_ParsesMultipleObjectsInSequence()
     {
-        var parser = CreateParser("42 true /Name [1 2]");
+        PdfParser parser = CreateParser("42 true /Name [1 2]");
         List<PdfObject> objects = parser.ReadAllObjects();
 
         Assert.Equal(4, objects.Count);
@@ -510,7 +510,7 @@ public class PdfParserTests
                 >>
             >>
         >>";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -549,7 +549,7 @@ public class PdfParserTests
     >>
 >>
 endobj";
-        var parser = CreateParser(content);
+        PdfParser parser = CreateParser(content);
         PdfObject? obj = parser.ReadObject();
 
         Assert.NotNull(obj);
@@ -576,7 +576,7 @@ endobj";
     [Fact]
     public void Parser_ReturnsNullOnEmptyStream()
     {
-        var parser = CreateParser("");
+        PdfParser parser = CreateParser("");
         PdfObject? obj = parser.ReadObject();
         Assert.Null(obj);
     }
@@ -584,7 +584,7 @@ endobj";
     [Fact]
     public void Parser_ReturnsNullOnEOF()
     {
-        var parser = CreateParser("42");
+        PdfParser parser = CreateParser("42");
         parser.ReadObject(); // Read the integer
         PdfObject? obj = parser.ReadObject(); // Should return null
         Assert.Null(obj);
@@ -593,7 +593,7 @@ endobj";
     [Fact]
     public void Parser_ThrowsOnInvalidTokenInObjectContext()
     {
-        var parser = CreateParser("]");
+        PdfParser parser = CreateParser("]");
         Assert.Throws<PdfParseException>(() => parser.ReadObject());
     }
 

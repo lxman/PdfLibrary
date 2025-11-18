@@ -504,7 +504,7 @@ public class PdfImageTests
         var stream = new PdfStream(imageDict, new byte[100]);
 
         var image = new PdfImage(stream);
-        string str = image.ToString();
+        var str = image.ToString();
 
         Assert.Contains("640x480", str);
         Assert.Contains("DeviceRGB", str);

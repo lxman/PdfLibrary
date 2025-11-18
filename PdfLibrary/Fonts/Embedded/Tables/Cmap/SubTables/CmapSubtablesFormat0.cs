@@ -1,4 +1,4 @@
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Cmap.SubTables
 {
     /// <summary>
     /// Cmap subtable format 0 - Byte encoding table

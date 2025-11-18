@@ -15,7 +15,7 @@ public class PdfDiagnosticTests
 
         testFilePath = Path.GetFullPath(testFilePath);
 
-        using var stream = File.OpenRead(testFilePath);
+        using FileStream stream = File.OpenRead(testFilePath);
 
         // Find startxref position
         long startxref = PdfTrailerParser.FindStartXref(stream);
@@ -25,7 +25,7 @@ public class PdfDiagnosticTests
         stream.Position = startxref;
 
         // Read 512 bytes to see what's there
-        byte[] buffer = new byte[512];
+        var buffer = new byte[512];
         int bytesRead = stream.Read(buffer, 0, buffer.Length);
         string content = Encoding.ASCII.GetString(buffer, 0, bytesRead);
         Console.WriteLine("Content at startxref position:");
@@ -36,8 +36,8 @@ public class PdfDiagnosticTests
         stream.Position = startxref;
 
         // Read "xref" keyword
-        byte[] lineBuffer = new byte[256];
-        int linePos = 0;
+        var lineBuffer = new byte[256];
+        var linePos = 0;
         int b;
         while ((b = stream.ReadByte()) != -1 && b != '\n' && linePos < 255)
         {
@@ -56,7 +56,7 @@ public class PdfDiagnosticTests
         Console.WriteLine($"Line 2 (subsection): '{line}' (pos after: {stream.Position})");
 
         // Skip 10 xref entries
-        for (int i = 0; i < 10; i++)
+        for (var i = 0; i < 10; i++)
         {
             linePos = 0;
             while ((b = stream.ReadByte()) != -1 && b != '\n' && linePos < 255)

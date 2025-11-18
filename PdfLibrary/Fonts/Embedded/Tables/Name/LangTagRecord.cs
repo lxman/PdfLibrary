@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Name
 {
     /// <summary>
     /// Language tag record from TrueType 'name' table (format 1)

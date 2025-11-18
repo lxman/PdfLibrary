@@ -1,0 +1,42 @@
+﻿<Window x:Class="PdfTool.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:PdfTool"
+        mc:Ignorable="d"
+        Title="PDF Viewer" Height="700" Width="1000">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <ToolBar Grid.Row="0" Padding="5">
+            <Button x:Name="OpenButton" Content="Open PDF" Click="OpenButton_Click" Padding="10,5"/>
+            <Separator/>
+            <Button x:Name="PrevPageButton" Content="Previous Page" Click="PrevPageButton_Click" Padding="10,5" IsEnabled="False"/>
+            <TextBlock VerticalAlignment="Center" Margin="5,0">
+                <Run Text="Page "/>
+                <Run x:Name="CurrentPageText" Text="0"/>
+                <Run Text=" of "/>
+                <Run x:Name="TotalPagesText" Text="0"/>
+            </TextBlock>
+            <Button x:Name="NextPageButton" Content="Next Page" Click="NextPageButton_Click" Padding="10,5" IsEnabled="False"/>
+        </ToolBar>
+
+        <!-- PDF Renderer -->
+        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Margin="5">
+            <local:Renderer x:Name="PdfRenderer"/>
+        </Border>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</Window>

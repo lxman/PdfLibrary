@@ -16,7 +16,7 @@ public class PdfDocumentTests
         testFilePath = Path.GetFullPath(testFilePath);
 
         // Act & Assert
-        var document = PdfDocument.Load(testFilePath);
+        PdfDocument document = PdfDocument.Load(testFilePath);
 
         Assert.NotNull(document);
         Assert.Equal(PdfVersion.Pdf20, document.Version);
@@ -35,7 +35,7 @@ public class PdfDocumentTests
         testFilePath = Path.GetFullPath(testFilePath);
 
         // Act & Assert
-        var document = PdfDocument.Load(testFilePath);
+        PdfDocument document = PdfDocument.Load(testFilePath);
 
         Assert.NotNull(document);
         Assert.Equal(PdfVersion.Pdf20, document.Version);
@@ -54,7 +54,7 @@ public class PdfDocumentTests
         testFilePath = Path.GetFullPath(testFilePath);
 
         // Act & Assert
-        var document = PdfDocument.Load(testFilePath);
+        PdfDocument document = PdfDocument.Load(testFilePath);
 
         Assert.NotNull(document);
         Assert.Equal(PdfVersion.Pdf20, document.Version);

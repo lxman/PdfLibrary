@@ -97,7 +97,7 @@ public class PdfStreamDecodeTests
     public void GetDecodedData_ASCII85Decode_DecodesCorrectly()
     {
         // "Hello" encoded in ASCII85
-        var originalData = Encoding.ASCII.GetBytes("Hello");
+        byte[] originalData = Encoding.ASCII.GetBytes("Hello");
         var filter = new Ascii85DecodeFilter();
         byte[] encodedData = filter.Encode(originalData);
 
@@ -116,7 +116,7 @@ public class PdfStreamDecodeTests
     [Fact]
     public void GetDecodedData_RunLengthDecode_DecodesCorrectly()
     {
-        var originalData = Encoding.ASCII.GetBytes("Test");
+        byte[] originalData = Encoding.ASCII.GetBytes("Test");
         var filter = new RunLengthDecodeFilter();
         byte[] encodedData = filter.Encode(originalData);
 
@@ -371,7 +371,7 @@ public class PdfStreamDecodeTests
     public void GetDecodedData_PDFTextStream_DecodesCorrectly()
     {
         // Simulate a typical PDF text stream
-        string pdfText = "BT\n/F1 12 Tf\n100 700 Td\n(Hello, World!) Tj\nET";
+        var pdfText = "BT\n/F1 12 Tf\n100 700 Td\n(Hello, World!) Tj\nET";
         byte[] originalData = Encoding.ASCII.GetBytes(pdfText);
 
         var filter = new FlateDecodeFilter();
@@ -392,8 +392,8 @@ public class PdfStreamDecodeTests
     public void GetDecodedData_LargeStream_HandlesEfficiently()
     {
         // Create large data (1MB)
-        byte[] largeData = new byte[1024 * 1024];
-        for (int i = 0; i < largeData.Length; i++)
+        var largeData = new byte[1024 * 1024];
+        for (var i = 0; i < largeData.Length; i++)
             largeData[i] = (byte)(i % 256);
 
         var filter = new FlateDecodeFilter();
@@ -414,8 +414,8 @@ public class PdfStreamDecodeTests
     public void GetDecodedData_BinaryImageData_PreservesBytes()
     {
         // Simulate binary image data
-        byte[] imageData = new byte[256];
-        for (int i = 0; i < 256; i++)
+        var imageData = new byte[256];
+        for (var i = 0; i < 256; i++)
             imageData[i] = (byte)i;
 
         var filter = new FlateDecodeFilter();
@@ -434,7 +434,7 @@ public class PdfStreamDecodeTests
 
         Assert.Equal(imageData, decoded);
         // Verify all bytes 0-255 are present
-        for (int i = 0; i < 256; i++)
+        for (var i = 0; i < 256; i++)
             Assert.Equal((byte)i, decoded[i]);
     }
 

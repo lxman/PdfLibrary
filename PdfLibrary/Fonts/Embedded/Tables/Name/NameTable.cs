@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
-
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Name
 {
     /// <summary>
     /// TrueType 'name' table parser - font naming information

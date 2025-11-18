@@ -77,6 +77,12 @@ namespace PdfLibrary.Fonts.Embedded
             return ReadShort();
         }
 
+        public uint ReadUInt24()
+        {
+            byte[] data = ReadBytes(3);
+            return (uint)((data[0] << 16) | (data[1] << 8) | data[2]);
+        }
+
         public uint ReadUInt32()
         {
             return BinaryPrimitives.ReadUInt32BigEndian(ReadBytes(4));

@@ -1,11 +1,10 @@
-using System.Collections.Generic;
-using System.Linq;
+using PdfLibrary.Fonts.Embedded.Tables.Cmap.SubTables;
 
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Cmap
 {
     /// <summary>
     /// TrueType 'cmap' table parser - character to glyph index mapping
-    /// Currently supports Format 4 (Unicode BMP - most common in PDFs)
+    /// Supports all common formats: 0, 2, 4, 6, 10, 12, 13, 14
     /// Adapted from FontManager.NET for PdfLibrary use
     /// </summary>
     public class CmapTable
@@ -52,12 +51,42 @@ namespace PdfLibrary.Fonts.Embedded.Tables
                         SubTables.Add(subTable);
                         break;
 
+                    case 2:
+                        subTable = new CmapSubtablesFormat2(reader);
+                        SubTables.Add(subTable);
+                        break;
+
                     case 4:
                         subTable = new CmapSubtablesFormat4(reader);
                         SubTables.Add(subTable);
                         break;
 
-                    // Add more formats here as needed (6, 12 are common)
+                    case 6:
+                        subTable = new CmapSubtablesFormat6(reader);
+                        SubTables.Add(subTable);
+                        break;
+
+                    case 10:
+                        subTable = new CmapSubtablesFormat10(reader);
+                        SubTables.Add(subTable);
+                        break;
+
+                    case 12:
+                        subTable = new CmapSubtablesFormat12(reader);
+                        SubTables.Add(subTable);
+                        break;
+
+                    case 13:
+                        subTable = new CmapSubtablesFormat13(reader);
+                        SubTables.Add(subTable);
+                        break;
+
+                    case 14:
+                        subTable = new CmapSubtablesFormat14(reader);
+                        SubTables.Add(subTable);
+                        break;
+
+                    // Format 8 is rare and not yet implemented
                     default:
                         // Skip unsupported formats
                         break;

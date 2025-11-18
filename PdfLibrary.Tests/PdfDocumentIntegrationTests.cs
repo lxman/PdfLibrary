@@ -20,7 +20,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void LoadPdf_SimplePdf20File_LoadsSuccessfully()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -40,7 +40,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void ExtractText_SimplePdf20File_ExtractsText()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -68,7 +68,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void ExtractTextWithFragments_SimplePdf20File_ReturnsPositionInformation()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -111,7 +111,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void ExtractTextFromMultiplePages_Utf8TestPdf_ExtractsAllPages()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\pdf20-utf8-test.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\pdf20-utf8-test.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -124,7 +124,7 @@ public class PdfDocumentIntegrationTests
 
         _output.WriteLine($"PDF has {pageCount} page(s)");
 
-        for (int i = 0; i < pageCount; i++)
+        for (var i = 0; i < pageCount; i++)
         {
             PdfPage? page = doc.GetPage(i);
             Assert.NotNull(page);
@@ -148,7 +148,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void GetPageDimensions_SimplePdf20File_ReturnsValidDimensions()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -173,7 +173,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void ExtractTextWithFragments_VerifyPositionAccuracy_FragmentsWithinPageBounds()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -209,7 +209,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void GetImages_Pdf20ImageWithBpc_ExtractsImage()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -222,7 +222,7 @@ public class PdfDocumentIntegrationTests
 
         _output.WriteLine($"PDF has {pageCount} page(s)");
 
-        for (int i = 0; i < pageCount; i++)
+        for (var i = 0; i < pageCount; i++)
         {
             PdfPage? page = doc.GetPage(i);
             Assert.NotNull(page);
@@ -278,9 +278,9 @@ public class PdfDocumentIntegrationTests
             try
             {
                 using PdfDocument doc = PdfDocument.Load(pdfPath);
-                int totalImages = 0;
+                var totalImages = 0;
 
-                for (int i = 0; i < doc.GetPageCount(); i++)
+                for (var i = 0; i < doc.GetPageCount(); i++)
                 {
                     PdfPage? page = doc.GetPage(i);
                     if (page != null)
@@ -301,7 +301,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void ExtractImages_VerifyImageData_DataSizeMatchesExpected()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\PDF 2.0 image with BPC.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -311,7 +311,7 @@ public class PdfDocumentIntegrationTests
 
         using PdfDocument doc = PdfDocument.Load(pdfPath);
 
-        for (int i = 0; i < doc.GetPageCount(); i++)
+        for (var i = 0; i < doc.GetPageCount(); i++)
         {
             PdfPage? page = doc.GetPage(i);
             if (page == null) continue;
@@ -337,7 +337,7 @@ public class PdfDocumentIntegrationTests
     [Fact]
     public void GetImageCount_SimplePdf_ReturnsCorrectCount()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\pdf20examples\Simple PDF 2.0 file.pdf";
 
         if (!File.Exists(pdfPath))
         {

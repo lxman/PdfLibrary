@@ -1,6 +1,4 @@
-using System.Collections.Generic;
-
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Cmap.SubTables
 {
     /// <summary>
     /// Cmap subtable format 4 - Segment mapping to delta values

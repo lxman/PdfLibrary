@@ -1,4 +1,4 @@
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Cmap.SubTables
 {
     /// <summary>
     /// Interface for cmap subtables (different format implementations)

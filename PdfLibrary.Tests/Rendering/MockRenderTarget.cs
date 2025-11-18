@@ -54,14 +54,14 @@ public class MockRenderTarget : IRenderTarget
         Operations.Add($"SetClippingPath: {GetPathDescription(path)}, EvenOdd={evenOdd}");
     }
 
-    private string GetPathDescription(IPathBuilder path)
+    private static string GetPathDescription(IPathBuilder path)
     {
         if (path is PathBuilder builder)
         {
             if (builder.Segments.Count == 0)
                 return "empty";
 
-            var segmentTypes = builder.Segments
+            List<string> segmentTypes = builder.Segments
                 .Select(s => s switch
                 {
                     MoveToSegment => "M",
@@ -78,12 +78,12 @@ public class MockRenderTarget : IRenderTarget
         return path.IsEmpty ? "empty" : "custom path";
     }
 
-    private string GetColorDescription(List<double> color, string colorSpace)
+    private static string GetColorDescription(List<double> color, string colorSpace)
     {
         if (color.Count == 0)
             return "none";
 
-        var values = string.Join(", ", color.Select(c => $"{c:F2}"));
+        string values = string.Join(", ", color.Select(c => $"{c:F2}"));
         return $"{colorSpace}({values})";
     }
 

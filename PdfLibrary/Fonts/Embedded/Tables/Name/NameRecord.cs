@@ -1,7 +1,6 @@
-using System;
 using System.Text;
 
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Name
 {
     /// <summary>
     /// Name record from TrueType 'name' table

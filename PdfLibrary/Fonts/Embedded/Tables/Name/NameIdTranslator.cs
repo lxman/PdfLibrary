@@ -1,4 +1,4 @@
-namespace PdfLibrary.Fonts.Embedded.Tables
+namespace PdfLibrary.Fonts.Embedded.Tables.Name
 {
     /// <summary>
     /// Translates TrueType NameID values to descriptive strings

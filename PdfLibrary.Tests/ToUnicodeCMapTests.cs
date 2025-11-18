@@ -8,7 +8,7 @@ public class ToUnicodeCMapTests
     [Fact]
     public void Parse_BfChar_SingleMappings()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 /CIDInit /ProcSet findresource begin
 12 dict begin
 begincmap
@@ -39,7 +39,7 @@ end";
     [Fact]
     public void Parse_BfRange_SequentialMappings()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 beginbfrange
 <0020> <007E> <0020>
 endbfrange
@@ -60,7 +60,7 @@ endbfrange
     [Fact]
     public void Parse_BfRange_ArrayMappings()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 beginbfrange
 <0041> <0043> [<0391> <0392> <0393>]
 endbfrange
@@ -78,7 +78,7 @@ endbfrange
     [Fact]
     public void Parse_MultipleBfCharBlocks()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 2 beginbfchar
 <41> <0041>
 <42> <0042>
@@ -101,7 +101,7 @@ endbfchar
     [Fact]
     public void Parse_MixedBfCharAndBfRange()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 2 beginbfchar
 <01> <0041>
 <02> <0042>
@@ -127,7 +127,7 @@ endbfrange
     [Fact]
     public void Parse_MultiByteCharacterCodes()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 beginbfchar
 <0102> <4E00>
 <0103> <4E01>
@@ -145,7 +145,7 @@ endbfchar
     [Fact]
     public void Parse_EmptyCMap_ReturnsValidObject()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 begincmap
 endcmap
 ";
@@ -160,7 +160,7 @@ endcmap
     [Fact]
     public void Lookup_UnmappedCharacter_ReturnsNull()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 beginbfchar
 <41> <0041>
 endbfchar
@@ -176,7 +176,7 @@ endbfchar
     [Fact]
     public void Parse_LongHexValues_8Digits()
     {
-        string cmapContent = @"
+        var cmapContent = @"
 beginbfchar
 <01> <0001F600>
 endbfchar

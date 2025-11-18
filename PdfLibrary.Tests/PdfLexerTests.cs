@@ -25,7 +25,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesPositiveInteger()
     {
-        var lexer = CreateLexer("123");
+        PdfLexer lexer = CreateLexer("123");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -35,7 +35,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNegativeInteger()
     {
-        var lexer = CreateLexer("-456");
+        PdfLexer lexer = CreateLexer("-456");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -45,7 +45,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesZero()
     {
-        var lexer = CreateLexer("0");
+        PdfLexer lexer = CreateLexer("0");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -55,7 +55,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesPositiveIntegerWithPlusSign()
     {
-        var lexer = CreateLexer("+789");
+        PdfLexer lexer = CreateLexer("+789");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -69,7 +69,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesPositiveReal()
     {
-        var lexer = CreateLexer("123.456");
+        PdfLexer lexer = CreateLexer("123.456");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Real, token.Type);
@@ -79,7 +79,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNegativeReal()
     {
-        var lexer = CreateLexer("-78.9");
+        PdfLexer lexer = CreateLexer("-78.9");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Real, token.Type);
@@ -89,7 +89,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesRealWithPlusSign()
     {
-        var lexer = CreateLexer("+0.25");
+        PdfLexer lexer = CreateLexer("+0.25");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Real, token.Type);
@@ -103,7 +103,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesTrue()
     {
-        var lexer = CreateLexer("true");
+        PdfLexer lexer = CreateLexer("true");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Boolean, token.Type);
@@ -113,7 +113,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesFalse()
     {
-        var lexer = CreateLexer("false");
+        PdfLexer lexer = CreateLexer("false");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Boolean, token.Type);
@@ -127,7 +127,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNull()
     {
-        var lexer = CreateLexer("null");
+        PdfLexer lexer = CreateLexer("null");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Null, token.Type);
@@ -141,7 +141,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesSimpleName()
     {
-        var lexer = CreateLexer("/Name1");
+        PdfLexer lexer = CreateLexer("/Name1");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Name, token.Type);
@@ -151,7 +151,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNameWithUnderscore()
     {
-        var lexer = CreateLexer("/Type_Name");
+        PdfLexer lexer = CreateLexer("/Type_Name");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Name, token.Type);
@@ -161,7 +161,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesEmptyName()
     {
-        var lexer = CreateLexer("/ ");
+        PdfLexer lexer = CreateLexer("/ ");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Name, token.Type);
@@ -171,7 +171,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNameStopsAtWhitespace()
     {
-        var lexer = CreateLexer("/Font 123");
+        PdfLexer lexer = CreateLexer("/Font 123");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Name, token.Type);
@@ -181,7 +181,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNameStopsAtDelimiter()
     {
-        var lexer = CreateLexer("/Type[");
+        PdfLexer lexer = CreateLexer("/Type[");
         PdfToken token1 = lexer.NextToken();
         PdfToken token2 = lexer.NextToken();
 
@@ -197,7 +197,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesSimpleLiteralString()
     {
-        var lexer = CreateLexer("(Hello World)");
+        PdfLexer lexer = CreateLexer("(Hello World)");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -207,7 +207,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesEmptyLiteralString()
     {
-        var lexer = CreateLexer("()");
+        PdfLexer lexer = CreateLexer("()");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -217,7 +217,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesLiteralStringWithNestedParentheses()
     {
-        var lexer = CreateLexer("(Text (with nested) parens)");
+        PdfLexer lexer = CreateLexer("(Text (with nested) parens)");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -227,7 +227,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesLiteralStringWithEscapedParentheses()
     {
-        var lexer = CreateLexer(@"(Left \( Right \))");
+        PdfLexer lexer = CreateLexer(@"(Left \( Right \))");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -237,7 +237,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesLiteralStringWithNewlineEscape()
     {
-        var lexer = CreateLexer(@"(Line1\nLine2)");
+        PdfLexer lexer = CreateLexer(@"(Line1\nLine2)");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -247,7 +247,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesLiteralStringWithAllEscapes()
     {
-        var lexer = CreateLexer(@"(\n\r\t\b\f\(\)\\)");
+        PdfLexer lexer = CreateLexer(@"(\n\r\t\b\f\(\)\\)");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -257,7 +257,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesLiteralStringWithOctalEscape()
     {
-        var lexer = CreateLexer(@"(\101\102\103)"); // ABC in octal
+        PdfLexer lexer = CreateLexer(@"(\101\102\103)"); // ABC in octal
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -267,7 +267,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesLiteralStringWithTwoDigitOctal()
     {
-        var lexer = CreateLexer(@"(\50X)"); // '(' in octal + X
+        PdfLexer lexer = CreateLexer(@"(\50X)"); // '(' in octal + X
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -281,7 +281,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesHexString()
     {
-        var lexer = CreateLexer("<48656C6C6F>");
+        PdfLexer lexer = CreateLexer("<48656C6C6F>");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -291,7 +291,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesHexStringWithWhitespace()
     {
-        var lexer = CreateLexer("<48 65 6C 6C 6F>");
+        PdfLexer lexer = CreateLexer("<48 65 6C 6C 6F>");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -301,7 +301,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesEmptyHexString()
     {
-        var lexer = CreateLexer("<>");
+        PdfLexer lexer = CreateLexer("<>");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -311,7 +311,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesHexStringWithMixedCase()
     {
-        var lexer = CreateLexer("<4A6b>");
+        PdfLexer lexer = CreateLexer("<4A6b>");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.String, token.Type);
@@ -325,7 +325,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesArrayStart()
     {
-        var lexer = CreateLexer("[");
+        PdfLexer lexer = CreateLexer("[");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.ArrayStart, token.Type);
@@ -335,7 +335,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesArrayEnd()
     {
-        var lexer = CreateLexer("]");
+        PdfLexer lexer = CreateLexer("]");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.ArrayEnd, token.Type);
@@ -345,7 +345,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesArrayWithContent()
     {
-        var lexer = CreateLexer("[1 2 3]");
+        PdfLexer lexer = CreateLexer("[1 2 3]");
         List<PdfToken> tokens = lexer.ReadAllTokens();
 
         Assert.Equal(5, tokens.Count);
@@ -366,7 +366,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesDictionaryStart()
     {
-        var lexer = CreateLexer("<<");
+        PdfLexer lexer = CreateLexer("<<");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.DictionaryStart, token.Type);
@@ -376,7 +376,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesDictionaryEnd()
     {
-        var lexer = CreateLexer(">>");
+        PdfLexer lexer = CreateLexer(">>");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.DictionaryEnd, token.Type);
@@ -386,7 +386,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesDictionaryWithContent()
     {
-        var lexer = CreateLexer("<</Type/Font>>");
+        PdfLexer lexer = CreateLexer("<</Type/Font>>");
         List<PdfToken> tokens = lexer.ReadAllTokens();
 
         Assert.Equal(4, tokens.Count);
@@ -405,7 +405,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesObjKeyword()
     {
-        var lexer = CreateLexer("obj");
+        PdfLexer lexer = CreateLexer("obj");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Obj, token.Type);
@@ -415,7 +415,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesEndObjKeyword()
     {
-        var lexer = CreateLexer("endobj");
+        PdfLexer lexer = CreateLexer("endobj");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.EndObj, token.Type);
@@ -425,7 +425,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesStreamKeyword()
     {
-        var lexer = CreateLexer("stream");
+        PdfLexer lexer = CreateLexer("stream");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Stream, token.Type);
@@ -435,7 +435,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesEndStreamKeyword()
     {
-        var lexer = CreateLexer("endstream");
+        PdfLexer lexer = CreateLexer("endstream");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.EndStream, token.Type);
@@ -445,7 +445,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesRKeyword()
     {
-        var lexer = CreateLexer("R");
+        PdfLexer lexer = CreateLexer("R");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.R, token.Type);
@@ -455,7 +455,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesXrefKeyword()
     {
-        var lexer = CreateLexer("xref");
+        PdfLexer lexer = CreateLexer("xref");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Xref, token.Type);
@@ -465,7 +465,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesTrailerKeyword()
     {
-        var lexer = CreateLexer("trailer");
+        PdfLexer lexer = CreateLexer("trailer");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Trailer, token.Type);
@@ -475,7 +475,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesStartXrefKeyword()
     {
-        var lexer = CreateLexer("startxref");
+        PdfLexer lexer = CreateLexer("startxref");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.StartXref, token.Type);
@@ -489,7 +489,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_SkipsComment()
     {
-        var lexer = CreateLexer("% This is a comment\n123");
+        PdfLexer lexer = CreateLexer("% This is a comment\n123");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -499,7 +499,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_SkipsMultipleComments()
     {
-        var lexer = CreateLexer("% Comment 1\n% Comment 2\ntrue");
+        PdfLexer lexer = CreateLexer("% Comment 1\n% Comment 2\ntrue");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Boolean, token.Type);
@@ -509,7 +509,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_SkipsCommentWithCRLF()
     {
-        var lexer = CreateLexer("% Comment\r\n456");
+        PdfLexer lexer = CreateLexer("% Comment\r\n456");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -523,7 +523,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_SkipsLeadingWhitespace()
     {
-        var lexer = CreateLexer("  \t\n\r  123");
+        PdfLexer lexer = CreateLexer("  \t\n\r  123");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.Integer, token.Type);
@@ -533,7 +533,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_HandlesWhitespaceBetweenTokens()
     {
-        var lexer = CreateLexer("1  2  3");
+        PdfLexer lexer = CreateLexer("1  2  3");
         List<PdfToken> tokens = lexer.ReadAllTokens();
 
         Assert.Equal(3, tokens.Count);
@@ -547,7 +547,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ReturnsEOFWhenEmpty()
     {
-        var lexer = CreateLexer("");
+        PdfLexer lexer = CreateLexer("");
         PdfToken token = lexer.NextToken();
 
         Assert.Equal(PdfTokenType.EndOfFile, token.Type);
@@ -556,7 +556,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ReturnsEOFAfterLastToken()
     {
-        var lexer = CreateLexer("123");
+        PdfLexer lexer = CreateLexer("123");
         lexer.NextToken(); // Consume 123
         PdfToken token = lexer.NextToken();
 
@@ -570,7 +570,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_TracksPosition()
     {
-        var lexer = CreateLexer("123 456");
+        PdfLexer lexer = CreateLexer("123 456");
 
         PdfToken token1 = lexer.NextToken();
         Assert.Equal(0, token1.Position);
@@ -586,7 +586,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesIndirectObjectDefinition()
     {
-        var lexer = CreateLexer("1 0 obj\n<</Type/Font>>\nendobj");
+        PdfLexer lexer = CreateLexer("1 0 obj\n<</Type/Font>>\nendobj");
         List<PdfToken> tokens = lexer.ReadAllTokens();
 
         Assert.Equal(8, tokens.Count);
@@ -605,7 +605,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesIndirectReference()
     {
-        var lexer = CreateLexer("5 0 R");
+        PdfLexer lexer = CreateLexer("5 0 R");
         List<PdfToken> tokens = lexer.ReadAllTokens();
 
         Assert.Equal(3, tokens.Count);
@@ -619,7 +619,7 @@ public class PdfLexerTests
     [Fact]
     public void Lexer_ParsesNestedArray()
     {
-        var lexer = CreateLexer("[1 [2 3] 4]");
+        PdfLexer lexer = CreateLexer("[1 [2 3] 4]");
         List<PdfToken> tokens = lexer.ReadAllTokens();
 
         Assert.Equal(8, tokens.Count);

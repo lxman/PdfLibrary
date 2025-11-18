@@ -1,4 +1,6 @@
-namespace PdfLibrary.Fonts.Embedded.Tables
+using PdfLibrary.Fonts.Embedded.Tables.Cmap.SubTables;
+
+namespace PdfLibrary.Fonts.Embedded.Tables.Cmap
 {
     /// <summary>
     /// Represents a cmap encoding (platform/encoding + subtable)

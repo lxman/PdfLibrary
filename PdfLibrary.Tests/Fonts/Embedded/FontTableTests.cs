@@ -1,5 +1,7 @@
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Fonts.Embedded.Tables;
+using PdfLibrary.Fonts.Embedded.Tables.Cmap;
+using PdfLibrary.Fonts.Embedded.Tables.Name;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
 
@@ -11,7 +13,7 @@ public class FontTableTests
     public void HeadTable_ParsesValidData_ReturnsCorrectValues()
     {
         // Arrange - Create valid head table data
-        var data = CreateHeadTableData(
+        byte[] data = CreateHeadTableData(
             version: 0x00010000,
             fontRevision: 0x00010000,
             unitsPerEm: 1000,
@@ -44,7 +46,7 @@ public class FontTableTests
     public void HeadTable_ParsesMinimalData_ReturnsDefaults()
     {
         // Arrange - Minimal valid head table
-        var data = CreateHeadTableData(
+        byte[] data = CreateHeadTableData(
             version: 0x00010000,
             fontRevision: 0x00010000,
             unitsPerEm: 2048
@@ -66,7 +68,7 @@ public class FontTableTests
     public void HheaTable_ParsesValidData_ReturnsCorrectValues()
     {
         // Arrange
-        var data = CreateHheaTableData(
+        byte[] data = CreateHheaTableData(
             ascender: 750,
             descender: -250,
             lineGap: 0,
@@ -93,7 +95,7 @@ public class FontTableTests
     public void MaxpTable_ParsesVersion10_ReturnsAllFields()
     {
         // Arrange
-        var data = CreateMaxpTableData(
+        byte[] data = CreateMaxpTableData(
             version: 0x00010000,
             numGlyphs: 512,
             maxPoints: 100,
@@ -114,7 +116,7 @@ public class FontTableTests
     public void MaxpTable_ParsesVersion05_ReturnsOnlyBasicFields()
     {
         // Arrange
-        var data = CreateMaxpTableData(
+        byte[] data = CreateMaxpTableData(
             version: 0x00005000,
             numGlyphs: 256
         );
@@ -136,9 +138,9 @@ public class FontTableTests
     public void HmtxTable_ParsesValidData_ReturnsCorrectMetrics()
     {
         // Arrange
-        var data = CreateHmtxTableData(
-            new[] { (ushort)500, (ushort)600, (ushort)700 }, // advance widths
-            new[] { (short)50, (short)60, (short)70 }         // left side bearings
+        byte[] data = CreateHmtxTableData(
+            [(ushort)500, (ushort)600, (ushort)700], // advance widths
+            [(short)50, (short)60, (short)70] // left side bearings
         );
 
         // Act
@@ -157,10 +159,10 @@ public class FontTableTests
     public void HmtxTable_WithMonospaceFont_SharesLastAdvanceWidth()
     {
         // Arrange - 2 long metrics, but 5 total glyphs (last 3 share advance width)
-        var data = CreateHmtxTableDataWithSharedAdvance(
-            longMetrics: new[] { (ushort)500, (ushort)500 },
-            longLsbs: new[] { (short)50, (short)60 },
-            additionalLsbs: new[] { (short)70, (short)80, (short)90 }
+        byte[] data = CreateHmtxTableDataWithSharedAdvance(
+            longMetrics: [(ushort)500, (ushort)500],
+            longLsbs: [(short)50, (short)60],
+            additionalLsbs: [(short)70, (short)80, (short)90]
         );
 
         // Act
@@ -183,7 +185,7 @@ public class FontTableTests
     public void NameTable_ParsesValidData_ExtractsNames()
     {
         // Arrange
-        var data = CreateNameTableData(
+        byte[] data = CreateNameTableData(
             ("Family", "Arial"),
             ("Subfamily", "Bold"),
             ("Full Name", "Arial Bold"),
@@ -204,7 +206,7 @@ public class FontTableTests
     public void NameTable_PrefersWindowsUnicode_OverOtherPlatforms()
     {
         // Arrange - Create table with both Macintosh and Windows entries
-        var data = CreateNameTableWithMultiplePlatforms(
+        byte[] data = CreateNameTableWithMultiplePlatforms(
             macFamily: "Arial-Mac",
             windowsFamily: "Arial-Win"
         );
@@ -224,7 +226,7 @@ public class FontTableTests
     public void CmapTable_Format4_MapsCharactersToGlyphs()
     {
         // Arrange - Create Format 4 cmap for basic ASCII
-        var data = CreateCmapTableFormat4(
+        byte[] data = CreateCmapTableFormat4(
             ('A', (ushort)33),
             ('Z', (ushort)58),
             ('a', (ushort)59),
@@ -244,11 +246,11 @@ public class FontTableTests
     public void CmapTable_GetPreferredUnicodeEncoding_ReturnsWindowsBMP()
     {
         // Arrange
-        var data = CreateCmapTableFormat4(('A', (ushort)1));
+        byte[] data = CreateCmapTableFormat4(('A', (ushort)1));
 
         // Act
         var table = new CmapTable(data);
-        var encoding = table.GetPreferredUnicodeEncoding();
+        CmapEncoding? encoding = table.GetPreferredUnicodeEncoding();
 
         // Assert
         Assert.NotNull(encoding);
@@ -264,7 +266,7 @@ public class FontTableTests
     public void TrueTypeParser_ParsesTableDirectory_FindsTables()
     {
         // Arrange
-        var fontData = CreateMinimalTrueTypeFont(
+        byte[] fontData = CreateMinimalTrueTypeFont(
             ("head", CreateHeadTableData(version: 0x00010000, fontRevision: 0x00010000, unitsPerEm: 1000)),
             ("maxp", CreateMaxpTableData(version: 0x00010000, numGlyphs: 100))
         );
@@ -282,18 +284,18 @@ public class FontTableTests
     public void TrueTypeParser_GetTable_ReturnsCorrectData()
     {
         // Arrange
-        var expectedHeadData = CreateHeadTableData(
+        byte[] expectedHeadData = CreateHeadTableData(
             version: 0x00010000,
             fontRevision: 0x00010000,
             unitsPerEm: 2048
         );
-        var fontData = CreateMinimalTrueTypeFont(
+        byte[] fontData = CreateMinimalTrueTypeFont(
             ("head", expectedHeadData)
         );
 
         // Act
         var parser = new TrueTypeParser(fontData);
-        var headData = parser.GetTable("head");
+        byte[]? headData = parser.GetTable("head");
 
         // Assert
         Assert.NotNull(headData);
@@ -304,7 +306,7 @@ public class FontTableTests
 
     #region Test Data Helper Methods
 
-    private byte[] CreateHeadTableData(
+    private static byte[] CreateHeadTableData(
         uint version,
         uint fontRevision,
         ushort unitsPerEm,
@@ -340,7 +342,7 @@ public class FontTableTests
         return writer.ToArray();
     }
 
-    private byte[] CreateHheaTableData(
+    private static byte[] CreateHheaTableData(
         short ascender,
         short descender,
         short lineGap,
@@ -372,7 +374,7 @@ public class FontTableTests
         return writer.ToArray();
     }
 
-    private byte[] CreateMaxpTableData(
+    private static byte[] CreateMaxpTableData(
         uint version,
         ushort numGlyphs,
         ushort maxPoints = 0,
@@ -389,19 +391,19 @@ public class FontTableTests
             WriteBigEndian(bw, maxPoints);
             WriteBigEndian(bw, maxContours);
             // Write remaining version 1.0 fields as zeros
-            for (int i = 0; i < 11; i++)
+            for (var i = 0; i < 11; i++)
                 WriteBigEndian(bw, (ushort)0);
         }
 
         return writer.ToArray();
     }
 
-    private byte[] CreateHmtxTableData(ushort[] advanceWidths, short[] leftSideBearings)
+    private static byte[] CreateHmtxTableData(ushort[] advanceWidths, short[] leftSideBearings)
     {
         var writer = new MemoryStream();
         var bw = new BinaryWriter(writer);
 
-        for (int i = 0; i < advanceWidths.Length; i++)
+        for (var i = 0; i < advanceWidths.Length; i++)
         {
             WriteBigEndian(bw, advanceWidths[i]);
             WriteBigEndian(bw, leftSideBearings[i]);
@@ -410,7 +412,7 @@ public class FontTableTests
         return writer.ToArray();
     }
 
-    private byte[] CreateHmtxTableDataWithSharedAdvance(
+    private static byte[] CreateHmtxTableDataWithSharedAdvance(
         ushort[] longMetrics,
         short[] longLsbs,
         short[] additionalLsbs)
@@ -418,13 +420,13 @@ public class FontTableTests
         var writer = new MemoryStream();
         var bw = new BinaryWriter(writer);
 
-        for (int i = 0; i < longMetrics.Length; i++)
+        for (var i = 0; i < longMetrics.Length; i++)
         {
             WriteBigEndian(bw, longMetrics[i]);
             WriteBigEndian(bw, longLsbs[i]);
         }
 
-        foreach (var lsb in additionalLsbs)
+        foreach (short lsb in additionalLsbs)
         {
             WriteBigEndian(bw, lsb);
         }
@@ -432,7 +434,7 @@ public class FontTableTests
         return writer.ToArray();
     }
 
-    private byte[] CreateNameTableData(params (string nameId, string value)[] names)
+    private static byte[] CreateNameTableData(params (string nameId, string value)[] names)
     {
         var writer = new MemoryStream();
         var bw = new BinaryWriter(writer);
@@ -443,7 +445,7 @@ public class FontTableTests
 
         // Write name records
         ushort offset = 0;
-        foreach (var (nameId, value) in names)
+        foreach ((string nameId, string value) in names)
         {
             WriteBigEndian(bw, (ushort)PlatformId.Windows);     // platformID
             WriteBigEndian(bw, (ushort)WindowsEncodingId.UnicodeBmp);  // encodingID
@@ -455,7 +457,7 @@ public class FontTableTests
         }
 
         // Write string data (UTF-16BE)
-        foreach (var (_, value) in names)
+        foreach ((string _, string value) in names)
         {
             foreach (char c in value)
                 WriteBigEndian(bw, (ushort)c);
@@ -464,7 +466,7 @@ public class FontTableTests
         return writer.ToArray();
     }
 
-    private byte[] CreateNameTableWithMultiplePlatforms(string macFamily, string windowsFamily)
+    private static byte[] CreateNameTableWithMultiplePlatforms(string macFamily, string windowsFamily)
     {
         var writer = new MemoryStream();
         var bw = new BinaryWriter(writer);
@@ -498,7 +500,7 @@ public class FontTableTests
         return writer.ToArray();
     }
 
-    private byte[] CreateCmapTableFormat4(params (char character, ushort glyphId)[] mappings)
+    private static byte[] CreateCmapTableFormat4(params (char character, ushort glyphId)[] mappings)
     {
         var writer = new MemoryStream();
         var bw = new BinaryWriter(writer);
@@ -514,16 +516,16 @@ public class FontTableTests
 
         // Group mappings into segments by consecutive ranges with same delta
         var segments = new List<(ushort start, ushort end, short delta)>();
-        var sorted = mappings.OrderBy(m => m.character).ToArray();
+        (char character, ushort glyphId)[] sorted = mappings.OrderBy(m => m.character).ToArray();
 
-        ushort segStart = (ushort)sorted[0].character;
-        ushort segEnd = (ushort)sorted[0].character;
-        short segDelta = (short)(sorted[0].glyphId - sorted[0].character);
+        var segStart = (ushort)sorted[0].character;
+        var segEnd = (ushort)sorted[0].character;
+        var segDelta = (short)(sorted[0].glyphId - sorted[0].character);
 
-        for (int i = 1; i < sorted.Length; i++)
+        for (var i = 1; i < sorted.Length; i++)
         {
-            ushort charCode = (ushort)sorted[i].character;
-            short delta = (short)(sorted[i].glyphId - sorted[i].character);
+            var charCode = (ushort)sorted[i].character;
+            var delta = (short)(sorted[i].glyphId - sorted[i].character);
 
             // Check if this continues the current segment
             if (charCode == segEnd + 1 && delta == segDelta)
@@ -541,45 +543,45 @@ public class FontTableTests
         }
         segments.Add((segStart, segEnd, segDelta)); // Add last segment
 
-        ushort segCount = (ushort)(segments.Count + 1); // +1 for terminator
+        var segCount = (ushort)(segments.Count + 1); // +1 for terminator
 
         // Format 4 subtable
         WriteBigEndian(bw, (ushort)4);      // format
-        ushort length = (ushort)(16 + segCount * 8);
+        var length = (ushort)(16 + segCount * 8);
         WriteBigEndian(bw, length);         // length
         WriteBigEndian(bw, (ushort)0);      // language
 
         WriteBigEndian(bw, (ushort)(segCount * 2));  // segCountX2
-        ushort searchRange = (ushort)(2 * (1 << (int)Math.Floor(Math.Log(segCount, 2))));
+        var searchRange = (ushort)(2 * (1 << (int)Math.Floor(Math.Log(segCount, 2))));
         WriteBigEndian(bw, searchRange);
         WriteBigEndian(bw, (ushort)Math.Floor(Math.Log(segCount, 2)));  // entrySelector
         WriteBigEndian(bw, (ushort)(segCount * 2 - searchRange));       // rangeShift
 
         // endCode array
-        foreach (var seg in segments)
+        foreach ((ushort start, ushort end, short delta) seg in segments)
             WriteBigEndian(bw, seg.end);
         WriteBigEndian(bw, (ushort)0xFFFF); // Terminator segment
 
         WriteBigEndian(bw, (ushort)0);      // reservedPad
 
         // startCode array
-        foreach (var seg in segments)
+        foreach ((ushort start, ushort end, short delta) seg in segments)
             WriteBigEndian(bw, seg.start);
         WriteBigEndian(bw, (ushort)0xFFFF);
 
         // idDelta array
-        foreach (var seg in segments)
+        foreach ((ushort start, ushort end, short delta) seg in segments)
             WriteBigEndian(bw, seg.delta);
         WriteBigEndian(bw, (short)1);
 
         // idRangeOffset array (all zeros - using delta method)
-        for (int i = 0; i < segCount; i++)
+        for (var i = 0; i < segCount; i++)
             WriteBigEndian(bw, (ushort)0);
 
         return writer.ToArray();
     }
 
-    private byte[] CreateMinimalTrueTypeFont(params (string tag, byte[] data)[] tables)
+    private static byte[] CreateMinimalTrueTypeFont(params (string tag, byte[] data)[] tables)
     {
         var writer = new MemoryStream();
         var bw = new BinaryWriter(writer);
@@ -592,17 +594,17 @@ public class FontTableTests
         WriteBigEndian(bw, (ushort)0);      // rangeShift
 
         // Calculate offsets
-        uint offset = (uint)(12 + tables.Length * 16);
+        var offset = (uint)(12 + tables.Length * 16);
         var tableRecords = new List<(string tag, uint checksum, uint offset, uint length)>();
 
-        foreach (var (tag, data) in tables)
+        foreach ((string tag, byte[] data) in tables)
         {
             tableRecords.Add((tag, 0, offset, (uint)data.Length));
             offset += (uint)((data.Length + 3) & ~3); // Pad to 4-byte boundary
         }
 
         // Write table directory
-        foreach (var (tag, checksum, tableOffset, length) in tableRecords)
+        foreach ((string tag, uint checksum, uint tableOffset, uint length) in tableRecords)
         {
             foreach (char c in tag.PadRight(4))
                 bw.Write((byte)c);
@@ -612,19 +614,19 @@ public class FontTableTests
         }
 
         // Write table data
-        foreach (var (_, data) in tables)
+        foreach ((string _, byte[] data) in tables)
         {
             bw.Write(data);
             // Pad to 4-byte boundary
             int padding = (4 - (data.Length % 4)) % 4;
-            for (int i = 0; i < padding; i++)
+            for (var i = 0; i < padding; i++)
                 bw.Write((byte)0);
         }
 
         return writer.ToArray();
     }
 
-    private ushort GetNameId(string nameIdStr)
+    private static ushort GetNameId(string nameIdStr)
     {
         return nameIdStr switch
         {
@@ -636,18 +638,18 @@ public class FontTableTests
         };
     }
 
-    private void WriteBigEndian(BinaryWriter bw, ushort value)
+    private static void WriteBigEndian(BinaryWriter bw, ushort value)
     {
         bw.Write((byte)(value >> 8));
         bw.Write((byte)(value & 0xFF));
     }
 
-    private void WriteBigEndian(BinaryWriter bw, short value)
+    private static void WriteBigEndian(BinaryWriter bw, short value)
     {
         WriteBigEndian(bw, (ushort)value);
     }
 
-    private void WriteBigEndian(BinaryWriter bw, uint value)
+    private static void WriteBigEndian(BinaryWriter bw, uint value)
     {
         bw.Write((byte)(value >> 24));
         bw.Write((byte)((value >> 16) & 0xFF));
@@ -655,7 +657,7 @@ public class FontTableTests
         bw.Write((byte)(value & 0xFF));
     }
 
-    private void WriteBigEndian(BinaryWriter bw, long value)
+    private static void WriteBigEndian(BinaryWriter bw, long value)
     {
         WriteBigEndian(bw, (uint)(value >> 32));
         WriteBigEndian(bw, (uint)(value & 0xFFFFFFFF));

@@ -15,8 +15,8 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfNull_Instance_IsSingleton()
     {
-        PdfNull null1 = PdfNull.Instance;
-        PdfNull null2 = PdfNull.Instance;
+        var null1 = PdfNull.Instance;
+        var null2 = PdfNull.Instance;
 
         Assert.Same(null1, null2);
     }

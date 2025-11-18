@@ -14,7 +14,7 @@ public class PdfTextExtractorTests
     [Fact]
     public void ExtractText_SimpleText_ReturnsText()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -30,7 +30,7 @@ ET";
     [Fact]
     public void ExtractText_MultipleTextOperators_ConcatenatesText()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -59,7 +59,7 @@ ET";
     [Fact]
     public void ExtractText_NoTextOperators_ReturnsEmpty()
     {
-        string content = @"
+        var content = @"
 q
 1 0 0 1 100 100 cm
 Q";
@@ -73,7 +73,7 @@ Q";
     [Fact]
     public void ExtractText_MultipleTextBlocks_ExtractsAll()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -95,7 +95,7 @@ ET";
     [Fact]
     public void ExtractText_WithoutResources_UsesDefaultEncoding()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -115,7 +115,7 @@ ET";
     [Fact]
     public void ExtractTextWithFragments_SimpleText_ReturnsTextAndFragments()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -123,7 +123,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (text, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Equal("\r\nHello", text);
         Assert.Single(fragments);
@@ -133,7 +133,7 @@ ET";
     [Fact]
     public void ExtractTextWithFragments_MultipleFragments_PreservesEach()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -142,7 +142,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (text, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Equal("\r\nHelloWorld", text);
         Assert.Equal(2, fragments.Count);
@@ -155,7 +155,7 @@ ET";
     {
         byte[] emptyContent = [];
 
-        var (text, fragments) = PdfTextExtractor.ExtractTextWithFragments(emptyContent);
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(emptyContent);
 
         Assert.Empty(text);
         Assert.Empty(fragments);
@@ -168,7 +168,7 @@ ET";
     [Fact]
     public void GetTextFragments_SimpleText_HasPosition()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -176,7 +176,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Single(fragments);
         Assert.Equal("Test", fragments[0].Text);
@@ -187,7 +187,7 @@ ET";
     [Fact]
     public void GetTextFragments_MultiplePositions_TracksEach()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -197,7 +197,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Equal(2, fragments.Count);
 
@@ -214,7 +214,7 @@ ET";
     [Fact]
     public void GetTextFragments_TextMatrix_UsesMatrixPosition()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 1 0 0 1 100 700 Tm
@@ -222,7 +222,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Single(fragments);
         Assert.Equal(100, fragments[0].X, 0.01);
@@ -236,7 +236,7 @@ ET";
     [Fact]
     public void GetTextFragments_WithFontInfo_IncludesFontName()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -244,7 +244,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Single(fragments);
         Assert.Equal("F1", fragments[0].FontName);
@@ -253,7 +253,7 @@ ET";
     [Fact]
     public void GetTextFragments_WithFontSize_IncludesFontSize()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -261,7 +261,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Single(fragments);
         Assert.Equal(12, fragments[0].FontSize, 0.01);
@@ -270,7 +270,7 @@ ET";
     [Fact]
     public void GetTextFragments_MultipleFonts_TracksFontChanges()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -280,7 +280,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         Assert.Equal(2, fragments.Count);
         Assert.Equal("F1", fragments[0].FontName);
@@ -296,7 +296,7 @@ ET";
     [Fact]
     public void ExtractText_TdOperator_UpdatesPosition()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 0 0 Td
@@ -306,7 +306,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (text, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         // Extractor adds space when position changes significantly
         // Starting at (0,0) doesn't trigger initial newline
@@ -317,7 +317,7 @@ ET";
     [Fact]
     public void ExtractText_TmOperator_SetsAbsolutePosition()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 1 0 0 1 100 700 Tm
@@ -327,7 +327,7 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (text, fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         // Extractor adds newline at start and between position changes
         Assert.Contains("At 100,700", text);
@@ -340,7 +340,7 @@ ET";
     [Fact]
     public void ExtractText_TStarOperator_MovesToNextLine()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -351,7 +351,7 @@ T*
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var text = PdfTextExtractor.ExtractText(bytes);
+        string text = PdfTextExtractor.ExtractText(bytes);
 
         Assert.Contains("Line 1", text);
         Assert.Contains("Line 2", text);
@@ -364,7 +364,7 @@ ET";
     [Fact]
     public void ExtractText_TjOperator_ShowsText()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -380,7 +380,7 @@ ET";
     [Fact]
     public void ExtractText_QuoteOperator_ShowsTextAndMovesToNextLine()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -399,7 +399,7 @@ ET";
     [Fact]
     public void ExtractText_DoubleQuoteOperator_SetsSpacingAndShowsText()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -418,7 +418,7 @@ ET";
     [Fact]
     public void ExtractText_TJOperator_HandlesArray()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -435,7 +435,7 @@ ET";
     [Fact]
     public void ExtractText_TJOperator_WithPositioning_HandlesSpacing()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -455,7 +455,7 @@ ET";
     [Fact]
     public void ExtractText_PDFWithFormattedText_PreservesContent()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 72 720 Td
@@ -478,7 +478,7 @@ ET";
     [Fact]
     public void ExtractText_MultiColumnLayout_ExtractsAllColumns()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 10 Tf
 72 720 Td
@@ -500,7 +500,7 @@ ET";
     [Fact]
     public void ExtractText_MixedContentWithGraphics_ExtractsOnlyText()
     {
-        string content = @"
+        var content = @"
 q
 1 0 0 1 100 100 cm
 100 200 m
@@ -533,7 +533,7 @@ Q";
         contentBuilder.AppendLine("100 700 Td");
 
         // Add 100 text operators
-        for (int i = 0; i < 100; i++)
+        for (var i = 0; i < 100; i++)
         {
             contentBuilder.AppendLine($"(Line {i}) Tj");
             contentBuilder.AppendLine("0 -12 Td");
@@ -564,7 +564,7 @@ Q";
     [Fact]
     public void ExtractText_TextOutsideTextBlock_Ignored()
     {
-        string content = @"
+        var content = @"
 /F1 12 Tf
 100 700 Td
 (Outside BT/ET) Tj
@@ -585,7 +585,7 @@ ET";
     public void ExtractText_NestedTextBlocks_HandlesGracefully()
     {
         // Nested BT/ET blocks are invalid but should be handled
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -606,7 +606,7 @@ ET";
     [Fact]
     public void ExtractText_MissingEndText_HandlesGracefully()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -622,7 +622,7 @@ BT
     [Fact]
     public void ExtractText_EmptyTextBlock_ReturnsEmpty()
     {
-        string content = @"
+        var content = @"
 BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
@@ -635,7 +635,7 @@ ET";
     [Fact]
     public void ExtractText_MalformedOperators_HandlesGracefully()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -671,7 +671,7 @@ ET";
     {
         var extractor = new PdfTextExtractor();
 
-        var fragments = extractor.GetTextFragments();
+        List<TextFragment> fragments = extractor.GetTextFragments();
 
         Assert.Empty(fragments);
     }
@@ -679,7 +679,7 @@ ET";
     [Fact]
     public void GetTextFragments_ReturnsCopy_NotReference()
     {
-        string content = @"
+        var content = @"
 BT
 /F1 12 Tf
 100 700 Td
@@ -687,8 +687,8 @@ BT
 ET";
         byte[] bytes = Encoding.ASCII.GetBytes(content);
 
-        var (_, fragments1) = PdfTextExtractor.ExtractTextWithFragments(bytes);
-        var (_, fragments2) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments1) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+        (_, List<TextFragment> fragments2) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
         // Should be different list instances
         Assert.NotSame(fragments1, fragments2);
@@ -714,7 +714,7 @@ ET";
             FontSize = 12.0
         };
 
-        string result = fragment.ToString();
+        var result = fragment.ToString();
 
         Assert.Contains("Hello", result);
         Assert.Contains("100.50", result);
