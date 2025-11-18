@@ -223,8 +223,9 @@ public class GlyfLocaTableTests
         // Act
         var glyph = new CompositeGlyph(reader, header);
 
-        // Assert
-        Assert.Equal(42, glyph.GlyphIndex);
+        // Assert - Now composite glyphs have a Components list
+        Assert.Single(glyph.Components);
+        Assert.Equal(42, glyph.Components[0].GlyphIndex);
     }
 
     #endregion
@@ -361,11 +362,17 @@ public class GlyfLocaTableTests
         WriteBigEndian(bw, flags);
         WriteBigEndian(bw, glyphIndex);
 
-        // Minimal args (2 shorts if ArgsAreXyValues)
-        if ((flags & 0x0002) != 0)
+        // Arguments are always present - ARG_1_AND_2_ARE_WORDS flag determines size
+        bool argsAreWords = (flags & 0x0001) != 0;
+        if (argsAreWords)
         {
             WriteBigEndian(bw, (short)0);
             WriteBigEndian(bw, (short)0);
+        }
+        else
+        {
+            bw.Write((byte)0);
+            bw.Write((byte)0);
         }
 
         return ms.ToArray();

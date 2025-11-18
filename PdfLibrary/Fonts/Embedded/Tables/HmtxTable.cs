@@ -78,6 +78,14 @@ namespace PdfLibrary.Fonts.Embedded.Tables
             }
             return 0;
         }
+
+        /// <summary>
+        /// Get both advance width and left side bearing for a glyph
+        /// </summary>
+        public (int advanceWidth, int leftSideBearing) GetMetrics(int glyphId)
+        {
+            return (GetAdvanceWidth(glyphId), GetLeftSideBearing(glyphId));
+        }
     }
 
     /// <summary>

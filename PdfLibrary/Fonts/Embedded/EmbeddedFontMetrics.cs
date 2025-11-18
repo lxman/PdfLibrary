@@ -1,6 +1,8 @@
 using PdfLibrary.Fonts.Embedded.Tables;
 using PdfLibrary.Fonts.Embedded.Tables.Cmap;
 using PdfLibrary.Fonts.Embedded.Tables.Name;
+using PdfLibrary.Fonts.Embedded.Tables.TtTables;
+using PdfLibrary.Fonts.Embedded.Tables.TtTables.Glyf;
 
 namespace PdfLibrary.Fonts.Embedded;
 
@@ -17,6 +19,9 @@ public class EmbeddedFontMetrics
     private readonly HmtxTable? _hmtxTable;
     private readonly NameTable? _nameTable;
     private readonly CmapTable? _cmapTable;
+    private GlyphTable? _glyphTable;
+    private LocaTable? _locaTable;
+    private bool _glyphTablesLoaded;
 
     /// <summary>
     /// Units per em - critical for scaling glyphs to correct size
@@ -168,5 +173,169 @@ public class EmbeddedFontMetrics
     public double ScaleToUserUnits(double fontUnitValue, double fontSize)
     {
         return fontUnitValue * fontSize / UnitsPerEm;
+    }
+
+    /// <summary>
+    /// Get the glyph outline for a specific glyph ID
+    /// </summary>
+    /// <param name="glyphId">Glyph ID from the font's cmap table</param>
+    /// <returns>GlyphOutline with contour data, or null if glyph not found or invalid</returns>
+    public GlyphOutline? GetGlyphOutline(ushort glyphId)
+    {
+        // Ensure glyph tables are loaded
+        if (!_glyphTablesLoaded)
+        {
+            LoadGlyphTables();
+        }
+
+        // If tables failed to load or are invalid, return null
+        if (_glyphTable == null || _locaTable == null)
+            return null;
+
+        // Get glyph data
+        GlyphData? glyphData = _glyphTable.GetGlyphData(glyphId);
+        if (glyphData == null)
+            return null;
+
+        // Get glyph metrics
+        ushort advanceWidth = GetAdvanceWidth(glyphId);
+        short leftSideBearing = GetLeftSideBearing(glyphId);
+
+        var metrics = new GlyphMetrics(
+            advanceWidth,
+            leftSideBearing,
+            glyphData.Header.XMin,
+            glyphData.Header.YMin,
+            glyphData.Header.XMax,
+            glyphData.Header.YMax
+        );
+
+        // Convert SimpleGlyph to GlyphOutline
+        if (glyphData.GlyphSpec is SimpleGlyph simpleGlyph)
+        {
+            var contours = ConvertSimpleGlyphToContours(simpleGlyph);
+            return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
+        }
+
+        // For composite glyphs, recursively resolve components
+        if (glyphData.GlyphSpec is CompositeGlyph compositeGlyph)
+        {
+            return ExtractCompositeGlyph(glyphId, compositeGlyph, metrics);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Recursively extract and compose a composite glyph
+    /// </summary>
+    private GlyphOutline ExtractCompositeGlyph(ushort glyphId, CompositeGlyph compositeGlyph, GlyphMetrics metrics)
+    {
+        var allContours = new List<GlyphContour>();
+        var componentIds = new List<int>();
+
+        // Recursively extract and transform each component
+        foreach (var component in compositeGlyph.Components)
+        {
+            componentIds.Add(component.GlyphIndex);
+
+            // Recursively extract the component glyph
+            GlyphOutline? componentOutline = GetGlyphOutline(component.GlyphIndex);
+            if (componentOutline == null || componentOutline.IsEmpty)
+                continue;
+
+            // Transform each contour of the component using the transformation matrix
+            foreach (var contour in componentOutline.Contours)
+            {
+                var transformedPoints = new List<ContourPoint>();
+
+                foreach (var point in contour.Points)
+                {
+                    // Apply transformation matrix and offset
+                    double x = point.X * component.A + point.Y * component.C + component.Argument1;
+                    double y = point.X * component.B + point.Y * component.D + component.Argument2;
+
+                    transformedPoints.Add(new ContourPoint(x, y, point.OnCurve));
+                }
+
+                allContours.Add(new GlyphContour(transformedPoints, contour.IsClosed));
+            }
+        }
+
+        return new GlyphOutline(
+            glyphId,
+            allContours,
+            metrics,
+            isComposite: true,
+            componentGlyphIds: componentIds
+        );
+    }
+
+    /// <summary>
+    /// Load glyph and loca tables for outline extraction
+    /// </summary>
+    private void LoadGlyphTables()
+    {
+        _glyphTablesLoaded = true;
+
+        try
+        {
+            // Parse loca table (required for glyph offsets)
+            byte[]? locaData = _parser.GetTable("loca");
+            if (locaData == null || _headTable == null || NumGlyphs == 0)
+                return;
+
+            _locaTable = new LocaTable(locaData);
+            bool isShortFormat = _headTable.IndexToLocFormat == 0;
+            _locaTable.Process(NumGlyphs, isShortFormat);
+
+            // Parse glyf table (contains glyph outlines)
+            byte[]? glyfData = _parser.GetTable("glyf");
+            if (glyfData == null)
+                return;
+
+            _glyphTable = new GlyphTable(glyfData);
+            _glyphTable.Process(NumGlyphs, _locaTable);
+        }
+        catch
+        {
+            // If parsing fails, leave tables as null
+            _glyphTable = null;
+            _locaTable = null;
+        }
+    }
+
+    /// <summary>
+    /// Convert a SimpleGlyph to a list of GlyphContours
+    /// </summary>
+    private List<GlyphContour> ConvertSimpleGlyphToContours(SimpleGlyph simpleGlyph)
+    {
+        var contours = new List<GlyphContour>();
+
+        if (simpleGlyph.Coordinates.Count == 0 || simpleGlyph.EndPtsOfContours.Count == 0)
+            return contours;
+
+        int startIndex = 0;
+
+        foreach (ushort endPtIndex in simpleGlyph.EndPtsOfContours)
+        {
+            var contourPoints = new List<ContourPoint>();
+
+            // Extract points for this contour
+            for (int i = startIndex; i <= endPtIndex && i < simpleGlyph.Coordinates.Count; i++)
+            {
+                var coord = simpleGlyph.Coordinates[i];
+                contourPoints.Add(new ContourPoint(coord.Point.X, coord.Point.Y, coord.OnCurve));
+            }
+
+            if (contourPoints.Count > 0)
+            {
+                contours.Add(new GlyphContour(contourPoints, isClosed: true));
+            }
+
+            startIndex = endPtIndex + 1;
+        }
+
+        return contours;
     }
 }

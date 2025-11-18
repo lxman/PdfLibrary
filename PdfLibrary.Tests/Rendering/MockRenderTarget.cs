@@ -1,5 +1,6 @@
 using PdfLibrary.Content;
 using PdfLibrary.Document;
+using PdfLibrary.Fonts;
 using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Tests.Rendering;
@@ -11,6 +12,19 @@ public class MockRenderTarget : IRenderTarget
 {
     public List<string> Operations { get; } = [];
     private int _stateDepth = 0;
+
+    public int CurrentPageNumber { get; private set; }
+
+    public void BeginPage(int pageNumber, double width, double height)
+    {
+        CurrentPageNumber = pageNumber;
+        Operations.Add($"BeginPage: Page {pageNumber}, Size={width}x{height}");
+    }
+
+    public void EndPage()
+    {
+        Operations.Add($"EndPage: Page {CurrentPageNumber}");
+    }
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
     {
@@ -27,7 +41,7 @@ public class MockRenderTarget : IRenderTarget
         Operations.Add($"FillAndStrokePath: {GetPathDescription(path)}, EvenOdd={evenOdd}");
     }
 
-    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state)
+    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {
         Operations.Add($"DrawText: \"{text}\", Font={state.FontName}, Size={state.FontSize}, Color={GetColorDescription(state.FillColor, state.FillColorSpace)}");
     }

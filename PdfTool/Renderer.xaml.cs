@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
+using PdfLibrary.Fonts;
 using PdfLibrary.Rendering;
 using Serilog;
 using Path = System.Windows.Shapes.Path;
@@ -20,8 +21,11 @@ public partial class Renderer : UserControl, IRenderTarget
 {
     private readonly List<UIElement> _elements = [];
 
+    // ==================== PAGE LIFECYCLE ====================
+
     /// <summary>
-    /// Current page number being rendered (1-based)
+    /// Current page number being rendered (1-based).
+    /// Updated by BeginPage().
     /// </summary>
     public int CurrentPageNumber { get; set; }
 
@@ -34,6 +38,31 @@ public partial class Renderer : UserControl, IRenderTarget
     /// Gets the number of child elements in the canvas (for debugging)
     /// </summary>
     public int GetChildCount() => RenderCanvas.Children.Count;
+
+    /// <summary>
+    /// Begin rendering a new page with specified dimensions.
+    /// Clears previous content and sets up canvas for new page.
+    /// </summary>
+    public void BeginPage(int pageNumber, double width, double height)
+    {
+        CurrentPageNumber = pageNumber;
+        Clear();
+        SetPageSize(width, height);
+        Log.Information("BeginPage: Page {PageNumber}, Size: {Width} x {Height}",
+            pageNumber, width, height);
+    }
+
+    /// <summary>
+    /// Complete rendering of current page.
+    /// Finalizes layout and ensures all elements are properly positioned.
+    /// </summary>
+    public void EndPage()
+    {
+        // Force final layout update to ensure all elements are positioned
+        this.UpdateLayout();
+        Log.Debug("EndPage: Page {PageNumber} complete, {ElementCount} elements rendered",
+            CurrentPageNumber, _elements.Count);
+    }
 
     /// <summary>
     /// Clears the canvas and prepares for a new page
@@ -189,7 +218,7 @@ public partial class Renderer : UserControl, IRenderTarget
         }
     }
 
-    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state)
+    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {
         if (string.IsNullOrEmpty(text)) return;
 

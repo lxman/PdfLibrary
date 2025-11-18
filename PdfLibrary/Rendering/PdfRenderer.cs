@@ -39,19 +39,38 @@ public class PdfRenderer : PdfContentProcessor
     }
 
     /// <summary>
-    /// Renders a PDF page
+    /// Renders a PDF page with full lifecycle management.
+    /// Calls BeginPage/EndPage on the rendering target automatically.
     /// </summary>
-    public void RenderPage(PdfPage page)
+    /// <param name="page">The PDF page to render</param>
+    /// <param name="pageNumber">1-based page number (default: 1)</param>
+    public void RenderPage(PdfPage page, int pageNumber = 1)
     {
-        var resources = page.GetResources();
-        var contents = page.GetContents();
+        // Get page dimensions
+        PdfRectangle mediaBox = page.GetMediaBox();
+        double width = mediaBox.Width;
+        double height = mediaBox.Height;
 
-        // Parse and process all content streams
-        foreach (var stream in contents)
+        // Begin page lifecycle
+        _target.BeginPage(pageNumber, width, height);
+
+        try
         {
-            var decodedData = stream.GetDecodedData();
-            var operators = PdfContentParser.Parse(decodedData);
-            ProcessOperators(operators);
+            var resources = page.GetResources();
+            var contents = page.GetContents();
+
+            // Parse and process all content streams
+            foreach (var stream in contents)
+            {
+                var decodedData = stream.GetDecodedData();
+                var operators = PdfContentParser.Parse(decodedData);
+                ProcessOperators(operators);
+            }
+        }
+        finally
+        {
+            // Always end page, even if exception occurs
+            _target.EndPage();
         }
     }
 
@@ -177,6 +196,7 @@ public class PdfRenderer : PdfContentProcessor
         byte[] bytes = text.Bytes;
         var decodedText = new StringBuilder();
         var glyphWidths = new List<double>();
+        var charCodes = new List<int>();
 
         // Type0 fonts use multi-byte character codes (typically 2 bytes)
         bool isType0 = font.FontType == PdfFontType.Type0;
@@ -210,6 +230,7 @@ public class PdfRenderer : PdfContentProcessor
             }
 
             decodedText.Append(decoded);
+            charCodes.Add(charCode);
 
             // Get character width in text space (1000-unit system) and convert to USER SPACE
             // The width is in the font's coordinate system (typically 1000 units = 1 em)
@@ -233,9 +254,7 @@ public class PdfRenderer : PdfContentProcessor
 
         // Render the text
         string textToRender = decodedText.ToString();
-        Console.WriteLine($"[OnShowText] Rendering '{textToRender}' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
-        Console.WriteLine($"  FontSize={CurrentState.FontSize:F2}, Widths={string.Join(",", glyphWidths.Take(3).Select(w => w.ToString("F2")))}...");
-        _target.DrawText(textToRender, glyphWidths, CurrentState);
+        _target.DrawText(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
         double totalAdvance = glyphWidths.Sum();
@@ -385,6 +404,7 @@ public class PdfRenderer : PdfContentProcessor
         bool isType0 = font.FontType == PdfFontType.Type0;
         var combinedText = new StringBuilder();
         var combinedWidths = new List<double>();
+        var combinedCharCodes = new List<int>();
 
         // Process all items in the TJ array
         foreach (PdfObject item in array)
@@ -412,6 +432,7 @@ public class PdfRenderer : PdfContentProcessor
 
                         string decoded = font.DecodeCharacter(charCode);
                         combinedText.Append(decoded);
+                        combinedCharCodes.Add(charCode);
 
                         // Get character width and convert to USER SPACE
                         double glyphWidth = font.GetCharacterWidth(charCode);
@@ -471,7 +492,7 @@ public class PdfRenderer : PdfContentProcessor
                     Console.WriteLine($"     WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
             }
 
-            _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState);
+            _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
 
             // Advance text position by total width
             double totalAdvance = combinedWidths.Sum();
