@@ -874,6 +874,29 @@ public class PdfRenderer : PdfContentProcessor
     }
 
     /// <summary>
+    /// Handles inline images (BI/ID/EI operators)
+    /// </summary>
+    protected override void OnInlineImage(InlineImageOperator inlineImage)
+    {
+        Console.WriteLine($"[INLINE-IMAGE] {inlineImage.Width}x{inlineImage.Height}, ColorSpace={inlineImage.ColorSpace}, BPC={inlineImage.BitsPerComponent}, Filter={inlineImage.Filter ?? "none"}");
+
+        try
+        {
+            // Create PdfImage from inline image operator
+            var image = new PdfImage(inlineImage);
+            Console.WriteLine($"  Created PdfImage: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
+
+            // Draw the image using the same mechanism as XObject images
+            _target.DrawImage(image, CurrentState);
+            Console.WriteLine($"  Inline image drawn successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  ERROR rendering inline image: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Checks if an XObject's Optional Content is disabled
     /// Uses OptionalContentManager if available to check visibility
     /// </summary>

@@ -75,11 +75,15 @@ public class PdfContentParser
                     break;
 
                 case PdfTokenType.Unknown:
-                    // Handle inline images specially - need to skip over image data
+                    // Handle inline images specially
                     if (token.Value == "BI")
                     {
-                        // Parse inline image dictionary and skip raw data
-                        SkipInlineImage(lexer);
+                        // Parse inline image and create operator
+                        var inlineImageOp = ParseInlineImage(lexer);
+                        if (inlineImageOp != null)
+                        {
+                            operators.Add(inlineImageOp);
+                        }
                         operands.Clear();
                         break;
                     }
@@ -367,52 +371,98 @@ public class PdfContentParser
     }
 
     /// <summary>
-    /// Skips over an inline image (BI...ID...EI)
+    /// Parses an inline image (BI...ID...EI) and returns an InlineImageOperator
     /// </summary>
-    private static void SkipInlineImage(PdfLexer lexer)
+    private static InlineImageOperator? ParseInlineImage(PdfLexer lexer)
     {
-        Console.WriteLine("[PARSER] Skipping inline image (BI...ID...EI)");
+        Console.WriteLine("[PARSER] Parsing inline image (BI...ID...EI)");
 
-        // Skip the dictionary part (until we see ID)
+        // Parse the dictionary part (until we see ID)
+        var parameters = new PdfDictionary();
+        PdfName? currentKey = null;
+
         while (true)
         {
             PdfToken token = lexer.NextToken();
 
             if (token.Type == PdfTokenType.EndOfFile)
-                return;
+                return null;
 
             // ID marks the start of raw image data
             if (token.Type == PdfTokenType.Unknown && token.Value == "ID")
                 break;
+
+            // Parse key-value pairs
+            if (token.Type == PdfTokenType.Name)
+            {
+                if (currentKey == null)
+                {
+                    currentKey = PdfName.Parse(token.Value);
+                }
+                else
+                {
+                    parameters[currentKey] = PdfName.Parse(token.Value);
+                    currentKey = null;
+                }
+            }
+            else if (currentKey != null)
+            {
+                PdfObject? value = token.Type switch
+                {
+                    PdfTokenType.Integer => new PdfInteger(int.Parse(token.Value)),
+                    PdfTokenType.Real => new PdfReal(double.Parse(token.Value)),
+                    PdfTokenType.String => new PdfString(token.Value),
+                    PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
+                    PdfTokenType.Null => PdfNull.Instance,
+                    PdfTokenType.ArrayStart => ParseArray(lexer),
+                    PdfTokenType.DictionaryStart => ParseDictionary(lexer),
+                    _ => null
+                };
+
+                if (value != null)
+                {
+                    parameters[currentKey] = value;
+                    currentKey = null;
+                }
+            }
         }
 
-        // Now we need to skip over the raw image data until we find EI
-        // This is tricky because the data can contain any bytes
-        // We look for the pattern: whitespace + "EI" + whitespace/EOF
+        // Now read the raw image data until we find EI
         var stream = lexer.GetStream();
         if (stream == null || !stream.CanRead)
-            return;
+        {
+            lexer.SyncPositionFromStream();
+            return null;
+        }
 
         // Skip one whitespace after ID
         int b = stream.ReadByte();
         if (b == -1)
-            return;
+        {
+            lexer.SyncPositionFromStream();
+            return null;
+        }
 
         // Read until we find EI
+        var imageData = new List<byte>();
         int prevPrev = 0;
         int prev = 0;
+
         while (true)
         {
             b = stream.ReadByte();
             if (b == -1)
-                return;
+            {
+                lexer.SyncPositionFromStream();
+                return null;
+            }
 
             // Check for EI sequence
             // EI should be preceded by whitespace and followed by whitespace or EOF
             if (prev == 'E' && b == 'I')
             {
                 // Check if prevPrev was whitespace
-                if (prevPrev == ' ' || prevPrev == '\n' || prevPrev == '\r' || prevPrev == '\t')
+                if (prevPrev == ' ' || prevPrev == '\n' || prevPrev == '\r' || prevPrev == '\t' || prevPrev == 0)
                 {
                     // Peek next byte to verify it's whitespace or EOF
                     int next = stream.ReadByte();
@@ -423,13 +473,32 @@ public class PdfContentParser
                         {
                             stream.Seek(-1, SeekOrigin.Current);
                         }
-                        return;
+                        // Remove the 'E' from image data (we added it as prev)
+                        if (imageData.Count > 0)
+                            imageData.RemoveAt(imageData.Count - 1);
+                        // Remove whitespace before 'E' if present
+                        if (imageData.Count > 0 && IsWhitespace(imageData[^1]))
+                            imageData.RemoveAt(imageData.Count - 1);
+
+                        lexer.SyncPositionFromStream();
+
+                        Console.WriteLine($"[PARSER] Inline image parsed: {parameters.Count} params, {imageData.Count} bytes");
+                        return new InlineImageOperator(parameters, imageData.ToArray());
                     }
                 }
             }
 
+            // Add previous byte to image data (we're one byte behind)
+            if (prev != 0)
+                imageData.Add((byte)prev);
+
             prevPrev = prev;
             prev = b;
         }
+    }
+
+    private static bool IsWhitespace(byte b)
+    {
+        return b == ' ' || b == '\n' || b == '\r' || b == '\t';
     }
 }

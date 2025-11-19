@@ -406,15 +406,32 @@ public class PdfLexer(Stream stream)
     public Stream? GetStream()
     {
         // Flush any buffered data back to stream position
-        if (_stream.CanSeek && _bufferLength > 0)
+        if (_stream.CanSeek)
         {
-            // Seek to current logical position
-            _stream.Seek(_streamPosition + _bufferPosition, SeekOrigin.Begin);
+            // Calculate and seek to current logical position
+            long currentLogicalPosition = _streamPosition + _bufferPosition;
+            _stream.Seek(currentLogicalPosition, SeekOrigin.Begin);
+            // Update _streamPosition to reflect the new base position
+            _streamPosition = currentLogicalPosition;
             // Clear buffer so we don't double-read
             _bufferLength = 0;
             _bufferPosition = 0;
         }
         return _stream;
+    }
+
+    /// <summary>
+    /// Synchronizes the lexer position after direct stream access
+    /// Call this after reading from GetStream() to update position tracking
+    /// </summary>
+    public void SyncPositionFromStream()
+    {
+        if (_stream.CanSeek)
+        {
+            _streamPosition = _stream.Position;
+            _bufferLength = 0;
+            _bufferPosition = 0;
+        }
     }
 
     /// <summary>

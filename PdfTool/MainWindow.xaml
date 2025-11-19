@@ -25,11 +25,13 @@
                 <Run x:Name="TotalPagesText" Text="0"/>
             </TextBlock>
             <Button x:Name="NextPageButton" Content="Next Page" Click="NextPageButton_Click" Padding="10,5" IsEnabled="False"/>
+            <Separator/>
+            <Button x:Name="CompareButton" Content="Compare with PDFium" Click="CompareButton_Click" Padding="10,5" IsEnabled="False"/>
         </ToolBar>
 
-        <!-- PDF Renderer -->
+        <!-- PDF Renderer (SkiaSharp-based with embedded font glyph outlines) -->
         <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1" Margin="5">
-            <local:Renderer x:Name="PdfRenderer"/>
+            <local:SkiaRenderer x:Name="PdfRenderer"/>
         </Border>
 
         <!-- Status Bar -->

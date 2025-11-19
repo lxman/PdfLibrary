@@ -1,3 +1,4 @@
+using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -12,6 +13,7 @@ public class PdfImage
 {
     private readonly PdfStream _stream;
     private readonly PdfDocument? _document;
+    private readonly bool _isInlineImage;
 
     /// <summary>
     /// Creates a PdfImage from an XObject stream
@@ -23,11 +25,126 @@ public class PdfImage
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _document = document;
+        _isInlineImage = false;
 
         // Verify this is an image XObject
         if (!IsImageXObject(stream))
             throw new ArgumentException("Stream is not an image XObject (Subtype must be /Image)");
     }
+
+    /// <summary>
+    /// Creates a PdfImage from an inline image operator
+    /// </summary>
+    /// <param name="inlineImage">The inline image operator containing image data</param>
+    public PdfImage(InlineImageOperator inlineImage)
+    {
+        if (inlineImage == null)
+            throw new ArgumentNullException(nameof(inlineImage));
+
+        _isInlineImage = true;
+        _document = null;
+
+        // Create a synthetic PdfStream from the inline image data
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(inlineImage.Width),
+            [new PdfName("Height")] = new PdfInteger(inlineImage.Height),
+            [new PdfName("BitsPerComponent")] = new PdfInteger(inlineImage.BitsPerComponent)
+        };
+
+        // Map color space (handle abbreviated names)
+        string colorSpace = inlineImage.ColorSpace;
+        dict[new PdfName("ColorSpace")] = new PdfName(colorSpace);
+
+        // Copy filter if present
+        string? filterName = null;
+        if (inlineImage.Filter != null)
+        {
+            // Map abbreviated filter names to full names
+            filterName = inlineImage.Filter switch
+            {
+                "AHx" => "ASCIIHexDecode",
+                "A85" => "ASCII85Decode",
+                "LZW" => "LZWDecode",
+                "Fl" => "FlateDecode",
+                "RL" => "RunLengthDecode",
+                "CCF" => "CCITTFaxDecode",
+                "DCT" => "DCTDecode",
+                _ => inlineImage.Filter
+            };
+            dict[new PdfName("Filter")] = new PdfName(filterName);
+        }
+
+        // Copy decode params if present, or create them for CCITTFaxDecode
+        if (inlineImage.DecodeParms != null)
+        {
+            // For CCITTFaxDecode, ensure Columns/Rows are set
+            if (filterName == "CCITTFaxDecode" && inlineImage.DecodeParms is PdfDictionary dpDict)
+            {
+                // Clone the dictionary and add missing Columns/Rows
+                var newDpDict = new PdfDictionary();
+                foreach (var kvp in dpDict)
+                {
+                    newDpDict[kvp.Key] = kvp.Value;
+                }
+
+                // Add Columns if not present
+                if (!newDpDict.ContainsKey(new PdfName("Columns")))
+                {
+                    newDpDict[new PdfName("Columns")] = new PdfInteger(inlineImage.Width);
+                }
+
+                // Add Rows if not present
+                if (!newDpDict.ContainsKey(new PdfName("Rows")))
+                {
+                    newDpDict[new PdfName("Rows")] = new PdfInteger(inlineImage.Height);
+                }
+
+                dict[new PdfName("DecodeParms")] = newDpDict;
+            }
+            else
+            {
+                dict[new PdfName("DecodeParms")] = inlineImage.DecodeParms;
+            }
+        }
+        else if (filterName == "CCITTFaxDecode")
+        {
+            // Create DecodeParms with Columns/Rows for CCITTFaxDecode
+            var dpDict = new PdfDictionary
+            {
+                [new PdfName("Columns")] = new PdfInteger(inlineImage.Width),
+                [new PdfName("Rows")] = new PdfInteger(inlineImage.Height)
+            };
+            dict[new PdfName("DecodeParms")] = dpDict;
+        }
+
+        // Copy decode array if present
+        if (inlineImage.Decode != null)
+        {
+            dict[new PdfName("Decode")] = inlineImage.Decode;
+        }
+
+        // Copy image mask flag if true
+        if (inlineImage.ImageMask)
+        {
+            dict[new PdfName("ImageMask")] = PdfBoolean.True;
+        }
+
+        // Copy interpolate flag if true
+        if (inlineImage.Interpolate)
+        {
+            dict[new PdfName("Interpolate")] = PdfBoolean.True;
+        }
+
+        // Create the synthetic stream with raw image data
+        _stream = new PdfStream(dict, inlineImage.ImageData);
+    }
+
+    /// <summary>
+    /// Gets whether this is an inline image (from BI/ID/EI operators)
+    /// </summary>
+    public bool IsInlineImage => _isInlineImage;
 
     /// <summary>
     /// Gets the underlying XObject stream

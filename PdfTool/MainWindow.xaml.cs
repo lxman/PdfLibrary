@@ -2,8 +2,11 @@ using System.IO;
 using System.Windows;
 using Microsoft.Win32;
 using PdfLibrary.Document;
-using PdfLibrary.Structure;
+using PdfLibrary.Rendering;
 using Serilog;
+using SkiaSharp;
+using PdfDocument = PdfLibrary.Structure.PdfDocument;
+using PdfPage = PdfLibrary.Document.PdfPage;
 
 namespace PdfTool;
 
@@ -15,6 +18,7 @@ public partial class MainWindow : Window
 {
     private PdfDocument? _document;
     private int _currentPage = 0;
+    private string? _currentFilePath;
 
     public MainWindow()
     {
@@ -49,9 +53,15 @@ public partial class MainWindow : Window
         {
             StatusText.Text = $"Loading {Path.GetFileName(filePath)}...";
 
+            // Store file path for comparison feature
+            _currentFilePath = filePath;
+
             // Load PDF document
             using FileStream stream = File.OpenRead(filePath);
             _document = PdfDocument.Load(stream);
+
+            // Set document on renderer for resolving indirect references
+            PdfRenderer.SetDocument(_document);
 
             _currentPage = 0;
 
@@ -62,6 +72,7 @@ public partial class MainWindow : Window
             // Enable navigation buttons
             NextPageButton.IsEnabled = _document.GetPageCount() > 0;
             PrevPageButton.IsEnabled = false;
+            CompareButton.IsEnabled = _document.GetPageCount() > 0;
 
             // DIAGNOSTIC: Skip page 1, start at page 2 to avoid image masking issue
             /*
@@ -78,6 +89,7 @@ public partial class MainWindow : Window
             }
 
             StatusText.Text = $"Loaded {Path.GetFileName(filePath)} ({_document.GetPageCount()} pages)";
+            Title = $"PDF Tool - {Path.GetFileName(filePath)}";
         }
         catch (Exception ex)
         {
@@ -111,12 +123,6 @@ public partial class MainWindow : Window
         {
             StatusText.Text = $"Rendering page {_currentPage}...";
 
-            // Clear previous rendering
-            PdfRenderer.Clear();
-
-            // Set current page number for diagnostics
-            PdfRenderer.CurrentPageNumber = _currentPage;
-
             // Get the page (GetPage uses 0-based indexing)
             PdfPage? page = _document.GetPage(_currentPage - 1);
             if (page == null)
@@ -127,9 +133,11 @@ public partial class MainWindow : Window
                 return;
             }
 
-            // Set page size
+            // Get page dimensions
             PdfRectangle mediaBox = page.GetMediaBox();
-            PdfRenderer.SetPageSize(mediaBox.Width, mediaBox.Height);
+
+            // Begin rendering the page (sets up SkiaSharp render target)
+            PdfRenderer.BeginPage(_currentPage, mediaBox.Width, mediaBox.Height);
 
             // Create an Optional Content Manager for layer visibility
             var optionalContentManager = new OptionalContentManager(_document);
@@ -138,8 +146,11 @@ public partial class MainWindow : Window
             var renderer = new PdfLibrary.Rendering.PdfRenderer(PdfRenderer, page.GetResources(), optionalContentManager, _document);
             renderer.RenderPage(page);
 
-            // Log how many elements were added to canvas
-            Log.Information("RenderCurrentPage: Canvas now has {ChildCount} elements", PdfRenderer.GetChildCount());
+            // End rendering (captures the rendered image for display)
+            PdfRenderer.EndPage();
+
+            // Log completion
+            Log.Information("RenderCurrentPage: Page {PageNumber} rendered", _currentPage);
 
             // Update UI
             CurrentPageText.Text = _currentPage.ToString();
@@ -153,6 +164,99 @@ public partial class MainWindow : Window
             StatusText.Text = $"Error rendering page {_currentPage}";
             MessageBox.Show($"Failed to render page {_currentPage}: {ex.Message}", "Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private void CompareButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_document == null || _currentFilePath == null || _currentPage < 1)
+        {
+            MessageBox.Show("Please load a PDF and navigate to a page first.", "No Page",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            StatusText.Text = "Generating comparison images...";
+
+            // Create output directory
+            string outputDir = Path.Combine(Path.GetDirectoryName(_currentFilePath) ?? ".", "Comparison");
+            Directory.CreateDirectory(outputDir);
+
+            string pdfLibraryPath = Path.Combine(outputDir, $"PdfLibrary_Page{_currentPage}.png");
+            string pdfiumPath = Path.Combine(outputDir, $"PDFium_Page{_currentPage}.png");
+
+            // Get current page dimensions
+            var page = _document.GetPage(_currentPage - 1);
+            if (page == null)
+            {
+                MessageBox.Show("Could not get current page.", "Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var mediaBox = page.GetMediaBox();
+            int width = (int)Math.Ceiling(mediaBox.Width);
+            int height = (int)Math.Ceiling(mediaBox.Height);
+
+            // Render with PdfLibrary
+            var renderTarget = new SkiaSharpRenderTarget(width, height, _document);
+            try
+            {
+                renderTarget.BeginPage(_currentPage, mediaBox.Width, mediaBox.Height);
+                var optionalContentManager = new OptionalContentManager(_document);
+                var renderer = new PdfLibrary.Rendering.PdfRenderer(renderTarget, page.GetResources(), optionalContentManager, _document);
+                renderer.RenderPage(page);
+                renderTarget.EndPage();
+                renderTarget.SaveToFile(pdfLibraryPath);
+            }
+            finally
+            {
+                renderTarget.Dispose();
+            }
+
+            // Render with PDFium
+            using (var pdfiumDoc = new PDFiumSharp.PdfDocument(_currentFilePath))
+            {
+                var pdfiumPage = pdfiumDoc.Pages[_currentPage - 1];
+                int pdfiumWidth = (int)pdfiumPage.Width;
+                int pdfiumHeight = (int)pdfiumPage.Height;
+
+                using var pdfiumBitmap = new PDFiumSharp.PDFiumBitmap(pdfiumWidth, pdfiumHeight, true);
+                pdfiumBitmap.FillRectangle(0, 0, pdfiumWidth, pdfiumHeight, 0xFFFFFFFF);
+                pdfiumPage.Render(pdfiumBitmap, (0, 0, pdfiumWidth, pdfiumHeight),
+                    PDFiumSharp.Enums.PageOrientations.Normal,
+                    PDFiumSharp.Enums.RenderingFlags.None);
+
+                // PDFium saves as BMP, so convert to PNG via SkiaSharp
+                string tempPath = Path.GetTempFileName() + ".bmp";
+                try
+                {
+                    pdfiumBitmap.Save(tempPath);
+                    using var skBitmap = SKBitmap.Decode(tempPath);
+                    using var image = SKImage.FromBitmap(skBitmap);
+                    using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+                    using var stream = File.OpenWrite(pdfiumPath);
+                    data.SaveTo(stream);
+                }
+                finally
+                {
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+            }
+
+            StatusText.Text = $"Comparison images saved to {outputDir}";
+            MessageBox.Show($"Comparison images saved:\n\n• {Path.GetFileName(pdfLibraryPath)}\n• {Path.GetFileName(pdfiumPath)}\n\nLocation: {outputDir}",
+                "Comparison Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Error generating comparison";
+            MessageBox.Show($"Failed to generate comparison: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Log.Error(ex, "Comparison failed");
         }
     }
 }

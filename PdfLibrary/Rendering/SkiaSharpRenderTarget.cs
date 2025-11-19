@@ -1,4 +1,5 @@
 using System.Numerics;
+using Microsoft.Extensions.Caching.Memory;
 using PdfLibrary.Content;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -23,7 +24,32 @@ public class SkiaSharpRenderTarget : IRenderTarget
     private double _pageWidth;
     private double _pageHeight;
 
+    // Static glyph path cache - shared across all render targets for efficiency
+    private static readonly MemoryCache _glyphPathCache;
+    private static readonly MemoryCacheEntryOptions _cacheOptions;
+
     public int CurrentPageNumber { get; private set; }
+
+    static SkiaSharpRenderTarget()
+    {
+        // Initialize cache with size limit (approx 10,000 glyphs)
+        var cacheOptions = new MemoryCacheOptions
+        {
+            SizeLimit = 10000
+        };
+        _glyphPathCache = new MemoryCache(cacheOptions);
+
+        // Cache entries expire after 10 minutes of non-use
+        _cacheOptions = new MemoryCacheEntryOptions()
+            .SetSize(1)
+            .SetSlidingExpiration(TimeSpan.FromMinutes(10))
+            .RegisterPostEvictionCallback((key, value, reason, state) =>
+            {
+                // Dispose SKPath when evicted from cache
+                if (value is SKPath path)
+                    path.Dispose();
+            });
+    }
 
     public SkiaSharpRenderTarget(int width, int height, PdfDocument? document = null)
     {
@@ -101,7 +127,13 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Convert fill color
             var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
-            Console.WriteLine($"[TEXT COLOR] Space={state.FillColorSpace}, Components=[{string.Join(", ", state.FillColor.Select(c => c.ToString("F2")))}] => {fillColor}");
+
+            // Debug: show text color if it's not black
+            if (fillColor.Red != 0 || fillColor.Green != 0 || fillColor.Blue != 0)
+            {
+                Console.WriteLine($"[TEXT COLOR] Text='{(text.Length > 20 ? text.Substring(0, 20) + "..." : text)}' Color=RGB({fillColor.Red},{fillColor.Green},{fillColor.Blue}) ColorSpace={state.FillColorSpace}");
+            }
+
             using var paint = new SKPaint
             {
                 Color = fillColor,
@@ -118,7 +150,45 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
-            using var fallbackFont = new SKFont(SKTypeface.FromFamilyName("Arial"), (float)state.FontSize);
+
+            // Determine font style from font descriptor
+            var fontStyle = SKFontStyle.Normal;
+            if (font != null)
+            {
+                var descriptor = font.GetDescriptor();
+                bool isBold = false;
+                bool isItalic = false;
+
+                if (descriptor != null)
+                {
+                    isBold = descriptor.IsBold;
+                    isItalic = descriptor.IsItalic;
+
+                    // Also use StemV as heuristic for bold detection
+                    if (descriptor.StemV >= 120)
+                        isBold = true;
+                }
+
+                // Also check font name for style hints
+                string? baseName = font.BaseFont;
+                if (baseName != null)
+                {
+                    if (baseName.Contains("Bold", StringComparison.OrdinalIgnoreCase))
+                        isBold = true;
+                    if (baseName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
+                        baseName.Contains("Oblique", StringComparison.OrdinalIgnoreCase))
+                        isItalic = true;
+                }
+
+                if (isBold && isItalic)
+                    fontStyle = SKFontStyle.BoldItalic;
+                else if (isBold)
+                    fontStyle = SKFontStyle.Bold;
+                else if (isItalic)
+                    fontStyle = SKFontStyle.Italic;
+            }
+
+            using var fallbackFont = new SKFont(SKTypeface.FromFamilyName("Arial", fontStyle), (float)state.FontSize);
 
             float currentX = 0;
             for (int i = 0; i < text.Length; i++)
@@ -141,20 +211,27 @@ public class SkiaSharpRenderTarget : IRenderTarget
     {
         try
         {
+            // Check if font should be rendered as bold (for synthetic bold)
+            bool applyBold = false;
+            var descriptor = font.GetDescriptor();
+            if (descriptor != null)
+            {
+                // Check font flags for bold, or check font name for "Bold"
+                bool isBoldFlag = descriptor.IsBold;
+                bool isBoldName = font.BaseFont?.Contains("Bold", StringComparison.OrdinalIgnoreCase) == true;
+
+                // Also use StemV as heuristic - higher values indicate bolder fonts
+                // Regular fonts typically have StemV < 100, bold fonts > 150
+                // Values 120-150 suggest semi-bold or bold variants without "Bold" in name
+                bool isBoldStemV = descriptor.StemV >= 120;
+
+                applyBold = isBoldFlag || isBoldName || isBoldStemV;
+            }
+
             // Get embedded font metrics
             var embeddedMetrics = font.GetEmbeddedMetrics();
-            if (embeddedMetrics == null)
-            {
-                if (font.FontType == PdfFontType.Type0)
-                    Console.WriteLine($"[TYPE0-METRICS] Font {font.BaseFont}: embeddedMetrics is NULL");
+            if (embeddedMetrics == null || !embeddedMetrics.IsValid)
                 return false;
-            }
-            if (!embeddedMetrics.IsValid)
-            {
-                if (font.FontType == PdfFontType.Type0)
-                    Console.WriteLine($"[TYPE0-METRICS] Font {font.BaseFont}: embeddedMetrics.IsValid=false");
-                return false;
-            }
 
             // Position for rendering glyphs
             double currentX = 0;
@@ -174,13 +251,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 char displayChar = i < text.Length ? text[i] : '?';
 
                 ushort glyphId;
-
-                // Debug: Check font type and embedded font info
-                if (i == 0 && font.FontType == PdfFontType.Type0)
-                {
-                    Console.WriteLine($"[TYPE0-DEBUG] Font class={font.GetType().Name}, IsCffFont={embeddedMetrics.IsCffFont}, HasEncoding={font.Encoding != null}");
-                    Console.WriteLine($"[TYPE0-DEBUG] DescendantFont={((font as Type0Font)?.DescendantFont?.GetType().Name ?? "null")}");
-                }
 
                 // For CFF fonts without cmap, use glyph name mapping via the PDF encoding
                 if (embeddedMetrics.IsCffFont && font.Encoding != null)
@@ -204,8 +274,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                         // For Type0 fonts, use CIDToGIDMap directly - the mapped value IS the glyph ID
                         int mappedGid = cidFont.MapCidToGid(charCode);
                         glyphId = (ushort)mappedGid;
-                        if (i < 3) // Only log first few characters
-                            Console.WriteLine($"[CID-GID] Type0 char '{displayChar}' CID=0x{charCode:X4} -> GID={glyphId}");
                     }
                     else
                     {
@@ -219,8 +287,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
-                    if (font is Type0Font && i < 5)
-                        Console.WriteLine($"[GLYPH-MISS] Type0 char '{displayChar}' CID=0x{charCode:X4} NOT FOUND");
                     continue;
                 }
 
@@ -228,8 +294,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 var glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
                 if (glyphOutline == null)
                 {
-                    if (font is Type0Font && i < 3)
-                        Console.WriteLine($"[OUTLINE-NULL] Type0 GID={glyphId} has no outline");
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
                     continue;
@@ -243,39 +307,56 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     continue;
                 }
 
-                // Convert glyph outline to SKPath
-                SKPath glyphPath;
+                // Create cache key: font name + glyph ID + font size (rounded for precision)
+                string fontKey = font.BaseFont ?? "unknown";
+                int roundedSize = (int)(state.FontSize * 10); // 0.1pt precision
+                string cacheKey = $"{fontKey}_{glyphId}_{roundedSize}";
 
-                // Check if this is a CFF font for proper cubic Bezier rendering
-                if (embeddedMetrics.IsCffFont)
+                // Try to get from cache first
+                SKPath glyphPath;
+                if (_glyphPathCache.TryGetValue(cacheKey, out SKPath? cachedPath) && cachedPath != null)
                 {
-                    var cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
-                    if (cffOutline != null)
+                    // Clone the cached path (we need to transform it)
+                    glyphPath = new SKPath(cachedPath);
+                }
+                else
+                {
+                    // Convert glyph outline to SKPath
+                    // Check if this is a CFF font for proper cubic Bezier rendering
+                    if (embeddedMetrics.IsCffFont)
                     {
-                        glyphPath = _glyphConverter.ConvertCffToPath(
-                            cffOutline,
-                            (float)state.FontSize,
-                            embeddedMetrics.UnitsPerEm
-                        );
+                        var cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
+                        if (cffOutline != null)
+                        {
+                            glyphPath = _glyphConverter.ConvertCffToPath(
+                                cffOutline,
+                                (float)state.FontSize,
+                                embeddedMetrics.UnitsPerEm
+                            );
+                        }
+                        else
+                        {
+                            // Fall back to contour-based conversion
+                            glyphPath = _glyphConverter.ConvertToPath(
+                                glyphOutline,
+                                (float)state.FontSize,
+                                embeddedMetrics.UnitsPerEm
+                            );
+                        }
                     }
                     else
                     {
-                        // Fall back to contour-based conversion
+                        // TrueType font - use quadratic Bezier conversion
                         glyphPath = _glyphConverter.ConvertToPath(
                             glyphOutline,
                             (float)state.FontSize,
                             embeddedMetrics.UnitsPerEm
                         );
                     }
-                }
-                else
-                {
-                    // TrueType font - use quadratic Bezier conversion
-                    glyphPath = _glyphConverter.ConvertToPath(
-                        glyphOutline,
-                        (float)state.FontSize,
-                        embeddedMetrics.UnitsPerEm
-                    );
+
+                    // Cache the path (clone it since we'll transform the original)
+                    var pathToCache = new SKPath(glyphPath);
+                    _glyphPathCache.Set(cacheKey, pathToCache, _cacheOptions);
                 }
 
                 // Translate path to current position
@@ -284,6 +365,26 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                 // Render the glyph
                 _canvas.DrawPath(glyphPath, paint);
+
+                // Apply synthetic bold by stroking the glyph outline
+                if (applyBold)
+                {
+                    // Calculate CTM scaling factor for stroke width
+                    // Note: Since canvas already has CTM transform, this may cause double-scaling
+                    // But we apply it for consistency with line width handling
+                    var ctm = state.Ctm;
+                    double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
+                    if (ctmScale < 0.0001) ctmScale = 1.0;
+
+                    using var strokePaint = new SKPaint
+                    {
+                        Color = paint.Color,
+                        IsAntialias = true,
+                        Style = SKPaintStyle.Stroke,
+                        StrokeWidth = (float)(state.FontSize * 0.04 * ctmScale)
+                    };
+                    _canvas.DrawPath(glyphPath, strokePaint);
+                }
 
                 // Clean up path
                 glyphPath.Dispose();
@@ -342,7 +443,16 @@ public class SkiaSharpRenderTarget : IRenderTarget
     private SKColor ConvertColor(List<double> colorComponents, string colorSpace)
     {
         if (colorComponents == null || colorComponents.Count == 0)
+        {
+            Console.WriteLine($"[COLOR] Warning: No color components for colorSpace={colorSpace}");
             return SKColors.Black;
+        }
+
+        // Log non-standard color spaces
+        if (colorSpace != "DeviceGray" && colorSpace != "DeviceRGB" && colorSpace != "DeviceCMYK")
+        {
+            Console.WriteLine($"[COLOR] Non-device colorSpace={colorSpace}, components=[{string.Join(", ", colorComponents)}]");
+        }
 
         switch (colorSpace)
         {
@@ -428,22 +538,33 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Create stroke paint
             var strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+
+
+            // Calculate CTM scaling factor for line width
+            // The line width should be scaled by the CTM's linear scaling factor
+            // which is the square root of the absolute determinant of the 2x2 portion
+            var ctm = state.Ctm;
+            double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
+            if (ctmScale < 0.0001) ctmScale = 1.0; // Avoid division by zero
+            double scaledLineWidth = state.LineWidth * ctmScale;
+
             using var paint = new SKPaint
             {
                 Color = strokeColor,
                 IsAntialias = true,
                 Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)state.LineWidth,
+                StrokeWidth = (float)scaledLineWidth,
                 StrokeCap = ConvertLineCap(state.LineCap),
                 StrokeJoin = ConvertLineJoin(state.LineJoin),
                 StrokeMiter = (float)state.MiterLimit
             };
 
-            // Apply dash pattern if present
+            // Apply dash pattern if present (scale by CTM as well)
             if (state.DashPattern != null && state.DashPattern.Length > 0)
             {
-                var dashIntervals = state.DashPattern.Select(d => (float)d).ToArray();
-                paint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)state.DashPhase);
+                var dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
+                Console.WriteLine($"[DASH] Applying dash pattern: [{string.Join(", ", dashIntervals)}] phase={state.DashPhase * ctmScale}");
+                paint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));
             }
 
             _canvas.DrawPath(skPath, paint);
@@ -521,22 +642,29 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Then stroke
             var strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+
+            // Calculate CTM scaling factor for line width
+            var ctm = state.Ctm;
+            double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
+            if (ctmScale < 0.0001) ctmScale = 1.0;
+            double scaledLineWidth = state.LineWidth * ctmScale;
+
             using (var strokePaint = new SKPaint
             {
                 Color = strokeColor,
                 IsAntialias = true,
                 Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)state.LineWidth,
+                StrokeWidth = (float)scaledLineWidth,
                 StrokeCap = ConvertLineCap(state.LineCap),
                 StrokeJoin = ConvertLineJoin(state.LineJoin),
                 StrokeMiter = (float)state.MiterLimit
             })
             {
-                // Apply dash pattern if present
+                // Apply dash pattern if present (scale by CTM as well)
                 if (state.DashPattern != null && state.DashPattern.Length > 0)
                 {
-                    var dashIntervals = state.DashPattern.Select(d => (float)d).ToArray();
-                    strokePaint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)state.DashPhase);
+                    var dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
+                    strokePaint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));
                 }
 
                 _canvas.DrawPath(skPath, strokePaint);
@@ -690,7 +818,13 @@ public class SkiaSharpRenderTarget : IRenderTarget
         try
         {
             // Create SKBitmap from PDF image data
-            var bitmap = CreateBitmapFromPdfImage(image);
+            // For image masks, pass the fill color to use as the stencil color
+            SKColor? fillColor = null;
+            if (image.IsImageMask)
+            {
+                fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            }
+            var bitmap = CreateBitmapFromPdfImage(image, fillColor);
             if (bitmap == null)
                 return;
 
@@ -761,7 +895,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
         }
     }
 
-    private SKBitmap? CreateBitmapFromPdfImage(PdfImage image)
+    private SKBitmap? CreateBitmapFromPdfImage(PdfImage image, SKColor? imageMaskColor = null)
     {
         try
         {
@@ -794,6 +928,46 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Determine SkiaSharp color type based on PDF color space
             SKBitmap? bitmap = null;
+
+            // Handle image masks (1-bit stencil images)
+            if (image.IsImageMask && imageMaskColor.HasValue)
+            {
+                // Image masks are 1-bit images where painted pixels use the fill color
+                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+                var color = imageMaskColor.Value;
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        // PDF images are stored bottom-up, flip Y for top-down bitmap
+                        int srcY = height - 1 - y;
+
+                        // Calculate bit position
+                        int bitIndex = srcY * width + x;
+                        int byteIndex = bitIndex / 8;
+                        int bitOffset = 7 - (bitIndex % 8); // MSB first
+
+                        if (byteIndex >= imageData.Length)
+                            continue;
+
+                        // Get the mask bit (1 = paint, 0 = transparent by default)
+                        // Note: The Decode array can invert this, but default is [0 1]
+                        bool paint = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
+
+                        if (paint)
+                        {
+                            bitmap.SetPixel(x, y, color);
+                        }
+                        else
+                        {
+                            bitmap.SetPixel(x, y, SKColors.Transparent);
+                        }
+                    }
+                }
+
+                return bitmap;
+            }
 
             if (colorSpace == "Indexed")
             {
@@ -867,7 +1041,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     }
                 }
             }
-            else if (colorSpace == "DeviceRGB" && bitsPerComponent == 8)
+            else if ((colorSpace == "DeviceRGB" || colorSpace == "CalRGB") && bitsPerComponent == 8)
             {
                 var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                 bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
@@ -898,7 +1072,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     }
                 }
             }
-            else if (colorSpace == "DeviceGray" && bitsPerComponent == 8)
+            else if ((colorSpace == "DeviceGray" || colorSpace == "CalGray") && bitsPerComponent == 8)
             {
                 var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                 bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
@@ -961,5 +1135,21 @@ public class SkiaSharpRenderTarget : IRenderTarget
     public void Dispose()
     {
         _surface?.Dispose();
+    }
+
+    /// <summary>
+    /// Clears the glyph path cache to free memory
+    /// </summary>
+    public static void ClearGlyphCache()
+    {
+        _glyphPathCache.Compact(1.0); // Remove all entries
+    }
+
+    /// <summary>
+    /// Gets the current number of cached glyph paths (approximate)
+    /// </summary>
+    public static int GetCacheCount()
+    {
+        return _glyphPathCache.Count;
     }
 }

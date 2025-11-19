@@ -1,4 +1,5 @@
 using PdfLibrary.Content.Operators;
+using PdfLibrary.Core.Primitives;
 
 namespace PdfLibrary.Content;
 
@@ -58,6 +59,22 @@ public abstract class PdfContentProcessor
 
             case SetMiterLimitOperator miter:
                 CurrentState.MiterLimit = miter.Limit;
+                break;
+
+            case SetDashPatternOperator dash:
+                // Convert PdfArray to double array
+                var dashArray = new double[dash.DashArray.Count];
+                for (int i = 0; i < dash.DashArray.Count; i++)
+                {
+                    dashArray[i] = dash.DashArray[i] switch
+                    {
+                        PdfInteger pi => pi.Value,
+                        PdfReal pr => pr.Value,
+                        _ => 0
+                    };
+                }
+                CurrentState.DashPattern = dashArray.Length > 0 ? dashArray : null;
+                CurrentState.DashPhase = dash.DashPhase;
                 break;
 
             case SetFlatnessOperator flatness:
@@ -216,6 +233,11 @@ public abstract class PdfContentProcessor
                 OnInvokeXObject(xobj.XObjectName);
                 break;
 
+            // Inline image operator
+            case InlineImageOperator inlineImg:
+                OnInlineImage(inlineImg);
+                break;
+
             // Color operators - Grayscale
             case SetStrokeGrayOperator g:
                 CurrentState.SetStrokeGray(g.Gray);
@@ -331,6 +353,7 @@ public abstract class PdfContentProcessor
     protected virtual void OnFillAndStroke() { }
     protected virtual void OnEndPath() { }
     protected virtual void OnInvokeXObject(string name) { }
+    protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
     protected virtual void OnColorChanged() { }
     protected virtual void OnGenericOperator(GenericOperator op) { }
 }

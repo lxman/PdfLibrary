@@ -92,15 +92,12 @@ public class EmbeddedFontMetrics
                 NumGlyphs = (ushort)_cffTable.RawCharStrings.Count;
                 IsValid = true;
 
-                Console.WriteLine($"[EmbeddedFontMetrics] Raw CFF parsed: {NumGlyphs} glyphs, IsValid={IsValid}");
-
                 // Create a dummy parser (won't be used for CFF)
                 _parser = new TrueTypeParser(fontData);
                 return;
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"[EmbeddedFontMetrics] Raw CFF parse failed: {ex.Message}");
                 // CFF parsing failed, try as TrueType below
                 _isCffFont = false;
             }
@@ -112,8 +109,15 @@ public class EmbeddedFontMetrics
         byte[]? headData = _parser.GetTable("head");
         if (headData != null)
         {
-            _headTable = new HeadTable(headData);
-            UnitsPerEm = _headTable.UnitsPerEm;
+            try
+            {
+                _headTable = new HeadTable(headData);
+                UnitsPerEm = _headTable.UnitsPerEm;
+            }
+            catch
+            {
+                UnitsPerEm = 1000; // Fallback default
+            }
         }
         else
         {
@@ -124,37 +128,72 @@ public class EmbeddedFontMetrics
         byte[]? maxpData = _parser.GetTable("maxp");
         if (maxpData != null)
         {
-            _maxpTable = new MaxPTable(maxpData);
-            NumGlyphs = _maxpTable.NumGlyphs;
+            try
+            {
+                _maxpTable = new MaxPTable(maxpData);
+                NumGlyphs = _maxpTable.NumGlyphs;
+            }
+            catch
+            {
+                // MaxP table parse failed
+            }
         }
 
         // Parse hhea table (required for horizontal metrics)
         byte[]? hheaData = _parser.GetTable("hhea");
         if (hheaData != null)
         {
-            _hheaTable = new HheaTable(hheaData);
+            try
+            {
+                _hheaTable = new HheaTable(hheaData);
+            }
+            catch
+            {
+                // Hhea table parse failed
+            }
         }
 
         // Parse hmtx table (required for glyph widths)
         byte[]? hmtxData = _parser.GetTable("hmtx");
         if (hmtxData != null && _hheaTable != null && NumGlyphs > 0)
         {
-            _hmtxTable = new HmtxTable(hmtxData);
-            _hmtxTable.Process(_hheaTable.NumberOfHMetrics, NumGlyphs);
+            try
+            {
+                _hmtxTable = new HmtxTable(hmtxData);
+                _hmtxTable.Process(_hheaTable.NumberOfHMetrics, NumGlyphs);
+            }
+            catch
+            {
+                // Hmtx table parse failed
+            }
         }
 
         // Parse name table (optional but useful)
         byte[]? nameData = _parser.GetTable("name");
         if (nameData != null)
         {
-            _nameTable = new NameTable(nameData);
+            try
+            {
+                _nameTable = new NameTable(nameData);
+            }
+            catch
+            {
+                // Name table parse failed
+            }
         }
 
         // Parse cmap table (required for character->glyph mapping)
         byte[]? cmapData = _parser.GetTable("cmap");
         if (cmapData != null)
         {
-            _cmapTable = new CmapTable(cmapData);
+            try
+            {
+                _cmapTable = new CmapTable(cmapData);
+            }
+            catch
+            {
+                _cmapTable = null;
+            }
         }
 
         // Check for CFF font (OpenType with CFF outlines)
@@ -179,15 +218,6 @@ public class EmbeddedFontMetrics
         // We need head + hmtx + either glyf (TrueType) or CFF outlines
         bool hasGlyphData = _parser.GetTable("glyf") != null || _cffTable != null;
         IsValid = _headTable != null && _hmtxTable != null && hasGlyphData;
-
-        if (!IsValid)
-        {
-            Console.WriteLine($"[EmbeddedFontMetrics] Invalid: head={_headTable != null}, hmtx={_hmtxTable != null}, hasGlyphData={hasGlyphData}");
-        }
-        else if (_cmapTable == null)
-        {
-            Console.WriteLine($"[EmbeddedFontMetrics] Valid but no cmap - requires external CID-to-GID mapping");
-        }
     }
 
     /// <summary>
