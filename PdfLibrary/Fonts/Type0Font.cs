@@ -143,11 +143,72 @@ internal class CidFont : PdfFont
 {
     private double _defaultWidth = 1000;
     private Dictionary<int, double>? _widths;
+    private Dictionary<int, int>? _cidToGidMap;
+    private bool _isIdentityMapping;
 
     public CidFont(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
     {
         LoadWidths();
+        LoadCidToGidMap();
+    }
+
+    /// <summary>
+    /// Maps a CID (Character ID) to a GID (Glyph ID) for the embedded font
+    /// </summary>
+    public int MapCidToGid(int cid)
+    {
+        // Identity mapping: CID = GID (most common for subset fonts)
+        if (_isIdentityMapping)
+            return cid;
+
+        // Look up in the mapping table
+        if (_cidToGidMap != null && _cidToGidMap.TryGetValue(cid, out int gid))
+            return gid;
+
+        // Default: assume identity mapping
+        return cid;
+    }
+
+    private void LoadCidToGidMap()
+    {
+        if (!_dictionary.TryGetValue(new PdfName("CIDToGIDMap"), out PdfObject? mapObj))
+        {
+            // No mapping specified, assume identity
+            _isIdentityMapping = true;
+            return;
+        }
+
+        // Resolve indirect reference
+        if (mapObj is PdfIndirectReference reference && _document != null)
+            mapObj = _document.ResolveReference(reference);
+
+        // Check for /Identity name
+        if (mapObj is PdfName name && name.Value == "Identity")
+        {
+            _isIdentityMapping = true;
+            return;
+        }
+
+        // Parse stream containing the mapping
+        if (mapObj is PdfStream stream)
+        {
+            byte[] data = stream.GetDecodedData();
+            _cidToGidMap = new Dictionary<int, int>();
+
+            // Each entry is 2 bytes (big-endian GID), indexed by CID
+            for (int cid = 0; cid < data.Length / 2; cid++)
+            {
+                int gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
+                if (gid != 0)  // Only store non-zero mappings
+                    _cidToGidMap[cid] = gid;
+            }
+        }
+        else
+        {
+            // Unknown format, assume identity
+            _isIdentityMapping = true;
+        }
     }
 
     public override PdfFontType FontType => PdfFontType.Type0;

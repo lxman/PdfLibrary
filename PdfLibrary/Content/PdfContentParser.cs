@@ -75,15 +75,36 @@ public class PdfContentParser
                     break;
 
                 case PdfTokenType.Unknown:
+                    // Handle inline images specially - need to skip over image data
+                    if (token.Value == "BI")
+                    {
+                        // Parse inline image dictionary and skip raw data
+                        SkipInlineImage(lexer);
+                        operands.Clear();
+                        break;
+                    }
+
                     // This is likely an operator
                     PdfOperator? op = CreateOperator(token.Value, operands);
                     if (op != null)
                     {
-                        // Debug: trace scn/sc operators with operand types
+                        // Debug: trace scn/sc operators with operand types and actual values
                         if (token.Value is "scn" or "SCN" or "sc" or "SC")
                         {
                             var types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
-                            Console.WriteLine($"[PARSER] {token.Value}: {operands.Count} operands on stack -> [{types}]");
+                            // Also show actual numeric values
+                            var values = op.Operands.Select(o => o switch {
+                                PdfReal r => r.Value.ToString("F4"),
+                                PdfInteger i => i.Value.ToString(),
+                                _ => o.ToString()
+                            });
+                            Console.WriteLine($"[PARSER] {token.Value}: {operands.Count} operands -> [{types}] values=[{string.Join(", ", values)}]");
+                        }
+                        // Debug: trace Do operators
+                        if (token.Value == "Do")
+                        {
+                            var types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
+                            Console.WriteLine($"[PARSER] Do: {operands.Count} operands -> [{types}], created {op.GetType().Name}");
                         }
                         operators.Add(op);
                     }
@@ -343,5 +364,72 @@ public class PdfContentParser
         }
 
         return dictionary;
+    }
+
+    /// <summary>
+    /// Skips over an inline image (BI...ID...EI)
+    /// </summary>
+    private static void SkipInlineImage(PdfLexer lexer)
+    {
+        Console.WriteLine("[PARSER] Skipping inline image (BI...ID...EI)");
+
+        // Skip the dictionary part (until we see ID)
+        while (true)
+        {
+            PdfToken token = lexer.NextToken();
+
+            if (token.Type == PdfTokenType.EndOfFile)
+                return;
+
+            // ID marks the start of raw image data
+            if (token.Type == PdfTokenType.Unknown && token.Value == "ID")
+                break;
+        }
+
+        // Now we need to skip over the raw image data until we find EI
+        // This is tricky because the data can contain any bytes
+        // We look for the pattern: whitespace + "EI" + whitespace/EOF
+        var stream = lexer.GetStream();
+        if (stream == null || !stream.CanRead)
+            return;
+
+        // Skip one whitespace after ID
+        int b = stream.ReadByte();
+        if (b == -1)
+            return;
+
+        // Read until we find EI
+        int prevPrev = 0;
+        int prev = 0;
+        while (true)
+        {
+            b = stream.ReadByte();
+            if (b == -1)
+                return;
+
+            // Check for EI sequence
+            // EI should be preceded by whitespace and followed by whitespace or EOF
+            if (prev == 'E' && b == 'I')
+            {
+                // Check if prevPrev was whitespace
+                if (prevPrev == ' ' || prevPrev == '\n' || prevPrev == '\r' || prevPrev == '\t')
+                {
+                    // Peek next byte to verify it's whitespace or EOF
+                    int next = stream.ReadByte();
+                    if (next == -1 || next == ' ' || next == '\n' || next == '\r' || next == '\t' || next == 'Q' || next == 'q')
+                    {
+                        // Found EI, put back the next byte if it's not EOF
+                        if (next != -1 && stream.CanSeek)
+                        {
+                            stream.Seek(-1, SeekOrigin.Current);
+                        }
+                        return;
+                    }
+                }
+            }
+
+            prevPrev = prev;
+            prev = b;
+        }
     }
 }

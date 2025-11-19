@@ -69,9 +69,12 @@ public class PdfPage
     public PdfRectangle GetMediaBox()
     {
         PdfArray? array = GetInheritableArray("MediaBox");
-        return array == null
-            ? throw new InvalidOperationException("Page missing required MediaBox")
-            : PdfRectangle.FromArray(array);
+        if (array == null)
+            throw new InvalidOperationException("Page missing required MediaBox");
+
+        var rect = PdfRectangle.FromArray(array);
+        Console.WriteLine($"[MEDIABOX] Found: {rect} (document={_document != null})");
+        return rect;
     }
 
     /// <summary>
@@ -197,16 +200,68 @@ public class PdfPage
 
     /// <summary>
     /// Helper to get inheritable array values
+    /// Traverses the full parent chain as per PDF spec
     /// </summary>
     private PdfArray? GetInheritableArray(string key)
     {
+        var keyName = new PdfName(key);
+
         // Try page first
-        if (_dictionary.TryGetValue(new PdfName(key), out PdfObject obj) && obj is PdfArray array)
+        if (_dictionary.TryGetValue(keyName, out PdfObject obj) && obj is PdfArray array)
             return array;
 
-        // Inherit from parent
-        if (_parentNode != null && _parentNode.TryGetValue(new PdfName(key), out obj) && obj is PdfArray parentArray)
-            return parentArray;
+        // Traverse parent chain to find inherited value
+        PdfDictionary? current = _parentNode;
+
+        // If no parent node was passed, try to get it from the page's /Parent key
+        if (current == null && _document != null)
+        {
+            if (_dictionary.TryGetValue(new PdfName("Parent"), out var parentObj))
+            {
+                current = ResolveDict(parentObj);
+                Console.WriteLine($"[INHERIT] Got parent from /Parent key: {current != null}");
+            }
+            else
+            {
+                Console.WriteLine($"[INHERIT] No /Parent key in page dictionary");
+            }
+        }
+        else if (current == null)
+        {
+            Console.WriteLine($"[INHERIT] No parent and no document (document={_document != null})");
+        }
+
+        // Walk up the parent chain
+        while (current != null)
+        {
+            if (current.TryGetValue(keyName, out obj) && obj is PdfArray parentArray)
+                return parentArray;
+
+            // Move to next parent
+            if (current.TryGetValue(new PdfName("Parent"), out var nextParent))
+            {
+                current = ResolveDict(nextParent);
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return null;
+    }
+
+    private PdfDictionary? ResolveDict(PdfObject obj)
+    {
+        if (obj is PdfDictionary dict)
+            return dict;
+
+        if (obj is PdfIndirectReference reference && _document != null)
+        {
+            var resolved = _document.ResolveReference(reference);
+            if (resolved is PdfDictionary resolvedDict)
+                return resolvedDict;
+        }
 
         return null;
     }

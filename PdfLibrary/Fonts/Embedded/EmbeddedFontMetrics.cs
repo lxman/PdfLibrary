@@ -174,10 +174,20 @@ public class EmbeddedFontMetrics
             }
         }
 
-        // Font is valid if we have the essential tables
-        // For CFF fonts, we need cmap and CFF table
-        // For TrueType, we need cmap, hmtx, and glyf (loaded later)
-        IsValid = _headTable != null && _hmtxTable != null && _cmapTable != null;
+        // Font is valid if we have the essential tables for rendering
+        // cmap is optional - Type0/CID fonts use CIDToGIDMap instead
+        // We need head + hmtx + either glyf (TrueType) or CFF outlines
+        bool hasGlyphData = _parser.GetTable("glyf") != null || _cffTable != null;
+        IsValid = _headTable != null && _hmtxTable != null && hasGlyphData;
+
+        if (!IsValid)
+        {
+            Console.WriteLine($"[EmbeddedFontMetrics] Invalid: head={_headTable != null}, hmtx={_hmtxTable != null}, hasGlyphData={hasGlyphData}");
+        }
+        else if (_cmapTable == null)
+        {
+            Console.WriteLine($"[EmbeddedFontMetrics] Valid but no cmap - requires external CID-to-GID mapping");
+        }
     }
 
     /// <summary>

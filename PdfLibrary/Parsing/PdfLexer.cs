@@ -59,7 +59,7 @@ public class PdfLexer(Stream stream)
             (byte)'<' => ReadHexStringOrDictionaryStart(),
             (byte)'>' => ReadDictionaryEnd(),
             (byte)'/' => ReadName(),
-            (byte)'+' or (byte)'-' or >= (byte)'0' and <= (byte)'9' => ReadNumber(),
+            (byte)'+' or (byte)'-' or (byte)'.' or >= (byte)'0' and <= (byte)'9' => ReadNumber(),
             _ => ReadKeywordOrBoolean()
         };
     }
@@ -398,6 +398,23 @@ public class PdfLexer(Stream stream)
 
         _bufferPosition++;
         return value;
+    }
+
+    /// <summary>
+    /// Gets the underlying stream for direct byte access (e.g., for inline images)
+    /// </summary>
+    public Stream? GetStream()
+    {
+        // Flush any buffered data back to stream position
+        if (_stream.CanSeek && _bufferLength > 0)
+        {
+            // Seek to current logical position
+            _stream.Seek(_streamPosition + _bufferPosition, SeekOrigin.Begin);
+            // Clear buffer so we don't double-read
+            _bufferLength = 0;
+            _bufferPosition = 0;
+        }
+        return _stream;
     }
 
     /// <summary>

@@ -18,6 +18,7 @@ public class PdfRenderer : PdfContentProcessor
 {
     private readonly IRenderTarget _target;
     private readonly PdfResources? _resources;
+    private PdfResources? _currentResources; // Can be swapped for annotation resources
     private readonly IPathBuilder _currentPath;
     private readonly OptionalContentManager? _optionalContentManager;
     private readonly PdfDocument? _document;
@@ -33,6 +34,7 @@ public class PdfRenderer : PdfContentProcessor
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
         _resources = resources;
+        _currentResources = resources; // Initially use page resources
         _currentPath = new PathBuilder();
         _optionalContentManager = optionalContentManager;
         _document = document;
@@ -59,19 +61,289 @@ public class PdfRenderer : PdfContentProcessor
             var resources = page.GetResources();
             var contents = page.GetContents();
 
+            // Diagnostic: List available XObjects
+            if (resources != null)
+            {
+                var xobjectNames = resources.GetXObjectNames();
+                Console.WriteLine($"[RESOURCES] XObjects available: [{string.Join(", ", xobjectNames)}]");
+
+                // Also list color spaces
+                var colorSpaces = resources.GetColorSpaces();
+                if (colorSpaces != null)
+                {
+                    var csNames = colorSpaces.Keys.Select(k => k.Value).ToList();
+                    Console.WriteLine($"[RESOURCES] ColorSpaces available: [{string.Join(", ", csNames)}]");
+                }
+            }
+
+            Console.WriteLine($"[CONTENT] Processing {contents.Count} content stream(s)");
+
             // Parse and process all content streams
+            int streamIndex = 0;
             foreach (var stream in contents)
             {
                 var decodedData = stream.GetDecodedData();
+
+                // Diagnostic: Dump first stream's raw content to see scn operands
+                if (streamIndex == 0 && decodedData.Length > 0)
+                {
+                    var text = System.Text.Encoding.ASCII.GetString(decodedData);
+                    // Find and show context around scn/SCN operators
+                    var lines = text.Split('\n');
+                    foreach (var line in lines.Take(50))  // First 50 lines
+                    {
+                        if (line.Contains("scn") || line.Contains("SCN") || line.Contains(" cs") || line.Contains(" CS"))
+                        {
+                            Console.WriteLine($"[RAW] {line.Trim()}");
+                        }
+                    }
+                }
+
                 var operators = PdfContentParser.Parse(decodedData);
+
+                // Diagnostic: Count operator types
+                var doOps = operators.Count(o => o.Name == "Do");
+                var csOps = operators.Count(o => o.Name == "cs" || o.Name == "CS");
+                var scnOps = operators.Count(o => o.Name == "scn" || o.Name == "SCN" || o.Name == "sc" || o.Name == "SC");
+                Console.WriteLine($"[OPERATORS] Stream {streamIndex}: Total: {operators.Count}, Do: {doOps}, cs/CS: {csOps}, scn/SCN/sc/SC: {scnOps}");
+
                 ProcessOperators(operators);
+                streamIndex++;
             }
+
+            // Render annotation appearances
+            RenderAnnotations(page);
         }
         finally
         {
             // Always end page, even if exception occurs
             _target.EndPage();
         }
+    }
+
+    /// <summary>
+    /// Renders annotation appearance streams on the page
+    /// </summary>
+    private void RenderAnnotations(PdfPage page)
+    {
+        var annotations = page.GetAnnotations();
+        if (annotations == null || annotations.Count == 0)
+            return;
+
+        Console.WriteLine($"[ANNOTATIONS] Found {annotations.Count} annotations");
+
+        foreach (var annotObj in annotations)
+        {
+            // Resolve annotation reference if needed
+            PdfDictionary? annotDict = annotObj switch
+            {
+                PdfIndirectReference reference => _document?.GetObject(reference.ObjectNumber) as PdfDictionary,
+                PdfDictionary dict => dict,
+                _ => null
+            };
+
+            if (annotDict == null)
+                continue;
+
+            // Get annotation rectangle
+            if (!annotDict.TryGetValue(new PdfName("Rect"), out var rectObj))
+                continue;
+
+            var rectArray = rectObj switch
+            {
+                PdfArray arr => arr,
+                PdfIndirectReference rRef => _document?.GetObject(rRef.ObjectNumber) as PdfArray,
+                _ => null
+            };
+
+            if (rectArray == null || rectArray.Count < 4)
+                continue;
+
+            double llx = GetAnnotNumber(rectArray[0]);
+            double lly = GetAnnotNumber(rectArray[1]);
+            double urx = GetAnnotNumber(rectArray[2]);
+            double ury = GetAnnotNumber(rectArray[3]);
+
+            // Get appearance dictionary
+            if (!annotDict.TryGetValue(new PdfName("AP"), out var apObj))
+                continue;
+
+            var apDict = apObj switch
+            {
+                PdfDictionary dict => dict,
+                PdfIndirectReference apRef => _document?.GetObject(apRef.ObjectNumber) as PdfDictionary,
+                _ => null
+            };
+
+            if (apDict == null)
+                continue;
+
+            // Get normal appearance (N)
+            if (!apDict.TryGetValue(new PdfName("N"), out var nObj))
+                continue;
+
+            // N can be a stream or a dictionary of streams (for different appearance states)
+            PdfStream? appearanceStream = nObj switch
+            {
+                PdfStream stream => stream,
+                PdfIndirectReference nRef => _document?.GetObject(nRef.ObjectNumber) as PdfStream,
+                PdfDictionary stateDict => GetAppearanceFromStateDict(stateDict, annotDict),
+                _ => null
+            };
+
+            if (appearanceStream == null)
+                continue;
+
+            // Get appearance stream's BBox
+            PdfArray? bbox = null;
+            if (appearanceStream.Dictionary.TryGetValue(new PdfName("BBox"), out var bboxObj))
+            {
+                bbox = bboxObj switch
+                {
+                    PdfArray arr => arr,
+                    PdfIndirectReference bRef => _document?.GetObject(bRef.ObjectNumber) as PdfArray,
+                    _ => null
+                };
+            }
+
+            double bboxLlx = 0, bboxLly = 0, bboxUrx = 1, bboxUry = 1;
+            if (bbox != null && bbox.Count >= 4)
+            {
+                bboxLlx = GetAnnotNumber(bbox[0]);
+                bboxLly = GetAnnotNumber(bbox[1]);
+                bboxUrx = GetAnnotNumber(bbox[2]);
+                bboxUry = GetAnnotNumber(bbox[3]);
+            }
+
+            // Calculate transformation matrix to map BBox to Rect
+            double rectWidth = urx - llx;
+            double rectHeight = ury - lly;
+            double bboxWidth = bboxUrx - bboxLlx;
+            double bboxHeight = bboxUry - bboxLly;
+
+            double sx = bboxWidth != 0 ? rectWidth / bboxWidth : 1;
+            double sy = bboxHeight != 0 ? rectHeight / bboxHeight : 1;
+            double tx = llx - bboxLlx * sx;
+            double ty = lly - bboxLly * sy;
+
+            Console.WriteLine($"[ANNOTATION] Rendering appearance at ({llx:F1}, {lly:F1}) - ({urx:F1}, {ury:F1})");
+
+            // Debug: check for color and border entries
+            if (annotDict.TryGetValue(new PdfName("C"), out var colorObj))
+            {
+                var colorArray = colorObj as PdfArray;
+                if (colorArray != null)
+                {
+                    var components = string.Join(", ", colorArray.Select(c => c.ToString()));
+                    Console.WriteLine($"[ANNOTATION] Has /C color: [{components}]");
+                }
+            }
+            if (annotDict.TryGetValue(new PdfName("Border"), out var borderObj))
+            {
+                Console.WriteLine($"[ANNOTATION] Has /Border: {borderObj}");
+            }
+            if (annotDict.TryGetValue(new PdfName("Subtype"), out var subtypeObj))
+            {
+                Console.WriteLine($"[ANNOTATION] Subtype: {subtypeObj}");
+            }
+
+            // Get annotation appearance stream resources
+            PdfResources? annotResources = null;
+            if (appearanceStream.Dictionary.TryGetValue(new PdfName("Resources"), out var resObj))
+            {
+                var resDict = resObj switch
+                {
+                    PdfDictionary dict => dict,
+                    PdfIndirectReference resRef => _document?.GetObject(resRef.ObjectNumber) as PdfDictionary,
+                    _ => null
+                };
+                if (resDict != null)
+                {
+                    annotResources = new PdfResources(resDict, _document);
+                    Console.WriteLine($"[ANNOTATION] Using annotation resources");
+                }
+            }
+
+            // Save current resources and swap in annotation resources
+            var savedResources = _currentResources;
+            if (annotResources != null)
+                _currentResources = annotResources;
+
+            // Create a new graphics state for the annotation
+            // Use q/Q to save/restore state
+            _target.SaveState();
+
+            // Apply transformation: scale and translate
+            CurrentState.ConcatenateMatrix((float)sx, 0, 0, (float)sy, (float)tx, (float)ty);
+
+            // Parse and render the appearance stream
+            var decodedData = appearanceStream.GetDecodedData();
+            var operators = PdfContentParser.Parse(decodedData);
+            Console.WriteLine($"[ANNOTATION] Stream has {operators.Count} operators");
+            // Debug: print first few operators
+            foreach (var op in operators.Take(20))
+            {
+                Console.WriteLine($"[ANNOT-OP] {op.GetType().Name}");
+            }
+            ProcessOperators(operators);
+
+            _target.RestoreState();
+
+            // Restore original resources
+            _currentResources = savedResources;
+        }
+    }
+
+    private PdfStream? GetAppearanceFromStateDict(PdfDictionary stateDict, PdfDictionary annotDict)
+    {
+        // Get appearance state name from /AS entry
+        string? stateName = null;
+        if (annotDict.TryGetValue(new PdfName("AS"), out var asObj))
+        {
+            stateName = asObj switch
+            {
+                PdfName name => name.Value,
+                _ => null
+            };
+        }
+
+        if (string.IsNullOrEmpty(stateName))
+        {
+            // Use first entry if no state specified
+            foreach (var kvp in stateDict)
+            {
+                return kvp.Value switch
+                {
+                    PdfStream stream => stream,
+                    PdfIndirectReference sRef => _document?.GetObject(sRef.ObjectNumber) as PdfStream,
+                    _ => null
+                };
+            }
+            return null;
+        }
+
+        // Look up the named state
+        if (stateDict.TryGetValue(new PdfName(stateName), out var stateObj))
+        {
+            return stateObj switch
+            {
+                PdfStream stream => stream,
+                PdfIndirectReference sRef => _document?.GetObject(sRef.ObjectNumber) as PdfStream,
+                _ => null
+            };
+        }
+
+        return null;
+    }
+
+    private static double GetAnnotNumber(PdfObject obj)
+    {
+        return obj switch
+        {
+            PdfInteger i => i.Value,
+            PdfReal r => r.Value,
+            _ => 0
+        };
     }
 
     // ==================== Graphics State ====================
@@ -137,6 +409,9 @@ public class PdfRenderer : PdfContentProcessor
     {
         if (!_currentPath.IsEmpty)
         {
+            var color = CurrentState.StrokeColor;
+            var colorStr = color != null ? string.Join(",", color.Select(c => c.ToString("F2"))) : "null";
+            Console.WriteLine($"[PATH STROKE] ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
             _target.StrokePath(_currentPath, CurrentState);
             _currentPath.Clear();
         }
@@ -146,6 +421,9 @@ public class PdfRenderer : PdfContentProcessor
     {
         if (!_currentPath.IsEmpty)
         {
+            var color = CurrentState.FillColor;
+            var colorStr = color != null ? string.Join(",", color.Select(c => c.ToString("F2"))) : "null";
+            Console.WriteLine($"[PATH FILL] ColorSpace={CurrentState.FillColorSpace}, Color=[{colorStr}], PathEmpty={_currentPath.IsEmpty}");
             _target.FillPath(_currentPath, CurrentState, evenOdd);
             _currentPath.Clear();
         }
@@ -176,14 +454,14 @@ public class PdfRenderer : PdfContentProcessor
     {
         System.Diagnostics.Debug.WriteLine($"PdfRenderer.OnShowText called: {text.Bytes.Length} bytes");
 
-        if (_resources == null || CurrentState.FontName == null)
+        if (_currentResources == null || CurrentState.FontName == null)
         {
-            System.Diagnostics.Debug.WriteLine($"  SKIPPED: _resources={_resources != null}, FontName={CurrentState.FontName}");
+            System.Diagnostics.Debug.WriteLine($"  SKIPPED: _currentResources={_currentResources != null}, FontName={CurrentState.FontName}");
             return;
         }
 
         // Get the font
-        PdfFont? font = _resources.GetFontObject(CurrentState.FontName);
+        PdfFont? font = _currentResources.GetFontObject(CurrentState.FontName);
         if (font == null)
         {
             System.Diagnostics.Debug.WriteLine($"  SKIPPED: Font '{CurrentState.FontName}' not found in resources");
@@ -291,7 +569,7 @@ public class PdfRenderer : PdfContentProcessor
 
         // Try to resolve named color space from resources
 
-        var colorSpaces = _resources?.GetColorSpaces();
+        var colorSpaces = _currentResources?.GetColorSpaces();
         if (colorSpaces == null)
             return;
 
@@ -412,12 +690,17 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnShowTextWithPositioning(PdfArray array)
     {
         // TJ operator: combine all strings and adjustments into a single DrawText call
-        if (_resources == null || CurrentState.FontName == null)
+        if (_currentResources == null || CurrentState.FontName == null)
             return;
 
-        PdfFont? font = _resources.GetFontObject(CurrentState.FontName);
-        if (font == null) return;
+        PdfFont? font = _currentResources.GetFontObject(CurrentState.FontName);
+        if (font == null)
+        {
+            Console.WriteLine($"[FONT] Font '{CurrentState.FontName}' NOT FOUND");
+            return;
+        }
 
+        Console.WriteLine($"[FONT] Using '{CurrentState.FontName}' Type={font.FontType} BaseFont={font.BaseFont}");
         bool isType0 = font.FontType == PdfFontType.Type0;
         var combinedText = new StringBuilder();
         var combinedWidths = new List<double>();
@@ -496,8 +779,14 @@ public class PdfRenderer : PdfContentProcessor
         // Render all text in a single DrawText call
         if (combinedText.Length > 0)
         {
-            string textPreview = combinedText.ToString().Substring(0, Math.Min(20, combinedText.Length));
+            string fullText = combinedText.ToString();
+            string textPreview = fullText.Substring(0, Math.Min(20, fullText.Length));
             Console.WriteLine($"[TJ] Rendering '{textPreview}...' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
+
+            // Show full text for Type0 fonts to debug extra character issue
+            PdfFont? tjFont = _currentResources.GetFontObject(CurrentState.FontName);
+            if (tjFont?.FontType == PdfFontType.Type0)
+                Console.WriteLine($"[TJ-FULL] Type0 text ({fullText.Length} chars, {combinedCharCodes.Count} codes): '{fullText}'");
 
             // DIAGNOSTIC: Log first few widths and check for zeros
             if (combinedWidths.Count > 0)
@@ -523,13 +812,13 @@ public class PdfRenderer : PdfContentProcessor
     {
         Console.WriteLine($"OnInvokeXObject: {name}");
 
-        if (_resources == null)
+        if (_currentResources == null)
         {
             Console.WriteLine($"  No resources");
             return;
         }
 
-        var xobject = _resources.GetXObject(name);
+        var xobject = _currentResources.GetXObject(name);
         if (xobject == null)
         {
             Console.WriteLine($"  XObject not found");

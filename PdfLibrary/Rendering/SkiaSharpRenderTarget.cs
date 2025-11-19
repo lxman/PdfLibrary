@@ -144,24 +144,43 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Get embedded font metrics
             var embeddedMetrics = font.GetEmbeddedMetrics();
             if (embeddedMetrics == null)
+            {
+                if (font.FontType == PdfFontType.Type0)
+                    Console.WriteLine($"[TYPE0-METRICS] Font {font.BaseFont}: embeddedMetrics is NULL");
                 return false;
+            }
             if (!embeddedMetrics.IsValid)
+            {
+                if (font.FontType == PdfFontType.Type0)
+                    Console.WriteLine($"[TYPE0-METRICS] Font {font.BaseFont}: embeddedMetrics.IsValid=false");
                 return false;
+            }
 
             // Position for rendering glyphs
             double currentX = 0;
 
-            for (int i = 0; i < text.Length; i++)
-            {
-                char c = text[i];
+            // Iterate over character codes, not Unicode characters
+            // One character code can decode to multiple Unicode chars (e.g., ligatures)
+            int loopCount = charCodes?.Count ?? text.Length;
 
-                // Get glyph ID for this character
-                // Use original PDF character code if available, otherwise fall back to Unicode
+            for (int i = 0; i < loopCount; i++)
+            {
+                // Get character code - either from original PDF codes or fall back to Unicode
                 ushort charCode = charCodes != null && i < charCodes.Count
                     ? (ushort)charCodes[i]
-                    : (ushort)c;
+                    : (ushort)text[i];
+
+                // Get corresponding character for logging (may not match 1:1 due to ligatures)
+                char displayChar = i < text.Length ? text[i] : '?';
 
                 ushort glyphId;
+
+                // Debug: Check font type and embedded font info
+                if (i == 0 && font.FontType == PdfFontType.Type0)
+                {
+                    Console.WriteLine($"[TYPE0-DEBUG] Font class={font.GetType().Name}, IsCffFont={embeddedMetrics.IsCffFont}, HasEncoding={font.Encoding != null}");
+                    Console.WriteLine($"[TYPE0-DEBUG] DescendantFont={((font as Type0Font)?.DescendantFont?.GetType().Name ?? "null")}");
+                }
 
                 // For CFF fonts without cmap, use glyph name mapping via the PDF encoding
                 if (embeddedMetrics.IsCffFont && font.Encoding != null)
@@ -179,7 +198,20 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 }
                 else
                 {
-                    glyphId = embeddedMetrics.GetGlyphId(charCode);
+                    // For Type0/CID fonts, map CID to GID using CIDToGIDMap
+                    if (font is Type0Font type0Font && type0Font.DescendantFont is CidFont cidFont)
+                    {
+                        // For Type0 fonts, use CIDToGIDMap directly - the mapped value IS the glyph ID
+                        int mappedGid = cidFont.MapCidToGid(charCode);
+                        glyphId = (ushort)mappedGid;
+                        if (i < 3) // Only log first few characters
+                            Console.WriteLine($"[CID-GID] Type0 char '{displayChar}' CID=0x{charCode:X4} -> GID={glyphId}");
+                    }
+                    else
+                    {
+                        // For other fonts, use cmap lookup
+                        glyphId = embeddedMetrics.GetGlyphId(charCode);
+                    }
                 }
 
                 if (glyphId == 0)
@@ -187,6 +219,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
+                    if (font is Type0Font && i < 5)
+                        Console.WriteLine($"[GLYPH-MISS] Type0 char '{displayChar}' CID=0x{charCode:X4} NOT FOUND");
                     continue;
                 }
 
@@ -194,6 +228,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 var glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
                 if (glyphOutline == null)
                 {
+                    if (font is Type0Font && i < 3)
+                        Console.WriteLine($"[OUTLINE-NULL] Type0 GID={glyphId} has no outline");
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
                     continue;
@@ -526,28 +562,21 @@ public class SkiaSharpRenderTarget : IRenderTarget
         skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
         // Transform the path to device coordinates
-        var pdfMatrix = state.Ctm;
-        var displayMatrix = new Matrix3x2(
-            1, 0,
-            0, -1,
-            0, (float)_pageHeight
-        );
-        var deviceMatrix = pdfMatrix * displayMatrix;
-
-        var skMatrix = new SKMatrix
+        // Only apply Y-flip - the CTM was already applied when the path was built
+        var flipMatrix = new SKMatrix
         {
-            ScaleX = deviceMatrix.M11,
-            SkewY = deviceMatrix.M12,
-            SkewX = deviceMatrix.M21,
-            ScaleY = deviceMatrix.M22,
-            TransX = deviceMatrix.M31,
-            TransY = deviceMatrix.M32,
+            ScaleX = 1,
+            SkewY = 0,
+            SkewX = 0,
+            ScaleY = -1,
+            TransX = 0,
+            TransY = (float)_pageHeight,
             Persp0 = 0,
             Persp1 = 0,
             Persp2 = 1
         };
 
-        skPath.Transform(skMatrix);
+        skPath.Transform(flipMatrix);
 
         // Apply clipping path (persists until RestoreState is called)
         _canvas.ClipPath(skPath, SKClipOperation.Intersect, antialias: true);
@@ -598,31 +627,28 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
     /// <summary>
     /// Apply transformation matrix for path operations
-    /// (Different from text transformation - no glyph flip needed)
+    /// Paths are already transformed by CTM during construction (OnMoveTo, OnLineTo, etc.)
+    /// So we only need to apply the display matrix (Y-flip) here
     /// </summary>
     private void ApplyPathTransformationMatrix(PdfGraphicsState state)
     {
-        var pdfMatrix = state.Ctm;
-
-        // Create page-to-device display matrix
+        // Paths are already transformed by CTM during construction
+        // Only apply the display matrix (Y-flip for PDF to screen coordinates)
         var displayMatrix = new Matrix3x2(
             1, 0,
             0, -1,
             0, (float)_pageHeight
         );
 
-        // Concatenate transformations
-        var deviceMatrix = pdfMatrix * displayMatrix;
-
         // Convert to SKMatrix
         var skMatrix = new SKMatrix
         {
-            ScaleX = deviceMatrix.M11,
-            SkewY = deviceMatrix.M12,
-            SkewX = deviceMatrix.M21,
-            ScaleY = deviceMatrix.M22,
-            TransX = deviceMatrix.M31,
-            TransY = deviceMatrix.M32,
+            ScaleX = displayMatrix.M11,
+            SkewY = displayMatrix.M12,
+            SkewX = displayMatrix.M21,
+            ScaleY = displayMatrix.M22,
+            TransX = displayMatrix.M31,
+            TransY = displayMatrix.M32,
             Persp0 = 0,
             Persp1 = 0,
             Persp2 = 1
@@ -672,38 +698,41 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             try
             {
-                // Apply full transformation matrix following PDFium's approach
-                // Images are drawn in a 1x1 unit square at origin, transformed by CTM
+                // Get CTM values - this defines how the unit square maps to PDF page coordinates
                 var pdfMatrix = state.Ctm;
 
-                // Create page-to-device display matrix for images (same as text)
-                // For rotation=0: [1, 0, 0, -1, 0, pageHeight]
-                // This maps PDF coordinates (x, y) to device coordinates (x, pageHeight - y)
-                // Pixels are manually flipped in CreateBitmapFromPdfImage, so the double flip results in correct orientation
-                var displayMatrix = new Matrix3x2(
-                    1, 0,                       // a, b
-                    0, -1,                      // c, d (negative d flips Y-axis)
-                    0, (float)_pageHeight       // e, f (translate Y by page height)
-                );
-
-                // Concatenate: pdfMatrix * displayMatrix to get device space transformation
-                var deviceMatrix = pdfMatrix * displayMatrix;
-
-                // Convert to SKMatrix and apply to canvas
-                var skMatrix = new SKMatrix
+                // Create transformation matrix for device coordinates
+                // Apply CTM first, then flip Y for device space
+                var ctmMatrix = new SKMatrix
                 {
-                    ScaleX = deviceMatrix.M11,
-                    SkewY = deviceMatrix.M12,
-                    SkewX = deviceMatrix.M21,
-                    ScaleY = deviceMatrix.M22,
-                    TransX = deviceMatrix.M31,
-                    TransY = deviceMatrix.M32,
+                    ScaleX = pdfMatrix.M11,
+                    SkewY = pdfMatrix.M12,
+                    SkewX = pdfMatrix.M21,
+                    ScaleY = pdfMatrix.M22,
+                    TransX = pdfMatrix.M31,
+                    TransY = pdfMatrix.M32,
                     Persp0 = 0,
                     Persp1 = 0,
                     Persp2 = 1
                 };
 
-                _canvas.Concat(in skMatrix);
+                // Y-flip matrix for device coordinates
+                var flipMatrix = new SKMatrix
+                {
+                    ScaleX = 1,
+                    SkewY = 0,
+                    SkewX = 0,
+                    ScaleY = -1,
+                    TransX = 0,
+                    TransY = (float)_pageHeight,
+                    Persp0 = 0,
+                    Persp1 = 0,
+                    Persp2 = 1
+                };
+
+                // Concatenate: CTM * flip (apply CTM first, then flip for device coords)
+                var deviceMatrix = ctmMatrix.PostConcat(flipMatrix);
+                _canvas.Concat(deviceMatrix);
 
                 // Draw image in canonical 1x1 unit square at origin
                 // The transformation matrix will position/scale/rotate it correctly
@@ -712,15 +741,13 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // Use high-quality sampling for image scaling
                 using var paint = new SKPaint
                 {
-                    IsAntialias = true
+                    IsAntialias = true,
+                    FilterQuality = SKFilterQuality.High
                 };
 
-                // Convert bitmap to image for better sampling options support
-                using var skImage = SKImage.FromBitmap(bitmap);
-
-                // Use bilinear filtering for downscaling
-                var samplingOptions = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
-                _canvas.DrawImage(skImage, unitRect, samplingOptions, paint);
+                // Draw bitmap with explicit source and destination rects
+                var srcRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
+                _canvas.DrawBitmap(bitmap, srcRect, unitRect, paint);
             }
             finally
             {
