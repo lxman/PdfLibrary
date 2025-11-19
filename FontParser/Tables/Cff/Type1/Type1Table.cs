@@ -25,6 +25,26 @@ namespace FontParser.Tables.Cff.Type1
 
         public List<List<string>> CharStringList { get; } = new List<List<string>>();
 
+        /// <summary>
+        /// Raw charstring data for each glyph (for direct parsing)
+        /// </summary>
+        public List<List<byte>> RawCharStrings { get; private set; } = new List<List<byte>>();
+
+        /// <summary>
+        /// Global subroutines for charstring parsing
+        /// </summary>
+        public List<List<byte>> GlobalSubroutines { get; private set; } = new List<List<byte>>();
+
+        /// <summary>
+        /// Local subroutines for charstring parsing
+        /// </summary>
+        public List<List<byte>> LocalSubroutines => _localSubroutines;
+
+        /// <summary>
+        /// Nominal width for glyph width calculations
+        /// </summary>
+        public int NominalWidthX { get; private set; }
+
         private readonly Type1TopDictOperatorEntries _type1TopDictOperatorEntries =
             new Type1TopDictOperatorEntries(new Dictionary<ushort, CffDictEntry?>());
 
@@ -105,10 +125,36 @@ namespace FontParser.Tables.Cff.Type1
             BuildCharStrings(charStrings, globalSubroutines);
         }
 
+        /// <summary>
+        /// Get glyph outline for a specific glyph index
+        /// </summary>
+        /// <param name="glyphIndex">Index of the glyph (0-based)</param>
+        /// <returns>GlyphOutline with path commands, or null if invalid index</returns>
+        public GlyphOutline? GetGlyphOutline(int glyphIndex)
+        {
+            if (glyphIndex < 0 || glyphIndex >= RawCharStrings.Count)
+                return null;
+
+            var parser = new CharStringParser(
+                48,
+                RawCharStrings[glyphIndex],
+                GlobalSubroutines,
+                _localSubroutines,
+                NominalWidthX
+            );
+
+            return parser.ParseToOutline();
+        }
+
         // Standard CFF
         // One set of local subroutines for the entire font
         private void BuildCharStrings(Type1Index charStrings, List<List<byte>> globalSubroutines)
         {
+            // Store raw data for later glyph outline extraction
+            RawCharStrings = charStrings.Data;
+            GlobalSubroutines = globalSubroutines;
+            NominalWidthX = Convert.ToInt32(_type1PrivateDictOperatorEntries.FirstOrDefault(e => e.Name == "nominalWidthX")?.Operand ?? 0);
+
             foreach (
                 CharStringParser parser in
                 charStrings
@@ -119,7 +165,7 @@ namespace FontParser.Tables.Cff.Type1
                             bytes,
                             globalSubroutines,
                             _localSubroutines,
-                            Convert.ToInt32(_type1PrivateDictOperatorEntries.FirstOrDefault(e => e.Name == "nominalWidthX")?.Operand ?? 0)
+                            NominalWidthX
                         )
                     )
             )

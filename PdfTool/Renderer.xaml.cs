@@ -381,7 +381,7 @@ public partial class Renderer : UserControl, IRenderTarget
         System.Diagnostics.Debug.WriteLine("RestoreState: Graphics state restored (visual elements remain)");
     }
 
-    public void SetClippingPath(IPathBuilder path, bool evenOdd)
+    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
         if (path.IsEmpty) return;
 

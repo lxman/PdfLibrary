@@ -279,8 +279,11 @@ public class PdfRenderer : PdfContentProcessor
 
     private void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color)
     {
-        if (string.IsNullOrEmpty(colorSpaceName) || color == null || color.Count == 0)
+        if (string.IsNullOrEmpty(colorSpaceName))
             return;
+
+        // Ensure color list exists
+        color ??= new List<double>();
 
         // Skip device color spaces - they don't need resolution
         if (colorSpaceName == "DeviceGray" || colorSpaceName == "DeviceRGB" || colorSpaceName == "DeviceCMYK")
@@ -326,6 +329,8 @@ public class PdfRenderer : PdfContentProcessor
                         numComponents = (int)nNum.Value;
                     }
 
+                    Console.WriteLine($"[RESOLVE] ICCBased '{colorSpaceName}': N={numComponents}, current color has {color.Count} components, color=[{string.Join(", ", color.Select(c => c.ToString("F2")))}]");
+
                     // Get /Alternate color space
                     string? alternateSpace = null;
                     if (streamDict.TryGetValue(new PdfName("Alternate"), out PdfObject? altObj))
@@ -351,6 +356,18 @@ public class PdfRenderer : PdfContentProcessor
                             3 => "DeviceRGB",
                             4 => "DeviceCMYK",
                             _ => "DeviceGray"
+                        };
+                    }
+
+                    // Initialize default colors if component count doesn't match
+                    if (color.Count != numComponents)
+                    {
+                        color = numComponents switch
+                        {
+                            1 => [0.0],
+                            3 => [0.0, 0.0, 0.0],
+                            4 => [0.0, 0.0, 0.0, 1.0],
+                            _ => [0.0]
                         };
                     }
                 }

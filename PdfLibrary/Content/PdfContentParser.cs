@@ -78,7 +78,15 @@ public class PdfContentParser
                     // This is likely an operator
                     PdfOperator? op = CreateOperator(token.Value, operands);
                     if (op != null)
+                    {
+                        // Debug: trace scn/sc operators with operand types
+                        if (token.Value is "scn" or "SCN" or "sc" or "SC")
+                        {
+                            var types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
+                            Console.WriteLine($"[PARSER] {token.Value}: {operands.Count} operands on stack -> [{types}]");
+                        }
                         operators.Add(op);
+                    }
                     operands.Clear();
                     break;
             }

@@ -101,6 +101,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Convert fill color
             var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            Console.WriteLine($"[TEXT COLOR] Space={state.FillColorSpace}, Components=[{string.Join(", ", state.FillColor.Select(c => c.ToString("F2")))}] => {fillColor}");
             using var paint = new SKPaint
             {
                 Color = fillColor,
@@ -117,7 +118,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
-            Console.WriteLine($"[FALLBACK] Using Arial for '{text.Substring(0, Math.Min(20, text.Length))}' with {glyphWidths.Count} widths");
             using var fallbackFont = new SKFont(SKTypeface.FromFamilyName("Arial"), (float)state.FontSize);
 
             float currentX = 0;
@@ -144,20 +144,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Get embedded font metrics
             var embeddedMetrics = font.GetEmbeddedMetrics();
             if (embeddedMetrics == null)
-            {
-                Console.WriteLine($"[GLYPH FAIL] No embedded metrics for '{text.Substring(0, Math.Min(20, text.Length))}' - Font: {font.BaseFont}, Type: {font.FontType}");
                 return false;
-            }
             if (!embeddedMetrics.IsValid)
-            {
-                Console.WriteLine($"[GLYPH FAIL] Invalid embedded metrics for '{text.Substring(0, Math.Min(20, text.Length))}' - Font: {font.BaseFont}");
                 return false;
-            }
 
             // Position for rendering glyphs
             double currentX = 0;
-
-            Console.WriteLine($"[GLYPH] Rendering '{text}' with {glyphWidths.Count} widths, {charCodes?.Count ?? 0} charCodes");
 
             for (int i = 0; i < text.Length; i++)
             {
@@ -168,10 +160,27 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 ushort charCode = charCodes != null && i < charCodes.Count
                     ? (ushort)charCodes[i]
                     : (ushort)c;
-                ushort glyphId = embeddedMetrics.GetGlyphId(charCode);
 
-                double width = i < glyphWidths.Count ? glyphWidths[i] : 0;
-                Console.WriteLine($"[GLYPH]   [{i}] '{c}' charCode={charCode:X4} glyphId={glyphId} width={width:F4} x={currentX:F2}");
+                ushort glyphId;
+
+                // For CFF fonts without cmap, use glyph name mapping via the PDF encoding
+                if (embeddedMetrics.IsCffFont && font.Encoding != null)
+                {
+                    string? glyphName = font.Encoding.GetGlyphName(charCode);
+                    if (glyphName != null)
+                    {
+                        glyphId = embeddedMetrics.GetGlyphIdByName(glyphName);
+                    }
+                    else
+                    {
+                        // Fall back to direct lookup
+                        glyphId = embeddedMetrics.GetGlyphId(charCode);
+                    }
+                }
+                else
+                {
+                    glyphId = embeddedMetrics.GetGlyphId(charCode);
+                }
 
                 if (glyphId == 0)
                 {
@@ -199,11 +208,39 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 }
 
                 // Convert glyph outline to SKPath
-                var glyphPath = _glyphConverter.ConvertToPath(
-                    glyphOutline,
-                    (float)state.FontSize,
-                    embeddedMetrics.UnitsPerEm
-                );
+                SKPath glyphPath;
+
+                // Check if this is a CFF font for proper cubic Bezier rendering
+                if (embeddedMetrics.IsCffFont)
+                {
+                    var cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
+                    if (cffOutline != null)
+                    {
+                        glyphPath = _glyphConverter.ConvertCffToPath(
+                            cffOutline,
+                            (float)state.FontSize,
+                            embeddedMetrics.UnitsPerEm
+                        );
+                    }
+                    else
+                    {
+                        // Fall back to contour-based conversion
+                        glyphPath = _glyphConverter.ConvertToPath(
+                            glyphOutline,
+                            (float)state.FontSize,
+                            embeddedMetrics.UnitsPerEm
+                        );
+                    }
+                }
+                else
+                {
+                    // TrueType font - use quadratic Bezier conversion
+                    glyphPath = _glyphConverter.ConvertToPath(
+                        glyphOutline,
+                        (float)state.FontSize,
+                        embeddedMetrics.UnitsPerEm
+                    );
+                }
 
                 // Translate path to current position
                 var matrix = SKMatrix.CreateTranslation((float)currentX, 0);
@@ -300,6 +337,36 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     byte g = (byte)((1 - m) * (1 - k) * 255);
                     byte b = (byte)((1 - y) * (1 - k) * 255);
                     return new SKColor(r, g, b);
+                }
+                break;
+            default:
+                // For named/unknown color spaces, try to interpret based on component count
+                // This is a fallback - proper implementation would resolve the named color space
+                if (colorComponents.Count >= 4)
+                {
+                    // Treat as CMYK
+                    double c = colorComponents[0];
+                    double m = colorComponents[1];
+                    double y = colorComponents[2];
+                    double k = colorComponents[3];
+                    byte r = (byte)((1 - c) * (1 - k) * 255);
+                    byte g = (byte)((1 - m) * (1 - k) * 255);
+                    byte b = (byte)((1 - y) * (1 - k) * 255);
+                    return new SKColor(r, g, b);
+                }
+                else if (colorComponents.Count >= 3)
+                {
+                    // Treat as RGB
+                    byte r = (byte)(colorComponents[0] * 255);
+                    byte g = (byte)(colorComponents[1] * 255);
+                    byte b = (byte)(colorComponents[2] * 255);
+                    return new SKColor(r, g, b);
+                }
+                else if (colorComponents.Count >= 1)
+                {
+                    // Treat as grayscale
+                    byte gray = (byte)(colorComponents[0] * 255);
+                    return new SKColor(gray, gray, gray);
                 }
                 break;
         }
@@ -596,19 +663,10 @@ public class SkiaSharpRenderTarget : IRenderTarget
     {
         try
         {
-            var filters = image.Filters;
-            string filterList = filters.Count > 0 ? string.Join(", ", filters) : "None";
-            Console.WriteLine($"[DrawImage] Size: {image.Width}x{image.Height}, ColorSpace: {image.ColorSpace}, BPC: {image.BitsPerComponent}, Filters: {filterList}");
-
             // Create SKBitmap from PDF image data
             var bitmap = CreateBitmapFromPdfImage(image);
             if (bitmap == null)
-            {
-                Console.WriteLine($"[DrawImage] Failed to create bitmap");
                 return;
-            }
-
-            Console.WriteLine($"[DrawImage] Bitmap created: {bitmap.Width}x{bitmap.Height}, ColorType: {bitmap.ColorType}");
 
             _canvas.Save();
 
@@ -617,7 +675,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // Apply full transformation matrix following PDFium's approach
                 // Images are drawn in a 1x1 unit square at origin, transformed by CTM
                 var pdfMatrix = state.Ctm;
-                Console.WriteLine($"[DrawImage] CTM: [{pdfMatrix.M11:F2}, {pdfMatrix.M12:F2}, {pdfMatrix.M21:F2}, {pdfMatrix.M22:F2}, {pdfMatrix.M31:F2}, {pdfMatrix.M32:F2}]");
 
                 // Create page-to-device display matrix for images (same as text)
                 // For rotation=0: [1, 0, 0, -1, 0, pageHeight]
@@ -631,8 +688,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                 // Concatenate: pdfMatrix * displayMatrix to get device space transformation
                 var deviceMatrix = pdfMatrix * displayMatrix;
-
-                Console.WriteLine($"[DrawImage] Device matrix: [{deviceMatrix.M11:F2}, {deviceMatrix.M12:F2}, {deviceMatrix.M21:F2}, {deviceMatrix.M22:F2}, {deviceMatrix.M31:F2}, {deviceMatrix.M32:F2}]");
 
                 // Convert to SKMatrix and apply to canvas
                 var skMatrix = new SKMatrix
@@ -666,7 +721,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // Use bilinear filtering for downscaling
                 var samplingOptions = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
                 _canvas.DrawImage(skImage, unitRect, samplingOptions, paint);
-                Console.WriteLine($"[DrawImage] Bitmap drawn successfully");
             }
             finally
             {
@@ -674,10 +728,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 bitmap.Dispose();
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[DrawImage] Error: {ex.Message}");
-            Console.WriteLine($"[DrawImage] Stack: {ex.StackTrace}");
+            // Image rendering failed, skip this image
         }
     }
 
@@ -696,7 +749,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
             bool hasSMask = image.HasAlpha;
             if (hasSMask)
             {
-                Console.WriteLine($"[CreateBitmap] Image has SMask, extracting alpha channel...");
                 // Extract SMask from the image stream
                 var stream = image.Stream;
                 if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out var smaskObj))
@@ -709,11 +761,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     {
                         var smaskImage = new PdfImage(smaskStream, _document);
                         smaskData = smaskImage.GetDecodedData();
-                        Console.WriteLine($"[CreateBitmap] SMask extracted: {smaskData.Length} bytes");
-                    }
-                    else
-                    {
-                        Console.WriteLine($"[CreateBitmap] WARNING: SMask could not be resolved (type: {smaskObj?.GetType().Name ?? "null"})");
                     }
                 }
             }
@@ -726,10 +773,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // Handle indexed color images
                 var paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
                 if (paletteData == null || baseColorSpace == null)
-                {
-                    Console.WriteLine($"[CreateBitmap] Failed to get indexed palette");
                     return null;
-                }
 
                 // Use Unpremul alpha type for SMask (we set colors without premultiplying)
                 var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
@@ -854,15 +898,14 @@ public class SkiaSharpRenderTarget : IRenderTarget
             }
             else
             {
-                Console.WriteLine($"[DrawImage] Unsupported: {colorSpace}/{bitsPerComponent}bpc");
+                // Unsupported color space/bits per component combination
                 return null;
             }
 
             return bitmap;
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"[CreateBitmap] Error: {ex.Message}");
             return null;
         }
     }

@@ -16,13 +16,18 @@ public class Program
     private const int LogoWidth = 96;
     private const int LogoHeight = 51;
 
+    // Output directory for comparison images
+    private static string _outputDir = AppContext.BaseDirectory;
+
     public static void Main(string[] args)
     {
         try
         {
             Console.WriteLine("=== Image Comparison Tool ===\n");
 
-            string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
+            string pdfPath = args.Length > 0
+                ? args[0]
+                : @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
             Console.WriteLine($"Loading PDF: {pdfPath}\n");
 
             if (!File.Exists(pdfPath))
@@ -75,7 +80,9 @@ public class Program
             Console.WriteLine("  - Difference_Map.png");
 
             // Analyze color histograms
-            ColorHistogram.AnalyzeAndCompare("PDFium_Logo.png", "PdfLibrary_Logo.png");
+            ColorHistogram.AnalyzeAndCompare(
+                Path.Combine(_outputDir, "PDFium_Logo.png"),
+                Path.Combine(_outputDir, "PdfLibrary_Logo.png"));
 
             pdfiumLogo.Dispose();
             pdfLibraryLogo.Dispose();
@@ -244,9 +251,10 @@ public class Program
 
     private static void SaveBitmap(SKBitmap bitmap, string filename)
     {
+        string fullPath = Path.Combine(_outputDir, filename);
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        using var stream = File.OpenWrite(filename);
+        using var stream = File.OpenWrite(fullPath);
         data.SaveTo(stream);
         Console.WriteLine($"✓ Saved: {filename}");
     }

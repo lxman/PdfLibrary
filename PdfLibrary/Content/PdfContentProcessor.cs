@@ -234,6 +234,7 @@ public abstract class PdfContentProcessor
                 break;
 
             case SetFillRgbOperator rg:
+                Console.WriteLine($"[rg OPERATOR] R={rg.R:F2}, G={rg.G:F2}, B={rg.B:F2}");
                 CurrentState.SetFillRgb(rg.R, rg.G, rg.B);
                 OnColorChanged();
                 break;
@@ -252,11 +253,28 @@ public abstract class PdfContentProcessor
             // Color space operators
             case SetStrokeColorSpaceOperator cs:
                 CurrentState.StrokeColorSpace = cs.ColorSpace;
+                // Initialize default color components for the new color space
+                CurrentState.StrokeColor = cs.ColorSpace switch
+                {
+                    "DeviceGray" => [0.0],
+                    "DeviceRGB" => [0.0, 0.0, 0.0],
+                    "DeviceCMYK" => [0.0, 0.0, 0.0, 1.0],
+                    _ => [0.0]
+                };
                 OnColorChanged();
                 break;
 
             case SetFillColorSpaceOperator cs:
+                Console.WriteLine($"[cs OPERATOR] ColorSpace={cs.ColorSpace}");
                 CurrentState.FillColorSpace = cs.ColorSpace;
+                // Initialize default color components for the new color space
+                CurrentState.FillColor = cs.ColorSpace switch
+                {
+                    "DeviceGray" => [0.0],
+                    "DeviceRGB" => [0.0, 0.0, 0.0],
+                    "DeviceCMYK" => [0.0, 0.0, 0.0, 1.0],
+                    _ => [0.0]
+                };
                 OnColorChanged();
                 break;
 
@@ -267,17 +285,23 @@ public abstract class PdfContentProcessor
                 break;
 
             case SetFillColorOperator sc:
+                Console.WriteLine($"[sc OPERATOR] Components=[{string.Join(", ", sc.Components.Select(c => c.ToString("F2")))}]");
                 CurrentState.FillColor = sc.Components;
                 OnColorChanged();
                 break;
 
             case SetStrokeColorExtendedOperator scn:
-                CurrentState.StrokeColor = scn.Components;
+                // Only update color if we have components (0 components means use current color)
+                if (scn.Components.Count > 0)
+                    CurrentState.StrokeColor = scn.Components;
                 OnColorChanged();
                 break;
 
             case SetFillColorExtendedOperator scn:
-                CurrentState.FillColor = scn.Components;
+                Console.WriteLine($"[scn OPERATOR] Operands={scn.Operands.Count}, Components=[{string.Join(", ", scn.Components.Select(c => c.ToString("F2")))}], Pattern={scn.PatternName}");
+                // Only update color if we have components (0 components means use current color)
+                if (scn.Components.Count > 0)
+                    CurrentState.FillColor = scn.Components;
                 OnColorChanged();
                 break;
 

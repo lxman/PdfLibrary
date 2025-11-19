@@ -1,9 +1,12 @@
 using SkiaSharp;
+using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;
+using FontParser.Tables.Cff;
 
 namespace PdfLibrary.Fonts.Embedded;
 
 /// <summary>
-/// Converts TrueType glyph outlines to SkiaSharp SKPath for rendering
+/// Converts glyph outlines to SkiaSharp SKPath for rendering.
+/// Supports both TrueType (quadratic Bezier) and CFF (cubic Bezier) outlines.
 /// </summary>
 public class GlyphToSKPathConverter
 {
@@ -31,6 +34,55 @@ public class GlyphToSKPathConverter
                 continue;
 
             ProcessContour(path, contour, scale);
+        }
+
+        return path;
+    }
+
+    /// <summary>
+    /// Convert a CFF glyph outline to an SKPath suitable for rendering.
+    /// CFF uses cubic Bezier curves unlike TrueType's quadratic curves.
+    /// </summary>
+    /// <param name="outline">The CFF glyph outline to convert</param>
+    /// <param name="fontSize">Font size in points</param>
+    /// <param name="unitsPerEm">Units per em from the font's head table</param>
+    /// <returns>SKPath representing the glyph shape</returns>
+    public SKPath ConvertCffToPath(CffGlyphOutline outline, float fontSize, ushort unitsPerEm)
+    {
+        if (outline == null)
+            throw new ArgumentNullException(nameof(outline));
+
+        if (unitsPerEm == 0)
+            throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
+
+        var path = new SKPath();
+        float scale = fontSize / unitsPerEm;
+
+        foreach (var command in outline.Commands)
+        {
+            switch (command)
+            {
+                case MoveToCommand moveTo:
+                    var movePoint = ScalePoint(moveTo.Point.X, moveTo.Point.Y, scale);
+                    path.MoveTo(movePoint);
+                    break;
+
+                case LineToCommand lineTo:
+                    var linePoint = ScalePoint(lineTo.Point.X, lineTo.Point.Y, scale);
+                    path.LineTo(linePoint);
+                    break;
+
+                case CubicBezierCommand cubic:
+                    var c1 = ScalePoint(cubic.Control1.X, cubic.Control1.Y, scale);
+                    var c2 = ScalePoint(cubic.Control2.X, cubic.Control2.Y, scale);
+                    var end = ScalePoint(cubic.EndPoint.X, cubic.EndPoint.Y, scale);
+                    path.CubicTo(c1, c2, end);
+                    break;
+
+                case ClosePathCommand:
+                    path.Close();
+                    break;
+            }
         }
 
         return path;

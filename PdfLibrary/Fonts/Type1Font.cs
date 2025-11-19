@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
@@ -11,6 +12,8 @@ public class Type1Font : PdfFont
 {
     private double[]? _widths;
     private double _defaultWidth;
+    private EmbeddedFontMetrics? _embeddedMetrics;
+    private bool _metricsLoaded;
 
     public Type1Font(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
@@ -46,6 +49,53 @@ public class Type1Font : PdfFont
         return _defaultWidth > 0
             ? _defaultWidth
             : 250; // 250 is PDF default
+    }
+
+    public override EmbeddedFontMetrics? GetEmbeddedMetrics()
+    {
+        if (_metricsLoaded)
+            return _embeddedMetrics;
+
+        _metricsLoaded = true;
+
+        try
+        {
+            // Get font descriptor
+            PdfFontDescriptor? descriptor = GetDescriptor();
+            if (descriptor == null)
+                return null;
+
+            // Try to get embedded CFF data (FontFile3) - preferred for Type1C
+            byte[]? fontData = descriptor.GetFontFile3();
+            string fontFileType = "FontFile3";
+
+            // If no FontFile3, try classic Type1 (FontFile)
+            // Note: FontFile uses PFB format which may need different parsing
+            if (fontData == null)
+            {
+                fontData = descriptor.GetFontFile();
+                fontFileType = "FontFile";
+            }
+
+            if (fontData == null)
+                return null;
+
+            // Debug: Log which font file type we're using
+            Console.WriteLine($"[Type1Font] Loading {fontFileType} for {BaseFont}, {fontData.Length} bytes");
+            if (fontData.Length >= 4)
+            {
+                Console.WriteLine($"[Type1Font] First bytes: {fontData[0]:X2} {fontData[1]:X2} {fontData[2]:X2} {fontData[3]:X2}");
+            }
+
+            // Parse embedded font metrics
+            _embeddedMetrics = new EmbeddedFontMetrics(fontData);
+            return _embeddedMetrics;
+        }
+        catch
+        {
+            // If parsing fails, return null and fall back to PDF widths
+            return null;
+        }
     }
 
     private void LoadEncoding()

@@ -1,4 +1,6 @@
 using FontParser.Tables;
+using FontParser.Tables.Cff;
+using FontParser.Tables.Cff.Type1;
 using FontParser.Tables.Cmap;
 using FontParser.Tables.Head;
 using FontParser.Tables.Hhea;
@@ -6,6 +8,8 @@ using FontParser.Tables.Hmtx;
 using FontParser.Tables.Name;
 using FontParser.Tables.TtTables;
 using FontParser.Tables.TtTables.Glyf;
+using FontParser.Tables.Cff.Type1.Charsets;
+using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;
 
 namespace PdfLibrary.Fonts.Embedded;
 
@@ -25,6 +29,10 @@ public class EmbeddedFontMetrics
     private GlyphTable? _glyphTable;
     private LocaTable? _locaTable;
     private bool _glyphTablesLoaded;
+
+    // CFF font support
+    private Type1Table? _cffTable;
+    private bool _isCffFont;
 
     /// <summary>
     /// Units per em - critical for scaling glyphs to correct size
@@ -62,11 +70,42 @@ public class EmbeddedFontMetrics
     public bool IsValid { get; }
 
     /// <summary>
+    /// Indicates if this is a CFF (OpenType/CFF) font rather than TrueType
+    /// </summary>
+    public bool IsCffFont => _isCffFont;
+
+    /// <summary>
     /// Creates embedded font metrics from raw TrueType/OpenType font data
     /// </summary>
-    /// <param name="fontData">Raw font bytes (TrueType or OpenType/CFF)</param>
+    /// <param name="fontData">Raw font bytes (TrueType, OpenType/CFF, or raw CFF)</param>
     public EmbeddedFontMetrics(byte[] fontData)
     {
+        // Check for raw CFF data (starts with version 01 00)
+        if (fontData.Length >= 2 && fontData[0] == 0x01 && fontData[1] == 0x00)
+        {
+            // Raw CFF font data - parse directly
+            try
+            {
+                _cffTable = new Type1Table(fontData);
+                _isCffFont = true;
+                UnitsPerEm = 1000; // CFF fonts typically use 1000 units per em
+                NumGlyphs = (ushort)_cffTable.RawCharStrings.Count;
+                IsValid = true;
+
+                Console.WriteLine($"[EmbeddedFontMetrics] Raw CFF parsed: {NumGlyphs} glyphs, IsValid={IsValid}");
+
+                // Create a dummy parser (won't be used for CFF)
+                _parser = new TrueTypeParser(fontData);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[EmbeddedFontMetrics] Raw CFF parse failed: {ex.Message}");
+                // CFF parsing failed, try as TrueType below
+                _isCffFont = false;
+            }
+        }
+
         _parser = new TrueTypeParser(fontData);
 
         // Parse head table (required)
@@ -118,7 +157,26 @@ public class EmbeddedFontMetrics
             _cmapTable = new CmapTable(cmapData);
         }
 
+        // Check for CFF font (OpenType with CFF outlines)
+        byte[]? cffData = _parser.GetTable("CFF ");
+        if (cffData != null)
+        {
+            try
+            {
+                _cffTable = new Type1Table(cffData);
+                _isCffFont = true;
+            }
+            catch
+            {
+                // CFF parsing failed, treat as invalid
+                _cffTable = null;
+                _isCffFont = false;
+            }
+        }
+
         // Font is valid if we have the essential tables
+        // For CFF fonts, we need cmap and CFF table
+        // For TrueType, we need cmap, hmtx, and glyf (loaded later)
         IsValid = _headTable != null && _hmtxTable != null && _cmapTable != null;
     }
 
@@ -129,7 +187,118 @@ public class EmbeddedFontMetrics
     /// <returns>Glyph ID, or 0 if not found</returns>
     public ushort GetGlyphId(ushort charCode)
     {
+        // For CFF fonts without cmap table, use direct character code mapping
+        // This works for subset fonts where character codes map directly to glyph indices
+        if (_isCffFont && _cmapTable == null)
+        {
+            // Character code is the glyph index for subset fonts
+            if (charCode < NumGlyphs)
+                return charCode;
+            return 0;
+        }
+
         return _cmapTable?.GetGlyphId(charCode) ?? 0;
+    }
+
+    /// <summary>
+    /// Gets the glyph ID for a glyph name (used for CFF fonts)
+    /// </summary>
+    /// <param name="glyphName">Glyph name (e.g., "o", "C", "space")</param>
+    /// <returns>Glyph ID, or 0 if not found</returns>
+    public ushort GetGlyphIdByName(string glyphName)
+    {
+        if (string.IsNullOrEmpty(glyphName))
+            return 0;
+
+        // For CFF fonts, use the charset to map glyph name to glyph index
+        if (_isCffFont && _cffTable != null)
+        {
+            // First, convert glyph name to SID
+            int sid = GetSidFromGlyphName(glyphName);
+            if (sid < 0)
+                return 0;
+
+            // Search the charset for the glyph index with this SID
+            // Glyph 0 is always .notdef (SID 0)
+            if (sid == 0)
+                return 0;
+
+            // Get the charset from the CFF table
+            ICharset? charset = _cffTable.CharSet;
+            if (charset == null)
+                return 0;
+
+            // Different charset formats store data differently
+            if (charset is CharsetsFormat0 format0)
+            {
+                // Format 0: simple array where Glyphs[glyphIndex-1] = SID
+                // (glyph 0 is .notdef and not in the array)
+                for (int i = 0; i < format0.Glyphs.Count; i++)
+                {
+                    if (format0.Glyphs[i] == sid)
+                        return (ushort)(i + 1); // +1 because .notdef is not in list
+                }
+            }
+            else if (charset is CharsetsFormat1 format1)
+            {
+                // Format 1: ranges with SID and count
+                int glyphIndex = 1; // Start at 1 (.notdef is 0)
+                foreach (var range in format1.Ranges)
+                {
+                    for (int i = 0; i <= range.NumberLeft; i++)
+                    {
+                        if (range.First + i == sid)
+                            return (ushort)glyphIndex;
+                        glyphIndex++;
+                    }
+                }
+            }
+            else if (charset is CharsetsFormat2 format2)
+            {
+                // Format 2: ranges with larger count field
+                int glyphIndex = 1; // Start at 1 (.notdef is 0)
+                foreach (var range in format2.Ranges)
+                {
+                    for (int i = 0; i <= range.NumberLeft; i++)
+                    {
+                        if (range.First + i == sid)
+                            return (ushort)glyphIndex;
+                        glyphIndex++;
+                    }
+                }
+            }
+
+            return 0;
+        }
+
+        // For TrueType fonts, fall back to cmap lookup
+        // This is not ideal but provides some compatibility
+        return 0;
+    }
+
+    /// <summary>
+    /// Convert a glyph name to its Standard String ID (SID)
+    /// </summary>
+    private int GetSidFromGlyphName(string glyphName)
+    {
+        // Check standard strings first (SID 0-390)
+        for (int i = 0; i <= 390; i++)
+        {
+            if (StandardStrings.GetString(i) == glyphName)
+                return i;
+        }
+
+        // Check custom strings in the CFF font
+        if (_cffTable?.Strings != null)
+        {
+            for (int i = 0; i < _cffTable.Strings.Count; i++)
+            {
+                if (_cffTable.Strings[i] == glyphName)
+                    return 391 + i; // Custom strings start at SID 391
+            }
+        }
+
+        return -1; // Not found
     }
 
     /// <summary>
@@ -185,6 +354,13 @@ public class EmbeddedFontMetrics
     /// <returns>GlyphOutline with contour data, or null if glyph not found or invalid</returns>
     public GlyphOutline? GetGlyphOutline(ushort glyphId)
     {
+        // Handle CFF fonts
+        if (_isCffFont && _cffTable != null)
+        {
+            return GetCffGlyphOutline(glyphId);
+        }
+
+        // TrueType font handling
         // Ensure glyph tables are loaded
         if (!_glyphTablesLoaded)
         {
@@ -227,6 +403,116 @@ public class EmbeddedFontMetrics
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Get the raw CFF glyph outline for direct rendering with cubic Bezier curves.
+    /// Returns null for TrueType fonts or if the glyph is not found.
+    /// </summary>
+    /// <param name="glyphId">Glyph ID from the font's cmap table</param>
+    /// <returns>CFF GlyphOutline with path commands, or null</returns>
+    public CffGlyphOutline? GetCffGlyphOutlineDirect(ushort glyphId)
+    {
+        if (!_isCffFont || _cffTable == null)
+            return null;
+
+        return _cffTable.GetGlyphOutline(glyphId);
+    }
+
+    /// <summary>
+    /// Get glyph outline for a CFF font
+    /// Converts CFF path commands to contour-based GlyphOutline
+    /// </summary>
+    private GlyphOutline? GetCffGlyphOutline(ushort glyphId)
+    {
+        if (_cffTable == null)
+            return null;
+
+        // Get CFF glyph outline from Type1Table
+        CffGlyphOutline? cffOutline = _cffTable.GetGlyphOutline(glyphId);
+        if (cffOutline == null)
+            return null;
+
+        // Get glyph metrics
+        ushort advanceWidth = GetAdvanceWidth(glyphId);
+        short leftSideBearing = GetLeftSideBearing(glyphId);
+
+        // Use bounding box from CFF outline if available
+        var metrics = new GlyphMetrics(
+            advanceWidth,
+            leftSideBearing,
+            (short)cffOutline.MinX,
+            (short)cffOutline.MinY,
+            (short)cffOutline.MaxX,
+            (short)cffOutline.MaxY
+        );
+
+        // Convert CFF path commands to contours
+        var contours = ConvertCffCommandsToContours(cffOutline);
+
+        return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
+    }
+
+    /// <summary>
+    /// Convert CFF path commands to contour-based representation
+    /// </summary>
+    private List<GlyphContour> ConvertCffCommandsToContours(CffGlyphOutline cffOutline)
+    {
+        var contours = new List<GlyphContour>();
+        var currentContour = new List<ContourPoint>();
+        float currentX = 0, currentY = 0;
+
+        foreach (var command in cffOutline.Commands)
+        {
+            switch (command)
+            {
+                case MoveToCommand moveTo:
+                    // Start a new contour
+                    if (currentContour.Count > 0)
+                    {
+                        contours.Add(new GlyphContour(currentContour, isClosed: true));
+                        currentContour = new List<ContourPoint>();
+                    }
+                    currentX = moveTo.Point.X;
+                    currentY = moveTo.Point.Y;
+                    currentContour.Add(new ContourPoint(currentX, currentY, onCurve: true));
+                    break;
+
+                case LineToCommand lineTo:
+                    currentX = lineTo.Point.X;
+                    currentY = lineTo.Point.Y;
+                    currentContour.Add(new ContourPoint(currentX, currentY, onCurve: true));
+                    break;
+
+                case CubicBezierCommand cubic:
+                    // For cubic Bezier, we store control points as off-curve
+                    // and the endpoint as on-curve
+                    // Note: This is a simplification - proper rendering should use
+                    // the cubic converter directly for better accuracy
+                    currentContour.Add(new ContourPoint(cubic.Control1.X, cubic.Control1.Y, onCurve: false));
+                    currentContour.Add(new ContourPoint(cubic.Control2.X, cubic.Control2.Y, onCurve: false));
+                    currentX = cubic.EndPoint.X;
+                    currentY = cubic.EndPoint.Y;
+                    currentContour.Add(new ContourPoint(currentX, currentY, onCurve: true));
+                    break;
+
+                case ClosePathCommand:
+                    if (currentContour.Count > 0)
+                    {
+                        contours.Add(new GlyphContour(currentContour, isClosed: true));
+                        currentContour = new List<ContourPoint>();
+                    }
+                    break;
+            }
+        }
+
+        // Add any remaining contour
+        if (currentContour.Count > 0)
+        {
+            contours.Add(new GlyphContour(currentContour, isClosed: true));
+        }
+
+        return contours;
     }
 
     /// <summary>

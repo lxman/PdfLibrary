@@ -149,9 +149,14 @@ public class SetStrokeColorOperator(List<PdfObject> components) : PdfOperator("S
 public class SetFillColorExtendedOperator(List<PdfObject> operands) : PdfOperator("scn", operands)
 {
     public List<double> Components { get; } = operands
-        .OfType<PdfReal>()
-        .Select(r => r.Value)
-        .Concat(operands.OfType<PdfInteger>().Select(i => (double)i.Value))
+        .Select(obj => obj switch
+        {
+            PdfInteger i => (double)i.Value,
+            PdfReal r => r.Value,
+            _ => (double?)null
+        })
+        .Where(v => v.HasValue)
+        .Select(v => v!.Value)
         .ToList();
 
     public string? PatternName { get; } = operands.OfType<PdfName>().FirstOrDefault()?.Value;
@@ -165,9 +170,14 @@ public class SetFillColorExtendedOperator(List<PdfObject> operands) : PdfOperato
 public class SetStrokeColorExtendedOperator(List<PdfObject> operands) : PdfOperator("SCN", operands)
 {
     public List<double> Components { get; } = operands
-        .OfType<PdfReal>()
-        .Select(r => r.Value)
-        .Concat(operands.OfType<PdfInteger>().Select(i => (double)i.Value))
+        .Select(obj => obj switch
+        {
+            PdfInteger i => (double)i.Value,
+            PdfReal r => r.Value,
+            _ => (double?)null
+        })
+        .Where(v => v.HasValue)
+        .Select(v => v!.Value)
         .ToList();
 
     public string? PatternName { get; } = operands.OfType<PdfName>().FirstOrDefault()?.Value;

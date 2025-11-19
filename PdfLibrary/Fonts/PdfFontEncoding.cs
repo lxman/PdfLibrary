@@ -66,6 +66,77 @@ public class PdfFontEncoding
     }
 
     /// <summary>
+    /// Gets the glyph name for a character code
+    /// </summary>
+    public string? GetGlyphName(int charCode)
+    {
+        if (_codeToName.TryGetValue(charCode, out string? name))
+            return name;
+
+        // For standard ASCII, use the character itself as the glyph name
+        if (charCode >= 32 && charCode <= 126)
+        {
+            char c = (char)charCode;
+            // Standard glyph names for common characters
+            return c switch
+            {
+                >= 'A' and <= 'Z' => c.ToString(),
+                >= 'a' and <= 'z' => c.ToString(),
+                >= '0' and <= '9' => c switch
+                {
+                    '0' => "zero",
+                    '1' => "one",
+                    '2' => "two",
+                    '3' => "three",
+                    '4' => "four",
+                    '5' => "five",
+                    '6' => "six",
+                    '7' => "seven",
+                    '8' => "eight",
+                    '9' => "nine",
+                    _ => null
+                },
+                ' ' => "space",
+                '!' => "exclam",
+                '"' => "quotedbl",
+                '#' => "numbersign",
+                '$' => "dollar",
+                '%' => "percent",
+                '&' => "ampersand",
+                '\'' => "quotesingle",
+                '(' => "parenleft",
+                ')' => "parenright",
+                '*' => "asterisk",
+                '+' => "plus",
+                ',' => "comma",
+                '-' => "hyphen",
+                '.' => "period",
+                '/' => "slash",
+                ':' => "colon",
+                ';' => "semicolon",
+                '<' => "less",
+                '=' => "equal",
+                '>' => "greater",
+                '?' => "question",
+                '@' => "at",
+                '[' => "bracketleft",
+                '\\' => "backslash",
+                ']' => "bracketright",
+                '^' => "asciicircum",
+                '_' => "underscore",
+                '`' => "grave",
+                '{' => "braceleft",
+                '|' => "bar",
+                '}' => "braceright",
+                '~' => "asciitilde",
+                _ => null
+            };
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Gets a standard PDF encoding
     /// </summary>
     public static PdfFontEncoding GetStandardEncoding(string name)
