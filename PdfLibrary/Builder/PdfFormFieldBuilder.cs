@@ -50,11 +50,52 @@ public abstract class PdfFormFieldBuilder
     /// </summary>
     public double BorderWidth { get; protected set; } = 1;
 
+    /// <summary>
+    /// Border style
+    /// </summary>
+    public PdfBorderStyle BorderStyle { get; protected set; } = PdfBorderStyle.Solid;
+
+    /// <summary>
+    /// Dash pattern for dashed borders (dash length, gap length)
+    /// </summary>
+    public double[]? DashPattern { get; protected set; }
+
     protected PdfFormFieldBuilder(string name, PdfRect rect)
     {
         Name = name;
         Rect = rect;
     }
+}
+
+/// <summary>
+/// Border styles for form fields
+/// </summary>
+public enum PdfBorderStyle
+{
+    /// <summary>
+    /// Solid border (default)
+    /// </summary>
+    Solid,
+
+    /// <summary>
+    /// Dashed border
+    /// </summary>
+    Dashed,
+
+    /// <summary>
+    /// 3D beveled border (raised appearance)
+    /// </summary>
+    Beveled,
+
+    /// <summary>
+    /// 3D inset border (sunken appearance)
+    /// </summary>
+    Inset,
+
+    /// <summary>
+    /// Single line at bottom (underline style)
+    /// </summary>
+    Underline
 }
 
 /// <summary>
@@ -222,11 +263,42 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
+    /// Set border style
+    /// </summary>
+    public PdfTextFieldBuilder BorderStyled(PdfBorderStyle style, double width = 1)
+    {
+        BorderStyle = style;
+        BorderWidth = width;
+        return this;
+    }
+
+    /// <summary>
+    /// Set dashed border with custom pattern
+    /// </summary>
+    public PdfTextFieldBuilder BorderDashed(double dashLength = 3, double gapLength = 3, double width = 1)
+    {
+        BorderStyle = PdfBorderStyle.Dashed;
+        DashPattern = [dashLength, gapLength];
+        BorderWidth = width;
+        return this;
+    }
+
+    /// <summary>
     /// Set background color
     /// </summary>
     public PdfTextFieldBuilder Background(PdfColor color)
     {
         BackgroundColor = color;
+        return this;
+    }
+
+    /// <summary>
+    /// Remove border (no border)
+    /// </summary>
+    public PdfTextFieldBuilder NoBorder()
+    {
+        BorderWidth = 0;
+        BorderColor = null;
         return this;
     }
 }
@@ -315,6 +387,16 @@ public class PdfCheckboxBuilder : PdfFormFieldBuilder
     public PdfCheckboxBuilder Border(PdfColor color, double width = 1)
     {
         BorderColor = color;
+        BorderWidth = width;
+        return this;
+    }
+
+    /// <summary>
+    /// Set border style
+    /// </summary>
+    public PdfCheckboxBuilder BorderStyled(PdfBorderStyle style, double width = 1)
+    {
+        BorderStyle = style;
         BorderWidth = width;
         return this;
     }
@@ -595,6 +677,16 @@ public class PdfDropdownBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
+    /// Set border style
+    /// </summary>
+    public PdfDropdownBuilder BorderStyled(PdfBorderStyle style, double width = 1)
+    {
+        BorderStyle = style;
+        BorderWidth = width;
+        return this;
+    }
+
+    /// <summary>
     /// Set background color
     /// </summary>
     public PdfDropdownBuilder Background(PdfColor color)
@@ -655,6 +747,27 @@ public class PdfSignatureFieldBuilder : PdfFormFieldBuilder
     public PdfSignatureFieldBuilder Border(PdfColor color, double width = 1)
     {
         BorderColor = color;
+        BorderWidth = width;
+        return this;
+    }
+
+    /// <summary>
+    /// Set border style
+    /// </summary>
+    public PdfSignatureFieldBuilder BorderStyled(PdfBorderStyle style, double width = 1)
+    {
+        BorderStyle = style;
+        BorderWidth = width;
+        return this;
+    }
+
+    /// <summary>
+    /// Set dashed border with custom pattern
+    /// </summary>
+    public PdfSignatureFieldBuilder BorderDashed(double dashLength = 3, double gapLength = 3, double width = 1)
+    {
+        BorderStyle = PdfBorderStyle.Dashed;
+        DashPattern = [dashLength, gapLength];
         BorderWidth = width;
         return this;
     }

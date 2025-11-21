@@ -17,7 +17,7 @@ public class PdfTextExtractor : PdfContentProcessor
     private readonly PdfResources? _resources;
     private bool _inTextObject;
     private Vector2 _lastPosition;
-    private const double SpaceThreshold = 1.0; // Threshold for detecting word spacing
+    private const double SpaceThreshold = 0.2; // Threshold for detecting word spacing (as fraction of font size)
 
     /// <summary>
     /// Creates a text extractor with optional resources for font resolution
@@ -62,7 +62,12 @@ public class PdfTextExtractor : PdfContentProcessor
     protected override void OnBeginText()
     {
         _inTextObject = true;
-        _lastPosition = CurrentState.GetTextPosition();
+        // Don't reset _lastPosition here - we want to track position across text blocks
+        // Only initialize it if this is the very first text block (when _lastPosition is default)
+        if (_lastPosition == default)
+        {
+            _lastPosition = CurrentState.GetTextPosition();
+        }
     }
 
     protected override void OnEndText()
@@ -76,9 +81,10 @@ public class PdfTextExtractor : PdfContentProcessor
 
         Vector2 currentPosition = CurrentState.GetTextPosition();
         float distance = Vector2.Distance(_lastPosition, currentPosition);
+        float threshold = (float)(SpaceThreshold * CurrentState.FontSize);
 
         // If significant movement, add space or newline
-        if (distance > SpaceThreshold * CurrentState.FontSize)
+        if (distance > threshold)
         {
             // Vertical movement suggests new line
             if (Math.Abs(currentPosition.Y - _lastPosition.Y) > CurrentState.FontSize * 0.5)
@@ -86,13 +92,15 @@ public class PdfTextExtractor : PdfContentProcessor
                 _textBuilder.AppendLine();
             }
             // Horizontal movement suggests space
-            else if (Math.Abs(currentPosition.X - _lastPosition.X) > SpaceThreshold * CurrentState.FontSize)
+            else if (Math.Abs(currentPosition.X - _lastPosition.X) > threshold)
             {
                 _textBuilder.Append(' ');
             }
         }
 
-        _lastPosition = currentPosition;
+        // Don't update _lastPosition here - let OnShowText() update it to the END position
+        // after calculating text width. This ensures we're always measuring gaps between
+        // the END of one text and the START of the next.
     }
 
     protected override void OnShowText(PdfString text)

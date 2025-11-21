@@ -60,7 +60,7 @@ public class GlyphExtractionIntegrationTests
 
         EmbeddedFontMetrics? metrics = FindFirstEmbeddedFontMetrics(page);
 
-        if (metrics == null || !metrics.IsValid)
+        if (metrics is not { IsValid: true })
         {
             return;
         }
@@ -94,7 +94,7 @@ public class GlyphExtractionIntegrationTests
 
         EmbeddedFontMetrics? metrics = FindFirstEmbeddedFontMetrics(page);
 
-        if (metrics == null || !metrics.IsValid)
+        if (metrics is not { IsValid: true })
         {
             return;
         }
@@ -126,7 +126,7 @@ public class GlyphExtractionIntegrationTests
 
         EmbeddedFontMetrics? metrics = FindFirstEmbeddedFontMetrics(page);
 
-        if (metrics == null || !metrics.IsValid)
+        if (metrics is not { IsValid: true })
         {
             return;
         }
@@ -154,7 +154,7 @@ public class GlyphExtractionIntegrationTests
 
         EmbeddedFontMetrics? metrics = FindFirstEmbeddedFontMetrics(page);
 
-        if (metrics == null || !metrics.IsValid)
+        if (metrics is not { IsValid: true })
         {
             return;
         }
@@ -180,10 +180,8 @@ public class GlyphExtractionIntegrationTests
     {
         // Try to get fonts from page resources
         var resources = page.GetResources();
-        if (resources == null)
-            return null;
 
-        var fonts = resources.GetFonts();
+        var fonts = resources?.GetFonts();
         if (fonts == null)
             return null;
 
@@ -198,13 +196,10 @@ public class GlyphExtractionIntegrationTests
 
                 // Try to create font and get embedded metrics
                 var font = PdfFont.Create(fontDict);
-                if (font != null)
+                var metrics = font?.GetEmbeddedMetrics();
+                if (metrics is { IsValid: true })
                 {
-                    var metrics = font.GetEmbeddedMetrics();
-                    if (metrics != null && metrics.IsValid)
-                    {
-                        return metrics;
-                    }
+                    return metrics;
                 }
             }
             catch

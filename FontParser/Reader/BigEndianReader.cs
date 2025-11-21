@@ -9,20 +9,22 @@ namespace FontParser.Reader
 {
     public class BigEndianReader : IDisposable
     {
-        public long BytesRemaining => _data.Length - Position;
+        public long BytesRemaining => _dataLength - Position;
 
-        public long WordsRemaining => (_data.Length / 2) - (Position / 2);
+        public long WordsRemaining => (_dataLength / 2) - (Position / 2);
 
         public long Position { get; private set; }
 
         public bool LogChanges { get; set; }
 
         private readonly byte[] _data;
+        private readonly long _dataLength;
 
         public BigEndianReader(byte[] data)
         {
             _data = ArrayPool<byte>.Shared.Rent(data.Length);
             data.CopyTo(_data, 0);
+            _dataLength = data.Length;
         }
 
         public void Seek(long position)
@@ -36,10 +38,10 @@ namespace FontParser.Reader
             [CallerFilePath] string path = "",
             [CallerLineNumber] int line = -1)
         {
-            if (Position + count > _data.Length)
+            if (Position + count > _dataLength)
             {
                 var sb = new StringBuilder();
-                sb.AppendLine($"Source array was not long enough by {Position + count - _data.Length} bytes.");
+                sb.AppendLine($"Source array was not long enough by {Position + count - _dataLength} bytes.");
                 sb.AppendLine($"Called from {path}");
                 sb.AppendLine(member);
                 sb.AppendLine($"Line #{line}");
@@ -217,14 +219,11 @@ namespace FontParser.Reader
             for (var i = 0; i < 5; i++)
             {
                 byte b = ReadByte();
-                if (i == 0 && b == 0x80)
+                if (i == 0 && b == 0x80 || (accumulator & 0xFE000000) != 0)
                 {
                     throw new Exception("Invalid base 128 value");
                 }
-                if ((accumulator & 0xFE000000) != 0)
-                {
-                    throw new Exception("Invalid base 128 value");
-                }
+
                 accumulator = (accumulator << 7) | (uint)(b & 0x7F);
                 if ((b & 0x80) == 0)
                 {

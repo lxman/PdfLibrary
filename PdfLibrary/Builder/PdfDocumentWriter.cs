@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.IO.Compression;
 using System.Text;
+using SkiaSharp;
 
 namespace PdfLibrary.Builder;
 
@@ -9,8 +11,11 @@ namespace PdfLibrary.Builder;
 public class PdfDocumentWriter
 {
     private int _nextObjectNumber = 1;
-    private readonly List<long> _objectOffsets = new();
+    private readonly Dictionary<int, long> _objectOffsets = new();
     private readonly Dictionary<string, int> _fontObjects = new();
+    private readonly Dictionary<string, int> _fontDescriptorObjects = new(); // For custom fonts
+    private readonly List<(PdfImageContent image, int objectNumber)> _imageObjects = new();
+    private readonly Dictionary<double, int> _extGStateObjects = new(); // opacity -> object number
 
     /// <summary>
     /// Write a document to a file
@@ -29,6 +34,8 @@ public class PdfDocumentWriter
         _nextObjectNumber = 1;
         _objectOffsets.Clear();
         _fontObjects.Clear();
+        _fontDescriptorObjects.Clear();
+        _imageObjects.Clear();
 
         using var writer = new StreamWriter(stream, Encoding.ASCII, leaveOpen: true);
         writer.NewLine = "\n";
@@ -50,6 +57,13 @@ public class PdfDocumentWriter
         foreach (var font in fonts)
         {
             _fontObjects[font] = _nextObjectNumber++;
+
+            // For custom fonts, reserve additional objects for FontDescriptor and FontFile2
+            if (builder.CustomFonts.ContainsKey(font))
+            {
+                _fontDescriptorObjects[font] = _nextObjectNumber++; // FontDescriptor
+                _nextObjectNumber++; // FontFile2 stream (we'll track this in WriteTrueTypeFont)
+            }
         }
 
         // Reserve page objects and their content streams
@@ -59,6 +73,25 @@ public class PdfDocumentWriter
             int pageObj = _nextObjectNumber++;
             int contentObj = _nextObjectNumber++;
             pageObjectNumbers.Add((pageObj, contentObj));
+        }
+
+        // Collect and reserve image objects
+        foreach (var page in builder.Pages)
+        {
+            foreach (var content in page.Content)
+            {
+                if (content is PdfImageContent image)
+                {
+                    int imageObj = _nextObjectNumber++;
+                    _imageObjects.Add((image, imageObj));
+
+                    // Collect opacity values for ExtGState objects
+                    if (image.Opacity < 1.0 && !_extGStateObjects.ContainsKey(image.Opacity))
+                    {
+                        _extGStateObjects[image.Opacity] = _nextObjectNumber++;
+                    }
+                }
+            }
         }
 
         // AcroForm object (if needed)
@@ -132,13 +165,40 @@ public class PdfDocumentWriter
         // Write Font objects
         foreach (var font in fonts)
         {
-            WriteObjectStart(writer, _fontObjects[font]);
-            writer.WriteLine("<< /Type /Font");
-            writer.WriteLine("   /Subtype /Type1");
-            writer.WriteLine($"   /BaseFont /{font}");
-            writer.WriteLine("   /Encoding /WinAnsiEncoding");
+            if (builder.CustomFonts.TryGetValue(font, out var customFont))
+            {
+                // Write TrueType font with embedding
+                WriteTrueTypeFont(writer, font, customFont);
+            }
+            else
+            {
+                // Write standard Type1 font (Base-14)
+                WriteObjectStart(writer, _fontObjects[font]);
+                writer.WriteLine("<< /Type /Font");
+                writer.WriteLine("   /Subtype /Type1");
+                writer.WriteLine($"   /BaseFont /{font}");
+                writer.WriteLine("   /Encoding /WinAnsiEncoding");
+                writer.WriteLine(">>");
+                WriteObjectEnd(writer);
+            }
+        }
+
+        // Write ExtGState objects for opacity
+        foreach (var (opacity, objNum) in _extGStateObjects)
+        {
+            WriteObjectStart(writer, objNum);
+            writer.WriteLine("<<");
+            writer.WriteLine("   /Type /ExtGState");
+            writer.WriteLine($"   /ca {opacity:F2}"); // Stroking alpha
+            writer.WriteLine($"   /CA {opacity:F2}"); // Non-stroking alpha
             writer.WriteLine(">>");
             WriteObjectEnd(writer);
+        }
+
+        // Write Image XObjects
+        foreach (var (image, objNum) in _imageObjects)
+        {
+            WriteImageXObject(writer, objNum, image);
         }
 
         // Write Page objects and content
@@ -165,6 +225,30 @@ public class PdfDocumentWriter
                 {
                     writer.WriteLine($"         /F{fontIndex} {_fontObjects[font]} 0 R");
                     fontIndex++;
+                }
+                writer.WriteLine("      >>");
+            }
+
+            // Add XObject dictionary for images
+            if (_imageObjects.Count > 0)
+            {
+                writer.WriteLine("      /XObject <<");
+                for (int imgIdx = 0; imgIdx < _imageObjects.Count; imgIdx++)
+                {
+                    writer.WriteLine($"         /Im{imgIdx + 1} {_imageObjects[imgIdx].objectNumber} 0 R");
+                }
+                writer.WriteLine("      >>");
+            }
+
+            // Add ExtGState dictionary for opacity
+            if (_extGStateObjects.Count > 0)
+            {
+                writer.WriteLine("      /ExtGState <<");
+                int gsIndex = 1;
+                foreach (var (opacity, objNum) in _extGStateObjects.OrderBy(x => x.Key))
+                {
+                    writer.WriteLine($"         /GS{gsIndex} {objNum} 0 R");
+                    gsIndex++;
                 }
                 writer.WriteLine("      >>");
             }
@@ -247,9 +331,10 @@ public class PdfDocumentWriter
         writer.WriteLine("xref");
         writer.WriteLine($"0 {_objectOffsets.Count + 1}");
         writer.WriteLine("0000000000 65535 f ");
-        foreach (var offset in _objectOffsets)
+        // Write offsets in object number order (1 to N)
+        for (int objNum = 1; objNum <= _objectOffsets.Count; objNum++)
         {
-            writer.WriteLine($"{offset:D10} 00000 n ");
+            writer.WriteLine($"{_objectOffsets[objNum]:D10} 00000 n ");
         }
 
         // Write trailer
@@ -267,7 +352,7 @@ public class PdfDocumentWriter
     private void WriteObjectStart(StreamWriter writer, int objectNumber)
     {
         writer.Flush();
-        _objectOffsets.Add(writer.BaseStream.Position);
+        _objectOffsets[objectNumber] = writer.BaseStream.Position;
         writer.WriteLine($"{objectNumber} 0 obj");
     }
 
@@ -345,10 +430,57 @@ public class PdfDocumentWriter
             {
                 case PdfTextContent text:
                     int fontIndex = fonts.IndexOf(text.FontName) + 1;
+
+                    // Graphics state operators must be OUTSIDE the text block
+                    // Set stroke color and line width before BT
+                    if (text.StrokeColor.HasValue)
+                    {
+                        var sc = text.StrokeColor.Value;
+                        sb.AppendLine($"{sc.R:F3} {sc.G:F3} {sc.B:F3} RG");
+                        sb.AppendLine($"{text.StrokeWidth:F2} w");
+                    }
+
                     sb.AppendLine("BT");
+
+                    // Set font
                     sb.AppendLine($"/F{fontIndex} {text.FontSize:F1} Tf");
+
+                    // ALWAYS set all text state operators to ensure clean state
+                    // (text state persists across BT/ET blocks, so we must reset to defaults)
+                    sb.AppendLine($"{text.CharacterSpacing:F2} Tc");
+                    sb.AppendLine($"{text.WordSpacing:F2} Tw");
+                    sb.AppendLine($"{text.HorizontalScale:F1} Tz");
+                    sb.AppendLine($"{text.TextRise:F2} Ts");
+                    sb.AppendLine($"{(int)text.RenderMode} Tr");
+
+                    if (text.LineSpacing > 0)
+                        sb.AppendLine($"{text.LineSpacing:F2} TL");
+
+                    // Fill color (rg is allowed inside BT...ET)
                     sb.AppendLine($"{text.FillColor.R:F3} {text.FillColor.G:F3} {text.FillColor.B:F3} rg");
-                    sb.AppendLine($"{text.X:F2} {text.Y:F2} Td");
+
+                    // Position with optional rotation using text matrix
+                    // Text matrix: [a b c d e f] where:
+                    //   a = horizontal scaling * cos(rotation)
+                    //   b = horizontal scaling * sin(rotation)
+                    //   c = -sin(rotation)
+                    //   d = cos(rotation)
+                    //   e = x position
+                    //   f = y position
+                    if (text.Rotation != 0)
+                    {
+                        double radians = text.Rotation * Math.PI / 180;
+                        double cos = Math.Cos(radians);
+                        double sin = Math.Sin(radians);
+                        sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} {text.X:F2} {text.Y:F2} Tm");
+                    }
+                    else
+                    {
+                        // Use Tm for absolute positioning (1 0 0 1 x y = identity matrix at position x,y)
+                        sb.AppendLine($"1 0 0 1 {text.X:F2} {text.Y:F2} Tm");
+                    }
+
+                    // Output text
                     sb.AppendLine($"({EscapePdfString(text.Text)}) Tj");
                     sb.AppendLine("ET");
                     break;
@@ -394,7 +526,68 @@ public class PdfDocumentWriter
                     break;
 
                 case PdfImageContent image:
-                    // TODO: Implement image support
+                    // Find the image index
+                    int imageIndex = -1;
+                    for (int idx = 0; idx < _imageObjects.Count; idx++)
+                    {
+                        if (ReferenceEquals(_imageObjects[idx].image, image))
+                        {
+                            imageIndex = idx + 1;
+                            break;
+                        }
+                    }
+
+                    if (imageIndex > 0)
+                    {
+                        sb.AppendLine("q"); // Save graphics state
+
+                        // Apply opacity if not fully opaque
+                        if (image.Opacity < 1.0 && _extGStateObjects.TryGetValue(image.Opacity, out int gsObj))
+                        {
+                            // Find the GS index for this opacity
+                            int gsIndex = 1;
+                            foreach (var opacity in _extGStateObjects.Keys.OrderBy(x => x))
+                            {
+                                if (Math.Abs(opacity - image.Opacity) < 0.001)
+                                {
+                                    sb.AppendLine($"/GS{gsIndex} gs");
+                                    break;
+                                }
+                                gsIndex++;
+                            }
+                        }
+
+                        // Build transformation matrix
+                        double width = image.Rect.Width;
+                        double height = image.Rect.Height;
+                        double x = image.Rect.Left;
+                        double y = image.Rect.Bottom;
+
+                        if (image.Rotation != 0)
+                        {
+                            // Rotation around center of image
+                            double radians = image.Rotation * Math.PI / 180;
+                            double cos = Math.Cos(radians);
+                            double sin = Math.Sin(radians);
+                            double cx = x + width / 2;
+                            double cy = y + height / 2;
+
+                            // Translate to center, rotate, scale, translate back
+                            sb.AppendLine($"1 0 0 1 {cx:F2} {cy:F2} cm"); // Translate to center
+                            sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} 0 0 cm"); // Rotate
+                            sb.AppendLine($"{width:F2} 0 0 {height:F2} {-width / 2:F2} {-height / 2:F2} cm"); // Scale and offset
+                        }
+                        else
+                        {
+                            // Simple transformation: scale and position
+                            // cm matrix: [width 0 0 height x y]
+                            sb.AppendLine($"{width:F2} 0 0 {height:F2} {x:F2} {y:F2} cm");
+                        }
+
+                        // Draw the image
+                        sb.AppendLine($"/Im{imageIndex} Do");
+                        sb.AppendLine("Q"); // Restore graphics state
+                    }
                     break;
             }
         }
@@ -500,7 +693,34 @@ public class PdfDocumentWriter
                 break;
         }
 
-        // Border and background
+        // Border style
+        if (field.BorderWidth > 0)
+        {
+            writer.WriteLine("   /BS <<");
+            writer.WriteLine($"      /W {field.BorderWidth:F1}");
+
+            string styleCode = field.BorderStyle switch
+            {
+                PdfBorderStyle.Solid => "S",
+                PdfBorderStyle.Dashed => "D",
+                PdfBorderStyle.Beveled => "B",
+                PdfBorderStyle.Inset => "I",
+                PdfBorderStyle.Underline => "U",
+                _ => "S"
+            };
+            writer.WriteLine($"      /S /{styleCode}");
+
+            if (field.BorderStyle == PdfBorderStyle.Dashed && field.DashPattern != null)
+            {
+                writer.Write("      /D [");
+                foreach (var d in field.DashPattern)
+                    writer.Write($" {d:F1}");
+                writer.WriteLine(" ]");
+            }
+            writer.WriteLine("   >>");
+        }
+
+        // Border color and background (MK dictionary)
         if (field.BorderColor.HasValue || field.BackgroundColor.HasValue)
         {
             writer.WriteLine("   /MK <<");
@@ -539,5 +759,454 @@ public class PdfDocumentWriter
     private static string PdfDate(DateTime date)
     {
         return $"(D:{date:yyyyMMddHHmmss})";
+    }
+
+    private void WriteImageXObject(StreamWriter writer, int objectNumber, PdfImageContent image)
+    {
+        // Detect image format and get dimensions
+        var (imageData, width, height, colorSpace, bitsPerComponent, filter) = ProcessImage(image);
+
+        WriteObjectStart(writer, objectNumber);
+        writer.WriteLine("<<");
+        writer.WriteLine("   /Type /XObject");
+        writer.WriteLine("   /Subtype /Image");
+        writer.WriteLine($"   /Width {width}");
+        writer.WriteLine($"   /Height {height}");
+        writer.WriteLine($"   /ColorSpace /{colorSpace}");
+        writer.WriteLine($"   /BitsPerComponent {bitsPerComponent}");
+
+        if (!string.IsNullOrEmpty(filter))
+        {
+            writer.WriteLine($"   /Filter /{filter}");
+        }
+
+        if (image.Interpolate)
+        {
+            writer.WriteLine("   /Interpolate true");
+        }
+
+        writer.WriteLine($"   /Length {imageData.Length}");
+        writer.WriteLine(">>");
+        writer.WriteLine("stream");
+        writer.Flush();
+        writer.BaseStream.Write(imageData, 0, imageData.Length);
+        writer.WriteLine();
+        writer.WriteLine("endstream");
+        WriteObjectEnd(writer);
+    }
+
+    private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessImage(PdfImageContent image)
+    {
+        var data = image.ImageData;
+
+        // Check for JPEG signature (FFD8FF)
+        if (data.Length >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF)
+        {
+            // JPEG image - can pass through directly
+            var (width, height) = GetJpegDimensions(data);
+            return (data, width, height, "DeviceRGB", 8, "DCTDecode");
+        }
+
+        // For all other formats (PNG, BMP, etc.), use SkiaSharp to decode
+        try
+        {
+            using var bitmap = SKBitmap.Decode(data);
+            if (bitmap == null)
+            {
+                // Fallback for unknown format
+                return (data, 100, 100, "DeviceRGB", 8, "");
+            }
+
+            int width = bitmap.Width;
+            int height = bitmap.Height;
+
+            // Convert to RGB888 format
+            var rgbData = new byte[width * height * 3];
+            int idx = 0;
+
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    var pixel = bitmap.GetPixel(x, y);
+                    rgbData[idx++] = pixel.Red;
+                    rgbData[idx++] = pixel.Green;
+                    rgbData[idx++] = pixel.Blue;
+                }
+            }
+
+            // Compress based on settings
+            if (image.Compression == PdfImageCompression.Jpeg)
+            {
+                var compressed = CompressJpeg(rgbData, width, height, image.JpegQuality);
+                return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
+            }
+            else if (image.Compression == PdfImageCompression.Flate || image.Compression == PdfImageCompression.Auto)
+            {
+                var compressed = CompressFlate(rgbData);
+                return (compressed, width, height, "DeviceRGB", 8, "FlateDecode");
+            }
+            else if (image.Compression == PdfImageCompression.None)
+            {
+                return (rgbData, width, height, "DeviceRGB", 8, "");
+            }
+
+            // Default: Flate compression
+            var defaultCompressed = CompressFlate(rgbData);
+            return (defaultCompressed, width, height, "DeviceRGB", 8, "FlateDecode");
+        }
+        catch
+        {
+            // If SkiaSharp fails, return a placeholder
+            return (new byte[0], 100, 100, "DeviceRGB", 8, "");
+        }
+    }
+
+    private (int width, int height) GetJpegDimensions(byte[] data)
+    {
+        int i = 2;
+        while (i < data.Length - 9)
+        {
+            if (data[i] != 0xFF)
+            {
+                i++;
+                continue;
+            }
+
+            byte marker = data[i + 1];
+
+            // SOF markers (Start of Frame)
+            if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
+            {
+                int height = (data[i + 5] << 8) | data[i + 6];
+                int width = (data[i + 7] << 8) | data[i + 8];
+                return (width, height);
+            }
+
+            // Skip to next marker
+            if (marker == 0xD8 || marker == 0xD9) // SOI or EOI
+            {
+                i += 2;
+            }
+            else if (marker >= 0xD0 && marker <= 0xD7) // RST markers
+            {
+                i += 2;
+            }
+            else
+            {
+                int length = (data[i + 2] << 8) | data[i + 3];
+                i += 2 + length;
+            }
+        }
+
+        // Default fallback
+        return (100, 100);
+    }
+
+    private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessPngImage(byte[] pngData, PdfImageCompression compression)
+    {
+        // Simple PNG decoder - extract IHDR and IDAT chunks
+        int width = 0, height = 0, bitDepth = 8, colorType = 2;
+        var idatData = new List<byte>();
+
+        int i = 8; // Skip PNG signature
+        while (i < pngData.Length - 12)
+        {
+            int chunkLength = (pngData[i] << 24) | (pngData[i + 1] << 16) | (pngData[i + 2] << 8) | pngData[i + 3];
+            string chunkType = Encoding.ASCII.GetString(pngData, i + 4, 4);
+
+            if (chunkType == "IHDR")
+            {
+                width = (pngData[i + 8] << 24) | (pngData[i + 9] << 16) | (pngData[i + 10] << 8) | pngData[i + 11];
+                height = (pngData[i + 12] << 24) | (pngData[i + 13] << 16) | (pngData[i + 14] << 8) | pngData[i + 15];
+                bitDepth = pngData[i + 16];
+                colorType = pngData[i + 17];
+            }
+            else if (chunkType == "IDAT")
+            {
+                for (int j = 0; j < chunkLength; j++)
+                {
+                    idatData.Add(pngData[i + 8 + j]);
+                }
+            }
+            else if (chunkType == "IEND")
+            {
+                break;
+            }
+
+            i += 12 + chunkLength; // 4 length + 4 type + data + 4 CRC
+        }
+
+        // Decompress PNG data (zlib format)
+        byte[] decompressed;
+        try
+        {
+            using var compressedStream = new MemoryStream(idatData.Skip(2).ToArray()); // Skip zlib header
+            using var deflateStream = new DeflateStream(compressedStream, CompressionMode.Decompress);
+            using var resultStream = new MemoryStream();
+            deflateStream.CopyTo(resultStream);
+            decompressed = resultStream.ToArray();
+        }
+        catch
+        {
+            // Fallback - return compressed data
+            return (idatData.ToArray(), width, height, "DeviceRGB", bitDepth, "FlateDecode");
+        }
+
+        // Remove PNG filter bytes (first byte of each row)
+        int bytesPerPixel = colorType == 2 ? 3 : (colorType == 6 ? 4 : 1);
+        int rowBytes = width * bytesPerPixel;
+        var rgbData = new List<byte>();
+
+        for (int row = 0; row < height; row++)
+        {
+            int rowStart = row * (rowBytes + 1) + 1; // Skip filter byte
+            for (int col = 0; col < rowBytes; col++)
+            {
+                if (rowStart + col < decompressed.Length)
+                {
+                    // Skip alpha channel for RGBA images
+                    if (colorType == 6 && (col + 1) % 4 == 0)
+                        continue;
+                    rgbData.Add(decompressed[rowStart + col]);
+                }
+            }
+        }
+
+        string colorSpace = colorType == 0 ? "DeviceGray" : "DeviceRGB";
+        var finalData = rgbData.ToArray();
+
+        if (compression == PdfImageCompression.Flate || compression == PdfImageCompression.Auto)
+        {
+            finalData = CompressFlate(finalData);
+            return (finalData, width, height, colorSpace, bitDepth, "FlateDecode");
+        }
+
+        return (finalData, width, height, colorSpace, bitDepth, "");
+    }
+
+    private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessBmpImage(byte[] bmpData, PdfImageCompression compression)
+    {
+        // Simple BMP decoder
+        int width = BitConverter.ToInt32(bmpData, 18);
+        int height = Math.Abs(BitConverter.ToInt32(bmpData, 22));
+        int bitsPerPixel = BitConverter.ToInt16(bmpData, 28);
+        int dataOffset = BitConverter.ToInt32(bmpData, 10);
+
+        int bytesPerPixel = bitsPerPixel / 8;
+        int rowSize = ((width * bytesPerPixel + 3) / 4) * 4; // BMP rows are padded to 4 bytes
+
+        var rgbData = new List<byte>();
+
+        // BMP is stored bottom-up, so we read from bottom to top
+        for (int y = height - 1; y >= 0; y--)
+        {
+            int rowStart = dataOffset + y * rowSize;
+            for (int x = 0; x < width; x++)
+            {
+                int pixelOffset = rowStart + x * bytesPerPixel;
+                if (pixelOffset + 2 < bmpData.Length)
+                {
+                    // BMP stores as BGR, we need RGB
+                    rgbData.Add(bmpData[pixelOffset + 2]); // R
+                    rgbData.Add(bmpData[pixelOffset + 1]); // G
+                    rgbData.Add(bmpData[pixelOffset]);     // B
+                }
+            }
+        }
+
+        var finalData = rgbData.ToArray();
+
+        if (compression == PdfImageCompression.Flate || compression == PdfImageCompression.Auto)
+        {
+            finalData = CompressFlate(finalData);
+            return (finalData, width, height, "DeviceRGB", 8, "FlateDecode");
+        }
+
+        return (finalData, width, height, "DeviceRGB", 8, "");
+    }
+
+    private byte[] CompressFlate(byte[] data)
+    {
+        using var outputStream = new MemoryStream();
+
+        // Write zlib header (RFC 1950)
+        // CMF = 0x78 (CM=8 deflate, CINFO=7 for 32K window)
+        // FLG = 0x9C (FCHECK makes header checkable, no dict, default compression)
+        outputStream.WriteByte(0x78);
+        outputStream.WriteByte(0x9C);
+
+        // Write deflate-compressed data
+        using (var deflateStream = new DeflateStream(outputStream, CompressionLevel.Optimal, leaveOpen: true))
+        {
+            deflateStream.Write(data, 0, data.Length);
+        }
+
+        // Write Adler-32 checksum (big-endian)
+        uint adler = ComputeAdler32(data);
+        outputStream.WriteByte((byte)(adler >> 24));
+        outputStream.WriteByte((byte)(adler >> 16));
+        outputStream.WriteByte((byte)(adler >> 8));
+        outputStream.WriteByte((byte)adler);
+
+        return outputStream.ToArray();
+    }
+
+    private uint ComputeAdler32(byte[] data)
+    {
+        const uint MOD_ADLER = 65521;
+        uint a = 1, b = 0;
+
+        foreach (byte c in data)
+        {
+            a = (a + c) % MOD_ADLER;
+            b = (b + a) % MOD_ADLER;
+        }
+
+        return (b << 16) | a;
+    }
+
+    private byte[] CompressJpeg(byte[] rgbData, int width, int height, int quality)
+    {
+        // Create a bitmap from RGB data and encode as JPEG
+        var info = new SKImageInfo(width, height, SKColorType.Rgb888x, SKAlphaType.Opaque);
+        using var bitmap = new SKBitmap(info);
+
+        // Copy RGB data to bitmap
+        var pixels = bitmap.GetPixelSpan();
+        int srcIdx = 0;
+        int dstIdx = 0;
+
+        for (int i = 0; i < width * height; i++)
+        {
+            pixels[dstIdx++] = rgbData[srcIdx++]; // R
+            pixels[dstIdx++] = rgbData[srcIdx++]; // G
+            pixels[dstIdx++] = rgbData[srcIdx++]; // B
+            pixels[dstIdx++] = 255; // A (unused but required for Rgb888x)
+        }
+
+        // Encode as JPEG
+        using var image = SKImage.FromBitmap(bitmap);
+        using var encoded = image.Encode(SKEncodedImageFormat.Jpeg, quality);
+        return encoded.ToArray();
+    }
+
+    /// <summary>
+    /// Write a TrueType font with embedding
+    /// </summary>
+    private void WriteTrueTypeFont(StreamWriter writer, string fontAlias, CustomFontInfo fontInfo)
+    {
+        int fontObj = _fontObjects[fontAlias];
+        int descriptorObj = _fontDescriptorObjects[fontAlias];
+        int fontFileObj = descriptorObj + 1; // FontFile2 comes right after descriptor
+
+        var metrics = fontInfo.Metrics;
+
+        // Write Font Dictionary
+        WriteObjectStart(writer, fontObj);
+        writer.WriteLine("<< /Type /Font");
+        writer.WriteLine("   /Subtype /TrueType");
+        writer.WriteLine($"   /BaseFont /{SanitizeFontName(fontInfo.PostScriptName)}");
+        writer.WriteLine($"   /FontDescriptor {descriptorObj} 0 R");
+        writer.WriteLine("   /Encoding /WinAnsiEncoding");
+
+        // Write FirstChar and LastChar (WinAnsi is 32-255)
+        writer.WriteLine("   /FirstChar 32");
+        writer.WriteLine("   /LastChar 255");
+
+        // Generate Widths array
+        writer.Write("   /Widths [");
+        for (int charCode = 32; charCode <= 255; charCode++)
+        {
+            if ((charCode - 32) % 16 == 0)
+                writer.Write("\n      ");
+
+            ushort width = metrics.GetCharacterAdvanceWidth((ushort)charCode);
+            writer.Write($"{width} ");
+        }
+        writer.WriteLine("\n   ]");
+
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+
+        // Write FontDescriptor
+        WriteFontDescriptor(writer, descriptorObj, fontFileObj, fontInfo);
+
+        // Write FontFile2 stream (embedded TrueType data)
+        WriteFontFile2Stream(writer, fontFileObj, fontInfo.FontData);
+    }
+
+    /// <summary>
+    /// Write font descriptor object
+    /// </summary>
+    private void WriteFontDescriptor(StreamWriter writer, int descriptorObj, int fontFileObj, CustomFontInfo fontInfo)
+    {
+        var metrics = fontInfo.Metrics;
+
+        WriteObjectStart(writer, descriptorObj);
+        writer.WriteLine("<< /Type /FontDescriptor");
+        writer.WriteLine($"   /FontName /{SanitizeFontName(fontInfo.PostScriptName)}");
+
+        // Font flags (see PDF spec section 9.8.2)
+        // Bit 1 (0x01): FixedPitch
+        // Bit 6 (0x20): Symbolic (not set for standard fonts)
+        // Bit 7 (0x40): Nonsymbolic (set for standard fonts with WinAnsi)
+        int flags = 0x40; // Nonsymbolic
+        writer.WriteLine($"   /Flags {flags}");
+
+        // Font bounding box (estimate if not available)
+        // Scale from font units to 1000-unit coordinate system
+        double scale = 1000.0 / metrics.UnitsPerEm;
+        int llx = -200;  // Typical left bearing
+        int lly = (int)(metrics.Descender * scale);
+        int urx = 1000;  // Typical right edge
+        int ury = (int)(metrics.Ascender * scale);
+
+        writer.WriteLine($"   /FontBBox [{llx} {lly} {urx} {ury}]");
+        writer.WriteLine($"   /ItalicAngle 0");
+        writer.WriteLine($"   /Ascent {(int)(metrics.Ascender * scale)}");
+        writer.WriteLine($"   /Descent {(int)(metrics.Descender * scale)}");
+        writer.WriteLine($"   /CapHeight {(int)(metrics.Ascender * scale * 0.7)}"); // Estimate
+        writer.WriteLine($"   /StemV 80"); // Estimate - would need complex font analysis for exact value
+
+        // Reference to embedded font program
+        writer.WriteLine($"   /FontFile2 {fontFileObj} 0 R");
+
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+    }
+
+    /// <summary>
+    /// Write FontFile2 stream with embedded TrueType data
+    /// </summary>
+    private void WriteFontFile2Stream(StreamWriter writer, int fontFileObj, byte[] fontData)
+    {
+        // Optionally compress the font data
+        byte[] compressedData = CompressFlate(fontData);
+
+        WriteObjectStart(writer, fontFileObj);
+        writer.WriteLine($"<< /Length {compressedData.Length}");
+        writer.WriteLine($"   /Length1 {fontData.Length}"); // Original uncompressed length
+        writer.WriteLine("   /Filter /FlateDecode");
+        writer.WriteLine(">>");
+        writer.WriteLine("stream");
+        writer.Flush();
+        writer.BaseStream.Write(compressedData, 0, compressedData.Length);
+        writer.WriteLine();
+        writer.WriteLine("endstream");
+        WriteObjectEnd(writer);
+    }
+
+    /// <summary>
+    /// Sanitize font name for PDF (remove spaces and special characters)
+    /// </summary>
+    private static string SanitizeFontName(string name)
+    {
+        return name
+            .Replace(" ", "")
+            .Replace("-", "")
+            .Replace("_", "")
+            .Replace(",", "")
+            .Replace(".", "");
     }
 }

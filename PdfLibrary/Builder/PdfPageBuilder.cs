@@ -7,6 +7,8 @@ public class PdfPageBuilder
 {
     private readonly List<PdfContentElement> _content = new();
     private readonly List<PdfFormFieldBuilder> _formFields = new();
+    private PdfUnit _defaultUnit = PdfUnit.Points;
+    private PdfOrigin _defaultOrigin = PdfOrigin.BottomLeft;
 
     /// <summary>
     /// Page size in points
@@ -23,12 +25,154 @@ public class PdfPageBuilder
         Size = size;
     }
 
+    // ==================== UNIT & ORIGIN CONFIGURATION ====================
+
+    /// <summary>
+    /// Set the default unit for all subsequent coordinate values (plain doubles)
+    /// </summary>
+    public PdfPageBuilder WithUnit(PdfUnit unit)
+    {
+        _defaultUnit = unit;
+        return this;
+    }
+
+    /// <summary>
+    /// Set the default origin for all subsequent coordinate values
+    /// </summary>
+    public PdfPageBuilder WithOrigin(PdfOrigin origin)
+    {
+        _defaultOrigin = origin;
+        return this;
+    }
+
+    /// <summary>
+    /// Set default unit to inches - convenience method
+    /// </summary>
+    public PdfPageBuilder WithInches() => WithUnit(PdfUnit.Inches);
+
+    /// <summary>
+    /// Set default unit to millimeters - convenience method
+    /// </summary>
+    public PdfPageBuilder WithMillimeters() => WithUnit(PdfUnit.Millimeters);
+
+    /// <summary>
+    /// Set default unit to centimeters - convenience method
+    /// </summary>
+    public PdfPageBuilder WithCentimeters() => WithUnit(PdfUnit.Centimeters);
+
+    /// <summary>
+    /// Set default unit to points (PDF native) - convenience method
+    /// </summary>
+    public PdfPageBuilder WithPoints() => WithUnit(PdfUnit.Points);
+
+    /// <summary>
+    /// Set default origin to top-left (screen-like coordinates) - convenience method
+    /// </summary>
+    public PdfPageBuilder FromTopLeft() => WithOrigin(PdfOrigin.TopLeft);
+
+    /// <summary>
+    /// Set default origin to bottom-left (PDF native) - convenience method
+    /// </summary>
+    public PdfPageBuilder FromBottomLeft() => WithOrigin(PdfOrigin.BottomLeft);
+
+    /// <summary>
+    /// Convert a plain double value to points using the current default unit and origin
+    /// </summary>
+    private double ConvertToPoints(double value, bool isYCoordinate = false)
+    {
+        // First convert from default unit to points
+        double points = _defaultUnit switch
+        {
+            PdfUnit.Points => value,
+            PdfUnit.Inches => value * 72,
+            PdfUnit.Millimeters => value * 2.834645669,
+            PdfUnit.Centimeters => value * 28.34645669,
+            _ => value
+        };
+
+        // Then adjust for origin if this is a Y coordinate
+        if (isYCoordinate && _defaultOrigin == PdfOrigin.TopLeft)
+        {
+            points = PageHeight - points;
+        }
+
+        return points;
+    }
+
+    /// <summary>
+    /// Create a field rectangle with the vertical center at the specified y coordinate.
+    /// This aligns the field's center with text baseline when using the same y value.
+    /// </summary>
+    private PdfRect CreateFieldRect(double x, double y, double width, double height)
+    {
+        // Position the field so its vertical center aligns with y (text baseline)
+        double fieldTop = y - (height / 2);
+        return PdfRect.Create(x, fieldTop, width, height, _defaultUnit, _defaultOrigin, PageHeight);
+    }
+
+    // ==================== MEASUREMENT ====================
+
+    /// <summary>
+    /// Measure the width of text in points
+    /// </summary>
+    public double MeasureText(string text, string fontName, double fontSize)
+    {
+        return PdfFontMetrics.MeasureText(text, fontName, fontSize);
+    }
+
+    /// <summary>
+    /// Measure the width of text in inches
+    /// </summary>
+    public double MeasureTextInches(string text, string fontName, double fontSize)
+    {
+        return PdfFontMetrics.MeasureText(text, fontName, fontSize) / 72.0;
+    }
+
     // ==================== TEXT ====================
 
     /// <summary>
-    /// Add text to the page
+    /// Add text to the page using default unit and origin (returns builder for fluent configuration)
     /// </summary>
-    public PdfPageBuilder AddText(string text, double x, double y, string fontName = "Helvetica", double fontSize = 12)
+    public PdfTextBuilder AddText(string text, double x, double y)
+    {
+        // Convert using default unit and origin
+        var xPt = ConvertToPoints(x, isYCoordinate: false);
+        var yPt = ConvertToPoints(y, isYCoordinate: true);
+
+        var content = new PdfTextContent
+        {
+            Text = text,
+            X = xPt,
+            Y = yPt
+        };
+        _content.Add(content);
+        return new PdfTextBuilder(this, content);
+    }
+
+    /// <summary>
+    /// Add text to the page with explicit unit specification (returns builder for fluent configuration)
+    /// </summary>
+    public PdfTextBuilder AddText(string text, PdfLength x, PdfLength y)
+    {
+        // Convert using explicit units/origins from PdfLength
+        // X coordinates never flip - always use BottomLeft origin
+        var xPt = x.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        var yPt = y.ToPoints(PageHeight, y.Origin ?? _defaultOrigin);
+
+        var content = new PdfTextContent
+        {
+            Text = text,
+            X = xPt,
+            Y = yPt
+        };
+        _content.Add(content);
+        return new PdfTextBuilder(this, content);
+    }
+
+    /// <summary>
+    /// Add text to the page with basic font settings
+    /// </summary>
+    public PdfPageBuilder AddText(string text, double x, double y, string fontName, double fontSize)
     {
         _content.Add(new PdfTextContent
         {
@@ -42,9 +186,19 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add text at a position specified in inches from top-left
+    /// Add text at a position specified in inches from top-left (returns builder for fluent configuration)
     /// </summary>
-    public PdfPageBuilder AddTextInches(string text, double left, double top, string fontName = "Helvetica", double fontSize = 12)
+    public PdfTextBuilder AddTextInches(string text, double left, double top)
+    {
+        double x = left * 72;
+        double y = PageHeight - (top * 72);
+        return AddText(text, x, y);
+    }
+
+    /// <summary>
+    /// Add text at a position specified in inches from top-left with basic font settings
+    /// </summary>
+    public PdfPageBuilder AddTextInches(string text, double left, double top, string fontName, double fontSize)
     {
         double x = left * 72;
         double y = PageHeight - (top * 72);
@@ -54,28 +208,140 @@ public class PdfPageBuilder
     // ==================== IMAGES ====================
 
     /// <summary>
-    /// Add an image to the page
+    /// Add an image to the page with fluent configuration
     /// </summary>
-    public PdfPageBuilder AddImage(byte[] imageData, PdfRect rect)
+    public PdfImageBuilder AddImage(byte[] imageData, PdfRect rect)
     {
-        _content.Add(new PdfImageContent
+        var content = new PdfImageContent
         {
             ImageData = imageData,
             Rect = rect
-        });
-        return this;
+        };
+        _content.Add(content);
+        return new PdfImageBuilder(content);
     }
 
     /// <summary>
-    /// Add an image at a position specified in inches from top-left
+    /// Add an image using default unit and origin
     /// </summary>
-    public PdfPageBuilder AddImageInches(byte[] imageData, double left, double top, double width, double height)
+    public PdfImageBuilder AddImage(byte[] imageData, double left, double top, double width, double height)
+    {
+        var leftPt = ConvertToPoints(left, isYCoordinate: false);
+        var topPt = ConvertToPoints(top, isYCoordinate: true);
+        var widthPt = ConvertToPoints(width, isYCoordinate: false);
+        var heightPt = ConvertToPoints(height, isYCoordinate: false);
+
+        // Convert to PDF rect (bottom-left coordinates)
+        var rect = _defaultOrigin == PdfOrigin.TopLeft
+            ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
+            : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
+
+        return AddImage(imageData, rect);
+    }
+
+    /// <summary>
+    /// Add an image with explicit unit specification
+    /// </summary>
+    public PdfImageBuilder AddImage(byte[] imageData, PdfLength left, PdfLength top, PdfLength width, PdfLength height)
+    {
+        var origin = top.Origin ?? _defaultOrigin;
+        // X coordinates and dimensions never flip - always use BottomLeft origin
+        var leftPt = left.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        var topPt = top.ToPoints(PageHeight, origin);
+        var widthPt = width.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        var heightPt = height.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+
+        // Convert to PDF rect (bottom-left coordinates)
+        var rect = origin == PdfOrigin.TopLeft
+            ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
+            : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
+
+        return AddImage(imageData, rect);
+    }
+
+    public PdfImageBuilder AddImageInches(byte[] imageData, double left, double top, double width, double height)
     {
         var rect = PdfRect.FromInches(left, top, width, height, PageHeight);
         return AddImage(imageData, rect);
     }
 
+    /// <summary>
+    /// Add an image from a file path
+    /// </summary>
+    public PdfImageBuilder AddImageFromFile(string filePath, PdfRect rect)
+    {
+        var imageData = File.ReadAllBytes(filePath);
+        return AddImage(imageData, rect);
+    }
+
+    /// <summary>
+    /// Add an image from a file using default unit and origin
+    /// </summary>
+    public PdfImageBuilder AddImageFromFile(string filePath, double left, double top, double width, double height)
+    {
+        var imageData = File.ReadAllBytes(filePath);
+        return AddImage(imageData, left, top, width, height);
+    }
+
+    /// <summary>
+    /// Add an image from a file with explicit unit specification
+    /// </summary>
+    public PdfImageBuilder AddImageFromFile(string filePath, PdfLength left, PdfLength top, PdfLength width, PdfLength height)
+    {
+        var imageData = File.ReadAllBytes(filePath);
+        return AddImage(imageData, left, top, width, height);
+    }
+
+    /// <summary>
+    /// Add an image from a file path at a position specified in inches
+    /// </summary>
+    public PdfImageBuilder AddImageFromFileInches(string filePath, double left, double top, double width, double height)
+    {
+        var rect = PdfRect.FromInches(left, top, width, height, PageHeight);
+        return AddImageFromFile(filePath, rect);
+    }
+
     // ==================== SHAPES ====================
+
+    /// <summary>
+    /// Add a rectangle to the page using default unit and origin
+    /// </summary>
+    public PdfPageBuilder AddRectangle(double left, double top, double width, double height,
+        PdfColor? fillColor = null, PdfColor? strokeColor = null, double lineWidth = 1)
+    {
+        var leftPt = ConvertToPoints(left, isYCoordinate: false);
+        var topPt = ConvertToPoints(top, isYCoordinate: true);
+        var widthPt = ConvertToPoints(width, isYCoordinate: false);
+        var heightPt = ConvertToPoints(height, isYCoordinate: false);
+
+        // Convert to PDF rect (bottom-left coordinates)
+        var rect = _defaultOrigin == PdfOrigin.TopLeft
+            ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
+            : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
+
+        return AddRectangle(rect, fillColor, strokeColor, lineWidth);
+    }
+
+    /// <summary>
+    /// Add a rectangle to the page with explicit unit specification
+    /// </summary>
+    public PdfPageBuilder AddRectangle(PdfLength left, PdfLength top, PdfLength width, PdfLength height,
+        PdfColor? fillColor = null, PdfColor? strokeColor = null, double lineWidth = 1)
+    {
+        var origin = top.Origin ?? _defaultOrigin;
+        // X coordinates and dimensions never flip - always use BottomLeft origin
+        var leftPt = left.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        var topPt = top.ToPoints(PageHeight, origin);
+        var widthPt = width.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        var heightPt = height.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+
+        // Convert to PDF rect (bottom-left coordinates)
+        var rect = origin == PdfOrigin.TopLeft
+            ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
+            : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
+
+        return AddRectangle(rect, fillColor, strokeColor, lineWidth);
+    }
 
     /// <summary>
     /// Add a rectangle to the page
@@ -112,7 +378,7 @@ public class PdfPageBuilder
     // ==================== FORM FIELDS ====================
 
     /// <summary>
-    /// Add a text field to the page
+    /// Add a text field to the page using explicit PdfRect
     /// </summary>
     public PdfTextFieldBuilder AddTextField(string name, PdfRect rect)
     {
@@ -122,13 +388,33 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a checkbox to the page
+    /// Add a text field to the page using current default units/origin.
+    /// The y coordinate represents the vertical center of the field (aligns with text baseline).
+    /// </summary>
+    public PdfTextFieldBuilder AddTextField(string name, double x, double y, double width, double height)
+    {
+        var rect = CreateFieldRect(x, y, width, height);
+        return AddTextField(name, rect);
+    }
+
+    /// <summary>
+    /// Add a checkbox to the page using explicit PdfRect
     /// </summary>
     public PdfCheckboxBuilder AddCheckbox(string name, PdfRect rect)
     {
         var field = new PdfCheckboxBuilder(name, rect);
         _formFields.Add(field);
         return field;
+    }
+
+    /// <summary>
+    /// Add a checkbox to the page using current default units/origin.
+    /// The y coordinate represents the vertical center of the checkbox (aligns with text baseline).
+    /// </summary>
+    public PdfCheckboxBuilder AddCheckbox(string name, double x, double y, double size)
+    {
+        var rect = CreateFieldRect(x, y, size, size);
+        return AddCheckbox(name, rect);
     }
 
     /// <summary>
@@ -142,7 +428,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a dropdown (combo box) to the page
+    /// Add a dropdown (combo box) to the page using explicit PdfRect
     /// </summary>
     public PdfDropdownBuilder AddDropdown(string name, PdfRect rect)
     {
@@ -152,13 +438,33 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a signature field to the page
+    /// Add a dropdown (combo box) to the page using current default units/origin.
+    /// The y coordinate represents the vertical center of the dropdown (aligns with text baseline).
+    /// </summary>
+    public PdfDropdownBuilder AddDropdown(string name, double x, double y, double width, double height)
+    {
+        var rect = CreateFieldRect(x, y, width, height);
+        return AddDropdown(name, rect);
+    }
+
+    /// <summary>
+    /// Add a signature field to the page using explicit PdfRect
     /// </summary>
     public PdfSignatureFieldBuilder AddSignatureField(string name, PdfRect rect)
     {
         var field = new PdfSignatureFieldBuilder(name, rect);
         _formFields.Add(field);
         return field;
+    }
+
+    /// <summary>
+    /// Add a signature field to the page using current default units/origin.
+    /// The y coordinate represents the vertical center of the signature field (aligns with text baseline).
+    /// </summary>
+    public PdfSignatureFieldBuilder AddSignatureField(string name, double x, double y, double width, double height)
+    {
+        var rect = CreateFieldRect(x, y, width, height);
+        return AddSignatureField(name, rect);
     }
 
     /// <summary>
@@ -192,6 +498,308 @@ public class PdfTextContent : PdfContentElement
     public string FontName { get; set; } = "Helvetica";
     public double FontSize { get; set; } = 12;
     public PdfColor FillColor { get; set; } = PdfColor.Black;
+    public PdfColor? StrokeColor { get; set; }
+    public double Rotation { get; set; } = 0;
+    public double CharacterSpacing { get; set; } = 0;
+    public double WordSpacing { get; set; } = 0;
+    public double HorizontalScale { get; set; } = 100;
+    public double TextRise { get; set; } = 0;
+    public double LineSpacing { get; set; } = 0;
+    public PdfTextRenderMode RenderMode { get; set; } = PdfTextRenderMode.Fill;
+    public double StrokeWidth { get; set; } = 1;
+    public PdfTextAlignment Alignment { get; set; } = PdfTextAlignment.Left;
+    public double? MaxWidth { get; set; }
+}
+
+/// <summary>
+/// Text rendering modes
+/// </summary>
+public enum PdfTextRenderMode
+{
+    /// <summary>
+    /// Fill text (default)
+    /// </summary>
+    Fill = 0,
+
+    /// <summary>
+    /// Stroke text (outline only)
+    /// </summary>
+    Stroke = 1,
+
+    /// <summary>
+    /// Fill then stroke (filled with outline)
+    /// </summary>
+    FillStroke = 2,
+
+    /// <summary>
+    /// Invisible text (for searchable OCR layers)
+    /// </summary>
+    Invisible = 3,
+
+    /// <summary>
+    /// Fill and add to clipping path
+    /// </summary>
+    FillClip = 4,
+
+    /// <summary>
+    /// Stroke and add to clipping path
+    /// </summary>
+    StrokeClip = 5,
+
+    /// <summary>
+    /// Fill, stroke, and add to clipping path
+    /// </summary>
+    FillStrokeClip = 6,
+
+    /// <summary>
+    /// Add to clipping path only
+    /// </summary>
+    Clip = 7
+}
+
+/// <summary>
+/// Fluent builder for text content
+/// </summary>
+public class PdfTextBuilder
+{
+    private readonly PdfPageBuilder _pageBuilder;
+    private readonly PdfTextContent _content;
+
+    internal PdfTextBuilder(PdfPageBuilder pageBuilder, PdfTextContent content)
+    {
+        _pageBuilder = pageBuilder;
+        _content = content;
+    }
+
+    /// <summary>
+    /// Set the font
+    /// </summary>
+    public PdfTextBuilder Font(string fontName, double fontSize = 12)
+    {
+        _content.FontName = fontName;
+        _content.FontSize = fontSize;
+        return this;
+    }
+
+    /// <summary>
+    /// Set font size only
+    /// </summary>
+    public PdfTextBuilder Size(double fontSize)
+    {
+        _content.FontSize = fontSize;
+        return this;
+    }
+
+    /// <summary>
+    /// Set fill color
+    /// </summary>
+    public PdfTextBuilder Color(PdfColor color)
+    {
+        _content.FillColor = color;
+        return this;
+    }
+
+    /// <summary>
+    /// Set stroke color (for outline text)
+    /// </summary>
+    public PdfTextBuilder StrokeColor(PdfColor color, double width = 1)
+    {
+        _content.StrokeColor = color;
+        _content.StrokeWidth = width;
+        return this;
+    }
+
+    /// <summary>
+    /// Rotate text by specified degrees
+    /// </summary>
+    public PdfTextBuilder Rotate(double degrees)
+    {
+        _content.Rotation = degrees;
+        return this;
+    }
+
+    /// <summary>
+    /// Set character spacing (extra space between characters in points)
+    /// </summary>
+    public PdfTextBuilder CharacterSpacing(double spacing)
+    {
+        _content.CharacterSpacing = spacing;
+        return this;
+    }
+
+    /// <summary>
+    /// Set word spacing (extra space between words in points)
+    /// </summary>
+    public PdfTextBuilder WordSpacing(double spacing)
+    {
+        _content.WordSpacing = spacing;
+        return this;
+    }
+
+    /// <summary>
+    /// Set horizontal scaling (percentage, 100 = normal)
+    /// </summary>
+    public PdfTextBuilder HorizontalScale(double percentage)
+    {
+        _content.HorizontalScale = percentage;
+        return this;
+    }
+
+    /// <summary>
+    /// Condense text horizontally
+    /// </summary>
+    public PdfTextBuilder Condensed(double percentage = 80)
+    {
+        _content.HorizontalScale = percentage;
+        return this;
+    }
+
+    /// <summary>
+    /// Expand text horizontally
+    /// </summary>
+    public PdfTextBuilder Expanded(double percentage = 120)
+    {
+        _content.HorizontalScale = percentage;
+        return this;
+    }
+
+    /// <summary>
+    /// Set text rise (positive = superscript, negative = subscript)
+    /// </summary>
+    public PdfTextBuilder Rise(double points)
+    {
+        _content.TextRise = points;
+        return this;
+    }
+
+    /// <summary>
+    /// Format as superscript
+    /// </summary>
+    public PdfTextBuilder Superscript()
+    {
+        _content.TextRise = _content.FontSize * 0.4;
+        _content.FontSize *= 0.7;
+        return this;
+    }
+
+    /// <summary>
+    /// Format as subscript
+    /// </summary>
+    public PdfTextBuilder Subscript()
+    {
+        _content.TextRise = -_content.FontSize * 0.2;
+        _content.FontSize *= 0.7;
+        return this;
+    }
+
+    /// <summary>
+    /// Set line spacing for multiline text
+    /// </summary>
+    public PdfTextBuilder LineSpacing(double points)
+    {
+        _content.LineSpacing = points;
+        return this;
+    }
+
+    /// <summary>
+    /// Set text rendering mode
+    /// </summary>
+    public PdfTextBuilder RenderMode(PdfTextRenderMode mode)
+    {
+        _content.RenderMode = mode;
+        return this;
+    }
+
+    /// <summary>
+    /// Render as outline only (no fill)
+    /// </summary>
+    public PdfTextBuilder Outline(double strokeWidth = 1)
+    {
+        _content.RenderMode = PdfTextRenderMode.Stroke;
+        _content.StrokeWidth = strokeWidth;
+        _content.StrokeColor ??= _content.FillColor;
+        return this;
+    }
+
+    /// <summary>
+    /// Render as filled with outline
+    /// </summary>
+    public PdfTextBuilder FillAndOutline(PdfColor strokeColor, double strokeWidth = 1)
+    {
+        _content.RenderMode = PdfTextRenderMode.FillStroke;
+        _content.StrokeColor = strokeColor;
+        _content.StrokeWidth = strokeWidth;
+        return this;
+    }
+
+    /// <summary>
+    /// Make text invisible (useful for searchable OCR layers)
+    /// </summary>
+    public PdfTextBuilder Invisible()
+    {
+        _content.RenderMode = PdfTextRenderMode.Invisible;
+        return this;
+    }
+
+    /// <summary>
+    /// Set text alignment (for use with MaxWidth)
+    /// </summary>
+    public PdfTextBuilder Align(PdfTextAlignment alignment)
+    {
+        _content.Alignment = alignment;
+        return this;
+    }
+
+    /// <summary>
+    /// Set maximum width (text will wrap or be truncated)
+    /// </summary>
+    public PdfTextBuilder MaxWidth(double points)
+    {
+        _content.MaxWidth = points;
+        return this;
+    }
+
+    /// <summary>
+    /// Bold simulation using stroke
+    /// </summary>
+    public PdfTextBuilder Bold()
+    {
+        _content.RenderMode = PdfTextRenderMode.FillStroke;
+        _content.StrokeColor = _content.FillColor;
+        _content.StrokeWidth = _content.FontSize * 0.03;
+        return this;
+    }
+
+    /// <summary>
+    /// Return to page builder for adding more content
+    /// </summary>
+    public PdfPageBuilder Done()
+    {
+        return _pageBuilder;
+    }
+
+    /// <summary>
+    /// Implicit conversion back to page builder
+    /// </summary>
+    public static implicit operator PdfPageBuilder(PdfTextBuilder builder)
+    {
+        return builder._pageBuilder;
+    }
+}
+
+/// <summary>
+/// Image compression options
+/// </summary>
+public enum PdfImageCompression
+{
+    /// <summary>Auto-detect best compression based on image type</summary>
+    Auto,
+    /// <summary>JPEG/DCT compression (lossy, good for photos)</summary>
+    Jpeg,
+    /// <summary>Flate/ZIP compression (lossless)</summary>
+    Flate,
+    /// <summary>No compression</summary>
+    None
 }
 
 /// <summary>
@@ -201,6 +809,89 @@ public class PdfImageContent : PdfContentElement
 {
     public byte[] ImageData { get; set; } = Array.Empty<byte>();
     public PdfRect Rect { get; set; }
+    public double Opacity { get; set; } = 1.0;
+    public double Rotation { get; set; } = 0;
+    public bool PreserveAspectRatio { get; set; } = true;
+    public PdfImageCompression Compression { get; set; } = PdfImageCompression.Auto;
+    public int JpegQuality { get; set; } = 85;
+    public bool Interpolate { get; set; } = true;
+}
+
+/// <summary>
+/// Fluent builder for image configuration
+/// </summary>
+public class PdfImageBuilder
+{
+    private readonly PdfImageContent _content;
+
+    public PdfImageBuilder(PdfImageContent content)
+    {
+        _content = content;
+    }
+
+    /// <summary>
+    /// Set image opacity (0.0 = transparent, 1.0 = opaque)
+    /// </summary>
+    public PdfImageBuilder Opacity(double opacity)
+    {
+        _content.Opacity = Math.Clamp(opacity, 0, 1);
+        return this;
+    }
+
+    /// <summary>
+    /// Rotate the image by the specified degrees
+    /// </summary>
+    public PdfImageBuilder Rotate(double degrees)
+    {
+        _content.Rotation = degrees;
+        return this;
+    }
+
+    /// <summary>
+    /// Preserve the image's aspect ratio when scaling
+    /// </summary>
+    public PdfImageBuilder PreserveAspectRatio(bool preserve = true)
+    {
+        _content.PreserveAspectRatio = preserve;
+        return this;
+    }
+
+    /// <summary>
+    /// Stretch image to fill the entire rect (don't preserve aspect ratio)
+    /// </summary>
+    public PdfImageBuilder Stretch()
+    {
+        _content.PreserveAspectRatio = false;
+        return this;
+    }
+
+    /// <summary>
+    /// Set the compression method for the image
+    /// </summary>
+    public PdfImageBuilder Compression(PdfImageCompression compression, int jpegQuality = 85)
+    {
+        _content.Compression = compression;
+        _content.JpegQuality = Math.Clamp(jpegQuality, 1, 100);
+        return this;
+    }
+
+    /// <summary>
+    /// Enable or disable image interpolation (smoothing when scaled)
+    /// </summary>
+    public PdfImageBuilder Interpolate(bool interpolate = true)
+    {
+        _content.Interpolate = interpolate;
+        return this;
+    }
+
+    /// <summary>
+    /// Disable interpolation for crisp pixel-perfect rendering
+    /// </summary>
+    public PdfImageBuilder NearestNeighbor()
+    {
+        _content.Interpolate = false;
+        return this;
+    }
 }
 
 /// <summary>

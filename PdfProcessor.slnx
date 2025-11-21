@@ -6,5 +6,6 @@
   <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />
   <Project Path="PdfLibrary/PdfLibrary.csproj" />
   <Project Path="PdfTool/PdfTool.csproj" />
+  <Project Path="TestBuilderApi/TestBuilderApi.csproj" />
   <Project Path="TestSkiaRender/TestSkiaRendering.csproj" />
 </Solution>

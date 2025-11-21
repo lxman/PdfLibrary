@@ -268,6 +268,6 @@ public class GlyphToSKPathConverterTests
         // Assert - Path should be closed (SkiaSharp closes paths automatically with Close())
         Assert.NotNull(path);
         var bounds = path.Bounds;
-        Assert.True(bounds.Width > 0 && bounds.Height > 0);
+        Assert.True(bounds is { Width: > 0, Height: > 0 });
     }
 }

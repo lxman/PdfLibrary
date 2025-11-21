@@ -74,6 +74,20 @@ public class EmbeddedFontMetrics
     /// </summary>
     public bool IsCffFont => _isCffFont;
 
+    // Diagnostic properties for cmap table debugging
+    public bool HasCmapTable => _cmapTable != null;
+    public int GetCmapSubtableCount() => _cmapTable?.SubTables?.Count ?? 0;
+    public int GetCmapEncodingRecordCount() => _cmapTable?.EncodingRecords?.Count ?? 0;
+
+    public string GetCmapEncodingRecordInfo(int index)
+    {
+        if (_cmapTable == null || _cmapTable.EncodingRecords == null || index >= _cmapTable.EncodingRecords.Count)
+            return "Invalid index";
+
+        var record = _cmapTable.EncodingRecords[index];
+        return $"Platform={record.PlatformId}";
+    }
+
     /// <summary>
     /// Creates embedded font metrics from raw TrueType/OpenType font data
     /// </summary>

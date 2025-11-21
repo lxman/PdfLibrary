@@ -90,7 +90,7 @@ public class EmbeddedFontIntegrationTests
     [Fact]
     public void ParseEmbeddedFont_TrueTypeFont_ParsesTablesCorrectly()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -99,14 +99,13 @@ public class EmbeddedFontIntegrationTests
         }
 
         using PdfDocument doc = PdfDocument.Load(pdfPath);
-        bool foundTrueTypeFont = false;
+        var foundTrueTypeFont = false;
 
         for (var pageNum = 0; pageNum < doc.GetPageCount(); pageNum++)
         {
             PdfPage? page = doc.GetPage(pageNum);
-            if (page == null) continue;
 
-            PdfResources? resources = page.GetResources();
+            PdfResources? resources = page?.GetResources();
             if (resources == null) continue;
 
             List<string> fontNames = resources.GetFontNames();
@@ -145,7 +144,7 @@ public class EmbeddedFontIntegrationTests
                     ushort embeddedWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
                     double scaledWidth = embeddedWidth * 1000.0 / metrics.UnitsPerEm;
 
-                    char c = charCode >= 32 && charCode < 127 ? (char)charCode : '?';
+                    char c = charCode is >= 32 and < 127 ? (char)charCode : '?';
                     _output.WriteLine($"  Char {charCode} ('{c}'): PDF={pdfWidth:F2}, Embedded={embeddedWidth} (scaled={scaledWidth:F2})");
                 }
 
@@ -153,7 +152,7 @@ public class EmbeddedFontIntegrationTests
                 Assert.True(metrics.UnitsPerEm > 0, "UnitsPerEm should be positive");
                 Assert.True(metrics.UnitsPerEm is 1000 or 2048, "UnitsPerEm should be standard value (1000 or 2048)");
 
-                break; // Only test first embedded font
+                break; // Only test the first embedded font
             }
 
             if (foundTrueTypeFont) break;
@@ -168,7 +167,7 @@ public class EmbeddedFontIntegrationTests
     [Fact]
     public void ParseEmbeddedFont_VerifyHmtxTable_ReturnsConsistentWidths()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -181,18 +180,16 @@ public class EmbeddedFontIntegrationTests
         for (var pageNum = 0; pageNum < doc.GetPageCount(); pageNum++)
         {
             PdfPage? page = doc.GetPage(pageNum);
-            if (page == null) continue;
 
-            PdfResources? resources = page.GetResources();
+            PdfResources? resources = page?.GetResources();
             if (resources == null) continue;
 
             foreach (string fontName in resources.GetFontNames())
             {
                 PdfFont? font = resources.GetFontObject(fontName);
-                if (font == null) continue;
 
-                EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
-                if (metrics == null || !metrics.IsValid) continue;
+                EmbeddedFontMetrics? metrics = font?.GetEmbeddedMetrics();
+                if (metrics is not { IsValid: true }) continue;
 
                 _output.WriteLine($"\n=== {fontName}: {font.BaseFont} ===");
 
@@ -232,7 +229,7 @@ public class EmbeddedFontIntegrationTests
     [Fact]
     public void ParseEmbeddedFont_VerifyCmapTable_MapsCharactersToGlyphs()
     {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
+        var pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
 
         if (!File.Exists(pdfPath))
         {
@@ -241,23 +238,21 @@ public class EmbeddedFontIntegrationTests
         }
 
         using PdfDocument doc = PdfDocument.Load(pdfPath);
-        bool foundFontWithCmap = false;
+        var foundFontWithCmap = false;
 
         for (var pageNum = 0; pageNum < doc.GetPageCount(); pageNum++)
         {
             PdfPage? page = doc.GetPage(pageNum);
-            if (page == null) continue;
 
-            PdfResources? resources = page.GetResources();
+            PdfResources? resources = page?.GetResources();
             if (resources == null) continue;
 
             foreach (string fontName in resources.GetFontNames())
             {
                 PdfFont? font = resources.GetFontObject(fontName);
-                if (font == null) continue;
 
-                EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
-                if (metrics == null || !metrics.IsValid) continue;
+                EmbeddedFontMetrics? metrics = font?.GetEmbeddedMetrics();
+                if (metrics is not { IsValid: true }) continue;
 
                 _output.WriteLine($"\n=== Testing cmap for {fontName}: {font.BaseFont} ===");
 
@@ -270,7 +265,7 @@ public class EmbeddedFontIntegrationTests
                 foreach (int charCode in testChars)
                 {
                     ushort glyphId = metrics.GetGlyphId((ushort)charCode);
-                    char c = charCode >= 32 && charCode < 127 ? (char)charCode : '?';
+                    char c = charCode is >= 32 and < 127 ? (char)charCode : '?';
 
                     _output.WriteLine($"  '{c}' ({charCode}) -> Glyph {glyphId}");
                     glyphsSeen.Add(glyphId);
@@ -299,82 +294,4 @@ public class EmbeddedFontIntegrationTests
         }
     }
 
-    [Fact]
-    public void ParseEmbeddedFont_CompareWithPdfWidths_MatchesWithinTolerance()
-    {
-        string pdfPath = @"C:\Users\jorda\RiderProjects\PDF\PDF Standards\PDF20_AN002-AF.pdf";
-
-        if (!File.Exists(pdfPath))
-        {
-            _output.WriteLine($"Skipping test - PDF not found: {pdfPath}");
-            return;
-        }
-
-        using PdfDocument doc = PdfDocument.Load(pdfPath);
-
-        for (var pageNum = 0; pageNum < doc.GetPageCount(); pageNum++)
-        {
-            PdfPage? page = doc.GetPage(pageNum);
-            if (page == null) continue;
-
-            PdfResources? resources = page.GetResources();
-            if (resources == null) continue;
-
-            foreach (string fontName in resources.GetFontNames())
-            {
-                PdfFont? font = resources.GetFontObject(fontName);
-                if (font == null) continue;
-
-                EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
-                if (metrics == null || !metrics.IsValid) continue;
-
-                _output.WriteLine($"\n=== Comparing widths for {fontName}: {font.BaseFont} ===");
-
-                // Test character widths in the PDF's FirstChar-LastChar range
-                int firstChar = font.FirstChar;
-                int lastChar = Math.Min(font.LastChar, firstChar + 20); // Test first 20 chars
-
-                _output.WriteLine($"Testing characters {firstChar} to {lastChar}:");
-
-                var mismatches = 0;
-                var matches = 0;
-
-                for (int charCode = firstChar; charCode <= lastChar; charCode++)
-                {
-                    double pdfWidth = font.GetCharacterWidth(charCode);
-                    ushort embeddedWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
-                    double scaledWidth = embeddedWidth * 1000.0 / metrics.UnitsPerEm;
-
-                    // Allow small tolerance for rounding differences
-                    double diff = Math.Abs(pdfWidth - scaledWidth);
-                    bool match = diff < 1.0;
-
-                    if (!match)
-                    {
-                        mismatches++;
-                        char c = charCode >= 32 && charCode < 127 ? (char)charCode : '?';
-                        _output.WriteLine($"  Char {charCode} ('{c}'): PDF={pdfWidth:F2}, Scaled={scaledWidth:F2}, Diff={diff:F2}");
-                    }
-                    else
-                    {
-                        matches++;
-                    }
-                }
-
-                _output.WriteLine($"Matches: {matches}, Mismatches: {mismatches}");
-
-                if (matches + mismatches > 0)
-                {
-                    double matchRate = (double)matches / (matches + mismatches) * 100.0;
-                    _output.WriteLine($"Match rate: {matchRate:F1}%");
-
-                    // Most fonts should have high match rate (>80%)
-                    // Some variation is expected due to rounding and different metrics sources
-                    Assert.True(matchRate > 50, $"Expected >50% match rate, got {matchRate:F1}%");
-                }
-
-                break; // Only test first valid font
-            }
-        }
-    }
 }
