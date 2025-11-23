@@ -416,7 +416,7 @@ public class PdfCheckboxBuilder : PdfFormFieldBuilder
 /// </summary>
 public class PdfRadioGroupBuilder : PdfFormFieldBuilder
 {
-    private readonly List<PdfRadioOption> _options = new();
+    private readonly List<PdfRadioOption> _options = [];
     private readonly double _pageHeight;
 
     /// <summary>
@@ -531,7 +531,7 @@ public class PdfRadioOption
 /// </summary>
 public class PdfDropdownBuilder : PdfFormFieldBuilder
 {
-    private readonly List<PdfDropdownOption> _options = new();
+    private readonly List<PdfDropdownOption> _options = [];
 
     /// <summary>
     /// Dropdown options

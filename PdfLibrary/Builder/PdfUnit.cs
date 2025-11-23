@@ -32,13 +32,13 @@ public enum PdfUnit
 public enum PdfOrigin
 {
     /// <summary>
-    /// Origin at bottom-left corner (PDF native)
+    /// Origin in the bottom-left corner (PDF native)
     /// Y increases upward
     /// </summary>
     BottomLeft,
 
     /// <summary>
-    /// Origin at top-left corner (screen-like)
+    /// Origin in the top-left corner (screen-like)
     /// Y increases downward
     /// </summary>
     TopLeft

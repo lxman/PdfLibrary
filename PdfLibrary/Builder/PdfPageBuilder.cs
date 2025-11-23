@@ -5,8 +5,8 @@ namespace PdfLibrary.Builder;
 /// </summary>
 public class PdfPageBuilder
 {
-    private readonly List<PdfContentElement> _content = new();
-    private readonly List<PdfFormFieldBuilder> _formFields = new();
+    private readonly List<PdfContentElement> _content = [];
+    private readonly List<PdfFormFieldBuilder> _formFields = [];
     private PdfUnit _defaultUnit = PdfUnit.Points;
     private PdfOrigin _defaultOrigin = PdfOrigin.BottomLeft;
 
@@ -807,7 +807,7 @@ public enum PdfImageCompression
 /// </summary>
 public class PdfImageContent : PdfContentElement
 {
-    public byte[] ImageData { get; set; } = Array.Empty<byte>();
+    public byte[] ImageData { get; set; } = [];
     public PdfRect Rect { get; set; }
     public double Opacity { get; set; } = 1.0;
     public double Rotation { get; set; }

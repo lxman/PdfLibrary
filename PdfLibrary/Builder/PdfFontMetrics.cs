@@ -49,8 +49,8 @@ public static class PdfFontMetrics
 
     // Helvetica character widths (standard Type1 font metrics)
     // Index is ASCII code, value is width in 1000-unit font space
-    private static readonly int[] HelveticaWidths = new int[256]
-    {
+    private static readonly int[] HelveticaWidths =
+    [
         // 0-31: Control characters (use 0 width)
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -75,11 +75,11 @@ public static class PdfFontMetrics
         722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611,
         556, 556, 556, 556, 556, 556, 889, 500, 556, 556, 556, 556, 278, 278, 278, 278,
         556, 556, 556, 556, 556, 556, 556, 584, 611, 556, 556, 556, 556, 500, 556, 500
-    };
+    ];
 
     // Helvetica Bold character widths
-    private static readonly int[] HelveticaBoldWidths = new int[256]
-    {
+    private static readonly int[] HelveticaBoldWidths =
+    [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         278, 333, 474, 556, 556, 889, 722, 238, 333, 333, 389, 584, 278, 333, 278, 278,
@@ -96,11 +96,11 @@ public static class PdfFontMetrics
         722, 722, 778, 778, 778, 778, 778, 584, 778, 722, 722, 722, 722, 667, 667, 611,
         556, 556, 556, 556, 556, 556, 889, 556, 556, 556, 556, 556, 278, 278, 278, 278,
         611, 611, 611, 611, 611, 611, 611, 584, 611, 611, 611, 611, 611, 556, 611, 556
-    };
+    ];
 
     // Times Roman character widths
-    private static readonly int[] TimesRomanWidths = new int[256]
-    {
+    private static readonly int[] TimesRomanWidths =
+    [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         250, 333, 408, 500, 500, 833, 778, 180, 333, 333, 500, 564, 250, 333, 250, 278,
@@ -117,11 +117,11 @@ public static class PdfFontMetrics
         722, 722, 722, 722, 722, 722, 722, 564, 722, 722, 722, 722, 722, 722, 556, 500,
         444, 444, 444, 444, 444, 444, 667, 444, 444, 444, 444, 444, 278, 278, 278, 278,
         500, 500, 500, 500, 500, 500, 500, 564, 500, 500, 500, 500, 500, 500, 500, 500
-    };
+    ];
 
     // Times Bold character widths
-    private static readonly int[] TimesBoldWidths = new int[256]
-    {
+    private static readonly int[] TimesBoldWidths =
+    [
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         250, 333, 555, 500, 500, 1000, 833, 278, 333, 333, 500, 570, 250, 333, 250, 278,
@@ -138,7 +138,7 @@ public static class PdfFontMetrics
         722, 722, 778, 778, 778, 778, 778, 570, 778, 722, 722, 722, 722, 722, 611, 556,
         500, 500, 500, 500, 500, 500, 722, 444, 444, 444, 444, 444, 278, 278, 278, 278,
         500, 556, 500, 500, 500, 500, 500, 570, 500, 556, 556, 556, 556, 500, 556, 500
-    };
+    ];
 
     // Courier (monospace) - all characters same width
     private static readonly int[] CourierWidths = CreateMonospaceWidths(600);

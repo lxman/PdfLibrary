@@ -23,8 +23,8 @@ public class PdfXrefEntry
     /// </summary>
     /// <param name="objectNumber">Object number</param>
     /// <param name="byteOffset">Byte offset in file (type 1) or object stream number (type 2)</param>
-    /// <param name="generationNumber">Generation number (type 1) or index in object stream (type 2)</param>
-    /// <param name="isInUse">True if object is in use, false if free</param>
+    /// <param name="generationNumber">Generation number (type 1) or index in the object stream (type 2)</param>
+    /// <param name="isInUse">True if the object is in use, false if free</param>
     /// <param name="entryType">Entry type (default: Uncompressed for in-use, Free for not in-use)</param>
     public PdfXrefEntry(int objectNumber, long byteOffset, int generationNumber, bool isInUse,
         PdfXrefEntryType? entryType = null)

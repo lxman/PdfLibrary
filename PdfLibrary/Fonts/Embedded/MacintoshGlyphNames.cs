@@ -47,7 +47,7 @@ namespace PdfLibrary.Fonts.Embedded
 
         public static string? GetStandardName(int index)
         {
-            if (index < 0 || index >= StandardNameCount)
+            if (index is < 0 or >= StandardNameCount)
                 return null;
             return StandardNames[index];
         }

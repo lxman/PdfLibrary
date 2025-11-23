@@ -158,7 +158,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Width"), out PdfObject? obj) && obj is PdfInteger width)
+            if (_stream.Dictionary.TryGetValue(new PdfName("Width"), out PdfObject obj) && obj is PdfInteger width)
                 return width.Value;
             return 0;
         }
@@ -171,7 +171,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Height"), out PdfObject? obj) && obj is PdfInteger height)
+            if (_stream.Dictionary.TryGetValue(new PdfName("Height"), out PdfObject obj) && obj is PdfInteger height)
                 return height.Value;
             return 0;
         }
@@ -184,7 +184,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("BitsPerComponent"), out PdfObject? obj) && obj is PdfInteger bits)
+            if (_stream.Dictionary.TryGetValue(new PdfName("BitsPerComponent"), out PdfObject obj) && obj is PdfInteger bits)
                 return bits.Value;
             return 8; // Default per PDF spec
         }
@@ -243,7 +243,7 @@ public class PdfImage
         {
             var filters = new List<string>();
 
-            if (!_stream.Dictionary.TryGetValue(new PdfName("Filter"), out PdfObject? obj))
+            if (!_stream.Dictionary.TryGetValue(new PdfName("Filter"), out PdfObject obj))
                 return filters;
 
             switch (obj)
@@ -290,7 +290,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Intent"), out PdfObject? obj) && obj is PdfName intent)
+            if (_stream.Dictionary.TryGetValue(new PdfName("Intent"), out PdfObject obj) && obj is PdfName intent)
                 return intent.Value;
             return null;
         }
@@ -303,7 +303,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("ImageMask"), out PdfObject? obj) && obj is PdfBoolean mask)
+            if (_stream.Dictionary.TryGetValue(new PdfName("ImageMask"), out PdfObject obj) && obj is PdfBoolean mask)
                 return mask.Value;
             return false;
         }
@@ -341,7 +341,7 @@ public class PdfImage
     /// </summary>
     public static bool IsImageXObject(PdfStream stream)
     {
-        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;
 
         return obj is PdfName { Value: "Image" };

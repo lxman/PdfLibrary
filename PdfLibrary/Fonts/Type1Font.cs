@@ -66,20 +66,17 @@ public class Type1Font : PdfFont
 
         // Standard 14 fonts have built-in metrics
         // Helvetica widths for WinAnsi encoding (most common)
-        if (BaseFont == "Helvetica" || BaseFont == "Helvetica-Bold" ||
-            BaseFont == "Helvetica-Oblique" || BaseFont == "Helvetica-BoldOblique")
+        if (BaseFont is "Helvetica" or "Helvetica-Bold" or "Helvetica-Oblique" or "Helvetica-BoldOblique")
         {
             return GetHelveticaWidth(charCode);
         }
 
-        if (BaseFont == "Times-Roman" || BaseFont == "Times-Bold" ||
-            BaseFont == "Times-Italic" || BaseFont == "Times-BoldItalic")
+        if (BaseFont is "Times-Roman" or "Times-Bold" or "Times-Italic" or "Times-BoldItalic")
         {
             return GetTimesRomanWidth(charCode);
         }
 
-        if (BaseFont == "Courier" || BaseFont == "Courier-Bold" ||
-            BaseFont == "Courier-Oblique" || BaseFont == "Courier-BoldOblique")
+        if (BaseFont is "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique")
         {
             // Courier is monospaced
             return 600;

@@ -43,7 +43,7 @@ namespace PdfLibrary.Fonts.Embedded
             Contours = contours;
             Metrics = metrics;
             IsComposite = isComposite;
-            ComponentGlyphIds = componentGlyphIds ?? new List<int>();
+            ComponentGlyphIds = componentGlyphIds ?? [];
         }
 
         /// <summary>

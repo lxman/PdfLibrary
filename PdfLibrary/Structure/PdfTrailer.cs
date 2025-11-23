@@ -32,7 +32,7 @@ public class PdfTrailer
     public PdfDictionary Dictionary => _dictionary;
 
     /// <summary>
-    /// Gets or sets the Size entry - total number of entries in cross-reference table
+    /// Gets or sets the Size entry - total number of entries in the cross-reference table
     /// </summary>
     public int? Size
     {
@@ -43,7 +43,7 @@ public class PdfTrailer
     }
 
     /// <summary>
-    /// Gets or sets the Prev entry - byte offset of previous cross-reference section
+    /// Gets or sets the Prev entry - byte offset of the previous cross-reference section
     /// </summary>
     public long? Prev
     {
@@ -89,7 +89,7 @@ public class PdfTrailer
     /// <summary>
     /// Gets or sets the ID entry - array of two byte strings
     /// </summary>
-    public PdfArray? ID
+    public PdfArray? Id
     {
         get => _dictionary.TryGetValue(new PdfName("ID"), out PdfObject obj) && obj is PdfArray array
             ? array

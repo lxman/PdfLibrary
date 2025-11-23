@@ -92,7 +92,7 @@ namespace PdfLibrary.Fonts.Embedded
             {
                 return new GlyphOutline(
                     glyphId,
-                    new List<GlyphContour>(),
+                    [],
                     metrics,
                     isComposite: false
                 );
@@ -149,7 +149,7 @@ namespace PdfLibrary.Fonts.Embedded
             if (glyphData.GlyphSpec is not SimpleGlyph simpleGlyph)
             {
                 // Unexpected - should be simple glyph
-                return new GlyphOutline(glyphId, new List<GlyphContour>(), metrics);
+                return new GlyphOutline(glyphId, [], metrics);
             }
 
             var contours = new List<GlyphContour>();
@@ -192,7 +192,7 @@ namespace PdfLibrary.Fonts.Embedded
             if (glyphData.GlyphSpec is not CompositeGlyph compositeGlyph)
             {
                 // Unexpected - should be composite glyph
-                return new GlyphOutline(glyphId, new List<GlyphContour>(), metrics);
+                return new GlyphOutline(glyphId, [], metrics);
             }
 
             var allContours = new List<GlyphContour>();

@@ -56,7 +56,7 @@ public class PdfRenderer : PdfContentProcessor
 
         Console.WriteLine($"[PDFRENDERER] RenderPage: MediaBox={mediaBox}");
 
-        // Begin page lifecycle
+        // Begin the page lifecycle
         _target.BeginPage(pageNumber, width, height);
 
         try
@@ -92,7 +92,7 @@ public class PdfRenderer : PdfContentProcessor
             {
                 byte[] decodedData = stream.GetDecodedData();
 
-                // Diagnostic: Dump first stream's raw content to see scn operands
+                // Diagnostic: Dump the first stream's raw content to see scn operands
                 if (streamIndex == 0 && decodedData.Length > 0)
                 {
                     string text = Encoding.ASCII.GetString(decodedData);
@@ -111,8 +111,8 @@ public class PdfRenderer : PdfContentProcessor
 
                 // Diagnostic: Count operator types
                 int doOps = operators.Count(o => o.Name == "Do");
-                int csOps = operators.Count(o => o.Name == "cs" || o.Name == "CS");
-                int scnOps = operators.Count(o => o.Name == "scn" || o.Name == "SCN" || o.Name == "sc" || o.Name == "SC");
+                int csOps = operators.Count(o => o.Name is "cs" or "CS");
+                int scnOps = operators.Count(o => o.Name is "scn" or "SCN" or "sc" or "SC");
                 Console.WriteLine($"[OPERATORS] Stream {streamIndex}: Total: {operators.Count}, Do: {doOps}, cs/CS: {csOps}, scn/SCN/sc/SC: {scnOps}");
 
                 ProcessOperators(operators);
@@ -239,8 +239,7 @@ public class PdfRenderer : PdfContentProcessor
             // Debug: check for color and border entries
             if (annotDict.TryGetValue(new PdfName("C"), out PdfObject colorObj))
             {
-                var colorArray = colorObj as PdfArray;
-                if (colorArray != null)
+                if (colorObj is PdfArray colorArray)
                 {
                     string components = string.Join(", ", colorArray.Select(c => c.ToString()));
                     Console.WriteLine($"[ANNOTATION] Has /C color: [{components}]");
@@ -265,7 +264,7 @@ public class PdfRenderer : PdfContentProcessor
                     PdfIndirectReference resRef => _document?.GetObject(resRef.ObjectNumber) as PdfDictionary,
                     _ => null
                 };
-                if (resDict != null)
+                if (resDict is not null)
                 {
                     annotResources = new PdfResources(resDict, _document);
                     Console.WriteLine("[ANNOTATION] Using annotation resources");
@@ -274,7 +273,7 @@ public class PdfRenderer : PdfContentProcessor
 
             // Save current resources and swap in annotation resources
             PdfResources? savedResources = _currentResources;
-            if (annotResources != null)
+            if (annotResources is not null)
                 _currentResources = annotResources;
 
             // Create a new graphics state for the annotation
@@ -318,16 +317,13 @@ public class PdfRenderer : PdfContentProcessor
         if (string.IsNullOrEmpty(stateName))
         {
             // Use first entry if no state specified
-            foreach (KeyValuePair<PdfName, PdfObject> kvp in stateDict)
-            {
-                return kvp.Value switch
+            return stateDict.Select(kvp => kvp.Value switch
                 {
                     PdfStream stream => stream,
                     PdfIndirectReference sRef => _document?.GetObject(sRef.ObjectNumber) as PdfStream,
                     _ => null
-                };
-            }
-            return null;
+                })
+                .FirstOrDefault();
         }
 
         // Look up the named state
@@ -417,45 +413,37 @@ public class PdfRenderer : PdfContentProcessor
 
     protected override void OnStroke()
     {
-        if (!_currentPath.IsEmpty)
-        {
-            List<double>? color = CurrentState.StrokeColor;
-            string colorStr = color != null ? string.Join(",", color.Select(c => c.ToString("F2"))) : "null";
-            Console.WriteLine($"[PATH STROKE] ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
-            _target.StrokePath(_currentPath, CurrentState);
-            _currentPath.Clear();
-        }
+        if (_currentPath.IsEmpty) return;
+        List<double> color = CurrentState.StrokeColor;
+        string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
+        Console.WriteLine($"[PATH STROKE] ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
+        _target.StrokePath(_currentPath, CurrentState);
+        _currentPath.Clear();
     }
 
     protected override void OnFill(bool evenOdd)
     {
-        if (!_currentPath.IsEmpty)
-        {
-            List<double>? color = CurrentState.FillColor;
-            string colorStr = color != null ? string.Join(",", color.Select(c => c.ToString("F2"))) : "null";
-            Console.WriteLine($"[PATH FILL] ColorSpace={CurrentState.FillColorSpace}, Color=[{colorStr}], PathEmpty={_currentPath.IsEmpty}");
-            _target.FillPath(_currentPath, CurrentState, evenOdd);
-            _currentPath.Clear();
-        }
+        if (_currentPath.IsEmpty) return;
+        List<double> color = CurrentState.FillColor;
+        string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
+        Console.WriteLine($"[PATH FILL] ColorSpace={CurrentState.FillColorSpace}, Color=[{colorStr}], PathEmpty={_currentPath.IsEmpty}");
+        _target.FillPath(_currentPath, CurrentState, evenOdd);
+        _currentPath.Clear();
     }
 
     protected override void OnFillAndStroke()
     {
-        if (!_currentPath.IsEmpty)
-        {
-            _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);
-            _currentPath.Clear();
-        }
+        if (_currentPath.IsEmpty) return;
+        _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);
+        _currentPath.Clear();
     }
 
     protected override void OnEndPath()
     {
         // End path without painting (used for clipping)
-        if (!_currentPath.IsEmpty)
-        {
-            _target.SetClippingPath(_currentPath, CurrentState, evenOdd: false);
-            _currentPath.Clear();
-        }
+        if (_currentPath.IsEmpty) return;
+        _target.SetClippingPath(_currentPath, CurrentState, evenOdd: false);
+        _currentPath.Clear();
     }
 
     // ==================== Text Rendering ====================
@@ -508,7 +496,7 @@ public class PdfRenderer : PdfContentProcessor
             string decoded = font.DecodeCharacter(charCode);
 
             // Debug logging for specific character codes
-            if (charCode == 0x03 || charCode == 0x0003 || charCode == 0x0766 || charCode is >= 0x0700 and <= 0x0800)
+            if (charCode is 0x03 or 0x0766 or >= 0x0700 and <= 0x0800)
             {
                 Debug.WriteLine($"  DEBUG: charCode=0x{charCode:X4} → '{decoded}' (U+{((int)decoded[0]):X4})");
             }
@@ -551,14 +539,14 @@ public class PdfRenderer : PdfContentProcessor
         string? fillCs = CurrentState.FillColorSpace;
         List<double>? fillColor = CurrentState.FillColor;
         ResolveColorSpace(ref fillCs, ref fillColor);
-        CurrentState.FillColorSpace = fillCs;
-        CurrentState.FillColor = fillColor;
+        CurrentState.FillColorSpace = fillCs ?? string.Empty;
+        CurrentState.FillColor = fillColor ?? [];
 
         string? strokeCs = CurrentState.StrokeColorSpace;
         List<double>? strokeColor = CurrentState.StrokeColor;
         ResolveColorSpace(ref strokeCs, ref strokeColor);
-        CurrentState.StrokeColorSpace = strokeCs;
-        CurrentState.StrokeColor = strokeColor;
+        CurrentState.StrokeColorSpace = strokeCs ?? string.Empty;
+        CurrentState.StrokeColor = strokeColor ?? [];
     }
 
     private void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color)
@@ -566,11 +554,11 @@ public class PdfRenderer : PdfContentProcessor
         if (string.IsNullOrEmpty(colorSpaceName))
             return;
 
-        // Ensure color list exists
-        color ??= new List<double>();
+        // Ensure the color list exists
+        color ??= [];
 
         // Skip device color spaces - they don't need resolution
-        if (colorSpaceName == "DeviceGray" || colorSpaceName == "DeviceRGB" || colorSpaceName == "DeviceCMYK")
+        if (colorSpaceName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK")
             return;
 
         // Try to resolve named color space from resources
@@ -593,22 +581,23 @@ public class PdfRenderer : PdfContentProcessor
             if (csArray[0] is not PdfName csType)
                 return;
 
-            // Handle ICCBased color space: [/ICCBased stream]
-            if (csType.Value == "ICCBased" && csArray.Count >= 2)
+            switch (csType.Value)
             {
-                // Get the ICC profile stream
-                PdfObject? streamObj = csArray[1];
-                if (streamObj is PdfIndirectReference streamRef && _document != null)
-                    streamObj = _document.ResolveReference(streamRef);
-
-                if (streamObj is PdfStream iccStream)
+                // Handle ICCBased color space: [/ICCBased stream]
+                case "ICCBased" when csArray.Count >= 2:
                 {
+                    // Get the ICC profile stream
+                    PdfObject? streamObj = csArray[1];
+                    if (streamObj is PdfIndirectReference streamRef && _document != null)
+                        streamObj = _document.ResolveReference(streamRef);
+
+                    if (streamObj is not PdfStream iccStream) return;
                     // Get stream dictionary to find alternate color space and number of components
                     PdfDictionary streamDict = iccStream.Dictionary;
 
                     // Get /N (number of components): 1=Gray, 3=RGB, 4=CMYK
                     var numComponents = 1;
-                    if (streamDict.TryGetValue(new PdfName("N"), out PdfObject? nObj) && nObj is PdfInteger nNum)
+                    if (streamDict.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nNum)
                     {
                         numComponents = nNum.Value;
                     }
@@ -617,7 +606,7 @@ public class PdfRenderer : PdfContentProcessor
 
                     // Get /Alternate color space
                     string? alternateSpace = null;
-                    if (streamDict.TryGetValue(new PdfName("Alternate"), out PdfObject? altObj))
+                    if (streamDict.TryGetValue(new PdfName("Alternate"), out PdfObject altObj))
                     {
                         if (altObj is PdfName altName)
                         {
@@ -654,40 +643,44 @@ public class PdfRenderer : PdfContentProcessor
                             _ => [0.0]
                         };
                     }
+
+                    break;
                 }
-            }
-            // Handle Separation color space: [/Separation name alternateSpace tintTransform]
-            else if (csType.Value == "Separation" && csArray is [_, _, PdfName alternateName, ..])
+                // Handle Separation color space: [/Separation name alternateSpace tintTransform]
                 // Get alternate color space (usually /DeviceRGB or /DeviceCMYK)
-            {
-                string altSpace = alternateName.Value;
-
-                // For now, simple heuristic: if alternate is DeviceRGB, map tint to grayscale in that space
-                // A tint of 0 typically means "no ink" (white) and 1 means "full ink"
-                // But Separation colors are usually inverted: 0 = full color, 1 = no color
-                if (color.Count == 1)
+                case "Separation" when csArray is [_, _, PdfName alternateName, ..]:
                 {
-                    double tint = color[0];
+                    string altSpace = alternateName.Value;
 
-                    // Most Separation spaces use tint where 0 = full color, 1 = no color
-                    // The tint transform function would normally handle this, but as a simple
-                    // approximation, we'll use: output = 1 - tint for each component
-                    if (altSpace == "DeviceRGB")
+                    // For now, simple heuristic: if alternate is DeviceRGB, map tint to grayscale in that space
+                    // A tint of 0 typically means "no ink" (white) and 1 means "full ink"
+                    // But Separation colors are usually inverted: 0 = full color, 1 = no color
+                    if (color.Count == 1)
                     {
-                        // For a typical spot color, full tint (0) produces the spot color
-                        // We need the actual tint transform, but as an approximation:
-                        // Assume the separation is a spot color that maps to a pure hue
-                        // For now, just convert to grayscale: 0 = black, 1 = white
-                        double value = 1.0 - tint; // Invert: 0 becomes 1 (white), 1 becomes 0 (black)
-                        color = [value, value, value];
-                        colorSpaceName = "DeviceRGB";
+                        double tint = color[0];
+
+                        // Most Separation spaces use tint where 0 = full color, 1 = no color
+                        // The tint transform function would normally handle this, but as a simple
+                        // approximation, we'll use: output = 1 - tint for each component
+                        if (altSpace == "DeviceRGB")
+                        {
+                            // For a typical spot color, full tint (0) produces the spot color
+                            // We need the actual tint transform, but as an approximation:
+                            // Assume the separation is a spot color that maps to a pure hue
+                            // For now, just convert to grayscale: 0 = black, 1 = white
+                            double value = 1.0 - tint; // Invert: 0 becomes 1 (white), 1 becomes 0 (black)
+                            color = [value, value, value];
+                            colorSpaceName = "DeviceRGB";
+                        }
+                        else if (altSpace == "DeviceGray")
+                        {
+                            double value = 1.0 - tint;
+                            color = [value];
+                            colorSpaceName = "DeviceGray";
+                        }
                     }
-                    else if (altSpace == "DeviceGray")
-                    {
-                        double value = 1.0 - tint;
-                        color = [value];
-                        colorSpaceName = "DeviceGray";
-                    }
+
+                    break;
                 }
             }
         }
@@ -783,33 +776,31 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Render all text in a single DrawText call
-        if (combinedText.Length > 0)
+        if (combinedText.Length <= 0) return;
+        var fullText = combinedText.ToString();
+        string textPreview = fullText[..Math.Min(20, fullText.Length)];
+        Console.WriteLine($"[TJ] Rendering '{textPreview}...' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
+
+        // Show full text for Type0 fonts to debug extra character issue
+        PdfFont? tjFont = _currentResources.GetFontObject(CurrentState.FontName);
+        if (tjFont?.FontType == PdfFontType.Type0)
+            Console.WriteLine($"[TJ-FULL] Type0 text ({fullText.Length} chars, {combinedCharCodes.Count} codes): '{fullText}'");
+
+        // DIAGNOSTIC: Log the first few widths and check for zeros
+        if (combinedWidths.Count > 0)
         {
-            var fullText = combinedText.ToString();
-            string textPreview = fullText[..Math.Min(20, fullText.Length)];
-            Console.WriteLine($"[TJ] Rendering '{textPreview}...' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
+            string widthsPreview = string.Join(", ", combinedWidths.Take(5).Select(w => $"{w:F4}"));
+            Console.WriteLine($"     Widths: [{widthsPreview}...] Total: {combinedWidths.Sum():F4}");
 
-            // Show full text for Type0 fonts to debug extra character issue
-            PdfFont? tjFont = _currentResources.GetFontObject(CurrentState.FontName);
-            if (tjFont?.FontType == PdfFontType.Type0)
-                Console.WriteLine($"[TJ-FULL] Type0 text ({fullText.Length} chars, {combinedCharCodes.Count} codes): '{fullText}'");
-
-            // DIAGNOSTIC: Log first few widths and check for zeros
-            if (combinedWidths.Count > 0)
-            {
-                string widthsPreview = string.Join(", ", combinedWidths.Take(5).Select(w => $"{w:F4}"));
-                Console.WriteLine($"     Widths: [{widthsPreview}...] Total: {combinedWidths.Sum():F4}");
-
-                if (combinedWidths.Take(5).All(w => w == 0))
-                    Console.WriteLine($"     WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
-            }
-
-            _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
-
-            // Advance text position by total width
-            double totalAdvance = combinedWidths.Sum();
-            CurrentState.AdvanceTextMatrix(totalAdvance, 0);
+            if (combinedWidths.Take(5).All(w => w == 0))
+                Console.WriteLine($"     WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
         }
+
+        _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
+
+        // Advance text position by total width
+        double totalAdvance = combinedWidths.Sum();
+        CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
 
     // ==================== XObject Rendering ====================
@@ -923,7 +914,7 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     private static bool IsFormXObject(PdfStream stream)
     {
-        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;
 
         return obj is PdfName { Value: "Form" };
@@ -942,11 +933,11 @@ public class PdfRenderer : PdfContentProcessor
         // Get the Form's Resources dictionary (if any)
         // Form XObjects can have their own resources, or inherit from the page
         PdfResources? formResources = _resources;
-        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resourcesObj))
+        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
             if (resourcesObj is PdfDictionary resourcesDict)
             {
-                // Create new resources object for the form
+                // Create a new resources object for the form
                 formResources = new PdfResources(resourcesDict);
             }
             // TODO: Handle indirect references to Resources dictionaries
@@ -961,10 +952,14 @@ public class PdfRenderer : PdfContentProcessor
         Matrix3x2 savedCtm = CurrentState.Ctm;
 
         // Create a new renderer for the form to ensure it starts with a fresh graphics state
-        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document);
-
-        // Set the form renderer's CTM to the saved CTM from the page
-        formRenderer.CurrentState.Ctm = savedCtm;
+        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document)
+            {
+                CurrentState =
+                {
+                    // Set the form renderer's CTM to the saved CTM from the page
+                    Ctm = savedCtm
+                }
+            };
 
         // TODO: If form has a /Matrix entry, concatenate it with the saved CTM
         // formCtm = formMatrix * savedCtm
@@ -980,17 +975,25 @@ public class PdfRenderer : PdfContentProcessor
 
     protected override void ProcessOperator(PdfOperator op)
     {
-        // Handle save/restore with render target
-        if (op is SaveGraphicsStateOperator)
+        switch (op)
         {
-            _target.SaveState();
-        }
-        else if (op is RestoreGraphicsStateOperator)
-        {
-            _target.RestoreState();
+            // Handle save/restore with a render target
+            case SaveGraphicsStateOperator:
+                Console.WriteLine($"[PDFLIBRARY q] Saving state, CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
+                _target.SaveState();
+                break;
+            case RestoreGraphicsStateOperator:
+                Console.WriteLine($"[PDFLIBRARY Q] Before restore, CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
+                _target.RestoreState();
+                break;
         }
 
         // Call base implementation to update CurrentState
         base.ProcessOperator(op);
+
+        if (op is not RestoreGraphicsStateOperator) return;
+        Console.WriteLine($"[PDFLIBRARY Q] After restore, CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
+        // After restoring state, we need to update the canvas matrix to match
+        _target.ApplyCtm(CurrentState.Ctm);
     }
 }

@@ -33,7 +33,7 @@ public class OptionalContentManager
         }
 
         // Look for /OCProperties in the catalog
-        if (!catalog.Dictionary.TryGetValue(new PdfName("OCProperties"), out PdfObject? ocPropsObj))
+        if (!catalog.Dictionary.TryGetValue(new PdfName("OCProperties"), out PdfObject ocPropsObj))
         {
             Console.WriteLine("OptionalContentManager: No /OCProperties in catalog");
             return;
@@ -49,7 +49,7 @@ public class OptionalContentManager
 
         // Get the default configuration dictionary /OCProperties/D
         // Per PDF spec ISO 32000-1:2008 section 8.11.4.3
-        if (!ocProperties.TryGetValue(new PdfName("D"), out PdfObject? dObj) || dObj is not PdfDictionary defaultConfig)
+        if (!ocProperties.TryGetValue(new PdfName("D"), out PdfObject dObj) || dObj is not PdfDictionary defaultConfig)
         {
             Console.WriteLine("OptionalContentManager: No /D (default configuration) found");
             return;
@@ -61,7 +61,7 @@ public class OptionalContentManager
         // If /BaseState is /ON (or missing), all OCGs are visible by default except those in /OFF
         // If /BaseState is /OFF, all OCGs are hidden by default except those in /ON
         var defaultVisible = true; // Default is /ON per spec
-        if (defaultConfig.TryGetValue(new PdfName("BaseState"), out PdfObject? baseStateObj) && baseStateObj is PdfName baseState)
+        if (defaultConfig.TryGetValue(new PdfName("BaseState"), out PdfObject baseStateObj) && baseStateObj is PdfName baseState)
         {
             defaultVisible = baseState.Value != "OFF";
             Console.WriteLine($"OptionalContentManager: /BaseState = {baseState.Value}, defaultVisible = {defaultVisible}");
@@ -75,7 +75,7 @@ public class OptionalContentManager
         if (defaultVisible)
         {
             // BaseState is /ON - read /OFF array for OCGs that should be hidden
-            if (defaultConfig.TryGetValue(new PdfName("OFF"), out PdfObject? offObj) && offObj is PdfArray offArray)
+            if (defaultConfig.TryGetValue(new PdfName("OFF"), out PdfObject offObj) && offObj is PdfArray offArray)
             {
                 Console.WriteLine($"OptionalContentManager: Found /OFF array with {offArray.Count} items");
                 foreach (PdfObject item in offArray)
@@ -101,12 +101,12 @@ public class OptionalContentManager
             Console.WriteLine("OptionalContentManager: /BaseState is /OFF - all OCGs hidden by default");
 
             // Get the /OCGs array which contains all OCGs in the document
-            if (ocProperties.TryGetValue(new PdfName("OCGs"), out PdfObject? ocgsObj) && ocgsObj is PdfArray ocgsArray)
+            if (ocProperties.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj) && ocgsObj is PdfArray ocgsArray)
             {
                 HashSet<string> enabledOCGs = [];
 
                 // First, collect all enabled OCGs from /ON array
-                if (defaultConfig.TryGetValue(new PdfName("ON"), out PdfObject? onObj) && onObj is PdfArray onArray)
+                if (defaultConfig.TryGetValue(new PdfName("ON"), out PdfObject onObj) && onObj is PdfArray onArray)
                 {
                     Console.WriteLine($"OptionalContentManager: Found /ON array with {onArray.Count} items");
                     foreach (PdfObject item in onArray)
@@ -171,7 +171,7 @@ public class OptionalContentManager
         // For OCMD dictionaries, we need to resolve the /OCGs entry
         if (ocObj is PdfDictionary ocmd)
         {
-            if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject? ocgsObj))
+            if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj))
             {
                 // /OCGs can be a single reference or an array of references
                 if (ocgsObj is PdfIndirectReference ocgRef)

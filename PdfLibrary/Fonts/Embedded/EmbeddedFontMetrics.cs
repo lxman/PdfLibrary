@@ -526,7 +526,7 @@ public class EmbeddedFontMetrics
                     if (currentContour.Count > 0)
                     {
                         contours.Add(new GlyphContour(currentContour, isClosed: true));
-                        currentContour = new List<ContourPoint>();
+                        currentContour = [];
                     }
                     currentX = moveTo.Point.X;
                     currentY = moveTo.Point.Y;
@@ -555,7 +555,7 @@ public class EmbeddedFontMetrics
                     if (currentContour.Count > 0)
                     {
                         contours.Add(new GlyphContour(currentContour, isClosed: true));
-                        currentContour = new List<ContourPoint>();
+                        currentContour = [];
                     }
                     break;
             }

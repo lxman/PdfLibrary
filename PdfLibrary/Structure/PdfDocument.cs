@@ -143,7 +143,7 @@ public class PdfDocument : IDisposable
             throw new PdfParseException($"Object stream {objectStreamNumber} not found or not a stream");
 
         // Verify this is an object stream
-        if (!objStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject? typeObj) ||
+        if (!objStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject typeObj) ||
             typeObj is not PdfName { Value: "ObjStm" })
         {
             throw new PdfParseException($"Object {objectStreamNumber} is not an object stream (/Type /ObjStm missing)");
@@ -163,7 +163,7 @@ public class PdfDocument : IDisposable
     private void ExtractObjectsFromStream(PdfStream objStream)
     {
         // Get /N (number of compressed objects)
-        if (!objStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject? nObj) ||
+        if (!objStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) ||
             nObj is not PdfInteger nInt)
         {
             throw new PdfParseException("Object stream missing /N entry");
@@ -171,7 +171,7 @@ public class PdfDocument : IDisposable
         int objectCount = nInt.Value;
 
         // Get /First (offset to first object's data)
-        if (!objStream.Dictionary.TryGetValue(new PdfName("First"), out PdfObject? firstObj) ||
+        if (!objStream.Dictionary.TryGetValue(new PdfName("First"), out PdfObject firstObj) ||
             firstObj is not PdfInteger firstInt)
         {
             throw new PdfParseException("Object stream missing /First entry");
@@ -426,7 +426,7 @@ public class PdfDocument : IDisposable
 
                 long prevXrefPosition = -1;
                 if (currentTrailer != null &&
-                    currentTrailer.TryGetValue(new PdfName("Prev"), out PdfObject? prevObj) &&
+                    currentTrailer.TryGetValue(new PdfName("Prev"), out PdfObject prevObj) &&
                     prevObj is PdfInteger prevInt)
                 {
                     prevXrefPosition = prevInt.Value + headerOffset;

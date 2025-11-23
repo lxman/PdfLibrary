@@ -85,9 +85,7 @@ public class AsciiHexDecodeFilter : IStreamFilter
     }
 
     private static bool IsHexDigit(char ch) =>
-        ch is >= '0' and <= '9' ||
-        ch is >= 'A' and <= 'F' ||
-        ch is >= 'a' and <= 'f';
+        ch is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f';
 
     private static int HexValue(char ch)
     {

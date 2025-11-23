@@ -462,11 +462,11 @@ public class PdfContentParser
             if (prev == 'E' && b == 'I')
             {
                 // Check if prevPrev was whitespace
-                if (prevPrev == ' ' || prevPrev == '\n' || prevPrev == '\r' || prevPrev == '\t' || prevPrev == 0)
+                if (prevPrev is ' ' or '\n' or '\r' or '\t' or 0)
                 {
                     // Peek next byte to verify it's whitespace or EOF
                     int next = stream.ReadByte();
-                    if (next == -1 || next == ' ' || next == '\n' || next == '\r' || next == '\t' || next == 'Q' || next == 'q')
+                    if (next is -1 or ' ' or '\n' or '\r' or '\t' or 'Q' or 'q')
                     {
                         // Found EI, put back the next byte if it's not EOF
                         if (next != -1 && stream.CanSeek)

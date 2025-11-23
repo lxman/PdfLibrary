@@ -74,15 +74,18 @@ public static class PdfUnitExtensions
 
     #region Pixels
 
-    /// <summary>
-    /// Create a length from pixels using standard screen DPI (96)
-    /// </summary>
-    public static PdfLength Px(this int value) => PdfLength.FromPixels(value);
+    extension(int value)
+    {
+        /// <summary>
+        /// Create a length from pixels using standard screen DPI (96)
+        /// </summary>
+        public PdfLength Px() => PdfLength.FromPixels(value);
 
-    /// <summary>
-    /// Create a length from pixels using the specified DPI
-    /// </summary>
-    public static PdfLength Px(this int value, int dpi) => PdfLength.FromPixels(value, dpi);
+        /// <summary>
+        /// Create a length from pixels using the specified DPI
+        /// </summary>
+        public PdfLength Px(int dpi) => PdfLength.FromPixels(value, dpi);
+    }
 
     #endregion
 }

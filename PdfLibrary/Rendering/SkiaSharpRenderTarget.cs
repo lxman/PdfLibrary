@@ -971,53 +971,36 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 SKMatrix oldMatrix = _canvas.TotalMatrix;
                 Console.WriteLine($"[PDFLIBRARY IMAGE]   Current matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
 
-                // PDF images are drawn in a 1×1 unit square with (0,0) at bottom-left
-                // The oldMatrix has negative ScaleY because of the initial Y-flip, making images upside down
-                // We need to flip the image right-side up by applying an additional Y-flip
-                // This is similar to how Melville does it
-
-                // Create the image flip matrix: Scale(1, -1) about y=1 (top of unit square)
-                // This is: Translate(0, 1) × Scale(1, -1) × Translate(0, -1)
-                // Which simplifies to: [1, 0, 0, -1, 0, 1]
-                var imageFlipMatrix = new SKMatrix
-                {
-                    ScaleX = 1,
-                    SkewY = 0,
-                    SkewX = 0,
-                    ScaleY = -1,
-                    TransX = 0,
-                    TransY = 1,
-                    Persp0 = 0,
-                    Persp1 = 0,
-                    Persp2 = 1
-                };
+                // Create the image flip matrix: [1, 0, 0, -1, 0, 1]
+                // This flips the image right-side up to counter the canvas Y-flip
+                var imageFlipMatrix = new SKMatrix(1, 0, 0, 0, -1, 1, 0, 0, 1);
 
                 // Combine: combinedMatrix = oldMatrix × imageFlipMatrix
-                // This applies the CTM and Y-flip, then flips the image right-side up
                 SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
 
                 Console.WriteLine($"[PDFLIBRARY IMAGE]   Image flip matrix: [1, 0, 0, -1, 0, 1]");
                 Console.WriteLine($"[PDFLIBRARY IMAGE]   Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
 
-                // Save canvas state
-                _canvas.Save();
-
-                // Apply the combined matrix
+                // Set the combined matrix
                 _canvas.SetMatrix(combinedMatrix);
 
-                using var paint = new SKPaint();
-                paint.FilterQuality = SKFilterQuality.High;
-                paint.IsAntialias = true;
+                using var paint = new SKPaint
+                {
+                    FilterQuality = SKFilterQuality.High,
+                    IsAntialias = true
+                };
 
-                // Draw the bitmap into the PDF unit square (0, 0, 1, 1)
-                // The combined matrix will transform it to the correct position and size
-                var unitRect = new SKRect(0, 0, 1, 1);
-                _canvas.DrawBitmap(bitmap, unitRect, paint);
+                // Use DrawImage with explicit source and destination rectangles
+                // This matches Melville's approach and ensures the entire bitmap is drawn into the unit square
+                using var skImage = SKImage.FromBitmap(bitmap);
+                var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
+                var destRect = new SKRect(0, 0, 1, 1);
+                _canvas.DrawImage(skImage, sourceRect, destRect, paint);
 
                 Console.WriteLine("  Image drawn successfully");
 
-                // Restore canvas state
-                _canvas.Restore();
+                // Restore the old matrix
+                _canvas.SetMatrix(oldMatrix);
             }
             finally
             {

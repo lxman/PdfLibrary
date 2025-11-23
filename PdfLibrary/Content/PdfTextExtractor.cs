@@ -84,18 +84,16 @@ public class PdfTextExtractor : PdfContentProcessor
         var threshold = (float)(SpaceThreshold * CurrentState.FontSize);
 
         // If significant movement, add space or newline
-        if (distance > threshold)
+        if (distance <= threshold) return;
+        // Vertical movement suggests new line
+        if (Math.Abs(currentPosition.Y - _lastPosition.Y) > CurrentState.FontSize * 0.5)
         {
-            // Vertical movement suggests new line
-            if (Math.Abs(currentPosition.Y - _lastPosition.Y) > CurrentState.FontSize * 0.5)
-            {
-                _textBuilder.AppendLine();
-            }
-            // Horizontal movement suggests space
-            else if (Math.Abs(currentPosition.X - _lastPosition.X) > threshold)
-            {
-                _textBuilder.Append(' ');
-            }
+            _textBuilder.AppendLine();
+        }
+        // Horizontal movement suggests space
+        else if (Math.Abs(currentPosition.X - _lastPosition.X) > threshold)
+        {
+            _textBuilder.Append(' ');
         }
 
         // Don't update _lastPosition here - let OnShowText() update it to the END position
@@ -111,7 +109,7 @@ public class PdfTextExtractor : PdfContentProcessor
 
         // Get current font object
         PdfFont? font = null;
-        if (_resources != null && !string.IsNullOrEmpty(CurrentState.FontName))
+        if (_resources is not null && !string.IsNullOrEmpty(CurrentState.FontName))
         {
             font = _resources.GetFontObject(CurrentState.FontName);
         }
@@ -220,7 +218,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     private static bool IsFormXObject(PdfStream stream)
     {
-        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject? obj))
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;
         return obj is PdfName { Value: "Form" };
     }
@@ -235,7 +233,7 @@ public class PdfTextExtractor : PdfContentProcessor
 
         // Get the Form's Resources dictionary if present
         PdfResources? formResources = _resources;
-        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resourcesObj))
+        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
             if (resourcesObj is PdfDictionary resourcesDict)
             {
@@ -269,43 +267,40 @@ public class PdfTextExtractor : PdfContentProcessor
         }
 
         // Use font for decoding if available
-        if (font != null)
+        if (font is null) return Encoding.Latin1.GetString(bytes);
+        var sb = new StringBuilder();
+
+        // Type0 fonts use multibyte character codes (typically 2 bytes)
+        if (font.FontType == PdfFontType.Type0)
         {
-            var sb = new StringBuilder();
-
-            // Type0 fonts use multi-byte character codes (typically 2 bytes)
-            if (font.FontType == PdfFontType.Type0)
+            // Read 2 bytes at a time for Type0 fonts
+            for (var i = 0; i < bytes.Length - 1; i += 2)
             {
-                // Read 2 bytes at a time for Type0 fonts
-                for (var i = 0; i < bytes.Length - 1; i += 2)
-                {
-                    int charCode = (bytes[i] << 8) | bytes[i + 1];
-                    string decoded = font.DecodeCharacter(charCode);
-                    sb.Append(decoded);
-                }
-
-                // Handle odd byte at end (shouldn't happen in well-formed PDFs)
-                if (bytes.Length % 2 == 1)
-                {
-                    string decoded = font.DecodeCharacter(bytes[^1]);
-                    sb.Append(decoded);
-                }
-            }
-            else
-            {
-                // Type1, Type3, TrueType fonts use single-byte character codes
-                foreach (byte b in bytes)
-                {
-                    string decoded = font.DecodeCharacter(b);
-                    sb.Append(decoded);
-                }
+                int charCode = (bytes[i] << 8) | bytes[i + 1];
+                string decoded = font.DecodeCharacter(charCode);
+                sb.Append(decoded);
             }
 
-            return sb.ToString();
+            // Handle odd byte at the end (shouldn't happen in well-formed PDFs)
+            if (bytes.Length % 2 != 1) return sb.ToString();
+            {
+                string decoded = font.DecodeCharacter(bytes[^1]);
+                sb.Append(decoded);
+            }
+        }
+        else
+        {
+            // Type1, Type3, TrueType fonts use single-byte character codes
+            foreach (byte b in bytes)
+            {
+                string decoded = font.DecodeCharacter(b);
+                sb.Append(decoded);
+            }
         }
 
+        return sb.ToString();
+
         // Fall back to Latin-1/PDFDocEncoding (similar to Windows-1252)
-        return Encoding.Latin1.GetString(bytes);
     }
 
     /// <summary>
@@ -319,17 +314,9 @@ public class PdfTextExtractor : PdfContentProcessor
             return bytes.Length * fontSize * 0.5;
         }
 
-        double totalWidth = 0;
-        foreach (byte b in bytes)
-        {
-            // Get character width in glyph space (typically 1000 units)
-            double glyphWidth = font.GetCharacterWidth(b);
-
-            // Convert to text space: width * fontSize / 1000
-            totalWidth += glyphWidth * fontSize / 1000.0;
-        }
-
-        return totalWidth;
+        return bytes
+            .Select(b => font.GetCharacterWidth(b)).Select(glyphWidth => glyphWidth * fontSize / 1000.0)
+            .Sum();
     }
 }
 

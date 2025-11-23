@@ -14,7 +14,7 @@ public class PdfDocumentWriter
     private readonly Dictionary<int, long> _objectOffsets = new();
     private readonly Dictionary<string, int> _fontObjects = new();
     private readonly Dictionary<string, int> _fontDescriptorObjects = new(); // For custom fonts
-    private readonly List<(PdfImageContent image, int objectNumber)> _imageObjects = new();
+    private readonly List<(PdfImageContent image, int objectNumber)> _imageObjects = [];
     private readonly Dictionary<double, int> _extGStateObjects = new(); // opacity -> object number
 
     /// <summary>
@@ -842,7 +842,7 @@ public class PdfDocumentWriter
                 return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
             }
 
-            if (image.Compression == PdfImageCompression.Flate || image.Compression == PdfImageCompression.Auto)
+            if (image.Compression is PdfImageCompression.Flate or PdfImageCompression.Auto)
             {
                 byte[] compressed = CompressFlate(rgbData);
                 return (compressed, width, height, "DeviceRGB", 8, "FlateDecode");
@@ -860,7 +860,7 @@ public class PdfDocumentWriter
         catch
         {
             // If SkiaSharp fails, return a placeholder
-            return (new byte[0], 100, 100, "DeviceRGB", 8, "");
+            return ([], 100, 100, "DeviceRGB", 8, "");
         }
     }
 
@@ -886,7 +886,7 @@ public class PdfDocumentWriter
             }
 
             // Skip to next marker
-            if (marker == 0xD8 || marker == 0xD9) // SOI or EOI
+            if (marker is 0xD8 or 0xD9) // SOI or EOI
             {
                 i += 2;
             }
@@ -978,7 +978,7 @@ public class PdfDocumentWriter
         string colorSpace = colorType == 0 ? "DeviceGray" : "DeviceRGB";
         byte[] finalData = rgbData.ToArray();
 
-        if (compression == PdfImageCompression.Flate || compression == PdfImageCompression.Auto)
+        if (compression is PdfImageCompression.Flate or PdfImageCompression.Auto)
         {
             finalData = CompressFlate(finalData);
             return (finalData, width, height, colorSpace, bitDepth, "FlateDecode");
@@ -1019,7 +1019,7 @@ public class PdfDocumentWriter
 
         byte[] finalData = rgbData.ToArray();
 
-        if (compression == PdfImageCompression.Flate || compression == PdfImageCompression.Auto)
+        if (compression is PdfImageCompression.Flate or PdfImageCompression.Auto)
         {
             finalData = CompressFlate(finalData);
             return (finalData, width, height, "DeviceRGB", 8, "FlateDecode");

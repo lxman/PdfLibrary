@@ -139,14 +139,14 @@ public class PdfXrefParser
             throw new PdfParseException("Expected XRef stream object");
 
         // Verify this is a cross-reference stream
-        if (!xrefStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject? typeObj) ||
+        if (!xrefStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject typeObj) ||
             typeObj is not PdfName { Value: "XRef" })
         {
             throw new PdfParseException("Stream is not a cross-reference stream (/Type /XRef missing)");
         }
 
         // Get /W array - specifies field widths [type, field2, field3]
-        if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out PdfObject? wObj) ||
+        if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out PdfObject wObj) ||
             wObj is not PdfArray { Count: 3 } wArray)
         {
             throw new PdfParseException("XRef stream missing or invalid /W array");
@@ -163,7 +163,7 @@ public class PdfXrefParser
 
         // Get /Index array (or default to [0, Size])
         int[] index;
-        if (xrefStream.Dictionary.TryGetValue(new PdfName("Index"), out PdfObject? indexObj) &&
+        if (xrefStream.Dictionary.TryGetValue(new PdfName("Index"), out PdfObject indexObj) &&
             indexObj is PdfArray indexArray)
         {
             index = new int[indexArray.Count];
@@ -178,7 +178,7 @@ public class PdfXrefParser
         else
         {
             // Default: [0, Size]
-            if (!xrefStream.Dictionary.TryGetValue(new PdfName("Size"), out PdfObject? sizeObj) ||
+            if (!xrefStream.Dictionary.TryGetValue(new PdfName("Size"), out PdfObject sizeObj) ||
                 sizeObj is not PdfInteger size)
             {
                 throw new PdfParseException("XRef stream missing /Size");

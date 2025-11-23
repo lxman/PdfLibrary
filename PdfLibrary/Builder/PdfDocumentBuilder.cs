@@ -7,7 +7,7 @@ namespace PdfLibrary.Builder;
 /// </summary>
 public class PdfDocumentBuilder
 {
-    private readonly List<PdfPageBuilder> _pages = new();
+    private readonly List<PdfPageBuilder> _pages = [];
     private readonly PdfMetadataBuilder _metadata = new();
     private PdfAcroFormBuilder? _acroForm;
     private readonly Dictionary<string, CustomFontInfo> _customFonts = new();
@@ -38,7 +38,7 @@ public class PdfDocumentBuilder
     }
 
     /// <summary>
-    /// Add a new page with specified size
+    /// Add a new page with the specified size
     /// </summary>
     public PdfDocumentBuilder AddPage(PdfSize size, Action<PdfPageBuilder> configure)
     {
@@ -74,7 +74,7 @@ public class PdfDocumentBuilder
         if (_customFonts.ContainsKey(fontAlias))
             throw new ArgumentException($"A font with alias '{fontAlias}' is already loaded");
 
-        // Read font file
+        // Read the font file
         byte[] fontData = File.ReadAllBytes(fontPath);
 
         // Parse font metrics
@@ -152,126 +152,4 @@ public class PdfDocumentBuilder
         Save(stream);
         return stream.ToArray();
     }
-}
-
-/// <summary>
-/// Builder for document metadata
-/// </summary>
-public class PdfMetadataBuilder
-{
-    internal string? Title { get; private set; }
-    internal string? Author { get; private set; }
-    internal string? Subject { get; private set; }
-    internal string? Keywords { get; private set; }
-    internal string? Creator { get; private set; }
-    internal string? Producer { get; private set; }
-    internal DateTime? CreationDate { get; private set; }
-    internal DateTime? ModificationDate { get; private set; }
-
-    public PdfMetadataBuilder SetTitle(string title)
-    {
-        Title = title;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetAuthor(string author)
-    {
-        Author = author;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetSubject(string subject)
-    {
-        Subject = subject;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetKeywords(string keywords)
-    {
-        Keywords = keywords;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetCreator(string creator)
-    {
-        Creator = creator;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetProducer(string producer)
-    {
-        Producer = producer;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetCreationDate(DateTime date)
-    {
-        CreationDate = date;
-        return this;
-    }
-
-    public PdfMetadataBuilder SetModificationDate(DateTime date)
-    {
-        ModificationDate = date;
-        return this;
-    }
-}
-
-/// <summary>
-/// Builder for document-level AcroForm settings
-/// </summary>
-public class PdfAcroFormBuilder
-{
-    internal string DefaultFont { get; private set; } = "Helvetica";
-    internal double DefaultFontSize { get; private set; } = 10;
-    internal bool NeedAppearances { get; private set; } = true;
-
-    public PdfAcroFormBuilder SetDefaultFont(string fontName, double fontSize = 10)
-    {
-        DefaultFont = fontName;
-        DefaultFontSize = fontSize;
-        return this;
-    }
-
-    public PdfAcroFormBuilder SetNeedAppearances(bool value)
-    {
-        NeedAppearances = value;
-        return this;
-    }
-}
-
-/// <summary>
-/// Information about a custom embedded font
-/// </summary>
-internal class CustomFontInfo
-{
-    /// <summary>
-    /// Alias name used to reference this font in the document
-    /// </summary>
-    public required string Alias { get; init; }
-
-    /// <summary>
-    /// Path to the original font file
-    /// </summary>
-    public required string FilePath { get; init; }
-
-    /// <summary>
-    /// Raw font file data
-    /// </summary>
-    public required byte[] FontData { get; init; }
-
-    /// <summary>
-    /// Parsed font metrics
-    /// </summary>
-    public required EmbeddedFontMetrics Metrics { get; init; }
-
-    /// <summary>
-    /// PostScript name from font
-    /// </summary>
-    public required string PostScriptName { get; init; }
-
-    /// <summary>
-    /// Font family name
-    /// </summary>
-    public required string FamilyName { get; init; }
 }

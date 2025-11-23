@@ -76,7 +76,7 @@ namespace PdfLibrary.Fonts.Embedded
                 uint sfntVersion = reader.ReadUInt32();
 
                 // Check for TrueType (0x00010000) or OpenType (0x4F54544F = "OTTO") or 'true'
-                bool isValid = (sfntVersion == 0x00010000 || sfntVersion == 0x74727565 || sfntVersion == 0x4F54544F);
+                bool isValid = sfntVersion is 0x00010000 or 0x74727565 or 0x4F54544F;
 
                 if (!isValid)
                     return tables; // Not a valid font

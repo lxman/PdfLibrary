@@ -80,7 +80,7 @@ public readonly struct PdfRect
     }
 
     /// <summary>
-    /// Create a rectangle from millimeters, measuring from top-left corner of page
+    /// Create a rectangle from millimeters, measuring from the top-left corner of the page
     /// </summary>
     /// <param name="left">Distance from left edge in mm</param>
     /// <param name="top">Distance from top edge in mm</param>
@@ -103,7 +103,7 @@ public readonly struct PdfRect
     }
 
     /// <summary>
-    /// Create a rectangle with explicit unit and origin specification
+    /// Create a rectangle with the explicit unit and origin specification
     /// </summary>
     public static PdfRect Create(double x, double y, double width, double height,
         PdfUnit unit, PdfOrigin origin, double pageHeight = 792)

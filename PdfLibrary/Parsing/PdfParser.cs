@@ -171,9 +171,7 @@ public class PdfParser(PdfLexer lexer)
     private static PdfString ParseString(PdfToken token)
     {
         // Check if it's a hex string (contains only hex digits)
-        bool isHex = token.Value.All(c => c is >= '0' and <= '9' ||
-                                           c is >= 'A' and <= 'F' ||
-                                           c is >= 'a' and <= 'f');
+        bool isHex = token.Value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f');
 
         if (isHex && token.Value.Length > 0)
         {
