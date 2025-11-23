@@ -1,6 +1,7 @@
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Logging;
 using PdfLibrary.Parsing;
 
 namespace PdfLibrary.Content;
@@ -102,13 +103,13 @@ public class PdfContentParser
                                 PdfInteger i => i.Value.ToString(),
                                 _ => o.ToString()
                             });
-                            Console.WriteLine($"[PARSER] {token.Value}: {operands.Count} operands -> [{types}] values=[{string.Join(", ", values)}]");
+                            PdfLogger.Log(LogCategory.PdfTool, $"[PARSER] {token.Value}: {operands.Count} operands -> [{types}] values=[{string.Join(", ", values)}]");
                         }
                         // Debug: trace Do operators
                         if (token.Value == "Do")
                         {
                             string types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
-                            Console.WriteLine($"[PARSER] Do: {operands.Count} operands -> [{types}], created {op.GetType().Name}");
+                            PdfLogger.Log(LogCategory.PdfTool, $"[PARSER] Do: {operands.Count} operands -> [{types}], created {op.GetType().Name}");
                         }
                         operators.Add(op);
                     }
@@ -375,7 +376,7 @@ public class PdfContentParser
     /// </summary>
     private static InlineImageOperator? ParseInlineImage(PdfLexer lexer)
     {
-        Console.WriteLine("[PARSER] Parsing inline image (BI...ID...EI)");
+        PdfLogger.Log(LogCategory.Images, "[PARSER] Parsing inline image (BI...ID...EI)");
 
         // Parse the dictionary part (until we see ID)
         var parameters = new PdfDictionary();
@@ -482,7 +483,7 @@ public class PdfContentParser
 
                         lexer.SyncPositionFromStream();
 
-                        Console.WriteLine($"[PARSER] Inline image parsed: {parameters.Count} params, {imageData.Count} bytes");
+                        PdfLogger.Log(LogCategory.Images, $"[PARSER] Inline image parsed: {parameters.Count} params, {imageData.Count} bytes");
                         return new InlineImageOperator(parameters, imageData.ToArray());
                     }
                 }

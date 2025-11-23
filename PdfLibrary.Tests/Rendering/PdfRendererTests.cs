@@ -25,7 +25,7 @@ public class PdfRendererTests
         renderer.ProcessOperators(operators);
 
         Assert.Contains(mock.Operations, op => op.StartsWith("StrokePath"));
-        Assert.Single(mock.Operations.Where(op => op.StartsWith("StrokePath")));
+        Assert.Single(mock.Operations, op => op.StartsWith("StrokePath"));
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class PdfRendererTests
 
         renderer.ProcessOperators(operators);
 
-        Assert.Single(mock.Operations.Where(op => op.StartsWith("StrokePath")));
+        Assert.Single(mock.Operations, op => op.StartsWith("StrokePath"));
         // Path should have MoveTo + CurveTo
         Assert.Contains("segments", mock.Operations[0]);
     }
@@ -108,7 +108,7 @@ public class PdfRendererTests
 
         renderer.ProcessOperators(operators);
 
-        Assert.Single(mock.Operations.Where(op => op.StartsWith("StrokePath")));
+        Assert.Single(mock.Operations, op => op.StartsWith("StrokePath"));
         Assert.Contains("[MLLZ]", mock.Operations[0]); // MoveTo, LineTo, LineTo, ClosePath
     }
 
@@ -247,7 +247,7 @@ public class PdfRendererTests
         renderer.ProcessOperators(operators);
 
         // After transformation, (0,0) -> (10,10) and (100,100) -> (210,210)
-        Assert.Single(mock.Operations.Where(op => op.StartsWith("StrokePath")));
+        Assert.Single(mock.Operations, op => op.StartsWith("StrokePath"));
     }
 
     [Fact]

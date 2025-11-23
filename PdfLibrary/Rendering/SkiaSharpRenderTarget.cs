@@ -6,6 +6,7 @@ using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Logging;
 using PdfLibrary.Structure;
 using SkiaSharp;
 
@@ -77,7 +78,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
         _pageWidth = width;
         _pageHeight = height;
 
-        Console.WriteLine($"[PDFLIBRARY] BeginPage: Page {pageNumber}, Size: {width}x{height}");
+        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}");
 
         // Clear canvas for the new page
         _canvas.Clear(SKColors.White);
@@ -88,7 +89,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
         // So we need to flip the Y-axis
         Matrix3x2 initialTransform = Matrix3x2.CreateScale(1, -1) * Matrix3x2.CreateTranslation(0, (float)height);
 
-        Console.WriteLine($"[PDFLIBRARY]   Initial viewport transform: Scale(1,-1) × Translate(0,{height})");
+        PdfLogger.Log(LogCategory.Transforms, $"Initial viewport transform: Scale(1,-1) × Translate(0,{height})");
 
         // Store this as our base transformation
         // All PDF CTM transformations will be applied on top of this
@@ -138,7 +139,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
         // Matrix multiplication order: rightmost matrix is applied first.
         // We want InitialTransform applied first, then CTM, so: CTM × InitialTransform
 
-        Console.WriteLine($"[PDFLIBRARY] ApplyCtm: PDF CTM=[{ctm.M11:F4}, {ctm.M12:F4}, {ctm.M21:F4}, {ctm.M22:F4}, {ctm.M31:F4}, {ctm.M32:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, $"ApplyCtm: PDF CTM=[{ctm.M11:F4}, {ctm.M12:F4}, {ctm.M21:F4}, {ctm.M22:F4}, {ctm.M31:F4}, {ctm.M32:F4}]");
 
         // Combine: CTM is applied to the viewport-transformed coordinates
         Matrix3x2 finalTransform = ctm * _initialTransform;
@@ -151,7 +152,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             0, 0, 1
         );
 
-        Console.WriteLine($"[PDFLIBRARY]   Final canvas matrix=[{finalMatrix.ScaleX:F4}, {finalMatrix.SkewY:F4}, {finalMatrix.SkewX:F4}, {finalMatrix.ScaleY:F4}, {finalMatrix.TransX:F4}, {finalMatrix.TransY:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, $"Final canvas matrix=[{finalMatrix.ScaleX:F4}, {finalMatrix.SkewY:F4}, {finalMatrix.SkewX:F4}, {finalMatrix.ScaleY:F4}, {finalMatrix.TransX:F4}, {finalMatrix.TransY:F4}]");
 
         _canvas.SetMatrix(finalMatrix);
     }
@@ -177,7 +178,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Debug: show text color if it's not black
             if (fillColor.Red != 0 || fillColor.Green != 0 || fillColor.Blue != 0)
             {
-                Console.WriteLine($"[TEXT COLOR] Text='{(text.Length > 20 ? text[..20] + "..." : text)}' Color=RGB({fillColor.Red},{fillColor.Green},{fillColor.Blue}) ColorSpace={state.FillColorSpace}");
+                PdfLogger.Log(LogCategory.Text, $"TEXT COLOR: Text='{(text.Length > 20 ? text[..20] + "..." : text)}' Color=RGB({fillColor.Red},{fillColor.Green},{fillColor.Blue}) ColorSpace={state.FillColorSpace}");
             }
 
             using var paint = new SKPaint();
@@ -189,11 +190,11 @@ public class SkiaSharpRenderTarget : IRenderTarget
             if (font is not null && TryRenderWithGlyphOutlines(text, glyphWidths, state, font, paint, charCodes))
             {
                 // Successfully rendered with glyph outlines
-                Console.WriteLine($"[RENDER] Glyph outline rendering succeeded for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
+                PdfLogger.Log(LogCategory.Text, $"Glyph outline rendering succeeded for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
                 return;
             }
 
-            Console.WriteLine($"[RENDER] Falling back to Arial for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
+            PdfLogger.Log(LogCategory.Text, $"Falling back to Arial for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
@@ -215,9 +216,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             Matrix3x2 fallbackMatrix = textPositionMatrix * state.TextMatrix;
 
-            Console.WriteLine($"[PDFLIBRARY] FALLBACK: FontSize={state.FontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
-            Console.WriteLine($"[PDFLIBRARY]   TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
-            Console.WriteLine($"[PDFLIBRARY]   FallbackMatrix (no FontSize)=[{fallbackMatrix.M11:F4}, {fallbackMatrix.M12:F4}, {fallbackMatrix.M21:F4}, {fallbackMatrix.M22:F4}, {fallbackMatrix.M31:F4}, {fallbackMatrix.M32:F4}]");
+            PdfLogger.Log(LogCategory.Text, $"FALLBACK: FontSize={state.FontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
+            PdfLogger.Log(LogCategory.Text, $"  TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
+            PdfLogger.Log(LogCategory.Text, $"  FallbackMatrix (no FontSize)=[{fallbackMatrix.M11:F4}, {fallbackMatrix.M12:F4}, {fallbackMatrix.M21:F4}, {fallbackMatrix.M22:F4}, {fallbackMatrix.M31:F4}, {fallbackMatrix.M32:F4}]");
 
             // Determine font style from font descriptor
             SKFontStyle? fontStyle = SKFontStyle.Normal;
@@ -271,7 +272,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // (excludes font size since SKFont already has it)
                 Vector2 position = Vector2.Transform(new Vector2(currentX, 0), fallbackMatrix);
 
-                Console.WriteLine($"[PDFLIBRARY] DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4})");
+                PdfLogger.Log(LogCategory.Text, $"DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4})");
 
                 var ch = text[i].ToString();
 
@@ -319,7 +320,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             EmbeddedFontMetrics? embeddedMetrics = font.GetEmbeddedMetrics();
             if (embeddedMetrics is not { IsValid: true })
             {
-                Console.WriteLine($"[RENDER] No embedded metrics for font '{font.BaseFont}'");
+                PdfLogger.Log(LogCategory.Text, $"No embedded metrics for font '{font.BaseFont}'");
                 return false;
             }
 
@@ -471,9 +472,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // Multiply by text matrix to get the complete glyph transformation
                 Matrix3x2 glyphMatrix = textStateMatrix * state.TextMatrix;
 
-                Console.WriteLine($"[PDFLIBRARY] GlyphTransformMatrix: HScale={tHs:F2}, Rise={tRise:F2} (FontSize={state.FontSize:F2} already in path)");
-                Console.WriteLine($"[PDFLIBRARY]   TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
-                Console.WriteLine($"[PDFLIBRARY]   Result=[{glyphMatrix.M11:F4}, {glyphMatrix.M12:F4}, {glyphMatrix.M21:F4}, {glyphMatrix.M22:F4}, {glyphMatrix.M31:F4}, {glyphMatrix.M32:F4}]");
+                PdfLogger.Log(LogCategory.Text, $"GlyphTransformMatrix: HScale={tHs:F2}, Rise={tRise:F2} (FontSize={state.FontSize:F2} already in path)");
+                PdfLogger.Log(LogCategory.Text, $"  TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
+                PdfLogger.Log(LogCategory.Text, $"  Result=[{glyphMatrix.M11:F4}, {glyphMatrix.M12:F4}, {glyphMatrix.M21:F4}, {glyphMatrix.M22:F4}, {glyphMatrix.M31:F4}, {glyphMatrix.M32:F4}]");
 
                 // Add translation for the current glyph position (in text space)
                 // The translation needs to be applied BEFORE the glyph transformation
@@ -499,7 +500,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                 // Log drawing details
                 SKRect bounds = glyphPath.Bounds;
-                Console.WriteLine($"[DRAW] Page={CurrentPageNumber} X={currentX:F2} GlyphId={glyphId} Bounds=[L:{bounds.Left:F2},T:{bounds.Top:F2},R:{bounds.Right:F2},B:{bounds.Bottom:F2}] GlyphMatrix=[{fullGlyphMatrix.M11:F2},{fullGlyphMatrix.M12:F2},{fullGlyphMatrix.M21:F2},{fullGlyphMatrix.M22:F2},{fullGlyphMatrix.M31:F2},{fullGlyphMatrix.M32:F2}]");
+                PdfLogger.Log(LogCategory.Text, $"DRAW: Page={CurrentPageNumber} X={currentX:F2} GlyphId={glyphId} Bounds=[L:{bounds.Left:F2},T:{bounds.Top:F2},R:{bounds.Right:F2},B:{bounds.Bottom:F2}] GlyphMatrix=[{fullGlyphMatrix.M11:F2},{fullGlyphMatrix.M12:F2},{fullGlyphMatrix.M21:F2},{fullGlyphMatrix.M22:F2},{fullGlyphMatrix.M31:F2},{fullGlyphMatrix.M32:F2}]");
 
                 // Render the glyph
                 _canvas.DrawPath(glyphPath, paint);
@@ -587,14 +588,14 @@ public class SkiaSharpRenderTarget : IRenderTarget
     {
         if (colorComponents.Count == 0)
         {
-            Console.WriteLine($"[COLOR] Warning: No color components for colorSpace={colorSpace}");
+            PdfLogger.Log(LogCategory.Graphics, $"Warning: No color components for colorSpace={colorSpace}");
             return SKColors.Black;
         }
 
         // Log non-standard color spaces
         if (colorSpace != "DeviceGray" && colorSpace != "DeviceRGB" && colorSpace != "DeviceCMYK")
         {
-            Console.WriteLine($"[COLOR] Non-device colorSpace={colorSpace}, components=[{string.Join(", ", colorComponents)}]");
+            PdfLogger.Log(LogCategory.Graphics, $"Non-device colorSpace={colorSpace}, components=[{string.Join(", ", colorComponents)}]");
         }
 
         switch (colorSpace)
@@ -708,7 +709,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             if (state.DashPattern is not null && state.DashPattern.Length > 0)
             {
                 float[] dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
-                Console.WriteLine($"[DASH] Applying dash pattern: [{string.Join(", ", dashIntervals)}] phase={state.DashPhase * ctmScale}");
+                PdfLogger.Log(LogCategory.Graphics, $"Applying dash pattern: [{string.Join(", ", dashIntervals)}] phase={state.DashPhase * ctmScale}");
                 paint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));
             }
 
@@ -964,12 +965,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             try
             {
-                Console.WriteLine("[PDFLIBRARY IMAGE] DrawImage called");
-                Console.WriteLine($"[PDFLIBRARY IMAGE]   Bitmap size: {bitmap.Width}x{bitmap.Height}");
+                PdfLogger.Log(LogCategory.Images, "DrawImage called");
+                PdfLogger.Log(LogCategory.Images, $"  Bitmap size: {bitmap.Width}x{bitmap.Height}");
 
                 // Get the current matrix (includes CTM and initial Y-flip)
                 SKMatrix oldMatrix = _canvas.TotalMatrix;
-                Console.WriteLine($"[PDFLIBRARY IMAGE]   Current matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
+                PdfLogger.Log(LogCategory.Images, $"  Current matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
 
                 // Create the image flip matrix: [1, 0, 0, -1, 0, 1]
                 // This flips the image right-side up to counter the canvas Y-flip
@@ -978,8 +979,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 // Combine: combinedMatrix = oldMatrix × imageFlipMatrix
                 SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
 
-                Console.WriteLine($"[PDFLIBRARY IMAGE]   Image flip matrix: [1, 0, 0, -1, 0, 1]");
-                Console.WriteLine($"[PDFLIBRARY IMAGE]   Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
+                PdfLogger.Log(LogCategory.Images, "  Image flip matrix: [1, 0, 0, -1, 0, 1]");
+                PdfLogger.Log(LogCategory.Images, $"  Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
 
                 // Set the combined matrix
                 _canvas.SetMatrix(combinedMatrix);
@@ -997,7 +998,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 var destRect = new SKRect(0, 0, 1, 1);
                 _canvas.DrawImage(skImage, sourceRect, destRect, paint);
 
-                Console.WriteLine("  Image drawn successfully");
+                PdfLogger.Log(LogCategory.Images, "  Image drawn successfully");
 
                 // Restore the old matrix
                 _canvas.SetMatrix(oldMatrix);
@@ -1011,7 +1012,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
         catch (Exception ex)
         {
             // Image rendering failed, skip this image
-            Console.WriteLine($"[PDFLIBRARY IMAGE] ERROR: {ex.Message}");
+            PdfLogger.Log(LogCategory.Images, $"ERROR: {ex.Message}");
         }
     }
 

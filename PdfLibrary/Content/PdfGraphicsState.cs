@@ -1,5 +1,6 @@
 using System.Numerics;
 using PdfLibrary.Document;
+using PdfLibrary.Logging;
 
 namespace PdfLibrary.Content;
 
@@ -196,10 +197,10 @@ public class PdfGraphicsState
     public void ConcatenateMatrix(double a, double b, double c, double d, double e, double f)
     {
         var matrix = new Matrix3x2((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
-        Console.WriteLine($"[CONCAT] Before: CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
-        Console.WriteLine($"[CONCAT] Matrix: [{matrix.M11:F4}, {matrix.M12:F4}, {matrix.M21:F4}, {matrix.M22:F4}, {matrix.M31:F4}, {matrix.M32:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, $"CONCAT Before: CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, $"CONCAT Matrix: [{matrix.M11:F4}, {matrix.M12:F4}, {matrix.M21:F4}, {matrix.M22:F4}, {matrix.M31:F4}, {matrix.M32:F4}]");
         Ctm = matrix * Ctm;
-        Console.WriteLine($"[CONCAT] After:  CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, $"CONCAT After:  CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
     }
 
     /// <summary>

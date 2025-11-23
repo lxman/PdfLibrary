@@ -4,6 +4,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
+using PdfLibrary.Logging;
 
 namespace PdfLibrary.Content;
 
@@ -177,37 +178,37 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     protected override void OnInvokeXObject(string name)
     {
-        Console.WriteLine($"[DEBUG] OnInvokeXObject called for: {name}");
+        PdfLogger.Log(LogCategory.Text, $"[DEBUG] OnInvokeXObject called for: {name}");
 
         // Get the XObject from resources
         if (_resources == null)
         {
-            Console.WriteLine("[DEBUG] No resources available");
+            PdfLogger.Log(LogCategory.Text, "[DEBUG] No resources available");
             return;
         }
 
         PdfStream? xobject = _resources.GetXObject(name);
         if (xobject == null)
         {
-            Console.WriteLine($"[DEBUG] XObject '{name}' not found in resources");
+            PdfLogger.Log(LogCategory.Text, $"[DEBUG] XObject '{name}' not found in resources");
             return;
         }
 
         // Skip image XObjects - we only care about Form XObjects
         if (PdfImage.IsImageXObject(xobject))
         {
-            Console.WriteLine($"[DEBUG] XObject '{name}' is an image, skipping");
+            PdfLogger.Log(LogCategory.Text, $"[DEBUG] XObject '{name}' is an image, skipping");
             return;
         }
 
         // Check if this is a Form XObject
         if (!IsFormXObject(xobject))
         {
-            Console.WriteLine($"[DEBUG] XObject '{name}' is not a Form XObject");
+            PdfLogger.Log(LogCategory.Text, $"[DEBUG] XObject '{name}' is not a Form XObject");
             return;
         }
 
-        Console.WriteLine($"[DEBUG] Extracting text from Form XObject '{name}'");
+        PdfLogger.Log(LogCategory.Text, $"[DEBUG] Extracting text from Form XObject '{name}'");
 
         // Extract text from the Form XObject
         ExtractTextFromFormXObject(xobject);

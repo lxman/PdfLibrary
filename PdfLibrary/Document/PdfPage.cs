@@ -2,6 +2,7 @@ using System.Text;
 using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Document;
@@ -74,7 +75,7 @@ public class PdfPage
             throw new InvalidOperationException("Page missing required MediaBox");
 
         PdfRectangle rect = PdfRectangle.FromArray(array);
-        Console.WriteLine($"[MEDIABOX] Found: {rect} (document={_document != null})");
+        PdfLogger.Log(LogCategory.PdfTool, $"[MEDIABOX] Found: {rect} (document={_document != null})");
         return rect;
     }
 
@@ -220,16 +221,16 @@ public class PdfPage
             if (_dictionary.TryGetValue(new PdfName("Parent"), out PdfObject parentObj))
             {
                 current = ResolveDict(parentObj);
-                Console.WriteLine($"[INHERIT] Got parent from /Parent key: {current != null}");
+                PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] Got parent from /Parent key: {current != null}");
             }
             else
             {
-                Console.WriteLine("[INHERIT] No /Parent key in page dictionary");
+                PdfLogger.Log(LogCategory.PdfTool, "[INHERIT] No /Parent key in page dictionary");
             }
         }
         else if (current == null)
         {
-            Console.WriteLine($"[INHERIT] No parent and no document (document={_document != null})");
+            PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] No parent and no document (document={_document != null})");
         }
 
         // Walk up the parent chain

@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Windows;
+using PdfLibrary.Logging;
 using Serilog;
 
 namespace PdfTool;
@@ -51,6 +52,22 @@ public partial class App : Application
             Log.Information("Command line argument: {FilePath}", e.Args[0]);
         }
 
+        // Initialize PdfLibrary logger
+        string pdfLibraryLogFile = Path.Combine(appDirectory, "logs", "pdflibrary.log");
+        PdfLogger.Initialize(new PdfLogConfiguration
+        {
+            LogImages = true,         // Enable image logging for debugging
+            LogText = false,          // Disable text logging
+            LogGraphics = false,      // Disable graphics logging
+            LogTransforms = true,     // Enable transform logging (default ON)
+            LogPdfTool = false,       // Disable PdfTool app logging
+            LogMelville = false,      // Disable Melville library logging
+            AppendToLog = false,      // Clear log on each run
+            LogFilePath = pdfLibraryLogFile
+        });
+
+        PdfLogger.Log(LogCategory.PdfTool, "PdfTool initialized PdfLibrary logging");
+
         // Create the main window
         var mainWindow = new MainWindow();
         MainWindow = mainWindow;
@@ -66,6 +83,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         Log.Information("PdfTool exiting...");
+        PdfLogger.Shutdown();
         Log.CloseAndFlush();
         base.OnExit(e);
     }

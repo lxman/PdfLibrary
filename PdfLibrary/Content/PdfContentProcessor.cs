@@ -1,5 +1,6 @@
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Logging;
 
 namespace PdfLibrary.Content;
 
@@ -256,7 +257,7 @@ public abstract class PdfContentProcessor
                 break;
 
             case SetFillRgbOperator rg:
-                Console.WriteLine($"[rg OPERATOR] R={rg.R:F2}, G={rg.G:F2}, B={rg.B:F2}");
+                PdfLogger.Log(LogCategory.Graphics, $"[rg OPERATOR] R={rg.R:F2}, G={rg.G:F2}, B={rg.B:F2}");
                 CurrentState.SetFillRgb(rg.R, rg.G, rg.B);
                 OnColorChanged();
                 break;
@@ -287,7 +288,7 @@ public abstract class PdfContentProcessor
                 break;
 
             case SetFillColorSpaceOperator cs:
-                Console.WriteLine($"[cs OPERATOR] ColorSpace={cs.ColorSpace}");
+                PdfLogger.Log(LogCategory.Graphics, $"[cs OPERATOR] ColorSpace={cs.ColorSpace}");
                 CurrentState.FillColorSpace = cs.ColorSpace;
                 // Initialize default color components for the new color space
                 CurrentState.FillColor = cs.ColorSpace switch
@@ -307,7 +308,7 @@ public abstract class PdfContentProcessor
                 break;
 
             case SetFillColorOperator sc:
-                Console.WriteLine($"[sc OPERATOR] Components=[{string.Join(", ", sc.Components.Select(c => c.ToString("F2")))}]");
+                PdfLogger.Log(LogCategory.Graphics, $"[sc OPERATOR] Components=[{string.Join(", ", sc.Components.Select(c => c.ToString("F2")))}]");
                 CurrentState.FillColor = sc.Components;
                 OnColorChanged();
                 break;
@@ -320,7 +321,7 @@ public abstract class PdfContentProcessor
                 break;
 
             case SetFillColorExtendedOperator scn:
-                Console.WriteLine($"[scn OPERATOR] Operands={scn.Operands.Count}, Components=[{string.Join(", ", scn.Components.Select(c => c.ToString("F2")))}], Pattern={scn.PatternName}");
+                PdfLogger.Log(LogCategory.Graphics, $"[scn OPERATOR] Operands={scn.Operands.Count}, Components=[{string.Join(", ", scn.Components.Select(c => c.ToString("F2")))}], Pattern={scn.PatternName}");
                 // Only update color if we have components (0 components means use current color)
                 if (scn.Components.Count > 0)
                     CurrentState.FillColor = scn.Components;

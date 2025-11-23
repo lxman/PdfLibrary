@@ -2,6 +2,7 @@ using System.Diagnostics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
@@ -38,7 +39,7 @@ public class TrueTypeFont : PdfFont
                 // Scale embedded width to PDF's 1000-unit coordinate system
                 // Embedded font may have different UnitsPerEm (e.g., 2048)
                 double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
-                Debug.WriteLine($"  [WIDTH] charCode={charCode} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                 return scaledWidth;
             }
         }
@@ -49,7 +50,7 @@ public class TrueTypeFont : PdfFont
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
             {
-                Debug.WriteLine($"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
                 return _widths[index];
             }
         }
