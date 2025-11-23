@@ -2,6 +2,7 @@ using System.Diagnostics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
@@ -54,7 +55,7 @@ public class Type0Font : PdfFont
         string? unicodeFromGlyph = _embeddedFont.GetUnicodeFromGlyphName(charCode);
         if (unicodeFromGlyph is null) return char.ConvertFromUtf32(charCode);
         // Log fallback usage for debugging
-        Debug.WriteLine(
+        PdfLogger.Log(LogCategory.Text,
             $"Type0Font: Using embedded font fallback for charCode 0x{charCode:X4} → '{unicodeFromGlyph}'");
         return unicodeFromGlyph;
 
