@@ -49,7 +49,7 @@ public readonly struct PdfLength
     public static PdfLength FromPixels(double value, int dpi = 96)
     {
         // Convert pixels to points: points = pixels * (72 / dpi)
-        var points = value * 72.0 / dpi;
+        double points = value * 72.0 / dpi;
         return new(points, PdfUnit.Points);
     }
 
@@ -82,7 +82,7 @@ public readonly struct PdfLength
         };
 
         // Then adjust for origin
-        var origin = Origin ?? defaultOrigin;
+        PdfOrigin origin = Origin ?? defaultOrigin;
         return origin == PdfOrigin.TopLeft
             ? pageHeight - points
             : points;

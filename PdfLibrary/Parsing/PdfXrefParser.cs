@@ -58,12 +58,10 @@ public class PdfXrefParser
             // Cross-reference stream (PDF 1.5+)
             return ParseXRefStream();
         }
-        else
-        {
-            // Traditional xref table (trailer comes separately)
-            var table = ParseTraditionalXRef();
-            return new PdfXrefParseResult(table, null, false);
-        }
+
+        // Traditional xref table (trailer comes separately)
+        PdfXrefTable table = ParseTraditionalXRef();
+        return new PdfXrefParseResult(table, null, false);
     }
 
     /// <summary>
@@ -142,22 +140,20 @@ public class PdfXrefParser
 
         // Verify this is a cross-reference stream
         if (!xrefStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject? typeObj) ||
-            typeObj is not PdfName typeName ||
-            typeName.Value != "XRef")
+            typeObj is not PdfName { Value: "XRef" })
         {
             throw new PdfParseException("Stream is not a cross-reference stream (/Type /XRef missing)");
         }
 
         // Get /W array - specifies field widths [type, field2, field3]
         if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out PdfObject? wObj) ||
-            wObj is not PdfArray wArray ||
-            wArray.Count != 3)
+            wObj is not PdfArray { Count: 3 } wArray)
         {
             throw new PdfParseException("XRef stream missing or invalid /W array");
         }
 
-        int[] fieldWidths = new int[3];
-        for (int i = 0; i < 3; i++)
+        var fieldWidths = new int[3];
+        for (var i = 0; i < 3; i++)
         {
             if (wArray[i] is PdfInteger wInt)
                 fieldWidths[i] = wInt.Value;
@@ -171,7 +167,7 @@ public class PdfXrefParser
             indexObj is PdfArray indexArray)
         {
             index = new int[indexArray.Count];
-            for (int i = 0; i < indexArray.Count; i++)
+            for (var i = 0; i < indexArray.Count; i++)
             {
                 if (indexArray[i] is PdfInteger indexInt)
                     index[i] = indexInt.Value;
@@ -207,15 +203,15 @@ public class PdfXrefParser
     private void ParseXRefStreamEntries(PdfXrefTable table, byte[] data, int[] fieldWidths, int[] index)
     {
         int bytesPerEntry = fieldWidths[0] + fieldWidths[1] + fieldWidths[2];
-        int dataOffset = 0;
+        var dataOffset = 0;
 
         // Process each subsection specified in /Index
-        for (int i = 0; i < index.Length; i += 2)
+        for (var i = 0; i < index.Length; i += 2)
         {
             int firstObjectNumber = index[i];
             int count = index[i + 1];
 
-            for (int j = 0; j < count; j++)
+            for (var j = 0; j < count; j++)
             {
                 int objectNumber = firstObjectNumber + j;
 
@@ -254,7 +250,7 @@ public class PdfXrefParser
     private long ReadBigEndianInt(byte[] data, int offset, int length)
     {
         long value = 0;
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             value = (value << 8) | data[offset + i];
         }
@@ -279,7 +275,7 @@ public class PdfXrefParser
             throw new PdfParseException($"Invalid xref entry format: {line}");
 
         // Parse byte offset (or next free object number)
-        string offsetStr = line.Substring(0, 10).Trim();
+        string offsetStr = line[..10].Trim();
         if (!long.TryParse(offsetStr, out long byteOffset))
             throw new PdfParseException($"Invalid byte offset in xref entry: {offsetStr}");
 

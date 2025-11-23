@@ -318,7 +318,7 @@ public class Type1Font : PdfFont
 
             // Try to get embedded CFF data (FontFile3) - preferred for Type1C
             byte[]? fontData = descriptor.GetFontFile3();
-            string fontFileType = "FontFile3";
+            var fontFileType = "FontFile3";
 
             // If no FontFile3, try classic Type1 (FontFile)
             // Note: FontFile uses PFB format which may need different parsing

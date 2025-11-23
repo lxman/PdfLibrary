@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace PdfLibrary.Core.Primitives;
@@ -73,7 +74,7 @@ public sealed class PdfName : PdfObject
             throw new ArgumentException("Input cannot be null or empty", nameof(input));
 
         // Remove leading solidus if present
-        string value = input.StartsWith('/') ? input.Substring(1) : input;
+        string value = input.StartsWith('/') ? input[1..] : input;
 
         if (string.IsNullOrEmpty(value))
             return new PdfName(""); // Empty name
@@ -87,7 +88,7 @@ public sealed class PdfName : PdfObject
             {
                 // Parse hex escape sequence
                 string hexCode = value.Substring(i + 1, 2);
-                if (byte.TryParse(hexCode, System.Globalization.NumberStyles.HexNumber, null, out byte b))
+                if (byte.TryParse(hexCode, NumberStyles.HexNumber, null, out byte b))
                 {
                     sb.Append((char)b);
                     i += 3;

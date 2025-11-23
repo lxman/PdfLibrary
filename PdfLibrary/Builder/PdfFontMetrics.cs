@@ -10,7 +10,7 @@ public static class PdfFontMetrics
     /// </summary>
     public static double MeasureText(string text, string fontName, double fontSize)
     {
-        var widths = GetFontWidths(fontName);
+        int[] widths = GetFontWidths(fontName);
         double totalWidth = 0;
 
         foreach (char c in text)
@@ -146,7 +146,7 @@ public static class PdfFontMetrics
     private static int[] CreateMonospaceWidths(int width)
     {
         var widths = new int[256];
-        for (int i = 32; i < 127; i++)
+        for (var i = 32; i < 127; i++)
             widths[i] = width;
         return widths;
     }

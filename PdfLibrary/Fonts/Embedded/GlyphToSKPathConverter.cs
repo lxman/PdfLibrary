@@ -1,6 +1,6 @@
+using FontParser.Tables.Cff;
 using SkiaSharp;
 using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;
-using FontParser.Tables.Cff;
 
 namespace PdfLibrary.Fonts.Embedded;
 
@@ -28,7 +28,7 @@ public class GlyphToSKPathConverter
         var path = new SKPath();
         float scale = fontSize / unitsPerEm;
 
-        foreach (var contour in outline.Contours)
+        foreach (GlyphContour contour in outline.Contours)
         {
             if (contour.Points.Count == 0)
                 continue;
@@ -58,24 +58,24 @@ public class GlyphToSKPathConverter
         var path = new SKPath();
         float scale = fontSize / unitsPerEm;
 
-        foreach (var command in outline.Commands)
+        foreach (PathCommand command in outline.Commands)
         {
             switch (command)
             {
                 case MoveToCommand moveTo:
-                    var movePoint = ScalePoint(moveTo.Point.X, moveTo.Point.Y, scale);
+                    SKPoint movePoint = ScalePoint(moveTo.Point.X, moveTo.Point.Y, scale);
                     path.MoveTo(movePoint);
                     break;
 
                 case LineToCommand lineTo:
-                    var linePoint = ScalePoint(lineTo.Point.X, lineTo.Point.Y, scale);
+                    SKPoint linePoint = ScalePoint(lineTo.Point.X, lineTo.Point.Y, scale);
                     path.LineTo(linePoint);
                     break;
 
                 case CubicBezierCommand cubic:
-                    var c1 = ScalePoint(cubic.Control1.X, cubic.Control1.Y, scale);
-                    var c2 = ScalePoint(cubic.Control2.X, cubic.Control2.Y, scale);
-                    var end = ScalePoint(cubic.EndPoint.X, cubic.EndPoint.Y, scale);
+                    SKPoint c1 = ScalePoint(cubic.Control1.X, cubic.Control1.Y, scale);
+                    SKPoint c2 = ScalePoint(cubic.Control2.X, cubic.Control2.Y, scale);
+                    SKPoint end = ScalePoint(cubic.EndPoint.X, cubic.EndPoint.Y, scale);
                     path.CubicTo(c1, c2, end);
                     break;
 
@@ -93,7 +93,7 @@ public class GlyphToSKPathConverter
     /// </summary>
     private void ProcessContour(SKPath path, GlyphContour contour, float scale)
     {
-        var points = contour.Points;
+        List<ContourPoint> points = contour.Points;
         if (points.Count == 0)
             return;
 
@@ -106,41 +106,41 @@ public class GlyphToSKPathConverter
             if (points.Count < 2)
                 return; // Can't process contour with < 2 points
 
-            var p0 = points[0];
-            var p1 = points[1];
-            short midX = (short)((p0.X + p1.X) / 2);
-            short midY = (short)((p0.Y + p1.Y) / 2);
-            var midPoint = ScalePoint(midX, midY, scale);
+            ContourPoint p0 = points[0];
+            ContourPoint p1 = points[1];
+            var midX = (short)((p0.X + p1.X) / 2);
+            var midY = (short)((p0.Y + p1.Y) / 2);
+            SKPoint midPoint = ScalePoint(midX, midY, scale);
             path.MoveTo(midPoint);
             startIndex = 0;
         }
         else
         {
-            var startPoint = ScalePoint(points[startIndex].X, points[startIndex].Y, scale);
+            SKPoint startPoint = ScalePoint(points[startIndex].X, points[startIndex].Y, scale);
             path.MoveTo(startPoint);
         }
 
         // Process points in order, wrapping around to handle the contour as a loop
         int count = points.Count;
-        for (int i = 1; i <= count; i++)
+        for (var i = 1; i <= count; i++)
         {
             int currentIndex = (startIndex + i) % count;
             int prevIndex = (startIndex + i - 1) % count;
 
-            var currentPoint = points[currentIndex];
-            var prevPoint = points[prevIndex];
+            ContourPoint currentPoint = points[currentIndex];
+            ContourPoint prevPoint = points[prevIndex];
 
             if (currentPoint.OnCurve)
             {
                 // Line segment to on-curve point
-                var p = ScalePoint(currentPoint.X, currentPoint.Y, scale);
+                SKPoint p = ScalePoint(currentPoint.X, currentPoint.Y, scale);
                 path.LineTo(p);
             }
             else
             {
                 // Off-curve point - this is a control point for a quadratic Bezier curve
                 int nextIndex = (currentIndex + 1) % count;
-                var nextPoint = points[nextIndex];
+                ContourPoint nextPoint = points[nextIndex];
 
                 SKPoint controlPoint = ScalePoint(currentPoint.X, currentPoint.Y, scale);
                 SKPoint endPoint;
@@ -156,8 +156,8 @@ public class GlyphToSKPathConverter
                     // Next point is also off-curve
                     // TrueType feature: implied on-curve point between two consecutive off-curve points
                     // The implied point is at the midpoint
-                    short impliedX = (short)((currentPoint.X + nextPoint.X) / 2);
-                    short impliedY = (short)((currentPoint.Y + nextPoint.Y) / 2);
+                    var impliedX = (short)((currentPoint.X + nextPoint.X) / 2);
+                    var impliedY = (short)((currentPoint.Y + nextPoint.Y) / 2);
                     endPoint = ScalePoint(impliedX, impliedY, scale);
                     // Don't skip next point - it will be processed in the next iteration
                 }
@@ -176,7 +176,7 @@ public class GlyphToSKPathConverter
     /// </summary>
     private int FindFirstOnCurvePoint(List<ContourPoint> points)
     {
-        for (int i = 0; i < points.Count; i++)
+        for (var i = 0; i < points.Count; i++)
         {
             if (points[i].OnCurve)
                 return i;

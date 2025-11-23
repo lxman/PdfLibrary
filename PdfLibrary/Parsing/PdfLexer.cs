@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace PdfLibrary.Parsing;
@@ -9,8 +10,8 @@ public class PdfLexer(Stream stream)
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private readonly byte[] _buffer = new byte[BufferSize];
-    private int _bufferPosition = 0;
-    private int _bufferLength = 0;
+    private int _bufferPosition;
+    private int _bufferLength;
     private long _streamPosition = stream.CanSeek ? stream.Position : 0;
 
     private const int BufferSize = 4096;
@@ -187,10 +188,10 @@ public class PdfLexer(Stream stream)
             Read(); // Skip closing >
 
         // Convert hex digit pairs to bytes
-        string hexString = hexDigits.ToString();
+        var hexString = hexDigits.ToString();
         var bytes = new List<byte>();
 
-        for (int i = 0; i < hexString.Length; i += 2)
+        for (var i = 0; i < hexString.Length; i += 2)
         {
             // Get two hex digits (or one if odd length, pad with 0)
             string hexPair = i + 1 < hexString.Length
@@ -198,7 +199,7 @@ public class PdfLexer(Stream stream)
                 : hexString[i] + "0";
 
             // Convert hex pair to byte
-            if (byte.TryParse(hexPair, System.Globalization.NumberStyles.HexNumber, null, out byte b))
+            if (byte.TryParse(hexPair, NumberStyles.HexNumber, null, out byte b))
             {
                 bytes.Add(b);
             }
@@ -206,7 +207,7 @@ public class PdfLexer(Stream stream)
 
         // Convert bytes to string for the token value
         // This will be parsed later by PdfParser into a PdfString with the correct bytes
-        string value = System.Text.Encoding.Latin1.GetString(bytes.ToArray());
+        string value = Encoding.Latin1.GetString(bytes.ToArray());
         return new PdfToken(PdfTokenType.String, value, position);
     }
 

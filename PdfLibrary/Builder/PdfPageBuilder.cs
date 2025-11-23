@@ -136,8 +136,8 @@ public class PdfPageBuilder
     public PdfTextBuilder AddText(string text, double x, double y)
     {
         // Convert using default unit and origin
-        var xPt = ConvertToPoints(x, isYCoordinate: false);
-        var yPt = ConvertToPoints(y, isYCoordinate: true);
+        double xPt = ConvertToPoints(x, isYCoordinate: false);
+        double yPt = ConvertToPoints(y, isYCoordinate: true);
 
         var content = new PdfTextContent
         {
@@ -156,8 +156,8 @@ public class PdfPageBuilder
     {
         // Convert using explicit units/origins from PdfLength
         // X coordinates never flip - always use BottomLeft origin
-        var xPt = x.ToPoints(PageHeight, PdfOrigin.BottomLeft);
-        var yPt = y.ToPoints(PageHeight, y.Origin ?? _defaultOrigin);
+        double xPt = x.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double yPt = y.ToPoints(PageHeight, y.Origin ?? _defaultOrigin);
 
         var content = new PdfTextContent
         {
@@ -226,13 +226,13 @@ public class PdfPageBuilder
     /// </summary>
     public PdfImageBuilder AddImage(byte[] imageData, double left, double top, double width, double height)
     {
-        var leftPt = ConvertToPoints(left, isYCoordinate: false);
-        var topPt = ConvertToPoints(top, isYCoordinate: true);
-        var widthPt = ConvertToPoints(width, isYCoordinate: false);
-        var heightPt = ConvertToPoints(height, isYCoordinate: false);
+        double leftPt = ConvertToPoints(left, isYCoordinate: false);
+        double topPt = ConvertToPoints(top, isYCoordinate: true);
+        double widthPt = ConvertToPoints(width, isYCoordinate: false);
+        double heightPt = ConvertToPoints(height, isYCoordinate: false);
 
         // Convert to PDF rect (bottom-left coordinates)
-        var rect = _defaultOrigin == PdfOrigin.TopLeft
+        PdfRect rect = _defaultOrigin == PdfOrigin.TopLeft
             ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
             : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
 
@@ -244,15 +244,15 @@ public class PdfPageBuilder
     /// </summary>
     public PdfImageBuilder AddImage(byte[] imageData, PdfLength left, PdfLength top, PdfLength width, PdfLength height)
     {
-        var origin = top.Origin ?? _defaultOrigin;
+        PdfOrigin origin = top.Origin ?? _defaultOrigin;
         // X coordinates and dimensions never flip - always use BottomLeft origin
-        var leftPt = left.ToPoints(PageHeight, PdfOrigin.BottomLeft);
-        var topPt = top.ToPoints(PageHeight, origin);
-        var widthPt = width.ToPoints(PageHeight, PdfOrigin.BottomLeft);
-        var heightPt = height.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double leftPt = left.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double topPt = top.ToPoints(PageHeight, origin);
+        double widthPt = width.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double heightPt = height.ToPoints(PageHeight, PdfOrigin.BottomLeft);
 
         // Convert to PDF rect (bottom-left coordinates)
-        var rect = origin == PdfOrigin.TopLeft
+        PdfRect rect = origin == PdfOrigin.TopLeft
             ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
             : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
 
@@ -261,7 +261,7 @@ public class PdfPageBuilder
 
     public PdfImageBuilder AddImageInches(byte[] imageData, double left, double top, double width, double height)
     {
-        var rect = PdfRect.FromInches(left, top, width, height, PageHeight);
+        PdfRect rect = PdfRect.FromInches(left, top, width, height, PageHeight);
         return AddImage(imageData, rect);
     }
 
@@ -270,7 +270,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfImageBuilder AddImageFromFile(string filePath, PdfRect rect)
     {
-        var imageData = File.ReadAllBytes(filePath);
+        byte[] imageData = File.ReadAllBytes(filePath);
         return AddImage(imageData, rect);
     }
 
@@ -279,7 +279,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfImageBuilder AddImageFromFile(string filePath, double left, double top, double width, double height)
     {
-        var imageData = File.ReadAllBytes(filePath);
+        byte[] imageData = File.ReadAllBytes(filePath);
         return AddImage(imageData, left, top, width, height);
     }
 
@@ -288,7 +288,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfImageBuilder AddImageFromFile(string filePath, PdfLength left, PdfLength top, PdfLength width, PdfLength height)
     {
-        var imageData = File.ReadAllBytes(filePath);
+        byte[] imageData = File.ReadAllBytes(filePath);
         return AddImage(imageData, left, top, width, height);
     }
 
@@ -297,7 +297,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfImageBuilder AddImageFromFileInches(string filePath, double left, double top, double width, double height)
     {
-        var rect = PdfRect.FromInches(left, top, width, height, PageHeight);
+        PdfRect rect = PdfRect.FromInches(left, top, width, height, PageHeight);
         return AddImageFromFile(filePath, rect);
     }
 
@@ -309,13 +309,13 @@ public class PdfPageBuilder
     public PdfPageBuilder AddRectangle(double left, double top, double width, double height,
         PdfColor? fillColor = null, PdfColor? strokeColor = null, double lineWidth = 1)
     {
-        var leftPt = ConvertToPoints(left, isYCoordinate: false);
-        var topPt = ConvertToPoints(top, isYCoordinate: true);
-        var widthPt = ConvertToPoints(width, isYCoordinate: false);
-        var heightPt = ConvertToPoints(height, isYCoordinate: false);
+        double leftPt = ConvertToPoints(left, isYCoordinate: false);
+        double topPt = ConvertToPoints(top, isYCoordinate: true);
+        double widthPt = ConvertToPoints(width, isYCoordinate: false);
+        double heightPt = ConvertToPoints(height, isYCoordinate: false);
 
         // Convert to PDF rect (bottom-left coordinates)
-        var rect = _defaultOrigin == PdfOrigin.TopLeft
+        PdfRect rect = _defaultOrigin == PdfOrigin.TopLeft
             ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
             : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
 
@@ -328,15 +328,15 @@ public class PdfPageBuilder
     public PdfPageBuilder AddRectangle(PdfLength left, PdfLength top, PdfLength width, PdfLength height,
         PdfColor? fillColor = null, PdfColor? strokeColor = null, double lineWidth = 1)
     {
-        var origin = top.Origin ?? _defaultOrigin;
+        PdfOrigin origin = top.Origin ?? _defaultOrigin;
         // X coordinates and dimensions never flip - always use BottomLeft origin
-        var leftPt = left.ToPoints(PageHeight, PdfOrigin.BottomLeft);
-        var topPt = top.ToPoints(PageHeight, origin);
-        var widthPt = width.ToPoints(PageHeight, PdfOrigin.BottomLeft);
-        var heightPt = height.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double leftPt = left.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double topPt = top.ToPoints(PageHeight, origin);
+        double widthPt = width.ToPoints(PageHeight, PdfOrigin.BottomLeft);
+        double heightPt = height.ToPoints(PageHeight, PdfOrigin.BottomLeft);
 
         // Convert to PDF rect (bottom-left coordinates)
-        var rect = origin == PdfOrigin.TopLeft
+        PdfRect rect = origin == PdfOrigin.TopLeft
             ? new PdfRect(leftPt, topPt - heightPt, leftPt + widthPt, topPt)
             : new PdfRect(leftPt, topPt, leftPt + widthPt, topPt + heightPt);
 
@@ -393,7 +393,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfTextFieldBuilder AddTextField(string name, double x, double y, double width, double height)
     {
-        var rect = CreateFieldRect(x, y, width, height);
+        PdfRect rect = CreateFieldRect(x, y, width, height);
         return AddTextField(name, rect);
     }
 
@@ -413,7 +413,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfCheckboxBuilder AddCheckbox(string name, double x, double y, double size)
     {
-        var rect = CreateFieldRect(x, y, size, size);
+        PdfRect rect = CreateFieldRect(x, y, size, size);
         return AddCheckbox(name, rect);
     }
 
@@ -443,7 +443,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfDropdownBuilder AddDropdown(string name, double x, double y, double width, double height)
     {
-        var rect = CreateFieldRect(x, y, width, height);
+        PdfRect rect = CreateFieldRect(x, y, width, height);
         return AddDropdown(name, rect);
     }
 
@@ -463,7 +463,7 @@ public class PdfPageBuilder
     /// </summary>
     public PdfSignatureFieldBuilder AddSignatureField(string name, double x, double y, double width, double height)
     {
-        var rect = CreateFieldRect(x, y, width, height);
+        PdfRect rect = CreateFieldRect(x, y, width, height);
         return AddSignatureField(name, rect);
     }
 
@@ -499,12 +499,12 @@ public class PdfTextContent : PdfContentElement
     public double FontSize { get; set; } = 12;
     public PdfColor FillColor { get; set; } = PdfColor.Black;
     public PdfColor? StrokeColor { get; set; }
-    public double Rotation { get; set; } = 0;
-    public double CharacterSpacing { get; set; } = 0;
-    public double WordSpacing { get; set; } = 0;
+    public double Rotation { get; set; }
+    public double CharacterSpacing { get; set; }
+    public double WordSpacing { get; set; }
     public double HorizontalScale { get; set; } = 100;
-    public double TextRise { get; set; } = 0;
-    public double LineSpacing { get; set; } = 0;
+    public double TextRise { get; set; }
+    public double LineSpacing { get; set; }
     public PdfTextRenderMode RenderMode { get; set; } = PdfTextRenderMode.Fill;
     public double StrokeWidth { get; set; } = 1;
     public PdfTextAlignment Alignment { get; set; } = PdfTextAlignment.Left;
@@ -810,7 +810,7 @@ public class PdfImageContent : PdfContentElement
     public byte[] ImageData { get; set; } = Array.Empty<byte>();
     public PdfRect Rect { get; set; }
     public double Opacity { get; set; } = 1.0;
-    public double Rotation { get; set; } = 0;
+    public double Rotation { get; set; }
     public bool PreserveAspectRatio { get; set; } = true;
     public PdfImageCompression Compression { get; set; } = PdfImageCompression.Auto;
     public int JpegQuality { get; set; } = 85;

@@ -81,7 +81,7 @@ public class PdfTextExtractor : PdfContentProcessor
 
         Vector2 currentPosition = CurrentState.GetTextPosition();
         float distance = Vector2.Distance(_lastPosition, currentPosition);
-        float threshold = (float)(SpaceThreshold * CurrentState.FontSize);
+        var threshold = (float)(SpaceThreshold * CurrentState.FontSize);
 
         // If significant movement, add space or newline
         if (distance > threshold)
@@ -122,7 +122,7 @@ public class PdfTextExtractor : PdfContentProcessor
         // Calculate effective font size by extracting scale from TextMatrix
         // The TextMatrix contains scaling factors that affect the actual rendered size
         // Extract Y-scale from the second column vector: sqrt(M12^2 + M22^2)
-        var scaleY = Math.Sqrt(
+        double scaleY = Math.Sqrt(
             CurrentState.TextMatrix.M12 * CurrentState.TextMatrix.M12 +
             CurrentState.TextMatrix.M22 * CurrentState.TextMatrix.M22
         );
@@ -184,7 +184,7 @@ public class PdfTextExtractor : PdfContentProcessor
         // Get the XObject from resources
         if (_resources == null)
         {
-            Console.WriteLine($"[DEBUG] No resources available");
+            Console.WriteLine("[DEBUG] No resources available");
             return;
         }
 
@@ -247,7 +247,7 @@ public class PdfTextExtractor : PdfContentProcessor
         var formExtractor = new PdfTextExtractor(formResources ?? _resources);
 
         // Parse and process the Form XObject's content stream
-        var operators = PdfContentParser.Parse(contentData);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         formExtractor.ProcessOperators(operators);
 
         // Append the extracted text and fragments to our results
@@ -277,7 +277,7 @@ public class PdfTextExtractor : PdfContentProcessor
             if (font.FontType == PdfFontType.Type0)
             {
                 // Read 2 bytes at a time for Type0 fonts
-                for (int i = 0; i < bytes.Length - 1; i += 2)
+                for (var i = 0; i < bytes.Length - 1; i += 2)
                 {
                     int charCode = (bytes[i] << 8) | bytes[i + 1];
                     string decoded = font.DecodeCharacter(charCode);

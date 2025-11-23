@@ -18,6 +18,13 @@ public class PdfGraphicsState
     public Matrix3x2 Ctm { get; set; } = Matrix3x2.Identity;
 
     /// <summary>
+    /// Initial transformation matrix set at BeginPage.
+    /// Maps the PDF page coordinate space to the rendering surface (viewport transformation).
+    /// Following Melville.Pdf architecture: separate from the CTM, which handles PDF content transformations.
+    /// </summary>
+    public Matrix3x2 InitialTransformMatrix { get; init; } = Matrix3x2.Identity;
+
+    /// <summary>
     /// Text matrix - determines position and orientation of text
     /// </summary>
     public Matrix3x2 TextMatrix { get; set; } = Matrix3x2.Identity;
@@ -149,6 +156,7 @@ public class PdfGraphicsState
         return new PdfGraphicsState
         {
             Ctm = Ctm,
+            InitialTransformMatrix = InitialTransformMatrix,
             TextMatrix = TextMatrix,
             TextLineMatrix = TextLineMatrix,
             CharacterSpacing = CharacterSpacing,
@@ -188,7 +196,10 @@ public class PdfGraphicsState
     public void ConcatenateMatrix(double a, double b, double c, double d, double e, double f)
     {
         var matrix = new Matrix3x2((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
+        Console.WriteLine($"[CONCAT] Before: CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
+        Console.WriteLine($"[CONCAT] Matrix: [{matrix.M11:F4}, {matrix.M12:F4}, {matrix.M21:F4}, {matrix.M22:F4}, {matrix.M31:F4}, {matrix.M32:F4}]");
         Ctm = matrix * Ctm;
+        Console.WriteLine($"[CONCAT] After:  CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
     }
 
     /// <summary>
@@ -222,7 +233,7 @@ public class PdfGraphicsState
     }
 
     /// <summary>
-    /// Moves to next line (T* operator) - uses leading
+    /// Moves to the next line (T* operator) - uses leading
     /// </summary>
     public void MoveToNextLine()
     {

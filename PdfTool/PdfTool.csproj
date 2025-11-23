@@ -6,10 +6,13 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
+      <ProjectReference Include="..\Pdf\src\Melville.Pdf.Model\Melville.Pdf.Model.csproj" />
+      <ProjectReference Include="..\Pdf\src\Melville.Pdf.SkiaSharp\Melville.Pdf.SkiaSharp.csproj" />
     </ItemGroup>
 
     <ItemGroup>

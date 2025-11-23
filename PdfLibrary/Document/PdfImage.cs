@@ -84,7 +84,7 @@ public class PdfImage
             {
                 // Clone the dictionary and add missing Columns/Rows
                 var newDpDict = new PdfDictionary();
-                foreach (var kvp in dpDict)
+                foreach (KeyValuePair<PdfName, PdfObject> kvp in dpDict)
                 {
                     newDpDict[kvp.Key] = kvp.Value;
                 }
@@ -371,7 +371,7 @@ public class PdfImage
             return null;
 
         // Check if it's Indexed
-        if (csArray[0] is not PdfName csName || csName.Value != "Indexed")
+        if (csArray[0] is not PdfName { Value: "Indexed" })
             return null;
 
         // Extract base color space (index 1)

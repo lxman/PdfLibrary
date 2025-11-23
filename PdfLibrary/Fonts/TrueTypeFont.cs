@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
@@ -28,16 +29,16 @@ public class TrueTypeFont : PdfFont
     public override double GetCharacterWidth(int charCode)
     {
         // Try to use embedded font metrics first for more accurate widths
-        var embeddedMetrics = GetEmbeddedMetrics();
-        if (embeddedMetrics != null && embeddedMetrics.IsValid)
+        EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
+        if (embeddedMetrics is { IsValid: true })
         {
             ushort glyphWidth = embeddedMetrics.GetCharacterAdvanceWidth((ushort)charCode);
             if (glyphWidth > 0)
             {
                 // Scale embedded width to PDF's 1000-unit coordinate system
                 // Embedded font may have different UnitsPerEm (e.g., 2048)
-                double scaledWidth = (double)glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
-                System.Diagnostics.Debug.WriteLine($"  [WIDTH] charCode={charCode} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
+                double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                Debug.WriteLine($"  [WIDTH] charCode={charCode} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                 return scaledWidth;
             }
         }
@@ -48,7 +49,7 @@ public class TrueTypeFont : PdfFont
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
             {
-                System.Diagnostics.Debug.WriteLine($"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
+                Debug.WriteLine($"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
                 return _widths[index];
             }
         }

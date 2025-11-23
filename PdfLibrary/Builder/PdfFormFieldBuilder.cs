@@ -136,7 +136,7 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
     /// <summary>
     /// Font size in points (0 = auto-size)
     /// </summary>
-    public double FontSize { get; private set; } = 0;
+    public double FontSize { get; private set; }
 
     /// <summary>
     /// Text color
@@ -458,7 +458,7 @@ public class PdfRadioGroupBuilder : PdfFormFieldBuilder
     /// </summary>
     public PdfRadioGroupBuilder AddOptionInches(string value, double left, double top, double size = 0.15)
     {
-        var rect = PdfRect.FromInches(left, top, size, size, _pageHeight);
+        PdfRect rect = PdfRect.FromInches(left, top, size, size, _pageHeight);
         return AddOption(value, rect);
     }
 
@@ -561,7 +561,7 @@ public class PdfDropdownBuilder : PdfFormFieldBuilder
     /// <summary>
     /// Font size (0 = auto)
     /// </summary>
-    public double FontSize { get; private set; } = 0;
+    public double FontSize { get; private set; }
 
     /// <summary>
     /// Text color
@@ -586,7 +586,7 @@ public class PdfDropdownBuilder : PdfFormFieldBuilder
     /// </summary>
     public PdfDropdownBuilder AddOptions(params string[] values)
     {
-        foreach (var value in values)
+        foreach (string value in values)
         {
             _options.Add(new PdfDropdownOption { Value = value, DisplayText = value });
         }

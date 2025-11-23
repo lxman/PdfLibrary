@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -72,7 +73,7 @@ public class PdfPage
         if (array == null)
             throw new InvalidOperationException("Page missing required MediaBox");
 
-        var rect = PdfRectangle.FromArray(array);
+        PdfRectangle rect = PdfRectangle.FromArray(array);
         Console.WriteLine($"[MEDIABOX] Found: {rect} (document={_document != null})");
         return rect;
     }
@@ -216,14 +217,14 @@ public class PdfPage
         // If no parent node was passed, try to get it from the page's /Parent key
         if (current == null && _document != null)
         {
-            if (_dictionary.TryGetValue(new PdfName("Parent"), out var parentObj))
+            if (_dictionary.TryGetValue(new PdfName("Parent"), out PdfObject parentObj))
             {
                 current = ResolveDict(parentObj);
                 Console.WriteLine($"[INHERIT] Got parent from /Parent key: {current != null}");
             }
             else
             {
-                Console.WriteLine($"[INHERIT] No /Parent key in page dictionary");
+                Console.WriteLine("[INHERIT] No /Parent key in page dictionary");
             }
         }
         else if (current == null)
@@ -238,7 +239,7 @@ public class PdfPage
                 return parentArray;
 
             // Move to next parent
-            if (current.TryGetValue(new PdfName("Parent"), out var nextParent))
+            if (current.TryGetValue(new PdfName("Parent"), out PdfObject nextParent))
             {
                 current = ResolveDict(nextParent);
             }
@@ -258,7 +259,7 @@ public class PdfPage
 
         if (obj is PdfIndirectReference reference && _document != null)
         {
-            var resolved = _document.ResolveReference(reference);
+            PdfObject? resolved = _document.ResolveReference(reference);
             if (resolved is PdfDictionary resolvedDict)
                 return resolvedDict;
         }
@@ -275,7 +276,7 @@ public class PdfPage
         if (contents.Count == 0)
             return string.Empty;
 
-        var allText = new System.Text.StringBuilder();
+        var allText = new StringBuilder();
         PdfResources? resources = GetResources();
 
         foreach (byte[] contentData in contents.Select(stream => stream.GetDecodedData()))
@@ -296,7 +297,7 @@ public class PdfPage
         if (contents.Count == 0)
             return (string.Empty, []);
 
-        var allText = new System.Text.StringBuilder();
+        var allText = new StringBuilder();
         var allFragments = new List<TextFragment>();
         PdfResources? resources = GetResources();
 
@@ -342,7 +343,6 @@ public class PdfPage
                 catch (Exception)
                 {
                     // Skip malformed images
-                    continue;
                 }
             }
         }

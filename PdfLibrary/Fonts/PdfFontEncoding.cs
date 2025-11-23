@@ -1,6 +1,6 @@
+using System.Text;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using System.Text;
 
 namespace PdfLibrary.Fonts;
 
@@ -74,9 +74,9 @@ public class PdfFontEncoding
             return name;
 
         // For standard ASCII, use the character itself as the glyph name
-        if (charCode >= 32 && charCode <= 126)
+        if (charCode is >= 32 and <= 126)
         {
-            char c = (char)charCode;
+            var c = (char)charCode;
             // Standard glyph names for common characters
             return c switch
             {
@@ -203,7 +203,7 @@ public class PdfFontEncoding
     // Standard Encoding (PDF Reference Appendix D.1)
     private static PdfFontEncoding CreateStandardEncoding()
     {
-        var encoding = new PdfFontEncoding("StandardEncoding");
+        var encoding = new PdfFontEncoding();
 
         // ASCII printable characters (32-126) map to themselves
         for (var i = 32; i <= 126; i++)

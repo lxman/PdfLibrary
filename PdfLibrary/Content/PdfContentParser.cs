@@ -79,7 +79,7 @@ public class PdfContentParser
                     if (token.Value == "BI")
                     {
                         // Parse inline image and create operator
-                        var inlineImageOp = ParseInlineImage(lexer);
+                        InlineImageOperator? inlineImageOp = ParseInlineImage(lexer);
                         if (inlineImageOp != null)
                         {
                             operators.Add(inlineImageOp);
@@ -95,9 +95,9 @@ public class PdfContentParser
                         // Debug: trace scn/sc operators with operand types and actual values
                         if (token.Value is "scn" or "SCN" or "sc" or "SC")
                         {
-                            var types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
+                            string types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
                             // Also show actual numeric values
-                            var values = op.Operands.Select(o => o switch {
+                            IEnumerable<string> values = op.Operands.Select(o => o switch {
                                 PdfReal r => r.Value.ToString("F4"),
                                 PdfInteger i => i.Value.ToString(),
                                 _ => o.ToString()
@@ -107,7 +107,7 @@ public class PdfContentParser
                         // Debug: trace Do operators
                         if (token.Value == "Do")
                         {
-                            var types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
+                            string types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
                             Console.WriteLine($"[PARSER] Do: {operands.Count} operands -> [{types}], created {op.GetType().Name}");
                         }
                         operators.Add(op);
@@ -389,7 +389,7 @@ public class PdfContentParser
                 return null;
 
             // ID marks the start of raw image data
-            if (token.Type == PdfTokenType.Unknown && token.Value == "ID")
+            if (token is { Type: PdfTokenType.Unknown, Value: "ID" })
                 break;
 
             // Parse key-value pairs
@@ -428,8 +428,8 @@ public class PdfContentParser
         }
 
         // Now read the raw image data until we find EI
-        var stream = lexer.GetStream();
-        if (stream == null || !stream.CanRead)
+        Stream? stream = lexer.GetStream();
+        if (stream is not { CanRead: true })
         {
             lexer.SyncPositionFromStream();
             return null;
@@ -445,8 +445,8 @@ public class PdfContentParser
 
         // Read until we find EI
         var imageData = new List<byte>();
-        int prevPrev = 0;
-        int prev = 0;
+        var prevPrev = 0;
+        var prev = 0;
 
         while (true)
         {

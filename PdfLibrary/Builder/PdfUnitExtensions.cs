@@ -77,7 +77,7 @@ public static class PdfUnitExtensions
     /// <summary>
     /// Create a length from pixels using standard screen DPI (96)
     /// </summary>
-    public static PdfLength Px(this int value) => PdfLength.FromPixels(value, 96);
+    public static PdfLength Px(this int value) => PdfLength.FromPixels(value);
 
     /// <summary>
     /// Create a length from pixels using the specified DPI

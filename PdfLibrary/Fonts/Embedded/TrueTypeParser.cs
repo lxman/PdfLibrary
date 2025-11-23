@@ -1,3 +1,4 @@
+using System.Text;
 using FontParser.Reader;
 
 namespace PdfLibrary.Fonts.Embedded
@@ -87,11 +88,11 @@ namespace PdfLibrary.Fonts.Embedded
                 reader.ReadUShort(); // rangeShift
 
                 // Read table records
-                for (int i = 0; i < numTables; i++)
+                for (var i = 0; i < numTables; i++)
                 {
                     var record = new TableRecord
                     {
-                        Tag = System.Text.Encoding.ASCII.GetString(reader.ReadBytes(4)),
+                        Tag = Encoding.ASCII.GetString(reader.ReadBytes(4)),
                         Checksum = reader.ReadUInt32(),
                         Offset = reader.ReadUInt32(),
                         Length = reader.ReadUInt32()
@@ -148,7 +149,7 @@ namespace PdfLibrary.Fonts.Embedded
                 return null;
 
             var result = new Dictionary<int, string>();
-            foreach (var kvp in postTable.GetAllGlyphNames())
+            foreach (KeyValuePair<int, string> kvp in postTable.GetAllGlyphNames())
             {
                 result[kvp.Key] = kvp.Value;
             }

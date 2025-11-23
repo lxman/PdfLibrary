@@ -44,7 +44,7 @@ namespace PdfLibrary.Fonts.Embedded
 
             // Read glyph name indices
             var glyphNameIndex = new ushort[NumGlyphs];
-            for (int i = 0; i < NumGlyphs; i++)
+            for (var i = 0; i < NumGlyphs; i++)
             {
                 glyphNameIndex[i] = reader.ReadUShort();
             }
@@ -73,7 +73,7 @@ namespace PdfLibrary.Fonts.Embedded
             }
 
             // Build glyph ID → name mapping
-            for (int glyphId = 0; glyphId < NumGlyphs; glyphId++)
+            for (var glyphId = 0; glyphId < NumGlyphs; glyphId++)
             {
                 int nameIndex = glyphNameIndex[glyphId];
 

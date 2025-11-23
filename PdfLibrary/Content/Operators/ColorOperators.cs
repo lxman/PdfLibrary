@@ -117,7 +117,7 @@ public class SetFillColorOperator(List<PdfObject> components) : PdfOperator("sc"
     public List<double> Components { get; } = components
         .Select(obj => obj switch
         {
-            PdfInteger i => (double)i.Value,
+            PdfInteger i => i.Value,
             PdfReal r => r.Value,
             _ => 0.0
         })
@@ -134,7 +134,7 @@ public class SetStrokeColorOperator(List<PdfObject> components) : PdfOperator("S
     public List<double> Components { get; } = components
         .Select(obj => obj switch
         {
-            PdfInteger i => (double)i.Value,
+            PdfInteger i => i.Value,
             PdfReal r => r.Value,
             _ => 0.0
         })

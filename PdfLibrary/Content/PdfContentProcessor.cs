@@ -64,7 +64,7 @@ public abstract class PdfContentProcessor
             case SetDashPatternOperator dash:
                 // Convert PdfArray to double array
                 var dashArray = new double[dash.DashArray.Count];
-                for (int i = 0; i < dash.DashArray.Count; i++)
+                for (var i = 0; i < dash.DashArray.Count; i++)
                 {
                     dashArray[i] = dash.DashArray[i] switch
                     {
@@ -341,8 +341,8 @@ public abstract class PdfContentProcessor
     protected virtual void OnEndText() { }
     protected virtual void OnFontChanged() { }
     protected virtual void OnTextPositionChanged() { }
-    protected virtual void OnShowText(Core.Primitives.PdfString text) { }
-    protected virtual void OnShowTextWithPositioning(Core.Primitives.PdfArray array) { }
+    protected virtual void OnShowText(PdfString text) { }
+    protected virtual void OnShowTextWithPositioning(PdfArray array) { }
     protected virtual void OnMoveTo(double x, double y) { }
     protected virtual void OnLineTo(double x, double y) { }
     protected virtual void OnCurveTo(double x1, double y1, double x2, double y2, double x3, double y3) { }

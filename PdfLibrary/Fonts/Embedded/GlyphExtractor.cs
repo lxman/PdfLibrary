@@ -104,11 +104,9 @@ namespace PdfLibrary.Fonts.Embedded
                 // Composite glyph - references other glyphs
                 return ExtractCompositeGlyph(glyphId, glyphData, metrics);
             }
-            else
-            {
-                // Simple glyph - has direct contour data
-                return ExtractSimpleGlyph(glyphId, glyphData, metrics);
-            }
+
+            // Simple glyph - has direct contour data
+            return ExtractSimpleGlyph(glyphId, glyphData, metrics);
         }
 
         /// <summary>
@@ -157,8 +155,8 @@ namespace PdfLibrary.Fonts.Embedded
             var contours = new List<GlyphContour>();
 
             // Process each contour
-            int startIndex = 0;
-            for (int i = 0; i < simpleGlyph.EndPtsOfContours.Count; i++)
+            var startIndex = 0;
+            for (var i = 0; i < simpleGlyph.EndPtsOfContours.Count; i++)
             {
                 int endIndex = simpleGlyph.EndPtsOfContours[i];
                 var points = new List<ContourPoint>();
@@ -166,7 +164,7 @@ namespace PdfLibrary.Fonts.Embedded
                 // Extract points for this contour
                 for (int j = startIndex; j <= endIndex; j++)
                 {
-                    var coord = simpleGlyph.Coordinates[j];
+                    SimpleGlyphCoordinate coord = simpleGlyph.Coordinates[j];
                     points.Add(new ContourPoint(
                         coord.Point.X,
                         coord.Point.Y,
@@ -201,7 +199,7 @@ namespace PdfLibrary.Fonts.Embedded
             var componentIds = new List<int>();
 
             // Recursively extract and transform each component
-            foreach (var component in compositeGlyph.Components)
+            foreach (CompositeGlyphComponent component in compositeGlyph.Components)
             {
                 componentIds.Add(component.GlyphIndex);
 
@@ -211,11 +209,11 @@ namespace PdfLibrary.Fonts.Embedded
                     continue;
 
                 // Transform each contour of the component using the transformation matrix
-                foreach (var contour in componentOutline.Contours)
+                foreach (GlyphContour contour in componentOutline.Contours)
                 {
                     var transformedPoints = new List<ContourPoint>();
 
-                    foreach (var point in contour.Points)
+                    foreach (ContourPoint point in contour.Points)
                     {
                         // Apply transformation matrix and offset
                         double x = point.X * component.A + point.Y * component.C + component.Argument1;

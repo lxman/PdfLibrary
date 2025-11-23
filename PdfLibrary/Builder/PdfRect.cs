@@ -131,11 +131,9 @@ public readonly struct PdfRect
             double bottomPt = topPt - heightPt;
             return new PdfRect(xPt, bottomPt, xPt + widthPt, topPt);
         }
-        else
-        {
-            // Already in bottom-left coordinates
-            return new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
-        }
+
+        // Already in bottom-left coordinates
+        return new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
     }
 
     /// <summary>

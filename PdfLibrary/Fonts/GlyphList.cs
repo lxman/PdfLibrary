@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace PdfLibrary.Fonts;
 
 /// <summary>
@@ -18,7 +20,7 @@ public static class GlyphList
 
         // Handle uniXXXX format (direct Unicode encoding)
         if (!glyphName.StartsWith("uni") || glyphName.Length != 7) return null;
-        return int.TryParse(glyphName[3..], System.Globalization.NumberStyles.HexNumber, null, out int codePoint)
+        return int.TryParse(glyphName[3..], NumberStyles.HexNumber, null, out int codePoint)
             ? char.ConvertFromUtf32(codePoint)
             : null;
     }

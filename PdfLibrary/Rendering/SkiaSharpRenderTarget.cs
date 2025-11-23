@@ -1,6 +1,7 @@
 using System.Numerics;
 using Microsoft.Extensions.Caching.Memory;
 using PdfLibrary.Content;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
@@ -23,10 +24,11 @@ public class SkiaSharpRenderTarget : IRenderTarget
     private readonly PdfDocument? _document;
     private double _pageWidth;
     private double _pageHeight;
+    private Matrix3x2 _initialTransform = Matrix3x2.Identity;
 
     // Static glyph path cache - shared across all render targets for efficiency
-    private static readonly MemoryCache _glyphPathCache;
-    private static readonly MemoryCacheEntryOptions _cacheOptions;
+    private static readonly MemoryCache GlyphPathCache;
+    private static readonly MemoryCacheEntryOptions CacheOptions;
 
     public int CurrentPageNumber { get; private set; }
 
@@ -37,10 +39,10 @@ public class SkiaSharpRenderTarget : IRenderTarget
         {
             SizeLimit = 10000
         };
-        _glyphPathCache = new MemoryCache(cacheOptions);
+        GlyphPathCache = new MemoryCache(cacheOptions);
 
         // Cache entries expire after 10 minutes of non-use
-        _cacheOptions = new MemoryCacheEntryOptions()
+        CacheOptions = new MemoryCacheEntryOptions()
             .SetSize(1)
             .SetSlidingExpiration(TimeSpan.FromMinutes(10))
             .RegisterPostEvictionCallback((key, value, reason, state) =>
@@ -75,12 +77,30 @@ public class SkiaSharpRenderTarget : IRenderTarget
         _pageWidth = width;
         _pageHeight = height;
 
-        // Clear canvas for new page
+        Console.WriteLine($"[PDFLIBRARY] BeginPage: Page {pageNumber}, Size: {width}x{height}");
+
+        // Clear canvas for the new page
         _canvas.Clear(SKColors.White);
 
-        // Reset to identity matrix - we'll handle PDF-to-device coordinate
-        // transformation per object, following PDFium's matrix-based approach
-        _canvas.ResetMatrix();
+        // Set up initial viewport transformation:
+        // PDF coordinate system has origin at bottom-left with Y increasing upward
+        // The screen coordinate system has origin at top-left with Y increasing downward
+        // So we need to flip the Y-axis
+        Matrix3x2 initialTransform = Matrix3x2.CreateScale(1, -1) * Matrix3x2.CreateTranslation(0, (float)height);
+
+        Console.WriteLine($"[PDFLIBRARY]   Initial viewport transform: Scale(1,-1) × Translate(0,{height})");
+
+        // Store this as our base transformation
+        // All PDF CTM transformations will be applied on top of this
+        _initialTransform = initialTransform;
+
+        // Set the canvas to the initial transform
+        var initialMatrix = new SKMatrix(
+            initialTransform.M11, initialTransform.M21, initialTransform.M31,
+            initialTransform.M12, initialTransform.M22, initialTransform.M32,
+            0, 0, 1
+        );
+        _canvas.SetMatrix(initialMatrix);
     }
 
     public void EndPage()
@@ -110,6 +130,32 @@ public class SkiaSharpRenderTarget : IRenderTarget
             _stateStack.Pop();
     }
 
+    public void ApplyCtm(Matrix3x2 ctm)
+    {
+        // The CTM parameter is the FULL accumulated transformation matrix from PdfGraphicsState.
+        // We need to combine it with our initial viewport transformation.
+        //
+        // Matrix multiplication order: rightmost matrix is applied first.
+        // We want InitialTransform applied first, then CTM, so: CTM × InitialTransform
+
+        Console.WriteLine($"[PDFLIBRARY] ApplyCtm: PDF CTM=[{ctm.M11:F4}, {ctm.M12:F4}, {ctm.M21:F4}, {ctm.M22:F4}, {ctm.M31:F4}, {ctm.M32:F4}]");
+
+        // Combine: CTM is applied to the viewport-transformed coordinates
+        Matrix3x2 finalTransform = ctm * _initialTransform;
+
+        // Convert to SKMatrix
+        // Matrix3x2 to SKMatrix mapping: M11→scaleX, M21→skewX, M31→transX, M12→skewY, M22→scaleY, M32→transY
+        var finalMatrix = new SKMatrix(
+            finalTransform.M11, finalTransform.M21, finalTransform.M31,  // scaleX, skewX, transX
+            finalTransform.M12, finalTransform.M22, finalTransform.M32,  // skewY, scaleY, transY
+            0, 0, 1
+        );
+
+        Console.WriteLine($"[PDFLIBRARY]   Final canvas matrix=[{finalMatrix.ScaleX:F4}, {finalMatrix.SkewY:F4}, {finalMatrix.SkewX:F4}, {finalMatrix.ScaleY:F4}, {finalMatrix.TransX:F4}, {finalMatrix.TransY:F4}]");
+
+        _canvas.SetMatrix(finalMatrix);
+    }
+
     // ==================== TEXT RENDERING ====================
 
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
@@ -121,84 +167,125 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
         try
         {
-            // Apply transformation matrix with Y-axis conversion
-            // Following PDFium's approach: convert PDF space to device space
-            ApplyTransformationMatrix(state);
+            // Note: We no longer apply glyph transformation to the canvas here.
+            // Instead, each glyph path is transformed individually with the full glyph matrix.
+            // Canvas already has (displayMatrix × CTM) from ApplyCtm().
 
             // Convert fill color
-            var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            SKColor fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
 
             // Debug: show text color if it's not black
             if (fillColor.Red != 0 || fillColor.Green != 0 || fillColor.Blue != 0)
             {
-                Console.WriteLine($"[TEXT COLOR] Text='{(text.Length > 20 ? text.Substring(0, 20) + "..." : text)}' Color=RGB({fillColor.Red},{fillColor.Green},{fillColor.Blue}) ColorSpace={state.FillColorSpace}");
+                Console.WriteLine($"[TEXT COLOR] Text='{(text.Length > 20 ? text[..20] + "..." : text)}' Color=RGB({fillColor.Red},{fillColor.Green},{fillColor.Blue}) ColorSpace={state.FillColorSpace}");
             }
 
-            using var paint = new SKPaint
-            {
-                Color = fillColor,
-                IsAntialias = true,
-                Style = SKPaintStyle.Fill
-            };
+            using var paint = new SKPaint();
+            paint.Color = fillColor;
+            paint.IsAntialias = true;
+            paint.Style = SKPaintStyle.Fill;
 
             // Try to render using embedded font glyph outlines
-            if (font != null && TryRenderWithGlyphOutlines(text, glyphWidths, state, font, paint, charCodes))
+            if (font is not null && TryRenderWithGlyphOutlines(text, glyphWidths, state, font, paint, charCodes))
             {
                 // Successfully rendered with glyph outlines
+                Console.WriteLine($"[RENDER] Glyph outline rendering succeeded for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
                 return;
             }
+
+            Console.WriteLine($"[RENDER] Falling back to Arial for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
 
-            // Determine font style from font descriptor
-            var fontStyle = SKFontStyle.Normal;
-            if (font != null)
-            {
-                var descriptor = font.GetDescriptor();
-                bool isBold = false;
-                bool isItalic = false;
+            // For fallback rendering with SKFont, the font size is already applied to the font
+            // So we only need to apply TextMatrix and TextRise (NOT font size scaling)
+            // Note: We still need horizontal scaling
+            // HorizontalScaling is stored as a percentage (100 = 100% = 1.0 scale)
+            float tHs = (float)state.HorizontalScaling / 100f;
+            var tRise = (float)state.TextRise;
 
-                if (descriptor != null)
+            // Apply only horizontal scaling and text rise, not font size
+            // (SKFont already has the font size baked in)
+            var textPositionMatrix = new Matrix3x2(
+                tHs, 0,       // Horizontal scaling only
+                0, 1,         // No Y scaling (font already sized)
+                0, tRise      // Text rise
+            );
+
+            Matrix3x2 fallbackMatrix = textPositionMatrix * state.TextMatrix;
+
+            Console.WriteLine($"[PDFLIBRARY] FALLBACK: FontSize={state.FontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
+            Console.WriteLine($"[PDFLIBRARY]   TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
+            Console.WriteLine($"[PDFLIBRARY]   FallbackMatrix (no FontSize)=[{fallbackMatrix.M11:F4}, {fallbackMatrix.M12:F4}, {fallbackMatrix.M21:F4}, {fallbackMatrix.M22:F4}, {fallbackMatrix.M31:F4}, {fallbackMatrix.M32:F4}]");
+
+            // Determine font style from font descriptor
+            SKFontStyle? fontStyle = SKFontStyle.Normal;
+            if (font is not null)
+            {
+                PdfFontDescriptor? descriptor = font.GetDescriptor();
+                var isBold = false;
+                var isItalic = false;
+
+                if (descriptor is not null)
                 {
                     isBold = descriptor.IsBold;
                     isItalic = descriptor.IsItalic;
 
-                    // Also use StemV as heuristic for bold detection
+                    // Also use StemV as a heuristic for bold detection
                     if (descriptor.StemV >= 120)
                         isBold = true;
                 }
 
-                // Also check font name for style hints
-                string? baseName = font.BaseFont;
-                if (baseName != null)
-                {
-                    if (baseName.Contains("Bold", StringComparison.OrdinalIgnoreCase))
-                        isBold = true;
-                    if (baseName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
-                        baseName.Contains("Oblique", StringComparison.OrdinalIgnoreCase))
-                        isItalic = true;
-                }
+                // Also check the font name for style hints
+                string baseName = font.BaseFont;
+                if (baseName.Contains("Bold", StringComparison.OrdinalIgnoreCase))
+                    isBold = true;
+                if (baseName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Oblique", StringComparison.OrdinalIgnoreCase))
+                    isItalic = true;
 
-                if (isBold && isItalic)
-                    fontStyle = SKFontStyle.BoldItalic;
-                else if (isBold)
-                    fontStyle = SKFontStyle.Bold;
-                else if (isItalic)
-                    fontStyle = SKFontStyle.Italic;
+                switch (isBold)
+                {
+                    case true when isItalic:
+                        fontStyle = SKFontStyle.BoldItalic;
+                        break;
+                    case true:
+                        fontStyle = SKFontStyle.Bold;
+                        break;
+                    default:
+                    {
+                        if (isItalic)
+                            fontStyle = SKFontStyle.Italic;
+                        break;
+                    }
+                }
             }
 
             using var fallbackFont = new SKFont(SKTypeface.FromFamilyName("Arial", fontStyle), (float)state.FontSize);
 
             float currentX = 0;
-            for (int i = 0; i < text.Length; i++)
+            for (var i = 0; i < text.Length; i++)
             {
-                string ch = text[i].ToString();
-                _canvas.DrawText(ch, currentX, 0, fallbackFont, paint);
+                // Transform character position through fallback matrix
+                // (excludes font size since SKFont already has it)
+                Vector2 position = Vector2.Transform(new Vector2(currentX, 0), fallbackMatrix);
 
-                // Advance by PDF glyph width, not Arial's width
+                Console.WriteLine($"[PDFLIBRARY] DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4})");
+
+                var ch = text[i].ToString();
+
+                // The canvas has a Y-flip applied, which makes text render upside down
+                // We need to apply a local Y-flip at the text position to counter this
+                _canvas.Save();
+                _canvas.Translate(position.X, position.Y);
+                _canvas.Scale(1, -1);  // Flip Y to make text right-side up
+                _canvas.DrawText(ch, 0, 0, fallbackFont, paint);
+                _canvas.Restore();
+
+                // Advance by PDF glyph width, scaled by horizontal scaling
                 if (i < glyphWidths.Count)
-                    currentX += (float)glyphWidths[i];
+                    currentX += (float)glyphWidths[i] * tHs;
             }
         }
         finally
@@ -211,12 +298,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
     {
         try
         {
-            // Check if font should be rendered as bold (for synthetic bold)
-            bool applyBold = false;
-            var descriptor = font.GetDescriptor();
+            // Check if the font should be rendered as bold (for synthetic bold)
+            var applyBold = false;
+            PdfFontDescriptor? descriptor = font.GetDescriptor();
             if (descriptor != null)
             {
-                // Check font flags for bold, or check font name for "Bold"
+                // Check font flags for bold, or check the font name for "Bold"
                 bool isBoldFlag = descriptor.IsBold;
                 bool isBoldName = font.BaseFont?.Contains("Bold", StringComparison.OrdinalIgnoreCase) == true;
 
@@ -229,9 +316,16 @@ public class SkiaSharpRenderTarget : IRenderTarget
             }
 
             // Get embedded font metrics
-            var embeddedMetrics = font.GetEmbeddedMetrics();
-            if (embeddedMetrics == null || !embeddedMetrics.IsValid)
+            EmbeddedFontMetrics? embeddedMetrics = font.GetEmbeddedMetrics();
+            if (embeddedMetrics is not { IsValid: true })
+            {
+                Console.WriteLine($"[RENDER] No embedded metrics for font '{font.BaseFont}'");
                 return false;
+            }
+
+            // Calculate the horizontal scaling factor early so we can use it for character advances
+            // HorizontalScaling is stored as a percentage (100 = 100% = 1.0 scale)
+            float tHs = (float)state.HorizontalScaling / 100f;
 
             // Position for rendering glyphs
             double currentX = 0;
@@ -240,12 +334,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // One character code can decode to multiple Unicode chars (e.g., ligatures)
             int loopCount = charCodes?.Count ?? text.Length;
 
-            for (int i = 0; i < loopCount; i++)
+            for (var i = 0; i < loopCount; i++)
             {
                 // Get character code - either from original PDF codes or fall back to Unicode
                 ushort charCode = charCodes != null && i < charCodes.Count
                     ? (ushort)charCodes[i]
-                    : (ushort)text[i];
+                    : text[i];
 
                 // Get corresponding character for logging (may not match 1:1 due to ligatures)
                 char displayChar = i < text.Length ? text[i] : '?';
@@ -253,23 +347,18 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 ushort glyphId;
 
                 // For CFF fonts without cmap, use glyph name mapping via the PDF encoding
-                if (embeddedMetrics.IsCffFont && font.Encoding != null)
+                if (embeddedMetrics.IsCffFont && font.Encoding is not null)
                 {
                     string? glyphName = font.Encoding.GetGlyphName(charCode);
-                    if (glyphName != null)
-                    {
-                        glyphId = embeddedMetrics.GetGlyphIdByName(glyphName);
-                    }
-                    else
-                    {
+                    glyphId = glyphName is not null
+                        ? embeddedMetrics.GetGlyphIdByName(glyphName)
                         // Fall back to direct lookup
-                        glyphId = embeddedMetrics.GetGlyphId(charCode);
-                    }
+                        : embeddedMetrics.GetGlyphId(charCode);
                 }
                 else
                 {
                     // For Type0/CID fonts, map CID to GID using CIDToGIDMap
-                    if (font is Type0Font type0Font && type0Font.DescendantFont is CidFont cidFont)
+                    if (font is Type0Font { DescendantFont: CidFont cidFont })
                     {
                         // For Type0 fonts, use CIDToGIDMap directly - the mapped value IS the glyph ID
                         int mappedGid = cidFont.MapCidToGid(charCode);
@@ -286,16 +375,16 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 {
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i];
+                        currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
                     continue;
                 }
 
                 // Extract glyph outline
-                var glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
+                GlyphOutline? glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
                 if (glyphOutline == null)
                 {
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i];
+                        currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
                     continue;
                 }
 
@@ -303,18 +392,18 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 {
                     // Empty glyph (e.g., space), just advance
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i];
+                        currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
                     continue;
                 }
 
-                // Create cache key: font name + glyph ID + font size (rounded for precision)
+                // Create a cache key: font name + glyph ID + font size (rounded for precision)
                 string fontKey = font.BaseFont ?? "unknown";
-                int roundedSize = (int)(state.FontSize * 10); // 0.1pt precision
-                string cacheKey = $"{fontKey}_{glyphId}_{roundedSize}";
+                var roundedSize = (int)(state.FontSize * 10); // 0.1pt precision
+                var cacheKey = $"{fontKey}_{glyphId}_{roundedSize}";
 
-                // Try to get from cache first
+                // Try to get from the cache first
                 SKPath glyphPath;
-                if (_glyphPathCache.TryGetValue(cacheKey, out SKPath? cachedPath) && cachedPath != null)
+                if (GlyphPathCache.TryGetValue(cacheKey, out SKPath? cachedPath) && cachedPath != null)
                 {
                     // Clone the cached path (we need to transform it)
                     glyphPath = new SKPath(cachedPath);
@@ -325,7 +414,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     // Check if this is a CFF font for proper cubic Bezier rendering
                     if (embeddedMetrics.IsCffFont)
                     {
-                        var cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
+                        FontParser.Tables.Cff.GlyphOutline? cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
                         if (cffOutline != null)
                         {
                             glyphPath = _glyphConverter.ConvertCffToPath(
@@ -356,12 +445,61 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                     // Cache the path (clone it since we'll transform the original)
                     var pathToCache = new SKPath(glyphPath);
-                    _glyphPathCache.Set(cacheKey, pathToCache, _cacheOptions);
+                    GlyphPathCache.Set(cacheKey, pathToCache, CacheOptions);
                 }
 
-                // Translate path to current position
-                var matrix = SKMatrix.CreateTranslation((float)currentX, 0);
-                glyphPath.Transform(matrix);
+                // IMPORTANT: The glyph converter (ConvertToPath/ConvertCffToPath) already scales
+                // the glyph by FontSize when converting from font units to device units.
+                // Therefore, we should NOT include FontSize in the transformation matrix here,
+                // or we'll get double font size scaling!
+                //
+                // This matches the fallback rendering approach (see line 223) which also
+                // excludes FontSize because SKFont already has it applied.
+                //
+                // Glyph transformation matrix should be: [[Th, 0, 0], [0, 1, 0], [0, Trise, 1]] × Tm
+                // (Note: NO FontSize scaling - that's already in the glyph path!)
+
+                // tHs is already calculated earlier for character advances
+                var tRise = (float)state.TextRise;
+
+                var textStateMatrix = new Matrix3x2(
+                    tHs, 0,      // Scale X by HorizontalScale only (NO FontSize - already in path!)
+                    0, 1,        // No Y scaling (FontSize already in path!)
+                    0, tRise     // Translate Y by TextRise
+                );
+
+                // Multiply by text matrix to get the complete glyph transformation
+                Matrix3x2 glyphMatrix = textStateMatrix * state.TextMatrix;
+
+                Console.WriteLine($"[PDFLIBRARY] GlyphTransformMatrix: HScale={tHs:F2}, Rise={tRise:F2} (FontSize={state.FontSize:F2} already in path)");
+                Console.WriteLine($"[PDFLIBRARY]   TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
+                Console.WriteLine($"[PDFLIBRARY]   Result=[{glyphMatrix.M11:F4}, {glyphMatrix.M12:F4}, {glyphMatrix.M21:F4}, {glyphMatrix.M22:F4}, {glyphMatrix.M31:F4}, {glyphMatrix.M32:F4}]");
+
+                // Add translation for the current glyph position (in text space)
+                // The translation needs to be applied BEFORE the glyph transformation
+                // so it gets scaled by the TextMatrix
+                var translationMatrix = Matrix3x2.CreateTranslation((float)currentX, 0);
+                Matrix3x2 fullGlyphMatrix = translationMatrix * glyphMatrix;
+
+                // Convert to SKMatrix and apply to path
+                // Negate ScaleY to flip the glyph upright, since the canvas has a Y-flip applied
+                var skGlyphMatrix = new SKMatrix
+                {
+                    ScaleX = fullGlyphMatrix.M11,
+                    SkewY = fullGlyphMatrix.M12,
+                    SkewX = fullGlyphMatrix.M21,
+                    ScaleY = -fullGlyphMatrix.M22,  // Negate to counter canvas Y-flip
+                    TransX = fullGlyphMatrix.M31,
+                    TransY = fullGlyphMatrix.M32,
+                    Persp0 = 0,
+                    Persp1 = 0,
+                    Persp2 = 1
+                };
+                glyphPath.Transform(skGlyphMatrix);
+
+                // Log drawing details
+                SKRect bounds = glyphPath.Bounds;
+                Console.WriteLine($"[DRAW] Page={CurrentPageNumber} X={currentX:F2} GlyphId={glyphId} Bounds=[L:{bounds.Left:F2},T:{bounds.Top:F2},R:{bounds.Right:F2},B:{bounds.Bottom:F2}] GlyphMatrix=[{fullGlyphMatrix.M11:F2},{fullGlyphMatrix.M12:F2},{fullGlyphMatrix.M21:F2},{fullGlyphMatrix.M22:F2},{fullGlyphMatrix.M31:F2},{fullGlyphMatrix.M32:F2}]");
 
                 // Render the glyph
                 _canvas.DrawPath(glyphPath, paint);
@@ -372,26 +510,24 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     // Calculate CTM scaling factor for stroke width
                     // Note: Since canvas already has CTM transform, this may cause double-scaling
                     // But we apply it for consistency with line width handling
-                    var ctm = state.Ctm;
+                    Matrix3x2 ctm = state.Ctm;
                     double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
                     if (ctmScale < 0.0001) ctmScale = 1.0;
 
-                    using var strokePaint = new SKPaint
-                    {
-                        Color = paint.Color,
-                        IsAntialias = true,
-                        Style = SKPaintStyle.Stroke,
-                        StrokeWidth = (float)(state.FontSize * 0.04 * ctmScale)
-                    };
+                    using var strokePaint = new SKPaint();
+                    strokePaint.Color = paint.Color;
+                    strokePaint.IsAntialias = true;
+                    strokePaint.Style = SKPaintStyle.Stroke;
+                    strokePaint.StrokeWidth = (float)(state.FontSize * 0.04 * ctmScale);
                     _canvas.DrawPath(glyphPath, strokePaint);
                 }
 
                 // Clean up path
                 glyphPath.Dispose();
 
-                // Advance to next glyph position
+                // Advance to the next glyph position
                 if (i < glyphWidths.Count)
-                    currentX += glyphWidths[i];
+                    currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
             }
 
             return true; // Successfully rendered with glyph outlines
@@ -405,44 +541,51 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
     private void ApplyTransformationMatrix(PdfGraphicsState state)
     {
-        // Combine CTM and text matrix (both in PDF space)
-        var pdfMatrix = state.Ctm * state.TextMatrix;
+        // Following Melville.Pdf architecture (GraphicsStateHelpers.cs GlyphTransformMatrix):
+        // Build glyph transformation matrix = [[Tfs × Th, 0, 0], [0, Tfs, 0], [0, Trise, 1]] × Tm
+        // Where:
+        //   Tfs = Font Size
+        //   Th = Horizontal Text Scale
+        //   Trise = Text Rise
+        //   Tm = Text Matrix
 
-        // Create page-to-device display matrix following PDFium's approach
-        // For rotation=0: [1, 0, 0, -1, 0, pageHeight]
-        // This maps PDF coordinates (x, y) to device coordinates (x, pageHeight - y)
-        var displayMatrix = new Matrix3x2(
-            1, 0,                       // a, b
-            0, -1,                      // c, d (negative d flips Y-axis)
-            0, (float)_pageHeight       // e, f (translate Y by page height)
+        var tFs = (float)state.FontSize;
+        var tHs = (float)state.HorizontalScaling;
+        var tRise = (float)state.TextRise;
+
+        // Create a text state matrix
+        var textStateMatrix = new Matrix3x2(
+            tFs * tHs, 0,      // Scale X by FontSize × HorizontalScale
+            0, tFs,            // Scale Y by FontSize
+            0, tRise           // Translate Y by TextRise
         );
 
-        // Concatenate transformations: pdfMatrix * displayMatrix
-        var deviceMatrix = pdfMatrix * displayMatrix;
+        // Multiply by text matrix to get a complete glyph transformation
+        Matrix3x2 glyphMatrix = textStateMatrix * state.TextMatrix;
 
         // Convert to SKMatrix
-        // Note: We negate ScaleY to counter-flip the glyphs (they were flipped by displayMatrix)
-        // This keeps the text position correct (from the matrix multiplication)
-        // but renders glyphs right-side-up
         var skMatrix = new SKMatrix
         {
-            ScaleX = deviceMatrix.M11,
-            SkewY = deviceMatrix.M12,
-            SkewX = deviceMatrix.M21,
-            ScaleY = -deviceMatrix.M22,  // Negate to counter-flip glyphs
-            TransX = deviceMatrix.M31,
-            TransY = deviceMatrix.M32,
+            ScaleX = glyphMatrix.M11,
+            SkewY = glyphMatrix.M12,
+            SkewX = glyphMatrix.M21,
+            ScaleY = glyphMatrix.M22,
+            TransX = glyphMatrix.M31,
+            TransY = glyphMatrix.M32,
             Persp0 = 0,
             Persp1 = 0,
             Persp2 = 1
         };
 
+        // Concatenate with canvas matrix (which already has displayMatrix applied)
+        // Note: SKCanvas.Concat does PRE-multiply (new × current), but we need POST-multiply (current × new)
+        // So we need to reverse the order to get the correct PDF transformation
         _canvas.Concat(in skMatrix);
     }
 
     private SKColor ConvertColor(List<double> colorComponents, string colorSpace)
     {
-        if (colorComponents == null || colorComponents.Count == 0)
+        if (colorComponents.Count == 0)
         {
             Console.WriteLine($"[COLOR] Warning: No color components for colorSpace={colorSpace}");
             return SKColors.Black;
@@ -458,15 +601,15 @@ public class SkiaSharpRenderTarget : IRenderTarget
         {
             case "DeviceGray":
                 {
-                    byte gray = (byte)(colorComponents[0] * 255);
+                    var gray = (byte)(colorComponents[0] * 255);
                     return new SKColor(gray, gray, gray);
                 }
             case "DeviceRGB":
                 if (colorComponents.Count >= 3)
                 {
-                    byte r = (byte)(colorComponents[0] * 255);
-                    byte g = (byte)(colorComponents[1] * 255);
-                    byte b = (byte)(colorComponents[2] * 255);
+                    var r = (byte)(colorComponents[0] * 255);
+                    var g = (byte)(colorComponents[1] * 255);
+                    var b = (byte)(colorComponents[2] * 255);
                     return new SKColor(r, g, b);
                 }
                 break;
@@ -479,41 +622,45 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     double y = colorComponents[2];
                     double k = colorComponents[3];
 
-                    byte r = (byte)((1 - c) * (1 - k) * 255);
-                    byte g = (byte)((1 - m) * (1 - k) * 255);
-                    byte b = (byte)((1 - y) * (1 - k) * 255);
+                    var r = (byte)((1 - c) * (1 - k) * 255);
+                    var g = (byte)((1 - m) * (1 - k) * 255);
+                    var b = (byte)((1 - y) * (1 - k) * 255);
                     return new SKColor(r, g, b);
                 }
                 break;
             default:
-                // For named/unknown color spaces, try to interpret based on component count
-                // This is a fallback - proper implementation would resolve the named color space
-                if (colorComponents.Count >= 4)
+                switch (colorComponents.Count)
                 {
-                    // Treat as CMYK
-                    double c = colorComponents[0];
-                    double m = colorComponents[1];
-                    double y = colorComponents[2];
-                    double k = colorComponents[3];
-                    byte r = (byte)((1 - c) * (1 - k) * 255);
-                    byte g = (byte)((1 - m) * (1 - k) * 255);
-                    byte b = (byte)((1 - y) * (1 - k) * 255);
-                    return new SKColor(r, g, b);
+                    // For named/unknown color spaces, try to interpret based on component count
+                    // This is a fallback - proper implementation would resolve the named color space
+                    case >= 4:
+                    {
+                        // Treat as CMYK
+                        double c = colorComponents[0];
+                        double m = colorComponents[1];
+                        double y = colorComponents[2];
+                        double k = colorComponents[3];
+                        var r = (byte)((1 - c) * (1 - k) * 255);
+                        var g = (byte)((1 - m) * (1 - k) * 255);
+                        var b = (byte)((1 - y) * (1 - k) * 255);
+                        return new SKColor(r, g, b);
+                    }
+                    case >= 3:
+                    {
+                        // Treat as RGB
+                        var r = (byte)(colorComponents[0] * 255);
+                        var g = (byte)(colorComponents[1] * 255);
+                        var b = (byte)(colorComponents[2] * 255);
+                        return new SKColor(r, g, b);
+                    }
+                    case >= 1:
+                    {
+                        // Treat as grayscale
+                        var gray = (byte)(colorComponents[0] * 255);
+                        return new SKColor(gray, gray, gray);
+                    }
                 }
-                else if (colorComponents.Count >= 3)
-                {
-                    // Treat as RGB
-                    byte r = (byte)(colorComponents[0] * 255);
-                    byte g = (byte)(colorComponents[1] * 255);
-                    byte b = (byte)(colorComponents[2] * 255);
-                    return new SKColor(r, g, b);
-                }
-                else if (colorComponents.Count >= 1)
-                {
-                    // Treat as grayscale
-                    byte gray = (byte)(colorComponents[0] * 255);
-                    return new SKColor(gray, gray, gray);
-                }
+
                 break;
         }
 
@@ -534,35 +681,33 @@ public class SkiaSharpRenderTarget : IRenderTarget
             ApplyPathTransformationMatrix(state);
 
             // Convert IPathBuilder to SKPath
-            var skPath = ConvertToSKPath(path);
+            SKPath skPath = ConvertToSkPath(path);
 
             // Create stroke paint
-            var strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+            SKColor strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
 
 
             // Calculate CTM scaling factor for line width
             // The line width should be scaled by the CTM's linear scaling factor
             // which is the square root of the absolute determinant of the 2x2 portion
-            var ctm = state.Ctm;
+            Matrix3x2 ctm = state.Ctm;
             double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
             if (ctmScale < 0.0001) ctmScale = 1.0; // Avoid division by zero
             double scaledLineWidth = state.LineWidth * ctmScale;
 
-            using var paint = new SKPaint
-            {
-                Color = strokeColor,
-                IsAntialias = true,
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)scaledLineWidth,
-                StrokeCap = ConvertLineCap(state.LineCap),
-                StrokeJoin = ConvertLineJoin(state.LineJoin),
-                StrokeMiter = (float)state.MiterLimit
-            };
+            using var paint = new SKPaint();
+            paint.Color = strokeColor;
+            paint.IsAntialias = true;
+            paint.Style = SKPaintStyle.Stroke;
+            paint.StrokeWidth = (float)scaledLineWidth;
+            paint.StrokeCap = ConvertLineCap(state.LineCap);
+            paint.StrokeJoin = ConvertLineJoin(state.LineJoin);
+            paint.StrokeMiter = (float)state.MiterLimit;
 
-            // Apply dash pattern if present (scale by CTM as well)
-            if (state.DashPattern != null && state.DashPattern.Length > 0)
+            // Apply a dash pattern if present (scale by CTM as well)
+            if (state.DashPattern is not null && state.DashPattern.Length > 0)
             {
-                var dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
+                float[] dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
                 Console.WriteLine($"[DASH] Applying dash pattern: [{string.Join(", ", dashIntervals)}] phase={state.DashPhase * ctmScale}");
                 paint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));
             }
@@ -588,19 +733,17 @@ public class SkiaSharpRenderTarget : IRenderTarget
             ApplyPathTransformationMatrix(state);
 
             // Convert IPathBuilder to SKPath
-            var skPath = ConvertToSKPath(path);
+            SKPath skPath = ConvertToSkPath(path);
 
             // Set fill rule
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
             // Create fill paint
-            var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
-            using var paint = new SKPaint
-            {
-                Color = fillColor,
-                IsAntialias = true,
-                Style = SKPaintStyle.Fill
-            };
+            SKColor fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            using var paint = new SKPaint();
+            paint.Color = fillColor;
+            paint.IsAntialias = true;
+            paint.Style = SKPaintStyle.Fill;
 
             _canvas.DrawPath(skPath, paint);
             skPath.Dispose();
@@ -623,47 +766,43 @@ public class SkiaSharpRenderTarget : IRenderTarget
             ApplyPathTransformationMatrix(state);
 
             // Convert IPathBuilder to SKPath
-            var skPath = ConvertToSKPath(path);
+            SKPath skPath = ConvertToSkPath(path);
 
             // Set fill rule
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
             // Fill first
-            var fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
-            using (var fillPaint = new SKPaint
+            SKColor fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            using (var fillPaint = new SKPaint())
             {
-                Color = fillColor,
-                IsAntialias = true,
-                Style = SKPaintStyle.Fill
-            })
-            {
+                fillPaint.Color = fillColor;
+                fillPaint.IsAntialias = true;
+                fillPaint.Style = SKPaintStyle.Fill;
                 _canvas.DrawPath(skPath, fillPaint);
             }
 
             // Then stroke
-            var strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+            SKColor strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
 
             // Calculate CTM scaling factor for line width
-            var ctm = state.Ctm;
+            Matrix3x2 ctm = state.Ctm;
             double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
             if (ctmScale < 0.0001) ctmScale = 1.0;
             double scaledLineWidth = state.LineWidth * ctmScale;
 
-            using (var strokePaint = new SKPaint
+            using (var strokePaint = new SKPaint())
             {
-                Color = strokeColor,
-                IsAntialias = true,
-                Style = SKPaintStyle.Stroke,
-                StrokeWidth = (float)scaledLineWidth,
-                StrokeCap = ConvertLineCap(state.LineCap),
-                StrokeJoin = ConvertLineJoin(state.LineJoin),
-                StrokeMiter = (float)state.MiterLimit
-            })
-            {
-                // Apply dash pattern if present (scale by CTM as well)
-                if (state.DashPattern != null && state.DashPattern.Length > 0)
+                strokePaint.Color = strokeColor;
+                strokePaint.IsAntialias = true;
+                strokePaint.Style = SKPaintStyle.Stroke;
+                strokePaint.StrokeWidth = (float)scaledLineWidth;
+                strokePaint.StrokeCap = ConvertLineCap(state.LineCap);
+                strokePaint.StrokeJoin = ConvertLineJoin(state.LineJoin);
+                strokePaint.StrokeMiter = (float)state.MiterLimit;
+                // Apply a dash pattern if present (scale by CTM as well)
+                if (state.DashPattern is not null && state.DashPattern.Length > 0)
                 {
-                    var dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
+                    float[] dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
                     strokePaint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));
                 }
 
@@ -684,7 +823,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             return;
 
         // Convert IPathBuilder to SKPath in PDF coordinates
-        var skPath = ConvertToSKPath(path);
+        SKPath skPath = ConvertToSkPath(path);
 
         // Set fill rule for clipping
         skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
@@ -706,8 +845,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
         skPath.Transform(flipMatrix);
 
-        // Apply clipping path (persists until RestoreState is called)
-        _canvas.ClipPath(skPath, SKClipOperation.Intersect, antialias: true);
+        // Apply a clipping path (persists until RestoreState is called)
+        _canvas.ClipPath(skPath, antialias: true);
         skPath.Dispose();
     }
 
@@ -716,14 +855,14 @@ public class SkiaSharpRenderTarget : IRenderTarget
     /// <summary>
     /// Convert IPathBuilder to SkiaSharp SKPath
     /// </summary>
-    private SKPath ConvertToSKPath(IPathBuilder pathBuilder)
+    private SKPath ConvertToSkPath(IPathBuilder pathBuilder)
     {
         var skPath = new SKPath();
 
         if (pathBuilder is not PathBuilder builder)
             return skPath;
 
-        foreach (var segment in builder.Segments)
+        foreach (PathSegment segment in builder.Segments)
         {
             switch (segment)
             {
@@ -755,34 +894,29 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
     /// <summary>
     /// Apply transformation matrix for path operations
-    /// Paths are already transformed by CTM during construction (OnMoveTo, OnLineTo, etc.)
-    /// So we only need to apply the display matrix (Y-flip) here
+    /// Per the code comments, paths are already transformed by CTM during construction.
+    /// We only need to apply the display matrix (Y-flip) to convert from PDF to screen coordinates.
     /// </summary>
     private void ApplyPathTransformationMatrix(PdfGraphicsState state)
     {
-        // Paths are already transformed by CTM during construction
-        // Only apply the display matrix (Y-flip for PDF to screen coordinates)
-        var displayMatrix = new Matrix3x2(
-            1, 0,
-            0, -1,
-            0, (float)_pageHeight
-        );
+        // Paths are already transformed by CTM during construction (in PDF user space)
+        // We need to apply ONLY the display matrix (Y-flip for PDF→screen conversion)
+        // NOT the full CTM, otherwise we'd be transforming twice
 
-        // Convert to SKMatrix
-        var skMatrix = new SKMatrix
+        var displayMatrix = new SKMatrix
         {
-            ScaleX = displayMatrix.M11,
-            SkewY = displayMatrix.M12,
-            SkewX = displayMatrix.M21,
-            ScaleY = displayMatrix.M22,
-            TransX = displayMatrix.M31,
-            TransY = displayMatrix.M32,
+            ScaleX = 1,
+            ScaleY = -1,
+            TransX = 0,
+            TransY = (float)_pageHeight,
+            SkewX = 0,
+            SkewY = 0,
             Persp0 = 0,
             Persp1 = 0,
             Persp2 = 1
         };
 
-        _canvas.Concat(in skMatrix);
+        _canvas.SetMatrix(displayMatrix);
     }
 
     /// <summary>
@@ -824,74 +958,77 @@ public class SkiaSharpRenderTarget : IRenderTarget
             {
                 fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
             }
-            var bitmap = CreateBitmapFromPdfImage(image, fillColor);
+            SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor);
             if (bitmap == null)
                 return;
 
-            _canvas.Save();
-
             try
             {
-                // Get CTM values - this defines how the unit square maps to PDF page coordinates
-                var pdfMatrix = state.Ctm;
+                Console.WriteLine("[PDFLIBRARY IMAGE] DrawImage called");
+                Console.WriteLine($"[PDFLIBRARY IMAGE]   Bitmap size: {bitmap.Width}x{bitmap.Height}");
 
-                // Create transformation matrix for device coordinates
-                // Apply CTM first, then flip Y for device space
-                var ctmMatrix = new SKMatrix
-                {
-                    ScaleX = pdfMatrix.M11,
-                    SkewY = pdfMatrix.M12,
-                    SkewX = pdfMatrix.M21,
-                    ScaleY = pdfMatrix.M22,
-                    TransX = pdfMatrix.M31,
-                    TransY = pdfMatrix.M32,
-                    Persp0 = 0,
-                    Persp1 = 0,
-                    Persp2 = 1
-                };
+                // Get the current matrix (includes CTM and initial Y-flip)
+                SKMatrix oldMatrix = _canvas.TotalMatrix;
+                Console.WriteLine($"[PDFLIBRARY IMAGE]   Current matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
 
-                // Y-flip matrix for device coordinates
-                var flipMatrix = new SKMatrix
+                // PDF images are drawn in a 1×1 unit square with (0,0) at bottom-left
+                // The oldMatrix has negative ScaleY because of the initial Y-flip, making images upside down
+                // We need to flip the image right-side up by applying an additional Y-flip
+                // This is similar to how Melville does it
+
+                // Create the image flip matrix: Scale(1, -1) about y=1 (top of unit square)
+                // This is: Translate(0, 1) × Scale(1, -1) × Translate(0, -1)
+                // Which simplifies to: [1, 0, 0, -1, 0, 1]
+                var imageFlipMatrix = new SKMatrix
                 {
                     ScaleX = 1,
                     SkewY = 0,
                     SkewX = 0,
                     ScaleY = -1,
                     TransX = 0,
-                    TransY = (float)_pageHeight,
+                    TransY = 1,
                     Persp0 = 0,
                     Persp1 = 0,
                     Persp2 = 1
                 };
 
-                // Concatenate: CTM * flip (apply CTM first, then flip for device coords)
-                var deviceMatrix = ctmMatrix.PostConcat(flipMatrix);
-                _canvas.Concat(deviceMatrix);
+                // Combine: combinedMatrix = oldMatrix × imageFlipMatrix
+                // This applies the CTM and Y-flip, then flips the image right-side up
+                SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
 
-                // Draw image in canonical 1x1 unit square at origin
-                // The transformation matrix will position/scale/rotate it correctly
+                Console.WriteLine($"[PDFLIBRARY IMAGE]   Image flip matrix: [1, 0, 0, -1, 0, 1]");
+                Console.WriteLine($"[PDFLIBRARY IMAGE]   Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
+
+                // Save canvas state
+                _canvas.Save();
+
+                // Apply the combined matrix
+                _canvas.SetMatrix(combinedMatrix);
+
+                using var paint = new SKPaint();
+                paint.FilterQuality = SKFilterQuality.High;
+                paint.IsAntialias = true;
+
+                // Draw the bitmap into the PDF unit square (0, 0, 1, 1)
+                // The combined matrix will transform it to the correct position and size
                 var unitRect = new SKRect(0, 0, 1, 1);
+                _canvas.DrawBitmap(bitmap, unitRect, paint);
 
-                // Use high-quality sampling for image scaling
-                using var paint = new SKPaint
-                {
-                    IsAntialias = true,
-                    FilterQuality = SKFilterQuality.High
-                };
+                Console.WriteLine("  Image drawn successfully");
 
-                // Draw bitmap with explicit source and destination rects
-                var srcRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
-                _canvas.DrawBitmap(bitmap, srcRect, unitRect, paint);
+                // Restore canvas state
+                _canvas.Restore();
             }
             finally
             {
-                _canvas.Restore();
+                // Dispose bitmap
                 bitmap.Dispose();
             }
         }
-        catch
+        catch (Exception ex)
         {
             // Image rendering failed, skip this image
+            Console.WriteLine($"[PDFLIBRARY IMAGE] ERROR: {ex.Message}");
         }
     }
 
@@ -911,8 +1048,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
             if (hasSMask)
             {
                 // Extract SMask from the image stream
-                var stream = image.Stream;
-                if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out var smaskObj))
+                PdfStream stream = image.Stream;
+                if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj))
                 {
                     // Resolve indirect reference if needed
                     if (smaskObj is PdfIndirectReference smaskRef && _document != null)
@@ -934,14 +1071,14 @@ public class SkiaSharpRenderTarget : IRenderTarget
             {
                 // Image masks are 1-bit images where painted pixels use the fill color
                 bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-                var color = imageMaskColor.Value;
+                SKColor color = imageMaskColor.Value;
 
-                for (int y = 0; y < height; y++)
+                for (var y = 0; y < height; y++)
                 {
-                    for (int x = 0; x < width; x++)
+                    for (var x = 0; x < width; x++)
                     {
-                        // PDF images are stored bottom-up, flip Y for top-down bitmap
-                        int srcY = height - 1 - y;
+                        // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
+                        int srcY = y;
 
                         // Calculate bit position
                         int bitIndex = srcY * width + x;
@@ -969,138 +1106,145 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 return bitmap;
             }
 
-            if (colorSpace == "Indexed")
+            switch (colorSpace)
             {
-                // Handle indexed color images
-                var paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
-                if (paletteData == null || baseColorSpace == null)
-                    return null;
-
-                // Use Unpremul alpha type for SMask (we set colors without premultiplying)
-                var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
-
-                int componentsPerEntry = baseColorSpace switch
+                case "Indexed":
                 {
-                    "DeviceRGB" => 3,
-                    "DeviceGray" => 1,
-                    _ => 3
-                };
+                    // Handle indexed color images
+                    byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
+                    if (paletteData == null || baseColorSpace == null)
+                        return null;
 
-                // Convert indexed pixels to RGBA
-                for (int y = 0; y < height; y++)
-                {
-                    for (int x = 0; x < width; x++)
+                    // Use Unpremul alpha type for SMask (we set colors without premultiplying)
+                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
+
+                    int componentsPerEntry = baseColorSpace switch
                     {
-                        // PDF images are stored bottom-up, flip Y for top-down bitmap
-                        int pixelIndex = (height - 1 - y) * width + x;
-                        if (pixelIndex >= imageData.Length)
-                            continue;
+                        "DeviceRGB" => 3,
+                        "DeviceGray" => 1,
+                        _ => 3
+                    };
 
-                        byte paletteIndex = imageData[pixelIndex];
-                        if (paletteIndex > hival)
-                            paletteIndex = (byte)hival;
-
-                        int paletteOffset = paletteIndex * componentsPerEntry;
-
-                        SKColor color;
-                        if (componentsPerEntry == 3 && paletteOffset + 2 < paletteData.Length)
+                    // Convert indexed pixels to RGBA
+                    for (var y = 0; y < height; y++)
+                    {
+                        for (var x = 0; x < width; x++)
                         {
-                            byte r = paletteData[paletteOffset];
-                            byte g = paletteData[paletteOffset + 1];
-                            byte b = paletteData[paletteOffset + 2];
+                            // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
+                            int pixelIndex = y * width + x;
+                            if (pixelIndex >= imageData.Length)
+                                continue;
+
+                            byte paletteIndex = imageData[pixelIndex];
+                            if (paletteIndex > hival)
+                                paletteIndex = (byte)hival;
+
+                            int paletteOffset = paletteIndex * componentsPerEntry;
+
+                            SKColor color;
+                            if (componentsPerEntry == 3 && paletteOffset + 2 < paletteData.Length)
+                            {
+                                byte r = paletteData[paletteOffset];
+                                byte g = paletteData[paletteOffset + 1];
+                                byte b = paletteData[paletteOffset + 2];
+
+                                // Apply SMask alpha channel if present
+                                byte alpha = 255;
+                                if (smaskData != null && pixelIndex < smaskData.Length)
+                                {
+                                    alpha = smaskData[pixelIndex];
+                                }
+
+                                color = new SKColor(r, g, b, alpha);
+                            }
+                            else if (componentsPerEntry == 1 && paletteOffset < paletteData.Length)
+                            {
+                                byte gray = paletteData[paletteOffset];
+
+                                // Apply SMask alpha channel if present
+                                byte alpha = 255;
+                                if (smaskData != null && pixelIndex < smaskData.Length)
+                                {
+                                    alpha = smaskData[pixelIndex];
+                                }
+
+                                color = new SKColor(gray, gray, gray, alpha);
+                            }
+                            else
+                            {
+                                color = SKColors.Black;
+                            }
+
+                            bitmap.SetPixel(x, y, color);
+                        }
+                    }
+
+                    break;
+                }
+                case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:
+                {
+                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
+                    int expectedSize = width * height * 3;
+                    if (imageData.Length < expectedSize)
+                        return null;
+
+                    for (var y = 0; y < height; y++)
+                    {
+                        for (var x = 0; x < width; x++)
+                        {
+                            // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
+                            int pixelIndex = y * width + x;
+                            int offset = pixelIndex * 3;
+                            byte r = imageData[offset];
+                            byte g = imageData[offset + 1];
+                            byte b = imageData[offset + 2];
+
+                            // Apply SMask alpha channel if present
+                            byte alpha = 255;
+                            if (smaskData != null)
+                            {
+                                if (pixelIndex < smaskData.Length)
+                                    alpha = smaskData[pixelIndex];
+                            }
+
+                            bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
+                        }
+                    }
+
+                    break;
+                }
+                case "DeviceGray" or "CalGray" when bitsPerComponent == 8:
+                {
+                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
+                    int expectedSize = width * height;
+                    if (imageData.Length < expectedSize)
+                        return null;
+
+                    for (var y = 0; y < height; y++)
+                    {
+                        for (var x = 0; x < width; x++)
+                        {
+                            // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
+                            int pixelIndex = y * width + x;
+                            byte gray = imageData[pixelIndex];
 
                             // Apply SMask alpha channel if present
                             byte alpha = 255;
                             if (smaskData != null && pixelIndex < smaskData.Length)
-                            {
                                 alpha = smaskData[pixelIndex];
-                            }
 
-                            color = new SKColor(r, g, b, alpha);
+                            bitmap.SetPixel(x, y, new SKColor(gray, gray, gray, alpha));
                         }
-                        else if (componentsPerEntry == 1 && paletteOffset < paletteData.Length)
-                        {
-                            byte gray = paletteData[paletteOffset];
-
-                            // Apply SMask alpha channel if present
-                            byte alpha = 255;
-                            if (smaskData != null && pixelIndex < smaskData.Length)
-                            {
-                                alpha = smaskData[pixelIndex];
-                            }
-
-                            color = new SKColor(gray, gray, gray, alpha);
-                        }
-                        else
-                        {
-                            color = SKColors.Black;
-                        }
-
-                        bitmap.SetPixel(x, y, color);
                     }
+
+                    break;
                 }
-            }
-            else if ((colorSpace == "DeviceRGB" || colorSpace == "CalRGB") && bitsPerComponent == 8)
-            {
-                var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
-                int expectedSize = width * height * 3;
-                if (imageData.Length < expectedSize)
+                default:
+                    // Unsupported color space/bits per component combination
                     return null;
-
-                for (int y = 0; y < height; y++)
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        // PDF images are stored bottom-up, flip Y for top-down bitmap
-                        int pixelIndex = (height - 1 - y) * width + x;
-                        int offset = pixelIndex * 3;
-                        byte r = imageData[offset];
-                        byte g = imageData[offset + 1];
-                        byte b = imageData[offset + 2];
-
-                        // Apply SMask alpha channel if present
-                        byte alpha = 255;
-                        if (smaskData != null)
-                        {
-                            if (pixelIndex < smaskData.Length)
-                                alpha = smaskData[pixelIndex];
-                        }
-
-                        bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
-                    }
-                }
-            }
-            else if ((colorSpace == "DeviceGray" || colorSpace == "CalGray") && bitsPerComponent == 8)
-            {
-                var alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
-                int expectedSize = width * height;
-                if (imageData.Length < expectedSize)
-                    return null;
-
-                for (int y = 0; y < height; y++)
-                {
-                    for (int x = 0; x < width; x++)
-                    {
-                        // PDF images are stored bottom-up, flip Y for top-down bitmap
-                        int pixelIndex = (height - 1 - y) * width + x;
-                        byte gray = imageData[pixelIndex];
-
-                        // Apply SMask alpha channel if present
-                        byte alpha = 255;
-                        if (smaskData != null && pixelIndex < smaskData.Length)
-                            alpha = smaskData[pixelIndex];
-
-                        bitmap.SetPixel(x, y, new SKColor(gray, gray, gray, alpha));
-                    }
-                }
-            }
-            else
-            {
-                // Unsupported color space/bits per component combination
-                return null;
             }
 
             return bitmap;
@@ -1126,15 +1270,15 @@ public class SkiaSharpRenderTarget : IRenderTarget
     /// </summary>
     public void SaveToFile(string filePath, SKEncodedImageFormat format = SKEncodedImageFormat.Png, int quality = 100)
     {
-        using var image = _surface.Snapshot();
-        using var data = image.Encode(format, quality);
-        using var stream = File.OpenWrite(filePath);
+        using SKImage? image = _surface.Snapshot();
+        using SKData? data = image.Encode(format, quality);
+        using FileStream stream = File.OpenWrite(filePath);
         data.SaveTo(stream);
     }
 
     public void Dispose()
     {
-        _surface?.Dispose();
+        _surface.Dispose();
     }
 
     /// <summary>
@@ -1142,7 +1286,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
     /// </summary>
     public static void ClearGlyphCache()
     {
-        _glyphPathCache.Compact(1.0); // Remove all entries
+        GlyphPathCache.Compact(1.0); // Remove all entries
     }
 
     /// <summary>
@@ -1150,6 +1294,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
     /// </summary>
     public static int GetCacheCount()
     {
-        return _glyphPathCache.Count;
+        return GlyphPathCache.Count;
     }
 }

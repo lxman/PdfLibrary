@@ -68,6 +68,11 @@ public class MockRenderTarget : IRenderTarget
         Operations.Add($"SetClippingPath: {GetPathDescription(path)}, EvenOdd={evenOdd}");
     }
 
+    public void ApplyCtm(System.Numerics.Matrix3x2 ctm)
+    {
+        Operations.Add($"ApplyCtm: CTM=[{ctm.M11},{ctm.M12},{ctm.M21},{ctm.M22},{ctm.M31},{ctm.M32}]");
+    }
+
     private static string GetPathDescription(IPathBuilder path)
     {
         if (path is PathBuilder builder)

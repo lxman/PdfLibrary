@@ -88,7 +88,7 @@ public class JpxDecodeFilter : IStreamFilter
                 default:
                 {
                     // Unknown format - use ImageSharp as fallback
-                    using Image<Rgb24> image = SixLabors.ImageSharp.Image.Load<Rgb24>(new MemoryStream(imageBytes));
+                    using Image<Rgb24> image = Image.Load<Rgb24>(new MemoryStream(imageBytes));
                     var fallbackPixels = new byte[image.Width * image.Height * 3];
 
                     image.ProcessPixelRows(accessor =>

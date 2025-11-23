@@ -1,6 +1,7 @@
 using FontParser.Tables;
 using FontParser.Tables.Cff;
 using FontParser.Tables.Cff.Type1;
+using FontParser.Tables.Cff.Type1.Charsets;
 using FontParser.Tables.Cmap;
 using FontParser.Tables.Head;
 using FontParser.Tables.Hhea;
@@ -8,8 +9,8 @@ using FontParser.Tables.Hmtx;
 using FontParser.Tables.Name;
 using FontParser.Tables.TtTables;
 using FontParser.Tables.TtTables.Glyf;
-using FontParser.Tables.Cff.Type1.Charsets;
 using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;
+using Range1 = FontParser.Tables.Cff.Type1.Charsets.Range1;
 
 namespace PdfLibrary.Fonts.Embedded;
 
@@ -84,7 +85,7 @@ public class EmbeddedFontMetrics
         if (_cmapTable == null || _cmapTable.EncodingRecords == null || index >= _cmapTable.EncodingRecords.Count)
             return "Invalid index";
 
-        var record = _cmapTable.EncodingRecords[index];
+        EncodingRecord record = _cmapTable.EncodingRecords[index];
         return $"Platform={record.PlatformId}";
     }
 
@@ -95,7 +96,7 @@ public class EmbeddedFontMetrics
     public EmbeddedFontMetrics(byte[] fontData)
     {
         // Check for raw CFF data (starts with version 01 00)
-        if (fontData.Length >= 2 && fontData[0] == 0x01 && fontData[1] == 0x00)
+        if (fontData is [0x01, 0x00, ..])
         {
             // Raw CFF font data - parse directly
             try
@@ -287,7 +288,7 @@ public class EmbeddedFontMetrics
             {
                 // Format 0: simple array where Glyphs[glyphIndex-1] = SID
                 // (glyph 0 is .notdef and not in the array)
-                for (int i = 0; i < format0.Glyphs.Count; i++)
+                for (var i = 0; i < format0.Glyphs.Count; i++)
                 {
                     if (format0.Glyphs[i] == sid)
                         return (ushort)(i + 1); // +1 because .notdef is not in list
@@ -296,10 +297,10 @@ public class EmbeddedFontMetrics
             else if (charset is CharsetsFormat1 format1)
             {
                 // Format 1: ranges with SID and count
-                int glyphIndex = 1; // Start at 1 (.notdef is 0)
-                foreach (var range in format1.Ranges)
+                var glyphIndex = 1; // Start at 1 (.notdef is 0)
+                foreach (Range1 range in format1.Ranges)
                 {
-                    for (int i = 0; i <= range.NumberLeft; i++)
+                    for (var i = 0; i <= range.NumberLeft; i++)
                     {
                         if (range.First + i == sid)
                             return (ushort)glyphIndex;
@@ -310,10 +311,10 @@ public class EmbeddedFontMetrics
             else if (charset is CharsetsFormat2 format2)
             {
                 // Format 2: ranges with larger count field
-                int glyphIndex = 1; // Start at 1 (.notdef is 0)
-                foreach (var range in format2.Ranges)
+                var glyphIndex = 1; // Start at 1 (.notdef is 0)
+                foreach (Range2 range in format2.Ranges)
                 {
-                    for (int i = 0; i <= range.NumberLeft; i++)
+                    for (var i = 0; i <= range.NumberLeft; i++)
                     {
                         if (range.First + i == sid)
                             return (ushort)glyphIndex;
@@ -336,7 +337,7 @@ public class EmbeddedFontMetrics
     private int GetSidFromGlyphName(string glyphName)
     {
         // Check standard strings first (SID 0-390)
-        for (int i = 0; i <= 390; i++)
+        for (var i = 0; i <= 390; i++)
         {
             if (StandardStrings.GetString(i) == glyphName)
                 return i;
@@ -345,7 +346,7 @@ public class EmbeddedFontMetrics
         // Check custom strings in the CFF font
         if (_cffTable?.Strings != null)
         {
-            for (int i = 0; i < _cffTable.Strings.Count; i++)
+            for (var i = 0; i < _cffTable.Strings.Count; i++)
             {
                 if (_cffTable.Strings[i] == glyphName)
                     return 391 + i; // Custom strings start at SID 391
@@ -446,7 +447,7 @@ public class EmbeddedFontMetrics
         // Convert SimpleGlyph to GlyphOutline
         if (glyphData.GlyphSpec is SimpleGlyph simpleGlyph)
         {
-            var contours = ConvertSimpleGlyphToContours(simpleGlyph);
+            List<GlyphContour> contours = ConvertSimpleGlyphToContours(simpleGlyph);
             return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
         }
 
@@ -502,7 +503,7 @@ public class EmbeddedFontMetrics
         );
 
         // Convert CFF path commands to contours
-        var contours = ConvertCffCommandsToContours(cffOutline);
+        List<GlyphContour> contours = ConvertCffCommandsToContours(cffOutline);
 
         return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
     }
@@ -516,7 +517,7 @@ public class EmbeddedFontMetrics
         var currentContour = new List<ContourPoint>();
         float currentX = 0, currentY = 0;
 
-        foreach (var command in cffOutline.Commands)
+        foreach (PathCommand command in cffOutline.Commands)
         {
             switch (command)
             {
@@ -588,11 +589,11 @@ public class EmbeddedFontMetrics
                 continue;
 
             // Transform each contour of the component using the transformation matrix
-            foreach (var contour in componentOutline.Contours)
+            foreach (GlyphContour contour in componentOutline.Contours)
             {
                 var transformedPoints = new List<ContourPoint>();
 
-                foreach (var point in contour.Points)
+                foreach (ContourPoint point in contour.Points)
                 {
                     // Apply transformation matrix and offset
                     double x = point.X * component.A + point.Y * component.C + component.Argument1;
@@ -658,7 +659,7 @@ public class EmbeddedFontMetrics
         if (simpleGlyph.Coordinates.Count == 0 || simpleGlyph.EndPtsOfContours.Count == 0)
             return contours;
 
-        int startIndex = 0;
+        var startIndex = 0;
 
         foreach (ushort endPtIndex in simpleGlyph.EndPtsOfContours)
         {
@@ -667,7 +668,7 @@ public class EmbeddedFontMetrics
             // Extract points for this contour
             for (int i = startIndex; i <= endPtIndex && i < simpleGlyph.Coordinates.Count; i++)
             {
-                var coord = simpleGlyph.Coordinates[i];
+                SimpleGlyphCoordinate coord = simpleGlyph.Coordinates[i];
                 contourPoints.Add(new ContourPoint(coord.Point.X, coord.Point.Y, coord.OnCurve));
             }
 

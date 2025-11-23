@@ -1,3 +1,4 @@
+using System.Numerics;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
@@ -7,7 +8,7 @@ namespace PdfLibrary.Rendering;
 /// <summary>
 /// Platform-agnostic rendering target for PDF content.
 /// Implementations provide platform-specific rendering (WPF, SkiaSharp, Avalonia).
-/// Enhanced with page lifecycle management for multi-page rendering support.
+/// Enhanced with page lifecycle management for multipage rendering support.
 /// </summary>
 public interface IRenderTarget
 {
@@ -23,14 +24,14 @@ public interface IRenderTarget
     void BeginPage(int pageNumber, double width, double height);
 
     /// <summary>
-    /// Complete rendering of current page.
+    /// Complete rendering of the current page.
     /// Called after all rendering operations for a page.
     /// Implementations may flush buffers, finalize layout, etc.
     /// </summary>
     void EndPage();
 
     /// <summary>
-    /// Clear all rendered content and reset state.
+    /// Clear all rendered content and reset the state.
     /// Used when switching documents or resetting renderer.
     /// </summary>
     void Clear();
@@ -44,12 +45,12 @@ public interface IRenderTarget
     // ==================== PATH OPERATIONS ====================
 
     /// <summary>
-    /// Stroke (outline) a path using current stroke state.
+    /// Stroke (outline) a path using the current stroke state.
     /// </summary>
     void StrokePath(IPathBuilder path, PdfGraphicsState state);
 
     /// <summary>
-    /// Fill a path using current fill state.
+    /// Fill a path using the current fill state.
     /// </summary>
     /// <param name="path">The path to fill</param>
     /// <param name="state">Current graphics state</param>
@@ -62,7 +63,7 @@ public interface IRenderTarget
     void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd);
 
     /// <summary>
-    /// Set clipping path for subsequent operations.
+    /// Set the clipping path for subsequent operations.
     /// </summary>
     /// <param name="path">The clipping path</param>
     /// <param name="state">Current graphics state for coordinate transformation</param>
@@ -90,12 +91,20 @@ public interface IRenderTarget
     // ==================== STATE MANAGEMENT ====================
 
     /// <summary>
-    /// Save current graphics state to stack (PDF 'q' operator).
+    /// Save the current graphics state to stack (PDF 'q' operator).
     /// </summary>
     void SaveState();
 
     /// <summary>
-    /// Restore graphics state from stack (PDF 'Q' operator).
+    /// Restore the graphics state from the stack (PDF 'Q' operator).
     /// </summary>
     void RestoreState();
+
+    /// <summary>
+    /// Apply Current Transformation Matrix (CTM) to the canvas.
+    /// Called when PDF 'cm' operator modifies the CTM.
+    /// Following Melville.Pdf architecture: CTM is applied to canvas,
+    /// glyph transformations are applied separately.
+    /// </summary>
+    void ApplyCtm(Matrix3x2 ctm);
 }

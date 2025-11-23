@@ -1,7 +1,8 @@
+using System.Diagnostics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using PdfLibrary.Structure;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;
 
@@ -53,7 +54,7 @@ public class Type0Font : PdfFont
         string? unicodeFromGlyph = _embeddedFont.GetUnicodeFromGlyphName(charCode);
         if (unicodeFromGlyph is null) return char.ConvertFromUtf32(charCode);
         // Log fallback usage for debugging
-        System.Diagnostics.Debug.WriteLine(
+        Debug.WriteLine(
             $"Type0Font: Using embedded font fallback for charCode 0x{charCode:X4} → '{unicodeFromGlyph}'");
         return unicodeFromGlyph;
 
@@ -184,7 +185,7 @@ internal class CidFont : PdfFont
             mapObj = _document.ResolveReference(reference);
 
         // Check for /Identity name
-        if (mapObj is PdfName name && name.Value == "Identity")
+        if (mapObj is PdfName { Value: "Identity" })
         {
             _isIdentityMapping = true;
             return;
@@ -197,7 +198,7 @@ internal class CidFont : PdfFont
             _cidToGidMap = new Dictionary<int, int>();
 
             // Each entry is 2 bytes (big-endian GID), indexed by CID
-            for (int cid = 0; cid < data.Length / 2; cid++)
+            for (var cid = 0; cid < data.Length / 2; cid++)
             {
                 int gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
                 if (gid != 0)  // Only store non-zero mappings

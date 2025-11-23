@@ -1,4 +1,3 @@
-using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
 
 namespace PdfLibrary.Builder;

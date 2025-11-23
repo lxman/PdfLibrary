@@ -55,7 +55,7 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
         _renderedImage?.Dispose();
         _renderedImage = null;
 
-        // Create new render target
+        // Create a new render target
         _renderTarget = new SkiaSharpRenderTarget(_width, _height, _document);
         _renderTarget.BeginPage(pageNumber, width, height);
 
@@ -115,7 +115,7 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
 
     private void OnPaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
-        var canvas = e.Surface.Canvas;
+        SKCanvas? canvas = e.Surface.Canvas;
         canvas.Clear(SKColors.White);
 
         if (_renderedImage != null)
@@ -165,5 +165,10 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
     public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
         _renderTarget?.SetClippingPath(path, state, evenOdd);
+    }
+
+    public void ApplyCtm(System.Numerics.Matrix3x2 ctm)
+    {
+        _renderTarget?.ApplyCtm(ctm);
     }
 }

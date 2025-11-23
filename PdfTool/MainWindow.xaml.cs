@@ -1,6 +1,15 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using Melville.Pdf.Model;
+using Melville.Pdf.Model.Renderers.DocumentRenderers;
+using Melville.Pdf.SkiaSharp;
 using Microsoft.Win32;
+using PDFiumSharp;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
 using Serilog;
@@ -11,14 +20,25 @@ using PdfPage = PdfLibrary.Document.PdfPage;
 namespace PdfTool;
 
 /// <summary>
-/// Main window for the PDF Viewer application
-/// Demonstrates how to use the PDF rendering system
+/// The main window for the Comparative PDF Renderer
+/// Displays PdfLibrary, PDFium, and Melville.Pdf renderings side-by-side
 /// </summary>
 public partial class MainWindow : Window
 {
-    private PdfDocument? _document;
-    private int _currentPage = 0;
+    // Document state
+    private PdfDocument? _pdfLibraryDoc;
+    private PDFiumSharp.PdfDocument? _pdfiumDoc;
+    private DocumentRenderer? _melvilleDoc;
+    private int _currentPage;
+    private int _totalPages;
     private string? _currentFilePath;
+
+    // Zoom state
+    private double _zoomLevel = 1.0;
+    private bool _isUpdatingZoom;
+
+    // Scroll synchronization
+    private bool _isSyncingScroll;
 
     public MainWindow()
     {
@@ -31,7 +51,7 @@ public partial class MainWindow : Window
     public void LoadPdfFromCommandLine(string filePath)
     {
         // Use Dispatcher to ensure the window is fully loaded before calling LoadPdf
-        Dispatcher.BeginInvoke(new Action(() => LoadPdf(filePath)));
+        Dispatcher.BeginInvoke(new Action(() => _ = LoadPdfAsync(filePath)));
     }
 
     private void OpenButton_Click(object sender, RoutedEventArgs e)
@@ -43,202 +63,607 @@ public partial class MainWindow : Window
         };
 
         if (dialog.ShowDialog() != true) return;
-        LoadPdf(dialog.FileName);
-        Title = $"PDF Viewer - {Path.GetFileName(dialog.FileName)}";
+        _ = LoadPdfAsync(dialog.FileName);
     }
 
-    private void LoadPdf(string filePath)
+    private async Task LoadPdfAsync(string filePath)
     {
         try
         {
             StatusText.Text = $"Loading {Path.GetFileName(filePath)}...";
-
-            // Store file path for comparison feature
             _currentFilePath = filePath;
+            _currentPage = 1;
+            _zoomLevel = 1.0;
 
-            // Load PDF document
-            using FileStream stream = File.OpenRead(filePath);
-            _document = PdfDocument.Load(stream);
+            // Clear existing documents
+            _pdfLibraryDoc?.Dispose();
+            _pdfiumDoc = null; // PDFiumSharp handles cleanup internally
+            _melvilleDoc = null;
 
-            // Set document on renderer for resolving indirect references
-            PdfRenderer.SetDocument(_document);
+            // Load all 3 renderers in parallel
+            Task[] loadTasks =
+            [
+                Task.Run(() => LoadPdfLibrary(filePath)),
+                Task.Run(() => LoadPdfium(filePath)),
+                Task.Run(async () => await LoadMelvilleAsync(filePath))
+            ];
 
-            _currentPage = 0;
+            await Task.WhenAll(loadTasks);
 
-            // Update UI
-            TotalPagesText.Text = _document.GetPageCount().ToString();
-            CurrentPageText.Text = "0";
+            // Get page count from the first successful loader
+            _totalPages = _pdfLibraryDoc?.GetPageCount() ?? _pdfiumDoc?.Pages.Count ?? 0;
 
-            // Enable navigation buttons
-            NextPageButton.IsEnabled = _document.GetPageCount() > 0;
-            PrevPageButton.IsEnabled = false;
-            CompareButton.IsEnabled = _document.GetPageCount() > 0;
-
-            // DIAGNOSTIC: Skip page 1, start at page 2 to avoid image masking issue
-            /*
-            if (_document.GetPageCount() >= 2)
+            if (_totalPages == 0)
             {
-                _currentPage = 2;
-                RenderCurrentPage();
-            }
-            */
-            if (_document.GetPageCount() > 0)
-            {
-                _currentPage = 1;
-                RenderCurrentPage();
-            }
-
-            StatusText.Text = $"Loaded {Path.GetFileName(filePath)} ({_document.GetPageCount()} pages)";
-            Title = $"PDF Tool - {Path.GetFileName(filePath)}";
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = "Error loading PDF";
-            MessageBox.Show($"Failed to load PDF: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private void PrevPageButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_document == null || _currentPage <= 1) return;
-
-        _currentPage--;
-        RenderCurrentPage();
-    }
-
-    private void NextPageButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (_document == null || _currentPage >= _document.GetPageCount()) return;
-
-        _currentPage++;
-        RenderCurrentPage();
-    }
-
-    private void RenderCurrentPage()
-    {
-        if (_document == null || _currentPage < 1 || _currentPage > _document.GetPageCount())
-            return;
-
-        try
-        {
-            StatusText.Text = $"Rendering page {_currentPage}...";
-
-            // Get the page (GetPage uses 0-based indexing)
-            PdfPage? page = _document.GetPage(_currentPage - 1);
-            if (page == null)
-            {
-                StatusText.Text = $"Error: Page {_currentPage} not found";
-                MessageBox.Show($"Page {_currentPage} could not be loaded", "Error",
+                MessageBox.Show("Failed to load PDF in any renderer.", "Error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 return;
             }
 
-            // Get page dimensions
-            PdfRectangle mediaBox = page.GetMediaBox();
-
-            // Begin rendering the page (sets up SkiaSharp render target)
-            PdfRenderer.BeginPage(_currentPage, mediaBox.Width, mediaBox.Height);
-
-            // Create an Optional Content Manager for layer visibility
-            var optionalContentManager = new OptionalContentManager(_document);
-
-            // Create a renderer and render the page
-            var renderer = new PdfLibrary.Rendering.PdfRenderer(PdfRenderer, page.GetResources(), optionalContentManager, _document);
-            renderer.RenderPage(page);
-
-            // End rendering (captures the rendered image for display)
-            PdfRenderer.EndPage();
-
-            // Log completion
-            Log.Information("RenderCurrentPage: Page {PageNumber} rendered", _currentPage);
-
             // Update UI
-            CurrentPageText.Text = _currentPage.ToString();
-            PrevPageButton.IsEnabled = _currentPage > 1;
-            NextPageButton.IsEnabled = _currentPage < _document.GetPageCount();
+            TotalPagesText.Text = _totalPages.ToString();
+            CurrentPageText.Text = "1";
+            UpdateZoomDisplay();
 
-            StatusText.Text = $"Page {_currentPage} of {_document.GetPageCount()}";
+            // Enable controls
+            NextPageButton.IsEnabled = _totalPages > 1;
+            PrevPageButton.IsEnabled = false;
+            CompareButton.IsEnabled = true;
+            EnableZoomControls(true);
+
+            // Render first page
+            await RenderAllPanelsAsync();
+
+            StatusText.Text = $"Loaded {Path.GetFileName(filePath)} ({_totalPages} pages)";
+            Title = $"PDF Comparative Renderer - {Path.GetFileName(filePath)}";
         }
         catch (Exception ex)
         {
-            StatusText.Text = $"Error rendering page {_currentPage}";
-            MessageBox.Show($"Failed to render page {_currentPage}: {ex.Message}", "Error",
+            StatusText.Text = "Error loading PDF";
+            MessageBox.Show($"Failed to load PDF: {ex.Message}", "Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+            Log.Error(ex, "Failed to load PDF");
         }
     }
 
-    private void CompareButton_Click(object sender, RoutedEventArgs e)
+    private void LoadPdfLibrary(string filePath)
     {
-        if (_document == null || _currentFilePath == null || _currentPage < 1)
+        try
         {
-            MessageBox.Show("Please load a PDF and navigate to a page first.", "No Page",
+            using FileStream stream = File.OpenRead(filePath);
+            _pdfLibraryDoc = PdfDocument.Load(stream);
+            PdfLibraryRenderer.SetDocument(_pdfLibraryDoc);
+            Log.Information("PdfLibrary loaded successfully");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "PdfLibrary failed to load");
+            Dispatcher.Invoke(() => ShowError("PdfLibrary", ex.Message));
+        }
+    }
+
+    private void LoadPdfium(string filePath)
+    {
+        try
+        {
+            _pdfiumDoc = new PDFiumSharp.PdfDocument(filePath);
+            Log.Information("PDFium loaded successfully");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "PDFium failed to load");
+            Dispatcher.Invoke(() => ShowError("PDFium", ex.Message));
+        }
+    }
+
+    private async Task LoadMelvilleAsync(string filePath)
+    {
+        try
+        {
+            var reader = new PdfReader();
+            _melvilleDoc = await reader.ReadFromFileAsync(filePath);
+            Log.Information("Melville.Pdf loaded successfully");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Melville.Pdf failed to load");
+            Dispatcher.Invoke(() => ShowError("Melville", ex.Message));
+        }
+    }
+
+    private async void PrevPageButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentPage <= 1) return;
+        _currentPage--;
+        await RenderAllPanelsAsync();
+        UpdateNavigationButtons();
+    }
+
+    private async void NextPageButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_currentPage >= _totalPages) return;
+        _currentPage++;
+        await RenderAllPanelsAsync();
+        UpdateNavigationButtons();
+    }
+
+    private void UpdateNavigationButtons()
+    {
+        CurrentPageText.Text = _currentPage.ToString();
+        PrevPageButton.IsEnabled = _currentPage > 1;
+        NextPageButton.IsEnabled = _currentPage < _totalPages;
+    }
+
+    private async Task RenderAllPanelsAsync()
+    {
+        StatusText.Text = $"Rendering page {_currentPage} at {_zoomLevel * 100:F0}%...";
+
+        // Render all 3 in parallel (with individual error handling)
+        Task[] renderTasks =
+        [
+            Task.Run(RenderPdfLibrary),
+            Task.Run(RenderPdfium),
+            Task.Run(async () => await RenderMelvilleAsync())
+        ];
+
+        // Wait for all to complete (don't fail if one fails)
+        await Task.WhenAll(renderTasks.Select(t => t.ContinueWith(_ => { })));
+
+        StatusText.Text = $"Page {_currentPage} of {_totalPages} ({_zoomLevel * 100:F0}%)";
+        UpdateNavigationButtons();
+    }
+
+    private void RenderPdfLibrary()
+    {
+        try
+        {
+            if (_pdfLibraryDoc == null) return;
+
+            Dispatcher.Invoke(() =>
+            {
+                PdfPage? page = _pdfLibraryDoc.GetPage(_currentPage - 1);
+                if (page == null)
+                {
+                    ShowError("PdfLibrary", $"Page {_currentPage} not found");
+                    return;
+                }
+
+                PdfRectangle mediaBox = page.GetMediaBox();
+                double width = mediaBox.Width * _zoomLevel;
+                double height = mediaBox.Height * _zoomLevel;
+
+                var optionalContentManager = new OptionalContentManager(_pdfLibraryDoc);
+                var renderer = new PdfRenderer(
+                    PdfLibraryRenderer, page.GetResources(), optionalContentManager, _pdfLibraryDoc);
+                renderer.RenderPage(page, _currentPage);
+
+                Log.Information("PdfLibrary rendered page {Page}", _currentPage);
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "PdfLibrary render failed");
+            Dispatcher.Invoke(() => ShowError("PdfLibrary", ex.Message));
+        }
+    }
+
+    private void RenderPdfium()
+    {
+        try
+        {
+            if (_pdfiumDoc == null || _pdfLibraryDoc == null) return;
+
+            // Get dimensions from PdfLibrary page to match sizing (PDFium uses different units)
+            PdfPage? pdfLibPage = _pdfLibraryDoc.GetPage(_currentPage - 1);
+            if (pdfLibPage == null) return;
+
+            PdfRectangle mediaBox = pdfLibPage.GetMediaBox();
+            var width = (int)(mediaBox.Width * _zoomLevel);
+            var height = (int)(mediaBox.Height * _zoomLevel);
+
+            PDFiumSharp.PdfPage? page = _pdfiumDoc.Pages[_currentPage - 1];
+
+            Log.Information("PDFium rendering: Page {Page}, PDFium size=({PdfiumW}x{PdfiumH}), Using PdfLib size=({Width}x{Height}), Zoom={Zoom}",
+                _currentPage, page.Width, page.Height, width, height, _zoomLevel);
+
+            // Create bitmap without alpha channel
+            // Extract pixel data from PDFiumBitmap before Dispatcher.Invoke
+            byte[] pixelData;
+            int stride = width * 4; // 4 bytes per pixel (BGRA)
+
+            using (var bitmap = new PDFiumBitmap(width, height, false))
+            {
+                // Fill with white background (BGRA format: 0xAARRGGBB)
+                bitmap.FillRectangle(0, 0, width, height, 0xFFFFFFFF);
+
+                // Render without destination rect - let PDFium scale to bitmap size
+                page.Render(bitmap);
+
+                Log.Information("PDFium render complete, extracting pixel data");
+
+                // Extract pixel data while bitmap is still alive
+                using var stream = new MemoryStream();
+                bitmap.Save(stream, 0); // 0 = BMP format
+                stream.Position = 0;
+
+                // Load BMP to get pixel data
+                var decoder = new BmpBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.Default);
+                BitmapFrame? frame = decoder.Frames[0];
+
+                // Extract pixels to byte array
+                pixelData = new byte[height * stride];
+                frame.CopyPixels(pixelData, stride, 0);
+            }
+            // PDFiumBitmap is now safely disposed
+
+            Log.Information("PDFium pixel data extracted, converting to WriteableBitmap on UI thread");
+
+            // Marshal pixel data to UI thread and create WriteableBitmap
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    // Create WriteableBitmap with 96 DPI (WPF default)
+                    var writeableBitmap = new WriteableBitmap(
+                        width, height,
+                        96.0, 96.0, // DpiX, DpiY
+                        PixelFormats.Bgra32,
+                        null);
+
+                    // Lock the bitmap for writing
+                    writeableBitmap.Lock();
+
+                    try
+                    {
+                        // Copy pixel data to WriteableBitmap
+                        Marshal.Copy(pixelData, 0, writeableBitmap.BackBuffer, pixelData.Length);
+                        writeableBitmap.AddDirtyRect(new Int32Rect(0, 0, width, height));
+                    }
+                    finally
+                    {
+                        writeableBitmap.Unlock();
+                    }
+
+                    writeableBitmap.Freeze();
+                    PdfiumImage.Source = writeableBitmap;
+                    PdfiumError.Visibility = Visibility.Collapsed;
+                    Log.Information("PDFium rendered page {Page}, WriteableBitmap size: {Width}x{Height}, DPI: 96x96",
+                        _currentPage, writeableBitmap.PixelWidth, writeableBitmap.PixelHeight);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Failed to create WriteableBitmap from pixel data");
+                    ShowError("PDFium", "Failed to create bitmap: " + ex.Message);
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "PDFium render failed");
+            Dispatcher.Invoke(() => ShowError("PDFium", ex.Message));
+        }
+    }
+
+    private async Task RenderMelvilleAsync()
+    {
+        try
+        {
+            if (_melvilleDoc is null || _pdfLibraryDoc is null) return;
+
+            // Get dimensions from the PdfLibrary page to match sizing
+            PdfPage? pdfLibPage = _pdfLibraryDoc.GetPage(_currentPage - 1);
+            if (pdfLibPage is null) return;
+
+            PdfRectangle mediaBox = pdfLibPage.GetMediaBox();
+            var width = (int)(mediaBox.Width * _zoomLevel);
+            var height = (int)(mediaBox.Height * _zoomLevel);
+
+            // Render to SKSurface using 1-based page number and explicit size
+            // Pass -1 for both width and height to let Melville determine size, then scale
+            SKSurface surface = await RenderWithSkia.ToSurfaceAsync(_melvilleDoc, _currentPage, width, height);
+            SKImage? image = surface.Snapshot();
+
+            // Convert SKImage to WPF BitmapSource
+            await Dispatcher.InvokeAsync(() =>
+            {
+                using SKData? data = image.Encode();
+                using var stream = new MemoryStream();
+                data.SaveTo(stream);
+                stream.Position = 0;
+
+                var bitmapImage = new BitmapImage();
+                bitmapImage.BeginInit();
+                bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
+                bitmapImage.StreamSource = stream;
+                bitmapImage.EndInit();
+                bitmapImage.Freeze();
+
+                MelvilleImage.Source = bitmapImage;
+                MelvilleError.Visibility = Visibility.Collapsed;
+                Log.Information("Melville.Pdf rendered page {Page}", _currentPage);
+            });
+
+            surface.Dispose();
+            image.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Melville.Pdf render failed");
+            await Dispatcher.InvokeAsync(() => ShowError("Melville", ex.Message));
+        }
+    }
+
+    private void ShowError(string renderer, string message)
+    {
+        switch (renderer)
+        {
+            case "PDFium":
+                PdfiumError.Text = $"PDFium Error:\n{message}";
+                PdfiumError.Visibility = Visibility.Visible;
+                PdfiumImage.Source = null;
+                break;
+            case "Melville":
+                MelvilleError.Text = $"Melville.Pdf Error:\n{message}";
+                MelvilleError.Visibility = Visibility.Visible;
+                MelvilleImage.Source = null;
+                break;
+            case "PdfLibrary":
+                // PdfLibrary renders in SkiaRenderer control, which doesn't have an error display yet
+                // Could add one if needed
+                break;
+        }
+    }
+
+    // ==================== ZOOM CONTROLS ====================
+
+    private async void ZoomIn_Click(object sender, RoutedEventArgs e)
+    {
+        await SetZoomAsync(_zoomLevel * 1.25);
+    }
+
+    private async void ZoomOut_Click(object sender, RoutedEventArgs e)
+    {
+        await SetZoomAsync(_zoomLevel / 1.25);
+    }
+
+    private async void FitToPage_Click(object sender, RoutedEventArgs e)
+    {
+        // Calculate zoom to fit page height in the viewport
+        PdfPage? page = _pdfLibraryDoc?.GetPage(_currentPage - 1);
+        if (page is null) return;
+        PdfRectangle mediaBox = page.GetMediaBox();
+        double viewportHeight = PdfLibraryScroll.ActualHeight - 20; // Account for margins
+        double zoom = viewportHeight / mediaBox.Height;
+        await SetZoomAsync(zoom);
+    }
+
+    private async void FitToWidth_Click(object sender, RoutedEventArgs e)
+    {
+        // Calculate zoom to fit page width in the viewport
+        PdfPage? page = _pdfLibraryDoc?.GetPage(_currentPage - 1);
+        if (page is null) return;
+        PdfRectangle mediaBox = page.GetMediaBox();
+        double viewportWidth = PdfLibraryScroll.ActualWidth - 20; // Account for margins/scrollbar
+        double zoom = viewportWidth / mediaBox.Width;
+        await SetZoomAsync(zoom);
+    }
+
+    private async void ActualSize_Click(object sender, RoutedEventArgs e)
+    {
+        await SetZoomAsync(1.0);
+    }
+
+    private async void ZoomSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isUpdatingZoom) return; // Prevent feedback loop
+        _zoomLevel = e.NewValue;
+        UpdateZoomDisplay();
+        if (_pdfLibraryDoc != null) // Only render if document is loaded
+        {
+            await RenderAllPanelsAsync();
+        }
+    }
+
+    private async Task SetZoomAsync(double newZoom)
+    {
+        // Clamp zoom level
+        newZoom = Math.Clamp(newZoom, 0.25, 4.0);
+        if (Math.Abs(newZoom - _zoomLevel) < 0.01) return; // No significant change
+
+        _zoomLevel = newZoom;
+
+        // Update slider without triggering ValueChanged
+        _isUpdatingZoom = true;
+        ZoomSlider.Value = _zoomLevel;
+        _isUpdatingZoom = false;
+
+        UpdateZoomDisplay();
+        await RenderAllPanelsAsync();
+    }
+
+    private void UpdateZoomDisplay()
+    {
+        ZoomText?.Text = $"{_zoomLevel * 100:F0}";
+    }
+
+    private void EnableZoomControls(bool enabled)
+    {
+        ZoomInButton.IsEnabled = enabled;
+        ZoomOutButton.IsEnabled = enabled;
+        ZoomSlider.IsEnabled = enabled;
+        FitToPageButton.IsEnabled = enabled;
+        FitToWidthButton.IsEnabled = enabled;
+        ActualSizeButton.IsEnabled = enabled;
+    }
+
+    // ==================== SCROLL SYNCHRONIZATION ====================
+
+    private void PdfLibraryScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (_isSyncingScroll) return;
+        _isSyncingScroll = true;
+
+        // Sync PDFium and Melville scrollbars to match PdfLibrary
+        PdfiumScroll.ScrollToVerticalOffset(e.VerticalOffset);
+        PdfiumScroll.ScrollToHorizontalOffset(e.HorizontalOffset);
+        MelvilleScroll.ScrollToVerticalOffset(e.VerticalOffset);
+        MelvilleScroll.ScrollToHorizontalOffset(e.HorizontalOffset);
+
+        _isSyncingScroll = false;
+    }
+
+    private void PdfiumScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (_isSyncingScroll) return;
+        _isSyncingScroll = true;
+
+        PdfLibraryScroll.ScrollToVerticalOffset(e.VerticalOffset);
+        PdfLibraryScroll.ScrollToHorizontalOffset(e.HorizontalOffset);
+        MelvilleScroll.ScrollToVerticalOffset(e.VerticalOffset);
+        MelvilleScroll.ScrollToHorizontalOffset(e.HorizontalOffset);
+
+        _isSyncingScroll = false;
+    }
+
+    private void MelvilleScroll_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (_isSyncingScroll) return;
+        _isSyncingScroll = true;
+
+        PdfLibraryScroll.ScrollToVerticalOffset(e.VerticalOffset);
+        PdfLibraryScroll.ScrollToHorizontalOffset(e.HorizontalOffset);
+        PdfiumScroll.ScrollToVerticalOffset(e.VerticalOffset);
+        PdfiumScroll.ScrollToHorizontalOffset(e.HorizontalOffset);
+
+        _isSyncingScroll = false;
+    }
+
+    // ==================== MOUSE WHEEL ZOOM ====================
+
+    private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        // Only zoom if Ctrl is held
+        if (Keyboard.Modifiers != ModifierKeys.Control) return;
+
+        e.Handled = true;
+
+        // Zoom in/out by 10%
+        double factor = e.Delta > 0 ? 1.1 : 0.9;
+        _ = SetZoomAsync(_zoomLevel * factor);
+    }
+
+    // ==================== COMPARISON EXPORT ====================
+
+    private async void CompareButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pdfLibraryDoc == null || _currentFilePath == null)
+        {
+            MessageBox.Show("Please load a PDF first.", "No Document",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
         try
         {
-            StatusText.Text = "Generating comparison images...";
+            StatusText.Text = "Exporting comparison images...";
 
-            // Create output directory
-            string outputDir = Path.Combine(Path.GetDirectoryName(_currentFilePath) ?? ".", "Comparison");
+            string outputDir = Path.Combine(Path.GetDirectoryName(_currentFilePath)!, "Comparison");
             Directory.CreateDirectory(outputDir);
 
-            string pdfLibraryPath = Path.Combine(outputDir, $"PdfLibrary_Page{_currentPage}.png");
-            string pdfiumPath = Path.Combine(outputDir, $"PDFium_Page{_currentPage}.png");
+            var baseName = $"Page{_currentPage}_Zoom{_zoomLevel * 100:F0}";
 
-            // Get current page dimensions
-            var page = _document.GetPage(_currentPage - 1);
-            if (page == null)
-            {
-                MessageBox.Show("Could not get current page.", "Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
+            // Save all 3 renderers
+            await Task.WhenAll(
+                SavePdfLibraryImageAsync(Path.Combine(outputDir, $"PdfLibrary_{baseName}.png")),
+                SavePdfiumImageAsync(Path.Combine(outputDir, $"PDFium_{baseName}.png")),
+                SaveMelvilleImageAsync(Path.Combine(outputDir, $"Melville_{baseName}.png"))
+            );
 
-            var mediaBox = page.GetMediaBox();
-            int width = (int)Math.Ceiling(mediaBox.Width);
-            int height = (int)Math.Ceiling(mediaBox.Height);
+            StatusText.Text = $"Comparison images saved to {outputDir}";
+            MessageBox.Show(
+                $"Comparison images saved:\n\n" +
+                $"• PdfLibrary_{baseName}.png\n" +
+                $"• PDFium_{baseName}.png\n" +
+                $"• Melville_{baseName}.png\n\n" +
+                $"Location: {outputDir}",
+                "Comparison Complete",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information
+            );
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Error exporting comparison";
+            MessageBox.Show($"Failed to export comparison: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Log.Error(ex, "Comparison export failed");
+        }
+    }
 
-            // Render with PdfLibrary
-            var renderTarget = new SkiaSharpRenderTarget(width, height, _document);
+    private Task SavePdfLibraryImageAsync(string path)
+    {
+        return Task.Run(() =>
+        {
             try
             {
-                renderTarget.BeginPage(_currentPage, mediaBox.Width, mediaBox.Height);
-                var optionalContentManager = new OptionalContentManager(_document);
-                var renderer = new PdfLibrary.Rendering.PdfRenderer(renderTarget, page.GetResources(), optionalContentManager, _document);
-                renderer.RenderPage(page);
-                renderTarget.EndPage();
-                renderTarget.SaveToFile(pdfLibraryPath);
+                PdfPage? page = _pdfLibraryDoc?.GetPage(_currentPage - 1);
+                if (page == null) return;
+
+                PdfRectangle mediaBox = page.GetMediaBox();
+                var width = (int)(mediaBox.Width * _zoomLevel);
+                var height = (int)(mediaBox.Height * _zoomLevel);
+
+                var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfLibraryDoc);
+                try
+                {
+                    renderTarget.BeginPage(_currentPage, mediaBox.Width * _zoomLevel, mediaBox.Height * _zoomLevel);
+                    var optionalContentManager = new OptionalContentManager(_pdfLibraryDoc);
+                    var renderer = new PdfRenderer(renderTarget, page.GetResources(),
+                        optionalContentManager, _pdfLibraryDoc);
+                    renderer.RenderPage(page);
+                    renderTarget.EndPage();
+                    renderTarget.SaveToFile(path);
+                    Log.Information("Saved PdfLibrary image to {Path}", path);
+                }
+                finally
+                {
+                    renderTarget.Dispose();
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                renderTarget.Dispose();
+                Log.Error(ex, "Failed to save PdfLibrary image");
             }
+        });
+    }
 
-            // Render with PDFium
-            using (var pdfiumDoc = new PDFiumSharp.PdfDocument(_currentFilePath))
+    private Task SavePdfiumImageAsync(string path)
+    {
+        return Task.Run(() =>
+        {
+            try
             {
-                var pdfiumPage = pdfiumDoc.Pages[_currentPage - 1];
-                int pdfiumWidth = (int)pdfiumPage.Width;
-                int pdfiumHeight = (int)pdfiumPage.Height;
+                if (_pdfiumDoc == null) return;
 
-                using var pdfiumBitmap = new PDFiumSharp.PDFiumBitmap(pdfiumWidth, pdfiumHeight, true);
-                pdfiumBitmap.FillRectangle(0, 0, pdfiumWidth, pdfiumHeight, 0xFFFFFFFF);
-                pdfiumPage.Render(pdfiumBitmap, (0, 0, pdfiumWidth, pdfiumHeight),
-                    PDFiumSharp.Enums.PageOrientations.Normal,
-                    PDFiumSharp.Enums.RenderingFlags.None);
+                PDFiumSharp.PdfPage? page = _pdfiumDoc.Pages[_currentPage - 1];
+                var width = (int)(page.Width * _zoomLevel);
+                var height = (int)(page.Height * _zoomLevel);
 
-                // PDFium saves as BMP, so convert to PNG via SkiaSharp
+                using var bitmap = new PDFiumBitmap(width, height, true);
+                bitmap.FillRectangle(0, 0, width, height, 0xFFFFFFFF);
+                page.Render(bitmap, (0, 0, width, height));
+
+                // Convert to PNG via SkiaSharp
                 string tempPath = Path.GetTempFileName() + ".bmp";
                 try
                 {
-                    pdfiumBitmap.Save(tempPath);
-                    using var skBitmap = SKBitmap.Decode(tempPath);
-                    using var image = SKImage.FromBitmap(skBitmap);
-                    using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-                    using var stream = File.OpenWrite(pdfiumPath);
+                    bitmap.Save(tempPath);
+                    using SKBitmap? skBitmap = SKBitmap.Decode(tempPath);
+                    using SKImage? image = SKImage.FromBitmap(skBitmap);
+                    using SKData? data = image.Encode(SKEncodedImageFormat.Png, 100);
+                    using FileStream stream = File.OpenWrite(path);
                     data.SaveTo(stream);
+                    Log.Information("Saved PDFium image to {Path}", path);
                 }
                 finally
                 {
@@ -246,17 +671,34 @@ public partial class MainWindow : Window
                         File.Delete(tempPath);
                 }
             }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Failed to save PDFium image");
+            }
+        });
+    }
 
-            StatusText.Text = $"Comparison images saved to {outputDir}";
-            MessageBox.Show($"Comparison images saved:\n\n• {Path.GetFileName(pdfLibraryPath)}\n• {Path.GetFileName(pdfiumPath)}\n\nLocation: {outputDir}",
-                "Comparison Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+    private async Task SaveMelvilleImageAsync(string path)
+    {
+        try
+        {
+            if (_melvilleDoc == null || _pdfLibraryDoc == null) return;
+
+            // Get dimensions from the PdfLibrary page to match sizing
+            PdfPage? pdfLibPage = _pdfLibraryDoc.GetPage(_currentPage - 1);
+            if (pdfLibPage == null) return;
+
+            PdfRectangle mediaBox = pdfLibPage.GetMediaBox();
+            var width = (int)(mediaBox.Width * _zoomLevel);
+            var height = (int)(mediaBox.Height * _zoomLevel);
+
+            await using FileStream stream = File.OpenWrite(path);
+            await RenderWithSkia.ToPngStreamAsync(_melvilleDoc, _currentPage, stream, width, height);
+            Log.Information("Saved Melville.Pdf image to {Path}", path);
         }
         catch (Exception ex)
         {
-            StatusText.Text = "Error generating comparison";
-            MessageBox.Show($"Failed to generate comparison: {ex.Message}", "Error",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-            Log.Error(ex, "Comparison failed");
+            Log.Error(ex, "Failed to save Melville.Pdf image");
         }
     }
 }
