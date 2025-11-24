@@ -38,8 +38,7 @@ public class PdfImage
     /// <param name="inlineImage">The inline image operator containing image data</param>
     public PdfImage(InlineImageOperator inlineImage)
     {
-        if (inlineImage == null)
-            throw new ArgumentNullException(nameof(inlineImage));
+        ArgumentNullException.ThrowIfNull(inlineImage);
 
         _isInlineImage = true;
         _document = null;
@@ -59,7 +58,7 @@ public class PdfImage
 
         // Copy filter if present
         string? filterName = null;
-        if (inlineImage.Filter != null)
+        if (inlineImage.Filter is not null)
         {
             // Map abbreviated filter names to full names
             filterName = inlineImage.Filter switch
@@ -77,7 +76,7 @@ public class PdfImage
         }
 
         // Copy decode params if present, or create them for CCITTFaxDecode
-        if (inlineImage.DecodeParms != null)
+        if (inlineImage.DecodeParms is not null)
         {
             // For CCITTFaxDecode, ensure Columns/Rows are set
             if (filterName == "CCITTFaxDecode" && inlineImage.DecodeParms is PdfDictionary dpDict)
@@ -120,7 +119,7 @@ public class PdfImage
         }
 
         // Copy decode array if present
-        if (inlineImage.Decode != null)
+        if (inlineImage.Decode is not null)
         {
             dict[new PdfName("Decode")] = inlineImage.Decode;
         }
@@ -201,7 +200,7 @@ public class PdfImage
                 return "Unknown";
 
             // Resolve indirect reference
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             return obj switch
@@ -267,21 +266,11 @@ public class PdfImage
     /// <summary>
     /// Checks if the image has an alpha channel (transparency)
     /// </summary>
-    public bool HasAlpha
-    {
-        get
-        {
-            // Check for soft mask (alpha channel)
-            if (_stream.Dictionary.ContainsKey(new PdfName("SMask")))
-                return true;
-
-            // Check for mask (binary transparency)
-            if (_stream.Dictionary.ContainsKey(new PdfName("Mask")))
-                return true;
-
-            return false;
-        }
-    }
+    public bool HasAlpha =>
+        // Check for soft mask (alpha channel)
+        _stream.Dictionary.ContainsKey(new PdfName("SMask")) ||
+        // Check for mask (binary transparency)
+        _stream.Dictionary.ContainsKey(new PdfName("Mask"));
 
     /// <summary>
     /// Gets the image intent (rendering intent)
@@ -363,7 +352,7 @@ public class PdfImage
             return null;
 
         // Resolve indirect reference
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         // Indexed color space is an array: [/Indexed base hival lookup]
@@ -374,19 +363,13 @@ public class PdfImage
         if (csArray[0] is not PdfName { Value: "Indexed" })
             return null;
 
-        // Extract base color space (index 1)
-        if (csArray[1] is PdfName baseName)
+        baseColorSpace = csArray[1] switch
         {
-            baseColorSpace = baseName.Value;
-        }
-        else if (csArray[1] is PdfArray { Count: > 0 } baseArray && baseArray[0] is PdfName baseArrayName)
-        {
-            baseColorSpace = baseArrayName.Value;
-        }
-        else
-        {
-            baseColorSpace = "DeviceRGB"; // Default
-        }
+            // Extract base color space (index 1)
+            PdfName baseName => baseName.Value,
+            PdfArray { Count: > 0 } baseArray when baseArray[0] is PdfName baseArrayName => baseArrayName.Value,
+            _ => "DeviceRGB"
+        };
 
         // Extract hival (index 2) - maximum palette index
         if (csArray[2] is PdfInteger hivalInt)
@@ -402,22 +385,17 @@ public class PdfImage
         PdfObject lookupObj = csArray[3];
 
         // Resolve indirect reference to lookup table
-        if (lookupObj is PdfIndirectReference lookupRef && _document != null)
+        if (lookupObj is PdfIndirectReference lookupRef && _document is not null)
             lookupObj = _document.ResolveReference(lookupRef);
 
         // Get palette data
-        byte[]? paletteData = null;
 
-        if (lookupObj is PdfString lookupString)
+        byte[]? paletteData = lookupObj switch
         {
-            // Palette is stored as a string
-            paletteData = lookupString.Bytes;
-        }
-        else if (lookupObj is PdfStream lookupStream)
-        {
-            // Palette is stored as a stream
-            paletteData = lookupStream.GetDecodedData();
-        }
+            PdfString lookupString => lookupString.Bytes,
+            PdfStream lookupStream => lookupStream.GetDecodedData(),
+            _ => null
+        };
 
         return paletteData;
     }

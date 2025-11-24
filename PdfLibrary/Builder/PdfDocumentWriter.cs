@@ -59,37 +59,33 @@ public class PdfDocumentWriter
             _fontObjects[font] = _nextObjectNumber++;
 
             // For custom fonts, reserve additional objects for FontDescriptor and FontFile2
-            if (builder.CustomFonts.ContainsKey(font))
-            {
-                _fontDescriptorObjects[font] = _nextObjectNumber++; // FontDescriptor
-                _nextObjectNumber++; // FontFile2 stream (we'll track this in WriteTrueTypeFont)
-            }
+            if (!builder.CustomFonts.ContainsKey(font)) continue;
+            _fontDescriptorObjects[font] = _nextObjectNumber++; // FontDescriptor
+            _nextObjectNumber++; // FontFile2 stream (we'll track this in WriteTrueTypeFont)
         }
 
         // Reserve page objects and their content streams
-        var pageObjectNumbers = new List<(int pageObj, int contentObj)>();
-        foreach (PdfPageBuilder _ in builder.Pages)
-        {
-            int pageObj = _nextObjectNumber++;
-            int contentObj = _nextObjectNumber++;
-            pageObjectNumbers.Add((pageObj, contentObj));
-        }
+        List<(int pageObj, int contentObj)> pageObjectNumbers =
+            (from _ in builder.Pages
+                select _nextObjectNumber++
+                into pageObj
+                let contentObj = _nextObjectNumber++
+                select (pageObj, contentObj))
+            .ToList();
 
         // Collect and reserve image objects
         foreach (PdfPageBuilder page in builder.Pages)
         {
             foreach (PdfContentElement content in page.Content)
             {
-                if (content is PdfImageContent image)
-                {
-                    int imageObj = _nextObjectNumber++;
-                    _imageObjects.Add((image, imageObj));
+                if (content is not PdfImageContent image) continue;
+                int imageObj = _nextObjectNumber++;
+                _imageObjects.Add((image, imageObj));
 
-                    // Collect opacity values for ExtGState objects
-                    if (image.Opacity < 1.0 && !_extGStateObjects.ContainsKey(image.Opacity))
-                    {
-                        _extGStateObjects[image.Opacity] = _nextObjectNumber++;
-                    }
+                // Collect opacity values for ExtGState objects
+                if (image.Opacity < 1.0 && !_extGStateObjects.ContainsKey(image.Opacity))
+                {
+                    _extGStateObjects[image.Opacity] = _nextObjectNumber++;
                 }
             }
         }
@@ -103,10 +99,7 @@ public class PdfDocumentWriter
             // Reserve objects for each field
             foreach (PdfPageBuilder page in builder.Pages)
             {
-                foreach (PdfFormFieldBuilder _ in page.FormFields)
-                {
-                    fieldObjects.Add(_nextObjectNumber++);
-                }
+                fieldObjects.AddRange(page.FormFields.Select(_ => _nextObjectNumber++));
             }
         }
 
@@ -290,7 +283,7 @@ public class PdfDocumentWriter
             writer.WriteLine("]");
 
             PdfAcroFormBuilder? acroForm = builder.AcroForm;
-            if (acroForm != null)
+            if (acroForm is not null)
             {
                 if (acroForm.NeedAppearances)
                     writer.WriteLine("   /NeedAppearances true");
@@ -376,10 +369,9 @@ public class PdfDocumentWriter
 
     private List<string> CollectFonts(PdfDocumentBuilder builder)
     {
-        var fonts = new HashSet<string>();
-
-        // Default font
-        fonts.Add("Helvetica");
+        var fonts = new HashSet<string> {
+            // Default font
+            "Helvetica" };
 
         // Fonts from content
         foreach (PdfPageBuilder page in builder.Pages)
@@ -395,19 +387,20 @@ public class PdfDocumentWriter
             // Fonts from form fields
             foreach (PdfFormFieldBuilder field in page.FormFields)
             {
-                if (field is PdfTextFieldBuilder textField)
+                switch (field)
                 {
-                    fonts.Add(textField.FontName);
-                }
-                else if (field is PdfDropdownBuilder dropdown)
-                {
-                    fonts.Add(dropdown.FontName);
+                    case PdfTextFieldBuilder textField:
+                        fonts.Add(textField.FontName);
+                        break;
+                    case PdfDropdownBuilder dropdown:
+                        fonts.Add(dropdown.FontName);
+                        break;
                 }
             }
         }
 
         // Font from AcroForm defaults
-        if (builder.AcroForm != null)
+        if (builder.AcroForm is not null)
         {
             fonts.Add(builder.AcroForm.DefaultFont);
         }
@@ -459,7 +452,7 @@ public class PdfDocumentWriter
                     // Fill color (rg is allowed inside BT...ET)
                     sb.AppendLine($"{text.FillColor.R:F3} {text.FillColor.G:F3} {text.FillColor.B:F3} rg");
 
-                    // Position with optional rotation using text matrix
+                    // Position with optional rotation using the text matrix
                     // Text matrix: [a b c d e f] where:
                     //   a = horizontal scaling * cos(rotation)
                     //   b = horizontal scaling * sin(rotation)
@@ -530,11 +523,9 @@ public class PdfDocumentWriter
                     int imageIndex = -1;
                     for (var idx = 0; idx < _imageObjects.Count; idx++)
                     {
-                        if (ReferenceEquals(_imageObjects[idx].image, image))
-                        {
-                            imageIndex = idx + 1;
-                            break;
-                        }
+                        if (!ReferenceEquals(_imageObjects[idx].image, image)) continue;
+                        imageIndex = idx + 1;
+                        break;
                     }
 
                     if (imageIndex > 0)
@@ -665,10 +656,9 @@ public class PdfDocumentWriter
                 writer.Write("   /Opt [");
                 foreach (PdfDropdownOption opt in dropdown.Options)
                 {
-                    if (opt.Value == opt.DisplayText)
-                        writer.Write($" {PdfString(opt.Value)}");
-                    else
-                        writer.Write($" [{PdfString(opt.Value)} {PdfString(opt.DisplayText)}]");
+                    writer.Write(opt.Value == opt.DisplayText
+                        ? $" {PdfString(opt.Value)}"
+                        : $" [{PdfString(opt.Value)} {PdfString(opt.DisplayText)}]");
                 }
                 writer.WriteLine(" ]");
 
@@ -811,7 +801,7 @@ public class PdfDocumentWriter
         try
         {
             using SKBitmap? bitmap = SKBitmap.Decode(data);
-            if (bitmap == null)
+            if (bitmap is null)
             {
                 // Fallback for unknown format
                 return (data, 100, 100, "DeviceRGB", 8, "");
@@ -835,27 +825,28 @@ public class PdfDocumentWriter
                 }
             }
 
-            // Compress based on settings
-            if (image.Compression == PdfImageCompression.Jpeg)
+            switch (image.Compression)
             {
-                byte[] compressed = CompressJpeg(rgbData, width, height, image.JpegQuality);
-                return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
+                // Compress based on settings
+                case PdfImageCompression.Jpeg:
+                {
+                    byte[] compressed = CompressJpeg(rgbData, width, height, image.JpegQuality);
+                    return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
+                }
+                case PdfImageCompression.Flate or PdfImageCompression.Auto:
+                {
+                    byte[] compressed = CompressFlate(rgbData);
+                    return (compressed, width, height, "DeviceRGB", 8, "FlateDecode");
+                }
+                case PdfImageCompression.None:
+                    return (rgbData, width, height, "DeviceRGB", 8, "");
+                default:
+                {
+                    // Default: Flate compression
+                    byte[] defaultCompressed = CompressFlate(rgbData);
+                    return (defaultCompressed, width, height, "DeviceRGB", 8, "FlateDecode");
+                }
             }
-
-            if (image.Compression is PdfImageCompression.Flate or PdfImageCompression.Auto)
-            {
-                byte[] compressed = CompressFlate(rgbData);
-                return (compressed, width, height, "DeviceRGB", 8, "FlateDecode");
-            }
-
-            if (image.Compression == PdfImageCompression.None)
-            {
-                return (rgbData, width, height, "DeviceRGB", 8, "");
-            }
-
-            // Default: Flate compression
-            byte[] defaultCompressed = CompressFlate(rgbData);
-            return (defaultCompressed, width, height, "DeviceRGB", 8, "FlateDecode");
         }
         catch
         {
@@ -877,27 +868,28 @@ public class PdfDocumentWriter
 
             byte marker = data[i + 1];
 
-            // SOF markers (Start of Frame)
-            if (marker is >= 0xC0 and <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
+            switch (marker)
             {
-                int height = (data[i + 5] << 8) | data[i + 6];
-                int width = (data[i + 7] << 8) | data[i + 8];
-                return (width, height);
-            }
-
-            // Skip to next marker
-            if (marker is 0xD8 or 0xD9) // SOI or EOI
-            {
-                i += 2;
-            }
-            else if (marker is >= 0xD0 and <= 0xD7) // RST markers
-            {
-                i += 2;
-            }
-            else
-            {
-                int length = (data[i + 2] << 8) | data[i + 3];
-                i += 2 + length;
+                // SOF markers (Start of Frame)
+                case >= 0xC0 and <= 0xCF when marker != 0xC4 && marker != 0xC8 && marker != 0xCC:
+                {
+                    int height = (data[i + 5] << 8) | data[i + 6];
+                    int width = (data[i + 7] << 8) | data[i + 8];
+                    return (width, height);
+                }
+                // Skip to next marker
+                // SOI or EOI
+                case 0xD8 or 0xD9:
+                // RST markers
+                case >= 0xD0 and <= 0xD7:
+                    i += 2;
+                    break;
+                default:
+                {
+                    int length = (data[i + 2] << 8) | data[i + 3];
+                    i += 2 + length;
+                    break;
+                }
             }
         }
 
@@ -978,13 +970,11 @@ public class PdfDocumentWriter
         string colorSpace = colorType == 0 ? "DeviceGray" : "DeviceRGB";
         byte[] finalData = rgbData.ToArray();
 
-        if (compression is PdfImageCompression.Flate or PdfImageCompression.Auto)
-        {
-            finalData = CompressFlate(finalData);
-            return (finalData, width, height, colorSpace, bitDepth, "FlateDecode");
-        }
+        if (compression is not (PdfImageCompression.Flate or PdfImageCompression.Auto))
+            return (finalData, width, height, colorSpace, bitDepth, "");
+        finalData = CompressFlate(finalData);
+        return (finalData, width, height, colorSpace, bitDepth, "FlateDecode");
 
-        return (finalData, width, height, colorSpace, bitDepth, "");
     }
 
     private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessBmpImage(byte[] bmpData, PdfImageCompression compression)
@@ -1019,13 +1009,11 @@ public class PdfDocumentWriter
 
         byte[] finalData = rgbData.ToArray();
 
-        if (compression is PdfImageCompression.Flate or PdfImageCompression.Auto)
-        {
-            finalData = CompressFlate(finalData);
-            return (finalData, width, height, "DeviceRGB", 8, "FlateDecode");
-        }
+        if (compression is not (PdfImageCompression.Flate or PdfImageCompression.Auto))
+            return (finalData, width, height, "DeviceRGB", 8, "");
+        finalData = CompressFlate(finalData);
+        return (finalData, width, height, "DeviceRGB", 8, "FlateDecode");
 
-        return (finalData, width, height, "DeviceRGB", 8, "");
     }
 
     private byte[] CompressFlate(byte[] data)
@@ -1056,13 +1044,13 @@ public class PdfDocumentWriter
 
     private uint ComputeAdler32(byte[] data)
     {
-        const uint MOD_ADLER = 65521;
+        const uint modAdler = 65521;
         uint a = 1, b = 0;
 
         foreach (byte c in data)
         {
-            a = (a + c) % MOD_ADLER;
-            b = (b + a) % MOD_ADLER;
+            a = (a + c) % modAdler;
+            b = (b + a) % modAdler;
         }
 
         return (b << 16) | a;
@@ -1153,15 +1141,15 @@ public class PdfDocumentWriter
         // Bit 1 (0x01): FixedPitch
         // Bit 6 (0x20): Symbolic (not set for standard fonts)
         // Bit 7 (0x40): Nonsymbolic (set for standard fonts with WinAnsi)
-        var flags = 0x40; // Nonsymbolic
+        const int flags = 0x40; // Nonsymbolic
         writer.WriteLine($"   /Flags {flags}");
 
         // Font bounding box (estimate if not available)
         // Scale from font units to 1000-unit coordinate system
         double scale = 1000.0 / metrics.UnitsPerEm;
-        int llx = -200;  // Typical left bearing
+        const int llx = -200;  // Typical left bearing
         var lly = (int)(metrics.Descender * scale);
-        var urx = 1000;  // Typical right edge
+        const int urx = 1000;  // Typical right edge
         var ury = (int)(metrics.Ascender * scale);
 
         writer.WriteLine($"   /FontBBox [{llx} {lly} {urx} {ury}]");
@@ -1200,7 +1188,7 @@ public class PdfDocumentWriter
     }
 
     /// <summary>
-    /// Sanitize font name for PDF (remove spaces and special characters)
+    /// Sanitize the font name for PDF (remove spaces and special characters)
     /// </summary>
     private static string SanitizeFontName(string name)
     {

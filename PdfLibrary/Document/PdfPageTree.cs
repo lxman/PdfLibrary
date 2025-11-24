@@ -53,7 +53,7 @@ public class PdfPageTree
     /// </summary>
     public List<PdfPage> GetPages()
     {
-        if (_cachedPages != null)
+        if (_cachedPages is not null)
             return _cachedPages;
 
         _cachedPages = [];
@@ -90,7 +90,7 @@ public class PdfPageTree
             PdfObject? kidObj = kid;
 
             // Resolve indirect reference
-            if (kidObj is PdfIndirectReference reference && _document != null)
+            if (kidObj is PdfIndirectReference reference && _document is not null)
             {
                 kidObj = _document.ResolveReference(reference);
             }
@@ -123,7 +123,7 @@ public class PdfPageTree
         if (!_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         if (obj is not PdfDictionary resourceDict)

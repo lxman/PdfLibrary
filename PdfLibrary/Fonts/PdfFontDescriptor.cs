@@ -259,7 +259,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         if (_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject? obj))
         {
             // Resolve indirect reference if needed
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
@@ -276,7 +276,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         if (_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject? obj))
         {
             // Resolve indirect reference if needed
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
@@ -293,7 +293,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         if (_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject? obj))
         {
             // Resolve indirect reference if needed
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)

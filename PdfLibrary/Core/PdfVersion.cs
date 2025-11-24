@@ -52,10 +52,9 @@ public sealed class PdfVersion : IComparable<PdfVersion>, IEquatable<PdfVersion>
 
         if (!int.TryParse(parts[0], out int major))
             throw new FormatException($"Invalid major version: {parts[0]}");
-        if (!int.TryParse(parts[1], out int minor))
-            throw new FormatException($"Invalid minor version: {parts[1]}");
-
-        return new PdfVersion(major, minor);
+        return !int.TryParse(parts[1], out int minor)
+            ? throw new FormatException($"Invalid minor version: {parts[1]}")
+            : new PdfVersion(major, minor);
     }
 
     /// <summary>
@@ -89,7 +88,7 @@ public sealed class PdfVersion : IComparable<PdfVersion>, IEquatable<PdfVersion>
     // IComparable<PdfVersion> implementation
     public int CompareTo(PdfVersion? other)
     {
-        if (other == null) return 1;
+        if (other is null) return 1;
 
         int majorComparison = Major.CompareTo(other.Major);
         return majorComparison != 0
@@ -99,7 +98,7 @@ public sealed class PdfVersion : IComparable<PdfVersion>, IEquatable<PdfVersion>
 
     // IEquatable<PdfVersion> implementation
     public bool Equals(PdfVersion? other) =>
-        other != null && Major == other.Major && Minor == other.Minor;
+        other is not null && Major == other.Major && Minor == other.Minor;
 
     public override bool Equals(object? obj) =>
         obj is PdfVersion version && Equals(version);

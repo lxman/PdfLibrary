@@ -45,7 +45,7 @@ public class PdfPage
         // Try to get from page first
         if (_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj))
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfDictionary resourceDict)
@@ -53,9 +53,9 @@ public class PdfPage
         }
 
         // Inherit from parent if not found
-        if (_parentNode == null || !_parentNode.TryGetValue(new PdfName("Resources"), out obj)) return null;
+        if (_parentNode is null || !_parentNode.TryGetValue(new PdfName("Resources"), out obj)) return null;
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfDictionary resourceDict)
@@ -71,11 +71,11 @@ public class PdfPage
     public PdfRectangle GetMediaBox()
     {
         PdfArray? array = GetInheritableArray("MediaBox");
-        if (array == null)
+        if (array is null)
             throw new InvalidOperationException("Page missing required MediaBox");
 
         PdfRectangle rect = PdfRectangle.FromArray(array);
-        PdfLogger.Log(LogCategory.PdfTool, $"[MEDIABOX] Found: {rect} (document={_document != null})");
+        PdfLogger.Log(LogCategory.PdfTool, $"[MEDIABOX] Found: {rect} (document={_document is not null})");
         return rect;
     }
 
@@ -86,7 +86,7 @@ public class PdfPage
     public PdfRectangle GetCropBox()
     {
         PdfArray? array = GetInheritableArray("CropBox");
-        return array != null
+        return array is not null
             ? PdfRectangle.FromArray(array)
             : GetMediaBox();
     }
@@ -103,7 +103,7 @@ public class PdfPage
                 return rotate.Value;
 
             // Inherit from the parent
-            if (_parentNode != null && _parentNode.TryGetValue(new PdfName("Rotate"), out obj) && obj is PdfInteger parentRotate)
+            if (_parentNode is not null && _parentNode.TryGetValue(new PdfName("Rotate"), out obj) && obj is PdfInteger parentRotate)
                 return parentRotate.Value;
 
             return 0;
@@ -121,7 +121,7 @@ public class PdfPage
             return streams;
 
         // Resolve indirect reference
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         switch (obj)
@@ -136,7 +136,7 @@ public class PdfPage
                 {
                     PdfObject? itemObj = item;
 
-                    if (itemObj is PdfIndirectReference itemRef && _document != null)
+                    if (itemObj is PdfIndirectReference itemRef && _document is not null)
                         itemObj = _document.ResolveReference(itemRef);
 
                     if (itemObj is PdfStream itemStream)
@@ -158,7 +158,7 @@ public class PdfPage
         if (!_dictionary.TryGetValue(new PdfName("Annots"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfArray;
@@ -215,26 +215,30 @@ public class PdfPage
         // Traverse parent chain to find inherited value
         PdfDictionary? current = _parentNode;
 
-        // If no parent node was passed, try to get it from the page's /Parent key
-        if (current == null && _document != null)
+        switch (current)
         {
-            if (_dictionary.TryGetValue(new PdfName("Parent"), out PdfObject parentObj))
+            // If no parent node was passed, try to get it from the page's /Parent key
+            case null when _document is not null:
             {
-                current = ResolveDict(parentObj);
-                PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] Got parent from /Parent key: {current != null}");
+                if (_dictionary.TryGetValue(new PdfName("Parent"), out PdfObject parentObj))
+                {
+                    current = ResolveDict(parentObj);
+                    PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] Got parent from /Parent key: {current is not null}");
+                }
+                else
+                {
+                    PdfLogger.Log(LogCategory.PdfTool, "[INHERIT] No /Parent key in page dictionary");
+                }
+
+                break;
             }
-            else
-            {
-                PdfLogger.Log(LogCategory.PdfTool, "[INHERIT] No /Parent key in page dictionary");
-            }
-        }
-        else if (current == null)
-        {
-            PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] No parent and no document (document={_document != null})");
+            case null:
+                PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] No parent and no document (document={_document is not null})");
+                break;
         }
 
         // Walk up the parent chain
-        while (current != null)
+        while (current is not null)
         {
             if (current.TryGetValue(keyName, out obj) && obj is PdfArray parentArray)
                 return parentArray;
@@ -258,12 +262,10 @@ public class PdfPage
         if (obj is PdfDictionary dict)
             return dict;
 
-        if (obj is PdfIndirectReference reference && _document != null)
-        {
-            PdfObject? resolved = _document.ResolveReference(reference);
-            if (resolved is PdfDictionary resolvedDict)
-                return resolvedDict;
-        }
+        if (obj is not PdfIndirectReference reference || _document is null) return null;
+        PdfObject? resolved = _document.ResolveReference(reference);
+        if (resolved is PdfDictionary resolvedDict)
+            return resolvedDict;
 
         return null;
     }
@@ -320,7 +322,7 @@ public class PdfPage
         var images = new List<PdfImage>();
         PdfResources? resources = GetResources();
 
-        if (resources == null)
+        if (resources is null)
             return images;
 
         // Get all XObject names
@@ -330,21 +332,19 @@ public class PdfPage
         foreach (string name in xobjectNames)
         {
             PdfStream? xobject = resources.GetXObject(name);
-            if (xobject == null)
+            if (xobject is null)
                 continue;
 
             // Check if this XObject is an image
-            if (PdfImage.IsImageXObject(xobject))
+            if (!PdfImage.IsImageXObject(xobject)) continue;
+            try
             {
-                try
-                {
-                    var image = new PdfImage(xobject, _document);
-                    images.Add(image);
-                }
-                catch (Exception)
-                {
-                    // Skip malformed images
-                }
+                var image = new PdfImage(xobject, _document);
+                images.Add(image);
+            }
+            catch (Exception)
+            {
+                // Skip malformed images
             }
         }
 

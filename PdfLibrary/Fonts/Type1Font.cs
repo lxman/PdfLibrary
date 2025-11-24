@@ -28,7 +28,7 @@ public class Type1Font : PdfFont
     public override double GetCharacterWidth(int charCode)
     {
         // Check if character code is in range
-        if (_widths != null && charCode >= FirstChar && charCode <= LastChar)
+        if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
@@ -42,7 +42,7 @@ public class Type1Font : PdfFont
 
         // Try to get from font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
-        if (descriptor == null) return _defaultWidth > 0
+        if (descriptor is null) return _defaultWidth > 0
             ? _defaultWidth
             : 250; // 250 is PDF default
         if (descriptor.MissingWidth > 0)
@@ -310,7 +310,7 @@ public class Type1Font : PdfFont
         {
             // Get font descriptor
             PdfFontDescriptor? descriptor = GetDescriptor();
-            if (descriptor == null)
+            if (descriptor is null)
                 return null;
 
             // Try to get embedded CFF data (FontFile3) - preferred for Type1C
@@ -319,13 +319,13 @@ public class Type1Font : PdfFont
 
             // If no FontFile3, try classic Type1 (FontFile)
             // Note: FontFile uses PFB format which may need different parsing
-            if (fontData == null)
+            if (fontData is null)
             {
                 fontData = descriptor.GetFontFile();
                 fontFileType = "FontFile";
             }
 
-            if (fontData == null)
+            if (fontData is null)
                 return null;
 
             // Parse embedded font metrics
@@ -349,7 +349,7 @@ public class Type1Font : PdfFont
         }
 
         // Resolve indirect reference
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         Encoding = obj switch
@@ -367,7 +367,7 @@ public class Type1Font : PdfFont
         // Get widths array
         if (_dictionary.TryGetValue(new PdfName("Widths"), out PdfObject? obj))
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfArray widthsArray)
@@ -382,13 +382,13 @@ public class Type1Font : PdfFont
 
         // Get default width
         PdfFontDescriptor? descriptor = GetDescriptor();
-        if (descriptor != null)
+        if (descriptor is not null)
         {
             _defaultWidth = descriptor.MissingWidth > 0 ? descriptor.MissingWidth : descriptor.AvgWidth;
         }
 
         // If still no width info, use standard metrics
-        if (_widths == null && _defaultWidth == 0)
+        if (_widths is null && _defaultWidth == 0)
         {
             _defaultWidth = GetStandardWidth(BaseFont);
         }

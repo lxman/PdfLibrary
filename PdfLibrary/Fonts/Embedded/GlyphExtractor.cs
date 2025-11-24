@@ -31,13 +31,13 @@ namespace PdfLibrary.Fonts.Embedded
 
             // Parse required tables
             byte[]? headData = parser.GetTable("head");
-            if (headData == null)
+            if (headData is null)
                 throw new InvalidOperationException("Font missing required 'head' table");
 
             _headTable = new HeadTable(headData);
 
             byte[]? locaData = parser.GetTable("loca");
-            if (locaData == null)
+            if (locaData is null)
                 throw new InvalidOperationException("Font missing required 'loca' table");
 
             _locaTable = new LocaTable(locaData);
@@ -45,21 +45,21 @@ namespace PdfLibrary.Fonts.Embedded
             _locaTable.Process(_numGlyphs, isShortFormat);
 
             byte[]? glyfData = parser.GetTable("glyf");
-            if (glyfData == null)
+            if (glyfData is null)
                 throw new InvalidOperationException("Font missing required 'glyf' table");
 
             _glyfTable = new GlyphTable(glyfData);
             _glyfTable.Process(_numGlyphs, _locaTable);
 
             byte[]? hmtxData = parser.GetTable("hmtx");
-            if (hmtxData == null)
+            if (hmtxData is null)
                 throw new InvalidOperationException("Font missing required 'hmtx' table");
 
             _hmtxTable = new HmtxTable(hmtxData);
 
             // Get number of horizontal metrics from hhea table
             byte[]? hheaData = parser.GetTable("hhea");
-            if (hheaData != null)
+            if (hheaData is not null)
             {
                 var hheaTable = new HheaTable(hheaData);
                 _hmtxTable.Process(hheaTable.NumberOfHMetrics, (ushort)_numGlyphs);
@@ -88,7 +88,7 @@ namespace PdfLibrary.Fonts.Embedded
             GlyphMetrics metrics = GetMetrics(glyphId);
 
             // Handle empty glyphs (space, etc.)
-            if (glyphData == null)
+            if (glyphData is null)
             {
                 return new GlyphOutline(
                     glyphId,
@@ -125,7 +125,7 @@ namespace PdfLibrary.Fonts.Embedded
 
             // Get bounding box from glyph data
             GlyphData? glyphData = _glyfTable.GetGlyphData(glyphId);
-            if (glyphData != null)
+            if (glyphData is not null)
             {
                 return new GlyphMetrics(
                     advanceWidth,
@@ -205,7 +205,7 @@ namespace PdfLibrary.Fonts.Embedded
 
                 // Recursively extract the component glyph
                 GlyphOutline? componentOutline = ExtractGlyph(component.GlyphIndex);
-                if (componentOutline == null || componentOutline.IsEmpty)
+                if (componentOutline is null || componentOutline.IsEmpty)
                     continue;
 
                 // Transform each contour of the component using the transformation matrix

@@ -66,7 +66,7 @@ public class PdfParser(PdfLexer lexer)
         var objects = new List<PdfObject>();
         PdfObject? obj;
 
-        while ((obj = ReadObject()) != null)
+        while ((obj = ReadObject()) is not null)
         {
             objects.Add(obj);
         }
@@ -153,7 +153,7 @@ public class PdfParser(PdfLexer lexer)
             PdfObject? content = ReadObject();
             ExpectToken(PdfTokenType.EndObj);
 
-            if (content != null)
+            if (content is not null)
             {
                 content.IsIndirect = true;
                 content.ObjectNumber = objectNumber;
@@ -214,7 +214,7 @@ public class PdfParser(PdfLexer lexer)
                 throw new PdfParseException("Unexpected end of file while parsing array");
 
             PdfObject? element = ReadObject();
-            if (element != null)
+            if (element is not null)
                 array.Add(element);
         }
 
@@ -261,7 +261,7 @@ public class PdfParser(PdfLexer lexer)
 
             // Read value
             PdfObject? value = ReadObject();
-            if (value != null)
+            if (value is not null)
                 dict[key] = value;
         }
 
@@ -273,7 +273,7 @@ public class PdfParser(PdfLexer lexer)
     /// </summary>
     private int ResolveStreamLength(PdfIndirectReference reference)
     {
-        if (_referenceResolver == null)
+        if (_referenceResolver is null)
             throw new PdfParseException("Cannot resolve indirect reference for stream length: no reference resolver set");
 
         PdfObject? resolvedObj = _referenceResolver(reference);

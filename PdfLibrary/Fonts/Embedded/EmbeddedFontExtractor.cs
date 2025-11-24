@@ -16,7 +16,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <param name="fontDescriptor">PDF font descriptor containing embedded font</param>
         public EmbeddedFontExtractor(PdfFontDescriptor? fontDescriptor)
         {
-            if (fontDescriptor == null)
+            if (fontDescriptor is null)
             {
                 _isValid = false;
                 return;
@@ -24,7 +24,7 @@ namespace PdfLibrary.Fonts.Embedded
 
             // Try to extract FontFile2 (TrueType) stream
             byte[]? fontData = fontDescriptor.GetFontFile2();
-            if (fontData != null)
+            if (fontData is not null)
             {
                 // Parse TrueType font for glyph names
                 _glyphNames = TrueTypeParser.GetAllGlyphNames(fontData);
@@ -50,7 +50,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <returns>Glyph name (e.g., "fi", "Aacute"), or null if not found</returns>
         public string? GetGlyphName(int charCode)
         {
-            if (!_isValid || _glyphNames == null)
+            if (!_isValid || _glyphNames is null)
                 return null;
 
             // For Type0 fonts, character code typically maps directly to glyph ID
@@ -65,7 +65,7 @@ namespace PdfLibrary.Fonts.Embedded
         public string? GetUnicodeFromGlyphName(int charCode)
         {
             string? glyphName = GetGlyphName(charCode);
-            if (glyphName == null)
+            if (glyphName is null)
                 return null;
 
             // Map glyph name to Unicode using Adobe Glyph List

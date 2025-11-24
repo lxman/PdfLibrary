@@ -76,13 +76,13 @@ public class EmbeddedFontMetrics
     public bool IsCffFont => _isCffFont;
 
     // Diagnostic properties for cmap table debugging
-    public bool HasCmapTable => _cmapTable != null;
+    public bool HasCmapTable => _cmapTable is not null;
     public int GetCmapSubtableCount() => _cmapTable?.SubTables?.Count ?? 0;
     public int GetCmapEncodingRecordCount() => _cmapTable?.EncodingRecords?.Count ?? 0;
 
     public string GetCmapEncodingRecordInfo(int index)
     {
-        if (_cmapTable == null || _cmapTable.EncodingRecords == null || index >= _cmapTable.EncodingRecords.Count)
+        if (_cmapTable is null || _cmapTable.EncodingRecords is null || index >= _cmapTable.EncodingRecords.Count)
             return "Invalid index";
 
         EncodingRecord record = _cmapTable.EncodingRecords[index];
@@ -122,7 +122,7 @@ public class EmbeddedFontMetrics
 
         // Parse head table (required)
         byte[]? headData = _parser.GetTable("head");
-        if (headData != null)
+        if (headData is not null)
         {
             try
             {
@@ -141,7 +141,7 @@ public class EmbeddedFontMetrics
 
         // Parse maxp table (required for glyph count)
         byte[]? maxpData = _parser.GetTable("maxp");
-        if (maxpData != null)
+        if (maxpData is not null)
         {
             try
             {
@@ -156,7 +156,7 @@ public class EmbeddedFontMetrics
 
         // Parse hhea table (required for horizontal metrics)
         byte[]? hheaData = _parser.GetTable("hhea");
-        if (hheaData != null)
+        if (hheaData is not null)
         {
             try
             {
@@ -170,7 +170,7 @@ public class EmbeddedFontMetrics
 
         // Parse hmtx table (required for glyph widths)
         byte[]? hmtxData = _parser.GetTable("hmtx");
-        if (hmtxData != null && _hheaTable != null && NumGlyphs > 0)
+        if (hmtxData is not null && _hheaTable is not null && NumGlyphs > 0)
         {
             try
             {
@@ -185,7 +185,7 @@ public class EmbeddedFontMetrics
 
         // Parse name table (optional but useful)
         byte[]? nameData = _parser.GetTable("name");
-        if (nameData != null)
+        if (nameData is not null)
         {
             try
             {
@@ -199,7 +199,7 @@ public class EmbeddedFontMetrics
 
         // Parse cmap table (required for character->glyph mapping)
         byte[]? cmapData = _parser.GetTable("cmap");
-        if (cmapData != null)
+        if (cmapData is not null)
         {
             try
             {
@@ -213,7 +213,7 @@ public class EmbeddedFontMetrics
 
         // Check for CFF font (OpenType with CFF outlines)
         byte[]? cffData = _parser.GetTable("CFF ");
-        if (cffData != null)
+        if (cffData is not null)
         {
             try
             {
@@ -231,8 +231,8 @@ public class EmbeddedFontMetrics
         // Font is valid if we have the essential tables for rendering
         // cmap is optional - Type0/CID fonts use CIDToGIDMap instead
         // We need head + hmtx + either glyf (TrueType) or CFF outlines
-        bool hasGlyphData = _parser.GetTable("glyf") != null || _cffTable != null;
-        IsValid = _headTable != null && _hmtxTable != null && hasGlyphData;
+        bool hasGlyphData = _parser.GetTable("glyf") is not null || _cffTable is not null;
+        IsValid = _headTable is not null && _hmtxTable is not null && hasGlyphData;
     }
 
     /// <summary>
@@ -244,7 +244,7 @@ public class EmbeddedFontMetrics
     {
         // For CFF fonts without cmap table, use direct character code mapping
         // This works for subset fonts where character codes map directly to glyph indices
-        if (_isCffFont && _cmapTable == null)
+        if (_isCffFont && _cmapTable is null)
         {
             // Character code is the glyph index for subset fonts
             if (charCode < NumGlyphs)
@@ -266,7 +266,7 @@ public class EmbeddedFontMetrics
             return 0;
 
         // For CFF fonts, use the charset to map glyph name to glyph index
-        if (_isCffFont && _cffTable != null)
+        if (_isCffFont && _cffTable is not null)
         {
             // First, convert glyph name to SID
             int sid = GetSidFromGlyphName(glyphName);
@@ -280,7 +280,7 @@ public class EmbeddedFontMetrics
 
             // Get the charset from the CFF table
             ICharset? charset = _cffTable.CharSet;
-            if (charset == null)
+            if (charset is null)
                 return 0;
 
             // Different charset formats store data differently
@@ -344,7 +344,7 @@ public class EmbeddedFontMetrics
         }
 
         // Check custom strings in the CFF font
-        if (_cffTable?.Strings != null)
+        if (_cffTable?.Strings is not null)
         {
             for (var i = 0; i < _cffTable.Strings.Count; i++)
             {
@@ -410,7 +410,7 @@ public class EmbeddedFontMetrics
     public GlyphOutline? GetGlyphOutline(ushort glyphId)
     {
         // Handle CFF fonts
-        if (_isCffFont && _cffTable != null)
+        if (_isCffFont && _cffTable is not null)
         {
             return GetCffGlyphOutline(glyphId);
         }
@@ -423,12 +423,12 @@ public class EmbeddedFontMetrics
         }
 
         // If tables failed to load or are invalid, return null
-        if (_glyphTable == null || _locaTable == null)
+        if (_glyphTable is null || _locaTable is null)
             return null;
 
         // Get glyph data
         GlyphData? glyphData = _glyphTable.GetGlyphData(glyphId);
-        if (glyphData == null)
+        if (glyphData is null)
             return null;
 
         // Get glyph metrics
@@ -468,7 +468,7 @@ public class EmbeddedFontMetrics
     /// <returns>CFF GlyphOutline with path commands, or null</returns>
     public CffGlyphOutline? GetCffGlyphOutlineDirect(ushort glyphId)
     {
-        if (!_isCffFont || _cffTable == null)
+        if (!_isCffFont || _cffTable is null)
             return null;
 
         return _cffTable.GetGlyphOutline(glyphId);
@@ -480,12 +480,12 @@ public class EmbeddedFontMetrics
     /// </summary>
     private GlyphOutline? GetCffGlyphOutline(ushort glyphId)
     {
-        if (_cffTable == null)
+        if (_cffTable is null)
             return null;
 
         // Get CFF glyph outline from Type1Table
         CffGlyphOutline? cffOutline = _cffTable.GetGlyphOutline(glyphId);
-        if (cffOutline == null)
+        if (cffOutline is null)
             return null;
 
         // Get glyph metrics
@@ -585,7 +585,7 @@ public class EmbeddedFontMetrics
 
             // Recursively extract the component glyph
             GlyphOutline? componentOutline = GetGlyphOutline(component.GlyphIndex);
-            if (componentOutline == null || componentOutline.IsEmpty)
+            if (componentOutline is null || componentOutline.IsEmpty)
                 continue;
 
             // Transform each contour of the component using the transformation matrix
@@ -626,7 +626,7 @@ public class EmbeddedFontMetrics
         {
             // Parse loca table (required for glyph offsets)
             byte[]? locaData = _parser.GetTable("loca");
-            if (locaData == null || _headTable == null || NumGlyphs == 0)
+            if (locaData is null || _headTable is null || NumGlyphs == 0)
                 return;
 
             _locaTable = new LocaTable(locaData);
@@ -635,7 +635,7 @@ public class EmbeddedFontMetrics
 
             // Parse glyf table (contains glyph outlines)
             byte[]? glyfData = _parser.GetTable("glyf");
-            if (glyfData == null)
+            if (glyfData is null)
                 return;
 
             _glyphTable = new GlyphTable(glyfData);

@@ -22,12 +22,12 @@ public class OptionalContentManager
     {
         _document = document;
 
-        if (document == null)
+        if (document is null)
             return;
 
         // Get the document catalog
         PdfCatalog? catalog = document.GetCatalog();
-        if (catalog == null)
+        if (catalog is null)
         {
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: No catalog found");
             return;
@@ -82,12 +82,10 @@ public class OptionalContentManager
                 foreach (PdfObject item in offArray)
                 {
                     // Items are indirect references to OCG dictionaries
-                    if (item is PdfIndirectReference reference)
-                    {
-                        var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
-                        _disabledOCGs.Add(ocgKey);
-                        PdfLogger.Log(LogCategory.Graphics, $"  Disabled OCG: {ocgKey}");
-                    }
+                    if (item is not PdfIndirectReference reference) continue;
+                    var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
+                    _disabledOCGs.Add(ocgKey);
+                    PdfLogger.Log(LogCategory.Graphics, $"  Disabled OCG: {ocgKey}");
                 }
             }
             else
@@ -112,25 +110,21 @@ public class OptionalContentManager
                     PdfLogger.Log(LogCategory.Graphics, $"OptionalContentManager: Found /ON array with {onArray.Count} items");
                     foreach (PdfObject item in onArray)
                     {
-                        if (item is PdfIndirectReference reference)
-                        {
-                            var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
-                            enabledOCGs.Add(ocgKey);
-                            PdfLogger.Log(LogCategory.Graphics, $"  Enabled OCG: {ocgKey}");
-                        }
+                        if (item is not PdfIndirectReference reference) continue;
+                        var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
+                        enabledOCGs.Add(ocgKey);
+                        PdfLogger.Log(LogCategory.Graphics, $"  Enabled OCG: {ocgKey}");
                     }
                 }
 
                 // Now disable all OCGs except those in /ON array
                 foreach (PdfObject ocg in ocgsArray)
                 {
-                    if (ocg is PdfIndirectReference reference)
+                    if (ocg is not PdfIndirectReference reference) continue;
+                    var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
+                    if (!enabledOCGs.Contains(ocgKey))
                     {
-                        var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
-                        if (!enabledOCGs.Contains(ocgKey))
-                        {
-                            _disabledOCGs.Add(ocgKey);
-                        }
+                        _disabledOCGs.Add(ocgKey);
                     }
                 }
             }
@@ -160,41 +154,49 @@ public class OptionalContentManager
         // 1. An indirect reference to an OCG dictionary
         // 2. An OCMD (Optional Content Membership Dictionary)
 
-        if (ocObj is PdfIndirectReference reference)
+        switch (ocObj)
         {
-            // Check if this OCG is in the disabled set
-            var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
-            bool isDisabled = _disabledOCGs.Contains(ocgKey);
-            PdfLogger.Log(LogCategory.Graphics, $"  IsVisible: OCG reference {ocgKey}, disabled = {isDisabled}");
-            return !isDisabled;
-        }
-
-        // For OCMD dictionaries, we need to resolve the /OCGs entry
-        if (ocObj is PdfDictionary ocmd)
-        {
-            if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj))
+            case PdfIndirectReference reference:
             {
-                // /OCGs can be a single reference or an array of references
-                if (ocgsObj is PdfIndirectReference ocgRef)
+                // Check if this OCG is in the disabled set
+                var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
+                bool isDisabled = _disabledOCGs.Contains(ocgKey);
+                PdfLogger.Log(LogCategory.Graphics, $"  IsVisible: OCG reference {ocgKey}, disabled = {isDisabled}");
+                return !isDisabled;
+            }
+            // For OCMD dictionaries, we need to resolve the /OCGs entry
+            case PdfDictionary ocmd:
+            {
+                if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj))
                 {
-                    var ocgKey = $"{ocgRef.ObjectNumber} {ocgRef.GenerationNumber} R";
-                    return !_disabledOCGs.Contains(ocgKey);
-                }
-
-                if (ocgsObj is PdfArray { Count: > 0 } ocgsArray)
-                {
-                    // For simplicity, if ANY referenced OCG is disabled, hide the content
-                    // A full implementation would check the /P (policy) entry
-                    foreach (PdfObject ocgItem in ocgsArray)
+                    switch (ocgsObj)
                     {
-                        if (ocgItem is PdfIndirectReference ocgArrayRef)
+                        // /OCGs can be a single reference or an array of references
+                        case PdfIndirectReference ocgRef:
                         {
-                            var ocgKey = $"{ocgArrayRef.ObjectNumber} {ocgArrayRef.GenerationNumber} R";
-                            if (_disabledOCGs.Contains(ocgKey))
-                                return false;
+                            var ocgKey = $"{ocgRef.ObjectNumber} {ocgRef.GenerationNumber} R";
+                            return !_disabledOCGs.Contains(ocgKey);
+                        }
+                        case PdfArray { Count: > 0 } ocgsArray:
+                        {
+                            // For simplicity, if ANY referenced OCG is disabled, hide the content
+                            // A full implementation would check the /P (policy) entry
+                            foreach (PdfObject ocgItem in ocgsArray)
+                            {
+                                if (ocgItem is PdfIndirectReference ocgArrayRef)
+                                {
+                                    var ocgKey = $"{ocgArrayRef.ObjectNumber} {ocgArrayRef.GenerationNumber} R";
+                                    if (_disabledOCGs.Contains(ocgKey))
+                                        return false;
+                                }
+                            }
+
+                            break;
                         }
                     }
                 }
+
+                break;
             }
         }
 

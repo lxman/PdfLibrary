@@ -85,7 +85,7 @@ public class PdfDocument : IDisposable
         // Load uncompressed objects on-demand
         // This is needed when one object references another that hasn't been loaded yet
         // (e.g., a stream with /Length pointing to an indirect object)
-        if (_stream != null && entry.EntryType == PdfXrefEntryType.Uncompressed)
+        if (_stream is not null && entry.EntryType == PdfXrefEntryType.Uncompressed)
         {
             try
             {
@@ -103,7 +103,7 @@ public class PdfDocument : IDisposable
 
                 // Read the object
                 PdfObject? obj = parser.ReadObject();
-                if (obj != null)
+                if (obj is not null)
                 {
                     AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
                 }
@@ -228,7 +228,7 @@ public class PdfDocument : IDisposable
             objectParser.SetReferenceResolver(reference => GetObject(reference.ObjectNumber));
 
             PdfObject? obj = objectParser.ReadObject();
-            if (obj != null)
+            if (obj is not null)
             {
                 // Add to cache (generation number is 0 for compressed objects)
                 AddObject(objectNumber, 0, obj);
@@ -241,7 +241,7 @@ public class PdfDocument : IDisposable
     /// </summary>
     public PdfObject? ResolveReference(PdfIndirectReference reference)
     {
-        return reference == null
+        return reference is null
             ? throw new ArgumentNullException(nameof(reference))
             : GetObject(reference.ObjectNumber);
     }
@@ -251,7 +251,7 @@ public class PdfDocument : IDisposable
     /// </summary>
     public PdfCatalog? GetCatalog()
     {
-        if (Trailer.Root == null)
+        if (Trailer.Root is null)
             return null;
 
         PdfObject? catalog = ResolveReference(Trailer.Root);
@@ -265,7 +265,7 @@ public class PdfDocument : IDisposable
     /// </summary>
     public PdfDictionary? GetInfo()
     {
-        if (Trailer.Info == null)
+        if (Trailer.Info is null)
             return null;
 
         PdfObject? info = ResolveReference(Trailer.Info);
@@ -278,7 +278,7 @@ public class PdfDocument : IDisposable
     public int GetPageCount()
     {
         PdfCatalog? catalog = GetCatalog();
-        if (catalog == null)
+        if (catalog is null)
             return 0;
 
         PdfPageTree? pageTree = catalog.GetPageTree();
@@ -291,7 +291,7 @@ public class PdfDocument : IDisposable
     public List<PdfPage> GetPages()
     {
         PdfCatalog? catalog = GetCatalog();
-        if (catalog == null)
+        if (catalog is null)
             return [];
 
         PdfPageTree? pageTree = catalog.GetPageTree();
@@ -425,7 +425,7 @@ public class PdfDocument : IDisposable
                 }
 
                 long prevXrefPosition = -1;
-                if (currentTrailer != null &&
+                if (currentTrailer is not null &&
                     currentTrailer.TryGetValue(new PdfName("Prev"), out PdfObject prevObj) &&
                     prevObj is PdfInteger prevInt)
                 {
@@ -460,7 +460,7 @@ public class PdfDocument : IDisposable
 
                     // Read the indirect object
                     PdfObject? obj = parser.ReadObject();
-                    if (obj != null)
+                    if (obj is not null)
                     {
                         document.AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
                     }

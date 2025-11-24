@@ -21,7 +21,7 @@ public class PathBuilder : IPathBuilder
 
     public void LineTo(double x, double y)
     {
-        if (_currentPoint == null)
+        if (_currentPoint is null)
             throw new InvalidOperationException("Cannot add line without current point. Use MoveTo first.");
 
         _segments.Add(new LineToSegment(x, y));
@@ -30,7 +30,7 @@ public class PathBuilder : IPathBuilder
 
     public void CurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     {
-        if (_currentPoint == null)
+        if (_currentPoint is null)
             throw new InvalidOperationException("Cannot add curve without current point. Use MoveTo first.");
 
         _segments.Add(new CurveToSegment(x1, y1, x2, y2, x3, y3));
@@ -49,7 +49,7 @@ public class PathBuilder : IPathBuilder
 
     public void ClosePath()
     {
-        if (_subpathStart == null)
+        if (_subpathStart is null)
             return;
 
         _segments.Add(new ClosePathSegment());

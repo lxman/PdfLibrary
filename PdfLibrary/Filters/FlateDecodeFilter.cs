@@ -40,7 +40,7 @@ public class FlateDecodeFilter : IStreamFilter
         byte[] decoded = outputStream.ToArray();
 
         // Apply predictor if specified in decode parameters
-        if (parameters != null && parameters.TryGetValue("Predictor", out object? predictorObj))
+        if (parameters is not null && parameters.TryGetValue("Predictor", out object? predictorObj))
         {
             if (predictorObj is int predictor and > 1)
             {

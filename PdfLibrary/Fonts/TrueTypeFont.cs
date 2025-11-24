@@ -45,7 +45,7 @@ public class TrueTypeFont : PdfFont
         }
 
         // Fallback to widths array from PDF
-        if (_widths != null && charCode >= FirstChar && charCode <= LastChar)
+        if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
@@ -57,7 +57,7 @@ public class TrueTypeFont : PdfFont
 
         // Try to get from font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
-        if (descriptor == null) return _defaultWidth > 0
+        if (descriptor is null) return _defaultWidth > 0
             ? _defaultWidth
             : 500;
         if (descriptor.MissingWidth > 0)
@@ -80,18 +80,18 @@ public class TrueTypeFont : PdfFont
         {
             // Get font descriptor
             PdfFontDescriptor? descriptor = GetDescriptor();
-            if (descriptor == null)
+            if (descriptor is null)
                 return null;
 
             // Try to get embedded TrueType data (FontFile2)
             byte[]? fontData = descriptor.GetFontFile2();
-            if (fontData == null)
+            if (fontData is null)
             {
                 // Try OpenType/CFF (FontFile3)
                 fontData = descriptor.GetFontFile3();
             }
 
-            if (fontData == null)
+            if (fontData is null)
                 return null;
 
             // Parse embedded font metrics
@@ -115,7 +115,7 @@ public class TrueTypeFont : PdfFont
         }
 
         // Resolve indirect reference
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         Encoding = obj switch
@@ -134,7 +134,7 @@ public class TrueTypeFont : PdfFont
         // Get widths array
         if (_dictionary.TryGetValue(new PdfName("Widths"), out PdfObject? obj))
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfArray widthsArray)
@@ -149,7 +149,7 @@ public class TrueTypeFont : PdfFont
 
         // Get default width from font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
-        if (descriptor != null)
+        if (descriptor is not null)
         {
             _defaultWidth = descriptor.MissingWidth > 0 ? descriptor.MissingWidth : descriptor.AvgWidth;
         }

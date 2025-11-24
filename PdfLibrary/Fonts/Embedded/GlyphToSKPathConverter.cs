@@ -19,7 +19,7 @@ public class GlyphToSKPathConverter
     /// <returns>SKPath representing the glyph shape</returns>
     public SKPath ConvertToPath(GlyphOutline outline, float fontSize, ushort unitsPerEm)
     {
-        if (outline == null)
+        if (outline is null)
             throw new ArgumentNullException(nameof(outline));
 
         if (unitsPerEm == 0)
@@ -49,7 +49,7 @@ public class GlyphToSKPathConverter
     /// <returns>SKPath representing the glyph shape</returns>
     public SKPath ConvertCffToPath(CffGlyphOutline outline, float fontSize, ushort unitsPerEm)
     {
-        if (outline == null)
+        if (outline is null)
             throw new ArgumentNullException(nameof(outline));
 
         if (unitsPerEm == 0)

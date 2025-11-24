@@ -66,14 +66,14 @@ public class PdfRenderer : PdfContentProcessor
             List<PdfStream> contents = page.GetContents();
 
             // Diagnostic: List available XObjects
-            if (resources != null)
+            if (resources is not null)
             {
                 List<string> xobjectNames = resources.GetXObjectNames();
                 PdfLogger.Log(LogCategory.PdfTool, $"XObjects available: [{string.Join(", ", xobjectNames)}]");
 
                 // Also list color spaces
                 PdfDictionary? colorSpaces = resources.GetColorSpaces();
-                if (colorSpaces != null)
+                if (colorSpaces is not null)
                 {
                     List<string> csNames = colorSpaces.Keys.Select(k => k.Value).ToList();
                     PdfLogger.Log(LogCategory.PdfTool, $"ColorSpaces available: [{string.Join(", ", csNames)}]");
@@ -82,7 +82,7 @@ public class PdfRenderer : PdfContentProcessor
                 // Diagnostic: List available fonts
                 List<string> fontNames = resources.GetFontNames();
                 PdfLogger.Log(LogCategory.PdfTool, $"Page {pageNumber} Fonts available: [{string.Join(", ", fontNames)}]");
-                PdfLogger.Log(LogCategory.PdfTool, $"Page {pageNumber} _currentResources has {(_currentResources != null ? _currentResources.GetFontNames().Count : 0)} fonts");
+                PdfLogger.Log(LogCategory.PdfTool, $"Page {pageNumber} _currentResources has {(_currentResources is not null ? _currentResources.GetFontNames().Count : 0)} fonts");
             }
 
             PdfLogger.Log(LogCategory.PdfTool, $"Processing {contents.Count} content stream(s)");
@@ -136,7 +136,7 @@ public class PdfRenderer : PdfContentProcessor
     private void RenderAnnotations(PdfPage page)
     {
         PdfArray? annotations = page.GetAnnotations();
-        if (annotations == null || annotations.Count == 0)
+        if (annotations is null || annotations.Count == 0)
             return;
 
         PdfLogger.Log(LogCategory.Graphics, $"Found {annotations.Count} annotations");
@@ -151,7 +151,7 @@ public class PdfRenderer : PdfContentProcessor
                 _ => null
             };
 
-            if (annotDict == null)
+            if (annotDict is null)
                 continue;
 
             // Get annotation rectangle
@@ -165,7 +165,7 @@ public class PdfRenderer : PdfContentProcessor
                 _ => null
             };
 
-            if (rectArray == null || rectArray.Count < 4)
+            if (rectArray is null || rectArray.Count < 4)
                 continue;
 
             double llx = GetAnnotNumber(rectArray[0]);
@@ -184,7 +184,7 @@ public class PdfRenderer : PdfContentProcessor
                 _ => null
             };
 
-            if (apDict == null)
+            if (apDict is null)
                 continue;
 
             // Get normal appearance (N)
@@ -200,7 +200,7 @@ public class PdfRenderer : PdfContentProcessor
                 _ => null
             };
 
-            if (appearanceStream == null)
+            if (appearanceStream is null)
                 continue;
 
             // Get appearance stream's BBox
@@ -451,15 +451,15 @@ public class PdfRenderer : PdfContentProcessor
 
     protected override void OnShowText(PdfString text)
     {
-        if (_currentResources == null || CurrentState.FontName == null)
+        if (_currentResources is null || CurrentState.FontName is null)
         {
-            PdfLogger.Log(LogCategory.Text, $"TEXT-SKIPPED: _currentResources={_currentResources != null}, FontName={CurrentState.FontName}");
+            PdfLogger.Log(LogCategory.Text, $"TEXT-SKIPPED: _currentResources={_currentResources is not null}, FontName={CurrentState.FontName}");
             return;
         }
 
         // Get the font
         PdfFont? font = _currentResources.GetFontObject(CurrentState.FontName);
-        if (font == null)
+        if (font is null)
         {
             PdfLogger.Log(LogCategory.Text, $"TEXT-SKIPPED: Font '{CurrentState.FontName}' not found in _currentResources (has {_currentResources.GetFontNames().Count} fonts: {string.Join(", ", _currentResources.GetFontNames())})");
             return;
@@ -565,14 +565,14 @@ public class PdfRenderer : PdfContentProcessor
         // Try to resolve named color space from resources
 
         PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
-        if (colorSpaces == null)
+        if (colorSpaces is null)
             return;
 
         if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out PdfObject? csObj))
             return;
 
         // Resolve indirect reference
-        if (csObj is PdfIndirectReference reference && _document != null)
+        if (csObj is PdfIndirectReference reference && _document is not null)
             csObj = _document.ResolveReference(reference);
 
         // Parse color space array
@@ -589,7 +589,7 @@ public class PdfRenderer : PdfContentProcessor
                 {
                     // Get the ICC profile stream
                     PdfObject? streamObj = csArray[1];
-                    if (streamObj is PdfIndirectReference streamRef && _document != null)
+                    if (streamObj is PdfIndirectReference streamRef && _document is not null)
                         streamObj = _document.ResolveReference(streamRef);
 
                     if (streamObj is not PdfStream iccStream) return;
@@ -617,7 +617,7 @@ public class PdfRenderer : PdfContentProcessor
 
                     // For now, use the alternate color space directly with the color values
                     // This is a simplification - ideally we'd process the ICC profile
-                    if (alternateSpace != null)
+                    if (alternateSpace is not null)
                     {
                         colorSpaceName = alternateSpace;
                     }
@@ -690,11 +690,11 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnShowTextWithPositioning(PdfArray array)
     {
         // TJ operator: combine all strings and adjustments into a single DrawText call
-        if (_currentResources == null || CurrentState.FontName == null)
+        if (_currentResources is null || CurrentState.FontName is null)
             return;
 
         PdfFont? font = _currentResources.GetFontObject(CurrentState.FontName);
-        if (font == null)
+        if (font is null)
         {
             PdfLogger.Log(LogCategory.Text, $"Font '{CurrentState.FontName}' NOT FOUND");
             return;
@@ -810,14 +810,14 @@ public class PdfRenderer : PdfContentProcessor
     {
         PdfLogger.Log(LogCategory.Images, $"OnInvokeXObject: {name}");
 
-        if (_currentResources == null)
+        if (_currentResources is null)
         {
             PdfLogger.Log(LogCategory.Images, "  No resources");
             return;
         }
 
         PdfStream? xobject = _currentResources.GetXObject(name);
-        if (xobject == null)
+        if (xobject is null)
         {
             PdfLogger.Log(LogCategory.Images, "  XObject not found");
             return;
@@ -900,7 +900,7 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     private bool IsOptionalContentDisabled(PdfStream xobject)
     {
-        if (_optionalContentManager == null)
+        if (_optionalContentManager is null)
         {
             // No OCG manager - render everything
             return false;

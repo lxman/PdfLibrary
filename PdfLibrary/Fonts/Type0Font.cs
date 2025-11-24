@@ -36,7 +36,7 @@ public class Type0Font : PdfFont
     public override double GetCharacterWidth(int charCode)
     {
         // Delegate to descendant font
-        if (_descendantFont != null)
+        if (_descendantFont is not null)
             return _descendantFont.GetCharacterWidth(charCode);
 
         return 1000; // CID fonts typically use 1000 as default
@@ -47,7 +47,7 @@ public class Type0Font : PdfFont
         // 3-step fallback chain for Type 0 fonts:
         // 1. Try ToUnicode CMap (standard, correct approach)
         string? unicode = ToUnicode?.Lookup(charCode);
-        if (unicode != null)
+        if (unicode is not null)
             return unicode;
 
         // 2. Try embedded font glyph name → Unicode (handles broken PDFs)
@@ -73,18 +73,18 @@ public class Type0Font : PdfFont
         {
             // Get font descriptor from descendant CIDFont or Type0 font
             PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
-            if (descriptor == null)
+            if (descriptor is null)
                 return null;
 
             // Try to get embedded TrueType data (FontFile2)
             byte[]? fontData = descriptor.GetFontFile2();
-            if (fontData == null)
+            if (fontData is null)
             {
                 // Try OpenType/CFF (FontFile3)
                 fontData = descriptor.GetFontFile3();
             }
 
-            if (fontData == null)
+            if (fontData is null)
                 return null;
 
             // Parse embedded font metrics
@@ -120,14 +120,14 @@ public class Type0Font : PdfFont
             return;
 
         // Resolve indirect reference
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         // DescendantFonts is an array with a single CIDFont
         if (obj is not PdfArray { Count: > 0 } array) return;
         PdfObject? descendantObj = array[0];
 
-        if (descendantObj is PdfIndirectReference descRef && _document != null)
+        if (descendantObj is PdfIndirectReference descRef && _document is not null)
             descendantObj = _document.ResolveReference(descRef);
 
         if (descendantObj is PdfDictionary descendantDict)
@@ -165,7 +165,7 @@ internal class CidFont : PdfFont
             return cid;
 
         // Look up in the mapping table
-        if (_cidToGidMap != null && _cidToGidMap.TryGetValue(cid, out int gid))
+        if (_cidToGidMap is not null && _cidToGidMap.TryGetValue(cid, out int gid))
             return gid;
 
         // Default: assume identity mapping
@@ -182,7 +182,7 @@ internal class CidFont : PdfFont
         }
 
         // Resolve indirect reference
-        if (mapObj is PdfIndirectReference reference && _document != null)
+        if (mapObj is PdfIndirectReference reference && _document is not null)
             mapObj = _document.ResolveReference(reference);
 
         // Check for /Identity name
@@ -234,7 +234,7 @@ internal class CidFont : PdfFont
         // Get width array (W)
         if (_dictionary.TryGetValue(new PdfName("W"), out PdfObject? wObj))
         {
-            if (wObj is PdfIndirectReference reference && _document != null)
+            if (wObj is PdfIndirectReference reference && _document is not null)
                 wObj = _document.ResolveReference(reference);
 
             if (wObj is PdfArray widthArray)
@@ -244,7 +244,7 @@ internal class CidFont : PdfFont
         }
 
         // Try to get from descriptor
-        if (_widths != null && _widths.Count != 0) return;
+        if (_widths is not null && _widths.Count != 0) return;
         PdfFontDescriptor? descriptor = GetDescriptor();
         if (descriptor is { MissingWidth: > 0 })
             _defaultWidth = descriptor.MissingWidth;

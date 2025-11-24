@@ -131,11 +131,11 @@ public class PdfPageBuilder
     // ==================== TEXT ====================
 
     /// <summary>
-    /// Add text to the page using default unit and origin (returns builder for fluent configuration)
+    /// Add text to the page using the default unit and origin (returns builder for fluent configuration)
     /// </summary>
     public PdfTextBuilder AddText(string text, double x, double y)
     {
-        // Convert using default unit and origin
+        // Convert using the default unit and origin
         double xPt = ConvertToPoints(x, isYCoordinate: false);
         double yPt = ConvertToPoints(y, isYCoordinate: true);
 
@@ -222,7 +222,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add an image using default unit and origin
+    /// Add an image using the default unit and origin
     /// </summary>
     public PdfImageBuilder AddImage(byte[] imageData, double left, double top, double width, double height)
     {
@@ -240,7 +240,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add an image with explicit unit specification
+    /// Add an image with an explicit unit specification
     /// </summary>
     public PdfImageBuilder AddImage(byte[] imageData, PdfLength left, PdfLength top, PdfLength width, PdfLength height)
     {
@@ -275,7 +275,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add an image from a file using default unit and origin
+    /// Add an image from a file using the default unit and origin
     /// </summary>
     public PdfImageBuilder AddImageFromFile(string filePath, double left, double top, double width, double height)
     {
@@ -284,7 +284,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add an image from a file with explicit unit specification
+    /// Add an image from a file with an explicit unit specification
     /// </summary>
     public PdfImageBuilder AddImageFromFile(string filePath, PdfLength left, PdfLength top, PdfLength width, PdfLength height)
     {
@@ -304,7 +304,7 @@ public class PdfPageBuilder
     // ==================== SHAPES ====================
 
     /// <summary>
-    /// Add a rectangle to the page using default unit and origin
+    /// Add a rectangle to the page using the default unit and origin
     /// </summary>
     public PdfPageBuilder AddRectangle(double left, double top, double width, double height,
         PdfColor? fillColor = null, PdfColor? strokeColor = null, double lineWidth = 1)
@@ -323,7 +323,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a rectangle to the page with explicit unit specification
+    /// Add a rectangle to the page with an explicit unit specification
     /// </summary>
     public PdfPageBuilder AddRectangle(PdfLength left, PdfLength top, PdfLength width, PdfLength height,
         PdfColor? fillColor = null, PdfColor? strokeColor = null, double lineWidth = 1)
@@ -388,7 +388,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a text field to the page using current default units/origin.
+    /// Add a text field to the page using the current default units / origin.
     /// The y coordinate represents the vertical center of the field (aligns with text baseline).
     /// </summary>
     public PdfTextFieldBuilder AddTextField(string name, double x, double y, double width, double height)
@@ -408,7 +408,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a checkbox to the page using current default units/origin.
+    /// Add a checkbox to the page using the current default units / origin.
     /// The y coordinate represents the vertical center of the checkbox (aligns with text baseline).
     /// </summary>
     public PdfCheckboxBuilder AddCheckbox(string name, double x, double y, double size)
@@ -438,7 +438,7 @@ public class PdfPageBuilder
     }
 
     /// <summary>
-    /// Add a dropdown (combo box) to the page using current default units/origin.
+    /// Add a dropdown (combo box) to the page using the current default units / origin.
     /// The y coordinate represents the vertical center of the dropdown (aligns with text baseline).
     /// </summary>
     public PdfDropdownBuilder AddDropdown(string name, double x, double y, double width, double height)
@@ -792,7 +792,7 @@ public class PdfTextBuilder
 /// </summary>
 public enum PdfImageCompression
 {
-    /// <summary>Auto-detect best compression based on image type</summary>
+    /// <summary>Auto-detect the best compression based on the image type</summary>
     Auto,
     /// <summary>JPEG/DCT compression (lossy, good for photos)</summary>
     Jpeg,

@@ -119,7 +119,7 @@ namespace PdfLibrary.Fonts.Embedded
             {
                 var parser = new TrueTypeParser(fontData);
                 byte[]? postData = parser.GetTable("post");
-                return postData != null ? new PostTable(postData) : null;
+                return postData is not null ? new PostTable(postData) : null;
             }
             catch
             {
@@ -145,7 +145,7 @@ namespace PdfLibrary.Fonts.Embedded
         public static Dictionary<int, string>? GetAllGlyphNames(byte[] fontData)
         {
             PostTable? postTable = ParsePostTable(fontData);
-            if (postTable == null)
+            if (postTable is null)
                 return null;
 
             var result = new Dictionary<int, string>();

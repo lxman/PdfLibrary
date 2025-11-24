@@ -52,7 +52,7 @@ public class Type3Font : PdfFont
     public PdfDictionary? GetCharProcs()
     {
         if (!_dictionary.TryGetValue(new PdfName("CharProcs"), out PdfObject? obj)) return null;
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -61,7 +61,7 @@ public class Type3Font : PdfFont
     public override double GetCharacterWidth(int charCode)
     {
         // Check if character code is in range
-        if (_widths == null || charCode < FirstChar || charCode > LastChar)
+        if (_widths is null || charCode < FirstChar || charCode > LastChar)
             return _defaultWidth > 0 ? _defaultWidth : 500;
         int index = charCode - FirstChar;
         if (index >= 0 && index < _widths.Length)
@@ -79,7 +79,7 @@ public class Type3Font : PdfFont
         }
 
         // Resolve indirect reference
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         Encoding = obj switch
@@ -98,7 +98,7 @@ public class Type3Font : PdfFont
         // Get widths array
         if (_dictionary.TryGetValue(new PdfName("Widths"), out PdfObject? obj))
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfArray widthsArray)

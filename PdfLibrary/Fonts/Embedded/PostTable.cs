@@ -81,7 +81,7 @@ namespace PdfLibrary.Fonts.Embedded
                 {
                     // Standard Macintosh name (0-257)
                     string? stdName = MacintoshGlyphNames.GetStandardName(nameIndex);
-                    if (stdName != null)
+                    if (stdName is not null)
                     {
                         _glyphNames[glyphId] = stdName;
                     }

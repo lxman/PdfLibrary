@@ -38,7 +38,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("Font"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -50,13 +50,13 @@ public class PdfResources
     public PdfDictionary? GetFont(string name)
     {
         PdfDictionary? fonts = GetFonts();
-        if (fonts == null)
+        if (fonts is null)
             return null;
 
         if (!fonts.TryGetValue(new PdfName(name), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -74,7 +74,7 @@ public class PdfResources
 
         // Get font dictionary
         PdfDictionary? fontDict = GetFont(name);
-        if (fontDict == null)
+        if (fontDict is null)
         {
             _fontCache[name] = null;
             return null;
@@ -98,7 +98,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("XObject"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -110,13 +110,13 @@ public class PdfResources
     public PdfStream? GetXObject(string name)
     {
         PdfDictionary? xobjects = GetXObjects();
-        if (xobjects == null)
+        if (xobjects is null)
             return null;
 
         if (!xobjects.TryGetValue(new PdfName(name), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfStream;
@@ -131,7 +131,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("ExtGState"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -146,7 +146,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -161,7 +161,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("Pattern"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -176,7 +176,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("Shading"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -202,7 +202,7 @@ public class PdfResources
         if (!_dictionary.TryGetValue(new PdfName("Properties"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -216,7 +216,7 @@ public class PdfResources
         var names = new List<string>();
         PdfDictionary? fonts = GetFonts();
 
-        if (fonts != null)
+        if (fonts is not null)
         {
             foreach (KeyValuePair<PdfName, PdfObject> kvp in fonts)
             {
@@ -235,7 +235,7 @@ public class PdfResources
         var names = new List<string>();
         PdfDictionary? xobjects = GetXObjects();
 
-        if (xobjects != null)
+        if (xobjects is not null)
         {
             foreach (KeyValuePair<PdfName, PdfObject> kvp in xobjects)
             {

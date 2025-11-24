@@ -62,7 +62,7 @@ namespace PdfLibrary.Filters.Lzw
         #region Overrides
         public override int GetHashCode()
         {
-            int result = _previous != null ? _previous.GetHashCode() : 0;
+            int result = _previous is not null ? _previous.GetHashCode() : 0;
             result = 31 * result + Length;
             result = 31 * result + Value;
             result = 31 * result + FirstChar;
@@ -80,7 +80,7 @@ namespace PdfLibrary.Filters.Lzw
             {
                 return true;
             }
-            if (other == null || other.GetType() != GetType())
+            if (other is null || other.GetType() != GetType())
             {
                 return false;
             }

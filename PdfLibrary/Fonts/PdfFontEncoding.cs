@@ -33,7 +33,7 @@ public class PdfFontEncoding
         if (_codeToName.TryGetValue(charCode, out string? charName))
         {
             string? unicodeFromName = GlyphList.GetUnicode(charName);
-            if (unicodeFromName != null)
+            if (unicodeFromName is not null)
                 return unicodeFromName;
         }
 
@@ -53,7 +53,7 @@ public class PdfFontEncoding
 
         // Also set Unicode if we can resolve it
         string? unicode = GlyphList.GetUnicode(charName);
-        if (unicode != null)
+        if (unicode is not null)
             _codeToUnicode[charCode] = unicode;
     }
 

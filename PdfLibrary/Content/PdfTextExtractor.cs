@@ -181,14 +181,14 @@ public class PdfTextExtractor : PdfContentProcessor
         PdfLogger.Log(LogCategory.Text, $"[DEBUG] OnInvokeXObject called for: {name}");
 
         // Get the XObject from resources
-        if (_resources == null)
+        if (_resources is null)
         {
             PdfLogger.Log(LogCategory.Text, "[DEBUG] No resources available");
             return;
         }
 
         PdfStream? xobject = _resources.GetXObject(name);
-        if (xobject == null)
+        if (xobject is null)
         {
             PdfLogger.Log(LogCategory.Text, $"[DEBUG] XObject '{name}' not found in resources");
             return;
@@ -309,7 +309,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     private static double CalculateTextWidth(byte[] bytes, PdfFont? font, double fontSize)
     {
-        if (font == null)
+        if (font is null)
         {
             // Fall back to rough estimate
             return bytes.Length * fontSize * 0.5;

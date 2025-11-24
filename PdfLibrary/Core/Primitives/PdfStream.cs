@@ -154,7 +154,7 @@ public sealed class PdfStream : PdfObject
     private byte[] ApplyFilter(byte[] data, string filterName, Dictionary<string, object>? decodeParams)
     {
         IStreamFilter? filter = StreamFilterFactory.CreateFilter(filterName);
-        return filter == null
+        return filter is null
             ? throw new NotSupportedException($"Unsupported filter: {filterName}")
             : filter.Decode(data, decodeParams);
     }
@@ -178,7 +178,7 @@ public sealed class PdfStream : PdfObject
                 _ => null
             };
 
-            if (value != null)
+            if (value is not null)
                 result[key] = value;
         }
 
@@ -191,7 +191,7 @@ public sealed class PdfStream : PdfObject
     public void SetEncodedData(byte[] decodedData, string filterName)
     {
         IStreamFilter? filter = StreamFilterFactory.CreateFilter(filterName);
-        if (filter == null)
+        if (filter is null)
             throw new NotSupportedException($"Unsupported filter: {filterName}");
 
         _data = filter.Encode(decodedData);

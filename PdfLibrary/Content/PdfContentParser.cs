@@ -16,7 +16,7 @@ public class PdfContentParser
     /// </summary>
     public static List<PdfOperator> Parse(byte[] contentData)
     {
-        if (contentData == null || contentData.Length == 0)
+        if (contentData.Length == 0)
             return [];
 
         using var stream = new MemoryStream(contentData);
@@ -81,7 +81,7 @@ public class PdfContentParser
                     {
                         // Parse inline image and create operator
                         InlineImageOperator? inlineImageOp = ParseInlineImage(lexer);
-                        if (inlineImageOp != null)
+                        if (inlineImageOp is not null)
                         {
                             operators.Add(inlineImageOp);
                         }
@@ -91,10 +91,10 @@ public class PdfContentParser
 
                     // This is likely an operator
                     PdfOperator? op = CreateOperator(token.Value, operands);
-                    if (op != null)
+                    switch (token.Value)
                     {
                         // Debug: trace scn/sc operators with operand types and actual values
-                        if (token.Value is "scn" or "SCN" or "sc" or "SC")
+                        case "scn" or "SCN" or "sc" or "SC":
                         {
                             string types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
                             // Also show actual numeric values
@@ -104,15 +104,18 @@ public class PdfContentParser
                                 _ => o.ToString()
                             });
                             PdfLogger.Log(LogCategory.PdfTool, $"[PARSER] {token.Value}: {operands.Count} operands -> [{types}] values=[{string.Join(", ", values)}]");
+                            break;
                         }
                         // Debug: trace Do operators
-                        if (token.Value == "Do")
+                        case "Do":
                         {
                             string types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
                             PdfLogger.Log(LogCategory.PdfTool, $"[PARSER] Do: {operands.Count} operands -> [{types}], created {op.GetType().Name}");
+                            break;
                         }
-                        operators.Add(op);
                     }
+
+                    operators.Add(op);
                     operands.Clear();
                     break;
             }
@@ -344,7 +347,7 @@ public class PdfContentParser
             {
                 currentKey = PdfName.Parse(token.Value);
             }
-            else if (currentKey != null)
+            else if (currentKey is not null)
             {
                 // Parse the value for the current key
                 PdfObject? value = token.Type switch
@@ -360,11 +363,9 @@ public class PdfContentParser
                     _ => null
                 };
 
-                if (value != null)
-                {
-                    dictionary[currentKey] = value;
-                    currentKey = null;
-                }
+                if (value is null) continue;
+                dictionary[currentKey] = value;
+                currentKey = null;
             }
         }
 
@@ -396,7 +397,7 @@ public class PdfContentParser
             // Parse key-value pairs
             if (token.Type == PdfTokenType.Name)
             {
-                if (currentKey == null)
+                if (currentKey is null)
                 {
                     currentKey = PdfName.Parse(token.Value);
                 }
@@ -406,7 +407,7 @@ public class PdfContentParser
                     currentKey = null;
                 }
             }
-            else if (currentKey != null)
+            else if (currentKey is not null)
             {
                 PdfObject? value = token.Type switch
                 {
@@ -420,11 +421,9 @@ public class PdfContentParser
                     _ => null
                 };
 
-                if (value != null)
-                {
-                    parameters[currentKey] = value;
-                    currentKey = null;
-                }
+                if (value is null) continue;
+                parameters[currentKey] = value;
+                currentKey = null;
             }
         }
 

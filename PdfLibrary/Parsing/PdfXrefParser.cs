@@ -128,7 +128,7 @@ public class PdfXrefParser
         var parser = new PdfParser(_stream);
 
         // Set up reference resolver if we have a document
-        if (_document != null)
+        if (_document is not null)
         {
             parser.SetReferenceResolver(reference => _document.GetObject(reference.ObjectNumber));
         }

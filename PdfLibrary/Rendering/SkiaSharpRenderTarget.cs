@@ -161,7 +161,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {
-        if (string.IsNullOrEmpty(text) || state.FontName == null)
+        if (string.IsNullOrEmpty(text) || state.FontName is null)
             return;
 
         _canvas.Save();
@@ -302,7 +302,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Check if the font should be rendered as bold (for synthetic bold)
             var applyBold = false;
             PdfFontDescriptor? descriptor = font.GetDescriptor();
-            if (descriptor != null)
+            if (descriptor is not null)
             {
                 // Check font flags for bold, or check the font name for "Bold"
                 bool isBoldFlag = descriptor.IsBold;
@@ -338,7 +338,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
             for (var i = 0; i < loopCount; i++)
             {
                 // Get character code - either from original PDF codes or fall back to Unicode
-                ushort charCode = charCodes != null && i < charCodes.Count
+                ushort charCode = charCodes is not null && i < charCodes.Count
                     ? (ushort)charCodes[i]
                     : text[i];
 
@@ -382,7 +382,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                 // Extract glyph outline
                 GlyphOutline? glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
-                if (glyphOutline == null)
+                if (glyphOutline is null)
                 {
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
@@ -404,7 +404,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                 // Try to get from the cache first
                 SKPath glyphPath;
-                if (GlyphPathCache.TryGetValue(cacheKey, out SKPath? cachedPath) && cachedPath != null)
+                if (GlyphPathCache.TryGetValue(cacheKey, out SKPath? cachedPath) && cachedPath is not null)
                 {
                     // Clone the cached path (we need to transform it)
                     glyphPath = new SKPath(cachedPath);
@@ -416,7 +416,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     if (embeddedMetrics.IsCffFont)
                     {
                         FontParser.Tables.Cff.GlyphOutline? cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
-                        if (cffOutline != null)
+                        if (cffOutline is not null)
                         {
                             glyphPath = _glyphConverter.ConvertCffToPath(
                                 cffOutline,
@@ -960,7 +960,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
             }
             SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor);
-            if (bitmap == null)
+            if (bitmap is null)
                 return;
 
             try
@@ -1026,7 +1026,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj))
                 {
                     // Resolve indirect reference if needed
-                    if (smaskObj is PdfIndirectReference smaskRef && _document != null)
+                    if (smaskObj is PdfIndirectReference smaskRef && _document is not null)
                         smaskObj = _document.ResolveReference(smaskRef);
 
                     if (smaskObj is PdfStream smaskStream)
@@ -1086,7 +1086,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 {
                     // Handle indexed color images
                     byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
-                    if (paletteData == null || baseColorSpace == null)
+                    if (paletteData is null || baseColorSpace is null)
                         return null;
 
                     // Use Unpremul alpha type for SMask (we set colors without premultiplying)
@@ -1125,7 +1125,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                                 // Apply SMask alpha channel if present
                                 byte alpha = 255;
-                                if (smaskData != null && pixelIndex < smaskData.Length)
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
                                 {
                                     alpha = smaskData[pixelIndex];
                                 }
@@ -1138,7 +1138,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                                 // Apply SMask alpha channel if present
                                 byte alpha = 255;
-                                if (smaskData != null && pixelIndex < smaskData.Length)
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
                                 {
                                     alpha = smaskData[pixelIndex];
                                 }
@@ -1177,7 +1177,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                             // Apply SMask alpha channel if present
                             byte alpha = 255;
-                            if (smaskData != null)
+                            if (smaskData is not null)
                             {
                                 if (pixelIndex < smaskData.Length)
                                     alpha = smaskData[pixelIndex];
@@ -1207,7 +1207,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                             // Apply SMask alpha channel if present
                             byte alpha = 255;
-                            if (smaskData != null && pixelIndex < smaskData.Length)
+                            if (smaskData is not null && pixelIndex < smaskData.Length)
                                 alpha = smaskData[pixelIndex];
 
                             bitmap.SetPixel(x, y, new SKColor(gray, gray, gray, alpha));

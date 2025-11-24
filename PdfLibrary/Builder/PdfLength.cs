@@ -50,7 +50,7 @@ public readonly struct PdfLength
     {
         // Convert pixels to points: points = pixels * (72 / dpi)
         double points = value * 72.0 / dpi;
-        return new(points, PdfUnit.Points);
+        return new PdfLength(points, PdfUnit.Points);
     }
 
     /// <summary>

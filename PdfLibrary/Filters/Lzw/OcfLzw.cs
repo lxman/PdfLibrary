@@ -118,7 +118,7 @@ namespace PdfLibrary.Filters.Lzw
                 }
                 else
                 {
-                    //if (table[lastCommand] == null)
+                    //if (table[lastCommand] is null)
                     //{
                     //    throw new Exception(String.Format("Corrupted LZW: code {0} (table size: {1})", lastCommand, table.Length));
                     //}

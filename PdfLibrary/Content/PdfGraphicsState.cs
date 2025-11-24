@@ -173,7 +173,7 @@ public class PdfGraphicsState
             LineJoin = LineJoin,
             MiterLimit = MiterLimit,
             Flatness = Flatness,
-            DashPattern = DashPattern != null ? [..DashPattern] : null,
+            DashPattern = DashPattern is not null ? [..DashPattern] : null,
             DashPhase = DashPhase,
             StrokeColorSpace = StrokeColorSpace,
             FillColorSpace = FillColorSpace,

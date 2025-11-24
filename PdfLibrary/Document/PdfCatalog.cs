@@ -42,7 +42,7 @@ public class PdfCatalog
             return null;
 
         // Resolve indirect reference if needed
-        if (pagesObj is PdfIndirectReference reference && _document != null)
+        if (pagesObj is PdfIndirectReference reference && _document is not null)
         {
             pagesObj = _document.ResolveReference(reference);
         }
@@ -86,7 +86,7 @@ public class PdfCatalog
         if (!_dictionary.TryGetValue(new PdfName("Outlines"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -100,7 +100,7 @@ public class PdfCatalog
         if (!_dictionary.TryGetValue(new PdfName("AcroForm"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;
@@ -114,7 +114,7 @@ public class PdfCatalog
         if (!_dictionary.TryGetValue(new PdfName("Metadata"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfStream;
@@ -141,7 +141,7 @@ public class PdfCatalog
         if (!_dictionary.TryGetValue(new PdfName("ViewerPreferences"), out PdfObject? obj))
             return null;
 
-        if (obj is PdfIndirectReference reference && _document != null)
+        if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
         return obj as PdfDictionary;

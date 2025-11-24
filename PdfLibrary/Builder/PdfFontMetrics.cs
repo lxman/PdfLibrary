@@ -140,7 +140,7 @@ public static class PdfFontMetrics
         500, 556, 500, 500, 500, 500, 500, 570, 500, 556, 556, 556, 556, 500, 556, 500
     ];
 
-    // Courier (monospace) - all characters same width
+    // Courier (monospace) - all characters the same width
     private static readonly int[] CourierWidths = CreateMonospaceWidths(600);
 
     private static int[] CreateMonospaceWidths(int width)

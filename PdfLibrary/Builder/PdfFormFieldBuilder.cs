@@ -189,7 +189,7 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
-    /// Use comb layout with fixed character positions
+    /// Use a comb layout with fixed character positions
     /// </summary>
     public PdfTextFieldBuilder Comb(bool comb = true)
     {
@@ -235,7 +235,7 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
-    /// Make field read-only
+    /// Make the field read-only
     /// </summary>
     public PdfTextFieldBuilder ReadOnly(bool readOnly = true)
     {
@@ -273,7 +273,7 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
-    /// Set dashed border with custom pattern
+    /// Set a dashed border with a custom pattern
     /// </summary>
     public PdfTextFieldBuilder BorderDashed(double dashLength = 3, double gapLength = 3, double width = 1)
     {
@@ -649,7 +649,7 @@ public class PdfDropdownBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
-    /// Make field read-only
+    /// Make the field read-only
     /// </summary>
     public PdfDropdownBuilder ReadOnly(bool readOnly = true)
     {
@@ -762,7 +762,7 @@ public class PdfSignatureFieldBuilder : PdfFormFieldBuilder
     }
 
     /// <summary>
-    /// Set dashed border with custom pattern
+    /// Set a dashed border with a custom pattern
     /// </summary>
     public PdfSignatureFieldBuilder BorderDashed(double dashLength = 3, double gapLength = 3, double width = 1)
     {

@@ -59,7 +59,7 @@ public readonly struct PdfRect
     }
 
     /// <summary>
-    /// Create a rectangle from inches, measuring from top-left corner of page
+    /// Create a rectangle from inches, measuring from the top-left corner of the page
     /// </summary>
     /// <param name="left">Distance from left edge in inches</param>
     /// <param name="top">Distance from top edge in inches</param>
@@ -124,16 +124,13 @@ public readonly struct PdfRect
         double heightPt = height * scale;
 
         // Convert origin if needed
-        if (origin == PdfOrigin.TopLeft)
-        {
-            // y is distance from top, convert to bottom-left coordinates
-            double topPt = pageHeight - yPt;
-            double bottomPt = topPt - heightPt;
-            return new PdfRect(xPt, bottomPt, xPt + widthPt, topPt);
-        }
+        if (origin != PdfOrigin.TopLeft) return new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
+        // y is distance from top, convert to bottom-left coordinates
+        double topPt = pageHeight - yPt;
+        double bottomPt = topPt - heightPt;
+        return new PdfRect(xPt, bottomPt, xPt + widthPt, topPt);
 
         // Already in bottom-left coordinates
-        return new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
     }
 
     /// <summary>

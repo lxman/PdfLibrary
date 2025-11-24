@@ -75,11 +75,11 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     {
         // Try ToUnicode CMap first (most reliable)
         string? unicode = ToUnicode?.Lookup(charCode);
-        if (unicode != null)
+        if (unicode is not null)
             return unicode;
 
         // Fall back to encoding
-        if (Encoding != null)
+        if (Encoding is not null)
         {
             return Encoding.DecodeCharacter(charCode);
         }
@@ -100,7 +100,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     {
         if (_dictionary.TryGetValue(new PdfName("FontDescriptor"), out PdfObject? obj))
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfDictionary descriptorDict)
@@ -148,7 +148,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     {
         if (_dictionary.TryGetValue(new PdfName("ToUnicode"), out PdfObject? obj))
         {
-            if (obj is PdfIndirectReference reference && _document != null)
+            if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
