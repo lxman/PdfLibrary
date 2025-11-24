@@ -2,7 +2,7 @@ using System.Text;
 using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using PdfLibrary.Logging;
+using Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Document;

@@ -7,7 +7,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
-using PdfLibrary.Logging;
+using Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering;

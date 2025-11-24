@@ -22,6 +22,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
+      <ProjectReference Include="..\Logging\Logging.csproj" />
     </ItemGroup>
 
 </Project>

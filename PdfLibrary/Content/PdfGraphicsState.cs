@@ -1,6 +1,6 @@
 using System.Numerics;
 using PdfLibrary.Document;
-using PdfLibrary.Logging;
+using Logging;
 
 namespace PdfLibrary.Content;
 

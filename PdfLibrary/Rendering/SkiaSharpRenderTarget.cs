@@ -6,7 +6,7 @@ using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
-using PdfLibrary.Logging;
+using Logging;
 using PdfLibrary.Structure;
 using SkiaSharp;
 
@@ -968,22 +968,14 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 PdfLogger.Log(LogCategory.Images, "DrawImage called");
                 PdfLogger.Log(LogCategory.Images, $"  Bitmap size: {bitmap.Width}x{bitmap.Height}");
 
-                // Get the current matrix (includes CTM and initial Y-flip)
-                SKMatrix oldMatrix = _canvas.TotalMatrix;
-                PdfLogger.Log(LogCategory.Images, $"  Current matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
+                var oldMatrix = _canvas.TotalMatrix;
+                PdfLogger.Log(LogCategory.Images, $"  Old matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
 
-                // Create the image flip matrix: [1, 0, 0, -1, 0, 1]
-                // This flips the image right-side up to counter the canvas Y-flip
                 var imageFlipMatrix = new SKMatrix(1, 0, 0, 0, -1, 1, 0, 0, 1);
+                PdfLogger.Log(LogCategory.Images, $"  Image flip matrix: [1, 0, 0, 0, -1, 1]");
 
-                // Combine: combinedMatrix = oldMatrix × imageFlipMatrix
-                SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
-
-                PdfLogger.Log(LogCategory.Images, "  Image flip matrix: [1, 0, 0, -1, 0, 1]");
+                var combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
                 PdfLogger.Log(LogCategory.Images, $"  Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
-
-                // Set the combined matrix
-                _canvas.SetMatrix(combinedMatrix);
 
                 using var paint = new SKPaint
                 {
@@ -991,17 +983,15 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     IsAntialias = true
                 };
 
-                // Use DrawImage with explicit source and destination rectangles
-                // This matches Melville's approach and ensures the entire bitmap is drawn into the unit square
                 using var skImage = SKImage.FromBitmap(bitmap);
                 var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
                 var destRect = new SKRect(0, 0, 1, 1);
+
+                _canvas.SetMatrix(combinedMatrix);
                 _canvas.DrawImage(skImage, sourceRect, destRect, paint);
+                _canvas.SetMatrix(oldMatrix);
 
                 PdfLogger.Log(LogCategory.Images, "  Image drawn successfully");
-
-                // Restore the old matrix
-                _canvas.SetMatrix(oldMatrix);
             }
             finally
             {

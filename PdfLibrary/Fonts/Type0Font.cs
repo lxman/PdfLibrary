@@ -2,7 +2,7 @@ using System.Diagnostics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
-using PdfLibrary.Logging;
+using Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts;

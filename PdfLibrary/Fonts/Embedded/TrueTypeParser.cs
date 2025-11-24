@@ -14,10 +14,10 @@ namespace PdfLibrary.Fonts.Embedded
 
         private class TableRecord
         {
-            public string Tag { get; set; } = string.Empty;
+            public string Tag { get; init; } = string.Empty;
             public uint Checksum { get; set; }
-            public uint Offset { get; set; }
-            public uint Length { get; set; }
+            public uint Offset { get; init; }
+            public uint Length { get; init; }
         }
 
         /// <summary>

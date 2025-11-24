@@ -1,6 +1,6 @@
 ﻿using System.IO;
 using System.Windows;
-using PdfLibrary.Logging;
+using Logging;
 using Serilog;
 
 namespace PdfTool;
@@ -61,7 +61,7 @@ public partial class App : Application
             LogGraphics = false,      // Disable graphics logging
             LogTransforms = true,     // Enable transform logging (default ON)
             LogPdfTool = false,       // Disable PdfTool app logging
-            LogMelville = false,      // Disable Melville library logging
+            LogMelville = true,       // Enable Melville library logging
             AppendToLog = false,      // Clear log on each run
             LogFilePath = pdfLibraryLogFile
         });
