@@ -139,33 +139,31 @@ public class PdfParser(PdfLexer lexer)
 
         PdfToken peek2 = PeekToken();
 
-        // Check for indirect reference (N G R)
-        if (peek2.Type == PdfTokenType.R)
+        switch (peek2.Type)
         {
-            NextToken(); // Consume R
-            return new PdfIndirectReference(objectNumber, generationNumber);
-        }
-
-        // Check for indirect object definition (N G obj)
-        if (peek2.Type == PdfTokenType.Obj)
-        {
-            NextToken(); // Consume obj
-            PdfObject? content = ReadObject();
-            ExpectToken(PdfTokenType.EndObj);
-
-            if (content is not null)
+            // Check for indirect reference (N G R)
+            case PdfTokenType.R:
+                NextToken(); // Consume R
+                return new PdfIndirectReference(objectNumber, generationNumber);
+            // Check for indirect object definition (N G obj)
+            case PdfTokenType.Obj:
             {
+                NextToken(); // Consume obj
+                PdfObject? content = ReadObject();
+                ExpectToken(PdfTokenType.EndObj);
+
+                if (content is null) return content ?? PdfNull.Instance;
                 content.IsIndirect = true;
                 content.ObjectNumber = objectNumber;
                 content.GenerationNumber = generationNumber;
+
+                return content ?? PdfNull.Instance;
             }
-
-            return content ?? PdfNull.Instance;
+            default:
+                // Otherwise, we have two integers - push back and return the first
+                PushBackToken(genToken);
+                return new PdfInteger(objectNumber);
         }
-
-        // Otherwise, we have two integers - push back and return the first
-        PushBackToken(genToken);
-        return new PdfInteger(objectNumber);
     }
 
     private static PdfString ParseString(PdfToken token)
@@ -173,24 +171,21 @@ public class PdfParser(PdfLexer lexer)
         // Check if it's a hex string (contains only hex digits)
         bool isHex = token.Value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f');
 
-        if (isHex && token.Value.Length > 0)
+        if (!isHex || token.Value.Length <= 0) return new PdfString(token.Value);
+        // Convert hex string to bytes
+        var bytes = new List<byte>();
+        for (var i = 0; i < token.Value.Length; i += 2)
         {
-            // Convert hex string to bytes
-            var bytes = new List<byte>();
-            for (var i = 0; i < token.Value.Length; i += 2)
-            {
-                string hex = i + 1 < token.Value.Length
-                    ? token.Value.Substring(i, 2)
-                    : token.Value.Substring(i, 1) + "0"; // Pad with 0 if odd length
+            string hex = i + 1 < token.Value.Length
+                ? token.Value.Substring(i, 2)
+                : string.Concat(token.Value.AsSpan(i, 1), "0"); // Pad with 0 if odd length
 
-                bytes.Add(Convert.ToByte(hex, 16));
-            }
-
-            return new PdfString(bytes.ToArray(), PdfStringFormat.Hexadecimal);
+            bytes.Add(Convert.ToByte(hex, 16));
         }
 
+        return new PdfString(bytes.ToArray(), PdfStringFormat.Hexadecimal);
+
         // Literal string
-        return new PdfString(token.Value);
     }
 
     private static PdfName ParseName(PdfToken token) =>

@@ -97,10 +97,9 @@ public class PdfTrailerParser(Stream stream)
         if (sb.Length == 0)
             throw new PdfParseException("Could not parse startxref value");
 
-        if (!long.TryParse(sb.ToString(), out long startxref))
-            throw new PdfParseException($"Invalid startxref value: {sb}");
-
-        return startxref;
+        return !long.TryParse(sb.ToString(), out long startxref)
+            ? throw new PdfParseException($"Invalid startxref value: {sb}")
+            : startxref;
     }
 
     /// <summary>
@@ -137,11 +136,9 @@ public class PdfTrailerParser(Stream stream)
         while ((b = _stream.ReadByte()) != -1)
         {
             var ch = (char)b;
-            if (!char.IsWhiteSpace(ch))
-            {
-                _stream.Position--;
-                break;
-            }
+            if (char.IsWhiteSpace(ch)) continue;
+            _stream.Position--;
+            break;
         }
     }
 
