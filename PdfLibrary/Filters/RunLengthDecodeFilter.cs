@@ -95,7 +95,7 @@ public class RunLengthDecodeFilter : IStreamFilter
                 // Copy the next length+1 bytes literally
                 int literalCount = length + 1;
 
-                // Ensure we don't read past end of data
+                // Ensure we don't read past the end of data
                 if (i + literalCount > data.Length)
                     literalCount = data.Length - i;
 

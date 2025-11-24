@@ -24,12 +24,10 @@ public class Ascii85DecodeFilter : IStreamFilter
             tuple = (tuple << 8) | b;
             count++;
 
-            if (count == 4)
-            {
-                EncodeBlock(sb, tuple, 5);
-                tuple = 0;
-                count = 0;
-            }
+            if (count != 4) continue;
+            EncodeBlock(sb, tuple, 5);
+            tuple = 0;
+            count = 0;
         }
 
         // Handle remaining bytes
@@ -73,38 +71,35 @@ public class Ascii85DecodeFilter : IStreamFilter
                     break;
             }
 
-            // Check for 'z' (shorthand for 0x00000000)
-            if (ch == 'z')
+            switch (ch)
             {
-                if (count != 0)
+                // Check for 'z' (shorthand for 0x00000000)
+                case 'z' when count != 0:
                     throw new InvalidDataException("'z' can only appear at tuple boundary");
-
-                output.Write([0, 0, 0, 0], 0, 4);
-                continue;
+                case 'z':
+                    output.Write([0, 0, 0, 0], 0, 4);
+                    continue;
+                // Valid characters are ! through u (33-117)
+                case < '!' or > 'u':
+                    throw new InvalidDataException($"Invalid ASCII85 character: {ch}");
             }
-
-            // Valid characters are ! through u (33-117)
-            if (ch is < '!' or > 'u')
-                throw new InvalidDataException($"Invalid ASCII85 character: {ch}");
 
             tuple = tuple * 85 + ((uint)ch - 33);
             count++;
 
-            if (count == 5)
-            {
-                // Output 4 bytes
-                output.WriteByte((byte)(tuple >> 24));
-                output.WriteByte((byte)(tuple >> 16));
-                output.WriteByte((byte)(tuple >> 8));
-                output.WriteByte((byte)tuple);
+            if (count != 5) continue;
+            // Output 4 bytes
+            output.WriteByte((byte)(tuple >> 24));
+            output.WriteByte((byte)(tuple >> 16));
+            output.WriteByte((byte)(tuple >> 8));
+            output.WriteByte((byte)tuple);
 
-                tuple = 0;
-                count = 0;
-            }
+            tuple = 0;
+            count = 0;
         }
 
         // Handle remaining characters
-        if (count > 0)
+        if (count <= 0) return output.ToArray();
         {
             // Add padding
             for (int i = count; i < 5; i++)

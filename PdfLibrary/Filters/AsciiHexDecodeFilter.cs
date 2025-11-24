@@ -89,12 +89,12 @@ public class AsciiHexDecodeFilter : IStreamFilter
 
     private static int HexValue(char ch)
     {
-        if (ch is >= '0' and <= '9')
-            return ch - '0';
-        if (ch is >= 'A' and <= 'F')
-            return ch - 'A' + 10;
-        if (ch is >= 'a' and <= 'f')
-            return ch - 'a' + 10;
-        throw new ArgumentException($"Invalid hex character: {ch}");
+        return ch switch
+        {
+            >= '0' and <= '9' => ch - '0',
+            >= 'A' and <= 'F' => ch - 'A' + 10,
+            >= 'a' and <= 'f' => ch - 'a' + 10,
+            _ => throw new ArgumentException($"Invalid hex character: {ch}")
+        };
     }
 }

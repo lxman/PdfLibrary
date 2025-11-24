@@ -39,13 +39,11 @@ public class FlateDecodeFilter : IStreamFilter
         zlibStream.CopyTo(outputStream);
         byte[] decoded = outputStream.ToArray();
 
-        // Apply predictor if specified in decode parameters
-        if (parameters is not null && parameters.TryGetValue("Predictor", out object? predictorObj))
+        // Apply predictor if specified in the decode parameters
+        if (parameters is null || !parameters.TryGetValue("Predictor", out object? predictorObj)) return decoded;
+        if (predictorObj is int predictor and > 1)
         {
-            if (predictorObj is int predictor and > 1)
-            {
-                decoded = ApplyPredictor(decoded, predictor, parameters);
-            }
+            decoded = ApplyPredictor(decoded, predictor, parameters);
         }
 
         return decoded;
@@ -72,19 +70,12 @@ public class FlateDecodeFilter : IStreamFilter
         int bytesPerPixel = (colors * bitsPerComponent + 7) / 8;
         int rowLength = (columns * colors * bitsPerComponent + 7) / 8;
 
-        if (predictor is >= 10 and <= 15)
+        return predictor switch
         {
-            // PNG predictors
-            return ApplyPngPredictor(data, rowLength, bytesPerPixel);
-        }
-
-        if (predictor == 2)
-        {
-            // TIFF Predictor 2
-            return ApplyTiffPredictor(data, rowLength, bytesPerPixel);
-        }
-
-        return data;
+            >= 10 and <= 15 => ApplyPngPredictor(data, rowLength, bytesPerPixel),
+            2 => ApplyTiffPredictor(data, rowLength, bytesPerPixel),
+            _ => data
+        };
     }
 
     private byte[] ApplyPngPredictor(byte[] data, int rowLength, int bytesPerPixel)
@@ -98,7 +89,7 @@ public class FlateDecodeFilter : IStreamFilter
             if (pos + rowLength + 1 > data.Length)
                 break;
 
-            // Read PNG predictor type (first byte of each row)
+            // Read the PNG predictor type (first byte of each row)
             byte predictor = data[pos++];
             var currentRow = new byte[rowLength];
 
@@ -162,8 +153,8 @@ public class FlateDecodeFilter : IStreamFilter
 
         if (pa <= pb && pa <= pc)
             return a;
-        if (pb <= pc)
-            return b;
-        return c;
+        return pb <= pc
+            ? b
+            : c;
     }
 }

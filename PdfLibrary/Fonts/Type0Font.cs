@@ -71,18 +71,14 @@ public class Type0Font : PdfFont
 
         try
         {
-            // Get font descriptor from descendant CIDFont or Type0 font
+            // Get the font descriptor from descendant CIDFont or Type0 font
             PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
             if (descriptor is null)
                 return null;
 
             // Try to get embedded TrueType data (FontFile2)
-            byte[]? fontData = descriptor.GetFontFile2();
-            if (fontData is null)
-            {
-                // Try OpenType/CFF (FontFile3)
-                fontData = descriptor.GetFontFile3();
-            }
+            // Try OpenType/CFF (FontFile3)
+            byte[]? fontData = descriptor.GetFontFile2() ?? descriptor.GetFontFile3();
 
             if (fontData is null)
                 return null;
@@ -105,7 +101,7 @@ public class Type0Font : PdfFont
     private void LoadEmbeddedFont()
     {
         // Get font descriptor from descendant CIDFont
-        // Try to get descriptor from Type0 font dict (rare but valid)
+        // Try to get the descriptor from Type0 font dict (rare but valid)
         PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
 
         if (descriptor is not null)
@@ -185,31 +181,32 @@ internal class CidFont : PdfFont
         if (mapObj is PdfIndirectReference reference && _document is not null)
             mapObj = _document.ResolveReference(reference);
 
-        // Check for /Identity name
-        if (mapObj is PdfName { Value: "Identity" })
+        switch (mapObj)
         {
-            _isIdentityMapping = true;
-            return;
-        }
-
-        // Parse stream containing the mapping
-        if (mapObj is PdfStream stream)
-        {
-            byte[] data = stream.GetDecodedData();
-            _cidToGidMap = new Dictionary<int, int>();
-
-            // Each entry is 2 bytes (big-endian GID), indexed by CID
-            for (var cid = 0; cid < data.Length / 2; cid++)
+            // Check for /Identity name
+            case PdfName { Value: "Identity" }:
+                _isIdentityMapping = true;
+                return;
+            // Parse stream containing the mapping
+            case PdfStream stream:
             {
-                int gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
-                if (gid != 0)  // Only store non-zero mappings
-                    _cidToGidMap[cid] = gid;
+                byte[] data = stream.GetDecodedData();
+                _cidToGidMap = new Dictionary<int, int>();
+
+                // Each entry is 2 bytes (big-endian GID), indexed by CID
+                for (var cid = 0; cid < data.Length / 2; cid++)
+                {
+                    int gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
+                    if (gid != 0)  // Only store non-zero mappings
+                        _cidToGidMap[cid] = gid;
+                }
+
+                break;
             }
-        }
-        else
-        {
-            // Unknown format, assume identity
-            _isIdentityMapping = true;
+            default:
+                // Unknown format, assume identity
+                _isIdentityMapping = true;
+                break;
         }
     }
 
