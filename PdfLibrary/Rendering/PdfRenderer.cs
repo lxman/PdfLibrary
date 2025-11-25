@@ -47,17 +47,18 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     /// <param name="page">The PDF page to render</param>
     /// <param name="pageNumber">1-based page number (default: 1)</param>
-    public void RenderPage(PdfPage page, int pageNumber = 1)
+    /// <param name="scale">Scale factor for rendering (1.0 = 100%, 2.0 = 200%, etc.)</param>
+    public void RenderPage(PdfPage page, int pageNumber = 1, double scale = 1.0)
     {
-        // Get page dimensions from MediaBox
+        // Get page dimensions from MediaBox (original PDF coordinates)
         PdfRectangle mediaBox = page.GetMediaBox();
         double width = mediaBox.Width;
         double height = mediaBox.Height;
 
-        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}");
+        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}, Scale={scale:F2}, OutputSize={width * scale:F0}x{height * scale:F0}");
 
-        // Begin the page lifecycle
-        _target.BeginPage(pageNumber, width, height);
+        // Begin the page lifecycle - pass scale to BeginPage so it can set up the initial transform correctly
+        _target.BeginPage(pageNumber, width, height, scale);
 
         try
         {

@@ -1,4 +1,14 @@
 <Solution>
+  <Folder Name="/Compressors/">
+    <Project Path="Compressors/Compressors.Ccitt.Tests/Compressors.Ccitt.Tests.csproj" />
+    <Project Path="Compressors/Compressors.Ccitt/Compressors.Ccitt.csproj" />
+    <Project Path="Compressors/Compressors.Jbig2.Tests/Compressors.Jbig2.Tests.csproj" />
+    <Project Path="Compressors/Compressors.Jbig2/Compressors.Jbig2.csproj" />
+    <Project Path="Compressors/Compressors.Jpeg2000.Tests/Compressors.Jpeg2000.Tests.csproj" />
+    <Project Path="Compressors/Compressors.Jpeg2000/Compressors.Jpeg2000.csproj" />
+    <Project Path="Compressors/Compressors.Lzw.Tests/Compressors.Lzw.Tests.csproj" />
+    <Project Path="Compressors/Compressors.Lzw/Compressors.Lzw.csproj" />
+  </Folder>
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Examples/PdfLibrary.Examples.csproj" />

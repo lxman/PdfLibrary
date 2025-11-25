@@ -251,7 +251,7 @@ public class EmbeddedFontMetrics
                 if (fontMatrix is not null && fontMatrix.Count >= 4 && fontMatrix[0] > 0)
                 {
                     string matrixStr = string.Join(", ", fontMatrix);
-                    ushort calculatedUnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);
+                    var calculatedUnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);
                     PdfLogger.Log(LogCategory.Text, $"[FONTMATRIX] OpenType CFF FontMatrix: [{matrixStr}], calculated UnitsPerEm: {calculatedUnitsPerEm}, head table UnitsPerEm: {UnitsPerEm}, NominalWidthX: {_cffTable.NominalWidthX}");
                 }
                 else

@@ -25,6 +25,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
     private readonly PdfDocument? _document;
     private double _pageWidth;
     private double _pageHeight;
+    private double _scale = 1.0;
     private Matrix3x2 _initialTransform = Matrix3x2.Identity;
 
     // Static glyph path cache - shared across all render targets for efficiency
@@ -72,13 +73,15 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
     // ==================== PAGE LIFECYCLE ====================
 
-    public void BeginPage(int pageNumber, double width, double height)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0)
     {
         CurrentPageNumber = pageNumber;
+        // Store the original PDF page dimensions (unscaled) for coordinate calculations
         _pageWidth = width;
         _pageHeight = height;
+        _scale = scale;
 
-        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}");
+        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}, Scale: {scale:F2}");
 
         // Clear canvas for the new page
         _canvas.Clear(SKColors.White);
@@ -86,10 +89,15 @@ public class SkiaSharpRenderTarget : IRenderTarget
         // Set up initial viewport transformation:
         // PDF coordinate system has origin at bottom-left with Y increasing upward
         // The screen coordinate system has origin at top-left with Y increasing downward
-        // So we need to flip the Y-axis
-        Matrix3x2 initialTransform = Matrix3x2.CreateScale(1, -1) * Matrix3x2.CreateTranslation(0, (float)height);
+        // So we need to flip the Y-axis AND apply the scale factor
+        //
+        // Transform order (applied right to left):
+        // 1. Scale by (scale, -scale) - scales content and flips Y
+        // 2. Translate by (0, height * scale) - moves origin to top-left of scaled output
+        Matrix3x2 initialTransform = Matrix3x2.CreateScale((float)scale, (float)-scale)
+                                   * Matrix3x2.CreateTranslation(0, (float)(height * scale));
 
-        PdfLogger.Log(LogCategory.Transforms, $"Initial viewport transform: Scale(1,-1) × Translate(0,{height})");
+        PdfLogger.Log(LogCategory.Transforms, $"Initial viewport transform: Scale({scale:F2},{-scale:F2}) × Translate(0,{height * scale:F0})");
 
         // Store this as our base transformation
         // All PDF CTM transformations will be applied on top of this
@@ -888,14 +896,14 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
         // IMPORTANT: Clipping paths are "frozen" in device coordinates when ClipPath is called.
         // The canvas matrix at the time of clipping transforms the path to device space.
-        // We need to use the same Y-flip display matrix that FillPath/StrokePath use,
+        // We need to use the same display matrix that BeginPage sets up (including scale),
         // so that the clip boundary aligns exactly with drawn content.
         //
-        // Transform the path directly to device coordinates (apply Y-flip) rather than
-        // changing the canvas matrix. This ensures the clip is in final device space
-        // and won't have any floating-point discrepancies with subsequent drawing.
-        var displayMatrix = SKMatrix.CreateScale(1, -1);
-        displayMatrix = displayMatrix.PostConcat(SKMatrix.CreateTranslation(0, (float)_pageHeight));
+        // Transform the path directly to device coordinates:
+        // 1. Scale by (scale, -scale) - scales content and flips Y (same as initial transform)
+        // 2. Translate by (0, height * scale) - moves origin to top-left of scaled output
+        var displayMatrix = SKMatrix.CreateScale((float)_scale, (float)-_scale);
+        displayMatrix = displayMatrix.PostConcat(SKMatrix.CreateTranslation(0, (float)(_pageHeight * _scale)));
         skPath.Transform(displayMatrix);
 
         // Save current canvas state, set identity, apply clip, restore
@@ -1135,7 +1143,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                             // DCTDecode returned RGB - extract just the first component (they should all be the same for grayscale)
                             PdfLogger.Log(LogCategory.Images, $"  [SMask] Converting RGB SMask to grayscale (len={rawSmaskData.Length}, expected gray={expectedGrayscaleSize})");
                             smaskData = new byte[expectedGrayscaleSize];
-                            for (int i = 0; i < expectedGrayscaleSize; i++)
+                            for (var i = 0; i < expectedGrayscaleSize; i++)
                             {
                                 // Take just the R channel (R=G=B for grayscale JPEG)
                                 smaskData[i] = rawSmaskData[i * 3];
@@ -1213,7 +1221,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                     // Build pixel buffer directly - SKBitmap.SetPixel has issues with certain alpha types
                     SKAlphaType alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
-                    byte[] pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                    var pixelBuffer = new byte[width * height * 4]; // RGBA8888
 
                     // Convert indexed pixels to RGBA
                     for (var y = 0; y < height; y++)
@@ -1447,9 +1455,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
                                 double k = imageData[offset + 3] / 255.0;
 
                                 // Convert CMYK to RGB
-                                byte r = (byte)(255 * (1 - c) * (1 - k));
-                                byte g = (byte)(255 * (1 - m) * (1 - k));
-                                byte b = (byte)(255 * (1 - yy) * (1 - k));
+                                var r = (byte)(255 * (1 - c) * (1 - k));
+                                var g = (byte)(255 * (1 - m) * (1 - k));
+                                var b = (byte)(255 * (1 - yy) * (1 - k));
 
                                 byte alpha = 255;
                                 if (smaskData is not null && pixelIndex < smaskData.Length)

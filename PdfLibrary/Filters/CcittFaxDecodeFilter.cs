@@ -1,13 +1,10 @@
-using System.Buffers;
-using Melville.CCITT;
-using Melville.Parsing.StreamFilters;
+using Compressors.Ccitt;
 
 namespace PdfLibrary.Filters;
 
 /// <summary>
 /// CCITTFaxDecode filter - CCITT Group 3/4 fax compression (ISO 32000-1:2008 section 7.4.7)
 /// Used for bi-level (black and white) images
-/// Uses Melville.CCITT for CCITT Type 3 and Type 4 decoding
 /// </summary>
 public class CcittFaxDecodeFilter : IStreamFilter
 {
@@ -28,6 +25,9 @@ public class CcittFaxDecodeFilter : IStreamFilter
     {
         ArgumentNullException.ThrowIfNull(data);
 
+        if (data.Length == 0)
+            return [];
+
         try
         {
             // CCITT decoding requires several parameters from the PDF:
@@ -36,83 +36,18 @@ public class CcittFaxDecodeFilter : IStreamFilter
             // - Rows: height of the image (optional)
             // - EncodedByteAlign: whether rows are byte-aligned
             // - BlackIs1: whether 1 bits represent black or white
+            // - EndOfLine: whether EOL markers are present
+            // - EndOfBlock: whether end-of-block marker is expected
 
-            int k = GetParameter(parameters, "K", 0);
-            int columns = GetParameter(parameters, "Columns", 1728); // Default fax width
-            int rows = GetParameter(parameters, "Rows", 0);
-            bool encodedByteAlign = GetParameter(parameters, "EncodedByteAlign", false);
-            bool blackIs1 = GetParameter(parameters, "BlackIs1", false);
+            int k = GetIntParameter(parameters, "K", 0);
+            int columns = GetIntParameter(parameters, "Columns", 1728); // Default fax width
+            int rows = GetIntParameter(parameters, "Rows", 0);
+            bool encodedByteAlign = GetBoolParameter(parameters, "EncodedByteAlign", false);
+            bool blackIs1 = GetBoolParameter(parameters, "BlackIs1", false);
+            bool endOfLine = GetBoolParameter(parameters, "EndOfLine", false);
+            bool endOfBlock = GetBoolParameter(parameters, "EndOfBlock", true);
 
-            // Create CCITT parameters for Melville decoder
-            var ccittParams = new CcittParameters(
-                k,
-                encodedByteAlign,
-                columns,
-                rows > 0 ? rows : int.MaxValue, // If rows not specified, decode until EOL
-                blackIs1,
-                true // endOfLine - PDF default
-            );
-
-            // Decode using Melville.CCITT with timeout to prevent hanging on invalid data
-            IStreamFilterDefinition decoder = CcittCodecFactory.SelectDecoder(ccittParams);
-
-            // Run decoding in a Task with timeout
-            Task<byte[]> decodeTask = Task.Run(() =>
-            {
-                var sequence = new ReadOnlySequence<byte>(data);
-                var reader = new SequenceReader<byte>(sequence);
-                var output = new List<byte>();
-                var buffer = new byte[Math.Max(decoder.MinWriteSize, 4096)];
-
-                var iterationCount = 0;
-                const int maxIterations = 100000;
-                long lastConsumed = 0;
-
-                while (!reader.End && iterationCount < maxIterations)
-                {
-                    (SequencePosition _, int bytesWritten, bool done) = decoder.Convert(ref reader, buffer);
-                    iterationCount++;
-
-                    if (bytesWritten > 0)
-                    {
-                        output.AddRange(buffer.AsSpan(0, bytesWritten).ToArray());
-                    }
-
-                    if (done)
-                        break;
-
-                    long currentConsumed = reader.Consumed;
-                    if (currentConsumed == lastConsumed && bytesWritten == 0)
-                    {
-                        break;
-                    }
-                    lastConsumed = currentConsumed;
-                }
-
-                (_, int finalBytes, _) = decoder.FinalConvert(ref reader, buffer);
-                if (finalBytes > 0)
-                {
-                    output.AddRange(buffer.AsSpan(0, finalBytes).ToArray());
-                }
-
-                return output.ToArray();
-            });
-
-            // Calculate timeout based on input size
-            // Assume minimum 100KB/sec decoding speed, with 500ms base and 10s max
-            int timeoutMs = Math.Max(500, Math.Min(10000, data.Length / 100 + 500));
-
-            if (!decodeTask.Wait(TimeSpan.FromMilliseconds(timeoutMs)))
-            {
-                throw new InvalidOperationException($"CCITT decoding timed out after {timeoutMs}ms - invalid or unsupported data format");
-            }
-
-            if (decodeTask is { IsFaulted: true, Exception: not null })
-            {
-                throw new InvalidOperationException($"CCITT decoding failed: {decodeTask.Exception.GetBaseException().Message}", decodeTask.Exception.GetBaseException());
-            }
-
-            return decodeTask.Result;
+            return Ccitt.Decompress(data, k, columns, rows, blackIs1, encodedByteAlign, endOfLine, endOfBlock);
         }
         catch (Exception ex)
         {
@@ -120,12 +55,31 @@ public class CcittFaxDecodeFilter : IStreamFilter
         }
     }
 
-    private static T GetParameter<T>(Dictionary<string, object>? parameters, string key, T defaultValue)
+    private static int GetIntParameter(Dictionary<string, object>? parameters, string key, int defaultValue)
     {
-        if (parameters?.TryGetValue(key, out object? value) == true && value is T typedValue)
+        if (parameters?.TryGetValue(key, out object? value) != true)
+            return defaultValue;
+
+        return value switch
         {
-            return typedValue;
-        }
-        return defaultValue;
+            int i => i,
+            long l => (int)l,
+            double d => (int)d,
+            _ => defaultValue
+        };
+    }
+
+    private static bool GetBoolParameter(Dictionary<string, object>? parameters, string key, bool defaultValue)
+    {
+        if (parameters?.TryGetValue(key, out object? value) != true)
+            return defaultValue;
+
+        return value switch
+        {
+            bool b => b,
+            int i => i != 0,
+            long l => l != 0,
+            _ => defaultValue
+        };
     }
 }

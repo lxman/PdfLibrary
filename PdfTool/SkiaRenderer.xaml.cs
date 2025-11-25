@@ -44,23 +44,25 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
 
     // ==================== PAGE LIFECYCLE ====================
 
-    public void BeginPage(int pageNumber, double width, double height)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0)
     {
         CurrentPageNumber = pageNumber;
-        _width = (int)Math.Ceiling(width);
-        _height = (int)Math.Ceiling(height);
+        // Calculate output dimensions (scaled)
+        _width = (int)Math.Ceiling(width * scale);
+        _height = (int)Math.Ceiling(height * scale);
 
         // Dispose previous render target
         _renderTarget?.Dispose();
         _renderedImage?.Dispose();
         _renderedImage = null;
 
-        // Create a new render target
+        // Create a new render target at the scaled size
         _renderTarget = new SkiaSharpRenderTarget(_width, _height, _document);
-        _renderTarget.BeginPage(pageNumber, width, height);
+        // Pass the original (unscaled) dimensions and scale factor
+        _renderTarget.BeginPage(pageNumber, width, height, scale);
 
-        Log.Information("BeginPage: Page {PageNumber}, Size: {Width} x {Height}",
-            pageNumber, width, height);
+        Log.Information("BeginPage: Page {PageNumber}, Size: {Width} x {Height}, Scale: {Scale:F2}",
+            pageNumber, _width, _height, scale);
     }
 
     public void EndPage()

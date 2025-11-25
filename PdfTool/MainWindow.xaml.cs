@@ -228,16 +228,12 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                PdfRectangle mediaBox = page.GetMediaBox();
-                double width = mediaBox.Width * _zoomLevel;
-                double height = mediaBox.Height * _zoomLevel;
-
                 var optionalContentManager = new OptionalContentManager(_pdfLibraryDoc);
                 var renderer = new PdfRenderer(
                     PdfLibraryRenderer, page.GetResources(), optionalContentManager, _pdfLibraryDoc);
-                renderer.RenderPage(page, _currentPage);
+                renderer.RenderPage(page, _currentPage, _zoomLevel);
 
-                Log.Information("PdfLibrary rendered page {Page}", _currentPage);
+                Log.Information("PdfLibrary rendered page {Page} at {Zoom}%", _currentPage, _zoomLevel * 100);
             });
         }
         catch (Exception ex)
@@ -616,12 +612,11 @@ public partial class MainWindow : Window
                 var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfLibraryDoc);
                 try
                 {
-                    renderTarget.BeginPage(_currentPage, mediaBox.Width * _zoomLevel, mediaBox.Height * _zoomLevel);
                     var optionalContentManager = new OptionalContentManager(_pdfLibraryDoc);
                     var renderer = new PdfRenderer(renderTarget, page.GetResources(),
                         optionalContentManager, _pdfLibraryDoc);
-                    renderer.RenderPage(page);
-                    renderTarget.EndPage();
+                    // Use RenderPage with scale parameter - it handles BeginPage/EndPage internally
+                    renderer.RenderPage(page, _currentPage, _zoomLevel);
                     renderTarget.SaveToFile(path);
                     Log.Information("Saved PdfLibrary image to {Path}", path);
                 }

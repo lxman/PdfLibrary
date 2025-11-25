@@ -15,10 +15,10 @@ public class MockRenderTarget : IRenderTarget
 
     public int CurrentPageNumber { get; private set; }
 
-    public void BeginPage(int pageNumber, double width, double height)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0)
     {
         CurrentPageNumber = pageNumber;
-        Operations.Add($"BeginPage: Page {pageNumber}, Size={width}x{height}");
+        Operations.Add($"BeginPage: Page {pageNumber}, Size={width}x{height}, Scale={scale:F2}");
     }
 
     public void EndPage()

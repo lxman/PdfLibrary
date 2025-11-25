@@ -896,15 +896,19 @@ public class StreamFilterTests
 
     #region LZWDecode Tests
 
-    [Fact]
-    public void LZWDecode_EncodeThrowsNotSupported()
-    {
-        // LZWDecodeFilter uses OcfLzw2 which is decode-only
-        var filter = new LzwDecodeFilter();
-        byte[] data = [0x00, 0x01, 0x02];
+    // Note: Comprehensive LZW codec tests are in Compressors.Lzw.Tests
+    // These tests focus on the PdfLibrary filter wrapper interface
 
-        var exception = Assert.Throws<NotSupportedException>(() => filter.Encode(data));
-        Assert.Contains("not supported", exception.Message);
+    [Fact]
+    public void LZWDecode_EncodeDecodeRoundTrip()
+    {
+        var filter = new LzwDecodeFilter();
+        byte[] original = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07];
+
+        byte[] encoded = filter.Encode(original);
+        byte[] decoded = filter.Decode(encoded);
+
+        Assert.Equal(original, decoded);
     }
 
     [Fact]
@@ -913,58 +917,24 @@ public class StreamFilterTests
         var filter = new LzwDecodeFilter();
 
         Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+        Assert.Throws<ArgumentNullException>(() => filter.Encode(null!));
     }
 
     [Fact]
-    public void LZWDecode_HandlesInvalidDataGracefully()
+    public void LZWDecode_EarlyChangeParameter()
     {
+        // Test that EarlyChange parameter is passed to the decoder
         var filter = new LzwDecodeFilter();
-        byte[] invalidData = [0x00, 0x01, 0x02, 0x03];
+        byte[] original = "Hello, LZW World!"u8.ToArray();
 
-        // OcfLzw2 is lenient and will attempt to decode any data
-        // It won't throw on invalid data but may return empty or partial results
-        byte[] result = filter.Decode(invalidData);
-        Assert.NotNull(result);
-    }
+        // Encode with default (EarlyChange=true)
+        byte[] encoded = filter.Encode(original);
 
-    [Fact]
-    public void LZWDecode_DecodesSimpleLZWData()
-    {
-        // Minimal valid LZW data: CLEAR_TABLE (256), 'A' (65), 'B' (66), EOD (257)
-        // LZW uses 9-bit codes initially
-        var filter = new LzwDecodeFilter();
+        // Decode with explicit EarlyChange=1 (true)
+        var parameters = new Dictionary<string, object> { { "EarlyChange", 1 } };
+        byte[] decoded = filter.Decode(encoded, parameters);
 
-        // This is a minimal LZW stream that OcfLzw2 can decode
-        // Format: 9-bit codes packed into bytes
-        // 256 (CLEAR), 65 ('A'), 66 ('B'), 257 (EOD)
-        byte[] lzwData =
-        [
-            0x80, 0x0B, 0x60, 0x50, 0x22, 0x0C, 0x0C, 0x85, 0x01
-        ];
-
-        // This should decode without throwing
-        byte[] decoded = filter.Decode(lzwData);
-
-        // OcfLzw2 is battle-tested, so if it decodes successfully, we trust the output
-        Assert.NotNull(decoded);
-    }
-
-    [Fact]
-    public void LZWDecode_HandleParametersGracefully()
-    {
-        // LZW can have parameters like EarlyChange, but OcfLzw2 handles them internally
-        var filter = new LzwDecodeFilter();
-        var parameters = new Dictionary<string, object>
-        {
-            { "EarlyChange", 1 }
-        };
-
-        byte[] invalidData = [0x00, 0x01, 0x02, 0x03];
-
-        // OcfLzw2 accepts parameters but handles them internally
-        // It won't throw - just attempts to decode
-        byte[] result = filter.Decode(invalidData, parameters);
-        Assert.NotNull(result);
+        Assert.Equal(original, decoded);
     }
 
     [Fact]
@@ -1035,9 +1005,8 @@ public class StreamFilterTests
 
     #region JBIG2Decode Tests
 
-    // Note: Tests with invalid JBIG2 data are skipped because the Melville.JBig2 decoder
-    // handles invalid data gracefully without throwing exceptions - it returns empty or partial
-    // results instead. The implementation works correctly with real JBIG2-encoded data from actual PDF files.
+    // Note: Comprehensive JBIG2 codec tests are in Compressors.Jbig2.Tests
+    // These tests focus on the PdfLibrary filter wrapper interface
 
     [Fact]
     public void JBIG2Decode_ThrowsOnNullData()
@@ -1045,6 +1014,7 @@ public class StreamFilterTests
         var filter = new Jbig2DecodeFilter();
 
         Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+        Assert.Throws<ArgumentNullException>(() => filter.Encode(null!));
     }
 
     [Fact]
@@ -1054,6 +1024,23 @@ public class StreamFilterTests
         byte[] data = [0x00, 0x01, 0x02];
 
         Assert.Throws<NotSupportedException>(() => filter.Encode(data));
+    }
+
+    [Fact]
+    public void JBIG2Decode_EmptyData_ReturnsEmpty()
+    {
+        var filter = new Jbig2DecodeFilter();
+
+        byte[] result = filter.Decode([]);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void JBIG2Decode_HasCorrectFilterName()
+    {
+        var filter = new Jbig2DecodeFilter();
+        Assert.Equal("JBIG2Decode", filter.Name);
     }
 
     #endregion
@@ -1091,6 +1078,9 @@ public class StreamFilterTests
 
     #region CCITTFaxDecode Tests
 
+    // Note: Comprehensive CCITT codec tests are in Compressors.Ccitt.Tests
+    // These tests focus on the PdfLibrary filter wrapper interface
+
     [Fact]
     public void CCITTFaxDecode_EncodeThrowsNotSupported()
     {
@@ -1106,11 +1096,25 @@ public class StreamFilterTests
         var filter = new CcittFaxDecodeFilter();
 
         Assert.Throws<ArgumentNullException>(() => filter.Decode(null!));
+        Assert.Throws<ArgumentNullException>(() => filter.Encode(null!));
     }
 
-    // Note: Tests with invalid CCITT data are skipped because the Melville.CCITT decoder
-    // hangs indefinitely on garbage data. The implementation works correctly with real
-    // CCITT-encoded data from actual PDF files.
+    [Fact]
+    public void CCITTFaxDecode_EmptyData_ReturnsEmpty()
+    {
+        var filter = new CcittFaxDecodeFilter();
+
+        byte[] result = filter.Decode([]);
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void CCITTFaxDecode_HasCorrectFilterName()
+    {
+        var filter = new CcittFaxDecodeFilter();
+        Assert.Equal("CCITTFaxDecode", filter.Name);
+    }
 
     #endregion
 }

@@ -1,11 +1,10 @@
-using PdfLibrary.Filters.Lzw;
+using Compressors.Lzw;
 
 namespace PdfLibrary.Filters;
 
 /// <summary>
 /// LZWDecode filter - Lempel-Ziv-Welch compression (ISO 32000-1:2008 section 7.4.4)
 /// Dictionary-based compression commonly used in TIFF and older PDF files
-/// Uses OcfLzw2 implementation (Apache 2.0 license) - tested against 10+ million real-world LZW blobs
 /// </summary>
 public class LzwDecodeFilter : IStreamFilter
 {
@@ -14,11 +13,7 @@ public class LzwDecodeFilter : IStreamFilter
     public byte[] Encode(byte[] data)
     {
         ArgumentNullException.ThrowIfNull(data);
-
-        // LZW encoding is not commonly needed for PDF reading
-        // OcfLzw2 is a decode-only implementation
-        throw new NotSupportedException(
-            "LZW encoding is not supported.");
+        return Lzw.Compress(data);
     }
 
     public byte[] Decode(byte[] data)
@@ -32,9 +27,25 @@ public class LzwDecodeFilter : IStreamFilter
 
         try
         {
-            // Use OcfLzw2 for decoding - battle-tested implementation
-            // Parameters like EarlyChange are handled internally by OcfLzw2
-            return OcfLzw2.Decode(data);
+            // Check for EarlyChange parameter (PDF default is 1/true)
+            var earlyChange = true;
+            if (parameters?.TryGetValue("EarlyChange", out object? ecValue) == true)
+            {
+                earlyChange = ecValue switch
+                {
+                    bool b => b,
+                    int i => i != 0,
+                    long l => l != 0,
+                    _ => true
+                };
+            }
+
+            var options = new LzwOptions
+            {
+                EarlyChange = earlyChange
+            };
+
+            return Lzw.Decompress(data, options);
         }
         catch (Exception ex)
         {

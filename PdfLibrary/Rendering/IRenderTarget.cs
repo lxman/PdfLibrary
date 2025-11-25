@@ -21,7 +21,8 @@ public interface IRenderTarget
     /// <param name="pageNumber">1-based page number</param>
     /// <param name="width">Page width in PDF units (1/72 inch)</param>
     /// <param name="height">Page height in PDF units (1/72 inch)</param>
-    void BeginPage(int pageNumber, double width, double height);
+    /// <param name="scale">Scale factor for rendering (1.0 = 100%)</param>
+    void BeginPage(int pageNumber, double width, double height, double scale = 1.0);
 
     /// <summary>
     /// Complete rendering of the current page.
