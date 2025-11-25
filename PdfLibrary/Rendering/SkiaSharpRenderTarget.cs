@@ -885,25 +885,18 @@ public class SkiaSharpRenderTarget : IRenderTarget
         // Set fill rule for clipping
         skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
-        // Transform the path to device coordinates
-        // Only apply Y-flip - the CTM was already applied when the path was built
-        var flipMatrix = new SKMatrix
-        {
-            ScaleX = 1,
-            SkewY = 0,
-            SkewX = 0,
-            ScaleY = -1,
-            TransX = 0,
-            TransY = (float)_pageHeight,
-            Persp0 = 0,
-            Persp1 = 0,
-            Persp2 = 1
-        };
+        // IMPORTANT: Do NOT transform the clip path manually!
+        // The canvas already has a Y-flip transform applied (from BeginPage/ApplyCtm).
+        // When we call ClipPath(), SkiaSharp applies the current canvas transform to the path.
+        // If we pre-transform the path, it gets flipped twice - once by us, once by the canvas.
+        //
+        // The clip path should be in the same coordinate space as the path building operations,
+        // which is PDF coordinates. The canvas transform will convert it to screen coordinates.
 
-        skPath.Transform(flipMatrix);
-
-        // Apply a clipping path (persists until RestoreState is called)
+        // Apply the clipping path (persists until RestoreState is called)
+        // The canvas transform will handle the Y-flip conversion
         _canvas.ClipPath(skPath, antialias: true);
+
         skPath.Dispose();
     }
 
@@ -1017,21 +1010,28 @@ public class SkiaSharpRenderTarget : IRenderTarget
             }
             SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor);
             if (bitmap is null)
+            {
+                PdfLogger.Log(LogCategory.Images, "DrawImage: CreateBitmapFromPdfImage returned null!");
                 return;
+            }
 
             try
             {
-                PdfLogger.Log(LogCategory.Images, "DrawImage called");
-                PdfLogger.Log(LogCategory.Images, $"  Bitmap size: {bitmap.Width}x{bitmap.Height}");
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: {bitmap.Width}x{bitmap.Height}");
 
                 SKMatrix oldMatrix = _canvas.TotalMatrix;
-                PdfLogger.Log(LogCategory.Images, $"  Old matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
 
+                // PDF images are drawn in a unit square from (0,0) to (1,1).
+                // The canvas already has the correct transform from ApplyCtm() which includes the Y-flip.
+                //
+                // However, PDF image data is stored with Y=0 at TOP of the image (like most image formats),
+                // while PDF coordinates have Y=0 at BOTTOM. So we need to flip the image vertically
+                // within the unit square by applying a flip matrix before drawing.
+
+                // Apply image flip: scale Y by -1 and translate by 1 to flip within unit square
                 var imageFlipMatrix = new SKMatrix(1, 0, 0, 0, -1, 1, 0, 0, 1);
-                PdfLogger.Log(LogCategory.Images, $"  Image flip matrix: [1, 0, 0, 0, -1, 1]");
-
                 SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
-                PdfLogger.Log(LogCategory.Images, $"  Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
+                _canvas.SetMatrix(combinedMatrix);
 
                 using var paint = new SKPaint
                 {
@@ -1039,12 +1039,21 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     IsAntialias = true
                 };
 
-                using SKImage? skImage = SKImage.FromBitmap(bitmap);
+                // Convert bitmap to SKImage for drawing
+                using var skImage = SKImage.FromBitmap(bitmap);
+                if (skImage == null)
+                {
+                    PdfLogger.Log(LogCategory.Images, "DrawImage: SKImage.FromBitmap returned null!");
+                    _canvas.SetMatrix(oldMatrix);
+                    return;
+                }
+
+                // Draw image into unit square
                 var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
                 var destRect = new SKRect(0, 0, 1, 1);
-
-                _canvas.SetMatrix(combinedMatrix);
                 _canvas.DrawImage(skImage, sourceRect, destRect, paint);
+
+                // Restore original matrix
                 _canvas.SetMatrix(oldMatrix);
 
                 PdfLogger.Log(LogCategory.Images, "  Image drawn successfully");
@@ -1074,11 +1083,19 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
             // Check for SMask (alpha channel / transparency)
             byte[]? smaskData = null;
-            bool hasSMask = image.HasAlpha;
+            PdfStream stream = image.Stream;
+
+            // Check if image has SMask (soft mask - actual alpha channel)
+            bool hasActualSMask = stream.Dictionary.ContainsKey(new PdfName("SMask"));
+            // Check if image has Mask (color key masking - different from SMask)
+            bool hasMask = stream.Dictionary.ContainsKey(new PdfName("Mask"));
+
+            // Only treat as having alpha if there's an actual SMask stream
+            // Mask entries are for color key masking, not soft masks
+            bool hasSMask = hasActualSMask;
             if (hasSMask)
             {
                 // Extract SMask from the image stream
-                PdfStream stream = image.Stream;
                 if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj))
                 {
                     // Resolve indirect reference if needed
@@ -1088,7 +1105,32 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     if (smaskObj is PdfStream smaskStream)
                     {
                         var smaskImage = new PdfImage(smaskStream, _document);
-                        smaskData = smaskImage.GetDecodedData();
+                        byte[] rawSmaskData = smaskImage.GetDecodedData();
+
+                        // SMask is always grayscale (1 component per pixel)
+                        // However, if DCTDecode was used, it might return RGB data (3 components per pixel)
+                        // We need to handle both cases
+                        int expectedGrayscaleSize = smaskImage.Width * smaskImage.Height;
+                        int expectedRgbSize = expectedGrayscaleSize * 3;
+
+                        if (rawSmaskData.Length == expectedRgbSize)
+                        {
+                            // DCTDecode returned RGB - extract just the first component (they should all be the same for grayscale)
+                            PdfLogger.Log(LogCategory.Images, $"  [SMask] Converting RGB SMask to grayscale (len={rawSmaskData.Length}, expected gray={expectedGrayscaleSize})");
+                            smaskData = new byte[expectedGrayscaleSize];
+                            for (int i = 0; i < expectedGrayscaleSize; i++)
+                            {
+                                // Take just the R channel (R=G=B for grayscale JPEG)
+                                smaskData[i] = rawSmaskData[i * 3];
+                            }
+                        }
+                        else
+                        {
+                            // Already grayscale or other format
+                            smaskData = rawSmaskData;
+                        }
+
+                        PdfLogger.Log(LogCategory.Images, $"  [SMask] Loaded SMask: {smaskImage.Width}x{smaskImage.Height}, dataLen={smaskData.Length}");
                     }
                 }
             }
@@ -1145,10 +1187,6 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     if (paletteData is null || baseColorSpace is null)
                         return null;
 
-                    // Use Unpremul alpha type for SMask (we set colors without premultiplying)
-                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
-
                     int componentsPerEntry = baseColorSpace switch
                     {
                         "DeviceRGB" => 3,
@@ -1156,12 +1194,15 @@ public class SkiaSharpRenderTarget : IRenderTarget
                         _ => 3
                     };
 
+                    // Build pixel buffer directly - SKBitmap.SetPixel has issues with certain alpha types
+                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
+                    byte[] pixelBuffer = new byte[width * height * 4]; // RGBA8888
+
                     // Convert indexed pixels to RGBA
                     for (var y = 0; y < height; y++)
                     {
                         for (var x = 0; x < width; x++)
                         {
-                            // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
                             int pixelIndex = y * width + x;
                             if (pixelIndex >= imageData.Length)
                                 continue;
@@ -1171,44 +1212,75 @@ public class SkiaSharpRenderTarget : IRenderTarget
                                 paletteIndex = (byte)hival;
 
                             int paletteOffset = paletteIndex * componentsPerEntry;
+                            int bufferOffset = pixelIndex * 4;
 
-                            SKColor color;
+                            byte r, g, b, alpha;
                             if (componentsPerEntry == 3 && paletteOffset + 2 < paletteData.Length)
                             {
-                                byte r = paletteData[paletteOffset];
-                                byte g = paletteData[paletteOffset + 1];
-                                byte b = paletteData[paletteOffset + 2];
+                                r = paletteData[paletteOffset];
+                                g = paletteData[paletteOffset + 1];
+                                b = paletteData[paletteOffset + 2];
 
                                 // Apply SMask alpha channel if present
-                                byte alpha = 255;
+                                alpha = 255;
                                 if (smaskData is not null && pixelIndex < smaskData.Length)
                                 {
                                     alpha = smaskData[pixelIndex];
+                                    // Premultiply RGB by alpha for Premul alpha type
+                                    if (hasSMask && alpha < 255)
+                                    {
+                                        r = (byte)((r * alpha) / 255);
+                                        g = (byte)((g * alpha) / 255);
+                                        b = (byte)((b * alpha) / 255);
+                                    }
                                 }
-
-                                color = new SKColor(r, g, b, alpha);
                             }
                             else if (componentsPerEntry == 1 && paletteOffset < paletteData.Length)
                             {
                                 byte gray = paletteData[paletteOffset];
 
                                 // Apply SMask alpha channel if present
-                                byte alpha = 255;
+                                alpha = 255;
                                 if (smaskData is not null && pixelIndex < smaskData.Length)
                                 {
                                     alpha = smaskData[pixelIndex];
+                                    // Premultiply gray by alpha for Premul alpha type
+                                    if (hasSMask && alpha < 255)
+                                    {
+                                        gray = (byte)((gray * alpha) / 255);
+                                    }
                                 }
 
-                                color = new SKColor(gray, gray, gray, alpha);
+                                r = g = b = gray;
                             }
                             else
                             {
-                                color = SKColors.Black;
+                                r = g = b = 0;
+                                alpha = 255;
                             }
 
-                            bitmap.SetPixel(x, y, color);
+                            // RGBA8888 format: R, G, B, A
+                            pixelBuffer[bufferOffset] = r;
+                            pixelBuffer[bufferOffset + 1] = g;
+                            pixelBuffer[bufferOffset + 2] = b;
+                            pixelBuffer[bufferOffset + 3] = alpha;
                         }
                     }
+
+                    // Create bitmap that owns its own memory, then copy pixels into it
+                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                    bitmap = new SKBitmap(imageInfo);
+
+                    // Get pointer to bitmap's pixel buffer and copy our data into it
+                    IntPtr bitmapPixels = bitmap.GetPixels();
+                    if (bitmapPixels == IntPtr.Zero)
+                        return null;
+
+                    // Copy pixel data directly into bitmap's memory
+                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+
+                    // CRITICAL: Notify SkiaSharp that we modified the pixels externally
+                    bitmap.NotifyPixelsChanged();
 
                     break;
                 }
@@ -1272,6 +1344,112 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
                     break;
                 }
+                case "ICCBased" when bitsPerComponent == 8:
+                {
+                    // ICCBased images: determine component count from the ICC profile stream
+                    int numComponents = GetIccBasedComponentCount(image);
+                    int expectedSize3 = width * height * 3;
+                    PdfLogger.Log(LogCategory.Images, $"  [ICCBased] Processing with {numComponents} components, dataLen={imageData.Length}, expected3={expectedSize3}");
+
+                    // Log first few bytes for debugging
+                    if (imageData.Length >= 12)
+                    {
+                        PdfLogger.Log(LogCategory.Images, $"  [ICCBased] First 12 bytes: {imageData[0]:X2} {imageData[1]:X2} {imageData[2]:X2} {imageData[3]:X2} {imageData[4]:X2} {imageData[5]:X2} {imageData[6]:X2} {imageData[7]:X2} {imageData[8]:X2} {imageData[9]:X2} {imageData[10]:X2} {imageData[11]:X2}");
+                    }
+
+                    if (numComponents == 3)
+                    {
+                        // Treat as RGB
+                        SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                        bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
+                        int expectedSize = width * height * 3;
+                        if (imageData.Length < expectedSize)
+                            return null;
+
+                        for (var y = 0; y < height; y++)
+                        {
+                            for (var x = 0; x < width; x++)
+                            {
+                                int pixelIndex = y * width + x;
+                                int offset = pixelIndex * 3;
+                                byte r = imageData[offset];
+                                byte g = imageData[offset + 1];
+                                byte b = imageData[offset + 2];
+
+                                byte alpha = 255;
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
+                                    alpha = smaskData[pixelIndex];
+
+                                bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
+                            }
+                        }
+                    }
+                    else if (numComponents == 1)
+                    {
+                        // Treat as grayscale
+                        SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                        bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
+                        int expectedSize = width * height;
+                        if (imageData.Length < expectedSize)
+                            return null;
+
+                        for (var y = 0; y < height; y++)
+                        {
+                            for (var x = 0; x < width; x++)
+                            {
+                                int pixelIndex = y * width + x;
+                                byte gray = imageData[pixelIndex];
+
+                                byte alpha = 255;
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
+                                    alpha = smaskData[pixelIndex];
+
+                                bitmap.SetPixel(x, y, new SKColor(gray, gray, gray, alpha));
+                            }
+                        }
+                    }
+                    else if (numComponents == 4)
+                    {
+                        // Treat as CMYK - convert to RGB
+                        SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                        bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
+                        int expectedSize = width * height * 4;
+                        if (imageData.Length < expectedSize)
+                            return null;
+
+                        for (var y = 0; y < height; y++)
+                        {
+                            for (var x = 0; x < width; x++)
+                            {
+                                int pixelIndex = y * width + x;
+                                int offset = pixelIndex * 4;
+                                // CMYK values are in range 0-255
+                                double c = imageData[offset] / 255.0;
+                                double m = imageData[offset + 1] / 255.0;
+                                double yy = imageData[offset + 2] / 255.0;
+                                double k = imageData[offset + 3] / 255.0;
+
+                                // Convert CMYK to RGB
+                                byte r = (byte)(255 * (1 - c) * (1 - k));
+                                byte g = (byte)(255 * (1 - m) * (1 - k));
+                                byte b = (byte)(255 * (1 - yy) * (1 - k));
+
+                                byte alpha = 255;
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
+                                    alpha = smaskData[pixelIndex];
+
+                                bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Unknown component count
+                        return null;
+                    }
+
+                    break;
+                }
                 default:
                     // Unsupported color space/bits per component combination
                     return null;
@@ -1282,6 +1460,45 @@ public class SkiaSharpRenderTarget : IRenderTarget
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of components for an ICCBased colorspace image
+    /// </summary>
+    private int GetIccBasedComponentCount(PdfImage image)
+    {
+        try
+        {
+            // Get the ColorSpace array from the image stream
+            if (!image.Stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? csObj))
+                return 3; // Default to RGB
+
+            // Resolve indirect reference
+            if (csObj is PdfIndirectReference reference && _document is not null)
+                csObj = _document.ResolveReference(reference);
+
+            // ICCBased colorspace is an array: [/ICCBased stream]
+            if (csObj is not PdfArray { Count: >= 2 } csArray)
+                return 3;
+
+            // Get the ICC profile stream (index 1)
+            PdfObject? streamObj = csArray[1];
+            if (streamObj is PdfIndirectReference streamRef && _document is not null)
+                streamObj = _document.ResolveReference(streamRef);
+
+            if (streamObj is not PdfStream iccStream)
+                return 3;
+
+            // Get /N (number of components) from the ICC profile stream dictionary
+            if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject? nObj) && nObj is PdfInteger nInt)
+                return nInt.Value;
+
+            return 3; // Default to RGB if /N not found
+        }
+        catch
+        {
+            return 3; // Default to RGB on error
         }
     }
 

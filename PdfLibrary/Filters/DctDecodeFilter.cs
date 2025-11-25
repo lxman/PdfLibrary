@@ -31,27 +31,15 @@ public class DctDecodeFilter : IStreamFilter
 
         try
         {
-            // Load JPEG data using ImageSharp
-            using Image<Rgb24> image = Image.Load<Rgb24>(data);
+            // Load JPEG data using ImageSharp - use generic Image.Load to preserve original format
+            using Image image = Image.Load(data);
 
             // Convert to raw RGB byte array
-            var pixels = new byte[image.Width * image.Height * 3];
+            // First convert to Rgb24 format, then extract pixels
+            using Image<Rgb24> rgbImage = image.CloneAs<Rgb24>();
 
-            image.ProcessPixelRows(accessor =>
-            {
-                var offset = 0;
-                for (var y = 0; y < accessor.Height; y++)
-                {
-                    Span<Rgb24> row = accessor.GetRowSpan(y);
-                    for (var x = 0; x < accessor.Width; x++)
-                    {
-                        Rgb24 pixel = row[x];
-                        pixels[offset++] = pixel.R;
-                        pixels[offset++] = pixel.G;
-                        pixels[offset++] = pixel.B;
-                    }
-                }
-            });
+            var pixels = new byte[rgbImage.Width * rgbImage.Height * 3];
+            rgbImage.CopyPixelDataTo(pixels);
 
             return pixels;
         }
