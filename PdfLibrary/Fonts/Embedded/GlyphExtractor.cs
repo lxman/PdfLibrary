@@ -3,6 +3,7 @@ using FontParser.Tables.Hhea;
 using FontParser.Tables.Hmtx;
 using FontParser.Tables.TtTables;
 using FontParser.Tables.TtTables.Glyf;
+using Logging;
 
 namespace PdfLibrary.Fonts.Embedded
 {
@@ -84,10 +85,17 @@ namespace PdfLibrary.Fonts.Embedded
             // Get glyph data from glyf table
             GlyphData? glyphData = _glyfTable.GetGlyphData(glyphId);
 
-            // Get metrics from hmtx table
+            // Get metrics
             GlyphMetrics metrics = GetMetrics(glyphId);
 
-            // Handle empty glyphs (space, etc.)
+            // Log metrics for em dash glyph
+            if (glyphId == 1165)
+            {
+                PdfLogger.Log(LogCategory.Text,
+                    $"[GLYPH-1165] GlyphId={glyphId} Metrics: {metrics}");
+            }
+
+            // Handle empty glyph (no outline data)
             if (glyphData is null)
             {
                 return new GlyphOutline(
@@ -99,14 +107,11 @@ namespace PdfLibrary.Fonts.Embedded
             }
 
             // Check if composite or simple glyph
-            if (glyphData.Header.NumberOfContours < 0)
-            {
+            return glyphData.Header.NumberOfContours < 0
                 // Composite glyph - references other glyphs
-                return ExtractCompositeGlyph(glyphId, glyphData, metrics);
-            }
-
-            // Simple glyph - has direct contour data
-            return ExtractSimpleGlyph(glyphId, glyphData, metrics);
+                ? ExtractCompositeGlyph(glyphId, glyphData, metrics)
+                // Simple glyph - has direct contour data
+                : ExtractSimpleGlyph(glyphId, glyphData, metrics);
         }
 
         /// <summary>

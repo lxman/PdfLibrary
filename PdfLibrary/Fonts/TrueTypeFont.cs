@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;

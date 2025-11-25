@@ -45,6 +45,18 @@ namespace FontParser.Tables.Cff.Type1
         /// </summary>
         public int NominalWidthX { get; private set; }
 
+        /// <summary>
+        /// Font matrix from CFF Top DICT
+        /// </summary>
+        public List<double>? FontMatrix
+        {
+            get
+            {
+                var entry = _topDictOperatorEntries.FirstOrDefault(e => e.Name == "FontMatrix");
+                return entry?.Operand as List<double>;
+            }
+        }
+
         private readonly Type1TopDictOperatorEntries _type1TopDictOperatorEntries =
             new Type1TopDictOperatorEntries(new Dictionary<ushort, CffDictEntry?>());
 

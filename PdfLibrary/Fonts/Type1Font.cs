@@ -1,3 +1,4 @@
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
@@ -27,12 +28,70 @@ public class Type1Font : PdfFont
 
     public override double GetCharacterWidth(int charCode)
     {
-        // Check if character code is in range
+        // Try to use embedded font metrics first for more accurate widths
+        // This matches TrueTypeFont behavior and fixes garbled text issues
+        // when the PDF /Widths array has incorrect values
+        EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: embeddedMetrics={(embeddedMetrics != null ? "exists" : "NULL")}, IsValid={embeddedMetrics?.IsValid}, Encoding={(Encoding != null ? "exists" : "NULL")}");
+
+        if (embeddedMetrics is { IsValid: true })
+        {
+            // For Type1 fonts with custom encodings, we must map through the encoding first
+            // Character codes (e.g., 18-31) -> Glyph names (e.g., "T", "e", "c") -> Glyph IDs -> Widths
+            string? glyphName = Encoding?.GetGlyphName(charCode);
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphName='{glyphName}'");
+
+            if (!string.IsNullOrEmpty(glyphName))
+            {
+                ushort glyphId = embeddedMetrics.GetGlyphIdByName(glyphName);
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphId={glyphId}");
+
+                if (glyphId > 0)
+                {
+                    ushort glyphWidth = embeddedMetrics.GetAdvanceWidth(glyphId);
+                    PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphWidth={glyphWidth}");
+
+                    if (glyphWidth > 0)
+                    {
+                        // For CFF fonts: if glyph width equals nominalWidthX, the glyph doesn't specify
+                        // its own width and is using the default. In this case, prefer PDF /Widths array.
+                        if (embeddedMetrics.IsCffFont)
+                        {
+                            int nominalWidthX = embeddedMetrics.GetNominalWidthX();
+                            if (glyphWidth == nominalWidthX)
+                            {
+                                PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: CFF glyph width equals nominalWidthX ({nominalWidthX}), trying PDF widths array");
+                                // Fall through to PDF widths array check below
+                            }
+                            else
+                            {
+                                // Glyph has explicit width, use it
+                                double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} glyphName='{glyphName}' glyphId={glyphId} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
+                                return scaledWidth;
+                            }
+                        }
+                        else
+                        {
+                            // Non-CFF fonts: always use embedded width
+                            double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                            PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} glyphName='{glyphName}' glyphId={glyphId} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
+                            return scaledWidth;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to widths array from PDF
         if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
+            {
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
                 return _widths[index];
+            }
         }
 
         // For standard 14 fonts, use built-in metrics
@@ -40,7 +99,7 @@ public class Type1Font : PdfFont
         if (standardWidth.HasValue)
             return standardWidth.Value;
 
-        // Try to get from font descriptor
+        // Try to get from the font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
         if (descriptor is null) return _defaultWidth > 0
             ? _defaultWidth
@@ -64,25 +123,16 @@ public class Type1Font : PdfFont
         if (string.IsNullOrEmpty(BaseFont))
             return null;
 
-        // Standard 14 fonts have built-in metrics
-        // Helvetica widths for WinAnsi encoding (most common)
-        if (BaseFont is "Helvetica" or "Helvetica-Bold" or "Helvetica-Oblique" or "Helvetica-BoldOblique")
+        return BaseFont switch
         {
-            return GetHelveticaWidth(charCode);
-        }
-
-        if (BaseFont is "Times-Roman" or "Times-Bold" or "Times-Italic" or "Times-BoldItalic")
-        {
-            return GetTimesRomanWidth(charCode);
-        }
-
-        if (BaseFont is "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique")
-        {
-            // Courier is monospaced
-            return 600;
-        }
-
-        return null;
+            // Standard 14 fonts have built-in metrics
+            // Helvetica widths for WinAnsi encoding (most common)
+            "Helvetica" or "Helvetica-Bold" or "Helvetica-Oblique" or "Helvetica-BoldOblique" => GetHelveticaWidth(
+                charCode),
+            "Times-Roman" or "Times-Bold" or "Times-Italic" or "Times-BoldItalic" => GetTimesRomanWidth(charCode),
+            "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
+            _ => null
+        };
     }
 
     /// <summary>
@@ -343,7 +393,7 @@ public class Type1Font : PdfFont
     {
         if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
         {
-            // Use standard encoding based on font name
+            // Use standard encoding based on the font name
             Encoding = GetStandardEncoding(BaseFont);
             return;
         }
@@ -397,14 +447,10 @@ public class Type1Font : PdfFont
     private static PdfFontEncoding GetStandardEncoding(string baseFontName)
     {
         // Standard 14 fonts use specific encodings
-        if (IsStandard14Font(baseFontName))
-        {
-            if (baseFontName.Contains("Symbol") || baseFontName.Contains("ZapfDingbats"))
-                return PdfFontEncoding.GetStandardEncoding("SymbolEncoding");
-            return PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
-        }
-
-        return PdfFontEncoding.GetStandardEncoding("StandardEncoding");
+        if (!IsStandard14Font(baseFontName)) return PdfFontEncoding.GetStandardEncoding("StandardEncoding");
+        if (baseFontName.Contains("Symbol") || baseFontName.Contains("ZapfDingbats"))
+            return PdfFontEncoding.GetStandardEncoding("SymbolEncoding");
+        return PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
     }
 
     private static double GetStandardWidth(string baseFontName)
@@ -412,11 +458,11 @@ public class Type1Font : PdfFont
         // Approximate widths for standard 14 fonts
         return baseFontName switch
         {
-            var name when name.Contains("Courier") => 600, // Courier is monospace
-            var name when name.Contains("Helvetica") => 556,
-            var name when name.Contains("Times") => 500,
-            var name when name.Contains("Symbol") => 600,
-            var name when name.Contains("ZapfDingbats") => 600,
+            _ when baseFontName.Contains("Courier") => 600, // Courier is monospace
+            _ when baseFontName.Contains("Helvetica") => 556,
+            _ when baseFontName.Contains("Times") => 500,
+            _ when baseFontName.Contains("Symbol") => 600,
+            _ when baseFontName.Contains("ZapfDingbats") => 600,
             _ => 500
         };
     }

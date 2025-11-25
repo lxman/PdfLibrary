@@ -10,7 +10,6 @@ using FontParser.Tables.Bitmap.Ebdt;
 using FontParser.Tables.Bitmap.Eblc;
 using FontParser.Tables.Cff.Type1;
 using FontParser.Tables.Cff.Type2;
-using FontParser.Tables.Cmap;
 using FontParser.Tables.Cvar;
 using FontParser.Tables.Fvar;
 using FontParser.Tables.Head;

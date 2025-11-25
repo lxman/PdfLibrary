@@ -375,6 +375,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 if (glyphId == 0)
                 {
                     // Glyph not found, skip this character
+                    PdfLogger.Log(LogCategory.Text, $"[SKIP] charCode={charCode} ('{displayChar}') -> glyphId=0 (not found), font={font.BaseFont}");
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
                     continue;
@@ -384,6 +385,60 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 GlyphOutline? glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
                 if (glyphOutline is null)
                 {
+                    // Check if this glyph has metrics (advance width > 0) but no outline
+                    // This happens in subset fonts where the glyph outline was stripped
+                    float glyphWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
+                    ushort advanceWidth = embeddedMetrics.GetAdvanceWidth(glyphId);
+
+                    // If this looks like an em dash (charCode 151) or similar punctuation with width,
+                    // draw a fallback rectangle
+                    if (charCode == 151 && glyphWidth > 0.1f) // Em dash
+                    {
+                        PdfLogger.Log(LogCategory.Text, $"[FALLBACK-EMDASH] charCode={charCode} glyphId={glyphId} width={glyphWidth:F2} advanceWidth={advanceWidth} font={font.BaseFont}");
+
+                        // Draw em dash as a horizontal line/rectangle
+                        // Em dash is typically at about 40% of the em height, with height about 5-8% of em
+                        float emDashY = (float)state.FontSize * 0.35f;  // Position at ~35% up from baseline
+                        float emDashHeight = (float)state.FontSize * 0.06f;  // ~6% of font size
+                        float emDashWidth = glyphWidth * (float)state.FontSize;  // Full width scaled by font size
+
+                        // Create rectangle path for em dash
+                        using var emDashPath = new SKPath();
+                        // Note: Y is negative because glyph coordinates are Y-up but we flip
+                        emDashPath.AddRect(new SKRect(0, -emDashY - emDashHeight, emDashWidth, -emDashY));
+
+                        // Apply glyph transformation
+                        var emDashTRise = (float)state.TextRise;
+                        var emDashTextStateMatrix = new Matrix3x2(
+                            tHs, 0,
+                            0, 1,
+                            0, emDashTRise
+                        );
+                        Matrix3x2 emDashGlyphMatrix = emDashTextStateMatrix * state.TextMatrix;
+                        var emDashTranslationMatrix = Matrix3x2.CreateTranslation((float)currentX, 0);
+                        Matrix3x2 emDashFullMatrix = emDashTranslationMatrix * emDashGlyphMatrix;
+
+                        var emDashMatrix = new SKMatrix
+                        {
+                            ScaleX = emDashFullMatrix.M11,
+                            SkewX = emDashFullMatrix.M21,
+                            TransX = emDashFullMatrix.M31,
+                            SkewY = emDashFullMatrix.M12,
+                            ScaleY = -emDashFullMatrix.M22,  // Flip Y
+                            TransY = emDashFullMatrix.M32,
+                            Persp0 = 0,
+                            Persp1 = 0,
+                            Persp2 = 1
+                        };
+
+                        emDashPath.Transform(emDashMatrix);
+                        _canvas.DrawPath(emDashPath, paint);
+                    }
+                    else
+                    {
+                        PdfLogger.Log(LogCategory.Text, $"[SKIP-NULL] charCode={charCode} ('{displayChar}') -> glyphId={glyphId} outline is NULL, font={font.BaseFont}");
+                    }
+
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
                     continue;
@@ -392,6 +447,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 if (glyphOutline.IsEmpty)
                 {
                     // Empty glyph (e.g., space), just advance
+                    PdfLogger.Log(LogCategory.Text, $"[SKIP-EMPTY] charCode={charCode} ('{displayChar}') -> glyphId={glyphId} outline is EMPTY, font={font.BaseFont}");
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
                     continue;
@@ -968,13 +1024,13 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 PdfLogger.Log(LogCategory.Images, "DrawImage called");
                 PdfLogger.Log(LogCategory.Images, $"  Bitmap size: {bitmap.Width}x{bitmap.Height}");
 
-                var oldMatrix = _canvas.TotalMatrix;
+                SKMatrix oldMatrix = _canvas.TotalMatrix;
                 PdfLogger.Log(LogCategory.Images, $"  Old matrix: [{oldMatrix.ScaleX:F4}, {oldMatrix.SkewY:F4}, {oldMatrix.SkewX:F4}, {oldMatrix.ScaleY:F4}, {oldMatrix.TransX:F4}, {oldMatrix.TransY:F4}]");
 
                 var imageFlipMatrix = new SKMatrix(1, 0, 0, 0, -1, 1, 0, 0, 1);
                 PdfLogger.Log(LogCategory.Images, $"  Image flip matrix: [1, 0, 0, 0, -1, 1]");
 
-                var combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
+                SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
                 PdfLogger.Log(LogCategory.Images, $"  Combined matrix: [{combinedMatrix.ScaleX:F4}, {combinedMatrix.SkewY:F4}, {combinedMatrix.SkewX:F4}, {combinedMatrix.ScaleY:F4}, {combinedMatrix.TransX:F4}, {combinedMatrix.TransY:F4}]");
 
                 using var paint = new SKPaint
@@ -983,7 +1039,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     IsAntialias = true
                 };
 
-                using var skImage = SKImage.FromBitmap(bitmap);
+                using SKImage? skImage = SKImage.FromBitmap(bitmap);
                 var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
                 var destRect = new SKRect(0, 0, 1, 1);
 
