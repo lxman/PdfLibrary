@@ -223,11 +223,14 @@ public class PdfRendererTests
 
         renderer.ProcessOperators(operators);
 
-        Assert.Equal(4, mock.Operations.Count);
-        Assert.Contains("depth=1", mock.Operations[0]);
-        Assert.Contains("depth=2", mock.Operations[1]);
-        Assert.Contains("depth=2", mock.Operations[2]);
-        Assert.Contains("depth=1", mock.Operations[3]);
+        // Expect 6 operations: 2 saves, 2 restores, 2 ApplyCtm (after each restore)
+        Assert.Equal(6, mock.Operations.Count);
+        Assert.Contains("depth=1", mock.Operations[0]); // SaveState
+        Assert.Contains("depth=2", mock.Operations[1]); // SaveState
+        Assert.Contains("depth=2", mock.Operations[2]); // RestoreState
+        Assert.Contains("ApplyCtm", mock.Operations[3]); // CTM restored after Q
+        Assert.Contains("depth=1", mock.Operations[4]); // RestoreState
+        Assert.Contains("ApplyCtm", mock.Operations[5]); // CTM restored after Q
     }
 
     [Fact]

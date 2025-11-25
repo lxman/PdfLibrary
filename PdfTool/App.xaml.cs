@@ -57,8 +57,8 @@ public partial class App : Application
         PdfLogger.Initialize(new PdfLogConfiguration
         {
             LogImages = true,         // Enable image logging for debugging
-            LogText = true,           // Disable text logging
-            LogGraphics = false,      // Disable graphics logging
+            LogText = false,           // Disable text logging
+            LogGraphics = true,       // Enable graphics logging for debugging
             LogTransforms = true,     // Enable transform logging (default ON)
             LogPdfTool = false,       // Disable PdfTool app logging
             LogMelville = true,       // Enable Melville library logging

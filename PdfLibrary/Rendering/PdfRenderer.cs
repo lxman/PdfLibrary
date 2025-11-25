@@ -414,6 +414,14 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnStroke()
     {
         if (_currentPath.IsEmpty) return;
+
+        // Apply clipping first if pending (W S or W* S sequence)
+        if (PendingClip)
+        {
+            _target.SetClippingPath(_currentPath, CurrentState, PendingClipEvenOdd);
+            ClearPendingClip();
+        }
+
         List<double> color = CurrentState.StrokeColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH STROKE: ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
@@ -424,6 +432,14 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnFill(bool evenOdd)
     {
         if (_currentPath.IsEmpty) return;
+
+        // Apply clipping first if pending (W f or W* f* sequence)
+        if (PendingClip)
+        {
+            _target.SetClippingPath(_currentPath, CurrentState, PendingClipEvenOdd);
+            ClearPendingClip();
+        }
+
         List<double> color = CurrentState.FillColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace}, Color=[{colorStr}], PathEmpty={_currentPath.IsEmpty}");
@@ -434,16 +450,29 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnFillAndStroke()
     {
         if (_currentPath.IsEmpty) return;
+
+        // Apply clipping first if pending (W B or W* B* sequence)
+        if (PendingClip)
+        {
+            _target.SetClippingPath(_currentPath, CurrentState, PendingClipEvenOdd);
+            ClearPendingClip();
+        }
+
         _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);
         _currentPath.Clear();
     }
 
     protected override void OnEndPath()
     {
-        // End path without painting (used for clipping)
-        if (_currentPath.IsEmpty) return;
-        _target.SetClippingPath(_currentPath, CurrentState, evenOdd: false);
+        // End path without painting
+        // Only set clipping path if W or W* operator was encountered before this
+        if (!_currentPath.IsEmpty && PendingClip)
+        {
+            _target.SetClippingPath(_currentPath, CurrentState, PendingClipEvenOdd);
+        }
+
         _currentPath.Clear();
+        ClearPendingClip();
     }
 
     // ==================== Text Rendering ====================

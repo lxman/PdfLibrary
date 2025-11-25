@@ -879,23 +879,35 @@ public class SkiaSharpRenderTarget : IRenderTarget
         if (path.IsEmpty)
             return;
 
-        // Convert IPathBuilder to SKPath in PDF coordinates
+        // Convert IPathBuilder to SKPath
+        // The path coordinates are ALREADY transformed by CTM during construction (same as fill/stroke paths)
         SKPath skPath = ConvertToSkPath(path);
 
         // Set fill rule for clipping
         skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
-        // IMPORTANT: Do NOT transform the clip path manually!
-        // The canvas already has a Y-flip transform applied (from BeginPage/ApplyCtm).
-        // When we call ClipPath(), SkiaSharp applies the current canvas transform to the path.
-        // If we pre-transform the path, it gets flipped twice - once by us, once by the canvas.
+        // IMPORTANT: Clipping paths are "frozen" in device coordinates when ClipPath is called.
+        // The canvas matrix at the time of clipping transforms the path to device space.
+        // We need to use the same Y-flip display matrix that FillPath/StrokePath use,
+        // so that the clip boundary aligns exactly with drawn content.
         //
-        // The clip path should be in the same coordinate space as the path building operations,
-        // which is PDF coordinates. The canvas transform will convert it to screen coordinates.
+        // Transform the path directly to device coordinates (apply Y-flip) rather than
+        // changing the canvas matrix. This ensures the clip is in final device space
+        // and won't have any floating-point discrepancies with subsequent drawing.
+        var displayMatrix = SKMatrix.CreateScale(1, -1);
+        displayMatrix = displayMatrix.PostConcat(SKMatrix.CreateTranslation(0, (float)_pageHeight));
+        skPath.Transform(displayMatrix);
 
-        // Apply the clipping path (persists until RestoreState is called)
-        // The canvas transform will handle the Y-flip conversion
-        _canvas.ClipPath(skPath, antialias: true);
+        // Save current canvas state, set identity, apply clip, restore
+        // This ensures the clip path (now in device coords) is applied without further transformation
+        SKMatrix currentMatrix = _canvas.TotalMatrix;
+        _canvas.SetMatrix(SKMatrix.Identity);
+
+        // Apply the clipping path with anti-aliasing disabled to get sharp clip edges
+        _canvas.ClipPath(skPath, SKClipOperation.Intersect, antialias: false);
+
+        // Restore canvas matrix for subsequent drawing operations
+        _canvas.SetMatrix(currentMatrix);
 
         skPath.Dispose();
     }
@@ -1033,10 +1045,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
                 _canvas.SetMatrix(combinedMatrix);
 
+                // Use None (nearest neighbor) filter quality to avoid any blending at tile boundaries.
+                // Sub-pixel blending from Medium/High filters can cause visible seams between adjacent images.
                 using var paint = new SKPaint
                 {
-                    FilterQuality = SKFilterQuality.High,
-                    IsAntialias = true
+                    FilterQuality = SKFilterQuality.None,
+                    IsAntialias = false
                 };
 
                 // Convert bitmap to SKImage for drawing
@@ -1048,9 +1062,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     return;
                 }
 
-                // Draw image into unit square
+                // Draw image into unit square with a tiny expansion to cover sub-pixel gaps
+                // Some PDFs have tiled images with fractional pixel gaps due to coordinate rounding.
+                // A small expansion (0.001 in unit space) prevents visible seams without affecting quality.
                 var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
-                var destRect = new SKRect(0, 0, 1, 1);
+                const float epsilon = 0.002f;  // Small expansion to cover sub-pixel gaps
+                var destRect = new SKRect(-epsilon, -epsilon, 1 + epsilon, 1 + epsilon);
                 _canvas.DrawImage(skImage, sourceRect, destRect, paint);
 
                 // Restore original matrix

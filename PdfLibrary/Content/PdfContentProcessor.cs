@@ -14,6 +14,14 @@ public abstract class PdfContentProcessor
     protected PdfGraphicsState CurrentState { get; private set; } = new();
 
     /// <summary>
+    /// Tracks whether a clipping operator (W or W*) is pending.
+    /// Per PDF spec, W/W* modify the clipping path but don't apply it until
+    /// a path painting or path ending operator is encountered.
+    /// </summary>
+    protected bool PendingClip { get; private set; }
+    protected bool PendingClipEvenOdd { get; private set; }
+
+    /// <summary>
     /// Processes a list of operators from a content stream
     /// </summary>
     public void ProcessOperators(List<PdfOperator> operators)
@@ -229,6 +237,17 @@ public abstract class PdfContentProcessor
                 OnEndPath();
                 break;
 
+            // Clipping path operators
+            case ClipOperator:
+                PendingClip = true;
+                PendingClipEvenOdd = false;
+                break;
+
+            case ClipEvenOddOperator:
+                PendingClip = true;
+                PendingClipEvenOdd = true;
+                break;
+
             // XObject operators
             case InvokeXObjectOperator xobj:
                 OnInvokeXObject(xobj.XObjectName);
@@ -357,4 +376,14 @@ public abstract class PdfContentProcessor
     protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
     protected virtual void OnColorChanged() { }
     protected virtual void OnGenericOperator(GenericOperator op) { }
+
+    /// <summary>
+    /// Clears the pending clip flag. Should be called after applying clipping
+    /// or after path-terminating operators.
+    /// </summary>
+    protected void ClearPendingClip()
+    {
+        PendingClip = false;
+        PendingClipEvenOdd = false;
+    }
 }

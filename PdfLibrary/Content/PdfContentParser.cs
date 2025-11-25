@@ -14,9 +14,9 @@ public class PdfContentParser
     /// <summary>
     /// Parses a content stream and returns a list of operators
     /// </summary>
-    public static List<PdfOperator> Parse(byte[] contentData)
+    public static List<PdfOperator> Parse(byte[]? contentData)
     {
-        if (contentData.Length == 0)
+        if (contentData == null || contentData.Length == 0)
             return [];
 
         using var stream = new MemoryStream(contentData);
@@ -244,7 +244,7 @@ public class PdfContentParser
         }
         catch
         {
-            // If operator creation fails, return generic operator
+            // If operator creation fails, return the generic operator
             return new GenericOperator(name, operands);
         }
     }
@@ -488,7 +488,7 @@ public class PdfContentParser
                 }
             }
 
-            // Add previous byte to image data (we're one byte behind)
+            // Add the previous byte to image data (we're one byte behind)
             if (prev != 0)
                 imageData.Add((byte)prev);
 
