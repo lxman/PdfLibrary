@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Description>CCITT Fax compression and decompression library (Group 3 and Group 4) with PDF support</Description>
+    <Authors>PDF Standards Project</Authors>
+  </PropertyGroup>
+
+</Project>
