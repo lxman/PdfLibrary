@@ -13,7 +13,7 @@ public class PathDrawingTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Path Drawing Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -120,9 +120,9 @@ public class PathDrawingTestDocument : ITestDocument
             double cy = y - 50;
             double outerR = 40;
             double innerR = 18;
-            var starPath = page.AddPath();
+            PdfPathBuilder starPath = page.AddPath();
 
-            for (int i = 0; i < 5; i++)
+            for (var i = 0; i < 5; i++)
             {
                 double outerAngle = (i * 72 - 90) * Math.PI / 180;
                 double innerAngle = ((i * 72) + 36 - 90) * Math.PI / 180;
@@ -174,7 +174,7 @@ public class PathDrawingTestDocument : ITestDocument
             // Spiral using connected semi-circle Bezier approximations
             double spiralX = leftMargin + 420;
             double spiralY = y - 50;
-            var spiralPath = page.AddPath().MoveTo(spiralX, spiralY);
+            PdfPathBuilder spiralPath = page.AddPath().MoveTo(spiralX, spiralY);
 
             // Draw spiral as connected semi-circles with increasing radii
             // Each semi-circle is approximated with two quarter-arc Bezier curves
@@ -184,7 +184,7 @@ public class PathDrawingTestDocument : ITestDocument
             double currentX = spiralX;
             double currentY = spiralY;
 
-            for (int i = 0; i < radii.Length; i++)
+            for (var i = 0; i < radii.Length; i++)
             {
                 double r = radii[i];
                 bool goingRight = (i % 2 == 0);

@@ -21,19 +21,19 @@ public static class PdfImageRenderer
     /// <param name="pageNumber">1-based page number</param>
     public static void RenderToImage(string pdfPath, string outputPath, double scale = 1.0, int pageNumber = 1)
     {
-        using var stream = File.OpenRead(pdfPath);
-        var document = PdfDocument.Load(stream);
+        using FileStream stream = File.OpenRead(pdfPath);
+        PdfDocument document = PdfDocument.Load(stream);
 
         int pageIndex = pageNumber - 1;
         PdfPage page = document.GetPage(pageIndex)
             ?? throw new InvalidOperationException($"Page {pageNumber} not found in {pdfPath}");
 
-        var cropBox = page.GetCropBox();
-        int width = (int)(cropBox.Width * scale);
-        int height = (int)(cropBox.Height * scale);
+        PdfRectangle cropBox = page.GetCropBox();
+        var width = (int)(cropBox.Width * scale);
+        var height = (int)(cropBox.Height * scale);
 
         using var renderTarget = new SkiaSharpRenderTarget(width, height, document);
-        var resources = page.GetResources();
+        PdfResources? resources = page.GetResources();
         var optionalContentManager = new OptionalContentManager(document);
         var renderer = new PdfLibrary.Rendering.PdfRenderer(renderTarget, resources, optionalContentManager, document);
 

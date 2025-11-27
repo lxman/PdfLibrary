@@ -12,7 +12,7 @@ public class TextBasicsTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Text Basics Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -74,7 +74,7 @@ public class TextBasicsTestDocument : ITestDocument
             y -= 14;
 
             double x = leftMargin;
-            var rgbColors = new[]
+            (PdfColor, string)[] rgbColors = new[]
             {
                 (PdfColor.Red, "Red"),
                 (PdfColor.Green, "Green"),
@@ -98,7 +98,7 @@ public class TextBasicsTestDocument : ITestDocument
             y -= 14;
 
             x = leftMargin;
-            var cmykColors = new[]
+            (PdfColor, string)[] cmykColors = new[]
             {
                 (PdfColor.CmykCyan, "Cyan"),
                 (PdfColor.CmykMagenta, "Magenta"),
@@ -124,7 +124,7 @@ public class TextBasicsTestDocument : ITestDocument
             x = leftMargin;
             for (double gray = 0; gray <= 1.0; gray += 0.2)
             {
-                string label = $"{gray:F1}";
+                var label = $"{gray:F1}";
                 page.AddText(label, x, y)
                     .Font("Helvetica-Bold", 11)
                     .Color(PdfColor.FromGray(gray));
@@ -164,18 +164,18 @@ public class TextBasicsTestDocument : ITestDocument
             double gridX = leftMargin;
             double gridY = y - 50;
             double gridSize = 16;
-            int gridCols = 10;
-            int gridRows = 3;
+            var gridCols = 10;
+            var gridRows = 3;
 
             // Draw grid lines
-            for (int row = 0; row <= gridRows; row++)
+            for (var row = 0; row <= gridRows; row++)
             {
                 page.AddPath()
                     .MoveTo(gridX, gridY + row * gridSize)
                     .LineTo(gridX + gridCols * gridSize, gridY + row * gridSize)
                     .Stroke(PdfColor.FromGray(0.85), 0.5);
             }
-            for (int col = 0; col <= gridCols; col++)
+            for (var col = 0; col <= gridCols; col++)
             {
                 page.AddPath()
                     .MoveTo(gridX + col * gridSize, gridY)
@@ -184,8 +184,8 @@ public class TextBasicsTestDocument : ITestDocument
             }
 
             // Place letters at grid intersections
-            string letters = "ABCDEFGHIJ";
-            for (int i = 0; i < letters.Length; i++)
+            var letters = "ABCDEFGHIJ";
+            for (var i = 0; i < letters.Length; i++)
             {
                 page.AddText(letters[i].ToString(), gridX + i * gridSize, gridY + 2 * gridSize)
                     .Font("Helvetica", 12)

@@ -12,7 +12,7 @@ public class LineStyleTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Line Style Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>

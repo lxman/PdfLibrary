@@ -14,7 +14,7 @@ public class ClippingPathTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Clipping Path Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -119,9 +119,9 @@ public class ClippingPathTestDocument : ITestDocument
 
     private static void DrawStar(PdfPageBuilder page, double cx, double cy, double outerR, double innerR)
     {
-        var path = page.AddPath();
+        PdfPathBuilder path = page.AddPath();
 
-        for (int i = 0; i < 5; i++)
+        for (var i = 0; i < 5; i++)
         {
             double outerAngle = (i * 72 - 90) * Math.PI / 180;
             double innerAngle = ((i * 72) + 36 - 90) * Math.PI / 180;
@@ -157,9 +157,9 @@ public class ClippingPathTestDocument : ITestDocument
 
     private static void DrawHexagon(PdfPageBuilder page, double cx, double cy, double radius)
     {
-        var path = page.AddPath();
+        PdfPathBuilder path = page.AddPath();
 
-        for (int i = 0; i < 6; i++)
+        for (var i = 0; i < 6; i++)
         {
             double angle = (i * 60 - 90) * Math.PI / 180;
             double x = cx + radius * Math.Cos(angle);
@@ -178,10 +178,10 @@ public class ClippingPathTestDocument : ITestDocument
 
     private static void DrawConcentricSquares(PdfPageBuilder page, double cx, double cy, bool useEvenOdd)
     {
-        var path = page.AddPath();
+        PdfPathBuilder path = page.AddPath();
 
         // Outer square (clockwise)
-        double size1 = 60;
+        const double size1 = 60;
         path.MoveTo(cx - size1/2, cy - size1/2)
             .LineTo(cx + size1/2, cy - size1/2)
             .LineTo(cx + size1/2, cy + size1/2)
@@ -189,7 +189,7 @@ public class ClippingPathTestDocument : ITestDocument
             .ClosePath();
 
         // Inner square (counter-clockwise for even-odd difference)
-        double size2 = 30;
+        const double size2 = 30;
         path.MoveTo(cx - size2/2, cy - size2/2)
             .LineTo(cx - size2/2, cy + size2/2)
             .LineTo(cx + size2/2, cy + size2/2)

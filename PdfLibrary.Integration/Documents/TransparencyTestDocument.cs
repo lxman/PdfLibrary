@@ -12,7 +12,7 @@ public class TransparencyTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Transparency Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -158,10 +158,10 @@ public class TransparencyTestDocument : ITestDocument
             // Horizontal gradient effect
             double gradX = leftMargin;
             double gradWidth = 350;
-            int steps = 20;
+            var steps = 20;
             double stepWidth = gradWidth / steps;
 
-            for (int i = 0; i < steps; i++)
+            for (var i = 0; i < steps; i++)
             {
                 double opacity = (double)(steps - i) / steps;
                 page.AddPath()
@@ -179,12 +179,12 @@ public class TransparencyTestDocument : ITestDocument
 
     private static void DrawCheckerboard(PdfPageBuilder page, double x, double y, double width, double height, double cellSize)
     {
-        int cols = (int)(width / cellSize);
-        int rows = (int)(height / cellSize);
+        var cols = (int)(width / cellSize);
+        var rows = (int)(height / cellSize);
 
-        for (int row = 0; row < rows; row++)
+        for (var row = 0; row < rows; row++)
         {
-            for (int col = 0; col < cols; col++)
+            for (var col = 0; col < cols; col++)
             {
                 bool isDark = (row + col) % 2 == 0;
                 PdfColor color = isDark ? PdfColor.FromGray(0.85) : PdfColor.White;

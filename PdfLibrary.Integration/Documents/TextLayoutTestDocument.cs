@@ -12,7 +12,7 @@ public class TextLayoutTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Text Layout Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -28,7 +28,7 @@ public class TextLayoutTestDocument : ITestDocument
             page.AddText("Character Spacing (Tc operator)", leftMargin, y, "Helvetica-Bold", 14);
             y -= 25;
 
-            var charSpacings = new[] { 0.0, 1.0, 2.0, 4.0, -0.5 };
+            double[] charSpacings = new[] { 0.0, 1.0, 2.0, 4.0, -0.5 };
             foreach (double spacing in charSpacings)
             {
                 string label = spacing >= 0 ? $"+{spacing:F1}pt" : $"{spacing:F1}pt";
@@ -44,7 +44,7 @@ public class TextLayoutTestDocument : ITestDocument
             page.AddText("Word Spacing (Tw operator)", leftMargin, y, "Helvetica-Bold", 14);
             y -= 25;
 
-            var wordSpacings = new[] { 0.0, 5.0, 10.0, 20.0, -2.0 };
+            double[] wordSpacings = new[] { 0.0, 5.0, 10.0, 20.0, -2.0 };
             foreach (double spacing in wordSpacings)
             {
                 string label = spacing >= 0 ? $"+{spacing:F0}pt" : $"{spacing:F0}pt";
@@ -210,12 +210,12 @@ public class TextLayoutTestDocument : ITestDocument
             page.AddText("Left edge", boxX, y - 15, "Helvetica", 11);
 
             // Right-positioned text (manually calculated)
-            string rightText = "Right edge";
+            var rightText = "Right edge";
             double textWidth = page.MeasureText(rightText, "Helvetica", 11);
             page.AddText(rightText, boxX + boxWidth - textWidth, y - 35, "Helvetica", 11);
 
             // Center-positioned text
-            string centerText = "Centered";
+            var centerText = "Centered";
             textWidth = page.MeasureText(centerText, "Helvetica", 11);
             page.AddText(centerText, boxX + (boxWidth - textWidth) / 2, y - 55, "Helvetica", 11);
 

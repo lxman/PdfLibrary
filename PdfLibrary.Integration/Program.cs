@@ -9,7 +9,7 @@ const string baseDir = @"C:\Users\jorda\RiderProjects\PDF\TestPDFs\targeted_cust
 const string goldenDir = "golden";      // Subdirectory for golden PDFs and images
 const string testDir = "test";          // Subdirectory for test outputs
 const double renderScale = 2.0;         // 144 DPI for better comparison
-const double matchThreshold = 95.0;     // Minimum % match to pass (allows for anti-aliasing differences)
+const double matchThreshold = 95.0;     // Minimum % match to pass (allows for antialiasing differences)
 
 // Parse command line
 string mode = args.Length > 0 ? args[0].ToLower() : "help";
@@ -77,8 +77,8 @@ static int GenerateBaseline(ITestDocument[] documents, string baseDir, string go
     Console.WriteLine($"Render scale: {scale}x ({72 * scale} DPI)");
     Console.WriteLine();
 
-    int success = 0;
-    int failed = 0;
+    var success = 0;
+    var failed = 0;
 
     foreach (ITestDocument doc in documents)
     {
@@ -132,8 +132,8 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
     Console.WriteLine();
 
     var results = new List<TestResult>();
-    int passed = 0;
-    int failed = 0;
+    var passed = 0;
+    var failed = 0;
 
     foreach (ITestDocument doc in documents)
     {
@@ -164,7 +164,7 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
             PdfImageRenderer.RenderToImage(testPdfPath, testImagePath, scale);
 
             // Compare images
-            var comparison = ImageComparer.Compare(goldenImagePath, testImagePath, diffImagePath);
+            ComparisonResult comparison = ImageComparer.Compare(goldenImagePath, testImagePath, diffImagePath);
 
             if (!comparison.Success)
             {

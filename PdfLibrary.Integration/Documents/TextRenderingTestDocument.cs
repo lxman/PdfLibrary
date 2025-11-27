@@ -12,7 +12,7 @@ public class TextRenderingTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Text Rendering Mode Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -107,7 +107,7 @@ public class TextRenderingTestDocument : ITestDocument
             page.AddText("Fill + Stroke Color Combinations", leftMargin, y, "Helvetica-Bold", 11);
             y -= 28;
 
-            var colorCombos = new[]
+            (PdfColor, PdfColor, string)[] colorCombos = new[]
             {
                 (PdfColor.White, PdfColor.Black, "Wht/Blk"),
                 (PdfColor.Red, PdfColor.Black, "Red/Blk"),

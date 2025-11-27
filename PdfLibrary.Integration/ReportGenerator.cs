@@ -49,7 +49,7 @@ public static class ReportGenerator
         html.AppendLine("</div>");
 
         // Individual results
-        foreach (var result in results)
+        foreach (TestResult result in results)
         {
             string statusClass = result.Passed ? "pass" : "fail";
             string statusText = result.Passed ? "PASS" : "FAIL";
@@ -70,7 +70,7 @@ public static class ReportGenerator
             html.AppendLine("<div class='images'>");
 
             // Golden image
-            string goldenImg = $"{result.Name}_golden.png";
+            var goldenImg = $"{result.Name}_golden.png";
             if (File.Exists(Path.Combine(imageDir, goldenImg)))
             {
                 html.AppendLine("<div class='image-box'>");
@@ -80,7 +80,7 @@ public static class ReportGenerator
             }
 
             // Actual image
-            string actualImg = $"{result.Name}_actual.png";
+            var actualImg = $"{result.Name}_actual.png";
             if (File.Exists(Path.Combine(imageDir, actualImg)))
             {
                 html.AppendLine("<div class='image-box'>");
@@ -92,7 +92,7 @@ public static class ReportGenerator
             // Diff image (only show for failures)
             if (!result.Passed)
             {
-                string diffImg = $"{result.Name}_diff.png";
+                var diffImg = $"{result.Name}_diff.png";
                 if (File.Exists(Path.Combine(imageDir, diffImg)))
                 {
                     html.AppendLine("<div class='image-box'>");

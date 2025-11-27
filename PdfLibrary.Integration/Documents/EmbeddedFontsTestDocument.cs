@@ -16,7 +16,7 @@ public class EmbeddedFontsTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Embedded Fonts Tests").SetAuthor("PdfLibrary.Integration"));
 
         // Load embedded fonts
@@ -180,16 +180,14 @@ public class EmbeddedFontsTestDocument : ITestDocument
             page.AddText("Character Coverage", leftMargin, y, "Helvetica-Bold", 14);
             y -= 25;
 
-            if (File.Exists(arialPath))
-            {
-                page.AddText("ABCDEFGHIJKLMNOPQRSTUVWXYZ", leftMargin, y, "Arial", 11);
-                y -= 16;
-                page.AddText("abcdefghijklmnopqrstuvwxyz", leftMargin, y, "Arial", 11);
-                y -= 16;
-                page.AddText("0123456789", leftMargin, y, "Arial", 11);
-                y -= 16;
-                page.AddText("!@#$%^&*()_+-=[]{}|;':\",./<>?", leftMargin, y, "Arial", 11);
-            }
+            if (!File.Exists(arialPath)) return;
+            page.AddText("ABCDEFGHIJKLMNOPQRSTUVWXYZ", leftMargin, y, "Arial", 11);
+            y -= 16;
+            page.AddText("abcdefghijklmnopqrstuvwxyz", leftMargin, y, "Arial", 11);
+            y -= 16;
+            page.AddText("0123456789", leftMargin, y, "Arial", 11);
+            y -= 16;
+            page.AddText("!@#$%^&*()_+-=[]{}|;':\",./<>?", leftMargin, y, "Arial", 11);
         });
 
         doc.Save(outputPath);

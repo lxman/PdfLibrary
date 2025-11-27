@@ -12,7 +12,7 @@ public class ColorSpaceTestDocument : ITestDocument
 
     public void Generate(string outputPath)
     {
-        var doc = new PdfDocumentBuilder()
+        PdfDocumentBuilder doc = new PdfDocumentBuilder()
             .WithMetadata(m => m.SetTitle("Color Space Tests").SetAuthor("PdfLibrary.Integration"));
 
         doc.AddPage(PdfPageSize.Letter, page =>
@@ -63,7 +63,7 @@ public class ColorSpaceTestDocument : ITestDocument
 
             // Gray gradient swatches
             x = leftMargin;
-            for (int i = 0; i <= 10; i++)
+            for (var i = 0; i <= 10; i++)
             {
                 double grayValue = i / 10.0;
                 PdfColor gray = PdfColor.FromGray(grayValue);
@@ -100,11 +100,9 @@ public class ColorSpaceTestDocument : ITestDocument
                 page.AddRectangle(PdfRect.FromPoints(x, y - swatchSize, swatchSize, swatchSize), color, PdfColor.CmykBlack, 1);
                 page.AddText(name, x, y - swatchSize - 15, "Helvetica", 7);
                 x += spacing + 50;
-                if (x > 500)
-                {
-                    x = leftMargin;
-                    y -= 70;
-                }
+                if (!(x > 500)) continue;
+                x = leftMargin;
+                y -= 70;
             }
             y -= 80;
 

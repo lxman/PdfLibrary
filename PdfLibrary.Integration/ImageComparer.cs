@@ -25,17 +25,17 @@ public static class ImageComparer
         if (!File.Exists(actualImagePath))
             return new ComparisonResult(false, 0, 0, $"Actual image not found: {actualImagePath}");
 
-        using var goldenImage = Image.Load<Rgba32>(goldenImagePath);
-        using var actualImage = Image.Load<Rgba32>(actualImagePath);
+        using Image<Rgba32> goldenImage = Image.Load<Rgba32>(goldenImagePath);
+        using Image<Rgba32> actualImage = Image.Load<Rgba32>(actualImagePath);
 
         // Calculate similarity
-        var diff = ImageSharpCompare.CalcDiff(goldenImage, actualImage);
+        ICompareResult diff = ImageSharpCompare.CalcDiff(goldenImage, actualImage);
         double matchPercentage = (1.0 - diff.PixelErrorPercentage) * 100.0;
 
         // Generate diff image if requested
         if (diffOutputPath != null)
         {
-            using var diffImage = ImageSharpCompare.CalcDiffMaskImage(goldenImage, actualImage);
+            using Image diffImage = ImageSharpCompare.CalcDiffMaskImage(goldenImage, actualImage);
             diffImage.SaveAsPng(diffOutputPath);
         }
 
