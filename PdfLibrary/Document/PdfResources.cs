@@ -138,6 +138,24 @@ public class PdfResources
     }
 
     /// <summary>
+    /// Gets a specific ExtGState dictionary by name
+    /// </summary>
+    public PdfDictionary? GetExtGState(string name)
+    {
+        PdfDictionary? extGStates = GetExtGStates();
+        if (extGStates is null)
+            return null;
+
+        if (!extGStates.TryGetValue(new PdfName(name), out PdfObject? obj))
+            return null;
+
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        return obj as PdfDictionary;
+    }
+
+    /// <summary>
     /// Gets the ColorSpace resources dictionary
     /// Maps color space names to color space arrays or names
     /// </summary>

@@ -6,15 +6,8 @@ using Xunit.Abstractions;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
 
-public class CmapDiagnosticTest
+public class CmapDiagnosticTest(ITestOutputHelper output)
 {
-    private readonly ITestOutputHelper _output;
-
-    public CmapDiagnosticTest(ITestOutputHelper output)
-    {
-        _output = output;
-    }
-
     [Fact]
     public void DiagnoseCmapParsing()
     {
@@ -22,7 +15,7 @@ public class CmapDiagnosticTest
 
         if (!File.Exists(pdfPath))
         {
-            _output.WriteLine($"Skipping test - PDF not found: {pdfPath}");
+            output.WriteLine($"Skipping test - PDF not found: {pdfPath}");
             return;
         }
 
@@ -41,37 +34,37 @@ public class CmapDiagnosticTest
 
                 if (metrics is not { IsValid: true }) continue;
 
-                _output.WriteLine($"\n=== Font: {fontName} - {font?.BaseFont} ===");
+                output.WriteLine($"\n=== Font: {fontName} - {font?.BaseFont} ===");
                 if (font is null) return;
-                _output.WriteLine($"Font Type: {font.FontType}");
-                _output.WriteLine($"FirstChar: {font.FirstChar}");
-                _output.WriteLine($"LastChar: {font.LastChar}");
-                _output.WriteLine($"Has ToUnicode: {font.ToUnicode != null}");
-                _output.WriteLine($"Has Encoding: {font.Encoding != null}");
+                output.WriteLine($"Font Type: {font.FontType}");
+                output.WriteLine($"FirstChar: {font.FirstChar}");
+                output.WriteLine($"LastChar: {font.LastChar}");
+                output.WriteLine($"Has ToUnicode: {font.ToUnicode != null}");
+                output.WriteLine($"Has Encoding: {font.Encoding != null}");
                 if (font.Encoding != null)
                 {
-                    _output.WriteLine($"Encoding Type: {font.Encoding.GetType().Name}");
+                    output.WriteLine($"Encoding Type: {font.Encoding.GetType().Name}");
                 }
 
-                _output.WriteLine($"UnitsPerEm: {metrics.UnitsPerEm}");
-                _output.WriteLine($"NumGlyphs: {metrics.NumGlyphs}");
-                _output.WriteLine($"Is CFF: {metrics.IsCffFont}");
+                output.WriteLine($"UnitsPerEm: {metrics.UnitsPerEm}");
+                output.WriteLine($"NumGlyphs: {metrics.NumGlyphs}");
+                output.WriteLine($"Is CFF: {metrics.IsCffFont}");
 
                 // Check if cmap table exists
-                _output.WriteLine($"\nDiagnostic info:");
-                _output.WriteLine($"Has cmap table: {metrics.HasCmapTable}");
-                _output.WriteLine($"Cmap subtable count: {metrics.GetCmapSubtableCount()}");
-                _output.WriteLine($"Cmap encoding record count: {metrics.GetCmapEncodingRecordCount()}");
+                output.WriteLine($"\nDiagnostic info:");
+                output.WriteLine($"Has cmap table: {metrics.HasCmapTable}");
+                output.WriteLine($"Cmap subtable count: {metrics.GetCmapSubtableCount()}");
+                output.WriteLine($"Cmap encoding record count: {metrics.GetCmapEncodingRecordCount()}");
                 if (metrics.GetCmapEncodingRecordCount() > 0)
                 {
                     for (var i = 0; i < metrics.GetCmapEncodingRecordCount(); i++)
                     {
-                        _output.WriteLine($"  Encoding {i}: {metrics.GetCmapEncodingRecordInfo(i)}");
+                        output.WriteLine($"  Encoding {i}: {metrics.GetCmapEncodingRecordInfo(i)}");
                     }
                 }
 
                 // Test character->glyph mapping for problematic characters
-                _output.WriteLine("\nTesting character->glyph mapping:");
+                output.WriteLine("\nTesting character->glyph mapping:");
                 int[] testChars = [32, 40, 41, 44, 45, 46, 47, 48];
 
                 foreach (int charCode in testChars)
@@ -80,7 +73,7 @@ public class CmapDiagnosticTest
                     ushort advanceWidth = metrics.GetAdvanceWidth(glyphId);
                     double pdfWidth = font.GetCharacterWidth(charCode);
 
-                    _output.WriteLine($"  Char {charCode} ('{(char)charCode}'): " +
+                    output.WriteLine($"  Char {charCode} ('{(char)charCode}'): " +
                                       $"GlyphID={glyphId}, " +
                                       $"AdvanceWidth={advanceWidth}, " +
                                       $"PDF Width={pdfWidth:F2}");

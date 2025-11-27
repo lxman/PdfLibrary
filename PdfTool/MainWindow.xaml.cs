@@ -250,12 +250,13 @@ public partial class MainWindow : Window
             if (_pdfiumDoc == null || _pdfLibraryDoc == null) return;
 
             // Get dimensions from PdfLibrary page to match sizing (PDFium uses different units)
+            // Use CropBox for visible area dimensions
             PdfPage? pdfLibPage = _pdfLibraryDoc.GetPage(_currentPage - 1);
             if (pdfLibPage == null) return;
 
-            PdfRectangle mediaBox = pdfLibPage.GetMediaBox();
-            var width = (int)(mediaBox.Width * _zoomLevel);
-            var height = (int)(mediaBox.Height * _zoomLevel);
+            PdfRectangle cropBox = pdfLibPage.GetCropBox();
+            var width = (int)(cropBox.Width * _zoomLevel);
+            var height = (int)(cropBox.Height * _zoomLevel);
 
             PDFiumSharp.PdfPage? page = _pdfiumDoc.Pages[_currentPage - 1];
 
@@ -347,12 +348,13 @@ public partial class MainWindow : Window
             if (_melvilleDoc is null || _pdfLibraryDoc is null) return;
 
             // Get dimensions from the PdfLibrary page to match sizing
+            // Use CropBox for visible area dimensions
             PdfPage? pdfLibPage = _pdfLibraryDoc.GetPage(_currentPage - 1);
             if (pdfLibPage is null) return;
 
-            PdfRectangle mediaBox = pdfLibPage.GetMediaBox();
-            var width = (int)(mediaBox.Width * _zoomLevel);
-            var height = (int)(mediaBox.Height * _zoomLevel);
+            PdfRectangle cropBox = pdfLibPage.GetCropBox();
+            var width = (int)(cropBox.Width * _zoomLevel);
+            var height = (int)(cropBox.Height * _zoomLevel);
 
             // Render to SKSurface using 1-based page number and explicit size
             // Pass -1 for both width and height to let Melville determine size, then scale
@@ -425,22 +427,24 @@ public partial class MainWindow : Window
     private async void FitToPage_Click(object sender, RoutedEventArgs e)
     {
         // Calculate zoom to fit page height in the viewport
+        // Use CropBox for visible area dimensions
         PdfPage? page = _pdfLibraryDoc?.GetPage(_currentPage - 1);
         if (page is null) return;
-        PdfRectangle mediaBox = page.GetMediaBox();
+        PdfRectangle cropBox = page.GetCropBox();
         double viewportHeight = PdfLibraryScroll.ActualHeight - 20; // Account for margins
-        double zoom = viewportHeight / mediaBox.Height;
+        double zoom = viewportHeight / cropBox.Height;
         await SetZoomAsync(zoom);
     }
 
     private async void FitToWidth_Click(object sender, RoutedEventArgs e)
     {
         // Calculate zoom to fit page width in the viewport
+        // Use CropBox for visible area dimensions
         PdfPage? page = _pdfLibraryDoc?.GetPage(_currentPage - 1);
         if (page is null) return;
-        PdfRectangle mediaBox = page.GetMediaBox();
+        PdfRectangle cropBox = page.GetCropBox();
         double viewportWidth = PdfLibraryScroll.ActualWidth - 20; // Account for margins/scrollbar
-        double zoom = viewportWidth / mediaBox.Width;
+        double zoom = viewportWidth / cropBox.Width;
         await SetZoomAsync(zoom);
     }
 
@@ -605,9 +609,10 @@ public partial class MainWindow : Window
                 PdfPage? page = _pdfLibraryDoc?.GetPage(_currentPage - 1);
                 if (page == null) return;
 
-                PdfRectangle mediaBox = page.GetMediaBox();
-                var width = (int)(mediaBox.Width * _zoomLevel);
-                var height = (int)(mediaBox.Height * _zoomLevel);
+                // Use CropBox for output dimensions (visible area), not MediaBox
+                PdfRectangle cropBox = page.GetCropBox();
+                var width = (int)(cropBox.Width * _zoomLevel);
+                var height = (int)(cropBox.Height * _zoomLevel);
 
                 var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfLibraryDoc);
                 try
@@ -680,12 +685,13 @@ public partial class MainWindow : Window
             if (_melvilleDoc == null || _pdfLibraryDoc == null) return;
 
             // Get dimensions from the PdfLibrary page to match sizing
+            // Use CropBox for visible area dimensions
             PdfPage? pdfLibPage = _pdfLibraryDoc.GetPage(_currentPage - 1);
             if (pdfLibPage == null) return;
 
-            PdfRectangle mediaBox = pdfLibPage.GetMediaBox();
-            var width = (int)(mediaBox.Width * _zoomLevel);
-            var height = (int)(mediaBox.Height * _zoomLevel);
+            PdfRectangle cropBox = pdfLibPage.GetCropBox();
+            var width = (int)(cropBox.Width * _zoomLevel);
+            var height = (int)(cropBox.Height * _zoomLevel);
 
             await using FileStream stream = File.OpenWrite(path);
             await RenderWithSkia.ToPngStreamAsync(_melvilleDoc, _currentPage, stream, width, height);

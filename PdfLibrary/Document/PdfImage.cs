@@ -299,12 +299,109 @@ public class PdfImage
     }
 
     /// <summary>
+    /// Gets the Decode array for the image (if present).
+    /// For image masks, [0 1] means 0=transparent/1=paint (default), [1 0] means 1=transparent/0=paint.
+    /// For regular images, maps sample values to a range.
+    /// </summary>
+    public double[]? DecodeArray
+    {
+        get
+        {
+            if (!_stream.Dictionary.TryGetValue(new PdfName("Decode"), out PdfObject? obj))
+                return null;
+
+            if (obj is not PdfArray array)
+                return null;
+
+            var result = new double[array.Count];
+            for (var i = 0; i < array.Count; i++)
+            {
+                result[i] = array[i] switch
+                {
+                    PdfInteger intVal => intVal.Value,
+                    PdfReal realVal => realVal.Value,
+                    _ => 0.0
+                };
+            }
+
+            return result;
+        }
+    }
+
+    /// <summary>
     /// Gets the raw decoded image data
     /// The data format depends on ColorSpace, BitsPerComponent, and dimensions
     /// </summary>
     public byte[] GetDecodedData()
     {
+        // For CCITTFaxDecode, we need to ensure Rows is set to the image Height
+        // because the PDF may omit Rows in DecodeParms, expecting the decoder to use the image dimensions
+        if (IsCcittFilter())
+        {
+            return GetDecodedDataWithCcittFix();
+        }
+
         return _stream.GetDecodedData();
+    }
+
+    /// <summary>
+    /// Checks if the image uses CCITTFaxDecode filter
+    /// </summary>
+    private bool IsCcittFilter()
+    {
+        if (!_stream.Dictionary.TryGetValue(PdfName.Filter, out PdfObject? filterObj))
+            return false;
+
+        return filterObj switch
+        {
+            PdfName name => name.Value is "CCITTFaxDecode" or "CCF",
+            PdfArray array => array.Count > 0 && array[0] is PdfName name && name.Value is "CCITTFaxDecode" or "CCF",
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Gets decoded data for CCITT images, ensuring Rows parameter is set
+    /// </summary>
+    private byte[] GetDecodedDataWithCcittFix()
+    {
+        // Get or create decode params with Rows set to image Height
+        var decodeParams = new Dictionary<string, object>();
+
+        // Copy existing decode params
+        if (_stream.Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject? decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
+        {
+            foreach (var kvp in decodeParmDict)
+            {
+                object? value = kvp.Value switch
+                {
+                    PdfInteger intVal => intVal.Value,
+                    PdfReal realVal => realVal.Value,
+                    PdfBoolean boolVal => (bool)boolVal,
+                    PdfName nameVal => nameVal.Value,
+                    _ => null
+                };
+
+                if (value is not null)
+                    decodeParams[kvp.Key.Value] = value;
+            }
+        }
+
+        // Ensure Columns is set to image Width
+        if (!decodeParams.ContainsKey("Columns"))
+        {
+            decodeParams["Columns"] = Width;
+        }
+
+        // Ensure Rows is set to image Height - this is the critical fix!
+        if (!decodeParams.ContainsKey("Rows"))
+        {
+            decodeParams["Rows"] = Height;
+        }
+
+        // Apply CCITT filter directly
+        var filter = new Filters.CcittFaxDecodeFilter();
+        return filter.Decode(_stream.Data, decodeParams);
     }
 
     /// <summary>

@@ -7,6 +7,7 @@ using FontParser.Tables.Head;
 using FontParser.Tables.Hhea;
 using FontParser.Tables.Hmtx;
 using FontParser.Tables.Name;
+using FontParser.Tables.PostScriptType1;
 using FontParser.Tables.TtTables;
 using FontParser.Tables.TtTables.Glyf;
 using Logging;
@@ -35,6 +36,10 @@ public class EmbeddedFontMetrics
     // CFF font support
     private readonly Type1Table? _cffTable;
     private readonly bool _isCffFont;
+
+    // PostScript Type1 font support
+    private readonly Type1FontParser? _type1Parser;
+    private readonly bool _isType1Font;
 
     /// <summary>
     /// Units per em - critical for scaling glyphs to correct size
@@ -75,6 +80,11 @@ public class EmbeddedFontMetrics
     /// Indicates if this is a CFF (OpenType/CFF) font rather than TrueType
     /// </summary>
     public bool IsCffFont => _isCffFont;
+
+    /// <summary>
+    /// Indicates if this is a PostScript Type1 font
+    /// </summary>
+    public bool IsType1Font => _isType1Font;
 
     /// <summary>
     /// Gets the nominal width (default width) for CFF glyphs that don't specify explicit widths
@@ -275,12 +285,104 @@ public class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Creates embedded font metrics from PostScript Type1 font data with Length1/Length2/Length3 parameters
+    /// </summary>
+    /// <param name="fontData">Raw font bytes from PDF FontFile stream</param>
+    /// <param name="length1">Length of ASCII portion</param>
+    /// <param name="length2">Length of binary/eexec portion</param>
+    /// <param name="length3">Length of trailer portion (optional)</param>
+    public EmbeddedFontMetrics(byte[] fontData, int length1, int length2, int length3 = 0)
+    {
+        // Initialize non-nullable parser field (won't be used for Type1)
+        _parser = null!;
+
+        PdfLogger.Log(LogCategory.Text,
+            $"[TYPE1] Attempting to parse Type1 font: dataLen={fontData.Length}, Length1={length1}, Length2={length2}, Length3={length3}");
+
+        // Log first few bytes to see the format
+        if (fontData.Length > 0)
+        {
+            string firstBytes = BitConverter.ToString(fontData, 0, Math.Min(32, fontData.Length));
+            PdfLogger.Log(LogCategory.Text, $"[TYPE1] First 32 bytes: {firstBytes}");
+        }
+
+        try
+        {
+            // Check for PFB format (starts with 0x80)
+            if (fontData.Length > 0 && fontData[0] == 0x80)
+            {
+                PdfLogger.Log(LogCategory.Text, "[TYPE1] Detected PFB format");
+                // PFB format - the parser handles this directly
+                _type1Parser = new Type1FontParser(fontData);
+            }
+            else if (length1 > 0 && length2 > 0)
+            {
+                PdfLogger.Log(LogCategory.Text, "[TYPE1] Using Length1/Length2 format");
+
+                // Check for eexec in the data to understand the format better
+                string textPreview = System.Text.Encoding.ASCII.GetString(fontData);
+                int eexecIdx = textPreview.IndexOf("eexec", StringComparison.Ordinal);
+                PdfLogger.Log(LogCategory.Text, $"[TYPE1] eexec found at index: {eexecIdx}");
+                if (eexecIdx > 0)
+                {
+                    // Show what comes after eexec
+                    int previewStart = Math.Min(eexecIdx + 5, textPreview.Length);
+                    int previewLen = Math.Min(100, textPreview.Length - previewStart);
+                    string afterEexec = textPreview.Substring(previewStart, previewLen);
+                    PdfLogger.Log(LogCategory.Text, $"[TYPE1] After eexec: '{afterEexec.Replace("\r", "\\r").Replace("\n", "\\n")}'");
+                }
+
+                // Raw PDF FontFile stream format with Length1/Length2/Length3
+                _type1Parser = new Type1FontParser(fontData, length1, length2, length3);
+            }
+            else
+            {
+                PdfLogger.Log(LogCategory.Text, "[TYPE1] Trying as PFB format (fallback)");
+                // Try as PFB format (fallback)
+                _type1Parser = new Type1FontParser(fontData);
+            }
+
+            if (_type1Parser.IsValid)
+            {
+                _isType1Font = true;
+                UnitsPerEm = (ushort)_type1Parser.UnitsPerEm;
+                NumGlyphs = (ushort)_type1Parser.GlyphCount;
+                IsValid = true;
+
+                PdfLogger.Log(LogCategory.Text,
+                    $"[TYPE1] Parsed Type1 font '{_type1Parser.FontName}' with {NumGlyphs} glyphs, UnitsPerEm={UnitsPerEm}");
+            }
+            else
+            {
+                _isType1Font = false;
+                IsValid = false;
+                PdfLogger.Log(LogCategory.Text, $"[TYPE1] Type1 font parsing failed - GlyphCount={_type1Parser.GlyphCount}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _isType1Font = false;
+            IsValid = false;
+            PdfLogger.Log(LogCategory.Text, $"[TYPE1] Type1 font parsing exception: {ex.Message}\n{ex.StackTrace}");
+        }
+    }
+
+    /// <summary>
     /// Gets the glyph ID for a character code
     /// </summary>
     /// <param name="charCode">Character code (can be Unicode or font-specific encoding)</param>
     /// <returns>Glyph ID, or 0 if not found</returns>
     public ushort GetGlyphId(ushort charCode)
     {
+        // For Type1 fonts, use direct character code as glyph index
+        // Type1 fonts use encoding arrays where charCode maps to glyph name
+        if (_isType1Font)
+        {
+            return charCode < NumGlyphs
+                ? charCode
+                : (ushort)0;
+        }
+
         // For CFF fonts without a cmap table, use direct character code mapping
         // This works for subset fonts where character codes map directly to glyph indices
         if (_isCffFont && _cmapTable is null)
@@ -295,7 +397,7 @@ public class EmbeddedFontMetrics
     }
 
     /// <summary>
-    /// Gets the glyph ID for a glyph name (used for CFF fonts)
+    /// Gets the glyph ID for a glyph name (used for CFF and Type1 fonts)
     /// </summary>
     /// <param name="glyphName">Glyph name (e.g., "o", "C", "space")</param>
     /// <returns>Glyph ID, or 0 if not found</returns>
@@ -303,6 +405,20 @@ public class EmbeddedFontMetrics
     {
         if (string.IsNullOrEmpty(glyphName))
             return 0;
+
+        // For Type1 fonts, check if the glyph exists
+        // We use a hash of the glyph name as a pseudo-ID (since Type1 doesn't have numeric IDs)
+        if (_isType1Font && _type1Parser is not null)
+        {
+            // Check if the glyph exists in the font
+            if (_type1Parser.HasGlyph(glyphName))
+            {
+                // Return a non-zero value to indicate the glyph exists
+                // We use a hash to create a consistent pseudo-ID for each glyph name
+                return (ushort)(Math.Abs(glyphName.GetHashCode()) % 65534 + 1);
+            }
+            return 0;
+        }
 
         // For CFF fonts, use the charset to map glyph name to glyph index
         if (!_isCffFont || _cffTable is null) return 0;
@@ -414,6 +530,23 @@ public class EmbeddedFontMetrics
             return _hmtxTable.GetAdvanceWidth(glyphId);
         }
 
+        // Type1 fonts store width in CharStrings
+        if (_isType1Font && _type1Parser is not null)
+        {
+            // Get glyph name for the glyphId (which is the charCode for Type1)
+            string? glyphName = _type1Parser.GetGlyphName(glyphId);
+            if (glyphName is not null)
+            {
+                CffGlyphOutline? outline = _type1Parser.GetGlyphOutline(glyphName);
+                if (outline?.Width is not null)
+                {
+                    return (ushort)Math.Round(outline.Width.Value);
+                }
+            }
+            // Return a default width if not found
+            return 500;
+        }
+
         // CFF fonts store width in CharStrings
         if (!_isCffFont || _cffTable is null) return 0;
         CffGlyphOutline? glyphOutline = _cffTable.GetGlyphOutline(glyphId);
@@ -468,6 +601,12 @@ public class EmbeddedFontMetrics
     /// <returns>GlyphOutline with contour data, or null if glyph not found or invalid</returns>
     public GlyphOutline? GetGlyphOutline(ushort glyphId)
     {
+        // Handle Type1 fonts
+        if (_isType1Font && _type1Parser is not null)
+        {
+            return GetType1GlyphOutline(glyphId);
+        }
+
         // Handle CFF fonts
         if (_isCffFont && _cffTable is not null)
         {
@@ -523,10 +662,10 @@ public class EmbeddedFontMetrics
                 // Log contour details for em dash
                 if (glyphId == 1165 && contours.Count > 0)
                 {
-                    var c = contours[0];
+                    GlyphContour c = contours[0];
                     PdfLogger.Log(LogCategory.Text,
                         $"[GLYPH-1165] Contour has {c.Points.Count} points");
-                    foreach (var pt in c.Points.Take(10))
+                    foreach (ContourPoint pt in c.Points.Take(10))
                     {
                         PdfLogger.Log(LogCategory.Text,
                             $"[GLYPH-1165]   Point: X={pt.X}, Y={pt.Y}, OnCurve={pt.OnCurve}");
@@ -589,6 +728,137 @@ public class EmbeddedFontMetrics
         List<GlyphContour> contours = ConvertCffCommandsToContours(cffOutline);
 
         return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
+    }
+
+    /// <summary>
+    /// Get glyph outline for a Type1 font
+    /// Converts Type1 CharString path commands to contour-based GlyphOutline
+    /// </summary>
+    private GlyphOutline? GetType1GlyphOutline(ushort glyphId)
+    {
+        if (_type1Parser is null)
+            return null;
+
+        // Try to get glyph name for the character code via Type1 encoding
+        string? glyphName = _type1Parser.GetGlyphName(glyphId);
+
+        // If encoding lookup fails, try index-based lookup (for CID fonts with Type1 data)
+        // In CID fonts, the GID from CIDToGIDMap may be an index into the CharStrings
+        if (glyphName is null)
+        {
+            glyphName = _type1Parser.GetGlyphNameByIndex(glyphId);
+            if (glyphName is not null)
+            {
+                PdfLogger.Log(LogCategory.Text,
+                    $"[TYPE1-GLYPH] GetType1GlyphOutline: glyphId={glyphId} -> index lookup found '{glyphName}'");
+            }
+        }
+        else
+        {
+            PdfLogger.Log(LogCategory.Text,
+                $"[TYPE1-GLYPH] GetType1GlyphOutline: glyphId={glyphId} -> encoding lookup found '{glyphName}'");
+        }
+
+        if (glyphName is null)
+        {
+            PdfLogger.Log(LogCategory.Text,
+                $"[TYPE1-GLYPH] GetType1GlyphOutline: glyphId={glyphId} -> no glyph found");
+            return null;
+        }
+
+        // Get Type1 glyph outline
+        CffGlyphOutline? type1Outline = _type1Parser.GetGlyphOutline(glyphName);
+
+        PdfLogger.Log(LogCategory.Text,
+            $"[TYPE1-GLYPH] GetGlyphOutline('{glyphName}'): {(type1Outline is null ? "null" : $"commands={type1Outline.Commands.Count}")}");
+
+        if (type1Outline is null)
+            return null;
+
+        // Get glyph metrics
+        ushort advanceWidth = GetAdvanceWidth(glyphId);
+        short leftSideBearing = 0; // Type1 uses sidebearing from CharString
+
+        // Use bounding box from Type1 outline
+        var metrics = new GlyphMetrics(
+            advanceWidth,
+            leftSideBearing,
+            (short)type1Outline.MinX,
+            (short)type1Outline.MinY,
+            (short)type1Outline.MaxX,
+            (short)type1Outline.MaxY
+        );
+
+        // Convert path commands to contours (same format as CFF)
+        List<GlyphContour> contours = ConvertCffCommandsToContours(type1Outline);
+
+        return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
+    }
+
+    /// <summary>
+    /// Get glyph outline for a Type1 font using the glyph name directly
+    /// This is the preferred method for Type1 fonts as they use name-based lookup
+    /// </summary>
+    /// <param name="glyphName">The glyph name (e.g., "A", "space", "Aacute")</param>
+    /// <returns>GlyphOutline with contour data, or null if glyph not found</returns>
+    public GlyphOutline? GetGlyphOutlineByName(string glyphName)
+    {
+        if (_type1Parser is null || string.IsNullOrEmpty(glyphName))
+            return null;
+
+        PdfLogger.Log(LogCategory.Text,
+            $"[TYPE1-GLYPH] GetGlyphOutlineByName: glyphName='{glyphName}'");
+
+        // Get Type1 glyph outline directly by name
+        CffGlyphOutline? type1Outline = _type1Parser.GetGlyphOutline(glyphName);
+
+        PdfLogger.Log(LogCategory.Text,
+            $"[TYPE1-GLYPH] GetGlyphOutline('{glyphName}'): {(type1Outline is null ? "null" : $"commands={type1Outline.Commands.Count}")}");
+
+        if (type1Outline is null)
+            return null;
+
+        // Get advance width from the outline (Type1 stores width in CharString)
+        ushort advanceWidth = type1Outline.Width is not null
+            ? (ushort)Math.Round(type1Outline.Width.Value)
+            : (ushort)500; // Default width
+        short leftSideBearing = 0; // Type1 uses sidebearing from CharString
+
+        // Use bounding box from Type1 outline
+        var metrics = new GlyphMetrics(
+            advanceWidth,
+            leftSideBearing,
+            (short)type1Outline.MinX,
+            (short)type1Outline.MinY,
+            (short)type1Outline.MaxX,
+            (short)type1Outline.MaxY
+        );
+
+        // Convert path commands to contours (same format as CFF)
+        List<GlyphContour> contours = ConvertCffCommandsToContours(type1Outline);
+
+        // Use a hash of the glyph name as the glyph ID
+        ushort pseudoGlyphId = (ushort)(Math.Abs(glyphName.GetHashCode()) % 65534 + 1);
+
+        return new GlyphOutline(pseudoGlyphId, contours, metrics, isComposite: false);
+    }
+
+    /// <summary>
+    /// Get advance width for a Type1 glyph by name
+    /// </summary>
+    /// <param name="glyphName">The glyph name</param>
+    /// <returns>Advance width in font units, or 500 if not found</returns>
+    public ushort GetAdvanceWidthByName(string glyphName)
+    {
+        if (_type1Parser is null || string.IsNullOrEmpty(glyphName))
+            return 500; // Default width
+
+        CffGlyphOutline? outline = _type1Parser.GetGlyphOutline(glyphName);
+        if (outline?.Width is not null)
+        {
+            return (ushort)Math.Round(outline.Width.Value);
+        }
+        return 500; // Default width
     }
 
     /// <summary>

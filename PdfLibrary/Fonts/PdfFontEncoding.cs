@@ -14,6 +14,12 @@ public class PdfFontEncoding
     private readonly Dictionary<int, string> _codeToUnicode = new();
     private readonly string _baseEncodingName;
 
+    // Static initializer to register code pages provider (for MacRoman encoding support)
+    static PdfFontEncoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     public PdfFontEncoding(string baseEncodingName = "StandardEncoding")
     {
         _baseEncodingName = baseEncodingName;
@@ -39,7 +45,7 @@ public class PdfFontEncoding
 
         // Fall back to character code as-is (Latin-1)
         if (charCode is >= 0 and <= 255)
-            return Encoding.Latin1.GetString([( byte)charCode]);
+            return Encoding.Latin1.GetString([(byte)charCode]);
 
         return "?";
     }

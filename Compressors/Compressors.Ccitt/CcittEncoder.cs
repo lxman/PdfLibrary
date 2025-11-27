@@ -1,7 +1,6 @@
 #nullable enable
 
 using System;
-using System.Collections.Generic;
 
 namespace Compressors.Ccitt
 {
@@ -41,7 +40,14 @@ namespace Compressors.Ccitt
             // Group 4 starts with an imaginary white reference line
             if (_options.Group == CcittGroup.Group4 || _options.Group == CcittGroup.Group3TwoDimensional)
             {
-                referenceLine = new byte[bytesPerRow]; // All white
+                referenceLine = new byte[bytesPerRow];
+                // BlackIs1=true: 1=black, 0=white, so all zeros = all white (default) ✓
+                // BlackIs1=false: 0=black, 1=white, so we need all 1s for white
+                if (!_options.BlackIs1)
+                {
+                    for (int i = 0; i < bytesPerRow; i++)
+                        referenceLine[i] = 0xFF;
+                }
             }
 
             for (int row = 0; row < height; row++)
@@ -327,9 +333,9 @@ namespace Compressors.Ccitt
         {
             bool isSet = GetPixelBit(row, position);
 
-            // Standard CCITT: 0 = white, 1 = black
-            // BlackIs1 inverts this
-            return _options.BlackIs1 ? !isSet : isSet;
+            // BlackIs1=true: 1 bits are black, so isSet=true means black
+            // BlackIs1=false: 0 bits are black (1=white), so isSet=true means white (not black)
+            return _options.BlackIs1 ? isSet : !isSet;
         }
     }
 }

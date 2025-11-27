@@ -1,4 +1,5 @@
 using PdfLibrary.Fonts.Embedded;
+using SkiaSharp;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
 
@@ -34,7 +35,7 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour>(), metrics);
 
         // Act
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert
         Assert.NotNull(path);
@@ -57,14 +58,14 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act - 12pt font, 1000 units per em (scale = 12/1000 = 0.012)
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert
         Assert.NotNull(path);
         Assert.True(path.PointCount > 0);
 
         // Verify the path is closed
-        var bounds = path.Bounds;
+        SKRect bounds = path.Bounds;
         Assert.True(bounds.Width > 0);
         Assert.True(bounds.Height > 0);
     }
@@ -85,10 +86,10 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act - 24pt font, 1000 units per em (scale = 24/1000 = 0.024)
-        var path = _converter.ConvertToPath(outline, 24.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 24.0f, 1000);
 
         // Assert - The bounding box should be 24x24 pixels
-        var bounds = path.Bounds;
+        SKRect bounds = path.Bounds;
         Assert.Equal(24.0f, bounds.Width, 2);  // Allow small tolerance for floating point
         Assert.Equal(24.0f, bounds.Height, 2);
     }
@@ -109,10 +110,10 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert - Y coordinates should be flipped (negative in SkiaSharp)
-        var bounds = path.Bounds;
+        SKRect bounds = path.Bounds;
         Assert.True(bounds.Top < 0, "Y-axis should be flipped, so top should be negative");
     }
 
@@ -131,7 +132,7 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert
         Assert.NotNull(path);
@@ -155,7 +156,7 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert
         Assert.NotNull(path);
@@ -189,7 +190,7 @@ public class GlyphToSKPathConverterTests
             metrics);
 
         // Act
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert
         Assert.NotNull(path);
@@ -212,7 +213,7 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act - Should not throw
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert
         Assert.NotNull(path);
@@ -235,9 +236,9 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act - Test with different font sizes
-        var path12 = _converter.ConvertToPath(outline, 12.0f, 1000);
-        var path24 = _converter.ConvertToPath(outline, 24.0f, 1000);
-        var path48 = _converter.ConvertToPath(outline, 48.0f, 1000);
+        SKPath path12 = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path24 = _converter.ConvertToPath(outline, 24.0f, 1000);
+        SKPath path48 = _converter.ConvertToPath(outline, 48.0f, 1000);
 
         // Assert - Larger font size should produce larger bounds
         Assert.True(path24.Bounds.Width > path12.Bounds.Width);
@@ -263,11 +264,11 @@ public class GlyphToSKPathConverterTests
         var outline = new GlyphOutline(0, new List<GlyphContour> { contour }, metrics);
 
         // Act
-        var path = _converter.ConvertToPath(outline, 12.0f, 1000);
+        SKPath path = _converter.ConvertToPath(outline, 12.0f, 1000);
 
         // Assert - Path should be closed (SkiaSharp closes paths automatically with Close())
         Assert.NotNull(path);
-        var bounds = path.Bounds;
+        SKRect bounds = path.Bounds;
         Assert.True(bounds is { Width: > 0, Height: > 0 });
     }
 }

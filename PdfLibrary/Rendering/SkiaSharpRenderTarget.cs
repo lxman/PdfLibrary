@@ -16,7 +16,7 @@ namespace PdfLibrary.Rendering;
 /// SkiaSharp-based render target for pixel-perfect PDF rendering.
 /// Uses embedded font glyph outlines for text rendering.
 /// </summary>
-public class SkiaSharpRenderTarget : IRenderTarget
+public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 {
     private readonly SKCanvas _canvas;
     private readonly SKSurface _surface;
@@ -27,6 +27,16 @@ public class SkiaSharpRenderTarget : IRenderTarget
     private double _pageHeight;
     private double _scale = 1.0;
     private Matrix3x2 _initialTransform = Matrix3x2.Identity;
+
+    // Soft mask support - track which state depth owns the current mask
+    // When a graphics state sets an SMask, we start a layer and record the depth
+    // The layer is composited with the mask ONLY when that specific state is restored
+    private SKBitmap? _activeSoftMask;
+    private int _softMaskOwnerDepth = -1;  // The state depth that owns the current soft mask (-1 = no mask)
+    private int _currentStateDepth;        // Current graphics state nesting depth
+
+    // Background color for the canvas (white for normal pages, transparent for mask rendering)
+    private readonly SKColor _backgroundColor;
 
     // Static glyph path cache - shared across all render targets for efficiency
     private static readonly MemoryCache GlyphPathCache;
@@ -55,9 +65,10 @@ public class SkiaSharpRenderTarget : IRenderTarget
             });
     }
 
-    public SkiaSharpRenderTarget(int width, int height, PdfDocument? document = null)
+    public SkiaSharpRenderTarget(int width, int height, PdfDocument? document = null, bool transparentBackground = false)
     {
         _document = document;
+        _backgroundColor = transparentBackground ? SKColors.Transparent : SKColors.White;
 
         // Create SkiaSharp surface
         var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
@@ -67,37 +78,44 @@ public class SkiaSharpRenderTarget : IRenderTarget
         _glyphConverter = new GlyphToSKPathConverter();
         _stateStack = new Stack<SKMatrix>();
 
-        // Clear to white background
-        _canvas.Clear(SKColors.White);
+        // Clear to the background color
+        _canvas.Clear(_backgroundColor);
     }
 
     // ==================== PAGE LIFECYCLE ====================
 
-    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
     {
         CurrentPageNumber = pageNumber;
         // Store the original PDF page dimensions (unscaled) for coordinate calculations
+        // These are CropBox dimensions (the visible area)
         _pageWidth = width;
         _pageHeight = height;
         _scale = scale;
 
-        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}, Scale: {scale:F2}");
+        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}, Scale: {scale:F2}, CropOffset: ({cropOffsetX}, {cropOffsetY})");
 
-        // Clear canvas for the new page
-        _canvas.Clear(SKColors.White);
+        // Clear canvas for the new page (use configured background color)
+        _canvas.Clear(_backgroundColor);
 
         // Set up initial viewport transformation:
         // PDF coordinate system has origin at bottom-left with Y increasing upward
         // The screen coordinate system has origin at top-left with Y increasing downward
         // So we need to flip the Y-axis AND apply the scale factor
         //
+        // When CropBox has an offset (e.g., CropBox [42, 60, 559, 719] vs MediaBox [0, 0, 612, 792]):
+        // - Content at PDF coordinate (42, 60) should render at output pixel (0, height*scale) (bottom-left of output)
+        // - We need to translate by (-cropOffsetX, -cropOffsetY) in PDF space BEFORE the Y-flip and scale
+        //
         // Transform order (applied right to left):
-        // 1. Scale by (scale, -scale) - scales content and flips Y
-        // 2. Translate by (0, height * scale) - moves origin to top-left of scaled output
-        Matrix3x2 initialTransform = Matrix3x2.CreateScale((float)scale, (float)-scale)
+        // 1. Translate by (-cropOffsetX, -cropOffsetY) - shift PDF coordinates so CropBox origin is at (0,0)
+        // 2. Scale by (scale, -scale) - scales content and flips Y
+        // 3. Translate by (0, height * scale) - moves origin to top-left of scaled output
+        Matrix3x2 initialTransform = Matrix3x2.CreateTranslation((float)-cropOffsetX, (float)-cropOffsetY)
+                                   * Matrix3x2.CreateScale((float)scale, (float)-scale)
                                    * Matrix3x2.CreateTranslation(0, (float)(height * scale));
 
-        PdfLogger.Log(LogCategory.Transforms, $"Initial viewport transform: Scale({scale:F2},{-scale:F2}) × Translate(0,{height * scale:F0})");
+        PdfLogger.Log(LogCategory.Transforms, $"Initial viewport transform: Translate({-cropOffsetX:F2},{-cropOffsetY:F2}) × Scale({scale:F2},{-scale:F2}) × Translate(0,{height * scale:F0})");
 
         // Store this as our base transformation
         // All PDF CTM transformations will be applied on top of this
@@ -122,6 +140,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
         _canvas.Clear(SKColors.White);
         _stateStack.Clear();
         CurrentPageNumber = 0;
+        ClearSoftMask();
+        _currentStateDepth = 0;
     }
 
     // ==================== STATE MANAGEMENT ====================
@@ -130,13 +150,33 @@ public class SkiaSharpRenderTarget : IRenderTarget
     {
         _canvas.Save();
         _stateStack.Push(_canvas.TotalMatrix);
+        _currentStateDepth++;
     }
 
     public void RestoreState()
     {
+        // Check if we're restoring the state that owns the soft mask
+        // If so, we need to apply the mask to the layer and composite it
+        if (_activeSoftMask is not null && _currentStateDepth == _softMaskOwnerDepth)
+        {
+            ApplySoftMaskToLayer();
+            // Restore the layer that was started by SaveLayer in SetSoftMask
+            _canvas.Restore();
+
+            // Clear the mask ownership
+            _activeSoftMask.Dispose();
+            _activeSoftMask = null;
+            _softMaskOwnerDepth = -1;
+
+            PdfLogger.Log(LogCategory.Graphics, $"RestoreState: Composited and cleared soft mask at depth {_currentStateDepth}");
+        }
+
+        // Restore the regular canvas state (from SaveState's _canvas.Save())
         _canvas.Restore();
         if (_stateStack.Count > 0)
             _stateStack.Pop();
+
+        _currentStateDepth--;
     }
 
     public void ApplyCtm(Matrix3x2 ctm)
@@ -165,6 +205,135 @@ public class SkiaSharpRenderTarget : IRenderTarget
         _canvas.SetMatrix(finalMatrix);
     }
 
+    public void OnGraphicsStateChanged(PdfGraphicsState state)
+    {
+        // This is called when the gs operator changes ExtGState parameters.
+        // The actual alpha/blend mode will be applied in the drawing methods.
+        // Log for debugging
+        if (state.FillAlpha < 1.0 || state.StrokeAlpha < 1.0)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"GraphicsState changed: FillAlpha={state.FillAlpha:F2}, StrokeAlpha={state.StrokeAlpha:F2}, BlendMode={state.BlendMode}");
+        }
+
+        if (state.SoftMask is not null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"GraphicsState has SMask: Subtype={state.SoftMask.Subtype}, HasGroup={state.SoftMask.Group is not null}");
+        }
+        else
+        {
+            // SMask cleared - clear any active soft mask
+            ClearSoftMask();
+        }
+    }
+
+    /// <summary>
+    /// Sets the active soft mask from a pre-rendered bitmap.
+    /// The bitmap should contain alpha values where 255 = fully opaque, 0 = fully transparent.
+    /// Called by PdfRenderer after rendering the SMask's Group XObject.
+    /// </summary>
+    /// <param name="maskBitmap">The rendered soft mask bitmap (grayscale or RGBA with alpha)</param>
+    /// <param name="subtype">The mask subtype: "Alpha" or "Luminosity"</param>
+    public void SetSoftMask(SKBitmap maskBitmap, string subtype)
+    {
+        // If there's already a mask, apply and clear it first
+        if (_activeSoftMask is not null)
+        {
+            ClearSoftMask();
+        }
+
+        _activeSoftMask = maskBitmap;
+        _softMaskOwnerDepth = _currentStateDepth;
+
+        PdfLogger.Log(LogCategory.Graphics, $"SetSoftMask: {maskBitmap.Width}x{maskBitmap.Height}, Subtype={subtype}, OwnerDepth={_softMaskOwnerDepth}");
+
+        // DEBUG: Save mask bitmap to file for inspection
+        try
+        {
+            var debugPath = $"mask_debug_{DateTime.Now:HHmmss_fff}.png";
+            using var image = SKImage.FromBitmap(maskBitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            using var stream = System.IO.File.OpenWrite(debugPath);
+            data.SaveTo(stream);
+            PdfLogger.Log(LogCategory.Graphics, $"SetSoftMask: DEBUG - Saved mask to {debugPath}");
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"SetSoftMask: DEBUG - Failed to save mask: {ex.Message}");
+        }
+
+        // Start a new layer for masked content
+        // All subsequent drawing will go to this layer until the owning state is restored
+        var layerBounds = new SKRect(0, 0, (float)(_pageWidth * _scale), (float)(_pageHeight * _scale));
+        _canvas.SaveLayer(layerBounds, null);
+
+        PdfLogger.Log(LogCategory.Graphics, $"SetSoftMask: Started layer for soft mask compositing at depth {_softMaskOwnerDepth}");
+    }
+
+    /// <summary>
+    /// Applies the soft mask to the current layer before restoring.
+    /// Uses DstIn blend mode to mask the layer content with the soft mask's alpha channel.
+    /// </summary>
+    private void ApplySoftMaskToLayer()
+    {
+        if (_activeSoftMask is null)
+            return;
+
+        // Create a paint with DstIn blend mode
+        // DstIn: Result = Dst × Src.Alpha - keeps destination color but multiplies by source alpha
+        using var maskPaint = new SKPaint();
+        maskPaint.BlendMode = SKBlendMode.DstIn;
+
+        // Draw the mask bitmap - its alpha channel will be applied to the layer
+        // The mask is in device coordinates, so reset the matrix temporarily
+        SKMatrix currentMatrix = _canvas.TotalMatrix;
+        _canvas.SetMatrix(SKMatrix.Identity);
+
+        using var maskImage = SKImage.FromBitmap(_activeSoftMask);
+        if (maskImage is not null)
+        {
+            _canvas.DrawImage(maskImage, 0, 0, maskPaint);
+            PdfLogger.Log(LogCategory.Graphics, $"ApplySoftMaskToLayer: Applied mask {_activeSoftMask.Width}x{_activeSoftMask.Height} with DstIn blend at depth {_softMaskOwnerDepth}");
+        }
+
+        _canvas.SetMatrix(currentMatrix);
+    }
+
+    /// <summary>
+    /// Clears the active soft mask.
+    /// If a soft mask layer is active, composites it with the mask before clearing.
+    /// </summary>
+    public void ClearSoftMask()
+    {
+        if (_activeSoftMask is not null && _softMaskOwnerDepth >= 0)
+        {
+            // Apply the mask to whatever content has been drawn
+            ApplySoftMaskToLayer();
+            // Restore the layer that was started by SaveLayer in SetSoftMask
+            _canvas.Restore();
+
+            PdfLogger.Log(LogCategory.Graphics, $"ClearSoftMask: Soft mask cleared at depth {_softMaskOwnerDepth}");
+            _activeSoftMask.Dispose();
+            _activeSoftMask = null;
+            _softMaskOwnerDepth = -1;
+        }
+    }
+
+    /// <summary>
+    /// Gets the current page dimensions for creating offscreen surfaces.
+    /// </summary>
+    public (int width, int height, double scale) GetPageDimensions()
+    {
+        return ((int)Math.Ceiling(_pageWidth * _scale), (int)Math.Ceiling(_pageHeight * _scale), _scale);
+    }
+
+    /// <summary>
+    /// Gets the initial transform matrix for creating offscreen surfaces.
+    /// </summary>
+    public Matrix3x2 GetInitialTransform()
+    {
+        return _initialTransform;
+    }
+
     // ==================== TEXT RENDERING ====================
 
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
@@ -180,14 +349,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Instead, each glyph path is transformed individually with the full glyph matrix.
             // Canvas already has (displayMatrix × CTM) from ApplyCtm().
 
-            // Convert fill color
-            SKColor fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            // Convert fill color with alpha from graphics state
+            SKColor fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
+            fillColor = ApplyAlpha(fillColor, state.FillAlpha);
 
-            // Debug: show text color if it's not black
-            if (fillColor.Red != 0 || fillColor.Green != 0 || fillColor.Blue != 0)
-            {
-                PdfLogger.Log(LogCategory.Text, $"TEXT COLOR: Text='{(text.Length > 20 ? text[..20] + "..." : text)}' Color=RGB({fillColor.Red},{fillColor.Green},{fillColor.Blue}) ColorSpace={state.FillColorSpace}");
-            }
+            // Debug: always show text color
+            PdfLogger.Log(LogCategory.Text, $"TEXT COLOR: Text='{(text.Length > 20 ? text[..20] + "..." : text)}' Color=RGBA({fillColor.Red},{fillColor.Green},{fillColor.Blue},{fillColor.Alpha}) ColorSpace={state.ResolvedFillColorSpace} FillAlpha={state.FillAlpha:F2}");
 
             using var paint = new SKPaint();
             paint.Color = fillColor;
@@ -202,57 +369,94 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 return;
             }
 
-            PdfLogger.Log(LogCategory.Text, $"Falling back to Arial for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
-
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
 
-            // For fallback rendering with SKFont, the font size is already applied to the font
-            // So we only need to apply TextMatrix and TextRise (NOT font size scaling)
-            // Note: We still need horizontal scaling
+            // In PDF, the actual visual font size is FontSize * TextMatrix scaling.
+            // Common pattern: "1 Tf" (FontSize=1) with "60 0 0 60 x y Tm" (TextMatrix scales by 60)
+            // The effective font size = FontSize * sqrt(M11^2 + M12^2) for the scaling factor
+            // For simple scaling (no rotation), this is just FontSize * M11
+            float textMatrixScaleX = (float)Math.Sqrt(state.TextMatrix.M11 * state.TextMatrix.M11 + state.TextMatrix.M12 * state.TextMatrix.M12);
+            float textMatrixScaleY = (float)Math.Sqrt(state.TextMatrix.M21 * state.TextMatrix.M21 + state.TextMatrix.M22 * state.TextMatrix.M22);
+            float effectiveFontSize = (float)state.FontSize * textMatrixScaleY; // Use Y scale for font size
+
             // HorizontalScaling is stored as a percentage (100 = 100% = 1.0 scale)
             float tHs = (float)state.HorizontalScaling / 100f;
             var tRise = (float)state.TextRise;
 
-            // Apply only horizontal scaling and text rise, not font size
-            // (SKFont already has the font size baked in)
+            // The fallback matrix only handles position transforms now
+            // Font size is handled by the SKFont, TextMatrix scaling is extracted separately
+            // We need a matrix that positions characters without the font size scaling
+            // Since we extracted the scale into effectiveFontSize, we use normalized TextMatrix for positioning
+            float posScaleX = textMatrixScaleX > 0 ? state.TextMatrix.M11 / textMatrixScaleX : 1;
+            float posScaleY = textMatrixScaleY > 0 ? state.TextMatrix.M22 / textMatrixScaleY : 1;
+
+            // Position matrix: applies text matrix scaling for position
+            // Note: glyphWidths from PdfRenderer already include:
+            //   - FontSize/1000 scaling (to convert from glyph units to user space)
+            //   - HorizontalScaling/100 (tHs)
+            // So we only need textMatrixScaleX here, NOT tHs (to avoid double-applying horizontal scaling)
             var textPositionMatrix = new Matrix3x2(
-                tHs, 0,       // Horizontal scaling only
-                0, 1,         // No Y scaling (font already sized)
-                0, tRise      // Text rise
+                textMatrixScaleX, state.TextMatrix.M12,
+                state.TextMatrix.M21, textMatrixScaleY,
+                0, tRise * textMatrixScaleY
             );
 
-            Matrix3x2 fallbackMatrix = textPositionMatrix * state.TextMatrix;
+            Matrix3x2 fallbackMatrix = textPositionMatrix;
+            // Apply translation from TextMatrix
+            fallbackMatrix.M31 = state.TextMatrix.M31;
+            fallbackMatrix.M32 = state.TextMatrix.M32;
 
-            PdfLogger.Log(LogCategory.Text, $"FALLBACK: FontSize={state.FontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
+            PdfLogger.Log(LogCategory.Text, $"FALLBACK: FontSize={state.FontSize:F2}, EffectiveFontSize={effectiveFontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
             PdfLogger.Log(LogCategory.Text, $"  TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
-            PdfLogger.Log(LogCategory.Text, $"  FallbackMatrix (no FontSize)=[{fallbackMatrix.M11:F4}, {fallbackMatrix.M12:F4}, {fallbackMatrix.M21:F4}, {fallbackMatrix.M22:F4}, {fallbackMatrix.M31:F4}, {fallbackMatrix.M32:F4}]");
+            PdfLogger.Log(LogCategory.Text, $"  TextMatrixScale=({textMatrixScaleX:F4}, {textMatrixScaleY:F4}), FallbackMatrix=[{fallbackMatrix.M11:F4}, {fallbackMatrix.M12:F4}, {fallbackMatrix.M21:F4}, {fallbackMatrix.M22:F4}, {fallbackMatrix.M31:F4}, {fallbackMatrix.M32:F4}]");
 
-            // Determine font style from font descriptor
+            // Determine font style and family from font descriptor and name
             SKFontStyle? fontStyle = SKFontStyle.Normal;
+            string fallbackFontFamily = "Arial"; // Default to sans-serif
+
             if (font is not null)
             {
                 PdfFontDescriptor? descriptor = font.GetDescriptor();
                 var isBold = false;
                 var isItalic = false;
+                var isSerif = false;
 
                 if (descriptor is not null)
                 {
                     isBold = descriptor.IsBold;
                     isItalic = descriptor.IsItalic;
+                    isSerif = descriptor.IsSerif;
 
                     // Also use StemV as a heuristic for bold detection
                     if (descriptor.StemV >= 120)
                         isBold = true;
                 }
 
-                // Also check the font name for style hints
+                // Also check the font name for style and family hints
                 string baseName = font.BaseFont;
                 if (baseName.Contains("Bold", StringComparison.OrdinalIgnoreCase))
                     isBold = true;
                 if (baseName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
                     baseName.Contains("Oblique", StringComparison.OrdinalIgnoreCase))
                     isItalic = true;
+
+                // Detect serif fonts by name
+                if (baseName.Contains("Times", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Serif", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Georgia", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Palatino", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Garamond", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Cambria", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Bodoni", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Century", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Bookman", StringComparison.OrdinalIgnoreCase))
+                {
+                    isSerif = true;
+                }
+
+                // Choose fallback font family based on serif classification
+                fallbackFontFamily = isSerif ? "Times New Roman" : "Arial";
 
                 switch (isBold)
                 {
@@ -271,16 +475,22 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 }
             }
 
-            using var fallbackFont = new SKFont(SKTypeface.FromFamilyName("Arial", fontStyle), (float)state.FontSize);
+            PdfLogger.Log(LogCategory.Text, $"Falling back to {fallbackFontFamily} for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
+
+            // Use effective font size (FontSize * TextMatrix scaling) for visible text
+            using var fallbackFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), effectiveFontSize);
 
             float currentX = 0;
             for (var i = 0; i < text.Length; i++)
             {
                 // Transform character position through fallback matrix
-                // (excludes font size since SKFont already has it)
+                // Position is in PDF coordinates (includes TextMatrix translation)
                 Vector2 position = Vector2.Transform(new Vector2(currentX, 0), fallbackMatrix);
 
-                PdfLogger.Log(LogCategory.Text, $"DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4})");
+                // Use PDF-specified width for positioning (in glyph space units, typically 1/1000 em)
+                // This maintains correct spacing as specified by the PDF regardless of fallback font metrics
+                float pdfWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
+                PdfLogger.Log(LogCategory.Text, $"DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4}) fontSize={effectiveFontSize:F2} pdfWidth={pdfWidth:F4}");
 
                 var ch = text[i].ToString();
 
@@ -292,9 +502,10 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 _canvas.DrawText(ch, 0, 0, fallbackFont, paint);
                 _canvas.Restore();
 
-                // Advance by PDF glyph width, scaled by horizontal scaling
-                if (i < glyphWidths.Count)
-                    currentX += (float)glyphWidths[i] * tHs;
+                // Advance by the PDF-specified width
+                // PDF widths are in glyph space (1/1000 em units), already scaled by effectiveFontSize/1000
+                // through the fallbackMatrix transformation
+                currentX += pdfWidth;
             }
         }
         finally
@@ -354,15 +565,69 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 char displayChar = i < text.Length ? text[i] : '?';
 
                 ushort glyphId;
+                string? resolvedGlyphName = null; // Track glyph name for Type1 fonts
 
-                // For CFF fonts without cmap, use glyph name mapping via the PDF encoding
-                if (embeddedMetrics.IsCffFont && font.Encoding is not null)
+                // Debug: Log font type information on first character
+                if (i == 0)
                 {
-                    string? glyphName = font.Encoding.GetGlyphName(charCode);
-                    glyphId = glyphName is not null
-                        ? embeddedMetrics.GetGlyphIdByName(glyphName)
+                    PdfLogger.Log(LogCategory.Text, $"[GLYPH-DEBUG] Font='{font.BaseFont}', FontType={font.FontType}, FontClass={font.GetType().Name}, IsCffFont={embeddedMetrics.IsCffFont}, IsType1Font={embeddedMetrics.IsType1Font}, HasEncoding={font.Encoding is not null}");
+                }
+
+                // For CFF and Type1 fonts without cmap, use glyph name mapping via the PDF encoding
+                if ((embeddedMetrics.IsCffFont || embeddedMetrics.IsType1Font) && font.Encoding is not null)
+                {
+                    resolvedGlyphName = font.Encoding.GetGlyphName(charCode);
+                    glyphId = resolvedGlyphName is not null
+                        ? embeddedMetrics.GetGlyphIdByName(resolvedGlyphName)
                         // Fall back to direct lookup
                         : embeddedMetrics.GetGlyphId(charCode);
+                }
+                // For Type0 fonts with embedded Type1 data, use ToUnicode → glyph name mapping
+                else if (font is Type0Font type0Font && embeddedMetrics.IsType1Font && type0Font.ToUnicode is not null)
+                {
+                    // Use ToUnicode CMap to get the Unicode character
+                    string? unicode = type0Font.ToUnicode.Lookup(charCode);
+                    if (unicode is not null)
+                    {
+                        // Map Unicode to PostScript glyph name via Adobe Glyph List
+                        resolvedGlyphName = AdobeGlyphList.GetGlyphName(unicode);
+                        if (resolvedGlyphName is not null)
+                        {
+                            // Use pseudo glyph ID (won't be used, we'll lookup by name)
+                            glyphId = embeddedMetrics.GetGlyphIdByName(resolvedGlyphName);
+                            PdfLogger.Log(LogCategory.Text,
+                                $"[TYPE0-TYPE1] charCode={charCode} -> unicode='{unicode}' -> glyphName='{resolvedGlyphName}' -> glyphId={glyphId}");
+                        }
+                        else
+                        {
+                            // No AGL mapping, try using the character itself as glyph name (works for basic ASCII)
+                            if (unicode.Length == 1 && char.IsAscii(unicode[0]))
+                            {
+                                resolvedGlyphName = unicode;
+                                glyphId = embeddedMetrics.GetGlyphIdByName(resolvedGlyphName);
+                                PdfLogger.Log(LogCategory.Text,
+                                    $"[TYPE0-TYPE1] charCode={charCode} -> unicode='{unicode}' -> ASCII glyphName='{resolvedGlyphName}' -> glyphId={glyphId}");
+                            }
+                            else
+                            {
+                                glyphId = 0;
+                                PdfLogger.Log(LogCategory.Text,
+                                    $"[TYPE0-TYPE1] charCode={charCode} -> unicode='{unicode}' -> NO glyph name mapping");
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // No ToUnicode mapping, fall back to CIDToGIDMap
+                        if (type0Font.DescendantFont is CidFont cidFont)
+                        {
+                            glyphId = (ushort)cidFont.MapCidToGid(charCode);
+                        }
+                        else
+                        {
+                            glyphId = embeddedMetrics.GetGlyphId(charCode);
+                        }
+                    }
                 }
                 else
                 {
@@ -383,14 +648,17 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 if (glyphId == 0)
                 {
                     // Glyph not found, skip this character
-                    PdfLogger.Log(LogCategory.Text, $"[SKIP] charCode={charCode} ('{displayChar}') -> glyphId=0 (not found), font={font.BaseFont}");
+                    PdfLogger.Log(LogCategory.Text, $"[SKIP] charCode={charCode} ('{displayChar}') -> glyphId=0 (not found), glyphName={resolvedGlyphName ?? "null"}, font={font.BaseFont}");
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
+                        currentX += glyphWidths[i];  // glyphWidths already include horizontal scaling
                     continue;
                 }
 
                 // Extract glyph outline
-                GlyphOutline? glyphOutline = embeddedMetrics.GetGlyphOutline(glyphId);
+                // For Type1 fonts, use name-based lookup for better accuracy
+                GlyphOutline? glyphOutline = embeddedMetrics.IsType1Font && resolvedGlyphName is not null
+                    ? embeddedMetrics.GetGlyphOutlineByName(resolvedGlyphName)
+                    : embeddedMetrics.GetGlyphOutline(glyphId);
                 if (glyphOutline is null)
                 {
                     // Check if this glyph has metrics (advance width > 0) but no outline
@@ -448,7 +716,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     }
 
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
+                        currentX += glyphWidths[i];  // glyphWidths already include horizontal scaling
                     continue;
                 }
 
@@ -457,7 +725,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
                     // Empty glyph (e.g., space), just advance
                     PdfLogger.Log(LogCategory.Text, $"[SKIP-EMPTY] charCode={charCode} ('{displayChar}') -> glyphId={glyphId} outline is EMPTY, font={font.BaseFont}");
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
+                        currentX += glyphWidths[i];  // glyphWidths already include horizontal scaling
                     continue;
                 }
 
@@ -591,8 +859,10 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 glyphPath.Dispose();
 
                 // Advance to the next glyph position
+                // NOTE: glyphWidths already include horizontal scaling from PdfRenderer,
+                // so we do NOT multiply by tHs again here
                 if (i < glyphWidths.Count)
-                    currentX += glyphWidths[i] * tHs;  // Apply horizontal scaling to advance
+                    currentX += glyphWidths[i];
             }
 
             return true; // Successfully rendered with glyph outlines
@@ -732,6 +1002,19 @@ public class SkiaSharpRenderTarget : IRenderTarget
         return SKColors.Black;
     }
 
+    /// <summary>
+    /// Applies alpha value from graphics state to a color.
+    /// Alpha is specified in PDF as a value from 0.0 (transparent) to 1.0 (opaque).
+    /// </summary>
+    private static SKColor ApplyAlpha(SKColor color, double alpha)
+    {
+        if (alpha >= 1.0)
+            return color;
+
+        var alphaByte = (byte)(Math.Clamp(alpha, 0.0, 1.0) * 255);
+        return color.WithAlpha(alphaByte);
+    }
+
     // ==================== PATH OPERATIONS ====================
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
@@ -748,9 +1031,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Convert IPathBuilder to SKPath
             SKPath skPath = ConvertToSkPath(path);
 
-            // Create stroke paint
-            SKColor strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
-
+            // Create stroke paint with alpha from graphics state
+            SKColor strokeColor = ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
+            strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
 
             // Calculate CTM scaling factor for line width
             // The line width should be scaled by the CTM's linear scaling factor
@@ -803,8 +1086,10 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Set fill rule
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
-            // Create fill paint
-            SKColor fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            // Create fill paint with alpha from graphics state
+            SKColor fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
+            fillColor = ApplyAlpha(fillColor, state.FillAlpha);
+
             using var paint = new SKPaint();
             paint.Color = fillColor;
             paint.IsAntialias = true;
@@ -836,8 +1121,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
             // Set fill rule
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
-            // Fill first
-            SKColor fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+            // Fill first (with fill alpha from graphics state)
+            SKColor fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
+            fillColor = ApplyAlpha(fillColor, state.FillAlpha);
             using (var fillPaint = new SKPaint())
             {
                 fillPaint.Color = fillColor;
@@ -846,8 +1132,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 _canvas.DrawPath(skPath, fillPaint);
             }
 
-            // Then stroke
-            SKColor strokeColor = ConvertColor(state.StrokeColor, state.StrokeColorSpace);
+            // Then stroke (with stroke alpha from graphics state)
+            SKColor strokeColor = ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
+            strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
 
             // Calculate CTM scaling factor for line width
             Matrix3x2 ctm = state.Ctm;
@@ -965,26 +1252,24 @@ public class SkiaSharpRenderTarget : IRenderTarget
     /// <summary>
     /// Apply transformation matrix for path operations
     /// Per the code comments, paths are already transformed by CTM during construction.
-    /// We only need to apply the display matrix (Y-flip) to convert from PDF to screen coordinates.
+    /// We only need to apply the display matrix (Y-flip with crop offset) to convert from PDF to screen coordinates.
     /// </summary>
     private void ApplyPathTransformationMatrix(PdfGraphicsState state)
     {
         // Paths are already transformed by CTM during construction (in PDF user space)
-        // We need to apply ONLY the display matrix (Y-flip for PDF→screen conversion)
+        // We need to apply ONLY the initial transform (Y-flip + crop offset for PDF→screen conversion)
         // NOT the full CTM, otherwise we'd be transforming twice
+        //
+        // The _initialTransform correctly handles:
+        // 1. CropBox offset translation (-cropOffsetX, -cropOffsetY)
+        // 2. Y-axis flip with scale
+        // 3. Translation to put origin at top-left
 
-        var displayMatrix = new SKMatrix
-        {
-            ScaleX = 1,
-            ScaleY = -1,
-            TransX = 0,
-            TransY = (float)_pageHeight,
-            SkewX = 0,
-            SkewY = 0,
-            Persp0 = 0,
-            Persp1 = 0,
-            Persp2 = 1
-        };
+        var displayMatrix = new SKMatrix(
+            _initialTransform.M11, _initialTransform.M21, _initialTransform.M31,
+            _initialTransform.M12, _initialTransform.M22, _initialTransform.M32,
+            0, 0, 1
+        );
 
         _canvas.SetMatrix(displayMatrix);
     }
@@ -1022,11 +1307,12 @@ public class SkiaSharpRenderTarget : IRenderTarget
         try
         {
             // Create SKBitmap from PDF image data
-            // For image masks, pass the fill color to use as the stencil color
+            // For image masks, pass the fill color to use as the stencil color (with alpha)
             SKColor? fillColor = null;
             if (image.IsImageMask)
             {
-                fillColor = ConvertColor(state.FillColor, state.FillColorSpace);
+                fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
+                fillColor = ApplyAlpha(fillColor.Value, state.FillAlpha);
             }
             SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor);
             if (bitmap is null)
@@ -1053,16 +1339,8 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
                 _canvas.SetMatrix(combinedMatrix);
 
-                // Use None (nearest neighbor) filter quality to avoid any blending at tile boundaries.
-                // Sub-pixel blending from Medium/High filters can cause visible seams between adjacent images.
-                using var paint = new SKPaint
-                {
-                    FilterQuality = SKFilterQuality.None,
-                    IsAntialias = false
-                };
-
                 // Convert bitmap to SKImage for drawing
-                using var skImage = SKImage.FromBitmap(bitmap);
+                using SKImage? skImage = SKImage.FromBitmap(bitmap);
                 if (skImage == null)
                 {
                     PdfLogger.Log(LogCategory.Images, "DrawImage: SKImage.FromBitmap returned null!");
@@ -1076,7 +1354,24 @@ public class SkiaSharpRenderTarget : IRenderTarget
                 var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
                 const float epsilon = 0.002f;  // Small expansion to cover sub-pixel gaps
                 var destRect = new SKRect(-epsilon, -epsilon, 1 + epsilon, 1 + epsilon);
-                _canvas.DrawImage(skImage, sourceRect, destRect, paint);
+
+                // Use linear filtering for better quality when downscaling images.
+                // Nearest-neighbor produces jagged artifacts when scaling by non-integer factors.
+                // SKFilterQuality is obsolete - use SKSamplingOptions instead.
+                var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+
+                // Apply fill alpha from graphics state to images
+                // PDF uses CA for stroke alpha and ca for fill alpha; images use fill alpha
+                if (state.FillAlpha < 1.0)
+                {
+                    using var paint = new SKPaint();
+                    paint.Color = ApplyAlpha(SKColors.White, state.FillAlpha);
+                    _canvas.DrawImage(skImage, sourceRect, destRect, sampling, paint);
+                }
+                else
+                {
+                    _canvas.DrawImage(skImage, sourceRect, destRect, sampling);
+                }
 
                 // Restore original matrix
                 _canvas.SetMatrix(oldMatrix);
@@ -1167,8 +1462,30 @@ public class SkiaSharpRenderTarget : IRenderTarget
             if (image.IsImageMask && imageMaskColor.HasValue)
             {
                 // Image masks are 1-bit images where painted pixels use the fill color
-                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+                // Use Premul alpha for better compositing when the mask is scaled
+                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
                 SKColor color = imageMaskColor.Value;
+
+                // Check for Decode array - determines how mask bits map to paint/transparent
+                // Default [0 1]: sample 0 → paint, sample 1 → transparent
+                // Inverted [1 0]: sample 0 → transparent, sample 1 → paint
+                double[]? decodeArray = image.DecodeArray;
+                bool invertMask = decodeArray is { Length: >= 2 } && decodeArray[0] > decodeArray[1];
+
+                // Each row is byte-aligned (CCITT output is row-padded, not packed)
+                int bytesPerRow = (width + 7) / 8;
+
+                PdfLogger.Log(LogCategory.Images, $"  [ImageMask] {width}x{height}, dataLen={imageData.Length}, bytesPerRow={bytesPerRow}, expected={bytesPerRow * height}");
+                PdfLogger.Log(LogCategory.Images, $"  [ImageMask] DecodeArray={decodeArray?.Length ?? 0} values{(decodeArray != null ? $" [{string.Join(", ", decodeArray)}]" : "")}, invert={invertMask}");
+
+                // Log sample of data to verify CCITT decoding
+                if (imageData.Length >= 8)
+                {
+                    PdfLogger.Log(LogCategory.Images, $"  [ImageMask] First 8 bytes: {imageData[0]:X2} {imageData[1]:X2} {imageData[2]:X2} {imageData[3]:X2} {imageData[4]:X2} {imageData[5]:X2} {imageData[6]:X2} {imageData[7]:X2}");
+                }
+
+                int paintedPixels = 0;
+                int transparentPixels = 0;
 
                 for (var y = 0; y < height; y++)
                 {
@@ -1177,28 +1494,36 @@ public class SkiaSharpRenderTarget : IRenderTarget
                         // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
                         int srcY = y;
 
-                        // Calculate bit position
-                        int bitIndex = srcY * width + x;
-                        int byteIndex = bitIndex / 8;
-                        int bitOffset = 7 - (bitIndex % 8); // MSB first
+                        // Calculate byte and bit position (row-aligned data, MSB first)
+                        int byteIndex = srcY * bytesPerRow + (x / 8);
+                        int bitOffset = 7 - (x % 8); // MSB first within each byte
 
                         if (byteIndex >= imageData.Length)
                             continue;
 
-                        // Get the mask bit (1 = paint, 0 = transparent by default)
-                        // Note: The Decode array can invert this, but default is [0 1]
-                        bool paint = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
+                        // Get the mask bit
+                        // With CCITT default (BlackIs1=false): 0=black (paint), 1=white (transparent)
+                        // With Decode default [0 1]: sample 0 → paint, sample 1 → transparent
+                        // So with defaults: bit=0 → paint, bit=1 → transparent
+                        bool bitIsSet = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
+                        // Default: paint when bit is 0 (not set), i.e., !bitIsSet
+                        // With invertMask: paint when bit is 1 (set), i.e., bitIsSet
+                        bool paint = invertMask ? bitIsSet : !bitIsSet;
 
                         if (paint)
                         {
                             bitmap.SetPixel(x, y, color);
+                            paintedPixels++;
                         }
                         else
                         {
                             bitmap.SetPixel(x, y, SKColors.Transparent);
+                            transparentPixels++;
                         }
                     }
                 }
+
+                PdfLogger.Log(LogCategory.Images, $"  [ImageMask] Result: {paintedPixels} painted, {transparentPixels} transparent");
 
                 return bitmap;
             }
@@ -1550,6 +1875,7 @@ public class SkiaSharpRenderTarget : IRenderTarget
 
     public void Dispose()
     {
+        Clear(); // Clean up soft masks
         _surface.Dispose();
     }
 
@@ -1568,4 +1894,9 @@ public class SkiaSharpRenderTarget : IRenderTarget
     {
         return GlyphPathCache.Count;
     }
+
+    /// <summary>
+    /// Returns this instance since it is the underlying SkiaSharp render target.
+    /// </summary>
+    public SkiaSharpRenderTarget GetSkiaRenderTarget() => this;
 }

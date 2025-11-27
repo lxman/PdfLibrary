@@ -6,6 +6,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
+using PdfLibrary.Functions;
 using Logging;
 using PdfLibrary.Structure;
 
@@ -50,15 +51,25 @@ public class PdfRenderer : PdfContentProcessor
     /// <param name="scale">Scale factor for rendering (1.0 = 100%, 2.0 = 200%, etc.)</param>
     public void RenderPage(PdfPage page, int pageNumber = 1, double scale = 1.0)
     {
-        // Get page dimensions from MediaBox (original PDF coordinates)
+        // Get page dimensions - CropBox defines the visible area, MediaBox is the full canvas
+        // The output image should match CropBox dimensions
         PdfRectangle mediaBox = page.GetMediaBox();
-        double width = mediaBox.Width;
-        double height = mediaBox.Height;
+        PdfRectangle cropBox = page.GetCropBox();
 
-        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}, Scale={scale:F2}, OutputSize={width * scale:F0}x{height * scale:F0}");
+        // Use CropBox dimensions for the output image
+        double width = cropBox.Width;
+        double height = cropBox.Height;
 
-        // Begin the page lifecycle - pass scale to BeginPage so it can set up the initial transform correctly
-        _target.BeginPage(pageNumber, width, height, scale);
+        // CropBox offset relative to MediaBox origin - needed to translate coordinates
+        // X1, Y1 are the lower-left corner coordinates
+        double cropOffsetX = cropBox.X1;
+        double cropOffsetY = cropBox.Y1;
+
+        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}, CropBox={cropBox}");
+        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: CropOffset=({cropOffsetX:F2}, {cropOffsetY:F2}), Scale={scale:F2}, OutputSize={width * scale:F0}x{height * scale:F0}");
+
+        // Begin the page lifecycle - pass CropBox dimensions and offset
+        _target.BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY);
 
         try
         {
@@ -494,6 +505,14 @@ public class PdfRenderer : PdfContentProcessor
             return;
         }
 
+        // Type3 fonts: Skip rendering (see OnShowTextWithPositioning for explanation)
+        if (font.FontType == PdfFontType.Type3)
+        {
+            PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - skipping visual rendering (glyphs rendered as vector paths)");
+            AdvanceTextPositionForType3Simple(text, font);
+            return;
+        }
+
         // Decode the text - handle multi-byte encodings for Type0 fonts
         byte[] bytes = text.Bytes;
         var decodedText = new StringBuilder();
@@ -566,17 +585,35 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnColorChanged()
     {
         // Resolve named color spaces to device color spaces
+        // We keep the original color space name and components in CurrentState
+        // so subsequent color operators (scn) can work correctly with named color spaces.
+        // The resolved values are stored in the Resolved* fields for rendering.
+
         string? fillCs = CurrentState.FillColorSpace;
-        List<double>? fillColor = CurrentState.FillColor;
+        List<double>? fillColor = [..CurrentState.FillColor]; // Copy to avoid modifying original
+
+        string beforeFillCs = fillCs ?? "null";
+        string beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
+
         ResolveColorSpace(ref fillCs, ref fillColor);
-        CurrentState.FillColorSpace = fillCs ?? string.Empty;
-        CurrentState.FillColor = fillColor ?? [];
+
+        string afterFillCs = fillCs ?? "null";
+        string afterFillColor = fillColor is not null ? $"[{string.Join(", ", fillColor.Select(c => c.ToString("F3")))}]" : "null";
+
+        if (beforeFillCs != afterFillCs || beforeFillColor != afterFillColor)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"OnColorChanged FILL: {beforeFillCs} {beforeFillColor} -> {afterFillCs} {afterFillColor}");
+        }
+
+        // Store resolved values for rendering, but keep original color space name
+        CurrentState.ResolvedFillColorSpace = fillCs ?? string.Empty;
+        CurrentState.ResolvedFillColor = fillColor ?? [];
 
         string? strokeCs = CurrentState.StrokeColorSpace;
-        List<double>? strokeColor = CurrentState.StrokeColor;
+        List<double>? strokeColor = [..CurrentState.StrokeColor]; // Copy to avoid modifying original
         ResolveColorSpace(ref strokeCs, ref strokeColor);
-        CurrentState.StrokeColorSpace = strokeCs ?? string.Empty;
-        CurrentState.StrokeColor = strokeColor ?? [];
+        CurrentState.ResolvedStrokeColorSpace = strokeCs ?? string.Empty;
+        CurrentState.ResolvedStrokeColor = strokeColor ?? [];
     }
 
     private void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color)
@@ -677,43 +714,615 @@ public class PdfRenderer : PdfContentProcessor
                     break;
                 }
                 // Handle Separation color space: [/Separation name alternateSpace tintTransform]
-                // Get alternate color space (usually /DeviceRGB or /DeviceCMYK)
-                case "Separation" when csArray is [_, _, PdfName alternateName, ..]:
+                // Get alternate color space (usually /DeviceRGB or /DeviceCMYK, or [/CalRGB ...], [/CalGray ...], etc.)
+                case "Separation" when csArray.Count >= 4:
                 {
-                    string altSpace = alternateName.Value;
+                    // Get the colorant name (index 1)
+                    string colorantName = csArray[1] is PdfName cn ? cn.Value : "Unknown";
 
-                    // For now, simple heuristic: if alternate is DeviceRGB, map tint to grayscale in that space
-                    // A tint of 0 typically means "no ink" (white) and 1 means "full ink"
-                    // But Separation colors are usually inverted: 0 = full color, 1 = no color
+                    // Get the alternate color space (index 2) - can be PdfName or PdfArray
+                    PdfObject alternateObj = csArray[2];
+                    if (alternateObj is PdfIndirectReference altRef && _document is not null)
+                        alternateObj = _document.ResolveReference(altRef);
+
+                    string altSpace;
+                    int altComponents;
+
+                    if (alternateObj is PdfName altName)
+                    {
+                        altSpace = altName.Value;
+                        altComponents = altSpace switch
+                        {
+                            "DeviceGray" => 1,
+                            "DeviceRGB" => 3,
+                            "DeviceCMYK" => 4,
+                            _ => 3
+                        };
+                    }
+                    else if (alternateObj is PdfArray altArray && altArray.Count >= 1 && altArray[0] is PdfName altArrayType)
+                    {
+                        // Handle array-based alternate spaces like [/CalRGB <<...>>], [/CalGray <<...>>], [/Lab <<...>>]
+                        altSpace = altArrayType.Value;
+                        altComponents = altSpace switch
+                        {
+                            "CalGray" => 1,
+                            "CalRGB" => 3,
+                            "Lab" => 3,
+                            "ICCBased" => 3, // Default, should read /N from stream
+                            _ => 3
+                        };
+                    }
+                    else
+                    {
+                        // Unknown alternate space format
+                        break;
+                    }
+
+                    // Get the tint transform function (index 3)
+                    PdfObject? tintTransformObj = csArray[3];
+                    PdfFunction? tintTransform = _document is not null
+                        ? PdfFunction.Create(tintTransformObj, _document)
+                        : null;
+
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation: colorant='{colorantName}', altSpace='{altSpace}', altComponents={altComponents}, tintTransform={tintTransform?.GetType().Name ?? "NULL"}, color.Count={color.Count}");
+
                     if (color.Count == 1)
                     {
                         double tint = color[0];
 
-                        // Most Separation spaces use tint where 0 = full color, 1 = no color
-                        // The tint transform function would normally handle this, but as a simple
-                        // approximation, we'll use: output = 1 - tint for each component
-                        if (altSpace == "DeviceRGB")
+                        // Try to use the tint transform function
+                        if (tintTransform is not null)
                         {
-                            // For a typical spot color, full tint (0) produces the spot color
-                            // We need the actual tint transform, but as an approximation:
-                            // Assume the separation is a spot color that maps to a pure hue
-                            // For now, just convert to grayscale: 0 = black, 1 = white
-                            double value = 1.0 - tint; // Invert: 0 becomes 1 (white), 1 becomes 0 (black)
-                            color = [value, value, value];
-                            colorSpaceName = "DeviceRGB";
+                            double[] result = tintTransform.Evaluate([tint]);
+                            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
+
+                            if (result.Length >= 3)
+                            {
+                                // RGB output from tint transform
+                                color = [result[0], result[1], result[2]];
+                                colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
+                                if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
+                                    colorSpaceName = "DeviceRGB";
+                            }
+                            else if (result.Length == 1)
+                            {
+                                // Grayscale output
+                                color = [result[0]];
+                                colorSpaceName = "DeviceGray";
+                            }
+                            else if (result.Length == 4)
+                            {
+                                // CMYK output
+                                color = [result[0], result[1], result[2], result[3]];
+                                colorSpaceName = "DeviceCMYK";
+                            }
                         }
-                        else if (altSpace == "DeviceGray")
+                        else
                         {
-                            double value = 1.0 - tint;
-                            color = [value];
-                            colorSpaceName = "DeviceGray";
+                            // Fallback: simple heuristic when tint transform not available
+                            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> using fallback (no tint transform), tint={tint:F3}");
+
+                            // Handle special colorant names
+                            if (colorantName == "Black" || colorantName == "All" || colorantName == "None")
+                            {
+                                // For Black/All separations: tint=1 means black, tint=0 means white
+                                double value = 1.0 - tint;
+                                color = [value, value, value];
+                                colorSpaceName = "DeviceRGB";
+                            }
+                            else if (altSpace is "DeviceRGB" or "CalRGB")
+                            {
+                                double value = 1.0 - tint;
+                                color = [value, value, value];
+                                colorSpaceName = "DeviceRGB";
+                            }
+                            else if (altSpace is "DeviceGray" or "CalGray")
+                            {
+                                double value = 1.0 - tint;
+                                color = [value];
+                                colorSpaceName = "DeviceGray";
+                            }
+                            else if (altSpace == "DeviceCMYK")
+                            {
+                                color = [0.0, 0.0, 0.0, tint];
+                                colorSpaceName = "DeviceCMYK";
+                            }
+                            else
+                            {
+                                double value = 1.0 - tint;
+                                color = [value, value, value];
+                                colorSpaceName = "DeviceRGB";
+                            }
                         }
                     }
 
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
                     break;
                 }
             }
         }
+    }
+
+    // ==================== Graphics State Parameter Dictionary ====================
+
+    /// <summary>
+    /// Handles the gs operator - sets graphics state from ExtGState dictionary
+    /// </summary>
+    protected override void OnSetGraphicsState(string dictName)
+    {
+        PdfLogger.Log(LogCategory.Graphics, $"gs operator: {dictName}");
+
+        if (_currentResources is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"  No resources for ExtGState lookup");
+            return;
+        }
+
+        PdfDictionary? extGState = _currentResources.GetExtGState(dictName);
+        if (extGState is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"  ExtGState '{dictName}' not found");
+            return;
+        }
+
+        // Apply all ExtGState parameters to the current graphics state
+        ApplyExtGState(extGState);
+    }
+
+    /// <summary>
+    /// Applies ExtGState dictionary parameters to the current graphics state
+    /// ISO 32000-1:2008 Table 58 - Entries in a graphics state parameter dictionary
+    /// </summary>
+    private void ApplyExtGState(PdfDictionary extGState)
+    {
+        foreach (var entry in extGState)
+        {
+            string key = entry.Key.Value;
+            PdfObject value = entry.Value;
+
+            // Resolve indirect references
+            if (value is PdfIndirectReference reference && _document is not null)
+                value = _document.ResolveReference(reference);
+
+            switch (key)
+            {
+                case "Type":
+                    // Ignore - just identifies this as an ExtGState dictionary
+                    break;
+
+                // Line width (LW)
+                case "LW":
+                    if (GetNumber(value) is double lw)
+                    {
+                        CurrentState.LineWidth = lw;
+                        PdfLogger.Log(LogCategory.Graphics, $"  LW (LineWidth) = {lw}");
+                    }
+                    break;
+
+                // Line cap (LC)
+                case "LC":
+                    if (value is PdfInteger lc)
+                    {
+                        CurrentState.LineCap = lc.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  LC (LineCap) = {lc.Value}");
+                    }
+                    break;
+
+                // Line join (LJ)
+                case "LJ":
+                    if (value is PdfInteger lj)
+                    {
+                        CurrentState.LineJoin = lj.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  LJ (LineJoin) = {lj.Value}");
+                    }
+                    break;
+
+                // Miter limit (ML)
+                case "ML":
+                    if (GetNumber(value) is double ml)
+                    {
+                        CurrentState.MiterLimit = ml;
+                        PdfLogger.Log(LogCategory.Graphics, $"  ML (MiterLimit) = {ml}");
+                    }
+                    break;
+
+                // Dash pattern (D)
+                case "D":
+                    if (value is PdfArray dashArray && dashArray.Count >= 2)
+                    {
+                        if (dashArray[0] is PdfArray pattern)
+                        {
+                            var dashPattern = new double[pattern.Count];
+                            for (var i = 0; i < pattern.Count; i++)
+                            {
+                                dashPattern[i] = GetNumber(pattern[i]) ?? 0;
+                            }
+                            CurrentState.DashPattern = dashPattern.Length > 0 ? dashPattern : null;
+                        }
+                        CurrentState.DashPhase = GetNumber(dashArray[1]) ?? 0;
+                        PdfLogger.Log(LogCategory.Graphics, $"  D (DashPattern) = [{string.Join(", ", CurrentState.DashPattern ?? [])}] {CurrentState.DashPhase}");
+                    }
+                    break;
+
+                // Rendering intent (RI)
+                case "RI":
+                    if (value is PdfName ri)
+                    {
+                        // Store rendering intent if needed
+                        PdfLogger.Log(LogCategory.Graphics, $"  RI (RenderingIntent) = {ri.Value}");
+                    }
+                    break;
+
+                // Overprint for stroking (OP)
+                case "OP":
+                    if (value is PdfBoolean op)
+                    {
+                        CurrentState.StrokeOverprint = op.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  OP (StrokeOverprint) = {op.Value}");
+                    }
+                    break;
+
+                // Overprint for non-stroking (op)
+                case "op":
+                    if (value is PdfBoolean opFill)
+                    {
+                        CurrentState.FillOverprint = opFill.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  op (FillOverprint) = {opFill.Value}");
+                    }
+                    break;
+
+                // Overprint mode (OPM)
+                case "OPM":
+                    if (value is PdfInteger opm)
+                    {
+                        CurrentState.OverprintMode = opm.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  OPM (OverprintMode) = {opm.Value}");
+                    }
+                    break;
+
+                // Font (Font) - array of [fontRef size]
+                case "Font":
+                    if (value is PdfArray fontArray && fontArray.Count >= 2)
+                    {
+                        // Get font reference and size
+                        PdfObject fontRef = fontArray[0];
+                        if (fontRef is PdfIndirectReference fRef && _document is not null)
+                            fontRef = _document.ResolveReference(fRef);
+
+                        double? fontSize = GetNumber(fontArray[1]);
+                        if (fontSize.HasValue)
+                        {
+                            CurrentState.FontSize = fontSize.Value;
+                            PdfLogger.Log(LogCategory.Graphics, $"  Font size = {fontSize}");
+                        }
+                        // Note: Font name would need to be resolved from the font dictionary
+                    }
+                    break;
+
+                // Black generation (BG, BG2)
+                case "BG":
+                case "BG2":
+                    PdfLogger.Log(LogCategory.Graphics, $"  {key} (BlackGeneration) - not implemented");
+                    break;
+
+                // Undercolor removal (UCR, UCR2)
+                case "UCR":
+                case "UCR2":
+                    PdfLogger.Log(LogCategory.Graphics, $"  {key} (UndercolorRemoval) - not implemented");
+                    break;
+
+                // Transfer function (TR, TR2)
+                case "TR":
+                case "TR2":
+                    PdfLogger.Log(LogCategory.Graphics, $"  {key} (TransferFunction) - not implemented");
+                    break;
+
+                // Halftone (HT)
+                case "HT":
+                    PdfLogger.Log(LogCategory.Graphics, $"  HT (Halftone) - not implemented");
+                    break;
+
+                // Flatness tolerance (FL)
+                case "FL":
+                    if (GetNumber(value) is double fl)
+                    {
+                        CurrentState.Flatness = fl;
+                        PdfLogger.Log(LogCategory.Graphics, $"  FL (Flatness) = {fl}");
+                    }
+                    break;
+
+                // Smoothness tolerance (SM)
+                case "SM":
+                    if (GetNumber(value) is double sm)
+                    {
+                        CurrentState.Smoothness = sm;
+                        PdfLogger.Log(LogCategory.Graphics, $"  SM (Smoothness) = {sm}");
+                    }
+                    break;
+
+                // Stroke adjustment (SA)
+                case "SA":
+                    if (value is PdfBoolean sa)
+                    {
+                        PdfLogger.Log(LogCategory.Graphics, $"  SA (StrokeAdjustment) = {sa.Value}");
+                    }
+                    break;
+
+                // Blend mode (BM)
+                case "BM":
+                    string blendMode = value switch
+                    {
+                        PdfName bmName => bmName.Value,
+                        PdfArray bmArray when bmArray.Count > 0 && bmArray[0] is PdfName firstName => firstName.Value,
+                        _ => "Normal"
+                    };
+                    CurrentState.BlendMode = blendMode;
+                    PdfLogger.Log(LogCategory.Graphics, $"  BM (BlendMode) = {blendMode}");
+                    break;
+
+                // Soft mask (SMask)
+                case "SMask":
+                    ApplySoftMask(value);
+                    break;
+
+                // Stroking alpha (CA)
+                case "CA":
+                    if (GetNumber(value) is double ca)
+                    {
+                        CurrentState.StrokeAlpha = ca;
+                        PdfLogger.Log(LogCategory.Graphics, $"  CA (StrokeAlpha) = {ca}");
+                    }
+                    break;
+
+                // Non-stroking alpha (ca)
+                case "ca":
+                    if (GetNumber(value) is double caFill)
+                    {
+                        CurrentState.FillAlpha = caFill;
+                        PdfLogger.Log(LogCategory.Graphics, $"  ca (FillAlpha) = {caFill}");
+                    }
+                    break;
+
+                // Alpha is shape (AIS)
+                case "AIS":
+                    if (value is PdfBoolean ais)
+                    {
+                        CurrentState.AlphaIsShape = ais.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  AIS (AlphaIsShape) = {ais.Value}");
+                    }
+                    break;
+
+                // Text knockout (TK)
+                case "TK":
+                    if (value is PdfBoolean tk)
+                    {
+                        CurrentState.TextKnockout = tk.Value;
+                        PdfLogger.Log(LogCategory.Graphics, $"  TK (TextKnockout) = {tk.Value}");
+                    }
+                    break;
+
+                default:
+                    PdfLogger.Log(LogCategory.Graphics, $"  Unknown ExtGState key: {key}");
+                    break;
+            }
+        }
+
+        // Notify render target of graphics state change
+        _target.OnGraphicsStateChanged(CurrentState);
+    }
+
+    /// <summary>
+    /// Applies a soft mask from the SMask entry
+    /// </summary>
+    private void ApplySoftMask(PdfObject value)
+    {
+        if (value is PdfName nameValue)
+        {
+            if (nameValue.Value == "None")
+            {
+                // Clear the soft mask
+                CurrentState.SoftMask = null;
+                PdfLogger.Log(LogCategory.Graphics, "  SMask = None (cleared)");
+            }
+            return;
+        }
+
+        if (value is not PdfDictionary smaskDict)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"  SMask: unexpected type {value.GetType().Name}");
+            return;
+        }
+
+        // Parse soft mask dictionary
+        var softMask = new PdfSoftMask();
+
+        // Get subtype (S) - "Alpha" or "Luminosity"
+        if (smaskDict.TryGetValue(new PdfName("S"), out PdfObject sObj) && sObj is PdfName subtype)
+        {
+            softMask = softMask with { Subtype = subtype.Value };
+        }
+
+        // Get transparency group (G) - Form XObject
+        if (smaskDict.TryGetValue(new PdfName("G"), out PdfObject gObj))
+        {
+            PdfStream? groupStream = gObj switch
+            {
+                PdfStream stream => stream,
+                PdfIndirectReference gRef when _document is not null => _document.ResolveReference(gRef) as PdfStream,
+                _ => null
+            };
+            softMask = softMask with { Group = groupStream };
+        }
+
+        // Get backdrop color (BC)
+        if (smaskDict.TryGetValue(new PdfName("BC"), out PdfObject bcObj) && bcObj is PdfArray bcArray)
+        {
+            var backdropColor = new double[bcArray.Count];
+            for (var i = 0; i < bcArray.Count; i++)
+            {
+                backdropColor[i] = GetNumber(bcArray[i]) ?? 0;
+            }
+            softMask = softMask with { BackdropColor = backdropColor };
+        }
+
+        // Get transfer function (TR)
+        if (smaskDict.TryGetValue(new PdfName("TR"), out PdfObject trObj))
+        {
+            softMask = softMask with { TransferFunction = trObj };
+        }
+
+        CurrentState.SoftMask = softMask;
+        PdfLogger.Log(LogCategory.Graphics, $"  SMask: Subtype={softMask.Subtype}, HasGroup={softMask.Group is not null}");
+
+        // If we have a Group and the target has a SkiaSharp render target, render the mask
+        if (softMask.Group is not null)
+        {
+            var skiaTarget = _target.GetSkiaRenderTarget();
+            if (skiaTarget is not null)
+            {
+                RenderSoftMaskGroup(softMask, skiaTarget);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Renders the SMask Group XObject to create a soft mask bitmap.
+    /// </summary>
+    private void RenderSoftMaskGroup(PdfSoftMask softMask, SkiaSharpRenderTarget skiaTarget)
+    {
+        if (softMask.Group is null)
+            return;
+
+        try
+        {
+            // Get page dimensions from the target
+            var (width, height, scale) = skiaTarget.GetPageDimensions();
+
+            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Rendering mask to {width}x{height} surface");
+
+            // Create an offscreen surface for rendering the mask
+            var imageInfo = new SkiaSharp.SKImageInfo(width, height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul);
+            using var maskSurface = SkiaSharp.SKSurface.Create(imageInfo);
+            if (maskSurface is null)
+            {
+                PdfLogger.Log(LogCategory.Graphics, "RenderSoftMaskGroup: Failed to create mask surface");
+                return;
+            }
+
+            SkiaSharp.SKCanvas maskCanvas = maskSurface.Canvas;
+
+            // Start with transparent background - only painted areas will be in the mask
+            maskCanvas.Clear(SkiaSharp.SKColors.Transparent);
+
+            // Create a temporary render target for the mask with TRANSPARENT background
+            // This is critical for Alpha-type soft masks: the alpha channel of the rendered
+            // content determines what is visible. Background must be transparent (alpha=0)
+            // so unpainted areas allow no content through.
+            using var maskRenderTarget = new SkiaSharpRenderTarget(width, height, _document, transparentBackground: true);
+            maskRenderTarget.BeginPage(1, width / scale, height / scale, scale);
+
+            // Get the form's resources
+            PdfResources? formResources = _resources;
+            if (softMask.Group.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
+            {
+                if (resourcesObj is PdfIndirectReference resRef && _document is not null)
+                    resourcesObj = _document.ResolveReference(resRef);
+                if (resourcesObj is PdfDictionary resourcesDict)
+                    formResources = new PdfResources(resourcesDict);
+            }
+
+            // Create a renderer for the mask content
+            var maskRenderer = new PdfRenderer(maskRenderTarget, formResources ?? _resources, _optionalContentManager, _document)
+            {
+                CurrentState =
+                {
+                    // Start with identity CTM - the mask is in its own coordinate space
+                    Ctm = System.Numerics.Matrix3x2.Identity
+                }
+            };
+
+            // Check for Matrix entry in the form XObject
+            if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) &&
+                matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+            {
+                double a = GetNumber(matrixArray[0]) ?? 1;
+                double b = GetNumber(matrixArray[1]) ?? 0;
+                double c = GetNumber(matrixArray[2]) ?? 0;
+                double d = GetNumber(matrixArray[3]) ?? 1;
+                double e = GetNumber(matrixArray[4]) ?? 0;
+                double f = GetNumber(matrixArray[5]) ?? 0;
+                maskRenderer.CurrentState.ConcatenateMatrix(a, b, c, d, e, f);
+            }
+
+            // Parse and render the mask content
+            byte[] contentData = softMask.Group.GetDecodedData();
+            List<PdfOperator> operators = PdfContentParser.Parse(contentData);
+            maskRenderer.ProcessOperators(operators);
+            maskRenderTarget.EndPage();
+
+            // Get the rendered mask image
+            using SkiaSharp.SKImage maskImage = maskRenderTarget.GetImage();
+            SkiaSharp.SKBitmap maskBitmap = SkiaSharp.SKBitmap.FromImage(maskImage);
+
+            // Convert to alpha mask based on subtype
+            SkiaSharp.SKBitmap alphaMask;
+            if (softMask.Subtype == "Luminosity")
+            {
+                // Luminosity mask: convert RGB luminosity to alpha
+                alphaMask = ConvertToLuminosityMask(maskBitmap);
+                maskBitmap.Dispose();
+            }
+            else
+            {
+                // Alpha mask: use the alpha channel directly
+                alphaMask = maskBitmap;
+            }
+
+            // Pass the mask to the render target
+            skiaTarget.SetSoftMask(alphaMask, softMask.Subtype);
+
+            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Mask rendered successfully");
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Error rendering mask: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Converts a rendered bitmap to a luminosity-based alpha mask.
+    /// The luminosity (grayscale value) of each pixel becomes the alpha value.
+    /// </summary>
+    private static SkiaSharp.SKBitmap ConvertToLuminosityMask(SkiaSharp.SKBitmap source)
+    {
+        var result = new SkiaSharp.SKBitmap(source.Width, source.Height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul);
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                SkiaSharp.SKColor pixel = source.GetPixel(x, y);
+                // Calculate luminosity: 0.299*R + 0.587*G + 0.114*B
+                var luminosity = (byte)(0.299 * pixel.Red + 0.587 * pixel.Green + 0.114 * pixel.Blue);
+                // Use luminosity as alpha, with white (255, 255, 255) for the color
+                result.SetPixel(x, y, new SkiaSharp.SKColor(255, 255, 255, luminosity));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Helper to extract a number from a PDF object
+    /// </summary>
+    private static double? GetNumber(PdfObject obj)
+    {
+        return obj switch
+        {
+            PdfInteger i => i.Value,
+            PdfReal r => r.Value,
+            _ => null
+        };
     }
 
     protected override void OnShowTextWithPositioning(PdfArray array)
@@ -730,6 +1339,21 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         PdfLogger.Log(LogCategory.Text, $"Using font '{CurrentState.FontName}' Type={font.FontType} BaseFont={font.BaseFont}");
+
+        // Type3 fonts: Skip rendering. Type3 font glyphs are defined as CharProc content streams.
+        // In this PDF library, the visual glyph shapes are typically rendered as separate vector paths
+        // in the main content stream (not via CharProc execution). The TJ/Tj operators with Type3 fonts
+        // are primarily for text extraction/selection. If we try to render, we'd fall back to Arial
+        // (since Type3 fonts have no embedded glyph outlines), causing double rendering/ghosting.
+        // TODO: Implement proper Type3 CharProc execution for PDFs that rely on it for visual rendering.
+        if (font.FontType == PdfFontType.Type3)
+        {
+            PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - skipping visual rendering (glyphs rendered as vector paths)");
+            // Still need to advance text position for proper layout of subsequent text
+            AdvanceTextPositionForType3(array, font);
+            return;
+        }
+
         bool isType0 = font.FontType == PdfFontType.Type0;
         var combinedText = new StringBuilder();
         var combinedWidths = new List<double>();
@@ -830,6 +1454,89 @@ public class PdfRenderer : PdfContentProcessor
 
         // Advance text position by total width
         double totalAdvance = combinedWidths.Sum();
+        CurrentState.AdvanceTextMatrix(totalAdvance, 0);
+    }
+
+    /// <summary>
+    /// Advances the text position for Type3 fonts without rendering (for Tj operator).
+    /// </summary>
+    private void AdvanceTextPositionForType3Simple(PdfString text, PdfFont font)
+    {
+        double totalAdvance = 0;
+        byte[] bytes = text.Bytes;
+
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            int charCode = bytes[i];
+            double glyphWidth = font.GetCharacterWidth(charCode);
+            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            advance *= CurrentState.HorizontalScaling / 100.0;
+
+            if (CurrentState.CharacterSpacing != 0)
+                advance += CurrentState.CharacterSpacing;
+
+            string decoded = font.DecodeCharacter(charCode);
+            if (decoded == " " && CurrentState.WordSpacing != 0)
+                advance += CurrentState.WordSpacing;
+
+            totalAdvance += advance;
+        }
+
+        CurrentState.AdvanceTextMatrix(totalAdvance, 0);
+    }
+
+    /// <summary>
+    /// Advances the text position for Type3 fonts without rendering (for TJ operator).
+    /// Type3 fonts have their glyphs rendered as vector paths, but we still need
+    /// to advance the text position properly for subsequent text operations.
+    /// </summary>
+    private void AdvanceTextPositionForType3(PdfArray array, PdfFont font)
+    {
+        double totalAdvance = 0;
+
+        foreach (PdfObject item in array)
+        {
+            switch (item)
+            {
+                case PdfString str:
+                {
+                    byte[] bytes = str.Bytes;
+                    for (var i = 0; i < bytes.Length; i++)
+                    {
+                        int charCode = bytes[i];
+                        double glyphWidth = font.GetCharacterWidth(charCode);
+                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        advance *= CurrentState.HorizontalScaling / 100.0;
+
+                        if (CurrentState.CharacterSpacing != 0)
+                            advance += CurrentState.CharacterSpacing;
+
+                        string decoded = font.DecodeCharacter(charCode);
+                        if (decoded == " " && CurrentState.WordSpacing != 0)
+                            advance += CurrentState.WordSpacing;
+
+                        totalAdvance += advance;
+                    }
+                    break;
+                }
+                case PdfInteger intVal:
+                {
+                    // Kerning adjustment in thousandths of text space
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    adjustment *= CurrentState.HorizontalScaling / 100.0;
+                    totalAdvance += adjustment;
+                    break;
+                }
+                case PdfReal realVal:
+                {
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    adjustment *= CurrentState.HorizontalScaling / 100.0;
+                    totalAdvance += adjustment;
+                    break;
+                }
+            }
+        }
+
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
 

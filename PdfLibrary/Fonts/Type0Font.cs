@@ -79,12 +79,24 @@ public class Type0Font : PdfFont
             // Try OpenType/CFF (FontFile3)
             byte[]? fontData = descriptor.GetFontFile2() ?? descriptor.GetFontFile3();
 
-            if (fontData is null)
-                return null;
+            if (fontData is not null)
+            {
+                // Parse embedded font metrics (TrueType or CFF)
+                _embeddedMetrics = new EmbeddedFontMetrics(fontData);
+                return _embeddedMetrics;
+            }
 
-            // Parse embedded font metrics
-            _embeddedMetrics = new EmbeddedFontMetrics(fontData);
-            return _embeddedMetrics;
+            // Try Type1 font (FontFile with Length1/Length2/Length3 parameters)
+            var type1Data = descriptor.GetFontFileWithLengths();
+            if (type1Data is not null)
+            {
+                var (data, length1, length2, length3) = type1Data.Value;
+                _embeddedMetrics = new EmbeddedFontMetrics(data, length1, length2, length3);
+                if (_embeddedMetrics.IsValid)
+                    return _embeddedMetrics;
+            }
+
+            return null;
         }
         catch
         {

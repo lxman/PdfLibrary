@@ -66,6 +66,7 @@ namespace Compressors.Ccitt.Tests
         public void Debug_Group4_VerticalStripes()
         {
             // Simpler test: just 32 pixels wide, 1 row
+            // Using BlackIs1=true so bit=1 means black
             int width = 32;
             int height = 1;
             int stripeWidth = 8;
@@ -73,7 +74,7 @@ namespace Compressors.Ccitt.Tests
             var original = new byte[bytesPerRow * height];
 
             // Create striped pattern: W W W W W W W W | B B B B B B B B | W W W W W W W W | B B B B B B B B
-            // Bytes: 00 FF 00 FF
+            // Bytes: 00 FF 00 FF (when BlackIs1=true)
             for (int col = 0; col < width; col++)
             {
                 bool isBlack = (col / stripeWidth) % 2 == 1;
@@ -90,11 +91,13 @@ namespace Compressors.Ccitt.Tests
             _output.WriteLine($"Changing elements at positions: 8, 16, 24, 32(end)");
 
             // Encode without EOFB for simpler analysis
+            // Use BlackIs1=true since we encoded bit=1 as black
             var options = new CcittOptions
             {
                 Group = CcittGroup.Group4,
                 Width = width,
-                EndOfBlock = false
+                EndOfBlock = false,
+                BlackIs1 = true
             };
 
             var encoder = new CcittEncoder(options);
@@ -134,11 +137,11 @@ namespace Compressors.Ccitt.Tests
         [Fact]
         public void Debug_FindChangingElement()
         {
-            // Test with all black row
-            var row = new byte[] { 0xFF, 0xFF }; // 16 black pixels
+            // Test with all black row (using BlackIs1=true so 0xFF means all black)
+            var row = new byte[] { 0xFF, 0xFF }; // 16 bits all set
             int width = 16;
 
-            var options = new CcittOptions { Width = width };
+            var options = new CcittOptions { Width = width, BlackIs1 = true };
             var encoder = new CcittEncoder(options);
 
             // Use reflection to test the private method
@@ -146,9 +149,9 @@ namespace Compressors.Ccitt.Tests
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
             // FindChangingElement(row, after, currentColor)
-            // Looking for first element after -1 that differs from white
+            // Looking for first element after -1 that differs from white (false)
             int a1 = (int)method.Invoke(encoder, new object[] { row, -1, false });
-            _output.WriteLine($"FindChangingElement(allBlack, -1, white) = {a1}");
+            _output.WriteLine($"FindChangingElement(allBlack, -1, white, BlackIs1=true) = {a1}");
 
             // Should be 0 since pixel 0 is black (different from white)
             Assert.Equal(0, a1);
@@ -157,10 +160,11 @@ namespace Compressors.Ccitt.Tests
         [Fact]
         public void Debug_GetPixelColor()
         {
-            var row = new byte[] { 0xFF }; // 8 black pixels
+            // Test with BlackIs1=true (bit=1 means black)
+            var row = new byte[] { 0xFF }; // 8 bits all set
             int width = 8;
 
-            var options = new CcittOptions { Width = width };
+            var options = new CcittOptions { Width = width, BlackIs1 = true };
             var encoder = new CcittEncoder(options);
 
             var method = typeof(CcittEncoder).GetMethod("GetPixelColor",
@@ -169,8 +173,19 @@ namespace Compressors.Ccitt.Tests
             for (int i = 0; i < 8; i++)
             {
                 bool isBlack = (bool)method.Invoke(encoder, new object[] { row, i });
-                _output.WriteLine($"GetPixelColor(0xFF, {i}) = {isBlack} (black)");
-                Assert.True(isBlack, $"Pixel {i} should be black");
+                _output.WriteLine($"GetPixelColor(0xFF, {i}, BlackIs1=true) = {isBlack}");
+                Assert.True(isBlack, $"Pixel {i} should be black when BlackIs1=true and bit=1");
+            }
+
+            // Test with BlackIs1=false (bit=0 means black, bit=1 means white)
+            var options2 = new CcittOptions { Width = width, BlackIs1 = false };
+            var encoder2 = new CcittEncoder(options2);
+
+            for (int i = 0; i < 8; i++)
+            {
+                bool isBlack = (bool)method.Invoke(encoder2, new object[] { row, i });
+                _output.WriteLine($"GetPixelColor(0xFF, {i}, BlackIs1=false) = {isBlack}");
+                Assert.False(isBlack, $"Pixel {i} should be white when BlackIs1=false and bit=1");
             }
         }
     }

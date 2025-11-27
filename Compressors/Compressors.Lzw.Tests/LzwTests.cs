@@ -1,8 +1,4 @@
-using System;
-using System.IO;
-using System.Linq;
 using System.Text;
-using Xunit;
 
 namespace Compressors.Lzw.Tests
 {

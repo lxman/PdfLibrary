@@ -1,4 +1,5 @@
 using Compressors.Ccitt;
+using Logging;
 
 namespace PdfLibrary.Filters;
 
@@ -47,7 +48,14 @@ public class CcittFaxDecodeFilter : IStreamFilter
             bool endOfLine = GetBoolParameter(parameters, "EndOfLine", false);
             bool endOfBlock = GetBoolParameter(parameters, "EndOfBlock", true);
 
-            return Ccitt.Decompress(data, k, columns, rows, blackIs1, encodedByteAlign, endOfLine, endOfBlock);
+            PdfLogger.Log(LogCategory.Images, $"  [CCITT] K={k}, Columns={columns}, Rows={rows}, BlackIs1={blackIs1}, EncodedByteAlign={encodedByteAlign}, EndOfLine={endOfLine}, EndOfBlock={endOfBlock}");
+            PdfLogger.Log(LogCategory.Images, $"  [CCITT] Input: {data.Length} bytes, Expected output: {(columns * rows + 7) / 8} bytes");
+
+            byte[] result = Ccitt.Decompress(data, k, columns, rows, blackIs1, encodedByteAlign, endOfLine, endOfBlock);
+
+            PdfLogger.Log(LogCategory.Images, $"  [CCITT] Output: {result.Length} bytes, ActualRows={result.Length * 8 / columns}");
+
+            return result;
         }
         catch (Exception ex)
         {

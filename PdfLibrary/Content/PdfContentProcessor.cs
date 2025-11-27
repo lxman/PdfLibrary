@@ -90,6 +90,10 @@ public abstract class PdfContentProcessor
                 CurrentState.Flatness = flatness.Flatness;
                 break;
 
+            case SetGraphicsStateOperator gs:
+                OnSetGraphicsState(gs.DictName);
+                break;
+
             // Text object operators
             case BeginTextOperator:
                 CurrentState.BeginText();
@@ -376,6 +380,7 @@ public abstract class PdfContentProcessor
     protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
     protected virtual void OnColorChanged() { }
     protected virtual void OnGenericOperator(GenericOperator op) { }
+    protected virtual void OnSetGraphicsState(string dictName) { }
 
     /// <summary>
     /// Clears the pending clip flag. Should be called after applying clipping

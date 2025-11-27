@@ -302,6 +302,38 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         return null;
     }
 
+    /// <summary>
+    /// Gets the FontFile stream (Type1 font program) along with Length1/Length2/Length3 parameters
+    /// needed for proper parsing of the Type1 font data
+    /// </summary>
+    /// <returns>Tuple of (data, length1, length2, length3) or null if not found</returns>
+    public (byte[] data, int length1, int length2, int length3)? GetFontFileWithLengths()
+    {
+        if (!_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject? obj))
+            return null;
+
+        // Resolve indirect reference if needed
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        if (obj is not PdfStream stream)
+            return null;
+
+        byte[] data = stream.GetDecodedData();
+
+        // Get Length1, Length2, Length3 from stream dictionary
+        int length1 = 0, length2 = 0, length3 = 0;
+
+        if (stream.Dictionary.TryGetValue(new PdfName("Length1"), out PdfObject? l1Obj))
+            length1 = (int)GetNumber(l1Obj);
+        if (stream.Dictionary.TryGetValue(new PdfName("Length2"), out PdfObject? l2Obj))
+            length2 = (int)GetNumber(l2Obj);
+        if (stream.Dictionary.TryGetValue(new PdfName("Length3"), out PdfObject? l3Obj))
+            length3 = (int)GetNumber(l3Obj);
+
+        return (data, length1, length2, length3);
+    }
+
     private static double GetNumber(PdfObject obj)
     {
         return obj switch

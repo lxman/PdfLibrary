@@ -44,7 +44,7 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
 
     // ==================== PAGE LIFECYCLE ====================
 
-    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
     {
         CurrentPageNumber = pageNumber;
         // Calculate output dimensions (scaled)
@@ -58,11 +58,11 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
 
         // Create a new render target at the scaled size
         _renderTarget = new SkiaSharpRenderTarget(_width, _height, _document);
-        // Pass the original (unscaled) dimensions and scale factor
-        _renderTarget.BeginPage(pageNumber, width, height, scale);
+        // Pass the original (unscaled) dimensions, scale factor, and crop offsets
+        _renderTarget.BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY);
 
-        Log.Information("BeginPage: Page {PageNumber}, Size: {Width} x {Height}, Scale: {Scale:F2}",
-            pageNumber, _width, _height, scale);
+        Log.Information("BeginPage: Page {PageNumber}, Size: {Width} x {Height}, Scale: {Scale:F2}, CropOffset: ({CropX}, {CropY})",
+            pageNumber, _width, _height, scale, cropOffsetX, cropOffsetY);
     }
 
     public void EndPage()
@@ -173,4 +173,14 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
     {
         _renderTarget?.ApplyCtm(ctm);
     }
+
+    public void OnGraphicsStateChanged(PdfGraphicsState state)
+    {
+        _renderTarget?.OnGraphicsStateChanged(state);
+    }
+
+    /// <summary>
+    /// Gets the underlying SkiaSharp render target for advanced operations.
+    /// </summary>
+    public SkiaSharpRenderTarget? GetSkiaRenderTarget() => _renderTarget;
 }

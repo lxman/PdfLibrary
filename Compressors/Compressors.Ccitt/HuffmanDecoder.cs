@@ -1,7 +1,6 @@
 #nullable enable
 
 using System;
-using System.Collections.Generic;
 
 namespace Compressors.Ccitt
 {
@@ -240,10 +239,20 @@ namespace Compressors.Ccitt
         /// <returns>The 2D mode.</returns>
         public TwoDimensionalMode Decode2DMode(CcittBitReader reader)
         {
+            int startPos = reader.Position;
             int value = DecodeValue(reader, _twoDimensionalRoot);
 
             if (value < 0)
+            {
+                // Debug: show what bits we tried to read
+                int endPos = reader.Position;
+                reader.Seek(startPos);
+                int peekBits = Math.Min(16, reader.BitsRemaining);
+                int bits = peekBits > 0 ? reader.PeekBits(peekBits) : -1;
+                Console.WriteLine($"[CCITT DEBUG] 2D mode decode failed at bit {startPos}, next {peekBits} bits: 0b{Convert.ToString(bits, 2).PadLeft(peekBits, '0')} (0x{bits:X})");
+                reader.Seek(endPos);
                 return TwoDimensionalMode.Error;
+            }
 
             return (TwoDimensionalMode)value;
         }

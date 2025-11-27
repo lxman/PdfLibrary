@@ -42,7 +42,7 @@ public class Jbig2DecodeFilter : IStreamFilter
             // JBIG2 spec: 0 = white (background), 1 = black (foreground)
             // PDF DeviceGray for 1-bit images: 0 = black, 1 = white
             // Need to invert all bits for PDF compatibility
-            for (int i = 0; i < result.Length; i++)
+            for (var i = 0; i < result.Length; i++)
             {
                 result[i] = (byte)~result[i];
             }

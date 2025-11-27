@@ -15,10 +15,10 @@ public class MockRenderTarget : IRenderTarget
 
     public int CurrentPageNumber { get; private set; }
 
-    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
     {
         CurrentPageNumber = pageNumber;
-        Operations.Add($"BeginPage: Page {pageNumber}, Size={width}x{height}, Scale={scale:F2}");
+        Operations.Add($"BeginPage: Page {pageNumber}, Size={width}x{height}, Scale={scale:F2}, CropOffset=({cropOffsetX:F2},{cropOffsetY:F2})");
     }
 
     public void EndPage()
@@ -72,6 +72,13 @@ public class MockRenderTarget : IRenderTarget
     {
         Operations.Add($"ApplyCtm: CTM=[{ctm.M11},{ctm.M12},{ctm.M21},{ctm.M22},{ctm.M31},{ctm.M32}]");
     }
+
+    public void OnGraphicsStateChanged(PdfGraphicsState state)
+    {
+        Operations.Add($"OnGraphicsStateChanged: FillAlpha={state.FillAlpha:F2}, StrokeAlpha={state.StrokeAlpha:F2}, BlendMode={state.BlendMode}");
+    }
+
+    public SkiaSharpRenderTarget? GetSkiaRenderTarget() => null;
 
     private static string GetPathDescription(IPathBuilder path)
     {

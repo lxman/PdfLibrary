@@ -83,17 +83,61 @@ public class PdfGraphicsState
     public double DashPhase { get; set; }
 
     // Color state
-    /// <summary>Stroke color space (default: DeviceGray)</summary>
+    /// <summary>Stroke color space name (default: DeviceGray) - may be a named color space like Cs9</summary>
     public string StrokeColorSpace { get; set; } = "DeviceGray";
 
-    /// <summary>Fill color space (default: DeviceGray)</summary>
+    /// <summary>Fill color space name (default: DeviceGray) - may be a named color space like Cs9</summary>
     public string FillColorSpace { get; set; } = "DeviceGray";
 
-    /// <summary>Stroke color components (default: black)</summary>
+    /// <summary>Stroke color components as specified in the content stream (default: black)</summary>
     public List<double> StrokeColor { get; set; } = [0.0];
 
-    /// <summary>Fill color components (default: black)</summary>
+    /// <summary>Fill color components as specified in the content stream (default: black)</summary>
     public List<double> FillColor { get; set; } = [0.0];
+
+    // Resolved color state - used by renderers after color space resolution
+    /// <summary>Resolved stroke color space (device color space)</summary>
+    public string ResolvedStrokeColorSpace { get; set; } = "DeviceGray";
+
+    /// <summary>Resolved fill color space (device color space)</summary>
+    public string ResolvedFillColorSpace { get; set; } = "DeviceGray";
+
+    /// <summary>Resolved stroke color components (in device color space)</summary>
+    public List<double> ResolvedStrokeColor { get; set; } = [0.0];
+
+    /// <summary>Resolved fill color components (in device color space)</summary>
+    public List<double> ResolvedFillColor { get; set; } = [0.0];
+
+    // ExtGState parameters (set via gs operator)
+    /// <summary>Stroking alpha (CA) - 0.0 = fully transparent, 1.0 = fully opaque</summary>
+    public double StrokeAlpha { get; set; } = 1.0;
+
+    /// <summary>Non-stroking (fill) alpha (ca) - 0.0 = fully transparent, 1.0 = fully opaque</summary>
+    public double FillAlpha { get; set; } = 1.0;
+
+    /// <summary>Blend mode (BM) - default is Normal</summary>
+    public string BlendMode { get; set; } = "Normal";
+
+    /// <summary>Soft mask dictionary (SMask) - for transparency masking</summary>
+    public PdfSoftMask? SoftMask { get; set; }
+
+    /// <summary>Alpha source flag (AIS) - if true, alpha comes from shape; if false, from opacity</summary>
+    public bool AlphaIsShape { get; set; }
+
+    /// <summary>Text knockout flag (TK) - affects text rendering in transparency groups</summary>
+    public bool TextKnockout { get; set; } = true;
+
+    /// <summary>Overprint mode for stroking (OP)</summary>
+    public bool StrokeOverprint { get; set; }
+
+    /// <summary>Overprint mode for non-stroking (op)</summary>
+    public bool FillOverprint { get; set; }
+
+    /// <summary>Overprint mode (OPM) - 0 or 1</summary>
+    public int OverprintMode { get; set; }
+
+    /// <summary>Smoothness tolerance (SM)</summary>
+    public double Smoothness { get; set; } = 0.0;
 
     /// <summary>
     /// Sets stroke color to grayscale
@@ -178,7 +222,22 @@ public class PdfGraphicsState
             StrokeColorSpace = StrokeColorSpace,
             FillColorSpace = FillColorSpace,
             StrokeColor = [..StrokeColor],
-            FillColor = [..FillColor]
+            FillColor = [..FillColor],
+            ResolvedStrokeColorSpace = ResolvedStrokeColorSpace,
+            ResolvedFillColorSpace = ResolvedFillColorSpace,
+            ResolvedStrokeColor = [..ResolvedStrokeColor],
+            ResolvedFillColor = [..ResolvedFillColor],
+            // ExtGState parameters
+            StrokeAlpha = StrokeAlpha,
+            FillAlpha = FillAlpha,
+            BlendMode = BlendMode,
+            SoftMask = SoftMask is not null ? SoftMask with { BackdropColor = SoftMask.BackdropColor is not null ? [..SoftMask.BackdropColor] : null } : null,
+            AlphaIsShape = AlphaIsShape,
+            TextKnockout = TextKnockout,
+            StrokeOverprint = StrokeOverprint,
+            FillOverprint = FillOverprint,
+            OverprintMode = OverprintMode,
+            Smoothness = Smoothness
         };
     }
 

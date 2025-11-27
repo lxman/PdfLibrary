@@ -46,7 +46,13 @@ namespace Compressors.Ccitt
             if (_options.Group == CcittGroup.Group4)
             {
                 referenceLine = new byte[bytesPerRow];
-                // All zeros = all white (in standard CCITT, 0 = white)
+                // BlackIs1=true: 1=black, 0=white, so all zeros = all white (default byte array is zeros) ✓
+                // BlackIs1=false: 0=black, 1=white, so we need all 1s for white
+                if (!_options.BlackIs1)
+                {
+                    for (int i = 0; i < bytesPerRow; i++)
+                        referenceLine[i] = 0xFF;
+                }
             }
 
             int rowCount = 0;
@@ -64,6 +70,8 @@ namespace Compressors.Ccitt
                 {
                     reader.AlignToByte();
                 }
+
+                Trace($"Row {rowCount}: starting at bit {reader.Position}");
 
                 byte[]? row = null;
 
@@ -105,6 +113,9 @@ namespace Compressors.Ccitt
                     if (CheckEndOfBlock(reader))
                         break;
 
+                    // Debug: log error position
+                    Console.WriteLine($"[CCITT DEBUG] Row {rowCount} decode failed at bit position {reader.Position}, bits remaining: {reader.BitsRemaining}");
+
                     // Error - try to continue if damaged rows allowed
                     if (_options.DamagedRowsBeforeError > 0)
                     {
@@ -132,7 +143,7 @@ namespace Compressors.Ccitt
         private byte[]? DecodeGroup3_1DRow(CcittBitReader reader)
         {
             int bytesPerRow = (_options.Width + 7) / 8;
-            var row = new byte[bytesPerRow];
+            var row = CreateWhiteRow(bytesPerRow);
             int pixelPosition = 0;
             bool isWhite = true; // Always start with white
 
@@ -180,48 +191,87 @@ namespace Compressors.Ccitt
         }
 
         /// <summary>
+        /// Enables detailed tracing for debugging.
+        /// </summary>
+        public bool EnableTracing { get; set; }
+
+        /// <summary>
+        /// Traces a message if tracing is enabled.
+        /// </summary>
+        private void Trace(string message)
+        {
+            if (EnableTracing)
+                Console.WriteLine(message);
+        }
+
+        /// <summary>
         /// Decodes a single row using 2D encoding (Group 3 2D or Group 4).
         /// </summary>
         private byte[]? Decode2DRow(CcittBitReader reader, byte[] referenceLine)
         {
             int bytesPerRow = (_options.Width + 7) / 8;
-            var row = new byte[bytesPerRow];
+            var row = CreateWhiteRow(bytesPerRow);
             int a0 = -1; // Current position (-1 means before the line)
             bool a0Color = false; // false = white, true = black (at position a0)
+            int modeCount = 0;
 
             while (a0 < _options.Width)
             {
+                int preModeBitPos = reader.Position;
                 var mode = _huffman.Decode2DMode(reader);
+                modeCount++;
+                Trace($"  Mode {modeCount}: {mode} at bit {preModeBitPos}, a0={a0}, a0Color={(a0Color ? "black" : "white")}");
 
                 switch (mode)
                 {
                     case TwoDimensionalMode.Pass:
                         // Pass mode: a0 moves to below b2
+                        // The region from a0 to b2 has no changing element, so it's all a0Color
                         int b1Pass = FindB1(referenceLine, a0, a0Color);
                         int b2Pass = FindB2(referenceLine, b1Pass);
+
+                        // Fill the region from a0 to b2 with a0Color
+                        int passFillStart = a0 < 0 ? 0 : a0;
+                        int passFillLength = b2Pass - passFillStart;
+                        if (a0Color && passFillLength > 0)
+                        {
+                            FillBlackRun(row, passFillStart, passFillLength);
+                        }
+
+                        Trace($"    Pass: b1={b1Pass}, b2={b2Pass}, fill {(a0Color ? "black" : "white")} from {passFillStart} len {passFillLength}, a0 moves {a0} -> {b2Pass}");
                         a0 = b2Pass;
                         // Color does NOT change in pass mode
                         break;
 
                     case TwoDimensionalMode.Horizontal:
                         // Horizontal mode: read two run lengths (a0a1 and a1a2)
-                        // First run color is the color AFTER a0 (opposite of a0Color)
+                        // First run color is the color at a0 (a0Color represents color at position a0)
                         // If a0 < 0 (start of line), first run is white
-                        bool firstRunIsBlack = a0 < 0 ? false : !a0Color;
+                        bool firstRunIsBlack = a0 < 0 ? false : a0Color;
 
                         // Read first run (a0a1)
                         int run1 = firstRunIsBlack
                             ? _huffman.DecodeBlackRunLength(reader)
                             : _huffman.DecodeWhiteRunLength(reader);
 
-                        if (run1 < 0) return null;
+                        if (run1 < 0)
+                        {
+                            Trace($"    Horizontal: failed to read run1 (isBlack={firstRunIsBlack})");
+                            return null;
+                        }
 
                         // Read second run (a1a2) - opposite color
                         int run2 = firstRunIsBlack
                             ? _huffman.DecodeWhiteRunLength(reader)
                             : _huffman.DecodeBlackRunLength(reader);
 
-                        if (run2 < 0) return null;
+                        if (run2 < 0)
+                        {
+                            Trace($"    Horizontal: failed to read run2 (isBlack={!firstRunIsBlack})");
+                            return null;
+                        }
+
+                        Trace($"    Horizontal: {(firstRunIsBlack ? "black" : "white")}{run1} + {(!firstRunIsBlack ? "black" : "white")}{run2}, a0 moves {a0} -> {(a0 < 0 ? 0 : a0) + run1 + run2}");
 
                         // Fill runs
                         int pos = a0 < 0 ? 0 : a0;
@@ -241,9 +291,10 @@ namespace Compressors.Ccitt
                         pos += run2;
 
                         a0 = pos;
-                        // After horizontal mode, a0Color is the color of the last run (second run)
-                        // Second run is opposite of first run
-                        a0Color = !firstRunIsBlack;
+                        // After horizontal mode, a0Color is the color of the NEXT run (starting at new a0)
+                        // Horizontal fills: run1 (firstRunIsBlack) + run2 (!firstRunIsBlack)
+                        // Next run is opposite of run2, which is same as firstRunIsBlack
+                        a0Color = firstRunIsBlack;
                         break;
 
                     case TwoDimensionalMode.Vertical0:
@@ -275,6 +326,8 @@ namespace Compressors.Ccitt
                         int fillStart = a0 < 0 ? 0 : a0;
                         int fillLength = a1 - fillStart;
 
+                        Trace($"    Vertical{offset}: b1={b1Vert}, a1={a1}, fill {(runColorIsBlack ? "black" : "white")} from {fillStart} len {fillLength}, a0 moves {a0} -> {a1}");
+
                         if (runColorIsBlack && fillLength > 0)
                         {
                             FillBlackRun(row, fillStart, fillLength);
@@ -293,6 +346,7 @@ namespace Compressors.Ccitt
 
                     case TwoDimensionalMode.Error:
                     default:
+                        Console.WriteLine($"[CCITT DEBUG] 2D decode error: mode={mode}, a0={a0}/{_options.Width}, a0Color={a0Color}, bitPos={preModeBitPos}, modes decoded this row={modeCount}");
                         return null;
                 }
             }
@@ -303,34 +357,64 @@ namespace Compressors.Ccitt
         /// <summary>
         /// Finds b1 - the first changing element on the reference line to the right of a0
         /// that has the opposite color of a0.
+        ///
+        /// b1 is defined as: "The first changing element on the reference line to the right
+        /// of a0 and of opposite colour to a0."
+        ///
+        /// A "changing element" is a position where the color CHANGES from the previous pixel.
+        /// So b1 is the first TRANSITION TO the opposite color, not just any pixel of that color.
         /// </summary>
         private int FindB1(byte[] referenceLine, int a0, bool a0Color)
         {
             int startPos = a0 < 0 ? 0 : a0 + 1;
-            bool searchForBlack = !a0Color;
+            bool targetColor = !a0Color; // The opposite color we're looking for
 
-            // First, skip pixels of the same color as a0
-            // Then find the first pixel of opposite color
+            // We need to find the first CHANGING ELEMENT to the target color after startPos.
+            // A changing element is where color transitions. So we look for a position where:
+            // - The pixel at that position is targetColor
+            // - The pixel at the previous position is NOT targetColor (a transition occurred)
 
-            for (int pos = startPos; pos < _options.Width; pos++)
+            // Special case: at startPos, check if it's a changing element by comparing to position before startPos
+            if (startPos > 0)
             {
-                bool pixelColor = GetPixel(referenceLine, pos);
-                if (pos == startPos)
+                bool prevPixel = GetPixel(referenceLine, startPos - 1);
+                bool currPixel = GetPixel(referenceLine, startPos);
+                if (EnableTracing && startPos >= 1960 && startPos <= 1970)
                 {
-                    // If starting pixel is already opposite color, find next change
-                    if (pixelColor == searchForBlack)
-                    {
-                        // This is b1
-                        return pos;
-                    }
+                    Console.WriteLine($"      FindB1: startPos={startPos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
                 }
-                else
+                if (currPixel == targetColor && prevPixel != targetColor)
                 {
-                    bool prevColor = GetPixel(referenceLine, pos - 1);
-                    if (pixelColor != prevColor && pixelColor == searchForBlack)
-                    {
-                        return pos;
-                    }
+                    // startPos is a changing element to targetColor
+                    return startPos;
+                }
+            }
+            else if (startPos == 0)
+            {
+                // At start of line, check if first pixel is the target color
+                // (imaginary pixel before line is white, so if targetColor=black and pixel0=black, it's a change)
+                bool firstPixel = GetPixel(referenceLine, 0);
+                if (firstPixel == targetColor)
+                {
+                    return 0;
+                }
+            }
+
+            // Scan forward looking for a transition TO targetColor
+            for (int pos = startPos + 1; pos < _options.Width; pos++)
+            {
+                bool prevPixel = GetPixel(referenceLine, pos - 1);
+                bool currPixel = GetPixel(referenceLine, pos);
+
+                if (EnableTracing && pos >= 1960 && pos <= 1970)
+                {
+                    Console.WriteLine($"      FindB1: pos={pos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
+                }
+
+                // Check if this is a changing element to the target color
+                if (currPixel == targetColor && prevPixel != targetColor)
+                {
+                    return pos;
                 }
             }
 
@@ -361,6 +445,22 @@ namespace Compressors.Ccitt
         }
 
         /// <summary>
+        /// Creates a row initialized to all white pixels.
+        /// </summary>
+        private byte[] CreateWhiteRow(int bytesPerRow)
+        {
+            var row = new byte[bytesPerRow];
+            // BlackIs1=true: 1=black, 0=white, so all zeros = all white (default) ✓
+            // BlackIs1=false: 0=black, 1=white, so we need all 1s for white
+            if (!_options.BlackIs1)
+            {
+                for (int i = 0; i < bytesPerRow; i++)
+                    row[i] = 0xFF;
+            }
+            return row;
+        }
+
+        /// <summary>
         /// Gets the pixel value at a position (false = white, true = black).
         /// </summary>
         private bool GetPixel(byte[] row, int position)
@@ -376,9 +476,9 @@ namespace Compressors.Ccitt
 
             bool isSet = ((row[byteIndex] >> bitIndex) & 1) != 0;
 
-            // Standard CCITT: 0 = white, 1 = black
-            // But BlackIs1 option can invert this
-            return _options.BlackIs1 ? !isSet : isSet;
+            // BlackIs1=true: 1 bits are black, so isSet=true means black
+            // BlackIs1=false: 0 bits are black (1=white), so isSet=true means white (not black)
+            return _options.BlackIs1 ? isSet : !isSet;
         }
 
         /// <summary>
@@ -387,9 +487,6 @@ namespace Compressors.Ccitt
         private void FillBlackRun(byte[] row, int start, int length)
         {
             if (length <= 0) return;
-
-            byte fillValue = _options.BlackIs1 ? (byte)0 : (byte)0xFF;
-            byte clearValue = _options.BlackIs1 ? (byte)0xFF : (byte)0;
 
             for (int i = 0; i < length; i++)
             {
@@ -401,13 +498,15 @@ namespace Compressors.Ccitt
 
                 if (byteIndex < row.Length)
                 {
+                    // BlackIs1=true: 1 bits are black, so SET bit for black
+                    // BlackIs1=false: 0 bits are black (1=white), so CLEAR bit for black
                     if (_options.BlackIs1)
                     {
-                        row[byteIndex] &= (byte)~(1 << bitIndex); // Clear bit for black
+                        row[byteIndex] |= (byte)(1 << bitIndex); // Set bit for black
                     }
                     else
                     {
-                        row[byteIndex] |= (byte)(1 << bitIndex); // Set bit for black
+                        row[byteIndex] &= (byte)~(1 << bitIndex); // Clear bit for black
                     }
                 }
             }

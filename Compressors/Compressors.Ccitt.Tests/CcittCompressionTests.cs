@@ -27,11 +27,16 @@ namespace Compressors.Ccitt.Tests
 
         /// <summary>
         /// Creates a bitmap with vertical stripes.
+        /// Uses BlackIs1=false convention (bit=0 is black, bit=1 is white).
         /// </summary>
         private byte[] CreateStripedBitmap(int width, int height, int stripeWidth)
         {
             int bytesPerRow = (width + 7) / 8;
             var bitmap = new byte[bytesPerRow * height];
+
+            // Start with all white (all 1s for BlackIs1=false)
+            for (int i = 0; i < bitmap.Length; i++)
+                bitmap[i] = 0xFF;
 
             for (int row = 0; row < height; row++)
             {
@@ -40,9 +45,10 @@ namespace Compressors.Ccitt.Tests
                     bool isBlack = (col / stripeWidth) % 2 == 1;
                     if (isBlack)
                     {
+                        // Clear bit for black (BlackIs1=false: bit=0 is black)
                         int byteIndex = row * bytesPerRow + col / 8;
                         int bitIndex = 7 - (col % 8);
-                        bitmap[byteIndex] |= (byte)(1 << bitIndex);
+                        bitmap[byteIndex] &= (byte)~(1 << bitIndex);
                     }
                 }
             }

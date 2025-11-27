@@ -198,5 +198,55 @@ namespace PdfLibrary.Fonts
         {
             return _glyphToUnicode;
         }
+
+        // Reverse mapping: Unicode to glyph name (lazily initialized)
+        private static Dictionary<string, string>? _unicodeToGlyph;
+        private static readonly object _initLock = new();
+
+        /// <summary>
+        /// Get glyph name from Unicode character
+        /// Used for Type0 fonts with embedded Type1 data where we need to map
+        /// Unicode (from ToUnicode CMap) back to PostScript glyph names
+        /// </summary>
+        /// <param name="unicode">Unicode string (single character or ligature)</param>
+        /// <returns>PostScript glyph name, or null if not found</returns>
+        public static string? GetGlyphName(string unicode)
+        {
+            if (string.IsNullOrEmpty(unicode))
+                return null;
+
+            // Initialize reverse mapping on first use
+            if (_unicodeToGlyph is null)
+            {
+                lock (_initLock)
+                {
+                    if (_unicodeToGlyph is null)
+                    {
+                        _unicodeToGlyph = new Dictionary<string, string>();
+                        foreach (var kvp in _glyphToUnicode)
+                        {
+                            // Only add if not already present (first glyph name wins)
+                            if (!_unicodeToGlyph.ContainsKey(kvp.Value))
+                            {
+                                _unicodeToGlyph[kvp.Value] = kvp.Key;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return _unicodeToGlyph.TryGetValue(unicode, out string? glyphName) ? glyphName : null;
+        }
+
+        /// <summary>
+        /// Get glyph name from Unicode code point
+        /// </summary>
+        /// <param name="codePoint">Unicode code point</param>
+        /// <returns>PostScript glyph name, or null if not found</returns>
+        public static string? GetGlyphName(int codePoint)
+        {
+            string unicode = char.ConvertFromUtf32(codePoint);
+            return GetGlyphName(unicode);
+        }
     }
 }

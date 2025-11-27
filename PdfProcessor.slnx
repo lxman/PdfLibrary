@@ -11,6 +11,7 @@
   </Folder>
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
+  <Project Path="PdfLibrary.Benchmarking/PdfLibrary.Benchmarking.csproj" />
   <Project Path="PdfLibrary.Examples/PdfLibrary.Examples.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
   <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />

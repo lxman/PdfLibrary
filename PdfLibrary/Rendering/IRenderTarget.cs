@@ -19,10 +19,12 @@ public interface IRenderTarget
     /// Called before any rendering operations for a page.
     /// </summary>
     /// <param name="pageNumber">1-based page number</param>
-    /// <param name="width">Page width in PDF units (1/72 inch)</param>
-    /// <param name="height">Page height in PDF units (1/72 inch)</param>
+    /// <param name="width">Page width in PDF units (1/72 inch) - from CropBox</param>
+    /// <param name="height">Page height in PDF units (1/72 inch) - from CropBox</param>
     /// <param name="scale">Scale factor for rendering (1.0 = 100%)</param>
-    void BeginPage(int pageNumber, double width, double height, double scale = 1.0);
+    /// <param name="cropOffsetX">X offset of CropBox from MediaBox origin</param>
+    /// <param name="cropOffsetY">Y offset of CropBox from MediaBox origin</param>
+    void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0);
 
     /// <summary>
     /// Complete rendering of the current page.
@@ -108,4 +110,18 @@ public interface IRenderTarget
     /// glyph transformations are applied separately.
     /// </summary>
     void ApplyCtm(Matrix3x2 ctm);
+
+    /// <summary>
+    /// Called when the graphics state is changed via the gs operator (ExtGState).
+    /// Implementations should update rendering parameters like alpha, blend mode, etc.
+    /// </summary>
+    /// <param name="state">The updated graphics state</param>
+    void OnGraphicsStateChanged(PdfGraphicsState state);
+
+    /// <summary>
+    /// Gets the underlying SkiaSharp render target, if available.
+    /// Used for advanced operations like soft mask rendering that require direct access.
+    /// </summary>
+    /// <returns>The underlying SkiaSharpRenderTarget, or null if not applicable</returns>
+    SkiaSharpRenderTarget? GetSkiaRenderTarget() => null;
 }
