@@ -32,12 +32,53 @@ public class FlateDecodeFilter : IStreamFilter
     {
         ArgumentNullException.ThrowIfNull(data);
 
-        using var inputStream = new MemoryStream(data);
-        using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
-        using var outputStream = new MemoryStream();
+        byte[] decoded;
 
-        zlibStream.CopyTo(outputStream);
-        byte[] decoded = outputStream.ToArray();
+        // Log the first few bytes for debugging
+        string headerHex = data.Length >= 4
+            ? $"{data[0]:X2} {data[1]:X2} {data[2]:X2} {data[3]:X2}"
+            : "too short";
+        Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: {data.Length} bytes, header: {headerHex}");
+
+        try
+        {
+            // First try ZLibStream (handles zlib header 78 xx)
+            using var inputStream = new MemoryStream(data);
+            using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
+            using var outputStream = new MemoryStream();
+            zlibStream.CopyTo(outputStream);
+            decoded = outputStream.ToArray();
+        }
+        catch (InvalidDataException)
+        {
+            // Fallback: try raw deflate (no zlib header)
+            Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, "FlateDecode: ZLibStream failed, trying raw DeflateStream");
+            try
+            {
+                using var inputStream = new MemoryStream(data);
+                using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
+                using var outputStream = new MemoryStream();
+                deflateStream.CopyTo(outputStream);
+                decoded = outputStream.ToArray();
+            }
+            catch (InvalidDataException ex2)
+            {
+                // Try skipping first 2 bytes (zlib header) and use raw deflate
+                Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: Raw deflate also failed: {ex2.Message}, trying skip 2 bytes");
+                if (data.Length > 2)
+                {
+                    using var inputStream = new MemoryStream(data, 2, data.Length - 2);
+                    using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
+                    using var outputStream = new MemoryStream();
+                    deflateStream.CopyTo(outputStream);
+                    decoded = outputStream.ToArray();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
 
         // Apply predictor if specified in the decode parameters
         if (parameters is null || !parameters.TryGetValue("Predictor", out object? predictorObj)) return decoded;

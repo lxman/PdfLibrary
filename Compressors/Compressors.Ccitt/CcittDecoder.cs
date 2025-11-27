@@ -363,82 +363,218 @@ namespace Compressors.Ccitt
         ///
         /// A "changing element" is a position where the color CHANGES from the previous pixel.
         /// So b1 is the first TRANSITION TO the opposite color, not just any pixel of that color.
+        ///
+        /// Optimized to use byte-level scanning for improved performance.
         /// </summary>
         private int FindB1(byte[] referenceLine, int a0, bool a0Color)
         {
             int startPos = a0 < 0 ? 0 : a0 + 1;
             bool targetColor = !a0Color; // The opposite color we're looking for
 
-            // We need to find the first CHANGING ELEMENT to the target color after startPos.
-            // A changing element is where color transitions. So we look for a position where:
-            // - The pixel at that position is targetColor
-            // - The pixel at the previous position is NOT targetColor (a transition occurred)
+            if (startPos >= _options.Width)
+                return _options.Width;
 
-            // Special case: at startPos, check if it's a changing element by comparing to position before startPos
+            // Determine what byte pattern indicates "all same color" (no transitions)
+            // BlackIs1=true: 1=black, 0=white. So 0xFF=all black, 0x00=all white
+            // BlackIs1=false: 0=black, 1=white. So 0x00=all black, 0xFF=all white
+            // We're looking for a transition TO targetColor
+            // If targetColor is black, we're looking for 0->1 (BlackIs1) or 1->0 (!BlackIs1)
+            // Note: We don't use allTargetColor/allOppositeColor for FindB1 because
+            // we need to detect transitions, not just find a color. A uniform byte
+            // still needs boundary checking for transitions.
+
+            // Special case: at startPos, check if it's a changing element
             if (startPos > 0)
             {
-                bool prevPixel = GetPixel(referenceLine, startPos - 1);
-                bool currPixel = GetPixel(referenceLine, startPos);
+                bool prevPixel = GetPixelFast(referenceLine, startPos - 1);
+                bool currPixel = GetPixelFast(referenceLine, startPos);
                 if (EnableTracing && startPos >= 1960 && startPos <= 1970)
                 {
                     Console.WriteLine($"      FindB1: startPos={startPos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
                 }
                 if (currPixel == targetColor && prevPixel != targetColor)
                 {
-                    // startPos is a changing element to targetColor
                     return startPos;
                 }
             }
             else if (startPos == 0)
             {
-                // At start of line, check if first pixel is the target color
-                // (imaginary pixel before line is white, so if targetColor=black and pixel0=black, it's a change)
-                bool firstPixel = GetPixel(referenceLine, 0);
+                bool firstPixel = GetPixelFast(referenceLine, 0);
                 if (firstPixel == targetColor)
                 {
                     return 0;
                 }
             }
 
-            // Scan forward looking for a transition TO targetColor
-            for (int pos = startPos + 1; pos < _options.Width; pos++)
+            // Start scanning from the next position
+            int pos = startPos + 1;
+
+            // Align to byte boundary for fast scanning
+            int byteIndex = pos >> 3;
+            int bitInByte = pos & 7;
+
+            // First, handle partial byte if not aligned
+            if (bitInByte != 0 && byteIndex < referenceLine.Length)
             {
-                bool prevPixel = GetPixel(referenceLine, pos - 1);
-                bool currPixel = GetPixel(referenceLine, pos);
-
-                if (EnableTracing && pos >= 1960 && pos <= 1970)
+                // Scan remaining bits in current byte
+                byte currentByte = referenceLine[byteIndex];
+                for (int bit = 7 - bitInByte; bit >= 0 && pos < _options.Width; bit--, pos++)
                 {
-                    Console.WriteLine($"      FindB1: pos={pos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
-                }
+                    bool currPixel = GetPixelFromByte(currentByte, bit);
+                    bool prevPixel = GetPixelFast(referenceLine, pos - 1);
 
-                // Check if this is a changing element to the target color
-                if (currPixel == targetColor && prevPixel != targetColor)
-                {
-                    return pos;
+                    if (EnableTracing && pos >= 1960 && pos <= 1970)
+                    {
+                        Console.WriteLine($"      FindB1: pos={pos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
+                    }
+
+                    if (currPixel == targetColor && prevPixel != targetColor)
+                    {
+                        return pos;
+                    }
                 }
+                byteIndex++;
             }
 
-            // b1 is at end of line if not found
+            // Fast path: scan full bytes looking for any byte that's not all-same-color
+            // A byte with all same color cannot contain a transition TO targetColor
+            // (unless the transition happens at the byte boundary)
+            while (byteIndex < referenceLine.Length && pos < _options.Width)
+            {
+                byte b = referenceLine[byteIndex];
+
+                // Check byte boundary transition first
+                bool prevPixel = GetPixelFast(referenceLine, pos - 1);
+                bool firstPixelInByte = GetPixelFromByte(b, 7);
+
+                if (firstPixelInByte == targetColor && prevPixel != targetColor)
+                {
+                    if (EnableTracing && pos >= 1960 && pos <= 1970)
+                    {
+                        Console.WriteLine($"      FindB1: pos={pos}, prevPixel={prevPixel}, currPixel={firstPixelInByte}, targetColor={targetColor}");
+                    }
+                    return pos;
+                }
+
+                // If byte is uniform (all 0s or all 1s), skip it entirely
+                // But only if we didn't find a transition at the boundary
+                if (b == 0x00 || b == 0xFF)
+                {
+                    pos += 8;
+                    if (pos > _options.Width) pos = _options.Width;
+                    byteIndex++;
+                    continue;
+                }
+
+                // Byte has mixed colors - scan bit by bit
+                for (int bit = 6; bit >= 0 && pos + (6 - bit) + 1 < _options.Width; bit--)
+                {
+                    int currentPos = pos + (6 - bit) + 1;
+                    bool currPixel = GetPixelFromByte(b, bit);
+                    bool prev = GetPixelFromByte(b, bit + 1);
+
+                    if (EnableTracing && currentPos >= 1960 && currentPos <= 1970)
+                    {
+                        Console.WriteLine($"      FindB1: pos={currentPos}, prevPixel={prev}, currPixel={currPixel}, targetColor={targetColor}");
+                    }
+
+                    if (currPixel == targetColor && prev != targetColor)
+                    {
+                        return currentPos;
+                    }
+                }
+
+                pos += 8;
+                if (pos > _options.Width) pos = _options.Width;
+                byteIndex++;
+            }
+
             return _options.Width;
         }
 
         /// <summary>
+        /// Gets pixel value from a byte at the specified bit position (0-7, where 7 is MSB/leftmost).
+        /// </summary>
+        private bool GetPixelFromByte(byte b, int bitIndex)
+        {
+            bool isSet = ((b >> bitIndex) & 1) != 0;
+            return _options.BlackIs1 ? isSet : !isSet;
+        }
+
+        /// <summary>
+        /// Fast pixel access without bounds checking (caller must ensure valid position).
+        /// </summary>
+        private bool GetPixelFast(byte[] row, int position)
+        {
+            int byteIndex = position >> 3;
+            int bitIndex = 7 - (position & 7);
+            bool isSet = ((row[byteIndex] >> bitIndex) & 1) != 0;
+            return _options.BlackIs1 ? isSet : !isSet;
+        }
+
+        /// <summary>
         /// Finds b2 - the next changing element after b1.
+        /// Optimized to use byte-level scanning.
         /// </summary>
         private int FindB2(byte[] referenceLine, int b1)
         {
             if (b1 >= _options.Width)
                 return _options.Width;
 
-            bool b1Color = GetPixel(referenceLine, b1);
+            bool b1Color = GetPixelFast(referenceLine, b1);
 
-            for (int pos = b1 + 1; pos < _options.Width; pos++)
+            // Byte pattern for "all b1Color"
+            byte allSameColor = b1Color
+                ? (_options.BlackIs1 ? (byte)0xFF : (byte)0x00)  // all black
+                : (_options.BlackIs1 ? (byte)0x00 : (byte)0xFF); // all white
+
+            int pos = b1 + 1;
+            int byteIndex = pos >> 3;
+            int bitInByte = pos & 7;
+
+            // Handle partial byte if not aligned
+            if (bitInByte != 0 && byteIndex < referenceLine.Length)
             {
-                bool pixelColor = GetPixel(referenceLine, pos);
-                if (pixelColor != b1Color)
+                byte currentByte = referenceLine[byteIndex];
+                for (int bit = 7 - bitInByte; bit >= 0 && pos < _options.Width; bit--, pos++)
                 {
-                    return pos;
+                    bool pixelColor = GetPixelFromByte(currentByte, bit);
+                    if (pixelColor != b1Color)
+                    {
+                        return pos;
+                    }
                 }
+                byteIndex++;
+            }
+
+            // Fast path: scan full bytes
+            while (byteIndex < referenceLine.Length && pos < _options.Width)
+            {
+                byte b = referenceLine[byteIndex];
+
+                // If byte is uniform and matches b1Color, skip it
+                if (b == allSameColor)
+                {
+                    pos += 8;
+                    if (pos > _options.Width) pos = _options.Width;
+                    byteIndex++;
+                    continue;
+                }
+
+                // Byte has different color or is mixed - scan bit by bit
+                int bitsToCheck = Math.Min(8, _options.Width - pos);
+                for (int i = 0; i < bitsToCheck; i++)
+                {
+                    int bit = 7 - i;
+                    bool pixelColor = GetPixelFromByte(b, bit);
+                    if (pixelColor != b1Color)
+                    {
+                        return pos + i;
+                    }
+                }
+
+                pos += 8;
+                byteIndex++;
             }
 
             return _options.Width;
@@ -462,14 +598,15 @@ namespace Compressors.Ccitt
 
         /// <summary>
         /// Gets the pixel value at a position (false = white, true = black).
+        /// Uses bit shifts for improved performance.
         /// </summary>
         private bool GetPixel(byte[] row, int position)
         {
             if (position < 0 || position >= _options.Width)
                 return false; // White for out of bounds
 
-            int byteIndex = position / 8;
-            int bitIndex = 7 - (position % 8); // MSB first
+            int byteIndex = position >> 3;       // position / 8
+            int bitIndex = 7 - (position & 7);   // 7 - (position % 8), MSB first
 
             if (byteIndex >= row.Length)
                 return false;
@@ -482,32 +619,91 @@ namespace Compressors.Ccitt
         }
 
         /// <summary>
-        /// Fills a run of black pixels.
+        /// Fills a run of black pixels using byte-aligned optimization.
         /// </summary>
         private void FillBlackRun(byte[] row, int start, int length)
         {
             if (length <= 0) return;
 
-            for (int i = 0; i < length; i++)
+            // Clamp to image width
+            int end = start + length;
+            if (end > _options.Width)
+                end = _options.Width;
+            if (start >= end) return;
+
+            // Use bit shifts for byte/bit indices (faster than division/modulo)
+            int firstByte = start >> 3;        // start / 8
+            int lastByte = (end - 1) >> 3;     // (end - 1) / 8
+            int firstBitInByte = start & 7;    // start % 8
+            int lastBitInByte = (end - 1) & 7; // (end - 1) % 8
+
+            // Bounds check
+            if (firstByte >= row.Length) return;
+            if (lastByte >= row.Length)
+                lastByte = row.Length - 1;
+
+            // Determine fill values based on BlackIs1 setting
+            // BlackIs1=true: 1 bits are black, so SET bits (OR with mask)
+            // BlackIs1=false: 0 bits are black, so CLEAR bits (AND with ~mask)
+            bool setForBlack = _options.BlackIs1;
+
+            if (firstByte == lastByte)
             {
-                int pos = start + i;
-                if (pos >= _options.Width) break;
+                // All pixels within one byte
+                // Create mask for bits from firstBitInByte to lastBitInByte (MSB first)
+                // Bit 7 is leftmost (position 0), bit 0 is rightmost (position 7)
+                int numBits = end - start;
+                // Mask: bits from (7 - firstBitInByte) down to (7 - lastBitInByte)
+                byte mask = (byte)(((1 << numBits) - 1) << (7 - lastBitInByte));
 
-                int byteIndex = pos / 8;
-                int bitIndex = 7 - (pos % 8);
+                if (setForBlack)
+                    row[firstByte] |= mask;
+                else
+                    row[firstByte] &= (byte)~mask;
+            }
+            else
+            {
+                // Spans multiple bytes
 
-                if (byteIndex < row.Length)
+                // Handle partial first byte (if not byte-aligned)
+                if (firstBitInByte > 0)
                 {
-                    // BlackIs1=true: 1 bits are black, so SET bit for black
-                    // BlackIs1=false: 0 bits are black (1=white), so CLEAR bit for black
-                    if (_options.BlackIs1)
-                    {
-                        row[byteIndex] |= (byte)(1 << bitIndex); // Set bit for black
-                    }
+                    // Mask for bits from firstBitInByte to 7 (rest of byte)
+                    // e.g., firstBitInByte=3 means positions 3,4,5,6,7 -> bits 4,3,2,1,0
+                    byte mask = (byte)((1 << (8 - firstBitInByte)) - 1);
+
+                    if (setForBlack)
+                        row[firstByte] |= mask;
                     else
-                    {
-                        row[byteIndex] &= (byte)~(1 << bitIndex); // Clear bit for black
-                    }
+                        row[firstByte] &= (byte)~mask;
+
+                    firstByte++;
+                }
+
+                // Fill full bytes in the middle
+                byte fullByte = setForBlack ? (byte)0xFF : (byte)0x00;
+                for (int b = firstByte; b < lastByte; b++)
+                {
+                    row[b] = fullByte;
+                }
+
+                // Handle partial last byte (if not byte-aligned)
+                // lastBitInByte is the last bit position (0-7) within the byte
+                if (lastBitInByte < 7)
+                {
+                    // Mask for bits from 0 to lastBitInByte
+                    // e.g., lastBitInByte=3 means positions 0,1,2,3 -> bits 7,6,5,4
+                    byte mask = (byte)(0xFF << (7 - lastBitInByte));
+
+                    if (setForBlack)
+                        row[lastByte] |= mask;
+                    else
+                        row[lastByte] &= (byte)~mask;
+                }
+                else
+                {
+                    // Last byte is fully covered
+                    row[lastByte] = fullByte;
                 }
             }
         }

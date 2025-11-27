@@ -4,6 +4,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
+using PdfLibrary.Structure;
 using Logging;
 
 namespace PdfLibrary.Content;
@@ -16,6 +17,7 @@ public class PdfTextExtractor : PdfContentProcessor
     private readonly StringBuilder _textBuilder = new();
     private readonly List<TextFragment> _fragments = [];
     private readonly PdfResources? _resources;
+    private readonly PdfDocument? _document;
     private bool _inTextObject;
     private Vector2 _lastPosition;
     private const double SpaceThreshold = 0.2; // Threshold for detecting word spacing (as fraction of font size)
@@ -23,9 +25,10 @@ public class PdfTextExtractor : PdfContentProcessor
     /// <summary>
     /// Creates a text extractor with optional resources for font resolution
     /// </summary>
-    public PdfTextExtractor(PdfResources? resources = null)
+    public PdfTextExtractor(PdfResources? resources = null, PdfDocument? document = null)
     {
         _resources = resources;
+        _document = document;
     }
 
     /// <summary>
@@ -230,7 +233,7 @@ public class PdfTextExtractor : PdfContentProcessor
     private void ExtractTextFromFormXObject(PdfStream formStream)
     {
         // Get the Form XObject's content data
-        byte[] contentData = formStream.GetDecodedData();
+        byte[] contentData = formStream.GetDecodedData(_document?.Decryptor);
 
         // Get the Form's Resources dictionary if present
         PdfResources? formResources = _resources;
@@ -243,7 +246,7 @@ public class PdfTextExtractor : PdfContentProcessor
         }
 
         // Create a new extractor for the form content
-        var formExtractor = new PdfTextExtractor(formResources ?? _resources);
+        var formExtractor = new PdfTextExtractor(formResources ?? _resources, _document);
 
         // Parse and process the Form XObject's content stream
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);

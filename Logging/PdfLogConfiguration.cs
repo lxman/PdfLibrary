@@ -46,6 +46,12 @@ namespace Logging
         /// </summary>
         public bool LogMelville { get; set; } = false;
 
+        /// <summary>
+        /// Enable logging for timing measurements.
+        /// Default: false
+        /// </summary>
+        public bool LogTimings { get; set; } = false;
+
         // ==================== File Settings ====================
 
         /// <summary>

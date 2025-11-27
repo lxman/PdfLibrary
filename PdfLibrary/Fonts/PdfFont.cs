@@ -153,7 +153,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
 
             if (obj is PdfStream stream)
             {
-                byte[] data = stream.GetDecodedData();
+                byte[] data = stream.GetDecodedData(_document?.Decryptor);
                 ToUnicode = ToUnicodeCMap.Parse(data);
             }
         }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using System.Text;
 using PdfLibrary.Content;
@@ -51,6 +52,8 @@ public class PdfRenderer : PdfContentProcessor
     /// <param name="scale">Scale factor for rendering (1.0 = 100%, 2.0 = 200%, etc.)</param>
     public void RenderPage(PdfPage page, int pageNumber = 1, double scale = 1.0)
     {
+        var totalStopwatch = Stopwatch.StartNew();
+
         // Get page dimensions - CropBox defines the visible area, MediaBox is the full canvas
         // The output image should match CropBox dimensions
         PdfRectangle mediaBox = page.GetMediaBox();
@@ -70,6 +73,9 @@ public class PdfRenderer : PdfContentProcessor
 
         // Begin the page lifecycle - pass CropBox dimensions and offset
         _target.BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY);
+
+        Stopwatch? contentStopwatch = null;
+        Stopwatch? annotationStopwatch = null;
 
         try
         {
@@ -98,11 +104,26 @@ public class PdfRenderer : PdfContentProcessor
 
             PdfLogger.Log(LogCategory.PdfTool, $"Processing {contents.Count} content stream(s)");
 
+            contentStopwatch = Stopwatch.StartNew();
+
             // Parse and process all content streams
             var streamIndex = 0;
+            PdfLogger.Log(LogCategory.PdfTool, $"About to iterate {contents.Count} streams, contents type={contents.GetType().Name}");
             foreach (PdfStream stream in contents)
             {
-                byte[] decodedData = stream.GetDecodedData();
+                PdfLogger.Log(LogCategory.PdfTool, $"Processing stream {streamIndex}, stream type={stream?.GetType().Name ?? "null"}");
+                byte[] decodedData;
+                try
+                {
+                    decodedData = stream.GetDecodedData(_document?.Decryptor);
+                    PdfLogger.Log(LogCategory.PdfTool, $"Decoded data length: {decodedData.Length}");
+                }
+                catch (Exception ex)
+                {
+                    PdfLogger.Log(LogCategory.PdfTool, $"EXCEPTION in GetDecodedData: {ex.GetType().Name}: {ex.Message}");
+                    PdfLogger.Log(LogCategory.PdfTool, $"Stack trace: {ex.StackTrace}");
+                    throw; // Re-throw to see full behavior
+                }
 
                 // Diagnostic: Dump the first stream's raw content to see scn operands
                 if (streamIndex == 0 && decodedData.Length > 0)
@@ -131,13 +152,23 @@ public class PdfRenderer : PdfContentProcessor
                 streamIndex++;
             }
 
+            contentStopwatch.Stop();
+            annotationStopwatch = Stopwatch.StartNew();
+
             // Render annotation appearances
             RenderAnnotations(page);
+
+            annotationStopwatch.Stop();
         }
         finally
         {
             // Always end page, even if exception occurs
             _target.EndPage();
+
+            totalStopwatch.Stop();
+            long contentMs = contentStopwatch?.ElapsedMilliseconds ?? 0;
+            long annotationMs = annotationStopwatch?.ElapsedMilliseconds ?? 0;
+            PdfLogger.Log(LogCategory.Timings, $"Page {pageNumber} rendered in {totalStopwatch.ElapsedMilliseconds}ms (content: {contentMs}ms, annotations: {annotationMs}ms)");
         }
     }
 
@@ -296,7 +327,7 @@ public class PdfRenderer : PdfContentProcessor
             CurrentState.ConcatenateMatrix((float)sx, 0, 0, (float)sy, (float)tx, (float)ty);
 
             // Parse and render the appearance stream
-            byte[] decodedData = appearanceStream.GetDecodedData();
+            byte[] decodedData = appearanceStream.GetDecodedData(_document?.Decryptor);
             List<PdfOperator> operators = PdfContentParser.Parse(decodedData);
             PdfLogger.Log(LogCategory.Graphics, $"Annotation stream has {operators.Count} operators");
             // Debug: print first few operators
@@ -1255,7 +1286,7 @@ public class PdfRenderer : PdfContentProcessor
             }
 
             // Parse and render the mask content
-            byte[] contentData = softMask.Group.GetDecodedData();
+            byte[] contentData = softMask.Group.GetDecodedData(_document?.Decryptor);
             List<PdfOperator> operators = PdfContentParser.Parse(contentData);
             maskRenderer.ProcessOperators(operators);
             maskRenderTarget.EndPage();
@@ -1577,9 +1608,15 @@ public class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Images, "  Type: Image XObject");
             try
             {
+                var imageStopwatch = Stopwatch.StartNew();
                 var image = new PdfImage(xobject, _document);
+                long createMs = imageStopwatch.ElapsedMilliseconds;
+
                 PdfLogger.Log(LogCategory.Images, $"  Image: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
                 _target.DrawImage(image, CurrentState);
+                imageStopwatch.Stop();
+
+                PdfLogger.Log(LogCategory.Timings, $"Image '{name}' ({image.Width}x{image.Height}, {image.ColorSpace}): {imageStopwatch.ElapsedMilliseconds}ms (create: {createMs}ms, draw: {imageStopwatch.ElapsedMilliseconds - createMs}ms)");
                 PdfLogger.Log(LogCategory.Images, "  Image drawn successfully");
             }
             catch (Exception ex)
@@ -1665,7 +1702,7 @@ public class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Current CTM before form = [{CurrentState.Ctm.M11}, {CurrentState.Ctm.M12}, {CurrentState.Ctm.M21}, {CurrentState.Ctm.M22}, {CurrentState.Ctm.M31}, {CurrentState.Ctm.M32}]");
 
         // Get the Form XObject's content data
-        byte[] contentData = formStream.GetDecodedData();
+        byte[] contentData = formStream.GetDecodedData(_document?.Decryptor);
 
         // Get the Form's Resources dictionary (if any)
         // Form XObjects can have their own resources, or inherit from the page

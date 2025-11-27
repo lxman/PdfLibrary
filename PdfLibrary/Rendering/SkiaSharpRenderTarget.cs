@@ -1484,22 +1484,33 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     PdfLogger.Log(LogCategory.Images, $"  [ImageMask] First 8 bytes: {imageData[0]:X2} {imageData[1]:X2} {imageData[2]:X2} {imageData[3]:X2} {imageData[4]:X2} {imageData[5]:X2} {imageData[6]:X2} {imageData[7]:X2}");
                 }
 
+                // Use direct pixel buffer for performance - SetPixel is very slow for large images
+                var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                byte colorR = color.Red, colorG = color.Green, colorB = color.Blue, colorA = color.Alpha;
                 int paintedPixels = 0;
-                int transparentPixels = 0;
 
                 for (var y = 0; y < height; y++)
                 {
+                    int rowStart = y * bytesPerRow;
+                    int bufferRowStart = y * width * 4;
+
                     for (var x = 0; x < width; x++)
                     {
-                        // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
-                        int srcY = y;
-
                         // Calculate byte and bit position (row-aligned data, MSB first)
-                        int byteIndex = srcY * bytesPerRow + (x / 8);
-                        int bitOffset = 7 - (x % 8); // MSB first within each byte
+                        int byteIndex = rowStart + (x >> 3);  // x / 8
+                        int bitOffset = 7 - (x & 7);  // 7 - (x % 8), MSB first within each byte
+
+                        int bufferOffset = bufferRowStart + (x << 2);  // x * 4
 
                         if (byteIndex >= imageData.Length)
+                        {
+                            // Transparent pixel (RGBA = 0,0,0,0)
+                            pixelBuffer[bufferOffset] = 0;
+                            pixelBuffer[bufferOffset + 1] = 0;
+                            pixelBuffer[bufferOffset + 2] = 0;
+                            pixelBuffer[bufferOffset + 3] = 0;
                             continue;
+                        }
 
                         // Get the mask bit
                         // With CCITT default (BlackIs1=false): 0=black (paint), 1=white (transparent)
@@ -1512,18 +1523,32 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                         if (paint)
                         {
-                            bitmap.SetPixel(x, y, color);
+                            pixelBuffer[bufferOffset] = colorR;
+                            pixelBuffer[bufferOffset + 1] = colorG;
+                            pixelBuffer[bufferOffset + 2] = colorB;
+                            pixelBuffer[bufferOffset + 3] = colorA;
                             paintedPixels++;
                         }
                         else
                         {
-                            bitmap.SetPixel(x, y, SKColors.Transparent);
-                            transparentPixels++;
+                            // Transparent pixel (RGBA = 0,0,0,0)
+                            pixelBuffer[bufferOffset] = 0;
+                            pixelBuffer[bufferOffset + 1] = 0;
+                            pixelBuffer[bufferOffset + 2] = 0;
+                            pixelBuffer[bufferOffset + 3] = 0;
                         }
                     }
                 }
 
-                PdfLogger.Log(LogCategory.Images, $"  [ImageMask] Result: {paintedPixels} painted, {transparentPixels} transparent");
+                // Copy pixel buffer to bitmap using Marshal.Copy for performance
+                IntPtr bitmapPixels = bitmap.GetPixels();
+                if (bitmapPixels != IntPtr.Zero)
+                {
+                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    bitmap.NotifyPixelsChanged();
+                }
+
+                PdfLogger.Log(LogCategory.Images, $"  [ImageMask] Result: {paintedPixels} painted, {width * height - paintedPixels} transparent");
 
                 return bitmap;
             }
@@ -1637,50 +1662,69 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:
                 {
                     SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                     int expectedSize = width * height * 3;
                     if (imageData.Length < expectedSize)
                         return null;
 
+                    // Use direct pixel buffer for performance - SetPixel is very slow for large images
+                    var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+
                     for (var y = 0; y < height; y++)
                     {
+                        int rowStart = y * width;
+
                         for (var x = 0; x < width; x++)
                         {
-                            // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
-                            int pixelIndex = y * width + x;
-                            int offset = pixelIndex * 3;
-                            byte r = imageData[offset];
-                            byte g = imageData[offset + 1];
-                            byte b = imageData[offset + 2];
+                            int pixelIndex = rowStart + x;
+                            int srcOffset = pixelIndex * 3;
+                            int dstOffset = pixelIndex * 4;
+
+                            byte r = imageData[srcOffset];
+                            byte g = imageData[srcOffset + 1];
+                            byte b = imageData[srcOffset + 2];
 
                             // Apply SMask alpha channel if present
                             byte alpha = 255;
-                            if (smaskData is not null)
-                            {
-                                if (pixelIndex < smaskData.Length)
-                                    alpha = smaskData[pixelIndex];
-                            }
+                            if (smaskData is not null && pixelIndex < smaskData.Length)
+                                alpha = smaskData[pixelIndex];
 
-                            bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
+                            pixelBuffer[dstOffset] = r;
+                            pixelBuffer[dstOffset + 1] = g;
+                            pixelBuffer[dstOffset + 2] = b;
+                            pixelBuffer[dstOffset + 3] = alpha;
                         }
                     }
+
+                    // Create bitmap and copy pixel buffer
+                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                    bitmap = new SKBitmap(imageInfo);
+                    IntPtr bitmapPixels = bitmap.GetPixels();
+                    if (bitmapPixels == IntPtr.Zero)
+                        return null;
+                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    bitmap.NotifyPixelsChanged();
 
                     break;
                 }
                 case "DeviceGray" or "CalGray" when bitsPerComponent == 8:
                 {
                     SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                     int expectedSize = width * height;
                     if (imageData.Length < expectedSize)
                         return null;
 
+                    // Use direct pixel buffer for performance - SetPixel is very slow for large images
+                    var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+
                     for (var y = 0; y < height; y++)
                     {
+                        int rowStart = y * width;
+                        int bufferRowStart = rowStart * 4;
+
                         for (var x = 0; x < width; x++)
                         {
-                            // Do NOT flip Y here - the image flip matrix in DrawImage will handle it
-                            int pixelIndex = y * width + x;
+                            int pixelIndex = rowStart + x;
+                            int bufferOffset = bufferRowStart + (x << 2);  // x * 4
                             byte gray = imageData[pixelIndex];
 
                             // Apply SMask alpha channel if present
@@ -1688,9 +1732,21 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             if (smaskData is not null && pixelIndex < smaskData.Length)
                                 alpha = smaskData[pixelIndex];
 
-                            bitmap.SetPixel(x, y, new SKColor(gray, gray, gray, alpha));
+                            pixelBuffer[bufferOffset] = gray;
+                            pixelBuffer[bufferOffset + 1] = gray;
+                            pixelBuffer[bufferOffset + 2] = gray;
+                            pixelBuffer[bufferOffset + 3] = alpha;
                         }
                     }
+
+                    // Create bitmap and copy pixel buffer
+                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                    bitmap = new SKBitmap(imageInfo);
+                    IntPtr bitmapPixels = bitmap.GetPixels();
+                    if (bitmapPixels == IntPtr.Zero)
+                        return null;
+                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    bitmap.NotifyPixelsChanged();
 
                     break;
                 }
@@ -1711,86 +1767,93 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     {
                         // Treat as RGB
                         SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                        bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                         int expectedSize = width * height * 3;
                         if (imageData.Length < expectedSize)
                             return null;
 
-                        for (var y = 0; y < height; y++)
+                        // Use direct pixel buffer for performance
+                        var pixelBuffer = new byte[width * height * 4];
+                        int pixelCount = width * height;
+                        for (var i = 0; i < pixelCount; i++)
                         {
-                            for (var x = 0; x < width; x++)
-                            {
-                                int pixelIndex = y * width + x;
-                                int offset = pixelIndex * 3;
-                                byte r = imageData[offset];
-                                byte g = imageData[offset + 1];
-                                byte b = imageData[offset + 2];
-
-                                byte alpha = 255;
-                                if (smaskData is not null && pixelIndex < smaskData.Length)
-                                    alpha = smaskData[pixelIndex];
-
-                                bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
-                            }
+                            int srcOffset = i * 3;
+                            int dstOffset = i * 4;
+                            pixelBuffer[dstOffset] = imageData[srcOffset];
+                            pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
+                            pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
+                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
                         }
+
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero) return null;
+                        System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                        bitmap.NotifyPixelsChanged();
                     }
                     else if (numComponents == 1)
                     {
                         // Treat as grayscale
                         SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                        bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                         int expectedSize = width * height;
                         if (imageData.Length < expectedSize)
                             return null;
 
-                        for (var y = 0; y < height; y++)
+                        // Use direct pixel buffer for performance
+                        var pixelBuffer = new byte[width * height * 4];
+                        int pixelCount = width * height;
+                        for (var i = 0; i < pixelCount; i++)
                         {
-                            for (var x = 0; x < width; x++)
-                            {
-                                int pixelIndex = y * width + x;
-                                byte gray = imageData[pixelIndex];
-
-                                byte alpha = 255;
-                                if (smaskData is not null && pixelIndex < smaskData.Length)
-                                    alpha = smaskData[pixelIndex];
-
-                                bitmap.SetPixel(x, y, new SKColor(gray, gray, gray, alpha));
-                            }
+                            byte gray = imageData[i];
+                            int dstOffset = i * 4;
+                            pixelBuffer[dstOffset] = gray;
+                            pixelBuffer[dstOffset + 1] = gray;
+                            pixelBuffer[dstOffset + 2] = gray;
+                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
                         }
+
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero) return null;
+                        System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                        bitmap.NotifyPixelsChanged();
                     }
                     else if (numComponents == 4)
                     {
                         // Treat as CMYK - convert to RGB
                         SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                        bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, alphaType);
                         int expectedSize = width * height * 4;
                         if (imageData.Length < expectedSize)
                             return null;
 
-                        for (var y = 0; y < height; y++)
+                        // Use direct pixel buffer for performance
+                        var pixelBuffer = new byte[width * height * 4];
+                        int pixelCount = width * height;
+                        for (var i = 0; i < pixelCount; i++)
                         {
-                            for (var x = 0; x < width; x++)
-                            {
-                                int pixelIndex = y * width + x;
-                                int offset = pixelIndex * 4;
-                                // CMYK values are in range 0-255
-                                double c = imageData[offset] / 255.0;
-                                double m = imageData[offset + 1] / 255.0;
-                                double yy = imageData[offset + 2] / 255.0;
-                                double k = imageData[offset + 3] / 255.0;
+                            int srcOffset = i * 4;
+                            int dstOffset = i * 4;
+                            // CMYK values are in range 0-255
+                            int c = imageData[srcOffset];
+                            int m = imageData[srcOffset + 1];
+                            int yy = imageData[srcOffset + 2];
+                            int k = imageData[srcOffset + 3];
 
-                                // Convert CMYK to RGB
-                                var r = (byte)(255 * (1 - c) * (1 - k));
-                                var g = (byte)(255 * (1 - m) * (1 - k));
-                                var b = (byte)(255 * (1 - yy) * (1 - k));
-
-                                byte alpha = 255;
-                                if (smaskData is not null && pixelIndex < smaskData.Length)
-                                    alpha = smaskData[pixelIndex];
-
-                                bitmap.SetPixel(x, y, new SKColor(r, g, b, alpha));
-                            }
+                            // Convert CMYK to RGB using integer math for performance
+                            // r = 255 * (1 - c/255) * (1 - k/255) = (255 - c) * (255 - k) / 255
+                            pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 2] = (byte)((255 - yy) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
                         }
+
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero) return null;
+                        System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                        bitmap.NotifyPixelsChanged();
                     }
                     else
                     {

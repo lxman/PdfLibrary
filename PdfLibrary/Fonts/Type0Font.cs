@@ -201,7 +201,7 @@ internal class CidFont : PdfFont
             // Parse stream containing the mapping
             case PdfStream stream:
             {
-                byte[] data = stream.GetDecodedData();
+                byte[] data = stream.GetDecodedData(_document?.Decryptor);
                 _cidToGidMap = new Dictionary<int, int>();
 
                 // Each entry is 2 bytes (big-endian GID), indexed by CID

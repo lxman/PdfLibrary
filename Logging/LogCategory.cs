@@ -33,6 +33,11 @@ namespace Logging
         /// <summary>
         /// Melville library operations (third-party rendering)
         /// </summary>
-        Melville
+        Melville,
+
+        /// <summary>
+        /// Timing measurements for performance analysis
+        /// </summary>
+        Timings
     }
 }

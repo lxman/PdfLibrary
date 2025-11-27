@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Functions;
 
@@ -26,7 +27,7 @@ public class SampledFunction : PdfFunction
         _samples = samples;
     }
 
-    public static SampledFunction? Create(PdfStream? stream, double[] domain, double[]? range)
+    public static SampledFunction? Create(PdfStream? stream, double[] domain, double[]? range, PdfDocument? document = null)
     {
         if (stream is null || range is null)
             return null;
@@ -72,7 +73,7 @@ public class SampledFunction : PdfFunction
         int totalSamples = size.Aggregate(1, (current, s) => current * s);
 
         // Decode the stream data
-        byte[] data = stream.GetDecodedData();
+        byte[] data = stream.GetDecodedData(document?.Decryptor);
 
         // Parse samples from the stream
         var samples = new double[totalSamples, outputCount];

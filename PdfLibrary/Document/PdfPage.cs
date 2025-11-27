@@ -282,7 +282,7 @@ public class PdfPage
         var allText = new StringBuilder();
         PdfResources? resources = GetResources();
 
-        foreach (byte[] contentData in contents.Select(stream => stream.GetDecodedData()))
+        foreach (byte[] contentData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
         {
             string text = PdfTextExtractor.ExtractText(contentData, resources);
             allText.Append(text);
@@ -304,7 +304,7 @@ public class PdfPage
         var allFragments = new List<TextFragment>();
         PdfResources? resources = GetResources();
 
-        foreach (byte[] decodedData in contents.Select(stream => stream.GetDecodedData()))
+        foreach (byte[] decodedData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
         {
             (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(decodedData, resources);
             allText.Append(text);

@@ -102,6 +102,7 @@ namespace Logging
                 LogCategory.Transforms => _config.LogTransforms,
                 LogCategory.PdfTool => _config.LogPdfTool,
                 LogCategory.Melville => _config.LogMelville,
+                LogCategory.Timings => _config.LogTimings,
                 _ => false
             };
         }
@@ -137,6 +138,7 @@ namespace Logging
                 LogCategory.Transforms => "[Transforms]",
                 LogCategory.PdfTool => "[PdfTool]",
                 LogCategory.Melville => "[Melville]",
+                LogCategory.Timings => "[Timings]",
                 _ => "[Unknown]"
             };
         }

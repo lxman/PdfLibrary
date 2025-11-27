@@ -68,7 +68,7 @@ public abstract class PdfFunction
 
         return functionType switch
         {
-            0 => SampledFunction.Create(obj as PdfStream, domain, range),
+            0 => SampledFunction.Create(obj as PdfStream, domain, range, document),
             2 => ExponentialFunction.Create(dict, domain, range),
             // Type 3 (stitching) and Type 4 (PostScript calculator) not yet implemented
             _ => null

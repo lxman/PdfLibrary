@@ -263,7 +263,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
-                return stream.GetDecodedData();
+                return stream.GetDecodedData(_document?.Decryptor);
         }
         return null;
     }
@@ -280,7 +280,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
-                return stream.GetDecodedData();
+                return stream.GetDecodedData(_document?.Decryptor);
         }
         return null;
     }
@@ -297,7 +297,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
-                return stream.GetDecodedData();
+                return stream.GetDecodedData(_document?.Decryptor);
         }
         return null;
     }
@@ -319,7 +319,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         if (obj is not PdfStream stream)
             return null;
 
-        byte[] data = stream.GetDecodedData();
+        byte[] data = stream.GetDecodedData(_document?.Decryptor);
 
         // Get Length1, Length2, Length3 from stream dictionary
         int length1 = 0, length2 = 0, length3 = 0;

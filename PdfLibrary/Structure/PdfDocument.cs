@@ -1,8 +1,11 @@
+using System.Diagnostics;
 using System.Text;
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Parsing;
+using PdfLibrary.Security;
 
 namespace PdfLibrary.Structure;
 
@@ -45,6 +48,16 @@ public class PdfDocument : IDisposable
     /// Gets all indirect objects in the document
     /// </summary>
     public IReadOnlyDictionary<int, PdfObject> Objects => _objects;
+
+    /// <summary>
+    /// Gets the decryptor for encrypted documents, or null if not encrypted.
+    /// </summary>
+    public PdfDecryptor? Decryptor { get; private set; }
+
+    /// <summary>
+    /// Gets whether the document is encrypted.
+    /// </summary>
+    public bool IsEncrypted => Decryptor is not null;
 
     /// <summary>
     /// Adds an indirect object to the document
@@ -178,8 +191,8 @@ public class PdfDocument : IDisposable
         }
         int firstOffset = firstInt.Value;
 
-        // Decode the stream
-        byte[] decodedData = objStream.GetDecodedData();
+        // Decode the stream (decryption is needed for encrypted documents)
+        byte[] decodedData = objStream.GetDecodedData(Decryptor);
 
         // Parse the first section: pairs of (objectNumber offset)
         using var headerStream = new MemoryStream(decodedData, 0, firstOffset);
@@ -339,6 +352,9 @@ public class PdfDocument : IDisposable
         if (!stream.CanSeek)
             throw new ArgumentException("Stream must be seekable", nameof(stream));
 
+        var totalStopwatch = Stopwatch.StartNew();
+        var phaseStopwatch = new Stopwatch();
+
         var document = new PdfDocument();
         if (!leaveOpen)
             document._stream = stream;
@@ -346,16 +362,21 @@ public class PdfDocument : IDisposable
         try
         {
             // Parse PDF header
+            phaseStopwatch.Restart();
             stream.Position = 0;
             (document.Version, long headerOffset) = ParseHeader(stream);
+            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Header parsed in {phaseStopwatch.ElapsedMilliseconds}ms");
 
             // Find startxref position
+            phaseStopwatch.Restart();
             long startxref = PdfTrailerParser.FindStartXref(stream);
+            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Found startxref in {phaseStopwatch.ElapsedMilliseconds}ms");
 
             // Adjust startxref by header offset (PDF 2.0 files may have data before the header)
             long actualXrefPosition = startxref + headerOffset;
 
             // Parse cross-reference table(s) - follow /Prev chain for incremental updates
+            phaseStopwatch.Restart();
             long xrefPosition = actualXrefPosition;
             var xrefChainDepth = 0;
             const int maxXrefChainDepth = 100; // Prevent infinite loops
@@ -371,8 +392,8 @@ public class PdfDocument : IDisposable
                 // for the same object number (incremental updates)
                 foreach (PdfXrefEntry entry in xrefResult.Table.Entries)
                 {
-                    // Check if this object already exists in the table
-                    if (document.XrefTable.Entries.All(e => e.ObjectNumber != entry.ObjectNumber))
+                    // Check if this object already exists in the table (O(1) dictionary lookup)
+                    if (!document.XrefTable.Contains(entry.ObjectNumber))
                     {
                         document.XrefTable.Add(entry);
                     }
@@ -436,8 +457,23 @@ public class PdfDocument : IDisposable
                 xrefChainDepth++;
             }
 
+            int xrefEntryCount = document.XrefTable.Entries.Count;
+            int compressedCount = document.XrefTable.Entries.Count(e => e.EntryType == PdfXrefEntryType.Compressed);
+            int uncompressedCount = document.XrefTable.Entries.Count(e => e.IsInUse && e.EntryType != PdfXrefEntryType.Compressed);
+            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Xref parsed in {phaseStopwatch.ElapsedMilliseconds}ms ({xrefEntryCount} entries: {uncompressedCount} uncompressed, {compressedCount} compressed, chain depth {xrefChainDepth})");
+
+            // Check for encryption and initialize decryptor
+            if (document.Trailer.Encrypt is not null)
+            {
+                phaseStopwatch.Restart();
+                InitializeDecryption(document, stream, headerOffset);
+                PdfLogger.Log(LogCategory.Timings, $"PDF Load: Encryption initialized in {phaseStopwatch.ElapsedMilliseconds}ms");
+            }
+
             // Load uncompressed indirect objects
             // Compressed objects (type 2) will be loaded on-demand from object streams
+            phaseStopwatch.Restart();
+            int loadedObjects = 0;
             foreach (PdfXrefEntry entry in document.XrefTable.Entries)
             {
                 if (!entry.IsInUse)
@@ -463,6 +499,7 @@ public class PdfDocument : IDisposable
                     if (obj is not null)
                     {
                         document.AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
+                        loadedObjects++;
                     }
                 }
                 catch (PdfParseException ex)
@@ -472,6 +509,10 @@ public class PdfDocument : IDisposable
                         ex);
                 }
             }
+            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Loaded {loadedObjects} uncompressed objects in {phaseStopwatch.ElapsedMilliseconds}ms");
+
+            totalStopwatch.Stop();
+            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Total load time {totalStopwatch.ElapsedMilliseconds}ms (file size: {stream.Length / 1024}KB)");
 
             return document;
         }
@@ -571,5 +612,52 @@ public class PdfDocument : IDisposable
 
         _stream?.Dispose();
         _disposed = true;
+    }
+
+    /// <summary>
+    /// Initializes decryption for an encrypted PDF document.
+    /// </summary>
+    private static void InitializeDecryption(PdfDocument document, Stream stream, long headerOffset)
+    {
+        // Get the /Encrypt dictionary reference
+        PdfIndirectReference? encryptRef = document.Trailer.Encrypt;
+        if (encryptRef is null)
+            return;
+
+        // Find the encryption dictionary object in the xref
+        PdfXrefEntry? encryptEntry = document.XrefTable.Entries
+            .FirstOrDefault(e => e.ObjectNumber == encryptRef.ObjectNumber && e.IsInUse);
+
+        if (encryptEntry is null)
+            throw new PdfSecurityException($"Encryption dictionary object {encryptRef.ObjectNumber} not found in xref");
+
+        // Load the encryption dictionary (this object is NOT encrypted)
+        stream.Position = encryptEntry.ByteOffset + headerOffset;
+        var parser = new PdfParser(stream);
+        PdfObject? encryptObj = parser.ReadObject();
+
+        if (encryptObj is not PdfDictionary encryptDict)
+            throw new PdfSecurityException("Encryption dictionary is not a dictionary");
+
+        // Get document ID from trailer
+        byte[] documentId = [];
+        if (document.Trailer.Dictionary.TryGetValue(new PdfName("ID"), out PdfObject? idObj) &&
+            idObj is PdfArray idArray && idArray.Count > 0 &&
+            idArray[0] is PdfString idString)
+        {
+            documentId = idString.Bytes;
+        }
+
+        // Create the decryptor (will verify password)
+        try
+        {
+            document.Decryptor = new PdfDecryptor(encryptDict, documentId, "");
+            PdfLogger.Log(LogCategory.PdfTool, "PDF decryption initialized successfully (empty password)");
+        }
+        catch (PdfSecurityException ex)
+        {
+            PdfLogger.Log(LogCategory.PdfTool, $"PDF decryption failed: {ex.Message}");
+            throw;
+        }
     }
 }

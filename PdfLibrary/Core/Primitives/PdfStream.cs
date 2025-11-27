@@ -1,5 +1,6 @@
 using System.Text;
 using PdfLibrary.Filters;
+using PdfLibrary.Security;
 
 namespace PdfLibrary.Core.Primitives;
 
@@ -102,11 +103,20 @@ public sealed class PdfStream : PdfObject
     }
 
     /// <summary>
-    /// Decodes the stream data using the filters specified in the stream dictionary
+    /// Decodes the stream data using the filters specified in the stream dictionary.
+    /// If decryptor is provided, decrypts the data first.
     /// </summary>
-    public byte[] GetDecodedData()
+    /// <param name="decryptor">Optional decryptor for encrypted documents</param>
+    /// <returns>Decoded (and decrypted if applicable) stream data</returns>
+    public byte[] GetDecodedData(PdfDecryptor? decryptor = null)
     {
         byte[] data = _data;
+
+        // Decrypt first if we have a decryptor and this stream has object info
+        if (decryptor is not null && IsIndirect)
+        {
+            data = decryptor.Decrypt(data, ObjectNumber, GenerationNumber);
+        }
 
         // Check if stream has filters
         if (!Dictionary.TryGetValue(PdfName.Filter, out PdfObject filterObj))

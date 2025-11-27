@@ -341,7 +341,7 @@ public class PdfImage
             return GetDecodedDataWithCcittFix();
         }
 
-        return _stream.GetDecodedData();
+        return _stream.GetDecodedData(_document?.Decryptor);
     }
 
     /// <summary>
@@ -399,9 +399,14 @@ public class PdfImage
             decodeParams["Rows"] = Height;
         }
 
-        // Apply CCITT filter directly
+        // Decrypt data if necessary, then apply CCITT filter
+        byte[] data = _stream.Data;
+        if (_document?.Decryptor is not null && _stream.IsIndirect)
+        {
+            data = _document.Decryptor.Decrypt(data, _stream.ObjectNumber, _stream.GenerationNumber);
+        }
         var filter = new Filters.CcittFaxDecodeFilter();
-        return filter.Decode(_stream.Data, decodeParams);
+        return filter.Decode(data, decodeParams);
     }
 
     /// <summary>
@@ -490,7 +495,7 @@ public class PdfImage
         byte[]? paletteData = lookupObj switch
         {
             PdfString lookupString => lookupString.Bytes,
-            PdfStream lookupStream => lookupStream.GetDecodedData(),
+            PdfStream lookupStream => lookupStream.GetDecodedData(_document?.Decryptor),
             _ => null
         };
 
