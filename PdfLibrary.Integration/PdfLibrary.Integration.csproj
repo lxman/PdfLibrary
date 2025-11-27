@@ -8,42 +8,16 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <Content Include="..\pdf20examples\PDF 2.0 image with BPC.pdf">
-        <Link>PDFs\2_0\PDF 2.0 image with BPC.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\pdf20examples\PDF 2.0 UTF-8 string and annotation.pdf">
-        <Link>PDFs\2_0\PDF 2.0 UTF-8 string and annotation.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\pdf20examples\PDF 2.0 via incremental save.pdf">
-        <Link>PDFs\2_0\PDF 2.0 via incremental save.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\pdf20examples\PDF 2.0 with offset start.pdf">
-        <Link>PDFs\2_0\PDF 2.0 with offset start.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\pdf20examples\PDF 2.0 with page level output intent.pdf">
-        <Link>PDFs\2_0\PDF 2.0 with page level output intent.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\pdf20examples\pdf20-utf8-test.pdf">
-        <Link>PDFs\2_0\pdf20-utf8-test.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-      <Content Include="..\pdf20examples\Simple PDF 2.0 file.pdf">
-        <Link>PDFs\2_0\Simple PDF 2.0 file.pdf</Link>
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </Content>
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Tests\" />
-    </ItemGroup>
-
-    <ItemGroup>
       <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
     </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Codeuctivity.ImageSharpCompare" Version="4.1.379" />
+      <PackageReference Include="SkiaSharp" Version="3.119.2-preview.1" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
 
 </Project>

@@ -201,8 +201,8 @@ public class PdfDocumentWriter
             WriteObjectStart(writer, objNum);
             writer.WriteLine("<<");
             writer.WriteLine("   /Type /ExtGState");
-            writer.WriteLine($"   /ca {key.strokeOpacity:F2}"); // Stroking alpha
-            writer.WriteLine($"   /CA {key.fillOpacity:F2}"); // Non-stroking alpha
+            writer.WriteLine($"   /ca {key.fillOpacity:F2}"); // Non-stroking (fill) alpha
+            writer.WriteLine($"   /CA {key.strokeOpacity:F2}"); // Stroking alpha
             writer.WriteLine(">>");
             WriteObjectEnd(writer);
         }
@@ -1292,14 +1292,16 @@ public class PdfDocumentWriter
         writer.WriteLine("   /FirstChar 32");
         writer.WriteLine("   /LastChar 255");
 
-        // Generate Widths array
+        // Generate Widths array (scaled to PDF's 1000-unit coordinate system)
+        double scale = 1000.0 / metrics.UnitsPerEm;
         writer.Write("   /Widths [");
         for (var charCode = 32; charCode <= 255; charCode++)
         {
             if ((charCode - 32) % 16 == 0)
                 writer.Write("\n      ");
 
-            ushort width = metrics.GetCharacterAdvanceWidth((ushort)charCode);
+            ushort rawWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
+            int width = (int)Math.Round(rawWidth * scale);
             writer.Write($"{width} ");
         }
         writer.WriteLine("\n   ]");
