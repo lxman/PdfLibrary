@@ -15,7 +15,7 @@ public class PdfDocumentWriter
     private readonly Dictionary<string, int> _fontObjects = new();
     private readonly Dictionary<string, int> _fontDescriptorObjects = new(); // For custom fonts
     private readonly List<(PdfImageContent image, int objectNumber)> _imageObjects = [];
-    private readonly Dictionary<double, int> _extGStateObjects = new(); // opacity -> object number
+    private readonly Dictionary<(double fillOpacity, double strokeOpacity), int> _extGStateObjects = new(); // (fillOpacity, strokeOpacity) -> object number
 
     /// <summary>
     /// Write a document to a file
@@ -83,9 +83,28 @@ public class PdfDocumentWriter
                 _imageObjects.Add((image, imageObj));
 
                 // Collect opacity values for ExtGState objects
-                if (image.Opacity < 1.0 && !_extGStateObjects.ContainsKey(image.Opacity))
+                if (image.Opacity < 1.0)
                 {
-                    _extGStateObjects[image.Opacity] = _nextObjectNumber++;
+                    var key = (image.Opacity, image.Opacity);
+                    if (!_extGStateObjects.ContainsKey(key))
+                    {
+                        _extGStateObjects[key] = _nextObjectNumber++;
+                    }
+                }
+            }
+
+            // Collect opacity values from path content
+            foreach (PdfContentElement content in page.Content)
+            {
+                if (content is not PdfPathContent path) continue;
+
+                bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
+                if (!needsOpacity) continue;
+
+                var key = (path.FillOpacity, path.StrokeOpacity);
+                if (!_extGStateObjects.ContainsKey(key))
+                {
+                    _extGStateObjects[key] = _nextObjectNumber++;
                 }
             }
         }
@@ -177,13 +196,13 @@ public class PdfDocumentWriter
         }
 
         // Write ExtGState objects for opacity
-        foreach ((double opacity, int objNum) in _extGStateObjects)
+        foreach (((double fillOpacity, double strokeOpacity) key, int objNum) in _extGStateObjects)
         {
             WriteObjectStart(writer, objNum);
             writer.WriteLine("<<");
             writer.WriteLine("   /Type /ExtGState");
-            writer.WriteLine($"   /ca {opacity:F2}"); // Stroking alpha
-            writer.WriteLine($"   /CA {opacity:F2}"); // Non-stroking alpha
+            writer.WriteLine($"   /ca {key.strokeOpacity:F2}"); // Stroking alpha
+            writer.WriteLine($"   /CA {key.fillOpacity:F2}"); // Non-stroking alpha
             writer.WriteLine(">>");
             WriteObjectEnd(writer);
         }
@@ -238,7 +257,7 @@ public class PdfDocumentWriter
             {
                 writer.WriteLine("      /ExtGState <<");
                 var gsIndex = 1;
-                foreach ((double opacity, int objNum) in _extGStateObjects.OrderBy(x => x.Key))
+                foreach (((double fillOpacity, double strokeOpacity) key, int objNum) in _extGStateObjects.OrderBy(x => x.Key))
                 {
                     writer.WriteLine($"         /GS{gsIndex} {objNum} 0 R");
                     gsIndex++;
@@ -428,8 +447,7 @@ public class PdfDocumentWriter
                     // Set stroke color and line width before BT
                     if (text.StrokeColor.HasValue)
                     {
-                        PdfColor sc = text.StrokeColor.Value;
-                        sb.AppendLine($"{sc.R:F3} {sc.G:F3} {sc.B:F3} RG");
+                        AppendColorOperator(sb, text.StrokeColor.Value, isFill: false);
                         sb.AppendLine($"{text.StrokeWidth:F2} w");
                     }
 
@@ -450,7 +468,7 @@ public class PdfDocumentWriter
                         sb.AppendLine($"{text.LineSpacing:F2} TL");
 
                     // Fill color (rg is allowed inside BT...ET)
-                    sb.AppendLine($"{text.FillColor.R:F3} {text.FillColor.G:F3} {text.FillColor.B:F3} rg");
+                    AppendColorOperator(sb, text.FillColor, isFill: true);
 
                     // Position with optional rotation using the text matrix
                     // Text matrix: [a b c d e f] where:
@@ -486,13 +504,11 @@ public class PdfDocumentWriter
 
                         if (rect.FillColor.HasValue)
                         {
-                            PdfColor c = rect.FillColor.Value;
-                            sb.AppendLine($"{c.R:F3} {c.G:F3} {c.B:F3} rg");
+                            AppendColorOperator(sb, rect.FillColor.Value, isFill: true);
                         }
                         if (rect.StrokeColor.HasValue)
                         {
-                            PdfColor c = rect.StrokeColor.Value;
-                            sb.AppendLine($"{c.R:F3} {c.G:F3} {c.B:F3} RG");
+                            AppendColorOperator(sb, rect.StrokeColor.Value, isFill: false);
                         }
 
                         sb.AppendLine($"{rect.Rect.Left:F2} {rect.Rect.Bottom:F2} {rect.Rect.Width:F2} {rect.Rect.Height:F2} re");
@@ -511,7 +527,7 @@ public class PdfDocumentWriter
                 case PdfLineContent line:
                     sb.AppendLine("q");
                     sb.AppendLine($"{line.LineWidth:F2} w");
-                    sb.AppendLine($"{line.StrokeColor.R:F3} {line.StrokeColor.G:F3} {line.StrokeColor.B:F3} RG");
+                    AppendColorOperator(sb, line.StrokeColor, isFill: false);
                     sb.AppendLine($"{line.X1:F2} {line.Y1:F2} m");
                     sb.AppendLine($"{line.X2:F2} {line.Y2:F2} l");
                     sb.AppendLine("S");
@@ -533,18 +549,13 @@ public class PdfDocumentWriter
                         sb.AppendLine("q"); // Save graphics state
 
                         // Apply opacity if not fully opaque
-                        if (image.Opacity < 1.0 && _extGStateObjects.TryGetValue(image.Opacity, out int gsObj))
+                        if (image.Opacity < 1.0)
                         {
-                            // Find the GS index for this opacity
-                            var gsIndex = 1;
-                            foreach (double opacity in _extGStateObjects.Keys.OrderBy(x => x))
+                            var opacityKey = (image.Opacity, image.Opacity);
+                            if (_extGStateObjects.ContainsKey(opacityKey))
                             {
-                                if (Math.Abs(opacity - image.Opacity) < 0.001)
-                                {
-                                    sb.AppendLine($"/GS{gsIndex} gs");
-                                    break;
-                                }
-                                gsIndex++;
+                                int gsIndex = GetExtGStateIndex(opacityKey);
+                                sb.AppendLine($"/GS{gsIndex} gs");
                             }
                         }
 
@@ -580,10 +591,187 @@ public class PdfDocumentWriter
                         sb.AppendLine("Q"); // Restore graphics state
                     }
                     break;
+
+                case PdfPathContent path:
+                    GeneratePathContent(sb, path);
+                    break;
             }
         }
 
         return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    /// <summary>
+    /// Generate PDF content stream operators for a path
+    /// </summary>
+    private void GeneratePathContent(StringBuilder sb, PdfPathContent path)
+    {
+        sb.AppendLine("q"); // Save graphics state
+
+        // Apply opacity if needed
+        bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
+        if (needsOpacity)
+        {
+            var opacityKey = (path.FillOpacity, path.StrokeOpacity);
+            if (_extGStateObjects.ContainsKey(opacityKey))
+            {
+                int gsIndex = GetExtGStateIndex(opacityKey);
+                sb.AppendLine($"/GS{gsIndex} gs");
+            }
+        }
+
+        // Set line width
+        sb.AppendLine($"{path.LineWidth:F2} w");
+
+        // Set line cap
+        sb.AppendLine($"{(int)path.LineCap} J");
+
+        // Set line join
+        sb.AppendLine($"{(int)path.LineJoin} j");
+
+        // Set miter limit
+        sb.AppendLine($"{path.MiterLimit:F2} M");
+
+        // Set dash pattern
+        if (path.DashPattern is { Length: > 0 })
+        {
+            sb.Append("[");
+            for (var i = 0; i < path.DashPattern.Length; i++)
+            {
+                if (i > 0) sb.Append(" ");
+                sb.Append($"{path.DashPattern[i]:F2}");
+            }
+            sb.AppendLine($"] {path.DashPhase:F2} d");
+        }
+        else
+        {
+            sb.AppendLine("[] 0 d"); // Reset to solid line
+        }
+
+        // Set fill color
+        if (path.FillColor.HasValue)
+        {
+            AppendColorOperator(sb, path.FillColor.Value, isFill: true);
+        }
+
+        // Set stroke color
+        if (path.StrokeColor.HasValue)
+        {
+            AppendColorOperator(sb, path.StrokeColor.Value, isFill: false);
+        }
+
+        // Generate path segments
+        foreach (PdfPathSegment segment in path.Segments)
+        {
+            switch (segment.Type)
+            {
+                case PdfPathSegmentType.MoveTo:
+                    sb.AppendLine($"{segment.Points[0]:F2} {segment.Points[1]:F2} m");
+                    break;
+                case PdfPathSegmentType.LineTo:
+                    sb.AppendLine($"{segment.Points[0]:F2} {segment.Points[1]:F2} l");
+                    break;
+                case PdfPathSegmentType.CurveTo:
+                    sb.AppendLine($"{segment.Points[0]:F2} {segment.Points[1]:F2} {segment.Points[2]:F2} {segment.Points[3]:F2} {segment.Points[4]:F2} {segment.Points[5]:F2} c");
+                    break;
+                case PdfPathSegmentType.CurveToV:
+                    sb.AppendLine($"{segment.Points[0]:F2} {segment.Points[1]:F2} {segment.Points[2]:F2} {segment.Points[3]:F2} v");
+                    break;
+                case PdfPathSegmentType.CurveToY:
+                    sb.AppendLine($"{segment.Points[0]:F2} {segment.Points[1]:F2} {segment.Points[2]:F2} {segment.Points[3]:F2} y");
+                    break;
+                case PdfPathSegmentType.ClosePath:
+                    sb.AppendLine("h");
+                    break;
+                case PdfPathSegmentType.Rectangle:
+                    sb.AppendLine($"{segment.Points[0]:F2} {segment.Points[1]:F2} {segment.Points[2]:F2} {segment.Points[3]:F2} re");
+                    break;
+            }
+        }
+
+        // Paint the path
+        if (path.IsClippingPath)
+        {
+            // Clipping path
+            if (path.FillRule == PdfFillRule.EvenOdd)
+                sb.AppendLine("W* n"); // Even-odd clip, no paint
+            else
+                sb.AppendLine("W n"); // Non-zero winding clip, no paint
+        }
+        else if (path.FillColor.HasValue && path.StrokeColor.HasValue)
+        {
+            // Fill and stroke
+            if (path.FillRule == PdfFillRule.EvenOdd)
+                sb.AppendLine("B*"); // Fill (even-odd) and stroke
+            else
+                sb.AppendLine("B"); // Fill (non-zero) and stroke
+        }
+        else if (path.FillColor.HasValue)
+        {
+            // Fill only
+            if (path.FillRule == PdfFillRule.EvenOdd)
+                sb.AppendLine("f*"); // Fill using even-odd rule
+            else
+                sb.AppendLine("f"); // Fill using non-zero winding
+        }
+        else if (path.StrokeColor.HasValue)
+        {
+            // Stroke only
+            sb.AppendLine("S");
+        }
+        else
+        {
+            // No paint - end path
+            sb.AppendLine("n");
+        }
+
+        sb.AppendLine("Q"); // Restore graphics state
+    }
+
+    /// <summary>
+    /// Append color operator for fill or stroke based on color space
+    /// </summary>
+    private static void AppendColorOperator(StringBuilder sb, PdfColor color, bool isFill)
+    {
+        switch (color.ColorSpace)
+        {
+            case PdfColorSpace.DeviceGray:
+                // g for fill, G for stroke
+                sb.AppendLine(isFill
+                    ? $"{color.Components[0]:F3} g"
+                    : $"{color.Components[0]:F3} G");
+                break;
+
+            case PdfColorSpace.DeviceCMYK:
+                // k for fill, K for stroke
+                sb.AppendLine(isFill
+                    ? $"{color.Components[0]:F3} {color.Components[1]:F3} {color.Components[2]:F3} {color.Components[3]:F3} k"
+                    : $"{color.Components[0]:F3} {color.Components[1]:F3} {color.Components[2]:F3} {color.Components[3]:F3} K");
+                break;
+
+            case PdfColorSpace.DeviceRGB:
+            default:
+                // rg for fill, RG for stroke
+                sb.AppendLine(isFill
+                    ? $"{color.R:F3} {color.G:F3} {color.B:F3} rg"
+                    : $"{color.R:F3} {color.G:F3} {color.B:F3} RG");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Get the index of an ExtGState object for the given opacity key
+    /// </summary>
+    private int GetExtGStateIndex((double fillOpacity, double strokeOpacity) key)
+    {
+        var index = 1;
+        foreach (var k in _extGStateObjects.Keys.OrderBy(x => x))
+        {
+            if (k == key)
+                return index;
+            index++;
+        }
+        return -1;
     }
 
     private void WriteFormField(StreamWriter writer, int objectNumber, PdfFormFieldBuilder field, int pageObj, List<string> fonts)

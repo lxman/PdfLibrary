@@ -375,6 +375,40 @@ public class PdfPageBuilder
         return this;
     }
 
+    /// <summary>
+    /// Begin a new path for complex shapes, curves, and clipping
+    /// </summary>
+    public PdfPathBuilder AddPath()
+    {
+        var content = new PdfPathContent();
+        _content.Add(content);
+        return new PdfPathBuilder(this, content);
+    }
+
+    /// <summary>
+    /// Add a circle to the page
+    /// </summary>
+    public PdfPathBuilder AddCircle(double centerX, double centerY, double radius)
+    {
+        return AddPath().Circle(centerX, centerY, radius);
+    }
+
+    /// <summary>
+    /// Add an ellipse to the page
+    /// </summary>
+    public PdfPathBuilder AddEllipse(double centerX, double centerY, double radiusX, double radiusY)
+    {
+        return AddPath().Ellipse(centerX, centerY, radiusX, radiusY);
+    }
+
+    /// <summary>
+    /// Add a rounded rectangle to the page
+    /// </summary>
+    public PdfPathBuilder AddRoundedRectangle(double x, double y, double width, double height, double cornerRadius)
+    {
+        return AddPath().RoundedRectangle(x, y, width, height, cornerRadius);
+    }
+
     // ==================== FORM FIELDS ====================
 
     /// <summary>
@@ -921,20 +955,66 @@ public class PdfLineContent : PdfContentElement
 // ==================== COLOR ====================
 
 /// <summary>
-/// Represents a color in PDF
+/// Color space types supported by the PDF builder
+/// </summary>
+public enum PdfColorSpace
+{
+    /// <summary>RGB color space (DeviceRGB)</summary>
+    DeviceRGB,
+    /// <summary>Grayscale color space (DeviceGray)</summary>
+    DeviceGray,
+    /// <summary>CMYK color space (DeviceCMYK)</summary>
+    DeviceCMYK
+}
+
+/// <summary>
+/// Represents a color in PDF with support for multiple color spaces
 /// </summary>
 public readonly struct PdfColor
 {
-    public double R { get; }
-    public double G { get; }
-    public double B { get; }
+    /// <summary>The color space this color is defined in</summary>
+    public PdfColorSpace ColorSpace { get; }
 
+    /// <summary>Color components (interpretation depends on ColorSpace)</summary>
+    public double[] Components { get; }
+
+    // Convenience accessors for RGB
+    public double R => ColorSpace == PdfColorSpace.DeviceRGB ? Components[0] : 0;
+    public double G => ColorSpace == PdfColorSpace.DeviceRGB ? Components[1] : 0;
+    public double B => ColorSpace == PdfColorSpace.DeviceRGB ? Components[2] : 0;
+
+    // Convenience accessors for Gray
+    public double GrayValue => ColorSpace == PdfColorSpace.DeviceGray ? Components[0] : 0;
+
+    // Convenience accessors for CMYK
+    public double C => ColorSpace == PdfColorSpace.DeviceCMYK ? Components[0] : 0;
+    public double M => ColorSpace == PdfColorSpace.DeviceCMYK ? Components[1] : 0;
+    public double Y => ColorSpace == PdfColorSpace.DeviceCMYK ? Components[2] : 0;
+    public double K => ColorSpace == PdfColorSpace.DeviceCMYK ? Components[3] : 0;
+
+    /// <summary>
+    /// Create an RGB color (values 0-1)
+    /// </summary>
     public PdfColor(double r, double g, double b)
     {
-        R = r;
-        G = g;
-        B = b;
+        ColorSpace = PdfColorSpace.DeviceRGB;
+        Components = [r, g, b];
     }
+
+    /// <summary>
+    /// Create a color with explicit color space and components (internal constructor)
+    /// </summary>
+    private PdfColor(PdfColorSpace colorSpace, double[] components)
+    {
+        ColorSpace = colorSpace;
+        Components = components;
+    }
+
+    /// <summary>
+    /// Create a color with explicit color space and components
+    /// </summary>
+    public static PdfColor FromComponents(PdfColorSpace colorSpace, params double[] components)
+        => new(colorSpace, components);
 
     /// <summary>
     /// Create a color from 0-255 RGB values
@@ -943,19 +1023,513 @@ public readonly struct PdfColor
         => new(r / 255.0, g / 255.0, b / 255.0);
 
     /// <summary>
-    /// Create a grayscale color (0 = black, 1 = white)
+    /// Create a grayscale color using DeviceGray color space (0 = black, 1 = white)
+    /// </summary>
+    public static PdfColor FromGray(double value)
+        => FromComponents(PdfColorSpace.DeviceGray, value);
+
+    /// <summary>
+    /// Create a grayscale color as RGB (0 = black, 1 = white) - legacy method
     /// </summary>
     public static PdfColor Gray(double value) => new(value, value, value);
 
-    // Common colors
-    public static readonly PdfColor Black = new(0, 0, 0);
-    public static readonly PdfColor White = new(1, 1, 1);
-    public static readonly PdfColor Red = new(1, 0, 0);
-    public static readonly PdfColor Green = new(0, 1, 0);
-    public static readonly PdfColor Blue = new(0, 0, 1);
-    public static readonly PdfColor Yellow = new(1, 1, 0);
-    public static readonly PdfColor Cyan = new(0, 1, 1);
-    public static readonly PdfColor Magenta = new(1, 0, 1);
-    public static readonly PdfColor LightGray = new(0.75, 0.75, 0.75);
-    public static readonly PdfColor DarkGray = new(0.25, 0.25, 0.25);
+    /// <summary>
+    /// Create a CMYK color (values 0-1)
+    /// </summary>
+    public static PdfColor FromCmyk(double c, double m, double y, double k)
+        => FromComponents(PdfColorSpace.DeviceCMYK, c, m, y, k);
+
+    /// <summary>
+    /// Create a CMYK color from 0-100 percentage values
+    /// </summary>
+    public static PdfColor FromCmykPercent(double c, double m, double y, double k)
+        => FromComponents(PdfColorSpace.DeviceCMYK, c / 100.0, m / 100.0, y / 100.0, k / 100.0);
+
+    // Common colors (DeviceRGB) - use explicit constructor to avoid ambiguity with params overload
+    public static readonly PdfColor Black = new PdfColor(0, 0, 0);
+    public static readonly PdfColor White = new PdfColor(1, 1, 1);
+    public static readonly PdfColor Red = new PdfColor(1, 0, 0);
+    public static readonly PdfColor Green = new PdfColor(0, 1, 0);
+    public static readonly PdfColor Blue = new PdfColor(0, 0, 1);
+    public static readonly PdfColor Yellow = new PdfColor(1, 1, 0);
+    public static readonly PdfColor Cyan = new PdfColor(0, 1, 1);
+    public static readonly PdfColor Magenta = new PdfColor(1, 0, 1);
+    public static readonly PdfColor LightGray = new PdfColor(0.75, 0.75, 0.75);
+    public static readonly PdfColor DarkGray = new PdfColor(0.25, 0.25, 0.25);
+
+    // Common CMYK colors
+    public static readonly PdfColor CmykBlack = FromCmyk(0, 0, 0, 1);
+    public static readonly PdfColor CmykWhite = FromCmyk(0, 0, 0, 0);
+    public static readonly PdfColor CmykCyan = FromCmyk(1, 0, 0, 0);
+    public static readonly PdfColor CmykMagenta = FromCmyk(0, 1, 0, 0);
+    public static readonly PdfColor CmykYellow = FromCmyk(0, 0, 1, 0);
+    public static readonly PdfColor CmykRed = FromCmyk(0, 1, 1, 0);
+    public static readonly PdfColor CmykGreen = FromCmyk(1, 0, 1, 0);
+    public static readonly PdfColor CmykBlue = FromCmyk(1, 1, 0, 0);
+}
+
+// ==================== PATH DRAWING ====================
+
+/// <summary>
+/// Types of path segments
+/// </summary>
+public enum PdfPathSegmentType
+{
+    MoveTo,
+    LineTo,
+    CurveTo,      // Cubic Bezier curve with two control points
+    CurveToV,     // Cubic Bezier with first control point = current point
+    CurveToY,     // Cubic Bezier with second control point = endpoint
+    ClosePath,
+    Rectangle
+}
+
+/// <summary>
+/// Represents a segment in a path
+/// </summary>
+public class PdfPathSegment
+{
+    public PdfPathSegmentType Type { get; init; }
+    public double[] Points { get; init; } = [];
+}
+
+/// <summary>
+/// Fill rules for paths
+/// </summary>
+public enum PdfFillRule
+{
+    /// <summary>Non-zero winding number rule (default)</summary>
+    NonZeroWinding,
+    /// <summary>Even-odd rule</summary>
+    EvenOdd
+}
+
+/// <summary>
+/// Line cap styles
+/// </summary>
+public enum PdfLineCap
+{
+    /// <summary>Butt cap - the stroke ends at the endpoint</summary>
+    Butt = 0,
+    /// <summary>Round cap - semicircular arc at the endpoint</summary>
+    Round = 1,
+    /// <summary>Projecting square cap - extends beyond the endpoint</summary>
+    Square = 2
+}
+
+/// <summary>
+/// Line join styles
+/// </summary>
+public enum PdfLineJoin
+{
+    /// <summary>Miter join - outer edges extended to meet</summary>
+    Miter = 0,
+    /// <summary>Round join - circular arc at the corner</summary>
+    Round = 1,
+    /// <summary>Bevel join - straight line across the corner</summary>
+    Bevel = 2
+}
+
+/// <summary>
+/// Path content element supporting complex shapes
+/// </summary>
+public class PdfPathContent : PdfContentElement
+{
+    public List<PdfPathSegment> Segments { get; } = [];
+    public PdfColor? FillColor { get; set; }
+    public PdfColor? StrokeColor { get; set; }
+    public double LineWidth { get; set; } = 1;
+    public PdfFillRule FillRule { get; set; } = PdfFillRule.NonZeroWinding;
+    public PdfLineCap LineCap { get; set; } = PdfLineCap.Butt;
+    public PdfLineJoin LineJoin { get; set; } = PdfLineJoin.Miter;
+    public double MiterLimit { get; set; } = 10;
+    public double[]? DashPattern { get; set; }
+    public double DashPhase { get; set; }
+    public bool IsClippingPath { get; set; }
+    public double FillOpacity { get; set; } = 1.0;
+    public double StrokeOpacity { get; set; } = 1.0;
+}
+
+/// <summary>
+/// Fluent builder for creating paths with lines, curves, and shapes
+/// </summary>
+public class PdfPathBuilder
+{
+    private readonly PdfPageBuilder _pageBuilder;
+    private readonly PdfPathContent _content;
+    private double _currentX;
+    private double _currentY;
+    private double _startX;
+    private double _startY;
+
+    internal PdfPathBuilder(PdfPageBuilder pageBuilder, PdfPathContent content)
+    {
+        _pageBuilder = pageBuilder;
+        _content = content;
+    }
+
+    /// <summary>
+    /// Move to a new position without drawing
+    /// </summary>
+    public PdfPathBuilder MoveTo(double x, double y)
+    {
+        _content.Segments.Add(new PdfPathSegment { Type = PdfPathSegmentType.MoveTo, Points = [x, y] });
+        _currentX = _startX = x;
+        _currentY = _startY = y;
+        return this;
+    }
+
+    /// <summary>
+    /// Draw a line to the specified position
+    /// </summary>
+    public PdfPathBuilder LineTo(double x, double y)
+    {
+        _content.Segments.Add(new PdfPathSegment { Type = PdfPathSegmentType.LineTo, Points = [x, y] });
+        _currentX = x;
+        _currentY = y;
+        return this;
+    }
+
+    /// <summary>
+    /// Draw a cubic Bezier curve with two control points
+    /// </summary>
+    public PdfPathBuilder CurveTo(double cp1X, double cp1Y, double cp2X, double cp2Y, double endX, double endY)
+    {
+        _content.Segments.Add(new PdfPathSegment
+        {
+            Type = PdfPathSegmentType.CurveTo,
+            Points = [cp1X, cp1Y, cp2X, cp2Y, endX, endY]
+        });
+        _currentX = endX;
+        _currentY = endY;
+        return this;
+    }
+
+    /// <summary>
+    /// Draw a cubic Bezier curve where the first control point is the current point
+    /// </summary>
+    public PdfPathBuilder CurveToV(double cp2X, double cp2Y, double endX, double endY)
+    {
+        _content.Segments.Add(new PdfPathSegment
+        {
+            Type = PdfPathSegmentType.CurveToV,
+            Points = [cp2X, cp2Y, endX, endY]
+        });
+        _currentX = endX;
+        _currentY = endY;
+        return this;
+    }
+
+    /// <summary>
+    /// Draw a cubic Bezier curve where the second control point equals the endpoint
+    /// </summary>
+    public PdfPathBuilder CurveToY(double cp1X, double cp1Y, double endX, double endY)
+    {
+        _content.Segments.Add(new PdfPathSegment
+        {
+            Type = PdfPathSegmentType.CurveToY,
+            Points = [cp1X, cp1Y, endX, endY]
+        });
+        _currentX = endX;
+        _currentY = endY;
+        return this;
+    }
+
+    /// <summary>
+    /// Draw a quadratic Bezier curve (converted to cubic internally)
+    /// </summary>
+    public PdfPathBuilder QuadraticCurveTo(double cpX, double cpY, double endX, double endY)
+    {
+        // Convert quadratic to cubic Bezier
+        // CP1 = P0 + 2/3 * (CP - P0) = P0 + 2/3*CP - 2/3*P0 = 1/3*P0 + 2/3*CP
+        // CP2 = P2 + 2/3 * (CP - P2) = P2 + 2/3*CP - 2/3*P2 = 1/3*P2 + 2/3*CP
+        double cp1X = _currentX + 2.0 / 3.0 * (cpX - _currentX);
+        double cp1Y = _currentY + 2.0 / 3.0 * (cpY - _currentY);
+        double cp2X = endX + 2.0 / 3.0 * (cpX - endX);
+        double cp2Y = endY + 2.0 / 3.0 * (cpY - endY);
+
+        return CurveTo(cp1X, cp1Y, cp2X, cp2Y, endX, endY);
+    }
+
+    /// <summary>
+    /// Draw a circular arc (approximated with Bezier curves)
+    /// </summary>
+    public PdfPathBuilder Arc(double centerX, double centerY, double radius, double startAngle, double endAngle)
+    {
+        return EllipticalArc(centerX, centerY, radius, radius, startAngle, endAngle);
+    }
+
+    /// <summary>
+    /// Draw an elliptical arc (approximated with Bezier curves)
+    /// </summary>
+    public PdfPathBuilder EllipticalArc(double centerX, double centerY, double radiusX, double radiusY,
+        double startAngleDegrees, double endAngleDegrees)
+    {
+        double startRad = startAngleDegrees * Math.PI / 180.0;
+        double endRad = endAngleDegrees * Math.PI / 180.0;
+
+        // Normalize angles
+        while (endRad < startRad)
+            endRad += 2 * Math.PI;
+
+        // Break arc into segments of at most 90 degrees for better approximation
+        double totalAngle = endRad - startRad;
+        int segments = (int)Math.Ceiling(Math.Abs(totalAngle) / (Math.PI / 2));
+        double angleStep = totalAngle / segments;
+
+        double currentAngle = startRad;
+
+        // Move to start point
+        double startX = centerX + radiusX * Math.Cos(currentAngle);
+        double startY = centerY + radiusY * Math.Sin(currentAngle);
+        MoveTo(startX, startY);
+
+        for (var i = 0; i < segments; i++)
+        {
+            double nextAngle = currentAngle + angleStep;
+            AddArcSegment(centerX, centerY, radiusX, radiusY, currentAngle, nextAngle);
+            currentAngle = nextAngle;
+        }
+
+        return this;
+    }
+
+    private void AddArcSegment(double cx, double cy, double rx, double ry, double startAngle, double endAngle)
+    {
+        // Use the standard cubic Bezier approximation for circular arcs
+        double angle = endAngle - startAngle;
+        double alpha = Math.Sin(angle) * (Math.Sqrt(4 + 3 * Math.Pow(Math.Tan(angle / 2), 2)) - 1) / 3;
+
+        double x1 = Math.Cos(startAngle);
+        double y1 = Math.Sin(startAngle);
+        double x2 = Math.Cos(endAngle);
+        double y2 = Math.Sin(endAngle);
+
+        double cp1X = cx + rx * (x1 - alpha * y1);
+        double cp1Y = cy + ry * (y1 + alpha * x1);
+        double cp2X = cx + rx * (x2 + alpha * y2);
+        double cp2Y = cy + ry * (y2 - alpha * x2);
+        double endX = cx + rx * x2;
+        double endY = cy + ry * y2;
+
+        CurveTo(cp1X, cp1Y, cp2X, cp2Y, endX, endY);
+    }
+
+    /// <summary>
+    /// Add a rectangle to the path
+    /// </summary>
+    public PdfPathBuilder Rectangle(double x, double y, double width, double height)
+    {
+        _content.Segments.Add(new PdfPathSegment
+        {
+            Type = PdfPathSegmentType.Rectangle,
+            Points = [x, y, width, height]
+        });
+        _currentX = x;
+        _currentY = y;
+        return this;
+    }
+
+    /// <summary>
+    /// Add a rounded rectangle to the path
+    /// </summary>
+    public PdfPathBuilder RoundedRectangle(double x, double y, double width, double height, double cornerRadius)
+    {
+        double r = Math.Min(cornerRadius, Math.Min(width / 2, height / 2));
+
+        // Start at top-left corner after the curve
+        MoveTo(x + r, y);
+
+        // Top edge and top-right corner
+        LineTo(x + width - r, y);
+        CurveTo(x + width - r * 0.45, y, x + width, y + r * 0.45, x + width, y + r);
+
+        // Right edge and bottom-right corner
+        LineTo(x + width, y + height - r);
+        CurveTo(x + width, y + height - r * 0.45, x + width - r * 0.45, y + height, x + width - r, y + height);
+
+        // Bottom edge and bottom-left corner
+        LineTo(x + r, y + height);
+        CurveTo(x + r * 0.45, y + height, x, y + height - r * 0.45, x, y + height - r);
+
+        // Left edge and top-left corner
+        LineTo(x, y + r);
+        CurveTo(x, y + r * 0.45, x + r * 0.45, y, x + r, y);
+
+        return ClosePath();
+    }
+
+    /// <summary>
+    /// Add a circle to the path
+    /// </summary>
+    public PdfPathBuilder Circle(double centerX, double centerY, double radius)
+    {
+        return Ellipse(centerX, centerY, radius, radius);
+    }
+
+    /// <summary>
+    /// Add an ellipse to the path
+    /// </summary>
+    public PdfPathBuilder Ellipse(double centerX, double centerY, double radiusX, double radiusY)
+    {
+        // Use Bezier approximation for ellipse (4 curves)
+        const double k = 0.5522847498; // 4/3 * (sqrt(2) - 1)
+        double kx = radiusX * k;
+        double ky = radiusY * k;
+
+        MoveTo(centerX + radiusX, centerY);
+        CurveTo(centerX + radiusX, centerY + ky, centerX + kx, centerY + radiusY, centerX, centerY + radiusY);
+        CurveTo(centerX - kx, centerY + radiusY, centerX - radiusX, centerY + ky, centerX - radiusX, centerY);
+        CurveTo(centerX - radiusX, centerY - ky, centerX - kx, centerY - radiusY, centerX, centerY - radiusY);
+        CurveTo(centerX + kx, centerY - radiusY, centerX + radiusX, centerY - ky, centerX + radiusX, centerY);
+
+        return ClosePath();
+    }
+
+    /// <summary>
+    /// Close the current subpath by drawing a line to the start point
+    /// </summary>
+    public PdfPathBuilder ClosePath()
+    {
+        _content.Segments.Add(new PdfPathSegment { Type = PdfPathSegmentType.ClosePath, Points = [] });
+        _currentX = _startX;
+        _currentY = _startY;
+        return this;
+    }
+
+    // ==================== STYLING ====================
+
+    /// <summary>
+    /// Set fill color
+    /// </summary>
+    public PdfPathBuilder Fill(PdfColor color)
+    {
+        _content.FillColor = color;
+        return this;
+    }
+
+    /// <summary>
+    /// Set stroke color
+    /// </summary>
+    public PdfPathBuilder Stroke(PdfColor color, double lineWidth = 1)
+    {
+        _content.StrokeColor = color;
+        _content.LineWidth = lineWidth;
+        return this;
+    }
+
+    /// <summary>
+    /// Set line width for stroke
+    /// </summary>
+    public PdfPathBuilder LineWidth(double width)
+    {
+        _content.LineWidth = width;
+        return this;
+    }
+
+    /// <summary>
+    /// Set line cap style
+    /// </summary>
+    public PdfPathBuilder LineCap(PdfLineCap cap)
+    {
+        _content.LineCap = cap;
+        return this;
+    }
+
+    /// <summary>
+    /// Set line join style
+    /// </summary>
+    public PdfPathBuilder LineJoin(PdfLineJoin join)
+    {
+        _content.LineJoin = join;
+        return this;
+    }
+
+    /// <summary>
+    /// Set miter limit for miter joins
+    /// </summary>
+    public PdfPathBuilder MiterLimit(double limit)
+    {
+        _content.MiterLimit = limit;
+        return this;
+    }
+
+    /// <summary>
+    /// Set dash pattern for strokes
+    /// </summary>
+    public PdfPathBuilder DashPattern(double[] pattern, double phase = 0)
+    {
+        _content.DashPattern = pattern;
+        _content.DashPhase = phase;
+        return this;
+    }
+
+    /// <summary>
+    /// Set a simple dash pattern
+    /// </summary>
+    public PdfPathBuilder Dashed(double dashLength = 3, double gapLength = 3)
+    {
+        return DashPattern([dashLength, gapLength]);
+    }
+
+    /// <summary>
+    /// Set a dotted pattern
+    /// </summary>
+    public PdfPathBuilder Dotted(double dotSize = 1, double gapSize = 2)
+    {
+        _content.LineCap = PdfLineCap.Round;
+        return DashPattern([0, dotSize + gapSize]);
+    }
+
+    /// <summary>
+    /// Set fill rule
+    /// </summary>
+    public PdfPathBuilder FillRule(PdfFillRule rule)
+    {
+        _content.FillRule = rule;
+        return this;
+    }
+
+    /// <summary>
+    /// Set fill opacity (0-1)
+    /// </summary>
+    public PdfPathBuilder FillOpacity(double opacity)
+    {
+        _content.FillOpacity = Math.Clamp(opacity, 0, 1);
+        return this;
+    }
+
+    /// <summary>
+    /// Set stroke opacity (0-1)
+    /// </summary>
+    public PdfPathBuilder StrokeOpacity(double opacity)
+    {
+        _content.StrokeOpacity = Math.Clamp(opacity, 0, 1);
+        return this;
+    }
+
+    /// <summary>
+    /// Use this path as a clipping path
+    /// </summary>
+    public PdfPathBuilder AsClippingPath()
+    {
+        _content.IsClippingPath = true;
+        return this;
+    }
+
+    /// <summary>
+    /// Return to page builder
+    /// </summary>
+    public PdfPageBuilder Done()
+    {
+        return _pageBuilder;
+    }
+
+    /// <summary>
+    /// Implicit conversion back to page builder
+    /// </summary>
+    public static implicit operator PdfPageBuilder(PdfPathBuilder builder)
+    {
+        return builder._pageBuilder;
+    }
 }
