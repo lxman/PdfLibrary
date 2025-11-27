@@ -1,3 +1,4 @@
+using System;
 using PdfLibrary.Builder;
 
 namespace PdfLibrary.Integration.Documents;

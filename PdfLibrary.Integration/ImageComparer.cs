@@ -1,3 +1,4 @@
+using System.IO;
 using Codeuctivity.ImageSharpCompare;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;

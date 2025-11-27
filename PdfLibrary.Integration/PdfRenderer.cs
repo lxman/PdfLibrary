@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
