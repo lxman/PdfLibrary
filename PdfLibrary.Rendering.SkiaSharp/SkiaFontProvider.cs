@@ -1,7 +1,8 @@
 using Logging;
+using PdfLibrary.Fonts;
 using SkiaSharp;
 
-namespace PdfLibrary.Fonts;
+namespace PdfLibrary.Rendering.SkiaSharp;
 
 /// <summary>
 /// Implementation of <see cref="ISystemFontProvider"/> using SkiaSharp's SKFontManager.

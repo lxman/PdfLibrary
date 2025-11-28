@@ -23,6 +23,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj"/>
+        <ProjectReference Include="..\PdfLibrary.Rendering.SkiaSharp\PdfLibrary.Rendering.SkiaSharp.csproj"/>
     </ItemGroup>
 
 </Project>

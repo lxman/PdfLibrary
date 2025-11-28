@@ -1,7 +1,9 @@
 using System.IO.Compression;
 using System.Text;
 using PdfLibrary.Fonts.Embedded;
-using SkiaSharp;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Formats.Jpeg;
 
 namespace PdfLibrary.Builder;
 
@@ -985,18 +987,14 @@ public class PdfDocumentWriter
             return (data, width, height, "DeviceRGB", 8, "DCTDecode");
         }
 
-        // For all other formats (PNG, BMP, etc.), use SkiaSharp to decode
+        // For all other formats (PNG, BMP, etc.), use ImageSharp to decode
         try
         {
-            using SKBitmap? bitmap = SKBitmap.Decode(data);
-            if (bitmap is null)
-            {
-                // Fallback for unknown format
-                return (data, 100, 100, "DeviceRGB", 8, "");
-            }
+            using var memStream = new MemoryStream(data);
+            using Image<Rgb24> imageData = Image.Load<Rgb24>(memStream);
 
-            int width = bitmap.Width;
-            int height = bitmap.Height;
+            int width = imageData.Width;
+            int height = imageData.Height;
 
             // Convert to RGB888 format
             var rgbData = new byte[width * height * 3];
@@ -1006,10 +1004,10 @@ public class PdfDocumentWriter
             {
                 for (var x = 0; x < width; x++)
                 {
-                    SKColor pixel = bitmap.GetPixel(x, y);
-                    rgbData[idx++] = pixel.Red;
-                    rgbData[idx++] = pixel.Green;
-                    rgbData[idx++] = pixel.Blue;
+                    Rgb24 pixel = imageData[x, y];
+                    rgbData[idx++] = pixel.R;
+                    rgbData[idx++] = pixel.G;
+                    rgbData[idx++] = pixel.B;
                 }
             }
 
@@ -1018,7 +1016,7 @@ public class PdfDocumentWriter
                 // Compress based on settings
                 case PdfImageCompression.Jpeg:
                 {
-                    byte[] compressed = CompressJpeg(rgbData, width, height, image.JpegQuality);
+                    byte[] compressed = CompressJpeg(imageData, image.JpegQuality);
                     return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
                 }
                 case PdfImageCompression.Flate or PdfImageCompression.Auto:
@@ -1038,7 +1036,7 @@ public class PdfDocumentWriter
         }
         catch
         {
-            // If SkiaSharp fails, return a placeholder
+            // If ImageSharp fails, return a placeholder
             return ([], 100, 100, "DeviceRGB", 8, "");
         }
     }
@@ -1085,125 +1083,6 @@ public class PdfDocumentWriter
         return (100, 100);
     }
 
-    private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessPngImage(byte[] pngData, PdfImageCompression compression)
-    {
-        // Simple PNG decoder - extract IHDR and IDAT chunks
-        int width = 0, height = 0, bitDepth = 8, colorType = 2;
-        var idatData = new List<byte>();
-
-        var i = 8; // Skip PNG signature
-        while (i < pngData.Length - 12)
-        {
-            int chunkLength = (pngData[i] << 24) | (pngData[i + 1] << 16) | (pngData[i + 2] << 8) | pngData[i + 3];
-            string chunkType = Encoding.ASCII.GetString(pngData, i + 4, 4);
-
-            if (chunkType == "IHDR")
-            {
-                width = (pngData[i + 8] << 24) | (pngData[i + 9] << 16) | (pngData[i + 10] << 8) | pngData[i + 11];
-                height = (pngData[i + 12] << 24) | (pngData[i + 13] << 16) | (pngData[i + 14] << 8) | pngData[i + 15];
-                bitDepth = pngData[i + 16];
-                colorType = pngData[i + 17];
-            }
-            else if (chunkType == "IDAT")
-            {
-                for (var j = 0; j < chunkLength; j++)
-                {
-                    idatData.Add(pngData[i + 8 + j]);
-                }
-            }
-            else if (chunkType == "IEND")
-            {
-                break;
-            }
-
-            i += 12 + chunkLength; // 4 length + 4 type + data + 4 CRC
-        }
-
-        // Decompress PNG data (zlib format)
-        byte[] decompressed;
-        try
-        {
-            using var compressedStream = new MemoryStream(idatData.Skip(2).ToArray()); // Skip zlib header
-            using var deflateStream = new DeflateStream(compressedStream, CompressionMode.Decompress);
-            using var resultStream = new MemoryStream();
-            deflateStream.CopyTo(resultStream);
-            decompressed = resultStream.ToArray();
-        }
-        catch
-        {
-            // Fallback - return compressed data
-            return (idatData.ToArray(), width, height, "DeviceRGB", bitDepth, "FlateDecode");
-        }
-
-        // Remove PNG filter bytes (first byte of each row)
-        int bytesPerPixel = colorType == 2 ? 3 : (colorType == 6 ? 4 : 1);
-        int rowBytes = width * bytesPerPixel;
-        var rgbData = new List<byte>();
-
-        for (var row = 0; row < height; row++)
-        {
-            int rowStart = row * (rowBytes + 1) + 1; // Skip filter byte
-            for (var col = 0; col < rowBytes; col++)
-            {
-                if (rowStart + col < decompressed.Length)
-                {
-                    // Skip alpha channel for RGBA images
-                    if (colorType == 6 && (col + 1) % 4 == 0)
-                        continue;
-                    rgbData.Add(decompressed[rowStart + col]);
-                }
-            }
-        }
-
-        string colorSpace = colorType == 0 ? "DeviceGray" : "DeviceRGB";
-        byte[] finalData = rgbData.ToArray();
-
-        if (compression is not (PdfImageCompression.Flate or PdfImageCompression.Auto))
-            return (finalData, width, height, colorSpace, bitDepth, "");
-        finalData = CompressFlate(finalData);
-        return (finalData, width, height, colorSpace, bitDepth, "FlateDecode");
-
-    }
-
-    private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessBmpImage(byte[] bmpData, PdfImageCompression compression)
-    {
-        // Simple BMP decoder
-        var width = BitConverter.ToInt32(bmpData, 18);
-        int height = Math.Abs(BitConverter.ToInt32(bmpData, 22));
-        int bitsPerPixel = BitConverter.ToInt16(bmpData, 28);
-        var dataOffset = BitConverter.ToInt32(bmpData, 10);
-
-        int bytesPerPixel = bitsPerPixel / 8;
-        int rowSize = ((width * bytesPerPixel + 3) / 4) * 4; // BMP rows are padded to 4 bytes
-
-        var rgbData = new List<byte>();
-
-        // BMP is stored bottom-up, so we read from bottom to top
-        for (int y = height - 1; y >= 0; y--)
-        {
-            int rowStart = dataOffset + y * rowSize;
-            for (var x = 0; x < width; x++)
-            {
-                int pixelOffset = rowStart + x * bytesPerPixel;
-                if (pixelOffset + 2 < bmpData.Length)
-                {
-                    // BMP stores as BGR, we need RGB
-                    rgbData.Add(bmpData[pixelOffset + 2]); // R
-                    rgbData.Add(bmpData[pixelOffset + 1]); // G
-                    rgbData.Add(bmpData[pixelOffset]);     // B
-                }
-            }
-        }
-
-        byte[] finalData = rgbData.ToArray();
-
-        if (compression is not (PdfImageCompression.Flate or PdfImageCompression.Auto))
-            return (finalData, width, height, "DeviceRGB", 8, "");
-        finalData = CompressFlate(finalData);
-        return (finalData, width, height, "DeviceRGB", 8, "FlateDecode");
-
-    }
-
     private byte[] CompressFlate(byte[] data)
     {
         using var outputStream = new MemoryStream();
@@ -1244,29 +1123,13 @@ public class PdfDocumentWriter
         return (b << 16) | a;
     }
 
-    private byte[] CompressJpeg(byte[] rgbData, int width, int height, int quality)
+    private byte[] CompressJpeg(Image<Rgb24> image, int quality)
     {
-        // Create a bitmap from RGB data and encode as JPEG
-        var info = new SKImageInfo(width, height, SKColorType.Rgb888x, SKAlphaType.Opaque);
-        using var bitmap = new SKBitmap(info);
-
-        // Copy RGB data to bitmap
-        Span<byte> pixels = bitmap.GetPixelSpan();
-        var srcIdx = 0;
-        var dstIdx = 0;
-
-        for (var i = 0; i < width * height; i++)
-        {
-            pixels[dstIdx++] = rgbData[srcIdx++]; // R
-            pixels[dstIdx++] = rgbData[srcIdx++]; // G
-            pixels[dstIdx++] = rgbData[srcIdx++]; // B
-            pixels[dstIdx++] = 255; // A (unused but required for Rgb888x)
-        }
-
-        // Encode as JPEG
-        using SKImage? image = SKImage.FromBitmap(bitmap);
-        using SKData? encoded = image.Encode(SKEncodedImageFormat.Jpeg, quality);
-        return encoded.ToArray();
+        // Encode as JPEG using ImageSharp
+        using var memStream = new MemoryStream();
+        var encoder = new JpegEncoder { Quality = quality };
+        image.Save(memStream, encoder);
+        return memStream.ToArray();
     }
 
     /// <summary>

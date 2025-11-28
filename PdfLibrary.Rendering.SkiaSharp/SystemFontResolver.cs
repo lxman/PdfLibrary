@@ -1,7 +1,8 @@
 using Logging;
+using PdfLibrary.Fonts;
 using SkiaSharp;
 
-namespace PdfLibrary.Fonts;
+namespace PdfLibrary.Rendering.SkiaSharp;
 
 /// <summary>
 /// Resolves PDF font names to system fonts with fallback support.

@@ -1,8 +1,9 @@
 using SkiaSharp;
 using PdfLibrary.Document;
+using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
-namespace PdfLibrary.Rendering;
+namespace PdfLibrary.Rendering.SkiaSharp;
 
 /// <summary>
 /// Fluent builder for rendering PDF pages with various options.
@@ -15,7 +16,7 @@ public class PageRenderBuilder
     private bool _transparentBackground;
     private int _pageNumber = 1;
 
-    internal PageRenderBuilder(PdfPage page, PdfDocument? document = null, int pageNumber = 1)
+    public PageRenderBuilder(PdfPage page, PdfDocument? document = null, int pageNumber = 1)
     {
         _page = page;
         _document = document;

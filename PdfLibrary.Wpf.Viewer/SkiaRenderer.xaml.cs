@@ -9,7 +9,7 @@ using Serilog;
 using SkiaSharp;
 using SkiaSharp.Views.Desktop;
 
-namespace PdfTool;
+namespace PdfLibrary.Wpf.Viewer;
 
 /// <summary>
 /// SkiaSharp-based rendering control for PDF content.

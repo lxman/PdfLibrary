@@ -12,6 +12,7 @@ using Microsoft.Win32;
 using PDFiumSharp;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
+using PdfLibrary.Rendering.SkiaSharp;
 using Serilog;
 using SkiaSharp;
 using PdfDocument = PdfLibrary.Structure.PdfDocument;

@@ -421,24 +421,6 @@ public class PdfDocument : IDisposable
     }
 
     /// <summary>
-    /// Renders a page and saves it to a file.
-    /// Shortcut for GetPage(index).RenderTo().WithScale(scale).ToFile(filePath)
-    /// </summary>
-    /// <param name="pageIndex">Page index (0-based)</param>
-    /// <param name="filePath">Output file path (format determined by extension)</param>
-    /// <param name="scale">Scale factor (default: 1.0 = 72 DPI)</param>
-    public void SavePageAs(int pageIndex, string filePath, double scale = 1.0)
-    {
-        PdfPage? page = GetPage(pageIndex);
-        if (page is null)
-            throw new ArgumentOutOfRangeException(nameof(pageIndex), $"Page {pageIndex} not found in document");
-
-        page.RenderTo(pageIndex + 1) // 1-based page number for logging
-            .WithScale(scale)
-            .ToFile(filePath);
-    }
-
-    /// <summary>
     /// Loads a PDF document from a file
     /// </summary>
     public static PdfDocument Load(string filePath)
@@ -623,7 +605,19 @@ public class PdfDocument : IDisposable
                 try
                 {
                     // Seek to object position (adjust for header offset)
-                    stream.Position = entry.ByteOffset + headerOffset;
+                    long targetPosition = entry.ByteOffset + headerOffset;
+                    stream.Position = targetPosition;
+
+                    // Try to find the object header, with error recovery for malformed xref offsets
+                    // Some PDFs have xref entries that point a few bytes before the actual object
+                    long? actualPosition = FindObjectHeader(stream, entry.ObjectNumber, entry.GenerationNumber, targetPosition);
+                    if (actualPosition is null)
+                    {
+                        PdfLogger.Log(LogCategory.Melville, $"Could not find object {entry.ObjectNumber} {entry.GenerationNumber} at or near offset {entry.ByteOffset}");
+                        continue;
+                    }
+
+                    stream.Position = actualPosition.Value;
 
                     // Create a new parser for each object to ensure the lexer buffer is synchronized
                     var parser = new PdfParser(stream);
@@ -749,6 +743,54 @@ public class PdfDocument : IDisposable
 
         _stream?.Dispose();
         _disposed = true;
+    }
+
+    /// <summary>
+    /// Finds the actual position of an object header, handling malformed xref offsets.
+    /// Some PDFs have xref entries that point a few bytes before the actual "N G obj" header.
+    /// This method scans forward up to 64 bytes to find the correct position.
+    /// </summary>
+    /// <param name="stream">The PDF stream positioned at the approximate object location</param>
+    /// <param name="expectedObjectNumber">The expected object number from the xref</param>
+    /// <param name="expectedGenerationNumber">The expected generation number from the xref</param>
+    /// <param name="targetPosition">The original target position from xref</param>
+    /// <returns>The actual position of the object header, or null if not found</returns>
+    private static long? FindObjectHeader(Stream stream, int expectedObjectNumber, int expectedGenerationNumber, long targetPosition)
+    {
+        const int maxScanBytes = 64;
+        var buffer = new byte[maxScanBytes];
+
+        // Read ahead to search for the object header pattern
+        int bytesRead = stream.Read(buffer, 0, maxScanBytes);
+        if (bytesRead == 0)
+            return null;
+
+        // Build the expected pattern: "N G obj"
+        string expectedPattern = $"{expectedObjectNumber} {expectedGenerationNumber} obj";
+        byte[] patternBytes = System.Text.Encoding.ASCII.GetBytes(expectedPattern);
+
+        // Search for the pattern in the buffer
+        for (var i = 0; i <= bytesRead - patternBytes.Length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < patternBytes.Length; j++)
+            {
+                if (buffer[i + j] != patternBytes[j])
+                {
+                    match = false;
+                    break;
+                }
+            }
+
+            if (match)
+            {
+                // Found the pattern - return the actual position
+                return targetPosition + i;
+            }
+        }
+
+        // Pattern not found in the scan range
+        return null;
     }
 
     /// <summary>

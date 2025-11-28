@@ -1,5 +1,6 @@
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
+using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Integration;

@@ -1,8 +1,10 @@
 using FontParser.Tables.Cff;
+using PdfLibrary.Fonts.Embedded;
 using SkiaSharp;
 using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;
+using GlyphOutline = PdfLibrary.Fonts.Embedded.GlyphOutline;
 
-namespace PdfLibrary.Fonts.Embedded;
+namespace PdfLibrary.Rendering.SkiaSharp;
 
 /// <summary>
 /// Converts glyph outlines to SkiaSharp SKPath for rendering.

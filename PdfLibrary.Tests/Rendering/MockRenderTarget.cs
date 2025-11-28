@@ -78,7 +78,21 @@ public class MockRenderTarget : IRenderTarget
         Operations.Add($"OnGraphicsStateChanged: FillAlpha={state.FillAlpha:F2}, StrokeAlpha={state.StrokeAlpha:F2}, BlendMode={state.BlendMode}");
     }
 
-    public SkiaSharpRenderTarget? GetSkiaRenderTarget() => null;
+    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)
+    {
+        Operations.Add($"RenderSoftMask: Subtype={maskSubtype}");
+        // For testing, we don't actually render the mask - just record the operation
+    }
+
+    public void ClearSoftMask()
+    {
+        Operations.Add("ClearSoftMask");
+    }
+
+    public (int width, int height, double scale) GetPageDimensions()
+    {
+        return (612, 792, 1.0); // Default letter size
+    }
 
     private static string GetPathDescription(IPathBuilder path)
     {

@@ -123,16 +123,22 @@ public class PdfParser(PdfLexer lexer)
 
     private PdfObject ParseIntegerOrReference(PdfToken firstToken)
     {
-        // Check if this is an indirect reference (N G R) or indirect object (N G obj)
-        if (!int.TryParse(firstToken.Value, out int objectNumber))
+        // First try to parse as a long (supports large integers found in some PDFs)
+        if (!long.TryParse(firstToken.Value, out long longValue))
             throw new PdfParseException($"Invalid integer: {firstToken.Value}");
+
+        // Check if this could be an indirect reference (N G R) or indirect object (N G obj)
+        // Object numbers must fit in int range
+        bool couldBeObjectNumber = longValue is >= 0 and <= int.MaxValue;
 
         PdfToken peek1 = PeekToken();
 
-        // If not followed by another integer, it's just an integer
-        if (peek1.Type != PdfTokenType.Integer)
-            return new PdfInteger(objectNumber);
+        // If not followed by another integer, or if the value is too large for an object number,
+        // it's just a plain integer
+        if (peek1.Type != PdfTokenType.Integer || !couldBeObjectNumber)
+            return new PdfInteger(longValue);
 
+        var objectNumber = (int)longValue;
         PdfToken genToken = NextToken();
         if (!int.TryParse(genToken.Value, out int generationNumber))
             return new PdfInteger(objectNumber);

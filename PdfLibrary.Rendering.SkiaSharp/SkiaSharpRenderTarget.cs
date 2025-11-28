@@ -10,7 +10,7 @@ using Logging;
 using PdfLibrary.Structure;
 using SkiaSharp;
 
-namespace PdfLibrary.Rendering;
+namespace PdfLibrary.Rendering.SkiaSharp;
 
 /// <summary>
 /// SkiaSharp-based render target for pixel-perfect PDF rendering.
@@ -297,6 +297,85 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     public Matrix3x2 GetInitialTransform()
     {
         return _initialTransform;
+    }
+
+    /// <summary>
+    /// Renders a soft mask using the provided content renderer callback.
+    /// Creates an offscreen surface, calls the callback to render mask content,
+    /// and applies the resulting mask for subsequent drawing operations.
+    /// </summary>
+    /// <param name="maskSubtype">The mask subtype: "Alpha" or "Luminosity"</param>
+    /// <param name="renderMaskContent">Callback that renders the mask content to the provided render target</param>
+    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)
+    {
+        try
+        {
+            (int width, int height, double scale) = GetPageDimensions();
+
+            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMask: Rendering mask to {width}x{height} surface");
+
+            // Create a temporary render target for the mask with TRANSPARENT background
+            // This is critical for Alpha-type soft masks: the alpha channel of the rendered
+            // content determines what is visible. Background must be transparent (alpha=0)
+            // so unpainted areas allow no content through.
+            using var maskRenderTarget = new SkiaSharpRenderTarget(width, height, _document, transparentBackground: true);
+            maskRenderTarget.BeginPage(1, _pageWidth, _pageHeight, scale);
+
+            // Call the render callback to render the mask content
+            renderMaskContent(maskRenderTarget);
+
+            maskRenderTarget.EndPage();
+
+            // Get the rendered mask image
+            using SKImage maskImage = maskRenderTarget.GetImage();
+            SKBitmap maskBitmap = SKBitmap.FromImage(maskImage);
+
+            // Convert to alpha mask based on subtype
+            SKBitmap alphaMask;
+            if (maskSubtype == "Luminosity")
+            {
+                // Luminosity mask: convert RGB luminosity to alpha
+                alphaMask = ConvertToLuminosityMask(maskBitmap);
+                maskBitmap.Dispose();
+            }
+            else
+            {
+                // Alpha mask: use the alpha channel directly
+                alphaMask = maskBitmap;
+            }
+
+            // Set the soft mask for subsequent rendering
+            SetSoftMask(alphaMask, maskSubtype);
+
+            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMask: Mask rendered successfully");
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMask: Error rendering mask: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Converts a rendered bitmap to a luminosity-based alpha mask.
+    /// The luminosity (grayscale value) of each pixel becomes the alpha value.
+    /// </summary>
+    private static SKBitmap ConvertToLuminosityMask(SKBitmap source)
+    {
+        var result = new SKBitmap(source.Width, source.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                SKColor pixel = source.GetPixel(x, y);
+                // Calculate luminosity: 0.299*R + 0.587*G + 0.114*B
+                var luminosity = (byte)(0.299 * pixel.Red + 0.587 * pixel.Green + 0.114 * pixel.Blue);
+                // Use luminosity as alpha, with white (255, 255, 255) for the color
+                result.SetPixel(x, y, new SKColor(255, 255, 255, luminosity));
+            }
+        }
+
+        return result;
     }
 
     // ==================== TEXT RENDERING ====================

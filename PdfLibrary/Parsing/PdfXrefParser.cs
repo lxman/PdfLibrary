@@ -29,12 +29,14 @@ public class PdfXrefParseResult
 public class PdfXrefParser
 {
     private readonly Stream _stream;
-    private readonly PdfDocument? _document;
 
+    // Note: The document parameter is kept for API compatibility but is no longer used.
+    // We intentionally do NOT resolve references during xref parsing because the xref table
+    // is still being built at that point.
     public PdfXrefParser(Stream stream, PdfDocument? document = null)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
-        _document = document;
+        // document parameter intentionally ignored - see note above
     }
 
     /// <summary>
@@ -125,13 +127,11 @@ public class PdfXrefParser
         var table = new PdfXrefTable();
 
         // Parse the XRef stream object
+        // NOTE: Do NOT set up a reference resolver here! We're in the middle of building
+        // the xref table, so GetObject() would try to look up objects in an incomplete table.
+        // The xref stream dictionary only needs direct values (/W, /Size, /Index, /Prev are
+        // all direct integers/arrays). Indirect references like /Root, /Info are resolved later.
         var parser = new PdfParser(_stream);
-
-        // Set up reference resolver if we have a document
-        if (_document is not null)
-        {
-            parser.SetReferenceResolver(reference => _document.GetObject(reference.ObjectNumber));
-        }
 
         PdfObject? obj = parser.ReadObject();
 

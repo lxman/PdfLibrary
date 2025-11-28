@@ -1212,142 +1212,74 @@ public class PdfRenderer : PdfContentProcessor
         CurrentState.SoftMask = softMask;
         PdfLogger.Log(LogCategory.Graphics, $"  SMask: Subtype={softMask.Subtype}, HasGroup={softMask.Group is not null}");
 
-        // If we have a Group and the target has a SkiaSharp render target, render the mask
+        // If we have a Group, render the mask using the render target's soft mask support
         if (softMask.Group is not null)
         {
-            SkiaSharpRenderTarget? skiaTarget = _target.GetSkiaRenderTarget();
-            if (skiaTarget is not null)
-            {
-                RenderSoftMaskGroup(softMask, skiaTarget);
-            }
+            RenderSoftMaskGroup(softMask);
         }
     }
 
     /// <summary>
-    /// Renders the SMask Group XObject to create a soft mask bitmap.
+    /// Renders the SMask Group XObject using the render target's soft mask support.
     /// </summary>
-    private void RenderSoftMaskGroup(PdfSoftMask softMask, SkiaSharpRenderTarget skiaTarget)
+    private void RenderSoftMaskGroup(PdfSoftMask softMask)
     {
         if (softMask.Group is null)
             return;
 
-        try
+        // Get the form's resources
+        PdfResources? formResources = _resources;
+        if (softMask.Group.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
-            // Get page dimensions from the target
-            (int width, int height, double scale) = skiaTarget.GetPageDimensions();
+            if (resourcesObj is PdfIndirectReference resRef && _document is not null)
+                resourcesObj = _document.ResolveReference(resRef);
+            if (resourcesObj is PdfDictionary resourcesDict)
+                formResources = new PdfResources(resourcesDict);
+        }
 
-            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Rendering mask to {width}x{height} surface");
+        // Check for Matrix entry in the form XObject
+        Matrix3x2 formMatrix = Matrix3x2.Identity;
+        if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) &&
+            matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+        {
+            double a = GetNumber(matrixArray[0]) ?? 1;
+            double b = GetNumber(matrixArray[1]) ?? 0;
+            double c = GetNumber(matrixArray[2]) ?? 0;
+            double d = GetNumber(matrixArray[3]) ?? 1;
+            double e = GetNumber(matrixArray[4]) ?? 0;
+            double f = GetNumber(matrixArray[5]) ?? 0;
+            formMatrix = new Matrix3x2((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
+        }
 
-            // Create an offscreen surface for rendering the mask
-            var imageInfo = new SkiaSharp.SKImageInfo(width, height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul);
-            using var maskSurface = SkiaSharp.SKSurface.Create(imageInfo);
-            if (maskSurface is null)
-            {
-                PdfLogger.Log(LogCategory.Graphics, "RenderSoftMaskGroup: Failed to create mask surface");
-                return;
-            }
+        // Parse the content operators ahead of time
+        byte[] contentData = softMask.Group.GetDecodedData(_document?.Decryptor);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
 
-            SkiaSharp.SKCanvas maskCanvas = maskSurface.Canvas;
-
-            // Start with transparent background - only painted areas will be in the mask
-            maskCanvas.Clear(SkiaSharp.SKColors.Transparent);
-
-            // Create a temporary render target for the mask with TRANSPARENT background
-            // This is critical for Alpha-type soft masks: the alpha channel of the rendered
-            // content determines what is visible. Background must be transparent (alpha=0)
-            // so unpainted areas allow no content through.
-            using var maskRenderTarget = new SkiaSharpRenderTarget(width, height, _document, transparentBackground: true);
-            maskRenderTarget.BeginPage(1, width / scale, height / scale, scale);
-
-            // Get the form's resources
-            PdfResources? formResources = _resources;
-            if (softMask.Group.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
-            {
-                if (resourcesObj is PdfIndirectReference resRef && _document is not null)
-                    resourcesObj = _document.ResolveReference(resRef);
-                if (resourcesObj is PdfDictionary resourcesDict)
-                    formResources = new PdfResources(resourcesDict);
-            }
-
+        // Use the render target's soft mask rendering method with a callback
+        _target.RenderSoftMask(softMask.Subtype, maskTarget =>
+        {
             // Create a renderer for the mask content
-            var maskRenderer = new PdfRenderer(maskRenderTarget, formResources ?? _resources, _optionalContentManager, _document)
+            var maskRenderer = new PdfRenderer(maskTarget, formResources ?? _resources, _optionalContentManager, _document)
             {
                 CurrentState =
                 {
                     // Start with identity CTM - the mask is in its own coordinate space
-                    Ctm = System.Numerics.Matrix3x2.Identity
+                    Ctm = Matrix3x2.Identity
                 }
             };
 
-            // Check for Matrix entry in the form XObject
-            if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) &&
-                matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+            // Apply form matrix if present
+            if (formMatrix != Matrix3x2.Identity)
             {
-                double a = GetNumber(matrixArray[0]) ?? 1;
-                double b = GetNumber(matrixArray[1]) ?? 0;
-                double c = GetNumber(matrixArray[2]) ?? 0;
-                double d = GetNumber(matrixArray[3]) ?? 1;
-                double e = GetNumber(matrixArray[4]) ?? 0;
-                double f = GetNumber(matrixArray[5]) ?? 0;
-                maskRenderer.CurrentState.ConcatenateMatrix(a, b, c, d, e, f);
+                maskRenderer.CurrentState.ConcatenateMatrix(
+                    formMatrix.M11, formMatrix.M12,
+                    formMatrix.M21, formMatrix.M22,
+                    formMatrix.M31, formMatrix.M32);
             }
 
-            // Parse and render the mask content
-            byte[] contentData = softMask.Group.GetDecodedData(_document?.Decryptor);
-            List<PdfOperator> operators = PdfContentParser.Parse(contentData);
+            // Render the mask content
             maskRenderer.ProcessOperators(operators);
-            maskRenderTarget.EndPage();
-
-            // Get the rendered mask image
-            using SkiaSharp.SKImage maskImage = maskRenderTarget.GetImage();
-            SkiaSharp.SKBitmap maskBitmap = SkiaSharp.SKBitmap.FromImage(maskImage);
-
-            // Convert to alpha mask based on subtype
-            SkiaSharp.SKBitmap alphaMask;
-            if (softMask.Subtype == "Luminosity")
-            {
-                // Luminosity mask: convert RGB luminosity to alpha
-                alphaMask = ConvertToLuminosityMask(maskBitmap);
-                maskBitmap.Dispose();
-            }
-            else
-            {
-                // Alpha mask: use the alpha channel directly
-                alphaMask = maskBitmap;
-            }
-
-            // Pass the mask to the render target
-            skiaTarget.SetSoftMask(alphaMask, softMask.Subtype);
-
-            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Mask rendered successfully");
-        }
-        catch (Exception ex)
-        {
-            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Error rendering mask: {ex.Message}");
-        }
-    }
-
-    /// <summary>
-    /// Converts a rendered bitmap to a luminosity-based alpha mask.
-    /// The luminosity (grayscale value) of each pixel becomes the alpha value.
-    /// </summary>
-    private static SkiaSharp.SKBitmap ConvertToLuminosityMask(SkiaSharp.SKBitmap source)
-    {
-        var result = new SkiaSharp.SKBitmap(source.Width, source.Height, SkiaSharp.SKColorType.Rgba8888, SkiaSharp.SKAlphaType.Premul);
-
-        for (var y = 0; y < source.Height; y++)
-        {
-            for (var x = 0; x < source.Width; x++)
-            {
-                SkiaSharp.SKColor pixel = source.GetPixel(x, y);
-                // Calculate luminosity: 0.299*R + 0.587*G + 0.114*B
-                var luminosity = (byte)(0.299 * pixel.Red + 0.587 * pixel.Green + 0.114 * pixel.Blue);
-                // Use luminosity as alpha, with white (255, 255, 255) for the color
-                result.SetPixel(x, y, new SkiaSharp.SKColor(255, 255, 255, luminosity));
-            }
-        }
-
-        return result;
+        });
     }
 
     /// <summary>

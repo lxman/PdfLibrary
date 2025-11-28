@@ -3,7 +3,6 @@ using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using Logging;
-using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Document;
@@ -37,6 +36,11 @@ public class PdfPage
     /// Gets the underlying dictionary
     /// </summary>
     public PdfDictionary Dictionary => _dictionary;
+
+    /// <summary>
+    /// Gets the document this page belongs to (if available).
+    /// </summary>
+    public PdfDocument? Document => _document;
 
     /// <summary>
     /// Gets the page resources (inheritable)
@@ -358,22 +362,6 @@ public class PdfPage
     public int GetImageCount()
     {
         return GetImages().Count;
-    }
-
-    /// <summary>
-    /// Creates a fluent builder for rendering this page.
-    /// </summary>
-    /// <param name="pageNumber">Page number (1-based) for logging purposes</param>
-    /// <returns>A PageRenderBuilder for configuring and executing the render</returns>
-    /// <example>
-    /// var bitmap = page.RenderTo()
-    ///     .WithScale(2.0)
-    ///     .WithBackground(SKColors.White)
-    ///     .ToBitmap();
-    /// </example>
-    public PageRenderBuilder RenderTo(int pageNumber = 1)
-    {
-        return new PageRenderBuilder(this, _document, pageNumber);
     }
 }
 

@@ -148,7 +148,7 @@ public class Type0Font : PdfFont
 /// Represents a CIDFont (Character Identifier font)
 /// Used as a descendant font of Type 0 fonts
 /// </summary>
-internal class CidFont : PdfFont
+public class CidFont : PdfFont
 {
     private double _defaultWidth = 1000;
     private Dictionary<int, double>? _widths;

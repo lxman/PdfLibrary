@@ -30,6 +30,9 @@ public class DetailedMockRenderTarget(ITestOutputHelper output) : IRenderTarget
     public void ApplyCtm(System.Numerics.Matrix3x2 ctm) { }
     public void OnGraphicsStateChanged(PdfGraphicsState state) { }
     public void Clear() { Operations.Clear(); }
+    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent) { }
+    public void ClearSoftMask() { }
+    public (int width, int height, double scale) GetPageDimensions() => (612, 792, 1.0);
 
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {

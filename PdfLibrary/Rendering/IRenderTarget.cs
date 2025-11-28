@@ -119,9 +119,22 @@ public interface IRenderTarget
     void OnGraphicsStateChanged(PdfGraphicsState state);
 
     /// <summary>
-    /// Gets the underlying SkiaSharp render target, if available.
-    /// Used for advanced operations like soft mask rendering that require direct access.
+    /// Renders a soft mask using the provided content renderer callback.
+    /// The implementation creates an appropriate offscreen surface, calls the render callback,
+    /// and applies the resulting mask for subsequent drawing operations.
     /// </summary>
-    /// <returns>The underlying SkiaSharpRenderTarget, or null if not applicable</returns>
-    SkiaSharpRenderTarget? GetSkiaRenderTarget() => null;
+    /// <param name="maskSubtype">The mask subtype: "Alpha" or "Luminosity"</param>
+    /// <param name="renderMaskContent">Callback that renders the mask content to the provided render target</param>
+    void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent);
+
+    /// <summary>
+    /// Clears the current soft mask, reverting to normal rendering.
+    /// </summary>
+    void ClearSoftMask();
+
+    /// <summary>
+    /// Gets the page dimensions for soft mask rendering.
+    /// Returns the width, height (in pixels), and scale factor.
+    /// </summary>
+    (int width, int height, double scale) GetPageDimensions();
 }
