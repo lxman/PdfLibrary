@@ -81,7 +81,7 @@ public class TextRenderingTestDocument : ITestDocument
                 .Font("Helvetica", 10)
                 .Invisible();
 
-            page.AddText("(select to see)", leftMargin + 210, y - 18, "Helvetica", 9);
+            page.AddText("(text is invisible but selectable/copyable)", leftMargin + 210, y - 18, "Helvetica", 8);
             y -= 40;
 
             // === Stroke Width Comparison ===

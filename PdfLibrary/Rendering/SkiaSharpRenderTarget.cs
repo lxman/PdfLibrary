@@ -394,14 +394,15 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             float posScaleX = textMatrixScaleX > 0 ? state.TextMatrix.M11 / textMatrixScaleX : 1;
             float posScaleY = textMatrixScaleY > 0 ? state.TextMatrix.M22 / textMatrixScaleY : 1;
 
-            // Position matrix: applies text matrix scaling for position
+            // Position matrix: applies text matrix for position, preserving rotation
             // Note: glyphWidths from PdfRenderer already include:
             //   - FontSize/1000 scaling (to convert from glyph units to user space)
             //   - HorizontalScaling/100 (tHs)
-            // So we only need textMatrixScaleX here, NOT tHs (to avoid double-applying horizontal scaling)
+            // We use the actual text matrix components (not just magnitudes) to preserve rotation direction
+            // This ensures character advances follow the rotated baseline correctly
             var textPositionMatrix = new Matrix3x2(
-                textMatrixScaleX, state.TextMatrix.M12,
-                state.TextMatrix.M21, textMatrixScaleY,
+                state.TextMatrix.M11, state.TextMatrix.M12,
+                state.TextMatrix.M21, state.TextMatrix.M22,
                 0, tRise * textMatrixScaleY
             );
 
@@ -410,7 +411,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             fallbackMatrix.M31 = state.TextMatrix.M31;
             fallbackMatrix.M32 = state.TextMatrix.M32 + tRise * textMatrixScaleY;
 
-            PdfLogger.Log(LogCategory.Text, $"FALLBACK: FontSize={state.FontSize:F2}, EffectiveFontSize={effectiveFontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
+            // Extract rotation angle from text matrix (in radians)
+            // For a rotation matrix: M11=cos(θ), M12=sin(θ), M21=-sin(θ), M22=cos(θ)
+            float rotationAngleRadians = (float)Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
+            float rotationAngleDegrees = rotationAngleRadians * (180f / (float)Math.PI);
+
+            PdfLogger.Log(LogCategory.Text, $"FALLBACK: FontSize={state.FontSize:F2}, EffectiveFontSize={effectiveFontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}, Rotation={rotationAngleDegrees:F1}°");
             PdfLogger.Log(LogCategory.Text, $"  TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
             PdfLogger.Log(LogCategory.Text, $"  TextMatrixScale=({textMatrixScaleX:F4}, {textMatrixScaleY:F4}), FallbackMatrix=[{fallbackMatrix.M11:F4}, {fallbackMatrix.M12:F4}, {fallbackMatrix.M21:F4}, {fallbackMatrix.M22:F4}, {fallbackMatrix.M31:F4}, {fallbackMatrix.M32:F4}]");
 
@@ -500,33 +506,102 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Use effective font size (FontSize * TextMatrix scaling) for visible text
             using var fallbackFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), effectiveFontSize);
 
-            float currentX = 0;
-            for (var i = 0; i < text.Length; i++)
+            // Determine text rendering mode
+            // PDF Text Rendering Modes:
+            // 0 = Fill, 1 = Stroke, 2 = Fill then Stroke, 3 = Invisible
+            // 4-7 = Same as 0-3 but also add to clipping path
+            int renderMode = state.RenderingMode;
+            bool shouldFill = renderMode == 0 || renderMode == 2 || renderMode == 4 || renderMode == 6;
+            bool shouldStroke = renderMode == 1 || renderMode == 2 || renderMode == 5 || renderMode == 6;
+            bool isInvisible = renderMode == 3 || renderMode == 7;
+
+            PdfLogger.Log(LogCategory.Text, $"FALLBACK RENDER MODE: {renderMode} (Fill={shouldFill}, Stroke={shouldStroke}, Invisible={isInvisible})");
+
+            if (isInvisible)
             {
-                // Transform character position through fallback matrix
-                // Position is in PDF coordinates (includes TextMatrix translation)
-                Vector2 position = Vector2.Transform(new Vector2(currentX, 0), fallbackMatrix);
+                // Don't render invisible text (used for searchable OCR layers)
+                return;
+            }
 
-                // Use PDF-specified width for positioning (in glyph space units, typically 1/1000 em)
-                // This maintains correct spacing as specified by the PDF regardless of fallback font metrics
-                float pdfWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
-                PdfLogger.Log(LogCategory.Text, $"DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4}) fontSize={effectiveFontSize:F2} pdfWidth={pdfWidth:F4}");
+            // Calculate CTM scaling factor for stroke width
+            Matrix3x2 ctm = state.Ctm;
+            double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
+            if (ctmScale < 0.0001) ctmScale = 1.0;
 
-                var ch = text[i].ToString();
+            // Prepare stroke paint if needed
+            SKPaint? strokePaint = null;
+            if (shouldStroke)
+            {
+                SKColor strokeColor = ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
+                strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
 
-                // The canvas has a Y-flip applied, which makes text render upside down
-                // We need to apply a local Y-flip at the text position to counter this
-                // Also apply horizontal scaling (Tz operator) to each character
-                _canvas.Save();
-                _canvas.Translate(position.X, position.Y);
-                _canvas.Scale(tHs, -1);  // Apply horizontal scaling and Y-flip
-                _canvas.DrawText(ch, 0, 0, fallbackFont, paint);
-                _canvas.Restore();
+                strokePaint = new SKPaint();
+                strokePaint.Color = strokeColor;
+                strokePaint.IsAntialias = true;
+                strokePaint.Style = SKPaintStyle.Stroke;
+                strokePaint.StrokeWidth = (float)(state.LineWidth * ctmScale);
+            }
 
-                // Advance by the PDF-specified width
-                // PDF widths are in glyph space (1/1000 em units), already scaled by effectiveFontSize/1000
-                // through the fallbackMatrix transformation
-                currentX += pdfWidth;
+            // Update fill paint style based on rendering mode
+            if (!shouldFill)
+            {
+                // If we're not filling, don't use the fill paint
+                paint.Style = SKPaintStyle.Stroke; // Just to prevent accidental fill
+            }
+
+            try
+            {
+                float currentX = 0;
+                for (var i = 0; i < text.Length; i++)
+                {
+                    // Transform character position through fallback matrix
+                    // Position is in PDF coordinates (includes TextMatrix translation)
+                    Vector2 position = Vector2.Transform(new Vector2(currentX, 0), fallbackMatrix);
+
+                    // Use PDF-specified width for positioning (in glyph space units, typically 1/1000 em)
+                    // This maintains correct spacing as specified by the PDF regardless of fallback font metrics
+                    float pdfWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
+                    PdfLogger.Log(LogCategory.Text, $"DRAW CHAR: '{text[i]}' currentX={currentX:F4} → position=({position.X:F4}, {position.Y:F4}) fontSize={effectiveFontSize:F2} pdfWidth={pdfWidth:F4}");
+
+                    var ch = text[i].ToString();
+
+                    // The canvas has a Y-flip applied, which makes text render upside down
+                    // We need to apply a local Y-flip at the text position to counter this
+                    // Also apply horizontal scaling (Tz operator) and rotation to each character
+                    _canvas.Save();
+                    _canvas.Translate(position.X, position.Y);
+
+                    // Apply rotation from text matrix
+                    // Note: We scale by -1 in Y after this, which effectively mirrors the rotation
+                    if (Math.Abs(rotationAngleDegrees) > 0.01f)
+                    {
+                        _canvas.RotateDegrees(rotationAngleDegrees);
+                    }
+
+                    _canvas.Scale(tHs, -1);  // Apply horizontal scaling and Y-flip
+
+                    // Draw based on rendering mode
+                    if (shouldFill)
+                    {
+                        _canvas.DrawText(ch, 0, 0, fallbackFont, paint);
+                    }
+
+                    if (shouldStroke && strokePaint != null)
+                    {
+                        _canvas.DrawText(ch, 0, 0, fallbackFont, strokePaint);
+                    }
+
+                    _canvas.Restore();
+
+                    // Advance by the PDF-specified width
+                    // PDF widths are in glyph space (1/1000 em units), already scaled by effectiveFontSize/1000
+                    // through the fallbackMatrix transformation
+                    currentX += pdfWidth;
+                }
+            }
+            finally
+            {
+                strokePaint?.Dispose();
             }
         }
         finally
