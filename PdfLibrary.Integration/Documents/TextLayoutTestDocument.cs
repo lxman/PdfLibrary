@@ -33,7 +33,7 @@ public class TextLayoutTestDocument : ITestDocument
             {
                 string label = spacing >= 0 ? $"+{spacing:F1}pt" : $"{spacing:F1}pt";
                 page.AddText($"SPACING ({label}): HELLO WORLD", leftMargin, y)
-                    .Font("Helvetica", 12)
+                    .Font("Helvetica")
                     .CharacterSpacing(spacing);
                 y -= 18;
             }
@@ -64,7 +64,7 @@ public class TextLayoutTestDocument : ITestDocument
             foreach (double scale in scales)
             {
                 page.AddText($"Scale {scale:F0}%: Horizontal Text", leftMargin, y)
-                    .Font("Helvetica", 12)
+                    .Font("Helvetica")
                     .HorizontalScale(scale);
                 y -= 18;
             }
@@ -74,13 +74,13 @@ public class TextLayoutTestDocument : ITestDocument
             // Convenience methods
             page.AddText("Condensed (80%):", leftMargin, y, "Helvetica", 10);
             page.AddText("Condensed text example", leftMargin + 110, y)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .Condensed();
             y -= 18;
 
             page.AddText("Expanded (120%):", leftMargin, y, "Helvetica", 10);
             page.AddText("Expanded text", leftMargin + 110, y)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .Expanded();
             y -= 25;
 
@@ -93,7 +93,7 @@ public class TextLayoutTestDocument : ITestDocument
             double riseX = leftMargin + 90;
 
             page.AddText("baseline", riseX, y)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .Color(PdfColor.Black);
             riseX += 55;
 
@@ -204,7 +204,7 @@ public class TextLayoutTestDocument : ITestDocument
             // Draw reference box
             page.AddPath()
                 .Rectangle(boxX, y - 60, boxWidth, 55)
-                .Stroke(PdfColor.FromGray(0.7), 1);
+                .Stroke(PdfColor.FromGray(0.7));
 
             // Left-positioned text
             page.AddText("Left edge", boxX, y - 15, "Helvetica", 11);

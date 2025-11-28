@@ -210,7 +210,7 @@ public class LineStyleTestDocument : ITestDocument
             page.AddPath()
                 .MoveTo(leftMargin, y)
                 .LineTo(leftMargin + 200, y)
-                .Dotted(3, 2)
+                .Dotted(3)
                 .Stroke(PdfColor.Black, 3);
             page.AddText("Dotted(3, 2)", leftMargin + 220, y - 3, "Helvetica", 9);
             y -= 20;

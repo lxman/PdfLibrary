@@ -1,4 +1,3 @@
-using System.IO;
 using Codeuctivity.ImageSharpCompare;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -30,19 +29,24 @@ public static class ImageComparer
 
         // Calculate similarity
         ICompareResult diff = ImageSharpCompare.CalcDiff(goldenImage, actualImage);
-        double matchPercentage = (1.0 - diff.PixelErrorPercentage) * 100.0;
+        // PixelErrorPercentage is already a percentage (0-100), not a ratio (0-1)
+        double matchPercentage = 100.0 - diff.PixelErrorPercentage;
 
         // Generate diff image if requested
-        if (diffOutputPath != null)
-        {
-            using Image diffImage = ImageSharpCompare.CalcDiffMaskImage(goldenImage, actualImage);
-            diffImage.SaveAsPng(diffOutputPath);
-        }
+        if (diffOutputPath is null)
+            return new ComparisonResult(
+                Success: true,
+                MatchPercentage: matchPercentage,
+                PixelErrorCount: diff.PixelErrorCount,
+                Message: null
+            );
+        using Image diffImage = ImageSharpCompare.CalcDiffMaskImage(goldenImage, actualImage);
+        diffImage.SaveAsPng(diffOutputPath);
 
         return new ComparisonResult(
             Success: true,
             MatchPercentage: matchPercentage,
-            PixelErrorCount: (int)diff.PixelErrorCount,
+            PixelErrorCount: diff.PixelErrorCount,
             Message: null
         );
     }

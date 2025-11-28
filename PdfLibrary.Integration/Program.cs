@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using PdfLibrary.Integration;
 using PdfLibrary.Integration.Documents;
 
@@ -150,7 +147,7 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
             // Check golden baseline exists
             if (!File.Exists(goldenImagePath))
             {
-                Console.WriteLine($"    SKIP: No golden baseline found");
+                Console.WriteLine("    SKIP: No golden baseline found");
                 results.Add(new TestResult(doc.Name, doc.Description, false, 0, "No golden baseline - run 'baseline' first"));
                 failed++;
                 Console.WriteLine();

@@ -41,7 +41,7 @@ public class TextRenderingTestDocument : ITestDocument
             page.AddText("OUTLINE", leftMargin, y)
                 .Font("Helvetica-Bold", 28)
                 .RenderMode(PdfTextRenderMode.Stroke)
-                .StrokeColor(PdfColor.Red, 1);
+                .StrokeColor(PdfColor.Red);
 
             // Using convenience method (on same line)
             page.AddText("OUTLINE ALT", leftMargin + 200, y)
@@ -58,7 +58,7 @@ public class TextRenderingTestDocument : ITestDocument
                 .Font("Helvetica-Bold", 28)
                 .RenderMode(PdfTextRenderMode.FillStroke)
                 .Color(PdfColor.Yellow)
-                .StrokeColor(PdfColor.Black, 1);
+                .StrokeColor(PdfColor.Black);
             y -= 38;
 
             // Using convenience method
@@ -75,7 +75,7 @@ public class TextRenderingTestDocument : ITestDocument
             // Draw a box where invisible text would be
             page.AddPath()
                 .Rectangle(leftMargin, y - 25, 200, 22)
-                .Stroke(PdfColor.FromGray(0.8), 1);
+                .Stroke(PdfColor.FromGray(0.8));
 
             page.AddText("[Invisible text here]", leftMargin + 5, y - 18)
                 .Font("Helvetica", 10)
@@ -125,7 +125,7 @@ public class TextRenderingTestDocument : ITestDocument
 
                 page.AddText("TEXT", x, y)
                     .Font("Helvetica-Bold", 20)
-                    .FillAndOutline(stroke, 1)
+                    .FillAndOutline(stroke)
                     .Color(fill);
 
                 page.AddText(name, x + 3, y - 20, "Helvetica", 6);

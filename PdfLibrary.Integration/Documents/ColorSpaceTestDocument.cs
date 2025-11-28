@@ -46,7 +46,7 @@ public class ColorSpaceTestDocument : ITestDocument
             double x = leftMargin;
             foreach ((PdfColor color, string name) in rgbColors)
             {
-                page.AddRectangle(PdfRect.FromPoints(x, y - swatchSize, swatchSize, swatchSize), color, PdfColor.Black, 1);
+                page.AddRectangle(PdfRect.FromPoints(x, y - swatchSize, swatchSize, swatchSize), color, PdfColor.Black);
                 page.AddText(name, x, y - swatchSize - 15, "Helvetica", 8);
                 x += spacing + 40;
                 if (x > 500)
@@ -97,7 +97,7 @@ public class ColorSpaceTestDocument : ITestDocument
             x = leftMargin;
             foreach ((PdfColor color, string name) in cmykColors)
             {
-                page.AddRectangle(PdfRect.FromPoints(x, y - swatchSize, swatchSize, swatchSize), color, PdfColor.CmykBlack, 1);
+                page.AddRectangle(PdfRect.FromPoints(x, y - swatchSize, swatchSize, swatchSize), color, PdfColor.CmykBlack);
                 page.AddText(name, x, y - swatchSize - 15, "Helvetica", 7);
                 x += spacing + 50;
                 if (!(x > 500)) continue;

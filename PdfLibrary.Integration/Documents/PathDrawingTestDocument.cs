@@ -1,4 +1,3 @@
-using System;
 using PdfLibrary.Builder;
 
 namespace PdfLibrary.Integration.Documents;
@@ -142,7 +141,7 @@ public class PathDrawingTestDocument : ITestDocument
 
             starPath.ClosePath()
                 .Fill(PdfColor.FromRgb(255, 215, 0))
-                .Stroke(PdfColor.Black, 1);
+                .Stroke(PdfColor.Black);
 
             page.AddText("Star", leftMargin + 35, y - 100, "Helvetica", 9);
 

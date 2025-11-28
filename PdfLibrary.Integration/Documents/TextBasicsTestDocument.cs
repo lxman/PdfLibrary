@@ -188,7 +188,7 @@ public class TextBasicsTestDocument : ITestDocument
             for (var i = 0; i < letters.Length; i++)
             {
                 page.AddText(letters[i].ToString(), gridX + i * gridSize, gridY + 2 * gridSize)
-                    .Font("Helvetica", 12)
+                    .Font("Helvetica")
                     .Color(PdfColor.Black);
             }
 

@@ -1,4 +1,3 @@
-using System;
 using PdfLibrary.Builder;
 
 namespace PdfLibrary.Integration.Documents;
@@ -141,7 +140,7 @@ public class ClippingPathTestDocument : ITestDocument
 
         path.ClosePath()
             .Fill(PdfColor.FromRgb(255, 215, 0))
-            .Stroke(PdfColor.Black, 1);
+            .Stroke(PdfColor.Black);
     }
 
     private static void DrawHeart(PdfPageBuilder page, double hx, double hy)

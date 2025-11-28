@@ -1,9 +1,6 @@
-using System;
-using System.IO;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
-using SkiaSharp;
 
 namespace PdfLibrary.Integration;
 
@@ -35,9 +32,9 @@ public static class PdfImageRenderer
         using var renderTarget = new SkiaSharpRenderTarget(width, height, document);
         PdfResources? resources = page.GetResources();
         var optionalContentManager = new OptionalContentManager(document);
-        var renderer = new PdfLibrary.Rendering.PdfRenderer(renderTarget, resources, optionalContentManager, document);
+        var renderer = new PdfRenderer(renderTarget, resources, optionalContentManager, document);
 
         renderer.RenderPage(page, pageNumber, scale);
-        renderTarget.SaveToFile(outputPath, SKEncodedImageFormat.Png, 100);
+        renderTarget.SaveToFile(outputPath);
     }
 }

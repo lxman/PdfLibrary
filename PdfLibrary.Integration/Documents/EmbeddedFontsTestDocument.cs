@@ -1,4 +1,3 @@
-using System.IO;
 using PdfLibrary.Builder;
 
 namespace PdfLibrary.Integration.Documents;
@@ -149,14 +148,14 @@ public class EmbeddedFontsTestDocument : ITestDocument
 
                 // Rotated
                 page.AddText("Rotated", leftMargin, y)
-                    .Font("Arial", 12)
+                    .Font("Arial")
                     .Rotate(15)
                     .Color(PdfColor.Red);
                 y -= 25;
 
                 // Character spacing
                 page.AddText("S P A C E D  O U T", leftMargin, y)
-                    .Font("Arial", 12)
+                    .Font("Arial")
                     .CharacterSpacing(3);
                 y -= 22;
 
@@ -170,7 +169,7 @@ public class EmbeddedFontsTestDocument : ITestDocument
                 // Fill and stroke
                 page.AddText("FILLED+STROKED", leftMargin, y)
                     .Font("Arial-Bold", 28)
-                    .FillAndOutline(PdfColor.Black, 1)
+                    .FillAndOutline(PdfColor.Black)
                     .Color(PdfColor.Yellow);
             }
 

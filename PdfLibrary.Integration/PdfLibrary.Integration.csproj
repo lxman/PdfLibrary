@@ -12,7 +12,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Codeuctivity.ImageSharpCompare" Version="4.1.379" />
+      <PackageReference Include="Codeuctivity.ImageSharpCompare" Version="3.0.0" />
       <PackageReference Include="SkiaSharp" Version="3.119.2-preview.1" />
     </ItemGroup>
 
