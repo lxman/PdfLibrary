@@ -144,10 +144,11 @@ public class Type1Font : PdfFont
 
         return BaseFont switch
         {
-            // Standard 14 fonts have built-in metrics
-            // Helvetica widths for WinAnsi encoding (most common)
-            "Helvetica" or "Helvetica-Bold" or "Helvetica-Oblique" or "Helvetica-BoldOblique" => GetHelveticaWidth(
-                charCode),
+            // Standard 14 fonts have built-in metrics from Adobe AFM files
+            // Helvetica and Helvetica-Oblique share the same widths (oblique is just slanted)
+            "Helvetica" or "Helvetica-Oblique" => GetHelveticaWidth(charCode),
+            // Helvetica-Bold and Helvetica-BoldOblique share the same widths
+            "Helvetica-Bold" or "Helvetica-BoldOblique" => GetHelveticaBoldWidth(charCode),
             "Times-Roman" or "Times-Bold" or "Times-Italic" or "Times-BoldItalic" => GetTimesRomanWidth(charCode),
             "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
             _ => null
@@ -257,6 +258,114 @@ public class Type1Font : PdfFont
             123 => 334,  // braceleft
             124 => 260,  // bar
             125 => 334,  // braceright
+            126 => 584,  // asciitilde
+            _ => 556     // default for extended characters
+        };
+    }
+
+    /// <summary>
+    /// Helvetica-Bold character widths (WinAnsi encoding)
+    /// Source: Adobe Font Metrics (AFM) files - Helvetica-Bold.afm
+    /// Bold variants have different widths than regular Helvetica
+    /// </summary>
+    private static double GetHelveticaBoldWidth(int charCode)
+    {
+        return charCode switch
+        {
+            32 => 278,   // space
+            33 => 333,   // exclam
+            34 => 474,   // quotedbl
+            35 => 556,   // numbersign
+            36 => 556,   // dollar
+            37 => 889,   // percent
+            38 => 722,   // ampersand
+            39 => 238,   // quotesingle
+            40 => 333,   // parenleft
+            41 => 333,   // parenright
+            42 => 389,   // asterisk
+            43 => 584,   // plus
+            44 => 278,   // comma
+            45 => 333,   // hyphen
+            46 => 278,   // period
+            47 => 278,   // slash
+            48 => 556,   // zero
+            49 => 556,   // one
+            50 => 556,   // two
+            51 => 556,   // three
+            52 => 556,   // four
+            53 => 556,   // five
+            54 => 556,   // six
+            55 => 556,   // seven
+            56 => 556,   // eight
+            57 => 556,   // nine
+            58 => 333,   // colon
+            59 => 333,   // semicolon
+            60 => 584,   // less
+            61 => 584,   // equal
+            62 => 584,   // greater
+            63 => 611,   // question
+            64 => 975,   // at
+            65 => 722,   // A
+            66 => 722,   // B
+            67 => 722,   // C
+            68 => 722,   // D
+            69 => 667,   // E
+            70 => 611,   // F
+            71 => 778,   // G
+            72 => 722,   // H
+            73 => 278,   // I
+            74 => 556,   // J
+            75 => 722,   // K
+            76 => 611,   // L
+            77 => 833,   // M
+            78 => 722,   // N
+            79 => 778,   // O
+            80 => 667,   // P
+            81 => 778,   // Q
+            82 => 722,   // R
+            83 => 667,   // S
+            84 => 611,   // T
+            85 => 722,   // U
+            86 => 667,   // V
+            87 => 944,   // W
+            88 => 667,   // X
+            89 => 667,   // Y
+            90 => 611,   // Z
+            91 => 333,   // bracketleft
+            92 => 278,   // backslash
+            93 => 333,   // bracketright
+            94 => 584,   // asciicircum
+            95 => 556,   // underscore
+            96 => 333,   // grave
+            97 => 556,   // a
+            98 => 611,   // b
+            99 => 556,   // c
+            100 => 611,  // d
+            101 => 556,  // e
+            102 => 333,  // f
+            103 => 611,  // g
+            104 => 611,  // h
+            105 => 278,  // i
+            106 => 278,  // j
+            107 => 556,  // k
+            108 => 278,  // l
+            109 => 889,  // m
+            110 => 611,  // n
+            111 => 611,  // o
+            112 => 611,  // p
+            113 => 611,  // q
+            114 => 389,  // r
+            115 => 556,  // s
+            116 => 333,  // t
+            117 => 611,  // u
+            118 => 556,  // v
+            119 => 778,  // w
+            120 => 556,  // x
+            121 => 556,  // y
+            122 => 500,  // z
+            123 => 389,  // braceleft
+            124 => 280,  // bar
+            125 => 389,  // braceright
             126 => 584,  // asciitilde
             _ => 556     // default for extended characters
         };

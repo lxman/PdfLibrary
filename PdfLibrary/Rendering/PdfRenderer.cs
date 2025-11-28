@@ -1443,7 +1443,13 @@ public class PdfRenderer : PdfContentProcessor
                     {
                         double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
                         adjustment *= CurrentState.HorizontalScaling / 100.0;
+                        double oldWidth = combinedWidths[^1];
                         combinedWidths[^1] += adjustment;
+                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: int={intVal.Value} -> adjustment={adjustment:F6}, prevWidth={oldWidth:F6} -> newWidth={combinedWidths[^1]:F6}");
+                    }
+                    else
+                    {
+                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: int={intVal.Value} SKIPPED (no previous char)");
                     }
                     break;
                 }
@@ -1453,7 +1459,13 @@ public class PdfRenderer : PdfContentProcessor
                     {
                         double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
                         adjustment *= CurrentState.HorizontalScaling / 100.0;
+                        double oldWidth = combinedWidths[^1];
                         combinedWidths[^1] += adjustment;
+                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: real={realVal.Value:F4} -> adjustment={adjustment:F6}, prevWidth={oldWidth:F6} -> newWidth={combinedWidths[^1]:F6}");
+                    }
+                    else
+                    {
+                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: real={realVal.Value:F4} SKIPPED (no previous char)");
                     }
                     break;
                 }
@@ -1475,7 +1487,22 @@ public class PdfRenderer : PdfContentProcessor
         if (combinedWidths.Count > 0)
         {
             string widthsPreview = string.Join(", ", combinedWidths.Take(5).Select(w => $"{w:F4}"));
-            PdfLogger.Log(LogCategory.Text, $"  Widths: [{widthsPreview}...] Total: {combinedWidths.Sum():F4}");
+            double totalWidth = combinedWidths.Sum();
+            PdfLogger.Log(LogCategory.Text, $"  Widths: [{widthsPreview}...] Total: {totalWidth:F4}");
+
+            // Log the last 3 widths for page number alignment debugging
+            if (combinedWidths.Count >= 3)
+            {
+                var lastWidths = combinedWidths.Skip(combinedWidths.Count - 3).ToList();
+                string lastChars = fullText.Length >= 3 ? fullText.Substring(fullText.Length - 3) : fullText;
+                PdfLogger.Log(LogCategory.Text, $"  LastWidths: '{lastChars}' -> [{string.Join(", ", lastWidths.Select(w => $"{w:F4}"))}]");
+            }
+
+            // Calculate final X position in user space
+            double startX = CurrentState.TextMatrix.M31;
+            double scaleFactor = Math.Sqrt(CurrentState.TextMatrix.M11 * CurrentState.TextMatrix.M11 + CurrentState.TextMatrix.M12 * CurrentState.TextMatrix.M12);
+            double finalX = startX + totalWidth * scaleFactor;
+            PdfLogger.Log(LogCategory.Text, $"  Position: startX={startX:F2}, totalWidth={totalWidth:F4}, scale={scaleFactor:F2} -> finalX={finalX:F2}");
 
             if (combinedWidths.Take(5).All(w => w == 0))
                 PdfLogger.Log(LogCategory.Text, $"  WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
