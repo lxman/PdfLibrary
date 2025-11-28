@@ -85,7 +85,7 @@ public class PdfDocumentWriter
                 // Collect opacity values for ExtGState objects
                 if (image.Opacity < 1.0)
                 {
-                    var key = (image.Opacity, image.Opacity);
+                    (double, double) key = (image.Opacity, image.Opacity);
                     if (!_extGStateObjects.ContainsKey(key))
                     {
                         _extGStateObjects[key] = _nextObjectNumber++;
@@ -101,7 +101,7 @@ public class PdfDocumentWriter
                 bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
                 if (!needsOpacity) continue;
 
-                var key = (path.FillOpacity, path.StrokeOpacity);
+                (double FillOpacity, double StrokeOpacity) key = (path.FillOpacity, path.StrokeOpacity);
                 if (!_extGStateObjects.ContainsKey(key))
                 {
                     _extGStateObjects[key] = _nextObjectNumber++;
@@ -551,7 +551,7 @@ public class PdfDocumentWriter
                         // Apply opacity if not fully opaque
                         if (image.Opacity < 1.0)
                         {
-                            var opacityKey = (image.Opacity, image.Opacity);
+                            (double, double) opacityKey = (image.Opacity, image.Opacity);
                             if (_extGStateObjects.ContainsKey(opacityKey))
                             {
                                 int gsIndex = GetExtGStateIndex(opacityKey);
@@ -612,7 +612,7 @@ public class PdfDocumentWriter
         bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
         if (needsOpacity)
         {
-            var opacityKey = (path.FillOpacity, path.StrokeOpacity);
+            (double FillOpacity, double StrokeOpacity) opacityKey = (path.FillOpacity, path.StrokeOpacity);
             if (_extGStateObjects.ContainsKey(opacityKey))
             {
                 int gsIndex = GetExtGStateIndex(opacityKey);
@@ -765,7 +765,7 @@ public class PdfDocumentWriter
     private int GetExtGStateIndex((double fillOpacity, double strokeOpacity) key)
     {
         var index = 1;
-        foreach (var k in _extGStateObjects.Keys.OrderBy(x => x))
+        foreach ((double fillOpacity, double strokeOpacity) k in _extGStateObjects.Keys.OrderBy(x => x))
         {
             if (k == key)
                 return index;
@@ -1301,7 +1301,7 @@ public class PdfDocumentWriter
                 writer.Write("\n      ");
 
             ushort rawWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
-            int width = (int)Math.Round(rawWidth * scale);
+            var width = (int)Math.Round(rawWidth * scale);
             writer.Write($"{width} ");
         }
         writer.WriteLine("\n   ]");

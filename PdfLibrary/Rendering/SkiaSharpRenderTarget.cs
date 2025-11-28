@@ -42,6 +42,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     private static readonly MemoryCache GlyphPathCache;
     private static readonly MemoryCacheEntryOptions CacheOptions;
 
+    // Static font resolver - shared across all render targets
+    private static readonly SystemFontResolver FontResolver;
+
     public int CurrentPageNumber { get; private set; }
 
     static SkiaSharpRenderTarget()
@@ -250,9 +253,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         try
         {
             var debugPath = $"mask_debug_{DateTime.Now:HHmmss_fff}.png";
-            using var image = SKImage.FromBitmap(maskBitmap);
-            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-            using var stream = System.IO.File.OpenWrite(debugPath);
+            using SKImage? image = SKImage.FromBitmap(maskBitmap);
+            using SKData? data = image.Encode(SKEncodedImageFormat.Png, 100);
+            using FileStream stream = System.IO.File.OpenWrite(debugPath);
             data.SaveTo(stream);
             PdfLogger.Log(LogCategory.Graphics, $"SetSoftMask: DEBUG - Saved mask to {debugPath}");
         }
@@ -288,7 +291,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         SKMatrix currentMatrix = _canvas.TotalMatrix;
         _canvas.SetMatrix(SKMatrix.Identity);
 
-        using var maskImage = SKImage.FromBitmap(_activeSoftMask);
+        using SKImage? maskImage = SKImage.FromBitmap(_activeSoftMask);
         if (maskImage is not null)
         {
             _canvas.DrawImage(maskImage, 0, 0, maskPaint);
@@ -376,8 +379,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Common pattern: "1 Tf" (FontSize=1) with "60 0 0 60 x y Tm" (TextMatrix scales by 60)
             // The effective font size = FontSize * sqrt(M11^2 + M12^2) for the scaling factor
             // For simple scaling (no rotation), this is just FontSize * M11
-            float textMatrixScaleX = (float)Math.Sqrt(state.TextMatrix.M11 * state.TextMatrix.M11 + state.TextMatrix.M12 * state.TextMatrix.M12);
-            float textMatrixScaleY = (float)Math.Sqrt(state.TextMatrix.M21 * state.TextMatrix.M21 + state.TextMatrix.M22 * state.TextMatrix.M22);
+            var textMatrixScaleX = (float)Math.Sqrt(state.TextMatrix.M11 * state.TextMatrix.M11 + state.TextMatrix.M12 * state.TextMatrix.M12);
+            var textMatrixScaleY = (float)Math.Sqrt(state.TextMatrix.M21 * state.TextMatrix.M21 + state.TextMatrix.M22 * state.TextMatrix.M22);
             float effectiveFontSize = (float)state.FontSize * textMatrixScaleY; // Use Y scale for font size
 
             // HorizontalScaling is stored as a percentage (100 = 100% = 1.0 scale)
@@ -413,7 +416,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
             // Determine font style and family from font descriptor and name
             SKFontStyle? fontStyle = SKFontStyle.Normal;
-            string fallbackFontFamily = "Arial"; // Default to sans-serif
+            var fallbackFontFamily = "Arial"; // Default to sans-serif
 
             if (font is not null)
             {
@@ -1532,7 +1535,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 // Use direct pixel buffer for performance - SetPixel is very slow for large images
                 var pixelBuffer = new byte[width * height * 4]; // RGBA8888
                 byte colorR = color.Red, colorG = color.Green, colorB = color.Blue, colorA = color.Alpha;
-                int paintedPixels = 0;
+                var paintedPixels = 0;
 
                 for (var y = 0; y < height; y++)
                 {

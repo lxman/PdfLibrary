@@ -58,8 +58,8 @@ public class PageRenderBuilder
     /// <returns>The rendered image (caller must dispose)</returns>
     public SKImage ToImage()
     {
-        int width = (int)Math.Ceiling(_page.Width * _scale);
-        int height = (int)Math.Ceiling(_page.Height * _scale);
+        var width = (int)Math.Ceiling(_page.Width * _scale);
+        var height = (int)Math.Ceiling(_page.Height * _scale);
 
         using var target = new SkiaSharpRenderTarget(width, height, _document, _transparentBackground);
 
@@ -77,8 +77,8 @@ public class PageRenderBuilder
     /// <param name="quality">Quality for lossy formats (0-100, default: 100)</param>
     public void ToFile(string filePath, int quality = 100)
     {
-        var extension = Path.GetExtension(filePath).ToLowerInvariant();
-        var format = extension switch
+        string extension = Path.GetExtension(filePath).ToLowerInvariant();
+        SKEncodedImageFormat format = extension switch
         {
             ".png" => SKEncodedImageFormat.Png,
             ".jpg" or ".jpeg" => SKEncodedImageFormat.Jpeg,
@@ -88,9 +88,9 @@ public class PageRenderBuilder
             _ => SKEncodedImageFormat.Png
         };
 
-        using var image = ToImage();
-        using var data = image.Encode(format, quality);
-        using var stream = File.OpenWrite(filePath);
+        using SKImage image = ToImage();
+        using SKData? data = image.Encode(format, quality);
+        using FileStream stream = File.OpenWrite(filePath);
         data.SaveTo(stream);
     }
 
@@ -102,8 +102,8 @@ public class PageRenderBuilder
     /// <param name="quality">Quality for lossy formats (0-100, default: 100)</param>
     public void ToStream(Stream stream, SKEncodedImageFormat format = SKEncodedImageFormat.Png, int quality = 100)
     {
-        using var image = ToImage();
-        using var data = image.Encode(format, quality);
+        using SKImage image = ToImage();
+        using SKData? data = image.Encode(format, quality);
         data.SaveTo(stream);
     }
 
@@ -115,8 +115,8 @@ public class PageRenderBuilder
     /// <returns>Encoded image bytes</returns>
     public byte[] ToBytes(SKEncodedImageFormat format = SKEncodedImageFormat.Png, int quality = 100)
     {
-        using var image = ToImage();
-        using var data = image.Encode(format, quality);
+        using SKImage image = ToImage();
+        using SKData? data = image.Encode(format, quality);
         return data.ToArray();
     }
 }

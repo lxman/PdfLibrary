@@ -371,7 +371,7 @@ public class PdfImage
         // Copy existing decode params
         if (_stream.Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject? decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
         {
-            foreach (var kvp in decodeParmDict)
+            foreach (KeyValuePair<PdfName, PdfObject> kvp in decodeParmDict)
             {
                 object? value = kvp.Value switch
                 {

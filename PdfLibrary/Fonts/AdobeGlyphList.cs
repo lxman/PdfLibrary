@@ -223,7 +223,7 @@ namespace PdfLibrary.Fonts
                     if (_unicodeToGlyph is null)
                     {
                         _unicodeToGlyph = new Dictionary<string, string>();
-                        foreach (var kvp in _glyphToUnicode)
+                        foreach (KeyValuePair<string, string> kvp in _glyphToUnicode)
                         {
                             // Only add if not already present (first glyph name wins)
                             if (!_unicodeToGlyph.ContainsKey(kvp.Value))

@@ -302,7 +302,7 @@ public class EmbeddedFontMetrics
         // Log first few bytes to see the format
         if (fontData.Length > 0)
         {
-            string firstBytes = BitConverter.ToString(fontData, 0, Math.Min(32, fontData.Length));
+            var firstBytes = BitConverter.ToString(fontData, 0, Math.Min(32, fontData.Length));
             PdfLogger.Log(LogCategory.Text, $"[TYPE1] First 32 bytes: {firstBytes}");
         }
 
@@ -838,7 +838,7 @@ public class EmbeddedFontMetrics
         List<GlyphContour> contours = ConvertCffCommandsToContours(type1Outline);
 
         // Use a hash of the glyph name as the glyph ID
-        ushort pseudoGlyphId = (ushort)(Math.Abs(glyphName.GetHashCode()) % 65534 + 1);
+        var pseudoGlyphId = (ushort)(Math.Abs(glyphName.GetHashCode()) % 65534 + 1);
 
         return new GlyphOutline(pseudoGlyphId, contours, metrics, isComposite: false);
     }

@@ -1274,7 +1274,7 @@ public class PdfPathBuilder
 
         // Break arc into segments of at most 90 degrees for better approximation
         double totalAngle = endRad - startRad;
-        int segments = (int)Math.Ceiling(Math.Abs(totalAngle) / (Math.PI / 2));
+        var segments = (int)Math.Ceiling(Math.Abs(totalAngle) / (Math.PI / 2));
         double angleStep = totalAngle / segments;
 
         double currentAngle = startRad;

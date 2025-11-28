@@ -87,10 +87,10 @@ public class Type0Font : PdfFont
             }
 
             // Try Type1 font (FontFile with Length1/Length2/Length3 parameters)
-            var type1Data = descriptor.GetFontFileWithLengths();
+            (byte[] data, int length1, int length2, int length3)? type1Data = descriptor.GetFontFileWithLengths();
             if (type1Data is not null)
             {
-                var (data, length1, length2, length3) = type1Data.Value;
+                (byte[] data, int length1, int length2, int length3) = type1Data.Value;
                 _embeddedMetrics = new EmbeddedFontMetrics(data, length1, length2, length3);
                 if (_embeddedMetrics.IsValid)
                     return _embeddedMetrics;

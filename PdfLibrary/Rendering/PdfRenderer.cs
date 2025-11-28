@@ -624,7 +624,7 @@ public class PdfRenderer : PdfContentProcessor
         List<double>? fillColor = [..CurrentState.FillColor]; // Copy to avoid modifying original
 
         string beforeFillCs = fillCs ?? "null";
-        string beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
+        var beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
 
         ResolveColorSpace(ref fillCs, ref fillColor);
 
@@ -906,7 +906,7 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     private void ApplyExtGState(PdfDictionary extGState)
     {
-        foreach (var entry in extGState)
+        foreach (KeyValuePair<PdfName, PdfObject> entry in extGState)
         {
             string key = entry.Key.Value;
             PdfObject value = entry.Value;
@@ -1208,7 +1208,7 @@ public class PdfRenderer : PdfContentProcessor
         // If we have a Group and the target has a SkiaSharp render target, render the mask
         if (softMask.Group is not null)
         {
-            var skiaTarget = _target.GetSkiaRenderTarget();
+            SkiaSharpRenderTarget? skiaTarget = _target.GetSkiaRenderTarget();
             if (skiaTarget is not null)
             {
                 RenderSoftMaskGroup(softMask, skiaTarget);
@@ -1227,7 +1227,7 @@ public class PdfRenderer : PdfContentProcessor
         try
         {
             // Get page dimensions from the target
-            var (width, height, scale) = skiaTarget.GetPageDimensions();
+            (int width, int height, double scale) = skiaTarget.GetPageDimensions();
 
             PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMaskGroup: Rendering mask to {width}x{height} surface");
 
@@ -1493,7 +1493,7 @@ public class PdfRenderer : PdfContentProcessor
             // Log the last 3 widths for page number alignment debugging
             if (combinedWidths.Count >= 3)
             {
-                var lastWidths = combinedWidths.Skip(combinedWidths.Count - 3).ToList();
+                List<double> lastWidths = combinedWidths.Skip(combinedWidths.Count - 3).ToList();
                 string lastChars = fullText.Length >= 3 ? fullText.Substring(fullText.Length - 3) : fullText;
                 PdfLogger.Log(LogCategory.Text, $"  LastWidths: '{lastChars}' -> [{string.Join(", ", lastWidths.Select(w => $"{w:F4}"))}]");
             }

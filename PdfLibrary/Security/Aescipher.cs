@@ -21,14 +21,14 @@ public static class AesCipher
             return data; // Too short to contain IV, return as-is
 
         // Extract IV (first 16 bytes) and ciphertext
-        byte[] iv = new byte[16];
+        var iv = new byte[16];
         Array.Copy(data, 0, iv, 0, 16);
 
         int ciphertextLength = data.Length - 16;
         if (ciphertextLength == 0)
             return []; // No actual data after IV
 
-        byte[] ciphertext = new byte[ciphertextLength];
+        var ciphertext = new byte[ciphertextLength];
         Array.Copy(data, 16, ciphertext, 0, ciphertextLength);
 
         using var aes = Aes.Create();
@@ -37,14 +37,14 @@ public static class AesCipher
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.None; // PDF handles padding manually
 
-        using var decryptor = aes.CreateDecryptor();
+        using ICryptoTransform decryptor = aes.CreateDecryptor();
 
         // AES requires input to be multiple of block size
         // If not, we need to pad it (this shouldn't happen with valid PDF data)
         int paddedLength = (ciphertext.Length + 15) / 16 * 16;
         if (paddedLength != ciphertext.Length)
         {
-            byte[] padded = new byte[paddedLength];
+            var padded = new byte[paddedLength];
             Array.Copy(ciphertext, padded, ciphertext.Length);
             ciphertext = padded;
         }
@@ -76,7 +76,7 @@ public static class AesCipher
                 return data; // Invalid padding
         }
 
-        byte[] result = new byte[data.Length - paddingLength];
+        var result = new byte[data.Length - paddingLength];
         Array.Copy(data, result, result.Length);
         return result;
     }

@@ -508,10 +508,10 @@ public class Type1Font : PdfFont
 
             // Try classic Type1 (FontFile) with length parameters
             // This uses PFA/PFB format which requires Length1/Length2/Length3 for proper parsing
-            var type1Data = descriptor.GetFontFileWithLengths();
+            (byte[] data, int length1, int length2, int length3)? type1Data = descriptor.GetFontFileWithLengths();
             if (type1Data is not null)
             {
-                var (data, length1, length2, length3) = type1Data.Value;
+                (byte[] data, int length1, int length2, int length3) = type1Data.Value;
                 PdfLogger.Log(LogCategory.Text, $"[TYPE1FONT] Found FontFile (Type1) for font '{BaseFont}', {data.Length} bytes, L1={length1}, L2={length2}, L3={length3}");
                 // Use the Type1-specific constructor with length parameters
                 _embeddedMetrics = new EmbeddedFontMetrics(data, length1, length2, length3);

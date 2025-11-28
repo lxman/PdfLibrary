@@ -22,12 +22,12 @@ public sealed class RC4
             throw new ArgumentException("Key cannot be empty", nameof(key));
 
         // Initialize S-box with identity permutation
-        for (int i = 0; i < 256; i++)
+        for (var i = 0; i < 256; i++)
             _s[i] = (byte)i;
 
         // Key Scheduling Algorithm (KSA)
-        int j = 0;
-        for (int i = 0; i < 256; i++)
+        var j = 0;
+        for (var i = 0; i < 256; i++)
         {
             j = (j + _s[i] + key[i % key.Length]) & 0xFF;
             (_s[i], _s[j]) = (_s[j], _s[i]); // Swap
@@ -46,7 +46,7 @@ public sealed class RC4
     {
         ArgumentNullException.ThrowIfNull(data);
 
-        for (int k = 0; k < data.Length; k++)
+        for (var k = 0; k < data.Length; k++)
         {
             _i = (_i + 1) & 0xFF;
             _j = (_j + _s[_i]) & 0xFF;
@@ -64,7 +64,7 @@ public sealed class RC4
     /// <returns>Encrypted/decrypted output</returns>
     public byte[] ProcessCopy(byte[] data)
     {
-        byte[] result = new byte[data.Length];
+        var result = new byte[data.Length];
         Array.Copy(data, result, data.Length);
         Process(result);
         return result;

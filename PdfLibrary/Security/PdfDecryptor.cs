@@ -186,12 +186,12 @@ public class PdfDecryptor
     private PdfEncryptionMethod DetermineV4Method(PdfDictionary encryptDict)
     {
         // Check crypt filters
-        if (!encryptDict.TryGetValue(new PdfName("CF"), out var cfObj) || cfObj is not PdfDictionary cf)
+        if (!encryptDict.TryGetValue(new PdfName("CF"), out PdfObject cfObj) || cfObj is not PdfDictionary cf)
             return PdfEncryptionMethod.Rc4_128; // Default to RC4
 
         // Check the StdCF filter (or whatever StmF points to)
         string filterName = GetNameValue(encryptDict, "StmF", "StdCF");
-        if (!cf.TryGetValue(new PdfName(filterName), out var filterObj) || filterObj is not PdfDictionary filter)
+        if (!cf.TryGetValue(new PdfName(filterName), out PdfObject filterObj) || filterObj is not PdfDictionary filter)
             return PdfEncryptionMethod.Rc4_128;
 
         string cfm = GetNameValue(filter, "CFM", "V2");
@@ -258,8 +258,8 @@ public class PdfDecryptor
 
         // Try user password first
         // User validation salt is bytes 32-39 of U
-        byte[] userValidationSalt = new byte[8];
-        byte[] userKeySalt = new byte[8];
+        var userValidationSalt = new byte[8];
+        var userKeySalt = new byte[8];
         Array.Copy(uValue, 32, userValidationSalt, 0, 8);
         Array.Copy(uValue, 40, userKeySalt, 0, 8);
 
@@ -274,8 +274,8 @@ public class PdfDecryptor
 
         // Try owner password
         // Owner validation salt is bytes 32-39 of O
-        byte[] ownerValidationSalt = new byte[8];
-        byte[] ownerKeySalt = new byte[8];
+        var ownerValidationSalt = new byte[8];
+        var ownerKeySalt = new byte[8];
         Array.Copy(oValue, 32, ownerValidationSalt, 0, 8);
         Array.Copy(oValue, 40, ownerKeySalt, 0, 8);
 
@@ -316,7 +316,7 @@ public class PdfDecryptor
     /// </summary>
     private static byte[] PrependIV(byte[] data)
     {
-        byte[] result = new byte[16 + data.Length];
+        var result = new byte[16 + data.Length];
         // IV is all zeros for UE/OE decryption
         Array.Copy(data, 0, result, 16, data.Length);
         return result;
@@ -385,7 +385,7 @@ public class PdfDecryptor
     private byte[] ComputeObjectKeyRc4(int objectNumber, int generationNumber)
     {
         int keyInputLength = _encryptionKey.Length + 5;
-        byte[] keyInput = new byte[keyInputLength];
+        var keyInput = new byte[keyInputLength];
 
         Array.Copy(_encryptionKey, 0, keyInput, 0, _encryptionKey.Length);
         keyInput[_encryptionKey.Length] = (byte)(objectNumber & 0xFF);
@@ -397,7 +397,7 @@ public class PdfDecryptor
         byte[] hash = MD5.HashData(keyInput);
 
         int objectKeyLength = Math.Min(_keyLengthBytes + 5, 16);
-        byte[] objectKey = new byte[objectKeyLength];
+        var objectKey = new byte[objectKeyLength];
         Array.Copy(hash, objectKey, objectKeyLength);
 
         return objectKey;
@@ -411,7 +411,7 @@ public class PdfDecryptor
     {
         // Same as RC4 but with "sAlT" marker appended
         int keyInputLength = _encryptionKey.Length + 5 + 4;
-        byte[] keyInput = new byte[keyInputLength];
+        var keyInput = new byte[keyInputLength];
 
         Array.Copy(_encryptionKey, 0, keyInput, 0, _encryptionKey.Length);
         keyInput[_encryptionKey.Length] = (byte)(objectNumber & 0xFF);
@@ -454,13 +454,13 @@ public class PdfDecryptor
         // Revision 3+: 50 additional MD5 iterations
         if (_revision >= 3)
         {
-            for (int i = 0; i < 50; i++)
+            for (var i = 0; i < 50; i++)
             {
                 hash = MD5.HashData(hash.AsSpan(0, _keyLengthBytes));
             }
         }
 
-        byte[] key = new byte[_keyLengthBytes];
+        var key = new byte[_keyLengthBytes];
         Array.Copy(hash, key, _keyLengthBytes);
         return key;
     }
@@ -485,10 +485,10 @@ public class PdfDecryptor
             md5.AppendData(_documentId);
             computedU = md5.GetHashAndReset();
 
-            for (int i = 0; i < 20; i++)
+            for (var i = 0; i < 20; i++)
             {
-                byte[] iterKey = new byte[encryptionKey.Length];
-                for (int j = 0; j < encryptionKey.Length; j++)
+                var iterKey = new byte[encryptionKey.Length];
+                for (var j = 0; j < encryptionKey.Length; j++)
                 {
                     iterKey[j] = (byte)(encryptionKey[j] ^ i);
                 }
@@ -512,16 +512,16 @@ public class PdfDecryptor
 
         if (_revision >= 3)
         {
-            for (int i = 0; i < 50; i++)
+            for (var i = 0; i < 50; i++)
             {
                 hash = MD5.HashData(hash);
             }
         }
 
-        byte[] key = new byte[_keyLengthBytes];
+        var key = new byte[_keyLengthBytes];
         Array.Copy(hash, key, _keyLengthBytes);
 
-        byte[] userPassword = new byte[oValue.Length];
+        var userPassword = new byte[oValue.Length];
         Array.Copy(oValue, userPassword, oValue.Length);
 
         if (_revision == 2)
@@ -531,10 +531,10 @@ public class PdfDecryptor
         }
         else
         {
-            for (int i = 19; i >= 0; i--)
+            for (var i = 19; i >= 0; i--)
             {
-                byte[] iterKey = new byte[key.Length];
-                for (int j = 0; j < key.Length; j++)
+                var iterKey = new byte[key.Length];
+                for (var j = 0; j < key.Length; j++)
                 {
                     iterKey[j] = (byte)(key[j] ^ i);
                 }
@@ -551,7 +551,7 @@ public class PdfDecryptor
     /// </summary>
     private static byte[] PadPassword(string password)
     {
-        byte[] result = new byte[32];
+        var result = new byte[32];
         byte[] passwordBytes = Encoding.Latin1.GetBytes(password ?? "");
 
         int copyLength = Math.Min(passwordBytes.Length, 32);
@@ -574,7 +574,7 @@ public class PdfDecryptor
         if (passwordBytes.Length <= 127)
             return passwordBytes;
 
-        byte[] truncated = new byte[127];
+        var truncated = new byte[127];
         Array.Copy(passwordBytes, truncated, 127);
         return truncated;
     }
@@ -587,7 +587,7 @@ public class PdfDecryptor
         if (a.Length < length || b.Length < length)
             return false;
 
-        for (int i = 0; i < length; i++)
+        for (var i = 0; i < length; i++)
         {
             if (a[i] != b[i])
                 return false;

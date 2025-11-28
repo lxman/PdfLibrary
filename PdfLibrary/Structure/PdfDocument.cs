@@ -408,7 +408,7 @@ public class PdfDocument : IDisposable
         var result = new List<(PdfImage, int)>();
         List<PdfPage> pages = GetPages();
 
-        for (int i = 0; i < pages.Count; i++)
+        for (var i = 0; i < pages.Count; i++)
         {
             List<PdfImage> pageImages = pages[i].GetImages();
             foreach (PdfImage image in pageImages)
@@ -610,7 +610,7 @@ public class PdfDocument : IDisposable
             // Load uncompressed indirect objects
             // Compressed objects (type 2) will be loaded on-demand from object streams
             phaseStopwatch.Restart();
-            int loadedObjects = 0;
+            var loadedObjects = 0;
             foreach (PdfXrefEntry entry in document.XrefTable.Entries)
             {
                 if (!entry.IsInUse)
