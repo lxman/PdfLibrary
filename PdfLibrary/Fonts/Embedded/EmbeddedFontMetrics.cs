@@ -697,6 +697,20 @@ public class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Get raw CFF-style glyph outline for a Type1 font using the glyph name.
+    /// Returns the outline with cubic Bezier commands for proper rendering.
+    /// </summary>
+    /// <param name="glyphName">The glyph name (e.g., "A", "space", "Aacute")</param>
+    /// <returns>CffGlyphOutline with cubic Bezier commands, or null if glyph not found</returns>
+    public CffGlyphOutline? GetType1GlyphOutlineDirect(string glyphName)
+    {
+        if (!_isType1Font || _type1Parser is null || string.IsNullOrEmpty(glyphName))
+            return null;
+
+        return _type1Parser.GetGlyphOutline(glyphName);
+    }
+
+    /// <summary>
     /// Get glyph outline for a CFF font
     /// Converts CFF path commands to contour-based GlyphOutline
     /// </summary>

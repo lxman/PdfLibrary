@@ -26,6 +26,10 @@ public class GlyphToSKPathConverter
             throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
 
         var path = new SKPath();
+        // Use EvenOdd fill type because the Y-flip in ScalePoint reverses winding direction
+        // of all contours. EvenOdd fill rule determines inside/outside by counting path
+        // crossings, not winding direction, so it correctly handles holes regardless.
+        path.FillType = SKPathFillType.EvenOdd;
         float scale = fontSize / unitsPerEm;
 
         foreach (GlyphContour contour in outline.Contours)
@@ -56,6 +60,10 @@ public class GlyphToSKPathConverter
             throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
 
         var path = new SKPath();
+        // Use EvenOdd fill type because the Y-flip in ScalePoint reverses winding direction
+        // of all contours. EvenOdd fill rule determines inside/outside by counting path
+        // crossings, not winding direction, so it correctly handles holes regardless.
+        path.FillType = SKPathFillType.EvenOdd;
         float scale = fontSize / unitsPerEm;
 
         foreach (PathCommand command in outline.Commands)
@@ -63,13 +71,11 @@ public class GlyphToSKPathConverter
             switch (command)
             {
                 case MoveToCommand moveTo:
-                    SKPoint movePoint = ScalePoint(moveTo.Point.X, moveTo.Point.Y, scale);
-                    path.MoveTo(movePoint);
+                    path.MoveTo(ScalePoint(moveTo.Point.X, moveTo.Point.Y, scale));
                     break;
 
                 case LineToCommand lineTo:
-                    SKPoint linePoint = ScalePoint(lineTo.Point.X, lineTo.Point.Y, scale);
-                    path.LineTo(linePoint);
+                    path.LineTo(ScalePoint(lineTo.Point.X, lineTo.Point.Y, scale));
                     break;
 
                 case CubicBezierCommand cubic:

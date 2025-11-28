@@ -1,5 +1,3 @@
-#nullable enable
-
 using System;
 using JBig2Decoder.NETStandard;
 
@@ -24,7 +22,7 @@ namespace Compressors.Jbig2
             {
                 width = 0;
                 height = 0;
-                return Array.Empty<byte>();
+                return [];
             }
 
             var decoder = new JBIG2StreamDecoder();
@@ -46,7 +44,7 @@ namespace Compressors.Jbig2
             {
                 width = 0;
                 height = 0;
-                return Array.Empty<byte>();
+                return [];
             }
 
             var decoder = new JBIG2StreamDecoder();

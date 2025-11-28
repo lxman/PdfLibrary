@@ -12,6 +12,7 @@
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
+  <Project Path="PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj" />
   <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />
   <Project Path="PdfLibrary/PdfLibrary.csproj" />
   <Project Path="PdfTool/PdfTool.csproj" />

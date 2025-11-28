@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Drawing;
 using FontParser.Tables.Cff;
@@ -38,8 +37,11 @@ namespace FontParser.Tables.PostScriptType1
             _currentY = 0;
             _outline = new GlyphOutline();
             _pathStarted = false;
+            _pathStartX = 0;
+            _pathStartY = 0;
             _flexPoints.Clear();
             _inFlex = false;
+            _returnFromSubr = false;
 
             try
             {
@@ -54,10 +56,12 @@ namespace FontParser.Tables.PostScriptType1
             return _outline;
         }
 
+        private bool _returnFromSubr; // Flag to signal return from subroutine
+
         private void Execute(byte[] data)
         {
             int i = 0;
-            while (i < data.Length)
+            while (i < data.Length && !_returnFromSubr)
             {
                 byte b = data[i++];
 
@@ -80,6 +84,10 @@ namespace FontParser.Tables.PostScriptType1
                     ExecuteCommand(b);
                 }
             }
+
+            // Clear the return flag when we exit this level
+            // (it was set by a nested callsubr, now we're returning)
+            _returnFromSubr = false;
         }
 
         private float DecodeNumber(byte[] data, ref int i, byte firstByte)
@@ -196,8 +204,8 @@ namespace FontParser.Tables.PostScriptType1
                     break;
 
                 case 11: // return
-                    // Return from subroutine - handled by call stack
-                    break;
+                    _returnFromSubr = true;
+                    return;
 
                 case 13: // hsbw (horizontal sidebearing and width)
                     if (_stack.Count >= 2)
@@ -215,7 +223,8 @@ namespace FontParser.Tables.PostScriptType1
                     {
                         ClosePath();
                     }
-                    break;
+                    _returnFromSubr = true;
+                    return;
 
                 case 21: // rmoveto
                     if (_stack.Count >= 2)
@@ -328,40 +337,39 @@ namespace FontParser.Tables.PostScriptType1
 
                 case 16: // callothersubr
                     // OtherSubrs are for flex hints and other special features
-                    // Pop the subr number and argument count
                     if (_stack.Count >= 2)
                     {
                         int subrNum = (int)Pop();
                         int numArgs = (int)Pop();
 
-                        // Handle known OtherSubrs
                         switch (subrNum)
                         {
                             case 0: // End flex
+                                // Must set _inFlex = false BEFORE calling CurveTo
+                                _inFlex = false;
                                 if (_flexPoints.Count >= 7 && _stack.Count >= 3)
                                 {
-                                    // Flex endpoint
-                                    float epY = Pop();
-                                    float epX = Pop();
+                                    float finalY = Pop();
+                                    float finalX = Pop();
                                     float flexDepth = Pop();
 
-                                    // Create curves from flex points
-                                    // _flexPoints should have 7 points for flex
-                                    if (_flexPoints.Count >= 6)
-                                    {
-                                        // Two cubic bezier curves
-                                        CurveTo(_flexPoints[1].X, _flexPoints[1].Y,
-                                               _flexPoints[2].X, _flexPoints[2].Y,
-                                               _flexPoints[3].X, _flexPoints[3].Y);
-                                        CurveTo(_flexPoints[4].X, _flexPoints[4].Y,
-                                               _flexPoints[5].X, _flexPoints[5].Y,
-                                               _currentX + epX, _currentY + epY);
-                                        _currentX += epX;
-                                        _currentY += epY;
-                                    }
+                                    // First Bézier: curveto(P1, P2, P3) from P0
+                                    CurveTo(_flexPoints[1].X, _flexPoints[1].Y,
+                                           _flexPoints[2].X, _flexPoints[2].Y,
+                                           _flexPoints[3].X, _flexPoints[3].Y);
+
+                                    // Second Bézier: curveto(P4, P5, P6) from P3
+                                    CurveTo(_flexPoints[4].X, _flexPoints[4].Y,
+                                           _flexPoints[5].X, _flexPoints[5].Y,
+                                           _flexPoints[6].X, _flexPoints[6].Y);
+
+                                    _currentX = _flexPoints[6].X;
+                                    _currentY = _flexPoints[6].Y;
+
+                                    _stack.Push(finalX);
+                                    _stack.Push(finalY);
                                 }
                                 _flexPoints.Clear();
-                                _inFlex = false;
                                 break;
 
                             case 1: // Start flex
@@ -373,13 +381,11 @@ namespace FontParser.Tables.PostScriptType1
                                 _flexPoints.Add(new PointF(_currentX, _currentY));
                                 break;
 
-                            case 3: // Replace hints (hint replacement)
-                                // Push 3 back onto stack for pop
+                            case 3: // Replace hints
                                 _stack.Push(3);
                                 break;
 
                             default:
-                                // Unknown OtherSubr - pop args
                                 for (int j = 0; j < numArgs && _stack.Count > 0; j++)
                                     Pop();
                                 break;
@@ -416,10 +422,18 @@ namespace FontParser.Tables.PostScriptType1
 
         private void MoveTo(float x, float y)
         {
+            if (_inFlex)
+            {
+                // During flex, don't add MoveTo commands - just track position
+                // The flex points are collected via OtherSubr 2 calls
+                return;
+            }
+
             if (_pathStarted)
             {
-                // Implicit closepath before moveto in some interpretations
-                // But typically Type1 uses explicit closepath
+                // Implicit closepath before moveto
+                _outline.Commands.Add(new ClosePathCommand());
+                _pathStarted = false;
             }
             _outline.Commands.Add(new MoveToCommand(x, y));
             _pathStarted = true;
@@ -429,6 +443,12 @@ namespace FontParser.Tables.PostScriptType1
 
         private void LineTo(float x, float y)
         {
+            if (_inFlex)
+            {
+                // During flex, don't add LineTo commands
+                return;
+            }
+
             if (!_pathStarted)
             {
                 MoveTo(_currentX, _currentY);
@@ -438,6 +458,12 @@ namespace FontParser.Tables.PostScriptType1
 
         private void CurveTo(float c1x, float c1y, float c2x, float c2y, float x, float y)
         {
+            if (_inFlex)
+            {
+                // During flex, don't add CurveTo commands - they'll be added by OtherSubr 0
+                return;
+            }
+
             if (!_pathStarted)
             {
                 MoveTo(_currentX, _currentY);

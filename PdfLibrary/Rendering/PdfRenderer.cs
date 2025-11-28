@@ -485,7 +485,8 @@ public class PdfRenderer : PdfContentProcessor
 
         List<double> color = CurrentState.FillColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
-        PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace}, Color=[{colorStr}], PathEmpty={_currentPath.IsEmpty}");
+        string resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
+        PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], PathEmpty={_currentPath.IsEmpty}");
         _target.FillPath(_currentPath, CurrentState, evenOdd);
         _currentPath.Clear();
     }
@@ -663,10 +664,16 @@ public class PdfRenderer : PdfContentProcessor
 
         PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
         if (colorSpaces is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: No ColorSpace dict in resources for '{colorSpaceName}' - _currentResources is {(_currentResources is null ? "null" : "not null")}");
             return;
+        }
 
         if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out PdfObject? csObj))
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict (has {colorSpaces.Keys.Count} entries: [{string.Join(", ", colorSpaces.Keys.Take(10).Select(k => k.Value))}])");
             return;
+        }
 
         // Resolve indirect reference
         if (csObj is PdfIndirectReference reference && _document is not null)
@@ -1389,6 +1396,7 @@ public class PdfRenderer : PdfContentProcessor
         var combinedText = new StringBuilder();
         var combinedWidths = new List<double>();
         var combinedCharCodes = new List<int>();
+        double leadingAdjustment = 0; // Track leading adjustment before first character
 
         // Process all items in the TJ array
         foreach (PdfObject item in array)
@@ -1439,37 +1447,50 @@ public class PdfRenderer : PdfContentProcessor
                 {
                     // Kerning adjustment: modify the width of the previous character
                     // Adjustment is in thousandths of text space, convert to user space
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    adjustment *= CurrentState.HorizontalScaling / 100.0;
+
                     if (combinedWidths.Count > 0)
                     {
-                        double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
-                        adjustment *= CurrentState.HorizontalScaling / 100.0;
                         double oldWidth = combinedWidths[^1];
                         combinedWidths[^1] += adjustment;
                         PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: int={intVal.Value} -> adjustment={adjustment:F6}, prevWidth={oldWidth:F6} -> newWidth={combinedWidths[^1]:F6}");
                     }
                     else
                     {
-                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: int={intVal.Value} SKIPPED (no previous char)");
+                        // Leading adjustment before first character - accumulate it
+                        leadingAdjustment += adjustment;
+                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: int={intVal.Value} -> leading adjustment={adjustment:F6}, total leading={leadingAdjustment:F6}");
                     }
                     break;
                 }
                 case PdfReal realVal:
                 {
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    adjustment *= CurrentState.HorizontalScaling / 100.0;
+
                     if (combinedWidths.Count > 0)
                     {
-                        double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
-                        adjustment *= CurrentState.HorizontalScaling / 100.0;
                         double oldWidth = combinedWidths[^1];
                         combinedWidths[^1] += adjustment;
                         PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: real={realVal.Value:F4} -> adjustment={adjustment:F6}, prevWidth={oldWidth:F6} -> newWidth={combinedWidths[^1]:F6}");
                     }
                     else
                     {
-                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: real={realVal.Value:F4} SKIPPED (no previous char)");
+                        // Leading adjustment before first character - accumulate it
+                        leadingAdjustment += adjustment;
+                        PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: real={realVal.Value:F4} -> leading adjustment={adjustment:F6}, total leading={leadingAdjustment:F6}");
                     }
                     break;
                 }
             }
+        }
+
+        // Apply leading adjustment by advancing the text matrix before rendering
+        if (leadingAdjustment != 0)
+        {
+            CurrentState.AdvanceTextMatrix(leadingAdjustment, 0);
+            PdfLogger.Log(LogCategory.Text, $"  Applied leading adjustment: {leadingAdjustment:F6}");
         }
 
         // Render all text in a single DrawText call
@@ -1736,13 +1757,16 @@ public class PdfRenderer : PdfContentProcessor
         PdfResources? formResources = _resources;
         if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
+            // Resolve indirect reference to Resources dictionary if needed
+            if (resourcesObj is PdfIndirectReference resourcesRef && _document is not null)
+                resourcesObj = _document.ResolveReference(resourcesRef);
+
             if (resourcesObj is PdfDictionary resourcesDict)
             {
-                // Create a new resources object for the form
-                formResources = new PdfResources(resourcesDict);
+                // Create a new resources object for the form, passing the document
+                // so that indirect references to fonts, XObjects, etc. can be resolved
+                formResources = new PdfResources(resourcesDict, _document);
             }
-            // TODO: Handle indirect references to Resources dictionaries
-            // Would need access to the PdfDocument to resolve references
         }
 
         // According to PDF spec (ISO 32000-1 section 8.10):
@@ -1752,24 +1776,51 @@ public class PdfRenderer : PdfContentProcessor
         // Save the current CTM to apply to the form's coordinate space
         Matrix3x2 savedCtm = CurrentState.Ctm;
 
+        // Check for Form XObject Matrix and concatenate with saved CTM
+        // The Matrix entry maps form space to user space
+        Matrix3x2 formCtm = savedCtm;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject? matrixObj) && matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+        {
+            var m11 = (float)(GetNumber(matrixArray[0]) ?? 0);
+            var m12 = (float)(GetNumber(matrixArray[1]) ?? 0);
+            var m21 = (float)(GetNumber(matrixArray[2]) ?? 0);
+            var m22 = (float)(GetNumber(matrixArray[3]) ?? 0);
+            var m31 = (float)(GetNumber(matrixArray[4]) ?? 0);
+            var m32 = (float)(GetNumber(matrixArray[5]) ?? 0);
+            var formMatrix = new Matrix3x2(m11, m12, m21, m22, m31, m32);
+
+            // Concatenate: formCtm = formMatrix * savedCtm
+            // This transforms form coordinates through the form matrix, then through the page CTM
+            formCtm = formMatrix * savedCtm;
+
+            PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form Matrix = [{m11}, {m12}, {m21}, {m22}, {m31}, {m32}]");
+        }
+
         // Create a new renderer for the form to ensure it starts with a fresh graphics state
         var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document)
             {
                 CurrentState =
                 {
-                    // Set the form renderer's CTM to the saved CTM from the page
-                    Ctm = savedCtm
+                    // Set the form renderer's CTM to the concatenated matrix
+                    Ctm = formCtm
                 }
             };
 
-        // TODO: If form has a /Matrix entry, concatenate it with the saved CTM
-        // formCtm = formMatrix * savedCtm
-
         PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form renderer CTM = [{formRenderer.CurrentState.Ctm.M11}, {formRenderer.CurrentState.Ctm.M12}, {formRenderer.CurrentState.Ctm.M21}, {formRenderer.CurrentState.Ctm.M22}, {formRenderer.CurrentState.Ctm.M31}, {formRenderer.CurrentState.Ctm.M32}]");
+
+        // Save render target state before processing form
+        _target.SaveState();
+
+        // Apply the form's CTM to the render target
+        // This is needed because we set CurrentState.Ctm directly, which doesn't trigger OnMatrixChanged
+        _target.ApplyCtm(formCtm);
 
         // Parse and process the Form XObject's content stream
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         formRenderer.ProcessOperators(operators);
+
+        // Restore render target state after form processing
+        _target.RestoreState();
     }
 
     // ==================== State Management ====================
