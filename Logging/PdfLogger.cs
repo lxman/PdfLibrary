@@ -72,15 +72,15 @@ namespace Logging
         /// <param name="message">The message to log</param>
         public static void Log(LogCategory category, string message)
         {
-            // Auto-initialize with defaults if not explicitly initialized
+            // Check if this category is enabled first (before any initialization)
+            if (!IsCategoryEnabled(category))
+                return;
+
+            // Only initialize if we're actually going to log something
             if (!_isInitialized)
             {
                 Initialize(new PdfLogConfiguration());
             }
-
-            // Check if this category is enabled
-            if (!IsCategoryEnabled(category))
-                return;
 
             // Get category prefix
             string prefix = GetCategoryPrefix(category);

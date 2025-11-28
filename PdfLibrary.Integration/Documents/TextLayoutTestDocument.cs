@@ -122,29 +122,39 @@ public class TextLayoutTestDocument : ITestDocument
 
             y -= 25;
 
-            // Superscript example
-            page.AddText("Superscript: E = mc", leftMargin, y, "Helvetica", 14);
-            page.AddText("2", leftMargin + 108, y)
+            // Superscript example: E = mc²
+            double superX = leftMargin;
+            page.AddText("Superscript: E = mc", superX, y, "Helvetica", 14);
+            superX += page.MeasureText("Superscript: E = mc", "Helvetica", 14);
+            page.AddText("2", superX, y)
                 .Font("Helvetica", 10)
                 .Superscript()
                 .Color(PdfColor.Blue);
+            superX += page.MeasureText("2", "Helvetica", 7); // 7pt after Superscript() reduces size
 
-            page.AddText("and x", leftMargin + 130, y, "Helvetica", 14);
-            page.AddText("n+1", leftMargin + 162, y)
+            superX += 10; // small gap
+            page.AddText("and x", superX, y, "Helvetica", 14);
+            superX += page.MeasureText("and x", "Helvetica", 14);
+            page.AddText("n+1", superX, y)
                 .Font("Helvetica", 9)
                 .Superscript()
                 .Color(PdfColor.Blue);
 
             y -= 22;
 
-            // Subscript example
-            page.AddText("Subscript: H", leftMargin, y, "Helvetica", 14);
-            page.AddText("2", leftMargin + 65, y)
+            // Subscript example: H₂O and CO₂
+            double subX = leftMargin;
+            page.AddText("Subscript: H", subX, y, "Helvetica", 14);
+            subX += page.MeasureText("Subscript: H", "Helvetica", 14);
+            page.AddText("2", subX, y)
                 .Font("Helvetica", 10)
                 .Subscript()
                 .Color(PdfColor.Red);
-            page.AddText("O and CO", leftMargin + 80, y, "Helvetica", 14);
-            page.AddText("2", leftMargin + 133, y)
+            subX += page.MeasureText("2", "Helvetica", 7); // 7pt after Subscript() reduces size
+
+            page.AddText("O and CO", subX, y, "Helvetica", 14);
+            subX += page.MeasureText("O and CO", "Helvetica", 14);
+            page.AddText("2", subX, y)
                 .Font("Helvetica", 10)
                 .Subscript()
                 .Color(PdfColor.Red);

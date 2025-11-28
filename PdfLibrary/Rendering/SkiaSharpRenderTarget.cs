@@ -403,9 +403,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             );
 
             Matrix3x2 fallbackMatrix = textPositionMatrix;
-            // Apply translation from TextMatrix
+            // Apply translation from TextMatrix, adding to the rise translation
             fallbackMatrix.M31 = state.TextMatrix.M31;
-            fallbackMatrix.M32 = state.TextMatrix.M32;
+            fallbackMatrix.M32 = state.TextMatrix.M32 + tRise * textMatrixScaleY;
 
             PdfLogger.Log(LogCategory.Text, $"FALLBACK: FontSize={state.FontSize:F2}, EffectiveFontSize={effectiveFontSize:F2}, HScale={tHs:F2}, Rise={tRise:F2}");
             PdfLogger.Log(LogCategory.Text, $"  TextMatrix=[{state.TextMatrix.M11:F4}, {state.TextMatrix.M12:F4}, {state.TextMatrix.M21:F4}, {state.TextMatrix.M22:F4}, {state.TextMatrix.M31:F4}, {state.TextMatrix.M32:F4}]");
@@ -421,12 +421,14 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 var isBold = false;
                 var isItalic = false;
                 var isSerif = false;
+                var isMonospace = false;
 
                 if (descriptor is not null)
                 {
                     isBold = descriptor.IsBold;
                     isItalic = descriptor.IsItalic;
                     isSerif = descriptor.IsSerif;
+                    isMonospace = descriptor.IsFixedPitch;
 
                     // Also use StemV as a heuristic for bold detection
                     if (descriptor.StemV >= 120)
@@ -440,6 +442,15 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 if (baseName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
                     baseName.Contains("Oblique", StringComparison.OrdinalIgnoreCase))
                     isItalic = true;
+
+                // Detect monospace fonts by name
+                if (baseName.Contains("Courier", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Consolas", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Monaco", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Mono", StringComparison.OrdinalIgnoreCase))
+                {
+                    isMonospace = true;
+                }
 
                 // Detect serif fonts by name
                 if (baseName.Contains("Times", StringComparison.OrdinalIgnoreCase) ||
@@ -455,8 +466,14 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     isSerif = true;
                 }
 
-                // Choose fallback font family based on serif classification
-                fallbackFontFamily = isSerif ? "Times New Roman" : "Arial";
+                // Choose fallback font family based on font classification
+                // Monospace takes priority, then serif vs sans-serif
+                if (isMonospace)
+                    fallbackFontFamily = "Courier New";
+                else if (isSerif)
+                    fallbackFontFamily = "Times New Roman";
+                else
+                    fallbackFontFamily = "Arial";
 
                 switch (isBold)
                 {
@@ -475,7 +492,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 }
             }
 
-            PdfLogger.Log(LogCategory.Text, $"Falling back to {fallbackFontFamily} for '{(text.Length > 20 ? text[..20] + "..." : text)}'");
+            PdfLogger.Log(LogCategory.Text, $"FALLBACK FONT: Using '{fallbackFontFamily}' for BaseFont='{font?.BaseFont ?? "null"}', text='{(text.Length > 20 ? text[..20] + "..." : text)}'");
 
             // Use effective font size (FontSize * TextMatrix scaling) for visible text
             using var fallbackFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), effectiveFontSize);
@@ -496,9 +513,10 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 // The canvas has a Y-flip applied, which makes text render upside down
                 // We need to apply a local Y-flip at the text position to counter this
+                // Also apply horizontal scaling (Tz operator) to each character
                 _canvas.Save();
                 _canvas.Translate(position.X, position.Y);
-                _canvas.Scale(1, -1);  // Flip Y to make text right-side up
+                _canvas.Scale(tHs, -1);  // Apply horizontal scaling and Y-flip
                 _canvas.DrawText(ch, 0, 0, fallbackFont, paint);
                 _canvas.Restore();
 
@@ -832,27 +850,54 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 // Log drawing details
                 SKRect bounds = glyphPath.Bounds;
-                PdfLogger.Log(LogCategory.Text, $"DRAW: Page={CurrentPageNumber} X={currentX:F2} GlyphId={glyphId} Bounds=[L:{bounds.Left:F2},T:{bounds.Top:F2},R:{bounds.Right:F2},B:{bounds.Bottom:F2}] GlyphMatrix=[{fullGlyphMatrix.M11:F2},{fullGlyphMatrix.M12:F2},{fullGlyphMatrix.M21:F2},{fullGlyphMatrix.M22:F2},{fullGlyphMatrix.M31:F2},{fullGlyphMatrix.M32:F2}]");
+                PdfLogger.Log(LogCategory.Text, $"DRAW: Page={CurrentPageNumber} X={currentX:F2} GlyphId={glyphId} RenderMode={state.RenderingMode} Bounds=[L:{bounds.Left:F2},T:{bounds.Top:F2},R:{bounds.Right:F2},B:{bounds.Bottom:F2}] GlyphMatrix=[{fullGlyphMatrix.M11:F2},{fullGlyphMatrix.M12:F2},{fullGlyphMatrix.M21:F2},{fullGlyphMatrix.M22:F2},{fullGlyphMatrix.M31:F2},{fullGlyphMatrix.M32:F2}]");
 
-                // Render the glyph
-                _canvas.DrawPath(glyphPath, paint);
+                // Render the glyph based on text rendering mode
+                // PDF Text Rendering Modes:
+                // 0 = Fill, 1 = Stroke, 2 = Fill then Stroke, 3 = Invisible
+                // 4-7 = Same as 0-3 but also add to clipping path
+                int renderMode = state.RenderingMode;
+                bool shouldFill = renderMode == 0 || renderMode == 2 || renderMode == 4 || renderMode == 6;
+                bool shouldStroke = renderMode == 1 || renderMode == 2 || renderMode == 5 || renderMode == 6;
+                bool isInvisible = renderMode == 3 || renderMode == 7;
 
-                // Apply synthetic bold by stroking the glyph outline
-                if (applyBold)
+                if (!isInvisible)
                 {
                     // Calculate CTM scaling factor for stroke width
-                    // Note: Since canvas already has CTM transform, this may cause double-scaling
-                    // But we apply it for consistency with line width handling
                     Matrix3x2 ctm = state.Ctm;
                     double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
                     if (ctmScale < 0.0001) ctmScale = 1.0;
 
-                    using var strokePaint = new SKPaint();
-                    strokePaint.Color = paint.Color;
-                    strokePaint.IsAntialias = true;
-                    strokePaint.Style = SKPaintStyle.Stroke;
-                    strokePaint.StrokeWidth = (float)(state.FontSize * 0.04 * ctmScale);
-                    _canvas.DrawPath(glyphPath, strokePaint);
+                    if (shouldFill)
+                    {
+                        // Fill the glyph
+                        _canvas.DrawPath(glyphPath, paint);
+                    }
+
+                    if (shouldStroke)
+                    {
+                        // Stroke the glyph outline
+                        SKColor strokeColor = ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
+                        strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
+
+                        using var strokePaint = new SKPaint();
+                        strokePaint.Color = strokeColor;
+                        strokePaint.IsAntialias = true;
+                        strokePaint.Style = SKPaintStyle.Stroke;
+                        // Use the line width from graphics state for text stroke
+                        strokePaint.StrokeWidth = (float)(state.LineWidth * ctmScale);
+                        _canvas.DrawPath(glyphPath, strokePaint);
+                    }
+                    else if (applyBold && shouldFill)
+                    {
+                        // Apply synthetic bold by stroking the glyph outline (only if not already stroking)
+                        using var boldPaint = new SKPaint();
+                        boldPaint.Color = paint.Color;
+                        boldPaint.IsAntialias = true;
+                        boldPaint.Style = SKPaintStyle.Stroke;
+                        boldPaint.StrokeWidth = (float)(state.FontSize * 0.04 * ctmScale);
+                        _canvas.DrawPath(glyphPath, boldPaint);
+                    }
                 }
 
                 // Clean up path
