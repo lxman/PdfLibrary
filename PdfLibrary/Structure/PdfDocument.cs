@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using Logging;
+using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -58,6 +59,12 @@ public class PdfDocument : IDisposable
     /// Gets whether the document is encrypted.
     /// </summary>
     public bool IsEncrypted => Decryptor is not null;
+
+    /// <summary>
+    /// Gets the document permissions for encrypted documents.
+    /// Returns full permissions for unencrypted documents.
+    /// </summary>
+    public PdfPermissions Permissions => Decryptor?.Permissions ?? PdfPermissions.AllPermissions;
 
     /// <summary>
     /// Adds an indirect object to the document
@@ -323,9 +330,128 @@ public class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// Gets a range of pages (0-based indices, inclusive)
+    /// </summary>
+    /// <param name="startIndex">Starting page index (0-based)</param>
+    /// <param name="endIndex">Ending page index (0-based, inclusive)</param>
+    /// <returns>List of pages in the range</returns>
+    public List<PdfPage> GetPages(int startIndex, int endIndex)
+    {
+        List<PdfPage> allPages = GetPages();
+        if (allPages.Count == 0)
+            return [];
+
+        startIndex = Math.Max(0, startIndex);
+        endIndex = Math.Min(allPages.Count - 1, endIndex);
+
+        if (startIndex > endIndex)
+            return [];
+
+        return allPages.Skip(startIndex).Take(endIndex - startIndex + 1).ToList();
+    }
+
+    /// <summary>
+    /// Gets the first page of the document
+    /// </summary>
+    public PdfPage? FirstPage => GetPage(0);
+
+    /// <summary>
+    /// Gets the last page of the document
+    /// </summary>
+    public PdfPage? LastPage
+    {
+        get
+        {
+            int count = GetPageCount();
+            return count > 0 ? GetPage(count - 1) : null;
+        }
+    }
+
+    /// <summary>
+    /// Gets the total number of pages
+    /// </summary>
+    public int PageCount => GetPageCount();
+
+    /// <summary>
+    /// Provides enumerable access to all pages
+    /// </summary>
+    public IEnumerable<PdfPage> Pages => GetPages();
+
+    /// <summary>
+    /// Extracts all text from all pages in the document
+    /// </summary>
+    /// <param name="separator">Separator to insert between pages (default: double newline)</param>
+    /// <returns>All extracted text concatenated</returns>
+    public string ExtractAllText(string separator = "\n\n")
+    {
+        List<PdfPage> pages = GetPages();
+        if (pages.Count == 0)
+            return string.Empty;
+
+        var texts = new List<string>();
+        foreach (PdfPage page in pages)
+        {
+            string text = page.ExtractText();
+            if (!string.IsNullOrWhiteSpace(text))
+                texts.Add(text);
+        }
+
+        return string.Join(separator, texts);
+    }
+
+    /// <summary>
+    /// Gets all images from all pages in the document
+    /// </summary>
+    /// <returns>List of all images with their page numbers</returns>
+    public List<(PdfImage Image, int PageNumber)> GetAllImages()
+    {
+        var result = new List<(PdfImage, int)>();
+        List<PdfPage> pages = GetPages();
+
+        for (int i = 0; i < pages.Count; i++)
+        {
+            List<PdfImage> pageImages = pages[i].GetImages();
+            foreach (PdfImage image in pageImages)
+            {
+                result.Add((image, i + 1)); // 1-based page number
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Renders a page and saves it to a file.
+    /// Shortcut for GetPage(index).RenderTo().WithScale(scale).ToFile(filePath)
+    /// </summary>
+    /// <param name="pageIndex">Page index (0-based)</param>
+    /// <param name="filePath">Output file path (format determined by extension)</param>
+    /// <param name="scale">Scale factor (default: 1.0 = 72 DPI)</param>
+    public void SavePageAs(int pageIndex, string filePath, double scale = 1.0)
+    {
+        PdfPage? page = GetPage(pageIndex);
+        if (page is null)
+            throw new ArgumentOutOfRangeException(nameof(pageIndex), $"Page {pageIndex} not found in document");
+
+        page.RenderTo(pageIndex + 1) // 1-based page number for logging
+            .WithScale(scale)
+            .ToFile(filePath);
+    }
+
+    /// <summary>
     /// Loads a PDF document from a file
     /// </summary>
     public static PdfDocument Load(string filePath)
+    {
+        return Load(filePath, password: "");
+    }
+
+    /// <summary>
+    /// Loads a PDF document from a file with a password
+    /// </summary>
+    /// <param name="filePath">Path to the PDF file</param>
+    /// <param name="password">Password for encrypted documents (empty string for no password)</param>
+    public static PdfDocument Load(string filePath, string password)
     {
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentException("File path cannot be null or empty", nameof(filePath));
@@ -334,7 +460,7 @@ public class PdfDocument : IDisposable
             throw new FileNotFoundException($"PDF file not found: {filePath}", filePath);
 
         FileStream stream = File.OpenRead(filePath);
-        return Load(stream, leaveOpen: false);  // We own this stream, so don't leave it open
+        return Load(stream, password, leaveOpen: false);  // We own this stream, so don't leave it open
     }
 
     /// <summary>
@@ -343,6 +469,17 @@ public class PdfDocument : IDisposable
     /// <param name="stream">Stream containing PDF data</param>
     /// <param name="leaveOpen">If false, the stream will be disposed when the document is disposed</param>
     public static PdfDocument Load(Stream stream, bool leaveOpen = false)
+    {
+        return Load(stream, password: "", leaveOpen);
+    }
+
+    /// <summary>
+    /// Loads a PDF document from a stream with a password
+    /// </summary>
+    /// <param name="stream">Stream containing PDF data</param>
+    /// <param name="password">Password for encrypted documents (empty string for no password)</param>
+    /// <param name="leaveOpen">If false, the stream will be disposed when the document is disposed</param>
+    public static PdfDocument Load(Stream stream, string password, bool leaveOpen = false)
     {
         ArgumentNullException.ThrowIfNull(stream);
 
@@ -466,8 +603,8 @@ public class PdfDocument : IDisposable
             if (document.Trailer.Encrypt is not null)
             {
                 phaseStopwatch.Restart();
-                InitializeDecryption(document, stream, headerOffset);
-                PdfLogger.Log(LogCategory.Timings, $"PDF Load: Encryption initialized in {phaseStopwatch.ElapsedMilliseconds}ms");
+                InitializeDecryption(document, stream, headerOffset, password);
+                PdfLogger.Log(LogCategory.Timings, $"PDF Load: Encryption initialized in {phaseStopwatch.ElapsedMilliseconds}ms (method: {document.Decryptor?.Method})");
             }
 
             // Load uncompressed indirect objects
@@ -617,7 +754,11 @@ public class PdfDocument : IDisposable
     /// <summary>
     /// Initializes decryption for an encrypted PDF document.
     /// </summary>
-    private static void InitializeDecryption(PdfDocument document, Stream stream, long headerOffset)
+    /// <param name="document">The document being loaded</param>
+    /// <param name="stream">The PDF stream</param>
+    /// <param name="headerOffset">Offset to the PDF header</param>
+    /// <param name="password">User or owner password</param>
+    private static void InitializeDecryption(PdfDocument document, Stream stream, long headerOffset, string password)
     {
         // Get the /Encrypt dictionary reference
         PdfIndirectReference? encryptRef = document.Trailer.Encrypt;
@@ -651,8 +792,9 @@ public class PdfDocument : IDisposable
         // Create the decryptor (will verify password)
         try
         {
-            document.Decryptor = new PdfDecryptor(encryptDict, documentId, "");
-            PdfLogger.Log(LogCategory.PdfTool, "PDF decryption initialized successfully (empty password)");
+            document.Decryptor = new PdfDecryptor(encryptDict, documentId, password);
+            string passwordType = document.Decryptor.IsUserPassword ? "user" : "owner";
+            PdfLogger.Log(LogCategory.PdfTool, $"PDF decryption initialized ({passwordType} password, {document.Decryptor.Method})");
         }
         catch (PdfSecurityException ex)
         {

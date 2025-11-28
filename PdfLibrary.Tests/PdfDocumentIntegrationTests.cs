@@ -526,7 +526,7 @@ public class PdfDocumentIntegrationTests(ITestOutputHelper output)
         }
 
         // Enable logging
-        var logFile = Path.Combine(Path.GetTempPath(), "tiff6_color_debug.log");
+        string logFile = Path.Combine(Path.GetTempPath(), "tiff6_color_debug.log");
         Logging.PdfLogger.Initialize(new Logging.PdfLogConfiguration
         {
             LogFilePath = logFile,
@@ -551,9 +551,9 @@ public class PdfDocumentIntegrationTests(ITestOutputHelper output)
         output.WriteLine($"\nLog file: {logFile}");
         if (File.Exists(logFile))
         {
-            var logLines = File.ReadAllLines(logFile).Take(50).ToArray();
+            string[] logLines = File.ReadAllLines(logFile).Take(50).ToArray();
             output.WriteLine($"First {logLines.Length} log lines:");
-            foreach (var line in logLines)
+            foreach (string line in logLines)
             {
                 output.WriteLine($"  {line}");
             }
@@ -576,14 +576,14 @@ public class PdfDocumentIntegrationTests(ITestOutputHelper output)
         }
 
         // Check if there are any black text operations (Color should be DeviceRGB(0.00, 0.00, 0.00))
-        var blackTextOps = mock.Operations.Where(o =>
+        List<string> blackTextOps = mock.Operations.Where(o =>
             o.StartsWith("DrawText:") &&
             o.Contains("DeviceRGB(0.00, 0.00, 0.00)")).ToList();
         output.WriteLine($"");
         output.WriteLine($"Black text operations: {blackTextOps.Count}");
 
         // Check for operations with other colors
-        var grayTextOps = mock.Operations.Where(o =>
+        List<string> grayTextOps = mock.Operations.Where(o =>
             o.StartsWith("DrawText:") &&
             !o.Contains("DeviceRGB(0.00, 0.00, 0.00)")).ToList();
         output.WriteLine($"Non-black text operations: {grayTextOps.Count}");
@@ -616,7 +616,7 @@ public class PdfDocumentIntegrationTests(ITestOutputHelper output)
         Assert.NotNull(colorSpaces);
 
         output.WriteLine("Available color spaces:");
-        foreach (var cs in colorSpaces)
+        foreach (KeyValuePair<PdfName, PdfObject> cs in colorSpaces)
         {
             output.WriteLine($"  {cs.Key}");
         }
@@ -640,7 +640,7 @@ public class PdfDocumentIntegrationTests(ITestOutputHelper output)
             PdfObject elem = cs9Array[i];
             if (elem is PdfIndirectReference elemRef)
             {
-                var resolved = doc.ResolveReference(elemRef);
+                PdfObject? resolved = doc.ResolveReference(elemRef);
                 output.WriteLine($"  [{i}]: {elem} -> {resolved?.GetType().Name}");
             }
             else

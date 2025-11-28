@@ -23,6 +23,11 @@ ITestDocument[] testDocuments =
     new TextLayoutTestDocument(),
     new TextRenderingTestDocument(),
     new EmbeddedFontsTestDocument(),
+    // Encrypted PDF test documents
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "", "owner"),
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "test123", "owner"),
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Aes128, "", "owner"),
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Aes128, "test123", "owner"),
 ];
 
 switch (mode)

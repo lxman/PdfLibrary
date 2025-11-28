@@ -14,7 +14,7 @@ namespace Logging
         private static PdfLogConfiguration _config = new PdfLogConfiguration();
         private static Logger? _logger;
         private static readonly object LockObject = new object();
-        private static bool _isInitialized = false;
+        private static bool _isInitialized;
 
         /// <summary>
         /// Initialize the logger with the specified configuration.
