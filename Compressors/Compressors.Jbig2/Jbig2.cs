@@ -18,7 +18,7 @@ namespace Compressors.Jbig2
         /// <param name="width">Output: the image width in pixels.</param>
         /// <param name="height">Output: the image height in pixels.</param>
         /// <returns>Decoded RGB pixel data.</returns>
-        public static byte[] Decompress(byte[] data, out int width, out int height)
+        public static byte[] Decompress(byte[]? data, out int width, out int height)
         {
             if (data == null || data.Length == 0)
             {
@@ -40,7 +40,7 @@ namespace Compressors.Jbig2
         /// <param name="width">Output: the image width in pixels.</param>
         /// <param name="height">Output: the image height in pixels.</param>
         /// <returns>Decoded RGB pixel data.</returns>
-        public static byte[] Decompress(byte[] data, byte[]? globals, out int width, out int height)
+        public static byte[] Decompress(byte[]? data, byte[]? globals, out int width, out int height)
         {
             if (data == null || data.Length == 0)
             {
@@ -81,11 +81,11 @@ namespace Compressors.Jbig2
         /// <returns>Decoded bitmap data (1 bit per pixel, packed into bytes, MSB first).</returns>
         public static byte[] DecompressToBitmap(byte[] data, byte[]? globals, out int width, out int height)
         {
-            var rgb = Decompress(data, globals, out width, out height);
+            byte[] rgb = Decompress(data, globals, out width, out height);
 
             if (rgb.Length == 0)
             {
-                return Array.Empty<byte>();
+                return [];
             }
 
             // Convert RGB to 1-bit bitmap
@@ -94,9 +94,9 @@ namespace Compressors.Jbig2
             int bytesPerRow = (width + 7) / 8;
             var bitmap = new byte[bytesPerRow * height];
 
-            for (int y = 0; y < height; y++)
+            for (var y = 0; y < height; y++)
             {
-                for (int x = 0; x < width; x++)
+                for (var x = 0; x < width; x++)
                 {
                     int rgbIndex = (y * width + x) * 3;
 
@@ -106,12 +106,10 @@ namespace Compressors.Jbig2
                                    rgb[rgbIndex + 1] == 0 &&
                                    rgb[rgbIndex + 2] == 0;
 
-                    if (isBlack)
-                    {
-                        int byteIndex = y * bytesPerRow + x / 8;
-                        int bitIndex = 7 - (x % 8);
-                        bitmap[byteIndex] |= (byte)(1 << bitIndex);
-                    }
+                    if (!isBlack) continue;
+                    int byteIndex = y * bytesPerRow + x / 8;
+                    int bitIndex = 7 - (x % 8);
+                    bitmap[byteIndex] |= (byte)(1 << bitIndex);
                 }
             }
 

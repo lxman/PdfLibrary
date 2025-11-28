@@ -56,8 +56,8 @@ public partial class App : Application
         string pdfLibraryLogFile = Path.Combine(appDirectory, "logs", "pdflibrary.log");
         PdfLogger.Initialize(new PdfLogConfiguration
         {
-            LogImages = false,         // Enable image logging for debugging
-            LogText = true,           // Disable text logging
+            LogImages = true,         // Enable image logging for debugging
+            LogText = false,           // Disable text logging
             LogGraphics = false,       // Enable graphics logging for debugging
             LogTransforms = true,     // Enable transform logging (default ON)
             LogPdfTool = false,       // Disable PdfTool app logging

@@ -1710,6 +1710,22 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 {
                     SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                     int expectedSize = width * height;
+                    int expectedRgbSize = expectedSize * 3;
+
+                    // Handle DCTDecode (JPEG) returning RGB data for grayscale images
+                    // The DctDecodeFilter always decodes to RGB, so we need to extract one channel
+                    if (imageData.Length == expectedRgbSize)
+                    {
+                        PdfLogger.Log(LogCategory.Images, $"  [DeviceGray] DCTDecode returned RGB data ({expectedRgbSize} bytes), extracting grayscale channel");
+                        var grayData = new byte[expectedSize];
+                        for (var i = 0; i < expectedSize; i++)
+                        {
+                            // For grayscale JPEG, R=G=B, so just take the first channel
+                            grayData[i] = imageData[i * 3];
+                        }
+                        imageData = grayData;
+                    }
+
                     if (imageData.Length < expectedSize)
                         return null;
 
