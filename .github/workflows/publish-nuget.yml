@@ -10,6 +10,8 @@ env:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for NuGet trusted publishing
 
     steps:
     - name: Checkout
@@ -54,7 +56,12 @@ jobs:
     - name: Pack PdfLibrary.Rendering.SkiaSharp
       run: dotnet pack PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-build --output ./nupkg
 
+    - name: Login to NuGet (Trusted Publishing)
+      uses: nuget/login@v1
+      with:
+        nuget-server: https://api.nuget.org
+
     - name: Publish to NuGet
       run: |
-        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate
