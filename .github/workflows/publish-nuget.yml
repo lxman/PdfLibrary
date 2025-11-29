@@ -64,5 +64,5 @@ jobs:
 
     - name: Publish to NuGet
       run: |
-        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ steps.nuget-login.outputs.api-key }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ steps.nuget-login.outputs.api-key }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
