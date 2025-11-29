@@ -60,6 +60,7 @@ jobs:
       uses: nuget/login@v1
       with:
         nuget-server: https://api.nuget.org
+        user: lxman
 
     - name: Publish to NuGet
       run: |
