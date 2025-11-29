@@ -46,7 +46,7 @@ jobs:
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --verbosity normal
+      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --verbosity normal --filter 'Category!=LocalOnly'
 
     - name: Pack PdfLibrary
       run: dotnet pack PdfLibrary/PdfLibrary.csproj --configuration Release --no-build --output ./nupkg

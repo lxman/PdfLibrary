@@ -3,6 +3,7 @@ using System.Text;
 
 namespace PdfLibrary.Tests;
 
+[Trait("Category", "LocalOnly")]
 public class PdfDiagnosticTests
 {
     [Fact]

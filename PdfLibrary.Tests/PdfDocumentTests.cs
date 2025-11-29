@@ -3,6 +3,7 @@ using PdfLibrary.Core;
 
 namespace PdfLibrary.Tests;
 
+[Trait("Category", "LocalOnly")]
 public class PdfDocumentTests
 {
     [Fact]
