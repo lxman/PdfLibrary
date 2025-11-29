@@ -82,6 +82,69 @@ public static class AesCipher
     }
 
     /// <summary>
+    /// Encrypts data using AES-CBC with PKCS#7 padding.
+    /// Returns IV + ciphertext (IV is first 16 bytes).
+    /// </summary>
+    /// <param name="key">AES key (16 bytes for AES-128, 32 bytes for AES-256)</param>
+    /// <param name="data">Plaintext data to encrypt</param>
+    /// <param name="iv">Optional IV (16 bytes). If null, a random IV is generated.</param>
+    /// <returns>IV + ciphertext</returns>
+    public static byte[] Encrypt(byte[] key, byte[] data, byte[]? iv = null)
+    {
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        // Use provided IV or generate random one
+        if (iv != null)
+        {
+            if (iv.Length != 16)
+                throw new ArgumentException("IV must be 16 bytes", nameof(iv));
+            aes.IV = iv;
+        }
+        else
+        {
+            aes.GenerateIV();
+        }
+
+        using ICryptoTransform encryptor = aes.CreateEncryptor();
+        byte[] ciphertext = encryptor.TransformFinalBlock(data, 0, data.Length);
+
+        // Prepend IV to ciphertext
+        var result = new byte[16 + ciphertext.Length];
+        Array.Copy(aes.IV, 0, result, 0, 16);
+        Array.Copy(ciphertext, 0, result, 16, ciphertext.Length);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Encrypts data using AES-CBC without prepending IV.
+    /// Used for encrypting file encryption keys where IV is all zeros.
+    /// </summary>
+    public static byte[] EncryptNoPrependIV(byte[] key, byte[] data, byte[] iv)
+    {
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.None;
+
+        // Pad data to block size if needed
+        int paddedLength = (data.Length + 15) / 16 * 16;
+        byte[] paddedData = data;
+        if (paddedLength != data.Length)
+        {
+            paddedData = new byte[paddedLength];
+            Array.Copy(data, paddedData, data.Length);
+        }
+
+        using ICryptoTransform encryptor = aes.CreateEncryptor();
+        return encryptor.TransformFinalBlock(paddedData, 0, paddedData.Length);
+    }
+
+    /// <summary>
     /// Computes SHA-256 hash (used in V=5 encryption).
     /// </summary>
     public static byte[] Sha256(byte[] data)

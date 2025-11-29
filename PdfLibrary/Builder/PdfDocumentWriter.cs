@@ -1,6 +1,8 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Security;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Formats.Jpeg;
@@ -18,6 +20,12 @@ public class PdfDocumentWriter
     private readonly Dictionary<string, int> _fontDescriptorObjects = new(); // For custom fonts
     private readonly List<(PdfImageContent image, int objectNumber)> _imageObjects = [];
     private readonly Dictionary<(double fillOpacity, double strokeOpacity), int> _extGStateObjects = new(); // (fillOpacity, strokeOpacity) -> object number
+    private readonly Dictionary<int, int> _layerObjects = new(); // Layer.Id -> object number
+    private readonly Dictionary<int, int> _bookmarkObjects = new(); // Bookmark.Id -> object number
+    private readonly Dictionary<int, int> _annotationObjects = new(); // Annotation.Id -> object number
+    private int _outlinesRootObj; // Root Outlines dictionary object number
+    private PdfEncryptor? _encryptor;
+    private byte[]? _documentId;
 
     /// <summary>
     /// Write a document to a file
@@ -38,6 +46,38 @@ public class PdfDocumentWriter
         _fontObjects.Clear();
         _fontDescriptorObjects.Clear();
         _imageObjects.Clear();
+        _layerObjects.Clear();
+        _bookmarkObjects.Clear();
+        _annotationObjects.Clear();
+        _outlinesRootObj = 0;
+        _encryptor = null;
+        _documentId = null;
+
+        // Generate document ID (required for encryption, good practice anyway)
+        _documentId = GenerateDocumentId();
+
+        // Set up encryption if configured
+        PdfEncryptionSettings? encryptionSettings = builder.EncryptionSettings;
+        int? encryptObj = null;
+        if (encryptionSettings != null)
+        {
+            // Convert builder encryption method to Security encryption method
+            Security.PdfEncryptionMethod securityMethod = encryptionSettings.Method switch
+            {
+                PdfEncryptionMethod.Rc4_40 => Security.PdfEncryptionMethod.Rc4_40,
+                PdfEncryptionMethod.Rc4_128 => Security.PdfEncryptionMethod.Rc4_128,
+                PdfEncryptionMethod.Aes128 => Security.PdfEncryptionMethod.Aes128,
+                PdfEncryptionMethod.Aes256 => Security.PdfEncryptionMethod.Aes256,
+                _ => Security.PdfEncryptionMethod.Aes256
+            };
+
+            _encryptor = new PdfEncryptor(
+                encryptionSettings.UserPassword,
+                encryptionSettings.OwnerPassword,
+                encryptionSettings.PermissionFlags,
+                securityMethod,
+                _documentId);
+        }
 
         using var writer = new StreamWriter(stream, Encoding.ASCII, leaveOpen: true);
         writer.NewLine = "\n";
@@ -124,6 +164,37 @@ public class PdfDocumentWriter
             }
         }
 
+        // Encryption object (if needed)
+        if (_encryptor != null)
+        {
+            encryptObj = _nextObjectNumber++;
+        }
+
+        // Reserve layer (OCG) objects
+        if (builder.Layers.Count > 0)
+        {
+            foreach (PdfLayer layer in builder.Layers)
+            {
+                _layerObjects[layer.Id] = _nextObjectNumber++;
+            }
+        }
+
+        // Reserve bookmark (outline) objects
+        if (builder.Bookmarks.Count > 0)
+        {
+            _outlinesRootObj = _nextObjectNumber++;
+            ReserveBookmarkObjects(builder.Bookmarks);
+        }
+
+        // Reserve annotation objects for each page
+        foreach (PdfPageBuilder page in builder.Pages)
+        {
+            foreach (PdfAnnotation annotation in page.Annotations)
+            {
+                _annotationObjects[annotation.Id] = _nextObjectNumber++;
+            }
+        }
+
         // Write Catalog
         WriteObjectStart(writer, catalogObj);
         writer.WriteLine("<< /Type /Catalog");
@@ -131,6 +202,19 @@ public class PdfDocumentWriter
         if (acroFormObj.HasValue)
         {
             writer.WriteLine($"   /AcroForm {acroFormObj.Value} 0 R");
+        }
+        if (builder.Bookmarks.Count > 0)
+        {
+            writer.WriteLine($"   /Outlines {_outlinesRootObj} 0 R");
+            writer.WriteLine("   /PageMode /UseOutlines"); // Open with bookmarks panel visible
+        }
+        if (builder.Layers.Count > 0)
+        {
+            WriteOCPropertiesInline(writer, builder.Layers);
+        }
+        if (builder.PageLabelRanges.Count > 0)
+        {
+            WritePageLabelsInline(writer, builder.PageLabelRanges);
         }
         writer.WriteLine(">>");
         WriteObjectEnd(writer);
@@ -154,24 +238,24 @@ public class PdfDocumentWriter
         writer.WriteLine("<<");
         PdfMetadataBuilder meta = builder.Metadata;
         if (!string.IsNullOrEmpty(meta.Title))
-            writer.WriteLine($"   /Title {PdfString(meta.Title)}");
+            writer.WriteLine($"   /Title {PdfEncryptedString(meta.Title, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Author))
-            writer.WriteLine($"   /Author {PdfString(meta.Author)}");
+            writer.WriteLine($"   /Author {PdfEncryptedString(meta.Author, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Subject))
-            writer.WriteLine($"   /Subject {PdfString(meta.Subject)}");
+            writer.WriteLine($"   /Subject {PdfEncryptedString(meta.Subject, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Keywords))
-            writer.WriteLine($"   /Keywords {PdfString(meta.Keywords)}");
+            writer.WriteLine($"   /Keywords {PdfEncryptedString(meta.Keywords, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Creator))
-            writer.WriteLine($"   /Creator {PdfString(meta.Creator)}");
+            writer.WriteLine($"   /Creator {PdfEncryptedString(meta.Creator, infoObj)}");
 
         string producer = meta.Producer ?? "PdfLibrary";
-        writer.WriteLine($"   /Producer {PdfString(producer)}");
+        writer.WriteLine($"   /Producer {PdfEncryptedString(producer, infoObj)}");
 
         DateTime creationDate = meta.CreationDate ?? DateTime.Now;
-        writer.WriteLine($"   /CreationDate {PdfDate(creationDate)}");
+        writer.WriteLine($"   /CreationDate {PdfEncryptedDate(creationDate, infoObj)}");
 
         if (meta.ModificationDate.HasValue)
-            writer.WriteLine($"   /ModDate {PdfDate(meta.ModificationDate.Value)}");
+            writer.WriteLine($"   /ModDate {PdfEncryptedDate(meta.ModificationDate.Value, infoObj)}");
 
         writer.WriteLine(">>");
         WriteObjectEnd(writer);
@@ -266,16 +350,45 @@ public class PdfDocumentWriter
                 }
                 writer.WriteLine("      >>");
             }
+
+            // Add Properties dictionary for layers (OCGs)
+            HashSet<PdfLayer> pageLayers = CollectPageLayers(page);
+            if (pageLayers.Count > 0)
+            {
+                writer.WriteLine("      /Properties <<");
+                foreach (PdfLayer layer in pageLayers)
+                {
+                    if (!_layerObjects.TryGetValue(layer.Id, out int layerObjNum))
+                    {
+                        throw new InvalidOperationException(
+                            $"Layer '{layer.Name}' (ID={layer.Id}) was used on a page but not defined at document level via DefineLayer(). " +
+                            $"Registered layer IDs: [{string.Join(", ", _layerObjects.Keys)}]");
+                    }
+                    writer.WriteLine($"         /{layer.ResourceName} {layerObjNum} 0 R");
+                }
+                writer.WriteLine("      >>");
+            }
             writer.WriteLine("   >>");
 
-            // Annotations (form fields)
-            if (page.FormFields.Count > 0)
+            // Annotations (form fields and annotations)
+            bool hasAnnotations = page.FormFields.Count > 0 || page.Annotations.Count > 0;
+            if (hasAnnotations)
             {
                 writer.Write("   /Annots [");
+                var annotCount = 0;
+                // Form fields first
                 for (var j = 0; j < page.FormFields.Count; j++)
                 {
-                    if (j > 0) writer.Write(" ");
+                    if (annotCount > 0) writer.Write(" ");
                     writer.Write($"{fieldObjects[fieldIndex + j]} 0 R");
+                    annotCount++;
+                }
+                // Then annotations (links, notes, highlights)
+                foreach (PdfAnnotation annotation in page.Annotations)
+                {
+                    if (annotCount > 0) writer.Write(" ");
+                    writer.Write($"{_annotationObjects[annotation.Id]} 0 R");
+                    annotCount++;
                 }
                 writer.WriteLine("]");
             }
@@ -338,6 +451,34 @@ public class PdfDocumentWriter
             }
         }
 
+        // Write Encryption dictionary (if needed)
+        if (encryptObj.HasValue && _encryptor != null)
+        {
+            WriteEncryptionDictionary(writer, encryptObj.Value);
+        }
+
+        // Write Layer (OCG) objects
+        foreach (PdfLayer layer in builder.Layers)
+        {
+            WriteLayerObject(writer, layer);
+        }
+
+        // Write Bookmark (Outline) objects
+        if (builder.Bookmarks.Count > 0)
+        {
+            WriteOutlineObjects(writer, builder.Bookmarks, pageObjectNumbers);
+        }
+
+        // Write Annotation objects
+        for (var pageIdx = 0; pageIdx < builder.Pages.Count; pageIdx++)
+        {
+            PdfPageBuilder page = builder.Pages[pageIdx];
+            foreach (PdfAnnotation annotation in page.Annotations)
+            {
+                WriteAnnotationObject(writer, annotation, pageObjectNumbers[pageIdx].pageObj, pageObjectNumbers);
+            }
+        }
+
         // Write xref table
         writer.Flush();
         long xrefOffset = stream.Position;
@@ -357,6 +498,20 @@ public class PdfDocumentWriter
         writer.WriteLine($"   /Size {_objectOffsets.Count + 1}");
         writer.WriteLine($"   /Root {catalogObj} 0 R");
         writer.WriteLine($"   /Info {infoObj} 0 R");
+
+        // Add /ID array (required for encryption, recommended otherwise)
+        if (_documentId != null)
+        {
+            string idHex = BytesToHexString(_documentId);
+            writer.WriteLine($"   /ID [<{idHex}> <{idHex}>]");
+        }
+
+        // Add /Encrypt reference
+        if (encryptObj.HasValue)
+        {
+            writer.WriteLine($"   /Encrypt {encryptObj.Value} 0 R");
+        }
+
         writer.WriteLine(">>");
         writer.WriteLine("startxref");
         writer.WriteLine(xrefOffset);
@@ -378,11 +533,14 @@ public class PdfDocumentWriter
 
     private void WriteStreamObject(StreamWriter writer, int objectNumber, byte[] data)
     {
+        // Encrypt the stream data if encryption is enabled
+        byte[] streamData = _encryptor != null ? EncryptStream(data, objectNumber) : data;
+
         WriteObjectStart(writer, objectNumber);
-        writer.WriteLine($"<< /Length {data.Length} >>");
+        writer.WriteLine($"<< /Length {streamData.Length} >>");
         writer.WriteLine("stream");
         writer.Flush();
-        writer.BaseStream.Write(data);
+        writer.BaseStream.Write(streamData);
         writer.WriteLine();
         writer.WriteLine("endstream");
         WriteObjectEnd(writer);
@@ -440,167 +598,229 @@ public class PdfDocumentWriter
 
         foreach (PdfContentElement element in page.Content)
         {
-            switch (element)
-            {
-                case PdfTextContent text:
-                    int fontIndex = fonts.IndexOf(text.FontName) + 1;
-
-                    // Graphics state operators must be OUTSIDE the text block
-                    // Set stroke color and line width before BT
-                    if (text.StrokeColor.HasValue)
-                    {
-                        AppendColorOperator(sb, text.StrokeColor.Value, isFill: false);
-                        sb.AppendLine($"{text.StrokeWidth:F2} w");
-                    }
-
-                    sb.AppendLine("BT");
-
-                    // Set font
-                    sb.AppendLine($"/F{fontIndex} {text.FontSize:F1} Tf");
-
-                    // ALWAYS set all text state operators to ensure clean state
-                    // (text state persists across BT/ET blocks, so we must reset to defaults)
-                    sb.AppendLine($"{text.CharacterSpacing:F2} Tc");
-                    sb.AppendLine($"{text.WordSpacing:F2} Tw");
-                    sb.AppendLine($"{text.HorizontalScale:F1} Tz");
-                    sb.AppendLine($"{text.TextRise:F2} Ts");
-                    sb.AppendLine($"{(int)text.RenderMode} Tr");
-
-                    if (text.LineSpacing > 0)
-                        sb.AppendLine($"{text.LineSpacing:F2} TL");
-
-                    // Fill color (rg is allowed inside BT...ET)
-                    AppendColorOperator(sb, text.FillColor, isFill: true);
-
-                    // Position with optional rotation using the text matrix
-                    // Text matrix: [a b c d e f] where:
-                    //   a = horizontal scaling * cos(rotation)
-                    //   b = horizontal scaling * sin(rotation)
-                    //   c = -sin(rotation)
-                    //   d = cos(rotation)
-                    //   e = x position
-                    //   f = y position
-                    if (text.Rotation != 0)
-                    {
-                        double radians = text.Rotation * Math.PI / 180;
-                        double cos = Math.Cos(radians);
-                        double sin = Math.Sin(radians);
-                        sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} {text.X:F2} {text.Y:F2} Tm");
-                    }
-                    else
-                    {
-                        // Use Tm for absolute positioning (1 0 0 1 x y = identity matrix at position x,y)
-                        sb.AppendLine($"1 0 0 1 {text.X:F2} {text.Y:F2} Tm");
-                    }
-
-                    // Output text
-                    sb.AppendLine($"({EscapePdfString(text.Text)}) Tj");
-                    sb.AppendLine("ET");
-                    break;
-
-                case PdfRectangleContent rect:
-                    if (rect.FillColor.HasValue || rect.StrokeColor.HasValue)
-                    {
-                        sb.AppendLine("q");
-                        sb.AppendLine($"{rect.LineWidth:F2} w");
-
-                        if (rect.FillColor.HasValue)
-                        {
-                            AppendColorOperator(sb, rect.FillColor.Value, isFill: true);
-                        }
-                        if (rect.StrokeColor.HasValue)
-                        {
-                            AppendColorOperator(sb, rect.StrokeColor.Value, isFill: false);
-                        }
-
-                        sb.AppendLine($"{rect.Rect.Left:F2} {rect.Rect.Bottom:F2} {rect.Rect.Width:F2} {rect.Rect.Height:F2} re");
-
-                        if (rect is { FillColor: not null, StrokeColor: not null })
-                            sb.AppendLine("B");
-                        else if (rect.FillColor.HasValue)
-                            sb.AppendLine("f");
-                        else
-                            sb.AppendLine("S");
-
-                        sb.AppendLine("Q");
-                    }
-                    break;
-
-                case PdfLineContent line:
-                    sb.AppendLine("q");
-                    sb.AppendLine($"{line.LineWidth:F2} w");
-                    AppendColorOperator(sb, line.StrokeColor, isFill: false);
-                    sb.AppendLine($"{line.X1:F2} {line.Y1:F2} m");
-                    sb.AppendLine($"{line.X2:F2} {line.Y2:F2} l");
-                    sb.AppendLine("S");
-                    sb.AppendLine("Q");
-                    break;
-
-                case PdfImageContent image:
-                    // Find the image index
-                    int imageIndex = -1;
-                    for (var idx = 0; idx < _imageObjects.Count; idx++)
-                    {
-                        if (!ReferenceEquals(_imageObjects[idx].image, image)) continue;
-                        imageIndex = idx + 1;
-                        break;
-                    }
-
-                    if (imageIndex > 0)
-                    {
-                        sb.AppendLine("q"); // Save graphics state
-
-                        // Apply opacity if not fully opaque
-                        if (image.Opacity < 1.0)
-                        {
-                            (double, double) opacityKey = (image.Opacity, image.Opacity);
-                            if (_extGStateObjects.ContainsKey(opacityKey))
-                            {
-                                int gsIndex = GetExtGStateIndex(opacityKey);
-                                sb.AppendLine($"/GS{gsIndex} gs");
-                            }
-                        }
-
-                        // Build transformation matrix
-                        double width = image.Rect.Width;
-                        double height = image.Rect.Height;
-                        double x = image.Rect.Left;
-                        double y = image.Rect.Bottom;
-
-                        if (image.Rotation != 0)
-                        {
-                            // Rotation around center of image
-                            double radians = image.Rotation * Math.PI / 180;
-                            double cos = Math.Cos(radians);
-                            double sin = Math.Sin(radians);
-                            double cx = x + width / 2;
-                            double cy = y + height / 2;
-
-                            // Translate to center, rotate, scale, translate back
-                            sb.AppendLine($"1 0 0 1 {cx:F2} {cy:F2} cm"); // Translate to center
-                            sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} 0 0 cm"); // Rotate
-                            sb.AppendLine($"{width:F2} 0 0 {height:F2} {-width / 2:F2} {-height / 2:F2} cm"); // Scale and offset
-                        }
-                        else
-                        {
-                            // Simple transformation: scale and position
-                            // cm matrix: [width 0 0 height x y]
-                            sb.AppendLine($"{width:F2} 0 0 {height:F2} {x:F2} {y:F2} cm");
-                        }
-
-                        // Draw the image
-                        sb.AppendLine($"/Im{imageIndex} Do");
-                        sb.AppendLine("Q"); // Restore graphics state
-                    }
-                    break;
-
-                case PdfPathContent path:
-                    GeneratePathContent(sb, path);
-                    break;
-            }
+            GenerateContentElement(sb, element, fonts);
         }
 
         return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    /// <summary>
+    /// Generate PDF content stream operators for layer content (wrapped in BDC/EMC)
+    /// </summary>
+    private void GenerateLayerContent(StringBuilder sb, PdfLayerContent layerContent, List<string> fonts)
+    {
+        // Begin marked content with the layer reference
+        sb.AppendLine($"/OC /{layerContent.Layer.ResourceName} BDC");
+
+        // Generate content for all elements within the layer
+        foreach (PdfContentElement element in layerContent.Content)
+        {
+            GenerateContentElement(sb, element, fonts);
+        }
+
+        // End marked content
+        sb.AppendLine("EMC");
+    }
+
+    /// <summary>
+    /// Generate content stream operators for a single content element
+    /// </summary>
+    private void GenerateContentElement(StringBuilder sb, PdfContentElement element, List<string> fonts)
+    {
+        switch (element)
+        {
+            case PdfTextContent text:
+                GenerateTextContent(sb, text, fonts);
+                break;
+
+            case PdfRectangleContent rect:
+                GenerateRectangleContent(sb, rect);
+                break;
+
+            case PdfLineContent line:
+                GenerateLineContent(sb, line);
+                break;
+
+            case PdfImageContent image:
+                GenerateImageContent(sb, image);
+                break;
+
+            case PdfPathContent path:
+                GeneratePathContent(sb, path);
+                break;
+
+            case PdfLayerContent nestedLayer:
+                GenerateLayerContent(sb, nestedLayer, fonts);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Generate PDF content stream operators for text
+    /// </summary>
+    private void GenerateTextContent(StringBuilder sb, PdfTextContent text, List<string> fonts)
+    {
+        int fontIndex = fonts.IndexOf(text.FontName) + 1;
+
+        // Graphics state operators must be OUTSIDE the text block
+        // Set stroke color and line width before BT
+        if (text.StrokeColor.HasValue)
+        {
+            AppendColorOperator(sb, text.StrokeColor.Value, isFill: false);
+            sb.AppendLine($"{text.StrokeWidth:F2} w");
+        }
+
+        sb.AppendLine("BT");
+
+        // Set font
+        sb.AppendLine($"/F{fontIndex} {text.FontSize:F1} Tf");
+
+        // ALWAYS set all text state operators to ensure clean state
+        // (text state persists across BT/ET blocks, so we must reset to defaults)
+        sb.AppendLine($"{text.CharacterSpacing:F2} Tc");
+        sb.AppendLine($"{text.WordSpacing:F2} Tw");
+        sb.AppendLine($"{text.HorizontalScale:F1} Tz");
+        sb.AppendLine($"{text.TextRise:F2} Ts");
+        sb.AppendLine($"{(int)text.RenderMode} Tr");
+
+        if (text.LineSpacing > 0)
+            sb.AppendLine($"{text.LineSpacing:F2} TL");
+
+        // Fill color (rg is allowed inside BT...ET)
+        AppendColorOperator(sb, text.FillColor, isFill: true);
+
+        // Position with optional rotation using the text matrix
+        // Text matrix: [a b c d e f] where:
+        //   a = horizontal scaling * cos(rotation)
+        //   b = horizontal scaling * sin(rotation)
+        //   c = -sin(rotation)
+        //   d = cos(rotation)
+        //   e = x position
+        //   f = y position
+        if (text.Rotation != 0)
+        {
+            double radians = text.Rotation * Math.PI / 180;
+            double cos = Math.Cos(radians);
+            double sin = Math.Sin(radians);
+            sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} {text.X:F2} {text.Y:F2} Tm");
+        }
+        else
+        {
+            // Use Tm for absolute positioning (1 0 0 1 x y = identity matrix at position x,y)
+            sb.AppendLine($"1 0 0 1 {text.X:F2} {text.Y:F2} Tm");
+        }
+
+        // Output text
+        sb.AppendLine($"({EscapePdfString(text.Text)}) Tj");
+        sb.AppendLine("ET");
+    }
+
+    /// <summary>
+    /// Generate PDF content stream operators for a rectangle
+    /// </summary>
+    private void GenerateRectangleContent(StringBuilder sb, PdfRectangleContent rect)
+    {
+        if (rect.FillColor.HasValue || rect.StrokeColor.HasValue)
+        {
+            sb.AppendLine("q");
+            sb.AppendLine($"{rect.LineWidth:F2} w");
+
+            if (rect.FillColor.HasValue)
+            {
+                AppendColorOperator(sb, rect.FillColor.Value, isFill: true);
+            }
+            if (rect.StrokeColor.HasValue)
+            {
+                AppendColorOperator(sb, rect.StrokeColor.Value, isFill: false);
+            }
+
+            sb.AppendLine($"{rect.Rect.Left:F2} {rect.Rect.Bottom:F2} {rect.Rect.Width:F2} {rect.Rect.Height:F2} re");
+
+            if (rect is { FillColor: not null, StrokeColor: not null })
+                sb.AppendLine("B");
+            else if (rect.FillColor.HasValue)
+                sb.AppendLine("f");
+            else
+                sb.AppendLine("S");
+
+            sb.AppendLine("Q");
+        }
+    }
+
+    /// <summary>
+    /// Generate PDF content stream operators for a line
+    /// </summary>
+    private void GenerateLineContent(StringBuilder sb, PdfLineContent line)
+    {
+        sb.AppendLine("q");
+        sb.AppendLine($"{line.LineWidth:F2} w");
+        AppendColorOperator(sb, line.StrokeColor, isFill: false);
+        sb.AppendLine($"{line.X1:F2} {line.Y1:F2} m");
+        sb.AppendLine($"{line.X2:F2} {line.Y2:F2} l");
+        sb.AppendLine("S");
+        sb.AppendLine("Q");
+    }
+
+    /// <summary>
+    /// Generate PDF content stream operators for an image
+    /// </summary>
+    private void GenerateImageContent(StringBuilder sb, PdfImageContent image)
+    {
+        // Find the image index
+        int imageIndex = -1;
+        for (var idx = 0; idx < _imageObjects.Count; idx++)
+        {
+            if (!ReferenceEquals(_imageObjects[idx].image, image)) continue;
+            imageIndex = idx + 1;
+            break;
+        }
+
+        if (imageIndex > 0)
+        {
+            sb.AppendLine("q"); // Save graphics state
+
+            // Apply opacity if not fully opaque
+            if (image.Opacity < 1.0)
+            {
+                (double, double) opacityKey = (image.Opacity, image.Opacity);
+                if (_extGStateObjects.ContainsKey(opacityKey))
+                {
+                    int gsIndex = GetExtGStateIndex(opacityKey);
+                    sb.AppendLine($"/GS{gsIndex} gs");
+                }
+            }
+
+            // Build transformation matrix
+            double width = image.Rect.Width;
+            double height = image.Rect.Height;
+            double x = image.Rect.Left;
+            double y = image.Rect.Bottom;
+
+            if (image.Rotation != 0)
+            {
+                // Rotation around center of image
+                double radians = image.Rotation * Math.PI / 180;
+                double cos = Math.Cos(radians);
+                double sin = Math.Sin(radians);
+                double cx = x + width / 2;
+                double cy = y + height / 2;
+
+                // Translate to center, rotate, scale, translate back
+                sb.AppendLine($"1 0 0 1 {cx:F2} {cy:F2} cm"); // Translate to center
+                sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} 0 0 cm"); // Rotate
+                sb.AppendLine($"{width:F2} 0 0 {height:F2} {-width / 2:F2} {-height / 2:F2} cm"); // Scale and offset
+            }
+            else
+            {
+                // Simple transformation: scale and position
+                // cm matrix: [width 0 0 height x y]
+                sb.AppendLine($"{width:F2} 0 0 {height:F2} {x:F2} {y:F2} cm");
+            }
+
+            // Draw the image
+            sb.AppendLine($"/Im{imageIndex} Do");
+            sb.AppendLine("Q"); // Restore graphics state
+        }
     }
 
     /// <summary>
@@ -784,10 +1004,10 @@ public class PdfDocumentWriter
         writer.WriteLine("   /Subtype /Widget");
         writer.WriteLine($"   /Rect [{field.Rect.Left:F2} {field.Rect.Bottom:F2} {field.Rect.Right:F2} {field.Rect.Top:F2}]");
         writer.WriteLine($"   /P {pageObj} 0 R");
-        writer.WriteLine($"   /T {PdfString(field.Name)}");
+        writer.WriteLine($"   /T {PdfEncryptedString(field.Name, objectNumber)}");
 
         if (!string.IsNullOrEmpty(field.Tooltip))
-            writer.WriteLine($"   /TU {PdfString(field.Tooltip)}");
+            writer.WriteLine($"   /TU {PdfEncryptedString(field.Tooltip, objectNumber)}");
 
         // Field-specific properties
         switch (field)
@@ -808,7 +1028,7 @@ public class PdfDocumentWriter
                     writer.WriteLine($"   /MaxLen {textField.MaxLength}");
 
                 if (!string.IsNullOrEmpty(textField.DefaultValue))
-                    writer.WriteLine($"   /V {PdfString(textField.DefaultValue)}");
+                    writer.WriteLine($"   /V {PdfEncryptedString(textField.DefaultValue, objectNumber)}");
 
                 // Default appearance
                 int fontIndex = fonts.IndexOf(textField.FontName) + 1;
@@ -847,13 +1067,13 @@ public class PdfDocumentWriter
                 foreach (PdfDropdownOption opt in dropdown.Options)
                 {
                     writer.Write(opt.Value == opt.DisplayText
-                        ? $" {PdfString(opt.Value)}"
-                        : $" [{PdfString(opt.Value)} {PdfString(opt.DisplayText)}]");
+                        ? $" {PdfEncryptedString(opt.Value, objectNumber)}"
+                        : $" [{PdfEncryptedString(opt.Value, objectNumber)} {PdfEncryptedString(opt.DisplayText, objectNumber)}]");
                 }
                 writer.WriteLine(" ]");
 
                 if (!string.IsNullOrEmpty(dropdown.SelectedValue))
-                    writer.WriteLine($"   /V {PdfString(dropdown.SelectedValue)}");
+                    writer.WriteLine($"   /V {PdfEncryptedString(dropdown.SelectedValue, objectNumber)}");
 
                 // Default appearance
                 int ddFontIndex = fonts.IndexOf(dropdown.FontName) + 1;
@@ -946,6 +1166,9 @@ public class PdfDocumentWriter
         // Detect image format and get dimensions
         (byte[] imageData, int width, int height, string colorSpace, int bitsPerComponent, string filter) = ProcessImage(image);
 
+        // Encrypt the image data if encryption is enabled
+        byte[] streamData = _encryptor != null ? EncryptStream(imageData, objectNumber) : imageData;
+
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine("<<");
         writer.WriteLine("   /Type /XObject");
@@ -965,11 +1188,11 @@ public class PdfDocumentWriter
             writer.WriteLine("   /Interpolate true");
         }
 
-        writer.WriteLine($"   /Length {imageData.Length}");
+        writer.WriteLine($"   /Length {streamData.Length}");
         writer.WriteLine(">>");
         writer.WriteLine("stream");
         writer.Flush();
-        writer.BaseStream.Write(imageData, 0, imageData.Length);
+        writer.BaseStream.Write(streamData, 0, streamData.Length);
         writer.WriteLine();
         writer.WriteLine("endstream");
         WriteObjectEnd(writer);
@@ -1227,14 +1450,17 @@ public class PdfDocumentWriter
         // Optionally compress the font data
         byte[] compressedData = CompressFlate(fontData);
 
+        // Encrypt the compressed data if encryption is enabled
+        byte[] streamData = _encryptor != null ? EncryptStream(compressedData, fontFileObj) : compressedData;
+
         WriteObjectStart(writer, fontFileObj);
-        writer.WriteLine($"<< /Length {compressedData.Length}");
+        writer.WriteLine($"<< /Length {streamData.Length}");
         writer.WriteLine($"   /Length1 {fontData.Length}"); // Original uncompressed length
         writer.WriteLine("   /Filter /FlateDecode");
         writer.WriteLine(">>");
         writer.WriteLine("stream");
         writer.Flush();
-        writer.BaseStream.Write(compressedData, 0, compressedData.Length);
+        writer.BaseStream.Write(streamData, 0, streamData.Length);
         writer.WriteLine();
         writer.WriteLine("endstream");
         WriteObjectEnd(writer);
@@ -1251,5 +1477,651 @@ public class PdfDocumentWriter
             .Replace("_", "")
             .Replace(",", "")
             .Replace(".", "");
+    }
+
+    /// <summary>
+    /// Generates a unique document ID
+    /// </summary>
+    private static byte[] GenerateDocumentId()
+    {
+        // Generate 16 random bytes for the document ID
+        var id = new byte[16];
+        RandomNumberGenerator.Fill(id);
+        return id;
+    }
+
+    /// <summary>
+    /// Converts a byte array to a hex string
+    /// </summary>
+    private static string BytesToHexString(byte[] bytes)
+    {
+        return Convert.ToHexString(bytes);
+    }
+
+    /// <summary>
+    /// Writes the encryption dictionary
+    /// </summary>
+    private void WriteEncryptionDictionary(StreamWriter writer, int objectNumber)
+    {
+        if (_encryptor == null) return;
+
+        WriteObjectStart(writer, objectNumber);
+        writer.WriteLine("<<");
+        writer.WriteLine("   /Filter /Standard");
+        writer.WriteLine($"   /V {_encryptor.Version}");
+        writer.WriteLine($"   /R {_encryptor.Revision}");
+        writer.WriteLine($"   /P {_encryptor.Permissions.RawValue}");
+
+        // Write O and U values as hex strings
+        writer.WriteLine($"   /O <{BytesToHexString(_encryptor.OValue)}>");
+        writer.WriteLine($"   /U <{BytesToHexString(_encryptor.UValue)}>");
+
+        // Key length for V=2,3,4
+        if (_encryptor.Version >= 2 && _encryptor.Version <= 4)
+        {
+            writer.WriteLine($"   /Length {_encryptor.KeyLengthBits}");
+        }
+
+        // V=4 specific: Crypt filters
+        if (_encryptor.Version == 4)
+        {
+            writer.WriteLine("   /CF <<");
+            writer.WriteLine("      /StdCF <<");
+            writer.WriteLine("         /AuthEvent /DocOpen");
+            writer.WriteLine("         /CFM /AESV2");
+            writer.WriteLine("         /Length 16");
+            writer.WriteLine("      >>");
+            writer.WriteLine("   >>");
+            writer.WriteLine("   /StmF /StdCF");
+            writer.WriteLine("   /StrF /StdCF");
+        }
+
+        // V=5 specific: AES-256 with additional values
+        if (_encryptor.Version == 5)
+        {
+            writer.WriteLine("   /CF <<");
+            writer.WriteLine("      /StdCF <<");
+            writer.WriteLine("         /AuthEvent /DocOpen");
+            writer.WriteLine("         /CFM /AESV3");
+            writer.WriteLine("         /Length 32");
+            writer.WriteLine("      >>");
+            writer.WriteLine("   >>");
+            writer.WriteLine("   /StmF /StdCF");
+            writer.WriteLine("   /StrF /StdCF");
+
+            // OE, UE, Perms are required for V=5
+            if (_encryptor.OEValue != null)
+                writer.WriteLine($"   /OE <{BytesToHexString(_encryptor.OEValue)}>");
+            if (_encryptor.UEValue != null)
+                writer.WriteLine($"   /UE <{BytesToHexString(_encryptor.UEValue)}>");
+            if (_encryptor.PermsValue != null)
+                writer.WriteLine($"   /Perms <{BytesToHexString(_encryptor.PermsValue)}>");
+        }
+
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+    }
+
+    /// <summary>
+    /// Encrypts a string for the current object being written
+    /// </summary>
+    private byte[] EncryptString(byte[] data, int objectNumber)
+    {
+        return _encryptor?.EncryptString(data, objectNumber, 0) ?? data;
+    }
+
+    /// <summary>
+    /// Encrypts stream data for the current object being written
+    /// </summary>
+    private byte[] EncryptStream(byte[] data, int objectNumber)
+    {
+        return _encryptor?.EncryptStream(data, objectNumber, 0) ?? data;
+    }
+
+    /// <summary>
+    /// Creates an encrypted PDF string from text
+    /// </summary>
+    private string PdfEncryptedString(string text, int objectNumber)
+    {
+        if (_encryptor == null)
+            return PdfString(text);
+
+        // Convert to bytes and encrypt
+        byte[] textBytes = Encoding.Latin1.GetBytes(text);
+        byte[] encrypted = EncryptString(textBytes, objectNumber);
+
+        // Return as hex string
+        return $"<{BytesToHexString(encrypted)}>";
+    }
+
+    /// <summary>
+    /// Creates an encrypted PDF date string
+    /// </summary>
+    private string PdfEncryptedDate(DateTime date, int objectNumber)
+    {
+        string dateStr = $"D:{date:yyyyMMddHHmmss}";
+        if (_encryptor == null)
+            return $"({dateStr})";
+
+        byte[] textBytes = Encoding.Latin1.GetBytes(dateStr);
+        byte[] encrypted = EncryptString(textBytes, objectNumber);
+        return $"<{BytesToHexString(encrypted)}>";
+    }
+
+    /// <summary>
+    /// Writes the OCProperties dictionary inline in the catalog
+    /// </summary>
+    private void WriteOCPropertiesInline(StreamWriter writer, IReadOnlyList<PdfLayer> layers)
+    {
+        writer.WriteLine("   /OCProperties <<");
+
+        // OCGs array - list of all layer object references
+        writer.Write("      /OCGs [");
+        for (var i = 0; i < layers.Count; i++)
+        {
+            if (i > 0) writer.Write(" ");
+            writer.Write($"{_layerObjects[layers[i].Id]} 0 R");
+        }
+        writer.WriteLine("]");
+
+        // D - Default viewing configuration
+        writer.WriteLine("      /D <<");
+        writer.WriteLine($"         /Name (Default)");
+
+        // Order array - defines layer order in UI
+        writer.Write("         /Order [");
+        for (var i = 0; i < layers.Count; i++)
+        {
+            if (i > 0) writer.Write(" ");
+            writer.Write($"{_layerObjects[layers[i].Id]} 0 R");
+        }
+        writer.WriteLine("]");
+
+        // ON array - layers visible by default
+        var onLayers = layers.Where(l => l.IsVisibleByDefault).ToList();
+        if (onLayers.Count > 0)
+        {
+            writer.Write("         /ON [");
+            for (var i = 0; i < onLayers.Count; i++)
+            {
+                if (i > 0) writer.Write(" ");
+                writer.Write($"{_layerObjects[onLayers[i].Id]} 0 R");
+            }
+            writer.WriteLine("]");
+        }
+
+        // OFF array - layers hidden by default
+        var offLayers = layers.Where(l => !l.IsVisibleByDefault).ToList();
+        if (offLayers.Count > 0)
+        {
+            writer.Write("         /OFF [");
+            for (var i = 0; i < offLayers.Count; i++)
+            {
+                if (i > 0) writer.Write(" ");
+                writer.Write($"{_layerObjects[offLayers[i].Id]} 0 R");
+            }
+            writer.WriteLine("]");
+        }
+
+        // Locked array - layers that cannot be toggled
+        var lockedLayers = layers.Where(l => l.IsLocked).ToList();
+        if (lockedLayers.Count > 0)
+        {
+            writer.Write("         /Locked [");
+            for (var i = 0; i < lockedLayers.Count; i++)
+            {
+                if (i > 0) writer.Write(" ");
+                writer.Write($"{_layerObjects[lockedLayers[i].Id]} 0 R");
+            }
+            writer.WriteLine("]");
+        }
+
+        writer.WriteLine("      >>");
+        writer.WriteLine("   >>");
+    }
+
+    /// <summary>
+    /// Writes a layer (OCG) object
+    /// </summary>
+    private void WriteLayerObject(StreamWriter writer, PdfLayer layer)
+    {
+        int objNum = _layerObjects[layer.Id];
+        WriteObjectStart(writer, objNum);
+        writer.WriteLine("<< /Type /OCG");
+        writer.WriteLine($"   /Name {PdfEncryptedString(layer.Name, objNum)}");
+
+        // Intent
+        if (layer.Intent != PdfLayerIntent.View)
+        {
+            string intent = layer.Intent switch
+            {
+                PdfLayerIntent.Design => "/Design",
+                PdfLayerIntent.All => "[/View /Design]",
+                _ => "/View"
+            };
+            writer.WriteLine($"   /Intent {intent}");
+        }
+
+        // Usage dictionary for print/export states
+        if (layer.PrintState.HasValue || layer.ExportState.HasValue)
+        {
+            writer.WriteLine("   /Usage <<");
+            if (layer.PrintState.HasValue)
+            {
+                string printState = layer.PrintState.Value ? "/ON" : "/OFF";
+                writer.WriteLine($"      /Print << /PrintState {printState} >>");
+            }
+            if (layer.ExportState.HasValue)
+            {
+                string exportState = layer.ExportState.Value ? "/ON" : "/OFF";
+                writer.WriteLine($"      /Export << /ExportState {exportState} >>");
+            }
+            writer.WriteLine("   >>");
+        }
+
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+    }
+
+    /// <summary>
+    /// Collects all layers used on a page
+    /// </summary>
+    private static HashSet<PdfLayer> CollectPageLayers(PdfPageBuilder page)
+    {
+        var layers = new HashSet<PdfLayer>();
+        foreach (PdfContentElement element in page.Content)
+        {
+            if (element is PdfLayerContent layerContent)
+            {
+                layers.Add(layerContent.Layer);
+            }
+        }
+        return layers;
+    }
+
+    /// <summary>
+    /// Recursively reserves object numbers for bookmarks
+    /// </summary>
+    private void ReserveBookmarkObjects(IEnumerable<PdfBookmark> bookmarks)
+    {
+        foreach (PdfBookmark bookmark in bookmarks)
+        {
+            _bookmarkObjects[bookmark.Id] = _nextObjectNumber++;
+            if (bookmark.Children.Count > 0)
+            {
+                ReserveBookmarkObjects(bookmark.Children);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the outline (bookmark) objects
+    /// </summary>
+    private void WriteOutlineObjects(StreamWriter writer, IReadOnlyList<PdfBookmark> bookmarks,
+        List<(int pageObj, int contentObj)> pageObjectNumbers)
+    {
+        // Write the root Outlines dictionary
+        WriteObjectStart(writer, _outlinesRootObj);
+        writer.WriteLine("<< /Type /Outlines");
+
+        // First and Last point to first and last top-level bookmarks
+        int firstBookmarkObj = _bookmarkObjects[bookmarks[0].Id];
+        int lastBookmarkObj = _bookmarkObjects[bookmarks[^1].Id];
+        writer.WriteLine($"   /First {firstBookmarkObj} 0 R");
+        writer.WriteLine($"   /Last {lastBookmarkObj} 0 R");
+
+        // Count is total number of open outline items at all levels
+        int totalCount = CountOpenOutlineItems(bookmarks);
+        writer.WriteLine($"   /Count {totalCount}");
+
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+
+        // Write each bookmark
+        WriteBookmarkObjects(writer, bookmarks, _outlinesRootObj, pageObjectNumbers);
+    }
+
+    /// <summary>
+    /// Recursively writes bookmark objects
+    /// </summary>
+    private void WriteBookmarkObjects(StreamWriter writer, IReadOnlyList<PdfBookmark> bookmarks,
+        int parentObj, List<(int pageObj, int contentObj)> pageObjectNumbers)
+    {
+        for (var i = 0; i < bookmarks.Count; i++)
+        {
+            PdfBookmark bookmark = bookmarks[i];
+            int objNum = _bookmarkObjects[bookmark.Id];
+
+            WriteObjectStart(writer, objNum);
+            writer.WriteLine("<<");
+
+            // Title (required)
+            writer.WriteLine($"   /Title {PdfEncryptedString(bookmark.Title, objNum)}");
+
+            // Parent (required)
+            writer.WriteLine($"   /Parent {parentObj} 0 R");
+
+            // Prev (if not first)
+            if (i > 0)
+            {
+                int prevObj = _bookmarkObjects[bookmarks[i - 1].Id];
+                writer.WriteLine($"   /Prev {prevObj} 0 R");
+            }
+
+            // Next (if not last)
+            if (i < bookmarks.Count - 1)
+            {
+                int nextObj = _bookmarkObjects[bookmarks[i + 1].Id];
+                writer.WriteLine($"   /Next {nextObj} 0 R");
+            }
+
+            // First and Last (if has children)
+            if (bookmark.Children.Count > 0)
+            {
+                int firstChildObj = _bookmarkObjects[bookmark.Children[0].Id];
+                int lastChildObj = _bookmarkObjects[bookmark.Children[^1].Id];
+                writer.WriteLine($"   /First {firstChildObj} 0 R");
+                writer.WriteLine($"   /Last {lastChildObj} 0 R");
+
+                // Count: positive if open (expanded), negative if closed
+                int childCount = CountOpenOutlineItems(bookmark.Children);
+                if (bookmark.IsOpen)
+                {
+                    writer.WriteLine($"   /Count {childCount}");
+                }
+                else
+                {
+                    writer.WriteLine($"   /Count -{bookmark.Children.Count}");
+                }
+            }
+
+            // Destination
+            WriteBookmarkDestination(writer, bookmark.Destination, pageObjectNumbers);
+
+            // Text style (C for color, F for flags)
+            if (bookmark.TextColor.HasValue)
+            {
+                PdfColor color = bookmark.TextColor.Value;
+                writer.WriteLine($"   /C [{color.R:F3} {color.G:F3} {color.B:F3}]");
+            }
+
+            if (bookmark.IsBold || bookmark.IsItalic)
+            {
+                int flags = 0;
+                if (bookmark.IsItalic) flags |= 1;
+                if (bookmark.IsBold) flags |= 2;
+                writer.WriteLine($"   /F {flags}");
+            }
+
+            writer.WriteLine(">>");
+            WriteObjectEnd(writer);
+
+            // Recursively write children
+            if (bookmark.Children.Count > 0)
+            {
+                WriteBookmarkObjects(writer, bookmark.Children, objNum, pageObjectNumbers);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the destination for a bookmark
+    /// </summary>
+    private static void WriteBookmarkDestination(StreamWriter writer, PdfDestination dest,
+        List<(int pageObj, int contentObj)> pageObjectNumbers)
+    {
+        // Ensure page index is valid
+        int pageIndex = Math.Clamp(dest.PageIndex, 0, pageObjectNumbers.Count - 1);
+        int pageObj = pageObjectNumbers[pageIndex].pageObj;
+
+        string destStr = dest.Type switch
+        {
+            PdfDestinationType.Fit => $"[{pageObj} 0 R /Fit]",
+            PdfDestinationType.FitH => $"[{pageObj} 0 R /FitH {FormatDestCoord(dest.Top)}]",
+            PdfDestinationType.FitV => $"[{pageObj} 0 R /FitV {FormatDestCoord(dest.Left)}]",
+            PdfDestinationType.FitB => $"[{pageObj} 0 R /FitB]",
+            PdfDestinationType.FitBH => $"[{pageObj} 0 R /FitBH {FormatDestCoord(dest.Top)}]",
+            PdfDestinationType.FitBV => $"[{pageObj} 0 R /FitBV {FormatDestCoord(dest.Left)}]",
+            PdfDestinationType.FitR => $"[{pageObj} 0 R /FitR {dest.Left ?? 0} {dest.Bottom ?? 0} {dest.Right ?? 612} {dest.Top ?? 792}]",
+            _ => $"[{pageObj} 0 R /XYZ {FormatDestCoord(dest.Left)} {FormatDestCoord(dest.Top)} {FormatDestCoord(dest.Zoom)}]"
+        };
+
+        writer.WriteLine($"   /Dest {destStr}");
+    }
+
+    /// <summary>
+    /// Formats a destination coordinate (null becomes "null" in PDF)
+    /// </summary>
+    private static string FormatDestCoord(double? value)
+    {
+        return value.HasValue ? value.Value.ToString("F2") : "null";
+    }
+
+    /// <summary>
+    /// Counts the total number of open outline items (for /Count in root)
+    /// </summary>
+    private static int CountOpenOutlineItems(IReadOnlyList<PdfBookmark> bookmarks)
+    {
+        int count = bookmarks.Count;
+        foreach (PdfBookmark bookmark in bookmarks)
+        {
+            if (bookmark.IsOpen && bookmark.Children.Count > 0)
+            {
+                count += CountOpenOutlineItems(bookmark.Children);
+            }
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Writes the PageLabels dictionary inline in the catalog
+    /// </summary>
+    private void WritePageLabelsInline(StreamWriter writer, IReadOnlyList<PdfPageLabelRange> ranges)
+    {
+        writer.WriteLine("   /PageLabels <<");
+        writer.WriteLine("      /Nums [");
+
+        foreach (PdfPageLabelRange range in ranges.OrderBy(r => r.StartPageIndex))
+        {
+            writer.Write($"         {range.StartPageIndex} << ");
+
+            // Style (S entry)
+            if (range.Style != PdfPageLabelStyle.None)
+            {
+                string styleCode = range.Style switch
+                {
+                    PdfPageLabelStyle.Decimal => "D",
+                    PdfPageLabelStyle.UppercaseRoman => "R",
+                    PdfPageLabelStyle.LowercaseRoman => "r",
+                    PdfPageLabelStyle.UppercaseLetters => "A",
+                    PdfPageLabelStyle.LowercaseLetters => "a",
+                    _ => "D"
+                };
+                writer.Write($"/S /{styleCode} ");
+            }
+
+            // Prefix (P entry)
+            if (!string.IsNullOrEmpty(range.Prefix))
+            {
+                writer.Write($"/P ({EscapePdfString(range.Prefix)}) ");
+            }
+
+            // Starting number (St entry) - only if not 1
+            if (range.StartNumber != 1)
+            {
+                writer.Write($"/St {range.StartNumber} ");
+            }
+
+            writer.WriteLine(">>");
+        }
+
+        writer.WriteLine("      ]");
+        writer.WriteLine("   >>");
+    }
+
+    /// <summary>
+    /// Writes an annotation object
+    /// </summary>
+    private void WriteAnnotationObject(StreamWriter writer, PdfAnnotation annotation, int pageObj,
+        List<(int pageObj, int contentObj)> pageObjectNumbers)
+    {
+        int objNum = _annotationObjects[annotation.Id];
+        WriteObjectStart(writer, objNum);
+        writer.WriteLine("<<");
+        writer.WriteLine("   /Type /Annot");
+        writer.WriteLine($"   /Subtype /{annotation.Subtype}");
+        writer.WriteLine($"   /Rect [{annotation.Rect.Left:F2} {annotation.Rect.Bottom:F2} {annotation.Rect.Right:F2} {annotation.Rect.Top:F2}]");
+        writer.WriteLine($"   /P {pageObj} 0 R");
+
+        // Annotation flags
+        if (annotation.Flags != PdfAnnotationFlags.None)
+        {
+            writer.WriteLine($"   /F {(int)annotation.Flags}");
+        }
+
+        // Border
+        if (annotation.Border != null)
+        {
+            writer.Write($"   /Border [{annotation.Border.HorizontalRadius:F1} {annotation.Border.VerticalRadius:F1} {annotation.Border.Width:F1}");
+            if (annotation.Border.DashPattern is { Length: > 0 })
+            {
+                writer.Write(" [");
+                foreach (double d in annotation.Border.DashPattern)
+                    writer.Write($" {d:F1}");
+                writer.Write(" ]");
+            }
+            writer.WriteLine("]");
+        }
+
+        // Type-specific properties
+        switch (annotation)
+        {
+            case PdfLinkAnnotation link:
+                WriteLinkAnnotation(writer, link, objNum, pageObjectNumbers);
+                break;
+
+            case PdfTextAnnotation text:
+                WriteTextAnnotation(writer, text, objNum);
+                break;
+
+            case PdfHighlightAnnotation highlight:
+                WriteHighlightAnnotation(writer, highlight, objNum);
+                break;
+        }
+
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+    }
+
+    /// <summary>
+    /// Writes link annotation specific properties
+    /// </summary>
+    private void WriteLinkAnnotation(StreamWriter writer, PdfLinkAnnotation link, int objNum,
+        List<(int pageObj, int contentObj)> pageObjectNumbers)
+    {
+        // Highlight mode
+        string hlMode = link.HighlightMode switch
+        {
+            PdfLinkHighlightMode.None => "N",
+            PdfLinkHighlightMode.Outline => "O",
+            PdfLinkHighlightMode.Push => "P",
+            _ => "I" // Invert is default
+        };
+        writer.WriteLine($"   /H /{hlMode}");
+
+        // Action
+        switch (link.Action)
+        {
+            case PdfGoToAction goTo:
+                // Write destination directly
+                PdfDestination dest = goTo.Destination;
+                int pageIndex = Math.Clamp(dest.PageIndex, 0, pageObjectNumbers.Count - 1);
+                int pageObj = pageObjectNumbers[pageIndex].pageObj;
+
+                string destStr = dest.Type switch
+                {
+                    PdfDestinationType.Fit => $"[{pageObj} 0 R /Fit]",
+                    PdfDestinationType.FitH => $"[{pageObj} 0 R /FitH {FormatDestCoord(dest.Top)}]",
+                    PdfDestinationType.FitV => $"[{pageObj} 0 R /FitV {FormatDestCoord(dest.Left)}]",
+                    PdfDestinationType.FitB => $"[{pageObj} 0 R /FitB]",
+                    PdfDestinationType.FitBH => $"[{pageObj} 0 R /FitBH {FormatDestCoord(dest.Top)}]",
+                    PdfDestinationType.FitBV => $"[{pageObj} 0 R /FitBV {FormatDestCoord(dest.Left)}]",
+                    PdfDestinationType.FitR => $"[{pageObj} 0 R /FitR {dest.Left ?? 0} {dest.Bottom ?? 0} {dest.Right ?? 612} {dest.Top ?? 792}]",
+                    _ => $"[{pageObj} 0 R /XYZ {FormatDestCoord(dest.Left)} {FormatDestCoord(dest.Top)} {FormatDestCoord(dest.Zoom)}]"
+                };
+                writer.WriteLine($"   /Dest {destStr}");
+                break;
+
+            case PdfUriAction uri:
+                // Write URI action
+                writer.WriteLine("   /A <<");
+                writer.WriteLine("      /Type /Action");
+                writer.WriteLine("      /S /URI");
+                writer.WriteLine($"      /URI {PdfEncryptedString(uri.Uri, objNum)}");
+                writer.WriteLine("   >>");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Writes text annotation specific properties
+    /// </summary>
+    private void WriteTextAnnotation(StreamWriter writer, PdfTextAnnotation text, int objNum)
+    {
+        // Contents
+        if (!string.IsNullOrEmpty(text.Contents))
+        {
+            writer.WriteLine($"   /Contents {PdfEncryptedString(text.Contents, objNum)}");
+        }
+
+        // Icon name
+        string iconName = text.Icon switch
+        {
+            PdfTextAnnotationIcon.Comment => "Comment",
+            PdfTextAnnotationIcon.Key => "Key",
+            PdfTextAnnotationIcon.Help => "Help",
+            PdfTextAnnotationIcon.NewParagraph => "NewParagraph",
+            PdfTextAnnotationIcon.Paragraph => "Paragraph",
+            PdfTextAnnotationIcon.Insert => "Insert",
+            _ => "Note"
+        };
+        writer.WriteLine($"   /Name /{iconName}");
+
+        // Open state
+        if (text.IsOpen)
+        {
+            writer.WriteLine("   /Open true");
+        }
+
+        // Color
+        if (text.Color.HasValue)
+        {
+            PdfColor c = text.Color.Value;
+            writer.WriteLine($"   /C [{c.R:F3} {c.G:F3} {c.B:F3}]");
+        }
+    }
+
+    /// <summary>
+    /// Writes highlight annotation specific properties
+    /// </summary>
+    private void WriteHighlightAnnotation(StreamWriter writer, PdfHighlightAnnotation highlight, int objNum)
+    {
+        // Color
+        writer.WriteLine($"   /C [{highlight.Color.R:F3} {highlight.Color.G:F3} {highlight.Color.B:F3}]");
+
+        // QuadPoints
+        if (highlight.QuadPoints.Count > 0)
+        {
+            writer.Write("   /QuadPoints [");
+            foreach (PdfQuadPoints quad in highlight.QuadPoints)
+            {
+                // PDF spec order: x1,y1,x2,y2,x3,y3,x4,y4 (counter-clockwise from bottom-left)
+                writer.Write($" {quad.X1:F2} {quad.Y1:F2}");
+                writer.Write($" {quad.X2:F2} {quad.Y2:F2}");
+                writer.Write($" {quad.X3:F2} {quad.Y3:F2}");
+                writer.Write($" {quad.X4:F2} {quad.Y4:F2}");
+            }
+            writer.WriteLine(" ]");
+        }
     }
 }

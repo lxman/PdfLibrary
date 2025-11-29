@@ -7,6 +7,7 @@ public class PdfPageBuilder(PdfSize size)
 {
     private readonly List<PdfContentElement> _content = [];
     private readonly List<PdfFormFieldBuilder> _formFields = [];
+    private readonly List<PdfAnnotation> _annotations = [];
     private PdfUnit _defaultUnit = PdfUnit.Points;
     private PdfOrigin _defaultOrigin = PdfOrigin.BottomLeft;
 
@@ -496,6 +497,203 @@ public class PdfPageBuilder(PdfSize size)
         return AddSignatureField(name, rect);
     }
 
+    // ==================== LAYERS ====================
+
+    /// <summary>
+    /// Add content to a layer (Optional Content Group)
+    /// </summary>
+    /// <param name="layer">The layer to add content to (must be defined via DefineLayer on the document)</param>
+    /// <param name="configure">Action to add content to the layer</param>
+    /// <returns>The page builder for chaining</returns>
+    public PdfPageBuilder Layer(PdfLayer layer, Action<PdfLayerContentBuilder> configure)
+    {
+        var layerContent = new PdfLayerContent(layer);
+        int startIndex = _content.Count;
+        _content.Add(layerContent); // Add placeholder
+
+        var builder = new PdfLayerContentBuilder(this, layerContent, _content, startIndex + 1);
+        configure(builder);
+
+        // Move any content added after the placeholder into the layer
+        var addedContent = _content.Skip(startIndex + 1).ToList();
+        _content.RemoveRange(startIndex + 1, addedContent.Count);
+        layerContent.Content.AddRange(addedContent);
+
+        return this;
+    }
+
+    // ==================== ANNOTATIONS ====================
+
+    /// <summary>
+    /// Add a link annotation that navigates to a page in this document
+    /// </summary>
+    /// <param name="rect">The clickable rectangle area</param>
+    /// <param name="pageIndex">The 0-based page index to navigate to</param>
+    /// <param name="configure">Optional action to configure the link</param>
+    /// <returns>The page builder for chaining</returns>
+    public PdfPageBuilder AddLink(PdfRect rect, int pageIndex, Action<PdfLinkAnnotationBuilder>? configure = null)
+    {
+        var dest = new PdfDestination { PageIndex = pageIndex, Type = PdfDestinationType.Fit };
+        var action = new PdfGoToAction(dest);
+        var annotation = new PdfLinkAnnotation(rect, action);
+
+        if (configure != null)
+        {
+            var builder = new PdfLinkAnnotationBuilder(annotation);
+            configure(builder);
+        }
+
+        _annotations.Add(annotation);
+        return this;
+    }
+
+    /// <summary>
+    /// Add a link annotation that navigates to a page with specific destination settings
+    /// </summary>
+    /// <param name="rect">The clickable rectangle area</param>
+    /// <param name="configureDest">Action to configure the destination</param>
+    /// <param name="configureLink">Optional action to configure the link appearance</param>
+    /// <returns>The page builder for chaining</returns>
+    public PdfPageBuilder AddLink(PdfRect rect, Action<PdfBookmarkBuilder> configureDest, Action<PdfLinkAnnotationBuilder>? configureLink = null)
+    {
+        var bookmark = new PdfBookmark("_internal_");
+        var bookmarkBuilder = new PdfBookmarkBuilder(bookmark);
+        configureDest(bookmarkBuilder);
+
+        var action = new PdfGoToAction(bookmark.Destination);
+        var annotation = new PdfLinkAnnotation(rect, action);
+
+        if (configureLink != null)
+        {
+            var builder = new PdfLinkAnnotationBuilder(annotation);
+            configureLink(builder);
+        }
+
+        _annotations.Add(annotation);
+        return this;
+    }
+
+    /// <summary>
+    /// Add a link annotation that opens an external URL
+    /// </summary>
+    /// <param name="rect">The clickable rectangle area</param>
+    /// <param name="url">The URL to open</param>
+    /// <param name="configure">Optional action to configure the link</param>
+    /// <returns>The page builder for chaining</returns>
+    public PdfPageBuilder AddExternalLink(PdfRect rect, string url, Action<PdfLinkAnnotationBuilder>? configure = null)
+    {
+        var action = new PdfUriAction(url);
+        var annotation = new PdfLinkAnnotation(rect, action);
+
+        if (configure != null)
+        {
+            var builder = new PdfLinkAnnotationBuilder(annotation);
+            configure(builder);
+        }
+
+        _annotations.Add(annotation);
+        return this;
+    }
+
+    /// <summary>
+    /// Add a link annotation using the default unit and origin
+    /// </summary>
+    public PdfPageBuilder AddLink(double x, double y, double width, double height, int pageIndex, Action<PdfLinkAnnotationBuilder>? configure = null)
+    {
+        double xPt = ConvertToPoints(x, isYCoordinate: false);
+        double yPt = ConvertToPoints(y, isYCoordinate: true);
+        double widthPt = ConvertToPoints(width, isYCoordinate: false);
+        double heightPt = ConvertToPoints(height, isYCoordinate: false);
+
+        PdfRect rect = _defaultOrigin == PdfOrigin.TopLeft
+            ? new PdfRect(xPt, yPt - heightPt, xPt + widthPt, yPt)
+            : new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
+
+        return AddLink(rect, pageIndex, configure);
+    }
+
+    /// <summary>
+    /// Add an external link annotation using the default unit and origin
+    /// </summary>
+    public PdfPageBuilder AddExternalLink(double x, double y, double width, double height, string url, Action<PdfLinkAnnotationBuilder>? configure = null)
+    {
+        double xPt = ConvertToPoints(x, isYCoordinate: false);
+        double yPt = ConvertToPoints(y, isYCoordinate: true);
+        double widthPt = ConvertToPoints(width, isYCoordinate: false);
+        double heightPt = ConvertToPoints(height, isYCoordinate: false);
+
+        PdfRect rect = _defaultOrigin == PdfOrigin.TopLeft
+            ? new PdfRect(xPt, yPt - heightPt, xPt + widthPt, yPt)
+            : new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
+
+        return AddExternalLink(rect, url, configure);
+    }
+
+    /// <summary>
+    /// Add a text annotation (sticky note / comment)
+    /// </summary>
+    /// <param name="x">X position (in current units)</param>
+    /// <param name="y">Y position (in current units)</param>
+    /// <param name="contents">The text content of the note</param>
+    /// <param name="configure">Optional action to configure the annotation</param>
+    /// <returns>The page builder for chaining</returns>
+    public PdfPageBuilder AddNote(double x, double y, string contents, Action<PdfTextAnnotationBuilder>? configure = null)
+    {
+        double xPt = ConvertToPoints(x, isYCoordinate: false);
+        double yPt = ConvertToPoints(y, isYCoordinate: true);
+
+        // Text annotations typically use a small icon size
+        var rect = new PdfRect(xPt, yPt - 24, xPt + 24, yPt);
+        var annotation = new PdfTextAnnotation(rect, contents);
+
+        if (configure != null)
+        {
+            var builder = new PdfTextAnnotationBuilder(annotation);
+            configure(builder);
+        }
+
+        _annotations.Add(annotation);
+        return this;
+    }
+
+    /// <summary>
+    /// Add a highlight annotation
+    /// </summary>
+    /// <param name="rect">The rectangle to highlight</param>
+    /// <param name="configure">Optional action to configure the highlight</param>
+    /// <returns>The page builder for chaining</returns>
+    public PdfPageBuilder AddHighlight(PdfRect rect, Action<PdfHighlightAnnotationBuilder>? configure = null)
+    {
+        var annotation = new PdfHighlightAnnotation(rect);
+        annotation.QuadPoints.Add(PdfQuadPoints.FromRect(rect));
+
+        if (configure != null)
+        {
+            var builder = new PdfHighlightAnnotationBuilder(annotation);
+            configure(builder);
+        }
+
+        _annotations.Add(annotation);
+        return this;
+    }
+
+    /// <summary>
+    /// Add a highlight annotation using the default unit and origin
+    /// </summary>
+    public PdfPageBuilder AddHighlight(double x, double y, double width, double height, Action<PdfHighlightAnnotationBuilder>? configure = null)
+    {
+        double xPt = ConvertToPoints(x, isYCoordinate: false);
+        double yPt = ConvertToPoints(y, isYCoordinate: true);
+        double widthPt = ConvertToPoints(width, isYCoordinate: false);
+        double heightPt = ConvertToPoints(height, isYCoordinate: false);
+
+        PdfRect rect = _defaultOrigin == PdfOrigin.TopLeft
+            ? new PdfRect(xPt, yPt - heightPt, xPt + widthPt, yPt)
+            : new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
+
+        return AddHighlight(rect, configure);
+    }
+
     /// <summary>
     /// Get the content elements
     /// </summary>
@@ -505,6 +703,11 @@ public class PdfPageBuilder(PdfSize size)
     /// Get the form fields
     /// </summary>
     internal IReadOnlyList<PdfFormFieldBuilder> FormFields => _formFields;
+
+    /// <summary>
+    /// Get the annotations
+    /// </summary>
+    internal IReadOnlyList<PdfAnnotation> Annotations => _annotations;
 }
 
 // ==================== CONTENT ELEMENT CLASSES ====================
