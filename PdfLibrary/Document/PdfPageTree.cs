@@ -8,7 +8,7 @@ namespace PdfLibrary.Document;
 /// Represents a PDF page tree (ISO 32000-1:2008 section 7.7.3)
 /// The page tree is a balanced tree structure containing all pages in the document
 /// </summary>
-public class PdfPageTree
+internal class PdfPageTree
 {
     private readonly PdfDictionary _dictionary;
     private readonly PdfDocument? _document;

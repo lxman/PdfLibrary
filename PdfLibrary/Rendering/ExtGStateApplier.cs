@@ -10,7 +10,7 @@ namespace PdfLibrary.Rendering;
 /// Applies ExtGState (Extended Graphics State) dictionaries to PdfGraphicsState.
 /// Handles all entries defined in ISO 32000-1:2008 Table 58.
 /// </summary>
-public class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
+internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
 {
     /// <summary>
     /// Callback for rendering soft mask groups. Set by PdfRenderer.

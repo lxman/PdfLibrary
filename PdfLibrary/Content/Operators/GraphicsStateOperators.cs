@@ -5,7 +5,7 @@ namespace PdfLibrary.Content.Operators;
 /// <summary>
 /// q - Save graphics state
 /// </summary>
-public class SaveGraphicsStateOperator() : PdfOperator("q", [])
+internal class SaveGraphicsStateOperator() : PdfOperator("q", [])
 {
     public override OperatorCategory Category => OperatorCategory.GraphicsState;
 }
@@ -13,7 +13,7 @@ public class SaveGraphicsStateOperator() : PdfOperator("q", [])
 /// <summary>
 /// Q - Restore graphics state
 /// </summary>
-public class RestoreGraphicsStateOperator() : PdfOperator("Q", [])
+internal class RestoreGraphicsStateOperator() : PdfOperator("Q", [])
 {
     public override OperatorCategory Category => OperatorCategory.GraphicsState;
 }
@@ -21,7 +21,7 @@ public class RestoreGraphicsStateOperator() : PdfOperator("Q", [])
 /// <summary>
 /// cm - Concatenate matrix to current transformation matrix (CTM)
 /// </summary>
-public class ConcatenateMatrixOperator(double a, double b, double c, double d, double e, double f)
+internal class ConcatenateMatrixOperator(double a, double b, double c, double d, double e, double f)
     : PdfOperator("cm", [
         new PdfReal(a), new PdfReal(b), new PdfReal(c),
         new PdfReal(d), new PdfReal(e), new PdfReal(f)
@@ -40,7 +40,7 @@ public class ConcatenateMatrixOperator(double a, double b, double c, double d, d
 /// <summary>
 /// w - Set line width
 /// </summary>
-public class SetLineWidthOperator(double width) : PdfOperator("w", [new PdfReal(width)])
+internal class SetLineWidthOperator(double width) : PdfOperator("w", [new PdfReal(width)])
 {
     public double Width { get; } = width;
 
@@ -50,7 +50,7 @@ public class SetLineWidthOperator(double width) : PdfOperator("w", [new PdfReal(
 /// <summary>
 /// J - Set line cap style
 /// </summary>
-public class SetLineCapOperator(int style) : PdfOperator("J", [new PdfInteger(style)])
+internal class SetLineCapOperator(int style) : PdfOperator("J", [new PdfInteger(style)])
 {
     public int Style { get; } = style;
 
@@ -60,7 +60,7 @@ public class SetLineCapOperator(int style) : PdfOperator("J", [new PdfInteger(st
 /// <summary>
 /// j - Set line join style
 /// </summary>
-public class SetLineJoinOperator(int style) : PdfOperator("j", [new PdfInteger(style)])
+internal class SetLineJoinOperator(int style) : PdfOperator("j", [new PdfInteger(style)])
 {
     public int Style { get; } = style;
 
@@ -70,7 +70,7 @@ public class SetLineJoinOperator(int style) : PdfOperator("j", [new PdfInteger(s
 /// <summary>
 /// M - Set miter limit
 /// </summary>
-public class SetMiterLimitOperator(double limit) : PdfOperator("M", [new PdfReal(limit)])
+internal class SetMiterLimitOperator(double limit) : PdfOperator("M", [new PdfReal(limit)])
 {
     public double Limit { get; } = limit;
 
@@ -80,7 +80,7 @@ public class SetMiterLimitOperator(double limit) : PdfOperator("M", [new PdfReal
 /// <summary>
 /// d - Set line dash pattern
 /// </summary>
-public class SetDashPatternOperator(PdfArray dashArray, double dashPhase)
+internal class SetDashPatternOperator(PdfArray dashArray, double dashPhase)
     : PdfOperator("d", [dashArray, new PdfReal(dashPhase)])
 {
     public PdfArray DashArray { get; } = dashArray;
@@ -92,7 +92,7 @@ public class SetDashPatternOperator(PdfArray dashArray, double dashPhase)
 /// <summary>
 /// gs - Set graphics state from parameter dictionary
 /// </summary>
-public class SetGraphicsStateOperator(PdfName dictName) : PdfOperator("gs", [dictName])
+internal class SetGraphicsStateOperator(PdfName dictName) : PdfOperator("gs", [dictName])
 {
     public string DictName { get; } = dictName.Value;
 
@@ -102,7 +102,7 @@ public class SetGraphicsStateOperator(PdfName dictName) : PdfOperator("gs", [dic
 /// <summary>
 /// ri - Set color rendering intent
 /// </summary>
-public class SetRenderingIntentOperator(PdfName intent) : PdfOperator("ri", [intent])
+internal class SetRenderingIntentOperator(PdfName intent) : PdfOperator("ri", [intent])
 {
     public string Intent { get; } = intent.Value;
 
@@ -112,7 +112,7 @@ public class SetRenderingIntentOperator(PdfName intent) : PdfOperator("ri", [int
 /// <summary>
 /// i - Set flatness tolerance
 /// </summary>
-public class SetFlatnessOperator(double flatness) : PdfOperator("i", [new PdfReal(flatness)])
+internal class SetFlatnessOperator(double flatness) : PdfOperator("i", [new PdfReal(flatness)])
 {
     public double Flatness { get; } = flatness;
 

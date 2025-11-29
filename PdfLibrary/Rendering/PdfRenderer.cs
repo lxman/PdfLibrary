@@ -35,7 +35,7 @@ public class PdfRenderer : PdfContentProcessor
     /// <param name="resources">Page resources for fonts, images, etc.</param>
     /// <param name="optionalContentManager">Optional content manager for layer visibility</param>
     /// <param name="document">The PDF document (for resolving indirect references in images)</param>
-    public PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null)
+    internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null)
     {
         _target = target ?? throw new ArgumentNullException(nameof(target));
         _resources = resources;
@@ -528,7 +528,7 @@ public class PdfRenderer : PdfContentProcessor
 
     // ==================== Text Rendering ====================
 
-    protected override void OnShowText(PdfString text)
+    private protected override void OnShowText(PdfString text)
     {
         if (_currentResources is null || CurrentState.FontName is null)
         {
@@ -747,7 +747,7 @@ public class PdfRenderer : PdfContentProcessor
     }
 
     
-    protected override void OnShowTextWithPositioning(PdfArray array)
+    private protected override void OnShowTextWithPositioning(PdfArray array)
     {
         // TJ operator: combine all strings and adjustments into a single DrawText call
         if (_currentResources is null || CurrentState.FontName is null)
@@ -1079,7 +1079,7 @@ public class PdfRenderer : PdfContentProcessor
     /// <summary>
     /// Handles inline images (BI/ID/EI operators)
     /// </summary>
-    protected override void OnInlineImage(InlineImageOperator inlineImage)
+    private protected override void OnInlineImage(InlineImageOperator inlineImage)
     {
         PdfLogger.Log(LogCategory.Images, $"INLINE-IMAGE: {inlineImage.Width}x{inlineImage.Height}, ColorSpace={inlineImage.ColorSpace}, BPC={inlineImage.BitsPerComponent}, Filter={inlineImage.Filter ?? "none"}");
 
@@ -1209,7 +1209,7 @@ public class PdfRenderer : PdfContentProcessor
 
     // ==================== State Management ====================
 
-    protected override void ProcessOperator(PdfOperator op)
+    private protected override void ProcessOperator(PdfOperator op)
     {
         switch (op)
         {

@@ -12,7 +12,7 @@ namespace PdfLibrary.Security;
 /// - AES-128 (V=4, R=4)
 /// - AES-256 (V=5, R=6) - Recommended
 /// </summary>
-public class PdfEncryptor
+internal class PdfEncryptor
 {
     // Padding string used in PDF encryption (Table 21 in ISO 32000-1)
     private static readonly byte[] PasswordPadding =

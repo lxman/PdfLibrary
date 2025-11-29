@@ -1,5 +1,4 @@
 using PdfLibrary.Document;
-using PdfLibrary.Rendering;
 using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Structure;
 
@@ -30,12 +29,9 @@ public static class PdfImageRenderer
         var width = (int)(cropBox.Width * scale);
         var height = (int)(cropBox.Height * scale);
 
+        // Use the public PdfPage.Render() API
         using var renderTarget = new SkiaSharpRenderTarget(width, height, document);
-        PdfResources? resources = page.GetResources();
-        var optionalContentManager = new OptionalContentManager(document);
-        var renderer = new PdfRenderer(renderTarget, resources, optionalContentManager, document);
-
-        renderer.RenderPage(page, pageNumber, scale);
+        page.Render(renderTarget, pageNumber, scale);
         renderTarget.SaveToFile(outputPath);
     }
 }

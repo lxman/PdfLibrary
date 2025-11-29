@@ -7,6 +7,13 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <!-- SkiaSharp is the platform-specific rendering implementation - needs internal access -->
+        <InternalsVisibleTo Include="PdfLibrary.Rendering.SkiaSharp" />
+        <!-- Test projects need internal access for thorough testing -->
+        <InternalsVisibleTo Include="PdfLibrary.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Serilog" Version="4.3.1-dev-02395" />
       <PackageReference Include="Serilog.Sinks.File" Version="7.0.1-dev-02315" />
       <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />

@@ -5,7 +5,7 @@ namespace PdfLibrary.Fonts.Embedded
     /// Supports TrueType (FontFile2) fonts for glyph name extraction
     /// Used as fallback when ToUnicode CMap is missing or incomplete
     /// </summary>
-    public class EmbeddedFontExtractor
+    internal class EmbeddedFontExtractor
     {
         private readonly Dictionary<int, string>? _glyphNames;
         private readonly bool _isValid;

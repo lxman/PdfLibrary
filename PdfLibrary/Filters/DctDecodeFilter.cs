@@ -7,7 +7,7 @@ namespace PdfLibrary.Filters;
 /// DCTDecode filter - JPEG compression using Discrete Cosine Transform (ISO 32000-1:2008 section 7.4.8)
 /// Uses SixLabors.ImageSharp for JPEG decoding
 /// </summary>
-public class DctDecodeFilter : IStreamFilter
+internal class DctDecodeFilter : IStreamFilter
 {
     public string Name => "DCTDecode";
 

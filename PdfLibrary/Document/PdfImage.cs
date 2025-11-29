@@ -21,7 +21,7 @@ public class PdfImage
     /// <param name="stream">The image XObject stream</param>
     /// <param name="document">The parent PDF document (optional, for resolving references)</param>
     /// <exception cref="ArgumentException">Thrown if the stream is not an image XObject</exception>
-    public PdfImage(PdfStream stream, PdfDocument? document = null)
+    internal PdfImage(PdfStream stream, PdfDocument? document = null)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _document = document;
@@ -36,7 +36,7 @@ public class PdfImage
     /// Creates a PdfImage from an inline image operator
     /// </summary>
     /// <param name="inlineImage">The inline image operator containing image data</param>
-    public PdfImage(InlineImageOperator inlineImage)
+    internal PdfImage(InlineImageOperator inlineImage)
     {
         ArgumentNullException.ThrowIfNull(inlineImage);
 
@@ -148,7 +148,7 @@ public class PdfImage
     /// <summary>
     /// Gets the underlying XObject stream
     /// </summary>
-    public PdfStream Stream => _stream;
+    internal PdfStream Stream => _stream;
 
     /// <summary>
     /// Gets the image width in pixels
@@ -430,7 +430,7 @@ public class PdfImage
     /// <summary>
     /// Checks if a stream is an image XObject
     /// </summary>
-    public static bool IsImageXObject(PdfStream stream)
+    internal static bool IsImageXObject(PdfStream stream)
     {
         if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;

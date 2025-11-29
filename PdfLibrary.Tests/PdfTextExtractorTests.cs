@@ -556,7 +556,7 @@ Q";
     [Fact]
     public void ExtractText_NullContent_ReturnsEmpty()
     {
-        string text = PdfTextExtractor.ExtractText((byte[])null!);
+        string text = PdfTextExtractor.ExtractText(null!);
 
         Assert.Empty(text);
     }

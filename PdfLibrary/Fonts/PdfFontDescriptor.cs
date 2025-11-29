@@ -8,7 +8,7 @@ namespace PdfLibrary.Fonts;
 /// Represents a PDF font descriptor (ISO 32000-1:2008 section 9.8)
 /// Contains font metrics and other font-specific information
 /// </summary>
-public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document = null)
+internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document = null)
 {
     private readonly PdfDictionary _dictionary = dictionary ?? throw new ArgumentNullException(nameof(dictionary));
     private readonly PdfDocument? _document = document;

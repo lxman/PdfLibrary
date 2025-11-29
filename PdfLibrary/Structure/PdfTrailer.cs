@@ -7,7 +7,7 @@ namespace PdfLibrary.Structure;
 /// Represents the trailer dictionary of a PDF file (ISO 32000-1:2008 section 7.5.5)
 /// The trailer provides information about how to read the cross-reference table and special objects
 /// </summary>
-public class PdfTrailer
+internal class PdfTrailer
 {
     private readonly PdfDictionary _dictionary;
 

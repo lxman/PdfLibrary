@@ -9,7 +9,7 @@ namespace PdfLibrary.Document;
 /// Represents a PDF resource dictionary (ISO 32000-1:2008 section 7.8.3)
 /// Resources define objects used by content streams (fonts, images, etc.)
 /// </summary>
-public class PdfResources
+internal class PdfResources
 {
     private readonly PdfDictionary _dictionary;
     private readonly PdfDocument? _document;

@@ -6,7 +6,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Represents a PDF string object (ISO 32000-1:2008 section 7.3.4)
 /// Strings can be literal (enclosed in parentheses) or hexadecimal (enclosed in angle brackets)
 /// </summary>
-public sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfStringFormat.Literal)
+internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfStringFormat.Literal)
     : PdfObject
 {
     private readonly byte[] _bytes = bytes ?? throw new ArgumentNullException(nameof(bytes));
@@ -114,7 +114,7 @@ public sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfStringFo
 /// <summary>
 /// Format for PDF string representation
 /// </summary>
-public enum PdfStringFormat
+internal enum PdfStringFormat
 {
     /// <summary>
     /// Literal strings enclosed in parentheses: (text)

@@ -3,6 +3,7 @@ using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using Logging;
+using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Document;
@@ -19,7 +20,7 @@ public class PdfPage
     /// <summary>
     /// Creates a page from a dictionary
     /// </summary>
-    public PdfPage(PdfDictionary dictionary, PdfDocument? document = null, PdfDictionary? parentNode = null)
+    internal PdfPage(PdfDictionary dictionary, PdfDocument? document = null, PdfDictionary? parentNode = null)
     {
         _dictionary = dictionary ?? throw new ArgumentNullException(nameof(dictionary));
         _document = document;
@@ -35,7 +36,7 @@ public class PdfPage
     /// <summary>
     /// Gets the underlying dictionary
     /// </summary>
-    public PdfDictionary Dictionary => _dictionary;
+    internal PdfDictionary Dictionary => _dictionary;
 
     /// <summary>
     /// Gets the document this page belongs to (if available).
@@ -45,7 +46,7 @@ public class PdfPage
     /// <summary>
     /// Gets the page resources (inheritable)
     /// </summary>
-    public PdfResources? GetResources()
+    internal PdfResources? GetResources()
     {
         // Try to get from page first
         if (_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj))
@@ -118,7 +119,7 @@ public class PdfPage
     /// <summary>
     /// Gets the page contents (content streams)
     /// </summary>
-    public List<PdfStream> GetContents()
+    internal List<PdfStream> GetContents()
     {
         var streams = new List<PdfStream>();
 
@@ -158,7 +159,7 @@ public class PdfPage
     /// <summary>
     /// Gets the page annotations
     /// </summary>
-    public PdfArray? GetAnnotations()
+    internal PdfArray? GetAnnotations()
     {
         if (!_dictionary.TryGetValue(new PdfName("Annots"), out PdfObject? obj))
             return null;
@@ -363,6 +364,23 @@ public class PdfPage
     {
         return GetImages().Count;
     }
+
+    /// <summary>
+    /// Renders this page to the specified render target.
+    /// This is the primary public API for rendering PDF pages.
+    /// </summary>
+    /// <param name="target">The render target (e.g., SkiaSharpRenderTarget)</param>
+    /// <param name="pageNumber">1-based page number for display purposes</param>
+    /// <param name="scale">Scale factor (1.0 = 100%, 2.0 = 200%)</param>
+    public void Render(IRenderTarget target, int pageNumber = 1, double scale = 1.0)
+    {
+        if (_document is null)
+            throw new InvalidOperationException("Cannot render a page without a document reference");
+
+        var optionalContentManager = new OptionalContentManager(_document);
+        var renderer = new PdfRenderer(target, GetResources(), optionalContentManager, _document);
+        renderer.RenderPage(this, pageNumber, scale);
+    }
 }
 
 /// <summary>
@@ -378,7 +396,7 @@ public readonly struct PdfRectangle(double x1, double y1, double x2, double y2)
     public double Width => Math.Abs(X2 - X1);
     public double Height => Math.Abs(Y2 - Y1);
 
-    public static PdfRectangle FromArray(PdfArray array)
+    internal static PdfRectangle FromArray(PdfArray array)
     {
         if (array.Count != 4)
             throw new ArgumentException($"Rectangle array must have 4 elements, got {array.Count}");

@@ -8,7 +8,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Dictionaries are associative tables with name keys and any-type values
 /// Written as << key value key value >> in PDF files
 /// </summary>
-public sealed class PdfDictionary : PdfObject, IDictionary<PdfName, PdfObject>
+internal sealed class PdfDictionary : PdfObject, IDictionary<PdfName, PdfObject>
 {
     private readonly Dictionary<PdfName, PdfObject> _entries;
 

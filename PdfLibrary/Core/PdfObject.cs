@@ -4,7 +4,7 @@ namespace PdfLibrary.Core;
 /// Base class for all PDF objects as defined in ISO 32000-1:2008 section 7.3
 /// PDF supports 8 basic object types: Boolean, Numeric (Integer/Real), String, Name, Array, Dictionary, Stream, and Null
 /// </summary>
-public abstract class PdfObject
+internal abstract class PdfObject
 {
     /// <summary>
     /// Gets the PDF object type
@@ -37,7 +37,7 @@ public abstract class PdfObject
 /// <summary>
 /// Enumeration of PDF object types
 /// </summary>
-public enum PdfObjectType
+internal enum PdfObjectType
 {
     Null,
     Boolean,

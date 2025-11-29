@@ -3,7 +3,7 @@ namespace PdfLibrary.Filters;
 /// <summary>
 /// Factory for creating stream filters by name
 /// </summary>
-public static class StreamFilterFactory
+internal static class StreamFilterFactory
 {
     private static readonly Dictionary<string, Func<IStreamFilter>> Filters = new()
     {

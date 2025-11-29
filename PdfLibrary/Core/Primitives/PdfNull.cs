@@ -4,7 +4,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Represents the PDF null object (ISO 32000-1:2008 section 7.3.9)
 /// The null object has a type and value unequal to any other object.
 /// </summary>
-public sealed class PdfNull : PdfObject
+internal sealed class PdfNull : PdfObject
 {
     /// <summary>
     /// Singleton instance of the null object

@@ -9,7 +9,7 @@ namespace PdfLibrary.Document;
 /// Manages Optional Content (layers/OCGs) visibility for PDF rendering
 /// PDF spec ISO 32000-1:2008 section 8.11
 /// </summary>
-public class OptionalContentManager
+internal class OptionalContentManager
 {
     private readonly HashSet<string> _disabledOCGs = [];
     private readonly PdfDocument? _document;

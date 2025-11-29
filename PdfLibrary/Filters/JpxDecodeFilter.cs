@@ -5,7 +5,7 @@ namespace PdfLibrary.Filters;
 /// <summary>
 /// JPXDecode filter - JPEG 2000 compression (ISO 32000-1:2008 section 7.4.10)
 /// </summary>
-public class JpxDecodeFilter : IStreamFilter
+internal class JpxDecodeFilter : IStreamFilter
 {
     public string Name => "JPXDecode";
 

@@ -4,7 +4,7 @@ namespace PdfLibrary.Filters;
 /// Interface for PDF stream filters (ISO 32000-1:2008 section 7.4)
 /// Filters encode/decode stream data
 /// </summary>
-public interface IStreamFilter
+internal interface IStreamFilter
 {
     /// <summary>
     /// Gets the filter name as it appears in PDF (/FlateDecode, /ASCIIHexDecode, etc.)

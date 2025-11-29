@@ -7,7 +7,7 @@ namespace PdfLibrary.Functions;
 /// Type 2 (Exponential interpolation) function.
 /// Computes: y_j = C0_j + x^N * (C1_j - C0_j)
 /// </summary>
-public class ExponentialFunction : PdfFunction
+internal class ExponentialFunction : PdfFunction
 {
     private readonly double[] _c0;
     private readonly double[] _c1;

@@ -1,6 +1,5 @@
 using SkiaSharp;
 using PdfLibrary.Document;
-using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering.SkiaSharp;
@@ -64,8 +63,8 @@ public class PageRenderBuilder
 
         using var target = new SkiaSharpRenderTarget(width, height, _document, _transparentBackground);
 
-        var renderer = new PdfRenderer(target, null, null, _document);
-        renderer.RenderPage(_page, _pageNumber, _scale);
+        // Use the public PdfPage.Render() API
+        _page.Render(target, _pageNumber, _scale);
 
         return target.GetImage();
     }

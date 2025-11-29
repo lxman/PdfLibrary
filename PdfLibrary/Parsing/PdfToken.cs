@@ -3,7 +3,7 @@ namespace PdfLibrary.Parsing;
 /// <summary>
 /// Represents a token in a PDF file (ISO 32000-1:2008 section 7.2)
 /// </summary>
-public readonly struct PdfToken(PdfTokenType type, string value, long position)
+internal readonly struct PdfToken(PdfTokenType type, string value, long position)
 {
     /// <summary>
     /// Type of token
@@ -26,7 +26,7 @@ public readonly struct PdfToken(PdfTokenType type, string value, long position)
 /// <summary>
 /// Types of tokens in PDF syntax
 /// </summary>
-public enum PdfTokenType
+internal enum PdfTokenType
 {
     // Primitives
     Integer,            // 123, -17, +42

@@ -24,7 +24,7 @@ public abstract class PdfContentProcessor
     /// <summary>
     /// Processes a list of operators from a content stream
     /// </summary>
-    public void ProcessOperators(List<PdfOperator> operators)
+    internal void ProcessOperators(List<PdfOperator> operators)
     {
         foreach (PdfOperator op in operators)
         {
@@ -35,7 +35,7 @@ public abstract class PdfContentProcessor
     /// <summary>
     /// Processes a single operator and updates graphics state
     /// </summary>
-    protected virtual void ProcessOperator(PdfOperator op)
+    private protected virtual void ProcessOperator(PdfOperator op)
     {
         switch (op)
         {
@@ -365,8 +365,8 @@ public abstract class PdfContentProcessor
     protected virtual void OnEndText() { }
     protected virtual void OnFontChanged() { }
     protected virtual void OnTextPositionChanged() { }
-    protected virtual void OnShowText(PdfString text) { }
-    protected virtual void OnShowTextWithPositioning(PdfArray array) { }
+    private protected virtual void OnShowText(PdfString text) { }
+    private protected virtual void OnShowTextWithPositioning(PdfArray array) { }
     protected virtual void OnMoveTo(double x, double y) { }
     protected virtual void OnLineTo(double x, double y) { }
     protected virtual void OnCurveTo(double x1, double y1, double x2, double y2, double x3, double y3) { }
@@ -377,9 +377,9 @@ public abstract class PdfContentProcessor
     protected virtual void OnFillAndStroke() { }
     protected virtual void OnEndPath() { }
     protected virtual void OnInvokeXObject(string name) { }
-    protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
+    private protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
     protected virtual void OnColorChanged() { }
-    protected virtual void OnGenericOperator(GenericOperator op) { }
+    private protected virtual void OnGenericOperator(GenericOperator op) { }
     protected virtual void OnSetGraphicsState(string dictName) { }
 
     /// <summary>

@@ -5,7 +5,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Format: objectNumber generationNumber R
 /// Example: 12 0 R
 /// </summary>
-public sealed class PdfIndirectReference : PdfObject
+internal sealed class PdfIndirectReference : PdfObject
 {
     public PdfIndirectReference(int objectNumber, int generationNumber)
     {

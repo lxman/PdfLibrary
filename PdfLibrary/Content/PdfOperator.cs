@@ -6,7 +6,7 @@ namespace PdfLibrary.Content;
 /// Represents a PDF content stream operator (ISO 32000-1:2008 section 7.8.2)
 /// Operators are commands in content streams that manipulate graphics state and draw content
 /// </summary>
-public abstract class PdfOperator(string name, List<PdfObject> operands)
+internal abstract class PdfOperator(string name, List<PdfObject> operands)
 {
     /// <summary>
     /// Gets the operator name (e.g., "Tj", "cm", "q")
@@ -29,7 +29,7 @@ public abstract class PdfOperator(string name, List<PdfObject> operands)
 /// <summary>
 /// Categories of PDF operators
 /// </summary>
-public enum OperatorCategory
+internal enum OperatorCategory
 {
     /// <summary>Graphics state operators (q, Q, cm, w, etc.)</summary>
     GraphicsState,

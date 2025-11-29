@@ -9,7 +9,7 @@ namespace PdfLibrary.Core.Primitives;
 /// A stream consists of a dictionary followed by binary data
 /// Format: dictionary\nstream\n...data...endstream
 /// </summary>
-public sealed class PdfStream : PdfObject
+internal sealed class PdfStream : PdfObject
 {
     private byte[] _data;
 

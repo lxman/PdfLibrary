@@ -7,7 +7,7 @@ namespace PdfLibrary.Functions;
 /// <summary>
 /// Type 0 (Sampled) function - samples stored in a stream, with interpolation.
 /// </summary>
-public class SampledFunction : PdfFunction
+internal class SampledFunction : PdfFunction
 {
     private readonly int[] _size;
     private readonly int _bitsPerSample;

@@ -7,7 +7,6 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using PdfLibrary.Document;
-using PdfLibrary.Rendering;
 using PdfLibrary.Rendering.SkiaSharp;
 using Serilog;
 using SkiaSharp;
@@ -173,10 +172,17 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                var optionalContentManager = new OptionalContentManager(_pdfDoc);
-                var renderer = new PdfRenderer(
-                    PdfRenderer, page.GetResources(), optionalContentManager, _pdfDoc);
-                renderer.RenderPage(page, _currentPage, _zoomLevel);
+                // Get page dimensions for the render target
+                PdfRectangle cropBox = page.GetCropBox();
+
+                // Get or create the render target with proper dimensions
+                SkiaSharpRenderTarget renderTarget = PdfRenderer.GetOrCreateRenderTarget(cropBox.Width, cropBox.Height, _zoomLevel);
+
+                // Use the simplified public API
+                page.Render(renderTarget, _currentPage, _zoomLevel);
+
+                // Finalize and display the rendered content
+                PdfRenderer.FinalizeRendering(_currentPage);
 
                 Log.Information("PdfLibrary rendered page {Page} at {Zoom}%", _currentPage, _zoomLevel * 100);
             });
@@ -337,10 +343,8 @@ public partial class MainWindow : Window
         var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfDoc);
         try
         {
-            var optionalContentManager = new OptionalContentManager(_pdfDoc);
-            var renderer = new PdfRenderer(renderTarget, page.GetResources(),
-                optionalContentManager, _pdfDoc);
-            renderer.RenderPage(page, _currentPage, _zoomLevel);
+            // Use the simplified public API
+            page.Render(renderTarget, _currentPage, _zoomLevel);
             renderTarget.SaveToFile(path);
             Log.Information("Saved image to {Path}", path);
         }
@@ -415,12 +419,9 @@ public partial class MainWindow : Window
         var width = (int)(cropBox.Width * scale);
         var height = (int)(cropBox.Height * scale);
 
-        // Render at calculated size
+        // Render at calculated size using the simplified public API
         using var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfDoc);
-        var optionalContentManager = new OptionalContentManager(_pdfDoc);
-        var renderer = new PdfRenderer(renderTarget, page.GetResources(),
-            optionalContentManager, _pdfDoc);
-        renderer.RenderPage(page, _currentPage, scale);
+        page.Render(renderTarget, _currentPage, scale);
 
         // Get the SKImage and convert to WPF BitmapSource
         using SKImage? skImage = renderTarget.GetImage();

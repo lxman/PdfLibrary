@@ -37,7 +37,6 @@ public class CorePrimitivesTests
     public void PdfNull_Equals_SameInstance()
     {
         Assert.True(PdfNull.Instance.Equals(PdfNull.Instance));
-        Assert.True(PdfNull.Instance.Equals((object)PdfNull.Instance));
     }
 
     [Fact]

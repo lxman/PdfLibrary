@@ -8,7 +8,7 @@ namespace PdfLibrary.Fonts;
 /// Represents a PDF font encoding (ISO 32000-1:2008 section 9.6.6)
 /// Maps character codes to character names or Unicode
 /// </summary>
-public class PdfFontEncoding
+internal class PdfFontEncoding
 {
     private readonly Dictionary<int, string> _codeToName = new();
     private readonly Dictionary<int, string> _codeToUnicode = new();

@@ -10,7 +10,7 @@ namespace PdfLibrary.Fonts;
 /// Represents a Type 0 (composite/CID) font (ISO 32000-1:2008 section 9.7)
 /// Used for fonts with large character sets (e.g., CJK fonts)
 /// </summary>
-public class Type0Font : PdfFont
+internal class Type0Font : PdfFont
 {
     private PdfFont? _descendantFont;
     private EmbeddedFontExtractor? _embeddedFont;
@@ -25,7 +25,7 @@ public class Type0Font : PdfFont
         LoadEmbeddedFont();  // Load embedded font for glyph name fallback
     }
 
-    public override PdfFontType FontType => PdfFontType.Type0;
+    internal override PdfFontType FontType => PdfFontType.Type0;
 
     /// <summary>
     /// Gets the descendant CIDFont
@@ -61,7 +61,7 @@ public class Type0Font : PdfFont
         // 3. Fall back to character code as Unicode (last resort)
     }
 
-    public override EmbeddedFontMetrics? GetEmbeddedMetrics()
+    internal override EmbeddedFontMetrics? GetEmbeddedMetrics()
     {
         if (_metricsLoaded)
             return _embeddedMetrics;
@@ -148,7 +148,7 @@ public class Type0Font : PdfFont
 /// Represents a CIDFont (Character Identifier font)
 /// Used as a descendant font of Type 0 fonts
 /// </summary>
-public class CidFont : PdfFont
+internal class CidFont : PdfFont
 {
     private double _defaultWidth = 1000;
     private Dictionary<int, double>? _widths;
@@ -221,7 +221,7 @@ public class CidFont : PdfFont
         }
     }
 
-    public override PdfFontType FontType => PdfFontType.Type0;
+    internal override PdfFontType FontType => PdfFontType.Type0;
 
     public override double GetCharacterWidth(int charCode)
     {

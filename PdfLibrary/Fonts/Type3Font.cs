@@ -8,7 +8,7 @@ namespace PdfLibrary.Fonts;
 /// Represents a Type 3 (user-defined) font (ISO 32000-1:2008 section 9.6.5)
 /// Type 3 fonts are defined by PDF content streams
 /// </summary>
-public class Type3Font : PdfFont
+internal class Type3Font : PdfFont
 {
     private double[]? _widths;
     private double _defaultWidth;
@@ -21,7 +21,7 @@ public class Type3Font : PdfFont
         LoadWidths();
     }
 
-    public override PdfFontType FontType => PdfFontType.Type3;
+    internal override PdfFontType FontType => PdfFontType.Type3;
 
     /// <summary>
     /// Gets the font matrix (transforms from glyph space to text space)

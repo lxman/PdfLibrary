@@ -5,7 +5,7 @@ namespace PdfLibrary.Content.Operators;
 /// <summary>
 /// BT - Begin text object
 /// </summary>
-public class BeginTextOperator() : PdfOperator("BT", [])
+internal class BeginTextOperator() : PdfOperator("BT", [])
 {
     public override OperatorCategory Category => OperatorCategory.TextObject;
 }
@@ -13,7 +13,7 @@ public class BeginTextOperator() : PdfOperator("BT", [])
 /// <summary>
 /// ET - End text object
 /// </summary>
-public class EndTextOperator() : PdfOperator("ET", [])
+internal class EndTextOperator() : PdfOperator("ET", [])
 {
     public override OperatorCategory Category => OperatorCategory.TextObject;
 }
@@ -21,7 +21,7 @@ public class EndTextOperator() : PdfOperator("ET", [])
 /// <summary>
 /// Tj - Show text string
 /// </summary>
-public class ShowTextOperator(PdfString text) : PdfOperator("Tj", [text])
+internal class ShowTextOperator(PdfString text) : PdfOperator("Tj", [text])
 {
     public PdfString Text { get; } = text;
 
@@ -31,7 +31,7 @@ public class ShowTextOperator(PdfString text) : PdfOperator("Tj", [text])
 /// <summary>
 /// TJ - Show text with individual glyph positioning
 /// </summary>
-public class ShowTextWithPositioningOperator(PdfArray array) : PdfOperator("TJ", [array])
+internal class ShowTextWithPositioningOperator(PdfArray array) : PdfOperator("TJ", [array])
 {
     public PdfArray Array { get; } = array;
 
@@ -41,7 +41,7 @@ public class ShowTextWithPositioningOperator(PdfArray array) : PdfOperator("TJ",
 /// <summary>
 /// ' - Move to next line and show text
 /// </summary>
-public class MoveToNextLineAndShowTextOperator(PdfString text) : PdfOperator("'", [text])
+internal class MoveToNextLineAndShowTextOperator(PdfString text) : PdfOperator("'", [text])
 {
     public PdfString Text { get; } = text;
 
@@ -51,7 +51,7 @@ public class MoveToNextLineAndShowTextOperator(PdfString text) : PdfOperator("'"
 /// <summary>
 /// " - Set word and character spacing, move to next line, and show text
 /// </summary>
-public class SetSpacingMoveAndShowTextOperator(PdfReal wordSpacing, PdfReal charSpacing, PdfString text)
+internal class SetSpacingMoveAndShowTextOperator(PdfReal wordSpacing, PdfReal charSpacing, PdfString text)
     : PdfOperator("\"", [wordSpacing, charSpacing, text])
 {
     public double WordSpacing { get; } = wordSpacing.Value;
@@ -64,7 +64,7 @@ public class SetSpacingMoveAndShowTextOperator(PdfReal wordSpacing, PdfReal char
 /// <summary>
 /// Td - Move text position
 /// </summary>
-public class MoveTextPositionOperator(double tx, double ty) : PdfOperator("Td", [new PdfReal(tx), new PdfReal(ty)])
+internal class MoveTextPositionOperator(double tx, double ty) : PdfOperator("Td", [new PdfReal(tx), new PdfReal(ty)])
 {
     public double Tx { get; } = tx;
     public double Ty { get; } = ty;
@@ -75,7 +75,7 @@ public class MoveTextPositionOperator(double tx, double ty) : PdfOperator("Td", 
 /// <summary>
 /// TD - Move text position and set leading
 /// </summary>
-public class MoveTextPositionAndSetLeadingOperator(double tx, double ty)
+internal class MoveTextPositionAndSetLeadingOperator(double tx, double ty)
     : PdfOperator("TD", [new PdfReal(tx), new PdfReal(ty)])
 {
     public double Tx { get; } = tx;
@@ -87,7 +87,7 @@ public class MoveTextPositionAndSetLeadingOperator(double tx, double ty)
 /// <summary>
 /// Tm - Set text matrix
 /// </summary>
-public class SetTextMatrixOperator(double a, double b, double c, double d, double e, double f)
+internal class SetTextMatrixOperator(double a, double b, double c, double d, double e, double f)
     : PdfOperator("Tm", [
         new PdfReal(a), new PdfReal(b), new PdfReal(c),
         new PdfReal(d), new PdfReal(e), new PdfReal(f)
@@ -106,7 +106,7 @@ public class SetTextMatrixOperator(double a, double b, double c, double d, doubl
 /// <summary>
 /// T* - Move to start of next line
 /// </summary>
-public class MoveToNextLineOperator() : PdfOperator("T*", [])
+internal class MoveToNextLineOperator() : PdfOperator("T*", [])
 {
     public override OperatorCategory Category => OperatorCategory.TextPositioning;
 }
@@ -114,7 +114,7 @@ public class MoveToNextLineOperator() : PdfOperator("T*", [])
 /// <summary>
 /// Tf - Set text font and size
 /// </summary>
-public class SetTextFontOperator(PdfName font, double size) : PdfOperator("Tf", [font, new PdfReal(size)])
+internal class SetTextFontOperator(PdfName font, double size) : PdfOperator("Tf", [font, new PdfReal(size)])
 {
     public string Font { get; } = font.Value;
     public double Size { get; } = size;
@@ -125,7 +125,7 @@ public class SetTextFontOperator(PdfName font, double size) : PdfOperator("Tf", 
 /// <summary>
 /// Tc - Set character spacing
 /// </summary>
-public class SetCharSpacingOperator(double spacing) : PdfOperator("Tc", [new PdfReal(spacing)])
+internal class SetCharSpacingOperator(double spacing) : PdfOperator("Tc", [new PdfReal(spacing)])
 {
     public double Spacing { get; } = spacing;
 
@@ -135,7 +135,7 @@ public class SetCharSpacingOperator(double spacing) : PdfOperator("Tc", [new Pdf
 /// <summary>
 /// Tw - Set word spacing
 /// </summary>
-public class SetWordSpacingOperator(double spacing) : PdfOperator("Tw", [new PdfReal(spacing)])
+internal class SetWordSpacingOperator(double spacing) : PdfOperator("Tw", [new PdfReal(spacing)])
 {
     public double Spacing { get; } = spacing;
 
@@ -145,7 +145,7 @@ public class SetWordSpacingOperator(double spacing) : PdfOperator("Tw", [new Pdf
 /// <summary>
 /// Tz - Set horizontal text scaling
 /// </summary>
-public class SetHorizontalScalingOperator(double scale) : PdfOperator("Tz", [new PdfReal(scale)])
+internal class SetHorizontalScalingOperator(double scale) : PdfOperator("Tz", [new PdfReal(scale)])
 {
     public double Scale { get; } = scale;
 
@@ -155,7 +155,7 @@ public class SetHorizontalScalingOperator(double scale) : PdfOperator("Tz", [new
 /// <summary>
 /// TL - Set text leading
 /// </summary>
-public class SetTextLeadingOperator(double leading) : PdfOperator("TL", [new PdfReal(leading)])
+internal class SetTextLeadingOperator(double leading) : PdfOperator("TL", [new PdfReal(leading)])
 {
     public double Leading { get; } = leading;
 
@@ -165,7 +165,7 @@ public class SetTextLeadingOperator(double leading) : PdfOperator("TL", [new Pdf
 /// <summary>
 /// Tr - Set text rendering mode
 /// </summary>
-public class SetTextRenderingModeOperator(int mode) : PdfOperator("Tr", [new PdfInteger(mode)])
+internal class SetTextRenderingModeOperator(int mode) : PdfOperator("Tr", [new PdfInteger(mode)])
 {
     public int Mode { get; } = mode;
 
@@ -175,7 +175,7 @@ public class SetTextRenderingModeOperator(int mode) : PdfOperator("Tr", [new Pdf
 /// <summary>
 /// Ts - Set text rise
 /// </summary>
-public class SetTextRiseOperator(double rise) : PdfOperator("Ts", [new PdfReal(rise)])
+internal class SetTextRiseOperator(double rise) : PdfOperator("Ts", [new PdfReal(rise)])
 {
     public double Rise { get; } = rise;
 

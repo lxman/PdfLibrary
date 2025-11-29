@@ -20,7 +20,7 @@ namespace PdfLibrary.Fonts.Embedded;
 /// Provides access to embedded TrueType/OpenType font metrics
 /// Parses font tables and exposes rendering-critical information
 /// </summary>
-public class EmbeddedFontMetrics
+internal class EmbeddedFontMetrics
 {
     private readonly TrueTypeParser _parser;
     private readonly HeadTable? _headTable;

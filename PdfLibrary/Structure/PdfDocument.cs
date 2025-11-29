@@ -38,22 +38,22 @@ public class PdfDocument : IDisposable
     /// <summary>
     /// Gets the cross-reference table
     /// </summary>
-    public PdfXrefTable XrefTable { get; }
+    internal PdfXrefTable XrefTable { get; }
 
     /// <summary>
     /// Gets the trailer dictionary
     /// </summary>
-    public PdfTrailer Trailer { get; }
+    internal PdfTrailer Trailer { get; }
 
     /// <summary>
     /// Gets all indirect objects in the document
     /// </summary>
-    public IReadOnlyDictionary<int, PdfObject> Objects => _objects;
+    internal IReadOnlyDictionary<int, PdfObject> Objects => _objects;
 
     /// <summary>
     /// Gets the decryptor for encrypted documents, or null if not encrypted.
     /// </summary>
-    public PdfDecryptor? Decryptor { get; private set; }
+    internal PdfDecryptor? Decryptor { get; private set; }
 
     /// <summary>
     /// Gets whether the document is encrypted.
@@ -69,7 +69,7 @@ public class PdfDocument : IDisposable
     /// <summary>
     /// Adds an indirect object to the document
     /// </summary>
-    public void AddObject(int objectNumber, int generationNumber, PdfObject obj)
+    internal void AddObject(int objectNumber, int generationNumber, PdfObject obj)
     {
         ArgumentNullException.ThrowIfNull(obj);
 
@@ -84,7 +84,7 @@ public class PdfDocument : IDisposable
     /// Gets an object by its object number
     /// Automatically loads objects on-demand (both compressed and uncompressed)
     /// </summary>
-    public PdfObject? GetObject(int objectNumber)
+    internal PdfObject? GetObject(int objectNumber)
     {
         // Check if already loaded
         if (_objects.TryGetValue(objectNumber, out PdfObject? cachedObj))
@@ -259,7 +259,7 @@ public class PdfDocument : IDisposable
     /// <summary>
     /// Resolves an indirect reference to its object
     /// </summary>
-    public PdfObject? ResolveReference(PdfIndirectReference reference)
+    internal PdfObject? ResolveReference(PdfIndirectReference reference)
     {
         return reference is null
             ? throw new ArgumentNullException(nameof(reference))
@@ -269,7 +269,7 @@ public class PdfDocument : IDisposable
     /// <summary>
     /// Gets the document catalog (Root object)
     /// </summary>
-    public PdfCatalog? GetCatalog()
+    internal PdfCatalog? GetCatalog()
     {
         if (Trailer.Root is null)
             return null;
@@ -283,7 +283,7 @@ public class PdfDocument : IDisposable
     /// <summary>
     /// Gets the document information dictionary
     /// </summary>
-    public PdfDictionary? GetInfo()
+    internal PdfDictionary? GetInfo()
     {
         if (Trailer.Info is null)
             return null;
@@ -403,7 +403,7 @@ public class PdfDocument : IDisposable
     /// Gets all images from all pages in the document
     /// </summary>
     /// <returns>List of all images with their page numbers</returns>
-    public List<(PdfImage Image, int PageNumber)> GetAllImages()
+    internal List<(PdfImage Image, int PageNumber)> GetAllImages()
     {
         var result = new List<(PdfImage, int)>();
         List<PdfPage> pages = GetPages();

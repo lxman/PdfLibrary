@@ -25,7 +25,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// <summary>
     /// Creates a text extractor with optional resources for font resolution
     /// </summary>
-    public PdfTextExtractor(PdfResources? resources = null, PdfDocument? document = null)
+    internal PdfTextExtractor(PdfResources? resources = null, PdfDocument? document = null)
     {
         _resources = resources;
         _document = document;
@@ -44,7 +44,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// <summary>
     /// Extracts text from a content stream
     /// </summary>
-    public static string ExtractText(byte[] contentData, PdfResources? resources = null)
+    internal static string ExtractText(byte[] contentData, PdfResources? resources = null)
     {
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         var extractor = new PdfTextExtractor(resources);
@@ -55,7 +55,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// <summary>
     /// Extracts text with fragments from a content stream
     /// </summary>
-    public static (string Text, List<TextFragment> Fragments) ExtractTextWithFragments(byte[] contentData, PdfResources? resources = null)
+    internal static (string Text, List<TextFragment> Fragments) ExtractTextWithFragments(byte[] contentData, PdfResources? resources = null)
     {
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         var extractor = new PdfTextExtractor(resources);
@@ -105,7 +105,7 @@ public class PdfTextExtractor : PdfContentProcessor
         // the END of one text and the START of the next.
     }
 
-    protected override void OnShowText(PdfString text)
+    private protected override void OnShowText(PdfString text)
     {
         if (!_inTextObject) return;
 
@@ -145,7 +145,7 @@ public class PdfTextExtractor : PdfContentProcessor
         _lastPosition = position with { X = position.X + (float)advance };
     }
 
-    protected override void OnShowTextWithPositioning(PdfArray array)
+    private protected override void OnShowTextWithPositioning(PdfArray array)
     {
         if (!_inTextObject) return;
 

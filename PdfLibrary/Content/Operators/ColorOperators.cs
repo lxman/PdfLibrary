@@ -10,7 +10,7 @@ namespace PdfLibrary.Content.Operators;
 /// <summary>
 /// g - Set gray level for nonstroking (fill) operations (0.0 = black, 1.0 = white)
 /// </summary>
-public class SetFillGrayOperator(double gray) : PdfOperator("g", [new PdfReal(gray)])
+internal class SetFillGrayOperator(double gray) : PdfOperator("g", [new PdfReal(gray)])
 {
     public double Gray { get; } = gray;
     public override OperatorCategory Category => OperatorCategory.Color;
@@ -19,7 +19,7 @@ public class SetFillGrayOperator(double gray) : PdfOperator("g", [new PdfReal(gr
 /// <summary>
 /// G - Set gray level for stroking operations
 /// </summary>
-public class SetStrokeGrayOperator(double gray) : PdfOperator("G", [new PdfReal(gray)])
+internal class SetStrokeGrayOperator(double gray) : PdfOperator("G", [new PdfReal(gray)])
 {
     public double Gray { get; } = gray;
     public override OperatorCategory Category => OperatorCategory.Color;
@@ -32,7 +32,7 @@ public class SetStrokeGrayOperator(double gray) : PdfOperator("G", [new PdfReal(
 /// <summary>
 /// rg - Set RGB color for nonstroking operations
 /// </summary>
-public class SetFillRgbOperator(double r, double g, double b)
+internal class SetFillRgbOperator(double r, double g, double b)
     : PdfOperator("rg", [new PdfReal(r), new PdfReal(g), new PdfReal(b)])
 {
     public double R { get; } = r;
@@ -44,7 +44,7 @@ public class SetFillRgbOperator(double r, double g, double b)
 /// <summary>
 /// RG - Set RGB color for stroking operations
 /// </summary>
-public class SetStrokeRgbOperator(double r, double g, double b)
+internal class SetStrokeRgbOperator(double r, double g, double b)
     : PdfOperator("RG", [new PdfReal(r), new PdfReal(g), new PdfReal(b)])
 {
     public double R { get; } = r;
@@ -60,7 +60,7 @@ public class SetStrokeRgbOperator(double r, double g, double b)
 /// <summary>
 /// k - Set CMYK color for nonstroking operations
 /// </summary>
-public class SetFillCmykOperator(double c, double m, double y, double k)
+internal class SetFillCmykOperator(double c, double m, double y, double k)
     : PdfOperator("k", [new PdfReal(c), new PdfReal(m), new PdfReal(y), new PdfReal(k)])
 {
     public double C { get; } = c;
@@ -73,7 +73,7 @@ public class SetFillCmykOperator(double c, double m, double y, double k)
 /// <summary>
 /// K - Set CMYK color for stroking operations
 /// </summary>
-public class SetStrokeCmykOperator(double c, double m, double y, double k)
+internal class SetStrokeCmykOperator(double c, double m, double y, double k)
     : PdfOperator("K", [new PdfReal(c), new PdfReal(m), new PdfReal(y), new PdfReal(k)])
 {
     public double C { get; } = c;
@@ -90,7 +90,7 @@ public class SetStrokeCmykOperator(double c, double m, double y, double k)
 /// <summary>
 /// cs - Set color space for nonstroking operations
 /// </summary>
-public class SetFillColorSpaceOperator(PdfName colorSpace) : PdfOperator("cs", [colorSpace])
+internal class SetFillColorSpaceOperator(PdfName colorSpace) : PdfOperator("cs", [colorSpace])
 {
     public string ColorSpace { get; } = colorSpace.Value;
     public override OperatorCategory Category => OperatorCategory.Color;
@@ -99,7 +99,7 @@ public class SetFillColorSpaceOperator(PdfName colorSpace) : PdfOperator("cs", [
 /// <summary>
 /// CS - Set color space for stroking operations
 /// </summary>
-public class SetStrokeColorSpaceOperator(PdfName colorSpace) : PdfOperator("CS", [colorSpace])
+internal class SetStrokeColorSpaceOperator(PdfName colorSpace) : PdfOperator("CS", [colorSpace])
 {
     public string ColorSpace { get; } = colorSpace.Value;
     public override OperatorCategory Category => OperatorCategory.Color;
@@ -112,7 +112,7 @@ public class SetStrokeColorSpaceOperator(PdfName colorSpace) : PdfOperator("CS",
 /// <summary>
 /// sc - Set color for nonstroking operations (generic, depends on current color space)
 /// </summary>
-public class SetFillColorOperator(List<PdfObject> components) : PdfOperator("sc", components)
+internal class SetFillColorOperator(List<PdfObject> components) : PdfOperator("sc", components)
 {
     public List<double> Components { get; } = components
         .Select(obj => obj switch
@@ -129,7 +129,7 @@ public class SetFillColorOperator(List<PdfObject> components) : PdfOperator("sc"
 /// <summary>
 /// SC - Set color for stroking operations (generic, depends on current color space)
 /// </summary>
-public class SetStrokeColorOperator(List<PdfObject> components) : PdfOperator("SC", components)
+internal class SetStrokeColorOperator(List<PdfObject> components) : PdfOperator("SC", components)
 {
     public List<double> Components { get; } = components
         .Select(obj => obj switch
@@ -146,7 +146,7 @@ public class SetStrokeColorOperator(List<PdfObject> components) : PdfOperator("S
 /// <summary>
 /// scn - Set color for nonstroking operations (supports Pattern, Separation, DeviceN)
 /// </summary>
-public class SetFillColorExtendedOperator(List<PdfObject> operands) : PdfOperator("scn", operands)
+internal class SetFillColorExtendedOperator(List<PdfObject> operands) : PdfOperator("scn", operands)
 {
     public List<double> Components { get; } = operands
         .Select(obj => obj switch
@@ -167,7 +167,7 @@ public class SetFillColorExtendedOperator(List<PdfObject> operands) : PdfOperato
 /// <summary>
 /// SCN - Set color for stroking operations (supports Pattern, Separation, DeviceN)
 /// </summary>
-public class SetStrokeColorExtendedOperator(List<PdfObject> operands) : PdfOperator("SCN", operands)
+internal class SetStrokeColorExtendedOperator(List<PdfObject> operands) : PdfOperator("SCN", operands)
 {
     public List<double> Components { get; } = operands
         .Select(obj => obj switch

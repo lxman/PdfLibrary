@@ -5,7 +5,7 @@ namespace PdfLibrary.Core;
 /// <summary>
 /// Extension methods for PdfObject to simplify common operations
 /// </summary>
-public static class PdfObjectExtensions
+internal static class PdfObjectExtensions
 {
     /// <summary>
     /// Converts a PdfObject to a double value.

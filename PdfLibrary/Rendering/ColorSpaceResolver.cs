@@ -10,7 +10,7 @@ namespace PdfLibrary.Rendering;
 /// Resolves PDF color spaces to device color spaces (DeviceRGB, DeviceCMYK, DeviceGray)
 /// Handles ICCBased, Separation, and other color space conversions
 /// </summary>
-public class ColorSpaceResolver(PdfDocument? document)
+internal class ColorSpaceResolver(PdfDocument? document)
 {
     /// <summary>
     /// Resolves a named color space from resources to a device color space

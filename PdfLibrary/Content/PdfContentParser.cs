@@ -9,7 +9,7 @@ namespace PdfLibrary.Content;
 /// <summary>
 /// Parses PDF content streams into operators (ISO 32000-1:2008 section 7.8.2)
 /// </summary>
-public class PdfContentParser
+internal class PdfContentParser
 {
     /// <summary>
     /// Parses a content stream and returns a list of operators

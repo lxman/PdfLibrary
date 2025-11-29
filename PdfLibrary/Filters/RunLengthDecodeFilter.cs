@@ -4,7 +4,7 @@ namespace PdfLibrary.Filters;
 /// RunLengthDecode filter - simple run-length compression (ISO 32000-1:2008 section 7.4.5)
 /// Used for compressing data with repeating sequences
 /// </summary>
-public class RunLengthDecodeFilter : IStreamFilter
+internal class RunLengthDecodeFilter : IStreamFilter
 {
     public string Name => "RunLengthDecode";
 

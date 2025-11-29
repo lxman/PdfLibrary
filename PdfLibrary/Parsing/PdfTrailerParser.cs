@@ -8,7 +8,7 @@ namespace PdfLibrary.Parsing;
 /// <summary>
 /// Parses PDF trailer dictionaries (ISO 32000-1:2008 section 7.5.5)
 /// </summary>
-public class PdfTrailerParser(Stream stream)
+internal class PdfTrailerParser(Stream stream)
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private readonly PdfParser _parser = new(stream);

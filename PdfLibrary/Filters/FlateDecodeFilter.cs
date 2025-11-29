@@ -6,7 +6,7 @@ namespace PdfLibrary.Filters;
 /// FlateDecode filter - uses zlib/deflate compression (ISO 32000-1:2008 section 7.4.4)
 /// This is the most commonly used filter in PDF files
 /// </summary>
-public class FlateDecodeFilter : IStreamFilter
+internal class FlateDecodeFilter : IStreamFilter
 {
     public string Name => "FlateDecode";
 

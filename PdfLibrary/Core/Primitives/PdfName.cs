@@ -8,7 +8,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Names are atomic symbols uniquely defined by sequences of characters
 /// Names are written with a leading SOLIDUS (/) in PDF files
 /// </summary>
-public sealed class PdfName : PdfObject
+internal sealed class PdfName : PdfObject
 {
     /// <summary>
     /// Creates a PDF name from a string value (without the leading solidus)

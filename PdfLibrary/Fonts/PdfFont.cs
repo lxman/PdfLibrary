@@ -9,15 +9,21 @@ namespace PdfLibrary.Fonts;
 /// Represents a PDF font (ISO 32000-1:2008 section 9.2)
 /// Base class for all font types
 /// </summary>
-public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = null)
+public abstract class PdfFont
 {
-    protected readonly PdfDictionary _dictionary = dictionary ?? throw new ArgumentNullException(nameof(dictionary));
-    protected readonly PdfDocument? _document = document;
+    private protected readonly PdfDictionary _dictionary;
+    private protected readonly PdfDocument? _document;
+
+    internal PdfFont(PdfDictionary dictionary, PdfDocument? document = null)
+    {
+        _dictionary = dictionary ?? throw new ArgumentNullException(nameof(dictionary));
+        _document = document;
+    }
 
     /// <summary>
     /// Gets the font type (Type1, TrueType, Type3, Type0, etc.)
     /// </summary>
-    public abstract PdfFontType FontType { get; }
+    internal abstract PdfFontType FontType { get; }
 
     /// <summary>
     /// Gets the font's base name
@@ -35,7 +41,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     /// <summary>
     /// Gets the font encoding
     /// </summary>
-    public PdfFontEncoding? Encoding { get; protected set; }
+    internal PdfFontEncoding? Encoding { get; private protected set; }
 
     /// <summary>
     /// Gets the ToUnicode CMap if present
@@ -96,7 +102,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     /// <summary>
     /// Gets the font descriptor
     /// </summary>
-    public PdfFontDescriptor? GetDescriptor()
+    internal PdfFontDescriptor? GetDescriptor()
     {
         if (_dictionary.TryGetValue(new PdfName("FontDescriptor"), out PdfObject? obj))
         {
@@ -115,7 +121,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     /// Only available for fonts with embedded TrueType data
     /// </summary>
     /// <returns>EmbeddedFontMetrics if font has embedded TrueType data, null otherwise</returns>
-    public virtual EmbeddedFontMetrics? GetEmbeddedMetrics()
+    internal virtual EmbeddedFontMetrics? GetEmbeddedMetrics()
     {
         // Default implementation: no embedded metrics
         // Overridden in TrueTypeFont and Type0Font
@@ -125,7 +131,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
     /// <summary>
     /// Creates a font from a dictionary
     /// </summary>
-    public static PdfFont? Create(PdfDictionary dictionary, PdfDocument? document = null)
+    internal static PdfFont? Create(PdfDictionary dictionary, PdfDocument? document = null)
     {
         if (!dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj) || subtypeObj is not PdfName subtype)
             return null;
@@ -163,7 +169,7 @@ public abstract class PdfFont(PdfDictionary dictionary, PdfDocument? document = 
 /// <summary>
 /// PDF font types
 /// </summary>
-public enum PdfFontType
+internal enum PdfFontType
 {
     Type1,
     TrueType,

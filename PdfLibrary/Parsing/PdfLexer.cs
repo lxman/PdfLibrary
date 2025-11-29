@@ -6,7 +6,7 @@ namespace PdfLibrary.Parsing;
 /// <summary>
 /// Tokenizes PDF byte streams according to ISO 32000-1:2008 section 7.2
 /// </summary>
-public class PdfLexer(Stream stream)
+internal class PdfLexer(Stream stream)
 {
     private readonly Stream _stream = stream ?? throw new ArgumentNullException(nameof(stream));
     private readonly byte[] _buffer = new byte[BufferSize];

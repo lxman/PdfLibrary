@@ -1,8 +1,4 @@
 using System.Windows.Controls;
-using PdfLibrary.Content;
-using PdfLibrary.Document;
-using PdfLibrary.Fonts;
-using PdfLibrary.Rendering;
 using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Structure;
 using Serilog;
@@ -13,9 +9,9 @@ namespace PdfLibrary.Wpf.Viewer;
 
 /// <summary>
 /// SkiaSharp-based rendering control for PDF content.
-/// Uses embedded font glyph outlines for high-fidelity text rendering.
+/// Wraps a SkiaSharpRenderTarget and displays the rendered output.
 /// </summary>
-public partial class SkiaRenderer : UserControl, IRenderTarget
+public partial class SkiaRenderer : UserControl
 {
     private SkiaSharpRenderTarget? _renderTarget;
     private SKImage? _renderedImage;
@@ -23,7 +19,7 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
     private int _width = 800;
     private int _height = 600;
 
-    public int CurrentPageNumber { get; set; }
+    public int CurrentPageNumber { get; private set; }
 
     public SkiaRenderer()
     {
@@ -39,15 +35,11 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
     }
 
     /// <summary>
-    /// Gets the number of child elements (for debugging compatibility)
+    /// Gets the underlying SkiaSharp render target.
+    /// Creates a new render target if needed based on the page dimensions.
     /// </summary>
-    public int GetChildCount() => _renderedImage != null ? 1 : 0;
-
-    // ==================== PAGE LIFECYCLE ====================
-
-    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
+    public SkiaSharpRenderTarget GetOrCreateRenderTarget(double width, double height, double scale)
     {
-        CurrentPageNumber = pageNumber;
         // Calculate output dimensions (scaled)
         _width = (int)Math.Ceiling(width * scale);
         _height = (int)Math.Ceiling(height * scale);
@@ -59,18 +51,18 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
 
         // Create a new render target at the scaled size
         _renderTarget = new SkiaSharpRenderTarget(_width, _height, _document);
-        // Pass the original (unscaled) dimensions, scale factor, and crop offsets
-        _renderTarget.BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY);
 
-        Log.Information("BeginPage: Page {PageNumber}, Size: {Width} x {Height}, Scale: {Scale:F2}, CropOffset: ({CropX}, {CropY})",
-            pageNumber, _width, _height, scale, cropOffsetX, cropOffsetY);
+        return _renderTarget;
     }
 
-    public void EndPage()
+    /// <summary>
+    /// Called after rendering to capture the image and update display
+    /// </summary>
+    public void FinalizeRendering(int pageNumber)
     {
-        if (_renderTarget == null) return;
+        CurrentPageNumber = pageNumber;
 
-        _renderTarget.EndPage();
+        if (_renderTarget == null) return;
 
         // Capture the rendered image
         _renderedImage?.Dispose();
@@ -81,9 +73,12 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
         SkiaCanvas.Height = _height;
         SkiaCanvas.InvalidateVisual();
 
-        Log.Debug("EndPage: Page {PageNumber} complete", CurrentPageNumber);
+        Log.Debug("FinalizeRendering: Page {PageNumber} complete", CurrentPageNumber);
     }
 
+    /// <summary>
+    /// Clears the rendered content
+    /// </summary>
     public void Clear()
     {
         _renderTarget?.Clear();
@@ -97,22 +92,9 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
     }
 
     /// <summary>
-    /// Sets the page size for rendering
+    /// Gets the number of child elements (for debugging compatibility)
     /// </summary>
-    public void SetPageSize(double width, double height)
-    {
-        _width = (int)Math.Ceiling(width);
-        _height = (int)Math.Ceiling(height);
-
-        SkiaCanvas.Width = _width;
-        SkiaCanvas.Height = _height;
-
-        // Set minimum size to ensure ScrollViewer works correctly
-        SkiaCanvas.MinWidth = _width;
-        SkiaCanvas.MinHeight = _height;
-
-        Log.Information("SetPageSize: Canvas size set to {Width} x {Height}", _width, _height);
-    }
+    public int GetChildCount() => _renderedImage != null ? 1 : 0;
 
     // ==================== SKIA PAINT EVENT ====================
 
@@ -127,76 +109,4 @@ public partial class SkiaRenderer : UserControl, IRenderTarget
             canvas.DrawImage(_renderedImage, 0, 0);
         }
     }
-
-    // ==================== IRenderTarget DELEGATION ====================
-
-    public void StrokePath(IPathBuilder path, PdfGraphicsState state)
-    {
-        _renderTarget?.StrokePath(path, state);
-    }
-
-    public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
-    {
-        _renderTarget?.FillPath(path, state, evenOdd);
-    }
-
-    public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
-    {
-        _renderTarget?.FillAndStrokePath(path, state, evenOdd);
-    }
-
-    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
-    {
-        _renderTarget?.DrawText(text, glyphWidths, state, font, charCodes);
-    }
-
-    public void DrawImage(PdfImage image, PdfGraphicsState state)
-    {
-        _renderTarget?.DrawImage(image, state);
-    }
-
-    public void SaveState()
-    {
-        _renderTarget?.SaveState();
-    }
-
-    public void RestoreState()
-    {
-        _renderTarget?.RestoreState();
-    }
-
-    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
-    {
-        _renderTarget?.SetClippingPath(path, state, evenOdd);
-    }
-
-    public void ApplyCtm(System.Numerics.Matrix3x2 ctm)
-    {
-        _renderTarget?.ApplyCtm(ctm);
-    }
-
-    public void OnGraphicsStateChanged(PdfGraphicsState state)
-    {
-        _renderTarget?.OnGraphicsStateChanged(state);
-    }
-
-    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)
-    {
-        _renderTarget?.RenderSoftMask(maskSubtype, renderMaskContent);
-    }
-
-    public void ClearSoftMask()
-    {
-        _renderTarget?.ClearSoftMask();
-    }
-
-    public (int width, int height, double scale) GetPageDimensions()
-    {
-        return _renderTarget?.GetPageDimensions() ?? (612, 792, 1.0);
-    }
-
-    /// <summary>
-    /// Gets the underlying SkiaSharp render target for advanced operations.
-    /// </summary>
-    public SkiaSharpRenderTarget? GetSkiaRenderTarget() => _renderTarget;
 }

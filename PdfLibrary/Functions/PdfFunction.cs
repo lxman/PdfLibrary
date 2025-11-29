@@ -9,7 +9,7 @@ namespace PdfLibrary.Functions;
 /// Functions map input values to output values, used for tint transforms,
 /// shading interpolation, and other color transformations.
 /// </summary>
-public abstract class PdfFunction
+internal abstract class PdfFunction
 {
     /// <summary>
     /// Domain of the function - pairs of (min, max) for each input dimension.

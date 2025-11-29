@@ -218,10 +218,24 @@ public interface IRenderTarget
 
 #### PdfRenderer
 
-Extends `PdfContentProcessor` to render pages:
+Extends `PdfContentProcessor` to render pages. The renderer is internal to the library;
+applications use the public `PdfPage.Render()` API instead:
 
 ```csharp
-public class PdfRenderer : PdfContentProcessor
+// Public API for rendering
+var page = document.GetPage(0);
+page.Render(renderTarget, pageNumber: 1, scale: 1.0);
+
+// Or use the fluent builder (from PdfLibrary.Rendering.SkiaSharp)
+page.Render(document)
+    .WithScale(2.0)
+    .ToFile("output.png");
+```
+
+Internally, `PdfRenderer` processes content streams and calls the render target:
+
+```csharp
+internal class PdfRenderer : PdfContentProcessor
 {
     private readonly IRenderTarget _target;
     private readonly PdfResources _resources;
@@ -429,14 +443,14 @@ class MyProcessor : PdfContentProcessor
 
 ### 3. Strategy Pattern
 
-Render targets are interchangeable:
+Render targets are interchangeable. Applications pass their chosen target to `PdfPage.Render()`:
 
 ```csharp
-IRenderTarget target = new SkiaSharpRenderTarget(...);
-// or
+IRenderTarget target = new SkiaSharpRenderTarget(width, height, document);
+// or a custom implementation
 IRenderTarget target = new SvgRenderTarget(...);
 
-var renderer = new PdfRenderer(document, target);
+page.Render(target, pageNumber, scale);
 ```
 
 ### 4. Factory Pattern

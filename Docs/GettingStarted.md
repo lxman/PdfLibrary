@@ -50,37 +50,29 @@ double height = page.Height;
 ### Rendering to an Image
 
 ```csharp
-using PdfLibrary.Rendering;
 using PdfLibrary.Rendering.SkiaSharp;
 
-// Create render target with page dimensions
+// Get the page to render
 var page = document.GetPage(0);
-using var target = new SkiaSharpRenderTarget(
-    (int)page.Width,
-    (int)page.Height);
 
-// Render the page
-var renderer = new PdfRenderer(document, target);
-renderer.RenderPage(0);
-
-// Save as PNG
-target.SavePng("output.png");
+// Render using the fluent API
+page.Render(document)
+    .WithScale(1.0)  // 1.0 = 72 DPI
+    .ToFile("output.png");
 ```
 
 ### Rendering at Higher Resolution
 
 ```csharp
 // Render at 2x scale (144 DPI instead of 72 DPI)
-double scale = 2.0;
-using var target = new SkiaSharpRenderTarget(
-    (int)(page.Width * scale),
-    (int)(page.Height * scale));
+page.Render(document)
+    .WithScale(2.0)
+    .ToFile("output@2x.png");
 
-// Apply scale transform
-target.Scale(scale, scale);
-
-renderer.RenderPage(0);
-target.SavePng("output@2x.png");
+// Or specify DPI directly
+page.Render(document)
+    .WithDpi(144)
+    .ToFile("output@144dpi.png");
 ```
 
 ### Rendering Multiple Pages
@@ -89,13 +81,9 @@ target.SavePng("output@2x.png");
 for (int i = 0; i < document.PageCount; i++)
 {
     var page = document.GetPage(i);
-    using var target = new SkiaSharpRenderTarget(
-        (int)page.Width,
-        (int)page.Height);
-
-    var renderer = new PdfRenderer(document, target);
-    renderer.RenderPage(i);
-    target.SavePng($"page_{i + 1}.png");
+    page.Render(document)
+        .WithScale(1.0)
+        .ToFile($"page_{i + 1}.png");
 }
 ```
 

@@ -4,7 +4,7 @@ namespace PdfLibrary.Structure;
 /// Represents a cross-reference table (ISO 32000-1:2008 section 7.5.4)
 /// Maps object numbers to byte offsets in the PDF file
 /// </summary>
-public class PdfXrefTable
+internal class PdfXrefTable
 {
     private readonly Dictionary<int, PdfXrefEntry> _entries = new();
 

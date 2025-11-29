@@ -5,7 +5,7 @@ namespace PdfLibrary.Filters;
 /// <summary>
 /// JBIG2Decode filter - JBIG2 compression for bi-level images (ISO 32000-1:2008 section 7.4.9)
 /// </summary>
-public class Jbig2DecodeFilter : IStreamFilter
+internal class Jbig2DecodeFilter : IStreamFilter
 {
     public string Name => "JBIG2Decode";
 

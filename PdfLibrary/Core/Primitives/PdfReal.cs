@@ -6,7 +6,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Represents a PDF real number object (ISO 32000-1:2008 section 7.3.3)
 /// Real numbers are written as decimal numerals with optional decimal point
 /// </summary>
-public sealed class PdfReal(double value) : PdfObject
+internal sealed class PdfReal(double value) : PdfObject
 {
     public double Value { get; } = value;
 

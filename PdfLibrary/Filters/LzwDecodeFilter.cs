@@ -6,7 +6,7 @@ namespace PdfLibrary.Filters;
 /// LZWDecode filter - Lempel-Ziv-Welch compression (ISO 32000-1:2008 section 7.4.4)
 /// Dictionary-based compression commonly used in TIFF and older PDF files
 /// </summary>
-public class LzwDecodeFilter : IStreamFilter
+internal class LzwDecodeFilter : IStreamFilter
 {
     public string Name => "LZWDecode";
 

@@ -20,7 +20,7 @@ public record PdfSoftMask
     /// The transparency group XObject (Form XObject with /Group dictionary)
     /// This is the mask content that will be rendered to create the mask
     /// </summary>
-    public PdfStream? Group { get; init; }
+    internal PdfStream? Group { get; init; }
 
     /// <summary>
     /// Backdrop color for the transparency group (BC entry)
@@ -32,5 +32,5 @@ public record PdfSoftMask
     /// Transfer function (TR entry) - maps luminosity/alpha values
     /// Can be a function dictionary or /Identity
     /// </summary>
-    public PdfObject? TransferFunction { get; init; }
+    internal PdfObject? TransferFunction { get; init; }
 }

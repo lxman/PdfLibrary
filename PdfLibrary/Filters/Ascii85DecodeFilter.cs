@@ -7,7 +7,7 @@ namespace PdfLibrary.Filters;
 /// More efficient than ASCIIHexDecode (4 bytes encoded as 5 ASCII characters)
 /// The sequence ends with ~> marker
 /// </summary>
-public class Ascii85DecodeFilter : IStreamFilter
+internal class Ascii85DecodeFilter : IStreamFilter
 {
     public string Name => "ASCII85Decode";
 

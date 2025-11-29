@@ -7,7 +7,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Represents a PDF array object (ISO 32000-1:2008 section 7.3.6)
 /// Arrays are one-dimensional heterogeneous collections enclosed in square brackets
 /// </summary>
-public sealed class PdfArray : PdfObject, IList<PdfObject>
+internal sealed class PdfArray : PdfObject, IList<PdfObject>
 {
     private readonly List<PdfObject> _items;
 

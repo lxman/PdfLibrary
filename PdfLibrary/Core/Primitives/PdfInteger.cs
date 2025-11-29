@@ -5,7 +5,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Integer objects represent mathematical integers written as decimal numerals.
 /// Uses long internally to support large integers found in some PDFs (e.g., timestamps, version numbers).
 /// </summary>
-public sealed class PdfInteger(long value) : PdfObject
+internal sealed class PdfInteger(long value) : PdfObject
 {
     /// <summary>
     /// Gets the full long value of this integer.

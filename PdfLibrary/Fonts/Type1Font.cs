@@ -9,7 +9,7 @@ namespace PdfLibrary.Fonts;
 /// <summary>
 /// Represents a Type 1 (PostScript) font (ISO 32000-1:2008 section 9.6.2)
 /// </summary>
-public class Type1Font : PdfFont
+internal class Type1Font : PdfFont
 {
     private double[]? _widths;
     private double _defaultWidth;
@@ -24,7 +24,7 @@ public class Type1Font : PdfFont
         LoadWidths();
     }
 
-    public override PdfFontType FontType => PdfFontType.Type1;
+    internal override PdfFontType FontType => PdfFontType.Type1;
 
     public override double GetCharacterWidth(int charCode)
     {
@@ -477,7 +477,7 @@ public class Type1Font : PdfFont
         };
     }
 
-    public override EmbeddedFontMetrics? GetEmbeddedMetrics()
+    internal override EmbeddedFontMetrics? GetEmbeddedMetrics()
     {
         if (_metricsLoaded)
             return _embeddedMetrics;

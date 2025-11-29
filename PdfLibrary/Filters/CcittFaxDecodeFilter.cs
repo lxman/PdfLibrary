@@ -7,7 +7,7 @@ namespace PdfLibrary.Filters;
 /// CCITTFaxDecode filter - CCITT Group 3/4 fax compression (ISO 32000-1:2008 section 7.4.7)
 /// Used for bi-level (black and white) images
 /// </summary>
-public class CcittFaxDecodeFilter : IStreamFilter
+internal class CcittFaxDecodeFilter : IStreamFilter
 {
     public string Name => "CCITTFaxDecode";
 

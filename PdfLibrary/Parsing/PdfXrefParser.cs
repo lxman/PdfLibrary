@@ -8,7 +8,7 @@ namespace PdfLibrary.Parsing;
 /// <summary>
 /// Result from parsing cross-reference data
 /// </summary>
-public class PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictionary, bool isXRefStream)
+internal class PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictionary, bool isXRefStream)
 {
     public PdfXrefTable Table { get; } = table;
     public PdfDictionary? TrailerDictionary { get; } = trailerDictionary;
@@ -19,7 +19,7 @@ public class PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictio
 /// Parses PDF cross-reference tables (ISO 32000-1:2008 section 7.5.4)
 /// and cross-reference streams (ISO 32000-1:2008 section 7.5.8)
 /// </summary>
-public class PdfXrefParser
+internal class PdfXrefParser
 {
     private readonly Stream _stream;
 

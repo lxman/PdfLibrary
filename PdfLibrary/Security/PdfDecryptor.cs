@@ -8,7 +8,7 @@ namespace PdfLibrary.Security;
 /// <summary>
 /// Encryption method used by the PDF.
 /// </summary>
-public enum PdfEncryptionMethod
+internal enum PdfEncryptionMethod
 {
     /// <summary>No encryption</summary>
     None,
@@ -35,7 +35,7 @@ public enum PdfEncryptionMethod
 /// - AES-128 (V=4, R=4)
 /// - AES-256 (V=5, R=5/R=6)
 /// </summary>
-public class PdfDecryptor
+internal class PdfDecryptor
 {
     // Padding string used in PDF encryption (Table 21 in ISO 32000-1)
     private static readonly byte[] PasswordPadding =
@@ -627,7 +627,7 @@ public class PdfDecryptor
 /// <summary>
 /// Exception thrown when PDF security operations fail.
 /// </summary>
-public class PdfSecurityException : Exception
+internal class PdfSecurityException : Exception
 {
     public PdfSecurityException(string message) : base(message) { }
     public PdfSecurityException(string message, Exception inner) : base(message, inner) { }

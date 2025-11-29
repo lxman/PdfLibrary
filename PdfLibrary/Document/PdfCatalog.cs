@@ -8,7 +8,7 @@ namespace PdfLibrary.Document;
 /// Represents the PDF document catalog (ISO 32000-1:2008 section 7.7.2)
 /// The catalog is the root of the document's object hierarchy
 /// </summary>
-public class PdfCatalog
+internal class PdfCatalog
 {
     private readonly PdfDictionary _dictionary;
     private readonly PdfDocument? _document;

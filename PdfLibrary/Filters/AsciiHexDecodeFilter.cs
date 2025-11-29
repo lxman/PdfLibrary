@@ -7,7 +7,7 @@ namespace PdfLibrary.Filters;
 /// Each byte is represented by two hexadecimal digits (0-9, A-F)
 /// The sequence ends with EOD marker (>)
 /// </summary>
-public class AsciiHexDecodeFilter : IStreamFilter
+internal class AsciiHexDecodeFilter : IStreamFilter
 {
     public string Name => "ASCIIHexDecode";
 

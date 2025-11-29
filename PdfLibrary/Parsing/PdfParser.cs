@@ -6,7 +6,7 @@ namespace PdfLibrary.Parsing;
 /// <summary>
 /// Parses PDF tokens into PDF objects (ISO 32000-1:2008 section 7.3)
 /// </summary>
-public class PdfParser(PdfLexer lexer)
+internal class PdfParser(PdfLexer lexer)
 {
     private readonly PdfLexer _lexer = lexer ?? throw new ArgumentNullException(nameof(lexer));
     private readonly Queue<PdfToken> _tokenBuffer = new();
@@ -319,7 +319,7 @@ public class PdfParser(PdfLexer lexer)
 /// <summary>
 /// Exception thrown when PDF parsing fails
 /// </summary>
-public class PdfParseException : Exception
+internal class PdfParseException : Exception
 {
     public PdfParseException(string message) : base(message)
     {

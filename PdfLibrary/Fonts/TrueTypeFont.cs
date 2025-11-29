@@ -9,7 +9,7 @@ namespace PdfLibrary.Fonts;
 /// <summary>
 /// Represents a TrueType font (ISO 32000-1:2008 section 9.6.3)
 /// </summary>
-public class TrueTypeFont : PdfFont
+internal class TrueTypeFont : PdfFont
 {
     private double[]? _widths;
     private double _defaultWidth;
@@ -24,7 +24,7 @@ public class TrueTypeFont : PdfFont
         LoadWidths();
     }
 
-    public override PdfFontType FontType => PdfFontType.TrueType;
+    internal override PdfFontType FontType => PdfFontType.TrueType;
 
     public override double GetCharacterWidth(int charCode)
     {
@@ -68,7 +68,7 @@ public class TrueTypeFont : PdfFont
         return _defaultWidth > 0 ? _defaultWidth : 500;
     }
 
-    public override EmbeddedFontMetrics? GetEmbeddedMetrics()
+    internal override EmbeddedFontMetrics? GetEmbeddedMetrics()
     {
         if (_metricsLoaded)
             return _embeddedMetrics;

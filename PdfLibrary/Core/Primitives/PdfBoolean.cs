@@ -4,7 +4,7 @@ namespace PdfLibrary.Core.Primitives;
 /// Represents a PDF boolean object (ISO 32000-1:2008 section 7.3.2)
 /// Boolean objects represent logical true/false values using keywords true and false
 /// </summary>
-public sealed class PdfBoolean : PdfObject
+internal sealed class PdfBoolean : PdfObject
 {
     /// <summary>
     /// Singleton instance for true

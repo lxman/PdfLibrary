@@ -61,22 +61,25 @@ PDF/
 ### Rendering a PDF
 
 ```csharp
-using PdfLibrary;
-using PdfLibrary.Rendering;
+using PdfLibrary.Structure;
 using PdfLibrary.Rendering.SkiaSharp;
 
 // Load a PDF document
-var document = PdfDocument.Load("document.pdf");
+using var stream = File.OpenRead("document.pdf");
+var document = PdfDocument.Load(stream);
 
-// Create a SkiaSharp render target
-using var target = new SkiaSharpRenderTarget(width: 612, height: 792);
+// Get the page to render
+var page = document.GetPage(0);  // 0-based index
 
-// Render page 1
-var renderer = new PdfRenderer(document, target);
-renderer.RenderPage(0);
+// Render to file using the fluent API
+page.Render(document)
+    .WithScale(1.0)  // 1.0 = 72 DPI
+    .ToFile("output.png");
 
-// Save as PNG
-target.SavePng("output.png");
+// Or render to SKImage for further processing
+using var image = page.Render(document)
+    .WithDpi(144)  // 2x resolution
+    .ToImage();
 ```
 
 ### Creating a PDF

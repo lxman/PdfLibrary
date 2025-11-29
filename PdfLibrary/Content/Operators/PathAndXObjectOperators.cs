@@ -6,7 +6,7 @@ namespace PdfLibrary.Content.Operators;
 /// <summary>
 /// m - Begin new subpath
 /// </summary>
-public class MoveToOperator(double x, double y) : PdfOperator("m", [new PdfReal(x), new PdfReal(y)])
+internal class MoveToOperator(double x, double y) : PdfOperator("m", [new PdfReal(x), new PdfReal(y)])
 {
     public double X { get; } = x;
     public double Y { get; } = y;
@@ -17,7 +17,7 @@ public class MoveToOperator(double x, double y) : PdfOperator("m", [new PdfReal(
 /// <summary>
 /// l - Append straight line segment
 /// </summary>
-public class LineToOperator(double x, double y) : PdfOperator("l", [new PdfReal(x), new PdfReal(y)])
+internal class LineToOperator(double x, double y) : PdfOperator("l", [new PdfReal(x), new PdfReal(y)])
 {
     public double X { get; } = x;
     public double Y { get; } = y;
@@ -28,7 +28,7 @@ public class LineToOperator(double x, double y) : PdfOperator("l", [new PdfReal(
 /// <summary>
 /// c - Append cubic Bézier curve
 /// </summary>
-public class CurveToOperator(double x1, double y1, double x2, double y2, double x3, double y3)
+internal class CurveToOperator(double x1, double y1, double x2, double y2, double x3, double y3)
     : PdfOperator("c", [
         new PdfReal(x1), new PdfReal(y1),
         new PdfReal(x2), new PdfReal(y2),
@@ -48,7 +48,7 @@ public class CurveToOperator(double x1, double y1, double x2, double y2, double 
 /// <summary>
 /// re - Append rectangle
 /// </summary>
-public class RectangleOperator(double x, double y, double width, double height)
+internal class RectangleOperator(double x, double y, double width, double height)
     : PdfOperator("re", [
         new PdfReal(x), new PdfReal(y),
         new PdfReal(width), new PdfReal(height)
@@ -65,7 +65,7 @@ public class RectangleOperator(double x, double y, double width, double height)
 /// <summary>
 /// h - Close current subpath
 /// </summary>
-public class ClosePathOperator() : PdfOperator("h", [])
+internal class ClosePathOperator() : PdfOperator("h", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathConstruction;
 }
@@ -73,7 +73,7 @@ public class ClosePathOperator() : PdfOperator("h", [])
 /// <summary>
 /// S - Stroke path
 /// </summary>
-public class StrokeOperator() : PdfOperator("S", [])
+internal class StrokeOperator() : PdfOperator("S", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -81,7 +81,7 @@ public class StrokeOperator() : PdfOperator("S", [])
 /// <summary>
 /// s - Close and stroke path
 /// </summary>
-public class CloseAndStrokeOperator() : PdfOperator("s", [])
+internal class CloseAndStrokeOperator() : PdfOperator("s", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -89,7 +89,7 @@ public class CloseAndStrokeOperator() : PdfOperator("s", [])
 /// <summary>
 /// f - Fill path using nonzero winding number rule
 /// </summary>
-public class FillOperator() : PdfOperator("f", [])
+internal class FillOperator() : PdfOperator("f", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -97,7 +97,7 @@ public class FillOperator() : PdfOperator("f", [])
 /// <summary>
 /// f* - Fill path using even-odd rule
 /// </summary>
-public class FillEvenOddOperator() : PdfOperator("f*", [])
+internal class FillEvenOddOperator() : PdfOperator("f*", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -105,7 +105,7 @@ public class FillEvenOddOperator() : PdfOperator("f*", [])
 /// <summary>
 /// B - Fill and stroke path using nonzero winding number rule
 /// </summary>
-public class FillAndStrokeOperator() : PdfOperator("B", [])
+internal class FillAndStrokeOperator() : PdfOperator("B", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -113,7 +113,7 @@ public class FillAndStrokeOperator() : PdfOperator("B", [])
 /// <summary>
 /// B* - Fill and stroke path using even-odd rule
 /// </summary>
-public class FillAndStrokeEvenOddOperator() : PdfOperator("B*", [])
+internal class FillAndStrokeEvenOddOperator() : PdfOperator("B*", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -121,7 +121,7 @@ public class FillAndStrokeEvenOddOperator() : PdfOperator("B*", [])
 /// <summary>
 /// b - Close, fill, and stroke path using nonzero winding number rule
 /// </summary>
-public class CloseAndFillAndStrokeOperator() : PdfOperator("b", [])
+internal class CloseAndFillAndStrokeOperator() : PdfOperator("b", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -129,7 +129,7 @@ public class CloseAndFillAndStrokeOperator() : PdfOperator("b", [])
 /// <summary>
 /// b* - Close, fill, and stroke path using even-odd rule
 /// </summary>
-public class CloseAndFillAndStrokeEvenOddOperator() : PdfOperator("b*", [])
+internal class CloseAndFillAndStrokeEvenOddOperator() : PdfOperator("b*", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -137,7 +137,7 @@ public class CloseAndFillAndStrokeEvenOddOperator() : PdfOperator("b*", [])
 /// <summary>
 /// n - End path without filling or stroking (clipping path)
 /// </summary>
-public class EndPathOperator() : PdfOperator("n", [])
+internal class EndPathOperator() : PdfOperator("n", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -145,7 +145,7 @@ public class EndPathOperator() : PdfOperator("n", [])
 /// <summary>
 /// W - Set clipping path using nonzero winding number rule
 /// </summary>
-public class ClipOperator() : PdfOperator("W", [])
+internal class ClipOperator() : PdfOperator("W", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -153,7 +153,7 @@ public class ClipOperator() : PdfOperator("W", [])
 /// <summary>
 /// W* - Set clipping path using even-odd rule
 /// </summary>
-public class ClipEvenOddOperator() : PdfOperator("W*", [])
+internal class ClipEvenOddOperator() : PdfOperator("W*", [])
 {
     public override OperatorCategory Category => OperatorCategory.PathPainting;
 }
@@ -161,7 +161,7 @@ public class ClipEvenOddOperator() : PdfOperator("W*", [])
 /// <summary>
 /// Do - Invoke named XObject
 /// </summary>
-public class InvokeXObjectOperator(PdfName name) : PdfOperator("Do", [name])
+internal class InvokeXObjectOperator(PdfName name) : PdfOperator("Do", [name])
 {
     public string XObjectName { get; } = name.Value;
 
@@ -171,7 +171,7 @@ public class InvokeXObjectOperator(PdfName name) : PdfOperator("Do", [name])
 /// <summary>
 /// Generic operator for unrecognized or simple operators
 /// </summary>
-public class GenericOperator(string name, List<PdfObject> operands) : PdfOperator(name, operands)
+internal class GenericOperator(string name, List<PdfObject> operands) : PdfOperator(name, operands)
 {
     public override OperatorCategory Category => OperatorCategory.Unknown;
 }
