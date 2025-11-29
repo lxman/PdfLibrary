@@ -16,10 +16,15 @@
         <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
         <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
 
         <!-- Generate documentation XML for IntelliSense -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
