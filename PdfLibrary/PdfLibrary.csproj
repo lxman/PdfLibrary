@@ -4,7 +4,26 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <!-- NuGet Package Metadata -->
+        <PackageId>PdfLibrary</PackageId>
+        <Version>0.0.1</Version>
+        <Authors>Jordan</Authors>
+        <Description>A comprehensive .NET library for parsing, rendering, and creating PDF documents. Pure C# implementation with support for PDF 1.x and 2.0.</Description>
+        <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;document</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+
+        <!-- Generate documentation XML for IntelliSense -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
 
     <ItemGroup>
         <!-- SkiaSharp is the platform-specific rendering implementation - needs internal access -->

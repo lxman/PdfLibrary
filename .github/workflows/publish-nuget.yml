@@ -1,0 +1,54 @@
+name: Publish to NuGet
+
+on:
+  release:
+    types: [published]
+
+env:
+  DOTNET_VERSION: '10.0.x'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Extract version from tag
+      id: version
+      run: |
+        # Remove 'v' prefix if present (v0.0.1 -> 0.0.1)
+        VERSION=${GITHUB_REF_NAME#v}
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+    - name: Update package versions
+      run: |
+        # Update version in csproj files to match the tag
+        sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary/PdfLibrary.csproj
+        sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
+
+    - name: Restore dependencies
+      run: dotnet restore PdfProcessor.slnx
+
+    - name: Build
+      run: dotnet build PdfProcessor.slnx --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --verbosity normal
+
+    - name: Pack PdfLibrary
+      run: dotnet pack PdfLibrary/PdfLibrary.csproj --configuration Release --no-build --output ./nupkg
+
+    - name: Pack PdfLibrary.Rendering.SkiaSharp
+      run: dotnet pack PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-build --output ./nupkg
+
+    - name: Publish to NuGet
+      run: |
+        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

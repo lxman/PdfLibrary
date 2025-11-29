@@ -4,6 +4,20 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
+
+        <!-- NuGet Package Metadata -->
+        <PackageId>PdfLibrary.Rendering.SkiaSharp</PackageId>
+        <Version>0.0.1</Version>
+        <Authors>Jordan</Authors>
+        <Description>SkiaSharp rendering backend for PdfLibrary. Provides high-quality PDF page rendering to images using SkiaSharp.</Description>
+        <PackageTags>pdf;pdf-renderer;skiasharp;rendering</PackageTags>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+
+        <!-- Generate documentation XML for IntelliSense -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>
 
     <ItemGroup>
