@@ -34,10 +34,10 @@ jobs:
         sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
 
     - name: Restore dependencies
-      run: dotnet restore PdfProcessor.slnx
+      run: dotnet restore PdfLibrary.slnx
 
     - name: Build
-      run: dotnet build PdfProcessor.slnx --configuration Release --no-restore
+      run: dotnet build PdfLibrary.slnx --configuration Release --no-restore
 
     - name: Run tests
       run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --verbosity normal
