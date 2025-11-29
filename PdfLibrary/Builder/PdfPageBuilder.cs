@@ -3,7 +3,7 @@ namespace PdfLibrary.Builder;
 /// <summary>
 /// Fluent builder for creating PDF page content
 /// </summary>
-public class PdfPageBuilder
+public class PdfPageBuilder(PdfSize size)
 {
     private readonly List<PdfContentElement> _content = [];
     private readonly List<PdfFormFieldBuilder> _formFields = [];
@@ -13,17 +13,12 @@ public class PdfPageBuilder
     /// <summary>
     /// Page size in points
     /// </summary>
-    public PdfSize Size { get; }
+    public PdfSize Size { get; } = size;
 
     /// <summary>
     /// Page height in points (for coordinate conversion)
     /// </summary>
     public double PageHeight => Size.Height;
-
-    public PdfPageBuilder(PdfSize size)
-    {
-        Size = size;
-    }
 
     // ==================== UNIT & ORIGIN CONFIGURATION ====================
 
@@ -854,21 +849,14 @@ public class PdfImageContent : PdfContentElement
 /// <summary>
 /// Fluent builder for image configuration
 /// </summary>
-public class PdfImageBuilder
+public class PdfImageBuilder(PdfImageContent content)
 {
-    private readonly PdfImageContent _content;
-
-    public PdfImageBuilder(PdfImageContent content)
-    {
-        _content = content;
-    }
-
     /// <summary>
     /// Set image opacity (0.0 = transparent, 1.0 = opaque)
     /// </summary>
     public PdfImageBuilder Opacity(double opacity)
     {
-        _content.Opacity = Math.Clamp(opacity, 0, 1);
+        content.Opacity = Math.Clamp(opacity, 0, 1);
         return this;
     }
 
@@ -877,7 +865,7 @@ public class PdfImageBuilder
     /// </summary>
     public PdfImageBuilder Rotate(double degrees)
     {
-        _content.Rotation = degrees;
+        content.Rotation = degrees;
         return this;
     }
 
@@ -886,7 +874,7 @@ public class PdfImageBuilder
     /// </summary>
     public PdfImageBuilder PreserveAspectRatio(bool preserve = true)
     {
-        _content.PreserveAspectRatio = preserve;
+        content.PreserveAspectRatio = preserve;
         return this;
     }
 
@@ -895,7 +883,7 @@ public class PdfImageBuilder
     /// </summary>
     public PdfImageBuilder Stretch()
     {
-        _content.PreserveAspectRatio = false;
+        content.PreserveAspectRatio = false;
         return this;
     }
 
@@ -904,8 +892,8 @@ public class PdfImageBuilder
     /// </summary>
     public PdfImageBuilder Compression(PdfImageCompression compression, int jpegQuality = 85)
     {
-        _content.Compression = compression;
-        _content.JpegQuality = Math.Clamp(jpegQuality, 1, 100);
+        content.Compression = compression;
+        content.JpegQuality = Math.Clamp(jpegQuality, 1, 100);
         return this;
     }
 
@@ -914,7 +902,7 @@ public class PdfImageBuilder
     /// </summary>
     public PdfImageBuilder Interpolate(bool interpolate = true)
     {
-        _content.Interpolate = interpolate;
+        content.Interpolate = interpolate;
         return this;
     }
 
@@ -923,7 +911,7 @@ public class PdfImageBuilder
     /// </summary>
     public PdfImageBuilder NearestNeighbor()
     {
-        _content.Interpolate = false;
+        content.Interpolate = false;
         return this;
     }
 }

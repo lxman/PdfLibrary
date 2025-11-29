@@ -71,16 +71,10 @@ public static class PdfPageSize
 /// <summary>
 /// Represents a page size in points
 /// </summary>
-public readonly struct PdfSize
+public readonly struct PdfSize(double width, double height)
 {
-    public double Width { get; }
-    public double Height { get; }
-
-    public PdfSize(double width, double height)
-    {
-        Width = width;
-        Height = height;
-    }
+    public double Width { get; } = width;
+    public double Height { get; } = height;
 
     /// <summary>
     /// Create a size from inches

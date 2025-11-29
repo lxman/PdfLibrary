@@ -149,51 +149,51 @@ public class PdfContentParser
 
                 // Text positioning operators
                 "Td" when operands.Count >= 2 => new MoveTextPositionOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1])),
+                    operands[0].ToDouble(), operands[1].ToDouble()),
                 "TD" when operands.Count >= 2 => new MoveTextPositionAndSetLeadingOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1])),
+                    operands[0].ToDouble(), operands[1].ToDouble()),
                 "Tm" when operands.Count >= 6 => new SetTextMatrixOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]),
-                    GetNumber(operands[3]), GetNumber(operands[4]), GetNumber(operands[5])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble(),
+                    operands[3].ToDouble(), operands[4].ToDouble(), operands[5].ToDouble()),
                 "T*" => new MoveToNextLineOperator(),
 
                 // Text state operators
                 "Tf" when operands is [PdfName font, _, ..] => new SetTextFontOperator(
-                    font, GetNumber(operands[1])),
-                "Tc" when operands.Count >= 1 => new SetCharSpacingOperator(GetNumber(operands[0])),
-                "Tw" when operands.Count >= 1 => new SetWordSpacingOperator(GetNumber(operands[0])),
-                "Tz" when operands.Count >= 1 => new SetHorizontalScalingOperator(GetNumber(operands[0])),
-                "TL" when operands.Count >= 1 => new SetTextLeadingOperator(GetNumber(operands[0])),
+                    font, operands[1].ToDouble()),
+                "Tc" when operands.Count >= 1 => new SetCharSpacingOperator(operands[0].ToDouble()),
+                "Tw" when operands.Count >= 1 => new SetWordSpacingOperator(operands[0].ToDouble()),
+                "Tz" when operands.Count >= 1 => new SetHorizontalScalingOperator(operands[0].ToDouble()),
+                "TL" when operands.Count >= 1 => new SetTextLeadingOperator(operands[0].ToDouble()),
                 "Tr" when operands.Count >= 1 => new SetTextRenderingModeOperator(GetInteger(operands[0])),
-                "Ts" when operands.Count >= 1 => new SetTextRiseOperator(GetNumber(operands[0])),
+                "Ts" when operands.Count >= 1 => new SetTextRiseOperator(operands[0].ToDouble()),
 
                 // Graphics state operators
                 "q" => new SaveGraphicsStateOperator(),
                 "Q" => new RestoreGraphicsStateOperator(),
                 "cm" when operands.Count >= 6 => new ConcatenateMatrixOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]),
-                    GetNumber(operands[3]), GetNumber(operands[4]), GetNumber(operands[5])),
-                "w" when operands.Count >= 1 => new SetLineWidthOperator(GetNumber(operands[0])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble(),
+                    operands[3].ToDouble(), operands[4].ToDouble(), operands[5].ToDouble()),
+                "w" when operands.Count >= 1 => new SetLineWidthOperator(operands[0].ToDouble()),
                 "J" when operands.Count >= 1 => new SetLineCapOperator(GetInteger(operands[0])),
                 "j" when operands.Count >= 1 => new SetLineJoinOperator(GetInteger(operands[0])),
-                "M" when operands.Count >= 1 => new SetMiterLimitOperator(GetNumber(operands[0])),
+                "M" when operands.Count >= 1 => new SetMiterLimitOperator(operands[0].ToDouble()),
                 "d" when operands is [PdfArray arr, _, ..] => new SetDashPatternOperator(
-                    arr, GetNumber(operands[1])),
+                    arr, operands[1].ToDouble()),
                 "gs" when operands is [PdfName dictName, ..] => new SetGraphicsStateOperator(dictName),
                 "ri" when operands is [PdfName intent, ..] => new SetRenderingIntentOperator(intent),
-                "i" when operands.Count >= 1 => new SetFlatnessOperator(GetNumber(operands[0])),
+                "i" when operands.Count >= 1 => new SetFlatnessOperator(operands[0].ToDouble()),
 
                 // Path construction operators
                 "m" when operands.Count >= 2 => new MoveToOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1])),
+                    operands[0].ToDouble(), operands[1].ToDouble()),
                 "l" when operands.Count >= 2 => new LineToOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1])),
+                    operands[0].ToDouble(), operands[1].ToDouble()),
                 "c" when operands.Count >= 6 => new CurveToOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]),
-                    GetNumber(operands[3]), GetNumber(operands[4]), GetNumber(operands[5])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble(),
+                    operands[3].ToDouble(), operands[4].ToDouble(), operands[5].ToDouble()),
                 "re" when operands.Count >= 4 => new RectangleOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]),
-                    GetNumber(operands[2]), GetNumber(operands[3])),
+                    operands[0].ToDouble(), operands[1].ToDouble(),
+                    operands[2].ToDouble(), operands[3].ToDouble()),
                 "h" => new ClosePathOperator(),
 
                 // Path painting operators
@@ -210,20 +210,20 @@ public class PdfContentParser
                 "W*" => new ClipEvenOddOperator(),
 
                 // Color operators - Grayscale
-                "g" when operands.Count >= 1 => new SetFillGrayOperator(GetNumber(operands[0])),
-                "G" when operands.Count >= 1 => new SetStrokeGrayOperator(GetNumber(operands[0])),
+                "g" when operands.Count >= 1 => new SetFillGrayOperator(operands[0].ToDouble()),
+                "G" when operands.Count >= 1 => new SetStrokeGrayOperator(operands[0].ToDouble()),
 
                 // Color operators - RGB
                 "rg" when operands.Count >= 3 => new SetFillRgbOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble()),
                 "RG" when operands.Count >= 3 => new SetStrokeRgbOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble()),
 
                 // Color operators - CMYK
                 "k" when operands.Count >= 4 => new SetFillCmykOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]), GetNumber(operands[3])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble(), operands[3].ToDouble()),
                 "K" when operands.Count >= 4 => new SetStrokeCmykOperator(
-                    GetNumber(operands[0]), GetNumber(operands[1]), GetNumber(operands[2]), GetNumber(operands[3])),
+                    operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble(), operands[3].ToDouble()),
 
                 // Color operators - Color space
                 "cs" when operands is [PdfName colorSpace, ..] => new SetFillColorSpaceOperator(colorSpace),
@@ -249,15 +249,6 @@ public class PdfContentParser
         }
     }
 
-    private static double GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => 0
-        };
-    }
 
     private static int GetInteger(PdfObject obj)
     {

@@ -383,23 +383,14 @@ public readonly struct PdfRectangle(double x1, double y1, double x2, double y2)
         if (array.Count != 4)
             throw new ArgumentException($"Rectangle array must have 4 elements, got {array.Count}");
 
-        double x1 = GetNumber(array[0]);
-        double y1 = GetNumber(array[1]);
-        double x2 = GetNumber(array[2]);
-        double y2 = GetNumber(array[3]);
+        double x1 = array[0].ToDouble();
+        double y1 = array[1].ToDouble();
+        double x2 = array[2].ToDouble();
+        double y2 = array[3].ToDouble();
 
         return new PdfRectangle(x1, y1, x2, y2);
     }
 
-    private static double GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger integer => integer.Value,
-            PdfReal real => real.Value,
-            _ => 0
-        };
-    }
 
     public override string ToString() => $"[{X1}, {Y1}, {X2}, {Y2}] ({Width}x{Height})";
 }

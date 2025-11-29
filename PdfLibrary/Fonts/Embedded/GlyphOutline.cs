@@ -4,47 +4,38 @@ namespace PdfLibrary.Fonts.Embedded
     /// Represents a complete glyph outline with contours and metrics.
     /// Used for vector rendering of embedded font glyphs.
     /// </summary>
-    public class GlyphOutline
+    public class GlyphOutline(
+        int glyphId,
+        List<GlyphContour> contours,
+        GlyphMetrics metrics,
+        bool isComposite = false,
+        List<int>? componentGlyphIds = null)
     {
         /// <summary>
         /// Glyph ID (index in font's glyph table)
         /// </summary>
-        public int GlyphId { get; }
+        public int GlyphId { get; } = glyphId;
 
         /// <summary>
         /// List of contours that make up this glyph.
         /// Simple glyphs have 1+ contours, composite glyphs reference other glyphs.
         /// </summary>
-        public List<GlyphContour> Contours { get; }
+        public List<GlyphContour> Contours { get; } = contours;
 
         /// <summary>
         /// Glyph metrics (advance width, left side bearing, bounding box)
         /// </summary>
-        public GlyphMetrics Metrics { get; }
+        public GlyphMetrics Metrics { get; } = metrics;
 
         /// <summary>
         /// True if this is a composite glyph (references other glyphs)
         /// </summary>
-        public bool IsComposite { get; }
+        public bool IsComposite { get; } = isComposite;
 
         /// <summary>
         /// For composite glyphs, list of referenced glyph IDs
         /// </summary>
-        public List<int> ComponentGlyphIds { get; }
-
-        public GlyphOutline(
-            int glyphId,
-            List<GlyphContour> contours,
-            GlyphMetrics metrics,
-            bool isComposite = false,
-            List<int>? componentGlyphIds = null)
-        {
-            GlyphId = glyphId;
-            Contours = contours;
-            Metrics = metrics;
-            IsComposite = isComposite;
-            ComponentGlyphIds = componentGlyphIds ?? [];
-        }
+        public List<int> ComponentGlyphIds { get; } = componentGlyphIds ?? [];
 
         /// <summary>
         /// Check if glyph is empty (space character, etc.)

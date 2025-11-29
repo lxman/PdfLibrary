@@ -8,18 +8,11 @@ namespace PdfLibrary.Parsing;
 /// <summary>
 /// Result from parsing cross-reference data
 /// </summary>
-public class PdfXrefParseResult
+public class PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictionary, bool isXRefStream)
 {
-    public PdfXrefTable Table { get; }
-    public PdfDictionary? TrailerDictionary { get; }
-    public bool IsXRefStream { get; }
-
-    public PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictionary, bool isXRefStream)
-    {
-        Table = table;
-        TrailerDictionary = trailerDictionary;
-        IsXRefStream = isXRefStream;
-    }
+    public PdfXrefTable Table { get; } = table;
+    public PdfDictionary? TrailerDictionary { get; } = trailerDictionary;
+    public bool IsXRefStream { get; } = isXRefStream;
 }
 
 /// <summary>

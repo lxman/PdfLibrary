@@ -4,24 +4,18 @@ namespace PdfLibrary.Fonts.Embedded
     /// Represents a single contour (closed path) in a glyph outline.
     /// TrueType glyphs are composed of one or more contours.
     /// </summary>
-    public class GlyphContour
+    public class GlyphContour(List<ContourPoint> points, bool isClosed = true)
     {
         /// <summary>
         /// Points that define this contour (on-curve and off-curve control points)
         /// </summary>
-        public List<ContourPoint> Points { get; }
+        public List<ContourPoint> Points { get; } = points;
 
         /// <summary>
         /// True if this contour is closed (forms a complete shape)
         /// Most TrueType contours are closed.
         /// </summary>
-        public bool IsClosed { get; }
-
-        public GlyphContour(List<ContourPoint> points, bool isClosed = true)
-        {
-            Points = points;
-            IsClosed = isClosed;
-        }
+        public bool IsClosed { get; } = isClosed;
 
         /// <summary>
         /// Number of on-curve points in this contour

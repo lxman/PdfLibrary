@@ -3,17 +3,17 @@ namespace PdfLibrary.Builder;
 /// <summary>
 /// Base class for form field builders
 /// </summary>
-public abstract class PdfFormFieldBuilder
+public abstract class PdfFormFieldBuilder(string name, PdfRect rect)
 {
     /// <summary>
     /// Field name (used as the field identifier in the PDF)
     /// </summary>
-    public string Name { get; }
+    public string Name { get; } = name;
 
     /// <summary>
     /// Field rectangle in PDF coordinates
     /// </summary>
-    public PdfRect Rect { get; protected set; }
+    public PdfRect Rect { get; protected set; } = rect;
 
     /// <summary>
     /// Tooltip text shown on hover
@@ -59,12 +59,6 @@ public abstract class PdfFormFieldBuilder
     /// Dash pattern for dashed borders (dash length, gap length)
     /// </summary>
     public double[]? DashPattern { get; protected set; }
-
-    protected PdfFormFieldBuilder(string name, PdfRect rect)
-    {
-        Name = name;
-        Rect = rect;
-    }
 }
 
 /// <summary>
@@ -101,7 +95,7 @@ public enum PdfBorderStyle
 /// <summary>
 /// Builder for text input fields
 /// </summary>
-public class PdfTextFieldBuilder : PdfFormFieldBuilder
+public class PdfTextFieldBuilder(string name, PdfRect rect) : PdfFormFieldBuilder(name, rect)
 {
     /// <summary>
     /// Default value
@@ -147,10 +141,6 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
     /// Text alignment
     /// </summary>
     public PdfTextAlignment Alignment { get; private set; } = PdfTextAlignment.Left;
-
-    public PdfTextFieldBuilder(string name, PdfRect rect) : base(name, rect)
-    {
-    }
 
     /// <summary>
     /// Set the default value
@@ -306,7 +296,7 @@ public class PdfTextFieldBuilder : PdfFormFieldBuilder
 /// <summary>
 /// Builder for checkbox fields
 /// </summary>
-public class PdfCheckboxBuilder : PdfFormFieldBuilder
+public class PdfCheckboxBuilder(string name, PdfRect rect) : PdfFormFieldBuilder(name, rect)
 {
     /// <summary>
     /// Whether the checkbox is checked by default
@@ -322,10 +312,6 @@ public class PdfCheckboxBuilder : PdfFormFieldBuilder
     /// Check mark style
     /// </summary>
     public PdfCheckStyle CheckStyle { get; private set; } = PdfCheckStyle.Check;
-
-    public PdfCheckboxBuilder(string name, PdfRect rect) : base(name, rect)
-    {
-    }
 
     /// <summary>
     /// Set default checked state
@@ -414,10 +400,9 @@ public class PdfCheckboxBuilder : PdfFormFieldBuilder
 /// <summary>
 /// Builder for radio button groups
 /// </summary>
-public class PdfRadioGroupBuilder : PdfFormFieldBuilder
+public class PdfRadioGroupBuilder(string name, double pageHeight) : PdfFormFieldBuilder(name, default)
 {
     private readonly List<PdfRadioOption> _options = [];
-    private readonly double _pageHeight;
 
     /// <summary>
     /// Radio button options
@@ -439,11 +424,6 @@ public class PdfRadioGroupBuilder : PdfFormFieldBuilder
     /// </summary>
     public PdfCheckStyle RadioStyle { get; private set; } = PdfCheckStyle.Circle;
 
-    public PdfRadioGroupBuilder(string name, double pageHeight) : base(name, default)
-    {
-        _pageHeight = pageHeight;
-    }
-
     /// <summary>
     /// Add a radio button option
     /// </summary>
@@ -458,7 +438,7 @@ public class PdfRadioGroupBuilder : PdfFormFieldBuilder
     /// </summary>
     public PdfRadioGroupBuilder AddOptionInches(string value, double left, double top, double size = 0.15)
     {
-        PdfRect rect = PdfRect.FromInches(left, top, size, size, _pageHeight);
+        PdfRect rect = PdfRect.FromInches(left, top, size, size, pageHeight);
         return AddOption(value, rect);
     }
 
@@ -529,7 +509,7 @@ public class PdfRadioOption
 /// <summary>
 /// Builder for dropdown (combo box) fields
 /// </summary>
-public class PdfDropdownBuilder : PdfFormFieldBuilder
+public class PdfDropdownBuilder(string name, PdfRect rect) : PdfFormFieldBuilder(name, rect)
 {
     private readonly List<PdfDropdownOption> _options = [];
 
@@ -567,10 +547,6 @@ public class PdfDropdownBuilder : PdfFormFieldBuilder
     /// Text color
     /// </summary>
     public PdfColor TextColor { get; private set; } = PdfColor.Black;
-
-    public PdfDropdownBuilder(string name, PdfRect rect) : base(name, rect)
-    {
-    }
 
     /// <summary>
     /// Add an option
@@ -708,12 +684,8 @@ public class PdfDropdownOption
 /// <summary>
 /// Builder for signature fields
 /// </summary>
-public class PdfSignatureFieldBuilder : PdfFormFieldBuilder
+public class PdfSignatureFieldBuilder(string name, PdfRect rect) : PdfFormFieldBuilder(name, rect)
 {
-    public PdfSignatureFieldBuilder(string name, PdfRect rect) : base(name, rect)
-    {
-    }
-
     /// <summary>
     /// Make field required
     /// </summary>

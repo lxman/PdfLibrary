@@ -25,6 +25,8 @@ public class PdfRenderer : PdfContentProcessor
     private readonly IPathBuilder _currentPath;
     private readonly OptionalContentManager? _optionalContentManager;
     private readonly PdfDocument? _document;
+    private readonly ColorSpaceResolver _colorSpaceResolver;
+    private readonly ExtGStateApplier _extGStateApplier;
 
     /// <summary>
     /// Creates a new PDF renderer
@@ -41,6 +43,11 @@ public class PdfRenderer : PdfContentProcessor
         _currentPath = new PathBuilder();
         _optionalContentManager = optionalContentManager;
         _document = document;
+        _colorSpaceResolver = new ColorSpaceResolver(document);
+        _extGStateApplier = new ExtGStateApplier(document, target)
+        {
+            RenderSoftMaskGroupCallback = RenderSoftMaskGroup
+        };
     }
 
     /// <summary>
@@ -627,7 +634,8 @@ public class PdfRenderer : PdfContentProcessor
         string beforeFillCs = fillCs ?? "null";
         var beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
 
-        ResolveColorSpace(ref fillCs, ref fillColor);
+        PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
+        _colorSpaceResolver.ResolveColorSpace(ref fillCs, ref fillColor, colorSpaces);
 
         string afterFillCs = fillCs ?? "null";
         string afterFillColor = fillColor is not null ? $"[{string.Join(", ", fillColor.Select(c => c.ToString("F3")))}]" : "null";
@@ -643,242 +651,9 @@ public class PdfRenderer : PdfContentProcessor
 
         string? strokeCs = CurrentState.StrokeColorSpace;
         List<double>? strokeColor = [..CurrentState.StrokeColor]; // Copy to avoid modifying original
-        ResolveColorSpace(ref strokeCs, ref strokeColor);
+        _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces);
         CurrentState.ResolvedStrokeColorSpace = strokeCs ?? string.Empty;
         CurrentState.ResolvedStrokeColor = strokeColor ?? [];
-    }
-
-    private void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color)
-    {
-        if (string.IsNullOrEmpty(colorSpaceName))
-            return;
-
-        // Ensure the color list exists
-        color ??= [];
-
-        // Skip device color spaces - they don't need resolution
-        if (colorSpaceName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK")
-            return;
-
-        // Try to resolve named color space from resources
-
-        PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
-        if (colorSpaces is null)
-        {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: No ColorSpace dict in resources for '{colorSpaceName}' - _currentResources is {(_currentResources is null ? "null" : "not null")}");
-            return;
-        }
-
-        if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out PdfObject? csObj))
-        {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict (has {colorSpaces.Keys.Count} entries: [{string.Join(", ", colorSpaces.Keys.Take(10).Select(k => k.Value))}])");
-            return;
-        }
-
-        // Resolve indirect reference
-        if (csObj is PdfIndirectReference reference && _document is not null)
-            csObj = _document.ResolveReference(reference);
-
-        // Parse color space array
-        // Can be: [/ICCBased stream] or [/Separation name alternateSpace tintTransform]
-        if (csObj is PdfArray { Count: >= 2 } csArray)
-        {
-            if (csArray[0] is not PdfName csType)
-                return;
-
-            switch (csType.Value)
-            {
-                // Handle ICCBased color space: [/ICCBased stream]
-                case "ICCBased" when csArray.Count >= 2:
-                {
-                    // Get the ICC profile stream
-                    PdfObject? streamObj = csArray[1];
-                    if (streamObj is PdfIndirectReference streamRef && _document is not null)
-                        streamObj = _document.ResolveReference(streamRef);
-
-                    if (streamObj is not PdfStream iccStream) return;
-                    // Get stream dictionary to find alternate color space and number of components
-                    PdfDictionary streamDict = iccStream.Dictionary;
-
-                    // Get /N (number of components): 1=Gray, 3=RGB, 4=CMYK
-                    var numComponents = 1;
-                    if (streamDict.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nNum)
-                    {
-                        numComponents = nNum.Value;
-                    }
-
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ICCBased '{colorSpaceName}': N={numComponents}, current color has {color.Count} components, color=[{string.Join(", ", color.Select(c => c.ToString("F2")))}]");
-
-                    // Get /Alternate color space
-                    string? alternateSpace = null;
-                    if (streamDict.TryGetValue(new PdfName("Alternate"), out PdfObject altObj))
-                    {
-                        if (altObj is PdfName altName)
-                        {
-                            alternateSpace = altName.Value;
-                        }
-                    }
-
-                    // For now, use the alternate color space directly with the color values
-                    // This is a simplification - ideally we'd process the ICC profile
-                    if (alternateSpace is not null)
-                    {
-                        colorSpaceName = alternateSpace;
-                    }
-                    else
-                    {
-                        // No alternate specified, infer from component count
-                        colorSpaceName = numComponents switch
-                        {
-                            1 => "DeviceGray",
-                            3 => "DeviceRGB",
-                            4 => "DeviceCMYK",
-                            _ => "DeviceGray"
-                        };
-                    }
-
-                    // Initialize default colors if component count doesn't match
-                    if (color.Count != numComponents)
-                    {
-                        color = numComponents switch
-                        {
-                            1 => [0.0],
-                            3 => [0.0, 0.0, 0.0],
-                            4 => [0.0, 0.0, 0.0, 1.0],
-                            _ => [0.0]
-                        };
-                    }
-
-                    break;
-                }
-                // Handle Separation color space: [/Separation name alternateSpace tintTransform]
-                // Get alternate color space (usually /DeviceRGB or /DeviceCMYK, or [/CalRGB ...], [/CalGray ...], etc.)
-                case "Separation" when csArray.Count >= 4:
-                {
-                    // Get the colorant name (index 1)
-                    string colorantName = csArray[1] is PdfName cn ? cn.Value : "Unknown";
-
-                    // Get the alternate color space (index 2) - can be PdfName or PdfArray
-                    PdfObject alternateObj = csArray[2];
-                    if (alternateObj is PdfIndirectReference altRef && _document is not null)
-                        alternateObj = _document.ResolveReference(altRef);
-
-                    string altSpace;
-                    int altComponents;
-
-                    if (alternateObj is PdfName altName)
-                    {
-                        altSpace = altName.Value;
-                        altComponents = altSpace switch
-                        {
-                            "DeviceGray" => 1,
-                            "DeviceRGB" => 3,
-                            "DeviceCMYK" => 4,
-                            _ => 3
-                        };
-                    }
-                    else if (alternateObj is PdfArray altArray && altArray.Count >= 1 && altArray[0] is PdfName altArrayType)
-                    {
-                        // Handle array-based alternate spaces like [/CalRGB <<...>>], [/CalGray <<...>>], [/Lab <<...>>]
-                        altSpace = altArrayType.Value;
-                        altComponents = altSpace switch
-                        {
-                            "CalGray" => 1,
-                            "CalRGB" => 3,
-                            "Lab" => 3,
-                            "ICCBased" => 3, // Default, should read /N from stream
-                            _ => 3
-                        };
-                    }
-                    else
-                    {
-                        // Unknown alternate space format
-                        break;
-                    }
-
-                    // Get the tint transform function (index 3)
-                    PdfObject? tintTransformObj = csArray[3];
-                    PdfFunction? tintTransform = _document is not null
-                        ? PdfFunction.Create(tintTransformObj, _document)
-                        : null;
-
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation: colorant='{colorantName}', altSpace='{altSpace}', altComponents={altComponents}, tintTransform={tintTransform?.GetType().Name ?? "NULL"}, color.Count={color.Count}");
-
-                    if (color.Count == 1)
-                    {
-                        double tint = color[0];
-
-                        // Try to use the tint transform function
-                        if (tintTransform is not null)
-                        {
-                            double[] result = tintTransform.Evaluate([tint]);
-                            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
-
-                            if (result.Length >= 3)
-                            {
-                                // RGB output from tint transform
-                                color = [result[0], result[1], result[2]];
-                                colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
-                                if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
-                                    colorSpaceName = "DeviceRGB";
-                            }
-                            else if (result.Length == 1)
-                            {
-                                // Grayscale output
-                                color = [result[0]];
-                                colorSpaceName = "DeviceGray";
-                            }
-                            else if (result.Length == 4)
-                            {
-                                // CMYK output
-                                color = [result[0], result[1], result[2], result[3]];
-                                colorSpaceName = "DeviceCMYK";
-                            }
-                        }
-                        else
-                        {
-                            // Fallback: simple heuristic when tint transform not available
-                            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> using fallback (no tint transform), tint={tint:F3}");
-
-                            // Handle special colorant names
-                            if (colorantName == "Black" || colorantName == "All" || colorantName == "None")
-                            {
-                                // For Black/All separations: tint=1 means black, tint=0 means white
-                                double value = 1.0 - tint;
-                                color = [value, value, value];
-                                colorSpaceName = "DeviceRGB";
-                            }
-                            else if (altSpace is "DeviceRGB" or "CalRGB")
-                            {
-                                double value = 1.0 - tint;
-                                color = [value, value, value];
-                                colorSpaceName = "DeviceRGB";
-                            }
-                            else if (altSpace is "DeviceGray" or "CalGray")
-                            {
-                                double value = 1.0 - tint;
-                                color = [value];
-                                colorSpaceName = "DeviceGray";
-                            }
-                            else if (altSpace == "DeviceCMYK")
-                            {
-                                color = [0.0, 0.0, 0.0, tint];
-                                colorSpaceName = "DeviceCMYK";
-                            }
-                            else
-                            {
-                                double value = 1.0 - tint;
-                                color = [value, value, value];
-                                colorSpaceName = "DeviceRGB";
-                            }
-                        }
-                    }
-
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
-                    break;
-                }
-            }
-        }
     }
 
     // ==================== Graphics State Parameter Dictionary ====================
@@ -904,323 +679,12 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Apply all ExtGState parameters to the current graphics state
-        ApplyExtGState(extGState);
-    }
-
-    /// <summary>
-    /// Applies ExtGState dictionary parameters to the current graphics state
-    /// ISO 32000-1:2008 Table 58 - Entries in a graphics state parameter dictionary
-    /// </summary>
-    private void ApplyExtGState(PdfDictionary extGState)
-    {
-        foreach (KeyValuePair<PdfName, PdfObject> entry in extGState)
-        {
-            string key = entry.Key.Value;
-            PdfObject value = entry.Value;
-
-            // Resolve indirect references
-            if (value is PdfIndirectReference reference && _document is not null)
-                value = _document.ResolveReference(reference);
-
-            switch (key)
-            {
-                case "Type":
-                    // Ignore - just identifies this as an ExtGState dictionary
-                    break;
-
-                // Line width (LW)
-                case "LW":
-                    if (GetNumber(value) is double lw)
-                    {
-                        CurrentState.LineWidth = lw;
-                        PdfLogger.Log(LogCategory.Graphics, $"  LW (LineWidth) = {lw}");
-                    }
-                    break;
-
-                // Line cap (LC)
-                case "LC":
-                    if (value is PdfInteger lc)
-                    {
-                        CurrentState.LineCap = lc.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  LC (LineCap) = {lc.Value}");
-                    }
-                    break;
-
-                // Line join (LJ)
-                case "LJ":
-                    if (value is PdfInteger lj)
-                    {
-                        CurrentState.LineJoin = lj.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  LJ (LineJoin) = {lj.Value}");
-                    }
-                    break;
-
-                // Miter limit (ML)
-                case "ML":
-                    if (GetNumber(value) is double ml)
-                    {
-                        CurrentState.MiterLimit = ml;
-                        PdfLogger.Log(LogCategory.Graphics, $"  ML (MiterLimit) = {ml}");
-                    }
-                    break;
-
-                // Dash pattern (D)
-                case "D":
-                    if (value is PdfArray dashArray && dashArray.Count >= 2)
-                    {
-                        if (dashArray[0] is PdfArray pattern)
-                        {
-                            var dashPattern = new double[pattern.Count];
-                            for (var i = 0; i < pattern.Count; i++)
-                            {
-                                dashPattern[i] = GetNumber(pattern[i]) ?? 0;
-                            }
-                            CurrentState.DashPattern = dashPattern.Length > 0 ? dashPattern : null;
-                        }
-                        CurrentState.DashPhase = GetNumber(dashArray[1]) ?? 0;
-                        PdfLogger.Log(LogCategory.Graphics, $"  D (DashPattern) = [{string.Join(", ", CurrentState.DashPattern ?? [])}] {CurrentState.DashPhase}");
-                    }
-                    break;
-
-                // Rendering intent (RI)
-                case "RI":
-                    if (value is PdfName ri)
-                    {
-                        // Store rendering intent if needed
-                        PdfLogger.Log(LogCategory.Graphics, $"  RI (RenderingIntent) = {ri.Value}");
-                    }
-                    break;
-
-                // Overprint for stroking (OP)
-                case "OP":
-                    if (value is PdfBoolean op)
-                    {
-                        CurrentState.StrokeOverprint = op.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  OP (StrokeOverprint) = {op.Value}");
-                    }
-                    break;
-
-                // Overprint for non-stroking (op)
-                case "op":
-                    if (value is PdfBoolean opFill)
-                    {
-                        CurrentState.FillOverprint = opFill.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  op (FillOverprint) = {opFill.Value}");
-                    }
-                    break;
-
-                // Overprint mode (OPM)
-                case "OPM":
-                    if (value is PdfInteger opm)
-                    {
-                        CurrentState.OverprintMode = opm.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  OPM (OverprintMode) = {opm.Value}");
-                    }
-                    break;
-
-                // Font (Font) - array of [fontRef size]
-                case "Font":
-                    if (value is PdfArray fontArray && fontArray.Count >= 2)
-                    {
-                        // Get font reference and size
-                        PdfObject fontRef = fontArray[0];
-                        if (fontRef is PdfIndirectReference fRef && _document is not null)
-                            fontRef = _document.ResolveReference(fRef);
-
-                        double? fontSize = GetNumber(fontArray[1]);
-                        if (fontSize.HasValue)
-                        {
-                            CurrentState.FontSize = fontSize.Value;
-                            PdfLogger.Log(LogCategory.Graphics, $"  Font size = {fontSize}");
-                        }
-                        // Note: Font name would need to be resolved from the font dictionary
-                    }
-                    break;
-
-                // Black generation (BG, BG2)
-                case "BG":
-                case "BG2":
-                    PdfLogger.Log(LogCategory.Graphics, $"  {key} (BlackGeneration) - not implemented");
-                    break;
-
-                // Undercolor removal (UCR, UCR2)
-                case "UCR":
-                case "UCR2":
-                    PdfLogger.Log(LogCategory.Graphics, $"  {key} (UndercolorRemoval) - not implemented");
-                    break;
-
-                // Transfer function (TR, TR2)
-                case "TR":
-                case "TR2":
-                    PdfLogger.Log(LogCategory.Graphics, $"  {key} (TransferFunction) - not implemented");
-                    break;
-
-                // Halftone (HT)
-                case "HT":
-                    PdfLogger.Log(LogCategory.Graphics, $"  HT (Halftone) - not implemented");
-                    break;
-
-                // Flatness tolerance (FL)
-                case "FL":
-                    if (GetNumber(value) is double fl)
-                    {
-                        CurrentState.Flatness = fl;
-                        PdfLogger.Log(LogCategory.Graphics, $"  FL (Flatness) = {fl}");
-                    }
-                    break;
-
-                // Smoothness tolerance (SM)
-                case "SM":
-                    if (GetNumber(value) is double sm)
-                    {
-                        CurrentState.Smoothness = sm;
-                        PdfLogger.Log(LogCategory.Graphics, $"  SM (Smoothness) = {sm}");
-                    }
-                    break;
-
-                // Stroke adjustment (SA)
-                case "SA":
-                    if (value is PdfBoolean sa)
-                    {
-                        PdfLogger.Log(LogCategory.Graphics, $"  SA (StrokeAdjustment) = {sa.Value}");
-                    }
-                    break;
-
-                // Blend mode (BM)
-                case "BM":
-                    string blendMode = value switch
-                    {
-                        PdfName bmName => bmName.Value,
-                        PdfArray bmArray when bmArray.Count > 0 && bmArray[0] is PdfName firstName => firstName.Value,
-                        _ => "Normal"
-                    };
-                    CurrentState.BlendMode = blendMode;
-                    PdfLogger.Log(LogCategory.Graphics, $"  BM (BlendMode) = {blendMode}");
-                    break;
-
-                // Soft mask (SMask)
-                case "SMask":
-                    ApplySoftMask(value);
-                    break;
-
-                // Stroking alpha (CA)
-                case "CA":
-                    if (GetNumber(value) is double ca)
-                    {
-                        CurrentState.StrokeAlpha = ca;
-                        PdfLogger.Log(LogCategory.Graphics, $"  CA (StrokeAlpha) = {ca}");
-                    }
-                    break;
-
-                // Non-stroking alpha (ca)
-                case "ca":
-                    if (GetNumber(value) is double caFill)
-                    {
-                        CurrentState.FillAlpha = caFill;
-                        PdfLogger.Log(LogCategory.Graphics, $"  ca (FillAlpha) = {caFill}");
-                    }
-                    break;
-
-                // Alpha is shape (AIS)
-                case "AIS":
-                    if (value is PdfBoolean ais)
-                    {
-                        CurrentState.AlphaIsShape = ais.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  AIS (AlphaIsShape) = {ais.Value}");
-                    }
-                    break;
-
-                // Text knockout (TK)
-                case "TK":
-                    if (value is PdfBoolean tk)
-                    {
-                        CurrentState.TextKnockout = tk.Value;
-                        PdfLogger.Log(LogCategory.Graphics, $"  TK (TextKnockout) = {tk.Value}");
-                    }
-                    break;
-
-                default:
-                    PdfLogger.Log(LogCategory.Graphics, $"  Unknown ExtGState key: {key}");
-                    break;
-            }
-        }
-
-        // Notify render target of graphics state change
-        _target.OnGraphicsStateChanged(CurrentState);
-    }
-
-    /// <summary>
-    /// Applies a soft mask from the SMask entry
-    /// </summary>
-    private void ApplySoftMask(PdfObject value)
-    {
-        if (value is PdfName nameValue)
-        {
-            if (nameValue.Value == "None")
-            {
-                // Clear the soft mask
-                CurrentState.SoftMask = null;
-                PdfLogger.Log(LogCategory.Graphics, "  SMask = None (cleared)");
-            }
-            return;
-        }
-
-        if (value is not PdfDictionary smaskDict)
-        {
-            PdfLogger.Log(LogCategory.Graphics, $"  SMask: unexpected type {value.GetType().Name}");
-            return;
-        }
-
-        // Parse soft mask dictionary
-        var softMask = new PdfSoftMask();
-
-        // Get subtype (S) - "Alpha" or "Luminosity"
-        if (smaskDict.TryGetValue(new PdfName("S"), out PdfObject sObj) && sObj is PdfName subtype)
-        {
-            softMask = softMask with { Subtype = subtype.Value };
-        }
-
-        // Get transparency group (G) - Form XObject
-        if (smaskDict.TryGetValue(new PdfName("G"), out PdfObject gObj))
-        {
-            PdfStream? groupStream = gObj switch
-            {
-                PdfStream stream => stream,
-                PdfIndirectReference gRef when _document is not null => _document.ResolveReference(gRef) as PdfStream,
-                _ => null
-            };
-            softMask = softMask with { Group = groupStream };
-        }
-
-        // Get backdrop color (BC)
-        if (smaskDict.TryGetValue(new PdfName("BC"), out PdfObject bcObj) && bcObj is PdfArray bcArray)
-        {
-            var backdropColor = new double[bcArray.Count];
-            for (var i = 0; i < bcArray.Count; i++)
-            {
-                backdropColor[i] = GetNumber(bcArray[i]) ?? 0;
-            }
-            softMask = softMask with { BackdropColor = backdropColor };
-        }
-
-        // Get transfer function (TR)
-        if (smaskDict.TryGetValue(new PdfName("TR"), out PdfObject trObj))
-        {
-            softMask = softMask with { TransferFunction = trObj };
-        }
-
-        CurrentState.SoftMask = softMask;
-        PdfLogger.Log(LogCategory.Graphics, $"  SMask: Subtype={softMask.Subtype}, HasGroup={softMask.Group is not null}");
-
-        // If we have a Group, render the mask using the render target's soft mask support
-        if (softMask.Group is not null)
-        {
-            RenderSoftMaskGroup(softMask);
-        }
+        _extGStateApplier.ApplyExtGState(extGState, CurrentState);
     }
 
     /// <summary>
     /// Renders the SMask Group XObject using the render target's soft mask support.
+    /// Called by ExtGStateApplier when a soft mask with a Group is encountered.
     /// </summary>
     private void RenderSoftMaskGroup(PdfSoftMask softMask)
     {
@@ -1242,12 +706,12 @@ public class PdfRenderer : PdfContentProcessor
         if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) &&
             matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
         {
-            double a = GetNumber(matrixArray[0]) ?? 1;
-            double b = GetNumber(matrixArray[1]) ?? 0;
-            double c = GetNumber(matrixArray[2]) ?? 0;
-            double d = GetNumber(matrixArray[3]) ?? 1;
-            double e = GetNumber(matrixArray[4]) ?? 0;
-            double f = GetNumber(matrixArray[5]) ?? 0;
+            double a = matrixArray[0].ToDoubleOrNull() ?? 1;
+            double b = matrixArray[1].ToDoubleOrNull() ?? 0;
+            double c = matrixArray[2].ToDoubleOrNull() ?? 0;
+            double d = matrixArray[3].ToDoubleOrNull() ?? 1;
+            double e = matrixArray[4].ToDoubleOrNull() ?? 0;
+            double f = matrixArray[5].ToDoubleOrNull() ?? 0;
             formMatrix = new Matrix3x2((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
         }
 
@@ -1282,19 +746,7 @@ public class PdfRenderer : PdfContentProcessor
         });
     }
 
-    /// <summary>
-    /// Helper to extract a number from a PDF object
-    /// </summary>
-    private static double? GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => null
-        };
-    }
-
+    
     protected override void OnShowTextWithPositioning(PdfArray array)
     {
         // TJ operator: combine all strings and adjustments into a single DrawText call
@@ -1713,12 +1165,12 @@ public class PdfRenderer : PdfContentProcessor
         Matrix3x2 formCtm = savedCtm;
         if (formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject? matrixObj) && matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
         {
-            var m11 = (float)(GetNumber(matrixArray[0]) ?? 0);
-            var m12 = (float)(GetNumber(matrixArray[1]) ?? 0);
-            var m21 = (float)(GetNumber(matrixArray[2]) ?? 0);
-            var m22 = (float)(GetNumber(matrixArray[3]) ?? 0);
-            var m31 = (float)(GetNumber(matrixArray[4]) ?? 0);
-            var m32 = (float)(GetNumber(matrixArray[5]) ?? 0);
+            var m11 = (float)matrixArray[0].ToDouble();
+            var m12 = (float)matrixArray[1].ToDouble();
+            var m21 = (float)matrixArray[2].ToDouble();
+            var m22 = (float)matrixArray[3].ToDouble();
+            var m31 = (float)matrixArray[4].ToDouble();
+            var m32 = (float)matrixArray[5].ToDouble();
             var formMatrix = new Matrix3x2(m11, m12, m21, m22, m31, m32);
 
             // Concatenate: formCtm = formMatrix * savedCtm

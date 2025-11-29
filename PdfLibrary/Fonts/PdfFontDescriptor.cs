@@ -97,10 +97,10 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
             if (_dictionary.TryGetValue(new PdfName("FontBBox"), out PdfObject obj) && obj is PdfArray { Count: 4 } array)
             {
                 return (
-                    GetNumber(array[0]),
-                    GetNumber(array[1]),
-                    GetNumber(array[2]),
-                    GetNumber(array[3])
+                    array[0].ToDouble(),
+                    array[1].ToDouble(),
+                    array[2].ToDouble(),
+                    array[3].ToDouble()
                 );
             }
             return null;
@@ -115,7 +115,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("ItalicAngle"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -128,7 +128,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("Ascent"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -141,7 +141,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("Descent"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -154,7 +154,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("Leading"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -167,7 +167,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("CapHeight"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -180,7 +180,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("XHeight"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -193,7 +193,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("StemV"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -206,7 +206,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("StemH"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -219,7 +219,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("AvgWidth"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -232,7 +232,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("MaxWidth"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -245,7 +245,7 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         get
         {
             if (_dictionary.TryGetValue(new PdfName("MissingWidth"), out PdfObject obj))
-                return GetNumber(obj);
+                return obj.ToDouble();
             return 0;
         }
     }
@@ -325,22 +325,13 @@ public class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document =
         int length1 = 0, length2 = 0, length3 = 0;
 
         if (stream.Dictionary.TryGetValue(new PdfName("Length1"), out PdfObject? l1Obj))
-            length1 = (int)GetNumber(l1Obj);
+            length1 = l1Obj.ToInt();
         if (stream.Dictionary.TryGetValue(new PdfName("Length2"), out PdfObject? l2Obj))
-            length2 = (int)GetNumber(l2Obj);
+            length2 = l2Obj.ToInt();
         if (stream.Dictionary.TryGetValue(new PdfName("Length3"), out PdfObject? l3Obj))
-            length3 = (int)GetNumber(l3Obj);
+            length3 = l3Obj.ToInt();
 
         return (data, length1, length2, length3);
     }
 
-    private static double GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => 0
-        };
-    }
 }

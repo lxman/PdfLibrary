@@ -6,24 +6,17 @@ namespace PdfLibrary.Content.Operators;
 /// <summary>
 /// BI...ID...EI - Inline image
 /// </summary>
-public class InlineImageOperator : PdfOperator
+public class InlineImageOperator(PdfDictionary parameters, byte[] imageData) : PdfOperator("BI", [])
 {
-    public InlineImageOperator(PdfDictionary parameters, byte[] imageData)
-        : base("BI", [])
-    {
-        Parameters = parameters;
-        ImageData = imageData;
-    }
-
     /// <summary>
     /// Image parameters (dictionary between BI and ID)
     /// </summary>
-    public PdfDictionary Parameters { get; }
+    public PdfDictionary Parameters { get; } = parameters;
 
     /// <summary>
     /// Raw image data (between ID and EI)
     /// </summary>
-    public byte[] ImageData { get; }
+    public byte[] ImageData { get; } = imageData;
 
     /// <summary>
     /// Image width (W or Width)

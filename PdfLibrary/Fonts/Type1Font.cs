@@ -567,7 +567,7 @@ public class Type1Font : PdfFont
                 _widths = new double[widthsArray.Count];
                 for (var i = 0; i < widthsArray.Count; i++)
                 {
-                    _widths[i] = GetNumber(widthsArray[i]);
+                    _widths[i] = widthsArray[i].ToDouble();
                 }
             }
         }
@@ -622,13 +622,4 @@ public class Type1Font : PdfFont
         return Array.Exists(standard14, font => baseFontName.Contains(font));
     }
 
-    private static double GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => 0
-        };
-    }
 }

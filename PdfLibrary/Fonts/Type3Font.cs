@@ -34,12 +34,12 @@ public class Type3Font : PdfFont
             {
                 return
                 [
-                    GetNumber(array[0]),
-                    GetNumber(array[1]),
-                    GetNumber(array[2]),
-                    GetNumber(array[3]),
-                    GetNumber(array[4]),
-                    GetNumber(array[5])
+                    array[0].ToDouble(),
+                    array[1].ToDouble(),
+                    array[2].ToDouble(),
+                    array[3].ToDouble(),
+                    array[4].ToDouble(),
+                    array[5].ToDouble()
                 ];
             }
             return [0.001, 0, 0, 0.001, 0, 0]; // Default font matrix
@@ -106,7 +106,7 @@ public class Type3Font : PdfFont
                 _widths = new double[widthsArray.Count];
                 for (var i = 0; i < widthsArray.Count; i++)
                 {
-                    _widths[i] = GetNumber(widthsArray[i]);
+                    _widths[i] = widthsArray[i].ToDouble();
                 }
             }
         }
@@ -122,13 +122,4 @@ public class Type3Font : PdfFont
         }
     }
 
-    private static double GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => 0
-        };
-    }
 }

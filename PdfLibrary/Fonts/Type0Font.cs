@@ -236,7 +236,7 @@ public class CidFont : PdfFont
         // Get default width (DW)
         if (_dictionary.TryGetValue(new PdfName("DW"), out PdfObject dwObj))
         {
-            _defaultWidth = GetNumber(dwObj);
+            _defaultWidth = dwObj.ToDouble();
         }
 
         // Get width array (W)
@@ -279,7 +279,7 @@ public class CidFont : PdfFont
             {
                 for (var j = 0; j < widthList.Count; j++)
                 {
-                    widths[start + j] = GetNumber(widthList[j]);
+                    widths[start + j] = widthList[j].ToDouble();
                 }
                 i++;
             }
@@ -287,7 +287,7 @@ public class CidFont : PdfFont
             else if (array[i] is PdfInteger endCid && i + 1 < array.Count)
             {
                 int end = endCid.Value;
-                double width = GetNumber(array[i + 1]);
+                double width = array[i + 1].ToDouble();
 
                 for (int cid = start; cid <= end; cid++)
                 {
@@ -304,13 +304,4 @@ public class CidFont : PdfFont
         return widths;
     }
 
-    private static double GetNumber(PdfObject obj)
-    {
-        return obj switch
-        {
-            PdfInteger i => i.Value,
-            PdfReal r => r.Value,
-            _ => 0
-        };
-    }
 }

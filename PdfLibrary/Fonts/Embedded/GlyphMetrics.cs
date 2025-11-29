@@ -4,53 +4,43 @@ namespace PdfLibrary.Fonts.Embedded
     /// Glyph metrics for positioning and layout.
     /// All values are in font design units (typically 0-2048).
     /// </summary>
-    public class GlyphMetrics
+    public class GlyphMetrics(
+        int advanceWidth,
+        int leftSideBearing,
+        short xMin,
+        short yMin,
+        short xMax,
+        short yMax)
     {
         /// <summary>
         /// Horizontal advance width - distance to advance to next glyph
         /// </summary>
-        public int AdvanceWidth { get; }
+        public int AdvanceWidth { get; } = advanceWidth;
 
         /// <summary>
         /// Left side bearing - distance from origin to left edge of glyph
         /// </summary>
-        public int LeftSideBearing { get; }
+        public int LeftSideBearing { get; } = leftSideBearing;
 
         /// <summary>
         /// Glyph bounding box minimum X coordinate
         /// </summary>
-        public short XMin { get; }
+        public short XMin { get; } = xMin;
 
         /// <summary>
         /// Glyph bounding box minimum Y coordinate
         /// </summary>
-        public short YMin { get; }
+        public short YMin { get; } = yMin;
 
         /// <summary>
         /// Glyph bounding box maximum X coordinate
         /// </summary>
-        public short XMax { get; }
+        public short XMax { get; } = xMax;
 
         /// <summary>
         /// Glyph bounding box maximum Y coordinate
         /// </summary>
-        public short YMax { get; }
-
-        public GlyphMetrics(
-            int advanceWidth,
-            int leftSideBearing,
-            short xMin,
-            short yMin,
-            short xMax,
-            short yMax)
-        {
-            AdvanceWidth = advanceWidth;
-            LeftSideBearing = leftSideBearing;
-            XMin = xMin;
-            YMin = yMin;
-            XMax = xMax;
-            YMax = yMax;
-        }
+        public short YMax { get; } = yMax;
 
         /// <summary>
         /// Width of the glyph bounding box
