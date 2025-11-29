@@ -148,21 +148,6 @@ dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj
 - [Getting Started](Docs/GettingStarted.md) - Step-by-step introduction
 - [Architecture](Docs/Architecture.md) - Technical architecture overview
 
-## Command-Line Tool
-
-PdfTool provides command-line access to rendering functionality:
-
-```bash
-# Render a PDF page to PNG
-PdfTool render "document.pdf" --pages 1 --output "page1.png"
-
-# Render with custom scale
-PdfTool render "document.pdf" --pages 1 --scale 2.0 --output "page1@2x.png"
-
-# Render multiple pages
-PdfTool render "document.pdf" --pages 1-5 --output "pages/"
-```
-
 ## Supported PDF Features
 
 ### Content Streams
