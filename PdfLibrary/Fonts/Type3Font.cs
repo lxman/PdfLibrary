@@ -58,6 +58,42 @@ internal class Type3Font : PdfFont
         return obj as PdfDictionary;
     }
 
+    /// <summary>
+    /// Gets the Resources dictionary for this Type3 font (used by CharProc content streams)
+    /// </summary>
+    public PdfDictionary? GetResourcesDictionary()
+    {
+        if (!_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj)) return null;
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        return obj as PdfDictionary;
+    }
+
+    /// <summary>
+    /// Gets the CharProc content stream for a given glyph name
+    /// </summary>
+    public PdfStream? GetCharProc(string glyphName)
+    {
+        PdfDictionary? charProcs = GetCharProcs();
+        if (charProcs is null) return null;
+
+        if (!charProcs.TryGetValue(new PdfName(glyphName), out PdfObject? obj)) return null;
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        return obj as PdfStream;
+    }
+
+    /// <summary>
+    /// Gets the glyph name for a character code using the font's encoding
+    /// </summary>
+    public string? GetGlyphName(int charCode)
+    {
+        // Use the encoding to map character code to glyph name
+        return Encoding?.GetGlyphName(charCode);
+    }
+
     public override double GetCharacterWidth(int charCode)
     {
         // Check if character code is in range

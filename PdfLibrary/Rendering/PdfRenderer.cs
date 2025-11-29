@@ -544,11 +544,11 @@ public class PdfRenderer : PdfContentProcessor
             return;
         }
 
-        // Type3 fonts: Skip rendering (see OnShowTextWithPositioning for explanation)
-        if (font.FontType == PdfFontType.Type3)
+        // Type3 fonts: Execute CharProc content streams for each glyph
+        if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
-            PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - skipping visual rendering (glyphs rendered as vector paths)");
-            AdvanceTextPositionForType3Simple(text, font);
+            PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution");
+            RenderType3Text(text, type3Font);
             return;
         }
 
@@ -762,17 +762,11 @@ public class PdfRenderer : PdfContentProcessor
 
         PdfLogger.Log(LogCategory.Text, $"Using font '{CurrentState.FontName}' Type={font.FontType} BaseFont={font.BaseFont}");
 
-        // Type3 fonts: Skip rendering. Type3 font glyphs are defined as CharProc content streams.
-        // In this PDF library, the visual glyph shapes are typically rendered as separate vector paths
-        // in the main content stream (not via CharProc execution). The TJ/Tj operators with Type3 fonts
-        // are primarily for text extraction/selection. If we try to render, we'd fall back to Arial
-        // (since Type3 fonts have no embedded glyph outlines), causing double rendering/ghosting.
-        // TODO: Implement proper Type3 CharProc execution for PDFs that rely on it for visual rendering.
-        if (font.FontType == PdfFontType.Type3)
+        // Type3 fonts: Execute CharProc content streams for each glyph
+        if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
-            PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - skipping visual rendering (glyphs rendered as vector paths)");
-            // Still need to advance text position for proper layout of subsequent text
-            AdvanceTextPositionForType3(array, font);
+            PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution (TJ)");
+            RenderType3TextWithPositioning(array, type3Font);
             return;
         }
 
@@ -1001,6 +995,225 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
+    }
+
+    // ==================== Type3 Font CharProc Rendering ====================
+
+    /// <summary>
+    /// Renders Type3 font glyphs by executing their CharProc content streams.
+    /// Type3 fonts define each glyph as a PDF content stream (CharProc).
+    /// </summary>
+    private void RenderType3Text(PdfString text, Type3Font type3Font)
+    {
+        byte[] bytes = text.Bytes;
+        double totalAdvance = 0;
+
+        // Get the font's resources for CharProc execution
+        PdfDictionary? type3ResourcesDict = type3Font.GetResourcesDictionary();
+        PdfResources? type3Resources = type3ResourcesDict is not null
+            ? new PdfResources(type3ResourcesDict, _document)
+            : _currentResources;
+
+        // Get the font matrix to transform glyph space to text space
+        double[] fontMatrix = type3Font.FontMatrix;
+        var fontMatrixM = new Matrix3x2(
+            (float)fontMatrix[0], (float)fontMatrix[1],
+            (float)fontMatrix[2], (float)fontMatrix[3],
+            (float)fontMatrix[4], (float)fontMatrix[5]);
+
+        PdfLogger.Log(LogCategory.Text, $"RenderType3Text: FontMatrix=[{fontMatrix[0]}, {fontMatrix[1]}, {fontMatrix[2]}, {fontMatrix[3]}, {fontMatrix[4]}, {fontMatrix[5]}]");
+        PdfLogger.Log(LogCategory.Text, $"RenderType3Text: TextMatrix=[{CurrentState.TextMatrix.M11:F4}, {CurrentState.TextMatrix.M12:F4}, {CurrentState.TextMatrix.M21:F4}, {CurrentState.TextMatrix.M22:F4}, {CurrentState.TextMatrix.M31:F4}, {CurrentState.TextMatrix.M32:F4}]");
+        PdfLogger.Log(LogCategory.Text, $"RenderType3Text: CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
+
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            int charCode = bytes[i];
+
+            // Get glyph name from encoding
+            string? glyphName = type3Font.GetGlyphName(charCode);
+            if (glyphName is null)
+            {
+                PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode}: No glyph name found");
+                continue;
+            }
+
+            // Get the CharProc content stream
+            PdfStream? charProc = type3Font.GetCharProc(glyphName);
+            if (charProc is null)
+            {
+                PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode} ('{glyphName}'): No CharProc found");
+                continue;
+            }
+
+            PdfLogger.Log(LogCategory.Text, $"  Rendering CharCode {charCode} ('{glyphName}')");
+
+            // Calculate the position for this glyph
+            // The glyph is rendered at the current text position
+            // TextRenderingMatrix = Tfs × Tc × Tm × CTM
+            float fontSize = (float)CurrentState.FontSize;
+
+            // Build the complete transformation matrix for this glyph
+            // Glyph space → Text space (via FontMatrix) → User space (via TextMatrix × fontSize) → Device space (via CTM)
+            var fontSizeMatrix = new Matrix3x2(fontSize, 0, 0, fontSize, 0, 0);
+
+            // Calculate glyph position: FontMatrix * FontSize * TextMatrix * CTM
+            Matrix3x2 glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
+
+            // Execute the CharProc content stream
+            ExecuteType3CharProc(charProc, type3Resources, glyphMatrix);
+
+            // Advance text position
+            double glyphWidth = type3Font.GetCharacterWidth(charCode);
+            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            advance *= CurrentState.HorizontalScaling / 100.0;
+
+            if (CurrentState.CharacterSpacing != 0)
+                advance += CurrentState.CharacterSpacing;
+
+            string decoded = type3Font.DecodeCharacter(charCode);
+            if (decoded == " " && CurrentState.WordSpacing != 0)
+                advance += CurrentState.WordSpacing;
+
+            totalAdvance += advance;
+
+            // Advance the text matrix for the next glyph
+            CurrentState.AdvanceTextMatrix(advance, 0);
+        }
+    }
+
+    /// <summary>
+    /// Renders Type3 font glyphs from a TJ array (text with positioning adjustments).
+    /// </summary>
+    private void RenderType3TextWithPositioning(PdfArray array, Type3Font type3Font)
+    {
+        // Get the font's resources for CharProc execution
+        PdfDictionary? type3ResourcesDict = type3Font.GetResourcesDictionary();
+        PdfResources? type3Resources = type3ResourcesDict is not null
+            ? new PdfResources(type3ResourcesDict, _document)
+            : _currentResources;
+
+        // Get the font matrix to transform glyph space to text space
+        double[] fontMatrix = type3Font.FontMatrix;
+        var fontMatrixM = new Matrix3x2(
+            (float)fontMatrix[0], (float)fontMatrix[1],
+            (float)fontMatrix[2], (float)fontMatrix[3],
+            (float)fontMatrix[4], (float)fontMatrix[5]);
+
+        PdfLogger.Log(LogCategory.Text, $"RenderType3TextWithPositioning: FontMatrix=[{fontMatrix[0]}, {fontMatrix[1]}, {fontMatrix[2]}, {fontMatrix[3]}, {fontMatrix[4]}, {fontMatrix[5]}]");
+
+        foreach (PdfObject item in array)
+        {
+            switch (item)
+            {
+                case PdfString str:
+                {
+                    byte[] bytes = str.Bytes;
+                    for (var i = 0; i < bytes.Length; i++)
+                    {
+                        int charCode = bytes[i];
+
+                        // Get glyph name from encoding
+                        string? glyphName = type3Font.GetGlyphName(charCode);
+                        if (glyphName is null)
+                        {
+                            PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode}: No glyph name found");
+                            continue;
+                        }
+
+                        // Get the CharProc content stream
+                        PdfStream? charProc = type3Font.GetCharProc(glyphName);
+                        if (charProc is null)
+                        {
+                            PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode} ('{glyphName}'): No CharProc found");
+                            continue;
+                        }
+
+                        PdfLogger.Log(LogCategory.Text, $"  Rendering TJ CharCode {charCode} ('{glyphName}')");
+
+                        // Calculate the glyph transformation matrix
+                        float fontSize = (float)CurrentState.FontSize;
+                        var fontSizeMatrix = new Matrix3x2(fontSize, 0, 0, fontSize, 0, 0);
+                        Matrix3x2 glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
+
+                        // Execute the CharProc content stream
+                        ExecuteType3CharProc(charProc, type3Resources, glyphMatrix);
+
+                        // Advance text position
+                        double glyphWidth = type3Font.GetCharacterWidth(charCode);
+                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        advance *= CurrentState.HorizontalScaling / 100.0;
+
+                        if (CurrentState.CharacterSpacing != 0)
+                            advance += CurrentState.CharacterSpacing;
+
+                        string decoded = type3Font.DecodeCharacter(charCode);
+                        if (decoded == " " && CurrentState.WordSpacing != 0)
+                            advance += CurrentState.WordSpacing;
+
+                        CurrentState.AdvanceTextMatrix(advance, 0);
+                    }
+                    break;
+                }
+                case PdfInteger intVal:
+                {
+                    // Kerning adjustment in thousandths of text space
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    adjustment *= CurrentState.HorizontalScaling / 100.0;
+                    CurrentState.AdvanceTextMatrix(adjustment, 0);
+                    break;
+                }
+                case PdfReal realVal:
+                {
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    adjustment *= CurrentState.HorizontalScaling / 100.0;
+                    CurrentState.AdvanceTextMatrix(adjustment, 0);
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executes a Type3 CharProc content stream to render a single glyph.
+    /// </summary>
+    private void ExecuteType3CharProc(PdfStream charProc, PdfResources? resources, Matrix3x2 glyphMatrix)
+    {
+        try
+        {
+            // Get the decoded content stream data
+            byte[] contentData = charProc.GetDecodedData(_document?.Decryptor);
+
+            PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: {contentData.Length} bytes, glyphMatrix=[{glyphMatrix.M11:F6}, {glyphMatrix.M12:F6}, {glyphMatrix.M21:F6}, {glyphMatrix.M22:F6}, {glyphMatrix.M31:F2}, {glyphMatrix.M32:F2}]");
+
+            // Create a sub-renderer for the CharProc with the glyph transformation
+            var charProcRenderer = new PdfRenderer(_target, resources ?? _currentResources, _optionalContentManager, _document)
+            {
+                CurrentState =
+                {
+                    // Set the CTM to the glyph matrix
+                    Ctm = glyphMatrix
+                }
+            };
+
+            // Save render target state
+            _target.SaveState();
+
+            // Apply the glyph matrix to the render target
+            _target.ApplyCtm(glyphMatrix);
+
+            // Parse and process the CharProc operators
+            List<PdfOperator> operators = PdfContentParser.Parse(contentData);
+            charProcRenderer.ProcessOperators(operators);
+
+            // Restore render target state
+            _target.RestoreState();
+
+            PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: Completed ({operators.Count} operators)");
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: ERROR - {ex.Message}");
+        }
     }
 
     // ==================== XObject Rendering ====================
