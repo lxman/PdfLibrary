@@ -6,7 +6,7 @@
         <Nullable>enable</Nullable>
 
         <!-- NuGet Package Metadata -->
-        <PackageId>PdfLibrary.Rendering.SkiaSharp</PackageId>
+        <PackageId>Lxman.PdfLibrary.Rendering.SkiaSharp</PackageId>
         <Version>0.0.1</Version>
         <Authors>Jordan</Authors>
         <Description>SkiaSharp rendering backend for PdfLibrary. Provides high-quality PDF page rendering to images using SkiaSharp.</Description>
