@@ -59,7 +59,7 @@ jobs:
     - name: Login to NuGet (Trusted Publishing)
       uses: nuget/login@v1
       with:
-        user: lxman
+        user: lxmanget
 
     - name: Publish to NuGet
       run: |
