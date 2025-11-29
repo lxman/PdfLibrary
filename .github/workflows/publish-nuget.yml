@@ -57,11 +57,12 @@ jobs:
       run: dotnet pack PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-build --output ./nupkg
 
     - name: Login to NuGet (Trusted Publishing)
+      id: nuget-login
       uses: nuget/login@v1
       with:
         user: lxmanget
 
     - name: Publish to NuGet
       run: |
-        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate
-        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ steps.nuget-login.outputs.api-key }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push ./nupkg/PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg --api-key ${{ steps.nuget-login.outputs.api-key }} --source https://api.nuget.org/v3/index.json --skip-duplicate
