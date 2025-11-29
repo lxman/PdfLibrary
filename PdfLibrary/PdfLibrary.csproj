@@ -7,6 +7,7 @@
 
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
+        <Title>PdfLibrary</Title>
         <Version>0.0.1</Version>
         <Authors>Jordan</Authors>
         <Description>A comprehensive .NET library for parsing, rendering, and creating PDF documents. Pure C# implementation with support for PDF 1.x and 2.0.</Description>
