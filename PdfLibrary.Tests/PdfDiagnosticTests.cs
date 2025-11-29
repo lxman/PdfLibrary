@@ -11,7 +11,7 @@ public class PdfDiagnosticTests
         // Arrange
         string testFilePath = Path.Combine(
             Directory.GetCurrentDirectory(),
-            "..", "..", "..", "..", "pdf20examples", "Simple PDF 2.0 file.pdf");
+            "..", "..", "..", "..", "PDFs", "pdf20examples", "Simple PDF 2.0 file.pdf");
 
         testFilePath = Path.GetFullPath(testFilePath);
 

@@ -92,7 +92,7 @@ public class PdfTextExtractor : PdfContentProcessor
         // Vertical movement suggests new line
         if (Math.Abs(currentPosition.Y - _lastPosition.Y) > CurrentState.FontSize * 0.5)
         {
-            _textBuilder.AppendLine();
+            _textBuilder.Append('\n');
         }
         // Horizontal movement suggests space
         else if (Math.Abs(currentPosition.X - _lastPosition.X) > threshold)

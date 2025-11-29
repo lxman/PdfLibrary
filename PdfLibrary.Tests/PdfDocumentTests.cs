@@ -11,7 +11,7 @@ public class PdfDocumentTests
         // Arrange
         string testFilePath = Path.Combine(
             Directory.GetCurrentDirectory(),
-            "..", "..", "..", "..", "pdf20examples", "Simple PDF 2.0 file.pdf");
+            "..", "..", "..", "..", "PDFs", "pdf20examples", "Simple PDF 2.0 file.pdf");
 
         testFilePath = Path.GetFullPath(testFilePath);
 
@@ -30,7 +30,7 @@ public class PdfDocumentTests
         // Arrange
         string testFilePath = Path.Combine(
             Directory.GetCurrentDirectory(),
-            "..", "..", "..", "..", "pdf20examples", "PDF 2.0 with offset start.pdf");
+            "..", "..", "..", "..", "PDFs", "pdf20examples", "PDF 2.0 with offset start.pdf");
 
         testFilePath = Path.GetFullPath(testFilePath);
 
@@ -49,7 +49,7 @@ public class PdfDocumentTests
         // Arrange
         string testFilePath = Path.Combine(
             Directory.GetCurrentDirectory(),
-            "..", "..", "..", "..", "pdf20examples", "pdf20-utf8-test.pdf");
+            "..", "..", "..", "..", "PDFs", "pdf20examples", "pdf20-utf8-test.pdf");
 
         testFilePath = Path.GetFullPath(testFilePath);
 

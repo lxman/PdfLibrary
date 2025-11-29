@@ -24,7 +24,7 @@ ET";
 
         string text = PdfTextExtractor.ExtractText(bytes);
 
-        Assert.Equal("\r\nHello, World!", text);
+        Assert.Equal("\nHello, World!", text);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ ET";
 
         string text = PdfTextExtractor.ExtractText(bytes);
 
-        Assert.Equal("\r\nHello, World!", text);
+        Assert.Equal("\nHello, World!", text);
     }
 
     [Fact]
@@ -105,7 +105,7 @@ ET";
 
         string text = PdfTextExtractor.ExtractText(bytes, resources: null);
 
-        Assert.Equal("\r\nTest", text);
+        Assert.Equal("\nTest", text);
     }
 
     #endregion
@@ -125,7 +125,7 @@ ET";
 
         (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
-        Assert.Equal("\r\nHello", text);
+        Assert.Equal("\nHello", text);
         Assert.Single(fragments);
         Assert.Equal("Hello", fragments[0].Text);
     }
@@ -144,7 +144,7 @@ ET";
 
         (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
 
-        Assert.Equal("\r\nHelloWorld", text);
+        Assert.Equal("\nHelloWorld", text);
         Assert.Equal(2, fragments.Count);
         Assert.Equal("Hello", fragments[0].Text);
         Assert.Equal("World", fragments[1].Text);
@@ -374,7 +374,7 @@ ET";
 
         string text = PdfTextExtractor.ExtractText(bytes);
 
-        Assert.Equal("\r\nText via Tj", text);
+        Assert.Equal("\nText via Tj", text);
     }
 
     [Fact]
@@ -521,7 +521,7 @@ Q";
 
         string text = PdfTextExtractor.ExtractText(bytes);
 
-        Assert.Equal("\r\nText content", text);
+        Assert.Equal("\nText content", text);
     }
 
     [Fact]
@@ -578,7 +578,7 @@ ET";
         string text = PdfTextExtractor.ExtractText(bytes);
 
         // Should only extract text inside BT/ET
-        Assert.Equal("\r\nInside BT/ET", text);
+        Assert.Equal("\nInside BT/ET", text);
     }
 
     [Fact]
