@@ -1627,6 +1627,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Determine SkiaSharp color type based on PDF color space
             SKBitmap? bitmap = null;
 
+            // Diagnostic: log actual values for image creation
+            double[]? imgDecodeArray = image.DecodeArray;
+            string decodeStr = imgDecodeArray != null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
+            PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, Decode={decodeStr}");
+
             // Handle image masks (1-bit stencil images)
             if (image.IsImageMask && imageMaskColor.HasValue)
             {
@@ -2082,6 +2087,70 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             return null;
                     }
 
+                    break;
+                }
+                case "DeviceCMYK" when bitsPerComponent == 8:
+                {
+                    // CMYK images - convert to RGB
+                    // Note: DCTDecode (JPEG) often converts CMYK to RGB automatically during decompression
+                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                    int expectedCmykSize = width * height * 4;
+                    int expectedRgbSize = width * height * 3;
+                    int pixelCount = width * height;
+
+                    // Use direct pixel buffer for performance
+                    var pixelBuffer = new byte[width * height * 4];
+
+                    if (imageData.Length >= expectedCmykSize)
+                    {
+                        // True CMYK data - convert to RGB
+                        for (var i = 0; i < pixelCount; i++)
+                        {
+                            int srcOffset = i * 4;
+                            int dstOffset = i * 4;
+                            // CMYK values are in range 0-255
+                            int c = imageData[srcOffset];
+                            int m = imageData[srcOffset + 1];
+                            int y = imageData[srcOffset + 2];
+                            int k = imageData[srcOffset + 3];
+
+                            // Convert CMYK to RGB using integer math for performance
+                            // r = 255 * (1 - c/255) * (1 - k/255) = (255 - c) * (255 - k) / 255
+                            pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 2] = (byte)((255 - y) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                        }
+                    }
+                    else if (imageData.Length >= expectedRgbSize)
+                    {
+                        // DCTDecode already converted CMYK to RGB
+                        // ImageSharp handles Adobe CMYK convention internally
+                        PdfLogger.Log(LogCategory.Images, $"DeviceCMYK->RGB first pixels: [{imageData[0]},{imageData[1]},{imageData[2]}] [{imageData[3]},{imageData[4]},{imageData[5]}] [{imageData[6]},{imageData[7]},{imageData[8]}]");
+
+                        for (var i = 0; i < pixelCount; i++)
+                        {
+                            int srcOffset = i * 3;
+                            int dstOffset = i * 4;
+                            // Use RGB values directly - ImageSharp has already converted from CMYK
+                            pixelBuffer[dstOffset] = imageData[srcOffset];
+                            pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
+                            pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
+                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                        }
+                    }
+                    else
+                    {
+                        // Data too small for either format
+                        return null;
+                    }
+
+                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                    bitmap = new SKBitmap(imageInfo);
+                    IntPtr bitmapPixels = bitmap.GetPixels();
+                    if (bitmapPixels == IntPtr.Zero) return null;
+                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    bitmap.NotifyPixelsChanged();
                     break;
                 }
                 default:
