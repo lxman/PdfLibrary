@@ -39,6 +39,30 @@ public abstract class PdfFont
     }
 
     /// <summary>
+    /// Gets whether this font is a subset font.
+    /// Subset fonts have a 6-letter prefix followed by '+' in the BaseFont name (e.g., "CAAAAA+Arial-BoldMT")
+    /// </summary>
+    public bool IsSubsetFont
+    {
+        get
+        {
+            string name = BaseFont;
+            // Subset fonts have a pattern: XXXXXX+FontName where XXXXXX is 6 uppercase letters
+            if (name.Length > 7 && name[6] == '+')
+            {
+                // Check that first 6 characters are uppercase letters
+                for (int i = 0; i < 6; i++)
+                {
+                    if (name[i] < 'A' || name[i] > 'Z')
+                        return false;
+                }
+                return true;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Gets the font encoding
     /// </summary>
     internal PdfFontEncoding? Encoding { get; private protected set; }

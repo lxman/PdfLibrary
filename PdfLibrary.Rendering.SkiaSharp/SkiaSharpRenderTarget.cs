@@ -45,6 +45,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     // Static font resolver - shared across all render targets
     private static readonly SystemFontResolver FontResolver;
 
+    // Track the last document to detect when a new document is loaded
+    // WeakReference prevents keeping old documents alive in memory
+    private static WeakReference<PdfDocument>? _lastDocument;
+    private static readonly object _documentLock = new();
+
     public int CurrentPageNumber { get; private set; }
 
     static SkiaSharpRenderTarget()
@@ -72,6 +77,26 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     {
         _document = document;
         _backgroundColor = transparentBackground ? SKColors.Transparent : SKColors.White;
+
+        // Clear glyph cache when a new document is loaded to prevent
+        // cached glyphs from one PDF's subset fonts being reused for another
+        if (document is not null)
+        {
+            lock (_documentLock)
+            {
+                bool isNewDocument = true;
+                if (_lastDocument is not null && _lastDocument.TryGetTarget(out var lastDoc))
+                {
+                    isNewDocument = !ReferenceEquals(lastDoc, document);
+                }
+
+                if (isNewDocument)
+                {
+                    ClearGlyphCache();
+                    _lastDocument = new WeakReference<PdfDocument>(document);
+                }
+            }
+        }
 
         // Create SkiaSharp surface
         var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
@@ -765,6 +790,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 GlyphOutline? glyphOutline = embeddedMetrics.IsType1Font && resolvedGlyphName is not null
                     ? embeddedMetrics.GetGlyphOutlineByName(resolvedGlyphName)
                     : embeddedMetrics.GetGlyphOutline(glyphId);
+
                 if (glyphOutline is null)
                 {
                     // Check if this glyph has metrics (advance width > 0) but no outline

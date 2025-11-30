@@ -110,6 +110,74 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Gets detailed diagnostic info about the cmap table for debugging
+    /// </summary>
+    public string GetCmapDiagnostics()
+    {
+        if (_cmapTable is null)
+            return "No cmap table";
+
+        var info = new System.Text.StringBuilder();
+        info.AppendLine($"Cmap: {_cmapTable.EncodingRecords.Count} encodings, {_cmapTable.SubTables.Count} subtables");
+
+        for (int i = 0; i < _cmapTable.EncodingRecords.Count; i++)
+        {
+            EncodingRecord rec = _cmapTable.EncodingRecords[i];
+            string encoding = rec.PlatformId switch
+            {
+                PlatformId.Unicode => $"Unicode/{rec.UnicodeEncoding}",
+                PlatformId.Windows => $"Windows/{rec.WindowsEncoding}",
+                PlatformId.Macintosh => $"Mac/{rec.MacintoshEncoding}",
+                _ => $"{rec.PlatformId}"
+            };
+            info.AppendLine($"  [{i}] {encoding}");
+        }
+
+        for (int i = 0; i < _cmapTable.SubTables.Count; i++)
+        {
+            var subtable = _cmapTable.SubTables[i];
+            info.AppendLine($"  Subtable[{i}]: {subtable.GetType().Name}");
+        }
+
+        return info.ToString();
+    }
+
+    /// <summary>
+    /// Checks if cmap uses Symbol encoding (Platform=3, Encoding=0)
+    /// Symbol encoding means character codes map directly without Unicode interpretation
+    /// </summary>
+    public bool HasSymbolCmapEncoding()
+    {
+        if (_cmapTable?.EncodingRecords is null)
+            return false;
+
+        // WindowsEncodingId.UnicodeCsm = 0 = Symbol encoding
+        // (the enum naming is misleading - 0 is actually Symbol, not Unicode)
+        return _cmapTable.EncodingRecords.Any(r =>
+            r.PlatformId == PlatformId.Windows &&
+            r.WindowsEncoding == WindowsEncodingId.UnicodeCsm);
+    }
+
+    /// <summary>
+    /// Test what glyph ID is returned for a specific character code
+    /// Used for debugging cmap behavior
+    /// </summary>
+    public (ushort glyphId, string subtableType) TestCmapLookup(ushort charCode)
+    {
+        if (_cmapTable is null)
+            return (0, "No cmap");
+
+        foreach (var subtable in _cmapTable.SubTables)
+        {
+            ushort gid = subtable.GetGlyphId(charCode);
+            if (gid != 0)
+                return (gid, subtable.GetType().Name);
+        }
+
+        return (0, "Not found");
+    }
+
+    /// <summary>
     /// Creates embedded font metrics from raw TrueType/OpenType font data
     /// </summary>
     /// <param name="fontData">Raw font bytes (TrueType, OpenType/CFF, or raw CFF)</param>
@@ -394,6 +462,46 @@ internal class EmbeddedFontMetrics
         }
 
         return _cmapTable?.GetGlyphId(charCode) ?? 0;
+    }
+
+    /// <summary>
+    /// Gets the glyph ID by trying Unicode lookup first, then falling back to character code.
+    /// This is needed for subsetted TrueType fonts where:
+    /// - Some fonts have cmap tables expecting Unicode code points
+    /// - Others have cmap tables expecting raw character codes (Symbol encoding)
+    /// </summary>
+    /// <param name="charCode">PDF character code</param>
+    /// <param name="unicodeCodePoint">Unicode code point from ToUnicode CMap (or 0 if not available)</param>
+    /// <returns>Glyph ID, or 0 if not found</returns>
+    public ushort GetGlyphIdWithUnicodeFallback(ushort charCode, ushort unicodeCodePoint)
+    {
+        // For Type1 fonts, use direct character code as glyph index
+        if (_isType1Font)
+        {
+            return charCode < NumGlyphs ? charCode : (ushort)0;
+        }
+
+        // For CFF fonts without a cmap table, use direct character code mapping
+        if (_isCffFont && _cmapTable is null)
+        {
+            return charCode < NumGlyphs ? charCode : (ushort)0;
+        }
+
+        if (_cmapTable is null)
+            return 0;
+
+        // If we have a Unicode code point from ToUnicode, try that first
+        // Most TrueType fonts have cmap tables that expect Unicode
+        if (unicodeCodePoint > 0 && unicodeCodePoint != charCode)
+        {
+            ushort glyphId = _cmapTable.GetGlyphId(unicodeCodePoint);
+            if (glyphId != 0)
+                return glyphId;
+        }
+
+        // Fall back to character code lookup
+        // This works for Symbol encoding cmaps where character codes map directly
+        return _cmapTable.GetGlyphId(charCode);
     }
 
     /// <summary>

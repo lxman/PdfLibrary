@@ -1,11 +1,19 @@
 using PdfLibrary.Parsing;
 using System.Text;
+using Xunit.Abstractions;
 
 namespace PdfLibrary.Tests;
 
 [Trait("Category", "LocalOnly")]
 public class PdfDiagnosticTests
 {
+    private readonly ITestOutputHelper _testOutputHelper;
+
+    public PdfDiagnosticTests(ITestOutputHelper testOutputHelper)
+    {
+        _testOutputHelper = testOutputHelper;
+    }
+
     [Fact]
     public void DiagnosePdf20Parsing()
     {
@@ -20,7 +28,7 @@ public class PdfDiagnosticTests
 
         // Find startxref position
         long startxref = PdfTrailerParser.FindStartXref(stream);
-        Console.WriteLine($"startxref position: {startxref}");
+        _testOutputHelper.WriteLine($"startxref position: {startxref}");
 
         // Seek to startxref
         stream.Position = startxref;
@@ -29,9 +37,9 @@ public class PdfDiagnosticTests
         var buffer = new byte[512];
         int bytesRead = stream.Read(buffer, 0, buffer.Length);
         string content = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-        Console.WriteLine("Content at startxref position:");
-        Console.WriteLine(content);
-        Console.WriteLine();
+        _testOutputHelper.WriteLine("Content at startxref position:");
+        _testOutputHelper.WriteLine(content);
+        _testOutputHelper.WriteLine(string.Empty);
 
         // Now test manually reading through xref to see where trailer detection fails
         stream.Position = startxref;
@@ -45,7 +53,7 @@ public class PdfDiagnosticTests
             if (b != '\r') lineBuffer[linePos++] = (byte)b;
         }
         string line = Encoding.ASCII.GetString(lineBuffer, 0, linePos);
-        Console.WriteLine($"Line 1: '{line}' (pos after: {stream.Position})");
+        _testOutputHelper.WriteLine($"Line 1: '{line}' (pos after: {stream.Position})");
 
         // Read subsection header "0 10"
         linePos = 0;
@@ -54,7 +62,7 @@ public class PdfDiagnosticTests
             if (b != '\r') lineBuffer[linePos++] = (byte)b;
         }
         line = Encoding.ASCII.GetString(lineBuffer, 0, linePos);
-        Console.WriteLine($"Line 2 (subsection): '{line}' (pos after: {stream.Position})");
+        _testOutputHelper.WriteLine($"Line 2 (subsection): '{line}' (pos after: {stream.Position})");
 
         // Skip 10 xref entries
         for (var i = 0; i < 10; i++)
@@ -64,11 +72,10 @@ public class PdfDiagnosticTests
             {
                 if (b != '\r') lineBuffer[linePos++] = (byte)b;
             }
-            if (i == 9) // Show last entry
-            {
-                line = Encoding.ASCII.GetString(lineBuffer, 0, linePos);
-                Console.WriteLine($"Last xref entry: '{line}' (pos after: {stream.Position})");
-            }
+
+            if (i != 9) continue; // Show last entry
+            line = Encoding.ASCII.GetString(lineBuffer, 0, linePos);
+            _testOutputHelper.WriteLine($"Last xref entry: '{line}' (pos after: {stream.Position})");
         }
 
         // Read next line - should be "trailer"
@@ -78,6 +85,6 @@ public class PdfDiagnosticTests
             if (b != '\r') lineBuffer[linePos++] = (byte)b;
         }
         line = Encoding.ASCII.GetString(lineBuffer, 0, linePos);
-        Console.WriteLine($"After xref entries: '{line}' (pos after: {stream.Position})");
+        _testOutputHelper.WriteLine($"After xref entries: '{line}' (pos after: {stream.Position})");
     }
 }
