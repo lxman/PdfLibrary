@@ -47,6 +47,22 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (csObj is PdfIndirectReference reference && document is not null)
             csObj = document.ResolveReference(reference);
 
+        // Handle single-element Pattern array: [/Pattern]
+        if (csObj is PdfArray { Count: 1 } singleArray && singleArray[0] is PdfName singleName && singleName.Value == "Pattern")
+        {
+            colorSpaceName = "Pattern";
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (uncolored)");
+            return;
+        }
+
+        // Handle Pattern with underlying color space: [/Pattern /DeviceRGB] or [/Pattern [/ICCBased ...]]
+        if (csObj is PdfArray { Count: >= 2 } patternArray && patternArray[0] is PdfName patternName && patternName.Value == "Pattern")
+        {
+            colorSpaceName = "Pattern";
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (colored, underlying={patternArray[1]})");
+            return;
+        }
+
         // Parse color space array
         // Can be: [/ICCBased stream] or [/Separation name alternateSpace tintTransform]
         if (csObj is PdfArray { Count: >= 2 } csArray)
@@ -62,6 +78,12 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
                 case "Separation" when csArray.Count >= 4:
                     ResolveSeparation(csArray, ref colorSpaceName, ref color);
+                    break;
+
+                case "Pattern":
+                    // Pattern color space - don't resolve to device colors
+                    colorSpaceName = "Pattern";
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected");
                     break;
             }
         }

@@ -41,6 +41,12 @@ public class MockRenderTarget : IRenderTarget
         Operations.Add($"FillAndStrokePath: {GetPathDescription(path)}, EvenOdd={evenOdd}");
     }
 
+    public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd, PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)
+    {
+        Operations.Add($"FillPathWithTilingPattern: {GetPathDescription(path)}, EvenOdd={evenOdd}, PaintType={pattern.PaintType}, TilingType={pattern.TilingType}");
+        // For testing, we don't actually render the pattern - just record the operation
+    }
+
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {
         Operations.Add($"DrawText: \"{text}\", Font={state.FontName}, Size={state.FontSize}, Color={GetColorDescription(state.FillColor, state.FillColorSpace)}");

@@ -66,6 +66,17 @@ public interface IRenderTarget
     void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd);
 
     /// <summary>
+    /// Fill a path using a tiling pattern.
+    /// </summary>
+    /// <param name="path">The path to fill</param>
+    /// <param name="state">Current graphics state</param>
+    /// <param name="evenOdd">True for even-odd fill rule, false for non-zero winding</param>
+    /// <param name="pattern">The tiling pattern definition</param>
+    /// <param name="renderPatternContent">Callback to render the pattern's content stream</param>
+    void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
+        PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent);
+
+    /// <summary>
     /// Set the clipping path for subsequent operations.
     /// </summary>
     /// <param name="path">The clipping path</param>

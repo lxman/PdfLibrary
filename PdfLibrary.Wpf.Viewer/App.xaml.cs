@@ -56,7 +56,7 @@ public partial class App : Application
         {
             LogImages = true,
             LogText = false,
-            LogGraphics = false,
+            LogGraphics = true,
             LogTransforms = true,
             LogPdfTool = false,
             LogMelville = false,

@@ -186,6 +186,24 @@ internal class PdfResources
     }
 
     /// <summary>
+    /// Gets a specific pattern by name (returns stream for tiling patterns)
+    /// </summary>
+    public PdfStream? GetPattern(string name)
+    {
+        PdfDictionary? patterns = GetPatterns();
+        if (patterns is null)
+            return null;
+
+        if (!patterns.TryGetValue(new PdfName(name), out PdfObject? obj))
+            return null;
+
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        return obj as PdfStream;
+    }
+
+    /// <summary>
     /// Gets the Shading resources dictionary
     /// Maps shading names to shading dictionaries
     /// </summary>

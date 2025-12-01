@@ -302,6 +302,14 @@ public class PdfRenderer : PdfContentProcessor
             if (annotDict.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj))
             {
                 PdfLogger.Log(LogCategory.Graphics, $"Annotation Subtype: {subtypeObj}");
+
+                // Skip Widget annotations for now - they often have opaque backgrounds
+                // that cover page content. TODO: Handle these properly with transparency/blend modes.
+                if (subtypeObj is PdfName subtypeName && subtypeName.Value == "Widget")
+                {
+                    PdfLogger.Log(LogCategory.Graphics, "Skipping Widget annotation (form field background)");
+                    continue;
+                }
             }
 
             // Get annotation appearance stream resources
@@ -493,9 +501,74 @@ public class PdfRenderer : PdfContentProcessor
         List<double> color = CurrentState.FillColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         string resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
-        PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], PathEmpty={_currentPath.IsEmpty}");
-        _target.FillPath(_currentPath, CurrentState, evenOdd);
+        PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], Pattern={CurrentState.FillPatternName}, PathEmpty={_currentPath.IsEmpty}");
+
+        // Check if we should use pattern fill
+        if (CurrentState.ResolvedFillColorSpace == "Pattern" && CurrentState.FillPatternName is not null)
+        {
+            FillWithPattern(_currentPath, evenOdd, CurrentState.FillPatternName);
+        }
+        else
+        {
+            _target.FillPath(_currentPath, CurrentState, evenOdd);
+        }
         _currentPath.Clear();
+    }
+
+    /// <summary>
+    /// Fills a path using a tiling pattern
+    /// </summary>
+    private void FillWithPattern(IPathBuilder path, bool evenOdd, string patternName)
+    {
+        if (_currentResources is null || _document is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: No resources or document for pattern '{patternName}'");
+            return;
+        }
+
+        // Get the pattern stream from resources
+        PdfStream? patternStream = _currentResources.GetPattern(patternName);
+        if (patternStream is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: Pattern '{patternName}' not found in resources");
+            return;
+        }
+
+        // Create pattern object from dictionary, including the content stream
+        PdfTilingPattern? pattern = PdfTilingPattern.FromDictionary(patternStream.Dictionary, _document, patternStream);
+        if (pattern is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: Failed to parse pattern '{patternName}' (may not be a tiling pattern)");
+            return;
+        }
+
+        PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: Using pattern '{patternName}': PaintType={pattern.PaintType}, TilingType={pattern.TilingType}, BBox={pattern.BBox}, XStep={pattern.XStep}, YStep={pattern.YStep}");
+
+        // Create callback to render pattern content
+        void RenderPatternContent(IRenderTarget target)
+        {
+            if (pattern.ContentStream is null) return;
+
+            // Get pattern's resources (or fall back to page resources)
+            PdfResources? patternResources = pattern.Resources ?? _currentResources;
+
+            // Decode pattern content stream
+            byte[] contentData = pattern.ContentStream.GetDecodedData(_document?.Decryptor);
+
+            // Create a sub-renderer for the pattern content
+            var patternRenderer = new PdfRenderer(target, patternResources, _optionalContentManager, _document);
+
+            // Process the pattern's content stream
+            List<PdfOperator> operators = PdfContentParser.Parse(contentData);
+
+            foreach (PdfOperator op in operators)
+            {
+                patternRenderer.ProcessOperator(op);
+            }
+        }
+
+        // Call the render target to fill with the pattern
+        _target.FillPathWithTilingPattern(path, CurrentState, evenOdd, pattern, RenderPatternContent);
     }
 
     protected override void OnFillAndStroke()

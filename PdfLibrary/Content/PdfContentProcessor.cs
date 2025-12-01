@@ -327,16 +327,20 @@ public abstract class PdfContentProcessor
             // Generic color operators
             case SetStrokeColorOperator sc:
                 CurrentState.StrokeColor = sc.Components;
+                CurrentState.StrokePatternName = null; // Clear pattern when solid color is set
                 OnColorChanged();
                 break;
 
             case SetFillColorOperator sc:
                 PdfLogger.Log(LogCategory.Graphics, $"[sc OPERATOR] Components=[{string.Join(", ", sc.Components.Select(c => c.ToString("F2")))}]");
                 CurrentState.FillColor = sc.Components;
+                CurrentState.FillPatternName = null; // Clear pattern when solid color is set
                 OnColorChanged();
                 break;
 
             case SetStrokeColorExtendedOperator scn:
+                // Store pattern name if present (for Pattern color space)
+                CurrentState.StrokePatternName = scn.PatternName;
                 // Only update color if we have components (0 components means use current color)
                 if (scn.Components.Count > 0)
                     CurrentState.StrokeColor = scn.Components;
@@ -345,6 +349,8 @@ public abstract class PdfContentProcessor
 
             case SetFillColorExtendedOperator scn:
                 PdfLogger.Log(LogCategory.Graphics, $"[scn OPERATOR] Operands={scn.Operands.Count}, Components=[{string.Join(", ", scn.Components.Select(c => c.ToString("F2")))}], Pattern={scn.PatternName}");
+                // Store pattern name if present (for Pattern color space)
+                CurrentState.FillPatternName = scn.PatternName;
                 // Only update color if we have components (0 components means use current color)
                 if (scn.Components.Count > 0)
                     CurrentState.FillColor = scn.Components;

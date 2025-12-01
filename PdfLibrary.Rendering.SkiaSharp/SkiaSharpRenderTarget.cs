@@ -209,10 +209,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         // The CTM parameter is the FULL accumulated transformation matrix from PdfGraphicsState.
         // We need to combine it with our initial viewport transformation.
         //
-        // Matrix multiplication order: rightmost matrix is applied first.
-        // We want InitialTransform applied first, then CTM, so: CTM × InitialTransform
+        // Matrix multiplication order: In System.Numerics.Matrix3x2, A * B means "apply A first, then B".
+        // A point p transforms as: p' = p * (A * B) which equals (p * A) * B
+        // We want: CTM applied first (position/scale in user space), then InitialTransform (user→device).
+        // So: CTM × InitialTransform
 
-        // Combine: CTM is applied to the viewport-transformed coordinates
+        // Combine: point goes through CTM first, then InitialTransform converts to device coords
         Matrix3x2 finalTransform = ctm * _initialTransform;
 
         // Convert to SKMatrix
@@ -1276,6 +1278,208 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         }
     }
 
+    public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
+        PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)
+    {
+        if (path.IsEmpty)
+            return;
+
+        _canvas.Save();
+        try
+        {
+            // Apply transformation matrix
+            ApplyPathTransformationMatrix(state);
+
+            // Convert IPathBuilder to SKPath
+            SKPath skPath = ConvertToSkPath(path);
+            skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+
+            // Calculate pattern cell size in device pixels
+            // Pattern BBox defines the content area, XStep/YStep define the tiling interval
+            double patternWidth = Math.Abs(pattern.XStep);
+            double patternHeight = Math.Abs(pattern.YStep);
+
+            if (patternWidth <= 0) patternWidth = pattern.BBox.Width;
+            if (patternHeight <= 0) patternHeight = pattern.BBox.Height;
+
+            // Apply pattern matrix and current CTM to get device pixel size
+            // Pattern matrix transforms pattern space to user space
+            Matrix3x2 patternMatrix = pattern.Matrix;
+            Matrix3x2 ctm = state.Ctm;
+            Matrix3x2 combined = patternMatrix * ctm;
+
+            // Calculate scale from combined matrix
+            double scaleX = Math.Sqrt(combined.M11 * combined.M11 + combined.M12 * combined.M12);
+            double scaleY = Math.Sqrt(combined.M21 * combined.M21 + combined.M22 * combined.M22);
+
+            int tileWidth = Math.Max(1, (int)Math.Ceiling(patternWidth * scaleX * _scale));
+            int tileHeight = Math.Max(1, (int)Math.Ceiling(patternHeight * scaleY * _scale));
+
+            // Limit tile size to prevent memory issues
+            const int maxTileSize = 2048;
+            if (tileWidth > maxTileSize) tileWidth = maxTileSize;
+            if (tileHeight > maxTileSize) tileHeight = maxTileSize;
+
+            PdfLogger.Log(LogCategory.Graphics, $"PATTERN TILE: BBox={pattern.BBox}, XStep={pattern.XStep}, YStep={pattern.YStep}, tileSize={tileWidth}x{tileHeight}");
+
+            // Create offscreen surface for pattern tile
+            var tileInfo = new SKImageInfo(tileWidth, tileHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var tileSurface = SKSurface.Create(tileInfo);
+
+            if (tileSurface is null)
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"PATTERN: Failed to create tile surface {tileWidth}x{tileHeight}");
+                skPath.Dispose();
+                return;
+            }
+
+            SKCanvas tileCanvas = tileSurface.Canvas;
+
+            // Clear with transparent (for colored patterns) or white (could vary)
+            tileCanvas.Clear(SKColors.Transparent);
+
+            // Set up transformation for pattern content
+            // Pattern content is defined in pattern space (PDF coordinates with Y-up)
+            // We need to transform from pattern space to tile surface space (SkiaSharp Y-down)
+            tileCanvas.Save();
+
+            // Scale from pattern space to device pixels, with Y-flip for coordinate system conversion
+            float deviceScaleX = (float)(tileWidth / patternWidth);
+            float deviceScaleY = (float)(tileHeight / patternHeight);
+
+            // Apply Y-flip transformation: PDF Y-up to SkiaSharp Y-down
+            // 1. Translate origin to bottom of tile
+            // 2. Flip Y axis (negative scale)
+            // 3. Translate to BBox origin
+            tileCanvas.Translate(0, tileHeight);
+            tileCanvas.Scale(deviceScaleX, -deviceScaleY);
+
+            // Translate to account for BBox origin (pattern content is relative to BBox)
+            tileCanvas.Translate(-(float)pattern.BBox.X1, -(float)pattern.BBox.Y1);
+
+            // Create a sub-render target for the pattern content
+            using var subTarget = new SkiaSharpRenderTargetForPattern(tileSurface, patternWidth, patternHeight);
+
+            // Render pattern content
+            renderPatternContent(subTarget);
+
+            tileCanvas.Restore();
+
+            // Get the tile as an image
+            using SKImage? tileImage = tileSurface.Snapshot();
+            if (tileImage is null)
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"PATTERN: Failed to snapshot tile");
+                skPath.Dispose();
+                return;
+            }
+
+            // Create a shader that tiles the pattern image
+            // The shader maps from user space coordinates to tile bitmap coordinates
+            // Shader operates in pre-canvas-transform space (user space)
+
+            // In user space, pattern tiles every XStep * patternMatrix.M11 in X
+            // and YStep * patternMatrix.M22 in Y
+            float patternScaleX = Math.Abs(pattern.Matrix.M11);
+            float patternScaleY = Math.Abs(pattern.Matrix.M22);
+            if (patternScaleX < 0.001f) patternScaleX = 1.0f;
+            if (patternScaleY < 0.001f) patternScaleY = 1.0f;
+
+            float userStepX = (float)(patternWidth * patternScaleX);
+            float userStepY = (float)(patternHeight * patternScaleY);
+
+            // The shader needs to transform user coordinates to tile bitmap coordinates.
+            // The tile bitmap was rendered with Y-flip (PDF Y-up → bitmap Y-down).
+            // The canvas also has Y-flip (device Y-down → user Y-up via canvasInverse).
+            // When we compose shaderMatrix with canvasInverse, these Y-flips must cancel out.
+            // So shaderMatrix needs NEGATIVE Y scale to compensate for canvasInverse's flip.
+
+            float scaleToTileX = tileWidth / userStepX;
+            float scaleToTileY = tileHeight / userStepY;
+
+            // Pattern origin in user space (from pattern matrix translation)
+            float patternOriginX = (float)pattern.Matrix.M31;
+            float patternOriginY = (float)pattern.Matrix.M32;
+
+            // For X: sample_x = (user_x - patternOriginX) * scaleToTileX
+            // For Y: We need to flip because tile was Y-flipped during rendering.
+            //        tile_y = tileHeight - (user_y - patternOriginY) * scaleToTileY
+            //        This equals: -user_y * scaleToTileY + (tileHeight + patternOriginY * scaleToTileY)
+            // Using negative Y scale compensates for canvasInverse's Y flip.
+
+            SKMatrix shaderMatrix = SKMatrix.CreateScale(scaleToTileX, -scaleToTileY);
+            shaderMatrix = shaderMatrix.PostConcat(SKMatrix.CreateTranslation(
+                -patternOriginX * scaleToTileX,
+                tileHeight + patternOriginY * scaleToTileY));
+
+            // IMPORTANT: SkiaSharp shaders are sampled in DEVICE coordinates (after canvas transform)
+            // The canvas transform converts user space to device space.
+            // The shader's local matrix needs to transform FROM device coords TO tile bitmap coords.
+            //
+            // device = canvasMatrix * user
+            // So: user = inverse(canvasMatrix) * device
+            // And: tile = shaderMatrix * user = shaderMatrix * inverse(canvasMatrix) * device
+            //
+            // Therefore, the effective shader matrix for device coords is:
+            // effectiveShaderMatrix = shaderMatrix * inverse(canvasMatrix)
+
+            SKMatrix canvasMatrix = _canvas.TotalMatrix;
+
+            // Get the inverse of canvas matrix to transform from device to user space
+            if (!canvasMatrix.TryInvert(out SKMatrix canvasInverse))
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: Canvas matrix not invertible, skipping pattern");
+                skPath.Dispose();
+                return;
+            }
+
+            // Effective shader matrix = shaderMatrix (user→tile) * canvasInverse (device→user)
+            // This gives us: device→user→tile
+            SKMatrix effectiveShaderMatrix = shaderMatrix.PreConcat(canvasInverse);
+
+            PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: tile={tileWidth}x{tileHeight}, origin=({patternOriginX:F1},{patternOriginY:F1}), step=({userStepX:F1},{userStepY:F1})");
+
+            // Create bitmap from the tile image
+            using var tileBitmap = SKBitmap.FromImage(tileImage);
+            if (tileBitmap is null)
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: Failed to create bitmap from tile image");
+                skPath.Dispose();
+                return;
+            }
+
+            // Create shader with the effective matrix (device coords → tile coords)
+            using SKShader shader = SKShader.CreateBitmap(
+                tileBitmap,
+                SKShaderTileMode.Repeat,
+                SKShaderTileMode.Repeat,
+                effectiveShaderMatrix);
+
+            if (shader is null)
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: Failed to create shader");
+                skPath.Dispose();
+                return;
+            }
+
+            // Fill the path with the pattern shader
+            using var paint = new SKPaint();
+            paint.Shader = shader;
+            paint.IsAntialias = true;
+            paint.Style = SKPaintStyle.Fill;
+
+            // Apply fill alpha
+            paint.Color = ApplyAlpha(SKColors.White, state.FillAlpha);
+
+            _canvas.DrawPath(skPath, paint);
+            skPath.Dispose();
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
+    }
+
     public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
         if (path.IsEmpty)
@@ -1359,14 +1563,18 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
         // IMPORTANT: Clipping paths are "frozen" in device coordinates when ClipPath is called.
         // The canvas matrix at the time of clipping transforms the path to device space.
-        // We need to use the same display matrix that BeginPage sets up (including scale),
+        // We MUST use the exact same _initialTransform that BeginPage uses (including CropBox offset),
         // so that the clip boundary aligns exactly with drawn content.
         //
-        // Transform the path directly to device coordinates:
-        // 1. Scale by (scale, -scale) - scales content and flips Y (same as initial transform)
-        // 2. Translate by (0, height * scale) - moves origin to top-left of scaled output
-        var displayMatrix = SKMatrix.CreateScale((float)_scale, (float)-_scale);
-        displayMatrix = displayMatrix.PostConcat(SKMatrix.CreateTranslation(0, (float)(_pageHeight * _scale)));
+        // _initialTransform includes:
+        // 1. Translate by (-cropOffsetX, -cropOffsetY) - shift so CropBox origin is at (0,0)
+        // 2. Scale by (scale, -scale) - scales content and flips Y
+        // 3. Translate by (0, height * scale) - moves origin to top-left of scaled output
+        var displayMatrix = new SKMatrix(
+            _initialTransform.M11, _initialTransform.M21, _initialTransform.M31,
+            _initialTransform.M12, _initialTransform.M22, _initialTransform.M32,
+            0, 0, 1
+        );
         skPath.Transform(displayMatrix);
 
         // Save current canvas state, set identity, apply clip, restore
@@ -1501,6 +1709,13 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             {
                 SKMatrix oldMatrix = _canvas.TotalMatrix;
 
+                // Debug: log the canvas matrix being used for this image
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: Canvas matrix=[{oldMatrix.ScaleX:F2},{oldMatrix.SkewX:F2},{oldMatrix.TransX:F2};{oldMatrix.SkewY:F2},{oldMatrix.ScaleY:F2},{oldMatrix.TransY:F2}]");
+
+                // Debug: Check clip bounds BEFORE any matrix changes
+                var deviceClipBefore = _canvas.DeviceClipBounds;
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: DeviceClipBounds BEFORE SetMatrix = ({deviceClipBefore.Left},{deviceClipBefore.Top},{deviceClipBefore.Right},{deviceClipBefore.Bottom})");
+
                 // PDF images are drawn in a unit square from (0,0) to (1,1).
                 // The canvas already has the correct transform from ApplyCtm() which includes the Y-flip.
                 //
@@ -1512,6 +1727,28 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 var imageFlipMatrix = new SKMatrix(1, 0, 0, 0, -1, 1, 0, 0, 1);
                 SKMatrix combinedMatrix = oldMatrix.PreConcat(imageFlipMatrix);
                 _canvas.SetMatrix(combinedMatrix);
+
+                // Debug: log the combined matrix after flip and where corners map
+                var p00 = combinedMatrix.MapPoint(new SKPoint(0, 0));
+                var p11 = combinedMatrix.MapPoint(new SKPoint(1, 1));
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: After flip=[{combinedMatrix.ScaleX:F2},{combinedMatrix.SkewX:F2},{combinedMatrix.TransX:F2};{combinedMatrix.SkewY:F2},{combinedMatrix.ScaleY:F2},{combinedMatrix.TransY:F2}]");
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: Unit (0,0) maps to ({p00.X:F2},{p00.Y:F2}), (1,1) maps to ({p11.X:F2},{p11.Y:F2})");
+
+                // Debug: Log bitmap info and sample pixels to verify image data
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: Bitmap created {bitmap.Width}x{bitmap.Height}, Info={bitmap.Info.ColorType}");
+                if (bitmap.Width > 0 && bitmap.Height > 0)
+                {
+                    SKColor pixel00 = bitmap.GetPixel(0, 0);
+                    int midX = bitmap.Width / 2;
+                    int midY = bitmap.Height / 2;
+                    SKColor pixelMid = bitmap.GetPixel(midX, midY);
+                    PdfLogger.Log(LogCategory.Images, $"DrawImage: pixel(0,0)=({pixel00.Red},{pixel00.Green},{pixel00.Blue},{pixel00.Alpha}), pixel(mid)=({pixelMid.Red},{pixelMid.Green},{pixelMid.Blue},{pixelMid.Alpha})");
+                }
+
+                // Debug: Log canvas clip bounds
+                var clipBounds = _canvas.LocalClipBounds;
+                var deviceClipBounds = _canvas.DeviceClipBounds;
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: ClipBounds Local=({clipBounds.Left:F2},{clipBounds.Top:F2},{clipBounds.Right:F2},{clipBounds.Bottom:F2}), Device=({deviceClipBounds.Left},{deviceClipBounds.Top},{deviceClipBounds.Right},{deviceClipBounds.Bottom})");
 
                 // Convert bitmap to SKImage for drawing
                 using SKImage? skImage = SKImage.FromBitmap(bitmap);
@@ -2252,4 +2489,456 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     /// Returns this instance since it is the underlying SkiaSharp render target.
     /// </summary>
     public SkiaSharpRenderTarget GetSkiaRenderTarget() => this;
+}
+
+/// <summary>
+/// Lightweight IRenderTarget implementation for rendering pattern content to an existing surface.
+/// Used internally by FillPathWithTilingPattern.
+/// </summary>
+internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
+{
+    private readonly SKSurface _surface;
+    private readonly SKCanvas _canvas;
+    private readonly double _patternWidth;
+    private readonly double _patternHeight;
+    private readonly Stack<SKMatrix> _stateStack = new();
+
+    public int CurrentPageNumber => 1;
+
+    public SkiaSharpRenderTargetForPattern(SKSurface surface, double patternWidth, double patternHeight)
+    {
+        _surface = surface;
+        _canvas = surface.Canvas;
+        _patternWidth = patternWidth;
+        _patternHeight = patternHeight;
+    }
+
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
+    {
+        // Pattern content uses pattern space coordinates, no additional transform needed
+        // The canvas transformation is already set up by the caller
+    }
+
+    public void EndPage() { }
+
+    public void Clear()
+    {
+        _canvas.Clear(SKColors.Transparent);
+    }
+
+    public void SaveState()
+    {
+        _stateStack.Push(_canvas.TotalMatrix);
+        _canvas.Save();
+    }
+
+    public void RestoreState()
+    {
+        _canvas.Restore();
+        if (_stateStack.Count > 0)
+            _stateStack.Pop();
+    }
+
+    public void ApplyCtm(Matrix3x2 ctm)
+    {
+        var skMatrix = new SKMatrix(
+            ctm.M11, ctm.M21, ctm.M31,
+            ctm.M12, ctm.M22, ctm.M32,
+            0, 0, 1);
+        _canvas.Concat(ref skMatrix);
+    }
+
+    public void OnGraphicsStateChanged(PdfGraphicsState state) { }
+
+    public void StrokePath(IPathBuilder path, PdfGraphicsState state)
+    {
+        if (path.IsEmpty) return;
+
+        _canvas.Save();
+        try
+        {
+            ApplyPathTransform(state);
+            using SKPath skPath = ConvertToSkPath(path);
+            using var paint = new SKPaint
+            {
+                Color = ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace),
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = Math.Max(0.5f, (float)state.LineWidth)
+            };
+            _canvas.DrawPath(skPath, paint);
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
+    }
+
+    public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        if (path.IsEmpty) return;
+
+        _canvas.Save();
+        try
+        {
+            ApplyPathTransform(state);
+            using SKPath skPath = ConvertToSkPath(path);
+            skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+            using var paint = new SKPaint
+            {
+                Color = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace),
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            };
+            _canvas.DrawPath(skPath, paint);
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
+    }
+
+    public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        FillPath(path, state, evenOdd);
+        StrokePath(path, state);
+    }
+
+    public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
+        PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)
+    {
+        // Nested patterns are rare - use solid fill as fallback
+        FillPath(path, state, evenOdd);
+    }
+
+    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        if (path.IsEmpty) return;
+        ApplyPathTransform(state);
+        using SKPath skPath = ConvertToSkPath(path);
+        skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+        _canvas.ClipPath(skPath);
+    }
+
+    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
+    {
+        // For pattern content, use simple text rendering
+        if (string.IsNullOrEmpty(text)) return;
+
+        _canvas.Save();
+        try
+        {
+            // Apply text transformation
+            Matrix3x2 textMatrix = state.TextMatrix;
+            Matrix3x2 ctm = state.Ctm;
+            Matrix3x2 combined = textMatrix * ctm;
+
+            var skMatrix = new SKMatrix(
+                combined.M11, combined.M21, combined.M31,
+                combined.M12, combined.M22, combined.M32,
+                0, 0, 1);
+            _canvas.Concat(ref skMatrix);
+
+            // Calculate font size
+            float effectiveSize = (float)(state.FontSize * Math.Sqrt(textMatrix.M21 * textMatrix.M21 + textMatrix.M22 * textMatrix.M22));
+            if (effectiveSize < 0.1f) effectiveSize = 12f;
+
+            using var paint = new SKPaint
+            {
+                Color = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace),
+                IsAntialias = true,
+                TextSize = effectiveSize,
+                Typeface = SKTypeface.Default
+            };
+
+            _canvas.DrawText(text, 0, 0, paint);
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
+    }
+
+    public void DrawImage(PdfImage image, PdfGraphicsState state)
+    {
+        // Pattern images - CTM has ALREADY been applied via ApplyCtm() when processing
+        // the content stream's 'cm' operator. Don't apply it again here.
+        // The canvas already has the correct transform to position and scale the image.
+        _canvas.Save();
+        try
+        {
+            // Log canvas state (CTM already applied)
+            SKMatrix canvasMatrix = _canvas.TotalMatrix;
+            PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: Canvas matrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2},{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
+
+            // Calculate where unit square corners will map to
+            var p00 = canvasMatrix.MapPoint(new SKPoint(0, 0));
+            var p11 = canvasMatrix.MapPoint(new SKPoint(1, 1));
+            PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: Unit (0,0) maps to ({p00.X:F2},{p00.Y:F2}), (1,1) maps to ({p11.X:F2},{p11.Y:F2})");
+
+            // Try to decode and draw the image
+            byte[] imageData = image.GetDecodedData();
+            PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: imageData.Length={imageData.Length}, ColorSpace={image.ColorSpace}, Size={image.Width}x{image.Height}");
+
+            if (imageData.Length > 0)
+            {
+                using var bitmap = CreateBitmapFromImageData(image, imageData);
+                PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: bitmap is {(bitmap is null ? "NULL" : $"{bitmap.Width}x{bitmap.Height}")}");
+
+                if (bitmap is not null)
+                {
+                    // Log some pixel values to verify bitmap content
+                    var pixel0 = bitmap.GetPixel(0, 0);
+                    var pixelMid = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2);
+                    PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: bitmap pixel(0,0)=({pixel0.Red},{pixel0.Green},{pixel0.Blue},{pixel0.Alpha}), pixel(mid)=({pixelMid.Red},{pixelMid.Green},{pixelMid.Blue},{pixelMid.Alpha})");
+
+                    using var paint = new SKPaint { IsAntialias = true, FilterQuality = SKFilterQuality.High };
+                    _canvas.DrawBitmap(bitmap, new SKRect(0, 0, 1, 1), paint);
+                    PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: Drew bitmap to (0,0,1,1)");
+                }
+            }
+        }
+        finally
+        {
+            _canvas.Restore();
+        }
+    }
+
+    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)
+    {
+        // Soft masks in patterns - render content without mask
+        renderMaskContent(this);
+    }
+
+    public void ClearSoftMask() { }
+
+    public (int width, int height, double scale) GetPageDimensions()
+    {
+        return ((int)_patternWidth, (int)_patternHeight, 1.0);
+    }
+
+    public void Dispose() { }
+
+    private void ApplyPathTransform(PdfGraphicsState state)
+    {
+        Matrix3x2 ctm = state.Ctm;
+        var skMatrix = new SKMatrix(
+            ctm.M11, ctm.M21, ctm.M31,
+            ctm.M12, ctm.M22, ctm.M32,
+            0, 0, 1);
+        _canvas.Concat(ref skMatrix);
+    }
+
+    private static SKPath ConvertToSkPath(IPathBuilder pathBuilder)
+    {
+        var skPath = new SKPath();
+
+        if (pathBuilder is not PathBuilder builder)
+            return skPath;
+
+        foreach (PathSegment segment in builder.Segments)
+        {
+            switch (segment)
+            {
+                case MoveToSegment moveTo:
+                    skPath.MoveTo((float)moveTo.X, (float)moveTo.Y);
+                    break;
+
+                case LineToSegment lineTo:
+                    skPath.LineTo((float)lineTo.X, (float)lineTo.Y);
+                    break;
+
+                case CurveToSegment curveTo:
+                    skPath.CubicTo(
+                        (float)curveTo.X1, (float)curveTo.Y1,
+                        (float)curveTo.X2, (float)curveTo.Y2,
+                        (float)curveTo.X3, (float)curveTo.Y3);
+                    break;
+
+                case ClosePathSegment:
+                    skPath.Close();
+                    break;
+            }
+        }
+        return skPath;
+    }
+
+    private static SKColor ConvertColor(List<double> components, string colorSpace)
+    {
+        if (components.Count == 0)
+            return SKColors.Black;
+
+        switch (colorSpace)
+        {
+            case "DeviceGray":
+            case "CalGray":
+                byte gray = (byte)(components[0] * 255);
+                return new SKColor(gray, gray, gray);
+
+            case "DeviceRGB":
+            case "CalRGB":
+                if (components.Count >= 3)
+                {
+                    return new SKColor(
+                        (byte)(components[0] * 255),
+                        (byte)(components[1] * 255),
+                        (byte)(components[2] * 255));
+                }
+                break;
+
+            case "DeviceCMYK":
+                if (components.Count >= 4)
+                {
+                    double c = components[0], m = components[1], y = components[2], k = components[3];
+                    byte r = (byte)(255 * (1 - c) * (1 - k));
+                    byte g = (byte)(255 * (1 - m) * (1 - k));
+                    byte b = (byte)(255 * (1 - y) * (1 - k));
+                    return new SKColor(r, g, b);
+                }
+                break;
+        }
+
+        return SKColors.Black;
+    }
+
+    private static SKBitmap? CreateBitmapFromImageData(PdfImage image, byte[] imageData)
+    {
+        int width = image.Width;
+        int height = image.Height;
+        int bitsPerComponent = image.BitsPerComponent;
+        string colorSpace = image.ColorSpace;
+
+        if (width <= 0 || height <= 0) return null;
+
+        try
+        {
+            int pixelCount = width * height;
+            byte[] pixelBuffer = new byte[pixelCount * 4];
+
+            switch (colorSpace)
+            {
+                case "DeviceGray":
+                case "CalGray":
+                    if (bitsPerComponent == 8 && imageData.Length >= pixelCount)
+                    {
+                        for (int i = 0; i < pixelCount; i++)
+                        {
+                            byte gray = imageData[i];
+                            int offset = i * 4;
+                            pixelBuffer[offset] = gray;
+                            pixelBuffer[offset + 1] = gray;
+                            pixelBuffer[offset + 2] = gray;
+                            pixelBuffer[offset + 3] = 255;
+                        }
+                    }
+                    else return null;
+                    break;
+
+                case "DeviceRGB":
+                case "CalRGB":
+                    int expectedRgb = pixelCount * 3;
+                    if (imageData.Length >= expectedRgb)
+                    {
+                        for (int i = 0; i < pixelCount; i++)
+                        {
+                            int srcOffset = i * 3;
+                            int dstOffset = i * 4;
+                            pixelBuffer[dstOffset] = imageData[srcOffset];
+                            pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
+                            pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
+                            pixelBuffer[dstOffset + 3] = 255;
+                        }
+                    }
+                    else return null;
+                    break;
+
+                case "DeviceCMYK":
+                    int expectedCmyk = pixelCount * 4;
+                    if (imageData.Length >= expectedCmyk)
+                    {
+                        for (int i = 0; i < pixelCount; i++)
+                        {
+                            int srcOffset = i * 4;
+                            int dstOffset = i * 4;
+                            int c = imageData[srcOffset];
+                            int m = imageData[srcOffset + 1];
+                            int y = imageData[srcOffset + 2];
+                            int k = imageData[srcOffset + 3];
+                            pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 2] = (byte)((255 - y) * (255 - k) / 255);
+                            pixelBuffer[dstOffset + 3] = 255;
+                        }
+                    }
+                    else return null;
+                    break;
+
+                case "Indexed":
+                {
+                    // Handle indexed color images
+                    byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
+                    if (paletteData is null || baseColorSpace is null)
+                        return null;
+
+                    int componentsPerEntry = baseColorSpace switch
+                    {
+                        "DeviceRGB" => 3,
+                        "DeviceGray" => 1,
+                        _ => 3
+                    };
+
+                    // Convert indexed pixels to RGBA
+                    for (int i = 0; i < pixelCount; i++)
+                    {
+                        if (i >= imageData.Length)
+                            continue;
+
+                        byte paletteIndex = imageData[i];
+                        if (paletteIndex > hival)
+                            paletteIndex = (byte)hival;
+
+                        int paletteOffset = paletteIndex * componentsPerEntry;
+                        int bufferOffset = i * 4;
+
+                        byte r, g, b;
+                        if (componentsPerEntry == 3 && paletteOffset + 2 < paletteData.Length)
+                        {
+                            r = paletteData[paletteOffset];
+                            g = paletteData[paletteOffset + 1];
+                            b = paletteData[paletteOffset + 2];
+                        }
+                        else if (componentsPerEntry == 1 && paletteOffset < paletteData.Length)
+                        {
+                            byte gray = paletteData[paletteOffset];
+                            r = g = b = gray;
+                        }
+                        else
+                        {
+                            r = g = b = 0;
+                        }
+
+                        pixelBuffer[bufferOffset] = r;
+                        pixelBuffer[bufferOffset + 1] = g;
+                        pixelBuffer[bufferOffset + 2] = b;
+                        pixelBuffer[bufferOffset + 3] = 255;
+                    }
+                    break;
+                }
+
+                default:
+                    return null;
+            }
+
+            var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
+            IntPtr pixels = bitmap.GetPixels();
+            if (pixels == IntPtr.Zero) return null;
+            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, pixels, pixelBuffer.Length);
+            bitmap.NotifyPixelsChanged();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }

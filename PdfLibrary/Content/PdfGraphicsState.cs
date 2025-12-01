@@ -108,6 +108,13 @@ public class PdfGraphicsState
     /// <summary>Resolved fill color components (in device color space)</summary>
     public List<double> ResolvedFillColor { get; set; } = [0.0];
 
+    // Pattern state
+    /// <summary>Fill pattern name (when using Pattern color space)</summary>
+    public string? FillPatternName { get; set; }
+
+    /// <summary>Stroke pattern name (when using Pattern color space)</summary>
+    public string? StrokePatternName { get; set; }
+
     // ExtGState parameters (set via gs operator)
     /// <summary>Stroking alpha (CA) - 0.0 = fully transparent, 1.0 = fully opaque</summary>
     public double StrokeAlpha { get; set; } = 1.0;
@@ -227,6 +234,9 @@ public class PdfGraphicsState
             ResolvedFillColorSpace = ResolvedFillColorSpace,
             ResolvedStrokeColor = [..ResolvedStrokeColor],
             ResolvedFillColor = [..ResolvedFillColor],
+            // Pattern state
+            FillPatternName = FillPatternName,
+            StrokePatternName = StrokePatternName,
             // ExtGState parameters
             StrokeAlpha = StrokeAlpha,
             FillAlpha = FillAlpha,
