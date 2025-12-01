@@ -29,15 +29,15 @@ internal class TrueTypeFont : PdfFont
     public override double GetCharacterWidth(int charCode)
     {
         // Try to use embedded font metrics first for more accurate widths
-        EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
+        var embeddedMetrics = GetEmbeddedMetrics();
         if (embeddedMetrics is { IsValid: true })
         {
-            ushort glyphWidth = embeddedMetrics.GetCharacterAdvanceWidth((ushort)charCode);
+            var glyphWidth = embeddedMetrics.GetCharacterAdvanceWidth((ushort)charCode);
             if (glyphWidth > 0)
             {
                 // Scale embedded width to PDF's 1000-unit coordinate system
                 // Embedded font may have different UnitsPerEm (e.g., 2048)
-                double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                var scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
                 PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                 return scaledWidth;
             }
@@ -46,7 +46,7 @@ internal class TrueTypeFont : PdfFont
         // Fallback to widths array from PDF
         if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
-            int index = charCode - FirstChar;
+            var index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
             {
                 PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
@@ -55,7 +55,7 @@ internal class TrueTypeFont : PdfFont
         }
 
         // Try to get from font descriptor
-        PdfFontDescriptor? descriptor = GetDescriptor();
+        var descriptor = GetDescriptor();
         if (descriptor is null) return _defaultWidth > 0
             ? _defaultWidth
             : 500;
@@ -78,12 +78,12 @@ internal class TrueTypeFont : PdfFont
         try
         {
             // Get font descriptor
-            PdfFontDescriptor? descriptor = GetDescriptor();
+            var descriptor = GetDescriptor();
             if (descriptor is null)
                 return null;
 
             // Try to get embedded TrueType data (FontFile2)
-            byte[]? fontData = descriptor.GetFontFile2();
+            var fontData = descriptor.GetFontFile2();
             if (fontData is null)
             {
                 // Try OpenType/CFF (FontFile3)
@@ -106,7 +106,7 @@ internal class TrueTypeFont : PdfFont
 
     private void LoadEncoding()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out var obj))
         {
             // TrueType fonts without encoding use WinAnsiEncoding by default
             Encoding = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
@@ -131,7 +131,7 @@ internal class TrueTypeFont : PdfFont
     private void LoadWidths()
     {
         // Get widths array
-        if (_dictionary.TryGetValue(new PdfName("Widths"), out PdfObject? obj))
+        if (_dictionary.TryGetValue(new PdfName("Widths"), out var obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
@@ -147,7 +147,7 @@ internal class TrueTypeFont : PdfFont
         }
 
         // Get default width from font descriptor
-        PdfFontDescriptor? descriptor = GetDescriptor();
+        var descriptor = GetDescriptor();
         if (descriptor is not null)
         {
             _defaultWidth = descriptor.MissingWidth > 0 ? descriptor.MissingWidth : descriptor.AvgWidth;

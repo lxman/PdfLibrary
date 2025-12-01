@@ -105,7 +105,7 @@ internal class EmbeddedFontMetrics
         if (_cmapTable?.EncodingRecords is null || index >= _cmapTable.EncodingRecords.Count)
             return "Invalid index";
 
-        EncodingRecord record = _cmapTable.EncodingRecords[index];
+        var record = _cmapTable.EncodingRecords[index];
         return $"Platform={record.PlatformId}";
     }
 
@@ -120,10 +120,10 @@ internal class EmbeddedFontMetrics
         var info = new System.Text.StringBuilder();
         info.AppendLine($"Cmap: {_cmapTable.EncodingRecords.Count} encodings, {_cmapTable.SubTables.Count} subtables");
 
-        for (int i = 0; i < _cmapTable.EncodingRecords.Count; i++)
+        for (var i = 0; i < _cmapTable.EncodingRecords.Count; i++)
         {
-            EncodingRecord rec = _cmapTable.EncodingRecords[i];
-            string encoding = rec.PlatformId switch
+            var rec = _cmapTable.EncodingRecords[i];
+            var encoding = rec.PlatformId switch
             {
                 PlatformId.Unicode => $"Unicode/{rec.UnicodeEncoding}",
                 PlatformId.Windows => $"Windows/{rec.WindowsEncoding}",
@@ -133,7 +133,7 @@ internal class EmbeddedFontMetrics
             info.AppendLine($"  [{i}] {encoding}");
         }
 
-        for (int i = 0; i < _cmapTable.SubTables.Count; i++)
+        for (var i = 0; i < _cmapTable.SubTables.Count; i++)
         {
             var subtable = _cmapTable.SubTables[i];
             info.AppendLine($"  Subtable[{i}]: {subtable.GetType().Name}");
@@ -169,7 +169,7 @@ internal class EmbeddedFontMetrics
 
         foreach (var subtable in _cmapTable.SubTables)
         {
-            ushort gid = subtable.GetGlyphId(charCode);
+            var gid = subtable.GetGlyphId(charCode);
             if (gid != 0)
                 return (gid, subtable.GetType().Name);
         }
@@ -194,11 +194,11 @@ internal class EmbeddedFontMetrics
 
                 // Calculate UnitsPerEm from FontMatrix instead of hardcoding
                 // FontMatrix[0] represents the scale from glyph units to text space: 1/UnitsPerEm
-                List<double>? fontMatrix = _cffTable.FontMatrix;
+                var fontMatrix = _cffTable.FontMatrix;
                 if (fontMatrix is not null && fontMatrix.Count >= 4 && fontMatrix[0] > 0)
                 {
                     UnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);
-                    string matrixStr = string.Join(", ", fontMatrix);
+                    var matrixStr = string.Join(", ", fontMatrix);
                     PdfLogger.Log(LogCategory.Text, $"[FONTMATRIX] CFF FontMatrix: [{matrixStr}], calculated UnitsPerEm: {UnitsPerEm}, NominalWidthX: {_cffTable.NominalWidthX}");
                 }
                 else
@@ -225,7 +225,7 @@ internal class EmbeddedFontMetrics
         _parser = new TrueTypeParser(fontData);
 
         // Parse head table (required)
-        byte[]? headData = _parser.GetTable("head");
+        var headData = _parser.GetTable("head");
         if (headData is not null)
         {
             try
@@ -244,7 +244,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse maxp table (required for glyph count)
-        byte[]? maxpData = _parser.GetTable("maxp");
+        var maxpData = _parser.GetTable("maxp");
         if (maxpData is not null)
         {
             try
@@ -259,7 +259,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse hhea table (required for horizontal metrics)
-        byte[]? hheaData = _parser.GetTable("hhea");
+        var hheaData = _parser.GetTable("hhea");
         if (hheaData is not null)
         {
             try
@@ -273,7 +273,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse hmtx table (required for glyph widths)
-        byte[]? hmtxData = _parser.GetTable("hmtx");
+        var hmtxData = _parser.GetTable("hmtx");
         if (hmtxData is not null && _hheaTable is not null && NumGlyphs > 0)
         {
             try
@@ -288,7 +288,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse name table (optional but useful)
-        byte[]? nameData = _parser.GetTable("name");
+        var nameData = _parser.GetTable("name");
         if (nameData is not null)
         {
             try
@@ -302,7 +302,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse cmap table (required for character->glyph mapping)
-        byte[]? cmapData = _parser.GetTable("cmap");
+        var cmapData = _parser.GetTable("cmap");
         if (cmapData is not null)
         {
             try
@@ -316,7 +316,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Check for CFF font (OpenType with CFF outlines)
-        byte[]? cffData = _parser.GetTable("CFF ");
+        var cffData = _parser.GetTable("CFF ");
         if (cffData is not null)
         {
             try
@@ -325,10 +325,10 @@ internal class EmbeddedFontMetrics
                 _isCffFont = true;
 
                 // Log FontMatrix for debugging
-                List<double>? fontMatrix = _cffTable.FontMatrix;
+                var fontMatrix = _cffTable.FontMatrix;
                 if (fontMatrix is not null && fontMatrix.Count >= 4 && fontMatrix[0] > 0)
                 {
-                    string matrixStr = string.Join(", ", fontMatrix);
+                    var matrixStr = string.Join(", ", fontMatrix);
                     var calculatedUnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);
                     PdfLogger.Log(LogCategory.Text, $"[FONTMATRIX] OpenType CFF FontMatrix: [{matrixStr}], calculated UnitsPerEm: {calculatedUnitsPerEm}, head table UnitsPerEm: {UnitsPerEm}, NominalWidthX: {_cffTable.NominalWidthX}");
                 }
@@ -348,7 +348,7 @@ internal class EmbeddedFontMetrics
         // Font is valid if we have the essential tables for rendering
         // cmap is optional - Type0/CID fonts use CIDToGIDMap instead
         // We need head + hmtx + either glyf (TrueType) or CFF outlines
-        bool hasGlyphData = _parser.GetTable("glyf") is not null || _cffTable is not null;
+        var hasGlyphData = _parser.GetTable("glyf") is not null || _cffTable is not null;
         IsValid = _headTable is not null && _hmtxTable is not null && hasGlyphData;
     }
 
@@ -388,15 +388,15 @@ internal class EmbeddedFontMetrics
                 PdfLogger.Log(LogCategory.Text, "[TYPE1] Using Length1/Length2 format");
 
                 // Check for eexec in the data to understand the format better
-                string textPreview = System.Text.Encoding.ASCII.GetString(fontData);
-                int eexecIdx = textPreview.IndexOf("eexec", StringComparison.Ordinal);
+                var textPreview = System.Text.Encoding.ASCII.GetString(fontData);
+                var eexecIdx = textPreview.IndexOf("eexec", StringComparison.Ordinal);
                 PdfLogger.Log(LogCategory.Text, $"[TYPE1] eexec found at index: {eexecIdx}");
                 if (eexecIdx > 0)
                 {
                     // Show what comes after eexec
-                    int previewStart = Math.Min(eexecIdx + 5, textPreview.Length);
-                    int previewLen = Math.Min(100, textPreview.Length - previewStart);
-                    string afterEexec = textPreview.Substring(previewStart, previewLen);
+                    var previewStart = Math.Min(eexecIdx + 5, textPreview.Length);
+                    var previewLen = Math.Min(100, textPreview.Length - previewStart);
+                    var afterEexec = textPreview.Substring(previewStart, previewLen);
                     PdfLogger.Log(LogCategory.Text, $"[TYPE1] After eexec: '{afterEexec.Replace("\r", "\\r").Replace("\n", "\\n")}'");
                 }
 
@@ -494,7 +494,7 @@ internal class EmbeddedFontMetrics
         // Most TrueType fonts have cmap tables that expect Unicode
         if (unicodeCodePoint > 0 && unicodeCodePoint != charCode)
         {
-            ushort glyphId = _cmapTable.GetGlyphId(unicodeCodePoint);
+            var glyphId = _cmapTable.GetGlyphId(unicodeCodePoint);
             if (glyphId != 0)
                 return glyphId;
         }
@@ -531,7 +531,7 @@ internal class EmbeddedFontMetrics
         // For CFF fonts, use the charset to map glyph name to glyph index
         if (!_isCffFont || _cffTable is null) return 0;
         // First, convert the glyph name to SID
-        int sid = GetSidFromGlyphName(glyphName);
+        var sid = GetSidFromGlyphName(glyphName);
         switch (sid)
         {
             case < 0:
@@ -542,7 +542,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Get the charset from the CFF table
-        ICharset? charset = _cffTable.CharSet;
+        var charset = _cffTable.CharSet;
         switch (charset)
         {
             case null:
@@ -564,7 +564,7 @@ internal class EmbeddedFontMetrics
             {
                 // Format 1: ranges with SID and count
                 var glyphIndex = 1; // Start at 1 (.notdef is 0)
-                foreach (Range1 range in format1.Ranges)
+                foreach (var range in format1.Ranges)
                 {
                     for (var i = 0; i <= range.NumberLeft; i++)
                     {
@@ -580,7 +580,7 @@ internal class EmbeddedFontMetrics
             {
                 // Format 2: ranges with larger count field
                 var glyphIndex = 1; // Start at 1 (.notdef is 0)
-                foreach (Range2 range in format2.Ranges)
+                foreach (var range in format2.Ranges)
                 {
                     for (var i = 0; i <= range.NumberLeft; i++)
                     {
@@ -642,10 +642,10 @@ internal class EmbeddedFontMetrics
         if (_isType1Font && _type1Parser is not null)
         {
             // Get glyph name for the glyphId (which is the charCode for Type1)
-            string? glyphName = _type1Parser.GetGlyphName(glyphId);
+            var glyphName = _type1Parser.GetGlyphName(glyphId);
             if (glyphName is not null)
             {
-                CffGlyphOutline? outline = _type1Parser.GetGlyphOutline(glyphName);
+                var outline = _type1Parser.GetGlyphOutline(glyphName);
                 if (outline?.Width is not null)
                 {
                     return (ushort)Math.Round(outline.Width.Value);
@@ -657,11 +657,11 @@ internal class EmbeddedFontMetrics
 
         // CFF fonts store width in CharStrings
         if (!_isCffFont || _cffTable is null) return 0;
-        CffGlyphOutline? glyphOutline = _cffTable.GetGlyphOutline(glyphId);
+        var glyphOutline = _cffTable.GetGlyphOutline(glyphId);
         if (glyphOutline is null) return 0;
         // If Width is specified in the CharString, use it
         // Otherwise use nominalWidthX (the default width for the font)
-        float width = glyphOutline.Width ?? _cffTable.NominalWidthX;
+        var width = glyphOutline.Width ?? _cffTable.NominalWidthX;
         // Width is already in font units (CFF uses 1000 units per em)
         return (ushort)Math.Round(width);
 
@@ -685,7 +685,7 @@ internal class EmbeddedFontMetrics
     /// <returns>Advance width in font units, or 0 if character not found</returns>
     public ushort GetCharacterAdvanceWidth(ushort charCode)
     {
-        ushort glyphId = GetGlyphId(charCode);
+        var glyphId = GetGlyphId(charCode);
         return glyphId == 0
             ? (ushort)0
             : GetAdvanceWidth(glyphId);
@@ -733,13 +733,13 @@ internal class EmbeddedFontMetrics
             return null;
 
         // Get glyph data
-        GlyphData? glyphData = _glyphTable.GetGlyphData(glyphId);
+        var glyphData = _glyphTable.GetGlyphData(glyphId);
         if (glyphData is null)
             return null;
 
         // Get glyph metrics
-        ushort advanceWidth = GetAdvanceWidth(glyphId);
-        short leftSideBearing = GetLeftSideBearing(glyphId);
+        var advanceWidth = GetAdvanceWidth(glyphId);
+        var leftSideBearing = GetLeftSideBearing(glyphId);
 
         var metrics = new GlyphMetrics(
             advanceWidth,
@@ -765,15 +765,15 @@ internal class EmbeddedFontMetrics
             // Convert SimpleGlyph to GlyphOutline
             case SimpleGlyph simpleGlyph:
             {
-                List<GlyphContour> contours = ConvertSimpleGlyphToContours(simpleGlyph);
+                var contours = ConvertSimpleGlyphToContours(simpleGlyph);
 
                 // Log contour details for em dash
                 if (glyphId == 1165 && contours.Count > 0)
                 {
-                    GlyphContour c = contours[0];
+                    var c = contours[0];
                     PdfLogger.Log(LogCategory.Text,
                         $"[GLYPH-1165] Contour has {c.Points.Count} points");
-                    foreach (ContourPoint pt in c.Points.Take(10))
+                    foreach (var pt in c.Points.Take(10))
                     {
                         PdfLogger.Log(LogCategory.Text,
                             $"[GLYPH-1165]   Point: X={pt.X}, Y={pt.Y}, OnCurve={pt.OnCurve}");
@@ -828,13 +828,13 @@ internal class EmbeddedFontMetrics
             return null;
 
         // Get CFF glyph outline from Type1Table
-        CffGlyphOutline? cffOutline = _cffTable.GetGlyphOutline(glyphId);
+        var cffOutline = _cffTable.GetGlyphOutline(glyphId);
         if (cffOutline is null)
             return null;
 
         // Get glyph metrics
-        ushort advanceWidth = GetAdvanceWidth(glyphId);
-        short leftSideBearing = GetLeftSideBearing(glyphId);
+        var advanceWidth = GetAdvanceWidth(glyphId);
+        var leftSideBearing = GetLeftSideBearing(glyphId);
 
         // Use bounding box from CFF outline if available
         var metrics = new GlyphMetrics(
@@ -847,7 +847,7 @@ internal class EmbeddedFontMetrics
         );
 
         // Convert CFF path commands to contours
-        List<GlyphContour> contours = ConvertCffCommandsToContours(cffOutline);
+        var contours = ConvertCffCommandsToContours(cffOutline);
 
         return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
     }
@@ -862,7 +862,7 @@ internal class EmbeddedFontMetrics
             return null;
 
         // Try to get glyph name for the character code via Type1 encoding
-        string? glyphName = _type1Parser.GetGlyphName(glyphId);
+        var glyphName = _type1Parser.GetGlyphName(glyphId);
 
         // If encoding lookup fails, try index-based lookup (for CID fonts with Type1 data)
         // In CID fonts, the GID from CIDToGIDMap may be an index into the CharStrings
@@ -889,7 +889,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Get Type1 glyph outline
-        CffGlyphOutline? type1Outline = _type1Parser.GetGlyphOutline(glyphName);
+        var type1Outline = _type1Parser.GetGlyphOutline(glyphName);
 
         PdfLogger.Log(LogCategory.Text,
             $"[TYPE1-GLYPH] GetGlyphOutline('{glyphName}'): {(type1Outline is null ? "null" : $"commands={type1Outline.Commands.Count}")}");
@@ -898,7 +898,7 @@ internal class EmbeddedFontMetrics
             return null;
 
         // Get glyph metrics
-        ushort advanceWidth = GetAdvanceWidth(glyphId);
+        var advanceWidth = GetAdvanceWidth(glyphId);
         short leftSideBearing = 0; // Type1 uses sidebearing from CharString
 
         // Use bounding box from Type1 outline
@@ -912,7 +912,7 @@ internal class EmbeddedFontMetrics
         );
 
         // Convert path commands to contours (same format as CFF)
-        List<GlyphContour> contours = ConvertCffCommandsToContours(type1Outline);
+        var contours = ConvertCffCommandsToContours(type1Outline);
 
         return new GlyphOutline(glyphId, contours, metrics, isComposite: false);
     }
@@ -932,7 +932,7 @@ internal class EmbeddedFontMetrics
             $"[TYPE1-GLYPH] GetGlyphOutlineByName: glyphName='{glyphName}'");
 
         // Get Type1 glyph outline directly by name
-        CffGlyphOutline? type1Outline = _type1Parser.GetGlyphOutline(glyphName);
+        var type1Outline = _type1Parser.GetGlyphOutline(glyphName);
 
         PdfLogger.Log(LogCategory.Text,
             $"[TYPE1-GLYPH] GetGlyphOutline('{glyphName}'): {(type1Outline is null ? "null" : $"commands={type1Outline.Commands.Count}")}");
@@ -941,7 +941,7 @@ internal class EmbeddedFontMetrics
             return null;
 
         // Get advance width from the outline (Type1 stores width in CharString)
-        ushort advanceWidth = type1Outline.Width is not null
+        var advanceWidth = type1Outline.Width is not null
             ? (ushort)Math.Round(type1Outline.Width.Value)
             : (ushort)500; // Default width
         short leftSideBearing = 0; // Type1 uses sidebearing from CharString
@@ -957,7 +957,7 @@ internal class EmbeddedFontMetrics
         );
 
         // Convert path commands to contours (same format as CFF)
-        List<GlyphContour> contours = ConvertCffCommandsToContours(type1Outline);
+        var contours = ConvertCffCommandsToContours(type1Outline);
 
         // Use a hash of the glyph name as the glyph ID
         var pseudoGlyphId = (ushort)(Math.Abs(glyphName.GetHashCode()) % 65534 + 1);
@@ -975,7 +975,7 @@ internal class EmbeddedFontMetrics
         if (_type1Parser is null || string.IsNullOrEmpty(glyphName))
             return 500; // Default width
 
-        CffGlyphOutline? outline = _type1Parser.GetGlyphOutline(glyphName);
+        var outline = _type1Parser.GetGlyphOutline(glyphName);
         if (outline?.Width is not null)
         {
             return (ushort)Math.Round(outline.Width.Value);
@@ -992,7 +992,7 @@ internal class EmbeddedFontMetrics
         var currentContour = new List<ContourPoint>();
         float currentX = 0, currentY = 0;
 
-        foreach (PathCommand command in cffOutline.Commands)
+        foreach (var command in cffOutline.Commands)
         {
             switch (command)
             {
@@ -1054,19 +1054,19 @@ internal class EmbeddedFontMetrics
         var componentIds = new List<int>();
 
         // Recursively extract and transform each component
-        foreach (CompositeGlyphComponent component in compositeGlyph.Components)
+        foreach (var component in compositeGlyph.Components)
         {
             componentIds.Add(component.GlyphIndex);
 
             // Recursively extract the component glyph
-            GlyphOutline? componentOutline = GetGlyphOutline(component.GlyphIndex);
+            var componentOutline = GetGlyphOutline(component.GlyphIndex);
             if (componentOutline is null || componentOutline.IsEmpty)
                 continue;
 
             // Transform each contour of the component using the transformation matrix
-            foreach (GlyphContour contour in componentOutline.Contours)
+            foreach (var contour in componentOutline.Contours)
             {
-                List<ContourPoint> transformedPoints =
+                var transformedPoints =
                     (from point in contour.Points
                         let x = point.X * component.A + point.Y * component.C + component.Argument1
                         let y = point.X * component.B + point.Y * component.D + component.Argument2
@@ -1096,16 +1096,16 @@ internal class EmbeddedFontMetrics
         try
         {
             // Parse loca table (required for glyph offsets)
-            byte[]? locaData = _parser.GetTable("loca");
+            var locaData = _parser.GetTable("loca");
             if (locaData is null || _headTable is null || NumGlyphs == 0)
                 return;
 
             _locaTable = new LocaTable(locaData);
-            bool isShortFormat = _headTable.IndexToLocFormat == IndexToLocFormat.Offset16;
+            var isShortFormat = _headTable.IndexToLocFormat == IndexToLocFormat.Offset16;
             _locaTable.Process(NumGlyphs, isShortFormat);
 
             // Parse glyf table (contains glyph outlines)
-            byte[]? glyfData = _parser.GetTable("glyf");
+            var glyfData = _parser.GetTable("glyf");
             if (glyfData is null)
                 return;
 
@@ -1132,14 +1132,14 @@ internal class EmbeddedFontMetrics
 
         var startIndex = 0;
 
-        foreach (ushort endPtIndex in simpleGlyph.EndPtsOfContours)
+        foreach (var endPtIndex in simpleGlyph.EndPtsOfContours)
         {
             var contourPoints = new List<ContourPoint>();
 
             // Extract points for this contour
-            for (int i = startIndex; i <= endPtIndex && i < simpleGlyph.Coordinates.Count; i++)
+            for (var i = startIndex; i <= endPtIndex && i < simpleGlyph.Coordinates.Count; i++)
             {
-                SimpleGlyphCoordinate coord = simpleGlyph.Coordinates[i];
+                var coord = simpleGlyph.Coordinates[i];
                 contourPoints.Add(new ContourPoint(coord.Point.X, coord.Point.Y, coord.OnCurve));
             }
 

@@ -49,7 +49,7 @@ internal class PdfLexer(Stream stream)
     {
         SkipWhiteSpaceAndComments();
 
-        if (!TryPeek(out byte ch))
+        if (!TryPeek(out var ch))
             return new PdfToken(PdfTokenType.EndOfFile, string.Empty, Position);
 
         return ch switch
@@ -85,21 +85,21 @@ internal class PdfLexer(Stream stream)
 
     private PdfToken ReadSingleChar(PdfTokenType type)
     {
-        long position = Position;
+        var position = Position;
         var ch = (char)Read();
         return new PdfToken(type, ch.ToString(), position);
     }
 
     private PdfToken ReadLiteralString()
     {
-        long position = Position;
+        var position = Position;
         var sb = new StringBuilder();
         Read(); // Skip opening (
 
         var depth = 1;
         var escaped = false;
 
-        while (TryPeek(out byte ch) && depth > 0)
+        while (TryPeek(out var ch) && depth > 0)
         {
             Read();
 
@@ -147,10 +147,10 @@ internal class PdfLexer(Stream stream)
 
     private int ReadOctalEscape(byte first)
     {
-        int value = first - '0';
+        var value = first - '0';
         var count = 1;
 
-        while (count < 3 && TryPeek(out byte ch) && ch >= '0' && ch <= '7')
+        while (count < 3 && TryPeek(out var ch) && ch >= '0' && ch <= '7')
         {
             Read();
             value = (value * 8) + (ch - '0');
@@ -162,10 +162,10 @@ internal class PdfLexer(Stream stream)
 
     private PdfToken ReadHexStringOrDictionaryStart()
     {
-        long position = Position;
+        var position = Position;
         Read(); // Skip first <
 
-        if (TryPeek(out byte next) && next == (byte)'<')
+        if (TryPeek(out var next) && next == (byte)'<')
         {
             Read(); // Skip second <
             return new PdfToken(PdfTokenType.DictionaryStart, "<<", position);
@@ -177,7 +177,7 @@ internal class PdfLexer(Stream stream)
         var hexDigits = new StringBuilder();
 
         // Collect all hex digits (ignoring whitespace)
-        while (TryPeek(out byte ch) && ch != (byte)'>')
+        while (TryPeek(out var ch) && ch != (byte)'>')
         {
             Read();
             if (!WhiteSpace.Contains(ch))
@@ -194,12 +194,12 @@ internal class PdfLexer(Stream stream)
         for (var i = 0; i < hexString.Length; i += 2)
         {
             // Get two hex digits (or one if odd length, pad with 0)
-            string hexPair = i + 1 < hexString.Length
+            var hexPair = i + 1 < hexString.Length
                 ? hexString.Substring(i, 2)
                 : hexString[i] + "0";
 
             // Convert hex pair to byte
-            if (byte.TryParse(hexPair, NumberStyles.HexNumber, null, out byte b))
+            if (byte.TryParse(hexPair, NumberStyles.HexNumber, null, out var b))
             {
                 bytes.Add(b);
             }
@@ -207,16 +207,16 @@ internal class PdfLexer(Stream stream)
 
         // Convert bytes to string for the token value
         // This will be parsed later by PdfParser into a PdfString with the correct bytes
-        string value = Encoding.Latin1.GetString(bytes.ToArray());
+        var value = Encoding.Latin1.GetString(bytes.ToArray());
         return new PdfToken(PdfTokenType.String, value, position);
     }
 
     private PdfToken ReadDictionaryEnd()
     {
-        long position = Position;
+        var position = Position;
         Read(); // Skip first >
 
-        if (TryPeek(out byte next) && next == (byte)'>')
+        if (TryPeek(out var next) && next == (byte)'>')
         {
             Read(); // Skip second >
             return new PdfToken(PdfTokenType.DictionaryEnd, ">>", position);
@@ -227,12 +227,12 @@ internal class PdfLexer(Stream stream)
 
     private PdfToken ReadName()
     {
-        long position = Position;
+        var position = Position;
         Read(); // Skip /
 
         var sb = new StringBuilder();
 
-        while (TryPeek(out byte ch) && !WhiteSpace.Contains(ch) && !Delimiters.Contains(ch))
+        while (TryPeek(out var ch) && !WhiteSpace.Contains(ch) && !Delimiters.Contains(ch))
         {
             Read();
             sb.Append((char)ch);
@@ -243,19 +243,19 @@ internal class PdfLexer(Stream stream)
 
     private PdfToken ReadNumber()
     {
-        long position = Position;
+        var position = Position;
         var sb = new StringBuilder();
         var hasDecimalPoint = false;
 
         // Read sign if present
-        if (TryPeek(out byte first) && first is (byte)'+' or (byte)'-')
+        if (TryPeek(out var first) && first is (byte)'+' or (byte)'-')
         {
             Read();
             sb.Append((char)first);
         }
 
         // Read digits and optional decimal point
-        while (TryPeek(out byte ch))
+        while (TryPeek(out var ch))
         {
             if (ch is >= (byte)'0' and <= (byte)'9')
             {
@@ -279,17 +279,17 @@ internal class PdfLexer(Stream stream)
         }
 
         var value = sb.ToString();
-        PdfTokenType type = hasDecimalPoint ? PdfTokenType.Real : PdfTokenType.Integer;
+        var type = hasDecimalPoint ? PdfTokenType.Real : PdfTokenType.Integer;
 
         return new PdfToken(type, value, position);
     }
 
     private PdfToken ReadKeywordOrBoolean()
     {
-        long position = Position;
+        var position = Position;
         var sb = new StringBuilder();
 
-        while (TryPeek(out byte ch) && !WhiteSpace.Contains(ch) && !Delimiters.Contains(ch))
+        while (TryPeek(out var ch) && !WhiteSpace.Contains(ch) && !Delimiters.Contains(ch))
         {
             Read();
             sb.Append((char)ch);
@@ -297,7 +297,7 @@ internal class PdfLexer(Stream stream)
 
         var value = sb.ToString();
 
-        PdfTokenType type = value switch
+        var type = value switch
         {
             "true" or "false" => PdfTokenType.Boolean,
             "null" => PdfTokenType.Null,
@@ -321,7 +321,7 @@ internal class PdfLexer(Stream stream)
 
     private void SkipWhiteSpaceAndComments()
     {
-        while (TryPeek(out byte ch))
+        while (TryPeek(out var ch))
         {
             if (WhiteSpace.Contains(ch))
             {
@@ -341,16 +341,16 @@ internal class PdfLexer(Stream stream)
     private void SkipComment()
     {
         // Skip until end of line (CR, LF, or EOF)
-        while (TryPeek(out byte ch) && ch != 0x0A && ch != 0x0D)
+        while (TryPeek(out var ch) && ch != 0x0A && ch != 0x0D)
         {
             Read();
         }
 
         // Skip the line ending character(s)
-        if (!TryPeek(out byte eol) || (eol != 0x0A && eol != 0x0D)) return;
+        if (!TryPeek(out var eol) || (eol != 0x0A && eol != 0x0D)) return;
         Read();
         // Handle CRLF
-        if (eol == 0x0D && TryPeek(out byte lf) && lf == 0x0A)
+        if (eol == 0x0D && TryPeek(out var lf) && lf == 0x0A)
             Read();
     }
 
@@ -360,14 +360,14 @@ internal class PdfLexer(Stream stream)
     /// </summary>
     internal void SkipEOL()
     {
-        if (!TryPeek(out byte ch))
+        if (!TryPeek(out var ch))
             return;
 
         if (ch == 0x0D) // CR
         {
             Read();
             // Check for LF to handle CRLF
-            if (TryPeek(out byte next) && next == 0x0A)
+            if (TryPeek(out var next) && next == 0x0A)
                 Read();
         }
         else if (ch == 0x0A) // LF
@@ -394,7 +394,7 @@ internal class PdfLexer(Stream stream)
 
     private byte Read()
     {
-        if (!TryPeek(out byte value))
+        if (!TryPeek(out var value))
             throw new EndOfStreamException("Unexpected end of PDF stream");
 
         _bufferPosition++;
@@ -410,7 +410,7 @@ internal class PdfLexer(Stream stream)
         if (_stream.CanSeek)
         {
             // Calculate and seek to current logical position
-            long currentLogicalPosition = _streamPosition + _bufferPosition;
+            var currentLogicalPosition = _streamPosition + _bufferPosition;
             _stream.Seek(currentLogicalPosition, SeekOrigin.Begin);
             // Update _streamPosition to reflect the new base position
             _streamPosition = currentLogicalPosition;
@@ -449,10 +449,10 @@ internal class PdfLexer(Stream stream)
         while (bytesRead < count)
         {
             // Read from buffer if available
-            int availableInBuffer = _bufferLength - _bufferPosition;
+            var availableInBuffer = _bufferLength - _bufferPosition;
             if (availableInBuffer > 0)
             {
-                int toRead = Math.Min(count - bytesRead, availableInBuffer);
+                var toRead = Math.Min(count - bytesRead, availableInBuffer);
                 Array.Copy(_buffer, _bufferPosition, result, bytesRead, toRead);
                 _bufferPosition += toRead;
                 bytesRead += toRead;

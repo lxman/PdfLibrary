@@ -26,7 +26,7 @@ public partial class ToUnicodeCMap
     public static ToUnicodeCMap Parse(byte[] data)
     {
         var cmap = new ToUnicodeCMap();
-        string content = Encoding.ASCII.GetString(data);
+        var content = Encoding.ASCII.GetString(data);
 
         // Parse bfchar mappings (single character mappings)
         ParseBfChar(cmap, content);
@@ -55,19 +55,19 @@ public partial class ToUnicodeCMap
     private static void ParseBfChar(ToUnicodeCMap cmap, string content)
     {
         // Find all bfchar blocks
-        List<string> bfcharBlocks = FindBlocks(content, "beginbfchar", "endbfchar");
+        var bfcharBlocks = FindBlocks(content, "beginbfchar", "endbfchar");
 
-        foreach (string block in bfcharBlocks)
+        foreach (var block in bfcharBlocks)
         {
-            MatchCollection matches = BfCharRegex().Matches(block);
+            var matches = BfCharRegex().Matches(block);
             foreach (Match match in matches)
             {
                 if (match.Groups.Count < 3) continue;
-                string charCodeHex = match.Groups[1].Value;
-                string unicodeHex = match.Groups[2].Value;
+                var charCodeHex = match.Groups[1].Value;
+                var unicodeHex = match.Groups[2].Value;
 
-                if (!int.TryParse(charCodeHex, NumberStyles.HexNumber, null, out int charCode)) continue;
-                string unicode = HexToUnicode(unicodeHex);
+                if (!int.TryParse(charCodeHex, NumberStyles.HexNumber, null, out var charCode)) continue;
+                var unicode = HexToUnicode(unicodeHex);
                 cmap._charToUnicode[charCode] = unicode;
             }
         }
@@ -79,41 +79,41 @@ public partial class ToUnicodeCMap
     /// </summary>
     private static void ParseBfRange(ToUnicodeCMap cmap, string content)
     {
-        List<string> bfrangeBlocks = FindBlocks(content, "beginbfrange", "endbfrange");
+        var bfrangeBlocks = FindBlocks(content, "beginbfrange", "endbfrange");
 
-        foreach (string block in bfrangeBlocks)
+        foreach (var block in bfrangeBlocks)
         {
             // Try simple range format: <start> <end> <unicode_start>
-            MatchCollection simpleMatches = BfRangeSimpleRegex().Matches(block);
+            var simpleMatches = BfRangeSimpleRegex().Matches(block);
             foreach (Match match in simpleMatches)
             {
                 if (match.Groups.Count < 4) continue;
-                if (!int.TryParse(match.Groups[1].Value, NumberStyles.HexNumber, null, out int start) ||
-                    !int.TryParse(match.Groups[2].Value, NumberStyles.HexNumber, null, out int end) ||
-                    !int.TryParse(match.Groups[3].Value, NumberStyles.HexNumber, null, out int unicodeStart))
+                if (!int.TryParse(match.Groups[1].Value, NumberStyles.HexNumber, null, out var start) ||
+                    !int.TryParse(match.Groups[2].Value, NumberStyles.HexNumber, null, out var end) ||
+                    !int.TryParse(match.Groups[3].Value, NumberStyles.HexNumber, null, out var unicodeStart))
                     continue;
-                for (int charCode = start; charCode <= end; charCode++)
+                for (var charCode = start; charCode <= end; charCode++)
                 {
-                    int unicodeValue = unicodeStart + (charCode - start);
+                    var unicodeValue = unicodeStart + (charCode - start);
                     cmap._charToUnicode[charCode] = char.ConvertFromUtf32(unicodeValue);
                 }
             }
 
             // Try array format: <start> <end> [<unicode1> <unicode2> ...]
-            MatchCollection arrayMatches = BfRangeArrayRegex().Matches(block);
+            var arrayMatches = BfRangeArrayRegex().Matches(block);
             foreach (Match match in arrayMatches)
             {
                 if (match.Groups.Count < 4) continue;
-                if (!int.TryParse(match.Groups[1].Value, NumberStyles.HexNumber, null, out int start) ||
-                    !int.TryParse(match.Groups[2].Value, NumberStyles.HexNumber, null, out int end)) continue;
-                string arrayContent = match.Groups[3].Value;
-                MatchCollection unicodeMatches = Regex.Matches(arrayContent, @"<([0-9A-Fa-f]+)>");
+                if (!int.TryParse(match.Groups[1].Value, NumberStyles.HexNumber, null, out var start) ||
+                    !int.TryParse(match.Groups[2].Value, NumberStyles.HexNumber, null, out var end)) continue;
+                var arrayContent = match.Groups[3].Value;
+                var unicodeMatches = Regex.Matches(arrayContent, @"<([0-9A-Fa-f]+)>");
 
-                int charCode = start;
+                var charCode = start;
                 foreach (Match unicodeMatch in unicodeMatches)
                 {
                     if (charCode > end || unicodeMatch.Groups.Count < 2) continue;
-                    string unicode = HexToUnicode(unicodeMatch.Groups[1].Value);
+                    var unicode = HexToUnicode(unicodeMatch.Groups[1].Value);
                     cmap._charToUnicode[charCode] = unicode;
                     charCode++;
                 }
@@ -131,16 +131,16 @@ public partial class ToUnicodeCMap
 
         while (true)
         {
-            int beginPos = content.IndexOf(beginMarker, pos, StringComparison.Ordinal);
+            var beginPos = content.IndexOf(beginMarker, pos, StringComparison.Ordinal);
             if (beginPos == -1)
                 break;
 
-            int endPos = content.IndexOf(endMarker, beginPos, StringComparison.Ordinal);
+            var endPos = content.IndexOf(endMarker, beginPos, StringComparison.Ordinal);
             if (endPos == -1)
                 break;
 
-            int blockStart = beginPos + beginMarker.Length;
-            int blockLength = endPos - blockStart;
+            var blockStart = beginPos + beginMarker.Length;
+            var blockLength = endPos - blockStart;
             blocks.Add(content.Substring(blockStart, blockLength));
 
             pos = endPos + endMarker.Length;
@@ -164,8 +164,8 @@ public partial class ToUnicodeCMap
             case 8:
             {
                 // Parse the 8-digit hex into two 16-bit parts
-                if (int.TryParse(hex[..4], NumberStyles.HexNumber, null, out int high) &&
-                    int.TryParse(hex[4..], NumberStyles.HexNumber, null, out int low))
+                if (int.TryParse(hex[..4], NumberStyles.HexNumber, null, out var high) &&
+                    int.TryParse(hex[4..], NumberStyles.HexNumber, null, out var low))
                 {
                     // Check if this is a UTF-16 surrogate pair (high: D800-DBFF, low: DC00-DFFF)
                     if (high is >= 0xD800 and <= 0xDBFF && low is >= 0xDC00 and <= 0xDFFF)
@@ -183,7 +183,7 @@ public partial class ToUnicodeCMap
                     }
 
                     // Try the entire 8-digit value as a single code point (only if in valid Unicode range)
-                    if (int.TryParse(hex, NumberStyles.HexNumber, null, out int codePoint) &&
+                    if (int.TryParse(hex, NumberStyles.HexNumber, null, out var codePoint) &&
                         codePoint is >= 0 and <= 0x10FFFF)
                     {
                         return char.ConvertFromUtf32(codePoint);
@@ -198,7 +198,7 @@ public partial class ToUnicodeCMap
             case 4:
             {
                 // Single 16-bit value
-                if (int.TryParse(hex, NumberStyles.HexNumber, null, out int value))
+                if (int.TryParse(hex, NumberStyles.HexNumber, null, out var value))
                 {
                     return char.ConvertFromUtf32(value);
                 }
@@ -213,7 +213,7 @@ public partial class ToUnicodeCMap
                     var sb = new StringBuilder();
                     for (var i = 0; i < hex.Length; i += 4)
                     {
-                        if (int.TryParse(hex.AsSpan(i, 4), NumberStyles.HexNumber, null, out int value))
+                        if (int.TryParse(hex.AsSpan(i, 4), NumberStyles.HexNumber, null, out var value))
                         {
                             sb.Append(char.ConvertFromUtf32(value));
                         }

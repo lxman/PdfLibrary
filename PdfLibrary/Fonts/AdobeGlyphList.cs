@@ -180,7 +180,7 @@ namespace PdfLibrary.Fonts
             if (string.IsNullOrEmpty(glyphName))
                 return null;
 
-            return _glyphToUnicode.TryGetValue(glyphName, out string? unicode) ? unicode : null;
+            return _glyphToUnicode.TryGetValue(glyphName, out var unicode) ? unicode : null;
         }
 
         /// <summary>
@@ -223,7 +223,7 @@ namespace PdfLibrary.Fonts
                     if (_unicodeToGlyph is null)
                     {
                         _unicodeToGlyph = new Dictionary<string, string>();
-                        foreach (KeyValuePair<string, string> kvp in _glyphToUnicode)
+                        foreach (var kvp in _glyphToUnicode)
                         {
                             // Only add if not already present (first glyph name wins)
                             if (!_unicodeToGlyph.ContainsKey(kvp.Value))
@@ -235,7 +235,7 @@ namespace PdfLibrary.Fonts
                 }
             }
 
-            return _unicodeToGlyph.TryGetValue(unicode, out string? glyphName) ? glyphName : null;
+            return _unicodeToGlyph.TryGetValue(unicode, out var glyphName) ? glyphName : null;
         }
 
         /// <summary>
@@ -245,7 +245,7 @@ namespace PdfLibrary.Fonts
         /// <returns>PostScript glyph name, or null if not found</returns>
         public static string? GetGlyphName(int codePoint)
         {
-            string unicode = char.ConvertFromUtf32(codePoint);
+            var unicode = char.ConvertFromUtf32(codePoint);
             return GetGlyphName(unicode);
         }
     }

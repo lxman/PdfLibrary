@@ -29,7 +29,7 @@ internal class LzwDecodeFilter : IStreamFilter
         {
             // Check for EarlyChange parameter (PDF default is 1/true)
             var earlyChange = true;
-            if (parameters?.TryGetValue("EarlyChange", out object? ecValue) == true)
+            if (parameters?.TryGetValue("EarlyChange", out var ecValue) == true)
             {
                 earlyChange = ecValue switch
                 {

@@ -25,10 +25,10 @@ internal class ExponentialFunction : PdfFunction
     public static ExponentialFunction? Create(PdfDictionary dict, double[] domain, double[]? range)
     {
         // N (required) - interpolation exponent
-        if (!dict.TryGetValue(new PdfName("N"), out PdfObject nObj))
+        if (!dict.TryGetValue(new PdfName("N"), out var nObj))
             return null;
 
-        double n = nObj switch
+        var n = nObj switch
         {
             PdfInteger intVal => intVal.Value,
             PdfReal realVal => realVal.Value,
@@ -36,16 +36,16 @@ internal class ExponentialFunction : PdfFunction
         };
 
         // Determine output count from Range or C0/C1
-        int outputCount = range?.Length / 2 ?? 0;
+        var outputCount = range?.Length / 2 ?? 0;
 
         // C0 (optional) - output values at x=0, default [0.0]
-        double[] c0 = ParseNumberArray(dict, "C0") ?? (outputCount > 0 ? new double[outputCount] : [0.0]);
+        var c0 = ParseNumberArray(dict, "C0") ?? (outputCount > 0 ? new double[outputCount] : [0.0]);
 
         if (outputCount == 0)
             outputCount = c0.Length;
 
         // C1 (optional) - output values at x=1, default [1.0]
-        double[]? c1 = ParseNumberArray(dict, "C1");
+        var c1 = ParseNumberArray(dict, "C1");
         if (c1 is not null) return new ExponentialFunction(domain, range, c0, c1, n);
         c1 = new double[outputCount];
         for (var i = 0; i < outputCount; i++)
@@ -60,18 +60,18 @@ internal class ExponentialFunction : PdfFunction
             return [];
 
         // Clamp input to domain (Type 2 functions are single-input)
-        double x = Clamp(input[0], Domain[0], Domain[1]);
+        var x = Clamp(input[0], Domain[0], Domain[1]);
 
         // Compute x^N
-        double xn = Math.Pow(x, _n);
+        var xn = Math.Pow(x, _n);
 
         // Compute outputs: y_j = C0_j + x^N * (C1_j - C0_j)
-        int outputCount = _c0.Length;
+        var outputCount = _c0.Length;
         var result = new double[outputCount];
 
         for (var j = 0; j < outputCount; j++)
         {
-            double value = _c0[j] + xn * (_c1[j] - _c0[j]);
+            var value = _c0[j] + xn * (_c1[j] - _c0[j]);
 
             // Clamp to range if specified
             if (Range is not null && j * 2 + 1 < Range.Length)

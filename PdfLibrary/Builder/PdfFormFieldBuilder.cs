@@ -438,7 +438,7 @@ public class PdfRadioGroupBuilder(string name, double pageHeight) : PdfFormField
     /// </summary>
     public PdfRadioGroupBuilder AddOptionInches(string value, double left, double top, double size = 0.15)
     {
-        PdfRect rect = PdfRect.FromInches(left, top, size, size, pageHeight);
+        var rect = PdfRect.FromInches(left, top, size, size, pageHeight);
         return AddOption(value, rect);
     }
 
@@ -562,7 +562,7 @@ public class PdfDropdownBuilder(string name, PdfRect rect) : PdfFormFieldBuilder
     /// </summary>
     public PdfDropdownBuilder AddOptions(params string[] values)
     {
-        foreach (string value in values)
+        foreach (var value in values)
         {
             _options.Add(new PdfDropdownOption { Value = value, DisplayText = value });
         }

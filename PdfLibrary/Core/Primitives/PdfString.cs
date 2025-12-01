@@ -44,7 +44,7 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
         var sb = new StringBuilder();
         sb.Append('(');
 
-        foreach (byte b in _bytes)
+        foreach (var b in _bytes)
         {
             var c = (char)b;
             switch (c)
@@ -87,7 +87,7 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
         var sb = new StringBuilder();
         sb.Append('<');
 
-        foreach (byte b in _bytes)
+        foreach (var b in _bytes)
         {
             sb.Append($"{b:X2}");
         }
@@ -102,7 +102,7 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
     public override int GetHashCode()
     {
         var hash = new HashCode();
-        foreach (byte b in _bytes)
+        foreach (var b in _bytes)
             hash.Add(b);
         return hash.ToHashCode();
     }

@@ -30,7 +30,7 @@ internal class JpxDecodeFilter : IStreamFilter
         try
         {
             // Decode JPEG 2000 data
-            byte[] imageBytes = Jpeg2000.Decompress(data, out _, out _, out int components);
+            var imageBytes = Jpeg2000.Decompress(data, out _, out _, out var components);
 
             // If already RGB, return as-is
             if (components == 3)
@@ -39,7 +39,7 @@ internal class JpxDecodeFilter : IStreamFilter
             }
 
             // Calculate dimensions
-            int pixelCount = imageBytes.Length / components;
+            var pixelCount = imageBytes.Length / components;
             var pixels = new byte[pixelCount * 3];
 
             switch (components)
@@ -50,7 +50,7 @@ internal class JpxDecodeFilter : IStreamFilter
                     var offset = 0;
                     for (var i = 0; i < pixelCount; i++)
                     {
-                        byte gray = imageBytes[i];
+                        var gray = imageBytes[i];
                         pixels[offset++] = gray;
                         pixels[offset++] = gray;
                         pixels[offset++] = gray;

@@ -27,7 +27,7 @@ public class PdfPage
         _parentNode = parentNode;
 
         // Verify this is a page
-        if (!_dictionary.TryGetValue(PdfName.TypeName, out PdfObject typeObj) ||
+        if (!_dictionary.TryGetValue(PdfName.TypeName, out var typeObj) ||
             typeObj is not PdfName typeName) return;
         if (typeName.Value != "Page")
             throw new ArgumentException($"Dictionary is not a Page (Type = {typeName.Value})");
@@ -49,7 +49,7 @@ public class PdfPage
     internal PdfResources? GetResources()
     {
         // Try to get from page first
-        if (_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj))
+        if (_dictionary.TryGetValue(new PdfName("Resources"), out var obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
@@ -76,11 +76,11 @@ public class PdfPage
     /// </summary>
     public PdfRectangle GetMediaBox()
     {
-        PdfArray? array = GetInheritableArray("MediaBox");
+        var array = GetInheritableArray("MediaBox");
         if (array is null)
             throw new InvalidOperationException("Page missing required MediaBox");
 
-        PdfRectangle rect = PdfRectangle.FromArray(array);
+        var rect = PdfRectangle.FromArray(array);
         PdfLogger.Log(LogCategory.PdfTool, $"[MEDIABOX] Found: {rect} (document={_document is not null})");
         return rect;
     }
@@ -91,7 +91,7 @@ public class PdfPage
     /// </summary>
     public PdfRectangle GetCropBox()
     {
-        PdfArray? array = GetInheritableArray("CropBox");
+        var array = GetInheritableArray("CropBox");
         return array is not null
             ? PdfRectangle.FromArray(array)
             : GetMediaBox();
@@ -105,7 +105,7 @@ public class PdfPage
         get
         {
             // Try page first
-            if (_dictionary.TryGetValue(new PdfName("Rotate"), out PdfObject obj) && obj is PdfInteger rotate)
+            if (_dictionary.TryGetValue(new PdfName("Rotate"), out var obj) && obj is PdfInteger rotate)
                 return rotate.Value;
 
             // Inherit from the parent
@@ -123,7 +123,7 @@ public class PdfPage
     {
         var streams = new List<PdfStream>();
 
-        if (!_dictionary.TryGetValue(new PdfName("Contents"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("Contents"), out var obj))
             return streams;
 
         // Resolve indirect reference
@@ -138,9 +138,9 @@ public class PdfPage
                 break;
             case PdfArray array:
             {
-                foreach (PdfObject item in array)
+                foreach (var item in array)
                 {
-                    PdfObject? itemObj = item;
+                    var itemObj = item;
 
                     if (itemObj is PdfIndirectReference itemRef && _document is not null)
                         itemObj = _document.ResolveReference(itemRef);
@@ -161,7 +161,7 @@ public class PdfPage
     /// </summary>
     internal PdfArray? GetAnnotations()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Annots"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("Annots"), out var obj))
             return null;
 
         if (obj is PdfIndirectReference reference && _document is not null)
@@ -177,11 +177,11 @@ public class PdfPage
     {
         get
         {
-            PdfRectangle mediaBox = GetMediaBox();
-            double width = mediaBox.Width;
+            var mediaBox = GetMediaBox();
+            var width = mediaBox.Width;
 
             // Swap width/height if rotated 90 or 270 degrees
-            int rotation = Rotate;
+            var rotation = Rotate;
             return rotation is 90 or 270
                 ? mediaBox.Height
                 : width;
@@ -195,11 +195,11 @@ public class PdfPage
     {
         get
         {
-            PdfRectangle mediaBox = GetMediaBox();
-            double height = mediaBox.Height;
+            var mediaBox = GetMediaBox();
+            var height = mediaBox.Height;
 
             // Swap width/height if rotated 90 or 270 degrees
-            int rotation = Rotate;
+            var rotation = Rotate;
             return rotation is 90 or 270
                 ? mediaBox.Width
                 : height;
@@ -215,18 +215,18 @@ public class PdfPage
         var keyName = new PdfName(key);
 
         // Try page first
-        if (_dictionary.TryGetValue(keyName, out PdfObject obj) && obj is PdfArray array)
+        if (_dictionary.TryGetValue(keyName, out var obj) && obj is PdfArray array)
             return array;
 
         // Traverse parent chain to find inherited value
-        PdfDictionary? current = _parentNode;
+        var current = _parentNode;
 
         switch (current)
         {
             // If no parent node was passed, try to get it from the page's /Parent key
             case null when _document is not null:
             {
-                if (_dictionary.TryGetValue(new PdfName("Parent"), out PdfObject parentObj))
+                if (_dictionary.TryGetValue(new PdfName("Parent"), out var parentObj))
                 {
                     current = ResolveDict(parentObj);
                     PdfLogger.Log(LogCategory.PdfTool, $"[INHERIT] Got parent from /Parent key: {current is not null}");
@@ -250,7 +250,7 @@ public class PdfPage
                 return parentArray;
 
             // Move to next parent
-            if (current.TryGetValue(new PdfName("Parent"), out PdfObject nextParent))
+            if (current.TryGetValue(new PdfName("Parent"), out var nextParent))
             {
                 current = ResolveDict(nextParent);
             }
@@ -269,7 +269,7 @@ public class PdfPage
             return dict;
 
         if (obj is not PdfIndirectReference reference || _document is null) return null;
-        PdfObject? resolved = _document.ResolveReference(reference);
+        var resolved = _document.ResolveReference(reference);
         if (resolved is PdfDictionary resolvedDict)
             return resolvedDict;
 
@@ -281,16 +281,16 @@ public class PdfPage
     /// </summary>
     public string ExtractText()
     {
-        List<PdfStream> contents = GetContents();
+        var contents = GetContents();
         if (contents.Count == 0)
             return string.Empty;
 
         var allText = new StringBuilder();
-        PdfResources? resources = GetResources();
+        var resources = GetResources();
 
-        foreach (byte[] contentData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
+        foreach (var contentData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
         {
-            string text = PdfTextExtractor.ExtractText(contentData, resources);
+            var text = PdfTextExtractor.ExtractText(contentData, resources);
             allText.Append(text);
         }
 
@@ -302,17 +302,17 @@ public class PdfPage
     /// </summary>
     public (string Text, List<TextFragment> Fragments) ExtractTextWithFragments()
     {
-        List<PdfStream> contents = GetContents();
+        var contents = GetContents();
         if (contents.Count == 0)
             return (string.Empty, []);
 
         var allText = new StringBuilder();
         var allFragments = new List<TextFragment>();
-        PdfResources? resources = GetResources();
+        var resources = GetResources();
 
-        foreach (byte[] decodedData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
+        foreach (var decodedData in contents.Select(stream => stream.GetDecodedData(_document?.Decryptor)))
         {
-            (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(decodedData, resources);
+            (var text, var fragments) = PdfTextExtractor.ExtractTextWithFragments(decodedData, resources);
             allText.Append(text);
             allFragments.AddRange(fragments);
         }
@@ -326,18 +326,18 @@ public class PdfPage
     public List<PdfImage> GetImages()
     {
         var images = new List<PdfImage>();
-        PdfResources? resources = GetResources();
+        var resources = GetResources();
 
         if (resources is null)
             return images;
 
         // Get all XObject names
-        List<string> xobjectNames = resources.GetXObjectNames();
+        var xobjectNames = resources.GetXObjectNames();
 
         // Check each XObject to see if it's an image
-        foreach (string name in xobjectNames)
+        foreach (var name in xobjectNames)
         {
-            PdfStream? xobject = resources.GetXObject(name);
+            var xobject = resources.GetXObject(name);
             if (xobject is null)
                 continue;
 
@@ -401,10 +401,10 @@ public readonly struct PdfRectangle(double x1, double y1, double x2, double y2)
         if (array.Count != 4)
             throw new ArgumentException($"Rectangle array must have 4 elements, got {array.Count}");
 
-        double x1 = array[0].ToDouble();
-        double y1 = array[1].ToDouble();
-        double x2 = array[2].ToDouble();
-        double y2 = array[3].ToDouble();
+        var x1 = array[0].ToDouble();
+        var y1 = array[1].ToDouble();
+        var x2 = array[2].ToDouble();
+        var y2 = array[3].ToDouble();
 
         return new PdfRectangle(x1, y1, x2, y2);
     }

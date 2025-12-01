@@ -32,24 +32,24 @@ internal class SampledFunction : PdfFunction
         if (stream is null || range is null)
             return null;
 
-        PdfDictionary dict = stream.Dictionary;
+        var dict = stream.Dictionary;
 
         // Size array (required) - number of samples in each input dimension
-        int[]? size = ParseIntArray(dict, "Size");
+        var size = ParseIntArray(dict, "Size");
         if (size is null || size.Length == 0)
             return null;
 
         // BitsPerSample (required) - 1, 2, 4, 8, 12, 16, 24, or 32
-        if (!dict.TryGetValue(new PdfName("BitsPerSample"), out PdfObject bpsObj) || bpsObj is not PdfInteger bpsInt)
+        if (!dict.TryGetValue(new PdfName("BitsPerSample"), out var bpsObj) || bpsObj is not PdfInteger bpsInt)
             return null;
-        int bitsPerSample = bpsInt.Value;
+        var bitsPerSample = bpsInt.Value;
 
-        int inputCount = domain.Length / 2;
-        int outputCount = range.Length / 2;
+        var inputCount = domain.Length / 2;
+        var outputCount = range.Length / 2;
 
         // Encode array (optional) - maps input to sample index
         // Default: [0 (Size[0]-1) 0 (Size[1]-1) ...]
-        double[]? encode = ParseNumberArray(dict, "Encode");
+        var encode = ParseNumberArray(dict, "Encode");
         if (encode is null || encode.Length != inputCount * 2)
         {
             encode = new double[inputCount * 2];
@@ -62,7 +62,7 @@ internal class SampledFunction : PdfFunction
 
         // Decode array (optional) - maps sample value to output
         // Default: same as Range
-        double[]? decode = ParseNumberArray(dict, "Decode");
+        var decode = ParseNumberArray(dict, "Decode");
         if (decode is null || decode.Length != outputCount * 2)
         {
             decode = new double[range.Length];
@@ -70,14 +70,14 @@ internal class SampledFunction : PdfFunction
         }
 
         // Calculate the total number of samples
-        int totalSamples = size.Aggregate(1, (current, s) => current * s);
+        var totalSamples = size.Aggregate(1, (current, s) => current * s);
 
         // Decode the stream data
-        byte[] data = stream.GetDecodedData(document?.Decryptor);
+        var data = stream.GetDecodedData(document?.Decryptor);
 
         // Parse samples from the stream
         var samples = new double[totalSamples, outputCount];
-        int maxSampleValue = (1 << bitsPerSample) - 1;
+        var maxSampleValue = (1 << bitsPerSample) - 1;
 
         var bitPosition = 0;
         for (var sampleIdx = 0; sampleIdx < totalSamples; sampleIdx++)
@@ -85,12 +85,12 @@ internal class SampledFunction : PdfFunction
             for (var outputIdx = 0; outputIdx < outputCount; outputIdx++)
             {
                 // Read sample value based on bits per sample
-                int sampleValue = ReadSample(data, ref bitPosition, bitsPerSample);
+                var sampleValue = ReadSample(data, ref bitPosition, bitsPerSample);
 
                 // Decode sample value to output range
-                double normalizedSample = (double)sampleValue / maxSampleValue;
-                double decodeMin = decode[outputIdx * 2];
-                double decodeMax = decode[outputIdx * 2 + 1];
+                var normalizedSample = (double)sampleValue / maxSampleValue;
+                var decodeMin = decode[outputIdx * 2];
+                var decodeMax = decode[outputIdx * 2 + 1];
                 samples[sampleIdx, outputIdx] = Interpolate(normalizedSample, 0, 1, decodeMin, decodeMax);
             }
         }
@@ -100,27 +100,27 @@ internal class SampledFunction : PdfFunction
 
     private static int ReadSample(byte[] data, ref int bitPosition, int bitsPerSample)
     {
-        int byteIndex = bitPosition / 8;
-        int bitOffset = bitPosition % 8;
+        var byteIndex = bitPosition / 8;
+        var bitOffset = bitPosition % 8;
         bitPosition += bitsPerSample;
 
         if (byteIndex >= data.Length)
             return 0;
 
         var result = 0;
-        int bitsRemaining = bitsPerSample;
+        var bitsRemaining = bitsPerSample;
 
         while (bitsRemaining > 0)
         {
             if (byteIndex >= data.Length)
                 break;
 
-            int bitsAvailable = 8 - bitOffset;
-            int bitsToRead = Math.Min(bitsAvailable, bitsRemaining);
+            var bitsAvailable = 8 - bitOffset;
+            var bitsToRead = Math.Min(bitsAvailable, bitsRemaining);
 
-            int mask = (1 << bitsToRead) - 1;
-            int shift = bitsAvailable - bitsToRead;
-            int bits = (data[byteIndex] >> shift) & mask;
+            var mask = (1 << bitsToRead) - 1;
+            var shift = bitsAvailable - bitsToRead;
+            var bits = (data[byteIndex] >> shift) & mask;
 
             result = (result << bitsToRead) | bits;
             bitsRemaining -= bitsToRead;
@@ -137,33 +137,33 @@ internal class SampledFunction : PdfFunction
         if (Range is null)
             return [];
 
-        int inputCount = InputCount;
-        int outputCount = OutputCount;
+        var inputCount = InputCount;
+        var outputCount = OutputCount;
 
         // For 1D function (most common for tint transforms)
         if (inputCount == 1 && _size.Length == 1)
         {
             // Clamp input to domain
-            double x = Clamp(input[0], Domain[0], Domain[1]);
+            var x = Clamp(input[0], Domain[0], Domain[1]);
 
             // Encode to sample index
-            double encodedX = Interpolate(x, Domain[0], Domain[1], _encode[0], _encode[1]);
+            var encodedX = Interpolate(x, Domain[0], Domain[1], _encode[0], _encode[1]);
 
             // Clamp to valid sample range
             encodedX = Clamp(encodedX, 0, _size[0] - 1);
 
             // Get sample indices for interpolation
             var idx0 = (int)Math.Floor(encodedX);
-            int idx1 = Math.Min(idx0 + 1, _size[0] - 1);
-            double frac = encodedX - idx0;
+            var idx1 = Math.Min(idx0 + 1, _size[0] - 1);
+            var frac = encodedX - idx0;
 
             // Interpolate outputs
             var result = new double[outputCount];
             for (var i = 0; i < outputCount; i++)
             {
-                double v0 = _samples[idx0, i];
-                double v1 = _samples[idx1, i];
-                double value = v0 + frac * (v1 - v0);
+                var v0 = _samples[idx0, i];
+                var v1 = _samples[idx1, i];
+                var value = v0 + frac * (v1 - v0);
 
                 // Clamp to range
                 result[i] = Clamp(value, Range[i * 2], Range[i * 2 + 1]);
@@ -175,15 +175,15 @@ internal class SampledFunction : PdfFunction
         var indices = new int[inputCount];
         for (var i = 0; i < inputCount; i++)
         {
-            double x = Clamp(input[i], Domain[i * 2], Domain[i * 2 + 1]);
-            double encoded = Interpolate(x, Domain[i * 2], Domain[i * 2 + 1], _encode[i * 2], _encode[i * 2 + 1]);
+            var x = Clamp(input[i], Domain[i * 2], Domain[i * 2 + 1]);
+            var encoded = Interpolate(x, Domain[i * 2], Domain[i * 2 + 1], _encode[i * 2], _encode[i * 2 + 1]);
             indices[i] = (int)Clamp(Math.Round(encoded), 0, _size[i] - 1);
         }
 
         // Calculate linear index from multi-dimensional indices
         var linearIndex = 0;
         var multiplier = 1;
-        for (int i = inputCount - 1; i >= 0; i--)
+        for (var i = inputCount - 1; i >= 0; i--)
         {
             linearIndex += indices[i] * multiplier;
             multiplier *= _size[i];

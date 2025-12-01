@@ -17,7 +17,7 @@ internal class AsciiHexDecodeFilter : IStreamFilter
 
         var sb = new StringBuilder(data.Length * 2 + 1);
 
-        foreach (byte b in data)
+        foreach (var b in data)
         {
             sb.Append($"{b:X2}");
         }
@@ -55,7 +55,7 @@ internal class AsciiHexDecodeFilter : IStreamFilter
             if (!IsHexDigit(ch))
                 throw new InvalidDataException($"Invalid hex character: {ch}");
 
-            int high = HexValue(ch);
+            var high = HexValue(ch);
 
             // Second hex digit (optional - if missing, assume 0)
             var low = 0;

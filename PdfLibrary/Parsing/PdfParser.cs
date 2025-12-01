@@ -39,7 +39,7 @@ internal class PdfParser(PdfLexer lexer)
     /// </summary>
     public PdfObject? ReadObject()
     {
-        PdfToken token = NextToken();
+        var token = NextToken();
 
         if (token.Type == PdfTokenType.EndOfFile)
             return null;
@@ -108,7 +108,7 @@ internal class PdfParser(PdfLexer lexer)
 
     private void ExpectToken(PdfTokenType expectedType)
     {
-        PdfToken token = NextToken();
+        var token = NextToken();
         if (token.Type != expectedType)
             throw new PdfParseException(
                 $"Expected {expectedType} but got {token.Type} at position {token.Position}");
@@ -124,14 +124,14 @@ internal class PdfParser(PdfLexer lexer)
     private PdfObject ParseIntegerOrReference(PdfToken firstToken)
     {
         // First try to parse as a long (supports large integers found in some PDFs)
-        if (!long.TryParse(firstToken.Value, out long longValue))
+        if (!long.TryParse(firstToken.Value, out var longValue))
             throw new PdfParseException($"Invalid integer: {firstToken.Value}");
 
         // Check if this could be an indirect reference (N G R) or indirect object (N G obj)
         // Object numbers must fit in int range
-        bool couldBeObjectNumber = longValue is >= 0 and <= int.MaxValue;
+        var couldBeObjectNumber = longValue is >= 0 and <= int.MaxValue;
 
-        PdfToken peek1 = PeekToken();
+        var peek1 = PeekToken();
 
         // If not followed by another integer, or if the value is too large for an object number,
         // it's just a plain integer
@@ -139,11 +139,11 @@ internal class PdfParser(PdfLexer lexer)
             return new PdfInteger(longValue);
 
         var objectNumber = (int)longValue;
-        PdfToken genToken = NextToken();
-        if (!int.TryParse(genToken.Value, out int generationNumber))
+        var genToken = NextToken();
+        if (!int.TryParse(genToken.Value, out var generationNumber))
             return new PdfInteger(objectNumber);
 
-        PdfToken peek2 = PeekToken();
+        var peek2 = PeekToken();
 
         switch (peek2.Type)
         {
@@ -155,7 +155,7 @@ internal class PdfParser(PdfLexer lexer)
             case PdfTokenType.Obj:
             {
                 NextToken(); // Consume obj
-                PdfObject? content = ReadObject();
+                var content = ReadObject();
                 ExpectToken(PdfTokenType.EndObj);
 
                 if (content is null) return content ?? PdfNull.Instance;
@@ -175,14 +175,14 @@ internal class PdfParser(PdfLexer lexer)
     private static PdfString ParseString(PdfToken token)
     {
         // Check if it's a hex string (contains only hex digits)
-        bool isHex = token.Value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f');
+        var isHex = token.Value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f');
 
         if (!isHex || token.Value.Length <= 0) return new PdfString(token.Value);
         // Convert hex string to bytes
         var bytes = new List<byte>();
         for (var i = 0; i < token.Value.Length; i += 2)
         {
-            string hex = i + 1 < token.Value.Length
+            var hex = i + 1 < token.Value.Length
                 ? token.Value.Substring(i, 2)
                 : string.Concat(token.Value.AsSpan(i, 1), "0"); // Pad with 0 if odd length
 
@@ -203,7 +203,7 @@ internal class PdfParser(PdfLexer lexer)
 
         while (true)
         {
-            PdfToken peek = PeekToken();
+            var peek = PeekToken();
 
             if (peek.Type == PdfTokenType.ArrayEnd)
             {
@@ -214,7 +214,7 @@ internal class PdfParser(PdfLexer lexer)
             if (peek.Type == PdfTokenType.EndOfFile)
                 throw new PdfParseException("Unexpected end of file while parsing array");
 
-            PdfObject? element = ReadObject();
+            var element = ReadObject();
             if (element is not null)
                 array.Add(element);
         }
@@ -224,10 +224,10 @@ internal class PdfParser(PdfLexer lexer)
 
     private PdfObject ParseDictionaryOrStream()
     {
-        PdfDictionary dict = ParseDictionary();
+        var dict = ParseDictionary();
 
         // Check if followed by stream
-        PdfToken peek = PeekToken();
+        var peek = PeekToken();
         if (peek.Type == PdfTokenType.Stream)
         {
             return ParseStream(dict);
@@ -242,7 +242,7 @@ internal class PdfParser(PdfLexer lexer)
 
         while (true)
         {
-            PdfToken peek = PeekToken();
+            var peek = PeekToken();
 
             if (peek.Type == PdfTokenType.DictionaryEnd)
             {
@@ -254,14 +254,14 @@ internal class PdfParser(PdfLexer lexer)
                 throw new PdfParseException("Unexpected end of file while parsing dictionary");
 
             // Read key (must be a name)
-            PdfToken keyToken = NextToken();
+            var keyToken = NextToken();
             if (keyToken.Type != PdfTokenType.Name)
                 throw new PdfParseException($"Dictionary key must be a name, got {keyToken.Type}");
 
-            PdfName key = PdfName.Parse(keyToken.Value);
+            var key = PdfName.Parse(keyToken.Value);
 
             // Read value
-            PdfObject? value = ReadObject();
+            var value = ReadObject();
             if (value is not null)
                 dict[key] = value;
         }
@@ -277,7 +277,7 @@ internal class PdfParser(PdfLexer lexer)
         if (_referenceResolver is null)
             throw new PdfParseException("Cannot resolve indirect reference for stream length: no reference resolver set");
 
-        PdfObject? resolvedObj = _referenceResolver(reference);
+        var resolvedObj = _referenceResolver(reference);
         return resolvedObj is PdfInteger resolvedInt
             ? resolvedInt.Value
             : throw new PdfParseException($"Resolved stream length is not an integer: {resolvedObj?.Type}");
@@ -288,10 +288,10 @@ internal class PdfParser(PdfLexer lexer)
         NextToken(); // Consume a 'stream' keyword
 
         // Get stream length from the dictionary
-        if (!dictionary.TryGetValue(PdfName.Length, out PdfObject lengthObj))
+        if (!dictionary.TryGetValue(PdfName.Length, out var lengthObj))
             throw new PdfParseException("Stream dictionary missing Length entry");
 
-        int length = lengthObj switch
+        var length = lengthObj switch
         {
             PdfInteger lengthInt => lengthInt.Value,
             PdfIndirectReference lengthRef => ResolveStreamLength(lengthRef),
@@ -302,7 +302,7 @@ internal class PdfParser(PdfLexer lexer)
         _lexer.SkipEOL();
 
         // Read stream data
-        byte[] data = _lexer.ReadBytes(length);
+        var data = _lexer.ReadBytes(length);
 
         // Skip EOL after stream data before 'endstream' (ISO 32000-1 section 7.3.8.1)
         // Per spec: "There should be an end-of-line marker after the data and before

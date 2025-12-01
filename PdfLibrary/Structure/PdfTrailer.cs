@@ -36,7 +36,7 @@ internal class PdfTrailer
     /// </summary>
     public int? Size
     {
-        get => _dictionary.TryGetValue(new PdfName("Size"), out PdfObject obj) && obj is PdfInteger integer
+        get => _dictionary.TryGetValue(new PdfName("Size"), out var obj) && obj is PdfInteger integer
             ? integer.Value
             : null;
         set => _dictionary[new PdfName("Size")] = value.HasValue ? new PdfInteger(value.Value) : PdfNull.Instance;
@@ -47,7 +47,7 @@ internal class PdfTrailer
     /// </summary>
     public long? Prev
     {
-        get => _dictionary.TryGetValue(new PdfName("Prev"), out PdfObject obj) && obj is PdfInteger integer
+        get => _dictionary.TryGetValue(new PdfName("Prev"), out var obj) && obj is PdfInteger integer
             ? integer.Value
             : null;
         set => _dictionary[new PdfName("Prev")] = value.HasValue ? new PdfInteger((int)value.Value) : PdfNull.Instance;
@@ -58,7 +58,7 @@ internal class PdfTrailer
     /// </summary>
     public PdfIndirectReference? Root
     {
-        get => _dictionary.TryGetValue(new PdfName("Root"), out PdfObject obj) && obj is PdfIndirectReference reference
+        get => _dictionary.TryGetValue(new PdfName("Root"), out var obj) && obj is PdfIndirectReference reference
             ? reference
             : null;
         set => _dictionary[new PdfName("Root")] = value is not null ? value : PdfNull.Instance;
@@ -69,7 +69,7 @@ internal class PdfTrailer
     /// </summary>
     public PdfIndirectReference? Encrypt
     {
-        get => _dictionary.TryGetValue(new PdfName("Encrypt"), out PdfObject obj) && obj is PdfIndirectReference reference
+        get => _dictionary.TryGetValue(new PdfName("Encrypt"), out var obj) && obj is PdfIndirectReference reference
             ? reference
             : null;
         set => _dictionary[new PdfName("Encrypt")] = value is not null ? value : PdfNull.Instance;
@@ -80,7 +80,7 @@ internal class PdfTrailer
     /// </summary>
     public PdfIndirectReference? Info
     {
-        get => _dictionary.TryGetValue(new PdfName("Info"), out PdfObject obj) && obj is PdfIndirectReference reference
+        get => _dictionary.TryGetValue(new PdfName("Info"), out var obj) && obj is PdfIndirectReference reference
             ? reference
             : null;
         set => _dictionary[new PdfName("Info")] = value is not null ? value : PdfNull.Instance;
@@ -91,7 +91,7 @@ internal class PdfTrailer
     /// </summary>
     public PdfArray? Id
     {
-        get => _dictionary.TryGetValue(new PdfName("ID"), out PdfObject obj) && obj is PdfArray array
+        get => _dictionary.TryGetValue(new PdfName("ID"), out var obj) && obj is PdfArray array
             ? array
             : null;
         set => _dictionary[new PdfName("ID")] = value is not null ? value : PdfNull.Instance;

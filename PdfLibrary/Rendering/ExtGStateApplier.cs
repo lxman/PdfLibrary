@@ -23,10 +23,10 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
     /// </summary>
     public void ApplyExtGState(PdfDictionary extGState, PdfGraphicsState currentState)
     {
-        foreach (KeyValuePair<PdfName, PdfObject> entry in extGState)
+        foreach (var entry in extGState)
         {
-            string key = entry.Key.Value;
-            PdfObject value = entry.Value;
+            var key = entry.Key.Value;
+            var value = entry.Value;
 
             // Resolve indirect references
             if (value is PdfIndirectReference reference && document is not null)
@@ -133,11 +133,11 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
                     if (value is PdfArray fontArray && fontArray.Count >= 2)
                     {
                         // Get font reference and size
-                        PdfObject fontRef = fontArray[0];
+                        var fontRef = fontArray[0];
                         if (fontRef is PdfIndirectReference fRef && document is not null)
                             fontRef = document.ResolveReference(fRef);
 
-                        double? fontSize = fontArray[1].ToDoubleOrNull();
+                        var fontSize = fontArray[1].ToDoubleOrNull();
                         if (fontSize.HasValue)
                         {
                             currentState.FontSize = fontSize.Value;
@@ -198,7 +198,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
 
                 // Blend mode (BM)
                 case "BM":
-                    string blendMode = value switch
+                    var blendMode = value switch
                     {
                         PdfName bmName => bmName.Value,
                         PdfArray bmArray when bmArray.Count > 0 && bmArray[0] is PdfName firstName => firstName.Value,
@@ -285,15 +285,15 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
         var softMask = new PdfSoftMask();
 
         // Get subtype (S) - "Alpha" or "Luminosity"
-        if (smaskDict.TryGetValue(new PdfName("S"), out PdfObject sObj) && sObj is PdfName subtype)
+        if (smaskDict.TryGetValue(new PdfName("S"), out var sObj) && sObj is PdfName subtype)
         {
             softMask = softMask with { Subtype = subtype.Value };
         }
 
         // Get transparency group (G) - Form XObject
-        if (smaskDict.TryGetValue(new PdfName("G"), out PdfObject gObj))
+        if (smaskDict.TryGetValue(new PdfName("G"), out var gObj))
         {
-            PdfStream? groupStream = gObj switch
+            var groupStream = gObj switch
             {
                 PdfStream stream => stream,
                 PdfIndirectReference gRef when document is not null => document.ResolveReference(gRef) as PdfStream,
@@ -303,7 +303,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
         }
 
         // Get backdrop color (BC)
-        if (smaskDict.TryGetValue(new PdfName("BC"), out PdfObject bcObj) && bcObj is PdfArray bcArray)
+        if (smaskDict.TryGetValue(new PdfName("BC"), out var bcObj) && bcObj is PdfArray bcArray)
         {
             var backdropColor = new double[bcArray.Count];
             for (var i = 0; i < bcArray.Count; i++)
@@ -314,7 +314,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
         }
 
         // Get transfer function (TR)
-        if (smaskDict.TryGetValue(new PdfName("TR"), out PdfObject trObj))
+        if (smaskDict.TryGetValue(new PdfName("TR"), out var trObj))
         {
             softMask = softMask with { TransferFunction = trObj };
         }

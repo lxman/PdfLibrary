@@ -29,26 +29,22 @@ internal sealed class JpegBufferOutputWriter8Bit : JpegBlockOutputWriter
 
     public override void WriteBlock(ref short blockRef, int componentIndex, int x, int y)
     {
-        int componentCount = _componentCount;
-        int width = _width;
-        int height = _height;
-
-        if (x >= width || y >= height)
+        if (x >= _width || y >= _height)
         {
             return;
         }
 
-        int writeWidth = Math.Min(8, width - x);
-        int writeHeight = Math.Min(8, height - y);
+        var writeWidth = Math.Min(8, _width - x);
+        var writeHeight = Math.Min(8, _height - y);
 
-        ref byte destinationRef = ref _output.Span[y * width * componentCount + x * componentCount + componentIndex];
+        ref var destinationRef = ref _output.Span[y * _width * _componentCount + x * _componentCount + componentIndex];
 
-        for (int destY = 0; destY < writeHeight; destY++)
+        for (var destY = 0; destY < writeHeight; destY++)
         {
-            ref byte destinationRowRef = ref Unsafe.Add(ref destinationRef, destY * width * componentCount);
-            for (int destX = 0; destX < writeWidth; destX++)
+            ref var destinationRowRef = ref Unsafe.Add(ref destinationRef, destY * _width * _componentCount);
+            for (var destX = 0; destX < writeWidth; destX++)
             {
-                Unsafe.Add(ref destinationRowRef, destX * componentCount) = ClampTo8Bit(Unsafe.Add(ref blockRef, destY * 8 + destX));
+                Unsafe.Add(ref destinationRowRef, destX * _componentCount) = ClampTo8Bit(Unsafe.Add(ref blockRef, destY * 8 + destX));
             }
         }
     }

@@ -22,7 +22,7 @@ internal class PdfCatalog
         _document = document;
 
         // Verify this is a catalog
-        if (!_dictionary.TryGetValue(PdfName.TypeName, out PdfObject typeObj) ||
+        if (!_dictionary.TryGetValue(PdfName.TypeName, out var typeObj) ||
             typeObj is not PdfName typeName) return;
         if (typeName.Value != "Catalog")
             throw new ArgumentException($"Dictionary is not a Catalog (Type = {typeName.Value})");
@@ -38,7 +38,7 @@ internal class PdfCatalog
     /// </summary>
     public PdfPageTree? GetPageTree()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Pages"), out PdfObject? pagesObj))
+        if (!_dictionary.TryGetValue(new PdfName("Pages"), out var pagesObj))
             return null;
 
         // Resolve indirect reference if needed
@@ -59,7 +59,7 @@ internal class PdfCatalog
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("PageLayout"), out PdfObject obj) && obj is PdfName name)
+            if (_dictionary.TryGetValue(new PdfName("PageLayout"), out var obj) && obj is PdfName name)
                 return name.Value;
             return null;
         }
@@ -72,7 +72,7 @@ internal class PdfCatalog
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("PageMode"), out PdfObject obj) && obj is PdfName name)
+            if (_dictionary.TryGetValue(new PdfName("PageMode"), out var obj) && obj is PdfName name)
                 return name.Value;
             return null;
         }
@@ -83,7 +83,7 @@ internal class PdfCatalog
     /// </summary>
     public PdfDictionary? GetOutlines()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Outlines"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("Outlines"), out var obj))
             return null;
 
         if (obj is PdfIndirectReference reference && _document is not null)
@@ -97,7 +97,7 @@ internal class PdfCatalog
     /// </summary>
     public PdfDictionary? GetAcroForm()
     {
-        if (!_dictionary.TryGetValue(new PdfName("AcroForm"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("AcroForm"), out var obj))
             return null;
 
         if (obj is PdfIndirectReference reference && _document is not null)
@@ -111,7 +111,7 @@ internal class PdfCatalog
     /// </summary>
     public PdfStream? GetMetadata()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Metadata"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("Metadata"), out var obj))
             return null;
 
         if (obj is PdfIndirectReference reference && _document is not null)
@@ -127,7 +127,7 @@ internal class PdfCatalog
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("Lang"), out PdfObject obj) && obj is PdfString str)
+            if (_dictionary.TryGetValue(new PdfName("Lang"), out var obj) && obj is PdfString str)
                 return str.ToString();
             return null;
         }
@@ -138,7 +138,7 @@ internal class PdfCatalog
     /// </summary>
     public PdfDictionary? GetViewerPreferences()
     {
-        if (!_dictionary.TryGetValue(new PdfName("ViewerPreferences"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("ViewerPreferences"), out var obj))
             return null;
 
         if (obj is PdfIndirectReference reference && _document is not null)

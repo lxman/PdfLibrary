@@ -26,7 +26,7 @@ public abstract class PdfContentProcessor
     /// </summary>
     internal void ProcessOperators(List<PdfOperator> operators)
     {
-        foreach (PdfOperator op in operators)
+        foreach (var op in operators)
         {
             ProcessOperator(op);
         }

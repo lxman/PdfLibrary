@@ -23,7 +23,7 @@ internal class PdfPageTree
         _document = document;
 
         // Verify this is a page tree node
-        if (_dictionary.TryGetValue(PdfName.TypeName, out PdfObject typeObj) && typeObj is PdfName typeName)
+        if (_dictionary.TryGetValue(PdfName.TypeName, out var typeObj) && typeObj is PdfName typeName)
         {
             if (typeName.Value != "Pages")
                 throw new ArgumentException($"Dictionary is not a Pages node (Type = {typeName.Value})");
@@ -42,7 +42,7 @@ internal class PdfPageTree
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("Count"), out PdfObject obj) && obj is PdfInteger count)
+            if (_dictionary.TryGetValue(new PdfName("Count"), out var obj) && obj is PdfInteger count)
                 return count.Value;
             return 0;
         }
@@ -66,7 +66,7 @@ internal class PdfPageTree
     /// </summary>
     public PdfPage? GetPage(int index)
     {
-        List<PdfPage> pages = GetPages();
+        var pages = GetPages();
         if (index < 0 || index >= pages.Count)
             return null;
 
@@ -79,15 +79,15 @@ internal class PdfPageTree
     private void CollectPages(PdfDictionary node, List<PdfPage> pages)
     {
         // Get the Kids array
-        if (!node.TryGetValue(new PdfName("Kids"), out PdfObject kidsObj))
+        if (!node.TryGetValue(new PdfName("Kids"), out var kidsObj))
             return;
 
         if (kidsObj is not PdfArray kidsArray)
             return;
 
-        foreach (PdfObject kid in kidsArray)
+        foreach (var kid in kidsArray)
         {
-            PdfObject? kidObj = kid;
+            var kidObj = kid;
 
             // Resolve indirect reference
             if (kidObj is PdfIndirectReference reference && _document is not null)
@@ -99,7 +99,7 @@ internal class PdfPageTree
                 continue;
 
             // Check if this is a page or a page tree node
-            if (!kidDict.TryGetValue(PdfName.TypeName, out PdfObject typeObj) || typeObj is not PdfName typeName)
+            if (!kidDict.TryGetValue(PdfName.TypeName, out var typeObj) || typeObj is not PdfName typeName)
                 continue;
 
             if (typeName.Value == "Pages")
@@ -120,7 +120,7 @@ internal class PdfPageTree
     /// </summary>
     public PdfResources? GetResources()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("Resources"), out var obj))
             return null;
 
         if (obj is PdfIndirectReference reference && _document is not null)
@@ -137,7 +137,7 @@ internal class PdfPageTree
     /// </summary>
     public PdfArray? GetMediaBox()
     {
-        if (_dictionary.TryGetValue(new PdfName("MediaBox"), out PdfObject obj) && obj is PdfArray array)
+        if (_dictionary.TryGetValue(new PdfName("MediaBox"), out var obj) && obj is PdfArray array)
             return array;
         return null;
     }
@@ -147,7 +147,7 @@ internal class PdfPageTree
     /// </summary>
     public PdfArray? GetCropBox()
     {
-        if (_dictionary.TryGetValue(new PdfName("CropBox"), out PdfObject obj) && obj is PdfArray array)
+        if (_dictionary.TryGetValue(new PdfName("CropBox"), out var obj) && obj is PdfArray array)
             return array;
         return null;
     }
@@ -157,7 +157,7 @@ internal class PdfPageTree
     /// </summary>
     public int? GetRotate()
     {
-        if (_dictionary.TryGetValue(new PdfName("Rotate"), out PdfObject obj) && obj is PdfInteger rotate)
+        if (_dictionary.TryGetValue(new PdfName("Rotate"), out var obj) && obj is PdfInteger rotate)
             return rotate.Value;
         return null;
     }

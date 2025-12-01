@@ -31,13 +31,13 @@ internal class Jbig2DecodeFilter : IStreamFilter
         {
             // Handle JBIG2Globals parameter if present (shared data across multiple JBIG2 streams)
             byte[]? globals = null;
-            if (parameters?.TryGetValue("JBIG2Globals", out object? globalsObj) == true)
+            if (parameters?.TryGetValue("JBIG2Globals", out var globalsObj) == true)
             {
                 globals = globalsObj as byte[];
             }
 
             // Decode to 1-bit bitmap (black=1, white=0)
-            byte[] result = Jbig2.DecompressToBitmap(data, globals, out _, out _);
+            var result = Jbig2.DecompressToBitmap(data, globals, out _, out _);
 
             // JBIG2 spec: 0 = white (background), 1 = black (foreground)
             // PDF DeviceGray for 1-bit images: 0 = black, 1 = white

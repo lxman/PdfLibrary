@@ -40,18 +40,18 @@ internal class CcittFaxDecodeFilter : IStreamFilter
             // - EndOfLine: whether EOL markers are present
             // - EndOfBlock: whether end-of-block marker is expected
 
-            int k = GetIntParameter(parameters, "K", 0);
-            int columns = GetIntParameter(parameters, "Columns", 1728); // Default fax width
-            int rows = GetIntParameter(parameters, "Rows", 0);
-            bool encodedByteAlign = GetBoolParameter(parameters, "EncodedByteAlign", false);
-            bool blackIs1 = GetBoolParameter(parameters, "BlackIs1", false);
-            bool endOfLine = GetBoolParameter(parameters, "EndOfLine", false);
-            bool endOfBlock = GetBoolParameter(parameters, "EndOfBlock", true);
+            var k = GetIntParameter(parameters, "K", 0);
+            var columns = GetIntParameter(parameters, "Columns", 1728); // Default fax width
+            var rows = GetIntParameter(parameters, "Rows", 0);
+            var encodedByteAlign = GetBoolParameter(parameters, "EncodedByteAlign", false);
+            var blackIs1 = GetBoolParameter(parameters, "BlackIs1", false);
+            var endOfLine = GetBoolParameter(parameters, "EndOfLine", false);
+            var endOfBlock = GetBoolParameter(parameters, "EndOfBlock", true);
 
             PdfLogger.Log(LogCategory.Images, $"  [CCITT] K={k}, Columns={columns}, Rows={rows}, BlackIs1={blackIs1}, EncodedByteAlign={encodedByteAlign}, EndOfLine={endOfLine}, EndOfBlock={endOfBlock}");
             PdfLogger.Log(LogCategory.Images, $"  [CCITT] Input: {data.Length} bytes, Expected output: {(columns * rows + 7) / 8} bytes");
 
-            byte[] result = Ccitt.Decompress(data, k, columns, rows, blackIs1, encodedByteAlign, endOfLine, endOfBlock);
+            var result = Ccitt.Decompress(data, k, columns, rows, blackIs1, encodedByteAlign, endOfLine, endOfBlock);
 
             PdfLogger.Log(LogCategory.Images, $"  [CCITT] Output: {result.Length} bytes, ActualRows={result.Length * 8 / columns}");
 
@@ -65,7 +65,7 @@ internal class CcittFaxDecodeFilter : IStreamFilter
 
     private static int GetIntParameter(Dictionary<string, object>? parameters, string key, int defaultValue)
     {
-        if (parameters?.TryGetValue(key, out object? value) != true)
+        if (parameters?.TryGetValue(key, out var value) != true)
             return defaultValue;
 
         return value switch
@@ -79,7 +79,7 @@ internal class CcittFaxDecodeFilter : IStreamFilter
 
     private static bool GetBoolParameter(Dictionary<string, object>? parameters, string key, bool defaultValue)
     {
-        if (parameters?.TryGetValue(key, out object? value) != true)
+        if (parameters?.TryGetValue(key, out var value) != true)
             return defaultValue;
 
         return value switch

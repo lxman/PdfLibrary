@@ -32,7 +32,7 @@ public class PdfDocumentWriter
     /// </summary>
     public void Write(PdfDocumentBuilder builder, string filePath)
     {
-        using FileStream stream = File.Create(filePath);
+        using var stream = File.Create(filePath);
         Write(builder, stream);
     }
 
@@ -57,12 +57,12 @@ public class PdfDocumentWriter
         _documentId = GenerateDocumentId();
 
         // Set up encryption if configured
-        PdfEncryptionSettings? encryptionSettings = builder.EncryptionSettings;
+        var encryptionSettings = builder.EncryptionSettings;
         int? encryptObj = null;
         if (encryptionSettings != null)
         {
             // Convert builder encryption method to Security encryption method
-            Security.PdfEncryptionMethod securityMethod = encryptionSettings.Method switch
+            var securityMethod = encryptionSettings.Method switch
             {
                 PdfEncryptionMethod.Rc4_40 => Security.PdfEncryptionMethod.Rc4_40,
                 PdfEncryptionMethod.Rc4_128 => Security.PdfEncryptionMethod.Rc4_128,
@@ -88,15 +88,15 @@ public class PdfDocumentWriter
         writer.Flush();
 
         // Collect all fonts used
-        List<string> fonts = CollectFonts(builder);
+        var fonts = CollectFonts(builder);
 
         // Reserve object numbers
-        int catalogObj = _nextObjectNumber++;
-        int pagesObj = _nextObjectNumber++;
-        int infoObj = _nextObjectNumber++;
+        var catalogObj = _nextObjectNumber++;
+        var pagesObj = _nextObjectNumber++;
+        var infoObj = _nextObjectNumber++;
 
         // Reserve font objects
-        foreach (string font in fonts)
+        foreach (var font in fonts)
         {
             _fontObjects[font] = _nextObjectNumber++;
 
@@ -107,7 +107,7 @@ public class PdfDocumentWriter
         }
 
         // Reserve page objects and their content streams
-        List<(int pageObj, int contentObj)> pageObjectNumbers =
+        var pageObjectNumbers =
             (from _ in builder.Pages
                 select _nextObjectNumber++
                 into pageObj
@@ -116,18 +116,18 @@ public class PdfDocumentWriter
             .ToList();
 
         // Collect and reserve image objects
-        foreach (PdfPageBuilder page in builder.Pages)
+        foreach (var page in builder.Pages)
         {
-            foreach (PdfContentElement content in page.Content)
+            foreach (var content in page.Content)
             {
                 if (content is not PdfImageContent image) continue;
-                int imageObj = _nextObjectNumber++;
+                var imageObj = _nextObjectNumber++;
                 _imageObjects.Add((image, imageObj));
 
                 // Collect opacity values for ExtGState objects
                 if (image.Opacity < 1.0)
                 {
-                    (double, double) key = (image.Opacity, image.Opacity);
+                    var key = (image.Opacity, image.Opacity);
                     if (!_extGStateObjects.ContainsKey(key))
                     {
                         _extGStateObjects[key] = _nextObjectNumber++;
@@ -136,14 +136,14 @@ public class PdfDocumentWriter
             }
 
             // Collect opacity values from path content
-            foreach (PdfContentElement content in page.Content)
+            foreach (var content in page.Content)
             {
                 if (content is not PdfPathContent path) continue;
 
-                bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
+                var needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
                 if (!needsOpacity) continue;
 
-                (double FillOpacity, double StrokeOpacity) key = (path.FillOpacity, path.StrokeOpacity);
+                var key = (path.FillOpacity, path.StrokeOpacity);
                 if (!_extGStateObjects.ContainsKey(key))
                 {
                     _extGStateObjects[key] = _nextObjectNumber++;
@@ -158,7 +158,7 @@ public class PdfDocumentWriter
         {
             acroFormObj = _nextObjectNumber++;
             // Reserve objects for each field
-            foreach (PdfPageBuilder page in builder.Pages)
+            foreach (var page in builder.Pages)
             {
                 fieldObjects.AddRange(page.FormFields.Select(_ => _nextObjectNumber++));
             }
@@ -173,7 +173,7 @@ public class PdfDocumentWriter
         // Reserve layer (OCG) objects
         if (builder.Layers.Count > 0)
         {
-            foreach (PdfLayer layer in builder.Layers)
+            foreach (var layer in builder.Layers)
             {
                 _layerObjects[layer.Id] = _nextObjectNumber++;
             }
@@ -187,9 +187,9 @@ public class PdfDocumentWriter
         }
 
         // Reserve annotation objects for each page
-        foreach (PdfPageBuilder page in builder.Pages)
+        foreach (var page in builder.Pages)
         {
-            foreach (PdfAnnotation annotation in page.Annotations)
+            foreach (var annotation in page.Annotations)
             {
                 _annotationObjects[annotation.Id] = _nextObjectNumber++;
             }
@@ -236,7 +236,7 @@ public class PdfDocumentWriter
         // Write Info dictionary
         WriteObjectStart(writer, infoObj);
         writer.WriteLine("<<");
-        PdfMetadataBuilder meta = builder.Metadata;
+        var meta = builder.Metadata;
         if (!string.IsNullOrEmpty(meta.Title))
             writer.WriteLine($"   /Title {PdfEncryptedString(meta.Title, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Author))
@@ -248,10 +248,10 @@ public class PdfDocumentWriter
         if (!string.IsNullOrEmpty(meta.Creator))
             writer.WriteLine($"   /Creator {PdfEncryptedString(meta.Creator, infoObj)}");
 
-        string producer = meta.Producer ?? "PdfLibrary";
+        var producer = meta.Producer ?? "PdfLibrary";
         writer.WriteLine($"   /Producer {PdfEncryptedString(producer, infoObj)}");
 
-        DateTime creationDate = meta.CreationDate ?? DateTime.Now;
+        var creationDate = meta.CreationDate ?? DateTime.Now;
         writer.WriteLine($"   /CreationDate {PdfEncryptedDate(creationDate, infoObj)}");
 
         if (meta.ModificationDate.HasValue)
@@ -261,9 +261,9 @@ public class PdfDocumentWriter
         WriteObjectEnd(writer);
 
         // Write Font objects
-        foreach (string font in fonts)
+        foreach (var font in fonts)
         {
-            if (builder.CustomFonts.TryGetValue(font, out CustomFontInfo? customFont))
+            if (builder.CustomFonts.TryGetValue(font, out var customFont))
             {
                 // Write TrueType font with embedding
                 WriteTrueTypeFont(writer, font, customFont);
@@ -282,7 +282,7 @@ public class PdfDocumentWriter
         }
 
         // Write ExtGState objects for opacity
-        foreach (((double fillOpacity, double strokeOpacity) key, int objNum) in _extGStateObjects)
+        foreach ((var key, var objNum) in _extGStateObjects)
         {
             WriteObjectStart(writer, objNum);
             writer.WriteLine("<<");
@@ -294,7 +294,7 @@ public class PdfDocumentWriter
         }
 
         // Write Image XObjects
-        foreach ((PdfImageContent image, int objNum) in _imageObjects)
+        foreach ((var image, var objNum) in _imageObjects)
         {
             WriteImageXObject(writer, objNum, image);
         }
@@ -303,8 +303,8 @@ public class PdfDocumentWriter
         var fieldIndex = 0;
         for (var i = 0; i < builder.Pages.Count; i++)
         {
-            PdfPageBuilder page = builder.Pages[i];
-            (int pageObj, int contentObj) = pageObjectNumbers[i];
+            var page = builder.Pages[i];
+            (var pageObj, var contentObj) = pageObjectNumbers[i];
 
             // Page object
             WriteObjectStart(writer, pageObj);
@@ -319,7 +319,7 @@ public class PdfDocumentWriter
             {
                 writer.WriteLine("      /Font <<");
                 var fontIndex = 1;
-                foreach (string font in fonts)
+                foreach (var font in fonts)
                 {
                     writer.WriteLine($"         /F{fontIndex} {_fontObjects[font]} 0 R");
                     fontIndex++;
@@ -343,7 +343,7 @@ public class PdfDocumentWriter
             {
                 writer.WriteLine("      /ExtGState <<");
                 var gsIndex = 1;
-                foreach (((double fillOpacity, double strokeOpacity) key, int objNum) in _extGStateObjects.OrderBy(x => x.Key))
+                foreach ((var key, var objNum) in _extGStateObjects.OrderBy(x => x.Key))
                 {
                     writer.WriteLine($"         /GS{gsIndex} {objNum} 0 R");
                     gsIndex++;
@@ -352,13 +352,13 @@ public class PdfDocumentWriter
             }
 
             // Add Properties dictionary for layers (OCGs)
-            HashSet<PdfLayer> pageLayers = CollectPageLayers(page);
+            var pageLayers = CollectPageLayers(page);
             if (pageLayers.Count > 0)
             {
                 writer.WriteLine("      /Properties <<");
-                foreach (PdfLayer layer in pageLayers)
+                foreach (var layer in pageLayers)
                 {
-                    if (!_layerObjects.TryGetValue(layer.Id, out int layerObjNum))
+                    if (!_layerObjects.TryGetValue(layer.Id, out var layerObjNum))
                     {
                         throw new InvalidOperationException(
                             $"Layer '{layer.Name}' (ID={layer.Id}) was used on a page but not defined at document level via DefineLayer(). " +
@@ -371,7 +371,7 @@ public class PdfDocumentWriter
             writer.WriteLine("   >>");
 
             // Annotations (form fields and annotations)
-            bool hasAnnotations = page.FormFields.Count > 0 || page.Annotations.Count > 0;
+            var hasAnnotations = page.FormFields.Count > 0 || page.Annotations.Count > 0;
             if (hasAnnotations)
             {
                 writer.Write("   /Annots [");
@@ -384,7 +384,7 @@ public class PdfDocumentWriter
                     annotCount++;
                 }
                 // Then annotations (links, notes, highlights)
-                foreach (PdfAnnotation annotation in page.Annotations)
+                foreach (var annotation in page.Annotations)
                 {
                     if (annotCount > 0) writer.Write(" ");
                     writer.Write($"{_annotationObjects[annotation.Id]} 0 R");
@@ -397,7 +397,7 @@ public class PdfDocumentWriter
             WriteObjectEnd(writer);
 
             // Content stream
-            byte[] content = GenerateContentStream(page, fonts);
+            var content = GenerateContentStream(page, fonts);
             WriteStreamObject(writer, contentObj, content);
 
             fieldIndex += page.FormFields.Count;
@@ -416,14 +416,14 @@ public class PdfDocumentWriter
             }
             writer.WriteLine("]");
 
-            PdfAcroFormBuilder? acroForm = builder.AcroForm;
+            var acroForm = builder.AcroForm;
             if (acroForm is not null)
             {
                 if (acroForm.NeedAppearances)
                     writer.WriteLine("   /NeedAppearances true");
 
                 // Default appearance
-                int fontIndex = fonts.IndexOf(acroForm.DefaultFont) + 1;
+                var fontIndex = fonts.IndexOf(acroForm.DefaultFont) + 1;
                 if (fontIndex > 0)
                 {
                     writer.WriteLine($"   /DA (/F{fontIndex} {acroForm.DefaultFontSize:F1} Tf 0 g)");
@@ -440,9 +440,9 @@ public class PdfDocumentWriter
             // Write field objects
             fieldIndex = 0;
             var pageIndex = 0;
-            foreach (PdfPageBuilder page in builder.Pages)
+            foreach (var page in builder.Pages)
             {
-                foreach (PdfFormFieldBuilder field in page.FormFields)
+                foreach (var field in page.FormFields)
                 {
                     WriteFormField(writer, fieldObjects[fieldIndex], field, pageObjectNumbers[pageIndex].pageObj, fonts);
                     fieldIndex++;
@@ -458,7 +458,7 @@ public class PdfDocumentWriter
         }
 
         // Write Layer (OCG) objects
-        foreach (PdfLayer layer in builder.Layers)
+        foreach (var layer in builder.Layers)
         {
             WriteLayerObject(writer, layer);
         }
@@ -472,8 +472,8 @@ public class PdfDocumentWriter
         // Write Annotation objects
         for (var pageIdx = 0; pageIdx < builder.Pages.Count; pageIdx++)
         {
-            PdfPageBuilder page = builder.Pages[pageIdx];
-            foreach (PdfAnnotation annotation in page.Annotations)
+            var page = builder.Pages[pageIdx];
+            foreach (var annotation in page.Annotations)
             {
                 WriteAnnotationObject(writer, annotation, pageObjectNumbers[pageIdx].pageObj, pageObjectNumbers);
             }
@@ -481,7 +481,7 @@ public class PdfDocumentWriter
 
         // Write xref table
         writer.Flush();
-        long xrefOffset = stream.Position;
+        var xrefOffset = stream.Position;
 
         writer.WriteLine("xref");
         writer.WriteLine($"0 {_objectOffsets.Count + 1}");
@@ -502,7 +502,7 @@ public class PdfDocumentWriter
         // Add /ID array (required for encryption, recommended otherwise)
         if (_documentId != null)
         {
-            string idHex = BytesToHexString(_documentId);
+            var idHex = BytesToHexString(_documentId);
             writer.WriteLine($"   /ID [<{idHex}> <{idHex}>]");
         }
 
@@ -534,7 +534,7 @@ public class PdfDocumentWriter
     private void WriteStreamObject(StreamWriter writer, int objectNumber, byte[] data)
     {
         // Encrypt the stream data if encryption is enabled
-        byte[] streamData = _encryptor != null ? EncryptStream(data, objectNumber) : data;
+        var streamData = _encryptor != null ? EncryptStream(data, objectNumber) : data;
 
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine($"<< /Length {streamData.Length} >>");
@@ -553,9 +553,9 @@ public class PdfDocumentWriter
             "Helvetica" };
 
         // Fonts from content
-        foreach (PdfPageBuilder page in builder.Pages)
+        foreach (var page in builder.Pages)
         {
-            foreach (PdfContentElement element in page.Content)
+            foreach (var element in page.Content)
             {
                 if (element is PdfTextContent text)
                 {
@@ -564,7 +564,7 @@ public class PdfDocumentWriter
             }
 
             // Fonts from form fields
-            foreach (PdfFormFieldBuilder field in page.FormFields)
+            foreach (var field in page.FormFields)
             {
                 switch (field)
                 {
@@ -596,7 +596,7 @@ public class PdfDocumentWriter
     {
         var sb = new StringBuilder();
 
-        foreach (PdfContentElement element in page.Content)
+        foreach (var element in page.Content)
         {
             GenerateContentElement(sb, element, fonts);
         }
@@ -613,7 +613,7 @@ public class PdfDocumentWriter
         sb.AppendLine($"/OC /{layerContent.Layer.ResourceName} BDC");
 
         // Generate content for all elements within the layer
-        foreach (PdfContentElement element in layerContent.Content)
+        foreach (var element in layerContent.Content)
         {
             GenerateContentElement(sb, element, fonts);
         }
@@ -660,7 +660,7 @@ public class PdfDocumentWriter
     /// </summary>
     private void GenerateTextContent(StringBuilder sb, PdfTextContent text, List<string> fonts)
     {
-        int fontIndex = fonts.IndexOf(text.FontName) + 1;
+        var fontIndex = fonts.IndexOf(text.FontName) + 1;
 
         // Graphics state operators must be OUTSIDE the text block
         // Set stroke color and line width before BT
@@ -699,9 +699,9 @@ public class PdfDocumentWriter
         //   f = y position
         if (text.Rotation != 0)
         {
-            double radians = text.Rotation * Math.PI / 180;
-            double cos = Math.Cos(radians);
-            double sin = Math.Sin(radians);
+            var radians = text.Rotation * Math.PI / 180;
+            var cos = Math.Cos(radians);
+            var sin = Math.Sin(radians);
             sb.AppendLine($"{cos:F4} {sin:F4} {-sin:F4} {cos:F4} {text.X:F2} {text.Y:F2} Tm");
         }
         else
@@ -767,7 +767,7 @@ public class PdfDocumentWriter
     private void GenerateImageContent(StringBuilder sb, PdfImageContent image)
     {
         // Find the image index
-        int imageIndex = -1;
+        var imageIndex = -1;
         for (var idx = 0; idx < _imageObjects.Count; idx++)
         {
             if (!ReferenceEquals(_imageObjects[idx].image, image)) continue;
@@ -782,28 +782,28 @@ public class PdfDocumentWriter
             // Apply opacity if not fully opaque
             if (image.Opacity < 1.0)
             {
-                (double, double) opacityKey = (image.Opacity, image.Opacity);
+                var opacityKey = (image.Opacity, image.Opacity);
                 if (_extGStateObjects.ContainsKey(opacityKey))
                 {
-                    int gsIndex = GetExtGStateIndex(opacityKey);
+                    var gsIndex = GetExtGStateIndex(opacityKey);
                     sb.AppendLine($"/GS{gsIndex} gs");
                 }
             }
 
             // Build transformation matrix
-            double width = image.Rect.Width;
-            double height = image.Rect.Height;
-            double x = image.Rect.Left;
-            double y = image.Rect.Bottom;
+            var width = image.Rect.Width;
+            var height = image.Rect.Height;
+            var x = image.Rect.Left;
+            var y = image.Rect.Bottom;
 
             if (image.Rotation != 0)
             {
                 // Rotation around center of image
-                double radians = image.Rotation * Math.PI / 180;
-                double cos = Math.Cos(radians);
-                double sin = Math.Sin(radians);
-                double cx = x + width / 2;
-                double cy = y + height / 2;
+                var radians = image.Rotation * Math.PI / 180;
+                var cos = Math.Cos(radians);
+                var sin = Math.Sin(radians);
+                var cx = x + width / 2;
+                var cy = y + height / 2;
 
                 // Translate to center, rotate, scale, translate back
                 sb.AppendLine($"1 0 0 1 {cx:F2} {cy:F2} cm"); // Translate to center
@@ -831,13 +831,13 @@ public class PdfDocumentWriter
         sb.AppendLine("q"); // Save graphics state
 
         // Apply opacity if needed
-        bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
+        var needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
         if (needsOpacity)
         {
-            (double FillOpacity, double StrokeOpacity) opacityKey = (path.FillOpacity, path.StrokeOpacity);
+            var opacityKey = (path.FillOpacity, path.StrokeOpacity);
             if (_extGStateObjects.ContainsKey(opacityKey))
             {
-                int gsIndex = GetExtGStateIndex(opacityKey);
+                var gsIndex = GetExtGStateIndex(opacityKey);
                 sb.AppendLine($"/GS{gsIndex} gs");
             }
         }
@@ -883,7 +883,7 @@ public class PdfDocumentWriter
         }
 
         // Generate path segments
-        foreach (PdfPathSegment segment in path.Segments)
+        foreach (var segment in path.Segments)
         {
             switch (segment.Type)
             {
@@ -987,7 +987,7 @@ public class PdfDocumentWriter
     private int GetExtGStateIndex((double fillOpacity, double strokeOpacity) key)
     {
         var index = 1;
-        foreach ((double fillOpacity, double strokeOpacity) k in _extGStateObjects.Keys.OrderBy(x => x))
+        foreach (var k in _extGStateObjects.Keys.OrderBy(x => x))
         {
             if (k == key)
                 return index;
@@ -1031,9 +1031,9 @@ public class PdfDocumentWriter
                     writer.WriteLine($"   /V {PdfEncryptedString(textField.DefaultValue, objectNumber)}");
 
                 // Default appearance
-                int fontIndex = fonts.IndexOf(textField.FontName) + 1;
-                PdfColor tc = textField.TextColor;
-                string fontSize = textField.FontSize > 0 ? $"{textField.FontSize:F1}" : "0";
+                var fontIndex = fonts.IndexOf(textField.FontName) + 1;
+                var tc = textField.TextColor;
+                var fontSize = textField.FontSize > 0 ? $"{textField.FontSize:F1}" : "0";
                 writer.WriteLine($"   /DA (/F{fontIndex} {fontSize} Tf {tc.R:F3} {tc.G:F3} {tc.B:F3} rg)");
                 writer.WriteLine($"   /Q {(int)textField.Alignment}");
                 break;
@@ -1047,7 +1047,7 @@ public class PdfDocumentWriter
                 if (cbFlags != 0)
                     writer.WriteLine($"   /Ff {cbFlags}");
 
-                string state = checkbox.IsChecked ? "Yes" : "Off";
+                var state = checkbox.IsChecked ? "Yes" : "Off";
                 writer.WriteLine($"   /V /{state}");
                 writer.WriteLine($"   /AS /{state}");
                 break;
@@ -1055,7 +1055,7 @@ public class PdfDocumentWriter
             case PdfDropdownBuilder dropdown:
                 writer.WriteLine("   /FT /Ch");
 
-                int ddFlags = 1 << 17; // Combo box
+                var ddFlags = 1 << 17; // Combo box
                 if (dropdown.AllowEdit) ddFlags |= 1 << 18;
                 if (dropdown.Sort) ddFlags |= 1 << 19;
                 if (dropdown.IsReadOnly) ddFlags |= 1;
@@ -1064,7 +1064,7 @@ public class PdfDocumentWriter
 
                 // Options
                 writer.Write("   /Opt [");
-                foreach (PdfDropdownOption opt in dropdown.Options)
+                foreach (var opt in dropdown.Options)
                 {
                     writer.Write(opt.Value == opt.DisplayText
                         ? $" {PdfEncryptedString(opt.Value, objectNumber)}"
@@ -1076,9 +1076,9 @@ public class PdfDocumentWriter
                     writer.WriteLine($"   /V {PdfEncryptedString(dropdown.SelectedValue, objectNumber)}");
 
                 // Default appearance
-                int ddFontIndex = fonts.IndexOf(dropdown.FontName) + 1;
-                PdfColor ddc = dropdown.TextColor;
-                string ddFontSize = dropdown.FontSize > 0 ? $"{dropdown.FontSize:F1}" : "0";
+                var ddFontIndex = fonts.IndexOf(dropdown.FontName) + 1;
+                var ddc = dropdown.TextColor;
+                var ddFontSize = dropdown.FontSize > 0 ? $"{dropdown.FontSize:F1}" : "0";
                 writer.WriteLine($"   /DA (/F{ddFontIndex} {ddFontSize} Tf {ddc.R:F3} {ddc.G:F3} {ddc.B:F3} rg)");
                 break;
 
@@ -1099,7 +1099,7 @@ public class PdfDocumentWriter
             writer.WriteLine("   /BS <<");
             writer.WriteLine($"      /W {field.BorderWidth:F1}");
 
-            string styleCode = field.BorderStyle switch
+            var styleCode = field.BorderStyle switch
             {
                 PdfBorderStyle.Solid => "S",
                 PdfBorderStyle.Dashed => "D",
@@ -1113,7 +1113,7 @@ public class PdfDocumentWriter
             if (field is { BorderStyle: PdfBorderStyle.Dashed, DashPattern: not null })
             {
                 writer.Write("      /D [");
-                foreach (double d in field.DashPattern)
+                foreach (var d in field.DashPattern)
                     writer.Write($" {d:F1}");
                 writer.WriteLine(" ]");
             }
@@ -1126,12 +1126,12 @@ public class PdfDocumentWriter
             writer.WriteLine("   /MK <<");
             if (field.BorderColor.HasValue)
             {
-                PdfColor bc = field.BorderColor.Value;
+                var bc = field.BorderColor.Value;
                 writer.WriteLine($"      /BC [{bc.R:F3} {bc.G:F3} {bc.B:F3}]");
             }
             if (field.BackgroundColor.HasValue)
             {
-                PdfColor bg = field.BackgroundColor.Value;
+                var bg = field.BackgroundColor.Value;
                 writer.WriteLine($"      /BG [{bg.R:F3} {bg.G:F3} {bg.B:F3}]");
             }
             writer.WriteLine("   >>");
@@ -1164,10 +1164,10 @@ public class PdfDocumentWriter
     private void WriteImageXObject(StreamWriter writer, int objectNumber, PdfImageContent image)
     {
         // Detect image format and get dimensions
-        (byte[] imageData, int width, int height, string colorSpace, int bitsPerComponent, string filter) = ProcessImage(image);
+        (var imageData, var width, var height, var colorSpace, var bitsPerComponent, var filter) = ProcessImage(image);
 
         // Encrypt the image data if encryption is enabled
-        byte[] streamData = _encryptor != null ? EncryptStream(imageData, objectNumber) : imageData;
+        var streamData = _encryptor != null ? EncryptStream(imageData, objectNumber) : imageData;
 
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine("<<");
@@ -1200,13 +1200,13 @@ public class PdfDocumentWriter
 
     private (byte[] data, int width, int height, string colorSpace, int bitsPerComponent, string filter) ProcessImage(PdfImageContent image)
     {
-        byte[] data = image.ImageData;
+        var data = image.ImageData;
 
         // Check for JPEG signature (FFD8FF)
         if (data is [0xFF, 0xD8, 0xFF, ..])
         {
             // JPEG image - can pass through directly
-            (int width, int height) = GetJpegDimensions(data);
+            (var width, var height) = GetJpegDimensions(data);
             return (data, width, height, "DeviceRGB", 8, "DCTDecode");
         }
 
@@ -1214,10 +1214,10 @@ public class PdfDocumentWriter
         try
         {
             using var memStream = new MemoryStream(data);
-            using Image<Rgb24> imageData = Image.Load<Rgb24>(memStream);
+            using var imageData = Image.Load<Rgb24>(memStream);
 
-            int width = imageData.Width;
-            int height = imageData.Height;
+            var width = imageData.Width;
+            var height = imageData.Height;
 
             // Convert to RGB888 format
             var rgbData = new byte[width * height * 3];
@@ -1227,7 +1227,7 @@ public class PdfDocumentWriter
             {
                 for (var x = 0; x < width; x++)
                 {
-                    Rgb24 pixel = imageData[x, y];
+                    var pixel = imageData[x, y];
                     rgbData[idx++] = pixel.R;
                     rgbData[idx++] = pixel.G;
                     rgbData[idx++] = pixel.B;
@@ -1239,12 +1239,12 @@ public class PdfDocumentWriter
                 // Compress based on settings
                 case PdfImageCompression.Jpeg:
                 {
-                    byte[] compressed = CompressJpeg(imageData, image.JpegQuality);
+                    var compressed = CompressJpeg(imageData, image.JpegQuality);
                     return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
                 }
                 case PdfImageCompression.Flate or PdfImageCompression.Auto:
                 {
-                    byte[] compressed = CompressFlate(rgbData);
+                    var compressed = CompressFlate(rgbData);
                     return (compressed, width, height, "DeviceRGB", 8, "FlateDecode");
                 }
                 case PdfImageCompression.None:
@@ -1252,7 +1252,7 @@ public class PdfDocumentWriter
                 default:
                 {
                     // Default: Flate compression
-                    byte[] defaultCompressed = CompressFlate(rgbData);
+                    var defaultCompressed = CompressFlate(rgbData);
                     return (defaultCompressed, width, height, "DeviceRGB", 8, "FlateDecode");
                 }
             }
@@ -1275,15 +1275,15 @@ public class PdfDocumentWriter
                 continue;
             }
 
-            byte marker = data[i + 1];
+            var marker = data[i + 1];
 
             switch (marker)
             {
                 // SOF markers (Start of Frame)
                 case >= 0xC0 and <= 0xCF when marker != 0xC4 && marker != 0xC8 && marker != 0xCC:
                 {
-                    int height = (data[i + 5] << 8) | data[i + 6];
-                    int width = (data[i + 7] << 8) | data[i + 8];
+                    var height = (data[i + 5] << 8) | data[i + 6];
+                    var width = (data[i + 7] << 8) | data[i + 8];
                     return (width, height);
                 }
                 // Skip to next marker
@@ -1295,7 +1295,7 @@ public class PdfDocumentWriter
                     break;
                 default:
                 {
-                    int length = (data[i + 2] << 8) | data[i + 3];
+                    var length = (data[i + 2] << 8) | data[i + 3];
                     i += 2 + length;
                     break;
                 }
@@ -1323,7 +1323,7 @@ public class PdfDocumentWriter
         }
 
         // Write Adler-32 checksum (big-endian)
-        uint adler = ComputeAdler32(data);
+        var adler = ComputeAdler32(data);
         outputStream.WriteByte((byte)(adler >> 24));
         outputStream.WriteByte((byte)(adler >> 16));
         outputStream.WriteByte((byte)(adler >> 8));
@@ -1337,7 +1337,7 @@ public class PdfDocumentWriter
         const uint modAdler = 65521;
         uint a = 1, b = 0;
 
-        foreach (byte c in data)
+        foreach (var c in data)
         {
             a = (a + c) % modAdler;
             b = (b + a) % modAdler;
@@ -1360,11 +1360,11 @@ public class PdfDocumentWriter
     /// </summary>
     private void WriteTrueTypeFont(StreamWriter writer, string fontAlias, CustomFontInfo fontInfo)
     {
-        int fontObj = _fontObjects[fontAlias];
-        int descriptorObj = _fontDescriptorObjects[fontAlias];
-        int fontFileObj = descriptorObj + 1; // FontFile2 comes right after descriptor
+        var fontObj = _fontObjects[fontAlias];
+        var descriptorObj = _fontDescriptorObjects[fontAlias];
+        var fontFileObj = descriptorObj + 1; // FontFile2 comes right after descriptor
 
-        EmbeddedFontMetrics metrics = fontInfo.Metrics;
+        var metrics = fontInfo.Metrics;
 
         // Write Font Dictionary
         WriteObjectStart(writer, fontObj);
@@ -1379,14 +1379,14 @@ public class PdfDocumentWriter
         writer.WriteLine("   /LastChar 255");
 
         // Generate Widths array (scaled to PDF's 1000-unit coordinate system)
-        double scale = 1000.0 / metrics.UnitsPerEm;
+        var scale = 1000.0 / metrics.UnitsPerEm;
         writer.Write("   /Widths [");
         for (var charCode = 32; charCode <= 255; charCode++)
         {
             if ((charCode - 32) % 16 == 0)
                 writer.Write("\n      ");
 
-            ushort rawWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
+            var rawWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
             var width = (int)Math.Round(rawWidth * scale);
             writer.Write($"{width} ");
         }
@@ -1407,7 +1407,7 @@ public class PdfDocumentWriter
     /// </summary>
     private void WriteFontDescriptor(StreamWriter writer, int descriptorObj, int fontFileObj, CustomFontInfo fontInfo)
     {
-        EmbeddedFontMetrics metrics = fontInfo.Metrics;
+        var metrics = fontInfo.Metrics;
 
         WriteObjectStart(writer, descriptorObj);
         writer.WriteLine("<< /Type /FontDescriptor");
@@ -1422,7 +1422,7 @@ public class PdfDocumentWriter
 
         // Font bounding box (estimate if not available)
         // Scale from font units to 1000-unit coordinate system
-        double scale = 1000.0 / metrics.UnitsPerEm;
+        var scale = 1000.0 / metrics.UnitsPerEm;
         const int llx = -200;  // Typical left bearing
         var lly = (int)(metrics.Descender * scale);
         const int urx = 1000;  // Typical right edge
@@ -1448,10 +1448,10 @@ public class PdfDocumentWriter
     private void WriteFontFile2Stream(StreamWriter writer, int fontFileObj, byte[] fontData)
     {
         // Optionally compress the font data
-        byte[] compressedData = CompressFlate(fontData);
+        var compressedData = CompressFlate(fontData);
 
         // Encrypt the compressed data if encryption is enabled
-        byte[] streamData = _encryptor != null ? EncryptStream(compressedData, fontFileObj) : compressedData;
+        var streamData = _encryptor != null ? EncryptStream(compressedData, fontFileObj) : compressedData;
 
         WriteObjectStart(writer, fontFileObj);
         writer.WriteLine($"<< /Length {streamData.Length}");
@@ -1587,8 +1587,8 @@ public class PdfDocumentWriter
             return PdfString(text);
 
         // Convert to bytes and encrypt
-        byte[] textBytes = Encoding.Latin1.GetBytes(text);
-        byte[] encrypted = EncryptString(textBytes, objectNumber);
+        var textBytes = Encoding.Latin1.GetBytes(text);
+        var encrypted = EncryptString(textBytes, objectNumber);
 
         // Return as hex string
         return $"<{BytesToHexString(encrypted)}>";
@@ -1599,12 +1599,12 @@ public class PdfDocumentWriter
     /// </summary>
     private string PdfEncryptedDate(DateTime date, int objectNumber)
     {
-        string dateStr = $"D:{date:yyyyMMddHHmmss}";
+        var dateStr = $"D:{date:yyyyMMddHHmmss}";
         if (_encryptor == null)
             return $"({dateStr})";
 
-        byte[] textBytes = Encoding.Latin1.GetBytes(dateStr);
-        byte[] encrypted = EncryptString(textBytes, objectNumber);
+        var textBytes = Encoding.Latin1.GetBytes(dateStr);
+        var encrypted = EncryptString(textBytes, objectNumber);
         return $"<{BytesToHexString(encrypted)}>";
     }
 
@@ -1685,7 +1685,7 @@ public class PdfDocumentWriter
     /// </summary>
     private void WriteLayerObject(StreamWriter writer, PdfLayer layer)
     {
-        int objNum = _layerObjects[layer.Id];
+        var objNum = _layerObjects[layer.Id];
         WriteObjectStart(writer, objNum);
         writer.WriteLine("<< /Type /OCG");
         writer.WriteLine($"   /Name {PdfEncryptedString(layer.Name, objNum)}");
@@ -1693,7 +1693,7 @@ public class PdfDocumentWriter
         // Intent
         if (layer.Intent != PdfLayerIntent.View)
         {
-            string intent = layer.Intent switch
+            var intent = layer.Intent switch
             {
                 PdfLayerIntent.Design => "/Design",
                 PdfLayerIntent.All => "[/View /Design]",
@@ -1708,12 +1708,12 @@ public class PdfDocumentWriter
             writer.WriteLine("   /Usage <<");
             if (layer.PrintState.HasValue)
             {
-                string printState = layer.PrintState.Value ? "/ON" : "/OFF";
+                var printState = layer.PrintState.Value ? "/ON" : "/OFF";
                 writer.WriteLine($"      /Print << /PrintState {printState} >>");
             }
             if (layer.ExportState.HasValue)
             {
-                string exportState = layer.ExportState.Value ? "/ON" : "/OFF";
+                var exportState = layer.ExportState.Value ? "/ON" : "/OFF";
                 writer.WriteLine($"      /Export << /ExportState {exportState} >>");
             }
             writer.WriteLine("   >>");
@@ -1729,7 +1729,7 @@ public class PdfDocumentWriter
     private static HashSet<PdfLayer> CollectPageLayers(PdfPageBuilder page)
     {
         var layers = new HashSet<PdfLayer>();
-        foreach (PdfContentElement element in page.Content)
+        foreach (var element in page.Content)
         {
             if (element is PdfLayerContent layerContent)
             {
@@ -1744,7 +1744,7 @@ public class PdfDocumentWriter
     /// </summary>
     private void ReserveBookmarkObjects(IEnumerable<PdfBookmark> bookmarks)
     {
-        foreach (PdfBookmark bookmark in bookmarks)
+        foreach (var bookmark in bookmarks)
         {
             _bookmarkObjects[bookmark.Id] = _nextObjectNumber++;
             if (bookmark.Children.Count > 0)
@@ -1765,13 +1765,13 @@ public class PdfDocumentWriter
         writer.WriteLine("<< /Type /Outlines");
 
         // First and Last point to first and last top-level bookmarks
-        int firstBookmarkObj = _bookmarkObjects[bookmarks[0].Id];
-        int lastBookmarkObj = _bookmarkObjects[bookmarks[^1].Id];
+        var firstBookmarkObj = _bookmarkObjects[bookmarks[0].Id];
+        var lastBookmarkObj = _bookmarkObjects[bookmarks[^1].Id];
         writer.WriteLine($"   /First {firstBookmarkObj} 0 R");
         writer.WriteLine($"   /Last {lastBookmarkObj} 0 R");
 
         // Count is total number of open outline items at all levels
-        int totalCount = CountOpenOutlineItems(bookmarks);
+        var totalCount = CountOpenOutlineItems(bookmarks);
         writer.WriteLine($"   /Count {totalCount}");
 
         writer.WriteLine(">>");
@@ -1789,8 +1789,8 @@ public class PdfDocumentWriter
     {
         for (var i = 0; i < bookmarks.Count; i++)
         {
-            PdfBookmark bookmark = bookmarks[i];
-            int objNum = _bookmarkObjects[bookmark.Id];
+            var bookmark = bookmarks[i];
+            var objNum = _bookmarkObjects[bookmark.Id];
 
             WriteObjectStart(writer, objNum);
             writer.WriteLine("<<");
@@ -1804,27 +1804,27 @@ public class PdfDocumentWriter
             // Prev (if not first)
             if (i > 0)
             {
-                int prevObj = _bookmarkObjects[bookmarks[i - 1].Id];
+                var prevObj = _bookmarkObjects[bookmarks[i - 1].Id];
                 writer.WriteLine($"   /Prev {prevObj} 0 R");
             }
 
             // Next (if not last)
             if (i < bookmarks.Count - 1)
             {
-                int nextObj = _bookmarkObjects[bookmarks[i + 1].Id];
+                var nextObj = _bookmarkObjects[bookmarks[i + 1].Id];
                 writer.WriteLine($"   /Next {nextObj} 0 R");
             }
 
             // First and Last (if has children)
             if (bookmark.Children.Count > 0)
             {
-                int firstChildObj = _bookmarkObjects[bookmark.Children[0].Id];
-                int lastChildObj = _bookmarkObjects[bookmark.Children[^1].Id];
+                var firstChildObj = _bookmarkObjects[bookmark.Children[0].Id];
+                var lastChildObj = _bookmarkObjects[bookmark.Children[^1].Id];
                 writer.WriteLine($"   /First {firstChildObj} 0 R");
                 writer.WriteLine($"   /Last {lastChildObj} 0 R");
 
                 // Count: positive if open (expanded), negative if closed
-                int childCount = CountOpenOutlineItems(bookmark.Children);
+                var childCount = CountOpenOutlineItems(bookmark.Children);
                 if (bookmark.IsOpen)
                 {
                     writer.WriteLine($"   /Count {childCount}");
@@ -1841,13 +1841,13 @@ public class PdfDocumentWriter
             // Text style (C for color, F for flags)
             if (bookmark.TextColor.HasValue)
             {
-                PdfColor color = bookmark.TextColor.Value;
+                var color = bookmark.TextColor.Value;
                 writer.WriteLine($"   /C [{color.R:F3} {color.G:F3} {color.B:F3}]");
             }
 
             if (bookmark.IsBold || bookmark.IsItalic)
             {
-                int flags = 0;
+                var flags = 0;
                 if (bookmark.IsItalic) flags |= 1;
                 if (bookmark.IsBold) flags |= 2;
                 writer.WriteLine($"   /F {flags}");
@@ -1871,10 +1871,10 @@ public class PdfDocumentWriter
         List<(int pageObj, int contentObj)> pageObjectNumbers)
     {
         // Ensure page index is valid
-        int pageIndex = Math.Clamp(dest.PageIndex, 0, pageObjectNumbers.Count - 1);
-        int pageObj = pageObjectNumbers[pageIndex].pageObj;
+        var pageIndex = Math.Clamp(dest.PageIndex, 0, pageObjectNumbers.Count - 1);
+        var pageObj = pageObjectNumbers[pageIndex].pageObj;
 
-        string destStr = dest.Type switch
+        var destStr = dest.Type switch
         {
             PdfDestinationType.Fit => $"[{pageObj} 0 R /Fit]",
             PdfDestinationType.FitH => $"[{pageObj} 0 R /FitH {FormatDestCoord(dest.Top)}]",
@@ -1902,8 +1902,8 @@ public class PdfDocumentWriter
     /// </summary>
     private static int CountOpenOutlineItems(IReadOnlyList<PdfBookmark> bookmarks)
     {
-        int count = bookmarks.Count;
-        foreach (PdfBookmark bookmark in bookmarks)
+        var count = bookmarks.Count;
+        foreach (var bookmark in bookmarks)
         {
             if (bookmark.IsOpen && bookmark.Children.Count > 0)
             {
@@ -1921,14 +1921,14 @@ public class PdfDocumentWriter
         writer.WriteLine("   /PageLabels <<");
         writer.WriteLine("      /Nums [");
 
-        foreach (PdfPageLabelRange range in ranges.OrderBy(r => r.StartPageIndex))
+        foreach (var range in ranges.OrderBy(r => r.StartPageIndex))
         {
             writer.Write($"         {range.StartPageIndex} << ");
 
             // Style (S entry)
             if (range.Style != PdfPageLabelStyle.None)
             {
-                string styleCode = range.Style switch
+                var styleCode = range.Style switch
                 {
                     PdfPageLabelStyle.Decimal => "D",
                     PdfPageLabelStyle.UppercaseRoman => "R",
@@ -1965,7 +1965,7 @@ public class PdfDocumentWriter
     private void WriteAnnotationObject(StreamWriter writer, PdfAnnotation annotation, int pageObj,
         List<(int pageObj, int contentObj)> pageObjectNumbers)
     {
-        int objNum = _annotationObjects[annotation.Id];
+        var objNum = _annotationObjects[annotation.Id];
         WriteObjectStart(writer, objNum);
         writer.WriteLine("<<");
         writer.WriteLine("   /Type /Annot");
@@ -1986,7 +1986,7 @@ public class PdfDocumentWriter
             if (annotation.Border.DashPattern is { Length: > 0 })
             {
                 writer.Write(" [");
-                foreach (double d in annotation.Border.DashPattern)
+                foreach (var d in annotation.Border.DashPattern)
                     writer.Write($" {d:F1}");
                 writer.Write(" ]");
             }
@@ -2020,7 +2020,7 @@ public class PdfDocumentWriter
         List<(int pageObj, int contentObj)> pageObjectNumbers)
     {
         // Highlight mode
-        string hlMode = link.HighlightMode switch
+        var hlMode = link.HighlightMode switch
         {
             PdfLinkHighlightMode.None => "N",
             PdfLinkHighlightMode.Outline => "O",
@@ -2034,11 +2034,11 @@ public class PdfDocumentWriter
         {
             case PdfGoToAction goTo:
                 // Write destination directly
-                PdfDestination dest = goTo.Destination;
-                int pageIndex = Math.Clamp(dest.PageIndex, 0, pageObjectNumbers.Count - 1);
-                int pageObj = pageObjectNumbers[pageIndex].pageObj;
+                var dest = goTo.Destination;
+                var pageIndex = Math.Clamp(dest.PageIndex, 0, pageObjectNumbers.Count - 1);
+                var pageObj = pageObjectNumbers[pageIndex].pageObj;
 
-                string destStr = dest.Type switch
+                var destStr = dest.Type switch
                 {
                     PdfDestinationType.Fit => $"[{pageObj} 0 R /Fit]",
                     PdfDestinationType.FitH => $"[{pageObj} 0 R /FitH {FormatDestCoord(dest.Top)}]",
@@ -2075,7 +2075,7 @@ public class PdfDocumentWriter
         }
 
         // Icon name
-        string iconName = text.Icon switch
+        var iconName = text.Icon switch
         {
             PdfTextAnnotationIcon.Comment => "Comment",
             PdfTextAnnotationIcon.Key => "Key",
@@ -2096,7 +2096,7 @@ public class PdfDocumentWriter
         // Color
         if (text.Color.HasValue)
         {
-            PdfColor c = text.Color.Value;
+            var c = text.Color.Value;
             writer.WriteLine($"   /C [{c.R:F3} {c.G:F3} {c.B:F3}]");
         }
     }
@@ -2113,7 +2113,7 @@ public class PdfDocumentWriter
         if (highlight.QuadPoints.Count > 0)
         {
             writer.Write("   /QuadPoints [");
-            foreach (PdfQuadPoints quad in highlight.QuadPoints)
+            foreach (var quad in highlight.QuadPoints)
             {
                 // PDF spec order: x1,y1,x2,y2,x3,y3,x4,y4 (counter-clockwise from bottom-left)
                 writer.Write($" {quad.X1:F2} {quad.Y1:F2}");

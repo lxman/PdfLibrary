@@ -24,7 +24,7 @@ public static class AesCipher
         var iv = new byte[16];
         Array.Copy(data, 0, iv, 0, 16);
 
-        int ciphertextLength = data.Length - 16;
+        var ciphertextLength = data.Length - 16;
         if (ciphertextLength == 0)
             return []; // No actual data after IV
 
@@ -37,11 +37,11 @@ public static class AesCipher
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.None; // PDF handles padding manually
 
-        using ICryptoTransform decryptor = aes.CreateDecryptor();
+        using var decryptor = aes.CreateDecryptor();
 
         // AES requires input to be multiple of block size
         // If not, we need to pad it (this shouldn't happen with valid PDF data)
-        int paddedLength = (ciphertext.Length + 15) / 16 * 16;
+        var paddedLength = (ciphertext.Length + 15) / 16 * 16;
         if (paddedLength != ciphertext.Length)
         {
             var padded = new byte[paddedLength];
@@ -49,7 +49,7 @@ public static class AesCipher
             ciphertext = padded;
         }
 
-        byte[] decrypted = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
+        var decrypted = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
 
         // Remove PKCS#7 padding if present
         return RemovePkcs7Padding(decrypted);
@@ -70,7 +70,7 @@ public static class AesCipher
             return data; // Invalid padding, return as-is
 
         // Verify all padding bytes are correct
-        for (int i = data.Length - paddingLength; i < data.Length; i++)
+        for (var i = data.Length - paddingLength; i < data.Length; i++)
         {
             if (data[i] != paddingLength)
                 return data; // Invalid padding
@@ -108,8 +108,8 @@ public static class AesCipher
             aes.GenerateIV();
         }
 
-        using ICryptoTransform encryptor = aes.CreateEncryptor();
-        byte[] ciphertext = encryptor.TransformFinalBlock(data, 0, data.Length);
+        using var encryptor = aes.CreateEncryptor();
+        var ciphertext = encryptor.TransformFinalBlock(data, 0, data.Length);
 
         // Prepend IV to ciphertext
         var result = new byte[16 + ciphertext.Length];
@@ -132,15 +132,15 @@ public static class AesCipher
         aes.Padding = PaddingMode.None;
 
         // Pad data to block size if needed
-        int paddedLength = (data.Length + 15) / 16 * 16;
-        byte[] paddedData = data;
+        var paddedLength = (data.Length + 15) / 16 * 16;
+        var paddedData = data;
         if (paddedLength != data.Length)
         {
             paddedData = new byte[paddedLength];
             Array.Copy(data, paddedData, data.Length);
         }
 
-        using ICryptoTransform encryptor = aes.CreateEncryptor();
+        using var encryptor = aes.CreateEncryptor();
         return encryptor.TransformFinalBlock(paddedData, 0, paddedData.Length);
     }
 

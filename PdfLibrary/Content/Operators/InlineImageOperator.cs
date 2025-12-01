@@ -65,7 +65,7 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
 
     private int GetIntParameter(string shortName, string longName, int defaultValue = 0)
     {
-        if (Parameters.TryGetValue(new PdfName(shortName), out PdfObject val) || Parameters.TryGetValue(new PdfName(longName), out val))
+        if (Parameters.TryGetValue(new PdfName(shortName), out var val) || Parameters.TryGetValue(new PdfName(longName), out val))
         {
             return val switch
             {
@@ -79,7 +79,7 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
 
     private string? GetNameParameter(string shortName, string longName, string? defaultValue)
     {
-        if (Parameters.TryGetValue(new PdfName(shortName), out PdfObject val) || Parameters.TryGetValue(new PdfName(longName), out val))
+        if (Parameters.TryGetValue(new PdfName(shortName), out var val) || Parameters.TryGetValue(new PdfName(longName), out val))
         {
             if (val is PdfName name)
             {
@@ -100,7 +100,7 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
 
     private bool GetBoolParameter(string shortName, string longName, bool defaultValue)
     {
-        if (Parameters.TryGetValue(new PdfName(shortName), out PdfObject val) || Parameters.TryGetValue(new PdfName(longName), out val))
+        if (Parameters.TryGetValue(new PdfName(shortName), out var val) || Parameters.TryGetValue(new PdfName(longName), out val))
         {
             return val switch
             {
@@ -113,7 +113,7 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
 
     private PdfArray? GetArrayParameter(string shortName, string longName)
     {
-        if (Parameters.TryGetValue(new PdfName(shortName), out PdfObject val) || Parameters.TryGetValue(new PdfName(longName), out val))
+        if (Parameters.TryGetValue(new PdfName(shortName), out var val) || Parameters.TryGetValue(new PdfName(longName), out val))
         {
             return val as PdfArray;
         }
@@ -122,7 +122,7 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
 
     private PdfObject? GetParameter(string shortName, string longName)
     {
-        if (Parameters.TryGetValue(new PdfName(shortName), out PdfObject val) || Parameters.TryGetValue(new PdfName(longName), out val))
+        if (Parameters.TryGetValue(new PdfName(shortName), out var val) || Parameters.TryGetValue(new PdfName(longName), out val))
         {
             return val;
         }

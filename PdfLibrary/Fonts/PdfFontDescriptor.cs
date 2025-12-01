@@ -20,7 +20,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("FontName"), out PdfObject obj) && obj is PdfName name)
+            if (_dictionary.TryGetValue(new PdfName("FontName"), out var obj) && obj is PdfName name)
                 return name.Value;
             return "Unknown";
         }
@@ -33,7 +33,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("FontFamily"), out PdfObject obj) && obj is PdfString str)
+            if (_dictionary.TryGetValue(new PdfName("FontFamily"), out var obj) && obj is PdfString str)
                 return str.Value;
             return null;
         }
@@ -46,7 +46,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("Flags"), out PdfObject obj) && obj is PdfInteger flags)
+            if (_dictionary.TryGetValue(new PdfName("Flags"), out var obj) && obj is PdfInteger flags)
                 return flags.Value;
             return 0;
         }
@@ -94,7 +94,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("FontBBox"), out PdfObject obj) && obj is PdfArray { Count: 4 } array)
+            if (_dictionary.TryGetValue(new PdfName("FontBBox"), out var obj) && obj is PdfArray { Count: 4 } array)
             {
                 return (
                     array[0].ToDouble(),
@@ -114,7 +114,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("ItalicAngle"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("ItalicAngle"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -127,7 +127,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("Ascent"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("Ascent"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -140,7 +140,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("Descent"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("Descent"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -153,7 +153,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("Leading"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("Leading"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -166,7 +166,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("CapHeight"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("CapHeight"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -179,7 +179,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("XHeight"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("XHeight"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -192,7 +192,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("StemV"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("StemV"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -205,7 +205,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("StemH"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("StemH"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -218,7 +218,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("AvgWidth"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("AvgWidth"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -231,7 +231,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("MaxWidth"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("MaxWidth"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -244,7 +244,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("MissingWidth"), out PdfObject obj))
+            if (_dictionary.TryGetValue(new PdfName("MissingWidth"), out var obj))
                 return obj.ToDouble();
             return 0;
         }
@@ -256,7 +256,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     /// </summary>
     public byte[]? GetFontFile2()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject? obj))
+        if (_dictionary.TryGetValue(new PdfName("FontFile2"), out var obj))
         {
             // Resolve indirect reference if needed
             if (obj is PdfIndirectReference reference && _document is not null)
@@ -273,7 +273,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     /// </summary>
     public byte[]? GetFontFile3()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject? obj))
+        if (_dictionary.TryGetValue(new PdfName("FontFile3"), out var obj))
         {
             // Resolve indirect reference if needed
             if (obj is PdfIndirectReference reference && _document is not null)
@@ -290,7 +290,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     /// </summary>
     public byte[]? GetFontFile()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject? obj))
+        if (_dictionary.TryGetValue(new PdfName("FontFile"), out var obj))
         {
             // Resolve indirect reference if needed
             if (obj is PdfIndirectReference reference && _document is not null)
@@ -309,7 +309,7 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     /// <returns>Tuple of (data, length1, length2, length3) or null if not found</returns>
     public (byte[] data, int length1, int length2, int length3)? GetFontFileWithLengths()
     {
-        if (!_dictionary.TryGetValue(new PdfName("FontFile"), out PdfObject? obj))
+        if (!_dictionary.TryGetValue(new PdfName("FontFile"), out var obj))
             return null;
 
         // Resolve indirect reference if needed
@@ -319,16 +319,16 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
         if (obj is not PdfStream stream)
             return null;
 
-        byte[] data = stream.GetDecodedData(_document?.Decryptor);
+        var data = stream.GetDecodedData(_document?.Decryptor);
 
         // Get Length1, Length2, Length3 from stream dictionary
         int length1 = 0, length2 = 0, length3 = 0;
 
-        if (stream.Dictionary.TryGetValue(new PdfName("Length1"), out PdfObject? l1Obj))
+        if (stream.Dictionary.TryGetValue(new PdfName("Length1"), out var l1Obj))
             length1 = l1Obj.ToInt();
-        if (stream.Dictionary.TryGetValue(new PdfName("Length2"), out PdfObject? l2Obj))
+        if (stream.Dictionary.TryGetValue(new PdfName("Length2"), out var l2Obj))
             length2 = l2Obj.ToInt();
-        if (stream.Dictionary.TryGetValue(new PdfName("Length3"), out PdfObject? l3Obj))
+        if (stream.Dictionary.TryGetValue(new PdfName("Length3"), out var l3Obj))
             length3 = l3Obj.ToInt();
 
         return (data, length1, length2, length3);

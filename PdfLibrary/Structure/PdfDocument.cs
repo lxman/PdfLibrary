@@ -87,11 +87,11 @@ public class PdfDocument : IDisposable
     internal PdfObject? GetObject(int objectNumber)
     {
         // Check if already loaded
-        if (_objects.TryGetValue(objectNumber, out PdfObject? cachedObj))
+        if (_objects.TryGetValue(objectNumber, out var cachedObj))
             return cachedObj;
 
         // Check if this object exists in the xref table
-        PdfXrefEntry? entry = XrefTable.Entries.FirstOrDefault(e => e.ObjectNumber == objectNumber);
+        var entry = XrefTable.Entries.FirstOrDefault(e => e.ObjectNumber == objectNumber);
         if (entry is not { IsInUse: true })
             return null;
 
@@ -110,7 +110,7 @@ public class PdfDocument : IDisposable
             try
             {
                 // Save the current stream position
-                long savedPosition = _stream.Position;
+                var savedPosition = _stream.Position;
 
                 // Seek to object position
                 _stream.Position = entry.ByteOffset;
@@ -122,7 +122,7 @@ public class PdfDocument : IDisposable
                 parser.SetReferenceResolver(reference => GetObject(reference.ObjectNumber));
 
                 // Read the object
-                PdfObject? obj = parser.ReadObject();
+                var obj = parser.ReadObject();
                 if (obj is not null)
                 {
                     AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
@@ -154,16 +154,16 @@ public class PdfDocument : IDisposable
         // - ByteOffset = object stream number
         // - GenerationNumber = index within the object stream
         var objectStreamNumber = (int)entry.ByteOffset;
-        int indexInStream = entry.GenerationNumber;
+        var indexInStream = entry.GenerationNumber;
 
         // Get the object stream (this will recursively call GetObject, but object streams
         // themselves must be uncompressed, so no infinite recursion)
-        PdfObject? objStreamObj = GetObject(objectStreamNumber);
+        var objStreamObj = GetObject(objectStreamNumber);
         if (objStreamObj is not PdfStream objStream)
             throw new PdfParseException($"Object stream {objectStreamNumber} not found or not a stream");
 
         // Verify this is an object stream
-        if (!objStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject typeObj) ||
+        if (!objStream.Dictionary.TryGetValue(new PdfName("Type"), out var typeObj) ||
             typeObj is not PdfName { Value: "ObjStm" })
         {
             throw new PdfParseException($"Object {objectStreamNumber} is not an object stream (/Type /ObjStm missing)");
@@ -183,23 +183,23 @@ public class PdfDocument : IDisposable
     private void ExtractObjectsFromStream(PdfStream objStream)
     {
         // Get /N (number of compressed objects)
-        if (!objStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) ||
+        if (!objStream.Dictionary.TryGetValue(new PdfName("N"), out var nObj) ||
             nObj is not PdfInteger nInt)
         {
             throw new PdfParseException("Object stream missing /N entry");
         }
-        int objectCount = nInt.Value;
+        var objectCount = nInt.Value;
 
         // Get /First (offset to first object's data)
-        if (!objStream.Dictionary.TryGetValue(new PdfName("First"), out PdfObject firstObj) ||
+        if (!objStream.Dictionary.TryGetValue(new PdfName("First"), out var firstObj) ||
             firstObj is not PdfInteger firstInt)
         {
             throw new PdfParseException("Object stream missing /First entry");
         }
-        int firstOffset = firstInt.Value;
+        var firstOffset = firstInt.Value;
 
         // Decode the stream (decryption is needed for encrypted documents)
-        byte[] decodedData = objStream.GetDecodedData(Decryptor);
+        var decodedData = objStream.GetDecodedData(Decryptor);
 
         // Parse the first section: pairs of (objectNumber offset)
         using var headerStream = new MemoryStream(decodedData, 0, firstOffset);
@@ -211,13 +211,13 @@ public class PdfDocument : IDisposable
         for (var i = 0; i < objectCount; i++)
         {
             // Read object number
-            PdfObject? objNumObj = headerParser.ReadObject();
+            var objNumObj = headerParser.ReadObject();
             if (objNumObj is not PdfInteger objNumInt)
                 throw new PdfParseException($"Invalid object number in object stream header at index {i}");
             objectNumbers.Add(objNumInt.Value);
 
             // Read offset
-            PdfObject? offsetObj = headerParser.ReadObject();
+            var offsetObj = headerParser.ReadObject();
             if (offsetObj is not PdfInteger offsetInt)
                 throw new PdfParseException($"Invalid offset in object stream header at index {i}");
             offsets.Add(offsetInt.Value);
@@ -226,8 +226,8 @@ public class PdfDocument : IDisposable
         // Parse the second section: actual objects
         for (var i = 0; i < objectCount; i++)
         {
-            int objectNumber = objectNumbers[i];
-            int offset = offsets[i] + firstOffset;
+            var objectNumber = objectNumbers[i];
+            var offset = offsets[i] + firstOffset;
 
             // Determine the length of this object's data
             int length;
@@ -247,7 +247,7 @@ public class PdfDocument : IDisposable
             var objectParser = new PdfParser(objectStream);
             objectParser.SetReferenceResolver(reference => GetObject(reference.ObjectNumber));
 
-            PdfObject? obj = objectParser.ReadObject();
+            var obj = objectParser.ReadObject();
             if (obj is not null)
             {
                 // Add to cache (generation number is 0 for compressed objects)
@@ -274,7 +274,7 @@ public class PdfDocument : IDisposable
         if (Trailer.Root is null)
             return null;
 
-        PdfObject? catalog = ResolveReference(Trailer.Root);
+        var catalog = ResolveReference(Trailer.Root);
         return catalog is not PdfDictionary catalogDict
             ? null
             : new PdfCatalog(catalogDict, this);
@@ -288,7 +288,7 @@ public class PdfDocument : IDisposable
         if (Trailer.Info is null)
             return null;
 
-        PdfObject? info = ResolveReference(Trailer.Info);
+        var info = ResolveReference(Trailer.Info);
         return info as PdfDictionary;
     }
 
@@ -297,11 +297,11 @@ public class PdfDocument : IDisposable
     /// </summary>
     public int GetPageCount()
     {
-        PdfCatalog? catalog = GetCatalog();
+        var catalog = GetCatalog();
         if (catalog is null)
             return 0;
 
-        PdfPageTree? pageTree = catalog.GetPageTree();
+        var pageTree = catalog.GetPageTree();
         return pageTree?.Count ?? 0;
     }
 
@@ -310,11 +310,11 @@ public class PdfDocument : IDisposable
     /// </summary>
     public List<PdfPage> GetPages()
     {
-        PdfCatalog? catalog = GetCatalog();
+        var catalog = GetCatalog();
         if (catalog is null)
             return [];
 
-        PdfPageTree? pageTree = catalog.GetPageTree();
+        var pageTree = catalog.GetPageTree();
         return pageTree?.GetPages() ?? [];
     }
 
@@ -323,9 +323,9 @@ public class PdfDocument : IDisposable
     /// </summary>
     public PdfPage? GetPage(int index)
     {
-        PdfCatalog? catalog = GetCatalog();
+        var catalog = GetCatalog();
 
-        PdfPageTree? pageTree = catalog?.GetPageTree();
+        var pageTree = catalog?.GetPageTree();
         return pageTree?.GetPage(index);
     }
 
@@ -337,7 +337,7 @@ public class PdfDocument : IDisposable
     /// <returns>List of pages in the range</returns>
     public List<PdfPage> GetPages(int startIndex, int endIndex)
     {
-        List<PdfPage> allPages = GetPages();
+        var allPages = GetPages();
         if (allPages.Count == 0)
             return [];
 
@@ -362,7 +362,7 @@ public class PdfDocument : IDisposable
     {
         get
         {
-            int count = GetPageCount();
+            var count = GetPageCount();
             return count > 0 ? GetPage(count - 1) : null;
         }
     }
@@ -384,14 +384,14 @@ public class PdfDocument : IDisposable
     /// <returns>All extracted text concatenated</returns>
     public string ExtractAllText(string separator = "\n\n")
     {
-        List<PdfPage> pages = GetPages();
+        var pages = GetPages();
         if (pages.Count == 0)
             return string.Empty;
 
         var texts = new List<string>();
-        foreach (PdfPage page in pages)
+        foreach (var page in pages)
         {
-            string text = page.ExtractText();
+            var text = page.ExtractText();
             if (!string.IsNullOrWhiteSpace(text))
                 texts.Add(text);
         }
@@ -406,12 +406,12 @@ public class PdfDocument : IDisposable
     internal List<(PdfImage Image, int PageNumber)> GetAllImages()
     {
         var result = new List<(PdfImage, int)>();
-        List<PdfPage> pages = GetPages();
+        var pages = GetPages();
 
         for (var i = 0; i < pages.Count; i++)
         {
-            List<PdfImage> pageImages = pages[i].GetImages();
-            foreach (PdfImage image in pageImages)
+            var pageImages = pages[i].GetImages();
+            foreach (var image in pageImages)
             {
                 result.Add((image, i + 1)); // 1-based page number
             }
@@ -441,7 +441,7 @@ public class PdfDocument : IDisposable
         if (!File.Exists(filePath))
             throw new FileNotFoundException($"PDF file not found: {filePath}", filePath);
 
-        FileStream stream = File.OpenRead(filePath);
+        var stream = File.OpenRead(filePath);
         return Load(stream, password, leaveOpen: false);  // We own this stream, so don't leave it open
     }
 
@@ -483,20 +483,20 @@ public class PdfDocument : IDisposable
             // Parse PDF header
             phaseStopwatch.Restart();
             stream.Position = 0;
-            (document.Version, long headerOffset) = ParseHeader(stream);
+            (document.Version, var headerOffset) = ParseHeader(stream);
             PdfLogger.Log(LogCategory.Timings, $"PDF Load: Header parsed in {phaseStopwatch.ElapsedMilliseconds}ms");
 
             // Find startxref position
             phaseStopwatch.Restart();
-            long startxref = PdfTrailerParser.FindStartXref(stream);
+            var startxref = PdfTrailerParser.FindStartXref(stream);
             PdfLogger.Log(LogCategory.Timings, $"PDF Load: Found startxref in {phaseStopwatch.ElapsedMilliseconds}ms");
 
             // Adjust startxref by header offset (PDF 2.0 files may have data before the header)
-            long actualXrefPosition = startxref + headerOffset;
+            var actualXrefPosition = startxref + headerOffset;
 
             // Parse cross-reference table(s) - follow /Prev chain for incremental updates
             phaseStopwatch.Restart();
-            long xrefPosition = actualXrefPosition;
+            var xrefPosition = actualXrefPosition;
             var xrefChainDepth = 0;
             const int maxXrefChainDepth = 100; // Prevent infinite loops
 
@@ -504,12 +504,12 @@ public class PdfDocument : IDisposable
             {
                 stream.Position = xrefPosition;
                 var xrefParser = new PdfXrefParser(stream, document);
-                PdfXrefParseResult xrefResult = xrefParser.Parse();
+                var xrefResult = xrefParser.Parse();
 
                 // Add entries to document xref table
                 // Note: Later entries (higher chain depth) take precedence over earlier ones
                 // for the same object number (incremental updates)
-                foreach (PdfXrefEntry entry in xrefResult.Table.Entries)
+                foreach (var entry in xrefResult.Table.Entries)
                 {
                     // Check if this object already exists in the table (O(1) dictionary lookup)
                     if (!document.XrefTable.Contains(entry.ObjectNumber))
@@ -529,7 +529,7 @@ public class PdfDocument : IDisposable
                     if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
                     {
                         // Cross-reference stream - trailer is embedded in the stream dictionary
-                        foreach (KeyValuePair<PdfName, PdfObject> kvp in xrefResult.TrailerDictionary)
+                        foreach (var kvp in xrefResult.TrailerDictionary)
                         {
                             document.Trailer.Dictionary[kvp.Key] = kvp.Value;
                         }
@@ -539,9 +539,9 @@ public class PdfDocument : IDisposable
                     {
                         // Traditional xref table - trailer follows separately
                         var trailerParser = new PdfTrailerParser(stream);
-                        (PdfTrailer trailer, _) = trailerParser.Parse();
+                        (var trailer, _) = trailerParser.Parse();
 
-                        foreach (KeyValuePair<PdfName, PdfObject> kvp in trailer.Dictionary)
+                        foreach (var kvp in trailer.Dictionary)
                         {
                             document.Trailer.Dictionary[kvp.Key] = kvp.Value;
                         }
@@ -559,14 +559,14 @@ public class PdfDocument : IDisposable
                     {
                         // For traditional xref, read the trailer
                         var trailerParser = new PdfTrailerParser(stream);
-                        (PdfTrailer trailer, _) = trailerParser.Parse();
+                        (var trailer, _) = trailerParser.Parse();
                         currentTrailer = trailer.Dictionary;
                     }
                 }
 
                 long prevXrefPosition = -1;
                 if (currentTrailer is not null &&
-                    currentTrailer.TryGetValue(new PdfName("Prev"), out PdfObject prevObj) &&
+                    currentTrailer.TryGetValue(new PdfName("Prev"), out var prevObj) &&
                     prevObj is PdfInteger prevInt)
                 {
                     prevXrefPosition = prevInt.Value + headerOffset;
@@ -576,9 +576,9 @@ public class PdfDocument : IDisposable
                 xrefChainDepth++;
             }
 
-            int xrefEntryCount = document.XrefTable.Entries.Count;
-            int compressedCount = document.XrefTable.Entries.Count(e => e.EntryType == PdfXrefEntryType.Compressed);
-            int uncompressedCount = document.XrefTable.Entries.Count(e => e.IsInUse && e.EntryType != PdfXrefEntryType.Compressed);
+            var xrefEntryCount = document.XrefTable.Entries.Count;
+            var compressedCount = document.XrefTable.Entries.Count(e => e.EntryType == PdfXrefEntryType.Compressed);
+            var uncompressedCount = document.XrefTable.Entries.Count(e => e.IsInUse && e.EntryType != PdfXrefEntryType.Compressed);
             PdfLogger.Log(LogCategory.Timings, $"PDF Load: Xref parsed in {phaseStopwatch.ElapsedMilliseconds}ms ({xrefEntryCount} entries: {uncompressedCount} uncompressed, {compressedCount} compressed, chain depth {xrefChainDepth})");
 
             // Check for encryption and initialize decryptor
@@ -593,7 +593,7 @@ public class PdfDocument : IDisposable
             // Compressed objects (type 2) will be loaded on-demand from object streams
             phaseStopwatch.Restart();
             var loadedObjects = 0;
-            foreach (PdfXrefEntry entry in document.XrefTable.Entries)
+            foreach (var entry in document.XrefTable.Entries)
             {
                 if (!entry.IsInUse)
                     continue;
@@ -605,12 +605,12 @@ public class PdfDocument : IDisposable
                 try
                 {
                     // Seek to object position (adjust for header offset)
-                    long targetPosition = entry.ByteOffset + headerOffset;
+                    var targetPosition = entry.ByteOffset + headerOffset;
                     stream.Position = targetPosition;
 
                     // Try to find the object header, with error recovery for malformed xref offsets
                     // Some PDFs have xref entries that point a few bytes before the actual object
-                    long? actualPosition = FindObjectHeader(stream, entry.ObjectNumber, entry.GenerationNumber, targetPosition);
+                    var actualPosition = FindObjectHeader(stream, entry.ObjectNumber, entry.GenerationNumber, targetPosition);
                     if (actualPosition is null)
                     {
                         PdfLogger.Log(LogCategory.Melville, $"Could not find object {entry.ObjectNumber} {entry.GenerationNumber} at or near offset {entry.ByteOffset}");
@@ -626,7 +626,7 @@ public class PdfDocument : IDisposable
                     parser.SetReferenceResolver(reference => document.GetObject(reference.ObjectNumber));
 
                     // Read the indirect object
-                    PdfObject? obj = parser.ReadObject();
+                    var obj = parser.ReadObject();
                     if (obj is not null)
                     {
                         document.AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
@@ -665,15 +665,15 @@ public class PdfDocument : IDisposable
 
         // Read first 1024 bytes to search for PDF header
         var buffer = new byte[Math.Min(1024, stream.Length)];
-        int bytesRead = stream.Read(buffer, 0, buffer.Length);
+        var bytesRead = stream.Read(buffer, 0, buffer.Length);
 
         // Search for %PDF- marker
         const string pdfMarker = "%PDF-";
-        int headerPosition = -1;
+        var headerPosition = -1;
 
         for (var i = 0; i <= bytesRead - pdfMarker.Length; i++)
         {
-            bool found = !pdfMarker.Where((t, j) => buffer[i + j] != (byte)t).Any();
+            var found = !pdfMarker.Where((t, j) => buffer[i + j] != (byte)t).Any();
 
             if (!found) continue;
             headerPosition = i;
@@ -684,15 +684,15 @@ public class PdfDocument : IDisposable
             throw new PdfParseException("Invalid PDF: missing %PDF- header in first 1024 bytes");
 
         // Extract the version line (read until CR, LF, or end of buffer)
-        int lineEnd = headerPosition;
+        var lineEnd = headerPosition;
         while (lineEnd < bytesRead && buffer[lineEnd] != 0x0A && buffer[lineEnd] != 0x0D)
             lineEnd++;
 
-        string headerLine = Encoding.ASCII.GetString(buffer, headerPosition, lineEnd - headerPosition);
+        var headerLine = Encoding.ASCII.GetString(buffer, headerPosition, lineEnd - headerPosition);
 
         try
         {
-            PdfVersion version = PdfVersion.Parse(headerLine);
+            var version = PdfVersion.Parse(headerLine);
             return (version, headerPosition);
         }
         catch (Exception ex)
@@ -709,7 +709,7 @@ public class PdfDocument : IDisposable
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentException("File path cannot be null or empty", nameof(filePath));
 
-        using FileStream stream = File.Create(filePath);
+        using var stream = File.Create(filePath);
         Save(stream);
     }
 
@@ -761,13 +761,13 @@ public class PdfDocument : IDisposable
         var buffer = new byte[maxScanBytes];
 
         // Read ahead to search for the object header pattern
-        int bytesRead = stream.Read(buffer, 0, maxScanBytes);
+        var bytesRead = stream.Read(buffer, 0, maxScanBytes);
         if (bytesRead == 0)
             return null;
 
         // Build the expected pattern: "N G obj"
-        string expectedPattern = $"{expectedObjectNumber} {expectedGenerationNumber} obj";
-        byte[] patternBytes = System.Text.Encoding.ASCII.GetBytes(expectedPattern);
+        var expectedPattern = $"{expectedObjectNumber} {expectedGenerationNumber} obj";
+        var patternBytes = System.Text.Encoding.ASCII.GetBytes(expectedPattern);
 
         // Search for the pattern in the buffer
         for (var i = 0; i <= bytesRead - patternBytes.Length; i++)
@@ -803,12 +803,12 @@ public class PdfDocument : IDisposable
     private static void InitializeDecryption(PdfDocument document, Stream stream, long headerOffset, string password)
     {
         // Get the /Encrypt dictionary reference
-        PdfIndirectReference? encryptRef = document.Trailer.Encrypt;
+        var encryptRef = document.Trailer.Encrypt;
         if (encryptRef is null)
             return;
 
         // Find the encryption dictionary object in the xref
-        PdfXrefEntry? encryptEntry = document.XrefTable.Entries
+        var encryptEntry = document.XrefTable.Entries
             .FirstOrDefault(e => e.ObjectNumber == encryptRef.ObjectNumber && e.IsInUse);
 
         if (encryptEntry is null)
@@ -817,14 +817,14 @@ public class PdfDocument : IDisposable
         // Load the encryption dictionary (this object is NOT encrypted)
         stream.Position = encryptEntry.ByteOffset + headerOffset;
         var parser = new PdfParser(stream);
-        PdfObject? encryptObj = parser.ReadObject();
+        var encryptObj = parser.ReadObject();
 
         if (encryptObj is not PdfDictionary encryptDict)
             throw new PdfSecurityException("Encryption dictionary is not a dictionary");
 
         // Get document ID from trailer
         byte[] documentId = [];
-        if (document.Trailer.Dictionary.TryGetValue(new PdfName("ID"), out PdfObject? idObj) &&
+        if (document.Trailer.Dictionary.TryGetValue(new PdfName("ID"), out var idObj) &&
             idObj is PdfArray idArray && idArray.Count > 0 &&
             idArray[0] is PdfString idString)
         {
@@ -835,7 +835,7 @@ public class PdfDocument : IDisposable
         try
         {
             document.Decryptor = new PdfDecryptor(encryptDict, documentId, password);
-            string passwordType = document.Decryptor.IsUserPassword ? "user" : "owner";
+            var passwordType = document.Decryptor.IsUserPassword ? "user" : "owner";
             PdfLogger.Log(LogCategory.PdfTool, $"PDF decryption initialized ({passwordType} password, {document.Decryptor.Method})");
         }
         catch (PdfSecurityException ex)

@@ -37,7 +37,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             return;
         }
 
-        if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out PdfObject? csObj))
+        if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out var csObj))
         {
             PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict (has {colorSpaces.Keys.Count} entries: [{string.Join(", ", colorSpaces.Keys.Take(10).Select(k => k.Value))}])");
             return;
@@ -97,18 +97,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
         color ??= [];
 
         // Get the ICC profile stream
-        PdfObject? streamObj = csArray[1];
+        var streamObj = csArray[1];
         if (streamObj is PdfIndirectReference streamRef && document is not null)
             streamObj = document.ResolveReference(streamRef);
 
         if (streamObj is not PdfStream iccStream) return;
 
         // Get stream dictionary to find alternate color space and number of components
-        PdfDictionary streamDict = iccStream.Dictionary;
+        var streamDict = iccStream.Dictionary;
 
         // Get /N (number of components): 1=Gray, 3=RGB, 4=CMYK
         var numComponents = 1;
-        if (streamDict.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nNum)
+        if (streamDict.TryGetValue(new PdfName("N"), out var nObj) && nObj is PdfInteger nNum)
         {
             numComponents = nNum.Value;
         }
@@ -117,7 +117,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         // Get /Alternate color space
         string? alternateSpace = null;
-        if (streamDict.TryGetValue(new PdfName("Alternate"), out PdfObject altObj))
+        if (streamDict.TryGetValue(new PdfName("Alternate"), out var altObj))
         {
             if (altObj is PdfName altName)
             {
@@ -164,10 +164,10 @@ internal class ColorSpaceResolver(PdfDocument? document)
         color ??= [];
 
         // Get the colorant name (index 1)
-        string colorantName = csArray[1] is PdfName cn ? cn.Value : "Unknown";
+        var colorantName = csArray[1] is PdfName cn ? cn.Value : "Unknown";
 
         // Get the alternate color space (index 2) - can be PdfName or PdfArray
-        PdfObject alternateObj = csArray[2];
+        var alternateObj = csArray[2];
         if (alternateObj is PdfIndirectReference altRef && document is not null)
             alternateObj = document.ResolveReference(altRef);
 
@@ -189,8 +189,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         }
 
         // Get the tint transform function (index 3)
-        PdfObject? tintTransformObj = csArray[3];
-        PdfFunction? tintTransform = document is not null
+        var tintTransformObj = csArray[3];
+        var tintTransform = document is not null
             ? PdfFunction.Create(tintTransformObj, document)
             : null;
 
@@ -198,12 +198,12 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         if (color.Count == 1)
         {
-            double tint = color[0];
+            var tint = color[0];
 
             // Try to use the tint transform function
             if (tintTransform is not null)
             {
-                double[] result = tintTransform.Evaluate([tint]);
+                var result = tintTransform.Evaluate([tint]);
                 PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
 
                 if (result.Length >= 3)
@@ -247,19 +247,19 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (colorantName == "Black" || colorantName == "All" || colorantName == "None")
         {
             // For Black/All separations: tint=1 means black, tint=0 means white
-            double value = 1.0 - tint;
+            var value = 1.0 - tint;
             color = [value, value, value];
             colorSpaceName = "DeviceRGB";
         }
         else if (altSpace is "DeviceRGB" or "CalRGB")
         {
-            double value = 1.0 - tint;
+            var value = 1.0 - tint;
             color = [value, value, value];
             colorSpaceName = "DeviceRGB";
         }
         else if (altSpace is "DeviceGray" or "CalGray")
         {
-            double value = 1.0 - tint;
+            var value = 1.0 - tint;
             color = [value];
             colorSpaceName = "DeviceGray";
         }
@@ -270,7 +270,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         }
         else
         {
-            double value = 1.0 - tint;
+            var value = 1.0 - tint;
             color = [value, value, value];
             colorSpaceName = "DeviceRGB";
         }

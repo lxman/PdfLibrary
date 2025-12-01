@@ -15,12 +15,12 @@ public static class GlyphList
     /// </summary>
     public static string? GetUnicode(string glyphName)
     {
-        if (_glyphToUnicode.TryGetValue(glyphName, out string? unicode))
+        if (_glyphToUnicode.TryGetValue(glyphName, out var unicode))
             return unicode;
 
         // Handle uniXXXX format (direct Unicode encoding)
         if (!glyphName.StartsWith("uni") || glyphName.Length != 7) return null;
-        return int.TryParse(glyphName[3..], NumberStyles.HexNumber, null, out int codePoint)
+        return int.TryParse(glyphName[3..], NumberStyles.HexNumber, null, out var codePoint)
             ? char.ConvertFromUtf32(codePoint)
             : null;
     }

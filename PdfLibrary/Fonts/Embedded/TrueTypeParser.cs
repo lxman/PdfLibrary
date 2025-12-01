@@ -36,7 +36,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <returns>Table data bytes, or null if table not found</returns>
         public byte[]? GetTable(string tag)
         {
-            if (!_tables.TryGetValue(tag, out TableRecord? record))
+            if (!_tables.TryGetValue(tag, out var record))
                 return null;
 
             try
@@ -73,16 +73,16 @@ namespace PdfLibrary.Fonts.Embedded
                 using var reader = new BigEndianReader(fontData);
 
                 // Read font header (TrueType or OpenType)
-                uint sfntVersion = reader.ReadUInt32();
+                var sfntVersion = reader.ReadUInt32();
 
                 // Check for TrueType (0x00010000) or OpenType (0x4F54544F = "OTTO") or 'true'
-                bool isValid = sfntVersion is 0x00010000 or 0x74727565 or 0x4F54544F;
+                var isValid = sfntVersion is 0x00010000 or 0x74727565 or 0x4F54544F;
 
                 if (!isValid)
                     return tables; // Not a valid font
 
                 // Read table directory header
-                ushort numTables = reader.ReadUShort();
+                var numTables = reader.ReadUShort();
                 reader.ReadUShort(); // searchRange
                 reader.ReadUShort(); // entrySelector
                 reader.ReadUShort(); // rangeShift
@@ -118,7 +118,7 @@ namespace PdfLibrary.Fonts.Embedded
             try
             {
                 var parser = new TrueTypeParser(fontData);
-                byte[]? postData = parser.GetTable("post");
+                var postData = parser.GetTable("post");
                 return postData is not null ? new PostTable(postData) : null;
             }
             catch
@@ -135,7 +135,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <returns>Glyph name, or null if not found</returns>
         public static string? GetGlyphName(byte[] fontData, int glyphId)
         {
-            PostTable? postTable = ParsePostTable(fontData);
+            var postTable = ParsePostTable(fontData);
             return postTable?.GetGlyphName(glyphId);
         }
 
@@ -144,12 +144,12 @@ namespace PdfLibrary.Fonts.Embedded
         /// </summary>
         public static Dictionary<int, string>? GetAllGlyphNames(byte[] fontData)
         {
-            PostTable? postTable = ParsePostTable(fontData);
+            var postTable = ParsePostTable(fontData);
             if (postTable is null)
                 return null;
 
             var result = new Dictionary<int, string>();
-            foreach (KeyValuePair<int, string> kvp in postTable.GetAllGlyphNames())
+            foreach (var kvp in postTable.GetAllGlyphNames())
             {
                 result[kvp.Key] = kvp.Value;
             }
