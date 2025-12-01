@@ -10,10 +10,10 @@ public static class PdfFontMetrics
     /// </summary>
     public static double MeasureText(string text, string fontName, double fontSize)
     {
-        var widths = GetFontWidths(fontName);
+        int[] widths = GetFontWidths(fontName);
         double totalWidth = 0;
 
-        foreach (var c in text)
+        foreach (char c in text)
         {
             int charCode = c;
             if (charCode >= 0 && charCode < widths.Length)

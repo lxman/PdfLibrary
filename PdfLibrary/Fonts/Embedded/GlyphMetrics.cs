@@ -64,7 +64,7 @@ namespace PdfLibrary.Fonts.Embedded
             double fontSize,
             int unitsPerEm)
         {
-            var scale = fontSize / unitsPerEm;
+            double scale = fontSize / unitsPerEm;
             return (
                 AdvanceWidth * scale,
                 LeftSideBearing * scale,

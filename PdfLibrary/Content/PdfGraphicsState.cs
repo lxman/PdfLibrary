@@ -332,7 +332,7 @@ public class PdfGraphicsState
     /// </summary>
     public double GetCharacterAdvance(double characterWidth, bool isSpace)
     {
-        var advance = characterWidth * FontSize + CharacterSpacing;
+        double advance = characterWidth * FontSize + CharacterSpacing;
         if (isSpace)
             advance += WordSpacing;
         return advance * HorizontalScaling / 100.0;

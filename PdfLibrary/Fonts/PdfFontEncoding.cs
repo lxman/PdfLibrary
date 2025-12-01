@@ -32,13 +32,13 @@ internal class PdfFontEncoding
     public string DecodeCharacter(int charCode)
     {
         // Direct Unicode mapping
-        if (_codeToUnicode.TryGetValue(charCode, out var unicode))
+        if (_codeToUnicode.TryGetValue(charCode, out string? unicode))
             return unicode;
 
         // Try character name lookup
-        if (_codeToName.TryGetValue(charCode, out var charName))
+        if (_codeToName.TryGetValue(charCode, out string? charName))
         {
-            var unicodeFromName = GlyphList.GetUnicode(charName);
+            string? unicodeFromName = GlyphList.GetUnicode(charName);
             if (unicodeFromName is not null)
                 return unicodeFromName;
         }
@@ -58,7 +58,7 @@ internal class PdfFontEncoding
         _codeToName[charCode] = charName;
 
         // Also set Unicode if we can resolve it
-        var unicode = GlyphList.GetUnicode(charName);
+        string? unicode = GlyphList.GetUnicode(charName);
         if (unicode is not null)
             _codeToUnicode[charCode] = unicode;
     }
@@ -76,7 +76,7 @@ internal class PdfFontEncoding
     /// </summary>
     public string? GetGlyphName(int charCode)
     {
-        if (_codeToName.TryGetValue(charCode, out var name))
+        if (_codeToName.TryGetValue(charCode, out string? name))
             return name;
 
         // For standard ASCII, use the character itself as the glyph name
@@ -166,15 +166,15 @@ internal class PdfFontEncoding
     {
         // Get base encoding
         var baseName = "StandardEncoding";
-        if (dict.TryGetValue(new PdfName("BaseEncoding"), out var baseObj) && baseObj is PdfName basePdfName)
+        if (dict.TryGetValue(new PdfName("BaseEncoding"), out PdfObject baseObj) && baseObj is PdfName basePdfName)
         {
             baseName = basePdfName.Value;
         }
 
-        var encoding = baseEncoding ?? GetStandardEncoding(baseName);
+        PdfFontEncoding encoding = baseEncoding ?? GetStandardEncoding(baseName);
 
         // Apply differences
-        if (dict.TryGetValue(new PdfName("Differences"), out var diffObj) && diffObj is PdfArray differences)
+        if (dict.TryGetValue(new PdfName("Differences"), out PdfObject diffObj) && diffObj is PdfArray differences)
         {
             ApplyDifferences(encoding, differences);
         }
@@ -186,7 +186,7 @@ internal class PdfFontEncoding
     {
         var currentCode = 0;
 
-        foreach (var item in differences)
+        foreach (PdfObject item in differences)
         {
             if (item is PdfInteger code)
             {

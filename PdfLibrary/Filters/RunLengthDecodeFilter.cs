@@ -36,7 +36,7 @@ internal class RunLengthDecodeFilter : IStreamFilter
             else
             {
                 // Find literal sequence (no repeating bytes)
-                var literalStart = i;
+                int literalStart = i;
                 var literalLength = 0;
 
                 while (i < data.Length && literalLength < 128)
@@ -84,7 +84,7 @@ internal class RunLengthDecodeFilter : IStreamFilter
 
         while (i < data.Length)
         {
-            var length = data[i++];
+            byte length = data[i++];
 
             // Check for end-of-data marker
             if (length == 128)
@@ -93,7 +93,7 @@ internal class RunLengthDecodeFilter : IStreamFilter
             if (length <= 127)
             {
                 // Copy the next length+1 bytes literally
-                var literalCount = length + 1;
+                int literalCount = length + 1;
 
                 // Ensure we don't read past the end of data
                 if (i + literalCount > data.Length)
@@ -105,12 +105,12 @@ internal class RunLengthDecodeFilter : IStreamFilter
             else // length is 129-255
             {
                 // Repeat the next byte (257 - length) times
-                var repeatCount = 257 - length;
+                int repeatCount = 257 - length;
 
                 if (i >= data.Length)
                     break;
 
-                var repeatByte = data[i++];
+                byte repeatByte = data[i++];
 
                 for (var j = 0; j < repeatCount; j++)
                 {

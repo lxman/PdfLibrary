@@ -32,7 +32,7 @@ internal class DctDecodeFilter : IStreamFilter
         try
         {
             // Check if this is a CMYK JPEG
-            var (isCmyk, isAdobeYcck, colorTransform) = AnalyzeJpegColorSpace(data);
+            (bool isCmyk, bool isAdobeYcck, int colorTransform) = AnalyzeJpegColorSpace(data);
 
             if (isCmyk)
             {
@@ -41,8 +41,8 @@ internal class DctDecodeFilter : IStreamFilter
             }
 
             // For RGB/Grayscale JPEGs, use ImageSharp (faster for simple cases)
-            using var image = Image.Load(data);
-            using var normalRgbImage = image.CloneAs<Rgb24>();
+            using Image image = Image.Load(data);
+            using Image<Rgb24> normalRgbImage = image.CloneAs<Rgb24>();
             var normalRgbPixels = new byte[normalRgbImage.Width * normalRgbImage.Height * 3];
             normalRgbImage.CopyPixelDataTo(normalRgbPixels);
 
@@ -64,12 +64,12 @@ internal class DctDecodeFilter : IStreamFilter
         decoder.SetInput(data);
         decoder.Identify();
 
-        var width = decoder.Width;
-        var height = decoder.Height;
-        var numberOfComponents = decoder.NumberOfComponents;
+        int width = decoder.Width;
+        int height = decoder.Height;
+        int numberOfComponents = decoder.NumberOfComponents;
 
         // Allocate buffer for raw component data (CMYK or YCCK)
-        var bufferSize = width * height * numberOfComponents;
+        int bufferSize = width * height * numberOfComponents;
         var componentData = new byte[bufferSize];
 
         // Decode to raw component data without color conversion
@@ -78,7 +78,7 @@ internal class DctDecodeFilter : IStreamFilter
 
         // Output buffer for CMYK data (4 components per pixel)
         var cmykPixels = new byte[width * height * 4];
-        var pixelCount = width * height;
+        int pixelCount = width * height;
 
         if (isAdobeYcck && colorTransform == 2)
         {
@@ -94,20 +94,20 @@ internal class DctDecodeFilter : IStreamFilter
 
             for (var i = 0; i < pixelCount; i++)
             {
-                var srcIdx = i * 4;
-                var dstIdx = i * 4;
+                int srcIdx = i * 4;
+                int dstIdx = i * 4;
 
                 // Raw YCCK components from JPEG
                 float y = componentData[srcIdx];
                 float cb = componentData[srcIdx + 1];
                 float cr = componentData[srcIdx + 2];
-                var kStored = componentData[srcIdx + 3];
+                byte kStored = componentData[srcIdx + 3];
 
                 // YCbCr → RGB (ITU-R BT.601)
                 // These are the INVERTED CMY values
-                var rPrime = y + 1.402f * (cr - 128);
-                var gPrime = y - 0.344136f * (cb - 128) - 0.714136f * (cr - 128);
-                var bPrime = y + 1.772f * (cb - 128);
+                float rPrime = y + 1.402f * (cr - 128);
+                float gPrime = y - 0.344136f * (cb - 128) - 0.714136f * (cr - 128);
+                float bPrime = y + 1.772f * (cb - 128);
 
                 // Invert R',G',B' to get actual C,M,Y
                 // K is stored as-is (no inversion)
@@ -121,17 +121,17 @@ internal class DctDecodeFilter : IStreamFilter
         {
             // Pure CMYK (colorTransform = 0 or no Adobe marker)
             // Adobe CMYK often has inverted values
-            var isInverted = colorTransform == 0;
+            bool isInverted = colorTransform == 0;
 
             for (var i = 0; i < pixelCount; i++)
             {
-                var srcIdx = i * 4;
-                var dstIdx = i * 4;
+                int srcIdx = i * 4;
+                int dstIdx = i * 4;
 
-                var c = componentData[srcIdx];
-                var m = componentData[srcIdx + 1];
-                var y = componentData[srcIdx + 2];
-                var k = componentData[srcIdx + 3];
+                byte c = componentData[srcIdx];
+                byte m = componentData[srcIdx + 1];
+                byte y = componentData[srcIdx + 2];
+                byte k = componentData[srcIdx + 3];
 
                 if (isInverted)
                 {
@@ -179,7 +179,7 @@ internal class DctDecodeFilter : IStreamFilter
         {
             if (data[pos] != 0xFF) break;
 
-            var marker = data[pos + 1];
+            byte marker = data[pos + 1];
             if (marker == 0xD9) break; // EOI
             if (marker == 0xDA) break; // SOS - start of scan, stop searching
 
@@ -192,7 +192,7 @@ internal class DctDecodeFilter : IStreamFilter
 
             // Get segment length (big-endian)
             if (pos + 3 >= data.Length) break;
-            var length = (data[pos + 2] << 8) | data[pos + 3];
+            int length = (data[pos + 2] << 8) | data[pos + 3];
             if (length < 2) break;
 
             // Check for Adobe APP14 marker (FF EE)
@@ -222,10 +222,10 @@ internal class DctDecodeFilter : IStreamFilter
         }
 
         // Determine if CMYK
-        var isCmyk = numComponents == 4;
+        bool isCmyk = numComponents == 4;
 
         // Determine if Adobe YCCK (colorTransform == 2)
-        var isAdobeYcck = isCmyk && hasAdobeMarker && adobeColorTransform == 2;
+        bool isAdobeYcck = isCmyk && hasAdobeMarker && adobeColorTransform == 2;
 
         return (isCmyk, isAdobeYcck, hasAdobeMarker ? adobeColorTransform : -1);
     }

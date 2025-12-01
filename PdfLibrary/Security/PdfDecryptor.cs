@@ -102,11 +102,11 @@ internal class PdfDecryptor
         // Extract encryption parameters
         _version = GetIntValue(encryptDict, "V", 0);
         _revision = GetIntValue(encryptDict, "R", 2);
-        var keyLengthBits = GetIntValue(encryptDict, "Length", 40);
+        int keyLengthBits = GetIntValue(encryptDict, "Length", 40);
         _keyLengthBytes = keyLengthBits / 8;
 
         // Permissions
-        var pValue = GetIntValue(encryptDict, "P", 0);
+        int pValue = GetIntValue(encryptDict, "P", 0);
         Permissions = new PdfPermissions(pValue);
 
         // Metadata encryption (default true for V<4, configurable for V>=4)
@@ -137,10 +137,10 @@ internal class PdfDecryptor
         }
 
         // Extract required values
-        var oValue = GetBytesValue(encryptDict, "O")
-                     ?? throw new PdfSecurityException("Missing /O value in encryption dictionary");
-        var uValue = GetBytesValue(encryptDict, "U")
-                     ?? throw new PdfSecurityException("Missing /U value in encryption dictionary");
+        byte[] oValue = GetBytesValue(encryptDict, "O")
+                        ?? throw new PdfSecurityException("Missing /O value in encryption dictionary");
+        byte[] uValue = GetBytesValue(encryptDict, "U")
+                        ?? throw new PdfSecurityException("Missing /U value in encryption dictionary");
 
         // V=5 has additional values
         byte[]? oeValue = null;
@@ -186,15 +186,15 @@ internal class PdfDecryptor
     private PdfEncryptionMethod DetermineV4Method(PdfDictionary encryptDict)
     {
         // Check crypt filters
-        if (!encryptDict.TryGetValue(new PdfName("CF"), out var cfObj) || cfObj is not PdfDictionary cf)
+        if (!encryptDict.TryGetValue(new PdfName("CF"), out PdfObject cfObj) || cfObj is not PdfDictionary cf)
             return PdfEncryptionMethod.Rc4_128; // Default to RC4
 
         // Check the StdCF filter (or whatever StmF points to)
-        var filterName = GetNameValue(encryptDict, "StmF", "StdCF");
-        if (!cf.TryGetValue(new PdfName(filterName), out var filterObj) || filterObj is not PdfDictionary filter)
+        string filterName = GetNameValue(encryptDict, "StmF", "StdCF");
+        if (!cf.TryGetValue(new PdfName(filterName), out PdfObject filterObj) || filterObj is not PdfDictionary filter)
             return PdfEncryptionMethod.Rc4_128;
 
-        var cfm = GetNameValue(filter, "CFM", "V2");
+        string cfm = GetNameValue(filter, "CFM", "V2");
         return cfm switch
         {
             "AESV2" => PdfEncryptionMethod.Aes128,
@@ -215,7 +215,7 @@ internal class PdfDecryptor
         }
 
         // V1-V4: Try user password first, then owner password
-        var key = ComputeEncryptionKeyV1V4(password, oValue, permissions);
+        byte[] key = ComputeEncryptionKeyV1V4(password, oValue, permissions);
 
         if (VerifyUserPasswordV1V4(key, uValue))
         {
@@ -224,7 +224,7 @@ internal class PdfDecryptor
         }
 
         // Try as owner password
-        var userPassword = RecoverUserPasswordFromOwner(password, oValue);
+        byte[] userPassword = RecoverUserPasswordFromOwner(password, oValue);
         key = ComputeEncryptionKeyV1V4(Encoding.Latin1.GetString(userPassword), oValue, permissions);
 
         if (VerifyUserPasswordV1V4(key, uValue))
@@ -254,7 +254,7 @@ internal class PdfDecryptor
     private byte[] AuthenticateV5(string password, byte[] oValue, byte[] uValue,
         byte[] oeValue, byte[] ueValue, byte[] permsValue)
     {
-        var passwordBytes = TruncatePassword(password);
+        byte[] passwordBytes = TruncatePassword(password);
 
         // Try user password first
         // User validation salt is bytes 32-39 of U
@@ -263,12 +263,12 @@ internal class PdfDecryptor
         Array.Copy(uValue, 32, userValidationSalt, 0, 8);
         Array.Copy(uValue, 40, userKeySalt, 0, 8);
 
-        var hash = ComputeHashV5(passwordBytes, userValidationSalt, null);
+        byte[] hash = ComputeHashV5(passwordBytes, userValidationSalt, null);
         if (CompareBytes(hash, uValue, 32))
         {
             // User password is correct - decrypt the file encryption key
             IsUserPassword = true;
-            var keyHash = ComputeHashV5(passwordBytes, userKeySalt, null);
+            byte[] keyHash = ComputeHashV5(passwordBytes, userKeySalt, null);
             return AesCipher.Decrypt(keyHash, PrependIV(ueValue));
         }
 
@@ -284,7 +284,7 @@ internal class PdfDecryptor
         {
             // Owner password is correct
             IsUserPassword = false;
-            var keyHash = ComputeHashV5(passwordBytes, ownerKeySalt, uValue);
+            byte[] keyHash = ComputeHashV5(passwordBytes, ownerKeySalt, uValue);
             return AesCipher.Decrypt(keyHash, PrependIV(oeValue));
         }
 
@@ -304,7 +304,7 @@ internal class PdfDecryptor
         if (userKey != null)
             sha256.AppendData(userKey);
 
-        var k = sha256.GetHashAndReset();
+        byte[] k = sha256.GetHashAndReset();
 
         // For R=6, perform additional rounds
         // (Simplified version - full implementation needs 64+ rounds with AES)
@@ -349,7 +349,7 @@ internal class PdfDecryptor
     /// </summary>
     private byte[] DecryptRc4(byte[] data, int objectNumber, int generationNumber)
     {
-        var objectKey = ComputeObjectKeyRc4(objectNumber, generationNumber);
+        byte[] objectKey = ComputeObjectKeyRc4(objectNumber, generationNumber);
         var rc4 = new RC4(objectKey);
         return rc4.ProcessCopy(data);
     }
@@ -362,7 +362,7 @@ internal class PdfDecryptor
         if (data.Length < 16)
             return data; // Too short for IV
 
-        var objectKey = ComputeObjectKeyAes128(objectNumber, generationNumber);
+        byte[] objectKey = ComputeObjectKeyAes128(objectNumber, generationNumber);
         return AesCipher.Decrypt(objectKey, data);
     }
 
@@ -384,7 +384,7 @@ internal class PdfDecryptor
     /// </summary>
     private byte[] ComputeObjectKeyRc4(int objectNumber, int generationNumber)
     {
-        var keyInputLength = _encryptionKey.Length + 5;
+        int keyInputLength = _encryptionKey.Length + 5;
         var keyInput = new byte[keyInputLength];
 
         Array.Copy(_encryptionKey, 0, keyInput, 0, _encryptionKey.Length);
@@ -394,9 +394,9 @@ internal class PdfDecryptor
         keyInput[_encryptionKey.Length + 3] = (byte)(generationNumber & 0xFF);
         keyInput[_encryptionKey.Length + 4] = (byte)((generationNumber >> 8) & 0xFF);
 
-        var hash = MD5.HashData(keyInput);
+        byte[] hash = MD5.HashData(keyInput);
 
-        var objectKeyLength = Math.Min(_keyLengthBytes + 5, 16);
+        int objectKeyLength = Math.Min(_keyLengthBytes + 5, 16);
         var objectKey = new byte[objectKeyLength];
         Array.Copy(hash, objectKey, objectKeyLength);
 
@@ -410,7 +410,7 @@ internal class PdfDecryptor
     private byte[] ComputeObjectKeyAes128(int objectNumber, int generationNumber)
     {
         // Same as RC4 but with "sAlT" marker appended
-        var keyInputLength = _encryptionKey.Length + 5 + 4;
+        int keyInputLength = _encryptionKey.Length + 5 + 4;
         var keyInput = new byte[keyInputLength];
 
         Array.Copy(_encryptionKey, 0, keyInput, 0, _encryptionKey.Length);
@@ -421,7 +421,7 @@ internal class PdfDecryptor
         keyInput[_encryptionKey.Length + 4] = (byte)((generationNumber >> 8) & 0xFF);
         Array.Copy(AesSaltMarker, 0, keyInput, _encryptionKey.Length + 5, 4);
 
-        var hash = MD5.HashData(keyInput);
+        byte[] hash = MD5.HashData(keyInput);
 
         // AES-128 always uses 16 byte key
         return hash;
@@ -435,7 +435,7 @@ internal class PdfDecryptor
     {
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
 
-        var paddedPassword = PadPassword(password);
+        byte[] paddedPassword = PadPassword(password);
         md5.AppendData(paddedPassword);
         md5.AppendData(oValue);
 
@@ -449,7 +449,7 @@ internal class PdfDecryptor
             md5.AppendData([0xFF, 0xFF, 0xFF, 0xFF]);
         }
 
-        var hash = md5.GetHashAndReset();
+        byte[] hash = md5.GetHashAndReset();
 
         // Revision 3+: 50 additional MD5 iterations
         if (_revision >= 3)
@@ -497,7 +497,7 @@ internal class PdfDecryptor
             }
         }
 
-        var compareLength = _revision == 2 ? 32 : 16;
+        int compareLength = _revision == 2 ? 32 : 16;
         return CompareBytes(computedU, uValue, compareLength);
     }
 
@@ -507,8 +507,8 @@ internal class PdfDecryptor
     /// </summary>
     private byte[] RecoverUserPasswordFromOwner(string ownerPassword, byte[] oValue)
     {
-        var paddedPassword = PadPassword(ownerPassword);
-        var hash = MD5.HashData(paddedPassword);
+        byte[] paddedPassword = PadPassword(ownerPassword);
+        byte[] hash = MD5.HashData(paddedPassword);
 
         if (_revision >= 3)
         {
@@ -552,9 +552,9 @@ internal class PdfDecryptor
     private static byte[] PadPassword(string password)
     {
         var result = new byte[32];
-        var passwordBytes = Encoding.Latin1.GetBytes(password ?? "");
+        byte[] passwordBytes = Encoding.Latin1.GetBytes(password ?? "");
 
-        var copyLength = Math.Min(passwordBytes.Length, 32);
+        int copyLength = Math.Min(passwordBytes.Length, 32);
         Array.Copy(passwordBytes, result, copyLength);
 
         if (copyLength < 32)
@@ -570,7 +570,7 @@ internal class PdfDecryptor
     /// </summary>
     private static byte[] TruncatePassword(string password)
     {
-        var passwordBytes = Encoding.UTF8.GetBytes(password ?? "");
+        byte[] passwordBytes = Encoding.UTF8.GetBytes(password ?? "");
         if (passwordBytes.Length <= 127)
             return passwordBytes;
 
@@ -597,28 +597,28 @@ internal class PdfDecryptor
 
     private static int GetIntValue(PdfDictionary dict, string key, int defaultValue)
     {
-        if (dict.TryGetValue(new PdfName(key), out var obj) && obj is PdfInteger intVal)
+        if (dict.TryGetValue(new PdfName(key), out PdfObject obj) && obj is PdfInteger intVal)
             return intVal.Value;
         return defaultValue;
     }
 
     private static bool GetBoolValue(PdfDictionary dict, string key, bool defaultValue)
     {
-        if (dict.TryGetValue(new PdfName(key), out var obj) && obj is PdfBoolean boolVal)
+        if (dict.TryGetValue(new PdfName(key), out PdfObject obj) && obj is PdfBoolean boolVal)
             return boolVal.Value;
         return defaultValue;
     }
 
     private static string GetNameValue(PdfDictionary dict, string key, string defaultValue)
     {
-        if (dict.TryGetValue(new PdfName(key), out var obj) && obj is PdfName nameVal)
+        if (dict.TryGetValue(new PdfName(key), out PdfObject obj) && obj is PdfName nameVal)
             return nameVal.Value;
         return defaultValue;
     }
 
     private static byte[]? GetBytesValue(PdfDictionary dict, string key)
     {
-        if (dict.TryGetValue(new PdfName(key), out var obj) && obj is PdfString strVal)
+        if (dict.TryGetValue(new PdfName(key), out PdfObject obj) && obj is PdfString strVal)
             return strVal.Bytes;
         return null;
     }

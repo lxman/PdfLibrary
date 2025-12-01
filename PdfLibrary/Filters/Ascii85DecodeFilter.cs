@@ -19,7 +19,7 @@ internal class Ascii85DecodeFilter : IStreamFilter
         var count = 0;
         uint tuple = 0;
 
-        foreach (var b in data)
+        foreach (byte b in data)
         {
             tuple = (tuple << 8) | b;
             count++;
@@ -102,7 +102,7 @@ internal class Ascii85DecodeFilter : IStreamFilter
         if (count <= 0) return output.ToArray();
         {
             // Add padding
-            for (var i = count; i < 5; i++)
+            for (int i = count; i < 5; i++)
             {
                 tuple = tuple * 85 + 84; // 'u' - 33 = 84
             }

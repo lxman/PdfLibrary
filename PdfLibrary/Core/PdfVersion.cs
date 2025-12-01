@@ -44,15 +44,15 @@ public sealed class PdfVersion : IComparable<PdfVersion>, IEquatable<PdfVersion>
             throw new ArgumentException("Version string cannot be null or empty", nameof(version));
 
         // Remove %PDF- prefix if present
-        var versionStr = version.Replace("%PDF-", "").Trim();
+        string versionStr = version.Replace("%PDF-", "").Trim();
 
-        var parts = versionStr.Split('.');
+        string[] parts = versionStr.Split('.');
         if (parts.Length != 2)
             throw new FormatException($"Invalid PDF version format: {version}");
 
-        if (!int.TryParse(parts[0], out var major))
+        if (!int.TryParse(parts[0], out int major))
             throw new FormatException($"Invalid major version: {parts[0]}");
-        return !int.TryParse(parts[1], out var minor)
+        return !int.TryParse(parts[1], out int minor)
             ? throw new FormatException($"Invalid minor version: {parts[1]}")
             : new PdfVersion(major, minor);
     }
@@ -90,7 +90,7 @@ public sealed class PdfVersion : IComparable<PdfVersion>, IEquatable<PdfVersion>
     {
         if (other is null) return 1;
 
-        var majorComparison = Major.CompareTo(other.Major);
+        int majorComparison = Major.CompareTo(other.Major);
         return majorComparison != 0
             ? majorComparison
             : Minor.CompareTo(other.Minor);

@@ -30,7 +30,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <returns>Scaled point coordinates</returns>
         public (double x, double y) Scale(double fontSize, int unitsPerEm)
         {
-            var scale = fontSize / unitsPerEm;
+            double scale = fontSize / unitsPerEm;
             return (X * scale, Y * scale);
         }
 
@@ -39,8 +39,8 @@ namespace PdfLibrary.Fonts.Embedded
         /// </summary>
         public ContourPoint Transform(double a, double b, double c, double d, double e, double f)
         {
-            var newX = a * X + c * Y + e;
-            var newY = b * X + d * Y + f;
+            double newX = a * X + c * Y + e;
+            double newY = b * X + d * Y + f;
             return new ContourPoint(newX, newY, OnCurve);
         }
 

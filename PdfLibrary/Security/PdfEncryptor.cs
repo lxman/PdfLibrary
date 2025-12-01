@@ -114,7 +114,7 @@ internal class PdfEncryptor
 
         // Compute permissions value with required bits set
         // Bits 1-2 must be 0, bits 7-8 must be 1, bits 13-32 must be 1
-        var pValue = (int)permissions | unchecked((int)0xFFFFF0C0);
+        int pValue = (int)permissions | unchecked((int)0xFFFFF0C0);
         Permissions = new PdfPermissions(pValue);
 
         if (Version == 5)
@@ -181,13 +181,13 @@ internal class PdfEncryptor
         string userPassword, string ownerPassword, int permissions)
     {
         // Step 1: Compute O value (Algorithm 3)
-        var oValue = ComputeOValueV1V4(userPassword, ownerPassword);
+        byte[] oValue = ComputeOValueV1V4(userPassword, ownerPassword);
 
         // Step 2: Compute encryption key (Algorithm 2)
-        var encryptionKey = ComputeEncryptionKeyV1V4(userPassword, oValue, permissions);
+        byte[] encryptionKey = ComputeEncryptionKeyV1V4(userPassword, oValue, permissions);
 
         // Step 3: Compute U value (Algorithm 4/5)
-        var uValue = ComputeUValueV1V4(encryptionKey);
+        byte[] uValue = ComputeUValueV1V4(encryptionKey);
 
         return (oValue, uValue, encryptionKey);
     }
@@ -199,10 +199,10 @@ internal class PdfEncryptor
     private byte[] ComputeOValueV1V4(string userPassword, string ownerPassword)
     {
         // Step a: Pad owner password
-        var paddedOwner = PadPassword(ownerPassword);
+        byte[] paddedOwner = PadPassword(ownerPassword);
 
         // Step b: MD5 hash
-        var hash = MD5.HashData(paddedOwner);
+        byte[] hash = MD5.HashData(paddedOwner);
 
         // Step c: For R=3+, do 50 additional iterations
         if (Revision >= 3)
@@ -218,7 +218,7 @@ internal class PdfEncryptor
         Array.Copy(hash, rc4Key, _keyLengthBytes);
 
         // Step e: Pad user password
-        var paddedUser = PadPassword(userPassword);
+        byte[] paddedUser = PadPassword(userPassword);
 
         // Step f: Encrypt with RC4
         byte[] oValue;
@@ -257,7 +257,7 @@ internal class PdfEncryptor
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
 
         // Step a-b: Pad password
-        var paddedPassword = PadPassword(userPassword);
+        byte[] paddedPassword = PadPassword(userPassword);
         md5.AppendData(paddedPassword);
 
         // Step c: O value
@@ -279,7 +279,7 @@ internal class PdfEncryptor
         // Step f: For R=4, if metadata not encrypted, add 0xFFFFFFFF
         // (We always encrypt metadata for simplicity)
 
-        var hash = md5.GetHashAndReset();
+        byte[] hash = md5.GetHashAndReset();
 
         // Step g: For R=3+, do 50 additional iterations
         if (Revision >= 3)
@@ -314,7 +314,7 @@ internal class PdfEncryptor
         using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
         md5.AppendData(PasswordPadding);
         md5.AppendData(_documentId);
-        var hash = md5.GetHashAndReset();
+        byte[] hash = md5.GetHashAndReset();
 
         // Step b-c: 20 RC4 iterations
         for (var i = 0; i < 20; i++)
@@ -339,7 +339,7 @@ internal class PdfEncryptor
     /// </summary>
     private byte[] EncryptRc4(byte[] data, int objectNumber, int generationNumber)
     {
-        var objectKey = ComputeObjectKeyRc4(objectNumber, generationNumber);
+        byte[] objectKey = ComputeObjectKeyRc4(objectNumber, generationNumber);
         var rc4 = new RC4(objectKey);
         return rc4.ProcessCopy(data);
     }
@@ -349,7 +349,7 @@ internal class PdfEncryptor
     /// </summary>
     private byte[] ComputeObjectKeyRc4(int objectNumber, int generationNumber)
     {
-        var keyInputLength = _fileEncryptionKey.Length + 5;
+        int keyInputLength = _fileEncryptionKey.Length + 5;
         var keyInput = new byte[keyInputLength];
 
         Array.Copy(_fileEncryptionKey, 0, keyInput, 0, _fileEncryptionKey.Length);
@@ -359,9 +359,9 @@ internal class PdfEncryptor
         keyInput[_fileEncryptionKey.Length + 3] = (byte)(generationNumber & 0xFF);
         keyInput[_fileEncryptionKey.Length + 4] = (byte)((generationNumber >> 8) & 0xFF);
 
-        var hash = MD5.HashData(keyInput);
+        byte[] hash = MD5.HashData(keyInput);
 
-        var objectKeyLength = Math.Min(_keyLengthBytes + 5, 16);
+        int objectKeyLength = Math.Min(_keyLengthBytes + 5, 16);
         var objectKey = new byte[objectKeyLength];
         Array.Copy(hash, objectKey, objectKeyLength);
 
@@ -375,7 +375,7 @@ internal class PdfEncryptor
     /// </summary>
     private byte[] EncryptAes128(byte[] data, int objectNumber, int generationNumber)
     {
-        var objectKey = ComputeObjectKeyAes128(objectNumber, generationNumber);
+        byte[] objectKey = ComputeObjectKeyAes128(objectNumber, generationNumber);
         return AesCipher.Encrypt(objectKey, data);
     }
 
@@ -385,7 +385,7 @@ internal class PdfEncryptor
     private byte[] ComputeObjectKeyAes128(int objectNumber, int generationNumber)
     {
         // Same as RC4 but with "sAlT" marker
-        var keyInputLength = _fileEncryptionKey.Length + 5 + 4;
+        int keyInputLength = _fileEncryptionKey.Length + 5 + 4;
         var keyInput = new byte[keyInputLength];
 
         Array.Copy(_fileEncryptionKey, 0, keyInput, 0, _fileEncryptionKey.Length);
@@ -418,8 +418,8 @@ internal class PdfEncryptor
         RandomNumberGenerator.Fill(fileKey);
 
         // Truncate passwords to 127 bytes UTF-8
-        var userPwd = TruncatePasswordV5(userPassword);
-        var ownerPwd = TruncatePasswordV5(ownerPassword);
+        byte[] userPwd = TruncatePasswordV5(userPassword);
+        byte[] ownerPwd = TruncatePasswordV5(ownerPassword);
 
         // Generate random salts (8 bytes each)
         var userValidationSalt = new byte[8];
@@ -432,30 +432,30 @@ internal class PdfEncryptor
         RandomNumberGenerator.Fill(ownerKeySalt);
 
         // Compute U value (48 bytes): hash(32) + validationSalt(8) + keySalt(8)
-        var userHash = ComputeHashV5(userPwd, userValidationSalt, null);
+        byte[] userHash = ComputeHashV5(userPwd, userValidationSalt, null);
         var uValue = new byte[48];
         Array.Copy(userHash, 0, uValue, 0, 32);
         Array.Copy(userValidationSalt, 0, uValue, 32, 8);
         Array.Copy(userKeySalt, 0, uValue, 40, 8);
 
         // Compute UE value (32 bytes): AES-256-CBC encrypt fileKey with hash(pwd + keySalt)
-        var userKeyHash = ComputeHashV5(userPwd, userKeySalt, null);
-        var ueValue = AesCipher.EncryptNoPrependIV(userKeyHash, fileKey, new byte[16]);
+        byte[] userKeyHash = ComputeHashV5(userPwd, userKeySalt, null);
+        byte[] ueValue = AesCipher.EncryptNoPrependIV(userKeyHash, fileKey, new byte[16]);
 
         // Compute O value (48 bytes): hash(32) + validationSalt(8) + keySalt(8)
         // Note: Owner hash includes U value
-        var ownerHash = ComputeHashV5(ownerPwd, ownerValidationSalt, uValue);
+        byte[] ownerHash = ComputeHashV5(ownerPwd, ownerValidationSalt, uValue);
         var oValue = new byte[48];
         Array.Copy(ownerHash, 0, oValue, 0, 32);
         Array.Copy(ownerValidationSalt, 0, oValue, 32, 8);
         Array.Copy(ownerKeySalt, 0, oValue, 40, 8);
 
         // Compute OE value (32 bytes)
-        var ownerKeyHash = ComputeHashV5(ownerPwd, ownerKeySalt, uValue);
-        var oeValue = AesCipher.EncryptNoPrependIV(ownerKeyHash, fileKey, new byte[16]);
+        byte[] ownerKeyHash = ComputeHashV5(ownerPwd, ownerKeySalt, uValue);
+        byte[] oeValue = AesCipher.EncryptNoPrependIV(ownerKeyHash, fileKey, new byte[16]);
 
         // Compute Perms value (16 bytes)
-        var permsValue = ComputePermsValueV5(fileKey, permissions);
+        byte[] permsValue = ComputePermsValueV5(fileKey, permissions);
 
         return (fileKey, oValue, uValue, oeValue, ueValue, permsValue);
     }
@@ -473,7 +473,7 @@ internal class PdfEncryptor
         if (userKey != null)
             sha256.AppendData(userKey);
 
-        var k = sha256.GetHashAndReset();
+        byte[] k = sha256.GetHashAndReset();
 
         // R=6 requires additional rounds with AES-CBC
         // Full implementation of Algorithm 2.B
@@ -481,11 +481,11 @@ internal class PdfEncryptor
         while (round < 64 || round < k[^1] + 32)
         {
             // K1 = password + K + userKey (repeated 64 times)
-            var k1Size = password.Length + k.Length + (userKey?.Length ?? 0);
+            int k1Size = password.Length + k.Length + (userKey?.Length ?? 0);
             var k1 = new byte[k1Size * 64];
             for (var i = 0; i < 64; i++)
             {
-                var offset = i * k1Size;
+                int offset = i * k1Size;
                 Array.Copy(password, 0, k1, offset, password.Length);
                 Array.Copy(k, 0, k1, offset + password.Length, k.Length);
                 if (userKey != null)
@@ -498,7 +498,7 @@ internal class PdfEncryptor
             Array.Copy(k, 0, aesKey, 0, 16);
             Array.Copy(k, 16, aesIv, 0, 16);
 
-            var e = AesCipher.EncryptNoPrependIV(aesKey, k1, aesIv);
+            byte[] e = AesCipher.EncryptNoPrependIV(aesKey, k1, aesIv);
 
             // Take first 16 bytes of E as big-endian number mod 3
             var sum = 0;
@@ -566,7 +566,7 @@ internal class PdfEncryptor
         aes.Mode = CipherMode.ECB;
         aes.Padding = PaddingMode.None;
 
-        using var encryptor = aes.CreateEncryptor();
+        using ICryptoTransform encryptor = aes.CreateEncryptor();
         return encryptor.TransformFinalBlock(perms, 0, 16);
     }
 
@@ -585,9 +585,9 @@ internal class PdfEncryptor
     private static byte[] PadPassword(string password)
     {
         var result = new byte[32];
-        var passwordBytes = Encoding.Latin1.GetBytes(password ?? "");
+        byte[] passwordBytes = Encoding.Latin1.GetBytes(password ?? "");
 
-        var copyLength = Math.Min(passwordBytes.Length, 32);
+        int copyLength = Math.Min(passwordBytes.Length, 32);
         Array.Copy(passwordBytes, result, copyLength);
 
         if (copyLength < 32)
@@ -603,7 +603,7 @@ internal class PdfEncryptor
     /// </summary>
     private static byte[] TruncatePasswordV5(string password)
     {
-        var passwordBytes = Encoding.UTF8.GetBytes(password ?? "");
+        byte[] passwordBytes = Encoding.UTF8.GetBytes(password ?? "");
         if (passwordBytes.Length <= 127)
             return passwordBytes;
 

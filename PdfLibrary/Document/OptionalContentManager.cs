@@ -26,7 +26,7 @@ internal class OptionalContentManager
             return;
 
         // Get the document catalog
-        var catalog = document.GetCatalog();
+        PdfCatalog? catalog = document.GetCatalog();
         if (catalog is null)
         {
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: No catalog found");
@@ -34,7 +34,7 @@ internal class OptionalContentManager
         }
 
         // Look for /OCProperties in the catalog
-        if (!catalog.Dictionary.TryGetValue(new PdfName("OCProperties"), out var ocPropsObj))
+        if (!catalog.Dictionary.TryGetValue(new PdfName("OCProperties"), out PdfObject ocPropsObj))
         {
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: No /OCProperties in catalog");
             return;
@@ -50,7 +50,7 @@ internal class OptionalContentManager
 
         // Get the default configuration dictionary /OCProperties/D
         // Per PDF spec ISO 32000-1:2008 section 8.11.4.3
-        if (!ocProperties.TryGetValue(new PdfName("D"), out var dObj) || dObj is not PdfDictionary defaultConfig)
+        if (!ocProperties.TryGetValue(new PdfName("D"), out PdfObject dObj) || dObj is not PdfDictionary defaultConfig)
         {
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: No /D (default configuration) found");
             return;
@@ -62,7 +62,7 @@ internal class OptionalContentManager
         // If /BaseState is /ON (or missing), all OCGs are visible by default except those in /OFF
         // If /BaseState is /OFF, all OCGs are hidden by default except those in /ON
         var defaultVisible = true; // Default is /ON per spec
-        if (defaultConfig.TryGetValue(new PdfName("BaseState"), out var baseStateObj) && baseStateObj is PdfName baseState)
+        if (defaultConfig.TryGetValue(new PdfName("BaseState"), out PdfObject baseStateObj) && baseStateObj is PdfName baseState)
         {
             defaultVisible = baseState.Value != "OFF";
             PdfLogger.Log(LogCategory.Graphics, $"OptionalContentManager: /BaseState = {baseState.Value}, defaultVisible = {defaultVisible}");
@@ -76,10 +76,10 @@ internal class OptionalContentManager
         if (defaultVisible)
         {
             // BaseState is /ON - read /OFF array for OCGs that should be hidden
-            if (defaultConfig.TryGetValue(new PdfName("OFF"), out var offObj) && offObj is PdfArray offArray)
+            if (defaultConfig.TryGetValue(new PdfName("OFF"), out PdfObject offObj) && offObj is PdfArray offArray)
             {
                 PdfLogger.Log(LogCategory.Graphics, $"OptionalContentManager: Found /OFF array with {offArray.Count} items");
-                foreach (var item in offArray)
+                foreach (PdfObject item in offArray)
                 {
                     // Items are indirect references to OCG dictionaries
                     if (item is not PdfIndirectReference reference) continue;
@@ -100,15 +100,15 @@ internal class OptionalContentManager
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: /BaseState is /OFF - all OCGs hidden by default");
 
             // Get the /OCGs array which contains all OCGs in the document
-            if (ocProperties.TryGetValue(new PdfName("OCGs"), out var ocgsObj) && ocgsObj is PdfArray ocgsArray)
+            if (ocProperties.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj) && ocgsObj is PdfArray ocgsArray)
             {
                 HashSet<string> enabledOCGs = [];
 
                 // First, collect all enabled OCGs from /ON array
-                if (defaultConfig.TryGetValue(new PdfName("ON"), out var onObj) && onObj is PdfArray onArray)
+                if (defaultConfig.TryGetValue(new PdfName("ON"), out PdfObject onObj) && onObj is PdfArray onArray)
                 {
                     PdfLogger.Log(LogCategory.Graphics, $"OptionalContentManager: Found /ON array with {onArray.Count} items");
-                    foreach (var item in onArray)
+                    foreach (PdfObject item in onArray)
                     {
                         if (item is not PdfIndirectReference reference) continue;
                         var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
@@ -118,7 +118,7 @@ internal class OptionalContentManager
                 }
 
                 // Now disable all OCGs except those in /ON array
-                foreach (var ocg in ocgsArray)
+                foreach (PdfObject ocg in ocgsArray)
                 {
                     if (ocg is not PdfIndirectReference reference) continue;
                     var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
@@ -160,14 +160,14 @@ internal class OptionalContentManager
             {
                 // Check if this OCG is in the disabled set
                 var ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
-                var isDisabled = _disabledOCGs.Contains(ocgKey);
+                bool isDisabled = _disabledOCGs.Contains(ocgKey);
                 PdfLogger.Log(LogCategory.Graphics, $"  IsVisible: OCG reference {ocgKey}, disabled = {isDisabled}");
                 return !isDisabled;
             }
             // For OCMD dictionaries, we need to resolve the /OCGs entry
             case PdfDictionary ocmd:
             {
-                if (ocmd.TryGetValue(new PdfName("OCGs"), out var ocgsObj))
+                if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject ocgsObj))
                 {
                     switch (ocgsObj)
                     {
@@ -181,7 +181,7 @@ internal class OptionalContentManager
                         {
                             // For simplicity, if ANY referenced OCG is disabled, hide the content
                             // A full implementation would check the /P (policy) entry
-                            foreach (var ocgItem in ocgsArray)
+                            foreach (PdfObject ocgItem in ocgsArray)
                             {
                                 if (ocgItem is PdfIndirectReference ocgArrayRef)
                                 {

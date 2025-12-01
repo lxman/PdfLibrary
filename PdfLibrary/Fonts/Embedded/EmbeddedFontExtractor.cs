@@ -23,7 +23,7 @@ namespace PdfLibrary.Fonts.Embedded
             }
 
             // Try to extract FontFile2 (TrueType) stream
-            var fontData = fontDescriptor.GetFontFile2();
+            byte[]? fontData = fontDescriptor.GetFontFile2();
             if (fontData is not null)
             {
                 // Parse TrueType font for glyph names
@@ -54,7 +54,7 @@ namespace PdfLibrary.Fonts.Embedded
                 return null;
 
             // For Type0 fonts, character code typically maps directly to glyph ID
-            return _glyphNames.TryGetValue(charCode, out var glyphName) ? glyphName : null;
+            return _glyphNames.TryGetValue(charCode, out string? glyphName) ? glyphName : null;
         }
 
         /// <summary>
@@ -64,7 +64,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <returns>Unicode string (e.g., "fi" for fi ligature), or null if not found</returns>
         public string? GetUnicodeFromGlyphName(int charCode)
         {
-            var glyphName = GetGlyphName(charCode);
+            string? glyphName = GetGlyphName(charCode);
             if (glyphName is null)
                 return null;
 
@@ -89,7 +89,7 @@ namespace PdfLibrary.Fonts.Embedded
             if (!_isValid)
                 return "No embedded font found or parsing failed";
 
-            var glyphCount = _glyphNames?.Count ?? 0;
+            int glyphCount = _glyphNames?.Count ?? 0;
             return $"TrueType font with {glyphCount} glyphs extracted";
         }
     }

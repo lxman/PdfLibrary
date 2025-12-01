@@ -35,7 +35,7 @@ internal class PdfContentParser
 
         while (true)
         {
-            var token = lexer.NextToken();
+            PdfToken token = lexer.NextToken();
 
             if (token.Type == PdfTokenType.EndOfFile)
                 break;
@@ -80,7 +80,7 @@ internal class PdfContentParser
                     if (token.Value == "BI")
                     {
                         // Parse inline image and create operator
-                        var inlineImageOp = ParseInlineImage(lexer);
+                        InlineImageOperator? inlineImageOp = ParseInlineImage(lexer);
                         if (inlineImageOp is not null)
                         {
                             operators.Add(inlineImageOp);
@@ -90,15 +90,15 @@ internal class PdfContentParser
                     }
 
                     // This is likely an operator
-                    var op = CreateOperator(token.Value, operands);
+                    PdfOperator op = CreateOperator(token.Value, operands);
                     switch (token.Value)
                     {
                         // Debug: trace scn/sc operators with operand types and actual values
                         case "scn" or "SCN" or "sc" or "SC":
                         {
-                            var types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
+                            string types = string.Join(", ", op.Operands.Select(o => $"{o.GetType().Name}:{o}"));
                             // Also show actual numeric values
-                            var values = op.Operands.Select(o => o switch {
+                            IEnumerable<string> values = op.Operands.Select(o => o switch {
                                 PdfReal r => r.Value.ToString("F4"),
                                 PdfInteger i => i.Value.ToString(),
                                 _ => o.ToString()
@@ -109,7 +109,7 @@ internal class PdfContentParser
                         // Debug: trace Do operators
                         case "Do":
                         {
-                            var types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
+                            string types = string.Join(", ", operands.Select(o => $"{o.GetType().Name}:{o}"));
                             PdfLogger.Log(LogCategory.PdfTool, $"[PARSER] Do: {operands.Count} operands -> [{types}], created {op.GetType().Name}");
                             break;
                         }
@@ -130,7 +130,7 @@ internal class PdfContentParser
     private static PdfOperator CreateOperator(string name, Stack<PdfObject> operandStack)
     {
         // Convert stack to list (reverse order)
-        var operands = operandStack.Reverse().ToList();
+        List<PdfObject> operands = operandStack.Reverse().ToList();
 
         try
         {
@@ -276,7 +276,7 @@ internal class PdfContentParser
 
         while (true)
         {
-            var token = lexer.NextToken();
+            PdfToken token = lexer.NextToken();
 
             if (token.Type is PdfTokenType.ArrayEnd or PdfTokenType.EndOfFile)
                 break;
@@ -328,7 +328,7 @@ internal class PdfContentParser
 
         while (true)
         {
-            var token = lexer.NextToken();
+            PdfToken token = lexer.NextToken();
 
             if (token.Type is PdfTokenType.DictionaryEnd or PdfTokenType.EndOfFile)
                 break;
@@ -376,7 +376,7 @@ internal class PdfContentParser
 
         while (true)
         {
-            var token = lexer.NextToken();
+            PdfToken token = lexer.NextToken();
 
             if (token.Type == PdfTokenType.EndOfFile)
                 return null;
@@ -419,7 +419,7 @@ internal class PdfContentParser
         }
 
         // Now read the raw image data until we find EI
-        var stream = lexer.GetStream();
+        Stream? stream = lexer.GetStream();
         if (stream is not { CanRead: true })
         {
             lexer.SyncPositionFromStream();
@@ -427,7 +427,7 @@ internal class PdfContentParser
         }
 
         // Skip one whitespace after ID
-        var b = stream.ReadByte();
+        int b = stream.ReadByte();
         if (b == -1)
         {
             lexer.SyncPositionFromStream();
@@ -456,7 +456,7 @@ internal class PdfContentParser
                 if (prevPrev is ' ' or '\n' or '\r' or '\t' or 0)
                 {
                     // Peek next byte to verify it's whitespace or EOF
-                    var next = stream.ReadByte();
+                    int next = stream.ReadByte();
                     if (next is -1 or ' ' or '\n' or '\r' or '\t' or 'Q' or 'q')
                     {
                         // Found EI, put back the next byte if it's not EOF

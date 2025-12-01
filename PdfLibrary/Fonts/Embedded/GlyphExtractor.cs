@@ -31,35 +31,35 @@ namespace PdfLibrary.Fonts.Embedded
             var parser = new TrueTypeParser(fontData);
 
             // Parse required tables
-            var headData = parser.GetTable("head");
+            byte[]? headData = parser.GetTable("head");
             if (headData is null)
                 throw new InvalidOperationException("Font missing required 'head' table");
 
             _headTable = new HeadTable(headData);
 
-            var locaData = parser.GetTable("loca");
+            byte[]? locaData = parser.GetTable("loca");
             if (locaData is null)
                 throw new InvalidOperationException("Font missing required 'loca' table");
 
             _locaTable = new LocaTable(locaData);
-            var isShortFormat = _headTable.IndexToLocFormat == IndexToLocFormat.Offset16;
+            bool isShortFormat = _headTable.IndexToLocFormat == IndexToLocFormat.Offset16;
             _locaTable.Process(_numGlyphs, isShortFormat);
 
-            var glyfData = parser.GetTable("glyf");
+            byte[]? glyfData = parser.GetTable("glyf");
             if (glyfData is null)
                 throw new InvalidOperationException("Font missing required 'glyf' table");
 
             _glyfTable = new GlyphTable(glyfData);
             _glyfTable.Process(_numGlyphs, _locaTable);
 
-            var hmtxData = parser.GetTable("hmtx");
+            byte[]? hmtxData = parser.GetTable("hmtx");
             if (hmtxData is null)
                 throw new InvalidOperationException("Font missing required 'hmtx' table");
 
             _hmtxTable = new HmtxTable(hmtxData);
 
             // Get number of horizontal metrics from hhea table
-            var hheaData = parser.GetTable("hhea");
+            byte[]? hheaData = parser.GetTable("hhea");
             if (hheaData is not null)
             {
                 var hheaTable = new HheaTable(hheaData);
@@ -83,10 +83,10 @@ namespace PdfLibrary.Fonts.Embedded
                 return null;
 
             // Get glyph data from glyf table
-            var glyphData = _glyfTable.GetGlyphData(glyphId);
+            GlyphData? glyphData = _glyfTable.GetGlyphData(glyphId);
 
             // Get metrics
-            var metrics = GetMetrics(glyphId);
+            GlyphMetrics metrics = GetMetrics(glyphId);
 
             // Log metrics for em dash glyph
             if (glyphId == 1165)
@@ -125,11 +125,11 @@ namespace PdfLibrary.Fonts.Embedded
             }
 
             // Get horizontal metrics
-            var advanceWidth = _hmtxTable.GetAdvanceWidth((ushort)glyphId);
-            var lsb = _hmtxTable.GetLeftSideBearing((ushort)glyphId);
+            ushort advanceWidth = _hmtxTable.GetAdvanceWidth((ushort)glyphId);
+            short lsb = _hmtxTable.GetLeftSideBearing((ushort)glyphId);
 
             // Get bounding box from glyph data
-            var glyphData = _glyfTable.GetGlyphData(glyphId);
+            GlyphData? glyphData = _glyfTable.GetGlyphData(glyphId);
             if (glyphData is not null)
             {
                 return new GlyphMetrics(
@@ -167,9 +167,9 @@ namespace PdfLibrary.Fonts.Embedded
                 var points = new List<ContourPoint>();
 
                 // Extract points for this contour
-                for (var j = startIndex; j <= endIndex; j++)
+                for (int j = startIndex; j <= endIndex; j++)
                 {
-                    var coord = simpleGlyph.Coordinates[j];
+                    SimpleGlyphCoordinate coord = simpleGlyph.Coordinates[j];
                     points.Add(new ContourPoint(
                         coord.Point.X,
                         coord.Point.Y,
@@ -204,25 +204,25 @@ namespace PdfLibrary.Fonts.Embedded
             var componentIds = new List<int>();
 
             // Recursively extract and transform each component
-            foreach (var component in compositeGlyph.Components)
+            foreach (CompositeGlyphComponent component in compositeGlyph.Components)
             {
                 componentIds.Add(component.GlyphIndex);
 
                 // Recursively extract the component glyph
-                var componentOutline = ExtractGlyph(component.GlyphIndex);
+                GlyphOutline? componentOutline = ExtractGlyph(component.GlyphIndex);
                 if (componentOutline is null || componentOutline.IsEmpty)
                     continue;
 
                 // Transform each contour of the component using the transformation matrix
-                foreach (var contour in componentOutline.Contours)
+                foreach (GlyphContour contour in componentOutline.Contours)
                 {
                     var transformedPoints = new List<ContourPoint>();
 
-                    foreach (var point in contour.Points)
+                    foreach (ContourPoint point in contour.Points)
                     {
                         // Apply transformation matrix and offset
-                        var x = point.X * component.A + point.Y * component.C + component.Argument1;
-                        var y = point.X * component.B + point.Y * component.D + component.Argument2;
+                        double x = point.X * component.A + point.Y * component.C + component.Argument1;
+                        double y = point.X * component.B + point.Y * component.D + component.Argument2;
 
                         transformedPoints.Add(new ContourPoint(
                             x,

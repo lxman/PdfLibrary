@@ -30,7 +30,7 @@ internal sealed class PdfDictionary : PdfObject, IDictionary<PdfName, PdfObject>
         sb.Append("<<");
 
         var first = true;
-        foreach (var kvp in _entries)
+        foreach (KeyValuePair<PdfName, PdfObject> kvp in _entries)
         {
             // Skip null values as per spec (7.3.7)
             if (kvp.Value is PdfNull)

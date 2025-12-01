@@ -36,7 +36,7 @@ internal class PdfXrefTable
     /// </summary>
     public long? GetByteOffset(int objectNumber)
     {
-        var entry = GetEntry(objectNumber);
+        PdfXrefEntry? entry = GetEntry(objectNumber);
         return entry?.IsInUse == true ? entry.ByteOffset : null;
     }
 

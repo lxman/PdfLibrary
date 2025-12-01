@@ -46,7 +46,7 @@ internal abstract class PdfFunction
         if (obj is PdfIndirectReference reference && document is not null)
             obj = document.ResolveReference(reference);
 
-        var dict = obj switch
+        PdfDictionary? dict = obj switch
         {
             PdfStream stream => stream.Dictionary,
             PdfDictionary d => d,
@@ -57,14 +57,14 @@ internal abstract class PdfFunction
             return null;
 
         // Get function type
-        if (!dict.TryGetValue(new PdfName("FunctionType"), out var typeObj) || typeObj is not PdfInteger typeInt)
+        if (!dict.TryGetValue(new PdfName("FunctionType"), out PdfObject typeObj) || typeObj is not PdfInteger typeInt)
             return null;
 
-        var functionType = typeInt.Value;
+        int functionType = typeInt.Value;
 
         // Parse Domain (required for all function types)
-        var domain = ParseNumberArray(dict, "Domain") ?? [];
-        var range = ParseNumberArray(dict, "Range");
+        double[] domain = ParseNumberArray(dict, "Domain") ?? [];
+        double[]? range = ParseNumberArray(dict, "Range");
 
         return functionType switch
         {
@@ -77,7 +77,7 @@ internal abstract class PdfFunction
 
     protected static double[]? ParseNumberArray(PdfDictionary dict, string key)
     {
-        if (!dict.TryGetValue(new PdfName(key), out var arrayObj) || arrayObj is not PdfArray array)
+        if (!dict.TryGetValue(new PdfName(key), out PdfObject arrayObj) || arrayObj is not PdfArray array)
             return null;
 
         var result = new double[array.Count];
@@ -95,7 +95,7 @@ internal abstract class PdfFunction
 
     protected static int[]? ParseIntArray(PdfDictionary dict, string key)
     {
-        if (!dict.TryGetValue(new PdfName(key), out var arrayObj) || arrayObj is not PdfArray array)
+        if (!dict.TryGetValue(new PdfName(key), out PdfObject arrayObj) || arrayObj is not PdfArray array)
             return null;
 
         var result = new int[array.Count];

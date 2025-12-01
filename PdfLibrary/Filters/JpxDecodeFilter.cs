@@ -1,4 +1,5 @@
 using Compressors.Jpeg2000;
+using Logging;
 
 namespace PdfLibrary.Filters;
 
@@ -30,7 +31,24 @@ internal class JpxDecodeFilter : IStreamFilter
         try
         {
             // Decode JPEG 2000 data
-            var imageBytes = Jpeg2000.Decompress(data, out _, out _, out var components);
+            byte[] imageBytes = Jpeg2000.Decompress(data, out int width, out int height, out int components);
+
+            PdfLogger.Log(LogCategory.Images, $"JPXDecode: Decoded {width}x{height}, {components} components, {imageBytes.Length} bytes");
+
+            // Debug: Sample first few pixels to check data
+            if (imageBytes.Length >= components * 10)
+            {
+                var samples = new List<string>();
+                for (int i = 0; i < 5; i++)
+                {
+                    int offset = i * components;
+                    if (components == 3)
+                        samples.Add($"({imageBytes[offset]},{imageBytes[offset+1]},{imageBytes[offset+2]})");
+                    else if (components == 1)
+                        samples.Add($"({imageBytes[offset]})");
+                }
+                PdfLogger.Log(LogCategory.Images, $"JPXDecode: First 5 pixels: {string.Join(" ", samples)}");
+            }
 
             // If already RGB, return as-is
             if (components == 3)
@@ -39,7 +57,7 @@ internal class JpxDecodeFilter : IStreamFilter
             }
 
             // Calculate dimensions
-            var pixelCount = imageBytes.Length / components;
+            int pixelCount = imageBytes.Length / components;
             var pixels = new byte[pixelCount * 3];
 
             switch (components)
@@ -50,7 +68,7 @@ internal class JpxDecodeFilter : IStreamFilter
                     var offset = 0;
                     for (var i = 0; i < pixelCount; i++)
                     {
-                        var gray = imageBytes[i];
+                        byte gray = imageBytes[i];
                         pixels[offset++] = gray;
                         pixels[offset++] = gray;
                         pixels[offset++] = gray;

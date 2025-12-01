@@ -75,8 +75,8 @@ public class PdfBookmark
     {
         if (Children.Count == 0) return 0;
 
-        var count = Children.Count;
-        foreach (var child in Children)
+        int count = Children.Count;
+        foreach (PdfBookmark child in Children)
         {
             if (child.IsOpen)
             {

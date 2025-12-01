@@ -68,13 +68,13 @@ public readonly struct PdfRect
     /// <param name="pageHeight">Page height in points (default: Letter = 792)</param>
     public static PdfRect FromInches(double left, double top, double width, double height, double pageHeight = 792)
     {
-        var leftPt = left * 72;
-        var widthPt = width * 72;
-        var heightPt = height * 72;
+        double leftPt = left * 72;
+        double widthPt = width * 72;
+        double heightPt = height * 72;
 
         // Convert from top-left origin to bottom-left origin
-        var topPt = pageHeight - (top * 72);
-        var bottomPt = topPt - heightPt;
+        double topPt = pageHeight - (top * 72);
+        double bottomPt = topPt - heightPt;
 
         return new PdfRect(leftPt, bottomPt, leftPt + widthPt, topPt);
     }
@@ -91,13 +91,13 @@ public readonly struct PdfRect
     {
         const double mmToPoints = 2.834645669;
 
-        var leftPt = left * mmToPoints;
-        var widthPt = width * mmToPoints;
-        var heightPt = height * mmToPoints;
+        double leftPt = left * mmToPoints;
+        double widthPt = width * mmToPoints;
+        double heightPt = height * mmToPoints;
 
         // Convert from top-left origin to bottom-left origin
-        var topPt = pageHeight - (top * mmToPoints);
-        var bottomPt = topPt - heightPt;
+        double topPt = pageHeight - (top * mmToPoints);
+        double bottomPt = topPt - heightPt;
 
         return new PdfRect(leftPt, bottomPt, leftPt + widthPt, topPt);
     }
@@ -109,7 +109,7 @@ public readonly struct PdfRect
         PdfUnit unit, PdfOrigin origin, double pageHeight = 792)
     {
         // Convert to points
-        var scale = unit switch
+        double scale = unit switch
         {
             PdfUnit.Points => 1.0,
             PdfUnit.Inches => 72.0,
@@ -118,16 +118,16 @@ public readonly struct PdfRect
             _ => 1.0
         };
 
-        var xPt = x * scale;
-        var yPt = y * scale;
-        var widthPt = width * scale;
-        var heightPt = height * scale;
+        double xPt = x * scale;
+        double yPt = y * scale;
+        double widthPt = width * scale;
+        double heightPt = height * scale;
 
         // Convert origin if needed
         if (origin != PdfOrigin.TopLeft) return new PdfRect(xPt, yPt, xPt + widthPt, yPt + heightPt);
         // y is distance from top, convert to bottom-left coordinates
-        var topPt = pageHeight - yPt;
-        var bottomPt = topPt - heightPt;
+        double topPt = pageHeight - yPt;
+        double bottomPt = topPt - heightPt;
         return new PdfRect(xPt, bottomPt, xPt + widthPt, topPt);
 
         // Already in bottom-left coordinates

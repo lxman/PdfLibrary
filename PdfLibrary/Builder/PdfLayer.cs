@@ -322,7 +322,7 @@ public class PdfLayerContentBuilder
     public PdfPageBuilder Done()
     {
         // Move all content added since starting the layer into the layer content
-        var addedContent = _originalContent.Skip(_startIndex).ToList();
+        List<PdfContentElement> addedContent = _originalContent.Skip(_startIndex).ToList();
 
         // Remove from the original list
         _originalContent.RemoveRange(_startIndex, addedContent.Count);

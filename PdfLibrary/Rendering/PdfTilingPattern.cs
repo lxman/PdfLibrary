@@ -71,7 +71,7 @@ public class PdfTilingPattern
     internal static PdfTilingPattern? FromDictionary(PdfDictionary dict, PdfDocument document, PdfStream? contentStream = null)
     {
         // Check pattern type
-        if (!dict.TryGetValue(new PdfName("PatternType"), out var ptObj) || ptObj is not PdfInteger pt || pt.Value != 1)
+        if (!dict.TryGetValue(new PdfName("PatternType"), out PdfObject ptObj) || ptObj is not PdfInteger pt || pt.Value != 1)
             return null; // Not a tiling pattern
 
         int paintType = 1;
@@ -83,15 +83,15 @@ public class PdfTilingPattern
         PdfResources? resources = null;
 
         // Paint type (required)
-        if (dict.TryGetValue(new PdfName("PaintType"), out var paintObj) && paintObj is PdfInteger paintInt)
+        if (dict.TryGetValue(new PdfName("PaintType"), out PdfObject paintObj) && paintObj is PdfInteger paintInt)
             paintType = paintInt.Value;
 
         // Tiling type (required)
-        if (dict.TryGetValue(new PdfName("TilingType"), out var tilingObj) && tilingObj is PdfInteger tilingInt)
+        if (dict.TryGetValue(new PdfName("TilingType"), out PdfObject tilingObj) && tilingObj is PdfInteger tilingInt)
             tilingType = tilingInt.Value;
 
         // BBox (required)
-        if (dict.TryGetValue(new PdfName("BBox"), out var bboxObj) && bboxObj is PdfArray bboxArray && bboxArray.Count >= 4)
+        if (dict.TryGetValue(new PdfName("BBox"), out PdfObject bboxObj) && bboxObj is PdfArray bboxArray && bboxArray.Count >= 4)
         {
             bbox = new PdfRectangle(
                 bboxArray[0].ToDouble(),
@@ -101,15 +101,15 @@ public class PdfTilingPattern
         }
 
         // XStep (required)
-        if (dict.TryGetValue(new PdfName("XStep"), out var xstepObj))
+        if (dict.TryGetValue(new PdfName("XStep"), out PdfObject xstepObj))
             xStep = xstepObj.ToDouble();
 
         // YStep (required)
-        if (dict.TryGetValue(new PdfName("YStep"), out var ystepObj))
+        if (dict.TryGetValue(new PdfName("YStep"), out PdfObject ystepObj))
             yStep = ystepObj.ToDouble();
 
         // Matrix (optional, defaults to identity)
-        if (dict.TryGetValue(new PdfName("Matrix"), out var matrixObj) && matrixObj is PdfArray m && m.Count >= 6)
+        if (dict.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) && matrixObj is PdfArray m && m.Count >= 6)
         {
             matrix = new Matrix3x2(
                 (float)m[0].ToDouble(),
@@ -121,9 +121,9 @@ public class PdfTilingPattern
         }
 
         // Resources (optional)
-        if (dict.TryGetValue(new PdfName("Resources"), out var resObj))
+        if (dict.TryGetValue(new PdfName("Resources"), out PdfObject resObj))
         {
-            var resolvedRes = resObj;
+            PdfObject? resolvedRes = resObj;
             if (resObj is PdfIndirectReference resRef)
                 resolvedRes = document.ResolveReference(resRef);
             if (resolvedRes is PdfDictionary resDict)

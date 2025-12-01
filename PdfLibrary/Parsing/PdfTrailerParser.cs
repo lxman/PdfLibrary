@@ -25,12 +25,12 @@ internal class PdfTrailerParser(Stream stream)
         // but use the parser for everything else.
 
         // Read the "trailer" keyword
-        var keyword = ReadKeyword();
+        string? keyword = ReadKeyword();
         if (keyword != "trailer")
             throw new PdfParseException($"Expected 'trailer' keyword, got: {keyword}");
 
         // Parse trailer dictionary - this uses the lexer
-        var dictObj = _parser.ReadObject();
+        PdfObject? dictObj = _parser.ReadObject();
         if (dictObj is not PdfDictionary dictionary)
             throw new PdfParseException($"Expected dictionary after 'trailer' keyword, got: {dictObj?.Type}");
 
@@ -39,7 +39,7 @@ internal class PdfTrailerParser(Stream stream)
         // After parsing the dictionary, the parser may have a buffered token from peeking.
         // Use the parser's NextToken() method to properly handle buffered tokens.
         // The next token should be "startxref"
-        var token = _parser.NextToken();
+        PdfToken token = _parser.NextToken();
 
         if (token.Type != PdfTokenType.StartXref)
             throw new PdfParseException($"Expected 'startxref' keyword after trailer, got: {token.Type} (value: '{token.Value}')");
@@ -49,7 +49,7 @@ internal class PdfTrailerParser(Stream stream)
         if (token.Type != PdfTokenType.Integer)
             throw new PdfParseException($"Expected integer after 'startxref' keyword, got: {token.Type}");
 
-        var startxref = long.Parse(token.Value);
+        long startxref = long.Parse(token.Value);
         return (trailer, startxref);
     }
 
@@ -65,22 +65,22 @@ internal class PdfTrailerParser(Stream stream)
 
         // Read the last 1024 bytes (should be enough to find startxref)
         const int searchSize = 1024;
-        var fileSize = stream.Length;
-        var searchStart = Math.Max(0, fileSize - searchSize);
+        long fileSize = stream.Length;
+        long searchStart = Math.Max(0, fileSize - searchSize);
 
         stream.Position = searchStart;
         var buffer = new byte[Math.Min(searchSize, fileSize)];
-        var bytesRead = stream.Read(buffer, 0, buffer.Length);
+        int bytesRead = stream.Read(buffer, 0, buffer.Length);
 
         // Convert to string and search for "startxref"
-        var text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-        var startxrefIndex = text.LastIndexOf("startxref", StringComparison.Ordinal);
+        string text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+        int startxrefIndex = text.LastIndexOf("startxref", StringComparison.Ordinal);
 
         if (startxrefIndex == -1)
             throw new PdfParseException("Could not find 'startxref' keyword at end of PDF file");
 
         // Find the number after "startxref"
-        var numberStart = startxrefIndex + "startxref".Length;
+        int numberStart = startxrefIndex + "startxref".Length;
 
         // Skip whitespace
         while (numberStart < text.Length && char.IsWhiteSpace(text[numberStart]))
@@ -97,7 +97,7 @@ internal class PdfTrailerParser(Stream stream)
         if (sb.Length == 0)
             throw new PdfParseException("Could not parse startxref value");
 
-        return !long.TryParse(sb.ToString(), out var startxref)
+        return !long.TryParse(sb.ToString(), out long startxref)
             ? throw new PdfParseException($"Invalid startxref value: {sb}")
             : startxref;
     }

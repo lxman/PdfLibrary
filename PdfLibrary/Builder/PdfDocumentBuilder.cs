@@ -321,7 +321,7 @@ public class PdfDocumentBuilder
             throw new ArgumentException($"A font with alias '{fontAlias}' is already loaded");
 
         // Read the font file
-        var fontData = File.ReadAllBytes(fontPath);
+        byte[] fontData = File.ReadAllBytes(fontPath);
 
         // Parse font metrics
         EmbeddedFontMetrics metrics;

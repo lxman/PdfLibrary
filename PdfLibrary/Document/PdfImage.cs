@@ -53,7 +53,7 @@ public class PdfImage
         };
 
         // Map color space (handle abbreviated names)
-        var colorSpace = inlineImage.ColorSpace;
+        string colorSpace = inlineImage.ColorSpace;
         dict[new PdfName("ColorSpace")] = new PdfName(colorSpace);
 
         // Copy filter if present
@@ -83,7 +83,7 @@ public class PdfImage
             {
                 // Clone the dictionary and add missing Columns/Rows
                 var newDpDict = new PdfDictionary();
-                foreach (var kvp in dpDict)
+                foreach (KeyValuePair<PdfName, PdfObject> kvp in dpDict)
                 {
                     newDpDict[kvp.Key] = kvp.Value;
                 }
@@ -157,7 +157,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Width"), out var obj) && obj is PdfInteger width)
+            if (_stream.Dictionary.TryGetValue(new PdfName("Width"), out PdfObject obj) && obj is PdfInteger width)
                 return width.Value;
             return 0;
         }
@@ -170,7 +170,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Height"), out var obj) && obj is PdfInteger height)
+            if (_stream.Dictionary.TryGetValue(new PdfName("Height"), out PdfObject obj) && obj is PdfInteger height)
                 return height.Value;
             return 0;
         }
@@ -183,7 +183,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("BitsPerComponent"), out var obj) && obj is PdfInteger bits)
+            if (_stream.Dictionary.TryGetValue(new PdfName("BitsPerComponent"), out PdfObject obj) && obj is PdfInteger bits)
                 return bits.Value;
             return 8; // Default per PDF spec
         }
@@ -196,7 +196,7 @@ public class PdfImage
     {
         get
         {
-            if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out var obj))
+            if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
                 return "Unknown";
 
             // Resolve indirect reference
@@ -242,7 +242,7 @@ public class PdfImage
         {
             var filters = new List<string>();
 
-            if (!_stream.Dictionary.TryGetValue(new PdfName("Filter"), out var obj))
+            if (!_stream.Dictionary.TryGetValue(new PdfName("Filter"), out PdfObject obj))
                 return filters;
 
             switch (obj)
@@ -251,7 +251,7 @@ public class PdfImage
                     filters.Add(name.Value);
                     break;
                 case PdfArray array:
-                    foreach (var item in array)
+                    foreach (PdfObject item in array)
                     {
                         if (item is PdfName filterName)
                             filters.Add(filterName.Value);
@@ -279,7 +279,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("Intent"), out var obj) && obj is PdfName intent)
+            if (_stream.Dictionary.TryGetValue(new PdfName("Intent"), out PdfObject obj) && obj is PdfName intent)
                 return intent.Value;
             return null;
         }
@@ -292,7 +292,7 @@ public class PdfImage
     {
         get
         {
-            if (_stream.Dictionary.TryGetValue(new PdfName("ImageMask"), out var obj) && obj is PdfBoolean mask)
+            if (_stream.Dictionary.TryGetValue(new PdfName("ImageMask"), out PdfObject obj) && obj is PdfBoolean mask)
                 return mask.Value;
             return false;
         }
@@ -307,7 +307,7 @@ public class PdfImage
     {
         get
         {
-            if (!_stream.Dictionary.TryGetValue(new PdfName("Decode"), out var obj))
+            if (!_stream.Dictionary.TryGetValue(new PdfName("Decode"), out PdfObject obj))
                 return null;
 
             if (obj is not PdfArray array)
@@ -349,7 +349,7 @@ public class PdfImage
     /// </summary>
     private bool IsCcittFilter()
     {
-        if (!_stream.Dictionary.TryGetValue(PdfName.Filter, out var filterObj))
+        if (!_stream.Dictionary.TryGetValue(PdfName.Filter, out PdfObject filterObj))
             return false;
 
         return filterObj switch
@@ -369,9 +369,9 @@ public class PdfImage
         var decodeParams = new Dictionary<string, object>();
 
         // Copy existing decode params
-        if (_stream.Dictionary.TryGetValue(PdfName.DecodeParms, out var decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
+        if (_stream.Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
         {
-            foreach (var kvp in decodeParmDict)
+            foreach (KeyValuePair<PdfName, PdfObject> kvp in decodeParmDict)
             {
                 object? value = kvp.Value switch
                 {
@@ -400,7 +400,7 @@ public class PdfImage
         }
 
         // Decrypt data if necessary, then apply CCITT filter
-        var data = _stream.Data;
+        byte[] data = _stream.Data;
         if (_document?.Decryptor is not null && _stream.IsIndirect)
         {
             data = _document.Decryptor.Decrypt(data, _stream.ObjectNumber, _stream.GenerationNumber);
@@ -422,8 +422,8 @@ public class PdfImage
     /// </summary>
     public int GetExpectedDataSize()
     {
-        var bitsPerPixel = BitsPerComponent * ComponentCount;
-        var bytesPerRow = (Width * bitsPerPixel + 7) / 8; // Round up to nearest byte
+        int bitsPerPixel = BitsPerComponent * ComponentCount;
+        int bytesPerRow = (Width * bitsPerPixel + 7) / 8; // Round up to nearest byte
         return bytesPerRow * Height;
     }
 
@@ -432,7 +432,7 @@ public class PdfImage
     /// </summary>
     internal static bool IsImageXObject(PdfStream stream)
     {
-        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out var obj))
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;
 
         return obj is PdfName { Value: "Image" };
@@ -450,7 +450,7 @@ public class PdfImage
         baseColorSpace = null;
         hival = 0;
 
-        if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out var obj))
+        if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
             return null;
 
         // Resolve indirect reference
@@ -484,7 +484,7 @@ public class PdfImage
         }
 
         // Extract lookup table (index 3) - can be string or stream
-        var lookupObj = csArray[3];
+        PdfObject? lookupObj = csArray[3];
 
         // Resolve indirect reference to lookup table
         if (lookupObj is PdfIndirectReference lookupRef && _document is not null)
@@ -492,7 +492,7 @@ public class PdfImage
 
         // Get palette data
 
-        var paletteData = lookupObj switch
+        byte[]? paletteData = lookupObj switch
         {
             PdfString lookupString => lookupString.Bytes,
             PdfStream lookupStream => lookupStream.GetDecodedData(_document?.Decryptor),
@@ -507,8 +507,8 @@ public class PdfImage
     /// </summary>
     public override string ToString()
     {
-        var filterInfo = Filters.Count > 0 ? $" [{string.Join(", ", Filters)}]" : "";
-        var alphaInfo = HasAlpha ? " +Alpha" : "";
+        string filterInfo = Filters.Count > 0 ? $" [{string.Join(", ", Filters)}]" : "";
+        string alphaInfo = HasAlpha ? " +Alpha" : "";
         return $"PdfImage {Width}x{Height} {ColorSpace}/{BitsPerComponent}bpc{filterInfo}{alphaInfo}";
     }
 }

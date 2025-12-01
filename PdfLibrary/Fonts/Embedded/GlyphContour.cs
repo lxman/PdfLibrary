@@ -35,10 +35,10 @@ namespace PdfLibrary.Fonts.Embedded
             if (Points.Count == 0)
                 return (0, 0, 0, 0);
 
-            var minX = Points.Min(p => p.X);
-            var minY = Points.Min(p => p.Y);
-            var maxX = Points.Max(p => p.X);
-            var maxY = Points.Max(p => p.Y);
+            double minX = Points.Min(p => p.X);
+            double minY = Points.Min(p => p.Y);
+            double maxX = Points.Max(p => p.X);
+            double maxY = Points.Max(p => p.Y);
 
             return (minX, minY, maxX, maxY);
         }

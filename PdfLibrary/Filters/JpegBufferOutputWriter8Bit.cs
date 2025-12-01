@@ -34,14 +34,14 @@ internal sealed class JpegBufferOutputWriter8Bit : JpegBlockOutputWriter
             return;
         }
 
-        var writeWidth = Math.Min(8, _width - x);
-        var writeHeight = Math.Min(8, _height - y);
+        int writeWidth = Math.Min(8, _width - x);
+        int writeHeight = Math.Min(8, _height - y);
 
-        ref var destinationRef = ref _output.Span[y * _width * _componentCount + x * _componentCount + componentIndex];
+        ref byte destinationRef = ref _output.Span[y * _width * _componentCount + x * _componentCount + componentIndex];
 
         for (var destY = 0; destY < writeHeight; destY++)
         {
-            ref var destinationRowRef = ref Unsafe.Add(ref destinationRef, destY * _width * _componentCount);
+            ref byte destinationRowRef = ref Unsafe.Add(ref destinationRef, destY * _width * _componentCount);
             for (var destX = 0; destX < writeWidth; destX++)
             {
                 Unsafe.Add(ref destinationRowRef, destX * _componentCount) = ClampTo8Bit(Unsafe.Add(ref blockRef, destY * 8 + destX));

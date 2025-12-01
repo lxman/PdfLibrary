@@ -63,17 +63,17 @@ public class PdfRenderer : PdfContentProcessor
 
         // Get page dimensions - CropBox defines the visible area, MediaBox is the full canvas
         // The output image should match CropBox dimensions
-        var mediaBox = page.GetMediaBox();
-        var cropBox = page.GetCropBox();
+        PdfRectangle mediaBox = page.GetMediaBox();
+        PdfRectangle cropBox = page.GetCropBox();
 
         // Use CropBox dimensions for the output image
-        var width = cropBox.Width;
-        var height = cropBox.Height;
+        double width = cropBox.Width;
+        double height = cropBox.Height;
 
         // CropBox offset relative to MediaBox origin - needed to translate coordinates
         // X1, Y1 are the lower-left corner coordinates
-        var cropOffsetX = cropBox.X1;
-        var cropOffsetY = cropBox.Y1;
+        double cropOffsetX = cropBox.X1;
+        double cropOffsetY = cropBox.Y1;
 
         PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}, CropBox={cropBox}");
         PdfLogger.Log(LogCategory.Transforms, $"RenderPage: CropOffset=({cropOffsetX:F2}, {cropOffsetY:F2}), Scale={scale:F2}, OutputSize={width * scale:F0}x{height * scale:F0}");
@@ -86,25 +86,25 @@ public class PdfRenderer : PdfContentProcessor
 
         try
         {
-            var resources = page.GetResources();
-            var contents = page.GetContents();
+            PdfResources? resources = page.GetResources();
+            List<PdfStream> contents = page.GetContents();
 
             // Diagnostic: List available XObjects
             if (resources is not null)
             {
-                var xobjectNames = resources.GetXObjectNames();
+                List<string> xobjectNames = resources.GetXObjectNames();
                 PdfLogger.Log(LogCategory.PdfTool, $"XObjects available: [{string.Join(", ", xobjectNames)}]");
 
                 // Also list color spaces
-                var colorSpaces = resources.GetColorSpaces();
+                PdfDictionary? colorSpaces = resources.GetColorSpaces();
                 if (colorSpaces is not null)
                 {
-                    var csNames = colorSpaces.Keys.Select(k => k.Value).ToList();
+                    List<string> csNames = colorSpaces.Keys.Select(k => k.Value).ToList();
                     PdfLogger.Log(LogCategory.PdfTool, $"ColorSpaces available: [{string.Join(", ", csNames)}]");
                 }
 
                 // Diagnostic: List available fonts
-                var fontNames = resources.GetFontNames();
+                List<string> fontNames = resources.GetFontNames();
                 PdfLogger.Log(LogCategory.PdfTool, $"Page {pageNumber} Fonts available: [{string.Join(", ", fontNames)}]");
                 PdfLogger.Log(LogCategory.PdfTool, $"Page {pageNumber} _currentResources has {(_currentResources is not null ? _currentResources.GetFontNames().Count : 0)} fonts");
             }
@@ -135,10 +135,10 @@ public class PdfRenderer : PdfContentProcessor
                 // Diagnostic: Dump the first stream's raw content to see scn operands
                 if (streamIndex == 0 && decodedData.Length > 0)
                 {
-                    var text = Encoding.ASCII.GetString(decodedData);
+                    string text = Encoding.ASCII.GetString(decodedData);
                     // Find and show context around scn/SCN operators
-                    var lines = text.Split('\n');
-                    foreach (var line in lines.Take(50))  // First 50 lines
+                    string[] lines = text.Split('\n');
+                    foreach (string line in lines.Take(50))  // First 50 lines
                     {
                         if (line.Contains("scn") || line.Contains("SCN") || line.Contains(" cs") || line.Contains(" CS"))
                         {
@@ -147,12 +147,12 @@ public class PdfRenderer : PdfContentProcessor
                     }
                 }
 
-                var operators = PdfContentParser.Parse(decodedData);
+                List<PdfOperator> operators = PdfContentParser.Parse(decodedData);
 
                 // Diagnostic: Count operator types
-                var doOps = operators.Count(o => o.Name == "Do");
-                var csOps = operators.Count(o => o.Name is "cs" or "CS");
-                var scnOps = operators.Count(o => o.Name is "scn" or "SCN" or "sc" or "SC");
+                int doOps = operators.Count(o => o.Name == "Do");
+                int csOps = operators.Count(o => o.Name is "cs" or "CS");
+                int scnOps = operators.Count(o => o.Name is "scn" or "SCN" or "sc" or "SC");
                 PdfLogger.Log(LogCategory.PdfTool, $"Stream {streamIndex}: Total: {operators.Count}, Do: {doOps}, cs/CS: {csOps}, scn/SCN/sc/SC: {scnOps}");
 
                 ProcessOperators(operators);
@@ -173,8 +173,8 @@ public class PdfRenderer : PdfContentProcessor
             _target.EndPage();
 
             totalStopwatch.Stop();
-            var contentMs = contentStopwatch?.ElapsedMilliseconds ?? 0;
-            var annotationMs = annotationStopwatch?.ElapsedMilliseconds ?? 0;
+            long contentMs = contentStopwatch?.ElapsedMilliseconds ?? 0;
+            long annotationMs = annotationStopwatch?.ElapsedMilliseconds ?? 0;
             PdfLogger.Log(LogCategory.Timings, $"Page {pageNumber} rendered in {totalStopwatch.ElapsedMilliseconds}ms (content: {contentMs}ms, annotations: {annotationMs}ms)");
         }
     }
@@ -184,16 +184,16 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     private void RenderAnnotations(PdfPage page)
     {
-        var annotations = page.GetAnnotations();
+        PdfArray? annotations = page.GetAnnotations();
         if (annotations is null || annotations.Count == 0)
             return;
 
         PdfLogger.Log(LogCategory.Graphics, $"Found {annotations.Count} annotations");
 
-        foreach (var annotObj in annotations)
+        foreach (PdfObject annotObj in annotations)
         {
             // Resolve annotation reference if needed
-            var annotDict = annotObj switch
+            PdfDictionary? annotDict = annotObj switch
             {
                 PdfIndirectReference reference => _document?.GetObject(reference.ObjectNumber) as PdfDictionary,
                 PdfDictionary dict => dict,
@@ -204,10 +204,10 @@ public class PdfRenderer : PdfContentProcessor
                 continue;
 
             // Get annotation rectangle
-            if (!annotDict.TryGetValue(new PdfName("Rect"), out var rectObj))
+            if (!annotDict.TryGetValue(new PdfName("Rect"), out PdfObject rectObj))
                 continue;
 
-            var rectArray = rectObj switch
+            PdfArray? rectArray = rectObj switch
             {
                 PdfArray arr => arr,
                 PdfIndirectReference rRef => _document?.GetObject(rRef.ObjectNumber) as PdfArray,
@@ -217,16 +217,16 @@ public class PdfRenderer : PdfContentProcessor
             if (rectArray is null || rectArray.Count < 4)
                 continue;
 
-            var llx = GetAnnotNumber(rectArray[0]);
-            var lly = GetAnnotNumber(rectArray[1]);
-            var urx = GetAnnotNumber(rectArray[2]);
-            var ury = GetAnnotNumber(rectArray[3]);
+            double llx = GetAnnotNumber(rectArray[0]);
+            double lly = GetAnnotNumber(rectArray[1]);
+            double urx = GetAnnotNumber(rectArray[2]);
+            double ury = GetAnnotNumber(rectArray[3]);
 
             // Get appearance dictionary
-            if (!annotDict.TryGetValue(new PdfName("AP"), out var apObj))
+            if (!annotDict.TryGetValue(new PdfName("AP"), out PdfObject apObj))
                 continue;
 
-            var apDict = apObj switch
+            PdfDictionary? apDict = apObj switch
             {
                 PdfDictionary dict => dict,
                 PdfIndirectReference apRef => _document?.GetObject(apRef.ObjectNumber) as PdfDictionary,
@@ -237,11 +237,11 @@ public class PdfRenderer : PdfContentProcessor
                 continue;
 
             // Get normal appearance (N)
-            if (!apDict.TryGetValue(new PdfName("N"), out var nObj))
+            if (!apDict.TryGetValue(new PdfName("N"), out PdfObject nObj))
                 continue;
 
             // N can be a stream or a dictionary of streams (for different appearance states)
-            var appearanceStream = nObj switch
+            PdfStream? appearanceStream = nObj switch
             {
                 PdfStream stream => stream,
                 PdfIndirectReference nRef => _document?.GetObject(nRef.ObjectNumber) as PdfStream,
@@ -254,7 +254,7 @@ public class PdfRenderer : PdfContentProcessor
 
             // Get appearance stream's BBox
             PdfArray? bbox = null;
-            if (appearanceStream.Dictionary.TryGetValue(new PdfName("BBox"), out var bboxObj))
+            if (appearanceStream.Dictionary.TryGetValue(new PdfName("BBox"), out PdfObject bboxObj))
             {
                 bbox = bboxObj switch
                 {
@@ -274,32 +274,32 @@ public class PdfRenderer : PdfContentProcessor
             }
 
             // Calculate transformation matrix to map BBox to Rect
-            var rectWidth = urx - llx;
-            var rectHeight = ury - lly;
-            var bboxWidth = bboxUrx - bboxLlx;
-            var bboxHeight = bboxUry - bboxLly;
+            double rectWidth = urx - llx;
+            double rectHeight = ury - lly;
+            double bboxWidth = bboxUrx - bboxLlx;
+            double bboxHeight = bboxUry - bboxLly;
 
-            var sx = bboxWidth != 0 ? rectWidth / bboxWidth : 1;
-            var sy = bboxHeight != 0 ? rectHeight / bboxHeight : 1;
-            var tx = llx - bboxLlx * sx;
-            var ty = lly - bboxLly * sy;
+            double sx = bboxWidth != 0 ? rectWidth / bboxWidth : 1;
+            double sy = bboxHeight != 0 ? rectHeight / bboxHeight : 1;
+            double tx = llx - bboxLlx * sx;
+            double ty = lly - bboxLly * sy;
 
             PdfLogger.Log(LogCategory.Graphics, $"Rendering annotation appearance at ({llx:F1}, {lly:F1}) - ({urx:F1}, {ury:F1})");
 
             // Debug: check for color and border entries
-            if (annotDict.TryGetValue(new PdfName("C"), out var colorObj))
+            if (annotDict.TryGetValue(new PdfName("C"), out PdfObject colorObj))
             {
                 if (colorObj is PdfArray colorArray)
                 {
-                    var components = string.Join(", ", colorArray.Select(c => c.ToString()));
+                    string components = string.Join(", ", colorArray.Select(c => c.ToString()));
                     PdfLogger.Log(LogCategory.Graphics, $"Annotation has /C color: [{components}]");
                 }
             }
-            if (annotDict.TryGetValue(new PdfName("Border"), out var borderObj))
+            if (annotDict.TryGetValue(new PdfName("Border"), out PdfObject borderObj))
             {
                 PdfLogger.Log(LogCategory.Graphics, $"Annotation has /Border: {borderObj}");
             }
-            if (annotDict.TryGetValue(new PdfName("Subtype"), out var subtypeObj))
+            if (annotDict.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj))
             {
                 PdfLogger.Log(LogCategory.Graphics, $"Annotation Subtype: {subtypeObj}");
 
@@ -314,9 +314,9 @@ public class PdfRenderer : PdfContentProcessor
 
             // Get annotation appearance stream resources
             PdfResources? annotResources = null;
-            if (appearanceStream.Dictionary.TryGetValue(new PdfName("Resources"), out var resObj))
+            if (appearanceStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resObj))
             {
-                var resDict = resObj switch
+                PdfDictionary? resDict = resObj switch
                 {
                     PdfDictionary dict => dict,
                     PdfIndirectReference resRef => _document?.GetObject(resRef.ObjectNumber) as PdfDictionary,
@@ -330,7 +330,7 @@ public class PdfRenderer : PdfContentProcessor
             }
 
             // Save current resources and swap in annotation resources
-            var savedResources = _currentResources;
+            PdfResources? savedResources = _currentResources;
             if (annotResources is not null)
                 _currentResources = annotResources;
 
@@ -342,11 +342,11 @@ public class PdfRenderer : PdfContentProcessor
             CurrentState.ConcatenateMatrix((float)sx, 0, 0, (float)sy, (float)tx, (float)ty);
 
             // Parse and render the appearance stream
-            var decodedData = appearanceStream.GetDecodedData(_document?.Decryptor);
-            var operators = PdfContentParser.Parse(decodedData);
+            byte[] decodedData = appearanceStream.GetDecodedData(_document?.Decryptor);
+            List<PdfOperator> operators = PdfContentParser.Parse(decodedData);
             PdfLogger.Log(LogCategory.Graphics, $"Annotation stream has {operators.Count} operators");
             // Debug: print first few operators
-            foreach (var op in operators.Take(20))
+            foreach (PdfOperator op in operators.Take(20))
             {
                 PdfLogger.Log(LogCategory.Graphics, $"Annotation operator: {op.GetType().Name}");
             }
@@ -363,7 +363,7 @@ public class PdfRenderer : PdfContentProcessor
     {
         // Get appearance state name from /AS entry
         string? stateName = null;
-        if (annotDict.TryGetValue(new PdfName("AS"), out var asObj))
+        if (annotDict.TryGetValue(new PdfName("AS"), out PdfObject asObj))
         {
             stateName = asObj switch
             {
@@ -385,7 +385,7 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Look up the named state
-        if (stateDict.TryGetValue(new PdfName(stateName), out var stateObj))
+        if (stateDict.TryGetValue(new PdfName(stateName), out PdfObject stateObj))
         {
             return stateObj switch
             {
@@ -423,21 +423,21 @@ public class PdfRenderer : PdfContentProcessor
     protected override void OnMoveTo(double x, double y)
     {
         // Transform point to device space
-        var transformed = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
+        Vector2 transformed = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
         _currentPath.MoveTo(transformed.X, transformed.Y);
     }
 
     protected override void OnLineTo(double x, double y)
     {
-        var transformed = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
+        Vector2 transformed = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
         _currentPath.LineTo(transformed.X, transformed.Y);
     }
 
     protected override void OnCurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     {
-        var p1 = Vector2.Transform(new Vector2((float)x1, (float)y1), CurrentState.Ctm);
-        var p2 = Vector2.Transform(new Vector2((float)x2, (float)y2), CurrentState.Ctm);
-        var p3 = Vector2.Transform(new Vector2((float)x3, (float)y3), CurrentState.Ctm);
+        Vector2 p1 = Vector2.Transform(new Vector2((float)x1, (float)y1), CurrentState.Ctm);
+        Vector2 p2 = Vector2.Transform(new Vector2((float)x2, (float)y2), CurrentState.Ctm);
+        Vector2 p3 = Vector2.Transform(new Vector2((float)x3, (float)y3), CurrentState.Ctm);
         _currentPath.CurveTo(p1.X, p1.Y, p2.X, p2.Y, p3.X, p3.Y);
     }
 
@@ -447,10 +447,10 @@ public class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Graphics, $"  CTM: [{CurrentState.Ctm.M11}, {CurrentState.Ctm.M12}, {CurrentState.Ctm.M21}, {CurrentState.Ctm.M22}, {CurrentState.Ctm.M31}, {CurrentState.Ctm.M32}]");
 
         // Transform rectangle corners
-        var p1 = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
-        var p2 = Vector2.Transform(new Vector2((float)(x + width), (float)y), CurrentState.Ctm);
-        var p3 = Vector2.Transform(new Vector2((float)(x + width), (float)(y + height)), CurrentState.Ctm);
-        var p4 = Vector2.Transform(new Vector2((float)x, (float)(y + height)), CurrentState.Ctm);
+        Vector2 p1 = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
+        Vector2 p2 = Vector2.Transform(new Vector2((float)(x + width), (float)y), CurrentState.Ctm);
+        Vector2 p3 = Vector2.Transform(new Vector2((float)(x + width), (float)(y + height)), CurrentState.Ctm);
+        Vector2 p4 = Vector2.Transform(new Vector2((float)x, (float)(y + height)), CurrentState.Ctm);
 
         PdfLogger.Log(LogCategory.Graphics, $"  Transformed: ({p1.X}, {p1.Y}) ({p2.X}, {p2.Y}) ({p3.X}, {p3.Y}) ({p4.X}, {p4.Y})");
 
@@ -480,8 +480,8 @@ public class PdfRenderer : PdfContentProcessor
             ClearPendingClip();
         }
 
-        var color = CurrentState.StrokeColor;
-        var colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
+        List<double> color = CurrentState.StrokeColor;
+        string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH STROKE: ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
         _target.StrokePath(_currentPath, CurrentState);
         _currentPath.Clear();
@@ -498,9 +498,9 @@ public class PdfRenderer : PdfContentProcessor
             ClearPendingClip();
         }
 
-        var color = CurrentState.FillColor;
-        var colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
-        var resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
+        List<double> color = CurrentState.FillColor;
+        string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
+        string resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], Pattern={CurrentState.FillPatternName}, PathEmpty={_currentPath.IsEmpty}");
 
         // Check if we should use pattern fill
@@ -610,7 +610,7 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Get the font
-        var font = _currentResources.GetFontObject(CurrentState.FontName);
+        PdfFont? font = _currentResources.GetFontObject(CurrentState.FontName);
         if (font is null)
         {
             PdfLogger.Log(LogCategory.Text, $"TEXT-SKIPPED: Font '{CurrentState.FontName}' not found in _currentResources (has {_currentResources.GetFontNames().Count} fonts: {string.Join(", ", _currentResources.GetFontNames())})");
@@ -626,14 +626,14 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Decode the text - handle multi-byte encodings for Type0 fonts
-        var bytes = text.Bytes;
+        byte[] bytes = text.Bytes;
         var decodedText = new StringBuilder();
         var glyphWidths = new List<double>();
         var charCodes = new List<int>();
 
         // Type0 fonts use multi-byte character codes (typically 2 bytes)
-        var isType0 = font.FontType == PdfFontType.Type0;
-        var bytesPerChar = isType0 ? 2 : 1;
+        bool isType0 = font.FontType == PdfFontType.Type0;
+        int bytesPerChar = isType0 ? 2 : 1;
 
         var i = 0;
         while (i < bytes.Length)
@@ -654,7 +654,7 @@ public class PdfRenderer : PdfContentProcessor
             }
 
             // Decode character
-            var decoded = font.DecodeCharacter(charCode);
+            string decoded = font.DecodeCharacter(charCode);
 
             // Debug logging for specific character codes
             if (charCode is 0x03 or 0x0766 or >= 0x0700 and <= 0x0800)
@@ -668,8 +668,8 @@ public class PdfRenderer : PdfContentProcessor
             // Get character width in text space (1000-unit system) and convert to USER SPACE
             // The width is in the font's coordinate system (typically 1000 units = 1 em)
             // We need to scale by fontSize to get user space units
-            var glyphWidth = font.GetCharacterWidth(charCode);
-            var advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            double glyphWidth = font.GetCharacterWidth(charCode);
+            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
 
             // Apply horizontal scaling
             advance *= CurrentState.HorizontalScaling / 100.0;
@@ -690,7 +690,7 @@ public class PdfRenderer : PdfContentProcessor
         _target.DrawText(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
-        var totalAdvance = glyphWidths.Sum();
+        double totalAdvance = glyphWidths.Sum();
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
 
@@ -701,17 +701,17 @@ public class PdfRenderer : PdfContentProcessor
         // so subsequent color operators (scn) can work correctly with named color spaces.
         // The resolved values are stored in the Resolved* fields for rendering.
 
-        var fillCs = CurrentState.FillColorSpace;
+        string? fillCs = CurrentState.FillColorSpace;
         List<double>? fillColor = [..CurrentState.FillColor]; // Copy to avoid modifying original
 
-        var beforeFillCs = fillCs ?? "null";
+        string beforeFillCs = fillCs ?? "null";
         var beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
 
-        var colorSpaces = _currentResources?.GetColorSpaces();
+        PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
         _colorSpaceResolver.ResolveColorSpace(ref fillCs, ref fillColor, colorSpaces);
 
-        var afterFillCs = fillCs ?? "null";
-        var afterFillColor = fillColor is not null ? $"[{string.Join(", ", fillColor.Select(c => c.ToString("F3")))}]" : "null";
+        string afterFillCs = fillCs ?? "null";
+        string afterFillColor = fillColor is not null ? $"[{string.Join(", ", fillColor.Select(c => c.ToString("F3")))}]" : "null";
 
         if (beforeFillCs != afterFillCs || beforeFillColor != afterFillColor)
         {
@@ -722,7 +722,7 @@ public class PdfRenderer : PdfContentProcessor
         CurrentState.ResolvedFillColorSpace = fillCs ?? string.Empty;
         CurrentState.ResolvedFillColor = fillColor ?? [];
 
-        var strokeCs = CurrentState.StrokeColorSpace;
+        string? strokeCs = CurrentState.StrokeColorSpace;
         List<double>? strokeColor = [..CurrentState.StrokeColor]; // Copy to avoid modifying original
         _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces);
         CurrentState.ResolvedStrokeColorSpace = strokeCs ?? string.Empty;
@@ -744,7 +744,7 @@ public class PdfRenderer : PdfContentProcessor
             return;
         }
 
-        var extGState = _currentResources.GetExtGState(dictName);
+        PdfDictionary? extGState = _currentResources.GetExtGState(dictName);
         if (extGState is null)
         {
             PdfLogger.Log(LogCategory.Graphics, $"  ExtGState '{dictName}' not found");
@@ -765,8 +765,8 @@ public class PdfRenderer : PdfContentProcessor
             return;
 
         // Get the form's resources
-        var formResources = _resources;
-        if (softMask.Group.Dictionary.TryGetValue(new PdfName("Resources"), out var resourcesObj))
+        PdfResources? formResources = _resources;
+        if (softMask.Group.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resourcesObj))
         {
             if (resourcesObj is PdfIndirectReference resRef && _document is not null)
                 resourcesObj = _document.ResolveReference(resRef);
@@ -775,22 +775,22 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Check for Matrix entry in the form XObject
-        var formMatrix = Matrix3x2.Identity;
-        if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out var matrixObj) &&
+        Matrix3x2 formMatrix = Matrix3x2.Identity;
+        if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) &&
             matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
         {
-            var a = matrixArray[0].ToDoubleOrNull() ?? 1;
-            var b = matrixArray[1].ToDoubleOrNull() ?? 0;
-            var c = matrixArray[2].ToDoubleOrNull() ?? 0;
-            var d = matrixArray[3].ToDoubleOrNull() ?? 1;
-            var e = matrixArray[4].ToDoubleOrNull() ?? 0;
-            var f = matrixArray[5].ToDoubleOrNull() ?? 0;
+            double a = matrixArray[0].ToDoubleOrNull() ?? 1;
+            double b = matrixArray[1].ToDoubleOrNull() ?? 0;
+            double c = matrixArray[2].ToDoubleOrNull() ?? 0;
+            double d = matrixArray[3].ToDoubleOrNull() ?? 1;
+            double e = matrixArray[4].ToDoubleOrNull() ?? 0;
+            double f = matrixArray[5].ToDoubleOrNull() ?? 0;
             formMatrix = new Matrix3x2((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
         }
 
         // Parse the content operators ahead of time
-        var contentData = softMask.Group.GetDecodedData(_document?.Decryptor);
-        var operators = PdfContentParser.Parse(contentData);
+        byte[] contentData = softMask.Group.GetDecodedData(_document?.Decryptor);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
 
         // Use the render target's soft mask rendering method with a callback
         _target.RenderSoftMask(softMask.Subtype, maskTarget =>
@@ -826,7 +826,7 @@ public class PdfRenderer : PdfContentProcessor
         if (_currentResources is null || CurrentState.FontName is null)
             return;
 
-        var font = _currentResources.GetFontObject(CurrentState.FontName);
+        PdfFont? font = _currentResources.GetFontObject(CurrentState.FontName);
         if (font is null)
         {
             PdfLogger.Log(LogCategory.Text, $"Font '{CurrentState.FontName}' NOT FOUND");
@@ -843,21 +843,21 @@ public class PdfRenderer : PdfContentProcessor
             return;
         }
 
-        var isType0 = font.FontType == PdfFontType.Type0;
+        bool isType0 = font.FontType == PdfFontType.Type0;
         var combinedText = new StringBuilder();
         var combinedWidths = new List<double>();
         var combinedCharCodes = new List<int>();
         double leadingAdjustment = 0; // Track leading adjustment before first character
 
         // Process all items in the TJ array
-        foreach (var item in array)
+        foreach (PdfObject item in array)
         {
             switch (item)
             {
                 case PdfString str:
                 {
                     // Decode characters from this string segment
-                    var bytes = str.Bytes;
+                    byte[] bytes = str.Bytes;
                     var i = 0;
                     while (i < bytes.Length)
                     {
@@ -873,13 +873,13 @@ public class PdfRenderer : PdfContentProcessor
                             i++;
                         }
 
-                        var decoded = font.DecodeCharacter(charCode);
+                        string decoded = font.DecodeCharacter(charCode);
                         combinedText.Append(decoded);
                         combinedCharCodes.Add(charCode);
 
                         // Get character width and convert to USER SPACE
-                        var glyphWidth = font.GetCharacterWidth(charCode);
-                        var advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        double glyphWidth = font.GetCharacterWidth(charCode);
+                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
                         advance *= CurrentState.HorizontalScaling / 100.0;
 
                         // Add character spacing
@@ -898,12 +898,12 @@ public class PdfRenderer : PdfContentProcessor
                 {
                     // Kerning adjustment: modify the width of the previous character
                     // Adjustment is in thousandths of text space, convert to user space
-                    var adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
                     adjustment *= CurrentState.HorizontalScaling / 100.0;
 
                     if (combinedWidths.Count > 0)
                     {
-                        var oldWidth = combinedWidths[^1];
+                        double oldWidth = combinedWidths[^1];
                         combinedWidths[^1] += adjustment;
                         PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: int={intVal.Value} -> adjustment={adjustment:F6}, prevWidth={oldWidth:F6} -> newWidth={combinedWidths[^1]:F6}");
                     }
@@ -917,12 +917,12 @@ public class PdfRenderer : PdfContentProcessor
                 }
                 case PdfReal realVal:
                 {
-                    var adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
                     adjustment *= CurrentState.HorizontalScaling / 100.0;
 
                     if (combinedWidths.Count > 0)
                     {
-                        var oldWidth = combinedWidths[^1];
+                        double oldWidth = combinedWidths[^1];
                         combinedWidths[^1] += adjustment;
                         PdfLogger.Log(LogCategory.Text, $"  TJ-ADJ: real={realVal.Value:F4} -> adjustment={adjustment:F6}, prevWidth={oldWidth:F6} -> newWidth={combinedWidths[^1]:F6}");
                     }
@@ -947,33 +947,33 @@ public class PdfRenderer : PdfContentProcessor
         // Render all text in a single DrawText call
         if (combinedText.Length <= 0) return;
         var fullText = combinedText.ToString();
-        var textPreview = fullText[..Math.Min(20, fullText.Length)];
+        string textPreview = fullText[..Math.Min(20, fullText.Length)];
         PdfLogger.Log(LogCategory.Text, $"TJ: Rendering '{textPreview}...' at ({CurrentState.GetTextPosition().X:F2}, {CurrentState.GetTextPosition().Y:F2})");
 
         // Show full text for Type0 fonts to debug extra character issue
-        var tjFont = _currentResources.GetFontObject(CurrentState.FontName);
+        PdfFont? tjFont = _currentResources.GetFontObject(CurrentState.FontName);
         if (tjFont?.FontType == PdfFontType.Type0)
             PdfLogger.Log(LogCategory.Text, $"TJ-FULL: Type0 text ({fullText.Length} chars, {combinedCharCodes.Count} codes): '{fullText}'");
 
         // DIAGNOSTIC: Log the first few widths and check for zeros
         if (combinedWidths.Count > 0)
         {
-            var widthsPreview = string.Join(", ", combinedWidths.Take(5).Select(w => $"{w:F4}"));
-            var totalWidth = combinedWidths.Sum();
+            string widthsPreview = string.Join(", ", combinedWidths.Take(5).Select(w => $"{w:F4}"));
+            double totalWidth = combinedWidths.Sum();
             PdfLogger.Log(LogCategory.Text, $"  Widths: [{widthsPreview}...] Total: {totalWidth:F4}");
 
             // Log the last 3 widths for page number alignment debugging
             if (combinedWidths.Count >= 3)
             {
-                var lastWidths = combinedWidths.Skip(combinedWidths.Count - 3).ToList();
-                var lastChars = fullText.Length >= 3 ? fullText.Substring(fullText.Length - 3) : fullText;
+                List<double> lastWidths = combinedWidths.Skip(combinedWidths.Count - 3).ToList();
+                string lastChars = fullText.Length >= 3 ? fullText.Substring(fullText.Length - 3) : fullText;
                 PdfLogger.Log(LogCategory.Text, $"  LastWidths: '{lastChars}' -> [{string.Join(", ", lastWidths.Select(w => $"{w:F4}"))}]");
             }
 
             // Calculate final X position in user space
             double startX = CurrentState.TextMatrix.M31;
-            var scaleFactor = Math.Sqrt(CurrentState.TextMatrix.M11 * CurrentState.TextMatrix.M11 + CurrentState.TextMatrix.M12 * CurrentState.TextMatrix.M12);
-            var finalX = startX + totalWidth * scaleFactor;
+            double scaleFactor = Math.Sqrt(CurrentState.TextMatrix.M11 * CurrentState.TextMatrix.M11 + CurrentState.TextMatrix.M12 * CurrentState.TextMatrix.M12);
+            double finalX = startX + totalWidth * scaleFactor;
             PdfLogger.Log(LogCategory.Text, $"  Position: startX={startX:F2}, totalWidth={totalWidth:F4}, scale={scaleFactor:F2} -> finalX={finalX:F2}");
 
             if (combinedWidths.Take(5).All(w => w == 0))
@@ -983,7 +983,7 @@ public class PdfRenderer : PdfContentProcessor
         _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
 
         // Advance text position by total width
-        var totalAdvance = combinedWidths.Sum();
+        double totalAdvance = combinedWidths.Sum();
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
 
@@ -993,19 +993,19 @@ public class PdfRenderer : PdfContentProcessor
     private void AdvanceTextPositionForType3Simple(PdfString text, PdfFont font)
     {
         double totalAdvance = 0;
-        var bytes = text.Bytes;
+        byte[] bytes = text.Bytes;
 
         for (var i = 0; i < bytes.Length; i++)
         {
             int charCode = bytes[i];
-            var glyphWidth = font.GetCharacterWidth(charCode);
-            var advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            double glyphWidth = font.GetCharacterWidth(charCode);
+            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
             advance *= CurrentState.HorizontalScaling / 100.0;
 
             if (CurrentState.CharacterSpacing != 0)
                 advance += CurrentState.CharacterSpacing;
 
-            var decoded = font.DecodeCharacter(charCode);
+            string decoded = font.DecodeCharacter(charCode);
             if (decoded == " " && CurrentState.WordSpacing != 0)
                 advance += CurrentState.WordSpacing;
 
@@ -1024,24 +1024,24 @@ public class PdfRenderer : PdfContentProcessor
     {
         double totalAdvance = 0;
 
-        foreach (var item in array)
+        foreach (PdfObject item in array)
         {
             switch (item)
             {
                 case PdfString str:
                 {
-                    var bytes = str.Bytes;
+                    byte[] bytes = str.Bytes;
                     for (var i = 0; i < bytes.Length; i++)
                     {
                         int charCode = bytes[i];
-                        var glyphWidth = font.GetCharacterWidth(charCode);
-                        var advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        double glyphWidth = font.GetCharacterWidth(charCode);
+                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
                         advance *= CurrentState.HorizontalScaling / 100.0;
 
                         if (CurrentState.CharacterSpacing != 0)
                             advance += CurrentState.CharacterSpacing;
 
-                        var decoded = font.DecodeCharacter(charCode);
+                        string decoded = font.DecodeCharacter(charCode);
                         if (decoded == " " && CurrentState.WordSpacing != 0)
                             advance += CurrentState.WordSpacing;
 
@@ -1052,14 +1052,14 @@ public class PdfRenderer : PdfContentProcessor
                 case PdfInteger intVal:
                 {
                     // Kerning adjustment in thousandths of text space
-                    var adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
                     adjustment *= CurrentState.HorizontalScaling / 100.0;
                     totalAdvance += adjustment;
                     break;
                 }
                 case PdfReal realVal:
                 {
-                    var adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
                     adjustment *= CurrentState.HorizontalScaling / 100.0;
                     totalAdvance += adjustment;
                     break;
@@ -1078,17 +1078,17 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     private void RenderType3Text(PdfString text, Type3Font type3Font)
     {
-        var bytes = text.Bytes;
+        byte[] bytes = text.Bytes;
         double totalAdvance = 0;
 
         // Get the font's resources for CharProc execution
-        var type3ResourcesDict = type3Font.GetResourcesDictionary();
-        var type3Resources = type3ResourcesDict is not null
+        PdfDictionary? type3ResourcesDict = type3Font.GetResourcesDictionary();
+        PdfResources? type3Resources = type3ResourcesDict is not null
             ? new PdfResources(type3ResourcesDict, _document)
             : _currentResources;
 
         // Get the font matrix to transform glyph space to text space
-        var fontMatrix = type3Font.FontMatrix;
+        double[] fontMatrix = type3Font.FontMatrix;
         var fontMatrixM = new Matrix3x2(
             (float)fontMatrix[0], (float)fontMatrix[1],
             (float)fontMatrix[2], (float)fontMatrix[3],
@@ -1103,7 +1103,7 @@ public class PdfRenderer : PdfContentProcessor
             int charCode = bytes[i];
 
             // Get glyph name from encoding
-            var glyphName = type3Font.GetGlyphName(charCode);
+            string? glyphName = type3Font.GetGlyphName(charCode);
             if (glyphName is null)
             {
                 PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode}: No glyph name found");
@@ -1111,7 +1111,7 @@ public class PdfRenderer : PdfContentProcessor
             }
 
             // Get the CharProc content stream
-            var charProc = type3Font.GetCharProc(glyphName);
+            PdfStream? charProc = type3Font.GetCharProc(glyphName);
             if (charProc is null)
             {
                 PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode} ('{glyphName}'): No CharProc found");
@@ -1130,20 +1130,20 @@ public class PdfRenderer : PdfContentProcessor
             var fontSizeMatrix = new Matrix3x2(fontSize, 0, 0, fontSize, 0, 0);
 
             // Calculate glyph position: FontMatrix * FontSize * TextMatrix * CTM
-            var glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
+            Matrix3x2 glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
 
             // Execute the CharProc content stream
             ExecuteType3CharProc(charProc, type3Resources, glyphMatrix);
 
             // Advance text position
-            var glyphWidth = type3Font.GetCharacterWidth(charCode);
-            var advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            double glyphWidth = type3Font.GetCharacterWidth(charCode);
+            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
             advance *= CurrentState.HorizontalScaling / 100.0;
 
             if (CurrentState.CharacterSpacing != 0)
                 advance += CurrentState.CharacterSpacing;
 
-            var decoded = type3Font.DecodeCharacter(charCode);
+            string decoded = type3Font.DecodeCharacter(charCode);
             if (decoded == " " && CurrentState.WordSpacing != 0)
                 advance += CurrentState.WordSpacing;
 
@@ -1160,13 +1160,13 @@ public class PdfRenderer : PdfContentProcessor
     private void RenderType3TextWithPositioning(PdfArray array, Type3Font type3Font)
     {
         // Get the font's resources for CharProc execution
-        var type3ResourcesDict = type3Font.GetResourcesDictionary();
-        var type3Resources = type3ResourcesDict is not null
+        PdfDictionary? type3ResourcesDict = type3Font.GetResourcesDictionary();
+        PdfResources? type3Resources = type3ResourcesDict is not null
             ? new PdfResources(type3ResourcesDict, _document)
             : _currentResources;
 
         // Get the font matrix to transform glyph space to text space
-        var fontMatrix = type3Font.FontMatrix;
+        double[] fontMatrix = type3Font.FontMatrix;
         var fontMatrixM = new Matrix3x2(
             (float)fontMatrix[0], (float)fontMatrix[1],
             (float)fontMatrix[2], (float)fontMatrix[3],
@@ -1174,19 +1174,19 @@ public class PdfRenderer : PdfContentProcessor
 
         PdfLogger.Log(LogCategory.Text, $"RenderType3TextWithPositioning: FontMatrix=[{fontMatrix[0]}, {fontMatrix[1]}, {fontMatrix[2]}, {fontMatrix[3]}, {fontMatrix[4]}, {fontMatrix[5]}]");
 
-        foreach (var item in array)
+        foreach (PdfObject item in array)
         {
             switch (item)
             {
                 case PdfString str:
                 {
-                    var bytes = str.Bytes;
+                    byte[] bytes = str.Bytes;
                     for (var i = 0; i < bytes.Length; i++)
                     {
                         int charCode = bytes[i];
 
                         // Get glyph name from encoding
-                        var glyphName = type3Font.GetGlyphName(charCode);
+                        string? glyphName = type3Font.GetGlyphName(charCode);
                         if (glyphName is null)
                         {
                             PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode}: No glyph name found");
@@ -1194,7 +1194,7 @@ public class PdfRenderer : PdfContentProcessor
                         }
 
                         // Get the CharProc content stream
-                        var charProc = type3Font.GetCharProc(glyphName);
+                        PdfStream? charProc = type3Font.GetCharProc(glyphName);
                         if (charProc is null)
                         {
                             PdfLogger.Log(LogCategory.Text, $"  CharCode {charCode} ('{glyphName}'): No CharProc found");
@@ -1206,20 +1206,20 @@ public class PdfRenderer : PdfContentProcessor
                         // Calculate the glyph transformation matrix
                         var fontSize = (float)CurrentState.FontSize;
                         var fontSizeMatrix = new Matrix3x2(fontSize, 0, 0, fontSize, 0, 0);
-                        var glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
+                        Matrix3x2 glyphMatrix = fontMatrixM * fontSizeMatrix * CurrentState.TextMatrix * CurrentState.Ctm;
 
                         // Execute the CharProc content stream
                         ExecuteType3CharProc(charProc, type3Resources, glyphMatrix);
 
                         // Advance text position
-                        var glyphWidth = type3Font.GetCharacterWidth(charCode);
-                        var advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        double glyphWidth = type3Font.GetCharacterWidth(charCode);
+                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
                         advance *= CurrentState.HorizontalScaling / 100.0;
 
                         if (CurrentState.CharacterSpacing != 0)
                             advance += CurrentState.CharacterSpacing;
 
-                        var decoded = type3Font.DecodeCharacter(charCode);
+                        string decoded = type3Font.DecodeCharacter(charCode);
                         if (decoded == " " && CurrentState.WordSpacing != 0)
                             advance += CurrentState.WordSpacing;
 
@@ -1230,14 +1230,14 @@ public class PdfRenderer : PdfContentProcessor
                 case PdfInteger intVal:
                 {
                     // Kerning adjustment in thousandths of text space
-                    var adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
                     adjustment *= CurrentState.HorizontalScaling / 100.0;
                     CurrentState.AdvanceTextMatrix(adjustment, 0);
                     break;
                 }
                 case PdfReal realVal:
                 {
-                    var adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
                     adjustment *= CurrentState.HorizontalScaling / 100.0;
                     CurrentState.AdvanceTextMatrix(adjustment, 0);
                     break;
@@ -1254,7 +1254,7 @@ public class PdfRenderer : PdfContentProcessor
         try
         {
             // Get the decoded content stream data
-            var contentData = charProc.GetDecodedData(_document?.Decryptor);
+            byte[] contentData = charProc.GetDecodedData(_document?.Decryptor);
 
             PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: {contentData.Length} bytes, glyphMatrix=[{glyphMatrix.M11:F6}, {glyphMatrix.M12:F6}, {glyphMatrix.M21:F6}, {glyphMatrix.M22:F6}, {glyphMatrix.M31:F2}, {glyphMatrix.M32:F2}]");
 
@@ -1275,7 +1275,7 @@ public class PdfRenderer : PdfContentProcessor
             _target.ApplyCtm(glyphMatrix);
 
             // Parse and process the CharProc operators
-            var operators = PdfContentParser.Parse(contentData);
+            List<PdfOperator> operators = PdfContentParser.Parse(contentData);
             charProcRenderer.ProcessOperators(operators);
 
             // Restore render target state
@@ -1301,7 +1301,7 @@ public class PdfRenderer : PdfContentProcessor
             return;
         }
 
-        var xobject = _currentResources.GetXObject(name);
+        PdfStream? xobject = _currentResources.GetXObject(name);
         if (xobject is null)
         {
             PdfLogger.Log(LogCategory.Images, "  XObject not found");
@@ -1311,7 +1311,7 @@ public class PdfRenderer : PdfContentProcessor
         // Check if this XObject has Optional Content that's disabled
         // PDF spec: XObjects can have an /OC key that references an Optional Content Group
         // If the OCG is in the document's /OFF list, we shouldn't render it
-        var isDisabled = IsOptionalContentDisabled(xobject);
+        bool isDisabled = IsOptionalContentDisabled(xobject);
         PdfLogger.Log(LogCategory.Images, $"  Optional content disabled: {isDisabled}");
 
         if (isDisabled)
@@ -1328,7 +1328,7 @@ public class PdfRenderer : PdfContentProcessor
             {
                 var imageStopwatch = Stopwatch.StartNew();
                 var image = new PdfImage(xobject, _document);
-                var createMs = imageStopwatch.ElapsedMilliseconds;
+                long createMs = imageStopwatch.ElapsedMilliseconds;
 
                 PdfLogger.Log(LogCategory.Images, $"  Image: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
                 _target.DrawImage(image, CurrentState);
@@ -1406,7 +1406,7 @@ public class PdfRenderer : PdfContentProcessor
     /// </summary>
     private static bool IsFormXObject(PdfStream stream)
     {
-        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out var obj))
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;
 
         return obj is PdfName { Value: "Form" };
@@ -1420,12 +1420,12 @@ public class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Current CTM before form = [{CurrentState.Ctm.M11}, {CurrentState.Ctm.M12}, {CurrentState.Ctm.M21}, {CurrentState.Ctm.M22}, {CurrentState.Ctm.M31}, {CurrentState.Ctm.M32}]");
 
         // Get the Form XObject's content data
-        var contentData = formStream.GetDecodedData(_document?.Decryptor);
+        byte[] contentData = formStream.GetDecodedData(_document?.Decryptor);
 
         // Get the Form's Resources dictionary (if any)
         // Form XObjects can have their own resources, or inherit from the page
-        var formResources = _resources;
-        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out var resourcesObj))
+        PdfResources? formResources = _resources;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resourcesObj))
         {
             // Resolve indirect reference to Resources dictionary if needed
             if (resourcesObj is PdfIndirectReference resourcesRef && _document is not null)
@@ -1444,12 +1444,12 @@ public class PdfRenderer : PdfContentProcessor
         // invoking context is inherited (and concatenated with the form's Matrix if present)
 
         // Save the current CTM to apply to the form's coordinate space
-        var savedCtm = CurrentState.Ctm;
+        Matrix3x2 savedCtm = CurrentState.Ctm;
 
         // Check for Form XObject Matrix and concatenate with saved CTM
         // The Matrix entry maps form space to user space
-        var formCtm = savedCtm;
-        if (formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out var matrixObj) && matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+        Matrix3x2 formCtm = savedCtm;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) && matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
         {
             var m11 = (float)matrixArray[0].ToDouble();
             var m12 = (float)matrixArray[1].ToDouble();
@@ -1486,7 +1486,7 @@ public class PdfRenderer : PdfContentProcessor
         _target.ApplyCtm(formCtm);
 
         // Parse and process the Form XObject's content stream
-        var operators = PdfContentParser.Parse(contentData);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         formRenderer.ProcessOperators(operators);
 
         // Restore render target state after form processing

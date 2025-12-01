@@ -46,7 +46,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     internal static string ExtractText(byte[] contentData, PdfResources? resources = null)
     {
-        var operators = PdfContentParser.Parse(contentData);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         var extractor = new PdfTextExtractor(resources);
         extractor.ProcessOperators(operators);
         return extractor.GetText();
@@ -57,7 +57,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     internal static (string Text, List<TextFragment> Fragments) ExtractTextWithFragments(byte[] contentData, PdfResources? resources = null)
     {
-        var operators = PdfContentParser.Parse(contentData);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         var extractor = new PdfTextExtractor(resources);
         extractor.ProcessOperators(operators);
         return (extractor.GetText(), extractor.GetTextFragments());
@@ -83,8 +83,8 @@ public class PdfTextExtractor : PdfContentProcessor
     {
         if (!_inTextObject) return;
 
-        var currentPosition = CurrentState.GetTextPosition();
-        var distance = Vector2.Distance(_lastPosition, currentPosition);
+        Vector2 currentPosition = CurrentState.GetTextPosition();
+        float distance = Vector2.Distance(_lastPosition, currentPosition);
         var threshold = (float)(SpaceThreshold * CurrentState.FontSize);
 
         // If significant movement, add space or newline
@@ -109,7 +109,7 @@ public class PdfTextExtractor : PdfContentProcessor
     {
         if (!_inTextObject) return;
 
-        var position = CurrentState.GetTextPosition();
+        Vector2 position = CurrentState.GetTextPosition();
 
         // Get current font object
         PdfFont? font = null;
@@ -119,16 +119,16 @@ public class PdfTextExtractor : PdfContentProcessor
         }
 
         // Decode text using font
-        var decodedText = DecodeText(text, font);
+        string decodedText = DecodeText(text, font);
 
         // Calculate effective font size by extracting scale from TextMatrix
         // The TextMatrix contains scaling factors that affect the actual rendered size
         // Extract Y-scale from the second column vector: sqrt(M12^2 + M22^2)
-        var scaleY = Math.Sqrt(
+        double scaleY = Math.Sqrt(
             CurrentState.TextMatrix.M12 * CurrentState.TextMatrix.M12 +
             CurrentState.TextMatrix.M22 * CurrentState.TextMatrix.M22
         );
-        var effectiveFontSize = CurrentState.FontSize * scaleY;
+        double effectiveFontSize = CurrentState.FontSize * scaleY;
 
         _textBuilder.Append(decodedText);
         _fragments.Add(new TextFragment
@@ -141,7 +141,7 @@ public class PdfTextExtractor : PdfContentProcessor
         });
 
         // Calculate actual text advance using font metrics
-        var advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize);
+        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize);
         _lastPosition = position with { X = position.X + (float)advance };
     }
 
@@ -149,7 +149,7 @@ public class PdfTextExtractor : PdfContentProcessor
     {
         if (!_inTextObject) return;
 
-        foreach (var item in array)
+        foreach (PdfObject item in array)
         {
             switch (item)
             {
@@ -160,15 +160,15 @@ public class PdfTextExtractor : PdfContentProcessor
                 {
                     // Negative values increase spacing (move text position)
                     // Values are in thousandths of a unit of text space
-                    var adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
-                    var position = CurrentState.GetTextPosition();
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    Vector2 position = CurrentState.GetTextPosition();
                     _lastPosition = position with { X = position.X + (float)adjustment };
                     break;
                 }
                 case PdfReal realVal:
                 {
-                    var adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
-                    var position = CurrentState.GetTextPosition();
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    Vector2 position = CurrentState.GetTextPosition();
                     _lastPosition = position with { X = position.X + (float)adjustment };
                     break;
                 }
@@ -190,7 +190,7 @@ public class PdfTextExtractor : PdfContentProcessor
             return;
         }
 
-        var xobject = _resources.GetXObject(name);
+        PdfStream? xobject = _resources.GetXObject(name);
         if (xobject is null)
         {
             PdfLogger.Log(LogCategory.Text, $"[DEBUG] XObject '{name}' not found in resources");
@@ -222,7 +222,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     private static bool IsFormXObject(PdfStream stream)
     {
-        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out var obj))
+        if (!stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj))
             return false;
         return obj is PdfName { Value: "Form" };
     }
@@ -233,11 +233,11 @@ public class PdfTextExtractor : PdfContentProcessor
     private void ExtractTextFromFormXObject(PdfStream formStream)
     {
         // Get the Form XObject's content data
-        var contentData = formStream.GetDecodedData(_document?.Decryptor);
+        byte[] contentData = formStream.GetDecodedData(_document?.Decryptor);
 
         // Get the Form's Resources dictionary if present
-        var formResources = _resources;
-        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out var resourcesObj))
+        PdfResources? formResources = _resources;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
             if (resourcesObj is PdfDictionary resourcesDict)
             {
@@ -249,7 +249,7 @@ public class PdfTextExtractor : PdfContentProcessor
         var formExtractor = new PdfTextExtractor(formResources ?? _resources, _document);
 
         // Parse and process the Form XObject's content stream
-        var operators = PdfContentParser.Parse(contentData);
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         formExtractor.ProcessOperators(operators);
 
         // Append the extracted text and fragments to our results
@@ -262,7 +262,7 @@ public class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     private static string DecodeText(PdfString pdfString, PdfFont? font)
     {
-        var bytes = pdfString.Bytes;
+        byte[] bytes = pdfString.Bytes;
 
         // Check for UTF-16BE BOM (used in some PDFs)
         if (bytes is [0xFE, 0xFF, ..])
@@ -280,24 +280,24 @@ public class PdfTextExtractor : PdfContentProcessor
             // Read 2 bytes at a time for Type0 fonts
             for (var i = 0; i < bytes.Length - 1; i += 2)
             {
-                var charCode = (bytes[i] << 8) | bytes[i + 1];
-                var decoded = font.DecodeCharacter(charCode);
+                int charCode = (bytes[i] << 8) | bytes[i + 1];
+                string decoded = font.DecodeCharacter(charCode);
                 sb.Append(decoded);
             }
 
             // Handle odd byte at the end (shouldn't happen in well-formed PDFs)
             if (bytes.Length % 2 != 1) return sb.ToString();
             {
-                var decoded = font.DecodeCharacter(bytes[^1]);
+                string decoded = font.DecodeCharacter(bytes[^1]);
                 sb.Append(decoded);
             }
         }
         else
         {
             // Type1, Type3, TrueType fonts use single-byte character codes
-            foreach (var b in bytes)
+            foreach (byte b in bytes)
             {
-                var decoded = font.DecodeCharacter(b);
+                string decoded = font.DecodeCharacter(b);
                 sb.Append(decoded);
             }
         }

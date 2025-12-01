@@ -1743,6 +1743,24 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     int midY = bitmap.Height / 2;
                     SKColor pixelMid = bitmap.GetPixel(midX, midY);
                     PdfLogger.Log(LogCategory.Images, $"DrawImage: pixel(0,0)=({pixel00.Red},{pixel00.Green},{pixel00.Blue},{pixel00.Alpha}), pixel(mid)=({pixelMid.Red},{pixelMid.Green},{pixelMid.Blue},{pixelMid.Alpha})");
+
+                    // DEBUG: Save bitmap before drawing to diagnose dithering
+                    if (bitmap.Width == 650 && bitmap.Height == 650)  // Only for this specific test image
+                    {
+                        try
+                        {
+                            string debugPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_bitmap_before_draw.png");
+                            using var debugImage = SKImage.FromBitmap(bitmap);
+                            using var debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
+                            if (debugData != null)
+                            {
+                                using var stream = System.IO.File.OpenWrite(debugPath);
+                                debugData.SaveTo(stream);
+                                PdfLogger.Log(LogCategory.Images, $"DEBUG: Saved bitmap to {debugPath}");
+                            }
+                        }
+                        catch { /* ignore debug errors */ }
+                    }
                 }
 
                 // Debug: Log canvas clip bounds
@@ -1766,10 +1784,10 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 const float epsilon = 0.002f;  // Small expansion to cover sub-pixel gaps
                 var destRect = new SKRect(-epsilon, -epsilon, 1 + epsilon, 1 + epsilon);
 
-                // Use linear filtering for better quality when downscaling images.
-                // Nearest-neighbor produces jagged artifacts when scaling by non-integer factors.
-                // SKFilterQuality is obsolete - use SKSamplingOptions instead.
-                var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+                // Use high-quality cubic filtering for downscaling images.
+                // CatmullRom (B=0, C=0.5) is commonly used for photo-quality downsampling.
+                // Linear filtering can cause dithering artifacts when scaling significantly.
+                var sampling = new SKSamplingOptions(new SKCubicResampler(0, 0.5f));
 
                 // Apply fill alpha from graphics state to images
                 // PDF uses CA for stroke alpha and ca for fill alpha; images use fill alpha
@@ -1867,7 +1885,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Diagnostic: log actual values for image creation
             double[]? imgDecodeArray = image.DecodeArray;
             string decodeStr = imgDecodeArray != null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
-            PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, Decode={decodeStr}");
+            int debugExpectedRgb = width * height * 3;
+            PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, ExpectedRGB={debugExpectedRgb}, Decode={decodeStr}");
+            Console.WriteLine($"[BITMAP DEBUG] ColorSpace='{colorSpace}', {width}x{height}, DataLen={imageData.Length}, ExpectedRGB={debugExpectedRgb}");
 
             // Handle image masks (1-bit stencil images)
             if (image.IsImageMask && imageMaskColor.HasValue)
@@ -2066,6 +2086,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     if (imageData.Length < expectedSize)
                         return null;
 
+                    // DEBUG: Check if SMask is present
+                    Console.WriteLine($"[BITMAP DEBUG] DeviceRGB: hasSMask={hasSMask}, smaskData={(smaskData == null ? "null" : $"len={smaskData.Length}")}");
+
                     // Use direct pixel buffer for performance - SetPixel is very slow for large images
                     var pixelBuffer = new byte[width * height * 4]; // RGBA8888
 
@@ -2095,13 +2118,77 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                         }
                     }
 
+                    // DEBUG: Save pixel buffer directly as image to verify data before bitmap copy
+                    if (width == 650 && height == 650)
+                    {
+                        try
+                        {
+                            // Sample some pixels to check data integrity
+                            Console.WriteLine($"[PIXEL DEBUG] Pixel (0,0): R={pixelBuffer[0]}, G={pixelBuffer[1]}, B={pixelBuffer[2]}, A={pixelBuffer[3]}");
+                            Console.WriteLine($"[PIXEL DEBUG] Pixel (649,0): R={pixelBuffer[649*4]}, G={pixelBuffer[649*4+1]}, B={pixelBuffer[649*4+2]}, A={pixelBuffer[649*4+3]}");
+                            int midRow = 325 * 650 * 4;
+                            Console.WriteLine($"[PIXEL DEBUG] Pixel (0,325): R={pixelBuffer[midRow]}, G={pixelBuffer[midRow+1]}, B={pixelBuffer[midRow+2]}, A={pixelBuffer[midRow+3]}");
+                            // Check pixel at x=433 where corruption visually starts
+                            int corrupt433 = 433 * 4;
+                            Console.WriteLine($"[PIXEL DEBUG] Pixel (433,0): R={pixelBuffer[corrupt433]}, G={pixelBuffer[corrupt433+1]}, B={pixelBuffer[corrupt433+2]}, A={pixelBuffer[corrupt433+3]}");
+                            int corrupt433Row100 = (100 * 650 + 433) * 4;
+                            Console.WriteLine($"[PIXEL DEBUG] Pixel (433,100): R={pixelBuffer[corrupt433Row100]}, G={pixelBuffer[corrupt433Row100+1]}, B={pixelBuffer[corrupt433Row100+2]}, A={pixelBuffer[corrupt433Row100+3]}");
+
+                            // Save the pixel buffer directly using SKBitmap.InstallPixels to bypass Marshal.Copy
+                            string debugPath2 = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_pixelbuffer_direct.png");
+                            var debugInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
+                            using var debugBitmap = new SKBitmap();
+                            var pinnedArray = System.Runtime.InteropServices.GCHandle.Alloc(pixelBuffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                            try
+                            {
+                                debugBitmap.InstallPixels(debugInfo, pinnedArray.AddrOfPinnedObject(), width * 4);
+                                using var debugImage = SKImage.FromBitmap(debugBitmap);
+                                using var debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
+                                if (debugData != null)
+                                {
+                                    using var fileStream = System.IO.File.OpenWrite(debugPath2);
+                                    debugData.SaveTo(fileStream);
+                                    Console.WriteLine($"[DEBUG] Saved pixelbuffer direct to {debugPath2}");
+                                }
+                            }
+                            finally
+                            {
+                                pinnedArray.Free();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[DEBUG ERROR] {ex.Message}");
+                        }
+                    }
+
                     // Create bitmap and copy pixel buffer
                     var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
                     bitmap = new SKBitmap(imageInfo);
                     IntPtr bitmapPixels = bitmap.GetPixels();
                     if (bitmapPixels == IntPtr.Zero)
                         return null;
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+
+                    // DEBUG: Check if RowBytes matches our expectation
+                    int expectedRowBytes = width * 4;
+                    Console.WriteLine($"[BITMAP DEBUG] RowBytes={bitmap.RowBytes}, Expected={expectedRowBytes}, Match={bitmap.RowBytes == expectedRowBytes}");
+
+                    // If RowBytes doesn't match, we need to copy row by row
+                    if (bitmap.RowBytes != expectedRowBytes)
+                    {
+                        // Copy row by row to handle row padding
+                        Console.WriteLine($"[BITMAP DEBUG] Using row-by-row copy due to stride mismatch");
+                        for (int row = 0; row < height; row++)
+                        {
+                            int srcOffset = row * expectedRowBytes;
+                            IntPtr dstOffset = bitmapPixels + (row * bitmap.RowBytes);
+                            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, srcOffset, dstOffset, expectedRowBytes);
+                        }
+                    }
+                    else
+                    {
+                        System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    }
                     bitmap.NotifyPixelsChanged();
 
                     break;

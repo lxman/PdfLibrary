@@ -45,13 +45,13 @@ internal class Type0Font : PdfFont
     {
         // 3-step fallback chain for Type 0 fonts:
         // 1. Try ToUnicode CMap (standard, correct approach)
-        var unicode = ToUnicode?.Lookup(charCode);
+        string? unicode = ToUnicode?.Lookup(charCode);
         if (unicode is not null)
             return unicode;
 
         // 2. Try embedded font glyph name → Unicode (handles broken PDFs)
         if (_embeddedFont is not { IsValid: true }) return char.ConvertFromUtf32(charCode);
-        var unicodeFromGlyph = _embeddedFont.GetUnicodeFromGlyphName(charCode);
+        string? unicodeFromGlyph = _embeddedFont.GetUnicodeFromGlyphName(charCode);
         if (unicodeFromGlyph is null) return char.ConvertFromUtf32(charCode);
         // Log fallback usage for debugging
         PdfLogger.Log(LogCategory.Text,
@@ -71,13 +71,13 @@ internal class Type0Font : PdfFont
         try
         {
             // Get the font descriptor from descendant CIDFont or Type0 font
-            var descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
+            PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
             if (descriptor is null)
                 return null;
 
             // Try to get embedded TrueType data (FontFile2)
             // Try OpenType/CFF (FontFile3)
-            var fontData = descriptor.GetFontFile2() ?? descriptor.GetFontFile3();
+            byte[]? fontData = descriptor.GetFontFile2() ?? descriptor.GetFontFile3();
 
             if (fontData is not null)
             {
@@ -87,10 +87,10 @@ internal class Type0Font : PdfFont
             }
 
             // Try Type1 font (FontFile with Length1/Length2/Length3 parameters)
-            var type1Data = descriptor.GetFontFileWithLengths();
+            (byte[] data, int length1, int length2, int length3)? type1Data = descriptor.GetFontFileWithLengths();
             if (type1Data is not null)
             {
-                (var data, var length1, var length2, var length3) = type1Data.Value;
+                (byte[] data, int length1, int length2, int length3) = type1Data.Value;
                 _embeddedMetrics = new EmbeddedFontMetrics(data, length1, length2, length3);
                 if (_embeddedMetrics.IsValid)
                     return _embeddedMetrics;
@@ -113,7 +113,7 @@ internal class Type0Font : PdfFont
     {
         // Get font descriptor from descendant CIDFont
         // Try to get the descriptor from Type0 font dict (rare but valid)
-        var descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
+        PdfFontDescriptor? descriptor = _descendantFont?.GetDescriptor() ?? GetDescriptor();
 
         if (descriptor is not null)
         {
@@ -123,7 +123,7 @@ internal class Type0Font : PdfFont
 
     private void LoadDescendantFont()
     {
-        if (!_dictionary.TryGetValue(new PdfName("DescendantFonts"), out var obj))
+        if (!_dictionary.TryGetValue(new PdfName("DescendantFonts"), out PdfObject? obj))
             return;
 
         // Resolve indirect reference
@@ -132,7 +132,7 @@ internal class Type0Font : PdfFont
 
         // DescendantFonts is an array with a single CIDFont
         if (obj is not PdfArray { Count: > 0 } array) return;
-        var descendantObj = array[0];
+        PdfObject? descendantObj = array[0];
 
         if (descendantObj is PdfIndirectReference descRef && _document is not null)
             descendantObj = _document.ResolveReference(descRef);
@@ -172,7 +172,7 @@ internal class CidFont : PdfFont
             return cid;
 
         // Look up in the mapping table
-        if (_cidToGidMap is not null && _cidToGidMap.TryGetValue(cid, out var gid))
+        if (_cidToGidMap is not null && _cidToGidMap.TryGetValue(cid, out int gid))
             return gid;
 
         // Default: assume identity mapping
@@ -181,7 +181,7 @@ internal class CidFont : PdfFont
 
     private void LoadCidToGidMap()
     {
-        if (!_dictionary.TryGetValue(new PdfName("CIDToGIDMap"), out var mapObj))
+        if (!_dictionary.TryGetValue(new PdfName("CIDToGIDMap"), out PdfObject? mapObj))
         {
             // No mapping specified, assume identity
             _isIdentityMapping = true;
@@ -201,13 +201,13 @@ internal class CidFont : PdfFont
             // Parse stream containing the mapping
             case PdfStream stream:
             {
-                var data = stream.GetDecodedData(_document?.Decryptor);
+                byte[] data = stream.GetDecodedData(_document?.Decryptor);
                 _cidToGidMap = new Dictionary<int, int>();
 
                 // Each entry is 2 bytes (big-endian GID), indexed by CID
                 for (var cid = 0; cid < data.Length / 2; cid++)
                 {
-                    var gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
+                    int gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
                     if (gid != 0)  // Only store non-zero mappings
                         _cidToGidMap[cid] = gid;
                 }
@@ -225,7 +225,7 @@ internal class CidFont : PdfFont
 
     public override double GetCharacterWidth(int charCode)
     {
-        if (_widths is not null && _widths.TryGetValue(charCode, out var width))
+        if (_widths is not null && _widths.TryGetValue(charCode, out double width))
             return width;
 
         return _defaultWidth;
@@ -234,13 +234,13 @@ internal class CidFont : PdfFont
     private void LoadWidths()
     {
         // Get default width (DW)
-        if (_dictionary.TryGetValue(new PdfName("DW"), out var dwObj))
+        if (_dictionary.TryGetValue(new PdfName("DW"), out PdfObject dwObj))
         {
             _defaultWidth = dwObj.ToDouble();
         }
 
         // Get width array (W)
-        if (_dictionary.TryGetValue(new PdfName("W"), out var wObj))
+        if (_dictionary.TryGetValue(new PdfName("W"), out PdfObject? wObj))
         {
             if (wObj is PdfIndirectReference reference && _document is not null)
                 wObj = _document.ResolveReference(reference);
@@ -253,7 +253,7 @@ internal class CidFont : PdfFont
 
         // Try to get from descriptor
         if (_widths is not null && _widths.Count != 0) return;
-        var descriptor = GetDescriptor();
+        PdfFontDescriptor? descriptor = GetDescriptor();
         if (descriptor is { MissingWidth: > 0 })
             _defaultWidth = descriptor.MissingWidth;
     }
@@ -268,7 +268,7 @@ internal class CidFont : PdfFont
             if (array[i] is not PdfInteger startCid)
                 break;
 
-            var start = startCid.Value;
+            int start = startCid.Value;
             i++;
 
             if (i >= array.Count)
@@ -286,10 +286,10 @@ internal class CidFont : PdfFont
             // Format 2: start_cid end_cid width
             else if (array[i] is PdfInteger endCid && i + 1 < array.Count)
             {
-                var end = endCid.Value;
+                int end = endCid.Value;
                 var width = array[i + 1].ToDouble();
 
-                for (var cid = start; cid <= end; cid++)
+                for (int cid = start; cid <= end; cid++)
                 {
                     widths[cid] = width;
                 }

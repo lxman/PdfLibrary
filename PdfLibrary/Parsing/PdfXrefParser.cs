@@ -39,8 +39,8 @@ internal class PdfXrefParser
     public PdfXrefParseResult Parse()
     {
         // Peek at the first line to determine format
-        var startPosition = _stream.Position;
-        var firstLine = ReadLine();
+        long startPosition = _stream.Position;
+        string? firstLine = ReadLine();
         _stream.Position = startPosition;
 
         if (string.IsNullOrEmpty(firstLine))
@@ -55,7 +55,7 @@ internal class PdfXrefParser
         }
 
         // Traditional xref table (trailer comes separately)
-        var table = ParseTraditionalXRef();
+        PdfXrefTable table = ParseTraditionalXRef();
         return new PdfXrefParseResult(table, null, false);
     }
 
@@ -67,15 +67,15 @@ internal class PdfXrefParser
         var table = new PdfXrefTable();
 
         // Read "xref" keyword
-        var keyword = ReadLine();
+        string? keyword = ReadLine();
         if (keyword?.Trim() != "xref")
             throw new PdfParseException($"Expected 'xref' keyword, got: {keyword}");
 
         // Read subsections
         while (true)
         {
-            var position = _stream.Position;
-            var line = ReadLine();
+            long position = _stream.Position;
+            string? line = ReadLine();
 
             if (string.IsNullOrWhiteSpace(line))
                 continue;
@@ -89,21 +89,21 @@ internal class PdfXrefParser
             }
 
             // Parse subsection header (firstObjectNumber count)
-            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length != 2)
                 throw new PdfParseException($"Invalid xref subsection header: {line}");
 
-            if (!int.TryParse(parts[0], out var firstObjectNumber))
+            if (!int.TryParse(parts[0], out int firstObjectNumber))
                 throw new PdfParseException($"Invalid first object number: {parts[0]}");
 
-            if (!int.TryParse(parts[1], out var count))
+            if (!int.TryParse(parts[1], out int count))
                 throw new PdfParseException($"Invalid entry count: {parts[1]}");
 
             // Read entries for this subsection
             for (var i = 0; i < count; i++)
             {
-                var objectNumber = firstObjectNumber + i;
-                var entry = ParseEntry(objectNumber);
+                int objectNumber = firstObjectNumber + i;
+                PdfXrefEntry entry = ParseEntry(objectNumber);
                 table.Add(entry);
             }
         }
@@ -126,20 +126,20 @@ internal class PdfXrefParser
         // all direct integers/arrays). Indirect references like /Root, /Info are resolved later.
         var parser = new PdfParser(_stream);
 
-        var obj = parser.ReadObject();
+        PdfObject? obj = parser.ReadObject();
 
         if (obj is not PdfStream xrefStream)
             throw new PdfParseException("Expected XRef stream object");
 
         // Verify this is a cross-reference stream
-        if (!xrefStream.Dictionary.TryGetValue(new PdfName("Type"), out var typeObj) ||
+        if (!xrefStream.Dictionary.TryGetValue(new PdfName("Type"), out PdfObject typeObj) ||
             typeObj is not PdfName { Value: "XRef" })
         {
             throw new PdfParseException("Stream is not a cross-reference stream (/Type /XRef missing)");
         }
 
         // Get /W array - specifies field widths [type, field2, field3]
-        if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out var wObj) ||
+        if (!xrefStream.Dictionary.TryGetValue(new PdfName("W"), out PdfObject wObj) ||
             wObj is not PdfArray { Count: 3 } wArray)
         {
             throw new PdfParseException("XRef stream missing or invalid /W array");
@@ -156,7 +156,7 @@ internal class PdfXrefParser
 
         // Get /Index array (or default to [0, Size])
         int[] index;
-        if (xrefStream.Dictionary.TryGetValue(new PdfName("Index"), out var indexObj) &&
+        if (xrefStream.Dictionary.TryGetValue(new PdfName("Index"), out PdfObject indexObj) &&
             indexObj is PdfArray indexArray)
         {
             index = new int[indexArray.Count];
@@ -171,7 +171,7 @@ internal class PdfXrefParser
         else
         {
             // Default: [0, Size]
-            if (!xrefStream.Dictionary.TryGetValue(new PdfName("Size"), out var sizeObj) ||
+            if (!xrefStream.Dictionary.TryGetValue(new PdfName("Size"), out PdfObject sizeObj) ||
                 sizeObj is not PdfInteger size)
             {
                 throw new PdfParseException("XRef stream missing /Size");
@@ -180,7 +180,7 @@ internal class PdfXrefParser
         }
 
         // Decode the stream data
-        var decodedData = xrefStream.GetDecodedData();
+        byte[] decodedData = xrefStream.GetDecodedData();
 
         // Parse binary xref entries
         ParseXRefStreamEntries(table, decodedData, fieldWidths, index);
@@ -195,36 +195,36 @@ internal class PdfXrefParser
     /// </summary>
     private void ParseXRefStreamEntries(PdfXrefTable table, byte[] data, int[] fieldWidths, int[] index)
     {
-        var bytesPerEntry = fieldWidths[0] + fieldWidths[1] + fieldWidths[2];
+        int bytesPerEntry = fieldWidths[0] + fieldWidths[1] + fieldWidths[2];
         var dataOffset = 0;
 
         // Process each subsection specified in /Index
         for (var i = 0; i < index.Length; i += 2)
         {
-            var firstObjectNumber = index[i];
-            var count = index[i + 1];
+            int firstObjectNumber = index[i];
+            int count = index[i + 1];
 
             for (var j = 0; j < count; j++)
             {
-                var objectNumber = firstObjectNumber + j;
+                int objectNumber = firstObjectNumber + j;
 
                 if (dataOffset + bytesPerEntry > data.Length)
                     throw new PdfParseException("XRef stream data truncated");
 
                 // Read fields
-                var field1 = ReadBigEndianInt(data, dataOffset, fieldWidths[0]);
+                long field1 = ReadBigEndianInt(data, dataOffset, fieldWidths[0]);
                 dataOffset += fieldWidths[0];
 
-                var field2 = ReadBigEndianInt(data, dataOffset, fieldWidths[1]);
+                long field2 = ReadBigEndianInt(data, dataOffset, fieldWidths[1]);
                 dataOffset += fieldWidths[1];
 
-                var field3 = ReadBigEndianInt(data, dataOffset, fieldWidths[2]);
+                long field3 = ReadBigEndianInt(data, dataOffset, fieldWidths[2]);
                 dataOffset += fieldWidths[2];
 
                 // Determine entry type (default to 1 if not specified)
-                var entryType = fieldWidths[0] == 0 ? 1 : (int)field1;
+                int entryType = fieldWidths[0] == 0 ? 1 : (int)field1;
 
-                var entry = entryType switch
+                PdfXrefEntry entry = entryType switch
                 {
                     0 => new PdfXrefEntry(objectNumber, field2, (int)field3, false, PdfXrefEntryType.Free),
                     1 => new PdfXrefEntry(objectNumber, field2, (int)field3, true, PdfXrefEntryType.Uncompressed),
@@ -256,7 +256,7 @@ internal class PdfXrefParser
     /// </summary>
     private PdfXrefEntry ParseEntry(int objectNumber)
     {
-        var line = ReadLine();
+        string? line = ReadLine();
         if (string.IsNullOrEmpty(line))
             throw new PdfParseException("Unexpected end of xref table");
 
@@ -268,18 +268,18 @@ internal class PdfXrefParser
             throw new PdfParseException($"Invalid xref entry format: {line}");
 
         // Parse byte offset (or next free object number)
-        var offsetStr = line[..10].Trim();
-        if (!long.TryParse(offsetStr, out var byteOffset))
+        string offsetStr = line[..10].Trim();
+        if (!long.TryParse(offsetStr, out long byteOffset))
             throw new PdfParseException($"Invalid byte offset in xref entry: {offsetStr}");
 
         // Parse generation number
-        var genStr = line.Substring(11, 5).Trim();
-        if (!int.TryParse(genStr, out var generationNumber))
+        string genStr = line.Substring(11, 5).Trim();
+        if (!int.TryParse(genStr, out int generationNumber))
             throw new PdfParseException($"Invalid generation number in xref entry: {genStr}");
 
         // Parse in-use flag
-        var flag = line.Length >= 18 ? line[17] : ' ';
-        var isInUse = flag switch
+        char flag = line.Length >= 18 ? line[17] : ' ';
+        bool isInUse = flag switch
         {
             'n' => true,
             'f' => false,
@@ -305,7 +305,7 @@ internal class PdfXrefParser
             if (ch == '\r')
             {
                 // Peek ahead for LF
-                var next = _stream.ReadByte();
+                int next = _stream.ReadByte();
                 if (next != -1 && next != '\n')
                 {
                     // Not CRLF, move back

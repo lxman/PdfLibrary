@@ -55,15 +55,15 @@ namespace PdfLibrary.Fonts.Embedded
             {
                 try
                 {
-                    var length = reader.ReadByte();
+                    byte length = reader.ReadByte();
                     if (length == 0)
                         break; // End of names
 
                     if (reader.BytesRemaining < length)
                         break; // Malformed data
 
-                    var nameBytes = reader.ReadBytes(length);
-                    var name = Encoding.ASCII.GetString(nameBytes);
+                    byte[] nameBytes = reader.ReadBytes(length);
+                    string name = Encoding.ASCII.GetString(nameBytes);
                     customNames.Add(name);
                 }
                 catch
@@ -80,7 +80,7 @@ namespace PdfLibrary.Fonts.Embedded
                 if (nameIndex < MacintoshGlyphNames.StandardNameCount)
                 {
                     // Standard Macintosh name (0-257)
-                    var stdName = MacintoshGlyphNames.GetStandardName(nameIndex);
+                    string? stdName = MacintoshGlyphNames.GetStandardName(nameIndex);
                     if (stdName is not null)
                     {
                         _glyphNames[glyphId] = stdName;
@@ -89,7 +89,7 @@ namespace PdfLibrary.Fonts.Embedded
                 else
                 {
                     // Custom name (258+)
-                    var customIndex = nameIndex - MacintoshGlyphNames.StandardNameCount;
+                    int customIndex = nameIndex - MacintoshGlyphNames.StandardNameCount;
                     if (customIndex >= 0 && customIndex < customNames.Count)
                     {
                         _glyphNames[glyphId] = customNames[customIndex];
@@ -103,7 +103,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// </summary>
         public string? GetGlyphName(int glyphId)
         {
-            return _glyphNames.TryGetValue(glyphId, out var name) ? name : null;
+            return _glyphNames.TryGetValue(glyphId, out string? name) ? name : null;
         }
 
         /// <summary>

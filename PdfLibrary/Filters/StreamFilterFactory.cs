@@ -33,7 +33,7 @@ internal static class StreamFilterFactory
         if (string.IsNullOrEmpty(filterName))
             return null;
 
-        return Filters.TryGetValue(filterName, out var factory) ? factory() : null;
+        return Filters.TryGetValue(filterName, out Func<IStreamFilter>? factory) ? factory() : null;
     }
 
     /// <summary>

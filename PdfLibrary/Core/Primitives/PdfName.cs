@@ -33,22 +33,22 @@ internal sealed class PdfName : PdfObject
         var sb = new StringBuilder();
         sb.Append('/');
 
-        foreach (var c in Value)
+        foreach (char c in Value)
         {
             var b = (byte)c;
 
             // Check if a character needs to be encoded
             // Regular characters: EXCLAMATION MARK (21h) to TILDE (7Eh) except # and delimiters
-            var isRegular = b is >= 0x21 and <= 0x7E &&
-                            c != '#' &&
-                            c != '(' && c != ')' &&
-                            c != '<' && c != '>' &&
-                            c != '[' && c != ']' &&
-                            c != '{' && c != '}' &&
-                            c != '/' && c != '%';
+            bool isRegular = b is >= 0x21 and <= 0x7E &&
+                             c != '#' &&
+                             c != '(' && c != ')' &&
+                             c != '<' && c != '>' &&
+                             c != '[' && c != ']' &&
+                             c != '{' && c != '}' &&
+                             c != '/' && c != '%';
 
             // White space must always be encoded
-            var isWhiteSpace = c is ' ' or '\t' or '\r' or '\n' or '\f' or '\0';
+            bool isWhiteSpace = c is ' ' or '\t' or '\r' or '\n' or '\f' or '\0';
 
             if (isWhiteSpace || !isRegular || b < 0x21 || b > 0x7E)
             {
@@ -74,7 +74,7 @@ internal sealed class PdfName : PdfObject
             throw new ArgumentException("Input cannot be null or empty", nameof(input));
 
         // Remove leading solidus if present
-        var value = input.StartsWith('/') ? input[1..] : input;
+        string value = input.StartsWith('/') ? input[1..] : input;
 
         if (string.IsNullOrEmpty(value))
             return new PdfName(""); // Empty name
@@ -87,8 +87,8 @@ internal sealed class PdfName : PdfObject
             if (value[i] == '#' && i + 2 < value.Length)
             {
                 // Parse hex escape sequence
-                var hexCode = value.Substring(i + 1, 2);
-                if (byte.TryParse(hexCode, NumberStyles.HexNumber, null, out var b))
+                string hexCode = value.Substring(i + 1, 2);
+                if (byte.TryParse(hexCode, NumberStyles.HexNumber, null, out byte b))
                 {
                     sb.Append((char)b);
                     i += 3;

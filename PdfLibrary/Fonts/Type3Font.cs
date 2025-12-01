@@ -30,7 +30,7 @@ internal class Type3Font : PdfFont
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("FontMatrix"), out var obj) && obj is PdfArray { Count: 6 } array)
+            if (_dictionary.TryGetValue(new PdfName("FontMatrix"), out PdfObject obj) && obj is PdfArray { Count: 6 } array)
             {
                 return
                 [
@@ -51,7 +51,7 @@ internal class Type3Font : PdfFont
     /// </summary>
     public PdfDictionary? GetCharProcs()
     {
-        if (!_dictionary.TryGetValue(new PdfName("CharProcs"), out var obj)) return null;
+        if (!_dictionary.TryGetValue(new PdfName("CharProcs"), out PdfObject? obj)) return null;
         if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
@@ -63,7 +63,7 @@ internal class Type3Font : PdfFont
     /// </summary>
     public PdfDictionary? GetResourcesDictionary()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Resources"), out var obj)) return null;
+        if (!_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj)) return null;
         if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
@@ -75,10 +75,10 @@ internal class Type3Font : PdfFont
     /// </summary>
     public PdfStream? GetCharProc(string glyphName)
     {
-        var charProcs = GetCharProcs();
+        PdfDictionary? charProcs = GetCharProcs();
         if (charProcs is null) return null;
 
-        if (!charProcs.TryGetValue(new PdfName(glyphName), out var obj)) return null;
+        if (!charProcs.TryGetValue(new PdfName(glyphName), out PdfObject? obj)) return null;
         if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
 
@@ -99,7 +99,7 @@ internal class Type3Font : PdfFont
         // Check if character code is in range
         if (_widths is null || charCode < FirstChar || charCode > LastChar)
             return _defaultWidth > 0 ? _defaultWidth : 500;
-        var index = charCode - FirstChar;
+        int index = charCode - FirstChar;
         if (index >= 0 && index < _widths.Length)
             return _widths[index];
 
@@ -108,7 +108,7 @@ internal class Type3Font : PdfFont
 
     private void LoadEncoding()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out var obj))
+        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
         {
             Encoding = PdfFontEncoding.GetStandardEncoding("StandardEncoding");
             return;
@@ -132,7 +132,7 @@ internal class Type3Font : PdfFont
     private void LoadWidths()
     {
         // Get widths array
-        if (_dictionary.TryGetValue(new PdfName("Widths"), out var obj))
+        if (_dictionary.TryGetValue(new PdfName("Widths"), out PdfObject? obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);

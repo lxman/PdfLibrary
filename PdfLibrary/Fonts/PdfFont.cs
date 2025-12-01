@@ -32,7 +32,7 @@ public abstract class PdfFont
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("BaseFont"), out var obj) && obj is PdfName name)
+            if (_dictionary.TryGetValue(new PdfName("BaseFont"), out PdfObject obj) && obj is PdfName name)
                 return name.Value;
             return "Unknown";
         }
@@ -46,7 +46,7 @@ public abstract class PdfFont
     {
         get
         {
-            var name = BaseFont;
+            string name = BaseFont;
             // Subset fonts have a pattern: XXXXXX+FontName where XXXXXX is 6 uppercase letters
             if (name.Length > 7 && name[6] == '+')
             {
@@ -79,7 +79,7 @@ public abstract class PdfFont
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("FirstChar"), out var obj) && obj is PdfInteger i)
+            if (_dictionary.TryGetValue(new PdfName("FirstChar"), out PdfObject obj) && obj is PdfInteger i)
                 return i.Value;
             return 0;
         }
@@ -92,7 +92,7 @@ public abstract class PdfFont
     {
         get
         {
-            if (_dictionary.TryGetValue(new PdfName("LastChar"), out var obj) && obj is PdfInteger i)
+            if (_dictionary.TryGetValue(new PdfName("LastChar"), out PdfObject obj) && obj is PdfInteger i)
                 return i.Value;
             return 255;
         }
@@ -104,7 +104,7 @@ public abstract class PdfFont
     public virtual string DecodeCharacter(int charCode)
     {
         // Try ToUnicode CMap first (most reliable)
-        var unicode = ToUnicode?.Lookup(charCode);
+        string? unicode = ToUnicode?.Lookup(charCode);
         if (unicode is not null)
             return unicode;
 
@@ -128,7 +128,7 @@ public abstract class PdfFont
     /// </summary>
     internal PdfFontDescriptor? GetDescriptor()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontDescriptor"), out var obj))
+        if (_dictionary.TryGetValue(new PdfName("FontDescriptor"), out PdfObject? obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
@@ -157,7 +157,7 @@ public abstract class PdfFont
     /// </summary>
     internal static PdfFont? Create(PdfDictionary dictionary, PdfDocument? document = null)
     {
-        if (!dictionary.TryGetValue(new PdfName("Subtype"), out var subtypeObj) || subtypeObj is not PdfName subtype)
+        if (!dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj) || subtypeObj is not PdfName subtype)
             return null;
 
         return subtype.Value switch
@@ -176,14 +176,14 @@ public abstract class PdfFont
     /// </summary>
     protected void LoadToUnicodeCMap()
     {
-        if (_dictionary.TryGetValue(new PdfName("ToUnicode"), out var obj))
+        if (_dictionary.TryGetValue(new PdfName("ToUnicode"), out PdfObject? obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfStream stream)
             {
-                var data = stream.GetDecodedData(_document?.Decryptor);
+                byte[] data = stream.GetDecodedData(_document?.Decryptor);
                 ToUnicode = ToUnicodeCMap.Parse(data);
             }
         }

@@ -31,14 +31,14 @@ internal class Type1Font : PdfFont
         // Try to use embedded font metrics first for more accurate widths
         // This matches TrueTypeFont behavior and fixes garbled text issues
         // when the PDF /Widths array has incorrect values
-        var embeddedMetrics = GetEmbeddedMetrics();
+        EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
         PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: embeddedMetrics={(embeddedMetrics != null ? "exists" : "NULL")}, IsValid={embeddedMetrics?.IsValid}, Encoding={(Encoding != null ? "exists" : "NULL")}");
 
         if (embeddedMetrics is { IsValid: true })
         {
             // For Type1 fonts with custom encodings, we must map through the encoding first
             // Character codes (e.g., 18-31) -> Glyph names (e.g., "T", "e", "c") -> Widths
-            var glyphName = Encoding?.GetGlyphName(charCode);
+            string? glyphName = Encoding?.GetGlyphName(charCode);
             PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphName='{glyphName}'");
 
             if (!string.IsNullOrEmpty(glyphName))
@@ -48,12 +48,12 @@ internal class Type1Font : PdfFont
                 // but GetAdvanceWidth expects a character code
                 if (embeddedMetrics.IsType1Font)
                 {
-                    var glyphWidth = embeddedMetrics.GetAdvanceWidthByName(glyphName);
+                    ushort glyphWidth = embeddedMetrics.GetAdvanceWidthByName(glyphName);
                     PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphWidth={glyphWidth} (by name)");
 
                     if (glyphWidth > 0)
                     {
-                        var scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                        double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
                         PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} glyphName='{glyphName}' -> embedded (by name): rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                         return scaledWidth;
                     }
@@ -61,12 +61,12 @@ internal class Type1Font : PdfFont
                 else
                 {
                     // CFF and other fonts: use glyphId-based lookup
-                    var glyphId = embeddedMetrics.GetGlyphIdByName(glyphName);
+                    ushort glyphId = embeddedMetrics.GetGlyphIdByName(glyphName);
                     PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphId={glyphId}");
 
                     if (glyphId > 0)
                     {
-                        var glyphWidth = embeddedMetrics.GetAdvanceWidth(glyphId);
+                        ushort glyphWidth = embeddedMetrics.GetAdvanceWidth(glyphId);
                         PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: glyphWidth={glyphWidth}");
 
                         if (glyphWidth > 0)
@@ -75,7 +75,7 @@ internal class Type1Font : PdfFont
                             // its own width and is using the default. In this case, prefer PDF /Widths array.
                             if (embeddedMetrics.IsCffFont)
                             {
-                                var nominalWidthX = embeddedMetrics.GetNominalWidthX();
+                                int nominalWidthX = embeddedMetrics.GetNominalWidthX();
                                 if (glyphWidth == nominalWidthX)
                                 {
                                     PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: CFF glyph width equals nominalWidthX ({nominalWidthX}), trying PDF widths array");
@@ -84,7 +84,7 @@ internal class Type1Font : PdfFont
                                 else
                                 {
                                     // Glyph has explicit width, use it
-                                    var scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                                    double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
                                     PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} glyphName='{glyphName}' glyphId={glyphId} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                                     return scaledWidth;
                                 }
@@ -92,7 +92,7 @@ internal class Type1Font : PdfFont
                             else
                             {
                                 // Non-CFF fonts: always use embedded width
-                                var scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
+                                double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
                                 PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} glyphName='{glyphName}' glyphId={glyphId} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                                 return scaledWidth;
                             }
@@ -105,7 +105,7 @@ internal class Type1Font : PdfFont
         // Fallback to widths array from PDF
         if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
-            var index = charCode - FirstChar;
+            int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
             {
                 PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
@@ -114,12 +114,12 @@ internal class Type1Font : PdfFont
         }
 
         // For standard 14 fonts, use built-in metrics
-        var standardWidth = GetStandardFontWidth(charCode);
+        double? standardWidth = GetStandardFontWidth(charCode);
         if (standardWidth.HasValue)
             return standardWidth.Value;
 
         // Try to get from the font descriptor
-        var descriptor = GetDescriptor();
+        PdfFontDescriptor? descriptor = GetDescriptor();
         if (descriptor is null) return _defaultWidth > 0
             ? _defaultWidth
             : 250; // 250 is PDF default
@@ -488,7 +488,7 @@ internal class Type1Font : PdfFont
         try
         {
             // Get font descriptor
-            var descriptor = GetDescriptor();
+            PdfFontDescriptor? descriptor = GetDescriptor();
             if (descriptor is null)
             {
                 PdfLogger.Log(LogCategory.Text, $"[TYPE1FONT] No descriptor for font '{BaseFont}'");
@@ -496,7 +496,7 @@ internal class Type1Font : PdfFont
             }
 
             // Try to get embedded CFF data (FontFile3) - preferred for Type1C
-            var fontData = descriptor.GetFontFile3();
+            byte[]? fontData = descriptor.GetFontFile3();
 
             if (fontData is not null)
             {
@@ -508,10 +508,10 @@ internal class Type1Font : PdfFont
 
             // Try classic Type1 (FontFile) with length parameters
             // This uses PFA/PFB format which requires Length1/Length2/Length3 for proper parsing
-            var type1Data = descriptor.GetFontFileWithLengths();
+            (byte[] data, int length1, int length2, int length3)? type1Data = descriptor.GetFontFileWithLengths();
             if (type1Data is not null)
             {
-                (var data, var length1, var length2, var length3) = type1Data.Value;
+                (byte[] data, int length1, int length2, int length3) = type1Data.Value;
                 PdfLogger.Log(LogCategory.Text, $"[TYPE1FONT] Found FontFile (Type1) for font '{BaseFont}', {data.Length} bytes, L1={length1}, L2={length2}, L3={length3}");
                 // Use the Type1-specific constructor with length parameters
                 _embeddedMetrics = new EmbeddedFontMetrics(data, length1, length2, length3);
@@ -532,7 +532,7 @@ internal class Type1Font : PdfFont
 
     private void LoadEncoding()
     {
-        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out var obj))
+        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
         {
             // Use standard encoding based on the font name
             Encoding = GetStandardEncoding(BaseFont);
@@ -557,7 +557,7 @@ internal class Type1Font : PdfFont
     private void LoadWidths()
     {
         // Get widths array
-        if (_dictionary.TryGetValue(new PdfName("Widths"), out var obj))
+        if (_dictionary.TryGetValue(new PdfName("Widths"), out PdfObject? obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
                 obj = _document.ResolveReference(reference);
@@ -573,7 +573,7 @@ internal class Type1Font : PdfFont
         }
 
         // Get default width
-        var descriptor = GetDescriptor();
+        PdfFontDescriptor? descriptor = GetDescriptor();
         if (descriptor is not null)
         {
             _defaultWidth = descriptor.MissingWidth > 0 ? descriptor.MissingWidth : descriptor.AvgWidth;

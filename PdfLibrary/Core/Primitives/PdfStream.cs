@@ -78,8 +78,8 @@ internal sealed class PdfStream : PdfObject
     public byte[] ToBytes()
     {
         // Calculate approximate size
-        var dictStr = Dictionary.ToPdfString();
-        var totalSize = Encoding.ASCII.GetByteCount(dictStr) +
+        string dictStr = Dictionary.ToPdfString();
+        int totalSize = Encoding.ASCII.GetByteCount(dictStr) +
                         20 + // "stream\n" + "endstream\n"
                         _data.Length;
 
@@ -110,7 +110,7 @@ internal sealed class PdfStream : PdfObject
     /// <returns>Decoded (and decrypted if applicable) stream data</returns>
     public byte[] GetDecodedData(PdfDecryptor? decryptor = null)
     {
-        var data = _data;
+        byte[] data = _data;
 
         // Decrypt first if we have a decryptor and this stream has object info
         if (decryptor is not null && IsIndirect)
@@ -119,12 +119,12 @@ internal sealed class PdfStream : PdfObject
         }
 
         // Check if stream has filters
-        if (!Dictionary.TryGetValue(PdfName.Filter, out var filterObj))
+        if (!Dictionary.TryGetValue(PdfName.Filter, out PdfObject filterObj))
             return data; // No filters, return raw data
 
         // Get decode parameters if present
         Dictionary<string, object>? decodeParams = null;
-        if (Dictionary.TryGetValue(PdfName.DecodeParms, out var decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
+        if (Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
         {
             decodeParams = ConvertToDecodeParams(decodeParmDict);
         }
@@ -142,7 +142,7 @@ internal sealed class PdfStream : PdfObject
                     if (filterArray[i] is not PdfName name) continue;
                     // Get the corresponding decode params if it's an array
                     Dictionary<string, object>? currentParams = null;
-                    if (Dictionary.TryGetValue(PdfName.DecodeParms, out var dpObj) && dpObj is PdfArray dpArray && i < dpArray.Count)
+                    if (Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject dpObj) && dpObj is PdfArray dpArray && i < dpArray.Count)
                     {
                         if (dpArray[i] is PdfDictionary dpDict)
                             currentParams = ConvertToDecodeParams(dpDict);
@@ -163,7 +163,7 @@ internal sealed class PdfStream : PdfObject
     /// </summary>
     private byte[] ApplyFilter(byte[] data, string filterName, Dictionary<string, object>? decodeParams)
     {
-        var filter = StreamFilterFactory.CreateFilter(filterName);
+        IStreamFilter? filter = StreamFilterFactory.CreateFilter(filterName);
         return filter is null
             ? throw new NotSupportedException($"Unsupported filter: {filterName}")
             : filter.Decode(data, decodeParams);
@@ -176,9 +176,9 @@ internal sealed class PdfStream : PdfObject
     {
         var result = new Dictionary<string, object>();
 
-        foreach (var kvp in dict)
+        foreach (KeyValuePair<PdfName, PdfObject> kvp in dict)
         {
-            var key = kvp.Key.Value;
+            string key = kvp.Key.Value;
             object? value = kvp.Value switch
             {
                 PdfInteger intVal => intVal.Value,
@@ -200,7 +200,7 @@ internal sealed class PdfStream : PdfObject
     /// </summary>
     public void SetEncodedData(byte[] decodedData, string filterName)
     {
-        var filter = StreamFilterFactory.CreateFilter(filterName);
+        IStreamFilter? filter = StreamFilterFactory.CreateFilter(filterName);
         if (filter is null)
             throw new NotSupportedException($"Unsupported filter: {filterName}");
 
