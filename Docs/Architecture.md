@@ -529,5 +529,5 @@ public class TextExtractorProcessor : PdfContentProcessor
 | Compressors.Lzw | LZW decompression |
 | Compressors.Ccitt | CCITT fax decompression |
 | Compressors.Jbig2 | JBIG2 decompression |
-| Compressors.Jpeg2000 | JPEG2000 decompression |
+| Compressors.Jpeg2000 | JPEG2000 decompression (uses Melville.CSJ2K - pure C# cross-platform) |
 | Serilog | Logging infrastructure |

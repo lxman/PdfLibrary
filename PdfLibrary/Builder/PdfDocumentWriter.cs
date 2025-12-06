@@ -1330,7 +1330,7 @@ public class PdfDocumentWriter
     {
         try
         {
-            // Use CoreJ2K to parse the JPEG2000 file and extract dimensions
+            // Use Melville.CSJ2K to parse the JPEG2000 file and extract dimensions
             // This works for both JP2 and J2K formats
             var portableImage = Jpeg2000.Decompress(data, out int width, out int height, out int components);
             return (width, height, components);

@@ -205,6 +205,11 @@ byte[] imageData = File.ReadAllBytes("photo.png");
     .AddImage(imageData, 100, 500, 200, 150))
 ```
 
+**Supported Image Formats** (automatically detected):
+- **JPEG** (.jpg, .jpeg) - Passed through with DCTDecode filter
+- **JPEG2000** (.jp2, .j2k) - Passed through with JPXDecode filter (uses Melville.CSJ2K)
+- **PNG, BMP, TIFF, GIF, etc.** - Decoded via ImageSharp, then compressed with FlateDecode
+
 ### Image Builder Methods
 
 ```csharp

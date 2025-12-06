@@ -428,8 +428,10 @@ namespace Compressors.Ccitt.Tests
                 BlackIs1 = false,
                 EndOfBlock = true
             };
-            var testDecoder = new CcittDecoder(options);
-            testDecoder.EnableTracing = true;
+            var testDecoder = new CcittDecoder(options)
+            {
+                EnableTracing = true
+            };
 
             // Capture console output
             var sw = new System.IO.StringWriter();

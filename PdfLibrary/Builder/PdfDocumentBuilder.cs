@@ -184,8 +184,13 @@ public class PdfDocumentBuilder
     /// </example>
     public PdfDocumentBuilder AddBookmark(string title, int pageIndex)
     {
-        var bookmark = new PdfBookmark(title);
-        bookmark.Destination.PageIndex = pageIndex;
+        var bookmark = new PdfBookmark(title)
+        {
+            Destination =
+            {
+                PageIndex = pageIndex
+            }
+        };
         _bookmarks.Add(bookmark);
         return this;
     }
