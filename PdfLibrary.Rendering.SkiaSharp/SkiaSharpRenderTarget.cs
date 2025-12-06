@@ -464,7 +464,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {
         if (string.IsNullOrEmpty(text) || state.FontName is null)
+        {
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-SKIPPED: text.IsNullOrEmpty={string.IsNullOrEmpty(text)}, FontName={state.FontName}");
             return;
+        }
+
+        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT: text='{text}', FontName={state.FontName}, FontSize={state.FontSize}, TextMatrix=[{state.TextMatrix.M11},{state.TextMatrix.M12},{state.TextMatrix.M21},{state.TextMatrix.M22},{state.TextMatrix.M31},{state.TextMatrix.M32}], font={font?.GetType().Name ?? "null"}");
 
         _canvas.Save();
 
