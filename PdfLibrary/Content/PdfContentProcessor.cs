@@ -106,6 +106,7 @@ public abstract class PdfContentProcessor
 
             // Text state operators
             case SetTextFontOperator tf:
+                PdfLogger.Log(LogCategory.Text, $"TF-OPERATOR: Setting font to '{tf.Font}' size {tf.Size}");
                 CurrentState.FontName = tf.Font;
                 CurrentState.FontSize = tf.Size;
                 OnFontChanged();

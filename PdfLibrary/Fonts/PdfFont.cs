@@ -158,7 +158,12 @@ public abstract class PdfFont
     internal static PdfFont? Create(PdfDictionary dictionary, PdfDocument? document = null)
     {
         if (!dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj) || subtypeObj is not PdfName subtype)
+        {
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CREATE: No Subtype found in font dictionary");
             return null;
+        }
+
+        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CREATE: Subtype={subtype.Value}");
 
         return subtype.Value switch
         {
