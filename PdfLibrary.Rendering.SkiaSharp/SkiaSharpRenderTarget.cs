@@ -492,7 +492,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
             // Try to render using embedded font glyph outlines
             if (font is not null && TryRenderWithGlyphOutlines(text, glyphWidths, state, font, paint, charCodes))
+            {
+                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using embedded glyph outlines for '{text}'");
                 return;
+            }
+
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using fallback rendering for '{text}'");
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
