@@ -483,6 +483,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             SKColor fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
             fillColor = ApplyAlpha(fillColor, state.FillAlpha);
 
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-COLOR: ResolvedColorSpace={state.ResolvedFillColorSpace}, ResolvedColor=[{string.Join(",", state.ResolvedFillColor.Select(c => c.ToString("F2")))}], SKColor=({fillColor.Red},{fillColor.Green},{fillColor.Blue},{fillColor.Alpha})");
+
             using var paint = new SKPaint();
             paint.Color = fillColor;
             paint.IsAntialias = true;
