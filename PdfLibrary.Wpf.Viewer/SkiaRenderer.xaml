@@ -5,11 +5,27 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF"
              mc:Ignorable="d"
-             d:DesignHeight="600" d:DesignWidth="800">
-    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-        <skia:SKElement x:Name="SkiaCanvas"
-                        PaintSurface="OnPaintSurface"
-                        HorizontalAlignment="Left"
-                        VerticalAlignment="Top" />
-    </ScrollViewer>
+             d:DesignHeight="600" d:DesignWidth="800"
+             Background="#F5F5F5">
+    <!-- Page container with margin for white space around the page -->
+    <Border Margin="20" HorizontalAlignment="Left" VerticalAlignment="Top">
+        <!-- Drop shadow effect -->
+        <Border.Effect>
+            <DropShadowEffect Color="Black"
+                              Direction="315"
+                              ShadowDepth="4"
+                              Opacity="0.3"
+                              BlurRadius="10"/>
+        </Border.Effect>
+
+        <!-- Page border and content -->
+        <Border BorderBrush="#333333"
+                BorderThickness="1"
+                Background="White">
+            <skia:SKElement x:Name="SkiaCanvas"
+                            PaintSurface="OnPaintSurface"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Top" />
+        </Border>
+    </Border>
 </UserControl>
