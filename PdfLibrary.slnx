@@ -8,8 +8,6 @@
     <Project Path="Compressors/Compressors.Jpeg/Compressors.Jpeg.csproj" />
     <Project Path="Compressors/Compressors.Jpeg2000.Tests/Compressors.Jpeg2000.Tests.csproj" />
     <Project Path="Compressors/Compressors.Jpeg2000/Compressors.Jpeg2000.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg2k.Tests/Compressors.Jpeg2k.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg2k/Compressors.Jpeg2k.csproj" />
     <Project Path="Compressors/Compressors.Lzw.Tests/Compressors.Lzw.Tests.csproj" />
     <Project Path="Compressors/Compressors.Lzw/Compressors.Lzw.csproj" />
   </Folder>

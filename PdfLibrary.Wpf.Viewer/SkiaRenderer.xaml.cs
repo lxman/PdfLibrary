@@ -105,8 +105,43 @@ public partial class SkiaRenderer : UserControl
 
         if (_renderedImage != null)
         {
+            // DEBUG: Save the SKImage to verify it's correct before WPF displays it
+            if (_renderedImage.Width == 650 && _renderedImage.Height == 650)
+            {
+                try
+                {
+                    string debugPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_skimage_before_wpf.png");
+                    using var data = _renderedImage.Encode(SKEncodedImageFormat.Png, 100);
+                    using var stream = System.IO.File.OpenWrite(debugPath);
+                    data.SaveTo(stream);
+                    Console.WriteLine($"[WPF DEBUG] Saved SKImage to {debugPath} before WPF display");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[WPF DEBUG] Failed to save SKImage: {ex.Message}");
+                }
+            }
+
             // Draw the pre-rendered image
             canvas.DrawImage(_renderedImage, 0, 0);
+
+            // DEBUG: Also save the surface after drawing to see if DrawImage corrupts it
+            if (_renderedImage.Width == 650 && _renderedImage.Height == 650)
+            {
+                try
+                {
+                    string debugPath2 = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_surface_after_draw.png");
+                    using var snapshot = e.Surface.Snapshot();
+                    using var data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+                    using var stream = System.IO.File.OpenWrite(debugPath2);
+                    data.SaveTo(stream);
+                    Console.WriteLine($"[WPF DEBUG] Saved surface to {debugPath2} after DrawImage");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[WPF DEBUG] Failed to save surface: {ex.Message}");
+                }
+            }
         }
     }
 }

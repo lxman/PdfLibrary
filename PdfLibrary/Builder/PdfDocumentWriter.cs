@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using Compressors.Jpeg2000;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Security;
 using SixLabors.ImageSharp;
@@ -1202,6 +1203,25 @@ public class PdfDocumentWriter
     {
         byte[] data = image.ImageData;
 
+        // Check for JPEG2000 signatures
+        // JP2 format: 00 00 00 0C 6A 50 20 20 0D 0A 87 0A (12-byte signature)
+        // J2K codestream: FF 4F FF 51 (SOC + SIZ markers)
+        if ((data.Length >= 12 && data is [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A, ..]) ||
+            (data.Length >= 4 && data is [0xFF, 0x4F, 0xFF, 0x51, ..]))
+        {
+            // JPEG2000 image - pass through directly with JPXDecode filter
+            (int width, int height, int components) = GetJpeg2000Dimensions(data);
+            // Determine color space based on component count
+            string colorSpace = components switch
+            {
+                1 => "DeviceGray",
+                3 => "DeviceRGB",
+                4 => "DeviceCMYK",
+                _ => "DeviceRGB" // Default to RGB
+            };
+            return (data, width, height, colorSpace, 8, "JPXDecode");
+        }
+
         // Check for JPEG signature (FFD8FF)
         if (data is [0xFF, 0xD8, 0xFF, ..])
         {
@@ -1304,6 +1324,22 @@ public class PdfDocumentWriter
 
         // Default fallback
         return (100, 100);
+    }
+
+    private (int width, int height, int components) GetJpeg2000Dimensions(byte[] data)
+    {
+        try
+        {
+            // Use CoreJ2K to parse the JPEG2000 file and extract dimensions
+            // This works for both JP2 and J2K formats
+            var portableImage = Jpeg2000.Decompress(data, out int width, out int height, out int components);
+            return (width, height, components);
+        }
+        catch
+        {
+            // If parsing fails, return default values
+            return (100, 100, 3);
+        }
     }
 
     private byte[] CompressFlate(byte[] data)

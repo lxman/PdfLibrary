@@ -1,4 +1,7 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
+using Compressors.Jpeg2000;
+using Logging;
 using Microsoft.Extensions.Caching.Memory;
 using PdfLibrary.Content;
 using PdfLibrary.Core;
@@ -6,8 +9,9 @@ using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
-using Logging;
 using PdfLibrary.Structure;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
 using SkiaSharp;
 
 namespace PdfLibrary.Rendering.SkiaSharp;
@@ -84,7 +88,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         {
             lock (_documentLock)
             {
-                bool isNewDocument = true;
+                var isNewDocument = true;
                 if (_lastDocument is not null && _lastDocument.TryGetTarget(out var lastDoc))
                 {
                     isNewDocument = !ReferenceEquals(lastDoc, document);
@@ -374,7 +378,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Set the soft mask for subsequent rendering
             SetSoftMask(alphaMask, maskSubtype);
 
-            PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMask: Mask rendered successfully");
+            PdfLogger.Log(LogCategory.Graphics, "RenderSoftMask: Mask rendered successfully");
         }
         catch (Exception ex)
         {
@@ -403,6 +407,56 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Converts ImageSharp Image to SKBitmap (supports RGB24, Rgba32, L8)
+    /// </summary>
+    private static SKBitmap ConvertImageSharpToSkBitmap(Image image)
+    {
+        if (image is Image<Rgb24> rgb24)
+        {
+            var bitmap = new SKBitmap(rgb24.Width, rgb24.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+            for (var y = 0; y < rgb24.Height; y++)
+            {
+                for (var x = 0; x < rgb24.Width; x++)
+                {
+                    var pixel = rgb24[x, y];
+                    bitmap.SetPixel(x, y, new SKColor(pixel.R, pixel.G, pixel.B, 255));
+                }
+            }
+            return bitmap;
+        }
+
+        if (image is Image<Rgba32> rgba32)
+        {
+            var bitmap = new SKBitmap(rgba32.Width, rgba32.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+            for (var y = 0; y < rgba32.Height; y++)
+            {
+                for (var x = 0; x < rgba32.Width; x++)
+                {
+                    var pixel = rgba32[x, y];
+                    bitmap.SetPixel(x, y, new SKColor(pixel.R, pixel.G, pixel.B, pixel.A));
+                }
+            }
+            return bitmap;
+        }
+
+        if (image is Image<L8> l8)
+        {
+            var bitmap = new SKBitmap(l8.Width, l8.Height, SKColorType.Gray8, SKAlphaType.Opaque);
+            for (var y = 0; y < l8.Height; y++)
+            {
+                for (var x = 0; x < l8.Width; x++)
+                {
+                    var pixel = l8[x, y];
+                    bitmap.SetPixel(x, y, new SKColor(pixel.PackedValue, pixel.PackedValue, pixel.PackedValue));
+                }
+            }
+            return bitmap;
+        }
+
+        throw new NotSupportedException($"ImageSharp pixel format {image.GetType().Name} not supported for conversion to SKBitmap");
     }
 
     // ==================== TEXT RENDERING ====================
@@ -1344,8 +1398,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             tileCanvas.Save();
 
             // Scale from pattern space to device pixels, with Y-flip for coordinate system conversion
-            float deviceScaleX = (float)(tileWidth / patternWidth);
-            float deviceScaleY = (float)(tileHeight / patternHeight);
+            var deviceScaleX = (float)(tileWidth / patternWidth);
+            var deviceScaleY = (float)(tileHeight / patternHeight);
 
             // Apply Y-flip transformation: PDF Y-up to SkiaSharp Y-down
             // 1. Translate origin to bottom of tile
@@ -1369,7 +1423,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             using SKImage? tileImage = tileSurface.Snapshot();
             if (tileImage is null)
             {
-                PdfLogger.Log(LogCategory.Graphics, $"PATTERN: Failed to snapshot tile");
+                PdfLogger.Log(LogCategory.Graphics, "PATTERN: Failed to snapshot tile");
                 skPath.Dispose();
                 return;
             }
@@ -1385,8 +1439,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             if (patternScaleX < 0.001f) patternScaleX = 1.0f;
             if (patternScaleY < 0.001f) patternScaleY = 1.0f;
 
-            float userStepX = (float)(patternWidth * patternScaleX);
-            float userStepY = (float)(patternHeight * patternScaleY);
+            var userStepX = (float)(patternWidth * patternScaleX);
+            var userStepY = (float)(patternHeight * patternScaleY);
 
             // The shader needs to transform user coordinates to tile bitmap coordinates.
             // The tile bitmap was rendered with Y-flip (PDF Y-up → bitmap Y-down).
@@ -1398,8 +1452,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             float scaleToTileY = tileHeight / userStepY;
 
             // Pattern origin in user space (from pattern matrix translation)
-            float patternOriginX = (float)pattern.Matrix.M31;
-            float patternOriginY = (float)pattern.Matrix.M32;
+            float patternOriginX = pattern.Matrix.M31;
+            float patternOriginY = pattern.Matrix.M32;
 
             // For X: sample_x = (user_x - patternOriginX) * scaleToTileX
             // For Y: We need to flip because tile was Y-flipped during rendering.
@@ -1407,7 +1461,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             //        This equals: -user_y * scaleToTileY + (tileHeight + patternOriginY * scaleToTileY)
             // Using negative Y scale compensates for canvasInverse's Y flip.
 
-            SKMatrix shaderMatrix = SKMatrix.CreateScale(scaleToTileX, -scaleToTileY);
+            var shaderMatrix = SKMatrix.CreateScale(scaleToTileX, -scaleToTileY);
             shaderMatrix = shaderMatrix.PostConcat(SKMatrix.CreateTranslation(
                 -patternOriginX * scaleToTileX,
                 tileHeight + patternOriginY * scaleToTileY));
@@ -1428,7 +1482,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Get the inverse of canvas matrix to transform from device to user space
             if (!canvasMatrix.TryInvert(out SKMatrix canvasInverse))
             {
-                PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: Canvas matrix not invertible, skipping pattern");
+                PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Canvas matrix not invertible, skipping pattern");
                 skPath.Dispose();
                 return;
             }
@@ -1443,13 +1497,13 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             using var tileBitmap = SKBitmap.FromImage(tileImage);
             if (tileBitmap is null)
             {
-                PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: Failed to create bitmap from tile image");
+                PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Failed to create bitmap from tile image");
                 skPath.Dispose();
                 return;
             }
 
             // Create shader with the effective matrix (device coords → tile coords)
-            using SKShader shader = SKShader.CreateBitmap(
+            using var shader = SKShader.CreateBitmap(
                 tileBitmap,
                 SKShaderTileMode.Repeat,
                 SKShaderTileMode.Repeat,
@@ -1457,7 +1511,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
             if (shader is null)
             {
-                PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: Failed to create shader");
+                PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Failed to create shader");
                 skPath.Dispose();
                 return;
             }
@@ -1583,7 +1637,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         _canvas.SetMatrix(SKMatrix.Identity);
 
         // Apply the clipping path with anti-aliasing disabled to get sharp clip edges
-        _canvas.ClipPath(skPath, SKClipOperation.Intersect, antialias: false);
+        _canvas.ClipPath(skPath);
 
         // Restore canvas matrix for subsequent drawing operations
         _canvas.SetMatrix(currentMatrix);
@@ -1749,12 +1803,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     {
                         try
                         {
-                            string debugPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_bitmap_before_draw.png");
+                            string debugPath = Path.Combine(Path.GetTempPath(), "debug_bitmap_before_draw.png");
                             using var debugImage = SKImage.FromBitmap(bitmap);
                             using var debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
                             if (debugData != null)
                             {
-                                using var stream = System.IO.File.OpenWrite(debugPath);
+                                using var stream = File.OpenWrite(debugPath);
                                 debugData.SaveTo(stream);
                                 PdfLogger.Log(LogCategory.Images, $"DEBUG: Saved bitmap to {debugPath}");
                             }
@@ -1828,9 +1882,46 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             int bitsPerComponent = image.BitsPerComponent;
             string colorSpace = image.ColorSpace;
 
+            // CRITICAL FIX: CoreJ2K.Skia returns Rgb888x which has a known SkiaSharp rendering bug
+            // See: https://github.com/mono/SkiaSharp/issues/2671
+            // Workaround: Use Decompress() for raw bytes, manually create Rgba8888 bitmap
+            PdfStream stream = image.Stream;
+            if (stream.Dictionary.TryGetValue(new PdfName("Filter"), out PdfObject? filterObj))
+            {
+                // Handle both single filter and array of filters
+                List<string> filters = new();
+                if (filterObj is PdfName filterName)
+                    filters.Add(filterName.Value);
+                else if (filterObj is PdfArray filterArray)
+                    filters.AddRange(filterArray.OfType<PdfName>().Select(n => n.Value));
+
+                // Check if JPXDecode is present
+                if (filters.Contains("JPXDecode"))
+                {
+                    try
+                    {
+                        // Get raw JP2 data
+                        byte[] rawJp2Data = stream.Data;
+
+                        // Use CoreJ2K.ImageSharp's conversion (cross-platform, no Rgb888x bug)
+                        Image jp2Image = Jpeg2000.DecompressToImage(rawJp2Data);
+
+                        // Convert ImageSharp Image to SKBitmap
+                        SKBitmap jp2Bitmap = ConvertImageSharpToSkBitmap(jp2Image);
+
+                        jp2Image.Dispose();
+                        return jp2Bitmap;
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[JP2 MANUAL] Failed to decode manually: {ex.Message}");
+                        // Fall through to standard processing if manual decode fails
+                    }
+                }
+            }
+
             // Check for SMask (alpha channel / transparency)
             byte[]? smaskData = null;
-            PdfStream stream = image.Stream;
 
             // Check if image has SMask (soft mask - actual alpha channel)
             bool hasActualSMask = stream.Dictionary.ContainsKey(new PdfName("SMask"));
@@ -1887,7 +1978,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             string decodeStr = imgDecodeArray != null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
             int debugExpectedRgb = width * height * 3;
             PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, ExpectedRGB={debugExpectedRgb}, Decode={decodeStr}");
-            Console.WriteLine($"[BITMAP DEBUG] ColorSpace='{colorSpace}', {width}x{height}, DataLen={imageData.Length}, ExpectedRGB={debugExpectedRgb}");
 
             // Handle image masks (1-bit stencil images)
             if (image.IsImageMask && imageMaskColor.HasValue)
@@ -1966,7 +2056,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 IntPtr bitmapPixels = bitmap.GetPixels();
                 if (bitmapPixels != IntPtr.Zero)
                 {
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                     bitmap.NotifyPixelsChanged();
                 }
 
@@ -2072,7 +2162,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                         return null;
 
                     // Copy pixel data directly into bitmap's memory
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
 
                     // CRITICAL: Notify SkiaSharp that we modified the pixels externally
                     bitmap.NotifyPixelsChanged();
@@ -2085,9 +2175,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     int expectedSize = width * height * 3;
                     if (imageData.Length < expectedSize)
                         return null;
-
-                    // DEBUG: Check if SMask is present
-                    Console.WriteLine($"[BITMAP DEBUG] DeviceRGB: hasSMask={hasSMask}, smaskData={(smaskData == null ? "null" : $"len={smaskData.Length}")}");
 
                     // Use direct pixel buffer for performance - SetPixel is very slow for large images
                     var pixelBuffer = new byte[width * height * 4]; // RGBA8888
@@ -2135,10 +2222,10 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             Console.WriteLine($"[PIXEL DEBUG] Pixel (433,100): R={pixelBuffer[corrupt433Row100]}, G={pixelBuffer[corrupt433Row100+1]}, B={pixelBuffer[corrupt433Row100+2]}, A={pixelBuffer[corrupt433Row100+3]}");
 
                             // Save the pixel buffer directly using SKBitmap.InstallPixels to bypass Marshal.Copy
-                            string debugPath2 = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_pixelbuffer_direct.png");
+                            string debugPath2 = Path.Combine(Path.GetTempPath(), "debug_pixelbuffer_direct.png");
                             var debugInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
                             using var debugBitmap = new SKBitmap();
-                            var pinnedArray = System.Runtime.InteropServices.GCHandle.Alloc(pixelBuffer, System.Runtime.InteropServices.GCHandleType.Pinned);
+                            var pinnedArray = GCHandle.Alloc(pixelBuffer, GCHandleType.Pinned);
                             try
                             {
                                 debugBitmap.InstallPixels(debugInfo, pinnedArray.AddrOfPinnedObject(), width * 4);
@@ -2146,7 +2233,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                                 using var debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
                                 if (debugData != null)
                                 {
-                                    using var fileStream = System.IO.File.OpenWrite(debugPath2);
+                                    using var fileStream = File.OpenWrite(debugPath2);
                                     debugData.SaveTo(fileStream);
                                     Console.WriteLine($"[DEBUG] Saved pixelbuffer direct to {debugPath2}");
                                 }
@@ -2171,23 +2258,21 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                     // DEBUG: Check if RowBytes matches our expectation
                     int expectedRowBytes = width * 4;
-                    Console.WriteLine($"[BITMAP DEBUG] RowBytes={bitmap.RowBytes}, Expected={expectedRowBytes}, Match={bitmap.RowBytes == expectedRowBytes}");
 
                     // If RowBytes doesn't match, we need to copy row by row
                     if (bitmap.RowBytes != expectedRowBytes)
                     {
                         // Copy row by row to handle row padding
-                        Console.WriteLine($"[BITMAP DEBUG] Using row-by-row copy due to stride mismatch");
-                        for (int row = 0; row < height; row++)
+                        for (var row = 0; row < height; row++)
                         {
                             int srcOffset = row * expectedRowBytes;
                             IntPtr dstOffset = bitmapPixels + (row * bitmap.RowBytes);
-                            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, srcOffset, dstOffset, expectedRowBytes);
+                            Marshal.Copy(pixelBuffer, srcOffset, dstOffset, expectedRowBytes);
                         }
                     }
                     else
                     {
-                        System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                     }
                     bitmap.NotifyPixelsChanged();
 
@@ -2240,7 +2325,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     IntPtr bitmapPixels1Bit = bitmap.GetPixels();
                     if (bitmapPixels1Bit == IntPtr.Zero)
                         return null;
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer1Bit, 0, bitmapPixels1Bit, pixelBuffer1Bit.Length);
+                    Marshal.Copy(pixelBuffer1Bit, 0, bitmapPixels1Bit, pixelBuffer1Bit.Length);
                     bitmap.NotifyPixelsChanged();
 
                     break;
@@ -2299,7 +2384,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     IntPtr bitmapPixels = bitmap.GetPixels();
                     if (bitmapPixels == IntPtr.Zero)
                         return null;
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                     bitmap.NotifyPixelsChanged();
 
                     break;
@@ -2336,7 +2421,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
                             if (bitmapPixels == IntPtr.Zero) return null;
-                            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -2365,7 +2450,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
                             if (bitmapPixels == IntPtr.Zero) return null;
-                            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -2402,7 +2487,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
                             if (bitmapPixels == IntPtr.Zero) return null;
-                            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -2473,7 +2558,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     bitmap = new SKBitmap(imageInfo);
                     IntPtr bitmapPixels = bitmap.GetPixels();
                     if (bitmapPixels == IntPtr.Zero) return null;
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                     bitmap.NotifyPixelsChanged();
                     break;
                 }
@@ -2484,8 +2569,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
             return bitmap;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[BITMAP ERROR] CreateBitmapFromPdfImage exception: {ex.GetType().Name}: {ex.Message}");
+            Console.WriteLine($"[BITMAP ERROR] Stack trace: {ex.StackTrace}");
+            PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage exception: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
@@ -2727,7 +2815,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
             _canvas.Concat(ref skMatrix);
 
             // Calculate font size
-            float effectiveSize = (float)(state.FontSize * Math.Sqrt(textMatrix.M21 * textMatrix.M21 + textMatrix.M22 * textMatrix.M22));
+            var effectiveSize = (float)(state.FontSize * Math.Sqrt(textMatrix.M21 * textMatrix.M21 + textMatrix.M22 * textMatrix.M22));
             if (effectiveSize < 0.1f) effectiveSize = 12f;
 
             using var paint = new SKPaint
@@ -2781,7 +2869,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
 
                     using var paint = new SKPaint { IsAntialias = true, FilterQuality = SKFilterQuality.High };
                     _canvas.DrawBitmap(bitmap, new SKRect(0, 0, 1, 1), paint);
-                    PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: Drew bitmap to (0,0,1,1)");
+                    PdfLogger.Log(LogCategory.Images, "PATTERN DrawImage: Drew bitmap to (0,0,1,1)");
                 }
             }
         }
@@ -2859,7 +2947,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
         {
             case "DeviceGray":
             case "CalGray":
-                byte gray = (byte)(components[0] * 255);
+                var gray = (byte)(components[0] * 255);
                 return new SKColor(gray, gray, gray);
 
             case "DeviceRGB":
@@ -2877,9 +2965,9 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                 if (components.Count >= 4)
                 {
                     double c = components[0], m = components[1], y = components[2], k = components[3];
-                    byte r = (byte)(255 * (1 - c) * (1 - k));
-                    byte g = (byte)(255 * (1 - m) * (1 - k));
-                    byte b = (byte)(255 * (1 - y) * (1 - k));
+                    var r = (byte)(255 * (1 - c) * (1 - k));
+                    var g = (byte)(255 * (1 - m) * (1 - k));
+                    var b = (byte)(255 * (1 - y) * (1 - k));
                     return new SKColor(r, g, b);
                 }
                 break;
@@ -2900,7 +2988,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
         try
         {
             int pixelCount = width * height;
-            byte[] pixelBuffer = new byte[pixelCount * 4];
+            var pixelBuffer = new byte[pixelCount * 4];
 
             switch (colorSpace)
             {
@@ -2908,7 +2996,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                 case "CalGray":
                     if (bitsPerComponent == 8 && imageData.Length >= pixelCount)
                     {
-                        for (int i = 0; i < pixelCount; i++)
+                        for (var i = 0; i < pixelCount; i++)
                         {
                             byte gray = imageData[i];
                             int offset = i * 4;
@@ -2926,7 +3014,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                     int expectedRgb = pixelCount * 3;
                     if (imageData.Length >= expectedRgb)
                     {
-                        for (int i = 0; i < pixelCount; i++)
+                        for (var i = 0; i < pixelCount; i++)
                         {
                             int srcOffset = i * 3;
                             int dstOffset = i * 4;
@@ -2943,7 +3031,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                     int expectedCmyk = pixelCount * 4;
                     if (imageData.Length >= expectedCmyk)
                     {
-                        for (int i = 0; i < pixelCount; i++)
+                        for (var i = 0; i < pixelCount; i++)
                         {
                             int srcOffset = i * 4;
                             int dstOffset = i * 4;
@@ -2975,7 +3063,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                     };
 
                     // Convert indexed pixels to RGBA
-                    for (int i = 0; i < pixelCount; i++)
+                    for (var i = 0; i < pixelCount; i++)
                     {
                         if (i >= imageData.Length)
                             continue;
@@ -3019,7 +3107,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
             var bitmap = new SKBitmap(new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul));
             IntPtr pixels = bitmap.GetPixels();
             if (pixels == IntPtr.Zero) return null;
-            System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, pixels, pixelBuffer.Length);
+            Marshal.Copy(pixelBuffer, 0, pixels, pixelBuffer.Length);
             bitmap.NotifyPixelsChanged();
             return bitmap;
         }

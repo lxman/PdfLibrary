@@ -201,7 +201,7 @@ public class SystemFontResolver
         _resolvedSymbol = _fontProvider.FindFirstAvailable(SymbolFallbacks);
         _resolvedDingbats = _fontProvider.FindFirstAvailable(DingbatsFallbacks);
 
-        PdfLogger.Log(LogCategory.Text, $"[FONT RESOLVER] Initialized fallbacks:");
+        PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER] Initialized fallbacks:");
         PdfLogger.Log(LogCategory.Text, $"  Sans-serif: {_resolvedSansSerif ?? "NONE"}");
         PdfLogger.Log(LogCategory.Text, $"  Serif: {_resolvedSerif ?? "NONE"}");
         PdfLogger.Log(LogCategory.Text, $"  Monospace: {_resolvedMonospace ?? "NONE"}");
