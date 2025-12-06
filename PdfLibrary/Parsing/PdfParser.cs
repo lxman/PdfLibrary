@@ -155,15 +155,28 @@ internal class PdfParser(PdfLexer lexer)
             case PdfTokenType.Obj:
             {
                 NextToken(); // Consume obj
-                PdfObject? content = ReadObject();
+
+                // Handle empty objects (ISO 32000-1: empty object = null)
+                PdfToken contentPeek = PeekToken();
+                PdfObject? content;
+                if (contentPeek.Type == PdfTokenType.EndObj)
+                {
+                    // Empty object - treat as null
+                    content = PdfNull.Instance;
+                }
+                else
+                {
+                    content = ReadObject();
+                }
+
                 ExpectToken(PdfTokenType.EndObj);
 
-                if (content is null) return content ?? PdfNull.Instance;
+                if (content is null) return PdfNull.Instance;
                 content.IsIndirect = true;
                 content.ObjectNumber = objectNumber;
                 content.GenerationNumber = generationNumber;
 
-                return content ?? PdfNull.Instance;
+                return content;
             }
             default:
                 // Otherwise, we have two integers - push back and return the first
