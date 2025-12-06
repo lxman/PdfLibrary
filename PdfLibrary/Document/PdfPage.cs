@@ -55,19 +55,31 @@ public class PdfPage
                 obj = _document.ResolveReference(reference);
 
             if (obj is PdfDictionary resourceDict)
-                return new PdfResources(resourceDict, _document);
+            {
+                var resources = new PdfResources(resourceDict, _document);
+                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"PAGE-RESOURCES: Found on page - {resources.GetFontNames().Count} fonts: {string.Join(", ", resources.GetFontNames())}");
+                return resources;
+            }
         }
 
         // Inherit from parent if not found
-        if (_parentNode is null || !_parentNode.TryGetValue(new PdfName("Resources"), out obj)) return null;
+        if (_parentNode is null || !_parentNode.TryGetValue(new PdfName("Resources"), out obj))
         {
-            if (obj is PdfIndirectReference reference && _document is not null)
-                obj = _document.ResolveReference(reference);
-
-            if (obj is PdfDictionary resourceDict)
-                return new PdfResources(resourceDict, _document);
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, "PAGE-RESOURCES: No resources found on page or parent");
+            return null;
         }
 
+        if (obj is PdfIndirectReference reference2 && _document is not null)
+            obj = _document.ResolveReference(reference2);
+
+        if (obj is PdfDictionary resourceDict2)
+        {
+            var resources = new PdfResources(resourceDict2, _document);
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"PAGE-RESOURCES: Inherited from parent - {resources.GetFontNames().Count} fonts: {string.Join(", ", resources.GetFontNames())}");
+            return resources;
+        }
+
+        Logging.PdfLogger.Log(Logging.LogCategory.Text, "PAGE-RESOURCES: Resources object exists but is not a dictionary");
         return null;
     }
 
