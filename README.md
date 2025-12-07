@@ -33,27 +33,36 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
 
 ```
 PDF/
-├── PdfLibrary/                    # Core library
-│   ├── Document/                  # PDF document model
-│   ├── Content/                   # Content stream processing
-│   ├── Rendering/                 # Rendering pipeline
-│   ├── Builder/                   # Fluent API for PDF creation
-│   ├── Fonts/                     # Font handling
-│   ├── Images/                    # Image decompression
-│   └── ColorSpaces/               # Color space support
-├── PdfLibrary.Rendering.SkiaSharp/ # SkiaSharp render target
-├── PdfLibrary.Tests/              # Unit tests
-├── PdfLibrary.Integration/        # Integration tests
-├── PdfTool/                       # Command-line tool
-├── PdfLibrary.Wpf.Viewer/         # WPF PDF viewer
-├── Compressors/                   # Decompression libraries
-│   ├── Compressors.Lzw/           # LZW decompression
-│   ├── Compressors.Ccitt/         # CCITT fax decompression
-│   ├── Compressors.Jbig2/         # JBIG2 decompression
-│   └── Compressors.Jpeg2000/      # JPEG2000 decompression
-├── FontParser/                    # TrueType/OpenType parsing
-├── Logging/                       # Logging infrastructure
-└── Docs/                          # Documentation
+├── PdfLibrary/                       # Core library
+│   ├── Document/                     # PDF document model
+│   ├── Content/                      # Content stream processing
+│   ├── Rendering/                    # Rendering pipeline
+│   ├── Builder/                      # Fluent API for PDF creation
+│   ├── Fonts/                        # Font handling
+│   ├── Images/                       # Image decompression
+│   ├── ColorSpaces/                  # Color space support
+│   ├── Parsing/                      # PDF parsing (lexer, parser)
+│   └── Security/                     # Encryption/decryption
+├── PdfLibrary.Rendering.SkiaSharp/   # SkiaSharp render target
+├── PdfLibrary.Tests/                 # Unit tests
+├── PdfLibrary.Integration/           # Integration tests
+├── PdfLibrary.Wpf.Viewer/            # WPF PDF viewer application
+├── Compressors/                      # Image decompression libraries
+│   ├── Compressors.Lzw/              # LZW decompression
+│   │   └── Compressors.Lzw.Tests/
+│   ├── Compressors.Ccitt/            # CCITT fax (Group 3/4)
+│   │   └── Compressors.Ccitt.Tests/
+│   ├── Compressors.Jbig2/            # JBIG2 decompression
+│   │   └── Compressors.Jbig2.Tests/
+│   ├── Compressors.Jpeg/             # JPEG (DCT) decompression
+│   │   └── Compressors.Jpeg.Tests/
+│   ├── Compressors.Jpeg2000/         # JPEG2000 (legacy)
+│   │   └── Compressors.Jpeg2000.Tests/
+│   └── Compressors.Jpeg2k/           # JPEG2000 (native, in progress)
+│       └── Compressors.Jpeg2k.Tests/
+├── FontParser/                       # TrueType/OpenType parsing
+├── Logging/                          # Logging infrastructure
+└── Docs/                             # Documentation
 ```
 
 ## Quick Start
