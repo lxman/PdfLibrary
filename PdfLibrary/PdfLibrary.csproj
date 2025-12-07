@@ -49,4 +49,8 @@
       <ProjectReference Include="..\Compressors\Compressors.Jpeg2000\Compressors.Jpeg2000.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="Fixups\" />
+    </ItemGroup>
+
 </Project>
