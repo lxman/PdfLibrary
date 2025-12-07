@@ -706,6 +706,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     // 1. Rotate back to cancel the rotation in position
                     // 2. Apply Y-flip and horizontal scaling
                     // 3. Rotate forward to match text orientation
+                    // NOTE: We do NOT scale glyphs to match PDF widths - this would distort them visually.
+                    // Instead, we render glyphs at their natural width and use PDF widths only for spacing.
                     _canvas.RotateDegrees(-localRotationDeg);
                     _canvas.Scale(tHs, -1);  // Horizontal scaling and Y-flip
                     _canvas.RotateDegrees(localRotationDeg);
