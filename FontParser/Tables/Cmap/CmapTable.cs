@@ -33,63 +33,72 @@ namespace FontParser.Tables.Cmap
             EncodingRecords = EncodingRecords.OrderBy(x => x.Offset).ToList();
             foreach (EncodingRecord? encodingRecord in EncodingRecords)
             {
-                reader.Seek(encodingRecord.Offset);
-                data = reader.PeekBytes(2);
-                ushort format = BinaryPrimitives.ReadUInt16BigEndian(data);
-                ICmapSubtable? subTable = null;
-                switch (format)
+                try
                 {
-                    case 0:
-                        subTable = new CmapSubtableFormat0(reader);
-                        break;
+                    // Check if we have enough data left to read even the format field (2 bytes)
+                    if (encodingRecord.Offset + 2 > cmapData.Length)
+                    {
+                        // Skip this encoding record - offset points beyond available data
+                        continue;
+                    }
 
-                    case 2:
-                        subTable = new CmapSubtablesFormat2(reader);
-                        break;
+                    reader.Seek(encodingRecord.Offset);
+                    data = reader.PeekBytes(2);
+                    ushort format = BinaryPrimitives.ReadUInt16BigEndian(data);
+                    ICmapSubtable? subTable = null;
+                    switch (format)
+                    {
+                        case 0:
+                            subTable = new CmapSubtableFormat0(reader);
+                            break;
 
-                    case 4:
-                        subTable = new CmapSubtablesFormat4(reader);
-                        break;
+                        case 2:
+                            subTable = new CmapSubtablesFormat2(reader);
+                            break;
 
-                    case 6:
-                        subTable = new CmapSubtablesFormat6(reader);
-                        break;
+                        case 4:
+                            subTable = new CmapSubtablesFormat4(reader);
+                            break;
 
-                    case 8:
-                        subTable = new CmapSubtablesFormat8(reader);
-                        break;
+                        case 6:
+                            subTable = new CmapSubtablesFormat6(reader);
+                            break;
 
-                    case 10:
-                        subTable = new CmapSubtablesFormat10(reader);
-                        break;
+                        case 8:
+                            subTable = new CmapSubtablesFormat8(reader);
+                            break;
 
-                    case 12:
-                        subTable = new CmapSubtablesFormat12(reader);
-                        break;
+                        case 10:
+                            subTable = new CmapSubtablesFormat10(reader);
+                            break;
 
-                    case 13:
-                        subTable = new CmapSubtablesFormat13(reader);
-                        break;
+                        case 12:
+                            subTable = new CmapSubtablesFormat12(reader);
+                            break;
 
-                    case 14:
-                        if (encodingRecord is { PlatformId: 0, UnicodeEncoding: { } } && (int)encodingRecord.UnicodeEncoding.Value == 5)
-                        {
-                            try
+                        case 13:
+                            subTable = new CmapSubtablesFormat13(reader);
+                            break;
+
+                        case 14:
+                            if (encodingRecord is { PlatformId: 0, UnicodeEncoding: { } } && (int)encodingRecord.UnicodeEncoding.Value == 5)
                             {
                                 subTable = new CmapSubtablesFormat14(reader);
                             }
-                            catch (Exception e)
-                            {
-                                Console.WriteLine("Invalid data for encoding record - not read.");
-                            }
-                        }
-                        break;
-                }
+                            break;
+                    }
 
-                if (!(subTable is null))
+                    if (!(subTable is null))
+                    {
+                        SubTables.Add(subTable);
+                        Encodings.Add(new CmapEncoding(encodingRecord, subTable));
+                    }
+                }
+                catch (Exception)
                 {
-                    SubTables.Add(subTable);
-                    Encodings.Add(new CmapEncoding(encodingRecord, subTable));
+                    // If parsing this encoding record fails (malformed/truncated data), skip it and continue
+                    // This commonly happens with subset fonts that have corrupted cmap tables
+                    continue;
                 }
             }
         }

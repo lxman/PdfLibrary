@@ -26,9 +26,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Ensure the color list exists
         color ??= [];
 
+        // DIAGNOSTIC: Log every color space resolution attempt
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE START: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
+
         // Skip device color spaces - they don't need resolution
         if (colorSpaceName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK")
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: '{colorSpaceName}' is device color space, skipping");
             return;
+        }
 
         // Try to resolve named color space from resources
         if (colorSpaces is null)
@@ -37,55 +43,83 @@ internal class ColorSpaceResolver(PdfDocument? document)
             return;
         }
 
+        // DIAGNOSTIC: Log what's in the ColorSpace dictionary
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace dict has {colorSpaces.Keys.Count} entries: [{string.Join(", ", colorSpaces.Keys.Take(10).Select(k => k.Value))}]");
+
         if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out PdfObject? csObj))
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict (has {colorSpaces.Keys.Count} entries: [{string.Join(", ", colorSpaces.Keys.Take(10).Select(k => k.Value))}])");
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict");
             return;
         }
+
+        // DIAGNOSTIC: Log successful lookup
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Found '{colorSpaceName}' in dict, type={csObj?.GetType().Name ?? "NULL"}");
 
         // Resolve indirect reference
         if (csObj is PdfIndirectReference reference && document is not null)
-            csObj = document.ResolveReference(reference);
-
-        // Handle single-element Pattern array: [/Pattern]
-        if (csObj is PdfArray { Count: 1 } singleArray && singleArray[0] is PdfName singleName && singleName.Value == "Pattern")
         {
-            colorSpaceName = "Pattern";
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (uncolored)");
-            return;
+            csObj = document.ResolveReference(reference);
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Resolved indirect reference for '{colorSpaceName}', type={csObj?.GetType().Name ?? "NULL"}");
         }
 
-        // Handle Pattern with underlying color space: [/Pattern /DeviceRGB] or [/Pattern [/ICCBased ...]]
-        if (csObj is PdfArray { Count: >= 2 } patternArray && patternArray[0] is PdfName patternName && patternName.Value == "Pattern")
+        // DIAGNOSTIC: Log PdfArray contents
+        if (csObj is PdfArray debugArray)
         {
-            colorSpaceName = "Pattern";
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (colored, underlying={patternArray[1]})");
-            return;
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: PdfArray Count={debugArray.Count}");
+            if (debugArray.Count > 0)
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: PdfArray[0] type={debugArray[0]?.GetType().Name ?? "NULL"}, value={debugArray[0]}");
+            }
+            if (debugArray.Count > 1)
+            {
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: PdfArray[1] type={debugArray[1]?.GetType().Name ?? "NULL"}");
+            }
+        }
+
+        switch (csObj)
+        {
+            // Handle single-element Pattern array: [/Pattern]
+            case PdfArray { Count: 1 } singleArray when singleArray[0] is PdfName singleName && singleName.Value == "Pattern":
+                colorSpaceName = "Pattern";
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (uncolored)");
+                return;
+            // Handle Pattern with underlying color space: [/Pattern /DeviceRGB] or [/Pattern [/ICCBased ...]]
+            case PdfArray { Count: >= 2 } patternArray when patternArray[0] is PdfName patternName && patternName.Value == "Pattern":
+                colorSpaceName = "Pattern";
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (colored, underlying={patternArray[1]})");
+                return;
         }
 
         // Parse color space array
         // Can be: [/ICCBased stream] or [/Separation name alternateSpace tintTransform]
-        if (csObj is PdfArray { Count: >= 2 } csArray)
+        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
         {
-            if (csArray[0] is not PdfName csType)
-                return;
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Early return - condition failed. csObj is PdfArray: {csObj is PdfArray}, count check: {(csObj as PdfArray)?.Count >= 2}, [0] is PdfName: {(csObj as PdfArray)?[0] is PdfName}");
+            return;
+        }
 
-            switch (csType.Value)
-            {
-                case "ICCBased" when csArray.Count >= 2:
-                    ResolveICCBased(csArray, ref colorSpaceName, ref color);
-                    break;
+        // DIAGNOSTIC: Log what we're switching on
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Entering switch with csType.Value='{csType.Value}', csArray.Count={csArray.Count}");
 
-                case "Separation" when csArray.Count >= 4:
-                    ResolveSeparation(csArray, ref colorSpaceName, ref color);
-                    break;
+        switch (csType.Value)
+        {
+            case "ICCBased" when csArray.Count >= 2:
+                ResolveICCBased(csArray, ref colorSpaceName, ref color);
+                break;
 
-                case "Pattern":
-                    // Pattern color space - don't resolve to device colors
-                    colorSpaceName = "Pattern";
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected");
-                    break;
-            }
+            case "Separation" when csArray.Count >= 4:
+                ResolveSeparation(csArray, ref colorSpaceName, ref color);
+                break;
+
+            case "Indexed" when csArray.Count >= 4:
+                ResolveIndexed(csArray, ref colorSpaceName, ref color);
+                break;
+
+            case "Pattern":
+                // Pattern color space - don't resolve to device colors
+                colorSpaceName = "Pattern";
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected");
+                break;
         }
     }
 
@@ -143,7 +177,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             };
         }
 
-        // Initialize default colors if component count doesn't match
+        // Initialize default colors if the component count doesn't match
         if (color.Count != numComponents)
         {
             color = numComponents switch
@@ -173,19 +207,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         string altSpace;
 
-        if (alternateObj is PdfName altName)
+        switch (alternateObj)
         {
-            altSpace = altName.Value;
-        }
-        else if (alternateObj is PdfArray altArray && altArray.Count >= 1 && altArray[0] is PdfName altArrayType)
-        {
-            // Handle array-based alternate spaces like [/CalRGB <<...>>], [/CalGray <<...>>], [/Lab <<...>>]
-            altSpace = altArrayType.Value;
-        }
-        else
-        {
-            // Unknown alternate space format
-            return;
+            case PdfName altName:
+                altSpace = altName.Value;
+                break;
+            case PdfArray altArray when altArray.Count >= 1 && altArray[0] is PdfName altArrayType:
+                // Handle array-based alternate spaces like [/CalRGB <<...>>], [/CalGray <<...>>], [/Lab <<...>>]
+                altSpace = altArrayType.Value;
+                break;
+            default:
+                // Unknown alternate space format
+                return;
         }
 
         // Get the tint transform function (index 3)
@@ -206,25 +239,33 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 double[] result = tintTransform.Evaluate([tint]);
                 PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
 
-                if (result.Length >= 3)
+                switch (result.Length)
                 {
-                    // RGB output from tint transform
-                    color = [result[0], result[1], result[2]];
-                    colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
-                    if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
-                        colorSpaceName = "DeviceRGB";
-                }
-                else if (result.Length == 1)
-                {
-                    // Grayscale output
-                    color = [result[0]];
-                    colorSpaceName = "DeviceGray";
-                }
-                else if (result.Length == 4)
-                {
-                    // CMYK output
-                    color = [result[0], result[1], result[2], result[3]];
-                    colorSpaceName = "DeviceCMYK";
+                    case >= 3:
+                    {
+                        // RGB output from tint transform
+                        color = [result[0], result[1], result[2]];
+                        colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
+                        if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
+                            colorSpaceName = "DeviceRGB";
+                        break;
+                    }
+                    case 1:
+                        // Grayscale output
+                        color = [result[0]];
+                        colorSpaceName = "DeviceGray";
+                        break;
+                    default:
+                    {
+                        if (result.Length == 4)
+                        {
+                            // CMYK output
+                            color = [result[0], result[1], result[2], result[3]];
+                            colorSpaceName = "DeviceCMYK";
+                        }
+
+                        break;
+                    }
                 }
             }
             else
@@ -236,6 +277,158 @@ internal class ColorSpaceResolver(PdfDocument? document)
         }
 
         PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
+    }
+
+    /// <summary>
+    /// Resolves an Indexed color space: [/Indexed base hival lookup]
+    /// </summary>
+    private void ResolveIndexed(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
+    {
+        color ??= [];
+
+        // Indexed color space requires a single component (the palette index)
+        if (color.Count != 1)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Expected 1 component (palette index), got {color.Count}");
+            return;
+        }
+
+        var paletteIndex = (int)color[0];
+
+        // Get the base color space (index 1) - can be PdfName or PdfArray
+        PdfObject? baseObj = csArray[1];
+        if (baseObj is PdfIndirectReference baseRef && document is not null)
+            baseObj = document.ResolveReference(baseRef);
+
+        // Extract base color space name and number of components
+        string? baseColorSpace = null;
+        var baseComponents = 3; // Default to RGB
+
+        switch (baseObj)
+        {
+            case PdfName baseName:
+                baseColorSpace = baseName.Value;
+                baseComponents = baseColorSpace switch
+                {
+                    "DeviceGray" => 1,
+                    "DeviceRGB" => 3,
+                    "DeviceCMYK" => 4,
+                    _ => 3
+                };
+                break;
+            case PdfArray { Count: >= 1 } baseArray when baseArray[0] is PdfName baseTypeName:
+            {
+                // Handle array-based color spaces like [/ICCBased stream]
+                if (baseTypeName.Value == "ICCBased" && baseArray.Count >= 2)
+                {
+                    // Get ICC stream to determine component count
+                    PdfObject? iccStreamObj = baseArray[1];
+                    if (iccStreamObj is PdfIndirectReference iccRef && document is not null)
+                        iccStreamObj = document.ResolveReference(iccRef);
+
+                    if (iccStreamObj is PdfStream iccStream)
+                    {
+                        if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
+                        {
+                            baseComponents = nInt.Value;
+                        }
+                    }
+
+                    baseColorSpace = baseTypeName.Value;
+                }
+
+                break;
+            }
+        }
+
+        // Get hival (index 2) - maximum palette index
+        var hival = 255;
+        if (csArray[2] is PdfInteger hivalInt)
+        {
+            hival = hivalInt.Value;
+        }
+
+        // Get lookup table (index 3) - can be string or stream
+        PdfObject? lookupObj = csArray[3];
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed LOOKUP OBJECT: type={lookupObj?.GetType().Name ?? "NULL"}, value={(lookupObj is PdfString s ? $"PdfString len={s.Bytes.Length}" : lookupObj?.ToString() ?? "null")}");
+
+        if (lookupObj is PdfIndirectReference lookupRef && document is not null)
+            lookupObj = document.ResolveReference(lookupRef);
+
+        byte[]? paletteData = lookupObj switch
+        {
+            PdfString lookupString => lookupString.Bytes,
+            PdfStream lookupStream => lookupStream.GetDecodedData(document?.Decryptor),
+            _ => null
+        };
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed PALETTE DATA: paletteData={(paletteData != null ? $"len={paletteData.Length}" : "NULL")}");
+
+        if (paletteData is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: No palette data found");
+            return;
+        }
+
+        // DIAGNOSTIC: Log palette data extraction for debugging
+        if (paletteData.Length >= 10)
+        {
+            string bytesHex = string.Join(" ", paletteData.Take(20).Select(b => b.ToString("X2")));
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed PALETTE BYTES: first 20 bytes=[{bytesHex}]");
+        }
+
+        // Validate palette index
+        if (paletteIndex < 0 || paletteIndex > hival)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Palette index {paletteIndex} out of range [0, {hival}]");
+            paletteIndex = Math.Clamp(paletteIndex, 0, hival);
+        }
+
+        // Extract color components from palette
+        // Palette is stored as consecutive bytes: [C1_0, C2_0, C3_0, C1_1, C2_1, C3_1, ...]
+        int bytesPerEntry = baseComponents;
+        int byteOffset = paletteIndex * bytesPerEntry;
+
+        if (byteOffset + bytesPerEntry > paletteData.Length)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Palette index {paletteIndex} * {bytesPerEntry} = {byteOffset} exceeds palette size {paletteData.Length}");
+            return;
+        }
+
+        // Extract color components and normalize to 0.0-1.0 range
+        var paletteColor = new List<double>();
+        for (var i = 0; i < baseComponents; i++)
+        {
+            byte componentByte = paletteData[byteOffset + i];
+            double normalizedValue = componentByte / 255.0;
+            paletteColor.Add(normalizedValue);
+        }
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: index={paletteIndex}, base={baseColorSpace}, components={baseComponents}, palette color=[{string.Join(", ", paletteColor.Select(c => c.ToString("F3")))}]");
+
+        // Now we have the color from the palette, resolve the base color space if needed
+        color = paletteColor;
+
+        // If base color space is ICCBased or another complex type, resolve it recursively
+        if (baseObj is PdfArray baseArray2 && baseArray2.Count >= 2 && baseArray2[0] is PdfName { Value: "ICCBased" })
+        {
+            ResolveICCBased(baseArray2, ref baseColorSpace, ref color);
+        }
+
+        // Set the resolved color space
+        colorSpaceName = baseColorSpace switch
+        {
+            "ICCBased" => color.Count switch
+            {
+                1 => "DeviceGray",
+                3 => "DeviceRGB",
+                4 => "DeviceCMYK",
+                _ => "DeviceRGB"
+            },
+            _ => baseColorSpace ?? "DeviceRGB"
+        };
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
     }
 
     /// <summary>

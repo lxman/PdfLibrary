@@ -318,6 +318,25 @@ public class PdfLexerTests
         Assert.Equal("Jk", token.Value); // <4A6b> = "Jk" (0x4A='J', 0x6b='k')
     }
 
+    [Fact]
+    public void Lexer_ParsesPaletteHexStringAndPreservesBytes()
+    {
+        // Test the palette hex string from Allmand PDF: <36322F0000008E827C>
+        // Expected bytes: [0x36, 0x32, 0x2F, 0x00, 0x00, 0x00, 0x8E, 0x82, 0x7C]
+        // This verifies the hex->bytes->Latin1 string->Latin1 bytes roundtrip
+        PdfLexer lexer = CreateLexer("<36322F0000008E827C>");
+        PdfToken token = lexer.NextToken();
+
+        Assert.Equal(PdfTokenType.String, token.Type);
+
+        // Convert the token value back to bytes using Latin-1 (same as PdfString does)
+        byte[] actualBytes = Encoding.Latin1.GetBytes(token.Value);
+
+        // Verify the bytes match exactly
+        byte[] expectedBytes = [0x36, 0x32, 0x2F, 0x00, 0x00, 0x00, 0x8E, 0x82, 0x7C];
+        Assert.Equal(expectedBytes, actualBytes);
+    }
+
     #endregion
 
     #region Array Delimiter Tests

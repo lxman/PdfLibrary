@@ -74,8 +74,8 @@ public class PdfTilingPattern
         if (!dict.TryGetValue(new PdfName("PatternType"), out PdfObject ptObj) || ptObj is not PdfInteger pt || pt.Value != 1)
             return null; // Not a tiling pattern
 
-        int paintType = 1;
-        int tilingType = 1;
+        var paintType = 1;
+        var tilingType = 1;
         PdfRectangle bbox = new(0, 0, 1, 1);
         double xStep = 1;
         double yStep = 1;

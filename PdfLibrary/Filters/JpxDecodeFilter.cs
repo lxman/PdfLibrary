@@ -39,7 +39,7 @@ internal class JpxDecodeFilter : IStreamFilter
             if (imageBytes.Length >= components * 10)
             {
                 var samples = new List<string>();
-                for (int i = 0; i < 5; i++)
+                for (var i = 0; i < 5; i++)
                 {
                     int offset = i * components;
                     if (components == 3)

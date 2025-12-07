@@ -966,7 +966,7 @@ public class PdfRenderer : PdfContentProcessor
             if (combinedWidths.Count >= 3)
             {
                 List<double> lastWidths = combinedWidths.Skip(combinedWidths.Count - 3).ToList();
-                string lastChars = fullText.Length >= 3 ? fullText.Substring(fullText.Length - 3) : fullText;
+                string lastChars = fullText.Length >= 3 ? fullText[^3..] : fullText;
                 PdfLogger.Log(LogCategory.Text, $"  LastWidths: '{lastChars}' -> [{string.Join(", ", lastWidths.Select(w => $"{w:F4}"))}]");
             }
 
@@ -1371,7 +1371,43 @@ public class PdfRenderer : PdfContentProcessor
 
         try
         {
-            // Create PdfImage from inline image operator
+            // Resolve color space resource references before creating PdfImage
+            // Inline images may reference color spaces via resource names (e.g., /CS /R16)
+            string colorSpaceName = inlineImage.ColorSpace;
+            PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
+
+            // Check if the color space is a resource reference (not a device color space)
+            bool isDeviceColorSpace = colorSpaceName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK"
+                or "G" or "RGB" or "CMYK"; // Abbreviated names
+
+            if (!isDeviceColorSpace && colorSpaces is not null)
+            {
+                // Try to resolve the color space reference
+                PdfName csKey = new PdfName(colorSpaceName);
+                if (colorSpaces.TryGetValue(csKey, out PdfObject? csObj))
+                {
+                    PdfLogger.Log(LogCategory.Images, $"  Resolving color space '{colorSpaceName}' from resources");
+
+                    // Resolve indirect reference if needed
+                    if (csObj is PdfIndirectReference csRef && _document is not null)
+                        csObj = _document.ResolveReference(csRef);
+
+                    // Replace the color space in the inline image parameters
+                    // The PdfImage constructor will read from Parameters dictionary
+                    if (csObj is not null)
+                    {
+                        // Check for both abbreviated and full parameter names
+                        PdfName csParamKey = inlineImage.Parameters.ContainsKey(new PdfName("CS"))
+                            ? new PdfName("CS")
+                            : new PdfName("ColorSpace");
+                        inlineImage.Parameters[csParamKey] = csObj;
+
+                        PdfLogger.Log(LogCategory.Images, $"  Replaced ColorSpace parameter with resolved object: {csObj.Type}");
+                    }
+                }
+            }
+
+            // Create PdfImage from inline image operator (now with resolved color space)
             var image = new PdfImage(inlineImage);
             PdfLogger.Log(LogCategory.Images, $"  Created PdfImage: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
 

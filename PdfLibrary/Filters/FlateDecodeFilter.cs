@@ -65,17 +65,31 @@ internal class FlateDecodeFilter : IStreamFilter
             {
                 // Try skipping first 2 bytes (zlib header) and use raw deflate
                 Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: Raw deflate also failed: {ex2.Message}, trying skip 2 bytes");
-                if (data.Length > 2)
+                try
                 {
-                    using var inputStream = new MemoryStream(data, 2, data.Length - 2);
-                    using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
-                    using var outputStream = new MemoryStream();
-                    deflateStream.CopyTo(outputStream);
-                    decoded = outputStream.ToArray();
+                    if (data.Length > 2)
+                    {
+                        using var inputStream = new MemoryStream(data, 2, data.Length - 2);
+                        using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
+                        using var outputStream = new MemoryStream();
+                        deflateStream.CopyTo(outputStream);
+                        decoded = outputStream.ToArray();
+                    }
+                    else
+                    {
+                        throw new InvalidDataException("Data too short for any DEFLATE variant");
+                    }
                 }
-                else
+                catch (Exception ex3)
                 {
-                    throw;
+                    // All decompression methods failed
+                    Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: All decompression methods failed. Final error: {ex3.Message}");
+                    Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: Data length={data.Length}, header={headerHex}");
+
+                    // Return the raw data as-is rather than throwing
+                    // This allows rendering to continue even if some images fail to decompress
+                    Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, "FlateDecode: Returning raw data (uncompressed fallback)");
+                    decoded = data;
                 }
             }
         }

@@ -11,6 +11,9 @@ internal class PdfParser(PdfLexer lexer)
     private readonly PdfLexer _lexer = lexer ?? throw new ArgumentNullException(nameof(lexer));
     private readonly Queue<PdfToken> _tokenBuffer = new();
     private Func<PdfIndirectReference, PdfObject?>? _referenceResolver;
+    private PdfLibrary.Security.PdfDecryptor? _decryptor;
+    private int _currentObjectNumber = -1;
+    private int _currentGenerationNumber = 0;
 
     public PdfParser(Stream stream) : this(new PdfLexer(stream))
     {
@@ -22,6 +25,14 @@ internal class PdfParser(PdfLexer lexer)
     public void SetReferenceResolver(Func<PdfIndirectReference, PdfObject?> resolver)
     {
         _referenceResolver = resolver;
+    }
+
+    /// <summary>
+    /// Sets the decryptor for decrypting encrypted strings and streams
+    /// </summary>
+    public void SetDecryptor(PdfLibrary.Security.PdfDecryptor? decryptor)
+    {
+        _decryptor = decryptor;
     }
 
     /// <summary>
@@ -156,27 +167,42 @@ internal class PdfParser(PdfLexer lexer)
             {
                 NextToken(); // Consume obj
 
-                // Handle empty objects (ISO 32000-1: empty object = null)
-                PdfToken contentPeek = PeekToken();
-                PdfObject? content;
-                if (contentPeek.Type == PdfTokenType.EndObj)
+                // Set current object context for string decryption
+                int prevObjectNumber = _currentObjectNumber;
+                int prevGenerationNumber = _currentGenerationNumber;
+                _currentObjectNumber = objectNumber;
+                _currentGenerationNumber = generationNumber;
+
+                try
                 {
-                    // Empty object - treat as null
-                    content = PdfNull.Instance;
+                    // Handle empty objects (ISO 32000-1: empty object = null)
+                    PdfToken contentPeek = PeekToken();
+                    PdfObject? content;
+                    if (contentPeek.Type == PdfTokenType.EndObj)
+                    {
+                        // Empty object - treat as null
+                        content = PdfNull.Instance;
+                    }
+                    else
+                    {
+                        content = ReadObject();
+                    }
+
+                    ExpectToken(PdfTokenType.EndObj);
+
+                    if (content is null) return PdfNull.Instance;
+                    content.IsIndirect = true;
+                    content.ObjectNumber = objectNumber;
+                    content.GenerationNumber = generationNumber;
+
+                    return content;
                 }
-                else
+                finally
                 {
-                    content = ReadObject();
+                    // Restore previous object context
+                    _currentObjectNumber = prevObjectNumber;
+                    _currentGenerationNumber = prevGenerationNumber;
                 }
-
-                ExpectToken(PdfTokenType.EndObj);
-
-                if (content is null) return PdfNull.Instance;
-                content.IsIndirect = true;
-                content.ObjectNumber = objectNumber;
-                content.GenerationNumber = generationNumber;
-
-                return content;
             }
             default:
                 // Otherwise, we have two integers - push back and return the first
@@ -185,26 +211,44 @@ internal class PdfParser(PdfLexer lexer)
         }
     }
 
-    private static PdfString ParseString(PdfToken token)
+    private PdfString ParseString(PdfToken token)
     {
-        // Check if it's a hex string (contains only hex digits)
-        bool isHex = token.Value.All(c => c is >= '0' and <= '9' or >= 'A' and <= 'F' or >= 'a' and <= 'f');
+        // NOTE: The lexer (PdfLexer.ReadHexStringOrDictionaryStart) has already converted
+        // hex strings like <36322F00...> to bytes and then to a Latin-1 string.
+        // We should NOT try to re-parse as hex here - just extract the bytes back from Latin-1.
+        // Otherwise, if all bytes happen to represent hex digit characters (0-9, A-F),
+        // we would incorrectly re-parse and get wrong byte values (double-conversion bug).
 
-        if (!isHex || token.Value.Length <= 0) return new PdfString(token.Value);
-        // Convert hex string to bytes
-        var bytes = new List<byte>();
-        for (var i = 0; i < token.Value.Length; i += 2)
+        // Simply return the string as-is - the PdfString constructor will use Latin-1
+        // to convert back to the original bytes that the lexer parsed from hex.
+        var pdfString = new PdfString(token.Value);
+
+        // If we're inside an indirect object and have a decryptor, decrypt the string
+        // Per PDF spec ISO 32000-1 section 7.6.2: "All strings in the document are encrypted"
+        if (_decryptor is not null && _currentObjectNumber >= 0)
         {
-            string hex = i + 1 < token.Value.Length
-                ? token.Value.Substring(i, 2)
-                : string.Concat(token.Value.AsSpan(i, 1), "0"); // Pad with 0 if odd length
+            byte[] encryptedBytes = pdfString.Bytes;
+            byte[] decryptedBytes = _decryptor.Decrypt(encryptedBytes, _currentObjectNumber, _currentGenerationNumber);
 
-            bytes.Add(Convert.ToByte(hex, 16));
+            // Create new PdfString with decrypted bytes
+            pdfString = new PdfString(decryptedBytes);
+
+            Logging.PdfLogger.Log(Logging.LogCategory.PdfTool,
+                $"DECRYPT STRING: obj {_currentObjectNumber} gen {_currentGenerationNumber}, " +
+                $"encrypted=[{string.Join(" ", encryptedBytes.Take(10).Select(b => b.ToString("X2")))}...] " +
+                $"decrypted=[{string.Join(" ", decryptedBytes.Take(10).Select(b => b.ToString("X2")))}...]");
         }
 
-        return new PdfString(bytes.ToArray(), PdfStringFormat.Hexadecimal);
+        // DIAGNOSTIC: Log PdfString creation for palette debugging
+        // Log ALL long strings, not just ones with expected bytes
+        if (token.Value.Length >= 50)
+        {
+            byte[] bytes = pdfString.Bytes;
+            string bytesHex = string.Join(" ", bytes.Take(20).Select(b => b.ToString("X2")));
+            Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"PARSER STRING: created PdfString len={bytes.Length}, first 20 bytes=[{bytesHex}]");
+        }
 
-        // Literal string
+        return pdfString;
     }
 
     private static PdfName ParseName(PdfToken token) =>

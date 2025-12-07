@@ -58,7 +58,7 @@ public partial class App : Application
             LogText = true,
             LogGraphics = true,
             LogTransforms = true,
-            LogPdfTool = false,
+            LogPdfTool = true,
             LogMelville = false,
             LogTimings = false,
             AppendToLog = false,

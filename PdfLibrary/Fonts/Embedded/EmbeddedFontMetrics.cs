@@ -308,12 +308,19 @@ internal class EmbeddedFontMetrics
         {
             try
             {
+                PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE: Attempting to parse cmap table, data length={cmapData.Length}");
                 _cmapTable = new CmapTable(cmapData);
+                PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE: Successfully parsed cmap table");
             }
-            catch
+            catch (Exception ex)
             {
+                PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE-FAIL: Failed to parse cmap table: {ex.GetType().Name}: {ex.Message}");
                 _cmapTable = null;
             }
+        }
+        else
+        {
+            PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE: No cmap table data found in font");
         }
 
         // Check for CFF font (OpenType with CFF outlines)
@@ -462,7 +469,35 @@ internal class EmbeddedFontMetrics
                 : (ushort)0;
         }
 
-        return _cmapTable?.GetGlyphId(charCode) ?? 0;
+        // For TrueType fonts without a cmap table, try direct character code mapping
+        // This is common for subset fonts where character codes map directly to glyph indices
+        if (_cmapTable is null)
+        {
+            PdfLogger.Log(LogCategory.Text,
+                $"CMAP-NULL: charCode={charCode}, _cmapTable is null, trying direct mapping (subset font fallback)");
+
+            // Try direct character code to glyph ID mapping (common for subset fonts)
+            // Character code is the glyph index for subset fonts
+            ushort directGlyphId = charCode < NumGlyphs ? charCode : (ushort)0;
+
+            PdfLogger.Log(LogCategory.Text,
+                $"CMAP-DIRECT: charCode={charCode} -> glyphId={directGlyphId} (NumGlyphs={NumGlyphs})");
+
+            return directGlyphId;
+        }
+
+        // DIAGNOSTIC: Get glyph ID and log details
+        ushort glyphId = _cmapTable.GetGlyphId(charCode);
+        if (glyphId == 0)
+        {
+            // Try TestCmapLookup to see if ANY subtable can find this character
+            (ushort testGid, string subtableType) = TestCmapLookup(charCode);
+            PdfLogger.Log(LogCategory.Text,
+                $"CMAP-ZERO: charCode={charCode}, GetGlyphId returned 0, TestCmapLookup returned gid={testGid} from {subtableType}, " +
+                $"cmapSubtableCount={GetCmapSubtableCount()}, encodingRecordCount={GetCmapEncodingRecordCount()}");
+        }
+
+        return glyphId;
     }
 
     /// <summary>

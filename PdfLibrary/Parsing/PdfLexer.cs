@@ -163,6 +163,7 @@ internal class PdfLexer(Stream stream)
     private PdfToken ReadHexStringOrDictionaryStart()
     {
         long position = Position;
+
         Read(); // Skip first <
 
         if (TryPeek(out byte next) && next == (byte)'<')
@@ -189,6 +190,7 @@ internal class PdfLexer(Stream stream)
 
         // Convert hex digit pairs to bytes
         var hexString = hexDigits.ToString();
+
         var bytes = new List<byte>();
 
         for (var i = 0; i < hexString.Length; i += 2)
@@ -207,7 +209,9 @@ internal class PdfLexer(Stream stream)
 
         // Convert bytes to string for the token value
         // This will be parsed later by PdfParser into a PdfString with the correct bytes
-        string value = Encoding.Latin1.GetString(bytes.ToArray());
+        byte[] byteArray = bytes.ToArray();
+        string value = Encoding.Latin1.GetString(byteArray);
+
         return new PdfToken(PdfTokenType.String, value, position);
     }
 
@@ -216,13 +220,10 @@ internal class PdfLexer(Stream stream)
         long position = Position;
         Read(); // Skip first >
 
-        if (TryPeek(out byte next) && next == (byte)'>')
-        {
-            Read(); // Skip second >
-            return new PdfToken(PdfTokenType.DictionaryEnd, ">>", position);
-        }
+        if (!TryPeek(out byte next) || next != (byte)'>') return new PdfToken(PdfTokenType.Unknown, ">", position);
+        Read(); // Skip second >
+        return new PdfToken(PdfTokenType.DictionaryEnd, ">>", position);
 
-        return new PdfToken(PdfTokenType.Unknown, ">", position);
     }
 
     private PdfToken ReadName()

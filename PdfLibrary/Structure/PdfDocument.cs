@@ -121,6 +121,10 @@ public class PdfDocument : IDisposable
                 // Set the reference resolver so this object can also resolve its dependencies
                 parser.SetReferenceResolver(reference => GetObject(reference.ObjectNumber));
 
+                // Set the decryptor if the document is encrypted
+                if (Decryptor is not null)
+                    parser.SetDecryptor(Decryptor);
+
                 // Read the object
                 PdfObject? obj = parser.ReadObject();
                 if (obj is not null)
@@ -624,6 +628,10 @@ public class PdfDocument : IDisposable
 
                     // Set the reference resolver so streams can resolve indirect Length references
                     parser.SetReferenceResolver(reference => document.GetObject(reference.ObjectNumber));
+
+                    // Set the decryptor if the document is encrypted
+                    if (document.Decryptor is not null)
+                        parser.SetDecryptor(document.Decryptor);
 
                     // Read the indirect object
                     PdfObject? obj = parser.ReadObject();

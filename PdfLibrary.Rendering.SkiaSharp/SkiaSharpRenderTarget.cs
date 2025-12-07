@@ -493,11 +493,15 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Try to render using embedded font glyph outlines
             if (font is not null && TryRenderWithGlyphOutlines(text, glyphWidths, state, font, paint, charCodes))
             {
-                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using embedded glyph outlines for '{text}'");
+                var rotationRad = Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
+                var rotationDeg = rotationRad * (180.0 / Math.PI);
+                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using embedded glyph outlines for '{text}' (rotation={rotationDeg:F1}°)");
                 return;
             }
 
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using fallback rendering for '{text}'");
+            var fallbackRotationRad = Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
+            var fallbackRotationDeg = fallbackRotationRad * (180.0 / Math.PI);
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using fallback rendering for '{text}' (rotation={fallbackRotationDeg:F1}°)");
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
@@ -686,19 +690,25 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     var ch = text[i].ToString();
 
                     // The canvas has a Y-flip applied, which makes text render upside down
-                    // We need to apply a local Y-flip at the text position to counter this
-                    // Also apply horizontal scaling (Tz operator) and rotation to each character
+                    // We need to apply a local transformation at the text position
+                    // The position is already transformed by fallbackMatrix (which includes text matrix rotation)
+                    // So we need to "undo" the rotation, apply Y-flip, then reapply rotation
                     _canvas.Save();
                     _canvas.Translate(position.X, position.Y);
 
-                    // Apply rotation from text matrix
-                    // Note: We scale by -1 in Y after this, which effectively mirrors the rotation
-                    if (Math.Abs(rotationAngleDegrees) > 0.01f)
-                    {
-                        _canvas.RotateDegrees(rotationAngleDegrees);
-                    }
+                    // Extract rotation angle from fallbackMatrix to undo it
+                    // For vertical text, fallbackMatrix has the rotation baked in
+                    // We need to rotate back to upright, flip Y, then rotate forward again
+                    var localRotationRad = (float)Math.Atan2(fallbackMatrix.M12, fallbackMatrix.M11);
+                    var localRotationDeg = localRotationRad * (180f / (float)Math.PI);
 
-                    _canvas.Scale(tHs, -1);  // Apply horizontal scaling and Y-flip
+                    // Apply transformations in order:
+                    // 1. Rotate back to cancel the rotation in position
+                    // 2. Apply Y-flip and horizontal scaling
+                    // 3. Rotate forward to match text orientation
+                    _canvas.RotateDegrees(-localRotationDeg);
+                    _canvas.Scale(tHs, -1);  // Horizontal scaling and Y-flip
+                    _canvas.RotateDegrees(localRotationDeg);
 
                     // Draw based on rendering mode
                     if (shouldFill)
@@ -732,6 +742,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
     private bool TryRenderWithGlyphOutlines(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont font, SKPaint paint, List<int>? charCodes)
     {
+        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"######## GLYPH-ENTRY: TryRenderWithGlyphOutlines called for text='{text}' ########");
         try
         {
             // Check if the font should be rendered as bold (for synthetic bold)
@@ -756,6 +767,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             if (embeddedMetrics is not { IsValid: true })
                 return false;
 
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-METRICS: Got valid embedded metrics, IsCffFont={embeddedMetrics.IsCffFont}, IsType1Font={embeddedMetrics.IsType1Font}");
+
             // Calculate the horizontal scaling factor early so we can use it for character advances
             // HorizontalScaling is stored as a percentage (100 = 100% = 1.0 scale)
             float tHs = (float)state.HorizontalScaling / 100f;
@@ -767,8 +780,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // One character code can decode to multiple Unicode chars (e.g., ligatures)
             int loopCount = charCodes?.Count ?? text.Length;
 
+            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-LOOP: About to render {loopCount} characters, text.Length={text.Length}, charCodes={(charCodes == null ? "null" : charCodes.Count.ToString())}");
+
             for (var i = 0; i < loopCount; i++)
             {
+                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-LOOP-ITER: Starting iteration {i} of {loopCount}");
+
                 // Get character code - either from original PDF codes or fall back to Unicode
                 ushort charCode = charCodes is not null && i < charCodes.Count
                     ? (ushort)charCodes[i]
@@ -834,19 +851,24 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     // For Type0/CID fonts, map CID to GID using CIDToGIDMap
                     if (font is Type0Font { DescendantFont: CidFont cidFont })
                     {
+                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: Type0/CID font path, charCode={charCode}");
                         // For Type0 fonts, use CIDToGIDMap directly - the mapped value IS the glyph ID
                         int mappedGid = cidFont.MapCidToGid(charCode);
                         glyphId = (ushort)mappedGid;
+                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: Type0 MapCidToGid returned glyphId={glyphId}");
                     }
                     else
                     {
+                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: TrueType cmap path, charCode={charCode}, font.GetType()={font.GetType().Name}");
                         // For other fonts, use cmap lookup
                         glyphId = embeddedMetrics.GetGlyphId(charCode);
+                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: GetGlyphId returned glyphId={glyphId}");
                     }
                 }
 
                 if (glyphId == 0)
                 {
+                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-SKIP-ZERO: char='{displayChar}' (charCode={charCode}), glyphId=0, skipping");
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
@@ -861,6 +883,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 if (glyphOutline is null)
                 {
+                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-SKIP-NULL: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline is null");
                     // Check if this glyph has metrics (advance width > 0) but no outline
                     // This happens in subset fonts where the glyph outline was stripped
                     float glyphWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
@@ -916,6 +939,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 if (glyphOutline.IsEmpty)
                 {
+                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-SKIP-EMPTY: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline.IsEmpty=true");
                     // Empty glyph (e.g., space), just advance
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
@@ -1025,13 +1049,51 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 Matrix3x2 fullGlyphMatrix = translationMatrix * glyphMatrix;
 
                 // Convert to SKMatrix and apply to path
-                // Negate ScaleY to flip the glyph upright, since the canvas has a Y-flip applied
+                // Apply rotation-aware Y-flip compensation
+                // The canvas has a global Y-flip (y → -y) applied in BeginPage
+                //
+                // Global Y-flip transforms matrix [M11, M12, M21, M22] to effectively [M11, -M12, -M21, M22]
+                // because it negates all y-coordinates in the transformation
+                //
+                // To compensate, we pre-negate the components that will be flipped
+
+                // Detect rotation angle from the matrix
+                var rotationRad = Math.Atan2(fullGlyphMatrix.M12, fullGlyphMatrix.M11);
+                var rotationDeg = rotationRad * (180.0 / Math.PI);
+
+                // Normalize rotation to [-180, 180]
+                while (rotationDeg > 180) rotationDeg -= 360;
+                while (rotationDeg < -180) rotationDeg += 360;
+
+                // Determine if text is primarily vertical (rotation near ±90°)
+                bool isVertical = Math.Abs(Math.Abs(rotationDeg) - 90) < 45;
+
+                float skewY, skewX, scaleY;
+                if (isVertical)
+                {
+                    // For vertical text, the Y-flip affects M21 (SkewX in SKMatrix)
+                    // The character's right direction maps to (M11, M21), and the Y-component M21 gets flipped
+                    // Pre-negate M21 only to compensate
+                    skewY = fullGlyphMatrix.M12;
+                    skewX = -fullGlyphMatrix.M21;
+                    scaleY = fullGlyphMatrix.M22;
+                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-YFLIP: char='{displayChar}', rotation={rotationDeg:F1}°, VERTICAL, negating M21 only");
+                }
+                else
+                {
+                    // For horizontal text, only M22 needs compensation
+                    skewY = fullGlyphMatrix.M12;
+                    skewX = fullGlyphMatrix.M21;
+                    scaleY = -fullGlyphMatrix.M22;
+                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-YFLIP: char='{displayChar}', rotation={rotationDeg:F1}°, HORIZONTAL, negating M22");
+                }
+
                 var skGlyphMatrix = new SKMatrix
                 {
                     ScaleX = fullGlyphMatrix.M11,
-                    SkewY = fullGlyphMatrix.M12,
-                    SkewX = fullGlyphMatrix.M21,
-                    ScaleY = -fullGlyphMatrix.M22,  // Negate to counter canvas Y-flip
+                    SkewY = skewY,
+                    SkewX = skewX,
+                    ScaleY = scaleY,
                     TransX = fullGlyphMatrix.M31,
                     TransY = fullGlyphMatrix.M32,
                     Persp0 = 0,
@@ -1049,6 +1111,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 bool shouldStroke = renderMode == 1 || renderMode == 2 || renderMode == 5 || renderMode == 6;
                 bool isInvisible = renderMode == 3 || renderMode == 7;
 
+                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-MODE: char='{displayChar}', renderMode={renderMode}, shouldFill={shouldFill}, shouldStroke={shouldStroke}, isInvisible={isInvisible}");
+
                 if (!isInvisible)
                 {
                     // Calculate CTM scaling factor for stroke width
@@ -1059,8 +1123,13 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     {
                         // Transform path to device coordinates and draw with identity matrix
                         SKMatrix canvasMatrix = _canvas.TotalMatrix;
+                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-RENDER: char='{displayChar}', canvasMatrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2};{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
+
                         using var devicePath = new SKPath();
                         glyphPath.Transform(canvasMatrix, devicePath);
+
+                        var deviceBounds = devicePath.Bounds;
+                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-RENDER: devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
 
                         _canvas.Save();
                         _canvas.ResetMatrix();
@@ -2095,6 +2164,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     SKAlphaType alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
                     var pixelBuffer = new byte[width * height * 4]; // RGBA8888
 
+                    // Debug: Log first few pixels
+                    int debugPixelCount = Math.Min(10, width * height);
+
                     // Convert indexed pixels to RGBA
                     for (var y = 0; y < height; y++)
                     {
@@ -2117,6 +2189,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                                 r = paletteData[paletteOffset];
                                 g = paletteData[paletteOffset + 1];
                                 b = paletteData[paletteOffset + 2];
+
+                                // Debug: Log first few pixels
+                                if (pixelIndex < debugPixelCount)
+                                {
+                                    Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
+                                }
 
                                 // Apply SMask alpha channel if present
                                 alpha = 255;
