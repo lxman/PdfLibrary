@@ -56,10 +56,8 @@ PDF/
 │   │   └── Compressors.Jbig2.Tests/
 │   ├── Compressors.Jpeg/             # JPEG (DCT) decompression
 │   │   └── Compressors.Jpeg.Tests/
-│   ├── Compressors.Jpeg2000/         # JPEG2000 (legacy)
-│   │   └── Compressors.Jpeg2000.Tests/
-│   └── Compressors.Jpeg2k/           # JPEG2000 (native, in progress)
-│       └── Compressors.Jpeg2k.Tests/
+│   └── Compressors.Jpeg2000/         # JPEG2000 (legacy)
+│       └── Compressors.Jpeg2000.Tests/
 ├── FontParser/                       # TrueType/OpenType parsing
 ├── Logging/                          # Logging infrastructure
 └── Docs/                             # Documentation
