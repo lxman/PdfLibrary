@@ -19,6 +19,9 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/JBig2/">
+    <Project Path="JBig2Decoder.NETStandard/JBig2Decoder.NETStandard/JBig2Decoder.NETStandard.csproj" />
+  </Folder>
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
