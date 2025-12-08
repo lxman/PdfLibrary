@@ -19,4 +19,10 @@
     <ProjectReference Include="..\Compressors.Jbig2\Compressors.Jbig2.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="TestData\*.jb2">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

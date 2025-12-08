@@ -18,15 +18,7 @@ namespace Compressors.Jbig2
         /// <returns>Decoded RGB pixel data.</returns>
         public static byte[] Decompress(byte[]? data, out int width, out int height)
         {
-            if (data == null || data.Length == 0)
-            {
-                width = 0;
-                height = 0;
-                return [];
-            }
-
-            var decoder = new JBIG2StreamDecoder();
-            return decoder.DecodeJBIG2(data, out width, out height);
+            return Decompress(data, null, out width, out height);
         }
 
         /// <summary>
@@ -40,21 +32,92 @@ namespace Compressors.Jbig2
         /// <returns>Decoded RGB pixel data.</returns>
         public static byte[] Decompress(byte[]? data, byte[]? globals, out int width, out int height)
         {
+            width = 0;
+            height = 0;
+
+            // Validate input
             if (data == null || data.Length == 0)
             {
+                Console.WriteLine("[JBIG2 WARNING] Empty or null data provided. Returning blank image.");
+                return [];
+            }
+
+            try
+            {
+                var decoder = new JBIG2StreamDecoder();
+
+                // Enable tolerance mode to match Chrome/Acrobat behavior
+                // This allows decoding JBIG2 streams with forward references
+                // (invalid per ITU-T T.88 but common in real-world PDFs)
+                decoder.TolerateMissingSegments = true;
+
+                // Set globals if provided (JBIG2Globals stream from PDF)
+                if (globals != null && globals.Length > 0)
+                {
+                    decoder.SetGlobalData(globals);
+                }
+
+                // The DecodeJBIG2 method can throw NullReferenceException on malformed data
+                // Catch all exceptions to prevent crashes
+                byte[] rgb = decoder.DecodeJBIG2(data, out width, out height);
+
+                // Validate output
+                if (rgb == null || rgb.Length == 0)
+                {
+                    Console.WriteLine($"[JBIG2 WARNING] Decoder returned null or empty result. Data length: {data.Length}. Returning blank image.");
+                    width = 0;
+                    height = 0;
+                    return [];
+                }
+
+                // Validate dimensions
+                if (width <= 0 || height <= 0)
+                {
+                    Console.WriteLine($"[JBIG2 WARNING] Decoder returned invalid dimensions ({width}x{height}). Returning blank image.");
+                    width = 0;
+                    height = 0;
+                    return [];
+                }
+
+                // Validate data length
+                int expectedLength = width * height * 3;
+                if (rgb.Length != expectedLength)
+                {
+                    Console.WriteLine($"[JBIG2 WARNING] Decoder returned incorrect data length. Expected {expectedLength}, got {rgb.Length}. Dimensions: {width}x{height}");
+                    width = 0;
+                    height = 0;
+                    return [];
+                }
+
+                return rgb;
+            }
+            catch (NullReferenceException ex)
+            {
+                // Common error from the decoder library when data is malformed
+                Console.WriteLine($"[JBIG2 ERROR] NullReferenceException during decode. Data length: {data.Length}, Has globals: {globals != null}. Error: {ex.Message}");
+                Console.WriteLine($"[JBIG2 ERROR] Stack trace: {ex.StackTrace}");
                 width = 0;
                 height = 0;
                 return [];
             }
-
-            var decoder = new JBIG2StreamDecoder();
-
-            if (globals != null && globals.Length > 0)
+            catch (IndexOutOfRangeException ex)
             {
-                decoder.SetGlobalData(globals);
+                // Another common error with malformed JBIG2 data
+                Console.WriteLine($"[JBIG2 ERROR] IndexOutOfRangeException during decode. Data length: {data.Length}. Error: {ex.Message}");
+                width = 0;
+                height = 0;
+                return [];
             }
-
-            return decoder.DecodeJBIG2(data, out width, out height);
+            catch (Exception ex)
+            {
+                // Catch any other exceptions from the decoder
+                Console.WriteLine($"[JBIG2 ERROR] Unexpected error during decode: {ex.GetType().Name}");
+                Console.WriteLine($"[JBIG2 ERROR] Message: {ex.Message}");
+                Console.WriteLine($"[JBIG2 ERROR] Data length: {data.Length}, Has globals: {globals != null}");
+                width = 0;
+                height = 0;
+                return [];
+            }
         }
 
         /// <summary>
@@ -77,8 +140,15 @@ namespace Compressors.Jbig2
         /// <param name="width">Output: the image width in pixels.</param>
         /// <param name="height">Output: the image height in pixels.</param>
         /// <returns>Decoded bitmap data (1 bit per pixel, packed into bytes, MSB first).</returns>
-        public static byte[] DecompressToBitmap(byte[] data, byte[]? globals, out int width, out int height)
+        public static byte[] DecompressToBitmap(byte[]? data, byte[]? globals, out int width, out int height)
         {
+            if (data == null || data.Length == 0)
+            {
+                width = 0;
+                height = 0;
+                return [];
+            }
+
             byte[] rgb = Decompress(data, globals, out width, out height);
 
             if (rgb.Length == 0)
@@ -87,8 +157,6 @@ namespace Compressors.Jbig2
             }
 
             // Convert RGB to 1-bit bitmap
-            // Assume RGB data is 3 bytes per pixel
-            int pixelCount = width * height;
             int bytesPerRow = (width + 7) / 8;
             var bitmap = new byte[bytesPerRow * height];
 
