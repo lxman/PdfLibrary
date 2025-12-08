@@ -167,7 +167,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
 
                 // Halftone (HT)
                 case "HT":
-                    PdfLogger.Log(LogCategory.Graphics, $"  HT (Halftone) - not implemented");
+                    PdfLogger.Log(LogCategory.Graphics, "  HT (Halftone) - not implemented");
                     break;
 
                 // Flatness tolerance (FL)

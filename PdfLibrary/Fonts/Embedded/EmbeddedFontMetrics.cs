@@ -1,3 +1,4 @@
+using System.Text;
 using FontParser.Tables;
 using FontParser.Tables.Cff;
 using FontParser.Tables.Cff.Type1;
@@ -118,7 +119,7 @@ internal class EmbeddedFontMetrics
         if (_cmapTable is null)
             return "No cmap table";
 
-        var info = new System.Text.StringBuilder();
+        var info = new StringBuilder();
         info.AppendLine($"Cmap: {_cmapTable.EncodingRecords.Count} encodings, {_cmapTable.SubTables.Count} subtables");
 
         for (var i = 0; i < _cmapTable.EncodingRecords.Count; i++)
@@ -310,7 +311,7 @@ internal class EmbeddedFontMetrics
             {
                 PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE: Attempting to parse cmap table, data length={cmapData.Length}");
                 _cmapTable = new CmapTable(cmapData);
-                PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE: Successfully parsed cmap table");
+                PdfLogger.Log(LogCategory.Text, "CMAP-PARSE: Successfully parsed cmap table");
             }
             catch (Exception ex)
             {
@@ -320,7 +321,7 @@ internal class EmbeddedFontMetrics
         }
         else
         {
-            PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE: No cmap table data found in font");
+            PdfLogger.Log(LogCategory.Text, "CMAP-PARSE: No cmap table data found in font");
         }
 
         // Check for CFF font (OpenType with CFF outlines)
@@ -396,7 +397,7 @@ internal class EmbeddedFontMetrics
                 PdfLogger.Log(LogCategory.Text, "[TYPE1] Using Length1/Length2 format");
 
                 // Check for eexec in the data to understand the format better
-                string textPreview = System.Text.Encoding.ASCII.GetString(fontData);
+                string textPreview = Encoding.ASCII.GetString(fontData);
                 int eexecIdx = textPreview.IndexOf("eexec", StringComparison.Ordinal);
                 PdfLogger.Log(LogCategory.Text, $"[TYPE1] eexec found at index: {eexecIdx}");
                 if (eexecIdx > 0)

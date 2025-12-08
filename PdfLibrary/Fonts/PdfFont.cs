@@ -1,3 +1,4 @@
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
@@ -48,17 +49,14 @@ public abstract class PdfFont
         {
             string name = BaseFont;
             // Subset fonts have a pattern: XXXXXX+FontName where XXXXXX is 6 uppercase letters
-            if (name.Length > 7 && name[6] == '+')
+            if (name.Length <= 7 || name[6] != '+') return false;
+            // Check that the first 6 characters are uppercase letters
+            for (var i = 0; i < 6; i++)
             {
-                // Check that first 6 characters are uppercase letters
-                for (var i = 0; i < 6; i++)
-                {
-                    if (name[i] < 'A' || name[i] > 'Z')
-                        return false;
-                }
-                return true;
+                if (name[i] < 'A' || name[i] > 'Z')
+                    return false;
             }
-            return false;
+            return true;
         }
     }
 
@@ -109,13 +107,10 @@ public abstract class PdfFont
             return unicode;
 
         // Fall back to encoding
-        if (Encoding is not null)
-        {
-            return Encoding.DecodeCharacter(charCode);
-        }
-
-        // Last resort: use the character code as-is
-        return char.ConvertFromUtf32(charCode);
+        return Encoding is not null
+            ? Encoding.DecodeCharacter(charCode)
+            // Last resort: use the character code as-is
+            : char.ConvertFromUtf32(charCode);
     }
 
     /// <summary>
@@ -128,14 +123,12 @@ public abstract class PdfFont
     /// </summary>
     internal PdfFontDescriptor? GetDescriptor()
     {
-        if (_dictionary.TryGetValue(new PdfName("FontDescriptor"), out PdfObject? obj))
-        {
-            if (obj is PdfIndirectReference reference && _document is not null)
-                obj = _document.ResolveReference(reference);
+        if (!_dictionary.TryGetValue(new PdfName("FontDescriptor"), out PdfObject? obj)) return null;
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
 
-            if (obj is PdfDictionary descriptorDict)
-                return new PdfFontDescriptor(descriptorDict, _document);
-        }
+        if (obj is PdfDictionary descriptorDict)
+            return new PdfFontDescriptor(descriptorDict, _document);
 
         return null;
     }
@@ -159,11 +152,11 @@ public abstract class PdfFont
     {
         if (!dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj) || subtypeObj is not PdfName subtype)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CREATE: No Subtype found in font dictionary");
+            PdfLogger.Log(LogCategory.Text, "FONT-CREATE: No Subtype found in font dictionary");
             return null;
         }
 
-        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CREATE: Subtype={subtype.Value}");
+        PdfLogger.Log(LogCategory.Text, $"FONT-CREATE: Subtype={subtype.Value}");
 
         return subtype.Value switch
         {
@@ -181,17 +174,13 @@ public abstract class PdfFont
     /// </summary>
     protected void LoadToUnicodeCMap()
     {
-        if (_dictionary.TryGetValue(new PdfName("ToUnicode"), out PdfObject? obj))
-        {
-            if (obj is PdfIndirectReference reference && _document is not null)
-                obj = _document.ResolveReference(reference);
+        if (!_dictionary.TryGetValue(new PdfName("ToUnicode"), out PdfObject? obj)) return;
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
 
-            if (obj is PdfStream stream)
-            {
-                byte[] data = stream.GetDecodedData(_document?.Decryptor);
-                ToUnicode = ToUnicodeCMap.Parse(data);
-            }
-        }
+        if (obj is not PdfStream stream) return;
+        byte[] data = stream.GetDecodedData(_document?.Decryptor);
+        ToUnicode = ToUnicodeCMap.Parse(data);
     }
 }
 
@@ -204,5 +193,5 @@ internal enum PdfFontType
     TrueType,
     Type3,
     Type0,
-    MMType1
+    MmType1
 }

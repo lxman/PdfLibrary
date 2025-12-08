@@ -17,39 +17,56 @@ public class SystemFontResolver
 
     // Fallback chains for different font categories
     // Listed in order of preference - first available wins
+    // Prioritize metric-compatible Base14 replacements (URW, Liberation, TeX Gyre)
+    // These fonts have identical metrics to Adobe's Base14 fonts
     private static readonly string[] SansSerifFallbacks =
     {
-        "Arial",
-        "Helvetica",
-        "Liberation Sans",
+        // Metric-compatible Helvetica replacements (HIGHEST PRIORITY)
+        "Nimbus Sans L",           // URW font, exact Helvetica metrics
+        "Nimbus Sans",             // Newer URW variant
+        "Liberation Sans",         // Red Hat, based on URW
+        "TeX Gyre Heros",          // TeX font, based on URW
+        "FreeSans",                // GNU FreeFont
+
+        // System fonts (FALLBACK - different metrics!)
+        "Arial",                   // Windows default (metrics differ from Helvetica)
+        "Helvetica",               // macOS
         "DejaVu Sans",
-        "Nimbus Sans",
-        "FreeSans",
         "Noto Sans",
         "Segoe UI"
     };
 
     private static readonly string[] SerifFallbacks =
     {
-        "Times New Roman",
-        "Times",
-        "Liberation Serif",
+        // Metric-compatible Times replacements (HIGHEST PRIORITY)
+        "Nimbus Roman No9 L",      // URW font, exact Times metrics
+        "Nimbus Roman",            // Newer URW variant
+        "Liberation Serif",        // Red Hat, based on URW
+        "TeX Gyre Termes",         // TeX font, based on URW
+        "FreeSerif",               // GNU FreeFont
+
+        // System fonts (FALLBACK - different metrics!)
+        "Times New Roman",         // Windows default (metrics differ from Times-Roman)
+        "Times",                   // macOS
         "DejaVu Serif",
-        "Nimbus Roman",
-        "FreeSerif",
         "Noto Serif",
         "Georgia"
     };
 
     private static readonly string[] MonospaceFallbacks =
     {
-        "Courier New",
-        "Courier",
+        // Metric-compatible Courier replacements (HIGHEST PRIORITY)
+        "Nimbus Mono L",           // URW font, exact Courier metrics
+        "Nimbus Mono PS",          // Newer URW variant
+        "Liberation Mono",         // Red Hat, based on URW
+        "TeX Gyre Cursor",         // TeX font, based on URW
+        "FreeMono",                // GNU FreeFont
+
+        // System fonts (FALLBACK - different metrics!)
+        "Courier New",             // Windows default (metrics differ from Courier)
+        "Courier",                 // macOS
         "Consolas",
-        "Liberation Mono",
         "DejaVu Sans Mono",
-        "Nimbus Mono",
-        "FreeMono",
         "Noto Sans Mono",
         "Lucida Console"
     };
@@ -207,6 +224,46 @@ public class SystemFontResolver
         PdfLogger.Log(LogCategory.Text, $"  Monospace: {_resolvedMonospace ?? "NONE"}");
         PdfLogger.Log(LogCategory.Text, $"  Symbol: {_resolvedSymbol ?? "NONE"}");
         PdfLogger.Log(LogCategory.Text, $"  Dingbats: {_resolvedDingbats ?? "NONE"}");
+
+        // Warn if using system fonts instead of metric-compatible fonts
+        bool usingMetricCompatibleSans = _resolvedSansSerif is "Nimbus Sans L" or "Nimbus Sans" or "Liberation Sans" or "TeX Gyre Heros" or "FreeSans";
+        bool usingMetricCompatibleSerif = _resolvedSerif is "Nimbus Roman No9 L" or "Nimbus Roman" or "Liberation Serif" or "TeX Gyre Termes" or "FreeSerif";
+        bool usingMetricCompatibleMono = _resolvedMonospace is "Nimbus Mono L" or "Nimbus Mono PS" or "Liberation Mono" or "TeX Gyre Cursor" or "FreeMono";
+
+        if (!usingMetricCompatibleSans || !usingMetricCompatibleSerif || !usingMetricCompatibleMono)
+        {
+            PdfLogger.Log(LogCategory.Text, "");
+            PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER] ⚠ WARNING: Metric-compatible Base14 fonts not found!");
+            PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER] PDFs may render with incorrect text spacing/layout.");
+            PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER] ");
+            PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER] For accurate rendering, install one of these font packages:");
+
+            if (!usingMetricCompatibleSans)
+            {
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]   • Sans-serif (Helvetica replacement):");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - Liberation Sans (https://github.com/liberationfonts/liberation-fonts)");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - Nimbus Sans L (from URW Base35 fonts)");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - TeX Gyre Heros (https://www.gust.org.pl/projects/e-foundry/tex-gyre)");
+            }
+
+            if (!usingMetricCompatibleSerif)
+            {
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]   • Serif (Times-Roman replacement):");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - Liberation Serif (https://github.com/liberationfonts/liberation-fonts)");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - Nimbus Roman No9 L (from URW Base35 fonts)");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - TeX Gyre Termes (https://www.gust.org.pl/projects/e-foundry/tex-gyre)");
+            }
+
+            if (!usingMetricCompatibleMono)
+            {
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]   • Monospace (Courier replacement):");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - Liberation Mono (https://github.com/liberationfonts/liberation-fonts)");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - Nimbus Mono L (from URW Base35 fonts)");
+                PdfLogger.Log(LogCategory.Text, "[FONT RESOLVER]     - TeX Gyre Cursor (https://www.gust.org.pl/projects/e-foundry/tex-gyre)");
+            }
+
+            PdfLogger.Log(LogCategory.Text, "");
+        }
     }
 
     private SKTypeface ResolveTypeface(string pdfFontName, bool bold, bool italic)

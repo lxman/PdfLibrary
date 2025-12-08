@@ -1,6 +1,6 @@
 using System.Numerics;
-using PdfLibrary.Document;
 using Logging;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Content;
 
@@ -144,7 +144,7 @@ public class PdfGraphicsState
     public int OverprintMode { get; set; }
 
     /// <summary>Smoothness tolerance (SM)</summary>
-    public double Smoothness { get; set; } = 0.0;
+    public double Smoothness { get; set; }
 
     /// <summary>
     /// Sets stroke color to grayscale

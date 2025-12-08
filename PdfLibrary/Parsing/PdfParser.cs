@@ -1,5 +1,7 @@
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Security;
 
 namespace PdfLibrary.Parsing;
 
@@ -11,9 +13,9 @@ internal class PdfParser(PdfLexer lexer)
     private readonly PdfLexer _lexer = lexer ?? throw new ArgumentNullException(nameof(lexer));
     private readonly Queue<PdfToken> _tokenBuffer = new();
     private Func<PdfIndirectReference, PdfObject?>? _referenceResolver;
-    private PdfLibrary.Security.PdfDecryptor? _decryptor;
+    private PdfDecryptor? _decryptor;
     private int _currentObjectNumber = -1;
-    private int _currentGenerationNumber = 0;
+    private int _currentGenerationNumber;
 
     public PdfParser(Stream stream) : this(new PdfLexer(stream))
     {
@@ -30,7 +32,7 @@ internal class PdfParser(PdfLexer lexer)
     /// <summary>
     /// Sets the decryptor for decrypting encrypted strings and streams
     /// </summary>
-    public void SetDecryptor(PdfLibrary.Security.PdfDecryptor? decryptor)
+    public void SetDecryptor(PdfDecryptor? decryptor)
     {
         _decryptor = decryptor;
     }
@@ -233,7 +235,7 @@ internal class PdfParser(PdfLexer lexer)
             // Create new PdfString with decrypted bytes
             pdfString = new PdfString(decryptedBytes);
 
-            Logging.PdfLogger.Log(Logging.LogCategory.PdfTool,
+            PdfLogger.Log(LogCategory.PdfTool,
                 $"DECRYPT STRING: obj {_currentObjectNumber} gen {_currentGenerationNumber}, " +
                 $"encrypted=[{string.Join(" ", encryptedBytes.Take(10).Select(b => b.ToString("X2")))}...] " +
                 $"decrypted=[{string.Join(" ", decryptedBytes.Take(10).Select(b => b.ToString("X2")))}...]");
@@ -245,7 +247,7 @@ internal class PdfParser(PdfLexer lexer)
         {
             byte[] bytes = pdfString.Bytes;
             string bytesHex = string.Join(" ", bytes.Take(20).Select(b => b.ToString("X2")));
-            Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"PARSER STRING: created PdfString len={bytes.Length}, first 20 bytes=[{bytesHex}]");
+            PdfLogger.Log(LogCategory.PdfTool, $"PARSER STRING: created PdfString len={bytes.Length}, first 20 bytes=[{bytesHex}]");
         }
 
         return pdfString;

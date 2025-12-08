@@ -97,6 +97,18 @@ public interface IRenderTarget
     void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null);
 
     /// <summary>
+    /// Measures the width of text as it would be rendered with the system font.
+    /// Used by fixups to detect width mismatches between PDF metrics and system fonts.
+    /// This is particularly important for Base14 fonts where PDFs reference standard fonts
+    /// by name without embedding, and system substitutes may have different metrics.
+    /// </summary>
+    /// <param name="text">The text to measure</param>
+    /// <param name="state">Current graphics state containing font size and transform info</param>
+    /// <param name="font">PDF font object</param>
+    /// <returns>Width in user space units</returns>
+    float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font);
+
+    /// <summary>
     /// Render an image (XObject).
     /// Image should be drawn in a 1x1 unit square at origin, transformed by state.Ctm.
     /// </summary>

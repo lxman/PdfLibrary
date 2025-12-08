@@ -1,8 +1,9 @@
 using System.Text;
+using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using Logging;
+using PdfLibrary.Fixups;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
@@ -48,7 +49,7 @@ public class PdfPage
     /// </summary>
     internal PdfResources? GetResources()
     {
-        // Try to get from page first
+        // Try to get from the page first
         if (_dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? obj))
         {
             if (obj is PdfIndirectReference reference && _document is not null)
@@ -57,7 +58,7 @@ public class PdfPage
             if (obj is PdfDictionary resourceDict)
             {
                 var resources = new PdfResources(resourceDict, _document);
-                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"PAGE-RESOURCES: Found on page - {resources.GetFontNames().Count} fonts: {string.Join(", ", resources.GetFontNames())}");
+                PdfLogger.Log(LogCategory.Text, $"PAGE-RESOURCES: Found on page - {resources.GetFontNames().Count} fonts: {string.Join(", ", resources.GetFontNames())}");
                 return resources;
             }
         }
@@ -65,7 +66,7 @@ public class PdfPage
         // Inherit from parent if not found
         if (_parentNode is null || !_parentNode.TryGetValue(new PdfName("Resources"), out obj))
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, "PAGE-RESOURCES: No resources found on page or parent");
+            PdfLogger.Log(LogCategory.Text, "PAGE-RESOURCES: No resources found on page or parent");
             return null;
         }
 
@@ -75,11 +76,11 @@ public class PdfPage
         if (obj is PdfDictionary resourceDict2)
         {
             var resources = new PdfResources(resourceDict2, _document);
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"PAGE-RESOURCES: Inherited from parent - {resources.GetFontNames().Count} fonts: {string.Join(", ", resources.GetFontNames())}");
+            PdfLogger.Log(LogCategory.Text, $"PAGE-RESOURCES: Inherited from parent - {resources.GetFontNames().Count} fonts: {string.Join(", ", resources.GetFontNames())}");
             return resources;
         }
 
-        Logging.PdfLogger.Log(Logging.LogCategory.Text, "PAGE-RESOURCES: Resources object exists but is not a dictionary");
+        PdfLogger.Log(LogCategory.Text, "PAGE-RESOURCES: Resources object exists but is not a dictionary");
         return null;
     }
 
@@ -386,12 +387,24 @@ public class PdfPage
     /// <param name="scale">Scale factor (1.0 = 100%, 2.0 = 200%)</param>
     public void Render(IRenderTarget target, int pageNumber = 1, double scale = 1.0)
     {
+        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] PdfPage.Render() called: pageNumber={pageNumber}, scale={scale}");
+
         if (_document is null)
             throw new InvalidOperationException("Cannot render a page without a document reference");
 
+        // Initialize the fixup system with centralized defaults
+        PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] Creating fixup configuration...");
+        FixupConfiguration fixupConfig = FixupDefaults.CreateDefaultConfiguration();
+        var fixupManager = new FixupManager(fixupConfig);
+        FixupDefaults.RegisterAllFixups(fixupManager);
+        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Fixup manager created: fixupManager!=null={fixupManager != null}");
+
         var optionalContentManager = new OptionalContentManager(_document);
-        var renderer = new PdfRenderer(target, GetResources(), optionalContentManager, _document);
+        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Creating PdfRenderer with fixupManager!=null={fixupManager != null}");
+        var renderer = new PdfRenderer(target, GetResources(), optionalContentManager, _document, fixupManager);
+        PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] Calling renderer.RenderPage()...");
         renderer.RenderPage(this, pageNumber, scale);
+        PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] renderer.RenderPage() completed");
     }
 }
 

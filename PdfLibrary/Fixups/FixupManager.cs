@@ -44,7 +44,7 @@ public class FixupManager
     /// <param name="context">The page rendering context.</param>
     public void ApplyBeforePageRenderFixups(PageRenderContext context)
     {
-        foreach (var fixup in _fixups.Where(f => f.IsEnabled))
+        foreach (IPdfFixup fixup in _fixups.Where(f => f.IsEnabled))
         {
             fixup.OnBeforePageRender(context);
         }
@@ -56,7 +56,7 @@ public class FixupManager
     /// <param name="context">The text run context.</param>
     public void ApplyTextRunFixups(TextRunContext context)
     {
-        foreach (var fixup in _fixups.Where(f => f.IsEnabled))
+        foreach (IPdfFixup fixup in _fixups.Where(f => f.IsEnabled))
         {
             fixup.OnTextRun(context);
         }
@@ -68,7 +68,7 @@ public class FixupManager
     /// <param name="context">The page rendering context.</param>
     public void ApplyAfterPageRenderFixups(PageRenderContext context)
     {
-        foreach (var fixup in _fixups.Where(f => f.IsEnabled))
+        foreach (IPdfFixup fixup in _fixups.Where(f => f.IsEnabled))
         {
             fixup.OnAfterPageRender(context);
         }

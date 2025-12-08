@@ -75,6 +75,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 if (value is SKPath path)
                     path.Dispose();
             });
+
+        // Initialize the font resolver
+        FontResolver = new SystemFontResolver();
     }
 
     public SkiaSharpRenderTarget(int width, int height, PdfDocument? document = null, bool transparentBackground = false)
@@ -89,7 +92,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             lock (_documentLock)
             {
                 var isNewDocument = true;
-                if (_lastDocument is not null && _lastDocument.TryGetTarget(out var lastDoc))
+                if (_lastDocument is not null && _lastDocument.TryGetTarget(out PdfDocument? lastDoc))
                 {
                     isNewDocument = !ReferenceEquals(lastDoc, document);
                 }
@@ -421,7 +424,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             {
                 for (var x = 0; x < rgb24.Width; x++)
                 {
-                    var pixel = rgb24[x, y];
+                    Rgb24 pixel = rgb24[x, y];
                     bitmap.SetPixel(x, y, new SKColor(pixel.R, pixel.G, pixel.B, 255));
                 }
             }
@@ -435,7 +438,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             {
                 for (var x = 0; x < rgba32.Width; x++)
                 {
-                    var pixel = rgba32[x, y];
+                    Rgba32 pixel = rgba32[x, y];
                     bitmap.SetPixel(x, y, new SKColor(pixel.R, pixel.G, pixel.B, pixel.A));
                 }
             }
@@ -449,7 +452,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             {
                 for (var x = 0; x < l8.Width; x++)
                 {
-                    var pixel = l8[x, y];
+                    L8 pixel = l8[x, y];
                     bitmap.SetPixel(x, y, new SKColor(pixel.PackedValue, pixel.PackedValue, pixel.PackedValue));
                 }
             }
@@ -465,11 +468,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     {
         if (string.IsNullOrEmpty(text) || state.FontName is null)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-SKIPPED: text.IsNullOrEmpty={string.IsNullOrEmpty(text)}, FontName={state.FontName}");
+            PdfLogger.Log(LogCategory.Text, $"DRAWTEXT-SKIPPED: text.IsNullOrEmpty={string.IsNullOrEmpty(text)}, FontName={state.FontName}");
             return;
         }
 
-        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT: text='{text}', FontName={state.FontName}, FontSize={state.FontSize}, TextMatrix=[{state.TextMatrix.M11},{state.TextMatrix.M12},{state.TextMatrix.M21},{state.TextMatrix.M22},{state.TextMatrix.M31},{state.TextMatrix.M32}], font={font?.GetType().Name ?? "null"}");
+        PdfLogger.Log(LogCategory.Text, $"DRAWTEXT: text='{text}', FontName={state.FontName}, FontSize={state.FontSize}, TextMatrix=[{state.TextMatrix.M11},{state.TextMatrix.M12},{state.TextMatrix.M21},{state.TextMatrix.M22},{state.TextMatrix.M31},{state.TextMatrix.M32}], font={font?.GetType().Name ?? "null"}");
 
         _canvas.Save();
 
@@ -483,7 +486,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             SKColor fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
             fillColor = ApplyAlpha(fillColor, state.FillAlpha);
 
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-COLOR: ResolvedColorSpace={state.ResolvedFillColorSpace}, ResolvedColor=[{string.Join(",", state.ResolvedFillColor.Select(c => c.ToString("F2")))}], SKColor=({fillColor.Red},{fillColor.Green},{fillColor.Blue},{fillColor.Alpha})");
+            PdfLogger.Log(LogCategory.Text, $"DRAWTEXT-COLOR: ResolvedColorSpace={state.ResolvedFillColorSpace}, ResolvedColor=[{string.Join(",", state.ResolvedFillColor.Select(c => c.ToString("F2")))}], SKColor=({fillColor.Red},{fillColor.Green},{fillColor.Blue},{fillColor.Alpha})");
 
             using var paint = new SKPaint();
             paint.Color = fillColor;
@@ -493,15 +496,15 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // Try to render using embedded font glyph outlines
             if (font is not null && TryRenderWithGlyphOutlines(text, glyphWidths, state, font, paint, charCodes))
             {
-                var rotationRad = Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
-                var rotationDeg = rotationRad * (180.0 / Math.PI);
-                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using embedded glyph outlines for '{text}' (rotation={rotationDeg:F1}°)");
+                double rotationRad = Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
+                double rotationDeg = rotationRad * (180.0 / Math.PI);
+                PdfLogger.Log(LogCategory.Text, $"DRAWTEXT-PATH: Using embedded glyph outlines for '{text}' (rotation={rotationDeg:F1}°)");
                 return;
             }
 
-            var fallbackRotationRad = Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
-            var fallbackRotationDeg = fallbackRotationRad * (180.0 / Math.PI);
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"DRAWTEXT-PATH: Using fallback rendering for '{text}' (rotation={fallbackRotationDeg:F1}°)");
+            double fallbackRotationRad = Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
+            double fallbackRotationDeg = fallbackRotationRad * (180.0 / Math.PI);
+            PdfLogger.Log(LogCategory.Text, $"DRAWTEXT-PATH: Using fallback rendering for '{text}' (rotation={fallbackRotationDeg:F1}°)");
 
             // Fallback: render each character individually using PDF glyph widths
             // This preserves correct spacing even when using a substitute font
@@ -546,6 +549,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // For a rotation matrix: M11=cos(θ), M12=sin(θ), M21=-sin(θ), M22=cos(θ)
             var rotationAngleRadians = (float)Math.Atan2(state.TextMatrix.M12, state.TextMatrix.M11);
             float rotationAngleDegrees = rotationAngleRadians * (180f / (float)Math.PI);
+
+            PdfLogger.Log(LogCategory.Text,
+                $"[ROTATION-DEBUG] Text='{text}' TextMatrix=[{state.TextMatrix.M11:F4},{state.TextMatrix.M12:F4},{state.TextMatrix.M21:F4},{state.TextMatrix.M22:F4},{state.TextMatrix.M31:F2},{state.TextMatrix.M32:F2}] Rotation={rotationAngleDegrees:F2}°");
 
             // Determine font style and family from font descriptor and name
             SKFontStyle? fontStyle = SKFontStyle.Normal;
@@ -604,12 +610,13 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 // Choose fallback font family based on font classification
                 // Monospace takes priority, then serif vs sans-serif
+                // Use FontResolver to get metric-compatible fonts (Nimbus, Liberation, TeX Gyre)
                 if (isMonospace)
-                    fallbackFontFamily = "Courier New";
+                    fallbackFontFamily = FontResolver.GetResolvedFontName(FontCategory.Monospace);
                 else if (isSerif)
-                    fallbackFontFamily = "Times New Roman";
+                    fallbackFontFamily = FontResolver.GetResolvedFontName(FontCategory.Serif);
                 else
-                    fallbackFontFamily = "Arial";
+                    fallbackFontFamily = FontResolver.GetResolvedFontName(FontCategory.SansSerif);
 
                 switch (isBold)
                 {
@@ -689,6 +696,14 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     float pdfWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
                     var ch = text[i].ToString();
 
+                    // DIAGNOSTIC: Measure actual SkiaSharp glyph width vs PDF width
+                    float actualWidth = fallbackFont.MeasureText(ch);
+                    if (i < 3 && Math.Abs(actualWidth - pdfWidth) > 0.1f)
+                    {
+                        PdfLogger.Log(LogCategory.Text,
+                            $"  [WIDTH-MISMATCH] '{text}' Char[{i}]='{ch}': PDF={pdfWidth:F3}, Actual={actualWidth:F3}, Diff={actualWidth - pdfWidth:F3}");
+                    }
+
                     // The canvas has a Y-flip applied, which makes text render upside down
                     // We need to apply a local transformation at the text position
                     // The position is already transformed by fallbackMatrix (which includes text matrix rotation)
@@ -700,17 +715,21 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     // For vertical text, fallbackMatrix has the rotation baked in
                     // We need to rotate back to upright, flip Y, then rotate forward again
                     var localRotationRad = (float)Math.Atan2(fallbackMatrix.M12, fallbackMatrix.M11);
-                    var localRotationDeg = localRotationRad * (180f / (float)Math.PI);
+                    float localRotationDeg = localRotationRad * (180f / (float)Math.PI);
+
+                    if (i == 0) // Log for first character only to avoid spam
+                    {
+                        PdfLogger.Log(LogCategory.Text,
+                            $"[ROTATION-DEBUG] Char '{ch}' pos=({position.X:F2},{position.Y:F2}) localRot={localRotationDeg:F2}° fallbackMatrix=[{fallbackMatrix.M11:F4},{fallbackMatrix.M12:F4},{fallbackMatrix.M21:F4},{fallbackMatrix.M22:F4}]");
+                    }
 
                     // Apply transformations in order:
-                    // 1. Rotate back to cancel the rotation in position
-                    // 2. Apply Y-flip and horizontal scaling
-                    // 3. Rotate forward to match text orientation
+                    // 1. Rotate to match text orientation
+                    // 2. Apply Y-flip (in rotated space) and horizontal scaling
                     // NOTE: We do NOT scale glyphs to match PDF widths - this would distort them visually.
                     // Instead, we render glyphs at their natural width and use PDF widths only for spacing.
-                    _canvas.RotateDegrees(-localRotationDeg);
-                    _canvas.Scale(tHs, -1);  // Horizontal scaling and Y-flip
-                    _canvas.RotateDegrees(localRotationDeg);
+                    _canvas.RotateDegrees(localRotationDeg);  // Apply rotation
+                    _canvas.Scale(tHs, -1);  // Horizontal scaling and Y-flip (in rotated space)
 
                     // Draw based on rendering mode
                     if (shouldFill)
@@ -744,7 +763,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
     private bool TryRenderWithGlyphOutlines(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont font, SKPaint paint, List<int>? charCodes)
     {
-        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"######## GLYPH-ENTRY: TryRenderWithGlyphOutlines called for text='{text}' ########");
+        PdfLogger.Log(LogCategory.Text, $"######## GLYPH-ENTRY: TryRenderWithGlyphOutlines called for text='{text}' ########");
         try
         {
             // Check if the font should be rendered as bold (for synthetic bold)
@@ -758,7 +777,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 // Also use StemV as heuristic - higher values indicate bolder fonts
                 // Regular fonts typically have StemV < 100, bold fonts > 150
-                // Values 120-150 suggest semi-bold or bold variants without "Bold" in name
+                // Values 120-150 suggest semi-bold or bold variants without "Bold" in the name
                 bool isBoldStemV = descriptor.StemV >= 120;
 
                 applyBold = isBoldFlag || isBoldName || isBoldStemV;
@@ -769,7 +788,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             if (embeddedMetrics is not { IsValid: true })
                 return false;
 
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-METRICS: Got valid embedded metrics, IsCffFont={embeddedMetrics.IsCffFont}, IsType1Font={embeddedMetrics.IsType1Font}");
+            PdfLogger.Log(LogCategory.Text, $"GLYPH-METRICS: Got valid embedded metrics, IsCffFont={embeddedMetrics.IsCffFont}, IsType1Font={embeddedMetrics.IsType1Font}");
 
             // Calculate the horizontal scaling factor early so we can use it for character advances
             // HorizontalScaling is stored as a percentage (100 = 100% = 1.0 scale)
@@ -782,11 +801,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             // One character code can decode to multiple Unicode chars (e.g., ligatures)
             int loopCount = charCodes?.Count ?? text.Length;
 
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-LOOP: About to render {loopCount} characters, text.Length={text.Length}, charCodes={(charCodes == null ? "null" : charCodes.Count.ToString())}");
+            PdfLogger.Log(LogCategory.Text, $"GLYPH-LOOP: About to render {loopCount} characters, text.Length={text.Length}, charCodes={(charCodes == null ? "null" : charCodes.Count.ToString())}");
 
             for (var i = 0; i < loopCount; i++)
             {
-                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-LOOP-ITER: Starting iteration {i} of {loopCount}");
+                PdfLogger.Log(LogCategory.Text, $"GLYPH-LOOP-ITER: Starting iteration {i} of {loopCount}");
 
                 // Get character code - either from original PDF codes or fall back to Unicode
                 ushort charCode = charCodes is not null && i < charCodes.Count
@@ -823,7 +842,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                         }
                         else
                         {
-                            // No AGL mapping, try using the character itself as glyph name (works for basic ASCII)
+                            // No AGL mapping, try using the character itself as the glyph name (works for basic ASCII)
                             if (unicode.Length == 1 && char.IsAscii(unicode[0]))
                             {
                                 resolvedGlyphName = unicode;
@@ -853,24 +872,24 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     // For Type0/CID fonts, map CID to GID using CIDToGIDMap
                     if (font is Type0Font { DescendantFont: CidFont cidFont })
                     {
-                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: Type0/CID font path, charCode={charCode}");
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH: Type0/CID font path, charCode={charCode}");
                         // For Type0 fonts, use CIDToGIDMap directly - the mapped value IS the glyph ID
                         int mappedGid = cidFont.MapCidToGid(charCode);
                         glyphId = (ushort)mappedGid;
-                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: Type0 MapCidToGid returned glyphId={glyphId}");
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH: Type0 MapCidToGid returned glyphId={glyphId}");
                     }
                     else
                     {
-                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: TrueType cmap path, charCode={charCode}, font.GetType()={font.GetType().Name}");
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH: TrueType cmap path, charCode={charCode}, font.GetType()={font.GetType().Name}");
                         // For other fonts, use cmap lookup
                         glyphId = embeddedMetrics.GetGlyphId(charCode);
-                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-PATH: GetGlyphId returned glyphId={glyphId}");
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH: GetGlyphId returned glyphId={glyphId}");
                     }
                 }
 
                 if (glyphId == 0)
                 {
-                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-SKIP-ZERO: char='{displayChar}' (charCode={charCode}), glyphId=0, skipping");
+                    PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-ZERO: char='{displayChar}' (charCode={charCode}), glyphId=0, skipping");
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
@@ -885,7 +904,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 if (glyphOutline is null)
                 {
-                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-SKIP-NULL: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline is null");
+                    PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-NULL: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline is null");
                     // Check if this glyph has metrics (advance width > 0) but no outline
                     // This happens in subset fonts where the glyph outline was stripped
                     float glyphWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
@@ -941,7 +960,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                 if (glyphOutline.IsEmpty)
                 {
-                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-SKIP-EMPTY: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline.IsEmpty=true");
+                    PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-EMPTY: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline.IsEmpty=true");
                     // Empty glyph (e.g., space), just advance
                     if (i < glyphWidths.Count)
                         currentX += glyphWidths[i];
@@ -1060,8 +1079,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 // To compensate, we pre-negate the components that will be flipped
 
                 // Detect rotation angle from the matrix
-                var rotationRad = Math.Atan2(fullGlyphMatrix.M12, fullGlyphMatrix.M11);
-                var rotationDeg = rotationRad * (180.0 / Math.PI);
+                double rotationRad = Math.Atan2(fullGlyphMatrix.M12, fullGlyphMatrix.M11);
+                double rotationDeg = rotationRad * (180.0 / Math.PI);
 
                 // Normalize rotation to [-180, 180]
                 while (rotationDeg > 180) rotationDeg -= 360;
@@ -1079,7 +1098,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     skewY = fullGlyphMatrix.M12;
                     skewX = -fullGlyphMatrix.M21;
                     scaleY = fullGlyphMatrix.M22;
-                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-YFLIP: char='{displayChar}', rotation={rotationDeg:F1}°, VERTICAL, negating M21 only");
+                    PdfLogger.Log(LogCategory.Text, $"GLYPH-YFLIP: char='{displayChar}', rotation={rotationDeg:F1}°, VERTICAL, negating M21 only");
                 }
                 else
                 {
@@ -1087,7 +1106,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     skewY = fullGlyphMatrix.M12;
                     skewX = fullGlyphMatrix.M21;
                     scaleY = -fullGlyphMatrix.M22;
-                    Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-YFLIP: char='{displayChar}', rotation={rotationDeg:F1}°, HORIZONTAL, negating M22");
+                    PdfLogger.Log(LogCategory.Text, $"GLYPH-YFLIP: char='{displayChar}', rotation={rotationDeg:F1}°, HORIZONTAL, negating M22");
                 }
 
                 var skGlyphMatrix = new SKMatrix
@@ -1113,7 +1132,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 bool shouldStroke = renderMode == 1 || renderMode == 2 || renderMode == 5 || renderMode == 6;
                 bool isInvisible = renderMode == 3 || renderMode == 7;
 
-                Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-MODE: char='{displayChar}', renderMode={renderMode}, shouldFill={shouldFill}, shouldStroke={shouldStroke}, isInvisible={isInvisible}");
+                PdfLogger.Log(LogCategory.Text, $"GLYPH-MODE: char='{displayChar}', renderMode={renderMode}, shouldFill={shouldFill}, shouldStroke={shouldStroke}, isInvisible={isInvisible}");
 
                 if (!isInvisible)
                 {
@@ -1125,13 +1144,13 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     {
                         // Transform path to device coordinates and draw with identity matrix
                         SKMatrix canvasMatrix = _canvas.TotalMatrix;
-                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-RENDER: char='{displayChar}', canvasMatrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2};{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-RENDER: char='{displayChar}', canvasMatrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2};{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
 
                         using var devicePath = new SKPath();
                         glyphPath.Transform(canvasMatrix, devicePath);
 
-                        var deviceBounds = devicePath.Bounds;
-                        Logging.PdfLogger.Log(Logging.LogCategory.Text, $"GLYPH-RENDER: devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
+                        SKRect deviceBounds = devicePath.Bounds;
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-RENDER: devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
 
                         _canvas.Save();
                         _canvas.ResetMatrix();
@@ -1577,7 +1596,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: tile={tileWidth}x{tileHeight}, origin=({patternOriginX:F1},{patternOriginY:F1}), step=({userStepX:F1},{userStepY:F1})");
 
             // Create bitmap from the tile image
-            using var tileBitmap = SKBitmap.FromImage(tileImage);
+            using SKBitmap? tileBitmap = SKBitmap.FromImage(tileImage);
             if (tileBitmap is null)
             {
                 PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Failed to create bitmap from tile image");
@@ -1823,6 +1842,95 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         };
     }
 
+    public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 0f;
+
+        // Calculate effective font size (same as DrawText)
+        // PDF visual font size = FontSize × TextMatrix scaling
+        var textMatrixScaleY = (float)Math.Sqrt(state.TextMatrix.M21 * state.TextMatrix.M21 + state.TextMatrix.M22 * state.TextMatrix.M22);
+        float effectiveFontSize = (float)state.FontSize * textMatrixScaleY;
+
+        // Determine font style and family (same logic as DrawText)
+        SKFontStyle fontStyle = SKFontStyle.Normal;
+        var fallbackFontFamily = "Arial"; // Default to sans-serif
+
+        if (font is not null)
+        {
+            PdfFontDescriptor? descriptor = font.GetDescriptor();
+            var isBold = false;
+            var isItalic = false;
+            var isSerif = false;
+            var isMonospace = false;
+
+            if (descriptor is not null)
+            {
+                // Get font flags
+                int flags = descriptor.Flags;
+                isSerif = (flags & 0x02) != 0;  // Bit 2: Serif
+                isItalic = (flags & 0x40) != 0; // Bit 7: Italic
+                isMonospace = (flags & 0x01) != 0; // Bit 1: FixedPitch
+
+                // Check if font is bold from descriptor
+                isBold = descriptor.IsBold;
+
+                // Fallback: check BaseFont name for style hints
+                string baseName = font.BaseFont;
+                if (baseName.Contains("Bold", StringComparison.OrdinalIgnoreCase))
+                    isBold = true;
+                if (baseName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
+                    baseName.Contains("Oblique", StringComparison.OrdinalIgnoreCase))
+                    isItalic = true;
+            }
+
+            // Also check font name for common font families
+            string baseName2 = font.BaseFont;
+            if (baseName2.Contains("Times", StringComparison.OrdinalIgnoreCase) ||
+                baseName2.Contains("Garamond", StringComparison.OrdinalIgnoreCase) ||
+                baseName2.Contains("Palatino", StringComparison.OrdinalIgnoreCase) ||
+                baseName2.Contains("Bookman", StringComparison.OrdinalIgnoreCase))
+            {
+                isSerif = true;
+            }
+
+            // Choose fallback font family based on font classification
+            if (isMonospace)
+                fallbackFontFamily = "Courier New";
+            else if (isSerif)
+                fallbackFontFamily = "Times New Roman";
+            else
+                fallbackFontFamily = "Arial";
+
+            switch (isBold)
+            {
+                case true when isItalic:
+                    fontStyle = SKFontStyle.BoldItalic;
+                    break;
+                case true:
+                    fontStyle = SKFontStyle.Bold;
+                    break;
+                default:
+                {
+                    if (isItalic)
+                        fontStyle = SKFontStyle.Italic;
+                    break;
+                }
+            }
+        }
+
+        // Create font and measure text width
+        using var measureFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), effectiveFontSize);
+        float width = measureFont.MeasureText(text);
+
+        // Account for horizontal scaling from graphics state
+        // HorizontalScaling is stored as percentage (100 = 100% = 1.0 scale)
+        float tHs = (float)state.HorizontalScaling / 100f;
+        width *= tHs;
+
+        return width;
+    }
+
     public void DrawImage(PdfImage image, PdfGraphicsState state)
     {
         try
@@ -1850,7 +1958,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: Canvas matrix=[{oldMatrix.ScaleX:F2},{oldMatrix.SkewX:F2},{oldMatrix.TransX:F2};{oldMatrix.SkewY:F2},{oldMatrix.ScaleY:F2},{oldMatrix.TransY:F2}]");
 
                 // Debug: Check clip bounds BEFORE any matrix changes
-                var deviceClipBefore = _canvas.DeviceClipBounds;
+                SKRectI deviceClipBefore = _canvas.DeviceClipBounds;
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: DeviceClipBounds BEFORE SetMatrix = ({deviceClipBefore.Left},{deviceClipBefore.Top},{deviceClipBefore.Right},{deviceClipBefore.Bottom})");
 
                 // PDF images are drawn in a unit square from (0,0) to (1,1).
@@ -1866,8 +1974,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 _canvas.SetMatrix(combinedMatrix);
 
                 // Debug: log the combined matrix after flip and where corners map
-                var p00 = combinedMatrix.MapPoint(new SKPoint(0, 0));
-                var p11 = combinedMatrix.MapPoint(new SKPoint(1, 1));
+                SKPoint p00 = combinedMatrix.MapPoint(new SKPoint(0, 0));
+                SKPoint p11 = combinedMatrix.MapPoint(new SKPoint(1, 1));
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: After flip=[{combinedMatrix.ScaleX:F2},{combinedMatrix.SkewX:F2},{combinedMatrix.TransX:F2};{combinedMatrix.SkewY:F2},{combinedMatrix.ScaleY:F2},{combinedMatrix.TransY:F2}]");
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: Unit (0,0) maps to ({p00.X:F2},{p00.Y:F2}), (1,1) maps to ({p11.X:F2},{p11.Y:F2})");
 
@@ -1887,11 +1995,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                         try
                         {
                             string debugPath = Path.Combine(Path.GetTempPath(), "debug_bitmap_before_draw.png");
-                            using var debugImage = SKImage.FromBitmap(bitmap);
-                            using var debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
+                            using SKImage? debugImage = SKImage.FromBitmap(bitmap);
+                            using SKData? debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
                             if (debugData != null)
                             {
-                                using var stream = File.OpenWrite(debugPath);
+                                using FileStream stream = File.OpenWrite(debugPath);
                                 debugData.SaveTo(stream);
                                 PdfLogger.Log(LogCategory.Images, $"DEBUG: Saved bitmap to {debugPath}");
                             }
@@ -1901,8 +2009,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 }
 
                 // Debug: Log canvas clip bounds
-                var clipBounds = _canvas.LocalClipBounds;
-                var deviceClipBounds = _canvas.DeviceClipBounds;
+                SKRect clipBounds = _canvas.LocalClipBounds;
+                SKRectI deviceClipBounds = _canvas.DeviceClipBounds;
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: ClipBounds Local=({clipBounds.Left:F2},{clipBounds.Top:F2},{clipBounds.Right:F2},{clipBounds.Bottom:F2}), Device=({deviceClipBounds.Left},{deviceClipBounds.Top},{deviceClipBounds.Right},{deviceClipBounds.Bottom})");
 
                 // Convert bitmap to SKImage for drawing
@@ -2195,7 +2303,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                                 // Debug: Log first few pixels
                                 if (pixelIndex < debugPixelCount)
                                 {
-                                    Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
+                                    PdfLogger.Log(LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
                                 }
 
                                 // Apply SMask alpha channel if present
@@ -2317,15 +2425,15 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                             string debugPath2 = Path.Combine(Path.GetTempPath(), "debug_pixelbuffer_direct.png");
                             var debugInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
                             using var debugBitmap = new SKBitmap();
-                            var pinnedArray = GCHandle.Alloc(pixelBuffer, GCHandleType.Pinned);
+                            GCHandle pinnedArray = GCHandle.Alloc(pixelBuffer, GCHandleType.Pinned);
                             try
                             {
                                 debugBitmap.InstallPixels(debugInfo, pinnedArray.AddrOfPinnedObject(), width * 4);
-                                using var debugImage = SKImage.FromBitmap(debugBitmap);
-                                using var debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
+                                using SKImage? debugImage = SKImage.FromBitmap(debugBitmap);
+                                using SKData? debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
                                 if (debugData != null)
                                 {
-                                    using var fileStream = File.OpenWrite(debugPath2);
+                                    using FileStream fileStream = File.OpenWrite(debugPath2);
                                     debugData.SaveTo(fileStream);
                                     Console.WriteLine($"[DEBUG] Saved pixelbuffer direct to {debugPath2}");
                                 }
@@ -2939,8 +3047,8 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
             PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: Canvas matrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2},{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
 
             // Calculate where unit square corners will map to
-            var p00 = canvasMatrix.MapPoint(new SKPoint(0, 0));
-            var p11 = canvasMatrix.MapPoint(new SKPoint(1, 1));
+            SKPoint p00 = canvasMatrix.MapPoint(new SKPoint(0, 0));
+            SKPoint p11 = canvasMatrix.MapPoint(new SKPoint(1, 1));
             PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: Unit (0,0) maps to ({p00.X:F2},{p00.Y:F2}), (1,1) maps to ({p11.X:F2},{p11.Y:F2})");
 
             // Try to decode and draw the image
@@ -2949,14 +3057,14 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
 
             if (imageData.Length > 0)
             {
-                using var bitmap = CreateBitmapFromImageData(image, imageData);
+                using SKBitmap? bitmap = CreateBitmapFromImageData(image, imageData);
                 PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: bitmap is {(bitmap is null ? "NULL" : $"{bitmap.Width}x{bitmap.Height}")}");
 
                 if (bitmap is not null)
                 {
                     // Log some pixel values to verify bitmap content
-                    var pixel0 = bitmap.GetPixel(0, 0);
-                    var pixelMid = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2);
+                    SKColor pixel0 = bitmap.GetPixel(0, 0);
+                    SKColor pixelMid = bitmap.GetPixel(bitmap.Width / 2, bitmap.Height / 2);
                     PdfLogger.Log(LogCategory.Images, $"PATTERN DrawImage: bitmap pixel(0,0)=({pixel0.Red},{pixel0.Green},{pixel0.Blue},{pixel0.Alpha}), pixel(mid)=({pixelMid.Red},{pixelMid.Green},{pixelMid.Blue},{pixelMid.Alpha})");
 
                     using var paint = new SKPaint { IsAntialias = true, FilterQuality = SKFilterQuality.High };
@@ -2982,6 +3090,27 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
     public (int width, int height, double scale) GetPageDimensions()
     {
         return ((int)_patternWidth, (int)_patternHeight, 1.0);
+    }
+
+    public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font)
+    {
+        // For pattern content, text measurement is rarely needed
+        // Return a simple estimate based on character count
+        if (string.IsNullOrEmpty(text))
+            return 0f;
+
+        // Calculate effective font size (same as DrawText)
+        var textMatrixScaleY = (float)Math.Sqrt(state.TextMatrix.M21 * state.TextMatrix.M21 + state.TextMatrix.M22 * state.TextMatrix.M22);
+        float effectiveFontSize = (float)state.FontSize * textMatrixScaleY;
+
+        // Use rough character width estimate (average character is ~0.5em)
+        float estimatedWidth = text.Length * effectiveFontSize * 0.5f;
+
+        // Apply horizontal scaling
+        float tHs = (float)state.HorizontalScaling / 100f;
+        estimatedWidth *= tHs;
+
+        return estimatedWidth;
     }
 
     public void Dispose() { }

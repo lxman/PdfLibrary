@@ -561,7 +561,7 @@ internal class PdfEncryptor
         RandomNumberGenerator.Fill(perms.AsSpan(12, 4));
 
         // AES-256-ECB encrypt (no IV, single block)
-        using var aes = System.Security.Cryptography.Aes.Create();
+        using var aes = Aes.Create();
         aes.Key = fileKey;
         aes.Mode = CipherMode.ECB;
         aes.Padding = PaddingMode.None;

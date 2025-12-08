@@ -1,3 +1,4 @@
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
@@ -71,7 +72,7 @@ internal class PdfResources
         // Check cache first
         if (_fontCache.TryGetValue(name, out PdfFont? cachedFont))
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CACHE-HIT: '{name}' -> {(cachedFont is not null ? $"{cachedFont.FontType} {cachedFont.BaseFont}" : "null")}");
+            PdfLogger.Log(LogCategory.Text, $"FONT-CACHE-HIT: '{name}' -> {(cachedFont is not null ? $"{cachedFont.FontType} {cachedFont.BaseFont}" : "null")}");
             return cachedFont;
         }
 
@@ -79,7 +80,7 @@ internal class PdfResources
         PdfDictionary? fontDict = GetFont(name);
         if (fontDict is null)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-NOT-FOUND: '{name}' not in resources. Available fonts: {string.Join(", ", GetFontNames())}");
+            PdfLogger.Log(LogCategory.Text, $"FONT-NOT-FOUND: '{name}' not in resources. Available fonts: {string.Join(", ", GetFontNames())}");
             _fontCache[name] = null;
             return null;
         }
@@ -89,11 +90,11 @@ internal class PdfResources
 
         if (font is null)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CREATE-FAILED: '{name}' - PdfFont.Create returned null");
+            PdfLogger.Log(LogCategory.Text, $"FONT-CREATE-FAILED: '{name}' - PdfFont.Create returned null");
         }
         else
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Text, $"FONT-CREATED: '{name}' -> {font.FontType} {font.BaseFont}");
+            PdfLogger.Log(LogCategory.Text, $"FONT-CREATED: '{name}' -> {font.FontType} {font.BaseFont}");
         }
 
         // Cache for future use

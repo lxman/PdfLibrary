@@ -1,4 +1,5 @@
 using PdfLibrary.Content;
+using PdfLibrary.Fonts;
 
 namespace PdfLibrary.Fixups;
 
@@ -37,6 +38,16 @@ public class TextRunContext
     /// Whether this is using a fallback font (i.e., not the original embedded font).
     /// </summary>
     public bool IsFallbackFont { get; set; }
+
+    /// <summary>
+    /// Whether this font is one of the PDF Base14 standard fonts.
+    /// </summary>
+    public bool IsBase14Font { get; set; }
+
+    /// <summary>
+    /// Whether this font has embedded font data (FontFile/FontFile2/FontFile3).
+    /// </summary>
+    public bool HasEmbeddedFontData { get; set; }
 
     /// <summary>
     /// The width of the text as specified in the PDF (before any fixups).

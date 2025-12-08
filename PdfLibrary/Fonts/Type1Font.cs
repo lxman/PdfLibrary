@@ -103,39 +103,99 @@ internal class Type1Font : PdfFont
         }
 
         // Fallback to widths array from PDF
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Checking PDF widths array: _widths={(_widths != null ? "exists" : "NULL")}, FirstChar={FirstChar}, LastChar={LastChar}, charCode={charCode}");
         if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
             int index = charCode - FirstChar;
             if (index >= 0 && index < _widths.Length)
             {
-                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array[{index}]: {_widths[index]:F1}");
                 return _widths[index];
+            }
+            else
+            {
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] PDF widths array index out of bounds: index={index}, _widths.Length={_widths.Length}");
             }
         }
 
         // For standard 14 fonts, use built-in metrics
-        double? standardWidth = GetStandardFontWidth(charCode);
+        // Map through encoding first (similar to embedded metrics path above)
+        // This fixes custom encodings where charCode 2 might be 'E', not standard ASCII 69
+        string? glyphNameForStd14 = Encoding?.GetGlyphName(charCode);
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Standard 14 fonts: glyphName='{glyphNameForStd14}'");
+
+        double? standardWidth = null;
+        if (!string.IsNullOrEmpty(glyphNameForStd14))
+        {
+            standardWidth = GetStandardFontWidthByName(glyphNameForStd14);
+        }
+
+        // If no encoding or glyph name not found, try direct charCode lookup as fallback
+        if (!standardWidth.HasValue)
+        {
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Standard 14 fonts: trying fallback charCode lookup");
+            standardWidth = GetStandardFontWidth(charCode);
+        }
+
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Standard 14 fonts width: {(standardWidth.HasValue ? standardWidth.Value.ToString("F1") : "NULL")}");
         if (standardWidth.HasValue)
+        {
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} glyphName='{glyphNameForStd14}' -> Standard 14 font: {standardWidth.Value:F1}");
             return standardWidth.Value;
+        }
 
         // Try to get from the font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
-        if (descriptor is null) return _defaultWidth > 0
-            ? _defaultWidth
-            : 250; // 250 is PDF default
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Font descriptor: {(descriptor != null ? $"MissingWidth={descriptor.MissingWidth}, AvgWidth={descriptor.AvgWidth}" : "NULL")}");
+        if (descriptor is null)
+        {
+            double fallback = _defaultWidth > 0 ? _defaultWidth : 250;
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> Default (no descriptor): {fallback:F1}");
+            return fallback;
+        }
         if (descriptor.MissingWidth > 0)
+        {
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> Descriptor MissingWidth: {descriptor.MissingWidth:F1}");
             return descriptor.MissingWidth;
+        }
         if (descriptor.AvgWidth > 0)
+        {
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> Descriptor AvgWidth: {descriptor.AvgWidth:F1}");
             return descriptor.AvgWidth;
+        }
 
         // Last resort: use default width
-        return _defaultWidth > 0
-            ? _defaultWidth
-            : 250; // 250 is PDF default
+        double finalDefault = _defaultWidth > 0 ? _defaultWidth : 250;
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> Final default: {finalDefault:F1}");
+        return finalDefault;
     }
 
     /// <summary>
-    /// Gets the width for a character in a standard 14 font
+    /// Gets the width for a character in a standard 14 font by glyph name.
+    /// This is the preferred method for custom encodings where charCode != standard ASCII.
+    /// </summary>
+    private double? GetStandardFontWidthByName(string glyphName)
+    {
+        if (string.IsNullOrEmpty(BaseFont) || string.IsNullOrEmpty(glyphName))
+            return null;
+
+        return BaseFont switch
+        {
+            // Each font variant has different widths - must use correct AFM data
+            "Helvetica" or "Helvetica-Oblique" => GetHelveticaWidthByName(glyphName),
+            "Helvetica-Bold" or "Helvetica-BoldOblique" => GetHelveticaBoldWidthByName(glyphName),
+            "Times-Roman" => GetTimesRomanWidthByName(glyphName),
+            "Times-Bold" => GetTimesBoldWidthByName(glyphName),
+            "Times-Italic" => GetTimesItalicWidthByName(glyphName),
+            "Times-BoldItalic" => GetTimesBoldItalicWidthByName(glyphName),
+            "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Gets the width for a character in a standard 14 font by charCode (fallback).
+    /// Only used when no encoding is available or glyph name lookup fails.
     /// </summary>
     private double? GetStandardFontWidth(int charCode)
     {
@@ -372,6 +432,220 @@ internal class Type1Font : PdfFont
     }
 
     /// <summary>
+    /// Helvetica character widths by glyph name (for custom encodings)
+    /// Source: Adobe Font Metrics (AFM) files
+    /// </summary>
+    private static double GetHelveticaWidthByName(string glyphName)
+    {
+        return glyphName switch
+        {
+            "space" => 278,
+            "exclam" => 278,
+            "quotedbl" => 355,
+            "numbersign" => 556,
+            "dollar" => 556,
+            "percent" => 889,
+            "ampersand" => 667,
+            "quotesingle" or "quoteright" => 191,
+            "parenleft" => 333,
+            "parenright" => 333,
+            "asterisk" => 389,
+            "plus" => 584,
+            "comma" => 278,
+            "hyphen" or "minus" => 333,
+            "period" => 278,
+            "slash" => 278,
+            "zero" => 556,
+            "one" => 556,
+            "two" => 556,
+            "three" => 556,
+            "four" => 556,
+            "five" => 556,
+            "six" => 556,
+            "seven" => 556,
+            "eight" => 556,
+            "nine" => 556,
+            "colon" => 278,
+            "semicolon" => 278,
+            "less" => 584,
+            "equal" => 584,
+            "greater" => 584,
+            "question" => 556,
+            "at" => 1015,
+            "A" => 667,
+            "B" => 667,
+            "C" => 722,
+            "D" => 722,
+            "E" => 667,
+            "F" => 611,
+            "G" => 778,
+            "H" => 722,
+            "I" => 278,
+            "J" => 500,
+            "K" => 667,
+            "L" => 556,
+            "M" => 833,
+            "N" => 722,
+            "O" => 778,
+            "P" => 667,
+            "Q" => 778,
+            "R" => 722,
+            "S" => 667,
+            "T" => 611,
+            "U" => 722,
+            "V" => 667,
+            "W" => 944,
+            "X" => 667,
+            "Y" => 667,
+            "Z" => 611,
+            "bracketleft" => 278,
+            "backslash" => 278,
+            "bracketright" => 278,
+            "asciicircum" => 469,
+            "underscore" => 556,
+            "grave" or "quoteleft" => 333,
+            "a" => 556,
+            "b" => 556,
+            "c" => 500,
+            "d" => 556,
+            "e" => 556,
+            "f" => 278,
+            "g" => 556,
+            "h" => 556,
+            "i" => 222,
+            "j" => 222,
+            "k" => 500,
+            "l" => 222,
+            "m" => 833,
+            "n" => 556,
+            "o" => 556,
+            "p" => 556,
+            "q" => 556,
+            "r" => 333,
+            "s" => 500,
+            "t" => 278,
+            "u" => 556,
+            "v" => 500,
+            "w" => 722,
+            "x" => 500,
+            "y" => 500,
+            "z" => 500,
+            "braceleft" => 334,
+            "bar" => 260,
+            "braceright" => 334,
+            "asciitilde" => 584,
+            _ => 556  // default
+        };
+    }
+
+    /// <summary>
+    /// Helvetica-Bold character widths by glyph name (for custom encodings)
+    /// Source: Adobe Font Metrics (AFM) files - Helvetica-Bold.afm
+    /// </summary>
+    private static double GetHelveticaBoldWidthByName(string glyphName)
+    {
+        return glyphName switch
+        {
+            "space" => 278,
+            "exclam" => 333,
+            "quotedbl" => 474,
+            "numbersign" => 556,
+            "dollar" => 556,
+            "percent" => 889,
+            "ampersand" => 722,
+            "quotesingle" or "quoteright" => 238,
+            "parenleft" => 333,
+            "parenright" => 333,
+            "asterisk" => 389,
+            "plus" => 584,
+            "comma" => 278,
+            "hyphen" or "minus" => 333,
+            "period" => 278,
+            "slash" => 278,
+            "zero" => 556,
+            "one" => 556,
+            "two" => 556,
+            "three" => 556,
+            "four" => 556,
+            "five" => 556,
+            "six" => 556,
+            "seven" => 556,
+            "eight" => 556,
+            "nine" => 556,
+            "colon" => 333,
+            "semicolon" => 333,
+            "less" => 584,
+            "equal" => 584,
+            "greater" => 584,
+            "question" => 611,
+            "at" => 975,
+            "A" => 722,
+            "B" => 722,
+            "C" => 722,
+            "D" => 722,
+            "E" => 667,
+            "F" => 611,
+            "G" => 778,
+            "H" => 722,
+            "I" => 278,
+            "J" => 556,
+            "K" => 722,
+            "L" => 611,
+            "M" => 833,
+            "N" => 722,
+            "O" => 778,
+            "P" => 667,
+            "Q" => 778,
+            "R" => 722,
+            "S" => 667,
+            "T" => 611,
+            "U" => 722,
+            "V" => 667,
+            "W" => 944,
+            "X" => 667,
+            "Y" => 667,
+            "Z" => 611,
+            "bracketleft" => 333,
+            "backslash" => 278,
+            "bracketright" => 333,
+            "asciicircum" => 584,
+            "underscore" => 556,
+            "grave" or "quoteleft" => 333,
+            "a" => 556,
+            "b" => 611,
+            "c" => 556,
+            "d" => 611,
+            "e" => 556,
+            "f" => 333,
+            "g" => 611,
+            "h" => 611,
+            "i" => 278,
+            "j" => 278,
+            "k" => 556,
+            "l" => 278,
+            "m" => 889,
+            "n" => 611,
+            "o" => 611,
+            "p" => 611,
+            "q" => 611,
+            "r" => 389,
+            "s" => 556,
+            "t" => 333,
+            "u" => 611,
+            "v" => 556,
+            "w" => 778,
+            "x" => 556,
+            "y" => 556,
+            "z" => 500,
+            "braceleft" => 389,
+            "bar" => 280,
+            "braceright" => 389,
+            "asciitilde" => 584,
+            _ => 556  // default
+        };
+    }
+
+    /// <summary>
     /// Times Roman character widths (WinAnsi encoding)
     /// </summary>
     private static double GetTimesRomanWidth(int charCode)
@@ -474,6 +748,435 @@ internal class Type1Font : PdfFont
             125 => 480,  // braceright
             126 => 541,  // asciitilde
             _ => 500     // default
+        };
+    }
+
+    /// <summary>
+    /// Times-Roman character widths by glyph name (for custom encodings)
+    /// Source: Adobe Font Metrics (AFM) files - Times-Roman.afm
+    /// </summary>
+    private static double GetTimesRomanWidthByName(string glyphName)
+    {
+        return glyphName switch
+        {
+            "space" => 250,
+            "exclam" => 333,
+            "quotedbl" => 408,
+            "numbersign" => 500,
+            "dollar" => 500,
+            "percent" => 833,
+            "ampersand" => 778,
+            "quotesingle" or "quoteright" => 333,
+            "parenleft" => 333,
+            "parenright" => 333,
+            "asterisk" => 500,
+            "plus" => 564,
+            "comma" => 250,
+            "hyphen" or "minus" => 333,
+            "period" => 250,
+            "slash" => 278,
+            "zero" => 500,
+            "one" => 500,
+            "two" => 500,
+            "three" => 500,
+            "four" => 500,
+            "five" => 500,
+            "six" => 500,
+            "seven" => 500,
+            "eight" => 500,
+            "nine" => 500,
+            "colon" => 278,
+            "semicolon" => 278,
+            "less" => 564,
+            "equal" => 564,
+            "greater" => 564,
+            "question" => 444,
+            "at" => 921,
+            "A" => 722,
+            "B" => 667,
+            "C" => 667,
+            "D" => 722,
+            "E" => 611,
+            "F" => 556,
+            "G" => 722,
+            "H" => 722,
+            "I" => 333,
+            "J" => 389,
+            "K" => 722,
+            "L" => 611,
+            "M" => 889,
+            "N" => 722,
+            "O" => 722,
+            "P" => 556,
+            "Q" => 722,
+            "R" => 667,
+            "S" => 556,
+            "T" => 611,
+            "U" => 722,
+            "V" => 722,
+            "W" => 944,
+            "X" => 722,
+            "Y" => 722,
+            "Z" => 611,
+            "bracketleft" => 333,
+            "backslash" => 278,
+            "bracketright" => 333,
+            "asciicircum" => 469,
+            "underscore" => 500,
+            "grave" or "quoteleft" => 333,
+            "a" => 444,
+            "b" => 500,
+            "c" => 444,
+            "d" => 500,
+            "e" => 444,
+            "f" => 333,
+            "g" => 500,
+            "h" => 500,
+            "i" => 278,
+            "j" => 278,
+            "k" => 500,
+            "l" => 278,
+            "m" => 778,
+            "n" => 500,
+            "o" => 500,
+            "p" => 500,
+            "q" => 500,
+            "r" => 333,
+            "s" => 389,
+            "t" => 278,
+            "u" => 500,
+            "v" => 500,
+            "w" => 722,
+            "x" => 500,
+            "y" => 500,
+            "z" => 444,
+            "braceleft" => 480,
+            "bar" => 200,
+            "braceright" => 480,
+            "asciitilde" => 541,
+            _ => 500  // default
+        };
+    }
+
+    /// <summary>
+    /// Times-Bold character widths by glyph name (for custom encodings)
+    /// Source: Adobe Font Metrics (AFM) files - Times-Bold.afm
+    /// NOTE: Times-Bold has DIFFERENT widths than Times-Roman
+    /// </summary>
+    private static double GetTimesBoldWidthByName(string glyphName)
+    {
+        return glyphName switch
+        {
+            "space" => 250,
+            "exclam" => 333,
+            "quotedbl" => 555,
+            "numbersign" => 500,
+            "dollar" => 500,
+            "percent" => 1000,
+            "ampersand" => 833,
+            "quotesingle" or "quoteright" => 333,
+            "parenleft" => 333,
+            "parenright" => 333,
+            "asterisk" => 500,
+            "plus" => 570,
+            "comma" => 250,
+            "hyphen" or "minus" => 333,
+            "period" => 250,
+            "slash" => 278,
+            "zero" => 500,
+            "one" => 500,
+            "two" => 500,
+            "three" => 500,
+            "four" => 500,
+            "five" => 500,
+            "six" => 500,
+            "seven" => 500,
+            "eight" => 500,
+            "nine" => 500,
+            "colon" => 333,
+            "semicolon" => 333,
+            "less" => 570,
+            "equal" => 570,
+            "greater" => 570,
+            "question" => 500,
+            "at" => 930,
+            "A" => 722,
+            "B" => 667,
+            "C" => 722,
+            "D" => 722,
+            "E" => 667,
+            "F" => 611,
+            "G" => 778,
+            "H" => 778,
+            "I" => 389,
+            "J" => 500,
+            "K" => 778,
+            "L" => 667,
+            "M" => 944,
+            "N" => 722,
+            "O" => 778,
+            "P" => 611,
+            "Q" => 778,
+            "R" => 722,
+            "S" => 556,
+            "T" => 667,
+            "U" => 722,
+            "V" => 722,
+            "W" => 1000,
+            "X" => 722,
+            "Y" => 722,
+            "Z" => 667,
+            "bracketleft" => 333,
+            "backslash" => 278,
+            "bracketright" => 333,
+            "asciicircum" => 581,
+            "underscore" => 500,
+            "grave" or "quoteleft" => 333,
+            "a" => 500,
+            "b" => 556,
+            "c" => 444,
+            "d" => 556,
+            "e" => 444,
+            "f" => 333,
+            "g" => 500,
+            "h" => 556,
+            "i" => 278,
+            "j" => 333,
+            "k" => 556,
+            "l" => 278,
+            "m" => 833,
+            "n" => 556,
+            "o" => 500,
+            "p" => 556,
+            "q" => 556,
+            "r" => 444,
+            "s" => 389,
+            "t" => 333,
+            "u" => 556,
+            "v" => 500,
+            "w" => 722,
+            "x" => 500,
+            "y" => 500,
+            "z" => 444,
+            "braceleft" => 394,
+            "bar" => 220,
+            "braceright" => 394,
+            "asciitilde" => 520,
+            _ => 500  // default
+        };
+    }
+
+    /// <summary>
+    /// Times-Italic character widths by glyph name (for custom encodings)
+    /// Source: Adobe Font Metrics (AFM) files - Times-Italic.afm
+    /// </summary>
+    private static double GetTimesItalicWidthByName(string glyphName)
+    {
+        return glyphName switch
+        {
+            "space" => 250,
+            "exclam" => 333,
+            "quotedbl" => 420,
+            "numbersign" => 500,
+            "dollar" => 500,
+            "percent" => 833,
+            "ampersand" => 778,
+            "quotesingle" or "quoteright" => 333,
+            "parenleft" => 333,
+            "parenright" => 333,
+            "asterisk" => 500,
+            "plus" => 675,
+            "comma" => 250,
+            "hyphen" or "minus" => 333,
+            "period" => 250,
+            "slash" => 278,
+            "zero" => 500,
+            "one" => 500,
+            "two" => 500,
+            "three" => 500,
+            "four" => 500,
+            "five" => 500,
+            "six" => 500,
+            "seven" => 500,
+            "eight" => 500,
+            "nine" => 500,
+            "colon" => 333,
+            "semicolon" => 333,
+            "less" => 675,
+            "equal" => 675,
+            "greater" => 675,
+            "question" => 500,
+            "at" => 920,
+            "A" => 611,
+            "B" => 611,
+            "C" => 667,
+            "D" => 722,
+            "E" => 611,
+            "F" => 611,
+            "G" => 722,
+            "H" => 722,
+            "I" => 333,
+            "J" => 444,
+            "K" => 667,
+            "L" => 556,
+            "M" => 833,
+            "N" => 667,
+            "O" => 722,
+            "P" => 611,
+            "Q" => 722,
+            "R" => 611,
+            "S" => 500,
+            "T" => 556,
+            "U" => 722,
+            "V" => 611,
+            "W" => 833,
+            "X" => 611,
+            "Y" => 556,
+            "Z" => 556,
+            "bracketleft" => 389,
+            "backslash" => 278,
+            "bracketright" => 389,
+            "asciicircum" => 422,
+            "underscore" => 500,
+            "grave" or "quoteleft" => 333,
+            "a" => 500,
+            "b" => 500,
+            "c" => 444,
+            "d" => 500,
+            "e" => 444,
+            "f" => 278,
+            "g" => 500,
+            "h" => 500,
+            "i" => 278,
+            "j" => 278,
+            "k" => 444,
+            "l" => 278,
+            "m" => 722,
+            "n" => 500,
+            "o" => 500,
+            "p" => 500,
+            "q" => 500,
+            "r" => 389,
+            "s" => 389,
+            "t" => 278,
+            "u" => 500,
+            "v" => 444,
+            "w" => 667,
+            "x" => 444,
+            "y" => 444,
+            "z" => 389,
+            "braceleft" => 400,
+            "bar" => 275,
+            "braceright" => 400,
+            "asciitilde" => 541,
+            _ => 500  // default
+        };
+    }
+
+    /// <summary>
+    /// Times-BoldItalic character widths by glyph name (for custom encodings)
+    /// Source: Adobe Font Metrics (AFM) files - Times-BoldItalic.afm
+    /// </summary>
+    private static double GetTimesBoldItalicWidthByName(string glyphName)
+    {
+        return glyphName switch
+        {
+            "space" => 250,
+            "exclam" => 389,
+            "quotedbl" => 555,
+            "numbersign" => 500,
+            "dollar" => 500,
+            "percent" => 833,
+            "ampersand" => 778,
+            "quotesingle" or "quoteright" => 333,
+            "parenleft" => 333,
+            "parenright" => 333,
+            "asterisk" => 500,
+            "plus" => 570,
+            "comma" => 250,
+            "hyphen" or "minus" => 333,
+            "period" => 250,
+            "slash" => 278,
+            "zero" => 500,
+            "one" => 500,
+            "two" => 500,
+            "three" => 500,
+            "four" => 500,
+            "five" => 500,
+            "six" => 500,
+            "seven" => 500,
+            "eight" => 500,
+            "nine" => 500,
+            "colon" => 333,
+            "semicolon" => 333,
+            "less" => 570,
+            "equal" => 570,
+            "greater" => 570,
+            "question" => 500,
+            "at" => 832,
+            "A" => 667,
+            "B" => 667,
+            "C" => 667,
+            "D" => 722,
+            "E" => 667,
+            "F" => 667,
+            "G" => 722,
+            "H" => 778,
+            "I" => 389,
+            "J" => 500,
+            "K" => 667,
+            "L" => 611,
+            "M" => 889,
+            "N" => 722,
+            "O" => 722,
+            "P" => 611,
+            "Q" => 722,
+            "R" => 667,
+            "S" => 556,
+            "T" => 611,
+            "U" => 722,
+            "V" => 667,
+            "W" => 889,
+            "X" => 667,
+            "Y" => 611,
+            "Z" => 611,
+            "bracketleft" => 333,
+            "backslash" => 278,
+            "bracketright" => 333,
+            "asciicircum" => 570,
+            "underscore" => 500,
+            "grave" or "quoteleft" => 333,
+            "a" => 500,
+            "b" => 500,
+            "c" => 444,
+            "d" => 500,
+            "e" => 444,
+            "f" => 333,
+            "g" => 500,
+            "h" => 556,
+            "i" => 278,
+            "j" => 278,
+            "k" => 500,
+            "l" => 278,
+            "m" => 778,
+            "n" => 556,
+            "o" => 500,
+            "p" => 500,
+            "q" => 500,
+            "r" => 389,
+            "s" => 389,
+            "t" => 278,
+            "u" => 556,
+            "v" => 444,
+            "w" => 667,
+            "x" => 500,
+            "y" => 444,
+            "z" => 389,
+            "braceleft" => 348,
+            "bar" => 220,
+            "braceright" => 348,
+            "asciitilde" => 570,
+            _ => 500  // default
         };
     }
 

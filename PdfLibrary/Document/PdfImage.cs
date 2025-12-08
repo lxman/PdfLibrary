@@ -1,6 +1,8 @@
+using Logging;
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Filters;
 using PdfLibrary.Structure;
 using SixLabors.ImageSharp.ColorSpaces;
 using SixLabors.ImageSharp.ColorSpaces.Conversion;
@@ -423,7 +425,7 @@ public class PdfImage
         {
             data = _document.Decryptor.Decrypt(data, _stream.ObjectNumber, _stream.GenerationNumber);
         }
-        var filter = new Filters.CcittFaxDecodeFilter();
+        var filter = new CcittFaxDecodeFilter();
         return filter.Decode(data, decodeParams);
     }
 
@@ -561,16 +563,16 @@ public class PdfImage
         // Debug: Log what csArray[3] is before resolution
         if (lookupObj is PdfIndirectReference lookupRef0)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED csArray[3]: indirect reference R{lookupRef0.ObjectNumber}");
+            PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: indirect reference R{lookupRef0.ObjectNumber}");
         }
         else if (lookupObj is PdfString lookupStr0)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED csArray[3]: inline PdfString len={lookupStr0.Bytes.Length}");
+            PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: inline PdfString len={lookupStr0.Bytes.Length}");
         }
         else
         {
             string type0 = lookupObj?.GetType().Name ?? "null";
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED csArray[3]: type={type0}");
+            PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: type={type0}");
         }
 
         // Resolve indirect reference to lookup table
@@ -582,13 +584,13 @@ public class PdfImage
             {
                 string resolvedType = lookupObj.GetType().Name;
                 int? objNum = lookupObj.ObjectNumber;
-                Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED RESOLVED: R{lookupRef.ObjectNumber} → {resolvedType} (obj #{objNum})");
+                PdfLogger.Log(LogCategory.Images, $"INDEXED RESOLVED: R{lookupRef.ObjectNumber} → {resolvedType} (obj #{objNum})");
             }
         }
 
         // Get palette data
         string lookupType = lookupObj?.GetType().Name ?? "null";
-        Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED LOOKUP: type={lookupType}");
+        PdfLogger.Log(LogCategory.Images, $"INDEXED LOOKUP: type={lookupType}");
 
         byte[]? paletteData = lookupObj switch
         {
@@ -601,7 +603,7 @@ public class PdfImage
         if (paletteData is not null && paletteData.Length >= 12)
         {
             string hex = BitConverter.ToString(paletteData, 0, Math.Min(20, paletteData.Length)).Replace("-", " ");
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED RAW BYTES: {hex}");
+            PdfLogger.Log(LogCategory.Images, $"INDEXED RAW BYTES: {hex}");
         }
 
         // Transform ICC palette colors to device RGB BEFORE setting baseColorSpace
@@ -619,7 +621,7 @@ public class PdfImage
                 var palette1 = $"RGB({paletteData[3]}, {paletteData[4]}, {paletteData[5]})";
                 var palette2 = $"RGB({paletteData[6]}, {paletteData[7]}, {paletteData[8]})";
                 var palette3 = $"RGB({paletteData[9]}, {paletteData[10]}, {paletteData[11]})";
-                Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED PALETTE (raw ICC): hival={hival}, palette[0]={palette0}, [1]={palette1}, [2]={palette2}, [3]={palette3}");
+                PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (raw ICC): hival={hival}, palette[0]={palette0}, [1]={palette1}, [2]={palette2}, [3]={palette3}");
             }
 
             // Get the ICC stream for transformation
@@ -638,7 +640,7 @@ public class PdfImage
                     var palette1t = $"RGB({paletteData[3]}, {paletteData[4]}, {paletteData[5]})";
                     var palette2t = $"RGB({paletteData[6]}, {paletteData[7]}, {paletteData[8]})";
                     var palette3t = $"RGB({paletteData[9]}, {paletteData[10]}, {paletteData[11]})";
-                    Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED PALETTE (transformed): palette[0]={palette0t}, [1]={palette1t}, [2]={palette2t}, [3]={palette3t}");
+                    PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (transformed): palette[0]={palette0t}, [1]={palette1t}, [2]={palette2t}, [3]={palette3t}");
                 }
             }
         }
@@ -649,7 +651,7 @@ public class PdfImage
             var palette1 = $"RGB({paletteData[3]}, {paletteData[4]}, {paletteData[5]})";
             var palette2 = $"RGB({paletteData[6]}, {paletteData[7]}, {paletteData[8]})";
             var palette3 = $"RGB({paletteData[9]}, {paletteData[10]}, {paletteData[11]})";
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"INDEXED PALETTE (non-ICC): baseCS={baseColorSpace}, hival={hival}, palette[0]={palette0}, [1]={palette1}, [2]={palette2}, [3]={palette3}");
+            PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (non-ICC): baseCS={baseColorSpace}, hival={hival}, palette[0]={palette0}, [1]={palette1}, [2]={palette2}, [3]={palette3}");
         }
 
         return paletteData;
@@ -672,7 +674,7 @@ public class PdfImage
             // Only handle 3-component (RGB) ICC profiles for now
             if (numComponents != 3 || paletteBytes.Length % 3 != 0)
             {
-                Logging.PdfLogger.Log(Logging.LogCategory.Images, $"ICC TRANSFORM SKIPPED: numComponents={numComponents}, palette length={paletteBytes.Length}");
+                PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM SKIPPED: numComponents={numComponents}, palette length={paletteBytes.Length}");
                 return paletteBytes;
             }
 
@@ -680,7 +682,7 @@ public class PdfImage
             var transformedBytes = new byte[paletteBytes.Length];
             var converter = new ColorSpaceConverter();
 
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"ICC TRANSFORM: Starting transformation of {numColors} palette colors");
+            PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM: Starting transformation of {numColors} palette colors");
 
             // Transform each RGB triple
             for (int i = 0; i < numColors; i++)
@@ -706,12 +708,12 @@ public class PdfImage
                 transformedBytes[offset + 2] = (byte)Math.Clamp((int)(deviceColor.B * 255f + 0.5f), 0, 255);
             }
 
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"ICC TRANSFORM: Completed transformation");
+            PdfLogger.Log(LogCategory.Images, "ICC TRANSFORM: Completed transformation");
             return transformedBytes;
         }
         catch (Exception ex)
         {
-            Logging.PdfLogger.Log(Logging.LogCategory.Images, $"ICC TRANSFORM ERROR: {ex.Message}");
+            PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM ERROR: {ex.Message}");
             return paletteBytes; // Return untransformed on error
         }
     }

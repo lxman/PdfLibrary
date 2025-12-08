@@ -19,7 +19,7 @@ public class FixupConfiguration
     /// <returns>True if the fixup is enabled, false otherwise.</returns>
     public bool IsEnabled(string fixupName)
     {
-        return EnabledFixups.TryGetValue(fixupName, out var enabled) && enabled;
+        return EnabledFixups.TryGetValue(fixupName, out bool enabled) && enabled;
     }
 
     /// <summary>

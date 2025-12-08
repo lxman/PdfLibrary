@@ -5,8 +5,8 @@ using Compressors.Jpeg2000;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Security;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using SixLabors.ImageSharp.PixelFormats;
 
 namespace PdfLibrary.Builder;
 
@@ -1332,7 +1332,7 @@ public class PdfDocumentWriter
         {
             // Use Melville.CSJ2K to parse the JPEG2000 file and extract dimensions
             // This works for both JP2 and J2K formats
-            var portableImage = Jpeg2000.Decompress(data, out int width, out int height, out int components);
+            byte[] portableImage = Jpeg2000.Decompress(data, out int width, out int height, out int components);
             return (width, height, components);
         }
         catch
@@ -1662,7 +1662,7 @@ public class PdfDocumentWriter
 
         // D - Default viewing configuration
         writer.WriteLine("      /D <<");
-        writer.WriteLine($"         /Name (Default)");
+        writer.WriteLine("         /Name (Default)");
 
         // Order array - defines layer order in UI
         writer.Write("         /Order [");

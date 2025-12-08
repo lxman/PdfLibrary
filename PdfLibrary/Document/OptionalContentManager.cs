@@ -1,6 +1,6 @@
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Document;

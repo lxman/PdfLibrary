@@ -81,7 +81,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             // Handle single-element Pattern array: [/Pattern]
             case PdfArray { Count: 1 } singleArray when singleArray[0] is PdfName singleName && singleName.Value == "Pattern":
                 colorSpaceName = "Pattern";
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (uncolored)");
+                PdfLogger.Log(LogCategory.Graphics, "RESOLVE: Pattern color space detected (uncolored)");
                 return;
             // Handle Pattern with underlying color space: [/Pattern /DeviceRGB] or [/Pattern [/ICCBased ...]]
             case PdfArray { Count: >= 2 } patternArray when patternArray[0] is PdfName patternName && patternName.Value == "Pattern":
@@ -118,7 +118,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             case "Pattern":
                 // Pattern color space - don't resolve to device colors
                 colorSpaceName = "Pattern";
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected");
+                PdfLogger.Log(LogCategory.Graphics, "RESOLVE: Pattern color space detected");
                 break;
         }
     }
@@ -366,7 +366,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         if (paletteData is null)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: No palette data found");
+            PdfLogger.Log(LogCategory.Graphics, "RESOLVE Indexed: No palette data found");
             return;
         }
 

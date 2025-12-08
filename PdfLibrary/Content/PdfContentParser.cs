@@ -1,7 +1,7 @@
+using Logging;
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
-using Logging;
 using PdfLibrary.Parsing;
 
 namespace PdfLibrary.Content;

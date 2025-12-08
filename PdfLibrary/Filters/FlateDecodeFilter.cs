@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using Logging;
 
 namespace PdfLibrary.Filters;
 
@@ -38,7 +39,7 @@ internal class FlateDecodeFilter : IStreamFilter
         string headerHex = data.Length >= 4
             ? $"{data[0]:X2} {data[1]:X2} {data[2]:X2} {data[3]:X2}"
             : "too short";
-        Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: {data.Length} bytes, header: {headerHex}");
+        PdfLogger.Log(LogCategory.PdfTool, $"FlateDecode: {data.Length} bytes, header: {headerHex}");
 
         try
         {
@@ -52,7 +53,7 @@ internal class FlateDecodeFilter : IStreamFilter
         catch (InvalidDataException)
         {
             // Fallback: try raw deflate (no zlib header)
-            Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, "FlateDecode: ZLibStream failed, trying raw DeflateStream");
+            PdfLogger.Log(LogCategory.PdfTool, "FlateDecode: ZLibStream failed, trying raw DeflateStream");
             try
             {
                 using var inputStream = new MemoryStream(data);
@@ -64,7 +65,7 @@ internal class FlateDecodeFilter : IStreamFilter
             catch (InvalidDataException ex2)
             {
                 // Try skipping first 2 bytes (zlib header) and use raw deflate
-                Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: Raw deflate also failed: {ex2.Message}, trying skip 2 bytes");
+                PdfLogger.Log(LogCategory.PdfTool, $"FlateDecode: Raw deflate also failed: {ex2.Message}, trying skip 2 bytes");
                 try
                 {
                     if (data.Length > 2)
@@ -83,12 +84,12 @@ internal class FlateDecodeFilter : IStreamFilter
                 catch (Exception ex3)
                 {
                     // All decompression methods failed
-                    Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: All decompression methods failed. Final error: {ex3.Message}");
-                    Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, $"FlateDecode: Data length={data.Length}, header={headerHex}");
+                    PdfLogger.Log(LogCategory.PdfTool, $"FlateDecode: All decompression methods failed. Final error: {ex3.Message}");
+                    PdfLogger.Log(LogCategory.PdfTool, $"FlateDecode: Data length={data.Length}, header={headerHex}");
 
                     // Return the raw data as-is rather than throwing
                     // This allows rendering to continue even if some images fail to decompress
-                    Logging.PdfLogger.Log(Logging.LogCategory.PdfTool, "FlateDecode: Returning raw data (uncompressed fallback)");
+                    PdfLogger.Log(LogCategory.PdfTool, "FlateDecode: Returning raw data (uncompressed fallback)");
                     decoded = data;
                 }
             }

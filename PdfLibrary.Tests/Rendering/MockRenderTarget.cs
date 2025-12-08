@@ -100,6 +100,23 @@ public class MockRenderTarget : IRenderTarget
         return (612, 792, 1.0); // Default letter size
     }
 
+    public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font)
+    {
+        // For mock testing, return a simple estimate
+        if (string.IsNullOrEmpty(text))
+            return 0f;
+
+        // Simple character-based width estimate
+        float estimatedWidth = text.Length * (float)state.FontSize * 0.5f;
+
+        // Apply horizontal scaling
+        float tHs = (float)state.HorizontalScaling / 100f;
+        estimatedWidth *= tHs;
+
+        Operations.Add($"MeasureTextWidth: \"{text}\", Result={estimatedWidth:F2}");
+        return estimatedWidth;
+    }
+
     private static string GetPathDescription(IPathBuilder path)
     {
         if (path is PathBuilder builder)

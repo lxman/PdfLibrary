@@ -1,14 +1,14 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Text;
+using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
+using PdfLibrary.Fixups;
 using PdfLibrary.Fonts;
-using PdfLibrary.Functions;
-using Logging;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering;
@@ -27,6 +27,7 @@ public class PdfRenderer : PdfContentProcessor
     private readonly PdfDocument? _document;
     private readonly ColorSpaceResolver _colorSpaceResolver;
     private readonly ExtGStateApplier _extGStateApplier;
+    private readonly FixupManager? _fixupManager;
 
     /// <summary>
     /// Creates a new PDF renderer
@@ -35,8 +36,11 @@ public class PdfRenderer : PdfContentProcessor
     /// <param name="resources">Page resources for fonts, images, etc.</param>
     /// <param name="optionalContentManager">Optional content manager for layer visibility</param>
     /// <param name="document">The PDF document (for resolving indirect references in images)</param>
-    internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null)
+    /// <param name="fixupManager">Optional fixup manager for handling edge cases</param>
+    internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null, FixupManager? fixupManager = null)
     {
+        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager != null}");
+
         _target = target ?? throw new ArgumentNullException(nameof(target));
         _resources = resources;
         _currentResources = resources; // Initially use page resources
@@ -48,6 +52,9 @@ public class PdfRenderer : PdfContentProcessor
         {
             RenderSoftMaskGroupCallback = RenderSoftMaskGroup
         };
+        _fixupManager = fixupManager;
+
+        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] _fixupManager assigned: _fixupManager!=null={_fixupManager != null}");
     }
 
     /// <summary>
@@ -556,7 +563,7 @@ public class PdfRenderer : PdfContentProcessor
             byte[] contentData = pattern.ContentStream.GetDecodedData(_document?.Decryptor);
 
             // Create a sub-renderer for the pattern content
-            var patternRenderer = new PdfRenderer(target, patternResources, _optionalContentManager, _document);
+            var patternRenderer = new PdfRenderer(target, patternResources, _optionalContentManager, _document, _fixupManager);
 
             // Process the pattern's content stream
             List<PdfOperator> operators = PdfContentParser.Parse(contentData);
@@ -685,12 +692,74 @@ public class PdfRenderer : PdfContentProcessor
             glyphWidths.Add(advance);
         }
 
-        // Render the text
+        // Calculate total text width
+        double totalAdvance = glyphWidths.Sum();
+
+        // Apply fixups if manager is present
         var textToRender = decodedText.ToString();
+
+        // DEBUG: Log BEFORE condition check
+        PdfLogger.Log(LogCategory.Text, $"[RENDERER-ENTRY] OnShowText reached fixup section: text='{textToRender}' font='{font.BaseFont}' _fixupManager!=null={_fixupManager is not null}");
+
+        if (_fixupManager is not null && !string.IsNullOrEmpty(textToRender))
+        {
+            // Get current text position from text matrix (M31, M32 are translation components)
+            float textX = CurrentState.TextMatrix.M31;
+            float textY = CurrentState.TextMatrix.M32;
+
+            // Create context for fixups
+            var context = new TextRunContext(
+                text: textToRender,
+                x: textX,
+                y: textY,
+                fontSize: (float)CurrentState.FontSize,
+                fontName: font.BaseFont,
+                isFallbackFont: false, // TODO: Determine if using fallback font
+                intendedWidth: (float)totalAdvance,
+                actualWidth: (float)totalAdvance, // TODO: Measure actual width with system font
+                graphicsState: CurrentState);
+
+            // Set detection flags for Base14 fonts
+            context.IsBase14Font = IsBase14Font(font);
+            context.HasEmbeddedFontData = HasEmbeddedFontData(font);
+
+            PdfLogger.Log(LogCategory.Text, $"[RENDERER-DEBUG] Before fixup call: text='{textToRender}' font='{font.BaseFont}' IsBase14={context.IsBase14Font} HasEmbedded={context.HasEmbeddedFontData} fixupManager!=null={_fixupManager != null}");
+
+            // Apply fixups
+            _fixupManager.ApplyTextRunFixups(context);
+
+            // Check if fixup wants to skip this text
+            if (context.ShouldSkip)
+            {
+                PdfLogger.Log(LogCategory.Text, $"TEXT-SKIPPED: Fixup requested skip for '{textToRender}'");
+                return;
+            }
+
+            // Apply spacing adjustment if present
+            if (context.CustomData.TryGetValue("SpacingAdjustment", out object? adjustment))
+            {
+                if (adjustment is float spacingAdjustment)
+                {
+                    // Distribute the spacing adjustment across all glyphs
+                    double perGlyphAdjustment = spacingAdjustment / glyphWidths.Count;
+                    for (int j = 0; j < glyphWidths.Count; j++)
+                    {
+                        glyphWidths[j] += perGlyphAdjustment;
+                    }
+
+                    // Update total advance
+                    totalAdvance += spacingAdjustment;
+
+                    PdfLogger.Log(LogCategory.Text,
+                        $"FIXUP-APPLIED: Added {spacingAdjustment:F2} spacing adjustment to '{textToRender}' ({glyphWidths.Count} glyphs)");
+                }
+            }
+        }
+
+        // Render the text
         _target.DrawText(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
-        double totalAdvance = glyphWidths.Sum();
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
 
@@ -740,7 +809,7 @@ public class PdfRenderer : PdfContentProcessor
 
         if (_currentResources is null)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"  No resources for ExtGState lookup");
+            PdfLogger.Log(LogCategory.Graphics, "  No resources for ExtGState lookup");
             return;
         }
 
@@ -796,7 +865,7 @@ public class PdfRenderer : PdfContentProcessor
         _target.RenderSoftMask(softMask.Subtype, maskTarget =>
         {
             // Create a renderer for the mask content
-            var maskRenderer = new PdfRenderer(maskTarget, formResources ?? _resources, _optionalContentManager, _document)
+            var maskRenderer = new PdfRenderer(maskTarget, formResources ?? _resources, _optionalContentManager, _document, _fixupManager)
             {
                 CurrentState =
                 {
@@ -1259,7 +1328,7 @@ public class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: {contentData.Length} bytes, glyphMatrix=[{glyphMatrix.M11:F6}, {glyphMatrix.M12:F6}, {glyphMatrix.M21:F6}, {glyphMatrix.M22:F6}, {glyphMatrix.M31:F2}, {glyphMatrix.M32:F2}]");
 
             // Create a sub-renderer for the CharProc with the glyph transformation
-            var charProcRenderer = new PdfRenderer(_target, resources ?? _currentResources, _optionalContentManager, _document)
+            var charProcRenderer = new PdfRenderer(_target, resources ?? _currentResources, _optionalContentManager, _document, _fixupManager)
             {
                 CurrentState =
                 {
@@ -1503,7 +1572,7 @@ public class PdfRenderer : PdfContentProcessor
         }
 
         // Create a new renderer for the form to ensure it starts with a fresh graphics state
-        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document)
+        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager)
             {
                 CurrentState =
                 {
@@ -1553,5 +1622,55 @@ public class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Transforms, $"Q (RestoreState) After restore: CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
         // After restoring state, we need to update the canvas matrix to match
         _target.ApplyCtm(CurrentState.Ctm);
+    }
+
+    // ==================== Fixup Helper Methods ====================
+
+    /// <summary>
+    /// The 14 standard PDF fonts that can be referenced without embedding.
+    /// </summary>
+    private static readonly string[] Base14FontNames =
+    {
+        "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
+        "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
+        "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique",
+        "Symbol", "ZapfDingbats"
+    };
+
+    /// <summary>
+    /// Checks if a font is one of the PDF Base14 standard fonts.
+    /// </summary>
+    private static bool IsBase14Font(PdfFont? font)
+    {
+        if (font is null)
+            return false;
+
+        // Get the base font name (strip subset prefix if present)
+        string baseFontName = font.BaseFont;
+        if (font.IsSubsetFont && baseFontName.Length > 7)
+        {
+            // Remove the "XXXXXX+" prefix from subset fonts
+            baseFontName = baseFontName.Substring(7);
+        }
+
+        return Base14FontNames.Contains(baseFontName);
+    }
+
+    /// <summary>
+    /// Checks if a font has embedded font data (FontFile/FontFile2/FontFile3).
+    /// </summary>
+    private static bool HasEmbeddedFontData(PdfFont? font)
+    {
+        if (font is null)
+            return false;
+
+        PdfFontDescriptor? descriptor = font.GetDescriptor();
+        if (descriptor is null)
+            return false;
+
+        // Check for any of the three font file streams
+        return descriptor.GetFontFile() is not null ||
+               descriptor.GetFontFile2() is not null ||
+               descriptor.GetFontFile3() is not null;
     }
 }

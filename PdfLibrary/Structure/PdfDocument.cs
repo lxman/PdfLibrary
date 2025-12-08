@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Text;
 using Logging;
-using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -775,7 +774,7 @@ public class PdfDocument : IDisposable
 
         // Build the expected pattern: "N G obj"
         var expectedPattern = $"{expectedObjectNumber} {expectedGenerationNumber} obj";
-        byte[] patternBytes = System.Text.Encoding.ASCII.GetBytes(expectedPattern);
+        byte[] patternBytes = Encoding.ASCII.GetBytes(expectedPattern);
 
         // Search for the pattern in the buffer
         for (var i = 0; i <= bytesRead - patternBytes.Length; i++)
