@@ -11,6 +11,7 @@ using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.PixelFormats;
 using SkiaSharp;
 
@@ -417,49 +418,102 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     /// </summary>
     private static SKBitmap ConvertImageSharpToSkBitmap(Image image)
     {
-        if (image is Image<Rgb24> rgb24)
+        switch (image)
         {
-            var bitmap = new SKBitmap(rgb24.Width, rgb24.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-            for (var y = 0; y < rgb24.Height; y++)
+            case Image<Rgb24> rgb24:
             {
-                for (var x = 0; x < rgb24.Width; x++)
-                {
-                    Rgb24 pixel = rgb24[x, y];
-                    bitmap.SetPixel(x, y, new SKColor(pixel.R, pixel.G, pixel.B, 255));
-                }
-            }
-            return bitmap;
-        }
+                var bitmap = new SKBitmap(rgb24.Width, rgb24.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+                int width = rgb24.Width;
+                int height = rgb24.Height;
+                var pixelBuffer = new byte[width * height * 4]; // RGBA8888
 
-        if (image is Image<Rgba32> rgba32)
-        {
-            var bitmap = new SKBitmap(rgba32.Width, rgba32.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-            for (var y = 0; y < rgba32.Height; y++)
+                // Copy pixels using direct memory access
+                for (var y = 0; y < height; y++)
+                {
+                    Span<Rgb24> rowSpan = rgb24.DangerousGetPixelRowMemory(y).Span;
+                    int bufferOffset = y * width * 4;
+
+                    for (var x = 0; x < width; x++)
+                    {
+                        Rgb24 pixel = rowSpan[x];
+                        int offset = bufferOffset + (x * 4);
+                        pixelBuffer[offset] = pixel.R;
+                        pixelBuffer[offset + 1] = pixel.G;
+                        pixelBuffer[offset + 2] = pixel.B;
+                        pixelBuffer[offset + 3] = 255; // Alpha
+                    }
+                }
+
+                // Bulk copy to bitmap
+                IntPtr bitmapPixels = bitmap.GetPixels();
+                if (bitmapPixels == IntPtr.Zero) return bitmap;
+                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                bitmap.NotifyPixelsChanged();
+
+                return bitmap;
+            }
+            case Image<Rgba32> rgba32:
             {
-                for (var x = 0; x < rgba32.Width; x++)
-                {
-                    Rgba32 pixel = rgba32[x, y];
-                    bitmap.SetPixel(x, y, new SKColor(pixel.R, pixel.G, pixel.B, pixel.A));
-                }
-            }
-            return bitmap;
-        }
+                var bitmap = new SKBitmap(rgba32.Width, rgba32.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+                int width = rgba32.Width;
+                int height = rgba32.Height;
+                var pixelBuffer = new byte[width * height * 4]; // RGBA8888
 
-        if (image is Image<L8> l8)
-        {
-            var bitmap = new SKBitmap(l8.Width, l8.Height, SKColorType.Gray8, SKAlphaType.Opaque);
-            for (var y = 0; y < l8.Height; y++)
+                // Copy pixels using direct memory access
+                for (var y = 0; y < height; y++)
+                {
+                    Span<Rgba32> rowSpan = rgba32.DangerousGetPixelRowMemory(y).Span;
+                    int bufferOffset = y * width * 4;
+
+                    for (var x = 0; x < width; x++)
+                    {
+                        Rgba32 pixel = rowSpan[x];
+                        int offset = bufferOffset + (x * 4);
+                        pixelBuffer[offset] = pixel.R;
+                        pixelBuffer[offset + 1] = pixel.G;
+                        pixelBuffer[offset + 2] = pixel.B;
+                        pixelBuffer[offset + 3] = pixel.A;
+                    }
+                }
+
+                // Bulk copy to bitmap
+                IntPtr bitmapPixels = bitmap.GetPixels();
+                if (bitmapPixels == IntPtr.Zero) return bitmap;
+                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                bitmap.NotifyPixelsChanged();
+
+                return bitmap;
+            }
+            case Image<L8> l8:
             {
-                for (var x = 0; x < l8.Width; x++)
-                {
-                    L8 pixel = l8[x, y];
-                    bitmap.SetPixel(x, y, new SKColor(pixel.PackedValue, pixel.PackedValue, pixel.PackedValue));
-                }
-            }
-            return bitmap;
-        }
+                var bitmap = new SKBitmap(l8.Width, l8.Height, SKColorType.Gray8, SKAlphaType.Opaque);
+                int width = l8.Width;
+                int height = l8.Height;
+                var pixelBuffer = new byte[width * height]; // Gray8 = 1 byte per pixel
 
-        throw new NotSupportedException($"ImageSharp pixel format {image.GetType().Name} not supported for conversion to SKBitmap");
+                // Copy pixels using direct memory access
+                for (var y = 0; y < height; y++)
+                {
+                    Span<L8> rowSpan = l8.DangerousGetPixelRowMemory(y).Span;
+                    int bufferOffset = y * width;
+
+                    for (var x = 0; x < width; x++)
+                    {
+                        pixelBuffer[bufferOffset + x] = rowSpan[x].PackedValue;
+                    }
+                }
+
+                // Bulk copy to bitmap
+                IntPtr bitmapPixels = bitmap.GetPixels();
+                if (bitmapPixels == IntPtr.Zero) return bitmap;
+                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                bitmap.NotifyPixelsChanged();
+
+                return bitmap;
+            }
+            default:
+                throw new NotSupportedException($"ImageSharp pixel format {image.GetType().Name} not supported for conversion to SKBitmap");
+        }
     }
 
     // ==================== TEXT RENDERING ====================
@@ -636,7 +690,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             }
 
             // Use effective font size (FontSize * TextMatrix scaling) for visible text
-            using var fallbackFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), effectiveFontSize);
+            // Note: SkiaSharp requires positive font size, but PDF can have negative font sizes when using Y-flipped CTM
+            using var fallbackFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), Math.Abs(effectiveFontSize));
 
             // Determine text rendering mode
             // PDF Text Rendering Modes:
@@ -729,7 +784,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     // NOTE: We do NOT scale glyphs to match PDF widths - this would distort them visually.
                     // Instead, we render glyphs at their natural width and use PDF widths only for spacing.
                     _canvas.RotateDegrees(localRotationDeg);  // Apply rotation
-                    _canvas.Scale(tHs, -1);  // Horizontal scaling and Y-flip (in rotated space)
+                    // If font size was negative (PDF uses negative font size with Y-flipped CTM):
+                    // - Flip X (to correct horizontal orientation)
+                    // - Don't flip Y (negative font size already encodes the Y-flip)
+                    float xScale = effectiveFontSize < 0 ? -tHs : tHs;
+                    float yScale = effectiveFontSize < 0 ? 1 : -1;
+                    _canvas.Scale(xScale, yScale);  // Horizontal scaling and Y-flip (in rotated space)
 
                     // Draw based on rendering mode
                     if (shouldFill)
@@ -1920,7 +1980,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         }
 
         // Create font and measure text width
-        using var measureFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), effectiveFontSize);
+        // Note: SkiaSharp requires positive font size, but PDF can have negative font sizes when using Y-flipped CTM
+        using var measureFont = new SKFont(SKTypeface.FromFamilyName(fallbackFontFamily, fontStyle), Math.Abs(effectiveFontSize));
         float width = measureFont.MeasureText(text);
 
         // Account for horizontal scaling from graphics state
@@ -2094,11 +2155,17 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                         // Get raw JP2 data
                         byte[] rawJp2Data = stream.Data;
 
-                        // Use CoreJ2K.ImageSharp's conversion (cross-platform, no Rgb888x bug)
+                        // TIMING: Measure JPEG2000 decode
+                        var decodeStart = DateTime.Now;
                         Image jp2Image = Jpeg2000.DecompressToImage(rawJp2Data);
+                        var decodeElapsed = DateTime.Now - decodeStart;
+                        PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {width}x{height} image");
 
-                        // Convert ImageSharp Image to SKBitmap
+                        // TIMING: Measure ImageSharp→SKBitmap conversion
+                        var convertStart = DateTime.Now;
                         SKBitmap jp2Bitmap = ConvertImageSharpToSkBitmap(jp2Image);
+                        var convertElapsed = DateTime.Now - convertStart;
+                        PdfLogger.Log(LogCategory.Images, $"[TIMING] ImageSharp→SKBitmap conversion took {convertElapsed.TotalMilliseconds:F0}ms for {width}x{height} image");
 
                         jp2Image.Dispose();
                         return jp2Bitmap;

@@ -1,5 +1,4 @@
-using Melville.CSJ2K;
-using Melville.CSJ2K.Util;
+using CoreJ2K.Util;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 
@@ -33,7 +32,7 @@ public static class Jpeg2000
 
         // Decode using Melville.CSJ2K
         using var stream = new MemoryStream(data);
-        PortableImage portableImage = J2kReader.FromStream(stream);
+        PortableImage portableImage = CoreJ2K.J2kImage.FromStream(stream);
 
         width = portableImage.Width;
         height = portableImage.Height;
@@ -42,48 +41,55 @@ public static class Jpeg2000
         // Get raw component data and convert to interleaved bytes
         var result = new byte[width * height * components];
 
-        if (components == 1)
+        switch (components)
         {
-            // Grayscale
-            int[] component0 = portableImage.GetComponent(0);
-            for (int i = 0; i < width * height; i++)
+            case 1:
             {
-                result[i] = ClampToByte(component0[i]);
-            }
-        }
-        else if (components == 3)
-        {
-            // RGB
-            int[] component0 = portableImage.GetComponent(0);
-            int[] component1 = portableImage.GetComponent(1);
-            int[] component2 = portableImage.GetComponent(2);
+                // Grayscale
+                int[] component0 = portableImage.GetComponent(0);
+                for (var i = 0; i < width * height; i++)
+                {
+                    result[i] = ClampToByte(component0[i]);
+                }
 
-            for (int i = 0; i < width * height; i++)
-            {
-                result[i * 3 + 0] = ClampToByte(component0[i]);
-                result[i * 3 + 1] = ClampToByte(component1[i]);
-                result[i * 3 + 2] = ClampToByte(component2[i]);
+                break;
             }
-        }
-        else if (components == 4)
-        {
-            // RGBA
-            int[] component0 = portableImage.GetComponent(0);
-            int[] component1 = portableImage.GetComponent(1);
-            int[] component2 = portableImage.GetComponent(2);
-            int[] component3 = portableImage.GetComponent(3);
+            case 3:
+            {
+                // RGB
+                int[] component0 = portableImage.GetComponent(0);
+                int[] component1 = portableImage.GetComponent(1);
+                int[] component2 = portableImage.GetComponent(2);
 
-            for (int i = 0; i < width * height; i++)
-            {
-                result[i * 4 + 0] = ClampToByte(component0[i]);
-                result[i * 4 + 1] = ClampToByte(component1[i]);
-                result[i * 4 + 2] = ClampToByte(component2[i]);
-                result[i * 4 + 3] = ClampToByte(component3[i]);
+                for (var i = 0; i < width * height; i++)
+                {
+                    result[i * 3 + 0] = ClampToByte(component0[i]);
+                    result[i * 3 + 1] = ClampToByte(component1[i]);
+                    result[i * 3 + 2] = ClampToByte(component2[i]);
+                }
+
+                break;
             }
-        }
-        else
-        {
-            throw new NotSupportedException($"Number of components {components} not supported");
+            case 4:
+            {
+                // RGBA
+                int[] component0 = portableImage.GetComponent(0);
+                int[] component1 = portableImage.GetComponent(1);
+                int[] component2 = portableImage.GetComponent(2);
+                int[] component3 = portableImage.GetComponent(3);
+
+                for (var i = 0; i < width * height; i++)
+                {
+                    result[i * 4 + 0] = ClampToByte(component0[i]);
+                    result[i * 4 + 1] = ClampToByte(component1[i]);
+                    result[i * 4 + 2] = ClampToByte(component2[i]);
+                    result[i * 4 + 3] = ClampToByte(component3[i]);
+                }
+
+                break;
+            }
+            default:
+                throw new NotSupportedException($"Number of components {components} not supported");
         }
 
         return result;
@@ -105,7 +111,7 @@ public static class Jpeg2000
 
         // Decode using Melville.CSJ2K
         using var stream = new MemoryStream(data);
-        PortableImage portableImage = J2kReader.FromStream(stream);
+        PortableImage portableImage = CoreJ2K.J2kImage.FromStream(stream);
 
         int width = portableImage.Width;
         int height = portableImage.Height;
@@ -125,9 +131,9 @@ public static class Jpeg2000
         var image = new Image<L8>(width, height);
         int[] component0 = portableImage.GetComponent(0);
 
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int idx = y * width + x;
                 image[x, y] = new L8(ClampToByte(component0[idx]));
@@ -144,9 +150,9 @@ public static class Jpeg2000
         int[] component1 = portableImage.GetComponent(1);
         int[] component2 = portableImage.GetComponent(2);
 
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int idx = y * width + x;
                 image[x, y] = new Rgb24(
@@ -168,9 +174,9 @@ public static class Jpeg2000
         int[] component2 = portableImage.GetComponent(2);
         int[] component3 = portableImage.GetComponent(3);
 
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int idx = y * width + x;
                 image[x, y] = new Rgba32(
