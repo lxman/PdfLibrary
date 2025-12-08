@@ -8,7 +8,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_DecimalStyle_WritesPageLabels()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
             .SetPageLabels(0, l => l.Decimal());
@@ -25,7 +25,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_RomanStyle_WritesCorrectStyleCode()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Preface", 100, 700))
             .SetPageLabels(0, l => l.LowercaseRoman());
 
@@ -39,7 +39,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_UppercaseRoman_WritesCorrectStyleCode()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Chapter", 100, 700))
             .SetPageLabels(0, l => l.UppercaseRoman());
 
@@ -53,7 +53,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_LetterStyles_WriteCorrectCodes()
     {
         // Lowercase letters
-        var builder1 = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder1 = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Appendix", 100, 700))
             .SetPageLabels(0, l => l.LowercaseLetters());
 
@@ -62,7 +62,7 @@ public class PdfPageLabelTests
         Assert.Contains("/S /a", content1);
 
         // Uppercase letters
-        var builder2 = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder2 = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Appendix", 100, 700))
             .SetPageLabels(0, l => l.UppercaseLetters());
 
@@ -75,7 +75,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_WithPrefix_WritesPrefix()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page", 100, 700))
             .SetPageLabels(0, l => l.Decimal().WithPrefix("Chapter-"));
 
@@ -89,7 +89,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_WithStartNumber_WritesStEntry()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page", 100, 700))
             .SetPageLabels(0, l => l.Decimal().StartingAt(5));
 
@@ -103,7 +103,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_NoNumbering_OmitsStyleEntry()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Cover", 100, 700))
             .SetPageLabels(0, l => l.NoNumbering().WithPrefix("Cover"));
 
@@ -119,7 +119,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_MultipleRanges_AllWritten()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Cover", 100, 700))       // 0
             .AddPage(p => p.AddText("Preface i", 100, 700))   // 1
             .AddPage(p => p.AddText("Preface ii", 100, 700))  // 2
@@ -142,7 +142,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_ShortOverload_SetsDecimalWithOptions()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .SetPageLabels(0, 1, "A-");  // startNumber=1, prefix="A-"
 
@@ -157,9 +157,9 @@ public class PdfPageLabelTests
     public void SetPageLabels_OutParameter_ReturnsRange()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .SetPageLabels(0, out var range, l => l.Decimal().WithPrefix("Test-"));
+            .SetPageLabels(0, out PdfPageLabelRange range, l => l.Decimal().WithPrefix("Test-"));
 
         // Assert
         Assert.NotNull(range);
@@ -172,7 +172,7 @@ public class PdfPageLabelTests
     public void Save_WithPageLabels_ProducesValidPdf()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Introduction", 100, 700))
             .AddPage(p => p.AddText("Chapter 1", 100, 700))
             .AddPage(p => p.AddText("Chapter 2", 100, 700))
@@ -195,7 +195,7 @@ public class PdfPageLabelTests
     public void PageWithoutLabels_NoPageLabelsInCatalog()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Simple page", 100, 700));
 
         byte[] pdf = builder.ToByteArray();
@@ -209,7 +209,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_CombinedWithBookmarks_BothWork()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Cover", 100, 700))
             .AddPage(p => p.AddText("Chapter 1", 100, 700))
             .SetPageLabels(0, l => l.NoNumbering().WithPrefix("Cover"))
@@ -228,13 +228,13 @@ public class PdfPageLabelTests
     public void AllPageLabelStyles_AreValid()
     {
         // Verify all enum values are handled
-        var styles = Enum.GetValues<PdfPageLabelStyle>();
+        PdfPageLabelStyle[] styles = Enum.GetValues<PdfPageLabelStyle>();
         Assert.Equal(6, styles.Length);  // None, Decimal, UppercaseRoman, LowercaseRoman, UppercaseLetters, LowercaseLetters
 
         // Test each style produces valid output
-        foreach (var style in styles)
+        foreach (PdfPageLabelStyle style in styles)
         {
-            var builder = PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
                 .AddPage(p => p.AddText("Test", 100, 700));
 
             // Use the builder pattern for each style
@@ -269,7 +269,7 @@ public class PdfPageLabelTests
     public void SetPageLabels_RangesOrderedCorrectly()
     {
         // Arrange - add ranges out of order
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
             .AddPage(p => p.AddText("Page 3", 100, 700))

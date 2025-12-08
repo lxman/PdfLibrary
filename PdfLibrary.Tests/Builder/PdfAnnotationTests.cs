@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Tests.Builder;
 
@@ -8,7 +9,7 @@ public class PdfAnnotationTests
     public void AddLink_ToPage_CreatesLinkAnnotation()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Page 1", 100, 700);
@@ -24,7 +25,7 @@ public class PdfAnnotationTests
     public void AddExternalLink_CreatesUriAnnotation()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Click here", 100, 700);
@@ -43,7 +44,7 @@ public class PdfAnnotationTests
     public void AddNote_CreatesTextAnnotation()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Content", 100, 700);
@@ -61,7 +62,7 @@ public class PdfAnnotationTests
     public void AddNote_WithConfiguration_SetsIcon()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Content", 100, 700);
@@ -82,7 +83,7 @@ public class PdfAnnotationTests
     public void AddHighlight_CreatesHighlightAnnotation()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Highlighted text", 100, 700);
@@ -100,7 +101,7 @@ public class PdfAnnotationTests
     public void AddLink_MultiplePages_CorrectDestination()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
             .AddPage(p =>
@@ -118,7 +119,7 @@ public class PdfAnnotationTests
     public void AddLink_WithConfiguration_SetsHighlightMode()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p =>
             {
@@ -138,7 +139,7 @@ public class PdfAnnotationTests
     public void MultipleAnnotations_OnSamePage_AllWritten()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Content", 100, 700);
@@ -159,7 +160,7 @@ public class PdfAnnotationTests
     public void AnnotationWithBorder_WritesBorderArray()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Link", 100, 700);
@@ -176,7 +177,7 @@ public class PdfAnnotationTests
     public void AnnotationPrintable_SetsPrintFlag()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Content", 100, 700);
@@ -193,7 +194,7 @@ public class PdfAnnotationTests
     public void Save_WithAnnotations_ProducesValidPdf()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Page with annotations", 100, 700);
@@ -217,7 +218,7 @@ public class PdfAnnotationTests
     public void PageWithAnnotationsAndFormFields_BothInAnnotsArray()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddTextField("name", 100, 700, 200, 30);
@@ -237,7 +238,7 @@ public class PdfAnnotationTests
     public void HighlightAnnotation_MultipleRegions_WritesAllQuadPoints()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p =>
             {
                 p.AddText("Line 1", 100, 700);
@@ -267,9 +268,9 @@ public class PdfAnnotationTests
             PdfTextAnnotationIcon.Insert
         };
 
-        foreach (var icon in icons)
+        foreach (PdfTextAnnotationIcon icon in icons)
         {
-            var builder = PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
                 .AddPage(p => p.AddNote(100, 700, $"Icon: {icon}", n => n.WithIcon(icon)));
 
             // Act
@@ -291,9 +292,9 @@ public class PdfAnnotationTests
             PdfLinkHighlightMode.Push
         };
 
-        foreach (var mode in modes)
+        foreach (PdfLinkHighlightMode mode in modes)
         {
-            var builder = PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
                 .AddPage(p => p.AddText("Page 1", 100, 700))
                 .AddPage(p => p.AddLink(100, 700, 100, 20, 0, l => l.WithHighlight(mode)));
 

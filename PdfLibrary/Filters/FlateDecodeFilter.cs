@@ -108,7 +108,7 @@ internal class FlateDecodeFilter : IStreamFilter
     /// <summary>
     /// Applies predictor functions for improved compression (ISO 32000-1:2008 section 7.4.4.4)
     /// </summary>
-    private byte[] ApplyPredictor(byte[] data, int predictor, Dictionary<string, object> parameters)
+    private static byte[] ApplyPredictor(byte[] data, int predictor, Dictionary<string, object> parameters)
     {
         // Predictor values:
         // 1 = No prediction
@@ -134,7 +134,7 @@ internal class FlateDecodeFilter : IStreamFilter
         };
     }
 
-    private byte[] ApplyPngPredictor(byte[] data, int rowLength, int bytesPerPixel)
+    private static byte[] ApplyPngPredictor(byte[] data, int rowLength, int bytesPerPixel)
     {
         using var output = new MemoryStream();
         var pos = 0;
@@ -175,7 +175,7 @@ internal class FlateDecodeFilter : IStreamFilter
         return output.ToArray();
     }
 
-    private byte[] ApplyTiffPredictor(byte[] data, int rowLength, int bytesPerPixel)
+    private static byte[] ApplyTiffPredictor(byte[] data, int rowLength, int bytesPerPixel)
     {
         using var output = new MemoryStream();
         var pos = 0;

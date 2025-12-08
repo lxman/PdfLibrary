@@ -149,7 +149,7 @@ namespace PdfLibrary.Fonts.Embedded
         /// <summary>
         /// Extract simple glyph (has direct contour data)
         /// </summary>
-        private GlyphOutline ExtractSimpleGlyph(int glyphId, GlyphData glyphData, GlyphMetrics metrics)
+        private static GlyphOutline ExtractSimpleGlyph(int glyphId, GlyphData glyphData, GlyphMetrics metrics)
         {
             if (glyphData.GlyphSpec is not SimpleGlyph simpleGlyph)
             {

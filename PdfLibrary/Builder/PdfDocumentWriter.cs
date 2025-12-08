@@ -2,6 +2,11 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Compressors.Jpeg2000;
+using PdfLibrary.Builder.Annotation;
+using PdfLibrary.Builder.Bookmark;
+using PdfLibrary.Builder.FormField;
+using PdfLibrary.Builder.Layer;
+using PdfLibrary.Builder.Page;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Security;
 using SixLabors.ImageSharp;
@@ -63,13 +68,13 @@ public class PdfDocumentWriter
         if (encryptionSettings != null)
         {
             // Convert builder encryption method to Security encryption method
-            Security.PdfEncryptionMethod securityMethod = encryptionSettings.Method switch
+            PdfEncryptionMethod securityMethod = encryptionSettings.Method switch
             {
-                PdfEncryptionMethod.Rc4_40 => Security.PdfEncryptionMethod.Rc4_40,
-                PdfEncryptionMethod.Rc4_128 => Security.PdfEncryptionMethod.Rc4_128,
-                PdfEncryptionMethod.Aes128 => Security.PdfEncryptionMethod.Aes128,
-                PdfEncryptionMethod.Aes256 => Security.PdfEncryptionMethod.Aes256,
-                _ => Security.PdfEncryptionMethod.Aes256
+                PdfEncryptionMethod.Rc4_40 => PdfEncryptionMethod.Rc4_40,
+                PdfEncryptionMethod.Rc4_128 => PdfEncryptionMethod.Rc4_128,
+                PdfEncryptionMethod.Aes128 => PdfEncryptionMethod.Aes128,
+                PdfEncryptionMethod.Aes256 => PdfEncryptionMethod.Aes256,
+                _ => PdfEncryptionMethod.Aes256
             };
 
             _encryptor = new PdfEncryptor(
@@ -526,7 +531,7 @@ public class PdfDocumentWriter
         writer.WriteLine($"{objectNumber} 0 obj");
     }
 
-    private void WriteObjectEnd(StreamWriter writer)
+    private static void WriteObjectEnd(StreamWriter writer)
     {
         writer.WriteLine("endobj");
         writer.WriteLine();
@@ -547,7 +552,7 @@ public class PdfDocumentWriter
         WriteObjectEnd(writer);
     }
 
-    private List<string> CollectFonts(PdfDocumentBuilder builder)
+    private static List<string> CollectFonts(PdfDocumentBuilder builder)
     {
         var fonts = new HashSet<string> {
             // Default font
@@ -588,7 +593,7 @@ public class PdfDocumentWriter
         return fonts.ToList();
     }
 
-    private bool HasFormFields(PdfDocumentBuilder builder)
+    private static bool HasFormFields(PdfDocumentBuilder builder)
     {
         return builder.Pages.Any(p => p.FormFields.Count > 0);
     }
@@ -659,7 +664,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Generate PDF content stream operators for text
     /// </summary>
-    private void GenerateTextContent(StringBuilder sb, PdfTextContent text, List<string> fonts)
+    private static void GenerateTextContent(StringBuilder sb, PdfTextContent text, List<string> fonts)
     {
         int fontIndex = fonts.IndexOf(text.FontName) + 1;
 
@@ -719,7 +724,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Generate PDF content stream operators for a rectangle
     /// </summary>
-    private void GenerateRectangleContent(StringBuilder sb, PdfRectangleContent rect)
+    private static void GenerateRectangleContent(StringBuilder sb, PdfRectangleContent rect)
     {
         if (rect.FillColor.HasValue || rect.StrokeColor.HasValue)
         {
@@ -751,7 +756,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Generate PDF content stream operators for a line
     /// </summary>
-    private void GenerateLineContent(StringBuilder sb, PdfLineContent line)
+    private static void GenerateLineContent(StringBuilder sb, PdfLineContent line)
     {
         sb.AppendLine("q");
         sb.AppendLine($"{line.LineWidth:F2} w");
@@ -1284,7 +1289,7 @@ public class PdfDocumentWriter
         }
     }
 
-    private (int width, int height) GetJpegDimensions(byte[] data)
+    private static (int width, int height) GetJpegDimensions(byte[] data)
     {
         var i = 2;
         while (i < data.Length - 9)
@@ -1326,7 +1331,7 @@ public class PdfDocumentWriter
         return (100, 100);
     }
 
-    private (int width, int height, int components) GetJpeg2000Dimensions(byte[] data)
+    private static (int width, int height, int components) GetJpeg2000Dimensions(byte[] data)
     {
         try
         {
@@ -1342,7 +1347,7 @@ public class PdfDocumentWriter
         }
     }
 
-    private byte[] CompressFlate(byte[] data)
+    private static byte[] CompressFlate(byte[] data)
     {
         using var outputStream = new MemoryStream();
 
@@ -1368,7 +1373,7 @@ public class PdfDocumentWriter
         return outputStream.ToArray();
     }
 
-    private uint ComputeAdler32(byte[] data)
+    private static uint ComputeAdler32(byte[] data)
     {
         const uint modAdler = 65521;
         uint a = 1, b = 0;
@@ -1382,7 +1387,7 @@ public class PdfDocumentWriter
         return (b << 16) | a;
     }
 
-    private byte[] CompressJpeg(Image<Rgb24> image, int quality)
+    private static byte[] CompressJpeg(Image<Rgb24> image, int quality)
     {
         // Encode as JPEG using ImageSharp
         using var memStream = new MemoryStream();
@@ -1952,7 +1957,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Writes the PageLabels dictionary inline in the catalog
     /// </summary>
-    private void WritePageLabelsInline(StreamWriter writer, IReadOnlyList<PdfPageLabelRange> ranges)
+    private static void WritePageLabelsInline(StreamWriter writer, IReadOnlyList<PdfPageLabelRange> ranges)
     {
         writer.WriteLine("   /PageLabels <<");
         writer.WriteLine("      /Nums [");
@@ -2140,7 +2145,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Writes highlight annotation specific properties
     /// </summary>
-    private void WriteHighlightAnnotation(StreamWriter writer, PdfHighlightAnnotation highlight, int objNum)
+    private static void WriteHighlightAnnotation(StreamWriter writer, PdfHighlightAnnotation highlight, int objNum)
     {
         // Color
         writer.WriteLine($"   /C [{highlight.Color.R:F3} {highlight.Color.G:F3} {highlight.Color.B:F3}]");

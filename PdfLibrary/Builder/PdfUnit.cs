@@ -1,50 +1,6 @@
 namespace PdfLibrary.Builder;
 
 /// <summary>
-/// Units of measurement for PDF coordinates
-/// </summary>
-public enum PdfUnit
-{
-    /// <summary>
-    /// PDF points (72 points per inch) - native PDF unit
-    /// </summary>
-    Points,
-
-    /// <summary>
-    /// Inches (1 inch = 72 points)
-    /// </summary>
-    Inches,
-
-    /// <summary>
-    /// Millimeters (1 mm = 2.834645669 points)
-    /// </summary>
-    Millimeters,
-
-    /// <summary>
-    /// Centimeters (1 cm = 28.34645669 points)
-    /// </summary>
-    Centimeters
-}
-
-/// <summary>
-/// Coordinate system origin for specifying positions
-/// </summary>
-public enum PdfOrigin
-{
-    /// <summary>
-    /// Origin in the bottom-left corner (PDF native)
-    /// Y increases upward
-    /// </summary>
-    BottomLeft,
-
-    /// <summary>
-    /// Origin in the top-left corner (screen-like)
-    /// Y increases downward
-    /// </summary>
-    TopLeft
-}
-
-/// <summary>
 /// Standard page sizes
 /// </summary>
 public static class PdfPageSize

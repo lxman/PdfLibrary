@@ -81,7 +81,7 @@ public class PdfDecryptorTests
         Random.Shared.NextBytes(uValue);
         Random.Shared.NextBytes(documentId);
 
-        var encryptDict = CreateEncryptionDict(
+        PdfDictionary encryptDict = CreateEncryptionDict(
             version: 2,
             revision: 3,
             keyLength: 128,

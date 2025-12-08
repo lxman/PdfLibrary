@@ -255,7 +255,7 @@ public class PdfEncryptorTests
     public void Permissions_SetsCorrectFlags()
     {
         // Arrange
-        var flags = PdfPermissionFlags.Print | PdfPermissionFlags.CopyContent;
+        PdfPermissionFlags flags = PdfPermissionFlags.Print | PdfPermissionFlags.CopyContent;
 
         // Act
         var encryptor = new PdfEncryptor(

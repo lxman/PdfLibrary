@@ -410,7 +410,7 @@ internal class PdfEncryptor
     /// Computes encryption values for V=5 (AES-256).
     /// ISO 32000-2 Algorithm 8.
     /// </summary>
-    private (byte[] key, byte[] O, byte[] U, byte[] OE, byte[] UE, byte[] Perms)
+    private static (byte[] key, byte[] O, byte[] U, byte[] OE, byte[] UE, byte[] Perms)
         ComputeEncryptionValuesV5(string userPassword, string ownerPassword, int permissions)
     {
         // Generate random file encryption key

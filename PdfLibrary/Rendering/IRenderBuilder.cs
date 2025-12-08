@@ -1,18 +1,6 @@
 namespace PdfLibrary.Rendering;
 
 /// <summary>
-/// Image format for encoded output.
-/// </summary>
-public enum ImageFormat
-{
-    Png,
-    Jpeg,
-    Webp,
-    Gif,
-    Bmp
-}
-
-/// <summary>
 /// Fluent interface for rendering PDF pages.
 /// Implemented by platform-specific rendering packages.
 /// </summary>

@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Integration.Documents;
 
@@ -125,16 +126,16 @@ public class TextLayoutTestDocument : ITestDocument
             // Superscript example: E = mc²
             double superX = leftMargin;
             page.AddText("Superscript: E = mc", superX, y, "Helvetica", 14);
-            superX += page.MeasureText("Superscript: E = mc", "Helvetica", 14);
+            superX += PdfPageBuilder.MeasureText("Superscript: E = mc", "Helvetica", 14);
             page.AddText("2", superX, y)
                 .Font("Helvetica", 10)
                 .Superscript()
                 .Color(PdfColor.Blue);
-            superX += page.MeasureText("2", "Helvetica", 7); // 7pt after Superscript() reduces size
+            superX += PdfPageBuilder.MeasureText("2", "Helvetica", 7); // 7pt after Superscript() reduces size
 
             superX += 10; // small gap
             page.AddText("and x", superX, y, "Helvetica", 14);
-            superX += page.MeasureText("and x", "Helvetica", 14);
+            superX += PdfPageBuilder.MeasureText("and x", "Helvetica", 14);
             page.AddText("n+1", superX, y)
                 .Font("Helvetica", 9)
                 .Superscript()
@@ -145,15 +146,15 @@ public class TextLayoutTestDocument : ITestDocument
             // Subscript example: H₂O and CO₂
             double subX = leftMargin;
             page.AddText("Subscript: H", subX, y, "Helvetica", 14);
-            subX += page.MeasureText("Subscript: H", "Helvetica", 14);
+            subX += PdfPageBuilder.MeasureText("Subscript: H", "Helvetica", 14);
             page.AddText("2", subX, y)
                 .Font("Helvetica", 10)
                 .Subscript()
                 .Color(PdfColor.Red);
-            subX += page.MeasureText("2", "Helvetica", 7); // 7pt after Subscript() reduces size
+            subX += PdfPageBuilder.MeasureText("2", "Helvetica", 7); // 7pt after Subscript() reduces size
 
             page.AddText("O and CO", subX, y, "Helvetica", 14);
-            subX += page.MeasureText("O and CO", "Helvetica", 14);
+            subX += PdfPageBuilder.MeasureText("O and CO", "Helvetica", 14);
             page.AddText("2", subX, y)
                 .Font("Helvetica", 10)
                 .Subscript()
@@ -221,12 +222,12 @@ public class TextLayoutTestDocument : ITestDocument
 
             // Right-positioned text (manually calculated)
             var rightText = "Right edge";
-            double textWidth = page.MeasureText(rightText, "Helvetica", 11);
+            double textWidth = PdfPageBuilder.MeasureText(rightText, "Helvetica", 11);
             page.AddText(rightText, boxX + boxWidth - textWidth, y - 35, "Helvetica", 11);
 
             // Center-positioned text
             var centerText = "Centered";
-            textWidth = page.MeasureText(centerText, "Helvetica", 11);
+            textWidth = PdfPageBuilder.MeasureText(centerText, "Helvetica", 11);
             page.AddText(centerText, boxX + (boxWidth - textWidth) / 2, y - 55, "Helvetica", 11);
 
             page.AddText("Manual positioning using MeasureText()", boxX + boxWidth + 20, y - 35, "Helvetica", 9);

@@ -1023,7 +1023,7 @@ internal class EmbeddedFontMetrics
     /// <summary>
     /// Convert CFF path commands to contour-based representation
     /// </summary>
-    private List<GlyphContour> ConvertCffCommandsToContours(CffGlyphOutline cffOutline)
+    private static List<GlyphContour> ConvertCffCommandsToContours(CffGlyphOutline cffOutline)
     {
         var contours = new List<GlyphContour>();
         var currentContour = new List<ContourPoint>();
@@ -1160,7 +1160,7 @@ internal class EmbeddedFontMetrics
     /// <summary>
     /// Convert a SimpleGlyph to a list of GlyphContours
     /// </summary>
-    private List<GlyphContour> ConvertSimpleGlyphToContours(SimpleGlyph simpleGlyph)
+    private static List<GlyphContour> ConvertSimpleGlyphToContours(SimpleGlyph simpleGlyph)
     {
         var contours = new List<GlyphContour>();
 

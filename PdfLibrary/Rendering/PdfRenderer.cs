@@ -1630,12 +1630,12 @@ public class PdfRenderer : PdfContentProcessor
     /// The 14 standard PDF fonts that can be referenced without embedding.
     /// </summary>
     private static readonly string[] Base14FontNames =
-    {
+    [
         "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
         "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
         "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique",
         "Symbol", "ZapfDingbats"
-    };
+    ];
 
     /// <summary>
     /// Checks if a font is one of the PDF Base14 standard fonts.

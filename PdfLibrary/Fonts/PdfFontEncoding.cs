@@ -200,7 +200,7 @@ internal class PdfFontEncoding
         }
     }
 
-    private void InitializeBaseEncoding(string encodingName)
+    private static void InitializeBaseEncoding(string encodingName)
     {
         // The actual encoding tables are initialized by the specific factory methods
         // This is just a placeholder for custom encodings

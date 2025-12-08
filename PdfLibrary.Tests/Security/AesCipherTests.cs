@@ -213,7 +213,7 @@ public class AesCipherTests
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
-        using var encryptor = aes.CreateEncryptor();
+        using ICryptoTransform encryptor = aes.CreateEncryptor();
         return encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length);
     }
 }

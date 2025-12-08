@@ -3,24 +3,6 @@ using PdfLibrary.Security;
 namespace PdfLibrary.Builder;
 
 /// <summary>
-/// Encryption method for PDF documents.
-/// </summary>
-public enum PdfEncryptionMethod
-{
-    /// <summary>RC4 40-bit encryption (V=1, R=2). Legacy, not recommended.</summary>
-    Rc4_40,
-
-    /// <summary>RC4 128-bit encryption (V=2, R=3). Legacy, not recommended.</summary>
-    Rc4_128,
-
-    /// <summary>AES 128-bit encryption (V=4, R=4).</summary>
-    Aes128,
-
-    /// <summary>AES 256-bit encryption (V=5, R=6). Recommended.</summary>
-    Aes256
-}
-
-/// <summary>
 /// Configuration for PDF document encryption.
 /// </summary>
 public class PdfEncryptionSettings

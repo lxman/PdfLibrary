@@ -8,7 +8,7 @@ public class PdfPermissionsTests
     public void AllPermissions_ShouldHaveAllFlagsSet()
     {
         // Arrange & Act
-        var permissions = PdfPermissions.AllPermissions;
+        PdfPermissions permissions = PdfPermissions.AllPermissions;
 
         // Assert
         Assert.True(permissions.CanPrint);

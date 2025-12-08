@@ -24,7 +24,7 @@ public class PdfJpeg2000Tests
         // The test verifies the code path reaches JP2 detection
         try
         {
-            var builder = PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
                 .AddPage(p => p.AddImage(jp2Data, 100, 100, 200, 200));
 
             // If no exception, the signature was recognized
@@ -56,7 +56,7 @@ public class PdfJpeg2000Tests
         // but we're testing that the signature is detected
         try
         {
-            var builder = PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
                 .AddPage(p => p.AddImage(j2kData, 100, 100, 200, 200));
 
             // If no exception, the signature was recognized
@@ -84,7 +84,7 @@ public class PdfJpeg2000Tests
         // Act & Assert - Should be detected as JPEG, not JPEG2000
         try
         {
-            var builder = PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
                 .AddPage(p => p.AddImage(jpegData, 100, 100, 200, 200));
 
             // Should process as JPEG (DCTDecode), not JPEG2000 (JPXDecode)

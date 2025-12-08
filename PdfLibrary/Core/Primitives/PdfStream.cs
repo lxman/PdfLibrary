@@ -161,7 +161,7 @@ internal sealed class PdfStream : PdfObject
     /// <summary>
     /// Applies a filter to decode data
     /// </summary>
-    private byte[] ApplyFilter(byte[] data, string filterName, Dictionary<string, object>? decodeParams)
+    private static byte[] ApplyFilter(byte[] data, string filterName, Dictionary<string, object>? decodeParams)
     {
         IStreamFilter? filter = StreamFilterFactory.CreateFilter(filterName);
         return filter is null
@@ -172,7 +172,7 @@ internal sealed class PdfStream : PdfObject
     /// <summary>
     /// Converts a PDF dictionary to decode parameters
     /// </summary>
-    private Dictionary<string, object> ConvertToDecodeParams(PdfDictionary dict)
+    private static Dictionary<string, object> ConvertToDecodeParams(PdfDictionary dict)
     {
         var result = new Dictionary<string, object>();
 

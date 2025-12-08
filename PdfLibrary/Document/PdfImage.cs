@@ -660,7 +660,7 @@ public class PdfImage
     /// <summary>
     /// Transforms palette bytes from ICC color space to device RGB using sRGB conversion
     /// </summary>
-    private byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace)
+    private static byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace)
     {
         try
         {

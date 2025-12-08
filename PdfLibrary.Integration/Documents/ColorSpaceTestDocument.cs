@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Integration.Documents;
 

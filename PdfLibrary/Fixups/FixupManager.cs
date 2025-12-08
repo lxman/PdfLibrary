@@ -5,7 +5,7 @@ namespace PdfLibrary.Fixups;
 /// </summary>
 public class FixupManager
 {
-    private readonly List<IPdfFixup> _fixups = new();
+    private readonly List<IPdfFixup> _fixups = [];
     private readonly FixupConfiguration _configuration;
 
     /// <summary>

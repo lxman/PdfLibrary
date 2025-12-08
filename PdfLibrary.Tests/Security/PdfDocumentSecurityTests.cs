@@ -36,7 +36,7 @@ public class PdfDocumentSecurityTests
         }
 
         // Act
-        using var document = PdfDocument.Load(testFilePath);
+        using PdfDocument document = PdfDocument.Load(testFilePath);
 
         // Assert
         Assert.False(document.IsEncrypted);
@@ -71,7 +71,7 @@ public class PdfDocumentSecurityTests
         }
 
         // Act - should not throw even with password parameter
-        using var document = PdfDocument.Load(testFilePath, "");
+        using PdfDocument document = PdfDocument.Load(testFilePath, "");
 
         // Assert
         Assert.NotNull(document);
@@ -94,8 +94,8 @@ public class PdfDocumentSecurityTests
         }
 
         // Act
-        using var stream = File.OpenRead(testFilePath);
-        using var document = PdfDocument.Load(stream, "", leaveOpen: false);
+        using FileStream stream = File.OpenRead(testFilePath);
+        using PdfDocument document = PdfDocument.Load(stream, "", leaveOpen: false);
 
         // Assert
         Assert.NotNull(document);
@@ -110,11 +110,11 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act
-        using var document = PdfDocument.Load(testFilePath);
+        using PdfDocument document = PdfDocument.Load(testFilePath);
 
         // Assert
         Assert.True(document.IsEncrypted);
@@ -132,11 +132,11 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act
-        using var document = PdfDocument.Load(testFilePath, password);
+        using PdfDocument document = PdfDocument.Load(testFilePath, password);
 
         // Assert
         Assert.True(document.IsEncrypted);
@@ -154,7 +154,7 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act & Assert
@@ -170,11 +170,11 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act
-        using var document = PdfDocument.Load(testFilePath);
+        using PdfDocument document = PdfDocument.Load(testFilePath);
 
         // Assert
         Assert.True(document.IsEncrypted);
@@ -192,11 +192,11 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act
-        using var document = PdfDocument.Load(testFilePath, password);
+        using PdfDocument document = PdfDocument.Load(testFilePath, password);
 
         // Assert
         Assert.True(document.IsEncrypted);
@@ -214,7 +214,7 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act & Assert
@@ -230,11 +230,11 @@ public class PdfDocumentSecurityTests
 
         if (!File.Exists(testFilePath))
         {
-            return; // Skip if test file not generated yet
+            return; // Skip if the test file not generated yet
         }
 
         // Act
-        using var document = PdfDocument.Load(testFilePath);
+        using PdfDocument document = PdfDocument.Load(testFilePath);
 
         // Assert
         Assert.True(document.IsEncrypted);

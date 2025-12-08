@@ -6,16 +6,6 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Parsing;
 
 /// <summary>
-/// Result from parsing cross-reference data
-/// </summary>
-internal class PdfXrefParseResult(PdfXrefTable table, PdfDictionary? trailerDictionary, bool isXRefStream)
-{
-    public PdfXrefTable Table { get; } = table;
-    public PdfDictionary? TrailerDictionary { get; } = trailerDictionary;
-    public bool IsXRefStream { get; } = isXRefStream;
-}
-
-/// <summary>
 /// Parses PDF cross-reference tables (ISO 32000-1:2008 section 7.5.4)
 /// and cross-reference streams (ISO 32000-1:2008 section 7.5.8)
 /// </summary>
@@ -193,7 +183,7 @@ internal class PdfXrefParser
     /// <summary>
     /// Parses binary cross-reference entries from decoded stream data
     /// </summary>
-    private void ParseXRefStreamEntries(PdfXrefTable table, byte[] data, int[] fieldWidths, int[] index)
+    private static void ParseXRefStreamEntries(PdfXrefTable table, byte[] data, int[] fieldWidths, int[] index)
     {
         int bytesPerEntry = fieldWidths[0] + fieldWidths[1] + fieldWidths[2];
         var dataOffset = 0;
@@ -240,7 +230,7 @@ internal class PdfXrefParser
     /// <summary>
     /// Reads a big-endian integer from a byte array
     /// </summary>
-    private long ReadBigEndianInt(byte[] data, int offset, int length)
+    private static long ReadBigEndianInt(byte[] data, int offset, int length)
     {
         long value = 0;
         for (var i = 0; i < length; i++)

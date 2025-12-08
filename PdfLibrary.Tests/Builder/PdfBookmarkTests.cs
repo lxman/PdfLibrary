@@ -1,4 +1,6 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Builder.Bookmark;
+using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Tests.Builder;
 
@@ -8,7 +10,7 @@ public class PdfBookmarkTests
     public void AddBookmark_CreatesBookmarkWithTitle()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddBookmark("Chapter 1", 0);
 
@@ -21,7 +23,7 @@ public class PdfBookmarkTests
     public void AddBookmark_WithConfiguration_SetsPageIndex()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
             .AddBookmark("Chapter 2", b => b.ToPage(1));
@@ -35,9 +37,9 @@ public class PdfBookmarkTests
     public void AddBookmark_WithOutParameter_ReturnsBookmark()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Chapter 1", out var bookmark);
+            .AddBookmark("Chapter 1", out PdfBookmark bookmark);
 
         // Assert
         Assert.NotNull(bookmark);
@@ -48,7 +50,7 @@ public class PdfBookmarkTests
     public void AddBookmark_MultipleBookmarks_AllCreated()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
             .AddPage(p => p.AddText("Page 3", 100, 700))
@@ -65,10 +67,10 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_ToPage_SetsDestinationPage()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.ToPage(1));
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.ToPage(1));
 
         // Assert
         Assert.Equal(1, bookmark.Destination.PageIndex);
@@ -78,9 +80,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_FitPage_SetsDestinationType()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.FitPage());
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.FitPage());
 
         // Assert
         Assert.Equal(PdfDestinationType.Fit, bookmark.Destination.Type);
@@ -90,9 +92,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_FitWidth_SetsDestinationType()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.FitWidth(700));
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.FitWidth(700));
 
         // Assert
         Assert.Equal(PdfDestinationType.FitH, bookmark.Destination.Type);
@@ -103,9 +105,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_AtPosition_SetsXYZDestination()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.AtPosition(100, 500, 1.5));
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.AtPosition(100, 500, 1.5));
 
         // Assert
         Assert.Equal(PdfDestinationType.XYZ, bookmark.Destination.Type);
@@ -118,9 +120,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_Collapsed_SetsIsOpenFalse()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.Collapsed());
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.Collapsed());
 
         // Assert
         Assert.False(bookmark.IsOpen);
@@ -130,9 +132,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_Bold_SetsIsBoldTrue()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.Bold());
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.Bold());
 
         // Assert
         Assert.True(bookmark.IsBold);
@@ -142,9 +144,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_Italic_SetsIsItalicTrue()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.Italic());
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.Italic());
 
         // Assert
         Assert.True(bookmark.IsItalic);
@@ -154,9 +156,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_WithColor_SetsTextColor()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Test", out var bookmark, b => b.WithColor(PdfColor.Blue));
+            .AddBookmark("Test", out PdfBookmark bookmark, b => b.WithColor(PdfColor.Blue));
 
         // Assert
         Assert.NotNull(bookmark.TextColor);
@@ -166,9 +168,9 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_AddChild_CreatesNestedBookmark()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
-            .AddBookmark("Parent", out var parent, b => b
+            .AddBookmark("Parent", out PdfBookmark parent, b => b
                 .AddChild("Child 1")
                 .AddChild("Child 2"));
 
@@ -182,10 +184,10 @@ public class PdfBookmarkTests
     public void PdfBookmarkBuilder_AddChild_WithConfiguration()
     {
         // Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Page 1", 100, 700))
             .AddPage(p => p.AddText("Page 2", 100, 700))
-            .AddBookmark("Parent", out var parent, b => b
+            .AddBookmark("Parent", out PdfBookmark parent, b => b
                 .ToPage(0)
                 .AddChild("Child", c => c.ToPage(1).Bold()));
 
@@ -199,7 +201,7 @@ public class PdfBookmarkTests
     public void Save_WithBookmarks_ProducesValidPdf()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Chapter 1", 100, 700))
             .AddPage(p => p.AddText("Chapter 2", 100, 700))
             .AddBookmark("Chapter 1", 0)
@@ -221,7 +223,7 @@ public class PdfBookmarkTests
     public void Save_WithBookmarks_ContainsOutlines()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Test", 100, 700))
             .AddBookmark("Test Bookmark", 0);
 
@@ -239,7 +241,7 @@ public class PdfBookmarkTests
     public void Save_WithBookmarks_ContainsPageModeUseOutlines()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Test", 100, 700))
             .AddBookmark("Bookmark", 0);
 
@@ -255,7 +257,7 @@ public class PdfBookmarkTests
     public void Save_WithNestedBookmarks_ContainsHierarchy()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Parent", b => b
                 .AddChild("Child 1")
@@ -277,7 +279,7 @@ public class PdfBookmarkTests
     public void Save_WithBoldBookmark_ContainsFlagsEntry()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Bold Bookmark", b => b.Bold());
 
@@ -293,7 +295,7 @@ public class PdfBookmarkTests
     public void Save_WithItalicBookmark_ContainsFlagsEntry()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Italic Bookmark", b => b.Italic());
 
@@ -309,7 +311,7 @@ public class PdfBookmarkTests
     public void Save_WithBoldItalicBookmark_ContainsCombinedFlags()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Bold Italic", b => b.Bold().Italic());
 
@@ -325,7 +327,7 @@ public class PdfBookmarkTests
     public void Save_WithColoredBookmark_ContainsColorArray()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Red Bookmark", b => b.WithColor(PdfColor.Red));
 
@@ -341,7 +343,7 @@ public class PdfBookmarkTests
     public void Save_WithFitDestination_ContainsFitOperator()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Fit Page", b => b.FitPage());
 
@@ -357,7 +359,7 @@ public class PdfBookmarkTests
     public void Save_WithFitWidthDestination_ContainsFitHOperator()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Fit Width", b => b.FitWidth(700));
 
@@ -373,7 +375,7 @@ public class PdfBookmarkTests
     public void Save_WithXYZDestination_ContainsXYZOperator()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Position", b => b.AtPosition(100, 500, 1.0));
 
@@ -389,7 +391,7 @@ public class PdfBookmarkTests
     public void Save_WithCollapsedBookmark_ContainsNegativeCount()
     {
         // Arrange
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Parent", b => b
                 .Collapsed()
@@ -408,7 +410,7 @@ public class PdfBookmarkTests
     public void PageContent_WithoutBookmarks_StillWorks()
     {
         // Arrange & Act - document without bookmarks
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("No bookmarks here", 100, 700));
 
         byte[] pdfData = builder.ToByteArray();
@@ -424,7 +426,7 @@ public class PdfBookmarkTests
     public void AddBookmark_DeepNesting_Works()
     {
         // Arrange & Act - 3 levels deep
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(p => p.AddText("Content", 100, 700))
             .AddBookmark("Level 1", b => b
                 .AddChild("Level 2", c => c

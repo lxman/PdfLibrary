@@ -1,46 +1,6 @@
 namespace PdfLibrary.Security;
 
 /// <summary>
-/// Represents PDF document permissions as defined in ISO 32000-1:2008 Table 22.
-/// These permissions are set by the document creator and enforced by PDF readers.
-/// Note: These are "honor system" restrictions - the content is still decryptable.
-/// </summary>
-[Flags]
-public enum PdfPermissionFlags
-{
-    /// <summary>No permissions granted</summary>
-    None = 0,
-
-    /// <summary>Bit 3: Print the document</summary>
-    Print = 1 << 2,
-
-    /// <summary>Bit 4: Modify contents (other than annotations, form fields, etc.)</summary>
-    ModifyContents = 1 << 3,
-
-    /// <summary>Bit 5: Copy or extract text and graphics</summary>
-    CopyContent = 1 << 4,
-
-    /// <summary>Bit 6: Add or modify annotations and form fields</summary>
-    ModifyAnnotations = 1 << 5,
-
-    /// <summary>Bit 9: Fill in form fields (even if bit 6 is clear)</summary>
-    FillForms = 1 << 8,
-
-    /// <summary>Bit 10: Extract text/graphics for accessibility</summary>
-    ExtractForAccessibility = 1 << 9,
-
-    /// <summary>Bit 11: Assemble document (insert, rotate, delete pages, bookmarks)</summary>
-    AssembleDocument = 1 << 10,
-
-    /// <summary>Bit 12: Print high quality (degraded printing if clear)</summary>
-    PrintHighQuality = 1 << 11,
-
-    /// <summary>All permissions granted</summary>
-    All = Print | ModifyContents | CopyContent | ModifyAnnotations |
-          FillForms | ExtractForAccessibility | AssembleDocument | PrintHighQuality
-}
-
-/// <summary>
 /// Provides a friendly API for checking PDF document permissions.
 /// </summary>
 public class PdfPermissions

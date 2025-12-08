@@ -6,27 +6,6 @@ using PdfLibrary.Core.Primitives;
 namespace PdfLibrary.Security;
 
 /// <summary>
-/// Encryption method used by the PDF.
-/// </summary>
-internal enum PdfEncryptionMethod
-{
-    /// <summary>No encryption</summary>
-    None,
-
-    /// <summary>RC4 with 40-bit key (V=1, R=2)</summary>
-    Rc4_40,
-
-    /// <summary>RC4 with 128-bit key (V=2, R=3)</summary>
-    Rc4_128,
-
-    /// <summary>AES-128 (V=4, R=4)</summary>
-    Aes128,
-
-    /// <summary>AES-256 (V=5, R=5 or R=6)</summary>
-    Aes256
-}
-
-/// <summary>
 /// Handles PDF document decryption according to ISO 32000-1:2008 section 7.6
 /// and ISO 32000-2:2020 for AES-256.
 /// Supports:
@@ -54,7 +33,6 @@ internal class PdfDecryptor
     private readonly int _version;
     private readonly int _revision;
     private readonly byte[] _documentId;
-    private readonly PdfEncryptionMethod _method;
     private readonly bool _encryptMetadata;
 
     // Crypt filter settings (V=4+)
@@ -69,7 +47,7 @@ internal class PdfDecryptor
     /// <summary>
     /// Gets the encryption method used.
     /// </summary>
-    public PdfEncryptionMethod Method => _method;
+    public PdfEncryptionMethod Method { get; set; }
 
     /// <summary>
     /// Gets the document permissions.
@@ -113,7 +91,7 @@ internal class PdfDecryptor
         _encryptMetadata = GetBoolValue(encryptDict, "EncryptMetadata", true);
 
         // Determine encryption method and key length
-        _method = DetermineEncryptionMethod(encryptDict);
+        Method = DetermineEncryptionMethod(encryptDict);
 
         // Adjust key length based on version
         switch (_version)
@@ -183,7 +161,7 @@ internal class PdfDecryptor
     /// <summary>
     /// Determines the encryption method for V=4 (can be RC4 or AES-128).
     /// </summary>
-    private PdfEncryptionMethod DetermineV4Method(PdfDictionary encryptDict)
+    private static PdfEncryptionMethod DetermineV4Method(PdfDictionary encryptDict)
     {
         // Check crypt filters
         if (!encryptDict.TryGetValue(new PdfName("CF"), out PdfObject cfObj) || cfObj is not PdfDictionary cf)
@@ -334,7 +312,7 @@ internal class PdfDecryptor
         if (data.Length == 0)
             return data;
 
-        return _method switch
+        return Method switch
         {
             PdfEncryptionMethod.Rc4_40 or
             PdfEncryptionMethod.Rc4_128 => DecryptRc4(data, objectNumber, generationNumber),
@@ -622,13 +600,4 @@ internal class PdfDecryptor
             return strVal.Bytes;
         return null;
     }
-}
-
-/// <summary>
-/// Exception thrown when PDF security operations fail.
-/// </summary>
-internal class PdfSecurityException : Exception
-{
-    public PdfSecurityException(string message) : base(message) { }
-    public PdfSecurityException(string message, Exception inner) : base(message, inner) { }
 }

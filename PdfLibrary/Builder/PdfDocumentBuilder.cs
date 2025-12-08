@@ -1,3 +1,6 @@
+using PdfLibrary.Builder.Bookmark;
+using PdfLibrary.Builder.Layer;
+using PdfLibrary.Builder.Page;
 using PdfLibrary.Fonts.Embedded;
 
 namespace PdfLibrary.Builder;
