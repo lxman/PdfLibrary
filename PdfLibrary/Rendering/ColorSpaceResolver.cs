@@ -241,13 +241,32 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
                 switch (result.Length)
                 {
+                    case 4:
+                    {
+                        // CMYK output
+                        color = [result[0], result[1], result[2], result[3]];
+                        colorSpaceName = "DeviceCMYK";
+                        break;
+                    }
                     case >= 3:
                     {
-                        // RGB output from tint transform
-                        color = [result[0], result[1], result[2]];
-                        colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
-                        if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
+                        // Check if this is Lab color space
+                        if (altSpace == "Lab" && result.Length == 3)
+                        {
+                            // Convert Lab to RGB
+                            double[] rgb = LabToRgb(result[0], result[1], result[2], alternateObj as PdfArray);
+                            color = [rgb[0], rgb[1], rgb[2]];
                             colorSpaceName = "DeviceRGB";
+                            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Lab -> RGB conversion: L={result[0]:F2}, a={result[1]:F2}, b={result[2]:F2} -> R={rgb[0]:F3}, G={rgb[1]:F3}, B={rgb[2]:F3}");
+                        }
+                        else
+                        {
+                            // RGB output from tint transform
+                            color = [result[0], result[1], result[2]];
+                            colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
+                            if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
+                                colorSpaceName = "DeviceRGB";
+                        }
                         break;
                     }
                     case 1:
@@ -256,16 +275,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
                         colorSpaceName = "DeviceGray";
                         break;
                     default:
-                    {
-                        if (result.Length == 4)
-                        {
-                            // CMYK output
-                            color = [result[0], result[1], result[2], result[3]];
-                            colorSpaceName = "DeviceCMYK";
-                        }
-
+                        // Unexpected component count
                         break;
-                    }
                 }
             }
             else
@@ -384,8 +395,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             paletteIndex = Math.Clamp(paletteIndex, 0, hival);
         }
 
-        // Extract color components from palette
-        // Palette is stored as consecutive bytes: [C1_0, C2_0, C3_0, C1_1, C2_1, C3_1, ...]
+        // Extract color components from the palette
+        // It is stored as consecutive bytes: [C1_0, C2_0, C3_0, C1_1, C2_1, C3_1, ...]
         int bytesPerEntry = baseComponents;
         int byteOffset = paletteIndex * bytesPerEntry;
 
@@ -409,13 +420,14 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Now we have the color from the palette, resolve the base color space if needed
         color = paletteColor;
 
-        // If base color space is ICCBased or another complex type, resolve it recursively
-        if (baseObj is PdfArray baseArray2 && baseArray2.Count >= 2 && baseArray2[0] is PdfName { Value: "ICCBased" })
+        // If the base color space is ICCBased or another complex type, resolve it recursively
+        if (baseObj is PdfArray baseArray2 and [PdfName { Value: "ICCBased" }, _, ..])
         {
             ResolveICCBased(baseArray2, ref baseColorSpace, ref color);
         }
 
         // Set the resolved color space
+        if (color is null) return;
         colorSpaceName = baseColorSpace switch
         {
             "ICCBased" => color.Count switch
@@ -428,7 +440,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             _ => baseColorSpace ?? "DeviceRGB"
         };
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
+        PdfLogger.Log(LogCategory.Graphics,
+            $"RESOLVE Indexed END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
     }
 
     /// <summary>
@@ -444,28 +457,126 @@ internal class ColorSpaceResolver(PdfDocument? document)
             color = [value, value, value];
             colorSpaceName = "DeviceRGB";
         }
-        else if (altSpace is "DeviceRGB" or "CalRGB")
+        else switch (altSpace)
         {
-            double value = 1.0 - tint;
-            color = [value, value, value];
-            colorSpaceName = "DeviceRGB";
+            case "DeviceRGB" or "CalRGB":
+            {
+                double value = 1.0 - tint;
+                color = [value, value, value];
+                colorSpaceName = "DeviceRGB";
+                break;
+            }
+            case "DeviceGray" or "CalGray":
+            {
+                double value = 1.0 - tint;
+                color = [value];
+                colorSpaceName = "DeviceGray";
+                break;
+            }
+            case "DeviceCMYK":
+                color = [0.0, 0.0, 0.0, tint];
+                colorSpaceName = "DeviceCMYK";
+                break;
+            default:
+            {
+                double value = 1.0 - tint;
+                color = [value, value, value];
+                colorSpaceName = "DeviceRGB";
+                break;
+            }
         }
-        else if (altSpace is "DeviceGray" or "CalGray")
+    }
+
+    /// <summary>
+    /// Converts CIE Lab color values to RGB
+    /// </summary>
+    /// <param name="L">L* value (0-100)</param>
+    /// <param name="a">a* value (-128 to 127)</param>
+    /// <param name="b">b* value (-128 to 127)</param>
+    /// <param name="labArray">Optional Lab color space array with WhitePoint</param>
+    /// <returns>RGB values in 0.0-1.0 range</returns>
+    private static double[] LabToRgb(double L, double a, double b, PdfArray? labArray)
+    {
+        // Get white point from Lab color space definition (default to D65)
+        double xn = 0.95047, yn = 1.0, zn = 1.08883;  // D65 white point
+
+        if (labArray is { Count: >= 2 } && labArray[1] is PdfDictionary labDict)
         {
-            double value = 1.0 - tint;
-            color = [value];
-            colorSpaceName = "DeviceGray";
+            if (labDict.TryGetValue(new PdfName("WhitePoint"), out PdfObject? wpObj) && wpObj is PdfArray wpArray && wpArray.Count >= 3)
+            {
+                xn = wpArray[0] switch
+                {
+                    PdfInteger intVal => intVal.Value,
+                    PdfReal realVal => realVal.Value,
+                    _ => xn
+                };
+                yn = wpArray[1] switch
+                {
+                    PdfInteger intVal => intVal.Value,
+                    PdfReal realVal => realVal.Value,
+                    _ => yn
+                };
+                zn = wpArray[2] switch
+                {
+                    PdfInteger intVal => intVal.Value,
+                    PdfReal realVal => realVal.Value,
+                    _ => zn
+                };
+
+                // Validate WhitePoint values - if they seem incorrect, fall back to D65
+                // D65 should have approximately: xn≈0.95, yn=1.0, zn≈1.09
+                if (xn < 0.90 || xn > 1.00 || yn < 0.95 || yn > 1.05 || zn < 1.00 || zn > 1.20)
+                {
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Invalid Lab WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}] detected, using D65 instead");
+                    xn = 0.95047;
+                    yn = 1.0;
+                    zn = 1.08883;
+                }
+                else
+                {
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Using PDF WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}]");
+                }
+            }
         }
-        else if (altSpace == "DeviceCMYK")
+
+        // Lab to XYZ conversion
+        double fy = (L + 16.0) / 116.0;
+        double fx = fy + (a / 500.0);
+        double fz = fy - (b / 200.0);
+
+        double x = xn * InverseF(fx);
+        double y = yn * InverseF(fy);
+        double z = zn * InverseF(fz);
+
+        // XYZ to sRGB (D65 illuminant) conversion matrix
+        double r = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
+        double g = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z;
+        double B = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
+
+        r = GammaCorrection(r);
+        g = GammaCorrection(g);
+        B = GammaCorrection(B);
+
+        // Clamp to [0, 1] range
+        r = Math.Clamp(r, 0.0, 1.0);
+        g = Math.Clamp(g, 0.0, 1.0);
+        B = Math.Clamp(B, 0.0, 1.0);
+
+        return [r, g, B];
+
+        // Inverse companding function
+        static double InverseF(double t)
         {
-            color = [0.0, 0.0, 0.0, tint];
-            colorSpaceName = "DeviceCMYK";
+            const double delta = 6.0 / 29.0;
+            return t > delta ? t * t * t : 3.0 * delta * delta * (t - 4.0 / 29.0);
         }
-        else
+
+        // Apply sRGB gamma correction
+        static double GammaCorrection(double c)
         {
-            double value = 1.0 - tint;
-            color = [value, value, value];
-            colorSpaceName = "DeviceRGB";
+            return c <= 0.0031308
+                ? 12.92 * c
+                : 1.055 * Math.Pow(c, 1.0 / 2.4) - 0.055;
         }
     }
 }
