@@ -65,13 +65,17 @@ internal sealed class PdfName : PdfObject
     }
 
     /// <summary>
-    /// Parses a PDF name from its string representation (with or without leading solidus)
+    /// Parses a PDF name from its string representation (with or without the leading solidus)
     /// Handles #XX hex escape sequences
     /// </summary>
     public static PdfName Parse(string input)
     {
-        if (string.IsNullOrEmpty(input))
-            throw new ArgumentException("Input cannot be null or empty", nameof(input));
+        // Handle null input
+        ArgumentNullException.ThrowIfNull(input);
+
+        // Handle empty input
+        if (input.Length == 0)
+            return new PdfName("");
 
         // Remove leading solidus if present
         string value = input.StartsWith('/') ? input[1..] : input;

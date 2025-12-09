@@ -71,7 +71,8 @@ internal class PdfXrefParser
                 continue;
 
             // Check if we've reached the trailer
-            if (line.Trim() == "trailer")
+            // Handle both "trailer" on its own line and "trailer<<...>>" on same line
+            if (line.TrimStart().StartsWith("trailer"))
             {
                 // Move back before "trailer" keyword
                 _stream.Position = position;
