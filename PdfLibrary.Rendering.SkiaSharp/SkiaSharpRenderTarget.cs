@@ -873,7 +873,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     // Advance by the PDF-specified width
                     // PDF widths are in glyph space (1/1000 em units), already scaled by effectiveFontSize/1000
                     // through the fallbackMatrix transformation
-                    currentX += pdfWidth;
+                    // Handle horizontal flips:
+                    // - FontSize < 0 is handled by canvas scaling (line 856-858) which flips glyph visually
+                    // - Advance direction is determined ONLY by TextMatrix.M11 (text flow direction)
+                    // - TextMatrix.M11 < 0 means text flows left, so flip advance
+                    double advanceSign = state.TextMatrix.M11 < 0 ? -1.0 : 1.0;
+                    currentX += Convert.ToSingle(pdfWidth * advanceSign);
                 }
             }
             finally
@@ -1018,7 +1023,15 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-ZERO: char='{displayChar}' (charCode={charCode}), glyphId=0, skipping");
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i];
+                    {
+                        // Handle horizontal flips: Use XOR logic because:
+                        // - FontSize < 0 scales glyph by negative value, causing horizontal flip (vertical flip is corrected via M22 negation)
+                        // - TextMatrix.M11 < 0 flips via transformation matrix
+                        // - One flip = backwards, two flips = normal
+                        bool flipXSkip = (state.FontSize < 0) != (state.TextMatrix.M11 < 0);  // XOR
+                        double advanceSignSkip = flipXSkip ? -1.0 : 1.0;
+                        currentX += glyphWidths[i] * advanceSignSkip;
+                    }
                     continue;
                 }
 
@@ -1080,7 +1093,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     }
 
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i];
+                    {
+                        // Handle horizontal flips: Use XOR logic (same as glyphId == 0 case)
+                        bool flipXNull = (state.FontSize < 0) != (state.TextMatrix.M11 < 0);  // XOR
+                        double advanceSignNull = flipXNull ? -1.0 : 1.0;
+                        currentX += glyphWidths[i] * advanceSignNull;
+                    }
                     continue;
                 }
 
@@ -1089,7 +1107,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                     PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-EMPTY: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline.IsEmpty=true");
                     // Empty glyph (e.g., space), just advance
                     if (i < glyphWidths.Count)
-                        currentX += glyphWidths[i];
+                    {
+                        // Handle horizontal flips: Use XOR logic (same as glyphId == 0 case)
+                        bool flipXEmpty = (state.FontSize < 0) != (state.TextMatrix.M11 < 0);  // XOR
+                        double advanceSignEmpty = flipXEmpty ? -1.0 : 1.0;
+                        currentX += glyphWidths[i] * advanceSignEmpty;
+                    }
                     continue;
                 }
 
@@ -1322,8 +1345,11 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
                 // Advance to the next glyph position
                 // NOTE: glyphWidths already include horizontal scaling from PdfRenderer,
                 // so we do NOT multiply by tHs again here
-                if (i < glyphWidths.Count)
-                    currentX += glyphWidths[i];
+                if (i >= glyphWidths.Count) continue;
+                // Handle horizontal flips: Use XOR logic (same as glyphId == 0 case)
+                bool flipX = (state.FontSize < 0) != (state.TextMatrix.M11 < 0);  // XOR
+                double advanceSign = flipX ? -1.0 : 1.0;
+                currentX += glyphWidths[i] * advanceSign;
             }
 
             return true; // Successfully rendered with glyph outlines
