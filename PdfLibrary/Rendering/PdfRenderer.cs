@@ -82,11 +82,14 @@ public class PdfRenderer : PdfContentProcessor
         double cropOffsetX = cropBox.X1;
         double cropOffsetY = cropBox.Y1;
 
-        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}, CropBox={cropBox}");
+        // Get page rotation (0, 90, 180, or 270 degrees clockwise)
+        int rotation = page.Rotate;
+
+        PdfLogger.Log(LogCategory.Transforms, $"RenderPage: MediaBox={mediaBox}, CropBox={cropBox}, Rotation={rotation}°");
         PdfLogger.Log(LogCategory.Transforms, $"RenderPage: CropOffset=({cropOffsetX:F2}, {cropOffsetY:F2}), Scale={scale:F2}, OutputSize={width * scale:F0}x{height * scale:F0}");
 
-        // Begin the page lifecycle - pass CropBox dimensions and offset
-        _target.BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY);
+        // Begin the page lifecycle - pass CropBox dimensions, offset, and rotation
+        _target.BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY, rotation);
 
         Stopwatch? contentStopwatch = null;
         Stopwatch? annotationStopwatch = null;

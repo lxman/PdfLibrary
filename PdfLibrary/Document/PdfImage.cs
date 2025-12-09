@@ -361,6 +361,13 @@ public class PdfImage
             return GetDecodedDataWithCcittFix();
         }
 
+        // For JBIG2Decode, we need to resolve JBIG2Globals indirect references
+        // because PdfStream.ConvertToDecodeParams() doesn't handle indirect references
+        if (IsJbig2Filter())
+        {
+            return GetDecodedDataWithJbig2Fix();
+        }
+
         return _stream.GetDecodedData(_document?.Decryptor);
     }
 
@@ -376,6 +383,22 @@ public class PdfImage
         {
             PdfName name => name.Value is "CCITTFaxDecode" or "CCF",
             PdfArray array => array.Count > 0 && array[0] is PdfName name && name.Value is "CCITTFaxDecode" or "CCF",
+            _ => false
+        };
+    }
+
+    /// <summary>
+    /// Checks if the image uses JBIG2Decode filter
+    /// </summary>
+    private bool IsJbig2Filter()
+    {
+        if (!_stream.Dictionary.TryGetValue(PdfName.Filter, out PdfObject filterObj))
+            return false;
+
+        return filterObj switch
+        {
+            PdfName name => name.Value is "JBIG2Decode",
+            PdfArray array => array.Count > 0 && array[0] is PdfName name && name.Value is "JBIG2Decode",
             _ => false
         };
     }
@@ -426,6 +449,61 @@ public class PdfImage
             data = _document.Decryptor.Decrypt(data, _stream.ObjectNumber, _stream.GenerationNumber);
         }
         var filter = new CcittFaxDecodeFilter();
+        return filter.Decode(data, decodeParams);
+    }
+
+    /// <summary>
+    /// Gets decoded data for JBIG2 images, resolving JBIG2Globals indirect references
+    /// </summary>
+    private byte[] GetDecodedDataWithJbig2Fix()
+    {
+        var decodeParams = new Dictionary<string, object>();
+
+        // Copy existing decode params and resolve JBIG2Globals reference
+        if (_stream.Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject decodeParmObj) && decodeParmObj is PdfDictionary decodeParmDict)
+        {
+            foreach (KeyValuePair<PdfName, PdfObject> kvp in decodeParmDict)
+            {
+                // Special handling for JBIG2Globals - resolve indirect reference
+                if (kvp.Key.Value == "JBIG2Globals" && kvp.Value is PdfIndirectReference globalsRef)
+                {
+                    // Resolve the indirect reference to get the globals stream
+                    if (_document is not null)
+                    {
+                        PdfObject? globalsObj = _document.GetObject(globalsRef.ObjectNumber);
+                        if (globalsObj is PdfStream globalsStream)
+                        {
+                            // Decode the globals stream and add the bytes to decode params
+                            byte[] globalsBytes = globalsStream.GetDecodedData(_document.Decryptor);
+                            decodeParams["JBIG2Globals"] = globalsBytes;
+                            continue; // Skip the default value handling below
+                        }
+                    }
+                }
+
+                // Default handling for other parameters
+                object? value = kvp.Value switch
+                {
+                    PdfInteger intVal => intVal.Value,
+                    PdfReal realVal => realVal.Value,
+                    PdfBoolean boolVal => (bool)boolVal,
+                    PdfName nameVal => nameVal.Value,
+                    _ => null
+                };
+
+                if (value is not null)
+                    decodeParams[kvp.Key.Value] = value;
+            }
+        }
+
+        // Decrypt data if necessary, then apply JBIG2 filter
+        byte[] data = _stream.Data;
+        if (_document?.Decryptor is not null && _stream.IsIndirect)
+        {
+            data = _document.Decryptor.Decrypt(data, _stream.ObjectNumber, _stream.GenerationNumber);
+        }
+
+        var filter = new Jbig2DecodeFilter();
         return filter.Decode(data, decodeParams);
     }
 

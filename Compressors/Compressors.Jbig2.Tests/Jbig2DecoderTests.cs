@@ -9,7 +9,7 @@ namespace Compressors.Jbig2.Tests
         [Fact]
         public void Decompress_EmptyData_ReturnsEmptyArray()
         {
-            var result = Jbig2.Decompress(Array.Empty<byte>(), out int width, out int height);
+            byte[] result = Jbig2.Decompress([], out int width, out int height);
 
             Assert.Empty(result);
             Assert.Equal(0, width);
@@ -19,7 +19,7 @@ namespace Compressors.Jbig2.Tests
         [Fact]
         public void Decompress_NullData_ReturnsEmptyArray()
         {
-            var result = Jbig2.Decompress(null!, out int width, out int height);
+            byte[] result = Jbig2.Decompress(null!, out int width, out int height);
 
             Assert.Empty(result);
             Assert.Equal(0, width);
@@ -29,7 +29,7 @@ namespace Compressors.Jbig2.Tests
         [Fact]
         public void DecompressToBitmap_EmptyData_ReturnsEmptyArray()
         {
-            var result = Jbig2.DecompressToBitmap(Array.Empty<byte>(), out int width, out int height);
+            byte[] result = Jbig2.DecompressToBitmap([], out int width, out int height);
 
             Assert.Empty(result);
             Assert.Equal(0, width);
@@ -40,7 +40,7 @@ namespace Compressors.Jbig2.Tests
         public void Decompress_WithGlobals_EmptyData_ReturnsEmptyArray()
         {
             var globals = new byte[] { 0x00, 0x01, 0x02 };
-            var result = Jbig2.Decompress(Array.Empty<byte>(), globals, out int width, out int height);
+            byte[] result = Jbig2.Decompress([], globals, out int width, out int height);
 
             Assert.Empty(result);
             Assert.Equal(0, width);
@@ -59,7 +59,7 @@ namespace Compressors.Jbig2.Tests
             byte[] data = File.ReadAllBytes(testDataPath);
 
             // Decode - should not crash
-            var result = Jbig2.Decompress(data, out int width, out int height);
+            byte[] result = Jbig2.Decompress(data, out int width, out int height);
 
             // Verify dimensions
             Assert.Equal(603, width);
@@ -80,7 +80,7 @@ namespace Compressors.Jbig2.Tests
             string testDataPath = Path.Combine("TestData", "jbig2_2005.jb2");
             byte[] data = File.ReadAllBytes(testDataPath);
 
-            var result = Jbig2.Decompress(data, out int width, out int height);
+            byte[] result = Jbig2.Decompress(data, out int width, out int height);
 
             Assert.Equal(583, width);
             Assert.Equal(707, height);
@@ -108,7 +108,7 @@ namespace Compressors.Jbig2.Tests
 
             // This previously crashed with IndexOutOfRangeException
             // The fix reads all symbol code lengths from bitstream, not just noOfSymbols
-            var result = Jbig2.Decompress(data, globals, out int width, out int height);
+            byte[] result = Jbig2.Decompress(data, globals, out int width, out int height);
 
             // If we get here without exception, the fix works!
             Assert.Equal(532, width);
@@ -127,7 +127,7 @@ namespace Compressors.Jbig2.Tests
             string testDataPath = Path.Combine("TestData", "jbig2_2042.jb2");
             byte[] data = File.ReadAllBytes(testDataPath);
 
-            var result = Jbig2.Decompress(data, out int width, out int height);
+            byte[] result = Jbig2.Decompress(data, out int width, out int height);
 
             Assert.Equal(513, width);
             Assert.Equal(722, height);
@@ -148,7 +148,7 @@ namespace Compressors.Jbig2.Tests
             byte[] data = File.ReadAllBytes(dataPath);
             byte[] globals = File.ReadAllBytes(globalsPath);
 
-            var result = Jbig2.Decompress(data, globals, out int width, out int height);
+            byte[] result = Jbig2.Decompress(data, globals, out int width, out int height);
 
             Assert.Equal(473, width);
             Assert.Equal(472, height);

@@ -172,11 +172,9 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                // Get page dimensions for the render target
-                PdfRectangle cropBox = page.GetCropBox();
-
                 // Get or create the render target with proper dimensions
-                SkiaSharpRenderTarget renderTarget = PdfRenderer.GetOrCreateRenderTarget(cropBox.Width, cropBox.Height, _zoomLevel);
+                // Use page.Width/Height which account for rotation (swap dimensions for 90°/270°)
+                SkiaSharpRenderTarget renderTarget = PdfRenderer.GetOrCreateRenderTarget(page.Width, page.Height, _zoomLevel);
 
                 // Use the simplified public API
                 page.Render(renderTarget, _currentPage, _zoomLevel);
@@ -211,9 +209,9 @@ public partial class MainWindow : Window
         // Calculate zoom to fit page height in the viewport
         PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
         if (page is null) return;
-        PdfRectangle cropBox = page.GetCropBox();
-        double viewportHeight = PdfScroll.ActualHeight - 20; // Account for margins
-        double zoom = viewportHeight / cropBox.Height;
+        double viewportHeight = PdfScroll.ActualHeight - 50; // Account for margins and prevent scrollbar
+        // Use page.Height which accounts for rotation
+        double zoom = viewportHeight / page.Height;
         await SetZoomAsync(zoom);
     }
 
@@ -222,9 +220,9 @@ public partial class MainWindow : Window
         // Calculate zoom to fit page width in the viewport
         PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
         if (page is null) return;
-        PdfRectangle cropBox = page.GetCropBox();
-        double viewportWidth = PdfScroll.ActualWidth - 20; // Account for margins/scrollbar
-        double zoom = viewportWidth / cropBox.Width;
+        double viewportWidth = PdfScroll.ActualWidth - 60; // Account for margins and prevent scrollbar
+        // Use page.Width which accounts for rotation
+        double zoom = viewportWidth / page.Width;
         await SetZoomAsync(zoom);
     }
 
@@ -335,10 +333,9 @@ public partial class MainWindow : Window
         PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
         if (page == null) return;
 
-        // Use CropBox for output dimensions (visible area)
-        PdfRectangle cropBox = page.GetCropBox();
-        var width = (int)(cropBox.Width * _zoomLevel);
-        var height = (int)(cropBox.Height * _zoomLevel);
+        // Use page dimensions which account for rotation
+        var width = (int)(page.Width * _zoomLevel);
+        var height = (int)(page.Height * _zoomLevel);
 
         var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfDoc);
         try
@@ -408,16 +405,14 @@ public partial class MainWindow : Window
         if (page == null)
             throw new InvalidOperationException("Page not found");
 
-        // Get page dimensions
-        PdfRectangle cropBox = page.GetCropBox();
-
         // Calculate scale to fit the page in the printable area while maintaining aspect ratio
-        double scaleX = targetWidth / cropBox.Width;
-        double scaleY = targetHeight / cropBox.Height;
+        // Use page.Width/Height which account for rotation
+        double scaleX = targetWidth / page.Width;
+        double scaleY = targetHeight / page.Height;
         double scale = Math.Min(scaleX, scaleY);
 
-        var width = (int)(cropBox.Width * scale);
-        var height = (int)(cropBox.Height * scale);
+        var width = (int)(page.Width * scale);
+        var height = (int)(page.Height * scale);
 
         // Render at calculated size using the simplified public API
         using var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfDoc);

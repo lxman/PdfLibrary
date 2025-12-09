@@ -24,7 +24,8 @@ public interface IRenderTarget
     /// <param name="scale">Scale factor for rendering (1.0 = 100%)</param>
     /// <param name="cropOffsetX">X offset of CropBox from MediaBox origin</param>
     /// <param name="cropOffsetY">Y offset of CropBox from MediaBox origin</param>
-    void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0);
+    /// <param name="rotation">Page rotation in degrees clockwise (0, 90, 180, or 270)</param>
+    void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0);
 
     /// <summary>
     /// Complete rendering of the current page.

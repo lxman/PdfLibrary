@@ -120,16 +120,24 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
     // ==================== PAGE LIFECYCLE ====================
 
-    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0)
     {
         CurrentPageNumber = pageNumber;
-        // Store the original PDF page dimensions (unscaled) for coordinate calculations
-        // These are CropBox dimensions (the visible area)
-        _pageWidth = width;
-        _pageHeight = height;
+        // Store the final page dimensions (after rotation, unscaled) for coordinate calculations
+        // For 90°/270° rotation, dimensions swap
+        if (rotation == 90 || rotation == 270)
+        {
+            _pageWidth = height;  // Swapped
+            _pageHeight = width;  // Swapped
+        }
+        else
+        {
+            _pageWidth = width;
+            _pageHeight = height;
+        }
         _scale = scale;
 
-        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}, Scale: {scale:F2}, CropOffset: ({cropOffsetX}, {cropOffsetY})");
+        PdfLogger.Log(LogCategory.Transforms, $"BeginPage: Page {pageNumber}, Size: {width}x{height}, Scale: {scale:F2}, CropOffset: ({cropOffsetX}, {cropOffsetY}), Rotation: {rotation}°");
 
         // Clear canvas for the new page (use configured background color)
         _canvas.Clear(_backgroundColor);
@@ -143,14 +151,72 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         // - Content at PDF coordinate (42, 60) should render at output pixel (0, height*scale) (bottom-left of output)
         // - We need to translate by (-cropOffsetX, -cropOffsetY) in PDF space BEFORE the Y-flip and scale
         //
+        // IMPORTANT: width and height parameters are UNROTATED CropBox dimensions
+        // (PdfRenderer passes cropBox.Width and cropBox.Height which are not rotation-adjusted)
+        //
         // Transform order (applied right to left):
         // 1. Translate by (-cropOffsetX, -cropOffsetY) - shift PDF coordinates so CropBox origin is at (0,0)
-        // 2. Scale by (scale, -scale) - scales content and flips Y
-        // 3. Translate by (0, height * scale) - moves origin to top-left of scaled output
-        Matrix3x2 initialTransform = Matrix3x2.CreateTranslation((float)-cropOffsetX, (float)-cropOffsetY)
-                                   * Matrix3x2.CreateScale((float)scale, (float)-scale)
-                                   * Matrix3x2.CreateTranslation(0, (float)(height * scale));
+        // 2. Apply rotation if needed (around center of unrotated page)
+        // 3. Scale by (scale, -scale) - scales content and flips Y
+        // 4. Translate by (0, finalHeight * scale) - moves origin to top-left of scaled output
 
+        Matrix3x2 initialTransform;
+
+        if (rotation == 0)
+        {
+            // No rotation - standard transform
+            initialTransform = Matrix3x2.CreateTranslation((float)-cropOffsetX, (float)-cropOffsetY)
+                             * Matrix3x2.CreateScale((float)scale, (float)-scale)
+                             * Matrix3x2.CreateTranslation(0, (float)(height * scale));
+        }
+        else
+        {
+            // Rotation is specified in degrees clockwise (0, 90, 180, or 270)
+            // Matrix3x2.CreateRotation() expects radians counterclockwise, so negate for clockwise
+            float rotationRadians = -(float)(rotation * Math.PI / 180.0);
+
+            // Calculate dimensions after rotation (swap for 90°/270°)
+            float finalWidth = (rotation == 90 || rotation == 270) ? (float)height : (float)width;
+            float finalHeight = (rotation == 90 || rotation == 270) ? (float)width : (float)height;
+
+            // Rotate around origin (0,0) in PDF space, then translate to position correctly
+            // After rotation, the page bounding box may be in negative coordinate space,
+            // so we need to translate it back to positive space.
+            //
+            // For each rotation angle, after rotating around origin:
+            // - 90° clockwise: translate by (0, width)
+            // - 180°: translate by (width, height)
+            // - 270° clockwise: translate by (height, 0)
+
+            float translateX = 0, translateY = 0;
+            if (rotation == 90)
+            {
+                translateX = 0;
+                translateY = (float)width;
+            }
+            else if (rotation == 180)
+            {
+                translateX = (float)width;
+                translateY = (float)height;
+            }
+            else if (rotation == 270)
+            {
+                translateX = (float)height;
+                translateY = 0;
+            }
+
+            // Transform order (right to left):
+            // 1. Remove crop offset in PDF space
+            // 2. Rotate around origin
+            // 3. Translate to move rotated content to positive coordinates
+            // 4. Scale and flip Y-axis
+            // 5. Position on canvas
+            initialTransform = Matrix3x2.CreateTranslation((float)-cropOffsetX, (float)-cropOffsetY)
+                             * Matrix3x2.CreateRotation(rotationRadians)
+                             * Matrix3x2.CreateTranslation(translateX, translateY)
+                             * Matrix3x2.CreateScale((float)scale, (float)-scale)
+                             * Matrix3x2.CreateTranslation(0, (float)(finalHeight * scale));
+        }
 
         // Store this as our base transformation
         // All PDF CTM transformations will be applied on top of this
@@ -2955,10 +3021,11 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
         _patternHeight = patternHeight;
     }
 
-    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0)
+    public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0)
     {
         // Pattern content uses pattern space coordinates, no additional transform needed
         // The canvas transformation is already set up by the caller
+        // Rotation is not applicable to pattern space - patterns are defined in their own coordinate system
     }
 
     public void EndPage() { }
