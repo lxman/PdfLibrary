@@ -5,9 +5,9 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
-
+  
   <ItemGroup>
-    <ProjectReference Include="..\..\JBig2Decoder.NETStandard\JBig2Decoder.NETStandard\JBig2Decoder.NETStandard.csproj" />
+    <PackageReference Include="JBig2Decoder.NETStandard" Version="1.5.2" />
   </ItemGroup>
 
 </Project>
