@@ -23,6 +23,9 @@ ITestDocument[] testDocuments =
     new TextLayoutTestDocument(),
     new TextRenderingTestDocument(),
     new EmbeddedFontsTestDocument(),
+    // Advanced features
+    new SeparationColorTestDocument(),
+    new AdvancedGraphicsStateTestDocument(),
     // Encrypted PDF test documents
     new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "", "owner"),
     new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "test123", "owner"),
@@ -85,7 +88,6 @@ static int GenerateBaseline(ITestDocument[] documents, string baseDir, string go
     foreach (ITestDocument doc in documents)
     {
         string pdfPath = Path.Combine(outputDir, $"{doc.Name}.pdf");
-        string imagePath = Path.Combine(outputDir, $"{doc.Name}_golden.png");
 
         Console.WriteLine($"  {doc.Name}");
         Console.WriteLine($"    {doc.Description}");
@@ -96,9 +98,20 @@ static int GenerateBaseline(ITestDocument[] documents, string baseDir, string go
             doc.Generate(pdfPath);
             Console.WriteLine($"    PDF: {pdfPath}");
 
-            // Render to image
-            PdfImageRenderer.RenderToImage(pdfPath, imagePath, scale);
-            Console.WriteLine($"    Image: {imagePath}");
+            // Detect number of pages in the generated PDF
+            int pageCount = PdfImageRenderer.GetPageCount(pdfPath);
+            Console.WriteLine($"    Pages: {pageCount}");
+
+            // Render each page to a separate image
+            for (int pageNum = 1; pageNum <= pageCount; pageNum++)
+            {
+                string imagePath = pageCount > 1
+                    ? Path.Combine(outputDir, $"{doc.Name}_Page{pageNum}_golden.png")
+                    : Path.Combine(outputDir, $"{doc.Name}_golden.png");
+
+                PdfImageRenderer.RenderToImage(pdfPath, imagePath, scale, pageNum);
+                Console.WriteLine($"    Image (Page {pageNum}): {imagePath}");
+            }
 
             success++;
         }
@@ -139,61 +152,85 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
 
     foreach (ITestDocument doc in documents)
     {
-        string goldenPdfPath = Path.Combine(goldenPath, $"{doc.Name}.pdf");
-        string goldenImagePath = Path.Combine(goldenPath, $"{doc.Name}_golden.png");
         string testPdfPath = Path.Combine(testPath, $"{doc.Name}.pdf");
-        string testImagePath = Path.Combine(testPath, $"{doc.Name}_actual.png");
-        string diffImagePath = Path.Combine(testPath, $"{doc.Name}_diff.png");
 
         Console.WriteLine($"  {doc.Name}");
 
         try
         {
-            // Check golden baseline exists
-            if (!File.Exists(goldenImagePath))
-            {
-                Console.WriteLine("    SKIP: No golden baseline found");
-                results.Add(new TestResult(doc.Name, doc.Description, false, 0, "No golden baseline - run 'baseline' first"));
-                failed++;
-                Console.WriteLine();
-                continue;
-            }
-
             // Generate test PDF
             doc.Generate(testPdfPath);
 
-            // Render test image
-            PdfImageRenderer.RenderToImage(testPdfPath, testImagePath, scale);
+            // Detect number of pages
+            int pageCount = PdfImageRenderer.GetPageCount(testPdfPath);
 
-            // Compare images
-            ComparisonResult comparison = ImageComparer.Compare(goldenImagePath, testImagePath, diffImagePath);
+            // Test each page
+            bool allPagesPassed = true;
+            double totalMatchPercentage = 0;
+            string? errorMessage = null;
 
-            if (!comparison.Success)
+            for (int pageNum = 1; pageNum <= pageCount; pageNum++)
             {
-                Console.WriteLine($"    FAIL: {comparison.Message}");
-                results.Add(new TestResult(doc.Name, doc.Description, false, 0, comparison.Message));
-                failed++;
+                string pageSuffix = pageCount > 1 ? $"_Page{pageNum}" : "";
+                string goldenImagePath = Path.Combine(goldenPath, $"{doc.Name}{pageSuffix}_golden.png");
+                string testImagePath = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_actual.png");
+                string diffImagePath = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_diff.png");
+
+                // Check golden baseline exists
+                if (!File.Exists(goldenImagePath))
+                {
+                    Console.WriteLine($"    Page {pageNum}: SKIP - No golden baseline found");
+                    errorMessage = $"No golden baseline for page {pageNum} - run 'baseline' first";
+                    allPagesPassed = false;
+                    continue;
+                }
+
+                // Render test image
+                PdfImageRenderer.RenderToImage(testPdfPath, testImagePath, scale, pageNum);
+
+                // Compare images
+                ComparisonResult comparison = ImageComparer.Compare(goldenImagePath, testImagePath, diffImagePath);
+
+                if (!comparison.Success)
+                {
+                    Console.WriteLine($"    Page {pageNum}: FAIL - {comparison.Message}");
+                    errorMessage = $"Page {pageNum}: {comparison.Message}";
+                    allPagesPassed = false;
+                }
+                else if (comparison.MatchPercentage >= threshold)
+                {
+                    Console.WriteLine($"    Page {pageNum}: PASS ({comparison.MatchPercentage:F2}% match)");
+                    totalMatchPercentage += comparison.MatchPercentage;
+
+                    // Clean up diff image for passing tests
+                    if (File.Exists(diffImagePath))
+                        File.Delete(diffImagePath);
+                }
+                else
+                {
+                    Console.WriteLine($"    Page {pageNum}: FAIL ({comparison.MatchPercentage:F2}% match, threshold {threshold}%)");
+                    errorMessage = $"Page {pageNum}: {comparison.MatchPercentage:F2}% match < {threshold}% threshold";
+                    allPagesPassed = false;
+                    totalMatchPercentage += comparison.MatchPercentage;
+                }
+
+                // Copy golden image to test dir for report
+                string goldenCopy = Path.Combine(testPath, $"{doc.Name}{pageSuffix}_golden.png");
+                File.Copy(goldenImagePath, goldenCopy, overwrite: true);
             }
-            else if (comparison.MatchPercentage >= threshold)
-            {
-                Console.WriteLine($"    PASS ({comparison.MatchPercentage:F2}% match)");
-                results.Add(new TestResult(doc.Name, doc.Description, true, comparison.MatchPercentage, null));
-                passed++;
 
-                // Clean up diff image for passing tests
-                if (File.Exists(diffImagePath))
-                    File.Delete(diffImagePath);
+            // Record overall result for this document
+            double avgMatchPercentage = pageCount > 0 ? totalMatchPercentage / pageCount : 0;
+            if (allPagesPassed)
+            {
+                results.Add(new TestResult(doc.Name, doc.Description, true, avgMatchPercentage, null));
+                passed++;
             }
             else
             {
-                Console.WriteLine($"    FAIL ({comparison.MatchPercentage:F2}% match, threshold {threshold}%)");
-                results.Add(new TestResult(doc.Name, doc.Description, false, comparison.MatchPercentage, null));
+                results.Add(new TestResult(doc.Name, doc.Description, false, avgMatchPercentage, errorMessage));
                 failed++;
             }
-
-            // Copy golden image to test dir for report
-            string goldenCopy = Path.Combine(testPath, $"{doc.Name}_golden.png");
-            File.Copy(goldenImagePath, goldenCopy, overwrite: true);
         }
         catch (Exception ex)
         {

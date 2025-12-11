@@ -364,6 +364,102 @@ public class PdfPathBuilder
         return this;
     }
 
+    // ==================== TRANSFORMATIONS ====================
+
+    /// <summary>
+    /// Apply a transformation matrix to this path
+    /// </summary>
+    public PdfPathBuilder WithTransform(System.Numerics.Matrix3x2 matrix)
+    {
+        _content.Transform = matrix;
+        return this;
+    }
+
+    /// <summary>
+    /// Translate (move) this path by the specified offset
+    /// </summary>
+    public PdfPathBuilder Translate(double x, double y)
+    {
+        var translation = System.Numerics.Matrix3x2.CreateTranslation((float)x, (float)y);
+        _content.Transform = _content.Transform.HasValue
+            ? translation * _content.Transform.Value
+            : translation;
+        return this;
+    }
+
+    /// <summary>
+    /// Scale this path by the specified factors
+    /// </summary>
+    public PdfPathBuilder Scale(double sx, double sy)
+    {
+        var scale = System.Numerics.Matrix3x2.CreateScale((float)sx, (float)sy);
+        _content.Transform = _content.Transform.HasValue
+            ? scale * _content.Transform.Value
+            : scale;
+        return this;
+    }
+
+    /// <summary>
+    /// Scale this path uniformly
+    /// </summary>
+    public PdfPathBuilder Scale(double s)
+    {
+        return Scale(s, s);
+    }
+
+    /// <summary>
+    /// Rotate this path by the specified angle in degrees
+    /// </summary>
+    public PdfPathBuilder Rotate(double angleDegrees)
+    {
+        double angleRadians = angleDegrees * Math.PI / 180.0;
+        var rotation = System.Numerics.Matrix3x2.CreateRotation((float)angleRadians);
+        _content.Transform = _content.Transform.HasValue
+            ? rotation * _content.Transform.Value
+            : rotation;
+        return this;
+    }
+
+    // ==================== ADVANCED GRAPHICS STATE ====================
+
+    /// <summary>
+    /// Enable or disable fill overprint
+    /// </summary>
+    public PdfPathBuilder WithFillOverprint(bool enabled = true)
+    {
+        _content.FillOverprint = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Enable or disable stroke overprint
+    /// </summary>
+    public PdfPathBuilder WithStrokeOverprint(bool enabled = true)
+    {
+        _content.StrokeOverprint = enabled;
+        return this;
+    }
+
+    /// <summary>
+    /// Set overprint mode (0 or 1)
+    /// </summary>
+    public PdfPathBuilder WithOverprintMode(int mode)
+    {
+        _content.OverprintMode = mode;
+        return this;
+    }
+
+    /// <summary>
+    /// Set blend mode
+    /// </summary>
+    public PdfPathBuilder WithBlendMode(string mode)
+    {
+        _content.BlendMode = mode;
+        return this;
+    }
+
+    // ==================== CLIPPING ====================
+
     /// <summary>
     /// Use this path as a clipping path
     /// </summary>

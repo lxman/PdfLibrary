@@ -16,6 +16,17 @@ using SixLabors.ImageSharp.PixelFormats;
 namespace PdfLibrary.Builder;
 
 /// <summary>
+/// Key for graphics state dictionary lookup
+/// </summary>
+internal record GraphicsStateKey(
+    double FillOpacity,
+    double StrokeOpacity,
+    bool FillOverprint,
+    bool StrokeOverprint,
+    int OverprintMode,
+    string? BlendMode);
+
+/// <summary>
 /// Writes PDF documents to files or streams
 /// </summary>
 public class PdfDocumentWriter
@@ -25,7 +36,8 @@ public class PdfDocumentWriter
     private readonly Dictionary<string, int> _fontObjects = new();
     private readonly Dictionary<string, int> _fontDescriptorObjects = new(); // For custom fonts
     private readonly List<(PdfImageContent image, int objectNumber)> _imageObjects = [];
-    private readonly Dictionary<(double fillOpacity, double strokeOpacity), int> _extGStateObjects = new(); // (fillOpacity, strokeOpacity) -> object number
+    private readonly Dictionary<GraphicsStateKey, int> _extGStateObjects = new();
+    private readonly Dictionary<string, int> _separationColorSpaces = new(); // ColorantName -> ObjectNumber
     private readonly Dictionary<int, int> _layerObjects = new(); // Layer.Id -> object number
     private readonly Dictionary<int, int> _bookmarkObjects = new(); // Bookmark.Id -> object number
     private readonly Dictionary<int, int> _annotationObjects = new(); // Annotation.Id -> object number
@@ -52,6 +64,8 @@ public class PdfDocumentWriter
         _fontObjects.Clear();
         _fontDescriptorObjects.Clear();
         _imageObjects.Clear();
+        _extGStateObjects.Clear();
+        _separationColorSpaces.Clear();
         _layerObjects.Clear();
         _bookmarkObjects.Clear();
         _annotationObjects.Clear();
@@ -133,7 +147,13 @@ public class PdfDocumentWriter
                 // Collect opacity values for ExtGState objects
                 if (image.Opacity < 1.0)
                 {
-                    (double, double) key = (image.Opacity, image.Opacity);
+                    var key = new GraphicsStateKey(
+                        FillOpacity: image.Opacity,
+                        StrokeOpacity: image.Opacity,
+                        FillOverprint: false,
+                        StrokeOverprint: false,
+                        OverprintMode: 0,
+                        BlendMode: null);
                     if (!_extGStateObjects.ContainsKey(key))
                     {
                         _extGStateObjects[key] = _nextObjectNumber++;
@@ -141,18 +161,99 @@ public class PdfDocumentWriter
                 }
             }
 
-            // Collect opacity values from path content
+            // Collect graphics state from path content
             foreach (PdfContentElement content in page.Content)
             {
                 if (content is not PdfPathContent path) continue;
 
-                bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
-                if (!needsOpacity) continue;
+                bool needsExtGState = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0 ||
+                                     path.FillOverprint || path.StrokeOverprint ||
+                                     path.OverprintMode != 0 || path.BlendMode != null;
+                if (!needsExtGState) continue;
 
-                (double FillOpacity, double StrokeOpacity) key = (path.FillOpacity, path.StrokeOpacity);
+                var key = new GraphicsStateKey(
+                    FillOpacity: path.FillOpacity,
+                    StrokeOpacity: path.StrokeOpacity,
+                    FillOverprint: path.FillOverprint,
+                    StrokeOverprint: path.StrokeOverprint,
+                    OverprintMode: path.OverprintMode,
+                    BlendMode: path.BlendMode);
                 if (!_extGStateObjects.ContainsKey(key))
                 {
                     _extGStateObjects[key] = _nextObjectNumber++;
+                }
+            }
+
+            // Collect Separation color spaces from all content
+            foreach (PdfContentElement content in page.Content)
+            {
+                if (content is PdfPathContent path)
+                {
+                    if (path.FillColor.HasValue && path.FillColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = path.FillColor.Value.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
+                    if (path.StrokeColor.HasValue && path.StrokeColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = path.StrokeColor.Value.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
+                }
+                else if (content is PdfRectangleContent rect)
+                {
+                    if (rect.FillColor.HasValue && rect.FillColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = rect.FillColor.Value.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
+                    if (rect.StrokeColor.HasValue && rect.StrokeColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = rect.StrokeColor.Value.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
+                }
+                else if (content is PdfLineContent line)
+                {
+                    if (line.StrokeColor.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = line.StrokeColor.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
+                }
+                else if (content is PdfTextContent text)
+                {
+                    if (text.FillColor.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = text.FillColor.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
+                    if (text.StrokeColor.HasValue && text.StrokeColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    {
+                        string colorantName = text.StrokeColor.Value.ColorantName ?? "Unknown";
+                        if (!_separationColorSpaces.ContainsKey(colorantName))
+                        {
+                            _separationColorSpaces[colorantName] = _nextObjectNumber++;
+                        }
+                    }
                 }
             }
         }
@@ -287,15 +388,41 @@ public class PdfDocumentWriter
             }
         }
 
-        // Write ExtGState objects for opacity
-        foreach (((double fillOpacity, double strokeOpacity) key, int objNum) in _extGStateObjects)
+        // Write ExtGState objects
+        foreach ((GraphicsStateKey key, int objNum) in _extGStateObjects)
         {
             WriteObjectStart(writer, objNum);
             writer.WriteLine("<<");
             writer.WriteLine("   /Type /ExtGState");
-            writer.WriteLine($"   /ca {key.fillOpacity:F2}"); // Non-stroking (fill) alpha
-            writer.WriteLine($"   /CA {key.strokeOpacity:F2}"); // Stroking alpha
+            writer.WriteLine($"   /ca {key.FillOpacity:F2}"); // Non-stroking (fill) alpha
+            writer.WriteLine($"   /CA {key.StrokeOpacity:F2}"); // Stroking alpha
+            if (key.FillOverprint)
+                writer.WriteLine("   /op true");
+            if (key.StrokeOverprint)
+                writer.WriteLine("   /OP true");
+            if (key.OverprintMode != 0)
+                writer.WriteLine($"   /OPM {key.OverprintMode}");
+            if (key.BlendMode != null)
+                writer.WriteLine($"   /BM /{key.BlendMode}");
             writer.WriteLine(">>");
+            WriteObjectEnd(writer);
+        }
+
+        // Write Separation color space objects
+        foreach ((string colorantName, int objNum) in _separationColorSpaces)
+        {
+            WriteObjectStart(writer, objNum);
+            writer.WriteLine($"[/Separation /{colorantName} /DeviceCMYK <<");
+            writer.WriteLine("   /FunctionType 2");
+            writer.WriteLine("   /Domain [0 1]");
+            writer.WriteLine("   /C0 [0 0 0 0]"); // White at tint=0
+
+            // Get CMYK values for this colorant
+            (double c, double m, double y, double k) = GetCmykForColorant(colorantName);
+            writer.WriteLine($"   /C1 [{c:F2} {m:F2} {y:F2} {k:F2}]"); // Colorant at tint=1
+
+            writer.WriteLine("   /N 1");
+            writer.WriteLine(">>]");
             WriteObjectEnd(writer);
         }
 
@@ -344,15 +471,28 @@ public class PdfDocumentWriter
                 writer.WriteLine("      >>");
             }
 
-            // Add ExtGState dictionary for opacity
+            // Add ExtGState dictionary
             if (_extGStateObjects.Count > 0)
             {
                 writer.WriteLine("      /ExtGState <<");
                 var gsIndex = 1;
-                foreach (((double fillOpacity, double strokeOpacity) key, int objNum) in _extGStateObjects.OrderBy(x => x.Key))
+                foreach ((GraphicsStateKey key, int objNum) in _extGStateObjects.OrderBy(x => x.Value))
                 {
                     writer.WriteLine($"         /GS{gsIndex} {objNum} 0 R");
                     gsIndex++;
+                }
+                writer.WriteLine("      >>");
+            }
+
+            // Add ColorSpace dictionary for Separation colors
+            if (_separationColorSpaces.Count > 0)
+            {
+                writer.WriteLine("      /ColorSpace <<");
+                var csIndex = 1;
+                foreach ((string colorantName, int objNum) in _separationColorSpaces.OrderBy(x => x.Value))
+                {
+                    writer.WriteLine($"         /CS{csIndex} {objNum} 0 R");
+                    csIndex++;
                 }
                 writer.WriteLine("      >>");
             }
@@ -664,7 +804,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Generate PDF content stream operators for text
     /// </summary>
-    private static void GenerateTextContent(StringBuilder sb, PdfTextContent text, List<string> fonts)
+    private void GenerateTextContent(StringBuilder sb, PdfTextContent text, List<string> fonts)
     {
         int fontIndex = fonts.IndexOf(text.FontName) + 1;
 
@@ -724,7 +864,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Generate PDF content stream operators for a rectangle
     /// </summary>
-    private static void GenerateRectangleContent(StringBuilder sb, PdfRectangleContent rect)
+    private void GenerateRectangleContent(StringBuilder sb, PdfRectangleContent rect)
     {
         if (rect.FillColor.HasValue || rect.StrokeColor.HasValue)
         {
@@ -756,7 +896,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Generate PDF content stream operators for a line
     /// </summary>
-    private static void GenerateLineContent(StringBuilder sb, PdfLineContent line)
+    private void GenerateLineContent(StringBuilder sb, PdfLineContent line)
     {
         sb.AppendLine("q");
         sb.AppendLine($"{line.LineWidth:F2} w");
@@ -788,10 +928,16 @@ public class PdfDocumentWriter
             // Apply opacity if not fully opaque
             if (image.Opacity < 1.0)
             {
-                (double, double) opacityKey = (image.Opacity, image.Opacity);
-                if (_extGStateObjects.ContainsKey(opacityKey))
+                var gsKey = new GraphicsStateKey(
+                    FillOpacity: image.Opacity,
+                    StrokeOpacity: image.Opacity,
+                    FillOverprint: false,
+                    StrokeOverprint: false,
+                    OverprintMode: 0,
+                    BlendMode: null);
+                if (_extGStateObjects.ContainsKey(gsKey))
                 {
-                    int gsIndex = GetExtGStateIndex(opacityKey);
+                    int gsIndex = GetExtGStateIndex(gsKey);
                     sb.AppendLine($"/GS{gsIndex} gs");
                 }
             }
@@ -836,16 +982,31 @@ public class PdfDocumentWriter
     {
         sb.AppendLine("q"); // Save graphics state
 
-        // Apply opacity if needed
-        bool needsOpacity = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0;
-        if (needsOpacity)
+        // Apply graphics state if needed
+        bool needsExtGState = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0 ||
+                             path.FillOverprint || path.StrokeOverprint ||
+                             path.OverprintMode != 0 || path.BlendMode != null;
+        if (needsExtGState)
         {
-            (double FillOpacity, double StrokeOpacity) opacityKey = (path.FillOpacity, path.StrokeOpacity);
-            if (_extGStateObjects.ContainsKey(opacityKey))
+            var gsKey = new GraphicsStateKey(
+                FillOpacity: path.FillOpacity,
+                StrokeOpacity: path.StrokeOpacity,
+                FillOverprint: path.FillOverprint,
+                StrokeOverprint: path.StrokeOverprint,
+                OverprintMode: path.OverprintMode,
+                BlendMode: path.BlendMode);
+            if (_extGStateObjects.ContainsKey(gsKey))
             {
-                int gsIndex = GetExtGStateIndex(opacityKey);
+                int gsIndex = GetExtGStateIndex(gsKey);
                 sb.AppendLine($"/GS{gsIndex} gs");
             }
+        }
+
+        // Apply CTM transformation if specified
+        if (path.Transform.HasValue)
+        {
+            var m = path.Transform.Value;
+            sb.AppendLine($"{m.M11:F4} {m.M12:F4} {m.M21:F4} {m.M22:F4} {m.M31:F2} {m.M32:F2} cm");
         }
 
         // Set line width
@@ -959,7 +1120,7 @@ public class PdfDocumentWriter
     /// <summary>
     /// Append color operator for fill or stroke based on color space
     /// </summary>
-    private static void AppendColorOperator(StringBuilder sb, PdfColor color, bool isFill)
+    private void AppendColorOperator(StringBuilder sb, PdfColor color, bool isFill)
     {
         switch (color.ColorSpace)
         {
@@ -977,6 +1138,17 @@ public class PdfDocumentWriter
                     : $"{color.Components[0]:F3} {color.Components[1]:F3} {color.Components[2]:F3} {color.Components[3]:F3} K");
                 break;
 
+            case PdfColorSpace.Separation:
+                // cs/CS to set color space, scn/SCN to set color value (tint)
+                int csIndex = GetColorSpaceIndex(color.ColorantName ?? "Unknown");
+                sb.AppendLine(isFill
+                    ? $"/CS{csIndex} cs"
+                    : $"/CS{csIndex} CS");
+                sb.AppendLine(isFill
+                    ? $"{color.Tint:F3} scn"
+                    : $"{color.Tint:F3} SCN");
+                break;
+
             case PdfColorSpace.DeviceRGB:
             default:
                 // rg for fill, RG for stroke
@@ -988,14 +1160,29 @@ public class PdfDocumentWriter
     }
 
     /// <summary>
-    /// Get the index of an ExtGState object for the given opacity key
+    /// Get the index of a Separation color space for the given colorant name
     /// </summary>
-    private int GetExtGStateIndex((double fillOpacity, double strokeOpacity) key)
+    private int GetColorSpaceIndex(string colorantName)
     {
         var index = 1;
-        foreach ((double fillOpacity, double strokeOpacity) k in _extGStateObjects.Keys.OrderBy(x => x))
+        foreach (int objNum in _separationColorSpaces.Values.OrderBy(x => x))
         {
-            if (k == key)
+            if (_separationColorSpaces[colorantName] == objNum)
+                return index;
+            index++;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Get the index of an ExtGState object for the given graphics state key
+    /// </summary>
+    private int GetExtGStateIndex(GraphicsStateKey key)
+    {
+        var index = 1;
+        foreach (int objNum in _extGStateObjects.Values.OrderBy(x => x))
+        {
+            if (_extGStateObjects[key] == objNum)
                 return index;
             index++;
         }
@@ -1537,6 +1724,33 @@ public class PdfDocumentWriter
     private static string BytesToHexString(byte[] bytes)
     {
         return Convert.ToHexString(bytes);
+    }
+
+    /// <summary>
+    /// Gets CMYK values for a given separation colorant name.
+    /// These are approximate CMYK equivalents for common spot colors used in testing.
+    /// </summary>
+    private static (double c, double m, double y, double k) GetCmykForColorant(string colorantName)
+    {
+        // Map colorant names to approximate CMYK values
+        // Format: (Cyan, Magenta, Yellow, Black) - each 0.0 to 1.0
+        return colorantName switch
+        {
+            // Standard test colors
+            "Orange" => (0.0, 0.5, 1.0, 0.0),        // Orange
+            "BrandOrange" => (0.0, 0.6, 0.9, 0.0),   // Slightly different orange
+
+            // PMS colors (approximate CMYK equivalents)
+            "PMS485" => (0.0, 1.0, 0.91, 0.0),       // Red (PMS 485)
+            "PMS300" => (1.0, 0.44, 0.0, 0.0),       // Blue (PMS 300)
+            "PMS375" => (0.42, 0.0, 1.0, 0.0),       // Green (PMS 375)
+
+            // Custom brand colors
+            "RefxBlue" => (1.0, 0.5, 0.0, 0.1),      // Custom blue with slight black
+
+            // Fallback for unknown colorants - use a distinctive purple to make it obvious
+            _ => (0.5, 1.0, 0.0, 0.0)
+        };
     }
 
     /// <summary>

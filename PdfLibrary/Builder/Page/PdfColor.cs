@@ -11,6 +11,9 @@ public readonly struct PdfColor
     /// <summary>Color components (interpretation depends on ColorSpace)</summary>
     public double[] Components { get; }
 
+    /// <summary>Colorant name for Separation color spaces (null for other color spaces)</summary>
+    public string? ColorantName { get; }
+
     // Convenience accessors for RGB
     public double R => ColorSpace == PdfColorSpace.DeviceRGB ? Components[0] : 0;
     public double G => ColorSpace == PdfColorSpace.DeviceRGB ? Components[1] : 0;
@@ -25,6 +28,9 @@ public readonly struct PdfColor
     public double Y => ColorSpace == PdfColorSpace.DeviceCMYK ? Components[2] : 0;
     public double K => ColorSpace == PdfColorSpace.DeviceCMYK ? Components[3] : 0;
 
+    // Convenience accessor for Separation
+    public double Tint => ColorSpace == PdfColorSpace.Separation ? Components[0] : 0;
+
     /// <summary>
     /// Create an RGB color (values 0-1)
     /// </summary>
@@ -32,15 +38,17 @@ public readonly struct PdfColor
     {
         ColorSpace = PdfColorSpace.DeviceRGB;
         Components = [r, g, b];
+        ColorantName = null;
     }
 
     /// <summary>
     /// Create a color with explicit color space and components (internal constructor)
     /// </summary>
-    private PdfColor(PdfColorSpace colorSpace, double[] components)
+    private PdfColor(PdfColorSpace colorSpace, double[] components, string? colorantName = null)
     {
         ColorSpace = colorSpace;
         Components = components;
+        ColorantName = colorantName;
     }
 
     /// <summary>
@@ -77,6 +85,12 @@ public readonly struct PdfColor
     /// </summary>
     public static PdfColor FromCmykPercent(double c, double m, double y, double k)
         => FromComponents(PdfColorSpace.DeviceCMYK, c / 100.0, m / 100.0, y / 100.0, k / 100.0);
+
+    /// <summary>
+    /// Create a Separation color (spot color) with a colorant name and tint value (0-1)
+    /// </summary>
+    public static PdfColor FromSeparation(string colorantName, double tint)
+        => new(PdfColorSpace.Separation, [Math.Clamp(tint, 0, 1)], colorantName);
 
     // Common colors (DeviceRGB) - use explicit constructor to avoid ambiguity with params overload
     public static readonly PdfColor Black = new PdfColor(0, 0, 0);

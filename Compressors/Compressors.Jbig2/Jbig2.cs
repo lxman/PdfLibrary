@@ -44,12 +44,13 @@ namespace Compressors.Jbig2
 
             try
             {
-                var decoder = new JBIG2StreamDecoder();
-
-                // Enable tolerance mode to match Chrome/Acrobat behavior
-                // This allows decoding JBIG2 streams with forward references
-                // (invalid per ITU-T T.88 but common in real-world PDFs)
-                decoder.TolerateMissingSegments = true;
+                var decoder = new JBIG2StreamDecoder
+                {
+                    // Enable tolerance mode to match Chrome/Acrobat behavior
+                    // This allows decoding JBIG2 streams with forward references
+                    // (invalid per ITU-T T.88 but common in real-world PDFs)
+                    TolerateMissingSegments = true
+                };
 
                 // Set globals if provided (JBIG2Globals stream from PDF)
                 if (globals != null && globals.Length > 0)
@@ -81,15 +82,12 @@ namespace Compressors.Jbig2
 
                 // Validate data length
                 int expectedLength = width * height * 3;
-                if (rgb.Length != expectedLength)
-                {
-                    Console.WriteLine($"[JBIG2 WARNING] Decoder returned incorrect data length. Expected {expectedLength}, got {rgb.Length}. Dimensions: {width}x{height}");
-                    width = 0;
-                    height = 0;
-                    return [];
-                }
+                if (rgb.Length == expectedLength) return rgb;
+                Console.WriteLine($"[JBIG2 WARNING] Decoder returned incorrect data length. Expected {expectedLength}, got {rgb.Length}. Dimensions: {width}x{height}");
+                width = 0;
+                height = 0;
+                return [];
 
-                return rgb;
             }
             catch (NullReferenceException ex)
             {

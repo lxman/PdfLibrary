@@ -10,6 +10,18 @@ namespace PdfLibrary.Integration;
 public static class PdfImageRenderer
 {
     /// <summary>
+    /// Gets the number of pages in a PDF file
+    /// </summary>
+    /// <param name="pdfPath">Path to the PDF file</param>
+    /// <returns>Number of pages</returns>
+    public static int GetPageCount(string pdfPath)
+    {
+        using FileStream stream = File.OpenRead(pdfPath);
+        PdfDocument document = PdfDocument.Load(stream);
+        return document.PageCount;
+    }
+
+    /// <summary>
     /// Renders a PDF page to a PNG file
     /// </summary>
     /// <param name="pdfPath">Path to the PDF file</param>

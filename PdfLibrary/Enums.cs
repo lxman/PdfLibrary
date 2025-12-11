@@ -12,7 +12,9 @@ public enum PdfColorSpace
     /// <summary>Grayscale color space (DeviceGray)</summary>
     DeviceGray,
     /// <summary>CMYK color space (DeviceCMYK)</summary>
-    DeviceCMYK
+    DeviceCMYK,
+    /// <summary>Separation color space (spot color)</summary>
+    Separation
 }
 
 /// <summary>

@@ -1,4 +1,6 @@
-﻿namespace PdfLibrary.Builder.Page;
+using System.Numerics;
+
+namespace PdfLibrary.Builder.Page;
 
 /// <summary>
 /// Path content element supporting complex shapes
@@ -18,4 +20,11 @@ public class PdfPathContent : PdfContentElement
     public bool IsClippingPath { get; set; }
     public double FillOpacity { get; set; } = 1.0;
     public double StrokeOpacity { get; set; } = 1.0;
+
+    // Advanced graphics state
+    public Matrix3x2? Transform { get; set; }
+    public bool FillOverprint { get; set; }
+    public bool StrokeOverprint { get; set; }
+    public int OverprintMode { get; set; }
+    public string? BlendMode { get; set; }
 }
