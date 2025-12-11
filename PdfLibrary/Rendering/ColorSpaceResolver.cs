@@ -3,6 +3,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Functions;
 using PdfLibrary.Structure;
+using Wacton.Unicolour;
 
 namespace PdfLibrary.Rendering;
 
@@ -488,7 +489,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
     }
 
     /// <summary>
-    /// Converts CIE Lab color values to RGB
+    /// Converts CIE Lab color values to RGB using Unicolour library
     /// </summary>
     /// <param name="L">L* value (0-100)</param>
     /// <param name="a">a* value (-128 to 127)</param>
@@ -539,44 +540,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        // Lab to XYZ conversion
-        double fy = (L + 16.0) / 116.0;
-        double fx = fy + (a / 500.0);
-        double fz = fy - (b / 200.0);
+        // Use Unicolour for Lab→RGB conversion
+        // Note: Using default D65 white point from Unicolour for now
+        // TODO: Investigate how to properly configure custom white points in Unicolour if needed
 
-        double x = xn * InverseF(fx);
-        double y = yn * InverseF(fy);
-        double z = zn * InverseF(fz);
+        // Create Lab color and convert to RGB (Unicolour expects Lab in range: L=0-100, a/b=-128 to 127)
+        var unicolour = new Unicolour(ColourSpace.Lab, L, a, b);
+        var rgb = unicolour.Rgb;
 
-        // XYZ to sRGB (D65 illuminant) conversion matrix
-        double r = 3.2404542 * x - 1.5371385 * y - 0.4985314 * z;
-        double g = -0.9692660 * x + 1.8760108 * y + 0.0415560 * z;
-        double B = 0.0556434 * x - 0.2040259 * y + 1.0572252 * z;
-
-        r = GammaCorrection(r);
-        g = GammaCorrection(g);
-        B = GammaCorrection(B);
-
-        // Clamp to [0, 1] range
-        r = Math.Clamp(r, 0.0, 1.0);
-        g = Math.Clamp(g, 0.0, 1.0);
-        B = Math.Clamp(B, 0.0, 1.0);
-
-        return [r, g, B];
-
-        // Inverse companding function
-        static double InverseF(double t)
-        {
-            const double delta = 6.0 / 29.0;
-            return t > delta ? t * t * t : 3.0 * delta * delta * (t - 4.0 / 29.0);
-        }
-
-        // Apply sRGB gamma correction
-        static double GammaCorrection(double c)
-        {
-            return c <= 0.0031308
-                ? 12.92 * c
-                : 1.055 * Math.Pow(c, 1.0 / 2.4) - 0.055;
-        }
+        // RGB values are already in 0.0-1.0 range and clamped by Unicolour
+        return [rgb.R, rgb.G, rgb.B];
     }
 }

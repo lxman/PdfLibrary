@@ -55,7 +55,7 @@ public partial class App : Application
         PdfLogger.Initialize(new PdfLogConfiguration
         {
             LogImages = true,
-            LogText = true,
+            LogText = false,
             LogGraphics = true,
             LogTransforms = true,
             LogPdfTool = true,

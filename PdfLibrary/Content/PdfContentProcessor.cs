@@ -300,29 +300,19 @@ public abstract class PdfContentProcessor
             // Color space operators
             case SetStrokeColorSpaceOperator cs:
                 CurrentState.StrokeColorSpace = cs.ColorSpace;
-                // Initialize default color components for the new color space
-                CurrentState.StrokeColor = cs.ColorSpace switch
-                {
-                    "DeviceGray" => [0.0],
-                    "DeviceRGB" => [0.0, 0.0, 0.0],
-                    "DeviceCMYK" => [0.0, 0.0, 0.0, 1.0],
-                    _ => [0.0]
-                };
-                OnColorChanged();
+                // Note: Do NOT initialize color or call OnColorChanged() here.
+                // The color will be set by a subsequent SC/SCN operator.
+                // Initializing color to default values causes Separation color spaces
+                // to render with tint=0 (white) until the SCN operator is processed.
                 break;
 
             case SetFillColorSpaceOperator cs:
                 PdfLogger.Log(LogCategory.Graphics, $"[cs OPERATOR] ColorSpace={cs.ColorSpace}");
                 CurrentState.FillColorSpace = cs.ColorSpace;
-                // Initialize default color components for the new color space
-                CurrentState.FillColor = cs.ColorSpace switch
-                {
-                    "DeviceGray" => [0.0],
-                    "DeviceRGB" => [0.0, 0.0, 0.0],
-                    "DeviceCMYK" => [0.0, 0.0, 0.0, 1.0],
-                    _ => [0.0]
-                };
-                OnColorChanged();
+                // Note: Do NOT initialize color or call OnColorChanged() here.
+                // The color will be set by a subsequent sc/scn operator.
+                // Initializing color to default values causes Separation color spaces
+                // to render with tint=0 (white) until the scn operator is processed.
                 break;
 
             // Generic color operators

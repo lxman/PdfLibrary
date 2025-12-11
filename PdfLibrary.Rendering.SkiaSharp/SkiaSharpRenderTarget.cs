@@ -1297,12 +1297,57 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
                         using var devicePath = new SKPath();
                         glyphPath.Transform(canvasMatrix, devicePath);
+                        // EXPERIMENTAL: Keep EvenOdd on devicePath to test if winding is the issue
+                        // If glyphs are still hollow, the problem is NOT fill rule related
+                        devicePath.FillType = SKPathFillType.EvenOdd;
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-FILLTYPE: char='{displayChar}', devicePath FillType explicitly set to EvenOdd (testing)");
 
                         SKRect deviceBounds = devicePath.Bounds;
                         PdfLogger.Log(LogCategory.Text, $"GLYPH-RENDER: devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
 
+                        // DEBUG: Log path contour information
+                        PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH-INFO: char='{displayChar}', ContourCount={devicePath.PointCount}, IsEmpty={devicePath.IsEmpty}");
+
+                        // DEBUG: Dump detailed path data for 'a' to see if inner contour is present
+                        if (displayChar == 'a')
+                        {
+                            var pathIterator = devicePath.CreateRawIterator();
+                            SKPoint[] points = new SKPoint[4];
+                            int commandIndex = 0;
+                            SKPathVerb verb;
+                            System.Text.StringBuilder pathDump = new System.Text.StringBuilder();
+                            pathDump.AppendLine($"PATH-DUMP for 'a': FillType={devicePath.FillType}");
+                            while ((verb = pathIterator.Next(points)) != SKPathVerb.Done)
+                            {
+                                pathDump.Append($"  [{commandIndex}] {verb}");
+                                if (verb == SKPathVerb.Move)
+                                    pathDump.AppendLine($" to ({points[0].X:F2}, {points[0].Y:F2})");
+                                else if (verb == SKPathVerb.Line)
+                                    pathDump.AppendLine($" to ({points[1].X:F2}, {points[1].Y:F2})");
+                                else if (verb == SKPathVerb.Quad)
+                                    pathDump.AppendLine($" ctrl({points[1].X:F2}, {points[1].Y:F2}) to ({points[2].X:F2}, {points[2].Y:F2})");
+                                else if (verb == SKPathVerb.Conic)
+                                    pathDump.AppendLine($" ctrl({points[1].X:F2}, {points[1].Y:F2}) w={pathIterator.ConicWeight():F2} to ({points[2].X:F2}, {points[2].Y:F2})");
+                                else if (verb == SKPathVerb.Cubic)
+                                    pathDump.AppendLine($" ctrl1({points[1].X:F2}, {points[1].Y:F2}) ctrl2({points[2].X:F2}, {points[2].Y:F2}) to ({points[3].X:F2}, {points[3].Y:F2})");
+                                else if (verb == SKPathVerb.Close)
+                                    pathDump.AppendLine();
+                                commandIndex++;
+                            }
+                            PdfLogger.Log(LogCategory.Text, pathDump.ToString());
+                        }
+
+                        // DEBUG: Check if there's a clip region active BEFORE drawing
+                        SKRect localClip = _canvas.LocalClipBounds;
+                        SKRect deviceClip = _canvas.DeviceClipBounds;
+                        PdfLogger.Log(LogCategory.Text, $"CLIP-BEFORE-GLYPH: char='{displayChar}', LocalClip=({localClip.Left:F2},{localClip.Top:F2},{localClip.Right:F2},{localClip.Bottom:F2}), DeviceClip=({deviceClip.Left:F2},{deviceClip.Top:F2},{deviceClip.Right:F2},{deviceClip.Bottom:F2})");
+
                         _canvas.Save();
                         _canvas.ResetMatrix();
+
+                        // DEBUG: Check clip bounds AFTER ResetMatrix
+                        SKRect clipAfterReset = _canvas.LocalClipBounds;
+                        PdfLogger.Log(LogCategory.Text, $"CLIP-AFTER-RESET: char='{displayChar}', LocalClip=({clipAfterReset.Left:F2},{clipAfterReset.Top:F2},{clipAfterReset.Right:F2},{clipAfterReset.Bottom:F2}), devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
                         _canvas.DrawPath(devicePath, paint);
                         _canvas.Restore();
                     }
@@ -1420,25 +1465,86 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             case "DeviceRGB":
                 if (colorComponents.Count >= 3)
                 {
-                    var r = (byte)(colorComponents[0] * 255);
-                    var g = (byte)(colorComponents[1] * 255);
-                    var b = (byte)(colorComponents[2] * 255);
+                    // Clamp to [0, 1] before converting to byte to prevent overflow
+                    var r = (byte)(Math.Clamp(colorComponents[0], 0.0, 1.0) * 255);
+                    var g = (byte)(Math.Clamp(colorComponents[1], 0.0, 1.0) * 255);
+                    var b = (byte)(Math.Clamp(colorComponents[2], 0.0, 1.0) * 255);
                     return new SKColor(r, g, b);
                 }
                 break;
             case "DeviceCMYK":
                 if (colorComponents.Count >= 4)
                 {
-                    // Simple CMYK to RGB conversion
                     double c = colorComponents[0];
                     double m = colorComponents[1];
                     double y = colorComponents[2];
                     double k = colorComponents[3];
 
-                    var r = (byte)((1 - c) * (1 - k) * 255);
-                    var g = (byte)((1 - m) * (1 - k) * 255);
-                    var b = (byte)((1 - y) * (1 - k) * 255);
+                    // Improved CMYK to RGB conversion
+                    // Adobe uses ICC profiles, but this provides a reasonable approximation
+                    // The key insight is that we convert to CMY first, then apply black
+                    var r = (byte)((1 - Math.Min(1.0, c * (1 - k) + k)) * 255);
+                    var g = (byte)((1 - Math.Min(1.0, m * (1 - k) + k)) * 255);
+                    var b = (byte)((1 - Math.Min(1.0, y * (1 - k) + k)) * 255);
+
+                    // Debug logging for CMYK conversion
+                    PdfLogger.Log(LogCategory.Graphics,
+                        $"CMYK→RGB: CMYK=[{c:F2},{m:F2},{y:F2},{k:F2}] → RGB=({r},{g},{b})");
+
                     return new SKColor(r, g, b);
+                }
+                break;
+            case "Lab":
+                if (colorComponents.Count >= 3)
+                {
+                    // Lab color space: L* (0-100), a* (-128 to 127), b* (-128 to 127)
+                    double L = colorComponents[0];
+                    double a = colorComponents[1];
+                    double b = colorComponents[2];
+
+                    // Default white point (D65 if not specified)
+                    double Xn = 0.9642, Yn = 1.0, Zn = 0.8249;
+
+                    // Convert Lab to XYZ
+                    double fy = (L + 16) / 116.0;
+                    double fx = fy + (a / 500.0);
+                    double fz = fy - (b / 200.0);
+
+                    double xr = fx * fx * fx;
+                    if (xr <= 0.008856) xr = (fx - 16.0 / 116.0) / 7.787;
+
+                    double yr = fy * fy * fy;
+                    if (yr <= 0.008856) yr = (fy - 16.0 / 116.0) / 7.787;
+
+                    double zr = fz * fz * fz;
+                    if (zr <= 0.008856) zr = (fz - 16.0 / 116.0) / 7.787;
+
+                    double X = xr * Xn;
+                    double Y = yr * Yn;
+                    double Z = zr * Zn;
+
+                    // Convert XYZ to sRGB (using standard D65 matrix)
+                    double rLinear =  3.2406 * X - 1.5372 * Y - 0.4986 * Z;
+                    double gLinear = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
+                    double bLinear =  0.0557 * X - 0.2040 * Y + 1.0570 * Z;
+
+                    // Apply gamma correction for sRGB
+                    var gamma = (double v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.Pow(v, 1.0 / 2.4) - 0.055;
+                    double rSrgb = gamma(rLinear);
+                    double gSrgb = gamma(gLinear);
+                    double bSrgb = gamma(bLinear);
+
+                    // Clamp to [0, 1] and convert to byte
+                    var clamp = (double v) => Math.Max(0, Math.Min(1, v));
+                    var rByte = (byte)(clamp(rSrgb) * 255);
+                    var gByte = (byte)(clamp(gSrgb) * 255);
+                    var bByte = (byte)(clamp(bSrgb) * 255);
+
+                    // Debug logging for Lab conversion
+                    PdfLogger.Log(LogCategory.Graphics,
+                        $"Lab→RGB: Lab=[{L:F2},{a:F2},{b:F2}] → RGB=({rByte},{gByte},{bByte})");
+
+                    return new SKColor(rByte, gByte, bByte);
                 }
                 break;
             default:
@@ -1532,6 +1638,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             paint.StrokeJoin = ConvertLineJoin(state.LineJoin);
             paint.StrokeMiter = (float)state.MiterLimit;
 
+            // Apply overprint blend mode if enabled
+            if (state.StrokeOverprint)
+            {
+                paint.BlendMode = SKBlendMode.Multiply;
+            }
+
             // Apply a dash pattern if present (scale by CTM as well)
             if (state.DashPattern is not null && state.DashPattern.Length > 0)
             {
@@ -1566,16 +1678,28 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             SKPath skPath = ConvertToSkPath(path);
 
             // Set fill rule
+            // Set fill type based on PDF operator (evenOdd parameter)
+            // Previously we forced EvenOdd when Y-flip was detected, but this causes overlapping
+            // paths to create holes. The Y-flip is just a coordinate transform and doesn't
+            // require changing the fill rule.
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
             // Create fill paint with alpha from graphics state
             SKColor fillColor = ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
             fillColor = ApplyAlpha(fillColor, state.FillAlpha);
 
+            PdfLogger.Log(LogCategory.Graphics, $"FILL COLOR: ColorSpace={state.ResolvedFillColorSpace}, Color=({fillColor.Red},{fillColor.Green},{fillColor.Blue}), Alpha={fillColor.Alpha}");
+
             using var paint = new SKPaint();
             paint.Color = fillColor;
             paint.IsAntialias = true;
             paint.Style = SKPaintStyle.Fill;
+
+            // Apply overprint blend mode if enabled
+            if (state.FillOverprint)
+            {
+                paint.BlendMode = SKBlendMode.Multiply;
+            }
 
             _canvas.DrawPath(skPath, paint);
             skPath.Dispose();
@@ -1600,6 +1724,10 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
             // Convert IPathBuilder to SKPath
             SKPath skPath = ConvertToSkPath(path);
+            // Set fill type based on PDF operator (evenOdd parameter)
+            // Previously we forced EvenOdd when Y-flip was detected, but this causes overlapping
+            // paths to create holes. The Y-flip is just a coordinate transform and doesn't
+            // require changing the fill rule.
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
             // Calculate pattern cell size in device pixels
@@ -1803,6 +1931,10 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             SKPath skPath = ConvertToSkPath(path);
 
             // Set fill rule
+            // Set fill type based on PDF operator (evenOdd parameter)
+            // Previously we forced EvenOdd when Y-flip was detected, but this causes overlapping
+            // paths to create holes. The Y-flip is just a coordinate transform and doesn't
+            // require changing the fill rule.
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
             // Fill first (with fill alpha from graphics state)
@@ -3118,6 +3250,10 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
         {
             ApplyPathTransform(state);
             using SKPath skPath = ConvertToSkPath(path);
+            // Set fill type based on PDF operator (evenOdd parameter)
+            // Previously we forced EvenOdd when Y-flip was detected, but this causes overlapping
+            // paths to create holes. The Y-flip is just a coordinate transform and doesn't
+            // require changing the fill rule.
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
             using var paint = new SKPaint
             {
@@ -3346,9 +3482,16 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                 if (components.Count >= 4)
                 {
                     double c = components[0], m = components[1], y = components[2], k = components[3];
-                    var r = (byte)(255 * (1 - c) * (1 - k));
-                    var g = (byte)(255 * (1 - m) * (1 - k));
-                    var b = (byte)(255 * (1 - y) * (1 - k));
+
+                    // Improved CMYK to RGB conversion
+                    var r = (byte)((1 - Math.Min(1.0, c * (1 - k) + k)) * 255);
+                    var g = (byte)((1 - Math.Min(1.0, m * (1 - k) + k)) * 255);
+                    var b = (byte)((1 - Math.Min(1.0, y * (1 - k) + k)) * 255);
+
+                    // Debug logging for CMYK conversion (ConvertPatternColor)
+                    PdfLogger.Log(LogCategory.Graphics,
+                        $"CMYK→RGB (Pattern): CMYK=[{c:F2},{m:F2},{y:F2},{k:F2}] → RGB=({r},{g},{b})");
+
                     return new SKColor(r, g, b);
                 }
                 break;
@@ -3416,13 +3559,17 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                         {
                             int srcOffset = i * 4;
                             int dstOffset = i * 4;
-                            int c = imageData[srcOffset];
-                            int m = imageData[srcOffset + 1];
-                            int y = imageData[srcOffset + 2];
-                            int k = imageData[srcOffset + 3];
-                            pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
-                            pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
-                            pixelBuffer[dstOffset + 2] = (byte)((255 - y) * (255 - k) / 255);
+
+                            // Convert byte values (0-255) to 0-1 range
+                            double c = imageData[srcOffset] / 255.0;
+                            double m = imageData[srcOffset + 1] / 255.0;
+                            double y = imageData[srcOffset + 2] / 255.0;
+                            double k = imageData[srcOffset + 3] / 255.0;
+
+                            // Improved CMYK to RGB conversion
+                            pixelBuffer[dstOffset] = (byte)((1 - Math.Min(1.0, c * (1 - k) + k)) * 255);
+                            pixelBuffer[dstOffset + 1] = (byte)((1 - Math.Min(1.0, m * (1 - k) + k)) * 255);
+                            pixelBuffer[dstOffset + 2] = (byte)((1 - Math.Min(1.0, y * (1 - k) + k)) * 255);
                             pixelBuffer[dstOffset + 3] = 255;
                         }
                     }

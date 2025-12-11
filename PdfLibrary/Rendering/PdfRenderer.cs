@@ -434,12 +434,14 @@ public class PdfRenderer : PdfContentProcessor
     {
         // Transform point to device space
         Vector2 transformed = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
+        PdfLogger.Log(LogCategory.Graphics, $"PATH-MOVETO: ({x:F3}, {y:F3}) -> ({transformed.X:F3}, {transformed.Y:F3}), CTM=[{CurrentState.Ctm.M11:F2},{CurrentState.Ctm.M12:F2},{CurrentState.Ctm.M21:F2},{CurrentState.Ctm.M22:F2},{CurrentState.Ctm.M31:F2},{CurrentState.Ctm.M32:F2}]");
         _currentPath.MoveTo(transformed.X, transformed.Y);
     }
 
     protected override void OnLineTo(double x, double y)
     {
         Vector2 transformed = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
+        PdfLogger.Log(LogCategory.Graphics, $"PATH-LINETO: ({x:F3}, {y:F3}) -> ({transformed.X:F3}, {transformed.Y:F3})");
         _currentPath.LineTo(transformed.X, transformed.Y);
     }
 
@@ -448,6 +450,7 @@ public class PdfRenderer : PdfContentProcessor
         Vector2 p1 = Vector2.Transform(new Vector2((float)x1, (float)y1), CurrentState.Ctm);
         Vector2 p2 = Vector2.Transform(new Vector2((float)x2, (float)y2), CurrentState.Ctm);
         Vector2 p3 = Vector2.Transform(new Vector2((float)x3, (float)y3), CurrentState.Ctm);
+        PdfLogger.Log(LogCategory.Graphics, $"PATH-CURVE: ({x1:F3},{y1:F3})->({p1.X:F3},{p1.Y:F3}), ({x2:F3},{y2:F3})->({p2.X:F3},{p2.Y:F3}), ({x3:F3},{y3:F3})->({p3.X:F3},{p3.Y:F3})");
         _currentPath.CurveTo(p1.X, p1.Y, p2.X, p2.Y, p3.X, p3.Y);
     }
 
@@ -456,11 +459,29 @@ public class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Graphics, $"OnRectangle: ({x}, {y}) size ({width}, {height})");
         PdfLogger.Log(LogCategory.Graphics, $"  CTM: [{CurrentState.Ctm.M11}, {CurrentState.Ctm.M12}, {CurrentState.Ctm.M21}, {CurrentState.Ctm.M22}, {CurrentState.Ctm.M31}, {CurrentState.Ctm.M32}]");
 
+        // Normalize negative width/height to ensure consistent winding direction
+        // Per PDF spec, rectangle with negative dimensions should produce the same winding as positive,
+        // but some PDFs have bugs where they draw the same rectangle twice with opposite winding,
+        // causing them to cancel out with non-zero winding fill rule.
+        double x1 = x, y1 = y, x2 = x + width, y2 = y + height;
+
+        // Swap coordinates if width is negative to ensure consistent left-to-right direction
+        if (width < 0)
+        {
+            (x1, x2) = (x2, x1);
+        }
+
+        // Swap coordinates if height is negative to ensure consistent bottom-to-top direction
+        if (height < 0)
+        {
+            (y1, y2) = (y2, y1);
+        }
+
         // Transform rectangle corners
-        Vector2 p1 = Vector2.Transform(new Vector2((float)x, (float)y), CurrentState.Ctm);
-        Vector2 p2 = Vector2.Transform(new Vector2((float)(x + width), (float)y), CurrentState.Ctm);
-        Vector2 p3 = Vector2.Transform(new Vector2((float)(x + width), (float)(y + height)), CurrentState.Ctm);
-        Vector2 p4 = Vector2.Transform(new Vector2((float)x, (float)(y + height)), CurrentState.Ctm);
+        Vector2 p1 = Vector2.Transform(new Vector2((float)x1, (float)y1), CurrentState.Ctm);
+        Vector2 p2 = Vector2.Transform(new Vector2((float)x2, (float)y1), CurrentState.Ctm);
+        Vector2 p3 = Vector2.Transform(new Vector2((float)x2, (float)y2), CurrentState.Ctm);
+        Vector2 p4 = Vector2.Transform(new Vector2((float)x1, (float)y2), CurrentState.Ctm);
 
         PdfLogger.Log(LogCategory.Graphics, $"  Transformed: ({p1.X}, {p1.Y}) ({p2.X}, {p2.Y}) ({p3.X}, {p3.Y}) ({p4.X}, {p4.Y})");
 
