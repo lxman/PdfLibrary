@@ -1,12 +1,19 @@
 using System.Numerics;
 using Logging;
 using PdfLibrary.Content;
-using PdfLibrary.Fonts;
-using PdfLibrary.Rendering;
 using PdfLibrary.Rendering.SkiaSharp.Conversion;
 using SkiaSharp;
 
 namespace PdfLibrary.Rendering.SkiaSharp.Rendering;
+
+/// <summary>
+/// Holds an isolated transparency group snapshot pending composite after canvas restore.
+/// </summary>
+internal class PendingComposite
+{
+    public SKImage GroupSnapshot { get; set; } = null!;
+    public SKPoint Position { get; set; }
+}
 
 /// <summary>
 /// Handles path rendering operations for PDF content.
@@ -18,6 +25,8 @@ internal class PathRenderer
     private readonly Func<Matrix3x2> _getInitialTransform;
     private readonly SKSurface _surface;
     private readonly double _scale;
+    private readonly PatternRenderer _patternRenderer;
+    private PendingComposite? _pendingComposite;
 
     /// <summary>
     /// Creates a new PathRenderer.
@@ -32,6 +41,7 @@ internal class PathRenderer
         _getInitialTransform = getInitialTransform;
         _surface = surface;
         _scale = scale;
+        _patternRenderer = new PatternRenderer(canvas, getInitialTransform, scale);
     }
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
@@ -71,11 +81,8 @@ internal class PathRenderer
             paint.StrokeJoin = ConvertLineJoin(state.LineJoin);
             paint.StrokeMiter = (float)state.MiterLimit;
 
-            // Apply overprint blend mode if enabled
-            if (state.StrokeOverprint)
-            {
-                paint.BlendMode = SKBlendMode.Multiply;
-            }
+            // Apply blend mode (including overprint simulation)
+            paint.BlendMode = BlendModeConverter.GetBlendModeForState(state, useStrokeOverprint: true);
 
             // Apply a dash pattern if present (scale by CTM as well)
             if (state.DashPattern is not null && state.DashPattern.Length > 0)
@@ -123,23 +130,22 @@ internal class PathRenderer
 
             PdfLogger.Log(LogCategory.Graphics, $"FILL COLOR: ColorSpace={state.ResolvedFillColorSpace}, Color=({fillColor.Red},{fillColor.Green},{fillColor.Blue}), Alpha={fillColor.Alpha}");
 
-            // Determine blend mode
-            SKBlendMode blendMode = SKBlendMode.SrcOver;
-            if (!string.IsNullOrEmpty(state.BlendMode) && state.BlendMode != "Normal")
-            {
-                blendMode = ConvertBlendMode(state.BlendMode);
-            }
-            else if (state.FillOverprint)
-            {
-                blendMode = SKBlendMode.Multiply;
-            }
+            // Determine blend mode using utility
+            SKBlendMode blendMode = BlendModeConverter.GetBlendModeForState(state, useStrokeOverprint: false);
+            PdfLogger.Log(LogCategory.Graphics, $"BLEND MODE: PDF BlendMode='{state.BlendMode}', SKBlendMode={blendMode}, FillOverprint={state.FillOverprint}");
 
             // For non-normal blend modes, use isolated transparency groups
             if (blendMode != SKBlendMode.SrcOver)
             {
-                // Get path bounds for the isolated group
-                SKRect pathBounds = skPath.Bounds;
+                PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Using isolated transparency group for blend mode {blendMode}");
+
+                // Get path bounds in user space and transform to device space
+                SKRect userSpaceBounds = skPath.Bounds;
+                SKMatrix canvasMatrix = _canvas.TotalMatrix;
+                SKRect pathBounds = canvasMatrix.MapRect(userSpaceBounds);
                 pathBounds.Inflate(2, 2); // Margin for antialiasing
+
+                PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: pathBounds=({pathBounds.Left},{pathBounds.Top},{pathBounds.Width},{pathBounds.Height})");
 
                 // Create isolated group
                 var groupInfo = new SKImageInfo(
@@ -151,52 +157,92 @@ internal class PathRenderer
                 using var groupSurface = SKSurface.Create(groupInfo);
                 if (groupSurface != null)
                 {
-                    var groupCanvas = groupSurface.Canvas;
+                    SKCanvas? groupCanvas = groupSurface.Canvas;
+                    // CRITICAL: Isolated transparency groups must have TRANSPARENT backdrop per PDF spec
+                    // (ISO 32000, Section 11.4.5). Blend modes operate against transparency, not white.
+                    // The group result is then composited over the page background.
                     groupCanvas.Clear(SKColors.Transparent);
 
-                    // Translate to draw at origin of isolated group
-                    groupCanvas.Translate(-pathBounds.Left, -pathBounds.Top);
+                    // Draw backdrop (existing canvas content) into the isolated group
+                    // Draw at negative offset so the pathBounds region appears at (0,0) in the group
+                    using SKImage? canvasSnapshot = _surface.Snapshot();
+                    groupCanvas.DrawImage(canvasSnapshot, -pathBounds.Left, -pathBounds.Top);
 
-                    // Draw backdrop (existing canvas content) into the group
-                    using var canvasSnapshot = _surface.Snapshot();
-                    groupCanvas.DrawImage(canvasSnapshot, 0, 0);
+                    // Apply the same transformation matrix as main canvas, then offset for the group bounds
+                    // This transforms the user-space path to device space, then positions it correctly in the group
+                    //
+                    // IMPORTANT: We can't use SetMatrix + Translate because Translate is affected by the matrix's Y-scale.
+                    // Instead, manually construct the correct matrix:
+                    // - canvasMatrix transforms from user space to device space (includes Y-flip)
+                    // - We want to translate by (-pathBounds.Left, -pathBounds.Top) in DEVICE space
+                    // - The correct matrix combines these: first transform, then translate in device space
+                    var correctedMatrix = new SKMatrix
+                    {
+                        ScaleX = canvasMatrix.ScaleX,
+                        SkewX = canvasMatrix.SkewX,
+                        SkewY = canvasMatrix.SkewY,
+                        ScaleY = canvasMatrix.ScaleY,
+                        TransX = canvasMatrix.TransX - pathBounds.Left,
+                        TransY = canvasMatrix.TransY - pathBounds.Top,
+                        Persp0 = canvasMatrix.Persp0,
+                        Persp1 = canvasMatrix.Persp1,
+                        Persp2 = canvasMatrix.Persp2
+                    };
+
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Main canvas matrix: [{canvasMatrix.ScaleX},{canvasMatrix.SkewX},{canvasMatrix.SkewY},{canvasMatrix.ScaleY},{canvasMatrix.TransX},{canvasMatrix.TransY}]");
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Corrected matrix: [{correctedMatrix.ScaleX},{correctedMatrix.SkewX},{correctedMatrix.SkewY},{correctedMatrix.ScaleY},{correctedMatrix.TransX},{correctedMatrix.TransY}]");
+
+                    groupCanvas.SetMatrix(correctedMatrix);
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Drawing shape with color ({fillColor.Red},{fillColor.Green},{fillColor.Blue},{fillColor.Alpha}), blendMode={blendMode}");
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Path bounds in user space: {skPath.Bounds}");
 
                     // Draw shape with blend mode into the group
-                    using var paint = new SKPaint
-                    {
-                        Color = fillColor,
-                        IsAntialias = true,
-                        Style = SKPaintStyle.Fill,
-                        BlendMode = blendMode
-                    };
+                    using var paint = new SKPaint();
+                    paint.Color = fillColor;
+                    paint.IsAntialias = true;
+                    paint.Style = SKPaintStyle.Fill;
+                    paint.BlendMode = blendMode;
                     groupCanvas.DrawPath(skPath, paint);
 
+                    // Flush to ensure drawing is complete
+                    groupCanvas.Flush();
+
+                    PdfLogger.Log(LogCategory.Graphics, "ISOLATED GROUP: Shape drawn, compositing back to main canvas");
+
                     // Composite the group result back with Normal blend
-                    using var groupSnapshot = groupSurface.Snapshot();
-                    _canvas.DrawImage(groupSnapshot, pathBounds.Left, pathBounds.Top);
+                    // NOTE: Don't use 'using' here because we need to keep the snapshot alive
+                    // for the pending composite that happens after the canvas restore.
+                    SKImage? groupSnapshot = groupSurface.Snapshot();
+
+                    // CRITICAL FIX: We need to draw the composite OUTSIDE the save/restore block
+                    // because any clipping or transformation state might interfere.
+                    // Save the group snapshot for later composite after the restore.
+                    // The snapshot will be disposed after it's used in the finally block.
+                    _pendingComposite = new PendingComposite
+                    {
+                        GroupSnapshot = groupSnapshot,
+                        Position = new SKPoint(pathBounds.Left, pathBounds.Top)
+                    };
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Scheduled composite at ({pathBounds.Left}, {pathBounds.Top}) for after restore");
                 }
                 else
                 {
                     // Fallback
-                    using var paint = new SKPaint
-                    {
-                        Color = fillColor,
-                        IsAntialias = true,
-                        Style = SKPaintStyle.Fill,
-                        BlendMode = blendMode
-                    };
+                    using var paint = new SKPaint();
+                    paint.Color = fillColor;
+                    paint.IsAntialias = true;
+                    paint.Style = SKPaintStyle.Fill;
+                    paint.BlendMode = blendMode;
                     _canvas.DrawPath(skPath, paint);
                 }
             }
             else
             {
                 // Normal blend - draw directly
-                using var paint = new SKPaint
-                {
-                    Color = fillColor,
-                    IsAntialias = true,
-                    Style = SKPaintStyle.Fill
-                };
+                using var paint = new SKPaint();
+                paint.Color = fillColor;
+                paint.IsAntialias = true;
+                paint.Style = SKPaintStyle.Fill;
                 _canvas.DrawPath(skPath, paint);
             }
 
@@ -205,6 +251,35 @@ internal class PathRenderer
         finally
         {
             _canvas.Restore();
+
+            // Apply any pending composite AFTER restore to avoid clipping/transform interference
+            if (_pendingComposite != null)
+            {
+                try
+                {
+                    _canvas.Save();
+                    _canvas.SetMatrix(SKMatrix.Identity);
+
+                    using var compositePaint = new SKPaint
+                    {
+                        BlendMode = SKBlendMode.SrcOver,
+                        IsAntialias = true
+                    };
+                    _canvas.DrawImage(_pendingComposite.GroupSnapshot, _pendingComposite.Position.X, _pendingComposite.Position.Y, compositePaint);
+                    _canvas.Flush();
+
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Composited at ({_pendingComposite.Position.X}, {_pendingComposite.Position.Y}) AFTER restore");
+
+                    _canvas.Restore();
+
+                    _pendingComposite.GroupSnapshot.Dispose();
+                    _pendingComposite = null;
+                }
+                catch (Exception ex)
+                {
+                    PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Failed to composite after restore: {ex.Message}");
+                }
+            }
         }
     }
 
@@ -223,189 +298,11 @@ internal class PathRenderer
             // Convert IPathBuilder to SKPath
             SKPath skPath = PathConverter.ConvertToSkPath(path);
             // Set fill type based on PDF operator (evenOdd parameter)
-            // Previously we forced EvenOdd when Y-flip was detected, but this causes overlapping
-            // paths to create holes. The Y-flip is just a coordinate transform and doesn't
-            // require changing the fill rule.
             skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
 
-            // Calculate pattern cell size in device pixels
-            // Pattern BBox defines the content area, XStep/YStep define the tiling interval
-            double patternWidth = Math.Abs(pattern.XStep);
-            double patternHeight = Math.Abs(pattern.YStep);
+            // Delegate pattern rendering to PatternRenderer
+            _patternRenderer.FillPathWithTilingPattern(skPath, state, pattern, renderPatternContent);
 
-            if (patternWidth <= 0) patternWidth = pattern.BBox.Width;
-            if (patternHeight <= 0) patternHeight = pattern.BBox.Height;
-
-            // Apply pattern matrix and current CTM to get device pixel size
-            // Pattern matrix transforms pattern space to user space
-            Matrix3x2 patternMatrix = pattern.Matrix;
-            Matrix3x2 ctm = state.Ctm;
-            Matrix3x2 combined = patternMatrix * ctm;
-
-            // Calculate scale from combined matrix
-            double scaleX = Math.Sqrt(combined.M11 * combined.M11 + combined.M12 * combined.M12);
-            double scaleY = Math.Sqrt(combined.M21 * combined.M21 + combined.M22 * combined.M22);
-
-            int tileWidth = Math.Max(1, (int)Math.Ceiling(patternWidth * scaleX * _scale));
-            int tileHeight = Math.Max(1, (int)Math.Ceiling(patternHeight * scaleY * _scale));
-
-            // Limit tile size to prevent memory issues
-            const int maxTileSize = 2048;
-            if (tileWidth > maxTileSize) tileWidth = maxTileSize;
-            if (tileHeight > maxTileSize) tileHeight = maxTileSize;
-
-            PdfLogger.Log(LogCategory.Graphics, $"PATTERN TILE: BBox={pattern.BBox}, XStep={pattern.XStep}, YStep={pattern.YStep}, tileSize={tileWidth}x{tileHeight}");
-
-            // Create offscreen surface for pattern tile
-            var tileInfo = new SKImageInfo(tileWidth, tileHeight, SKColorType.Rgba8888, SKAlphaType.Premul);
-            using var tileSurface = SKSurface.Create(tileInfo);
-
-            if (tileSurface is null)
-            {
-                PdfLogger.Log(LogCategory.Graphics, $"PATTERN: Failed to create tile surface {tileWidth}x{tileHeight}");
-                skPath.Dispose();
-                return;
-            }
-
-            SKCanvas tileCanvas = tileSurface.Canvas;
-
-            // Clear with transparent (for colored patterns) or white (could vary)
-            tileCanvas.Clear(SKColors.Transparent);
-
-            // Set up transformation for pattern content
-            // Pattern content is defined in pattern space (PDF coordinates with Y-up)
-            // We need to transform from pattern space to tile surface space (SkiaSharp Y-down)
-            tileCanvas.Save();
-
-            // Scale from pattern space to device pixels, with Y-flip for coordinate system conversion
-            var deviceScaleX = (float)(tileWidth / patternWidth);
-            var deviceScaleY = (float)(tileHeight / patternHeight);
-
-            // Apply Y-flip transformation: PDF Y-up to SkiaSharp Y-down
-            // 1. Translate origin to bottom of tile
-            // 2. Flip Y axis (negative scale)
-            // 3. Translate to BBox origin
-            tileCanvas.Translate(0, tileHeight);
-            tileCanvas.Scale(deviceScaleX, -deviceScaleY);
-
-            // Translate to account for BBox origin (pattern content is relative to BBox)
-            tileCanvas.Translate(-(float)pattern.BBox.X1, -(float)pattern.BBox.Y1);
-
-            // Create a sub-render target for the pattern content
-            using var subTarget = new SkiaSharpRenderTargetForPattern(tileSurface, patternWidth, patternHeight);
-
-            // Render pattern content
-            renderPatternContent(subTarget);
-
-            tileCanvas.Restore();
-
-            // Get the tile as an image
-            using SKImage? tileImage = tileSurface.Snapshot();
-            if (tileImage is null)
-            {
-                PdfLogger.Log(LogCategory.Graphics, "PATTERN: Failed to snapshot tile");
-                skPath.Dispose();
-                return;
-            }
-
-            // Create a shader that tiles the pattern image
-            // The shader maps from user space coordinates to tile bitmap coordinates
-            // Shader operates in pre-canvas-transform space (user space)
-
-            // In user space, pattern tiles every XStep * patternMatrix.M11 in X
-            // and YStep * patternMatrix.M22 in Y
-            float patternScaleX = Math.Abs(pattern.Matrix.M11);
-            float patternScaleY = Math.Abs(pattern.Matrix.M22);
-            if (patternScaleX < 0.001f) patternScaleX = 1.0f;
-            if (patternScaleY < 0.001f) patternScaleY = 1.0f;
-
-            var userStepX = (float)(patternWidth * patternScaleX);
-            var userStepY = (float)(patternHeight * patternScaleY);
-
-            // The shader needs to transform user coordinates to tile bitmap coordinates.
-            // The tile bitmap was rendered with Y-flip (PDF Y-up → bitmap Y-down).
-            // The canvas also has Y-flip (device Y-down → user Y-up via canvasInverse).
-            // When we compose shaderMatrix with canvasInverse, these Y-flips must cancel out.
-            // So shaderMatrix needs NEGATIVE Y scale to compensate for canvasInverse's flip.
-
-            float scaleToTileX = tileWidth / userStepX;
-            float scaleToTileY = tileHeight / userStepY;
-
-            // Pattern origin in user space (from pattern matrix translation)
-            float patternOriginX = pattern.Matrix.M31;
-            float patternOriginY = pattern.Matrix.M32;
-
-            // For X: sample_x = (user_x - patternOriginX) * scaleToTileX
-            // For Y: We need to flip because tile was Y-flipped during rendering.
-            //        tile_y = tileHeight - (user_y - patternOriginY) * scaleToTileY
-            //        This equals: -user_y * scaleToTileY + (tileHeight + patternOriginY * scaleToTileY)
-            // Using negative Y scale compensates for canvasInverse's Y flip.
-
-            var shaderMatrix = SKMatrix.CreateScale(scaleToTileX, -scaleToTileY);
-            shaderMatrix = shaderMatrix.PostConcat(SKMatrix.CreateTranslation(
-                -patternOriginX * scaleToTileX,
-                tileHeight + patternOriginY * scaleToTileY));
-
-            // IMPORTANT: SkiaSharp shaders are sampled in DEVICE coordinates (after canvas transform)
-            // The canvas transform converts user space to device space.
-            // The shader's local matrix needs to transform FROM device coords TO tile bitmap coords.
-            //
-            // device = canvasMatrix * user
-            // So: user = inverse(canvasMatrix) * device
-            // And: tile = shaderMatrix * user = shaderMatrix * inverse(canvasMatrix) * device
-            //
-            // Therefore, the effective shader matrix for device coords is:
-            // effectiveShaderMatrix = shaderMatrix * inverse(canvasMatrix)
-
-            SKMatrix canvasMatrix = _canvas.TotalMatrix;
-
-            // Get the inverse of canvas matrix to transform from device to user space
-            if (!canvasMatrix.TryInvert(out SKMatrix canvasInverse))
-            {
-                PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Canvas matrix not invertible, skipping pattern");
-                skPath.Dispose();
-                return;
-            }
-
-            // Effective shader matrix = shaderMatrix (user→tile) * canvasInverse (device→user)
-            // This gives us: device→user→tile
-            SKMatrix effectiveShaderMatrix = shaderMatrix.PreConcat(canvasInverse);
-
-            PdfLogger.Log(LogCategory.Graphics, $"PATTERN SHADER: tile={tileWidth}x{tileHeight}, origin=({patternOriginX:F1},{patternOriginY:F1}), step=({userStepX:F1},{userStepY:F1})");
-
-            // Create bitmap from the tile image
-            using SKBitmap? tileBitmap = SKBitmap.FromImage(tileImage);
-            if (tileBitmap is null)
-            {
-                PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Failed to create bitmap from tile image");
-                skPath.Dispose();
-                return;
-            }
-
-            // Create shader with the effective matrix (device coords → tile coords)
-            using var shader = SKShader.CreateBitmap(
-                tileBitmap,
-                SKShaderTileMode.Repeat,
-                SKShaderTileMode.Repeat,
-                effectiveShaderMatrix);
-
-            if (shader is null)
-            {
-                PdfLogger.Log(LogCategory.Graphics, "PATTERN SHADER: Failed to create shader");
-                skPath.Dispose();
-                return;
-            }
-
-            // Fill the path with the pattern shader
-            using var paint = new SKPaint();
-            paint.Shader = shader;
-            paint.IsAntialias = true;
-            paint.Style = SKPaintStyle.Fill;
-
-            // Apply fill alpha
-            paint.Color = ColorConverter.ApplyAlpha(SKColors.White, state.FillAlpha);
-
-            _canvas.DrawPath(skPath, paint);
             skPath.Dispose();
         }
         finally
@@ -583,33 +480,6 @@ internal class PathRenderer
             1 => SKStrokeJoin.Round,    // Round join
             2 => SKStrokeJoin.Bevel,    // Bevel join
             _ => SKStrokeJoin.Miter
-        };
-    }
-
-    /// <summary>
-    /// Convert PDF blend mode string to SkiaSharp blend mode
-    /// </summary>
-    private SKBlendMode ConvertBlendMode(string blendMode)
-    {
-        return blendMode switch
-        {
-            "Normal" or "Compatible" => SKBlendMode.SrcOver,
-            "Multiply" => SKBlendMode.Multiply,
-            "Screen" => SKBlendMode.Screen,
-            "Overlay" => SKBlendMode.Overlay,
-            "Darken" => SKBlendMode.Darken,
-            "Lighten" => SKBlendMode.Lighten,
-            "ColorDodge" => SKBlendMode.ColorDodge,
-            "ColorBurn" => SKBlendMode.ColorBurn,
-            "HardLight" => SKBlendMode.HardLight,
-            "SoftLight" => SKBlendMode.SoftLight,
-            "Difference" => SKBlendMode.Difference,
-            "Exclusion" => SKBlendMode.Exclusion,
-            "Hue" => SKBlendMode.Hue,
-            "Saturation" => SKBlendMode.Saturation,
-            "Color" => SKBlendMode.Color,
-            "Luminosity" => SKBlendMode.Luminosity,
-            _ => SKBlendMode.SrcOver
         };
     }
 }

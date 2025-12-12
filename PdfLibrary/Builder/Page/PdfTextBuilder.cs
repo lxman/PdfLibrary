@@ -43,6 +43,11 @@ public class PdfTextBuilder
     }
 
     /// <summary>
+    /// Set fill color (alias for Color method, following fluent API naming conventions)
+    /// </summary>
+    public PdfTextBuilder WithColor(PdfColor color) => Color(color);
+
+    /// <summary>
     /// Set stroke color (for outline text)
     /// </summary>
     public PdfTextBuilder StrokeColor(PdfColor color, double width = 1)

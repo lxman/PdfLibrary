@@ -1,4 +1,3 @@
-using PdfLibrary.Rendering;
 using SkiaSharp;
 
 namespace PdfLibrary.Rendering.SkiaSharp.Conversion;

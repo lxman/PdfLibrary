@@ -253,6 +253,44 @@ internal class PdfRenderer : PdfContentProcessor
 }
 ```
 
+#### SkiaSharp Rendering Implementation
+
+The SkiaSharp-based render target is organized into specialized renderer classes:
+
+| Component | Responsibility |
+|-----------|----------------|
+| `SkiaSharpRenderTarget` | Main render target implementation |
+| `PathRenderer` | Path filling/stroking with blend mode support |
+| `TextRenderer` | Text rendering with font metrics |
+| `ImageRenderer` | Image XObject rendering |
+| `ColorConverter` | PDF to SkiaSharp color conversion |
+| `PathConverter` | PDF to SkiaSharp path conversion |
+| `CanvasStateManager` | Canvas save/restore stack management |
+| `SoftMaskManager` | Soft mask (transparency) handling |
+
+#### Blend Modes and Transparency Groups
+
+PDF supports 16 blend modes for compositing operations. When a non-Normal blend mode is encountered, the renderer creates an **isolated transparency group** per PDF specification (ISO 32000, Section 11.4.5):
+
+```csharp
+// Isolated transparency group workflow:
+1. Create offscreen surface with transparent backdrop
+2. Draw existing canvas content into the group
+3. Draw new content with blend mode into the group
+4. Composite the group result back to main canvas with Normal blend mode
+```
+
+**Critical Implementation Detail**: Isolated groups must use transparent backdrop, NOT white or opaque backdrop. Blend modes operate against transparency first, then the group result composites over the page background.
+
+Supported blend modes:
+- Normal (SrcOver)
+- Multiply, Screen, Overlay
+- Darken, Lighten
+- ColorDodge, ColorBurn
+- HardLight, SoftLight
+- Difference, Exclusion
+- Hue, Saturation, Color, Luminosity
+
 #### ColorSpaceResolver
 
 Converts PDF color spaces to device colors:

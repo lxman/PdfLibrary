@@ -49,7 +49,7 @@ internal class SoftMaskManager
 
         // Start a new layer for masked content
         // All subsequent drawing will go to this layer until the owning state is restored
-        var (width, height) = _getLayerBounds();
+        (float width, float height) = _getLayerBounds();
         var layerBounds = new SKRect(0, 0, width, height);
         _canvas.SaveLayer(layerBounds, null);
     }
@@ -119,5 +119,28 @@ internal class SoftMaskManager
         }
 
         _canvas.SetMatrix(currentMatrix);
+    }
+
+    /// <summary>
+    /// Converts a rendered bitmap to a luminosity-based alpha mask.
+    /// The luminosity (grayscale value) of each pixel becomes the alpha value.
+    /// </summary>
+    public static SKBitmap ConvertToLuminosityMask(SKBitmap source)
+    {
+        var result = new SKBitmap(source.Width, source.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+
+        for (var y = 0; y < source.Height; y++)
+        {
+            for (var x = 0; x < source.Width; x++)
+            {
+                SKColor pixel = source.GetPixel(x, y);
+                // Calculate luminosity: 0.299*R + 0.587*G + 0.114*B
+                var luminosity = (byte)(0.299 * pixel.Red + 0.587 * pixel.Green + 0.114 * pixel.Blue);
+                // Use luminosity as alpha, with white (255, 255, 255) for the color
+                result.SetPixel(x, y, new SKColor(255, 255, 255, luminosity));
+            }
+        }
+
+        return result;
     }
 }

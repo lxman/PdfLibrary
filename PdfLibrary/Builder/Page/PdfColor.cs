@@ -58,16 +58,22 @@ public readonly struct PdfColor
         => new(colorSpace, components);
 
     /// <summary>
-    /// Create a color from 0-255 RGB values
+    /// Create a color from 0-255 RGB values (clamped to valid range)
     /// </summary>
     public static PdfColor FromRgb(int r, int g, int b)
-        => new(r / 255.0, g / 255.0, b / 255.0);
+        => new(Math.Clamp(r / 255.0, 0, 1), Math.Clamp(g / 255.0, 0, 1), Math.Clamp(b / 255.0, 0, 1));
 
     /// <summary>
-    /// Create a grayscale color using DeviceGray color space (0 = black, 1 = white)
+    /// Create a color from 0-1 RGB values (clamped to valid range)
+    /// </summary>
+    public static PdfColor FromRgb(double r, double g, double b)
+        => new(Math.Clamp(r, 0, 1), Math.Clamp(g, 0, 1), Math.Clamp(b, 0, 1));
+
+    /// <summary>
+    /// Create a grayscale color using DeviceGray color space (0 = black, 1 = white, clamped to valid range)
     /// </summary>
     public static PdfColor FromGray(double value)
-        => FromComponents(PdfColorSpace.DeviceGray, value);
+        => FromComponents(PdfColorSpace.DeviceGray, Math.Clamp(value, 0, 1));
 
     /// <summary>
     /// Create a grayscale color as RGB (0 = black, 1 = white) - legacy method
@@ -75,10 +81,14 @@ public readonly struct PdfColor
     public static PdfColor Gray(double value) => new(value, value, value);
 
     /// <summary>
-    /// Create a CMYK color (values 0-1)
+    /// Create a CMYK color (values 0-1, clamped to valid range)
     /// </summary>
     public static PdfColor FromCmyk(double c, double m, double y, double k)
-        => FromComponents(PdfColorSpace.DeviceCMYK, c, m, y, k);
+        => FromComponents(PdfColorSpace.DeviceCMYK,
+            Math.Clamp(c, 0, 1),
+            Math.Clamp(m, 0, 1),
+            Math.Clamp(y, 0, 1),
+            Math.Clamp(k, 0, 1));
 
     /// <summary>
     /// Create a CMYK color from 0-100 percentage values
@@ -87,22 +97,53 @@ public readonly struct PdfColor
         => FromComponents(PdfColorSpace.DeviceCMYK, c / 100.0, m / 100.0, y / 100.0, k / 100.0);
 
     /// <summary>
+    /// Create an RGB color from a hex string (e.g., "#FF00FF" or "FF00FF")
+    /// Supports both 6-character (#RRGGBB) and 3-character (#RGB) formats
+    /// </summary>
+    public static PdfColor FromHex(string hex)
+    {
+        // Remove # if present
+        if (hex.StartsWith("#"))
+            hex = hex.Substring(1);
+
+        // Handle 3-character shorthand (#RGB -> #RRGGBB)
+        if (hex.Length == 3)
+            hex = $"{hex[0]}{hex[0]}{hex[1]}{hex[1]}{hex[2]}{hex[2]}";
+
+        if (hex.Length != 6)
+            throw new ArgumentException("Hex color must be 3 or 6 characters (excluding optional #)", nameof(hex));
+
+        int r = Convert.ToInt32(hex.Substring(0, 2), 16);
+        int g = Convert.ToInt32(hex.Substring(2, 2), 16);
+        int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+
+        return FromRgb(r, g, b);
+    }
+
+    /// <summary>
     /// Create a Separation color (spot color) with a colorant name and tint value (0-1)
     /// </summary>
     public static PdfColor FromSeparation(string colorantName, double tint)
-        => new(PdfColorSpace.Separation, [Math.Clamp(tint, 0, 1)], colorantName);
+    {
+        if (colorantName == null)
+            throw new ArgumentNullException(nameof(colorantName));
 
-    // Common colors (DeviceRGB) - use explicit constructor to avoid ambiguity with params overload
-    public static readonly PdfColor Black = new PdfColor(0, 0, 0);
-    public static readonly PdfColor White = new PdfColor(1, 1, 1);
+        return new(PdfColorSpace.Separation, [Math.Clamp(tint, 0, 1)], colorantName);
+    }
+
+    // Grayscale colors (DeviceGray)
+    public static readonly PdfColor Black = FromGray(0);
+    public static readonly PdfColor White = FromGray(1);
+    public static readonly PdfColor LightGray = FromGray(0.75);
+    public static readonly PdfColor DarkGray = FromGray(0.25);
+
+    // Common RGB colors (DeviceRGB)
     public static readonly PdfColor Red = new PdfColor(1, 0, 0);
     public static readonly PdfColor Green = new PdfColor(0, 1, 0);
     public static readonly PdfColor Blue = new PdfColor(0, 0, 1);
     public static readonly PdfColor Yellow = new PdfColor(1, 1, 0);
     public static readonly PdfColor Cyan = new PdfColor(0, 1, 1);
     public static readonly PdfColor Magenta = new PdfColor(1, 0, 1);
-    public static readonly PdfColor LightGray = new PdfColor(0.75, 0.75, 0.75);
-    public static readonly PdfColor DarkGray = new PdfColor(0.25, 0.25, 0.25);
 
     // Common CMYK colors
     public static readonly PdfColor CmykBlack = FromCmyk(0, 0, 0, 1);

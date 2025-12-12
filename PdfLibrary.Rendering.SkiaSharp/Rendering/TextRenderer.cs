@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using Logging;
 using Microsoft.Extensions.Caching.Memory;
 using PdfLibrary.Content;
@@ -963,11 +964,11 @@ internal class TextRenderer
 
     private void LogPathDetails(SKPath devicePath)
     {
-        var pathIterator = devicePath.CreateRawIterator();
-        SKPoint[] points = new SKPoint[4];
-        int commandIndex = 0;
+        SKPath.RawIterator? pathIterator = devicePath.CreateRawIterator();
+        var points = new SKPoint[4];
+        var commandIndex = 0;
         SKPathVerb verb;
-        System.Text.StringBuilder pathDump = new System.Text.StringBuilder();
+        var pathDump = new StringBuilder();
         pathDump.AppendLine($"PATH-DUMP for 'a': FillType={devicePath.FillType}");
         while ((verb = pathIterator.Next(points)) != SKPathVerb.Done)
         {

@@ -1,11 +1,12 @@
 using System.Runtime.InteropServices;
 using Compressors.Jpeg2000;
 using Logging;
+using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
-using PdfLibrary.Structure;
 using PdfLibrary.Rendering.SkiaSharp.Conversion;
+using PdfLibrary.Structure;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Advanced;
 using SixLabors.ImageSharp.PixelFormats;
@@ -31,7 +32,7 @@ internal class ImageRenderer
     /// <summary>
     /// Draws a PDF image to the canvas using the current graphics state.
     /// </summary>
-    public void DrawImage(PdfImage image, Content.PdfGraphicsState state)
+    public void DrawImage(PdfImage image, PdfGraphicsState state)
     {
         try
         {
@@ -198,15 +199,15 @@ internal class ImageRenderer
                         byte[] rawJp2Data = stream.Data;
 
                         // TIMING: Measure JPEG2000 decode
-                        var decodeStart = DateTime.Now;
+                        DateTime decodeStart = DateTime.Now;
                         Image jp2Image = Jpeg2000.DecompressToImage(rawJp2Data);
-                        var decodeElapsed = DateTime.Now - decodeStart;
+                        TimeSpan decodeElapsed = DateTime.Now - decodeStart;
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {width}x{height} image");
 
                         // TIMING: Measure ImageSharp→SKBitmap conversion
-                        var convertStart = DateTime.Now;
+                        DateTime convertStart = DateTime.Now;
                         SKBitmap jp2Bitmap = ConvertImageSharpToSkBitmap(jp2Image);
-                        var convertElapsed = DateTime.Now - convertStart;
+                        TimeSpan convertElapsed = DateTime.Now - convertStart;
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] ImageSharp→SKBitmap conversion took {convertElapsed.TotalMilliseconds:F0}ms for {width}x{height} image");
 
                         jp2Image.Dispose();
@@ -225,7 +226,7 @@ internal class ImageRenderer
 
             // Check if image has SMask (soft mask - actual alpha channel)
             bool hasActualSMask = stream.Dictionary.ContainsKey(new PdfName("SMask"));
-            // Check if image has Mask (color key masking - different from SMask)
+            // Check if the image has Mask (color key masking - different from SMask)
             bool hasMask = stream.Dictionary.ContainsKey(new PdfName("Mask"));
 
             // Only treat as having alpha if there's an actual SMask stream
@@ -271,7 +272,7 @@ internal class ImageRenderer
             }
 
             // Determine SkiaSharp color type based on PDF color space
-            SKBitmap? bitmap = null;
+            SKBitmap? bitmap;
 
             // Diagnostic: log actual values for image creation
             double[]? imgDecodeArray = image.DecodeArray;
@@ -354,11 +355,9 @@ internal class ImageRenderer
 
                 // Copy pixel buffer to bitmap using Marshal.Copy for performance
                 IntPtr bitmapPixels = bitmap.GetPixels();
-                if (bitmapPixels != IntPtr.Zero)
-                {
-                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
-                    bitmap.NotifyPixelsChanged();
-                }
+                if (bitmapPixels == IntPtr.Zero) return bitmap;
+                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                bitmap.NotifyPixelsChanged();
 
                 return bitmap;
             }
@@ -403,54 +402,59 @@ internal class ImageRenderer
                             int bufferOffset = pixelIndex * 4;
 
                             byte r, g, b, alpha;
-                            if (componentsPerEntry == 3 && paletteOffset + 2 < paletteData.Length)
+                            switch (componentsPerEntry)
                             {
-                                r = paletteData[paletteOffset];
-                                g = paletteData[paletteOffset + 1];
-                                b = paletteData[paletteOffset + 2];
-
-                                // Debug: Log first few pixels
-                                if (pixelIndex < debugPixelCount)
+                                case 3 when paletteOffset + 2 < paletteData.Length:
                                 {
-                                    PdfLogger.Log(LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
-                                }
+                                    r = paletteData[paletteOffset];
+                                    g = paletteData[paletteOffset + 1];
+                                    b = paletteData[paletteOffset + 2];
 
-                                // Apply SMask alpha channel if present
-                                alpha = 255;
-                                if (smaskData is not null && pixelIndex < smaskData.Length)
-                                {
-                                    alpha = smaskData[pixelIndex];
-                                    // Premultiply RGB by alpha for Premul alpha type
-                                    if (hasSMask && alpha < 255)
+                                    // Debug: Log first few pixels
+                                    if (pixelIndex < debugPixelCount)
                                     {
-                                        r = (byte)((r * alpha) / 255);
-                                        g = (byte)((g * alpha) / 255);
-                                        b = (byte)((b * alpha) / 255);
+                                        PdfLogger.Log(LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
                                     }
-                                }
-                            }
-                            else if (componentsPerEntry == 1 && paletteOffset < paletteData.Length)
-                            {
-                                byte gray = paletteData[paletteOffset];
 
-                                // Apply SMask alpha channel if present
-                                alpha = 255;
-                                if (smaskData is not null && pixelIndex < smaskData.Length)
-                                {
-                                    alpha = smaskData[pixelIndex];
-                                    // Premultiply gray by alpha for Premul alpha type
-                                    if (hasSMask && alpha < 255)
+                                    // Apply SMask alpha channel if present
+                                    alpha = 255;
+                                    if (smaskData is not null && pixelIndex < smaskData.Length)
                                     {
-                                        gray = (byte)((gray * alpha) / 255);
+                                        alpha = smaskData[pixelIndex];
+                                        // Premultiply RGB by alpha for Premul alpha type
+                                        if (hasSMask && alpha < 255)
+                                        {
+                                            r = (byte)((r * alpha) / 255);
+                                            g = (byte)((g * alpha) / 255);
+                                            b = (byte)((b * alpha) / 255);
+                                        }
                                     }
-                                }
 
-                                r = g = b = gray;
-                            }
-                            else
-                            {
-                                r = g = b = 0;
-                                alpha = 255;
+                                    break;
+                                }
+                                case 1 when paletteOffset < paletteData.Length:
+                                {
+                                    byte gray = paletteData[paletteOffset];
+
+                                    // Apply SMask alpha channel if present
+                                    alpha = 255;
+                                    if (smaskData is not null && pixelIndex < smaskData.Length)
+                                    {
+                                        alpha = smaskData[pixelIndex];
+                                        // Premultiply gray by alpha for Premul alpha type
+                                        if (hasSMask && alpha < 255)
+                                        {
+                                            gray = (byte)((gray * alpha) / 255);
+                                        }
+                                    }
+
+                                    r = g = b = gray;
+                                    break;
+                                }
+                                default:
+                                    r = g = b = 0;
+                                    alpha = 255;
+                                    break;
                             }
 
                             // RGBA8888 format: R, G, B, A
@@ -1034,7 +1038,7 @@ internal class ImageRenderer
     /// </summary>
     private static SKColor ApplyAlpha(SKColor color, double alpha)
     {
-        byte newAlpha = (byte)(color.Alpha * alpha);
+        var newAlpha = (byte)(color.Alpha * alpha);
         return new SKColor(color.Red, color.Green, color.Blue, newAlpha);
     }
 }

@@ -26,6 +26,7 @@ ITestDocument[] testDocuments =
     // Advanced features
     new SeparationColorTestDocument(),
     new AdvancedGraphicsStateTestDocument(),
+    new BlendModeTestDocument(),
     // Encrypted PDF test documents
     new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "", "owner"),
     new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "test123", "owner"),

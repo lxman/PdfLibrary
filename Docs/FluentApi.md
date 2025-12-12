@@ -732,6 +732,10 @@ var cmyk = PdfColor.FromCmyk(0, 0.5, 1, 0);
 
 // Hex string
 var color = PdfColor.FromHex("#8040C0");
+
+// Separation (Spot Color) - tint range: 0.0-1.0
+var spotColor = PdfColor.FromSeparation("PANTONE 185 C", 1.0);  // Full tint
+var lightSpot = PdfColor.FromSeparation("PANTONE 185 C", 0.5);  // 50% tint
 ```
 
 ---

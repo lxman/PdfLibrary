@@ -1,5 +1,6 @@
 using Logging;
 using SkiaSharp;
+using Wacton.Unicolour;
 
 namespace PdfLibrary.Rendering.SkiaSharp.Conversion;
 
@@ -47,9 +48,9 @@ internal static class ColorConverter
                     double y = colorComponents[2];
                     double k = colorComponents[3];
 
-                    // Improved CMYK to RGB conversion
-                    // Adobe uses ICC profiles, but this provides a reasonable approximation
-                    // The key insight is that we convert to CMY first, then apply black
+                    // Manual CMYK→RGB conversion (naive, without ICC profile)
+                    // Unicolour only supports CMYK through ICC profiles, which DeviceCMYK doesn't provide
+                    // This is the standard naive conversion appropriate for DeviceCMYK
                     var r = (byte)((1 - Math.Min(1.0, c * (1 - k) + k)) * 255);
                     var g = (byte)((1 - Math.Min(1.0, m * (1 - k) + k)) * 255);
                     var b = (byte)((1 - Math.Min(1.0, y * (1 - k) + k)) * 255);
@@ -69,43 +70,13 @@ internal static class ColorConverter
                     double a = colorComponents[1];
                     double b = colorComponents[2];
 
-                    // Default white point (D65 if not specified)
-                    double Xn = 0.9642, Yn = 1.0, Zn = 0.8249;
+                    // Use Unicolour for Lab→RGB conversion
+                    var unicolour = new Unicolour(ColourSpace.Lab, L, a, b);
+                    Rgb rgb = unicolour.Rgb;
 
-                    // Convert Lab to XYZ
-                    double fy = (L + 16) / 116.0;
-                    double fx = fy + (a / 500.0);
-                    double fz = fy - (b / 200.0);
-
-                    double xr = fx * fx * fx;
-                    if (xr <= 0.008856) xr = (fx - 16.0 / 116.0) / 7.787;
-
-                    double yr = fy * fy * fy;
-                    if (yr <= 0.008856) yr = (fy - 16.0 / 116.0) / 7.787;
-
-                    double zr = fz * fz * fz;
-                    if (zr <= 0.008856) zr = (fz - 16.0 / 116.0) / 7.787;
-
-                    double X = xr * Xn;
-                    double Y = yr * Yn;
-                    double Z = zr * Zn;
-
-                    // Convert XYZ to sRGB (using standard D65 matrix)
-                    double rLinear =  3.2406 * X - 1.5372 * Y - 0.4986 * Z;
-                    double gLinear = -0.9689 * X + 1.8758 * Y + 0.0415 * Z;
-                    double bLinear =  0.0557 * X - 0.2040 * Y + 1.0570 * Z;
-
-                    // Apply gamma correction for sRGB
-                    var gamma = (double v) => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.Pow(v, 1.0 / 2.4) - 0.055;
-                    double rSrgb = gamma(rLinear);
-                    double gSrgb = gamma(gLinear);
-                    double bSrgb = gamma(bLinear);
-
-                    // Clamp to [0, 1] and convert to byte
-                    var clamp = (double v) => Math.Max(0, Math.Min(1, v));
-                    var rByte = (byte)(clamp(rSrgb) * 255);
-                    var gByte = (byte)(clamp(gSrgb) * 255);
-                    var bByte = (byte)(clamp(bSrgb) * 255);
+                    var rByte = (byte)(Math.Clamp(rgb.R, 0.0, 1.0) * 255);
+                    var gByte = (byte)(Math.Clamp(rgb.G, 0.0, 1.0) * 255);
+                    var bByte = (byte)(Math.Clamp(rgb.B, 0.0, 1.0) * 255);
 
                     // Debug logging for Lab conversion
                     PdfLogger.Log(LogCategory.Graphics,
