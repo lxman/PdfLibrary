@@ -1,19 +1,6 @@
 namespace PdfLibrary.Structure;
 
 /// <summary>
-/// Cross-reference entry types (ISO 32000-1 section 7.5.8.3)
-/// </summary>
-internal enum PdfXrefEntryType
-{
-    /// <summary>Free entry</summary>
-    Free = 0,
-    /// <summary>Uncompressed object at byte offset</summary>
-    Uncompressed = 1,
-    /// <summary>Compressed object in object stream</summary>
-    Compressed = 2
-}
-
-/// <summary>
 /// Represents a single entry in the cross-reference table (ISO 32000-1:2008 section 7.5.4)
 /// </summary>
 internal class PdfXrefEntry

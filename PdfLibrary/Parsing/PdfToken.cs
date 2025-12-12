@@ -22,38 +22,3 @@ internal readonly struct PdfToken(PdfTokenType type, string value, long position
 
     public override string ToString() => $"{Type}: {Value} @ {Position}";
 }
-
-/// <summary>
-/// Types of tokens in PDF syntax
-/// </summary>
-internal enum PdfTokenType
-{
-    // Primitives
-    Integer,            // 123, -17, +42
-    Real,               // 3.14, -0.5, +1.0
-    String,             // (text) or <48656C6C6F>
-    Name,               // /Name, /Type, /Lime#20Green
-    Boolean,            // true, false
-    Null,               // null
-
-    // Delimiters
-    ArrayStart,         // [
-    ArrayEnd,           // ]
-    DictionaryStart,    // <<
-    DictionaryEnd,      // >>
-
-    // Keywords
-    Obj,                // obj
-    EndObj,             // endobj
-    Stream,             // stream
-    EndStream,          // endstream
-    R,                  // R (indirect reference)
-    Xref,               // xref
-    Trailer,            // trailer
-    StartXref,          // startxref
-
-    // Special
-    Comment,            // % comment text
-    EndOfFile,          // End of stream
-    Unknown             // Unrecognized token
-}

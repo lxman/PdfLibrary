@@ -260,6 +260,15 @@ public class PdfPageBuilder(PdfSize size)
         return AddImage(imageData, rect);
     }
 
+    /// <summary>
+    /// Add an image at a position specified in inches from top-left
+    /// </summary>
+    /// <param name="imageData">The image file data (PNG, JPEG, etc.)</param>
+    /// <param name="left">Left position in inches</param>
+    /// <param name="top">Top position in inches</param>
+    /// <param name="width">Width in inches</param>
+    /// <param name="height">Height in inches</param>
+    /// <returns>The image builder for fluent configuration</returns>
     public PdfImageBuilder AddImageInches(byte[] imageData, double left, double top, double width, double height)
     {
         PdfRect rect = PdfRect.FromInches(left, top, width, height, PageHeight);

@@ -110,19 +110,3 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
     public static implicit operator string(PdfString pdfString) => pdfString.Value;
     public static implicit operator PdfString(string value) => new(value);
 }
-
-/// <summary>
-/// Format for PDF string representation
-/// </summary>
-internal enum PdfStringFormat
-{
-    /// <summary>
-    /// Literal strings enclosed in parentheses: (text)
-    /// </summary>
-    Literal,
-
-    /// <summary>
-    /// Hexadecimal strings enclosed in angle brackets: &lt;48656C6C6F&gt;
-    /// </summary>
-    Hexadecimal
-}

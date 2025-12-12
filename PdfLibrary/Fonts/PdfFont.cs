@@ -183,15 +183,3 @@ public abstract class PdfFont
         ToUnicode = ToUnicodeCMap.Parse(data);
     }
 }
-
-/// <summary>
-/// PDF font types
-/// </summary>
-internal enum PdfFontType
-{
-    Type1,
-    TrueType,
-    Type3,
-    Type0,
-    MmType1
-}

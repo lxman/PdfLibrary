@@ -576,3 +576,144 @@ public enum ImageFormat
     Bmp
 }
 
+/// <summary>
+/// PDF font types
+/// </summary>
+internal enum PdfFontType
+{
+    Type1,
+    TrueType,
+    Type3,
+    Type0,
+    MmType1
+}
+
+/// <summary>
+/// Enumeration of PDF object types
+/// </summary>
+internal enum PdfObjectType
+{
+    Null,
+    Boolean,
+    Integer,
+    Real,
+    String,
+    Name,
+    Array,
+    Dictionary,
+    Stream,
+    IndirectReference
+}
+
+/// <summary>
+/// Format for PDF string representation
+/// </summary>
+internal enum PdfStringFormat
+{
+    /// <summary>
+    /// Literal strings enclosed in parentheses: (text)
+    /// </summary>
+    Literal,
+
+    /// <summary>
+    /// Hexadecimal strings enclosed in angle brackets: &lt;48656C6C6F&gt;
+    /// </summary>
+    Hexadecimal
+}
+
+/// <summary>
+/// Categories of PDF operators
+/// </summary>
+internal enum OperatorCategory
+{
+    /// <summary>Graphics state operators (q, Q, cm, w, etc.)</summary>
+    GraphicsState,
+
+    /// <summary>Path construction operators (m, l, c, re, etc.)</summary>
+    PathConstruction,
+
+    /// <summary>Path painting operators (S, s, f, F, B, etc.)</summary>
+    PathPainting,
+
+    /// <summary>Text objects (BT, ET)</summary>
+    TextObject,
+
+    /// <summary>Text state operators (Tc, Tw, Tz, TL, etc.)</summary>
+    TextState,
+
+    /// <summary>Text positioning operators (Td, TD, Tm, T*)</summary>
+    TextPositioning,
+
+    /// <summary>Text showing operators (Tj, TJ, ', ")</summary>
+    TextShowing,
+
+    /// <summary>Color operators (CS, cs, SC, sc, etc.)</summary>
+    Color,
+
+    /// <summary>Shading operators (sh)</summary>
+    Shading,
+
+    /// <summary>Inline images (BI, ID, EI)</summary>
+    InlineImage,
+
+    /// <summary>XObject operators (Do)</summary>
+    XObject,
+
+    /// <summary>Marked content operators (BMC, BDC, EMC, etc.)</summary>
+    MarkedContent,
+
+    /// <summary>Compatibility operators (BX, EX)</summary>
+    Compatibility,
+
+    /// <summary>Unknown or unrecognized operator</summary>
+    Unknown
+}
+
+/// <summary>
+/// Types of tokens in PDF syntax
+/// </summary>
+internal enum PdfTokenType
+{
+    // Primitives
+    Integer,            // 123, -17, +42
+    Real,               // 3.14, -0.5, +1.0
+    String,             // (text) or <48656C6C6F>
+    Name,               // /Name, /Type, /Lime#20Green
+    Boolean,            // true, false
+    Null,               // null
+
+    // Delimiters
+    ArrayStart,         // [
+    ArrayEnd,           // ]
+    DictionaryStart,    // <<
+    DictionaryEnd,      // >>
+
+    // Keywords
+    Obj,                // obj
+    EndObj,             // endobj
+    Stream,             // stream
+    EndStream,          // endstream
+    R,                  // R (indirect reference)
+    Xref,               // xref
+    Trailer,            // trailer
+    StartXref,          // startxref
+
+    // Special
+    Comment,            // % comment text
+    EndOfFile,          // End of stream
+    Unknown             // Unrecognized token
+}
+
+/// <summary>
+/// Cross-reference entry types (ISO 32000-1 section 7.5.8.3)
+/// </summary>
+internal enum PdfXrefEntryType
+{
+    /// <summary>Free entry</summary>
+    Free = 0,
+    /// <summary>Uncompressed object at byte offset</summary>
+    Uncompressed = 1,
+    /// <summary>Compressed object in object stream</summary>
+    Compressed = 2
+}
+

@@ -33,20 +33,3 @@ internal abstract class PdfObject
 
     public override string ToString() => ToPdfString();
 }
-
-/// <summary>
-/// Enumeration of PDF object types
-/// </summary>
-internal enum PdfObjectType
-{
-    Null,
-    Boolean,
-    Integer,
-    Real,
-    String,
-    Name,
-    Array,
-    Dictionary,
-    Stream,
-    IndirectReference
-}
