@@ -1641,11 +1641,20 @@ public class PdfDocumentWriter
         writer.WriteLine("<< /Type /FontDescriptor");
         writer.WriteLine($"   /FontName /{SanitizeFontName(fontInfo.PostScriptName)}");
 
-        // Font flags (see PDF spec section 9.8.2)
-        // Bit 1 (0x01): FixedPitch
-        // Bit 6 (0x20): Symbolic (not set for standard fonts)
-        // Bit 7 (0x40): Nonsymbolic (set for standard fonts with WinAnsi)
-        const int flags = 0x40; // Nonsymbolic
+        // Font flags (see PDF spec ISO 32000-1:2008 section 9.8.2)
+        // Bit 1 (0x0001): FixedPitch
+        // Bit 3 (0x0004): Symbolic
+        // Bit 6 (0x0020): Nonsymbolic (required for fonts with standard encodings like WinAnsiEncoding)
+        // Bit 7 (0x0040): Italic
+        // Bit 17 (0x10000): ForceBold
+        int flags = 0x0020; // Nonsymbolic (required for WinAnsiEncoding fonts)
+
+        if (metrics.IsItalic)
+            flags |= 0x0040; // Italic
+
+        if (metrics.IsBold)
+            flags |= 0x10000; // ForceBold
+
         writer.WriteLine($"   /Flags {flags}");
 
         // Font bounding box (estimate if not available)

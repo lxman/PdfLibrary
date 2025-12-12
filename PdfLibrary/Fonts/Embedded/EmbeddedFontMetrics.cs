@@ -89,6 +89,16 @@ internal class EmbeddedFontMetrics
     public bool IsType1Font => _isType1Font;
 
     /// <summary>
+    /// Indicates if this font is bold according to the head table's macStyle
+    /// </summary>
+    public bool IsBold => _headTable?.MacStyle.HasFlag(MacStyle.Bold) ?? false;
+
+    /// <summary>
+    /// Indicates if this font is italic according to the head table's macStyle
+    /// </summary>
+    public bool IsItalic => _headTable?.MacStyle.HasFlag(MacStyle.Italic) ?? false;
+
+    /// <summary>
     /// Gets the nominal width (default width) for CFF glyphs that don't specify explicit widths
     /// </summary>
     /// <returns>NominalWidthX in font units, or 0 if not a CFF font</returns>
