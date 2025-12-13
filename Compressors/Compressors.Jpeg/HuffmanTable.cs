@@ -50,7 +50,7 @@ public class HuffmanTable
 
         // Find max code length
         MaxCodeLength = 0;
-        for (int i = 15; i >= 0; i--)
+        for (var i = 15; i >= 0; i--)
         {
             if (Bits[i] > 0)
             {
@@ -132,8 +132,8 @@ public class HuffmanTable
 
         // Slow path: read bit by bit
         // This handles codes longer than LookupBits and end-of-data scenarios
-        int code = 0;
-        for (int length = 1; length <= MaxCodeLength; length++)
+        var code = 0;
+        for (var length = 1; length <= MaxCodeLength; length++)
         {
             int bit = reader.ReadBit();
             if (bit < 0)
@@ -156,17 +156,17 @@ public class HuffmanTable
     private void BuildEncodeTable()
     {
         // Initialize all entries as invalid
-        for (int i = 0; i < 256; i++)
+        for (var i = 0; i < 256; i++)
         {
             _encodeTable[i] = (0, 0);
         }
 
-        int code = 0;
-        int valueIndex = 0;
+        var code = 0;
+        var valueIndex = 0;
 
-        for (int length = 1; length <= 16; length++)
+        for (var length = 1; length <= 16; length++)
         {
-            for (int i = 0; i < Bits[length - 1]; i++)
+            for (var i = 0; i < Bits[length - 1]; i++)
             {
                 byte symbol = Values[valueIndex++];
                 _encodeTable[symbol] = ((ushort)code, (byte)length);
@@ -182,17 +182,17 @@ public class HuffmanTable
     private void BuildDecodeTable()
     {
         // Initialize lookup as invalid
-        for (int i = 0; i < _decodeLookup.Length; i++)
+        for (var i = 0; i < _decodeLookup.Length; i++)
         {
             _decodeLookup[i] = -1;
         }
 
-        int code = 0;
-        int valueIndex = 0;
+        var code = 0;
+        var valueIndex = 0;
 
-        for (int length = 1; length <= 16; length++)
+        for (var length = 1; length <= 16; length++)
         {
-            for (int i = 0; i < Bits[length - 1]; i++)
+            for (var i = 0; i < Bits[length - 1]; i++)
             {
                 byte symbol = Values[valueIndex++];
 
@@ -203,7 +203,7 @@ public class HuffmanTable
                     int baseIndex = code << shift;
                     int count = 1 << shift;
 
-                    for (int j = 0; j < count; j++)
+                    for (var j = 0; j < count; j++)
                     {
                         _decodeLookup[baseIndex + j] = (length << 8) | symbol;
                     }
@@ -220,12 +220,12 @@ public class HuffmanTable
     /// </summary>
     private int FindCode(int code, int length)
     {
-        int checkCode = 0;
-        int valueIndex = 0;
+        var checkCode = 0;
+        var valueIndex = 0;
 
-        for (int len = 1; len <= length; len++)
+        for (var len = 1; len <= length; len++)
         {
-            for (int i = 0; i < Bits[len - 1]; i++)
+            for (var i = 0; i < Bits[len - 1]; i++)
             {
                 if (len == length && checkCode == code)
                     return valueIndex;
@@ -247,17 +247,17 @@ public class HuffmanTable
         // tableClass: 0 = DC, 1 = AC
         // tableId: 0-3
 
-        int totalValues = 0;
-        for (int i = 0; i < 16; i++)
+        var totalValues = 0;
+        for (var i = 0; i < 16; i++)
             totalValues += Bits[i];
 
         var data = new byte[1 + 16 + totalValues];
         data[0] = (byte)((tableClass << 4) | (tableId & 0x0F));
 
-        for (int i = 0; i < 16; i++)
+        for (var i = 0; i < 16; i++)
             data[1 + i] = Bits[i];
 
-        for (int i = 0; i < totalValues; i++)
+        for (var i = 0; i < totalValues; i++)
             data[17 + i] = Values[i];
 
         return data;
@@ -275,16 +275,16 @@ public class HuffmanTable
         tableClass = (info >> 4) & 0x0F;
         tableId = info & 0x0F;
 
-        var bits = data.Slice(1, 16);
+        ReadOnlySpan<byte> bits = data.Slice(1, 16);
 
-        int totalValues = 0;
-        for (int i = 0; i < 16; i++)
+        var totalValues = 0;
+        for (var i = 0; i < 16; i++)
             totalValues += bits[i];
 
         if (data.Length < 17 + totalValues)
             throw new ArgumentException("DHT segment data too short for values", nameof(data));
 
-        var values = data.Slice(17, totalValues);
+        ReadOnlySpan<byte> values = data.Slice(17, totalValues);
 
         return new HuffmanTable(bits, values);
     }

@@ -1,6 +1,4 @@
 using CoreJ2K.Util;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace Compressors.Jpeg2000;
 
@@ -95,106 +93,14 @@ public static class Jpeg2000
         return result;
     }
 
-    /// <summary>
-    /// Decompress JPEG 2000 data directly to ImageSharp Image
-    /// </summary>
-    /// <param name="data">JPEG 2000 encoded data (J2K or JP2 format)</param>
-    /// <returns>ImageSharp Image with decoded image data</returns>
-    public static Image DecompressToImage(byte[] data)
-    {
-        ArgumentNullException.ThrowIfNull(data);
-
-        if (data.Length == 0)
-        {
-            throw new ArgumentException("Empty JP2 data", nameof(data));
-        }
-
-        // Decode using Melville.CSJ2K
-        using var stream = new MemoryStream(data);
-        PortableImage portableImage = CoreJ2K.J2kImage.FromStream(stream);
-
-        int width = portableImage.Width;
-        int height = portableImage.Height;
-        int components = portableImage.NumberOfComponents;
-
-        return components switch
-        {
-            1 => ConvertGrayscaleImage(portableImage, width, height),
-            3 => ConvertRgbImage(portableImage, width, height),
-            4 => ConvertRgbaImage(portableImage, width, height),
-            _ => throw new NotSupportedException($"Number of components {components} not supported")
-        };
-    }
-
-    private static Image<L8> ConvertGrayscaleImage(PortableImage portableImage, int width, int height)
-    {
-        var image = new Image<L8>(width, height);
-        int[] component0 = portableImage.GetComponent(0);
-
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                int idx = y * width + x;
-                image[x, y] = new L8(ClampToByte(component0[idx]));
-            }
-        }
-
-        return image;
-    }
-
-    private static Image<Rgb24> ConvertRgbImage(PortableImage portableImage, int width, int height)
-    {
-        var image = new Image<Rgb24>(width, height);
-        int[] component0 = portableImage.GetComponent(0);
-        int[] component1 = portableImage.GetComponent(1);
-        int[] component2 = portableImage.GetComponent(2);
-
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                int idx = y * width + x;
-                image[x, y] = new Rgb24(
-                    ClampToByte(component0[idx]),
-                    ClampToByte(component1[idx]),
-                    ClampToByte(component2[idx])
-                );
-            }
-        }
-
-        return image;
-    }
-
-    private static Image<Rgba32> ConvertRgbaImage(PortableImage portableImage, int width, int height)
-    {
-        var image = new Image<Rgba32>(width, height);
-        int[] component0 = portableImage.GetComponent(0);
-        int[] component1 = portableImage.GetComponent(1);
-        int[] component2 = portableImage.GetComponent(2);
-        int[] component3 = portableImage.GetComponent(3);
-
-        for (var y = 0; y < height; y++)
-        {
-            for (var x = 0; x < width; x++)
-            {
-                int idx = y * width + x;
-                image[x, y] = new Rgba32(
-                    ClampToByte(component0[idx]),
-                    ClampToByte(component1[idx]),
-                    ClampToByte(component2[idx]),
-                    ClampToByte(component3[idx])
-                );
-            }
-        }
-
-        return image;
-    }
 
     private static byte ClampToByte(int value)
     {
-        if (value < 0) return 0;
-        if (value > 255) return 255;
-        return (byte)value;
+        return value switch
+        {
+            < 0 => 0,
+            > 255 => 255,
+            _ => (byte)value
+        };
     }
 }

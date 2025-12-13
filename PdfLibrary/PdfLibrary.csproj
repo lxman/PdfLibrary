@@ -34,15 +34,14 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="JpegLibrary" Version="0.4.32" />
       <PackageReference Include="Serilog" Version="4.3.1-dev-02395" />
       <PackageReference Include="Serilog.Sinks.File" Version="7.0.1-dev-02315" />
-      <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
       <PackageReference Include="Wacton.Unicolour" Version="6.3.0" />
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
+      <ProjectReference Include="..\JpegLibrary\src\JpegLibrary\JpegLibrary.csproj" />
       <ProjectReference Include="..\Logging\Logging.csproj" />
       <ProjectReference Include="..\Compressors\Compressors.Lzw\Compressors.Lzw.csproj" />
       <ProjectReference Include="..\Compressors\Compressors.Ccitt\Compressors.Ccitt.csproj" />

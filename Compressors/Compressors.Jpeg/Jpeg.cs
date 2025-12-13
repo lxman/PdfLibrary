@@ -32,7 +32,7 @@ public static class Jpeg
     public static byte[] Decode(Stream stream, out int width, out int height)
     {
         var decoder = new JpegDecoder();
-        var result = decoder.Decode(stream);
+        byte[] result = decoder.Decode(stream);
         width = decoder.Width;
         height = decoder.Height;
         return result;
@@ -65,7 +65,7 @@ public static class Jpeg
     public static byte[] Decode(Stream stream, out int width, out int height, out int componentCount, bool convertToRgb = true)
     {
         var decoder = new JpegDecoder();
-        var result = decoder.Decode(stream, convertToRgb);
+        byte[] result = decoder.Decode(stream, convertToRgb);
         width = decoder.Width;
         height = decoder.Height;
         componentCount = decoder.ComponentCount;
@@ -93,7 +93,7 @@ public static class Jpeg
     public static JpegDecodeResult DecodeWithInfo(Stream stream, bool convertToRgb = true)
     {
         var decoder = new JpegDecoder();
-        var data = decoder.Decode(stream, convertToRgb);
+        byte[] data = decoder.Decode(stream, convertToRgb);
         return new JpegDecodeResult
         {
             Data = data,
@@ -233,7 +233,7 @@ public static class Jpeg
             if (b < 0)
                 break;
 
-            byte marker = (byte)b;
+            var marker = (byte)b;
 
             // Handle markers without length
             if (marker == JpegConstants.SOI || marker == JpegConstants.EOI ||

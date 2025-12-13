@@ -4,8 +4,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Filters;
 using PdfLibrary.Structure;
-using SixLabors.ImageSharp.ColorSpaces;
-using SixLabors.ImageSharp.ColorSpaces.Conversion;
+using Wacton.Unicolour;
 
 namespace PdfLibrary.Document;
 
@@ -363,12 +362,9 @@ public class PdfImage
 
         // For JBIG2Decode, we need to resolve JBIG2Globals indirect references
         // because PdfStream.ConvertToDecodeParams() doesn't handle indirect references
-        if (IsJbig2Filter())
-        {
-            return GetDecodedDataWithJbig2Fix();
-        }
-
-        return _stream.GetDecodedData(_document?.Decryptor);
+        return IsJbig2Filter()
+            ? GetDecodedDataWithJbig2Fix()
+            : _stream.GetDecodedData(_document?.Decryptor);
     }
 
     /// <summary>
@@ -571,55 +567,58 @@ public class PdfImage
         // We'll set baseColorSpace after checking for ICC transformation
         string? resolvedBaseColorSpace = null;
 
-        if (baseObj is PdfName baseName)
+        switch (baseObj)
         {
-            resolvedBaseColorSpace = baseName.Value;
-        }
-        else if (baseObj is PdfArray { Count: > 0 } baseArray && baseArray[0] is PdfName baseTypeName)
-        {
-            // Handle ICCBased base color space - determine device equivalent but DON'T set it yet
-            if (baseTypeName.Value == "ICCBased" && baseArray.Count >= 2)
+            case PdfName baseName:
+                resolvedBaseColorSpace = baseName.Value;
+                break;
+            case PdfArray { Count: > 0 } baseArray when baseArray[0] is PdfName baseTypeName:
             {
-                // Get the ICC stream to determine actual component count
-                PdfObject? iccStreamObj = baseArray[1];
-                if (iccStreamObj is PdfIndirectReference iccRef && _document is not null)
-                    iccStreamObj = _document.ResolveReference(iccRef);
-
-                if (iccStreamObj is PdfStream iccStream)
+                // Handle ICCBased base color space - determine device equivalent but DON'T set it yet
+                if (baseTypeName.Value == "ICCBased" && baseArray.Count >= 2)
                 {
-                    // Get /N (number of components): 1=Gray, 3=RGB, 4=CMYK
-                    if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
+                    // Get the ICC stream to determine actual component count
+                    PdfObject? iccStreamObj = baseArray[1];
+                    if (iccStreamObj is PdfIndirectReference iccRef && _document is not null)
+                        iccStreamObj = _document.ResolveReference(iccRef);
+
+                    if (iccStreamObj is PdfStream iccStream)
                     {
-                        int numComponents = nInt.Value;
-                        // Map to device color space based on component count
-                        resolvedBaseColorSpace = numComponents switch
+                        // Get /N (number of components): 1=Gray, 3=RGB, 4=CMYK
+                        if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
                         {
-                            1 => "DeviceGray",
-                            3 => "DeviceRGB",
-                            4 => "DeviceCMYK",
-                            _ => "DeviceRGB"
-                        };
+                            int numComponents = nInt.Value;
+                            // Map to device color space based on component count
+                            resolvedBaseColorSpace = numComponents switch
+                            {
+                                1 => "DeviceGray",
+                                3 => "DeviceRGB",
+                                4 => "DeviceCMYK",
+                                _ => "DeviceRGB"
+                            };
+                        }
+                        else
+                        {
+                            // No /N found, default to RGB
+                            resolvedBaseColorSpace = "DeviceRGB";
+                        }
                     }
                     else
                     {
-                        // No /N found, default to RGB
                         resolvedBaseColorSpace = "DeviceRGB";
                     }
                 }
                 else
                 {
-                    resolvedBaseColorSpace = "DeviceRGB";
+                    // Other array-based color spaces
+                    resolvedBaseColorSpace = baseTypeName.Value;
                 }
+
+                break;
             }
-            else
-            {
-                // Other array-based color spaces
-                resolvedBaseColorSpace = baseTypeName.Value;
-            }
-        }
-        else
-        {
-            resolvedBaseColorSpace = "DeviceRGB";
+            default:
+                resolvedBaseColorSpace = "DeviceRGB";
+                break;
         }
 
         // Set baseColorSpace for output parameter (will be updated if we transform ICC palette)
@@ -638,19 +637,21 @@ public class PdfImage
         // Extract lookup table (index 3) - can be string or stream
         PdfObject? lookupObj = csArray[3];
 
-        // Debug: Log what csArray[3] is before resolution
-        if (lookupObj is PdfIndirectReference lookupRef0)
+        switch (lookupObj)
         {
-            PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: indirect reference R{lookupRef0.ObjectNumber}");
-        }
-        else if (lookupObj is PdfString lookupStr0)
-        {
-            PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: inline PdfString len={lookupStr0.Bytes.Length}");
-        }
-        else
-        {
-            string type0 = lookupObj?.GetType().Name ?? "null";
-            PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: type={type0}");
+            // Debug: Log what csArray[3] is before resolution
+            case PdfIndirectReference lookupRef0:
+                PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: indirect reference R{lookupRef0.ObjectNumber}");
+                break;
+            case PdfString lookupStr0:
+                PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: inline PdfString len={lookupStr0.Bytes.Length}");
+                break;
+            default:
+            {
+                string type0 = lookupObj?.GetType().Name ?? "null";
+                PdfLogger.Log(LogCategory.Images, $"INDEXED csArray[3]: type={type0}");
+                break;
+            }
         }
 
         // Resolve indirect reference to lookup table
@@ -707,20 +708,16 @@ public class PdfImage
             if (iccStreamObj is PdfIndirectReference iccRef2 && _document is not null)
                 iccStreamObj = _document.ResolveReference(iccRef2);
 
-            if (iccStreamObj is PdfStream iccStream2)
-            {
-                paletteData = TransformIccPalette(iccStream2, paletteData, resolvedBaseColorSpace ?? "DeviceRGB");
+            if (iccStreamObj is not PdfStream iccStream2) return paletteData;
+            paletteData = TransformIccPalette(iccStream2, paletteData, resolvedBaseColorSpace ?? "DeviceRGB");
 
-                // Debug: Log AFTER transformation
-                if (paletteData.Length >= 12)
-                {
-                    var palette0t = $"RGB({paletteData[0]}, {paletteData[1]}, {paletteData[2]})";
-                    var palette1t = $"RGB({paletteData[3]}, {paletteData[4]}, {paletteData[5]})";
-                    var palette2t = $"RGB({paletteData[6]}, {paletteData[7]}, {paletteData[8]})";
-                    var palette3t = $"RGB({paletteData[9]}, {paletteData[10]}, {paletteData[11]})";
-                    PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (transformed): palette[0]={palette0t}, [1]={palette1t}, [2]={palette2t}, [3]={palette3t}");
-                }
-            }
+            // Debug: Log AFTER transformation
+            if (paletteData.Length < 12) return paletteData;
+            var palette0t = $"RGB({paletteData[0]}, {paletteData[1]}, {paletteData[2]})";
+            var palette1t = $"RGB({paletteData[3]}, {paletteData[4]}, {paletteData[5]})";
+            var palette2t = $"RGB({paletteData[6]}, {paletteData[7]}, {paletteData[8]})";
+            var palette3t = $"RGB({paletteData[9]}, {paletteData[10]}, {paletteData[11]})";
+            PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (transformed): palette[0]={palette0t}, [1]={palette1t}, [2]={palette2t}, [3]={palette3t}");
         }
         else if (paletteData is not null && paletteData.Length >= 12)
         {
@@ -742,8 +739,8 @@ public class PdfImage
     {
         try
         {
-            // Get number of components from ICC profile
-            int numComponents = 3; // Default to RGB
+            // Get the number of components from the ICC profile
+            var numComponents = 3; // Default to RGB
             if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
             {
                 numComponents = nInt.Value;
@@ -758,32 +755,31 @@ public class PdfImage
 
             int numColors = paletteBytes.Length / 3;
             var transformedBytes = new byte[paletteBytes.Length];
-            var converter = new ColorSpaceConverter();
 
             PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM: Starting transformation of {numColors} palette colors");
 
             // Transform each RGB triple
-            for (int i = 0; i < numColors; i++)
+            for (var i = 0; i < numColors; i++)
             {
                 int offset = i * 3;
 
                 // Read ICC color values (normalized to 0-1 range)
-                float r = paletteBytes[offset] / 255f;
-                float g = paletteBytes[offset + 1] / 255f;
-                float b = paletteBytes[offset + 2] / 255f;
+                double r = paletteBytes[offset] / 255.0;
+                double g = paletteBytes[offset + 1] / 255.0;
+                double b = paletteBytes[offset + 2] / 255.0;
 
-                // Create an sRGB color (ICC sRGB uses sRGB primaries and gamma)
-                var iccColor = new Rgb(r, g, b);
+                // Create an sRGB color and convert through XYZ to ensure proper color space transformation
+                // This ensures gamma correction is applied
+                var iccColor = new Unicolour(ColourSpace.Rgb, r, g, b);
 
-                // Convert through CIE XYZ to ensure proper color space transformation
-                // sRGB -> XYZ -> sRGB ensures gamma correction is applied
-                var xyzColor = converter.ToCieXyz(iccColor);
-                var deviceColor = converter.ToRgb(xyzColor);
+                // Convert through CIE XYZ and back to RGB
+                var xyz = iccColor.Xyz;
+                var deviceColor = new Unicolour(ColourSpace.Xyz, xyz.X, xyz.Y, xyz.Z);
 
                 // Convert back to 0-255 range
-                transformedBytes[offset] = (byte)Math.Clamp((int)(deviceColor.R * 255f + 0.5f), 0, 255);
-                transformedBytes[offset + 1] = (byte)Math.Clamp((int)(deviceColor.G * 255f + 0.5f), 0, 255);
-                transformedBytes[offset + 2] = (byte)Math.Clamp((int)(deviceColor.B * 255f + 0.5f), 0, 255);
+                transformedBytes[offset] = (byte)Math.Clamp((int)(deviceColor.Rgb.R * 255.0 + 0.5), 0, 255);
+                transformedBytes[offset + 1] = (byte)Math.Clamp((int)(deviceColor.Rgb.G * 255.0 + 0.5), 0, 255);
+                transformedBytes[offset + 2] = (byte)Math.Clamp((int)(deviceColor.Rgb.B * 255.0 + 0.5), 0, 255);
             }
 
             PdfLogger.Log(LogCategory.Images, "ICC TRANSFORM: Completed transformation");

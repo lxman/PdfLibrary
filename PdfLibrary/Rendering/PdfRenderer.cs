@@ -766,7 +766,7 @@ public class PdfRenderer : PdfContentProcessor
                 {
                     // Distribute the spacing adjustment across all glyphs
                     double perGlyphAdjustment = spacingAdjustment / glyphWidths.Count;
-                    for (int j = 0; j < glyphWidths.Count; j++)
+                    for (var j = 0; j < glyphWidths.Count; j++)
                     {
                         glyphWidths[j] += perGlyphAdjustment;
                     }
@@ -1476,7 +1476,7 @@ public class PdfRenderer : PdfContentProcessor
             if (!isDeviceColorSpace && colorSpaces is not null)
             {
                 // Try to resolve the color space reference
-                PdfName csKey = new PdfName(colorSpaceName);
+                var csKey = new PdfName(colorSpaceName);
                 if (colorSpaces.TryGetValue(csKey, out PdfObject? csObj))
                 {
                     PdfLogger.Log(LogCategory.Images, $"  Resolving color space '{colorSpaceName}' from resources");

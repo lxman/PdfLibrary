@@ -157,16 +157,6 @@ namespace FontParser
                 tsRecord.Attempted = true;
             }
 
-            if (!_tables.Any()) return;
-            if (_tables.Any(t => !t.Attempted))
-            {
-                Console.WriteLine("Remaining tables to parse:");
-                _tables.Where(t => !t.Attempted).ToList().ForEach(t => Console.WriteLine($"\t{t.Name}"));
-                Console.WriteLine();
-            }
-            if (!_tables.Any(t => t.Attempted)) return;
-            Console.WriteLine("Parsing failed for:");
-            _tables.Where(t => t.Attempted).ToList().ForEach(t => Console.WriteLine($"\t{t.Name}"));
         }
 
         public DocumentIndex GetSvgDocumentIndex()

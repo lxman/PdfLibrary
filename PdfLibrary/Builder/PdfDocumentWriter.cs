@@ -9,9 +9,6 @@ using PdfLibrary.Builder.Layer;
 using PdfLibrary.Builder.Page;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Security;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace PdfLibrary.Builder;
 
@@ -1422,58 +1419,12 @@ public class PdfDocumentWriter
             return (data, width, height, "DeviceRGB", 8, "DCTDecode");
         }
 
-        // For all other formats (PNG, BMP, etc.), use ImageSharp to decode
-        try
-        {
-            using var memStream = new MemoryStream(data);
-            using Image<Rgb24> imageData = Image.Load<Rgb24>(memStream);
-
-            int width = imageData.Width;
-            int height = imageData.Height;
-
-            // Convert to RGB888 format
-            var rgbData = new byte[width * height * 3];
-            var idx = 0;
-
-            for (var y = 0; y < height; y++)
-            {
-                for (var x = 0; x < width; x++)
-                {
-                    Rgb24 pixel = imageData[x, y];
-                    rgbData[idx++] = pixel.R;
-                    rgbData[idx++] = pixel.G;
-                    rgbData[idx++] = pixel.B;
-                }
-            }
-
-            switch (image.Compression)
-            {
-                // Compress based on settings
-                case PdfImageCompression.Jpeg:
-                {
-                    byte[] compressed = CompressJpeg(imageData, image.JpegQuality);
-                    return (compressed, width, height, "DeviceRGB", 8, "DCTDecode");
-                }
-                case PdfImageCompression.Flate or PdfImageCompression.Auto:
-                {
-                    byte[] compressed = CompressFlate(rgbData);
-                    return (compressed, width, height, "DeviceRGB", 8, "FlateDecode");
-                }
-                case PdfImageCompression.None:
-                    return (rgbData, width, height, "DeviceRGB", 8, "");
-                default:
-                {
-                    // Default: Flate compression
-                    byte[] defaultCompressed = CompressFlate(rgbData);
-                    return (defaultCompressed, width, height, "DeviceRGB", 8, "FlateDecode");
-                }
-            }
-        }
-        catch
-        {
-            // If ImageSharp fails, return a placeholder
-            return ([], 100, 100, "DeviceRGB", 8, "");
-        }
+        // Unsupported format - only JPEG and JPEG2000 are supported directly
+        // For other formats (PNG, BMP, TIFF, etc.), pre-convert to JPEG or JPEG2000 before adding to PDF
+        throw new NotSupportedException(
+            "Only JPEG and JPEG2000 image formats are supported directly. " +
+            "Please convert PNG, BMP, TIFF, or other formats to JPEG before embedding in PDF. " +
+            "Detected image format signature: " + BitConverter.ToString(data.Take(12).ToArray()));
     }
 
     private static (int width, int height) GetJpegDimensions(byte[] data)
@@ -1574,15 +1525,6 @@ public class PdfDocumentWriter
         return (b << 16) | a;
     }
 
-    private static byte[] CompressJpeg(Image<Rgb24> image, int quality)
-    {
-        // Encode as JPEG using ImageSharp
-        using var memStream = new MemoryStream();
-        var encoder = new JpegEncoder { Quality = quality };
-        image.Save(memStream, encoder);
-        return memStream.ToArray();
-    }
-
     /// <summary>
     /// Write a TrueType font with embedding
     /// </summary>
@@ -1647,7 +1589,7 @@ public class PdfDocumentWriter
         // Bit 6 (0x0020): Nonsymbolic (required for fonts with standard encodings like WinAnsiEncoding)
         // Bit 7 (0x0040): Italic
         // Bit 17 (0x10000): ForceBold
-        int flags = 0x0020; // Nonsymbolic (required for WinAnsiEncoding fonts)
+        var flags = 0x0020; // Nonsymbolic (required for WinAnsiEncoding fonts)
 
         if (metrics.IsItalic)
             flags |= 0x0040; // Italic

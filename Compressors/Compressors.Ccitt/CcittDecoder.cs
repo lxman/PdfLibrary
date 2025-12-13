@@ -113,9 +113,6 @@ namespace Compressors.Ccitt
                     if (CheckEndOfBlock(reader))
                         break;
 
-                    // Debug: log error position
-                    Console.WriteLine($"[CCITT DEBUG] Row {rowCount} decode failed at bit position {reader.Position}, bits remaining: {reader.BitsRemaining}");
-
                     // Error - try to continue if damaged rows allowed
                     if (_options.DamagedRowsBeforeError > 0)
                     {
@@ -200,8 +197,7 @@ namespace Compressors.Ccitt
         /// </summary>
         private void Trace(string message)
         {
-            if (EnableTracing)
-                Console.WriteLine(message);
+            // Tracing disabled
         }
 
         /// <summary>
@@ -346,7 +342,6 @@ namespace Compressors.Ccitt
 
                     case TwoDimensionalMode.Error:
                     default:
-                        Console.WriteLine($"[CCITT DEBUG] 2D decode error: mode={mode}, a0={a0}/{_options.Width}, a0Color={a0Color}, bitPos={preModeBitPos}, modes decoded this row={modeCount}");
                         return null;
                 }
             }
@@ -388,10 +383,6 @@ namespace Compressors.Ccitt
             {
                 bool prevPixel = GetPixelFast(referenceLine, startPos - 1);
                 bool currPixel = GetPixelFast(referenceLine, startPos);
-                if (EnableTracing && startPos >= 1960 && startPos <= 1970)
-                {
-                    Console.WriteLine($"      FindB1: startPos={startPos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
-                }
                 if (currPixel == targetColor && prevPixel != targetColor)
                 {
                     return startPos;
@@ -423,11 +414,6 @@ namespace Compressors.Ccitt
                     bool currPixel = GetPixelFromByte(currentByte, bit);
                     bool prevPixel = GetPixelFast(referenceLine, pos - 1);
 
-                    if (EnableTracing && pos >= 1960 && pos <= 1970)
-                    {
-                        Console.WriteLine($"      FindB1: pos={pos}, prevPixel={prevPixel}, currPixel={currPixel}, targetColor={targetColor}");
-                    }
-
                     if (currPixel == targetColor && prevPixel != targetColor)
                     {
                         return pos;
@@ -449,10 +435,6 @@ namespace Compressors.Ccitt
 
                 if (firstPixelInByte == targetColor && prevPixel != targetColor)
                 {
-                    if (EnableTracing && pos >= 1960 && pos <= 1970)
-                    {
-                        Console.WriteLine($"      FindB1: pos={pos}, prevPixel={prevPixel}, currPixel={firstPixelInByte}, targetColor={targetColor}");
-                    }
                     return pos;
                 }
 
@@ -472,11 +454,6 @@ namespace Compressors.Ccitt
                     int currentPos = pos + (6 - bit) + 1;
                     bool currPixel = GetPixelFromByte(b, bit);
                     bool prev = GetPixelFromByte(b, bit + 1);
-
-                    if (EnableTracing && currentPos >= 1960 && currentPos <= 1970)
-                    {
-                        Console.WriteLine($"      FindB1: pos={currentPos}, prevPixel={prev}, currPixel={currPixel}, targetColor={targetColor}");
-                    }
 
                     if (currPixel == targetColor && prev != targetColor)
                     {

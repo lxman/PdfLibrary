@@ -38,7 +38,6 @@ namespace Compressors.Jbig2
             // Validate input
             if (data == null || data.Length == 0)
             {
-                Console.WriteLine("[JBIG2 WARNING] Empty or null data provided. Returning blank image.");
                 return [];
             }
 
@@ -65,7 +64,6 @@ namespace Compressors.Jbig2
                 // Validate output
                 if (rgb == null || rgb.Length == 0)
                 {
-                    Console.WriteLine($"[JBIG2 WARNING] Decoder returned null or empty result. Data length: {data.Length}. Returning blank image.");
                     width = 0;
                     height = 0;
                     return [];
@@ -74,7 +72,6 @@ namespace Compressors.Jbig2
                 // Validate dimensions
                 if (width <= 0 || height <= 0)
                 {
-                    Console.WriteLine($"[JBIG2 WARNING] Decoder returned invalid dimensions ({width}x{height}). Returning blank image.");
                     width = 0;
                     height = 0;
                     return [];
@@ -83,35 +80,28 @@ namespace Compressors.Jbig2
                 // Validate data length
                 int expectedLength = width * height * 3;
                 if (rgb.Length == expectedLength) return rgb;
-                Console.WriteLine($"[JBIG2 WARNING] Decoder returned incorrect data length. Expected {expectedLength}, got {rgb.Length}. Dimensions: {width}x{height}");
                 width = 0;
                 height = 0;
                 return [];
 
             }
-            catch (NullReferenceException ex)
+            catch (NullReferenceException)
             {
                 // Common error from the decoder library when data is malformed
-                Console.WriteLine($"[JBIG2 ERROR] NullReferenceException during decode. Data length: {data.Length}, Has globals: {globals != null}. Error: {ex.Message}");
-                Console.WriteLine($"[JBIG2 ERROR] Stack trace: {ex.StackTrace}");
                 width = 0;
                 height = 0;
                 return [];
             }
-            catch (IndexOutOfRangeException ex)
+            catch (IndexOutOfRangeException)
             {
                 // Another common error with malformed JBIG2 data
-                Console.WriteLine($"[JBIG2 ERROR] IndexOutOfRangeException during decode. Data length: {data.Length}. Error: {ex.Message}");
                 width = 0;
                 height = 0;
                 return [];
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // Catch any other exceptions from the decoder
-                Console.WriteLine($"[JBIG2 ERROR] Unexpected error during decode: {ex.GetType().Name}");
-                Console.WriteLine($"[JBIG2 ERROR] Message: {ex.Message}");
-                Console.WriteLine($"[JBIG2 ERROR] Data length: {data.Length}, Has globals: {globals != null}");
                 width = 0;
                 height = 0;
                 return [];

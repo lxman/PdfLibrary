@@ -43,27 +43,27 @@ public static class Dct
             throw new ArgumentException("Block must contain exactly 64 elements", nameof(block));
 
         // Row-column algorithm: apply 1D DCT to rows, then columns
-        var block2D = Span2D<float>.DangerousCreate(ref block[0], 8, 8, 0);
+        Span2D<float> block2D = Span2D<float>.DangerousCreate(ref block[0], 8, 8, 0);
 
         // Transform rows
-        for (int i = 0; i < 8; i++)
+        for (var i = 0; i < 8; i++)
         {
-            var row = block2D.GetRowSpan(i);
+            Span<float> row = block2D.GetRowSpan(i);
             ForwardDct1D(row);
         }
 
         // Transform columns
         Span<float> column = stackalloc float[8];
-        for (int j = 0; j < 8; j++)
+        for (var j = 0; j < 8; j++)
         {
             // Extract column
-            for (int i = 0; i < 8; i++)
+            for (var i = 0; i < 8; i++)
                 column[i] = block2D[i, j];
 
             ForwardDct1D(column);
 
             // Write back
-            for (int i = 0; i < 8; i++)
+            for (var i = 0; i < 8; i++)
                 block2D[i, j] = column[i];
         }
     }
@@ -78,27 +78,27 @@ public static class Dct
         if (block.Length != 64)
             throw new ArgumentException("Block must contain exactly 64 elements", nameof(block));
 
-        var block2D = Span2D<float>.DangerousCreate(ref block[0], 8, 8, 0);
+        Span2D<float> block2D = Span2D<float>.DangerousCreate(ref block[0], 8, 8, 0);
 
         // Transform columns first for IDCT
         Span<float> column = stackalloc float[8];
-        for (int j = 0; j < 8; j++)
+        for (var j = 0; j < 8; j++)
         {
             // Extract column
-            for (int i = 0; i < 8; i++)
+            for (var i = 0; i < 8; i++)
                 column[i] = block2D[i, j];
 
             InverseDct1D(column);
 
             // Write back
-            for (int i = 0; i < 8; i++)
+            for (var i = 0; i < 8; i++)
                 block2D[i, j] = column[i];
         }
 
         // Transform rows
-        for (int i = 0; i < 8; i++)
+        for (var i = 0; i < 8; i++)
         {
-            var row = block2D.GetRowSpan(i);
+            Span<float> row = block2D.GetRowSpan(i);
             InverseDct1D(row);
         }
     }
@@ -115,10 +115,10 @@ public static class Dct
     {
         Span<float> result = stackalloc float[8];
 
-        for (int k = 0; k < 8; k++)
+        for (var k = 0; k < 8; k++)
         {
             float sum = 0;
-            for (int n = 0; n < 8; n++)
+            for (var n = 0; n < 8; n++)
             {
                 sum += data[n] * MathF.Cos(MathF.PI * (2 * n + 1) * k / 16);
             }
@@ -138,10 +138,10 @@ public static class Dct
     {
         Span<float> result = stackalloc float[8];
 
-        for (int n = 0; n < 8; n++)
+        for (var n = 0; n < 8; n++)
         {
             float sum = 0;
-            for (int k = 0; k < 8; k++)
+            for (var k = 0; k < 8; k++)
             {
                 float alpha = k == 0 ? Alpha0 : AlphaK;
                 sum += alpha * data[k] * MathF.Cos(MathF.PI * (2 * n + 1) * k / 16);
@@ -165,14 +165,14 @@ public static class Dct
         Span<float> temp = stackalloc float[64];
         block.CopyTo(temp);
 
-        for (int u = 0; u < 8; u++)
+        for (var u = 0; u < 8; u++)
         {
-            for (int v = 0; v < 8; v++)
+            for (var v = 0; v < 8; v++)
             {
                 float sum = 0;
-                for (int x = 0; x < 8; x++)
+                for (var x = 0; x < 8; x++)
                 {
-                    for (int y = 0; y < 8; y++)
+                    for (var y = 0; y < 8; y++)
                     {
                         sum += temp[x * 8 + y] *
                                MathF.Cos((2 * x + 1) * u * MathF.PI / 16) *
@@ -199,14 +199,14 @@ public static class Dct
         Span<float> temp = stackalloc float[64];
         block.CopyTo(temp);
 
-        for (int x = 0; x < 8; x++)
+        for (var x = 0; x < 8; x++)
         {
-            for (int y = 0; y < 8; y++)
+            for (var y = 0; y < 8; y++)
             {
                 float sum = 0;
-                for (int u = 0; u < 8; u++)
+                for (var u = 0; u < 8; u++)
                 {
-                    for (int v = 0; v < 8; v++)
+                    for (var v = 0; v < 8; v++)
                     {
                         float cu = u == 0 ? 1f / MathF.Sqrt(2) : 1f;
                         float cv = v == 0 ? 1f / MathF.Sqrt(2) : 1f;
@@ -233,7 +233,7 @@ public static class Dct
             throw new ArgumentException("Output must contain exactly 64 elements", nameof(output));
 
         // Level shift and convert to float
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             output[i] = input[i] - JpegConstants.LevelShift;
         }
@@ -255,7 +255,7 @@ public static class Dct
         InverseDct(input);
 
         // Level shift and clamp
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             int value = (int)MathF.Round(input[i]) + JpegConstants.LevelShift;
             output[i] = (byte)Math.Clamp(value, 0, 255);

@@ -7,9 +7,6 @@ using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering.SkiaSharp.Conversion;
 using PdfLibrary.Structure;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Advanced;
-using SixLabors.ImageSharp.PixelFormats;
 using SkiaSharp;
 
 namespace PdfLibrary.Rendering.SkiaSharp.Rendering;
@@ -89,24 +86,6 @@ internal class ImageRenderer
                     int midY = bitmap.Height / 2;
                     SKColor pixelMid = bitmap.GetPixel(midX, midY);
                     PdfLogger.Log(LogCategory.Images, $"DrawImage: pixel(0,0)=({pixel00.Red},{pixel00.Green},{pixel00.Blue},{pixel00.Alpha}), pixel(mid)=({pixelMid.Red},{pixelMid.Green},{pixelMid.Blue},{pixelMid.Alpha})");
-
-                    // DEBUG: Save bitmap before drawing to diagnose dithering
-                    if (bitmap.Width == 650 && bitmap.Height == 650)  // Only for this specific test image
-                    {
-                        try
-                        {
-                            string debugPath = Path.Combine(Path.GetTempPath(), "debug_bitmap_before_draw.png");
-                            using SKImage? debugImage = SKImage.FromBitmap(bitmap);
-                            using SKData? debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
-                            if (debugData != null)
-                            {
-                                using FileStream stream = File.OpenWrite(debugPath);
-                                debugData.SaveTo(stream);
-                                PdfLogger.Log(LogCategory.Images, $"DEBUG: Saved bitmap to {debugPath}");
-                            }
-                        }
-                        catch { /* ignore debug errors */ }
-                    }
                 }
 
                 // Debug: Log canvas clip bounds
@@ -200,22 +179,20 @@ internal class ImageRenderer
 
                         // TIMING: Measure JPEG2000 decode
                         DateTime decodeStart = DateTime.Now;
-                        Image jp2Image = Jpeg2000.DecompressToImage(rawJp2Data);
+                        byte[] pixelData = Jpeg2000.Decompress(rawJp2Data, out int jp2Width, out int jp2Height, out int components);
                         TimeSpan decodeElapsed = DateTime.Now - decodeStart;
-                        PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {width}x{height} image");
+                        PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image with {components} components");
 
-                        // TIMING: Measure ImageSharp→SKBitmap conversion
+                        // TIMING: Measure raw bytes→SKBitmap conversion
                         DateTime convertStart = DateTime.Now;
-                        SKBitmap jp2Bitmap = ConvertImageSharpToSkBitmap(jp2Image);
+                        SKBitmap jp2Bitmap = ConvertRawBytesToSkBitmap(pixelData, jp2Width, jp2Height, components);
                         TimeSpan convertElapsed = DateTime.Now - convertStart;
-                        PdfLogger.Log(LogCategory.Images, $"[TIMING] ImageSharp→SKBitmap conversion took {convertElapsed.TotalMilliseconds:F0}ms for {width}x{height} image");
+                        PdfLogger.Log(LogCategory.Images, $"[TIMING] Raw bytes→SKBitmap conversion took {convertElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image");
 
-                        jp2Image.Dispose();
                         return jp2Bitmap;
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        Console.WriteLine($"[JP2 MANUAL] Failed to decode manually: {ex.Message}");
                         // Fall through to standard processing if manual decode fails
                     }
                 }
@@ -358,6 +335,7 @@ internal class ImageRenderer
                 if (bitmapPixels == IntPtr.Zero) return bitmap;
                 Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
                 bitmap.NotifyPixelsChanged();
+
 
                 return bitmap;
             }
@@ -518,50 +496,6 @@ internal class ImageRenderer
                         }
                     }
 
-                    // DEBUG: Save pixel buffer directly as image to verify data before bitmap copy
-                    if (width == 650 && height == 650)
-                    {
-                        try
-                        {
-                            // Sample some pixels to check data integrity
-                            Console.WriteLine($"[PIXEL DEBUG] Pixel (0,0): R={pixelBuffer[0]}, G={pixelBuffer[1]}, B={pixelBuffer[2]}, A={pixelBuffer[3]}");
-                            Console.WriteLine($"[PIXEL DEBUG] Pixel (649,0): R={pixelBuffer[649*4]}, G={pixelBuffer[649*4+1]}, B={pixelBuffer[649*4+2]}, A={pixelBuffer[649*4+3]}");
-                            int midRow = 325 * 650 * 4;
-                            Console.WriteLine($"[PIXEL DEBUG] Pixel (0,325): R={pixelBuffer[midRow]}, G={pixelBuffer[midRow+1]}, B={pixelBuffer[midRow+2]}, A={pixelBuffer[midRow+3]}");
-                            // Check pixel at x=433 where corruption visually starts
-                            int corrupt433 = 433 * 4;
-                            Console.WriteLine($"[PIXEL DEBUG] Pixel (433,0): R={pixelBuffer[corrupt433]}, G={pixelBuffer[corrupt433+1]}, B={pixelBuffer[corrupt433+2]}, A={pixelBuffer[corrupt433+3]}");
-                            int corrupt433Row100 = (100 * 650 + 433) * 4;
-                            Console.WriteLine($"[PIXEL DEBUG] Pixel (433,100): R={pixelBuffer[corrupt433Row100]}, G={pixelBuffer[corrupt433Row100+1]}, B={pixelBuffer[corrupt433Row100+2]}, A={pixelBuffer[corrupt433Row100+3]}");
-
-                            // Save the pixel buffer directly using SKBitmap.InstallPixels to bypass Marshal.Copy
-                            string debugPath2 = Path.Combine(Path.GetTempPath(), "debug_pixelbuffer_direct.png");
-                            var debugInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
-                            using var debugBitmap = new SKBitmap();
-                            GCHandle pinnedArray = GCHandle.Alloc(pixelBuffer, GCHandleType.Pinned);
-                            try
-                            {
-                                debugBitmap.InstallPixels(debugInfo, pinnedArray.AddrOfPinnedObject(), width * 4);
-                                using SKImage? debugImage = SKImage.FromBitmap(debugBitmap);
-                                using SKData? debugData = debugImage?.Encode(SKEncodedImageFormat.Png, 100);
-                                if (debugData != null)
-                                {
-                                    using FileStream fileStream = File.OpenWrite(debugPath2);
-                                    debugData.SaveTo(fileStream);
-                                    Console.WriteLine($"[DEBUG] Saved pixelbuffer direct to {debugPath2}");
-                                }
-                            }
-                            finally
-                            {
-                                pinnedArray.Free();
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"[DEBUG ERROR] {ex.Message}");
-                        }
-                    }
-
                     // Create bitmap and copy pixel buffer
                     var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
                     bitmap = new SKBitmap(imageInfo);
@@ -714,13 +648,14 @@ internal class ImageRenderer
                             // Treat as RGB
                             SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
                             int expectedSize = width * height * 3;
-                            if (imageData.Length < expectedSize)
-                                return null;
+
+                            // Handle truncated data more gracefully - render what we can instead of failing completely
 
                             // Use direct pixel buffer for performance
                             var pixelBuffer = new byte[width * height * 4];
-                            int pixelCount = width * height;
-                            for (var i = 0; i < pixelCount; i++)
+                            int availablePixels = Math.Min(imageData.Length / 3, width * height);
+
+                            for (var i = 0; i < availablePixels; i++)
                             {
                                 int srcOffset = i * 3;
                                 int dstOffset = i * 4;
@@ -728,6 +663,16 @@ internal class ImageRenderer
                                 pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
                                 pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
                                 pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                            }
+
+                            // Fill remaining pixels with transparent or white if data is incomplete
+                            for (var i = availablePixels; i < width * height; i++)
+                            {
+                                int dstOffset = i * 4;
+                                pixelBuffer[dstOffset] = 255;     // R
+                                pixelBuffer[dstOffset + 1] = 255; // G
+                                pixelBuffer[dstOffset + 2] = 255; // B
+                                pixelBuffer[dstOffset + 3] = 0;   // A - transparent
                             }
 
                             var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
@@ -880,12 +825,11 @@ internal class ImageRenderer
                     return null;
             }
 
+
             return bitmap;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[BITMAP ERROR] CreateBitmapFromPdfImage exception: {ex.GetType().Name}: {ex.Message}");
-            Console.WriteLine($"[BITMAP ERROR] Stack trace: {ex.StackTrace}");
             PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage exception: {ex.GetType().Name}: {ex.Message}");
             return null;
         }
@@ -931,107 +875,65 @@ internal class ImageRenderer
     }
 
     /// <summary>
-    /// Converts ImageSharp Image to SkiaSharp SKBitmap.
+    /// Converts raw interleaved pixel bytes to SkiaSharp SKBitmap.
     /// </summary>
-    private static SKBitmap ConvertImageSharpToSkBitmap(Image image)
+    /// <param name="pixelData">Raw interleaved pixel data (RGB or RGBA or grayscale)</param>
+    /// <param name="width">Image width</param>
+    /// <param name="height">Image height</param>
+    /// <param name="components">Number of components (1=Gray, 3=RGB, 4=RGBA)</param>
+    /// <returns>SKBitmap with decoded image data</returns>
+    private static SKBitmap ConvertRawBytesToSkBitmap(byte[] pixelData, int width, int height, int components)
     {
-        switch (image)
+        switch (components)
         {
-            case Image<Rgb24> rgb24:
+            case 1: // Grayscale
             {
-                var bitmap = new SKBitmap(rgb24.Width, rgb24.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-                int width = rgb24.Width;
-                int height = rgb24.Height;
-                var pixelBuffer = new byte[width * height * 4]; // RGBA8888
-
-                // Copy pixels using direct memory access
-                for (var y = 0; y < height; y++)
-                {
-                    Span<Rgb24> rowSpan = rgb24.DangerousGetPixelRowMemory(y).Span;
-                    int bufferOffset = y * width * 4;
-
-                    for (var x = 0; x < width; x++)
-                    {
-                        Rgb24 pixel = rowSpan[x];
-                        int offset = bufferOffset + (x * 4);
-                        pixelBuffer[offset] = pixel.R;
-                        pixelBuffer[offset + 1] = pixel.G;
-                        pixelBuffer[offset + 2] = pixel.B;
-                        pixelBuffer[offset + 3] = 255; // Alpha
-                    }
-                }
-
-                // Bulk copy to bitmap
+                var bitmap = new SKBitmap(width, height, SKColorType.Gray8, SKAlphaType.Opaque);
                 IntPtr bitmapPixels = bitmap.GetPixels();
-                if (bitmapPixels == IntPtr.Zero) return bitmap;
-                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
-                bitmap.NotifyPixelsChanged();
-
+                if (bitmapPixels != IntPtr.Zero)
+                {
+                    Marshal.Copy(pixelData, 0, bitmapPixels, pixelData.Length);
+                    bitmap.NotifyPixelsChanged();
+                }
                 return bitmap;
             }
-            case Image<Rgba32> rgba32:
+            case 3: // RGB - convert to RGBA8888 for SkiaSharp
             {
-                var bitmap = new SKBitmap(rgba32.Width, rgba32.Height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-                int width = rgba32.Width;
-                int height = rgba32.Height;
-                var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+                var rgbaBuffer = new byte[width * height * 4];
 
-                // Copy pixels using direct memory access
-                for (var y = 0; y < height; y++)
+                for (var i = 0; i < width * height; i++)
                 {
-                    Span<Rgba32> rowSpan = rgba32.DangerousGetPixelRowMemory(y).Span;
-                    int bufferOffset = y * width * 4;
-
-                    for (var x = 0; x < width; x++)
-                    {
-                        Rgba32 pixel = rowSpan[x];
-                        int offset = bufferOffset + (x * 4);
-                        pixelBuffer[offset] = pixel.R;
-                        pixelBuffer[offset + 1] = pixel.G;
-                        pixelBuffer[offset + 2] = pixel.B;
-                        pixelBuffer[offset + 3] = pixel.A;
-                    }
+                    rgbaBuffer[i * 4 + 0] = pixelData[i * 3 + 0]; // R
+                    rgbaBuffer[i * 4 + 1] = pixelData[i * 3 + 1]; // G
+                    rgbaBuffer[i * 4 + 2] = pixelData[i * 3 + 2]; // B
+                    rgbaBuffer[i * 4 + 3] = 255;                   // A (opaque)
                 }
 
-                // Bulk copy to bitmap
                 IntPtr bitmapPixels = bitmap.GetPixels();
-                if (bitmapPixels == IntPtr.Zero) return bitmap;
-                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
-                bitmap.NotifyPixelsChanged();
-
+                if (bitmapPixels != IntPtr.Zero)
+                {
+                    Marshal.Copy(rgbaBuffer, 0, bitmapPixels, rgbaBuffer.Length);
+                    bitmap.NotifyPixelsChanged();
+                }
                 return bitmap;
             }
-            case Image<L8> l8:
+            case 4: // RGBA
             {
-                var bitmap = new SKBitmap(l8.Width, l8.Height, SKColorType.Gray8, SKAlphaType.Opaque);
-                int width = l8.Width;
-                int height = l8.Height;
-                var pixelBuffer = new byte[width * height]; // Gray8 = 1 byte per pixel
-
-                // Copy pixels using direct memory access
-                for (var y = 0; y < height; y++)
-                {
-                    Span<L8> rowSpan = l8.DangerousGetPixelRowMemory(y).Span;
-                    int bufferOffset = y * width;
-
-                    for (var x = 0; x < width; x++)
-                    {
-                        pixelBuffer[bufferOffset + x] = rowSpan[x].PackedValue;
-                    }
-                }
-
-                // Bulk copy to bitmap
+                var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
                 IntPtr bitmapPixels = bitmap.GetPixels();
-                if (bitmapPixels == IntPtr.Zero) return bitmap;
-                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
-                bitmap.NotifyPixelsChanged();
-
+                if (bitmapPixels != IntPtr.Zero)
+                {
+                    Marshal.Copy(pixelData, 0, bitmapPixels, pixelData.Length);
+                    bitmap.NotifyPixelsChanged();
+                }
                 return bitmap;
             }
             default:
-                throw new NotSupportedException($"ImageSharp pixel format {image.GetType().Name} not supported for conversion to SKBitmap");
+                throw new NotSupportedException($"Number of components {components} not supported for conversion to SKBitmap");
         }
     }
+
 
     /// <summary>
     /// Applies alpha transparency to a color.

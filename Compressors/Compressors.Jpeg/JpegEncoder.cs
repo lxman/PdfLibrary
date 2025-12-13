@@ -259,7 +259,7 @@ public class JpegEncoder
     /// </summary>
     private void WriteHuffmanTable(BitWriter writer, HuffmanTable table, int tableClass, int tableId)
     {
-        var data = table.ToSegmentData(tableClass, tableId);
+        byte[] data = table.ToSegmentData(tableClass, tableId);
 
         writer.WriteBytesRaw(new byte[] { JpegConstants.MarkerPrefix, JpegConstants.DHT });
         writer.WriteUInt16BigEndian((ushort)(2 + data.Length));
@@ -390,14 +390,14 @@ public class JpegEncoder
         Span<byte> blockPixels = stackalloc byte[64];
 
         // Encode MCUs
-        for (int mcuRow = 0; mcuRow < mcuRows; mcuRow++)
+        for (var mcuRow = 0; mcuRow < mcuRows; mcuRow++)
         {
-            for (int mcuCol = 0; mcuCol < mcusPerRow; mcuCol++)
+            for (var mcuCol = 0; mcuCol < mcusPerRow; mcuCol++)
             {
                 // Encode Y blocks
-                for (int blockV = 0; blockV < yBlocksV; blockV++)
+                for (var blockV = 0; blockV < yBlocksV; blockV++)
                 {
-                    for (int blockH = 0; blockH < yBlocksH; blockH++)
+                    for (var blockH = 0; blockH < yBlocksH; blockH++)
                     {
                         int blockX = mcuCol * mcuWidth + blockH * 8;
                         int blockY = mcuRow * mcuHeight + blockV * 8;
@@ -442,15 +442,15 @@ public class JpegEncoder
         int blocksPerRow = (width + 7) / 8;
         int blockRows = (height + 7) / 8;
 
-        int dcPred = 0;
+        var dcPred = 0;
         Span<float> dctBlock = stackalloc float[64];
         Span<int> quantized = stackalloc int[64];
         Span<int> zigzag = stackalloc int[64];
         Span<byte> blockPixels = stackalloc byte[64];
 
-        for (int blockRow = 0; blockRow < blockRows; blockRow++)
+        for (var blockRow = 0; blockRow < blockRows; blockRow++)
         {
-            for (int blockCol = 0; blockCol < blocksPerRow; blockCol++)
+            for (var blockCol = 0; blockCol < blocksPerRow; blockCol++)
             {
                 int blockX = blockCol * 8;
                 int blockY = blockRow * 8;
@@ -469,10 +469,10 @@ public class JpegEncoder
     private static void ExtractBlock(ReadOnlySpan<byte> plane, int planeWidth, int planeHeight,
         int blockX, int blockY, Span<byte> block)
     {
-        for (int y = 0; y < 8; y++)
+        for (var y = 0; y < 8; y++)
         {
             int srcY = Math.Min(blockY + y, planeHeight - 1);
-            for (int x = 0; x < 8; x++)
+            for (var x = 0; x < 8; x++)
             {
                 int srcX = Math.Min(blockX + x, planeWidth - 1);
                 block[y * 8 + x] = plane[srcY * planeWidth + srcX];
@@ -514,7 +514,7 @@ public class JpegEncoder
     private static void EncodeDcCoefficient(int value, HuffmanTable table, BitWriter writer)
     {
         int size = BitWriter.GetBitSize(value);
-        var (code, length) = table.Encode((byte)size);
+        (ushort code, byte length) = table.Encode((byte)size);
 
         writer.WriteBits(code, length);
 
@@ -530,9 +530,9 @@ public class JpegEncoder
     /// </summary>
     private static void EncodeAcCoefficients(ReadOnlySpan<int> coeffs, HuffmanTable table, BitWriter writer)
     {
-        int zeroRun = 0;
+        var zeroRun = 0;
 
-        for (int i = 0; i < 63; i++)
+        for (var i = 0; i < 63; i++)
         {
             int value = coeffs[i];
 
@@ -545,15 +545,15 @@ public class JpegEncoder
                 // Encode any 16-zero runs
                 while (zeroRun >= 16)
                 {
-                    var (zrlCode, zrlLen) = table.Encode(JpegConstants.ZRL);
+                    (ushort zrlCode, byte zrlLen) = table.Encode(JpegConstants.ZRL);
                     writer.WriteBits(zrlCode, zrlLen);
                     zeroRun -= 16;
                 }
 
                 // Encode (run, size) symbol
                 int size = BitWriter.GetBitSize(value);
-                byte symbol = (byte)((zeroRun << 4) | size);
-                var (code, length) = table.Encode(symbol);
+                var symbol = (byte)((zeroRun << 4) | size);
+                (ushort code, byte length) = table.Encode(symbol);
                 writer.WriteBits(code, length);
 
                 // Encode value bits
@@ -567,7 +567,7 @@ public class JpegEncoder
         // If we ended with zeros, write EOB
         if (zeroRun > 0)
         {
-            var (eobCode, eobLen) = table.Encode(JpegConstants.EOB);
+            (ushort eobCode, byte eobLen) = table.Encode(JpegConstants.EOB);
             writer.WriteBits(eobCode, eobLen);
         }
     }

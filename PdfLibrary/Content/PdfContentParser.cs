@@ -418,6 +418,7 @@ internal class PdfContentParser
             }
         }
 
+
         // Now read the raw image data until we find EI
         Stream? stream = lexer.GetStream();
         if (stream is not { CanRead: true })
@@ -436,8 +437,8 @@ internal class PdfContentParser
 
         // Read until we find EI
         var imageData = new List<byte>();
-        var prevPrev = 0;
-        var prev = 0;
+        var prevPrev = -1;  // Use -1 as sentinel, not 0 (0x00 is a valid data byte!)
+        var prev = -1;      // Use -1 as sentinel, not 0 (0x00 is a valid data byte!)
 
         while (true)
         {
@@ -452,8 +453,8 @@ internal class PdfContentParser
             // EI should be preceded by whitespace and followed by whitespace or EOF
             if (prev == 'E' && b == 'I')
             {
-                // Check if prevPrev was whitespace
-                if (prevPrev is ' ' or '\n' or '\r' or '\t' or 0)
+                // Check if prevPrev was whitespace (or -1 at start of stream)
+                if (prevPrev is ' ' or '\n' or '\r' or '\t' or -1)
                 {
                     // Peek next byte to verify it's whitespace or EOF
                     int next = stream.ReadByte();
@@ -480,7 +481,7 @@ internal class PdfContentParser
             }
 
             // Add the previous byte to image data (we're one byte behind)
-            if (prev != 0)
+            if (prev != -1)  // Skip only if uninitialized (-1), not if data byte is 0x00
                 imageData.Add((byte)prev);
 
             prevPrev = prev;

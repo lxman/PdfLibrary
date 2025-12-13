@@ -120,7 +120,9 @@ internal sealed class PdfStream : PdfObject
 
         // Check if stream has filters
         if (!Dictionary.TryGetValue(PdfName.Filter, out PdfObject filterObj))
+        {
             return data; // No filters, return raw data
+        }
 
         // Get decode parameters if present
         Dictionary<string, object>? decodeParams = null;
@@ -134,6 +136,7 @@ internal sealed class PdfStream : PdfObject
             // Handle a single filter
             case PdfName filterName:
                 return ApplyFilter(data, filterName.Value, decodeParams);
+
             // Handle array of filters (applied in sequence)
             case PdfArray filterArray:
             {

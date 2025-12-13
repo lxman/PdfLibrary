@@ -99,7 +99,6 @@ namespace FontParser
             switch (fontStructure.FileType)
             {
                 case FileType.Unk:
-                    Console.WriteLine("This is an unknown file type.");
                     break;
 
                 case FileType.Ttf:
@@ -110,7 +109,6 @@ namespace FontParser
                     return ParseTtc(reader, file);
 
                 case FileType.Otc:
-                    Console.WriteLine("I am not aware how to parse otc files yet.");
                     break;
 
                 case FileType.Woff:

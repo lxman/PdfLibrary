@@ -94,10 +94,12 @@ internal class PdfLexer(Stream stream)
     {
         long position = Position;
         var sb = new StringBuilder();
+        long startPos = Position;
         Read(); // Skip opening (
 
         var depth = 1;
         var escaped = false;
+        int escapeCount = 0;
 
         while (TryPeek(out byte ch) && depth > 0)
         {
@@ -105,6 +107,7 @@ internal class PdfLexer(Stream stream)
 
             if (escaped)
             {
+                escapeCount++;
                 // Handle escape sequences (7.3.4.2)
                 sb.Append(ch switch
                 {
@@ -142,7 +145,10 @@ internal class PdfLexer(Stream stream)
             }
         }
 
-        return new PdfToken(PdfTokenType.String, sb.ToString(), position);
+        long endPos = Position;
+        string result = sb.ToString();
+
+        return new PdfToken(PdfTokenType.String, result, position);
     }
 
     private int ReadOctalEscape(byte first)
@@ -163,6 +169,7 @@ internal class PdfLexer(Stream stream)
     private PdfToken ReadHexStringOrDictionaryStart()
     {
         long position = Position;
+        long startPos = Position;
 
         Read(); // Skip first <
 
@@ -187,6 +194,8 @@ internal class PdfLexer(Stream stream)
 
         if (TryPeek(out _))
             Read(); // Skip closing >
+
+        long endPos = Position;
 
         // Convert hex digit pairs to bytes
         var hexString = hexDigits.ToString();

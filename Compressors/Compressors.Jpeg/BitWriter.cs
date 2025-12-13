@@ -176,7 +176,7 @@ public class BitWriter : IDisposable
         if (value < 0)
             value = -value;
 
-        int bits = 0;
+        var bits = 0;
         while (value > 0)
         {
             bits++;

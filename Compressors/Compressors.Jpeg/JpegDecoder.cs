@@ -61,22 +61,12 @@ public class JpegDecoder
     public byte AdobeColorTransform => _adobeColorTransform;
 
     /// <summary>
-    /// Decodes a JPEG image from a stream.
-    /// </summary>
-    /// <param name="stream">Input stream containing JPEG data</param>
-    /// <returns>Decoded RGB pixel data (3 bytes per pixel), or raw component data for CMYK</returns>
-    public byte[] Decode(Stream stream)
-    {
-        return Decode(stream, convertToRgb: true);
-    }
-
-    /// <summary>
     /// Decodes a JPEG image from a stream with optional color conversion.
     /// </summary>
     /// <param name="stream">Input stream containing JPEG data</param>
     /// <param name="convertToRgb">If true, converts to RGB. If false, returns raw component data.</param>
     /// <returns>Pixel data (RGB if converted, raw components otherwise)</returns>
-    public byte[] Decode(Stream stream, bool convertToRgb)
+    public byte[] Decode(Stream stream, bool convertToRgb = true)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _hasAdobeMarker = false;
@@ -154,24 +144,22 @@ public class JpegDecoder
         ReadExactly(_stream!, data, 0, length);
 
         // Check for "Adobe" signature
-        if (data[0] == 'A' && data[1] == 'd' && data[2] == 'o' &&
-            data[3] == 'b' && data[4] == 'e')
+        if (data[0] != 'A' || data[1] != 'd' || data[2] != 'o' ||
+            data[3] != 'b' || data[4] != 'e') return;
+        _hasAdobeMarker = true;
+        // Color transform byte is at offset 11
+        if (length > 11)
         {
-            _hasAdobeMarker = true;
-            // Color transform byte is at offset 11
-            if (length > 11)
-            {
-                _adobeColorTransform = data[11];
-            }
+            _adobeColorTransform = data[11];
         }
     }
 
     /// <summary>
-    /// Helper to read exact number of bytes (netstandard2.1 compatibility).
+    /// Helper to read the exact number of bytes (netstandard2.1 compatibility).
     /// </summary>
     private static void ReadExactly(Stream stream, byte[] buffer, int offset, int count)
     {
-        int totalRead = 0;
+        var totalRead = 0;
         while (totalRead < count)
         {
             int read = stream.Read(buffer, offset + totalRead, count - totalRead);
@@ -227,7 +215,7 @@ public class JpegDecoder
     }
 
     /// <summary>
-    /// Reads Start of Frame (SOF0) segment.
+    /// Reads the Start of Frame (SOF0) segment.
     /// </summary>
     private void ReadStartOfFrame()
     {
@@ -247,7 +235,7 @@ public class JpegDecoder
         _components = new JpegComponent[_componentCount];
 
         int maxH = 1, maxV = 1;
-        for (int i = 0; i < _componentCount; i++)
+        for (var i = 0; i < _componentCount; i++)
         {
             int id = _stream.ReadByte();
             int sampling = _stream.ReadByte();
@@ -275,7 +263,7 @@ public class JpegDecoder
         _mcuRows = (_height + _mcuHeight - 1) / _mcuHeight;
 
         // Set component dimensions
-        for (int i = 0; i < _componentCount; i++)
+        for (var i = 0; i < _componentCount; i++)
         {
             _components[i].Width = (_width * _components[i].HorizontalSampling + maxH - 1) / maxH;
             _components[i].Height = (_height * _components[i].VerticalSampling + maxV - 1) / maxV;
@@ -290,23 +278,23 @@ public class JpegDecoder
     private void ReadHuffmanTable()
     {
         int length = ReadUInt16() - 2;
-        var data = ArrayPool<byte>.Shared.Rent(length);
+        byte[]? data = ArrayPool<byte>.Shared.Rent(length);
 
         try
         {
             ReadExactly(_stream!, data, 0, length);
 
-            int offset = 0;
+            var offset = 0;
             while (offset < length)
             {
-                var table = HuffmanTable.FromSegmentData(
+                HuffmanTable table = HuffmanTable.FromSegmentData(
                     data.AsSpan(offset),
                     out int tableClass,
                     out int tableId);
 
                 // Calculate size of this table in the data
                 int tableSize = 1 + 16;
-                for (int i = 0; i < 16; i++)
+                for (var i = 0; i < 16; i++)
                     tableSize += table.Bits[i];
 
                 offset += tableSize;
@@ -349,7 +337,7 @@ public class JpegDecoder
                 // 16-bit values
                 var table = new int[64];
                 var zigzag = new int[64];
-                for (int i = 0; i < 64; i++)
+                for (var i = 0; i < 64; i++)
                 {
                     zigzag[i] = ReadUInt16();
                 }
@@ -377,20 +365,18 @@ public class JpegDecoder
         int length = ReadUInt16();
         int componentCount = _stream!.ReadByte();
 
-        for (int i = 0; i < componentCount; i++)
+        for (var i = 0; i < componentCount; i++)
         {
             int componentId = _stream.ReadByte();
             int tableIds = _stream.ReadByte();
 
             // Find component by ID
-            for (int j = 0; j < _componentCount; j++)
+            for (var j = 0; j < _componentCount; j++)
             {
-                if (_components[j].Id == componentId)
-                {
-                    _components[j].DcTableId = (tableIds >> 4) & 0x0F;
-                    _components[j].AcTableId = tableIds & 0x0F;
-                    break;
-                }
+                if (_components[j].Id != componentId) continue;
+                _components[j].DcTableId = (tableIds >> 4) & 0x0F;
+                _components[j].AcTableId = tableIds & 0x0F;
+                break;
             }
         }
 
@@ -408,7 +394,7 @@ public class JpegDecoder
         _bitReader = new BitReader(_stream!);
 
         // Allocate component buffers
-        for (int i = 0; i < _componentCount; i++)
+        for (var i = 0; i < _componentCount; i++)
         {
             int blocksH = (_components[i].Width + 7) / 8;
             int blocksV = (_components[i].Height + 7) / 8;
@@ -419,10 +405,10 @@ public class JpegDecoder
         var dcPredictors = new int[_componentCount];
 
         // Decode MCUs
-        int mcuCount = 0;
-        for (int mcuRow = 0; mcuRow < _mcuRows; mcuRow++)
+        var mcuCount = 0;
+        for (var mcuRow = 0; mcuRow < _mcuRows; mcuRow++)
         {
-            for (int mcuCol = 0; mcuCol < _mcusPerRow; mcuCol++)
+            for (var mcuCol = 0; mcuCol < _mcusPerRow; mcuCol++)
             {
                 // Handle restart interval
                 if (_restartInterval > 0 && mcuCount > 0 && mcuCount % _restartInterval == 0)
@@ -438,14 +424,9 @@ public class JpegDecoder
         }
 
         // Convert or return raw components
-        if (convertToRgb)
-        {
-            return ConvertToRgb();
-        }
-        else
-        {
-            return GetRawComponents();
-        }
+        return convertToRgb
+            ? ConvertToRgb()
+            : GetRawComponents();
     }
 
     /// <summary>
@@ -456,15 +437,15 @@ public class JpegDecoder
     {
         var output = new byte[_width * _height * _componentCount];
 
-        for (int y = 0; y < _height; y++)
+        for (var y = 0; y < _height; y++)
         {
-            for (int x = 0; x < _width; x++)
+            for (var x = 0; x < _width; x++)
             {
                 int outputIdx = (y * _width + x) * _componentCount;
 
-                for (int c = 0; c < _componentCount; c++)
+                for (var c = 0; c < _componentCount; c++)
                 {
-                    var comp = _components[c];
+                    JpegComponent comp = _components[c];
                     int blocksPerRow = (comp.Width + 7) / 8;
 
                     // Map to component coordinates (handle subsampling)
@@ -494,19 +475,19 @@ public class JpegDecoder
         Span<float> dctBlock = stackalloc float[64];
         Span<byte> pixelBlock = stackalloc byte[64];
 
-        for (int compIdx = 0; compIdx < _componentCount; compIdx++)
+        for (var compIdx = 0; compIdx < _componentCount; compIdx++)
         {
-            var comp = _components[compIdx];
-            var dcTable = _dcTables[comp.DcTableId]!;
-            var acTable = _acTables[comp.AcTableId]!;
-            var quantTable = _quantTables[comp.QuantTableId]!;
+            JpegComponent comp = _components[compIdx];
+            HuffmanTable dcTable = _dcTables[comp.DcTableId]!;
+            HuffmanTable acTable = _acTables[comp.AcTableId]!;
+            int[] quantTable = _quantTables[comp.QuantTableId]!;
 
             int blocksH = comp.BlocksPerMcuH;
             int blocksV = comp.BlocksPerMcuV;
 
-            for (int blockV = 0; blockV < blocksV; blockV++)
+            for (var blockV = 0; blockV < blocksV; blockV++)
             {
-                for (int blockH = 0; blockH < blocksH; blockH++)
+                for (var blockH = 0; blockH < blocksH; blockH++)
                 {
                     // Decode coefficients
                     DecodeBlock(dcTable, acTable, coeffs, ref dcPredictors[compIdx]);
@@ -517,16 +498,14 @@ public class JpegDecoder
                     // Inverse DCT
                     Dct.InverseDctToBytes(dctBlock, pixelBlock);
 
-                    // Store in component buffer
+                    // Store in the component buffer
                     int compBlocksPerRow = (comp.Width + 7) / 8;
                     int destBlockX = mcuCol * blocksH + blockH;
                     int destBlockY = mcuRow * blocksV + blockV;
 
-                    if (destBlockX < compBlocksPerRow && destBlockY * 8 < comp.Height)
-                    {
-                        int destOffset = (destBlockY * compBlocksPerRow + destBlockX) * 64;
-                        pixelBlock.CopyTo(comp.Data.AsSpan(destOffset));
-                    }
+                    if (destBlockX >= compBlocksPerRow || destBlockY * 8 >= comp.Height) continue;
+                    int destOffset = (destBlockY * compBlocksPerRow + destBlockX) * 64;
+                    pixelBlock.CopyTo(comp.Data.AsSpan(destOffset));
                 }
             }
         }
@@ -544,7 +523,7 @@ public class JpegDecoder
         if (dcSize < 0)
             throw new InvalidDataException("Failed to decode DC coefficient");
 
-        int dcDiff = 0;
+        var dcDiff = 0;
         if (dcSize > 0)
         {
             dcDiff = _bitReader.ReadBits(dcSize);
@@ -555,7 +534,7 @@ public class JpegDecoder
         coeffs[0] = dcPredictor;
 
         // Decode AC coefficients
-        int index = 1;
+        var index = 1;
         while (index < 64)
         {
             int symbol = acTable.Decode(_bitReader);
@@ -607,24 +586,22 @@ public class JpegDecoder
     {
         var rgb = new byte[_width * _height * 3];
 
-        if (_componentCount == 1)
+        switch (_componentCount)
         {
-            // Grayscale
-            ConvertGrayscaleToRgb(rgb);
-        }
-        else if (_componentCount == 3)
-        {
-            // YCbCr
-            ConvertYCbCrToRgb(rgb);
-        }
-        else if (_componentCount == 4)
-        {
-            // CMYK or YCCK
-            ConvertCmykToRgb(rgb);
-        }
-        else
-        {
-            throw new NotSupportedException($"Unsupported component count: {_componentCount}");
+            case 1:
+                // Grayscale
+                ConvertGrayscaleToRgb(rgb);
+                break;
+            case 3:
+                // YCbCr
+                ConvertYCbCrToRgb(rgb);
+                break;
+            case 4:
+                // CMYK or YCCK
+                ConvertCmykToRgb(rgb);
+                break;
+            default:
+                throw new NotSupportedException($"Unsupported component count: {_componentCount}");
         }
 
         return rgb;
@@ -636,12 +613,12 @@ public class JpegDecoder
     private void ConvertCmykToRgb(byte[] rgb)
     {
         // Get raw component data first
-        var cmyk = GetRawComponents();
+        byte[] cmyk = GetRawComponents();
 
         bool isYcck = _hasAdobeMarker && _adobeColorTransform == 2;
         bool isInvertedCmyk = _hasAdobeMarker && _adobeColorTransform == 0;
 
-        for (int i = 0; i < _width * _height; i++)
+        for (var i = 0; i < _width * _height; i++)
         {
             int srcIdx = i * 4;
             int dstIdx = i * 3;
@@ -706,12 +683,12 @@ public class JpegDecoder
     /// </summary>
     private void ConvertGrayscaleToRgb(byte[] rgb)
     {
-        var comp = _components[0];
+        JpegComponent comp = _components[0];
         int blocksPerRow = (comp.Width + 7) / 8;
 
-        for (int y = 0; y < _height; y++)
+        for (var y = 0; y < _height; y++)
         {
-            for (int x = 0; x < _width; x++)
+            for (var x = 0; x < _width; x++)
             {
                 int blockX = x / 8;
                 int blockY = y / 8;
@@ -734,17 +711,17 @@ public class JpegDecoder
     /// </summary>
     private void ConvertYCbCrToRgb(byte[] rgb)
     {
-        var yComp = _components[0];
-        var cbComp = _components[1];
-        var crComp = _components[2];
+        JpegComponent yComp = _components[0];
+        JpegComponent cbComp = _components[1];
+        JpegComponent crComp = _components[2];
 
         int yBlocksPerRow = (yComp.Width + 7) / 8;
         int cbBlocksPerRow = (cbComp.Width + 7) / 8;
         int crBlocksPerRow = (crComp.Width + 7) / 8;
 
-        for (int y = 0; y < _height; y++)
+        for (var y = 0; y < _height; y++)
         {
-            for (int x = 0; x < _width; x++)
+            for (var x = 0; x < _width; x++)
             {
                 // Y component (full resolution)
                 int yBlockX = x / 8;

@@ -34,7 +34,7 @@ public static class Quantization
             scale = 200 - quality * 2;
 
         var table = new int[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             int value = (baseTable[i] * scale + 50) / 100;
             // Clamp to valid range [1, 255]
@@ -73,7 +73,7 @@ public static class Quantization
         if (quantTable.Length != 64)
             throw new ArgumentException("Quantization table must contain exactly 64 elements", nameof(quantTable));
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             // Round to nearest integer
             dctCoeffs[i] = MathF.Round(dctCoeffs[i] / quantTable[i]);
@@ -92,7 +92,7 @@ public static class Quantization
         if (output.Length != 64)
             throw new ArgumentException("Output must contain exactly 64 elements", nameof(output));
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             output[i] = (int)MathF.Round(dctCoeffs[i] / quantTable[i]);
         }
@@ -111,7 +111,7 @@ public static class Quantization
         if (quantTable.Length != 64)
             throw new ArgumentException("Quantization table must contain exactly 64 elements", nameof(quantTable));
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             quantizedCoeffs[i] *= quantTable[i];
         }
@@ -129,7 +129,7 @@ public static class Quantization
         if (output.Length != 64)
             throw new ArgumentException("Output must contain exactly 64 elements", nameof(output));
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             output[i] = quantizedCoeffs[i] * quantTable[i];
         }
@@ -146,7 +146,7 @@ public static class Quantization
         if (zigzag.Length != 64)
             throw new ArgumentException("Zigzag order array must contain exactly 64 elements", nameof(zigzag));
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             zigzag[i] = natural[JpegConstants.ZigzagOrder[i]];
         }
@@ -163,7 +163,7 @@ public static class Quantization
         if (natural.Length != 64)
             throw new ArgumentException("Natural order array must contain exactly 64 elements", nameof(natural));
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             natural[JpegConstants.ZigzagOrder[i]] = zigzag[i];
         }
@@ -178,7 +178,7 @@ public static class Quantization
             throw new ArgumentException("Table must contain exactly 64 elements", nameof(table));
 
         var result = new byte[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             result[i] = (byte)table[JpegConstants.ZigzagOrder[i]];
         }
@@ -194,7 +194,7 @@ public static class Quantization
             throw new ArgumentException("Table must contain exactly 64 elements", nameof(zigzagTable));
 
         var result = new int[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             result[JpegConstants.ZigzagOrder[i]] = zigzagTable[i];
         }

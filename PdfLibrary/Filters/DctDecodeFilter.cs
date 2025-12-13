@@ -1,6 +1,4 @@
 using JpegLibrary;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 
 namespace PdfLibrary.Filters;
 
@@ -40,13 +38,8 @@ internal class DctDecodeFilter : IStreamFilter
                 return DecodeCmykJpegWithJpegLibrary(data, isAdobeYcck, colorTransform);
             }
 
-            // For RGB/Grayscale JPEGs, use ImageSharp (faster for simple cases)
-            using Image image = Image.Load(data);
-            using Image<Rgb24> normalRgbImage = image.CloneAs<Rgb24>();
-            var normalRgbPixels = new byte[normalRgbImage.Width * normalRgbImage.Height * 3];
-            normalRgbImage.CopyPixelDataTo(normalRgbPixels);
-
-            return normalRgbPixels;
+            // For RGB/Grayscale JPEGs, use JpegLibrary to get raw component data
+            return DecodeRgbGrayscaleJpegWithJpegLibrary(data);
         }
         catch (Exception ex)
         {
@@ -150,6 +143,64 @@ internal class DctDecodeFilter : IStreamFilter
         }
 
         return cmykPixels;
+    }
+
+    /// <summary>
+    /// Decodes an RGB or Grayscale JPEG using JpegLibrary.
+    /// Returns RGB data (3 components per pixel) for RGB images, or grayscale data (1 component) for grayscale images.
+    /// </summary>
+    private static byte[] DecodeRgbGrayscaleJpegWithJpegLibrary(byte[] data)
+    {
+        var decoder = new JpegDecoder();
+        decoder.SetInput(data);
+        decoder.Identify();
+
+        int width = decoder.Width;
+        int height = decoder.Height;
+        int numberOfComponents = decoder.NumberOfComponents;
+
+        // Allocate buffer for raw component data
+        int bufferSize = width * height * numberOfComponents;
+        var componentData = new byte[bufferSize];
+
+        // Decode to raw component data
+        decoder.SetOutputWriter(new JpegBufferOutputWriter8Bit(width, height, numberOfComponents, componentData));
+        decoder.Decode();
+
+        if (numberOfComponents == 1)
+        {
+            // Grayscale - return as-is
+            return componentData;
+        }
+        else if (numberOfComponents == 3)
+        {
+            // JpegLibrary returns YCbCr data - need to convert to RGB
+            var rgbData = new byte[componentData.Length];
+            int pixelCount = width * height;
+
+            for (var i = 0; i < pixelCount; i++)
+            {
+                int offset = i * 3;
+                byte y  = componentData[offset];
+                byte cb = componentData[offset + 1];
+                byte cr = componentData[offset + 2];
+
+                // YCbCr to RGB conversion (ITU-R BT.601)
+                int r = (int)(y + 1.402f * (cr - 128));
+                int g = (int)(y - 0.34414f * (cb - 128) - 0.71414f * (cr - 128));
+                int b = (int)(y + 1.772f * (cb - 128));
+
+                rgbData[offset]     = (byte)Math.Clamp(r, 0, 255);
+                rgbData[offset + 1] = (byte)Math.Clamp(g, 0, 255);
+                rgbData[offset + 2] = (byte)Math.Clamp(b, 0, 255);
+            }
+
+            return rgbData;
+        }
+        else
+        {
+            throw new NotSupportedException($"Unexpected number of components {numberOfComponents} in RGB/Grayscale JPEG");
+        }
     }
 
     private static byte ClampToByte(float value)

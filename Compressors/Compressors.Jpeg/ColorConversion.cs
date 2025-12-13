@@ -98,7 +98,7 @@ public static class ColorConversion
         if (crPlane.Length != pixelCount)
             throw new ArgumentException("Cr plane length must equal width * height", nameof(crPlane));
 
-        for (int i = 0; i < pixelCount; i++)
+        for (var i = 0; i < pixelCount; i++)
         {
             int rgbIndex = i * 3;
             RgbToYCbCr(
@@ -128,7 +128,7 @@ public static class ColorConversion
         if (rgb.Length != pixelCount * 3)
             throw new ArgumentException("RGB data length must equal width * height * 3", nameof(rgb));
 
-        for (int i = 0; i < pixelCount; i++)
+        for (var i = 0; i < pixelCount; i++)
         {
             int rgbIndex = i * 3;
             YCbCrToRgb(
@@ -158,7 +158,7 @@ public static class ColorConversion
         if (crPlane.Length != pixelCount)
             throw new ArgumentException("Cr plane length must equal width * height", nameof(crPlane));
 
-        for (int i = 0; i < pixelCount; i++)
+        for (var i = 0; i < pixelCount; i++)
         {
             int rgbaIndex = i * 4;
             RgbToYCbCr(
@@ -186,12 +186,12 @@ public static class ColorConversion
         if (output.Length != outputWidth * outputHeight)
             throw new ArgumentException("Output length must equal (width+1)/2 * (height+1)/2", nameof(output));
 
-        for (int oy = 0; oy < outputHeight; oy++)
+        for (var oy = 0; oy < outputHeight; oy++)
         {
             int iy = oy * 2;
             int iy2 = Math.Min(iy + 1, inputHeight - 1);
 
-            for (int ox = 0; ox < outputWidth; ox++)
+            for (var ox = 0; ox < outputWidth; ox++)
             {
                 int ix = ox * 2;
                 int ix2 = Math.Min(ix + 1, inputWidth - 1);
@@ -223,7 +223,7 @@ public static class ColorConversion
         if (output.Length != outputWidth * outputHeight)
             throw new ArgumentException("Output length must equal outputWidth * outputHeight", nameof(output));
 
-        for (int oy = 0; oy < outputHeight; oy++)
+        for (var oy = 0; oy < outputHeight; oy++)
         {
             // Map output y to input y (with 0.5 offset for center sampling)
             float fy = (oy + 0.5f) * inputHeight / outputHeight - 0.5f;
@@ -231,7 +231,7 @@ public static class ColorConversion
             int iy1 = Math.Min(iy0 + 1, inputHeight - 1);
             float wy = fy - iy0;
 
-            for (int ox = 0; ox < outputWidth; ox++)
+            for (var ox = 0; ox < outputWidth; ox++)
             {
                 float fx = (ox + 0.5f) * inputWidth / outputWidth - 0.5f;
                 int ix0 = Math.Max(0, (int)fx);
@@ -267,9 +267,9 @@ public static class ColorConversion
         if (output.Length != outputWidth * inputHeight)
             throw new ArgumentException("Output length must equal (width+1)/2 * height", nameof(output));
 
-        for (int y = 0; y < inputHeight; y++)
+        for (var y = 0; y < inputHeight; y++)
         {
-            for (int ox = 0; ox < outputWidth; ox++)
+            for (var ox = 0; ox < outputWidth; ox++)
             {
                 int ix = ox * 2;
                 int ix2 = Math.Min(ix + 1, inputWidth - 1);

@@ -50,7 +50,7 @@ internal class FlateDecodeFilter : IStreamFilter
             zlibStream.CopyTo(outputStream);
             decoded = outputStream.ToArray();
         }
-        catch (InvalidDataException)
+        catch (InvalidDataException ex)
         {
             // Fallback: try raw deflate (no zlib header)
             PdfLogger.Log(LogCategory.PdfTool, "FlateDecode: ZLibStream failed, trying raw DeflateStream");

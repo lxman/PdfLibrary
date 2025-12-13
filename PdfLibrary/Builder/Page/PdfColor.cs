@@ -113,9 +113,9 @@ public readonly struct PdfColor
         if (hex.Length != 6)
             throw new ArgumentException("Hex color must be 3 or 6 characters (excluding optional #)", nameof(hex));
 
-        int r = Convert.ToInt32(hex.Substring(0, 2), 16);
-        int g = Convert.ToInt32(hex.Substring(2, 2), 16);
-        int b = Convert.ToInt32(hex.Substring(4, 2), 16);
+        var r = Convert.ToInt32(hex.Substring(0, 2), 16);
+        var g = Convert.ToInt32(hex.Substring(2, 2), 16);
+        var b = Convert.ToInt32(hex.Substring(4, 2), 16);
 
         return FromRgb(r, g, b);
     }

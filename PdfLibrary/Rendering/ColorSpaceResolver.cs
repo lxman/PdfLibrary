@@ -116,6 +116,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 ResolveIndexed(csArray, ref colorSpaceName, ref color);
                 break;
 
+            case "Lab" when csArray.Count >= 2:
+                ResolveLab(csArray, ref colorSpaceName, ref color);
+                break;
+
+            case "CalRGB" when csArray.Count >= 2:
+                ResolveCalRgb(csArray, ref colorSpaceName, ref color);
+                break;
+
+            case "CalGray" when csArray.Count >= 2:
+                ResolveCalGray(csArray, ref colorSpaceName, ref color);
+                break;
+
             case "Pattern":
                 // Pattern color space - don't resolve to device colors
                 colorSpaceName = "Pattern";
@@ -486,6 +498,79 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 break;
             }
         }
+    }
+
+    /// <summary>
+    /// Resolves a Lab color space: [/Lab &lt;&lt; /WhitePoint [...] /Range [...] &gt;&gt;]
+    /// </summary>
+    private void ResolveLab(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
+    {
+        color ??= [];
+
+        // Lab color space requires 3 components: L, a, b
+        if (color.Count != 3)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab: Expected 3 components (L,a,b), got {color.Count}");
+            return;
+        }
+
+        double L = color[0];
+        double a = color[1];
+        double b = color[2];
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab: L={L:F2}, a={a:F2}, b={b:F2}");
+
+        // Convert Lab to RGB using the existing LabToRgb helper
+        double[] rgb = LabToRgb(L, a, b, csArray);
+
+        color = [rgb[0], rgb[1], rgb[2]];
+        colorSpaceName = "DeviceRGB";
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab END: R={rgb[0]:F3}, G={rgb[1]:F3}, B={rgb[2]:F3}");
+    }
+
+    /// <summary>
+    /// Resolves a CalRGB color space: [/CalRGB &lt;&lt; /WhitePoint [...] /Gamma [...] /Matrix [...] &gt;&gt;]
+    /// For now, we simply pass through to DeviceRGB
+    /// </summary>
+    private void ResolveCalRgb(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
+    {
+        color ??= [];
+
+        // CalRGB requires 3 components: R, G, B
+        if (color.Count != 3)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalRGB: Expected 3 components, got {color.Count}");
+            return;
+        }
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalRGB: R={color[0]:F3}, G={color[1]:F3}, B={color[2]:F3} (passing through to DeviceRGB)");
+
+        // For now, treat CalRGB as DeviceRGB
+        // TODO: Apply gamma and matrix transformations from the CalRGB dictionary
+        colorSpaceName = "DeviceRGB";
+    }
+
+    /// <summary>
+    /// Resolves a CalGray color space: [/CalGray &lt;&lt; /WhitePoint [...] /Gamma [...] &gt;&gt;]
+    /// For now, we simply pass through to DeviceGray
+    /// </summary>
+    private void ResolveCalGray(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
+    {
+        color ??= [];
+
+        // CalGray requires 1 component: Gray value
+        if (color.Count != 1)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: Expected 1 component, got {color.Count}");
+            return;
+        }
+
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: Gray={color[0]:F3} (passing through to DeviceGray)");
+
+        // For now, treat CalGray as DeviceGray
+        // TODO: Apply gamma transformation from the CalGray dictionary
+        colorSpaceName = "DeviceGray";
     }
 
     /// <summary>
