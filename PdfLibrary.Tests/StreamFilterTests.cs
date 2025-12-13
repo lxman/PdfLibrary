@@ -971,7 +971,7 @@ public class StreamFilterTests
 
         // Should decode to 1 byte (1x1 greyscale pixel)
         Assert.NotEmpty(decoded);
-        Assert.Equal(1, decoded.Length);
+        Assert.Single(decoded);
     }
 
     [Fact]
