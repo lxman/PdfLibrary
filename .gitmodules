@@ -1,0 +1,3 @@
+[submodule "JpegLibrary"]
+	path = JpegLibrary
+	url = https://github.com/lxman/JpegLibrary.git

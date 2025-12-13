@@ -16,6 +16,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
@@ -37,12 +39,14 @@ jobs:
 
     - name: Restore dependencies
       run: |
+        dotnet restore JpegLibrary/src/JpegLibrary/JpegLibrary.csproj
         dotnet restore PdfLibrary/PdfLibrary.csproj
         dotnet restore PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
         dotnet restore PdfLibrary.Tests/PdfLibrary.Tests.csproj
 
     - name: Build
       run: |
+        dotnet build JpegLibrary/src/JpegLibrary/JpegLibrary.csproj --configuration Release --no-restore
         dotnet build PdfLibrary/PdfLibrary.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
