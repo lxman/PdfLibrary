@@ -11,4 +11,8 @@
       <PackageReference Include="JpegLibrary" Version="0.4.32" />
     </ItemGroup>
 
+    <ItemGroup>
+      <ProjectReference Include="..\..\..\JpegLibrary\src\JpegLibrary\JpegLibrary.csproj" />
+    </ItemGroup>
+
 </Project>
