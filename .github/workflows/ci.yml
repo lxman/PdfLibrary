@@ -34,7 +34,7 @@ jobs:
 
     - name: Build
       run: |
-        dotnet build JpegLibrary/src/JpegLibrary/JpegLibrary.csproj --configuration Release --no-restore
+        dotnet build JpegLibrary/src/JpegLibrary/JpegLibrary.csproj --configuration Release --no-restore /p:EnablePackageValidation=false
         dotnet build PdfLibrary/PdfLibrary.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
