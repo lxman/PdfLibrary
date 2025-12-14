@@ -19,6 +19,19 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/Examples/">
+    <Project Path="PdfLibrary.Examples/00-Generator/Generator.csproj" />
+    <Project Path="PdfLibrary.Examples/01-RenderPdfToImage/RenderPdfToImage.csproj" />
+    <Project Path="PdfLibrary.Examples/02-CreateInvoice/CreateInvoice.csproj" />
+    <Project Path="PdfLibrary.Examples/03-AddWatermark/AddWatermark.csproj" />
+    <Project Path="PdfLibrary.Examples/04-ExtractText/ExtractText.csproj" />
+    <Project Path="PdfLibrary.Examples/05-FillForms/FillForms.csproj" />
+    <Project Path="PdfLibrary.Examples/06-MergePdfs/MergePdfs.csproj" />
+    <Project Path="PdfLibrary.Examples/07-AddBookmarks/AddBookmarks.csproj" />
+    <Project Path="PdfLibrary.Examples/08-EncryptPdf/EncryptPdf.csproj" />
+    <Project Path="PdfLibrary.Examples/09-ExtractImages/ExtractImages.csproj" />
+    <Project Path="PdfLibrary.Examples/10-CreateFromScratch/CreateFromScratch.csproj" />
+  </Folder>
   <Project Path="../JpegLibrary/src/JpegLibrary/JpegLibrary.csproj" />
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />

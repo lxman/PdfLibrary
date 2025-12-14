@@ -12,6 +12,7 @@ internal class PdfFontEncoding
 {
     private readonly Dictionary<int, string> _codeToName = new();
     private readonly Dictionary<int, string> _codeToUnicode = new();
+    private readonly Dictionary<char, byte> _unicodeToCode = new();
     private readonly string _baseEncodingName;
 
     // Static initializer to register code pages provider (for MacRoman encoding support)
@@ -69,6 +70,47 @@ internal class PdfFontEncoding
     public void SetUnicode(int charCode, string unicode)
     {
         _codeToUnicode[charCode] = unicode;
+
+        // Also add to reverse mapping if single character
+        if (unicode.Length == 1 && charCode >= 0 && charCode <= 255)
+        {
+            _unicodeToCode[unicode[0]] = (byte)charCode;
+        }
+    }
+
+    /// <summary>
+    /// Encodes a Unicode character to a byte for this encoding
+    /// Returns null if the character is not available in this encoding
+    /// </summary>
+    public byte? EncodeCharacter(char unicodeChar)
+    {
+        if (_unicodeToCode.TryGetValue(unicodeChar, out byte code))
+            return code;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Encodes a string to bytes using this encoding
+    /// Characters not available in the encoding are replaced with '?'
+    /// </summary>
+    public byte[] EncodeString(string text)
+    {
+        var bytes = new byte[text.Length];
+        for (int i = 0; i < text.Length; i++)
+        {
+            byte? encoded = EncodeCharacter(text[i]);
+            bytes[i] = encoded ?? (byte)'?';
+        }
+        return bytes;
+    }
+
+    /// <summary>
+    /// Checks if a character is available in this encoding
+    /// </summary>
+    public bool CanEncode(char unicodeChar)
+    {
+        return _unicodeToCode.ContainsKey(unicodeChar);
     }
 
     /// <summary>

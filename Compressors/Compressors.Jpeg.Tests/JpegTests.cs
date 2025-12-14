@@ -1,5 +1,3 @@
-using Compressors.Jpeg;
-
 namespace Compressors.Jpeg.Tests;
 
 public class JpegTests
@@ -11,7 +9,7 @@ public class JpegTests
     {
         // Create a test block with known values
         var original = new float[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             original[i] = (i * 4) - 128; // Values from -128 to 124
         }
@@ -26,7 +24,7 @@ public class JpegTests
         Dct.InverseDct(block);
 
         // Check that we get back approximately the original values
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             Assert.True(Math.Abs(block[i] - original[i]) < 0.5f,
                 $"Mismatch at index {i}: expected {original[i]}, got {block[i]}");
@@ -40,7 +38,7 @@ public class JpegTests
 
         Dct.ForwardDct(block);
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             Assert.True(Math.Abs(block[i]) < 0.001f, $"Expected zero at index {i}, got {block[i]}");
         }
@@ -50,7 +48,7 @@ public class JpegTests
     public void Dct_ConstantBlock_HasOnlyDcCoefficient()
     {
         var block = new float[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             block[i] = 100;
         }
@@ -61,7 +59,7 @@ public class JpegTests
         Assert.True(Math.Abs(block[0]) > 1, "DC coefficient should be non-zero");
 
         // All other coefficients should be approximately zero
-        for (int i = 1; i < 64; i++)
+        for (var i = 1; i < 64; i++)
         {
             Assert.True(Math.Abs(block[i]) < 0.001f,
                 $"AC coefficient at index {i} should be zero, got {block[i]}");
@@ -75,7 +73,7 @@ public class JpegTests
         var block2 = new float[64];
         var random = new Random(42);
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             float value = random.Next(-128, 128);
             block1[i] = value;
@@ -86,7 +84,7 @@ public class JpegTests
         Dct.ForwardDctReference(block2);
 
         // Check that both implementations produce similar results
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             Assert.True(Math.Abs(block1[i] - block2[i]) < 1.0f,
                 $"Mismatch at index {i}: fast={block1[i]}, reference={block2[i]}");
@@ -100,9 +98,9 @@ public class JpegTests
     [Fact]
     public void Quantization_GenerateTable_Quality50_ReturnsStandardTable()
     {
-        var table = Quantization.GenerateLuminanceQuantTable(50);
+        int[] table = Quantization.GenerateLuminanceQuantTable(50);
 
-        // At quality 50, scale factor is 100, so values should be approximately the standard table
+        // At quality 50, the scale factor is 100, so values should be approximately the standard table
         Assert.Equal(64, table.Length);
         Assert.Equal(16, table[0]); // First element of standard luminance table
     }
@@ -110,19 +108,19 @@ public class JpegTests
     [Fact]
     public void Quantization_GenerateTable_Quality1_MaximumQuantization()
     {
-        var table = Quantization.GenerateLuminanceQuantTable(1);
+        int[] table = Quantization.GenerateLuminanceQuantTable(1);
 
-        // At quality 1, scale factor is 5000, so values should be much larger
+        // At quality 1, the scale factor is 5000, so values should be much larger
         Assert.True(table[0] >= 255 || table[0] == 255); // Clamped to 255
     }
 
     [Fact]
     public void Quantization_GenerateTable_Quality100_MinimumQuantization()
     {
-        var table = Quantization.GenerateLuminanceQuantTable(100);
+        int[] table = Quantization.GenerateLuminanceQuantTable(100);
 
-        // At quality 100, scale factor is 0, so all values should be 1
-        for (int i = 0; i < 64; i++)
+        // At quality 100, the scale factor is 0, so all values should be 1
+        for (var i = 0; i < 64; i++)
         {
             Assert.Equal(1, table[i]);
         }
@@ -132,7 +130,7 @@ public class JpegTests
     public void Quantization_ZigzagRoundtrip()
     {
         var natural = new int[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             natural[i] = i;
         }
@@ -143,7 +141,7 @@ public class JpegTests
         Quantization.ToZigzag(natural, zigzag);
         Quantization.FromZigzag(zigzag, restored);
 
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             Assert.Equal(natural[i], restored[i]);
         }
@@ -186,7 +184,7 @@ public class JpegTests
             (200, 100, 50),  // Random
         };
 
-        foreach (var (r, g, b) in testColors)
+        foreach ((byte r, byte g, byte b) in testColors)
         {
             ColorConversion.RgbToYCbCr(r, g, b, out byte y, out byte cb, out byte cr);
             ColorConversion.YCbCrToRgb(y, cb, cr, out byte r2, out byte g2, out byte b2);
@@ -224,7 +222,7 @@ public class JpegTests
         // DC luminance table has symbols 0-11
         for (byte i = 0; i <= 11; i++)
         {
-            var (code, length) = dcTable.Encode(i);
+            (ushort code, byte length) = dcTable.Encode(i);
             Assert.True(length > 0, $"Symbol {i} should have positive length");
             Assert.True(length <= 16, $"Symbol {i} should have length <= 16");
         }
@@ -265,7 +263,7 @@ public class JpegTests
             writer.WriteBits(0xFF, 8);
         }
 
-        var bytes = stream.ToArray();
+        byte[] bytes = stream.ToArray();
 
         // Should have 0xFF followed by 0x00 (stuffing) plus padding
         Assert.True(bytes.Length >= 2);
@@ -303,31 +301,31 @@ public class JpegTests
     {
         // Create a simple 8x8 grayscale image
         var gray = new byte[64];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             gray[i] = (byte)(i * 4);
         }
 
         // Encode
-        var jpegData = Jpeg.EncodeGrayscale(gray, 8, 8, 95);
+        byte[] jpegData = Jpeg.EncodeGrayscale(gray, 8, 8, 95);
 
         // Verify it's a valid JPEG
         Assert.Equal(0xFF, jpegData[0]);
         Assert.Equal(JpegConstants.SOI, jpegData[1]);
 
         // Get info
-        var info = Jpeg.GetInfo(jpegData);
+        JpegInfo info = Jpeg.GetInfo(jpegData);
         Assert.Equal(8, info.Width);
         Assert.Equal(8, info.Height);
         Assert.True(info.IsGrayscale);
 
         // Decode
-        var decoded = Jpeg.Decode(jpegData, out int width, out int height);
+        byte[] decoded = Jpeg.Decode(jpegData, out int width, out int height);
         Assert.Equal(8, width);
         Assert.Equal(8, height);
 
         // Verify we get approximately the same values (lossy compression)
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             // RGB output for grayscale has R=G=B
             byte decodedGray = decoded[i * 3];
@@ -341,7 +339,7 @@ public class JpegTests
     {
         // Create a simple 8x8 color image
         var rgb = new byte[64 * 3];
-        for (int i = 0; i < 64; i++)
+        for (var i = 0; i < 64; i++)
         {
             rgb[i * 3] = (byte)(i * 4);     // R
             rgb[i * 3 + 1] = (byte)(128);   // G
@@ -349,20 +347,20 @@ public class JpegTests
         }
 
         // Encode with high quality to minimize loss
-        var jpegData = Jpeg.Encode(rgb, 8, 8, 95, JpegSubsampling.Subsampling444);
+        byte[] jpegData = Jpeg.Encode(rgb, 8, 8, 95, JpegSubsampling.Subsampling444);
 
         // Verify it's a valid JPEG
         Assert.Equal(0xFF, jpegData[0]);
         Assert.Equal(JpegConstants.SOI, jpegData[1]);
 
         // Get info
-        var info = Jpeg.GetInfo(jpegData);
+        JpegInfo info = Jpeg.GetInfo(jpegData);
         Assert.Equal(8, info.Width);
         Assert.Equal(8, info.Height);
         Assert.True(info.IsColor);
 
         // Decode
-        var decoded = Jpeg.Decode(jpegData, out int width, out int height);
+        byte[] decoded = Jpeg.Decode(jpegData, out int width, out int height);
         Assert.Equal(8, width);
         Assert.Equal(8, height);
         Assert.Equal(64 * 3, decoded.Length);
@@ -372,13 +370,13 @@ public class JpegTests
     public void Jpeg_EncodeDecodeColor_LargerImage()
     {
         // Create a 32x32 color image with gradient
-        int width = 32;
-        int height = 32;
+        var width = 32;
+        var height = 32;
         var rgb = new byte[width * height * 3];
 
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int idx = (y * width + x) * 3;
                 rgb[idx] = (byte)(x * 8);      // R: horizontal gradient
@@ -388,22 +386,17 @@ public class JpegTests
         }
 
         // Encode
-        var jpegData = Jpeg.Encode(rgb, width, height, 85);
+        byte[] jpegData = Jpeg.Encode(rgb, width, height, 85);
 
         // Decode
-        var decoded = Jpeg.Decode(jpegData, out int decWidth, out int decHeight);
+        byte[] decoded = Jpeg.Decode(jpegData, out int decWidth, out int decHeight);
 
         Assert.Equal(width, decWidth);
         Assert.Equal(height, decHeight);
         Assert.Equal(width * height * 3, decoded.Length);
 
         // Verify PSNR is reasonable (lossy compression)
-        double mse = 0;
-        for (int i = 0; i < rgb.Length; i++)
-        {
-            double diff = rgb[i] - decoded[i];
-            mse += diff * diff;
-        }
+        double mse = rgb.Select((t, i) => t - decoded[i]).Sum(diff => diff * (double)diff);
         mse /= rgb.Length;
         double psnr = 10 * Math.Log10(255 * 255 / mse);
 
@@ -415,9 +408,9 @@ public class JpegTests
     {
         // Create a minimal JPEG
         var rgb = new byte[8 * 8 * 3];
-        var jpegData = Jpeg.Encode(rgb, 8, 8, 75);
+        byte[] jpegData = Jpeg.Encode(rgb, 8, 8, 75);
 
-        var info = Jpeg.GetInfo(jpegData);
+        JpegInfo info = Jpeg.GetInfo(jpegData);
 
         Assert.Equal(8, info.Width);
         Assert.Equal(8, info.Height);
@@ -443,10 +436,10 @@ public class JpegTests
         var random = new Random(42);
         random.NextBytes(rgb);
 
-        var jpegData = Jpeg.Encode(rgb, 16, 16, quality);
+        byte[] jpegData = Jpeg.Encode(rgb, 16, 16, quality);
 
         // Should be able to decode without error
-        var decoded = Jpeg.Decode(jpegData, out int width, out int height);
+        byte[] decoded = Jpeg.Decode(jpegData, out int width, out int height);
 
         Assert.Equal(16, width);
         Assert.Equal(16, height);
@@ -462,9 +455,9 @@ public class JpegTests
         var random = new Random(42);
         random.NextBytes(rgb);
 
-        var jpegData = Jpeg.Encode(rgb, 16, 16, 75, subsampling);
+        byte[] jpegData = Jpeg.Encode(rgb, 16, 16, 75, subsampling);
 
-        var decoded = Jpeg.Decode(jpegData, out int width, out int height);
+        byte[] decoded = Jpeg.Decode(jpegData, out int width, out int height);
 
         Assert.Equal(16, width);
         Assert.Equal(16, height);

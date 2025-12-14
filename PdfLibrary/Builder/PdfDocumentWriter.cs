@@ -28,6 +28,12 @@ internal record GraphicsStateKey(
 /// </summary>
 public class PdfDocumentWriter
 {
+    // Static initializer to register code pages provider (for Windows-1252 encoding support)
+    static PdfDocumentWriter()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+    }
+
     private int _nextObjectNumber = 1;
     private readonly Dictionary<int, long> _objectOffsets = new();
     private readonly Dictionary<string, int> _fontObjects = new();
@@ -744,7 +750,10 @@ public class PdfDocumentWriter
             GenerateContentElement(sb, element, fonts);
         }
 
-        return Encoding.ASCII.GetBytes(sb.ToString());
+        // Use Windows-1252 (WinAnsiEncoding) instead of ASCII to support extended characters
+        // like degree symbol (°), bullet (•), trademark (™), etc.
+        // PDF operators are all ASCII (0-127) so this is safe, and text strings get proper encoding
+        return Encoding.GetEncoding(1252).GetBytes(sb.ToString());
     }
 
     /// <summary>
