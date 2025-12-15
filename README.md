@@ -12,7 +12,14 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
 - High-quality rendering using SkiaSharp
 - Support for complex graphics operations (paths, clipping, transparency)
 - Comprehensive color space support (DeviceRGB, DeviceCMYK, DeviceGray, ICCBased, Separation, Lab)
-- Image handling (JPEG, PNG, CCITT, JBIG2, JPEG2000)
+- Image handling with custom high-performance decompressors:
+  - JPEG (via JpegLibrary fork with enhanced compatibility)
+  - JPEG2000 (JP2/J2K via custom CSJ2K-based decoder)
+  - CCITT Group 3 and Group 4 fax compression
+  - JBIG2 monochrome compression
+  - LZW compression
+  - FlateDecode (zlib/PNG)
+  - RunLength, ASCII85, ASCIIHex encoding
 - Font rendering (Type1, TrueType, CID, embedded fonts)
 - Text extraction and positioning
 
@@ -47,7 +54,9 @@ PDF/
 ├── PdfLibrary.Tests/                 # Unit tests
 ├── PdfLibrary.Integration/           # Integration tests
 ├── PdfLibrary.Wpf.Viewer/            # WPF PDF viewer application
-├── Compressors/                      # Image decompression libraries
+├── PdfLibrary.Utilities/             # Utility applications
+│   └── ImageUtility/                 # Image format viewer with codec system
+├── Compressors/                      # Custom image decompression libraries
 │   ├── Compressors.Lzw/              # LZW decompression
 │   │   └── Compressors.Lzw.Tests/
 │   ├── Compressors.Ccitt/            # CCITT fax (Group 3/4)
@@ -132,18 +141,79 @@ PdfDocumentBuilder.Create()
     .Save("form.pdf");
 ```
 
+### Advanced Rendering Options
+
+```csharp
+// Render with custom background color
+using var image = page.Render(document)
+    .WithDpi(300)  // High resolution for printing
+    .WithBackgroundColor(new SKColor(255, 250, 240))  // Antique white
+    .ToImage();
+
+// Render specific region of page
+using var cropImage = page.Render(document)
+    .WithScale(2.0)
+    .WithCropBox(100, 100, 400, 600)  // x, y, width, height
+    .ToImage();
+```
+
+### Text Extraction
+
+```csharp
+// Extract all text from a page
+var page = document.GetPage(0);
+var textContent = page.ExtractText(document);
+
+// Extract text with positioning information
+var textBlocks = page.ExtractTextBlocks(document);
+foreach (var block in textBlocks)
+{
+    Console.WriteLine($"Text: {block.Text}");
+    Console.WriteLine($"Position: ({block.X}, {block.Y})");
+    Console.WriteLine($"Font: {block.FontName}, Size: {block.FontSize}");
+}
+```
+
+## Image Decompression Architecture
+
+PdfLibrary uses custom-built, high-performance decompression libraries for all PDF image formats. These are **pure C# implementations** with no external dependencies:
+
+### Custom Decompressors
+- **Compressors.Jpeg** - DCTDecode filter with full baseline and progressive JPEG support
+- **Compressors.Jpeg2000** - JPXDecode filter based on CSJ2K for JP2 and J2K codestreams
+- **Compressors.Ccitt** - CCITTFaxDecode filter supporting Group 3 (1D, 2D) and Group 4
+- **Compressors.Jbig2** - JBIG2Decode filter for monochrome document compression
+- **Compressors.Lzw** - LZWDecode filter with support for Early Change optimization
+
+### Integration
+The core library uses **JpegLibrary** (a high-performance fork) for JPEG images embedded in PDFs. The custom Compressors.Jpeg library is available for standalone image processing and is used in utility applications.
+
 ## Requirements
 
 - .NET 10.0 or later
-- SkiaSharp (for rendering)
-- SixLabors.ImageSharp (for image processing)
+- SkiaSharp (for rendering - separate PdfLibrary.Rendering.SkiaSharp package)
+
+### Core Dependencies
+- **Serilog** - Structured logging
+- **Unicolour** - Advanced color space transformations
+- **JpegLibrary** - High-performance JPEG decompression for PDF images
+- **Custom Image Decompression Libraries**:
+  - Compressors.Lzw - LZW decompression
+  - Compressors.Ccitt - CCITT Group 3/4 fax
+  - Compressors.Jbig2 - JBIG2 monochrome compression
+  - Compressors.Jpeg2000 - JPEG2000 (JP2/J2K) support
+
+**Note**: ImageSharp is NOT a dependency of the core library. It is only used in utility applications for general image format support (PNG, BMP, GIF, TIFF, WebP, etc.).
 
 ## Building
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/PDF.git
+# Clone the repository with submodules
+git clone --recurse-submodules https://github.com/lxman/PDF.git
 cd PDF
+
+# Or if already cloned, initialize submodules
+git submodule update --init --recursive
 
 # Build the solution
 dotnet build PdfProcessor.slnx
@@ -151,6 +221,8 @@ dotnet build PdfProcessor.slnx
 # Run tests
 dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj
 ```
+
+**Note**: The repository uses git submodules for JpegLibrary. Make sure to use `--recurse-submodules` when cloning or run `git submodule update --init --recursive` after cloning.
 
 ## Documentation
 
@@ -224,6 +296,11 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 
 ## Acknowledgments
 
-- [SkiaSharp](https://github.com/mono/SkiaSharp) - 2D graphics library
-- [ImageSharp](https://github.com/SixLabors/ImageSharp) - Image processing library
-- [Serilog](https://serilog.net/) - Logging framework
+### Core Library
+- [SkiaSharp](https://github.com/mono/SkiaSharp) - 2D graphics library for PDF rendering
+- [Serilog](https://serilog.net/) - Structured logging framework
+- [Unicolour](https://github.com/waacton/Unicolour) - Advanced color space handling and transformations
+- [JpegLibrary](https://github.com/yigolden/JpegLibrary) - High-performance JPEG decoder
+
+### Utilities
+- [ImageSharp](https://github.com/SixLabors/ImageSharp) - Used in ImageUtility viewer for general image format support (not a dependency of PdfLibrary itself)

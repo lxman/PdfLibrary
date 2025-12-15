@@ -30,7 +30,7 @@ var items = new[]
 
 // Calculate totals
 decimal subtotal = items.Sum(i => i.Quantity * i.Rate);
-decimal taxRate = 0.08m; // 8% sales tax
+var taxRate = 0.08m; // 8% sales tax
 decimal tax = subtotal * taxRate;
 decimal total = subtotal + tax;
 
@@ -91,7 +91,7 @@ PdfDocumentBuilder.Create()
             .WithColor(PdfColor.FromHex("#2C3E50"));
 
         double billToY = 178;
-        foreach (var line in billTo)
+        foreach (string line in billTo)
         {
             p.AddText(line, 72, billToY)
                 .Font("Helvetica", 10);
@@ -125,7 +125,7 @@ PdfDocumentBuilder.Create()
 
         // Table rows (add spacing after header)
         double rowY = tableTop + 25 + 5; // 5px gap after header
-        bool alternateRow = false;
+        var alternateRow = false;
 
         foreach (var item in items)
         {
