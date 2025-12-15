@@ -13,6 +13,7 @@ public class BitReader
     private int _bitBuffer;
     private int _bitsInBuffer;
     private bool _endOfData;
+    private byte _nextMarker; // 0 = no marker, otherwise the marker byte (non-zero part of FFxx)
 
     /// <summary>
     /// Creates a new BitReader for the specified stream.
@@ -23,6 +24,7 @@ public class BitReader
         _bitBuffer = 0;
         _bitsInBuffer = 0;
         _endOfData = false;
+        _nextMarker = 0;
     }
 
     /// <summary>
@@ -34,6 +36,58 @@ public class BitReader
     /// Gets the number of bits currently in the buffer.
     /// </summary>
     public int BitsInBuffer => _bitsInBuffer;
+
+    /// <summary>
+    /// Checks if a marker was encountered during buffer filling.
+    /// Returns true if _nextMarker is set (non-zero).
+    /// Only reliable when buffer is empty, as marker is only detected when FillBuffer() encounters it.
+    /// </summary>
+    public bool IsAtMarker()
+    {
+        // Can only detect markers when buffer is empty
+        if (_bitsInBuffer != 0)
+            return false;
+
+        // Check if we have a pending marker
+        return _nextMarker != 0 || _endOfData;
+    }
+
+    /// <summary>
+    /// Gets the pending marker byte (0 if no marker).
+    /// </summary>
+    public byte GetMarker()
+    {
+        return _nextMarker;
+    }
+
+    /// <summary>
+    /// Clears the pending marker, allowing reading to continue.
+    /// </summary>
+    public void ClearMarker()
+    {
+        _nextMarker = 0;
+    }
+
+    /// <summary>
+    /// Gets the current stream position (for debugging).
+    /// </summary>
+    public long GetStreamPosition()
+    {
+        return _stream.Position;
+    }
+
+    // Debug tracking
+    private int _bitsReadSinceMarker = 0;
+    private bool _trackingBits = false;
+
+    /// <summary>
+    /// Start tracking bit reads (for debugging).
+    /// </summary>
+    public void StartBitTracking()
+    {
+        _trackingBits = true;
+        _bitsReadSinceMarker = 0;
+    }
 
     /// <summary>
     /// Reads a single bit from the stream.
@@ -53,7 +107,15 @@ public class BitReader
             return -1;
 
         _bitsInBuffer--;
-        return (_bitBuffer >> _bitsInBuffer) & 1;
+        int bit = (_bitBuffer >> _bitsInBuffer) & 1;
+
+        if (_trackingBits && _bitsReadSinceMarker < 500)
+        {
+            _bitsReadSinceMarker++;
+            Console.WriteLine($"      BIT#{_bitsReadSinceMarker}: {bit} (buffer=0x{_bitBuffer:X4}, bitsLeft={_bitsInBuffer}, pos=0x{_stream.Position:X6})");
+        }
+
+        return bit;
     }
 
     /// <summary>
@@ -163,26 +225,41 @@ public class BitReader
     /// <summary>
     /// Fills the bit buffer with more data from the stream.
     /// Handles JPEG byte stuffing (0xFF followed by 0x00 means 0xFF data).
+    /// When a marker is encountered, stores it in _nextMarker and stops filling.
     /// </summary>
     private bool FillBuffer()
     {
-        if (_endOfData)
+        if (_endOfData || _nextMarker != 0)
             return false;
 
+        long posBeforeRead = _stream.Position;
         int b = ReadByteWithStuffing();
         if (b < 0)
         {
-            _endOfData = true;
+            // If _nextMarker is set, a marker was encountered - don't set _endOfData
+            // If _nextMarker is NOT set, we hit actual end-of-stream
+            if (_nextMarker == 0)
+                _endOfData = true;
             return false;
         }
 
-        _bitBuffer = (_bitBuffer << 8) | b;
+        // Mask off consumed bits before shifting
+        // Only keep the bits that haven't been consumed
+        int validBits = _bitBuffer & ((1 << _bitsInBuffer) - 1);
+        _bitBuffer = (validBits << 8) | b;
         _bitsInBuffer += 8;
+
+        if (_trackingBits && _bitsReadSinceMarker < 500)
+        {
+            Console.WriteLine($"    FILL: Read byte 0x{b:X2} from pos 0x{posBeforeRead:X6}, buffer now=0x{_bitBuffer:X}, bits now={_bitsInBuffer}");
+        }
+
         return true;
     }
 
     /// <summary>
     /// Reads a byte from the stream, handling JPEG byte stuffing.
+    /// When a marker is encountered, stores it in _nextMarker and returns -1.
     /// </summary>
     private int ReadByteWithStuffing()
     {
@@ -193,6 +270,7 @@ public class BitReader
         // Handle byte stuffing: 0xFF 0x00 means 0xFF data byte
         if (b == 0xFF)
         {
+            long pos = _stream.Position;
             int next = _stream.ReadByte();
             if (next < 0)
                 return -1;
@@ -202,15 +280,18 @@ public class BitReader
                 // Stuffed byte - return 0xFF
                 return 0xFF;
             }
-            else if (next >= 0xD0 && next <= 0xD7)
-            {
-                // Restart marker - skip it and continue
-                return ReadByteWithStuffing();
-            }
             else
             {
-                // Other marker - end of entropy-coded data
-                _endOfData = true;
+                // Marker (including RST markers) - store it and signal end of buffer filling
+                _nextMarker = (byte)next;
+
+                // Log RST marker detection
+                if (next >= 0xD0 && next <= 0xD7)
+                {
+                    Console.WriteLine($"    *** MARKER DETECTED: RST{next - 0xD0} at stream pos 0x{pos - 1:X6}");
+                    Console.WriteLine($"    *** Buffer state: bits={_bitsInBuffer}, buffer=0x{_bitBuffer:X}");
+                }
+
                 return -1;
             }
         }
@@ -226,6 +307,7 @@ public class BitReader
         _bitBuffer = 0;
         _bitsInBuffer = 0;
         _endOfData = false;
+        _nextMarker = 0;
     }
 
     /// <summary>

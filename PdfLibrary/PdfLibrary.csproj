@@ -40,7 +40,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Compressors\Compressors.Jpeg\Compressors.Jpeg.csproj" />
+      <ProjectReference Include="..\JpegLibrary\src\JpegLibrary\JpegLibrary.csproj" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
       <ProjectReference Include="..\Logging\Logging.csproj" />
       <ProjectReference Include="..\Compressors\Compressors.Lzw\Compressors.Lzw.csproj" />

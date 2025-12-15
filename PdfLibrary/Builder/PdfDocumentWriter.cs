@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using Compressors.Jpeg2000;
@@ -1011,7 +1012,7 @@ public class PdfDocumentWriter
         // Apply CTM transformation if specified
         if (path.Transform.HasValue)
         {
-            var m = path.Transform.Value;
+            Matrix3x2 m = path.Transform.Value;
             sb.AppendLine($"{m.M11:F4} {m.M12:F4} {m.M21:F4} {m.M22:F4} {m.M31:F2} {m.M32:F2} cm");
         }
 

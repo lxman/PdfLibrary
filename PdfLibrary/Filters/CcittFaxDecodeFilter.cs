@@ -36,7 +36,7 @@ internal class CcittFaxDecodeFilter : IStreamFilter
             // - Columns: width of the image
             // - Rows: height of the image (optional)
             // - EncodedByteAlign: whether rows are byte-aligned
-            // - BlackIs1: whether 1 bits represent black or white
+            // - BlackIs1: whether a 1 bit represents black or white
             // - EndOfLine: whether EOL markers are present
             // - EndOfBlock: whether end-of-block marker is expected
 

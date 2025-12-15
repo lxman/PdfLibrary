@@ -97,7 +97,7 @@ internal class PdfFontEncoding
     public byte[] EncodeString(string text)
     {
         var bytes = new byte[text.Length];
-        for (int i = 0; i < text.Length; i++)
+        for (var i = 0; i < text.Length; i++)
         {
             byte? encoded = EncodeCharacter(text[i]);
             bytes[i] = encoded ?? (byte)'?';

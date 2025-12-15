@@ -631,7 +631,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         // Create Lab color and convert to RGB (Unicolour expects Lab in range: L=0-100, a/b=-128 to 127)
         var unicolour = new Unicolour(ColourSpace.Lab, L, a, b);
-        var rgb = unicolour.Rgb;
+        Rgb rgb = unicolour.Rgb;
 
         // RGB values are already in 0.0-1.0 range and clamped by Unicolour
         return [rgb.R, rgb.G, rgb.B];

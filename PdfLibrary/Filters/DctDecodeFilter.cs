@@ -1,5 +1,3 @@
-using JpegLibrary;
-
 namespace PdfLibrary.Filters;
 
 /// <summary>
@@ -29,17 +27,22 @@ internal class DctDecodeFilter : IStreamFilter
 
         try
         {
-            // Check if this is a CMYK JPEG
-            (bool isCmyk, bool isAdobeYcck, int colorTransform) = AnalyzeJpegColorSpace(data);
+            // Decode JPEG with metadata (get raw component data, not RGB-converted)
+            JpegDecodeResult result = JpegLibraryAdapter.DecodeWithInfo(data, convertToRgb: false);
 
-            if (isCmyk)
+            int width = result.Width;
+            int height = result.Height;
+            int componentCount = result.ComponentCount;
+            byte[] componentData = result.Data;  // Already interleaved component data
+
+            return componentCount switch
             {
-                // For CMYK/YCCK JPEGs, use JpegLibrary which gives us raw component data
-                return DecodeCmykJpegWithJpegLibrary(data, isAdobeYcck, colorTransform);
-            }
-
-            // For RGB/Grayscale JPEGs, use JpegLibrary to get raw component data
-            return DecodeRgbGrayscaleJpegWithJpegLibrary(data);
+                // Handle different color spaces
+                4 => DecodeCmykJpeg(componentData, width, height, result.HasAdobeMarker, result.AdobeColorTransform),
+                3 => DecodeRgbJpeg(componentData, width, height),
+                1 => componentData,
+                _ => throw new NotSupportedException($"Unsupported JPEG component count: {componentCount}")
+            };
         }
         catch (Exception ex)
         {
@@ -48,32 +51,19 @@ internal class DctDecodeFilter : IStreamFilter
     }
 
     /// <summary>
-    /// Decodes a CMYK/YCCK JPEG using JpegLibrary for proper color handling.
+    /// Decodes CMYK/YCCK component data to standard CMYK format.
     /// Returns CMYK data (4 components per pixel) - the caller handles CMYK→RGB conversion.
     /// </summary>
-    private static byte[] DecodeCmykJpegWithJpegLibrary(byte[] data, bool isAdobeYcck, int colorTransform)
+    private static byte[] DecodeCmykJpeg(byte[] componentData, int width, int height, bool hasAdobeMarker, byte adobeColorTransform)
     {
-        var decoder = new JpegDecoder();
-        decoder.SetInput(data);
-        decoder.Identify();
-
-        int width = decoder.Width;
-        int height = decoder.Height;
-        int numberOfComponents = decoder.NumberOfComponents;
-
-        // Allocate buffer for raw component data (CMYK or YCCK)
-        int bufferSize = width * height * numberOfComponents;
-        var componentData = new byte[bufferSize];
-
-        // Decode to raw component data without color conversion
-        decoder.SetOutputWriter(new JpegBufferOutputWriter8Bit(width, height, numberOfComponents, componentData));
-        decoder.Decode();
-
         // Output buffer for CMYK data (4 components per pixel)
         var cmykPixels = new byte[width * height * 4];
         int pixelCount = width * height;
 
-        if (isAdobeYcck && colorTransform == 2)
+        bool isAdobeYcck = hasAdobeMarker && adobeColorTransform == 2;
+        bool isInvertedCmyk = hasAdobeMarker && adobeColorTransform == 0;
+
+        if (isAdobeYcck)
         {
             // Adobe YCCK decoding:
             // In YCCK, Y/Cb/Cr encode the INVERTED C/M/Y values.
@@ -110,174 +100,62 @@ internal class DctDecodeFilter : IStreamFilter
                 cmykPixels[dstIdx + 3] = kStored;                    // K = K_stored (as-is)
             }
         }
-        else
+        else if (isInvertedCmyk)
         {
-            // Pure CMYK (colorTransform = 0 or no Adobe marker)
-            // Adobe CMYK often has inverted values
-            bool isInverted = colorTransform == 0;
-
+            // Inverted CMYK (Adobe colorTransform = 0)
             for (var i = 0; i < pixelCount; i++)
             {
                 int srcIdx = i * 4;
                 int dstIdx = i * 4;
 
-                byte c = componentData[srcIdx];
-                byte m = componentData[srcIdx + 1];
-                byte y = componentData[srcIdx + 2];
-                byte k = componentData[srcIdx + 3];
-
-                if (isInverted)
-                {
-                    // Inverted CMYK: need to uninvert
-                    c = (byte)(255 - c);
-                    m = (byte)(255 - m);
-                    y = (byte)(255 - y);
-                    k = (byte)(255 - k);
-                }
-
-                cmykPixels[dstIdx] = c;
-                cmykPixels[dstIdx + 1] = m;
-                cmykPixels[dstIdx + 2] = y;
-                cmykPixels[dstIdx + 3] = k;
+                // Uninvert CMYK components
+                cmykPixels[dstIdx] = (byte)(255 - componentData[srcIdx]);
+                cmykPixels[dstIdx + 1] = (byte)(255 - componentData[srcIdx + 1]);
+                cmykPixels[dstIdx + 2] = (byte)(255 - componentData[srcIdx + 2]);
+                cmykPixels[dstIdx + 3] = (byte)(255 - componentData[srcIdx + 3]);
             }
+        }
+        else
+        {
+            // Standard CMYK - copy as-is
+            Array.Copy(componentData, cmykPixels, cmykPixels.Length);
         }
 
         return cmykPixels;
     }
 
     /// <summary>
-    /// Decodes an RGB or Grayscale JPEG using JpegLibrary.
-    /// Returns RGB data (3 components per pixel) for RGB images, or grayscale data (1 component) for grayscale images.
+    /// Converts YCbCr component data to RGB.
+    /// Returns RGB data (3 components per pixel).
     /// </summary>
-    private static byte[] DecodeRgbGrayscaleJpegWithJpegLibrary(byte[] data)
+    private static byte[] DecodeRgbJpeg(byte[] componentData, int width, int height)
     {
-        var decoder = new JpegDecoder();
-        decoder.SetInput(data);
-        decoder.Identify();
+        // Convert YCbCr to RGB
+        var rgbData = new byte[width * height * 3];
+        int pixelCount = width * height;
 
-        int width = decoder.Width;
-        int height = decoder.Height;
-        int numberOfComponents = decoder.NumberOfComponents;
-
-        // Allocate buffer for raw component data
-        int bufferSize = width * height * numberOfComponents;
-        var componentData = new byte[bufferSize];
-
-        // Decode to raw component data
-        decoder.SetOutputWriter(new JpegBufferOutputWriter8Bit(width, height, numberOfComponents, componentData));
-        decoder.Decode();
-
-        if (numberOfComponents == 1)
+        for (var i = 0; i < pixelCount; i++)
         {
-            // Grayscale - return as-is
-            return componentData;
+            int offset = i * 3;
+            byte y  = componentData[offset];
+            byte cb = componentData[offset + 1];
+            byte cr = componentData[offset + 2];
+
+            // YCbCr to RGB conversion (ITU-R BT.601)
+            var r = (int)(y + 1.402f * (cr - 128));
+            var g = (int)(y - 0.34414f * (cb - 128) - 0.71414f * (cr - 128));
+            var b = (int)(y + 1.772f * (cb - 128));
+
+            rgbData[offset]     = (byte)Math.Clamp(r, 0, 255);
+            rgbData[offset + 1] = (byte)Math.Clamp(g, 0, 255);
+            rgbData[offset + 2] = (byte)Math.Clamp(b, 0, 255);
         }
-        else if (numberOfComponents == 3)
-        {
-            // JpegLibrary returns YCbCr data - need to convert to RGB
-            var rgbData = new byte[componentData.Length];
-            int pixelCount = width * height;
 
-            for (var i = 0; i < pixelCount; i++)
-            {
-                int offset = i * 3;
-                byte y  = componentData[offset];
-                byte cb = componentData[offset + 1];
-                byte cr = componentData[offset + 2];
-
-                // YCbCr to RGB conversion (ITU-R BT.601)
-                int r = (int)(y + 1.402f * (cr - 128));
-                int g = (int)(y - 0.34414f * (cb - 128) - 0.71414f * (cr - 128));
-                int b = (int)(y + 1.772f * (cb - 128));
-
-                rgbData[offset]     = (byte)Math.Clamp(r, 0, 255);
-                rgbData[offset + 1] = (byte)Math.Clamp(g, 0, 255);
-                rgbData[offset + 2] = (byte)Math.Clamp(b, 0, 255);
-            }
-
-            return rgbData;
-        }
-        else
-        {
-            throw new NotSupportedException($"Unexpected number of components {numberOfComponents} in RGB/Grayscale JPEG");
-        }
+        return rgbData;
     }
 
     private static byte ClampToByte(float value)
     {
         return (byte)Math.Max(0, Math.Min(255, Math.Round(value)));
-    }
-
-    private static byte ClampToByte(int value)
-    {
-        return (byte)Math.Max(0, Math.Min(255, value));
-    }
-
-    /// <summary>
-    /// Analyzes JPEG markers to determine color space and Adobe inversion
-    /// </summary>
-    /// <returns>Tuple of (isCmyk, isAdobeYcck, colorTransform)</returns>
-    private static (bool isCmyk, bool isAdobeYcck, int colorTransform) AnalyzeJpegColorSpace(byte[] data)
-    {
-        if (data.Length < 20) return (false, false, -1);
-
-        var hasAdobeMarker = false;
-        byte adobeColorTransform = 0;
-        var numComponents = 0;
-
-        var pos = 2; // Skip SOI marker (FF D8)
-        while (pos < data.Length - 4)
-        {
-            if (data[pos] != 0xFF) break;
-
-            byte marker = data[pos + 1];
-            if (marker == 0xD9) break; // EOI
-            if (marker == 0xDA) break; // SOS - start of scan, stop searching
-
-            // Skip markers without length
-            if (marker == 0x00 || marker == 0x01 || (marker >= 0xD0 && marker <= 0xD7))
-            {
-                pos += 2;
-                continue;
-            }
-
-            // Get segment length (big-endian)
-            if (pos + 3 >= data.Length) break;
-            int length = (data[pos + 2] << 8) | data[pos + 3];
-            if (length < 2) break;
-
-            // Check for Adobe APP14 marker (FF EE)
-            if (marker == 0xEE && length >= 14 && pos + 16 <= data.Length)
-            {
-                // Check for "Adobe" signature at pos+4
-                if (data[pos + 4] == 'A' && data[pos + 5] == 'd' && data[pos + 6] == 'o' &&
-                    data[pos + 7] == 'b' && data[pos + 8] == 'e')
-                {
-                    hasAdobeMarker = true;
-                    // Color transform byte is at offset 11 from segment data start (pos+4)
-                    adobeColorTransform = data[pos + 15];
-                }
-            }
-
-            // Check for SOF markers to get component count
-            if (marker >= 0xC0 && marker <= 0xCF && marker != 0xC4 && marker != 0xC8 && marker != 0xCC)
-            {
-                // SOF marker - number of components is at offset 7 from marker
-                if (pos + 9 < data.Length)
-                {
-                    numComponents = data[pos + 9];
-                }
-            }
-
-            pos += 2 + length;
-        }
-
-        // Determine if CMYK
-        bool isCmyk = numComponents == 4;
-
-        // Determine if Adobe YCCK (colorTransform == 2)
-        bool isAdobeYcck = isCmyk && hasAdobeMarker && adobeColorTransform == 2;
-
-        return (isCmyk, isAdobeYcck, hasAdobeMarker ? adobeColorTransform : -1);
     }
 }

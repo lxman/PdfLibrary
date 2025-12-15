@@ -32,6 +32,9 @@
     <Project Path="PdfLibrary.Examples/09-ExtractImages/ExtractImages.csproj" />
     <Project Path="PdfLibrary.Examples/10-CreateFromScratch/CreateFromScratch.csproj" />
   </Folder>
+  <Folder Name="/Utilities/">
+    <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
+  </Folder>
   <Project Path="../JpegLibrary/src/JpegLibrary/JpegLibrary.csproj" />
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />

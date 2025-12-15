@@ -773,7 +773,7 @@ public class PdfImage
                 var iccColor = new Unicolour(ColourSpace.Rgb, r, g, b);
 
                 // Convert through CIE XYZ and back to RGB
-                var xyz = iccColor.Xyz;
+                Xyz xyz = iccColor.Xyz;
                 var deviceColor = new Unicolour(ColourSpace.Xyz, xyz.X, xyz.Y, xyz.Z);
 
                 // Convert back to 0-255 range

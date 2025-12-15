@@ -116,17 +116,53 @@ public class HuffmanTable
     /// <returns>Decoded symbol, or -1 on error</returns>
     public int Decode(BitReader reader)
     {
+        // Debug: check if we're at the failing position
+        long streamPos = reader.GetStreamPosition();
+        int bitsBefore = reader.BitsInBuffer;
+        bool isFailPosition = streamPos == 0x18B8 && bitsBefore == 7;
+
+        if (isFailPosition)
+        {
+            Console.WriteLine($"  HUFFMAN DEBUG: Starting decode at pos=0x{streamPos:X6}, bits={bitsBefore}");
+        }
+
+        // CRITICAL: Check for markers BEFORE peeking bits!
+        // This only works when the bit buffer is empty (after consuming all bits from previous codes)
+        // If we're at a marker, return EOB (0x00) to signal end of block
+        if (reader.IsAtMarker())
+        {
+            if (isFailPosition)
+                Console.WriteLine($"  HUFFMAN DEBUG: At marker, returning 0x00");
+            return 0x00;
+        }
+
         // Try fast lookup first (only if we can peek 8 bits)
         int peek = reader.PeekBits(LookupBits);
+        if (isFailPosition)
+        {
+            Console.WriteLine($"  HUFFMAN DEBUG: PeekBits({LookupBits}) returned {peek} (0x{peek:X2})");
+            if (peek >= 0)
+                Console.WriteLine($"    Binary: 0b{Convert.ToString(peek, 2).PadLeft(8, '0')}");
+        }
+
         if (peek >= 0)
         {
             int lookup = _decodeLookup[peek];
+            if (isFailPosition)
+                Console.WriteLine($"  HUFFMAN DEBUG: Lookup[{peek}] = {lookup} (0x{lookup:X4})");
+
             if (lookup >= 0)
             {
                 int length = lookup >> 8;
                 int symbol = lookup & 0xFF;
+                if (isFailPosition)
+                    Console.WriteLine($"  HUFFMAN DEBUG: Fast decode: length={length}, symbol={symbol}");
                 reader.SkipBits(length);
                 return symbol;
+            }
+            else if (isFailPosition)
+            {
+                Console.WriteLine($"  HUFFMAN DEBUG: Fast lookup failed, going to slow path");
             }
         }
 
@@ -136,17 +172,63 @@ public class HuffmanTable
         for (var length = 1; length <= MaxCodeLength; length++)
         {
             int bit = reader.ReadBit();
+            if (isFailPosition)
+                Console.WriteLine($"  HUFFMAN DEBUG: Slow path length={length}, ReadBit()={bit}");
+
             if (bit < 0)
+            {
+                // Check if we're at a marker boundary
+                if (reader.IsAtMarker())
+                {
+                    if (isFailPosition)
+                        Console.WriteLine($"  HUFFMAN DEBUG: At marker during slow path, returning 0x00");
+                    return 0x00;
+                }
+                if (isFailPosition)
+                    Console.WriteLine($"  HUFFMAN DEBUG: ReadBit() returned -1, returning error");
                 return -1;
+            }
 
             code = (code << 1) | bit;
+            if (isFailPosition)
+                Console.WriteLine($"  HUFFMAN DEBUG: Code so far = {code} (0b{Convert.ToString(code, 2).PadLeft(length, '0')})");
 
             // Check if this code exists at this length
             int index = FindCode(code, length);
+            if (isFailPosition)
+                Console.WriteLine($"  HUFFMAN DEBUG: FindCode({code}, {length}) = {index}");
+
             if (index >= 0)
-                return Values[index];
+            {
+                int symbol = Values[index];
+                if (isFailPosition)
+                    Console.WriteLine($"  HUFFMAN DEBUG: Slow decode success: symbol={symbol}");
+                return symbol;
+            }
         }
 
+        // JPEG PADDING DETECTION:
+        // After exhausting all code lengths without a match, check if this is a padding pattern.
+        // JPEG encoders pad with all-1s bits before restart markers to align to byte boundaries.
+        // Some encoders also use this padding between blocks. If we have an all-1s pattern
+        // (e.g., 0b1111111), treat it as padding and realign to the next byte boundary.
+        int maxCode = (1 << MaxCodeLength) - 1; // All 1s for MaxCodeLength bits
+        if (code == maxCode)
+        {
+            // This is an all-1s padding pattern
+            Console.WriteLine($"  HUFFMAN: Detected padding pattern 0b{Convert.ToString(code, 2).PadLeft(MaxCodeLength, '0')} at length {MaxCodeLength}");
+            Console.WriteLine($"  HUFFMAN: Discarding padding and realigning to next byte boundary");
+
+            // Align to next byte boundary and try decoding again
+            reader.AlignToByte();
+
+            // Recursively try to decode from the next byte
+            // Note: This assumes padding only happens once per code
+            return Decode(reader);
+        }
+
+        if (isFailPosition)
+            Console.WriteLine($"  HUFFMAN DEBUG: Slow path exhausted all lengths, returning -1");
         return -1; // Invalid code
     }
 

@@ -437,8 +437,8 @@ internal class PdfContentParser
 
         // Read until we find EI
         var imageData = new List<byte>();
-        var prevPrev = -1;  // Use -1 as sentinel, not 0 (0x00 is a valid data byte!)
-        var prev = -1;      // Use -1 as sentinel, not 0 (0x00 is a valid data byte!)
+        int prevPrev = -1;  // Use -1 as sentinel, not 0 (0x00 is a valid data byte!)
+        int prev = -1;      // Use -1 as sentinel, not 0 (0x00 is a valid data byte!)
 
         while (true)
         {

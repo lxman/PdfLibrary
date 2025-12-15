@@ -99,7 +99,7 @@ internal class PdfLexer(Stream stream)
 
         var depth = 1;
         var escaped = false;
-        int escapeCount = 0;
+        var escapeCount = 0;
 
         while (TryPeek(out byte ch) && depth > 0)
         {
@@ -146,7 +146,7 @@ internal class PdfLexer(Stream stream)
         }
 
         long endPos = Position;
-        string result = sb.ToString();
+        var result = sb.ToString();
 
         return new PdfToken(PdfTokenType.String, result, position);
     }

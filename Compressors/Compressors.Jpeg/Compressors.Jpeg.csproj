@@ -8,11 +8,7 @@
 
     <ItemGroup>
       <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
-      <PackageReference Include="JpegLibrary" Version="0.4.32" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <ProjectReference Include="..\..\..\JpegLibrary\src\JpegLibrary\JpegLibrary.csproj" />
+      <PackageReference Include="Wacton.Unicolour" Version="6.3.0" />
     </ItemGroup>
 
 </Project>

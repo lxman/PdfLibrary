@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.IO;
+using System.Linq;
 
 namespace Compressors.Jpeg;
 
@@ -124,6 +125,54 @@ public class JpegDecoder
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Diagnostic method to get raw YCbCr values for a specific pixel.
+    /// Must be called after Decode() completes.
+    /// </summary>
+    public (byte Y, byte Cb, byte Cr) GetYCbCrForPixel(int x, int y)
+    {
+        if (_componentCount != 3)
+            throw new InvalidOperationException("GetYCbCrForPixel requires a 3-component image");
+
+        var yComp = _components[0];
+        var cbComp = _components[1];
+        var crComp = _components[2];
+
+        int yBlocksPerRow = _mcusPerRow * yComp.BlocksPerMcuH;
+        int cbBlocksPerRow = _mcusPerRow * cbComp.BlocksPerMcuH;
+        int crBlocksPerRow = _mcusPerRow * crComp.BlocksPerMcuH;
+
+        // Y component
+        int yBlockX = x / 8;
+        int yBlockY = y / 8;
+        int yPixelX = x % 8;
+        int yPixelY = y % 8;
+        int yOffset = (yBlockY * yBlocksPerRow + yBlockX) * 64 + yPixelY * 8 + yPixelX;
+        byte yVal = yComp.Data![yOffset];
+
+        // Cb component
+        int cbX = x * cbComp.Width / _width;
+        int cbY = y * cbComp.Height / _height;
+        int cbBlockX = cbX / 8;
+        int cbBlockY = cbY / 8;
+        int cbPixelX = cbX % 8;
+        int cbPixelY = cbY % 8;
+        int cbOffset = (cbBlockY * cbBlocksPerRow + cbBlockX) * 64 + cbPixelY * 8 + cbPixelX;
+        byte cbVal = cbComp.Data![cbOffset];
+
+        // Cr component
+        int crX = x * crComp.Width / _width;
+        int crY = y * crComp.Height / _height;
+        int crBlockX = crX / 8;
+        int crBlockY = crY / 8;
+        int crPixelX = crX % 8;
+        int crPixelY = crY % 8;
+        int crOffset = (crBlockY * crBlocksPerRow + crBlockX) * 64 + crPixelY * 8 + crPixelX;
+        byte crVal = crComp.Data![crOffset];
+
+        return (yVal, cbVal, crVal);
     }
 
     /// <summary>
@@ -355,6 +404,7 @@ public class JpegDecoder
     {
         ReadUInt16(); // length
         _restartInterval = ReadUInt16();
+        Console.WriteLine($"DRI: Restart interval = {_restartInterval} MCUs");
     }
 
     /// <summary>
@@ -391,34 +441,97 @@ public class JpegDecoder
     /// </summary>
     private byte[] DecodeScan(bool convertToRgb)
     {
+        Console.WriteLine($"\n=== Starting DecodeScan ===");
+        Console.WriteLine($"Stream position before BitReader: {_stream!.Position}");
+        Console.WriteLine($"Image dimensions: {_width}×{_height}");
+        Console.WriteLine($"MCU dimensions: {_mcuWidth}×{_mcuHeight} pixels");
+        Console.WriteLine($"MCU grid: {_mcusPerRow} cols × {_mcuRows} rows = {_mcusPerRow * _mcuRows} total MCUs");
+        Console.WriteLine($"Expected total blocks: {_mcusPerRow * _mcuRows * 4}");
+
         _bitReader = new BitReader(_stream!);
 
-        // Allocate component buffers
+        // Allocate component buffers based on MCU-aligned dimensions
         for (var i = 0; i < _componentCount; i++)
         {
-            int blocksH = (_components[i].Width + 7) / 8;
-            int blocksV = (_components[i].Height + 7) / 8;
-            _components[i].Data = new byte[blocksH * blocksV * 64];
+            // Buffer must accommodate all blocks from all MCUs
+            int blocksH = _mcusPerRow * _components[i].BlocksPerMcuH;
+            int blocksV = _mcuRows * _components[i].BlocksPerMcuV;
+            int bufferSize = blocksH * blocksV * 64;
+            _components[i].Data = new byte[bufferSize];
         }
 
         // Reset DC predictors
         var dcPredictors = new int[_componentCount];
 
-        // Decode MCUs
+        // Decode MCUs in proper MCU-by-MCU order
+        // JPEG spec requires: for each MCU { for each component { for blockV { for blockH }}}
         var mcuCount = 0;
+
         for (var mcuRow = 0; mcuRow < _mcuRows; mcuRow++)
         {
             for (var mcuCol = 0; mcuCol < _mcusPerRow; mcuCol++)
             {
-                // Handle restart interval
+                // Handle restart interval before processing MCU
                 if (_restartInterval > 0 && mcuCount > 0 && mcuCount % _restartInterval == 0)
                 {
-                    _bitReader.AlignToByte();
-                    // Skip restart marker (already handled by bit reader)
+                    // Restart markers are detected DURING bit reading by ReadByteWithStuffing()
+                    // When a marker is encountered, it's stored in _nextMarker and reading stops
+                    // The marker should already be detected by now (during previous MCU's decode)
+
+                    Console.WriteLine($"At MCU {mcuCount}: Checking for restart marker");
+                    Console.WriteLine($"  BitReader state: BitsInBuffer={_bitReader!.BitsInBuffer}, Marker=0x{_bitReader.GetMarker():X2}");
+
+                    // Check if we're at a marker (should already be detected)
+                    byte marker = _bitReader.GetMarker();
+                    if (marker >= 0xD0 && marker <= 0xD7)
+                    {
+                        // Valid RST marker
+                        int expectedRstNum = ((mcuCount / _restartInterval) - 1) % 8;
+                        int actualRstNum = marker - 0xD0;
+                        Console.WriteLine($"Found RST{actualRstNum} marker at MCU {mcuCount} (expected RST{expectedRstNum})");
+
+                        if (actualRstNum != expectedRstNum)
+                        {
+                            Console.WriteLine($"  WARNING: RST marker mismatch!");
+                        }
+
+                        // Clear the marker flag to allow reading to continue
+                        _bitReader.ClearMarker();
+
+                        // After a restart marker, the bit stream restarts at a byte boundary
+                        // Discard any remaining bits and align to byte boundary
+                        Console.WriteLine($"  Buffer before alignment: bits={_bitReader.BitsInBuffer}, buffer=0x{_bitReader.GetStreamPosition():X}");
+                        _bitReader.AlignToByte();
+                        Console.WriteLine($"  Aligned to byte boundary, bits={_bitReader.BitsInBuffer}");
+                    }
+                    else if (marker != 0)
+                    {
+                        Console.WriteLine($"  WARNING: Expected RST marker but found marker 0x{marker:X2}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  ERROR: No RST marker detected at expected position!");
+                        throw new InvalidDataException($"Expected RST marker at MCU {mcuCount} but found none");
+                    }
+
+                    // Reset DC predictors
+                    Console.WriteLine($"Resetting DC predictors from: {string.Join(", ", dcPredictors)}");
                     Array.Clear(dcPredictors, 0, dcPredictors.Length);
+                    Console.WriteLine($"DC predictors after reset: {string.Join(", ", dcPredictors)}");
                 }
 
-                DecodeMcu(mcuRow, mcuCol, dcPredictors);
+                try
+                {
+                    DecodeMcu(mcuRow, mcuCol, dcPredictors);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"DECODE FAILED at MCU ({mcuRow},{mcuCol}) mcuCount={mcuCount}");
+                    Console.WriteLine($"  Expected next restart at MCU {((mcuCount / _restartInterval) + 1) * _restartInterval}");
+                    Console.WriteLine($"  BitReader state: bitsInBuffer={_bitReader!.BitsInBuffer}, marker={_bitReader.GetMarker():X2}");
+                    throw;
+                }
+
                 mcuCount++;
             }
         }
@@ -446,7 +559,7 @@ public class JpegDecoder
                 for (var c = 0; c < _componentCount; c++)
                 {
                     JpegComponent comp = _components[c];
-                    int blocksPerRow = (comp.Width + 7) / 8;
+                    int blocksPerRow = _mcusPerRow * comp.BlocksPerMcuH;
 
                     // Map to component coordinates (handle subsampling)
                     int compX = x * comp.Width / _width;
@@ -467,7 +580,8 @@ public class JpegDecoder
     }
 
     /// <summary>
-    /// Decodes a single MCU.
+    /// Decodes a complete MCU (all blocks for all components).
+    /// JPEG spec order: for each component { for blockV { for blockH }}.
     /// </summary>
     private void DecodeMcu(int mcuRow, int mcuCol, int[] dcPredictors)
     {
@@ -475,6 +589,7 @@ public class JpegDecoder
         Span<float> dctBlock = stackalloc float[64];
         Span<byte> pixelBlock = stackalloc byte[64];
 
+        // Iterate through components in scan order (Y, Cb, Cr)
         for (var compIdx = 0; compIdx < _componentCount; compIdx++)
         {
             JpegComponent comp = _components[compIdx];
@@ -482,29 +597,61 @@ public class JpegDecoder
             HuffmanTable acTable = _acTables[comp.AcTableId]!;
             int[] quantTable = _quantTables[comp.QuantTableId]!;
 
-            int blocksH = comp.BlocksPerMcuH;
-            int blocksV = comp.BlocksPerMcuV;
-
-            for (var blockV = 0; blockV < blocksV; blockV++)
+            // DEBUG: Print table IDs for first MCU
+            if (mcuRow == 0 && mcuCol == 0)
             {
-                for (var blockH = 0; blockH < blocksH; blockH++)
+                Console.WriteLine($"DEBUG: MCU(0,0) comp={compIdx} DcTableId={comp.DcTableId}, AcTableId={comp.AcTableId}, QuantTableId={comp.QuantTableId}, BlocksPerMcuH={comp.BlocksPerMcuH}, BlocksPerMcuV={comp.BlocksPerMcuV}");
+            }
+
+            // For this component, decode all blocks in order: blockV → blockH
+            for (var blockV = 0; blockV < comp.BlocksPerMcuV; blockV++)
+            {
+                for (var blockH = 0; blockH < comp.BlocksPerMcuH; blockH++)
                 {
+                    // DEBUG: Print DC predictor BEFORE decode (all blocks in first MCU)
+                    bool debugThisBlock = (mcuRow == 0 && mcuCol == 0);
+                    if (debugThisBlock)
+                    {
+                        Console.WriteLine($"DEBUG: MCU(0,0) comp={compIdx} blockV={blockV} blockH={blockH} DC predictor BEFORE = {dcPredictors[compIdx]}");
+                    }
+
                     // Decode coefficients
-                    DecodeBlock(dcTable, acTable, coeffs, ref dcPredictors[compIdx]);
+                    DecodeBlock(dcTable, acTable, coeffs, ref dcPredictors[compIdx], debugThisBlock, compIdx);
+
+                    // DEBUG: Print DC coefficient BEFORE dequantization
+                    if (mcuRow == 0 && mcuCol == 0 && compIdx >= 1 && blockH == 0 && blockV == 0)
+                    {
+                        Console.WriteLine($"DEBUG: MCU(0,0) comp={compIdx} DC delta (raw) = {coeffs[0]}, DC predictor AFTER = {dcPredictors[compIdx]}, quant[0] = {quantTable[0]}");
+                    }
 
                     // Dequantize
                     Quantization.DequantizeFromInt(coeffs, quantTable, dctBlock);
 
+                    // DEBUG: Print DC coefficient for first few Cb/Cr blocks
+                    if (mcuRow == 0 && mcuCol == 0 && compIdx >= 1 && blockH == 0 && blockV == 0)
+                    {
+                        Console.WriteLine($"DEBUG: MCU(0,0) comp={compIdx} DC coeff after dequant = {dctBlock[0]:F2}");
+                    }
+
                     // Inverse DCT
                     Dct.InverseDctToBytes(dctBlock, pixelBlock);
 
-                    // Store in the component buffer
-                    int compBlocksPerRow = (comp.Width + 7) / 8;
-                    int destBlockX = mcuCol * blocksH + blockH;
-                    int destBlockY = mcuRow * blocksV + blockV;
+                    // DEBUG: Print first pixel value for first few Cb/Cr blocks
+                    if (mcuRow == 0 && mcuCol == 0 && compIdx >= 1 && blockH == 0 && blockV == 0)
+                    {
+                        Console.WriteLine($"DEBUG: MCU(0,0) comp={compIdx} first pixel after IDCT = {pixelBlock[0]}");
+                    }
 
-                    if (destBlockX >= compBlocksPerRow || destBlockY * 8 >= comp.Height) continue;
+                    // Store in the component buffer
+                    int compBlocksPerRow = _mcusPerRow * comp.BlocksPerMcuH;
+                    int destBlockX = mcuCol * comp.BlocksPerMcuH + blockH;
+                    int destBlockY = mcuRow * comp.BlocksPerMcuV + blockV;
+
+                    // Check block indices, not pixel positions (JPEG allows partial blocks at edges)
+                    int compBlocksPerColumn = _mcuRows * comp.BlocksPerMcuV;
+                    if (destBlockX >= compBlocksPerRow || destBlockY >= compBlocksPerColumn) continue;
                     int destOffset = (destBlockY * compBlocksPerRow + destBlockX) * 64;
+
                     pixelBlock.CopyTo(comp.Data.AsSpan(destOffset));
                 }
             }
@@ -514,20 +661,40 @@ public class JpegDecoder
     /// <summary>
     /// Decodes a single 8x8 block of coefficients.
     /// </summary>
-    private void DecodeBlock(HuffmanTable dcTable, HuffmanTable acTable, Span<int> coeffs, ref int dcPredictor)
+    private void DecodeBlock(HuffmanTable dcTable, HuffmanTable acTable, Span<int> coeffs, ref int dcPredictor, bool debug = false, int compIdx = -1)
     {
         coeffs.Clear();
+
+        // Debug: track state before decode
+        long streamPosBefore = _bitReader!.GetStreamPosition();
+        int bitsBefore = _bitReader.BitsInBuffer;
 
         // Decode DC coefficient
         int dcSize = dcTable.Decode(_bitReader!);
         if (dcSize < 0)
+        {
+            Console.WriteLine($"  DECODE DC FAILED: bitsInBuffer={_bitReader.BitsInBuffer}, streamPos=0x{_bitReader.GetStreamPosition():X6}, marker={_bitReader.GetMarker():X2}");
+            Console.WriteLine($"  dcPredictor before={dcPredictor}");
+            Console.WriteLine($"  Stream/bits before decode: pos=0x{streamPosBefore:X6}, bits={bitsBefore}");
             throw new InvalidDataException("Failed to decode DC coefficient");
+        }
 
         var dcDiff = 0;
+        int rawBits = 0;
         if (dcSize > 0)
         {
-            dcDiff = _bitReader.ReadBits(dcSize);
-            dcDiff = BitReader.Extend(dcDiff, dcSize);
+            rawBits = _bitReader.ReadBits(dcSize);
+            dcDiff = BitReader.Extend(rawBits, dcSize);
+        }
+
+        if (debug)
+        {
+            long posAfterSize = _bitReader!.GetStreamPosition();
+            int bitsAfterSize = _bitReader.BitsInBuffer;
+            long posAfterValue = _bitReader!.GetStreamPosition();
+            int bitsAfterValue = _bitReader.BitsInBuffer;
+            Console.WriteLine($"DEBUG: comp={compIdx} dcSize={dcSize} [pos before=0x{streamPosBefore:X}, bits={bitsBefore}]");
+            Console.WriteLine($"DEBUG: comp={compIdx} rawBits=0x{rawBits:X} ({rawBits}), dcDiff after Extend={dcDiff} [pos after=0x{posAfterValue:X}, bits={bitsAfterValue}]");
         }
 
         dcPredictor += dcDiff;
@@ -684,7 +851,8 @@ public class JpegDecoder
     private void ConvertGrayscaleToRgb(byte[] rgb)
     {
         JpegComponent comp = _components[0];
-        int blocksPerRow = (comp.Width + 7) / 8;
+        // Use MCU-based block count to match how IDCT stores the data
+        int blocksPerRow = _mcusPerRow * comp.BlocksPerMcuH;
 
         for (var y = 0; y < _height; y++)
         {
@@ -715,9 +883,10 @@ public class JpegDecoder
         JpegComponent cbComp = _components[1];
         JpegComponent crComp = _components[2];
 
-        int yBlocksPerRow = (yComp.Width + 7) / 8;
-        int cbBlocksPerRow = (cbComp.Width + 7) / 8;
-        int crBlocksPerRow = (crComp.Width + 7) / 8;
+        // Use MCU-based block count to match how IDCT stores the data
+        int yBlocksPerRow = _mcusPerRow * yComp.BlocksPerMcuH;
+        int cbBlocksPerRow = _mcusPerRow * cbComp.BlocksPerMcuH;
+        int crBlocksPerRow = _mcusPerRow * crComp.BlocksPerMcuH;
 
         for (var y = 0; y < _height; y++)
         {
