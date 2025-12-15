@@ -35,7 +35,7 @@
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>
-  <Project Path="../JpegLibrary/src/JpegLibrary/JpegLibrary.csproj" />
+  <Project Path="JpegLibrary/src/JpegLibrary/JpegLibrary.csproj" />
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
