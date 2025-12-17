@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.1</TargetFramework>
+        <Nullable>enable</Nullable>
+        <LangVersion>default</LangVersion>
+
+        <!-- NuGet Package Metadata -->
+        <PackageId>ImageLibrary</PackageId>
+        <Version>1.0.0</Version>
+        <Authors>Your Name</Authors>
+        <Company>Your Company</Company>
+        <Description>A comprehensive, pure C# image processing library with native encoders and decoders for BMP, GIF, PNG, TGA, JPEG, JBIG2, and JPEG 2000 formats. Zero native dependencies, cross-platform compatible.</Description>
+        <PackageTags>image;decoder;encoder;bmp;gif;png;tga;jpeg;jpg;jbig2;jpeg2000;jp2;codec;pure-csharp;cross-platform</PackageTags>
+        <PackageProjectUrl>https://github.com/yourusername/ImageLibrary</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/yourusername/ImageLibrary</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageReleaseNotes>Initial release with support for BMP, GIF, PNG, TGA, JPEG, JBIG2, and JPEG 2000 formats.</PackageReleaseNotes>
+
+        <!-- Build Settings -->
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <Folder Include="Ccitt\" />
+      <Folder Include="Lzw\" />
+      <Folder Include="Tiff\" />
+    </ItemGroup>
+
+</Project>

@@ -32,6 +32,17 @@
     <Project Path="PdfLibrary.Examples/09-ExtractImages/ExtractImages.csproj" />
     <Project Path="PdfLibrary.Examples/10-CreateFromScratch/CreateFromScratch.csproj" />
   </Folder>
+  <Folder Name="/ImageLibrary/">
+    <Project Path="ImageLibrary/BmpCodec.Tests/BmpCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/GifCodec.Tests/GifCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/ImageLibrary.IntegrationTests/ImageLibrary.IntegrationTests.csproj" />
+    <Project Path="ImageLibrary/ImageLibrary/ImageLibrary.csproj" />
+    <Project Path="ImageLibrary/Jbig2Codec.Tests/Jbig2Codec.Tests.csproj" />
+    <Project Path="ImageLibrary/Jp2Codec.Tests/Jp2Codec.Tests.csproj" />
+    <Project Path="ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/PngCodec.Tests/PngCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/TgaCodec.Tests/TgaCodec.Tests.csproj" />
+  </Folder>
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>
