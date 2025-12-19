@@ -56,7 +56,7 @@ public class ImageData
     /// <summary>
     /// Raw pixel data (format specified by PixelFormat).
     /// </summary>
-    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public byte[] Data { get; set; } = [];
 
     /// <summary>
     /// Image width in pixels.

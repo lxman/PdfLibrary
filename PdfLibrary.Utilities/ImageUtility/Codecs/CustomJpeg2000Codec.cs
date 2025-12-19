@@ -1,49 +1,41 @@
-using Compressors.Jpeg2000;
+using ImageLibrary.Jp2;
 
 namespace ImageUtility.Codecs;
 
 /// <summary>
-/// Custom JPEG2000 decoder using the Compressors.Jpeg2000 library.
+/// Custom JPEG2000 decoder using the ImageLibrary.Jp2 library.
 /// Supports .jp2 and .j2k files (decode only).
 /// </summary>
 public class CustomJpeg2000Codec : IImageCodec
 {
-    public string Name => "Custom JPEG2000 Decoder (Compressors.Jpeg2000)";
-    public string[] Extensions => new[] { ".jp2", ".j2k", ".jpx", ".jpf" };
+    public string Name => "Custom JPEG2000 Decoder (ImageLibrary)";
+    public string[] Extensions => [".jp2", ".j2k", ".jpx", ".jpf"];
     public bool CanDecode => true;
     public bool CanEncode => false; // Encoder not implemented yet
 
     public bool CanHandle(ReadOnlySpan<byte> header)
     {
-        // JP2 signature box: 0x0000000C 0x6A502020 0x0D0A870A
-        // Or raw codestream: 0xFF4FFF51
-        if (header.Length >= 12)
+        return header.Length switch
         {
+            // JP2 signature box: 0x0000000C 0x6A502020 0x0D0A870A
+            // Or raw codestream: 0xFF4FFF51
             // Check for JP2 format signature
-            if (header[4] == 0x6A && header[5] == 0x50 &&
-                header[6] == 0x20 && header[7] == 0x20)
-            {
-                return true;
-            }
-        }
+            >= 12 when header[4] == 0x6A && header[5] == 0x50 && header[6] == 0x20 && header[7] == 0x20 => true,
+            < 4 => false,
+            _ => header[0] == 0xFF && header[1] == 0x4F && header[2] == 0xFF && header[3] == 0x51
+        };
 
-        if (header.Length >= 4)
-        {
-            // Check for raw J2K codestream (SOC + SIZ markers)
-            if (header[0] == 0xFF && header[1] == 0x4F &&
-                header[2] == 0xFF && header[3] == 0x51)
-            {
-                return true;
-            }
-        }
-
-        return false;
+        // Check for raw J2K codestream (SOC + SIZ markers)
     }
 
     public ImageData Decode(byte[] data)
     {
-        // Decode using Compressors.Jpeg2000
-        byte[] pixelData = Jpeg2000.Decompress(data, out int width, out int height, out int components);
+        // Decode using ImageLibrary.Jp2
+        var decoder = new Jp2Decoder(data);
+        byte[] pixelData = decoder.Decode();
+        int width = decoder.Width;
+        int height = decoder.Height;
+        int components = decoder.ComponentCount;
 
         // Determine pixel format based on component count
         PixelFormat pixelFormat = components switch
@@ -60,7 +52,7 @@ public class CustomJpeg2000Codec : IImageCodec
             Width = width,
             Height = height,
             PixelFormat = pixelFormat,
-            DpiX = 96.0, // JPEG2000 may include resolution, but defaulting to 96
+            DpiX = 96.0,
             DpiY = 96.0,
             Metadata = new Dictionary<string, object>
             {

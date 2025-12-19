@@ -8,7 +8,7 @@ namespace ImageUtility.Codecs;
 public class CodecRegistry
 {
     private static readonly Lazy<CodecRegistry> _instance = new(() => new CodecRegistry());
-    private readonly List<IImageCodec> _codecs = new();
+    private readonly List<IImageCodec> _codecs = [];
     private CodecConfiguration _configuration;
 
     /// <summary>
@@ -209,26 +209,20 @@ public class CodecRegistry
     private void RegisterBuiltInCodecs()
     {
         // Register custom codecs first (higher priority)
-        // These are our owned implementations from the Compressors namespace
+        // These are our owned implementations using ImageLibrary
 
-        // Custom JPEG codec (preferred over ImageSharp for JPEG)
+        // Custom JPEG codec (ImageLibrary.Jpeg)
         Register(new CustomJpegCodec());
 
-        // Custom JPEG2000 decoder (decode only)
+        // Custom JPEG2000 decoder (ImageLibrary.Jp2, decode only)
         Register(new CustomJpeg2000Codec());
 
-        // Register ImageSharp codecs as fallback for all formats
-        // These provide broad format support when custom codecs aren't available
-        Register(ImageSharpCodec.CreateJpegCodec());  // Fallback JPEG (lower priority)
-        Register(ImageSharpCodec.CreatePngCodec());
-        Register(ImageSharpCodec.CreateBmpCodec());
-        Register(ImageSharpCodec.CreateGifCodec());
-        Register(ImageSharpCodec.CreateTiffCodec());
-        Register(ImageSharpCodec.CreateTgaCodec());
-        Register(ImageSharpCodec.CreateWebPCodec());
-        Register(ImageSharpCodec.CreatePbmCodec());
-
-        // As more custom codecs are implemented (PNG, TIFF, etc.),
-        // register them before their ImageSharp equivalents to give them priority
+        // Register ImageLibrary codecs for common formats
+        // These provide broad format support (PNG, BMP, GIF, TIFF, TGA)
+        Register(ImageLibraryCodec.CreatePngCodec());
+        Register(ImageLibraryCodec.CreateBmpCodec());
+        Register(ImageLibraryCodec.CreateGifCodec());
+        Register(ImageLibraryCodec.CreateTiffCodec());
+        Register(ImageLibraryCodec.CreateTgaCodec());
     }
 }

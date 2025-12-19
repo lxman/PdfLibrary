@@ -54,11 +54,11 @@ public partial class App : Application
         string pdfLibraryLogFile = Path.Combine(appDirectory, "logs", "pdflibrary.log");
         PdfLogger.Initialize(new PdfLogConfiguration
         {
-            LogImages = true,
+            LogImages = false,
             LogText = false,
-            LogGraphics = true,
-            LogTransforms = true,
-            LogPdfTool = true,
+            LogGraphics = false,
+            LogTransforms = false,
+            LogPdfTool = false,
             LogMelville = false,
             LogTimings = false,
             AppendToLog = false,

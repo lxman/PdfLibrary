@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Compressors.Jpeg2000;
+using ImageLibrary.Jp2;
 using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Core;
@@ -185,7 +185,11 @@ internal class ImageRenderer
 
                         // TIMING: Measure JPEG2000 decode
                         DateTime decodeStart = DateTime.Now;
-                        byte[] pixelData = Jpeg2000.Decompress(rawJp2Data, out int jp2Width, out int jp2Height, out int components);
+                        var jp2Decoder = new Jp2Decoder(rawJp2Data);
+                        byte[] pixelData = jp2Decoder.Decode();
+                        int jp2Width = jp2Decoder.Width;
+                        int jp2Height = jp2Decoder.Height;
+                        int components = jp2Decoder.ComponentCount;
                         TimeSpan decodeElapsed = DateTime.Now - decodeStart;
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image with {components} components");
 

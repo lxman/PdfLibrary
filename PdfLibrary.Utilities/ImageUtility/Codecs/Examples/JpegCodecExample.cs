@@ -9,7 +9,7 @@ namespace ImageUtility.Codecs.Examples;
 public class JpegDecoderExample : IImageCodec
 {
     public string Name => "JPEG Decoder (JpegLibrary)";
-    public string[] Extensions => new[] { ".jpg", ".jpeg" };
+    public string[] Extensions => [".jpg", ".jpeg"];
     public bool CanDecode => true;   // This codec can ONLY decode
     public bool CanEncode => false;  // This codec CANNOT encode
 
@@ -40,7 +40,7 @@ public class JpegDecoderExample : IImageCodec
             Width = 0,      // Would be actual width from decoder
             Height = 0,     // Would be actual height from decoder
             PixelFormat = PixelFormat.Rgb24,
-            Data = Array.Empty<byte>(),  // Would be actual pixel data
+            Data = [],  // Would be actual pixel data
             DpiX = 96.0,
             DpiY = 96.0
         };
@@ -57,7 +57,7 @@ public class JpegDecoderExample : IImageCodec
 public class JpegEncoderExample : IImageCodec
 {
     public string Name => "JPEG Encoder (Custom)";
-    public string[] Extensions => new[] { ".jpg", ".jpeg" };
+    public string[] Extensions => [".jpg", ".jpeg"];
     public bool CanDecode => false;  // This codec CANNOT decode
     public bool CanEncode => true;   // This codec can ONLY encode
 
@@ -94,7 +94,7 @@ public class JpegEncoderExample : IImageCodec
 
         // TODO: Implement actual JPEG encoding here
         // For now, return empty array as placeholder
-        return Array.Empty<byte>();
+        return [];
     }
 }
 

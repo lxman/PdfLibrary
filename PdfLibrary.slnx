@@ -1,16 +1,4 @@
 <Solution>
-  <Folder Name="/Compressors/">
-    <Project Path="Compressors/Compressors.Ccitt.Tests/Compressors.Ccitt.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Ccitt/Compressors.Ccitt.csproj" />
-    <Project Path="Compressors/Compressors.Jbig2.Tests/Compressors.Jbig2.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Jbig2/Compressors.Jbig2.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg.Tests/Compressors.Jpeg.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg/Compressors.Jpeg.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg2000.Tests/Compressors.Jpeg2000.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg2000/Compressors.Jpeg2000.csproj" />
-    <Project Path="Compressors/Compressors.Lzw.Tests/Compressors.Lzw.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Lzw/Compressors.Lzw.csproj" />
-  </Folder>
   <Folder Name="/Docs/">
     <File Path="CHANGELOG.md" />
     <File Path="Docs/Architecture.md" />
@@ -46,7 +34,6 @@
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>
-  <Project Path="JpegLibrary/src/JpegLibrary/JpegLibrary.csproj" />
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
