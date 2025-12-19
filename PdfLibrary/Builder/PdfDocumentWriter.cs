@@ -2,7 +2,7 @@ using System.IO.Compression;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
-using Compressors.Jpeg2000;
+using ImageLibrary.Jp2;
 using PdfLibrary.Builder.Annotation;
 using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Builder.FormField;
@@ -1483,10 +1483,10 @@ public class PdfDocumentWriter
     {
         try
         {
-            // Use Melville.CSJ2K to parse the JPEG2000 file and extract dimensions
+            // Use ImageLibrary.Jp2 to parse the JPEG2000 file and extract dimensions
             // This works for both JP2 and J2K formats
-            byte[] portableImage = Jpeg2000.Decompress(data, out int width, out int height, out int components);
-            return (width, height, components);
+            var decoder = new Jp2Decoder(data);
+            return (decoder.Width, decoder.Height, decoder.ComponentCount);
         }
         catch
         {

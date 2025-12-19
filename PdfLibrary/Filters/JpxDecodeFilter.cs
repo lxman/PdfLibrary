@@ -1,4 +1,4 @@
-using Compressors.Jpeg2000;
+using ImageLibrary.Jp2;
 using Logging;
 
 namespace PdfLibrary.Filters;
@@ -31,7 +31,11 @@ internal class JpxDecodeFilter : IStreamFilter
         try
         {
             // Decode JPEG 2000 data
-            byte[] imageBytes = Jpeg2000.Decompress(data, out int width, out int height, out int components);
+            var decoder = new Jp2Decoder(data);
+            byte[] imageBytes = decoder.Decode();
+            int width = decoder.Width;
+            int height = decoder.Height;
+            int components = decoder.ComponentCount;
 
             PdfLogger.Log(LogCategory.Images, $"JPXDecode: Decoded {width}x{height}, {components} components, {imageBytes.Length} bytes");
 

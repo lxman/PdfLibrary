@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace ImageLibrary.Jpeg;
 
@@ -61,8 +62,13 @@ internal class JpegReader
                 case JpegMarker.EOI:
                     throw new JpegException("Unexpected EOI marker before SOS");
 
+                case JpegMarker.APP14:
+                    // Parse Adobe APP14 marker for color transform info
+                    ReadAPP14(frame);
+                    break;
+
                 case >= JpegMarker.APP0 and <= 0xEF:
-                    // Skip application markers
+                    // Skip other application markers
                     SkipMarkerSegment();
                     break;
 
@@ -247,6 +253,52 @@ internal class JpegReader
         frame.RestartInterval = ReadUInt16();
     }
 
+    private void ReadAPP14(JpegFrame frame)
+    {
+        int length = ReadUInt16();
+        if (length < 12)
+        {
+            // Not a valid Adobe marker, skip it
+            _position += length - 2;
+            return;
+        }
+
+        // Read identifier (should be "Adobe")
+        byte[] identifier = new byte[5];
+        Array.Copy(_data, _position, identifier, 0, 5);
+        _position += 5;
+
+        // Check if it's an Adobe marker
+        if (identifier[0] != 0x41 || identifier[1] != 0x64 || identifier[2] != 0x6F ||
+            identifier[3] != 0x62 || identifier[4] != 0x65)
+        {
+            // Not an Adobe marker, skip remaining bytes
+            _position += length - 7;
+            return;
+        }
+
+        // Read version (2 bytes, typically 100)
+        _position += 2;
+
+        // Read flags (4 bytes)
+        _position += 4;
+
+        // Read color transform
+        if (_position < _data.Length)
+        {
+            byte colorTransform = _data[_position++];
+            frame.HasAdobeMarker = true;
+            frame.AdobeColorTransform = colorTransform;
+        }
+
+        // Skip any remaining bytes in this marker
+        int remainingBytes = length - 14;
+        if (remainingBytes > 0)
+        {
+            _position += remainingBytes;
+        }
+    }
+
     private void ReadSOS(JpegFrame frame)
     {
         int length = ReadUInt16();
@@ -270,7 +322,6 @@ internal class JpegReader
         byte spectralStart = _data[_position++];
         byte spectralEnd = _data[_position++];
         byte approximation = _data[_position++];
-
         // For baseline: spectralStart=0, spectralEnd=63, approximation=0
     }
 

@@ -88,6 +88,17 @@ internal class JpegFrame
     public int EntropyDataLength { get; set; }
 
     /// <summary>
+    /// True if an Adobe APP14 marker was found in the file.
+    /// </summary>
+    public bool HasAdobeMarker { get; set; }
+
+    /// <summary>
+    /// Adobe color transform value from APP14 marker (0=unknown/CMYK, 1=YCbCr, 2=YCCK).
+    /// Only valid if HasAdobeMarker is true.
+    /// </summary>
+    public byte AdobeColorTransform { get; set; }
+
+    /// <summary>
     /// Number of MCU columns (width in MCUs).
     /// </summary>
     public int McuCountX => (Width + (MaxHorizontalSamplingFactor * 8) - 1) / (MaxHorizontalSamplingFactor * 8);

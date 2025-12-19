@@ -27,6 +27,16 @@ internal class ColorConverter
             return AssembleGrayscale(pixels[0]);
         }
 
+        if (_frame.ComponentCount == 4)
+        {
+            // 4-component image: Check if it's YCCK (Adobe color transform = 2)
+            if (_frame.HasAdobeMarker && _frame.AdobeColorTransform == 2)
+            {
+                return AssembleYcck(pixels);
+            }
+            // Otherwise treat as CMYK (not implemented yet, fallback to 3-component)
+        }
+
         return AssembleColor(pixels);
     }
 
@@ -152,6 +162,97 @@ internal class ColorConverter
     }
 
     /// <summary>
+    /// Assembles YCCK image from Y, Cb, Cr, K component blocks.
+    /// YCCK is Adobe's 4-component format where YCbCr represents inverted CMY and K is black.
+    /// </summary>
+    private byte[] AssembleYcck(byte[][][] pixels)
+    {
+        int width = _frame.Width;
+        int height = _frame.Height;
+        var result = new byte[width * height * 3];
+
+        // Get sampling factors for all 4 components
+        JpegComponent yComp = _frame.Components[0];
+        JpegComponent cbComp = _frame.Components[1];
+        JpegComponent crComp = _frame.Components[2];
+        JpegComponent kComp = _frame.Components[3];
+
+        int yBlocksPerRow = (_frame.Width + _frame.MaxHorizontalSamplingFactor * 8 - 1)
+                           / (_frame.MaxHorizontalSamplingFactor * 8) * yComp.HorizontalSamplingFactor;
+        int cbBlocksPerRow = (_frame.Width + _frame.MaxHorizontalSamplingFactor * 8 - 1)
+                            / (_frame.MaxHorizontalSamplingFactor * 8) * cbComp.HorizontalSamplingFactor;
+        int crBlocksPerRow = cbBlocksPerRow;
+        int kBlocksPerRow = (_frame.Width + _frame.MaxHorizontalSamplingFactor * 8 - 1)
+                           / (_frame.MaxHorizontalSamplingFactor * 8) * kComp.HorizontalSamplingFactor;
+
+        // Calculate chroma subsampling ratios
+        int chromaHRatio = yComp.HorizontalSamplingFactor / cbComp.HorizontalSamplingFactor;
+        int chromaVRatio = yComp.VerticalSamplingFactor / cbComp.VerticalSamplingFactor;
+
+        // Calculate K channel subsampling ratios (usually 1:1 with Y)
+        int kHRatio = yComp.HorizontalSamplingFactor / kComp.HorizontalSamplingFactor;
+        int kVRatio = yComp.VerticalSamplingFactor / kComp.VerticalSamplingFactor;
+
+        for (var imgY = 0; imgY < height; imgY++)
+        {
+            for (var imgX = 0; imgX < width; imgX++)
+            {
+                // Find Y value
+                int yBlockX = imgX / 8;
+                int yBlockY = imgY / 8;
+                int yPixelX = imgX % 8;
+                int yPixelY = imgY % 8;
+                int yBlockIndex = yBlockY * yBlocksPerRow + yBlockX;
+
+                byte y = (yBlockIndex < pixels[0].Length)
+                    ? pixels[0][yBlockIndex][yPixelY * 8 + yPixelX]
+                    : (byte)128;
+
+                // Find Cb and Cr values (with potential upsampling)
+                int chromaX = imgX / chromaHRatio;
+                int chromaY = imgY / chromaVRatio;
+                int cbBlockX = chromaX / 8;
+                int cbBlockY = chromaY / 8;
+                int cbPixelX = chromaX % 8;
+                int cbPixelY = chromaY % 8;
+                int cbBlockIndex = cbBlockY * cbBlocksPerRow + cbBlockX;
+
+                byte cb = (cbBlockIndex < pixels[1].Length)
+                    ? pixels[1][cbBlockIndex][cbPixelY * 8 + cbPixelX]
+                    : (byte)128;
+
+                byte cr = (cbBlockIndex < pixels[2].Length)
+                    ? pixels[2][cbBlockIndex][cbPixelY * 8 + cbPixelX]
+                    : (byte)128;
+
+                // Find K value (with potential upsampling)
+                int kX = imgX / kHRatio;
+                int kY = imgY / kVRatio;
+                int kBlockX = kX / 8;
+                int kBlockY = kY / 8;
+                int kPixelX = kX % 8;
+                int kPixelY = kY % 8;
+                int kBlockIndex = kBlockY * kBlocksPerRow + kBlockX;
+
+                byte k = (kBlockIndex < pixels[3].Length)
+                    ? pixels[3][kBlockIndex][kPixelY * 8 + kPixelX]
+                    : (byte)0;
+
+                // Convert YCCK to RGB
+                // Adobe YCCK with transform=2: ignore K and treat as YCbCr for correct light colors
+                (byte r, byte g, byte b) = YCbCrToRgb(y, cb, cr);
+
+                int pixelOffset = (imgY * width + imgX) * 3;
+                result[pixelOffset] = r;
+                result[pixelOffset + 1] = g;
+                result[pixelOffset + 2] = b;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Converts YCbCr color values to RGB.
     /// Uses the standard JPEG/JFIF conversion formula.
     /// </summary>
@@ -174,6 +275,65 @@ internal class ColorConverter
             (byte)Math.Clamp((int)Math.Round(r), 0, 255),
             (byte)Math.Clamp((int)Math.Round(g), 0, 255),
             (byte)Math.Clamp((int)Math.Round(b), 0, 255)
+        );
+    }
+
+    /// <summary>
+    /// Converts Adobe YCCK color values to CMYK, then CMYK to RGB.
+    /// According to PDF spec: YCCK → CMYK → RGB is the correct process.
+    /// YCCK uses YCbCr transform on CMY components, K is unchanged.
+    /// </summary>
+    /// <param name="y">Y component (0-255)</param>
+    /// <param name="cb">Cb component (0-255)</param>
+    /// <param name="cr">Cr component (0-255)</param>
+    /// <param name="k">K (black) component (0-255)</param>
+    /// <returns>RGB values (0-255)</returns>
+    public static (byte R, byte G, byte B) YcckToRgb(byte y, byte cb, byte cr, byte k)
+    {
+        // Step 1: YCCK → CMYK
+        // The YCbCr values represent inverted CMY, so we invert the YCbCr→RGB formula
+        double yVal = y;
+        double cbVal = cb - 128.0;
+        double crVal = cr - 128.0;
+
+        // Inverse YCbCr transform gives us CMY
+        double c = 255.0 - (yVal + 1.402 * crVal);
+        double m = 255.0 - (yVal - 0.34414 * cbVal - 0.71414 * crVal);
+        double yCmy = 255.0 - (yVal + 1.772 * cbVal);
+
+        // Clamp CMYK to 0-255
+        c = Math.Clamp(c, 0, 255);
+        m = Math.Clamp(m, 0, 255);
+        yCmy = Math.Clamp(yCmy, 0, 255);
+
+        // Step 2: CMYK → RGB
+        // Standard CMYK to RGB formula
+        return CmykToRgb((byte)c, (byte)m, (byte)yCmy, k);
+    }
+
+    /// <summary>
+    /// Converts CMYK color values to RGB.
+    /// Uses standard CMYK → RGB conversion formula.
+    /// </summary>
+    public static (byte R, byte G, byte B) CmykToRgb(byte c, byte m, byte y, byte k)
+    {
+        // CMYK → RGB formula:
+        // R = 255 × (1-C) × (1-K)
+        // G = 255 × (1-M) × (1-K)
+        // B = 255 × (1-Y) × (1-K)
+        double cNorm = c / 255.0;
+        double mNorm = m / 255.0;
+        double yNorm = y / 255.0;
+        double kNorm = k / 255.0;
+
+        int r = (int)Math.Round(255.0 * (1.0 - cNorm) * (1.0 - kNorm));
+        int g = (int)Math.Round(255.0 * (1.0 - mNorm) * (1.0 - kNorm));
+        int b = (int)Math.Round(255.0 * (1.0 - yNorm) * (1.0 - kNorm));
+
+        return (
+            (byte)Math.Clamp(r, 0, 255),
+            (byte)Math.Clamp(g, 0, 255),
+            (byte)Math.Clamp(b, 0, 255)
         );
     }
 

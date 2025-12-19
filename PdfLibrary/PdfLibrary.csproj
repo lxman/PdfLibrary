@@ -40,13 +40,9 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\JpegLibrary\src\JpegLibrary\JpegLibrary.csproj" />
+      <ProjectReference Include="..\ImageLibrary\ImageLibrary\ImageLibrary.csproj" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
       <ProjectReference Include="..\Logging\Logging.csproj" />
-      <ProjectReference Include="..\Compressors\Compressors.Lzw\Compressors.Lzw.csproj" />
-      <ProjectReference Include="..\Compressors\Compressors.Ccitt\Compressors.Ccitt.csproj" />
-      <ProjectReference Include="..\Compressors\Compressors.Jbig2\Compressors.Jbig2.csproj" />
-      <ProjectReference Include="..\Compressors\Compressors.Jpeg2000\Compressors.Jpeg2000.csproj" />
     </ItemGroup>
 
     <ItemGroup>

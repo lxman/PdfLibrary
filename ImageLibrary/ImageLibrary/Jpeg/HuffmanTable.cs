@@ -1,3 +1,6 @@
+using System;
+using System.Linq;
+
 namespace ImageLibrary.Jpeg;
 
 /// <summary>
@@ -156,41 +159,40 @@ internal class HuffmanTable
     /// </summary>
     public byte DecodeSymbol(BitReader reader)
     {
-        // Try fast 8-bit lookup first
+        // Try a fast 8-bit lookup first
         int peek = reader.PeekBits(8);
         ushort entry = _lookupTable[peek];
 
-        if ((entry & 0xFF) != 0)
-        {
-            // Fast path: code was 8 bits or less
-            int length = entry & 0xFF;
-            reader.SkipBits(length);
-            return (byte)(entry >> 8);
-        }
+        if ((entry & 0xFF) == 0) return DecodeSymbolSlow(reader, peek);
+        // Fast path: code was 8 bits or fewer
+        int length = entry & 0xFF;
+        reader.SkipBits(length);
+        return (byte)(entry >> 8);
 
         // Slow path: code is longer than 8 bits
-        return DecodeSymbolSlow(reader);
     }
 
     /// <summary>
     /// Slow path for decoding symbols with codes longer than 8 bits.
     /// </summary>
-    private byte DecodeSymbolSlow(BitReader reader)
+    private byte DecodeSymbolSlow(BitReader reader, int initialCode)
     {
-        int code = reader.PeekBits(8);
+        // Use the already-peeked code to avoid reading different bits
+        int code = initialCode;
         reader.SkipBits(8);
 
         var codeLen = 8;
 
         while (code > _maxCode[codeLen] || _maxCode[codeLen] == -1)
         {
-            code = (code << 1) | reader.ReadBit();
-            codeLen++;
-
-            if (codeLen > 16)
+            if (codeLen >= 16)
             {
                 throw new JpegException("Invalid Huffman code - exceeds 16 bits");
             }
+
+            int nextBit = reader.ReadBit();
+            code = (code << 1) | nextBit;
+            codeLen++;
         }
 
         int index = _valPtr[codeLen] + code - (_maxCode[codeLen] - (GetCodeCount(codeLen) - 1));

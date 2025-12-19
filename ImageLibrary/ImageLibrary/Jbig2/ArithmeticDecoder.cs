@@ -215,6 +215,74 @@ internal sealed class ArithmeticDecoder
     }
 
     /// <summary>
+    /// Decodes an unsigned integer (no sign bit) using JBIG2 integer arithmetic decoding.
+    /// Used for contexts like EXRUNLENGTH where only non-negative values are valid.
+    /// T.88 Annex A.2 (magnitude decoding only, no sign bit)
+    /// </summary>
+    public int DecodeUInt(Context[] contexts)
+    {
+        if (contexts == null)
+            throw new ArgumentNullException(nameof(contexts));
+        if (contexts.Length < 512)
+            throw new ArgumentException("Integer decoding requires 512 contexts", nameof(contexts));
+
+        // For unsigned integers, skip the sign bit and decode only the magnitude
+        var prev = 1;
+
+        // Decode the value class - same decision tree as signed DecodeInt
+        int v;
+        int d1 = DecodeIntBit(contexts, ref prev);
+        if (d1 == 0)
+        {
+            // 2-bit value
+            v = DecodeIntBits(contexts, ref prev, 2);
+        }
+        else
+        {
+            int d2 = DecodeIntBit(contexts, ref prev);
+            if (d2 == 0)
+            {
+                // 4-bit value + 4
+                v = DecodeIntBits(contexts, ref prev, 4) + 4;
+            }
+            else
+            {
+                int d3 = DecodeIntBit(contexts, ref prev);
+                if (d3 == 0)
+                {
+                    // 6-bit value + 20
+                    v = DecodeIntBits(contexts, ref prev, 6) + 20;
+                }
+                else
+                {
+                    int d4 = DecodeIntBit(contexts, ref prev);
+                    if (d4 == 0)
+                    {
+                        // 8-bit value + 84
+                        v = DecodeIntBits(contexts, ref prev, 8) + 84;
+                    }
+                    else
+                    {
+                        int d5 = DecodeIntBit(contexts, ref prev);
+                        if (d5 == 0)
+                        {
+                            // 12-bit value + 340
+                            v = DecodeIntBits(contexts, ref prev, 12) + 340;
+                        }
+                        else
+                        {
+                            // OOB - all 5 decision bits were 1
+                            return int.MinValue;
+                        }
+                    }
+                }
+            }
+        }
+
+        return v;
+    }
+
+    /// <summary>
     /// Decodes an integer using the JBIG2 integer arithmetic decoding procedure.
     /// T.88 Annex A.2
     /// </summary>

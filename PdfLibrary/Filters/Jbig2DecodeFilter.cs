@@ -1,4 +1,4 @@
-using Compressors.Jbig2;
+using ImageLibrary.Jbig2;
 
 namespace PdfLibrary.Filters;
 
@@ -37,7 +37,9 @@ internal class Jbig2DecodeFilter : IStreamFilter
             }
 
             // Decode to 1-bit bitmap (black=1, white=0)
-            byte[] result = Jbig2.DecompressToBitmap(data, globals, out _, out _);
+            var decoder = new Jbig2Decoder(data, globals);
+            Bitmap bitmap = decoder.Decode();
+            byte[] result = bitmap.Data;
 
             // JBIG2 spec: 0 = white (background), 1 = black (foreground)
             // PDF DeviceGray for 1-bit images: 0 = black, 1 = white

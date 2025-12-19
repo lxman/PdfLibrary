@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 
 namespace ImageLibrary.Jpeg;
 
@@ -100,11 +101,31 @@ internal class EntropyDecoder
         // Reset decode position counter for sequential storage mode
         _decodePosition = 0;
 
+        // Track restart interval
+        int restartInterval = _frame.RestartInterval;
+        int mcusUntilRestart = restartInterval;
+
         for (var mcuY = 0; mcuY < mcuCountY; mcuY++)
         {
             for (var mcuX = 0; mcuX < mcuCountX; mcuX++)
             {
                 DecodeMcu(mcuX, mcuY, result, blocksPerComponent);
+
+                // Handle restart markers
+                if (restartInterval > 0 && (--mcusUntilRestart) == 0)
+                {
+                    // Byte-align the bit buffer (discard partial bits)
+                    _bitReader.AdvanceAlignByte();
+
+                    // Note: The restart marker bytes are skipped automatically by BitReader.ReadNextByte()
+                    // when it encounters 0xFF 0xDN during the next read operation
+
+                    // Reset DC predictors for all components
+                    Array.Clear(_dcPredictors, 0, _dcPredictors.Length);
+
+                    // Reset MCU counter
+                    mcusUntilRestart = restartInterval;
+                }
             }
         }
 

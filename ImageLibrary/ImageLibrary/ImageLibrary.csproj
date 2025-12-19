@@ -33,4 +33,8 @@
       <Folder Include="Tiff\" />
     </ItemGroup>
 
+    <ItemGroup>
+      <PackageReference Include="Wacton.Unicolour" Version="6.3.0" />
+    </ItemGroup>
+
 </Project>

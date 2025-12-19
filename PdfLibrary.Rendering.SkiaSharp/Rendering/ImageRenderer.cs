@@ -40,6 +40,7 @@ internal class ImageRenderer
             {
                 fillColor = ColorConverter.ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
                 fillColor = ApplyAlpha(fillColor.Value, state.FillAlpha);
+                PdfLogger.Log(LogCategory.Images, $"DrawImage: ImageMask detected! FillColorSpace={state.ResolvedFillColorSpace}, FillColor=[{string.Join(",", state.ResolvedFillColor)}], SKColor=({fillColor.Value.Red},{fillColor.Value.Green},{fillColor.Value.Blue},{fillColor.Value.Alpha})");
             }
             SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor);
             if (bitmap is null)
@@ -105,8 +106,13 @@ internal class ImageRenderer
                 // Draw image into unit square with a tiny expansion to cover sub-pixel gaps
                 // Some PDFs have tiled images with fractional pixel gaps due to coordinate rounding.
                 // A small expansion (0.001 in unit space) prevents visible seams without affecting quality.
+                // HOWEVER: For 1-bit DeviceGray images (like JBIG2), this epsilon causes misalignment
+                // when multiple images are layered precisely on top of each other (e.g., engineer seals).
                 var sourceRect = new SKRect(0, 0, bitmap.Width, bitmap.Height);
-                const float epsilon = 0.002f;  // Small expansion to cover sub-pixel gaps
+
+                // Disable epsilon expansion for 1-bit DeviceGray images to preserve precise alignment
+                bool is1BitGray = image.BitsPerComponent == 1 && image.ColorSpace == "DeviceGray";
+                float epsilon = is1BitGray ? 0.0f : 0.002f;
                 var destRect = new SKRect(-epsilon, -epsilon, 1 + epsilon, 1 + epsilon);
 
                 // Use high-quality cubic filtering for downscaling images.
@@ -329,6 +335,11 @@ internal class ImageRenderer
                         }
                     }
                 }
+
+                // Log ImageMask statistics
+                int totalPixels = width * height;
+                double paintedPercentage = (paintedPixels * 100.0) / totalPixels;
+                PdfLogger.Log(LogCategory.Images, $"ImageMask {width}x{height}: painted {paintedPixels}/{totalPixels} pixels ({paintedPercentage:F1}%), color=({colorR},{colorG},{colorB},{colorA}), invertMask={invertMask}");
 
                 // Copy pixel buffer to bitmap using Marshal.Copy for performance
                 IntPtr bitmapPixels = bitmap.GetPixels();
@@ -679,7 +690,27 @@ internal class ImageRenderer
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
                             if (bitmapPixels == IntPtr.Zero) return null;
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+
+                            // Check bitmap stride - SkiaSharp may add row padding
+                            int bitmapStride = bitmap.RowBytes;
+                            int expectedStride = width * 4;
+
+                            if (bitmapStride == expectedStride)
+                            {
+                                // No padding - can copy entire buffer at once
+                                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            }
+                            else
+                            {
+                                // Stride mismatch - copy row by row
+                                for (int y = 0; y < height; y++)
+                                {
+                                    IntPtr rowPtr = bitmapPixels + (y * bitmapStride);
+                                    int srcOffset = y * expectedStride;
+                                    Marshal.Copy(pixelBuffer, srcOffset, rowPtr, expectedStride);
+                                }
+                            }
+
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -708,7 +739,27 @@ internal class ImageRenderer
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
                             if (bitmapPixels == IntPtr.Zero) return null;
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+
+                            // Check bitmap stride - SkiaSharp may add row padding
+                            int bitmapStride = bitmap.RowBytes;
+                            int expectedStride = width * 4;
+
+                            if (bitmapStride == expectedStride)
+                            {
+                                // No padding - can copy entire buffer at once
+                                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            }
+                            else
+                            {
+                                // Stride mismatch - copy row by row
+                                for (int y = 0; y < height; y++)
+                                {
+                                    IntPtr rowPtr = bitmapPixels + (y * bitmapStride);
+                                    int srcOffset = y * expectedStride;
+                                    Marshal.Copy(pixelBuffer, srcOffset, rowPtr, expectedStride);
+                                }
+                            }
+
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -745,7 +796,27 @@ internal class ImageRenderer
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
                             if (bitmapPixels == IntPtr.Zero) return null;
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+
+                            // Check bitmap stride - SkiaSharp may add row padding
+                            int bitmapStride = bitmap.RowBytes;
+                            int expectedStride = width * 4;
+
+                            if (bitmapStride == expectedStride)
+                            {
+                                // No padding - can copy entire buffer at once
+                                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            }
+                            else
+                            {
+                                // Stride mismatch - copy row by row
+                                for (int y = 0; y < height; y++)
+                                {
+                                    IntPtr rowPtr = bitmapPixels + (y * bitmapStride);
+                                    int srcOffset = y * expectedStride;
+                                    Marshal.Copy(pixelBuffer, srcOffset, rowPtr, expectedStride);
+                                }
+                            }
+
                             bitmap.NotifyPixelsChanged();
                             break;
                         }

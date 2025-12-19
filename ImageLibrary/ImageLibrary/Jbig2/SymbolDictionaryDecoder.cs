@@ -40,6 +40,7 @@ internal sealed class SymbolDictionaryDecoder
         _inputSymbols = inputSymbols ?? new SymbolDictionary();
         _options = options ?? Jbig2DecoderOptions.Default;
 
+
         if (_params.UseHuffman)
             throw new Jbig2UnsupportedException("Huffman-coded symbol dictionaries not yet implemented");
 
@@ -316,13 +317,32 @@ internal sealed class SymbolDictionaryDecoder
         int totalSymbols = _inputSymbols.Count + newSymbols.Count;
         var exportFlags = new bool[totalSymbols];
 
+        // T.88 Section 6.5.10: "If SDNUMEXSYMS is equal to the number of new and input symbols
+        // (i.e., SDNUMEXSYMS = SDNUMINSYMS + SDNUMNEWSYMS), then the symbol dictionary contains
+        // only exported symbols. In this case, the EXFLAGS field is empty and all symbols are exported."
+        if (_params.NumExportedSymbols == totalSymbols)
+        {
+            var exported = new SymbolDictionary();
+            for (var k = 0; k < _inputSymbols.Count; k++)
+                exported.Add(_inputSymbols[k]);
+            for (var k = 0; k < newSymbols.Count; k++)
+                exported.Add(newSymbols[k]);
+            return exported;
+        }
+
         int currentExport = false ? 1 : 0; // Start with non-export
         var i = 0;
+        var runNumber = 0;
 
         while (i < totalSymbols)
         {
-            // Decode run length
-            int runLength = _decoder.DecodeInt(_iaExContexts);
+            // Decode run length - T.88 Section 6.5.10
+            // EXRUNLENGTH uses IAEX context which requires UNSIGNED integer decoding
+            // Run length specifies how many symbols to process with current CUREXFLAG value
+            // After each run, CUREXFLAG toggles
+            int runLength = _decoder.DecodeUInt(_iaExContexts);
+            runNumber++;
+
             if (runLength == int.MinValue)
             {
                 // OOB during export flags - this can happen when end-of-data marker

@@ -1438,7 +1438,7 @@ public class PdfRenderer : PdfContentProcessor
         // Handle Form XObjects (nested content streams)
         else if (IsFormXObject(xobject))
         {
-            PdfLogger.Log(LogCategory.Graphics, "  Type: Form XObject");
+            PdfLogger.Log(LogCategory.Graphics, "  Type: Form XObject:");
             try
             {
                 RenderFormXObject(xobject);

@@ -71,6 +71,111 @@ public class JpegDecoder
     }
 
     /// <summary>
+    /// Decodes the JPEG image and returns raw component data before color conversion.
+    /// This is useful for applications that need to perform custom color space conversions
+    /// (e.g., PDF rendering with CMYK/YCCK support).
+    /// </summary>
+    /// <returns>A RawJpegData containing raw component pixels and metadata</returns>
+    public RawJpegData DecodeRaw()
+    {
+        // Stage 1: Parse markers
+        var reader = new JpegReader(_data);
+        JpegFrame frame = reader.ReadFrame();
+
+        // Stage 2 & 3: Entropy decode (includes Huffman table building)
+        var entropyDecoder = new EntropyDecoder(frame, _data);
+        short[][][] dctCoefficients = entropyDecoder.DecodeAllBlocks();
+
+        // Stage 4: Dequantize
+        var dequantizer = new Dequantizer(frame);
+        int[][][] dequantized = dequantizer.DequantizeAll(dctCoefficients);
+
+        // Stage 5: Inverse DCT (get raw component pixels)
+        byte[][][] componentBlocks = InverseDct.TransformAll(dequantized);
+
+        // Assemble component data into interleaved format
+        byte[] interleavedData = AssembleInterleavedComponents(componentBlocks, frame);
+
+        return new RawJpegData(
+            frame.Width,
+            frame.Height,
+            frame.ComponentCount,
+            frame.Precision,
+            interleavedData,
+            frame.HasAdobeMarker,
+            frame.AdobeColorTransform
+        );
+    }
+
+    /// <summary>
+    /// Assembles component blocks into interleaved component data.
+    /// For 1 component: Y, Y, Y, ...
+    /// For 3 components: Y, Cb, Cr, Y, Cb, Cr, ...
+    /// For 4 components: C, M, Y, K, C, M, Y, K, ... (or Y, Cb, Cr, K for YCCK)
+    /// </summary>
+    private static byte[] AssembleInterleavedComponents(byte[][][] componentBlocks, JpegFrame frame)
+    {
+        int width = frame.Width;
+        int height = frame.Height;
+        int componentCount = frame.ComponentCount;
+        var result = new byte[width * height * componentCount];
+
+        // Calculate MCU (Minimum Coded Unit) dimensions
+        // Each MCU is maxH×maxV blocks, where each block is 8×8 pixels
+        int mcuWidth = frame.MaxHorizontalSamplingFactor * 8;
+        int mcuHeight = frame.MaxVerticalSamplingFactor * 8;
+        int mcusHorizontal = (width + mcuWidth - 1) / mcuWidth;
+        int mcusVertical = (height + mcuHeight - 1) / mcuHeight;
+
+        // Calculate blocks per row for each component based on MCU layout
+        // For interleaved JPEGs, blocks are organized in MCU scan order
+        int[] blocksPerRow = new int[componentCount];
+        for (var c = 0; c < componentCount; c++)
+        {
+            JpegComponent comp = frame.Components[c];
+            blocksPerRow[c] = mcusHorizontal * comp.HorizontalSamplingFactor;
+        }
+
+        // Get sampling ratios (for chroma subsampling)
+        int[] hRatios = new int[componentCount];
+        int[] vRatios = new int[componentCount];
+        for (var c = 0; c < componentCount; c++)
+        {
+            hRatios[c] = frame.Components[0].HorizontalSamplingFactor / frame.Components[c].HorizontalSamplingFactor;
+            vRatios[c] = frame.Components[0].VerticalSamplingFactor / frame.Components[c].VerticalSamplingFactor;
+        }
+
+        // Assemble pixels in interleaved format
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                int pixelOffset = (y * width + x) * componentCount;
+
+                for (var c = 0; c < componentCount; c++)
+                {
+                    // Calculate which block this pixel belongs to for this component
+                    int compX = x / hRatios[c];
+                    int compY = y / vRatios[c];
+                    int blockX = compX / 8;
+                    int blockY = compY / 8;
+                    int pixelX = compX % 8;
+                    int pixelY = compY % 8;
+
+                    int blockIndex = blockY * blocksPerRow[c] + blockX;
+                    byte componentValue = (blockIndex < componentBlocks[c].Length)
+                        ? componentBlocks[c][blockIndex][pixelY * 8 + pixelX]
+                        : (byte)128; // Default to neutral value if out of bounds
+
+                    result[pixelOffset + c] = componentValue;
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Decodes a JPEG file from disk.
     /// </summary>
     public static DecodedImage DecodeFile(string path)
@@ -137,5 +242,73 @@ public class DecodedImage
     {
         (byte r, _, _) = GetPixel(x, y);
         return r;
+    }
+}
+
+/// <summary>
+/// Represents raw JPEG component data before color conversion.
+/// Used for custom color space handling (e.g., CMYK/YCCK in PDF).
+/// </summary>
+public class RawJpegData
+{
+    /// <summary>
+    /// Image width in pixels.
+    /// </summary>
+    public int Width { get; }
+
+    /// <summary>
+    /// Image height in pixels.
+    /// </summary>
+    public int Height { get; }
+
+    /// <summary>
+    /// Number of components (1=grayscale, 3=YCbCr, 4=CMYK/YCCK).
+    /// </summary>
+    public int ComponentCount { get; }
+
+    /// <summary>
+    /// Sample precision in bits (typically 8).
+    /// </summary>
+    public int Precision { get; }
+
+    /// <summary>
+    /// Raw component data in interleaved format.
+    /// For 1 component: Y, Y, Y, ...
+    /// For 3 components: Y, Cb, Cr, Y, Cb, Cr, ...
+    /// For 4 components: C, M, Y, K, C, M, Y, K, ... (or Y, Cb, Cr, K for YCCK)
+    /// Length is Width * Height * ComponentCount.
+    /// </summary>
+    public byte[] ComponentData { get; }
+
+    /// <summary>
+    /// True if an Adobe APP14 marker was found in the file.
+    /// </summary>
+    public bool HasAdobeMarker { get; }
+
+    /// <summary>
+    /// Adobe color transform value (0=unknown/CMYK, 1=YCbCr, 2=YCCK).
+    /// Only valid if HasAdobeMarker is true.
+    /// </summary>
+    public byte AdobeColorTransform { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RawJpegData"/> class.
+    /// </summary>
+    public RawJpegData(
+        int width,
+        int height,
+        int componentCount,
+        int precision,
+        byte[] componentData,
+        bool hasAdobeMarker,
+        byte adobeColorTransform)
+    {
+        Width = width;
+        Height = height;
+        ComponentCount = componentCount;
+        Precision = precision;
+        ComponentData = componentData;
+        HasAdobeMarker = hasAdobeMarker;
+        AdobeColorTransform = adobeColorTransform;
     }
 }

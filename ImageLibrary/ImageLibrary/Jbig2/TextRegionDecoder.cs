@@ -116,7 +116,9 @@ internal sealed class TextRegionDecoder
 
         // Default pixel fill
         if (_params.DefaultPixel != 0)
+        {
             bitmap.Fill(1);
+        }
 
         // 6.4.5 (1) - Decode initial STRIPT
         // Note: jbig2dec decodes IADT before the main loop and applies -SBSTRIPS multiplier
@@ -162,17 +164,19 @@ internal sealed class TextRegionDecoder
 
                 // For second and subsequent symbols in strip, decode IADS first
                 // (matching jbig2dec loop structure where IADS is decoded before instance processing)
+                int ds = 0;
                 if (!firstSymbolInStrip)
                 {
                     // 6.4.12 - Decode delta S for this symbol
-                    int ds = _decoder.DecodeInt(_iaDsContexts);
+                    ds = _decoder.DecodeInt(_iaDsContexts);
                     if (ds == int.MinValue) // OOB - end of strip
                     {
                         break;
                     }
 
-                    // Advance S by delta
-                    curS += ds;
+                    // Advance S by delta + offset (T.88 6.4.12)
+                    // Per reference implementation and spec, SBDSOFFSET is added here
+                    curS += ds + _params.StripDeltaOffset;
                 }
                 firstSymbolInStrip = false;
 
@@ -213,8 +217,10 @@ internal sealed class TextRegionDecoder
                 // 6.4.11 - Place symbol on bitmap
                 PlaceSymbol(bitmap, symbolBitmap, curS, t);
 
-                // Advance curS by symbol width for next iteration's ds calculation
-                curS += _params.Transposed ? symbolBitmap.Height : symbolBitmap.Width;
+                // Advance curS by symbol width minus 1 for next iteration's ds calculation
+                // Per T.88 reference implementation, we use (symbolWidth - 1) not symbolWidth
+                int symbolWidth = _params.Transposed ? symbolBitmap.Height : symbolBitmap.Width;
+                curS += symbolWidth - 1;
 
                 instancesDecoded++;
 
