@@ -28,7 +28,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\ImageLibrary\ImageLibrary\ImageLibrary.csproj" />
       <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
       <ProjectReference Include="..\Logging\Logging.csproj" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
