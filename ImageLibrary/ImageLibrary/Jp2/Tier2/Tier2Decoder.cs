@@ -23,7 +23,7 @@ internal class Tier2Decoder : ITier2Decoder
 
     public Tier2Output Process(Jp2TilePart input)
     {
-        var decoder = new TilePartDecoder(_codestream, input);
+        using var decoder = new TilePartDecoder(_codestream, input);
         return decoder.Decode();
     }
 
@@ -32,7 +32,7 @@ internal class Tier2Decoder : ITier2Decoder
     /// </summary>
     public Tier2Output[] DecodeAllComponents(Jp2TilePart tilePart)
     {
-        var decoder = new TilePartDecoder(_codestream, tilePart);
+        using var decoder = new TilePartDecoder(_codestream, tilePart);
         return decoder.DecodeAllComponents();
     }
 }
@@ -40,7 +40,7 @@ internal class Tier2Decoder : ITier2Decoder
 /// <summary>
 /// Decodes a single tile-part's packet data.
 /// </summary>
-internal class TilePartDecoder
+internal class TilePartDecoder : IDisposable
 {
     private readonly Jp2Codestream _codestream;
     private readonly Jp2TilePart _tilePart;
@@ -60,6 +60,11 @@ internal class TilePartDecoder
     // Code-block inclusion state (first layer where it's included)
     private readonly int[,,][,] _firstInclusion;
 
+    // Packet counter for header dump
+    private int _packetNumber = 0;
+    private readonly System.IO.StreamWriter? _packetHeaderLog;
+    private readonly System.IO.StreamWriter? _tier1InputLog;
+
     public TilePartDecoder(Jp2Codestream codestream, Jp2TilePart tilePart)
     {
         _codestream = codestream;
@@ -77,6 +82,36 @@ internal class TilePartDecoder
         _inclusionTrees = new TagTree[_numComponents, _numResolutions, 4][];
         _zeroBitPlaneTrees = new TagTree[_numComponents, _numResolutions, 4][];
         _firstInclusion = new int[_numComponents, _numResolutions, 4][,];
+
+        // Initialize packet header log
+        try
+        {
+            _packetHeaderLog = new System.IO.StreamWriter(@"C:\temp\our-packet-headers.txt", false);
+            _packetHeaderLog.WriteLine("=== PACKET HEADER DUMP ===");
+            _packetHeaderLog.WriteLine($"NumComponents: {_numComponents}");
+            _packetHeaderLog.WriteLine($"NumResolutions: {_numResolutions}");
+            _packetHeaderLog.WriteLine($"NumLayers: {_numLayers}");
+            _packetHeaderLog.WriteLine($"Progression: {_coding.Progression}");
+            _packetHeaderLog.WriteLine();
+        }
+        catch
+        {
+            _packetHeaderLog = null;
+        }
+
+        // Initialize Tier-1 input log (assembled code-blocks)
+        try
+        {
+            _tier1InputLog = new System.IO.StreamWriter(@"C:\temp\our-tier1-inputs.txt", false);
+            _tier1InputLog.WriteLine("=== TIER-1 INPUT CODE-BLOCKS ===");
+            _tier1InputLog.WriteLine($"NumComponents: {_numComponents}");
+            _tier1InputLog.WriteLine($"NumResolutions: {_numResolutions}");
+            _tier1InputLog.WriteLine();
+        }
+        catch
+        {
+            _tier1InputLog = null;
+        }
 
         InitializeCodeBlockStructure();
     }
@@ -112,9 +147,13 @@ internal class TilePartDecoder
                 if (resHeight == 0) resHeight = 1;
 
                 // Number of subbands at this resolution
-                int numSubbands = (r == 0) ? 1 : 3;
+                // Resolution 0: subband 0 (LL)
+                // Resolution > 0: subbands 1, 2, 3 (HL, LH, HH)
+                int startSubband = (r == 0) ? 0 : 1;
+                int numSubbands = (r == 0) ? 1 : 4;
 
-                for (var s = 0; s < numSubbands; s++)
+                Console.WriteLine($"[INIT] c={c} r={r} startSubband={startSubband} numSubbands={numSubbands}");
+                for (var s = startSubband; s < numSubbands; s++)
                 {
                     int subbandWidth, subbandHeight;
                     if (r == 0)
@@ -126,20 +165,20 @@ internal class TilePartDecoder
                     else
                     {
                         // Subband dimensions depend on orientation:
-                        // HL: high horizontal (floor), low vertical (ceil)
-                        // LH: low horizontal (ceil), high vertical (floor)
-                        // HH: high both (floor)
+                        // Subband 1 (HL): high horizontal (floor), low vertical (ceil)
+                        // Subband 2 (LH): low horizontal (ceil), high vertical (floor)
+                        // Subband 3 (HH): high both (floor)
                         switch (s)
                         {
-                            case 0: // HL
+                            case 1: // HL
                                 subbandWidth = resWidth / 2;
                                 subbandHeight = (resHeight + 1) / 2;
                                 break;
-                            case 1: // LH
+                            case 2: // LH
                                 subbandWidth = (resWidth + 1) / 2;
                                 subbandHeight = resHeight / 2;
                                 break;
-                            default: // HH
+                            default: // HH (case 3)
                                 subbandWidth = resWidth / 2;
                                 subbandHeight = resHeight / 2;
                                 break;
@@ -153,6 +192,8 @@ internal class TilePartDecoder
                     int numCbY = (subbandHeight + cbHeight - 1) / cbHeight;
                     if (numCbX == 0) numCbX = 1;
                     if (numCbY == 0) numCbY = 1;
+
+                    Console.WriteLine($"[GRID] c={c} r={r} s={s}: subband={subbandWidth}x{subbandHeight}, cb={cbWidth}x{cbHeight}, grid={numCbX}x{numCbY} ({numCbX * numCbY} blocks)");
 
                     _codeBlocks[c, r, s] = new List<CodeBlockInfo>[numCbY * numCbX];
                     _inclusionTrees[c, r, s] = [new TagTree(numCbX, numCbY)];
@@ -302,6 +343,9 @@ internal class TilePartDecoder
         if (!reader.HasMoreData)
             return;
 
+        _packetHeaderLog?.WriteLine($"--- Packet {_packetNumber} ---");
+        _packetHeaderLog?.WriteLine($"Component: {component}, Resolution: {resolution}, Layer: {layer}");
+
         // Check for SOP marker if enabled
         if ((_coding.Style & CodingStyle.SopMarkers) != 0)
         {
@@ -317,9 +361,14 @@ internal class TilePartDecoder
         // First bit: packet empty flag (0 = empty, 1 = non-empty)
         int packetPresent = reader.ReadBit();
 
+        _packetHeaderLog?.WriteLine($"PacketPresent: {packetPresent}");
+
         if (packetPresent == 0)
         {
             // Empty packet - skip to EPH if present
+            _packetHeaderLog?.WriteLine("Empty packet");
+            _packetHeaderLog?.WriteLine();
+            _packetNumber++;
             if ((_coding.Style & CodingStyle.EphMarkers) != 0)
             {
                 reader.AlignToByte();
@@ -333,11 +382,14 @@ internal class TilePartDecoder
         }
 
         // Parse code-block contributions
-        int numSubbands = (resolution == 0) ? 1 : 3;
+        // At resolution 0: subband 0 (LL)
+        // At resolution > 0: subbands 1, 2, 3 (HL, LH, HH detail subbands)
+        int startSubband = (resolution == 0) ? 0 : 1;
+        int numSubbands = (resolution == 0) ? 1 : 4;
 
         var contributions = new List<(int cbx, int cby, int subband, int passes, int length, int zeroBitPlanes)>();
 
-        for (var s = 0; s < numSubbands; s++)
+        for (var s = startSubband; s < numSubbands; s++)
         {
             List<CodeBlockInfo>[]? blockList = _codeBlocks[component, resolution, s];
             if (blockList == null || blockList.Length == 0)
@@ -367,6 +419,9 @@ internal class TilePartDecoder
                             // Decode zero bit-planes using tag tree
                             int zeroBp = zeroBpTree.DecodeValue(reader, cbx, cby);
 
+                            // Debug: log zero bitplane values
+                            Console.WriteLine($"[TIER2] c={component} r={resolution} s={s} cb=({cbx},{cby}) layer={layer} zeroBp={zeroBp}");
+
                             // Decode number of coding passes
                             int passes = DecodeNumPasses(reader);
 
@@ -374,6 +429,9 @@ internal class TilePartDecoder
                             int length = DecodeLength(reader, passes);
 
                             contributions.Add((cbx, cby, s, passes, length, zeroBp));
+
+                            _packetHeaderLog?.WriteLine($"  CB({cbx},{cby}) subband={s} FIRST_INCL zeroBp={zeroBp}");
+                            _packetHeaderLog?.WriteLine($"  Passes={passes} Length={length}");
                         }
                     }
                     else
@@ -387,6 +445,9 @@ internal class TilePartDecoder
 
                             // Zero bit-planes already known from first inclusion
                             contributions.Add((cbx, cby, s, passes, length, -1));
+
+                            _packetHeaderLog?.WriteLine($"  CB({cbx},{cby}) subband={s} INCL");
+                            _packetHeaderLog?.WriteLine($"  Passes={passes} Length={length}");
                         }
                     }
                 }
@@ -413,6 +474,21 @@ internal class TilePartDecoder
         {
             byte[] data = reader.ReadBytes(length);
 
+            // Log compressed data
+            if (_packetHeaderLog != null)
+            {
+                _packetHeaderLog.WriteLine($"  CB({cbx},{cby}) subband={s} DATA[{length} bytes]:");
+
+                // Output hex dump of compressed data
+                const int bytesPerLine = 16;
+                for (int i = 0; i < data.Length; i += bytesPerLine)
+                {
+                    int lineLength = Math.Min(bytesPerLine, data.Length - i);
+                    string hex = BitConverter.ToString(data, i, lineLength).Replace("-", " ");
+                    _packetHeaderLog.WriteLine($"    {i:X4}: {hex}");
+                }
+            }
+
             int idx = cby * GetNumCodeBlocksX(component, resolution, s) + cbx;
             _codeBlocks[component, resolution, s][idx].Add(new CodeBlockInfo
             {
@@ -422,6 +498,9 @@ internal class TilePartDecoder
                 Data = data,
             });
         }
+
+        _packetHeaderLog?.WriteLine();
+        _packetNumber++;
     }
 
     private int DecodeNumPasses(BitReader reader)
@@ -556,7 +635,11 @@ internal class TilePartDecoder
 
         for (var r = 0; r < _numResolutions; r++)
         {
-            int numSubbands = (r == 0) ? 1 : 3;
+            // Number of subbands at this resolution
+            // Resolution 0: subband 0 (LL)
+            // Resolution > 0: subbands 1, 2, 3 (HL, LH, HH)
+            int startSubband = (r == 0) ? 0 : 1;
+            int numSubbands = (r == 0) ? 1 : 4;
             resolutionBlocks[r] = new CodeBlockBitstream[numSubbands][];
 
             // Calculate subband dimensions at this resolution using ceiling division
@@ -567,7 +650,7 @@ internal class TilePartDecoder
             if (resWidth == 0) resWidth = 1;
             if (resHeight == 0) resHeight = 1;
 
-            for (var s = 0; s < numSubbands; s++)
+            for (var s = startSubband; s < numSubbands; s++)
             {
                 List<CodeBlockInfo>[]? blockList = _codeBlocks[component, r, s];
                 if (blockList == null)
@@ -586,20 +669,20 @@ internal class TilePartDecoder
                 else
                 {
                     // Subband dimensions depend on orientation:
-                    // HL: high horizontal (floor), low vertical (ceil)
-                    // LH: low horizontal (ceil), high vertical (floor)
-                    // HH: high both (floor)
+                    // Subband 1 (HL): high horizontal (floor), low vertical (ceil)
+                    // Subband 2 (LH): low horizontal (ceil), high vertical (floor)
+                    // Subband 3 (HH): high both (floor)
                     switch (s)
                     {
-                        case 0: // HL
+                        case 1: // HL
                             subbandWidth = resWidth / 2;
                             subbandHeight = (resHeight + 1) / 2;
                             break;
-                        case 1: // LH
+                        case 2: // LH
                             subbandWidth = (resWidth + 1) / 2;
                             subbandHeight = resHeight / 2;
                             break;
-                        default: // HH
+                        default: // HH (case 3)
                             subbandWidth = resWidth / 2;
                             subbandHeight = resHeight / 2;
                             break;
@@ -618,7 +701,7 @@ internal class TilePartDecoder
                     for (var cbx = 0; cbx < numCbX; cbx++)
                     {
                         int idx = cby * numCbX + cbx;
-                        List<CodeBlockInfo> layerData = blockList[idx];
+                        List<CodeBlockInfo>? layerData = blockList[idx];
 
                         // Calculate actual code-block dimensions (may be smaller at edges)
                         int startX = cbx * maxCbWidth;
@@ -632,15 +715,21 @@ internal class TilePartDecoder
                         var zeroBp = 0;
                         var allData = new List<byte>();
 
-                        foreach (CodeBlockInfo info in layerData)
+                        if (layerData != null)
                         {
-                            totalPasses += info.CodingPasses;
-                            if (info.ZeroBitPlanes > 0)
-                                zeroBp = info.ZeroBitPlanes;
-                            allData.AddRange(info.Data);
+                            foreach (CodeBlockInfo info in layerData)
+                            {
+                                totalPasses += info.CodingPasses;
+                                // ZeroBitPlanes can legitimately be 0 (all bits significant)
+                                // Only -1 indicates "use previously stored value"
+                                if (info.ZeroBitPlanes >= 0)
+                                    zeroBp = info.ZeroBitPlanes;
+                                allData.AddRange(info.Data);
+                            }
                         }
 
-                        if (allData.Count > 0 || totalPasses > 0)
+                        // Always include code-block even if it has no data
+                        // Zero-data blocks are valid in JPEG2000 (represents all-zero coefficients)
                         {
                             // Determine subband type
                             SubbandType subbandType;
@@ -650,8 +739,23 @@ internal class TilePartDecoder
                             }
                             else
                             {
-                                subbandType = s switch { 0 => SubbandType.HL, 1 => SubbandType.LH, _ => SubbandType.HH };
+                                subbandType = s switch { 1 => SubbandType.HL, 2 => SubbandType.LH, _ => SubbandType.HH };
                             }
+
+                            // Log assembled code-block input for Tier-1 decoder verification
+                            _tier1InputLog?.WriteLine($"=== CODE-BLOCK ===");
+                            _tier1InputLog?.WriteLine($"Resolution={r}, Subband={s}, CB({cbx},{cby})");
+                            _tier1InputLog?.WriteLine($"Dimensions: {actualWidth}x{actualHeight}");
+                            _tier1InputLog?.WriteLine($"Total Passes: {totalPasses}");
+                            _tier1InputLog?.WriteLine($"Zero Bit-Planes: {zeroBp}");
+                            _tier1InputLog?.WriteLine($"Data Length: {allData.Count} bytes");
+                            if (allData.Count > 0)
+                            {
+                                int displayBytes = Math.Min(32, allData.Count);
+                                string hex = BitConverter.ToString(allData.ToArray(), 0, displayBytes).Replace("-", " ");
+                                _tier1InputLog?.WriteLine($"First {displayBytes} bytes: {hex}");
+                            }
+                            _tier1InputLog?.WriteLine();
 
                             subbandBlocks.Add(new CodeBlockBitstream
                             {
@@ -679,6 +783,17 @@ internal class TilePartDecoder
             ResolutionLevels = _numResolutions,
             CodeBlocks = resolutionBlocks,
         };
+    }
+
+    public void Dispose()
+    {
+        _packetHeaderLog?.Flush();
+        _packetHeaderLog?.Close();
+        _packetHeaderLog?.Dispose();
+
+        _tier1InputLog?.Flush();
+        _tier1InputLog?.Close();
+        _tier1InputLog?.Dispose();
     }
 }
 

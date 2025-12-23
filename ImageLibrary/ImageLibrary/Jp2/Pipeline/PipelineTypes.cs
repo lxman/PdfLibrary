@@ -72,11 +72,29 @@ public class QuantizedSubband
     /// <summary>Height of the subband in samples.</summary>
     public int Height { get; set; }
 
+    /// <summary>Starting X coordinate in tile component reference grid.</summary>
+    public int X0 { get; set; }
+
+    /// <summary>Starting Y coordinate in tile component reference grid.</summary>
+    public int Y0 { get; set; }
+
     /// <summary>Quantization step size for this subband.</summary>
     public QuantizationStepSize StepSize { get; set; }
 
     /// <summary>Quantized coefficient values.</summary>
     public int[,] Coefficients { get; set; } = new int[0, 0];
+
+    /// <summary>Code-block width used for this subband.</summary>
+    public int CodeBlockWidth { get; set; }
+
+    /// <summary>Code-block height used for this subband.</summary>
+    public int CodeBlockHeight { get; set; }
+
+    /// <summary>
+    /// Zero bitplanes per code-block [blockY, blockX].
+    /// Used for correct dequantization: actualMagBits = 31 - zeroBitPlanes.
+    /// </summary>
+    public int[,] CodeBlockZeroBitPlanes { get; set; } = new int[0, 0];
 }
 
 /// <summary>
@@ -117,6 +135,18 @@ public class DwtCoefficients
     /// Level n > 0 contains HL, LH, HH from decomposition level n.
     /// </summary>
     public double[][,] Subbands { get; set; } = [];
+
+    /// <summary>
+    /// X0 coordinates for each subband, matching Subbands structure.
+    /// Used for phase detection in inverse DWT.
+    /// </summary>
+    public int[] SubbandX0 { get; set; } = [];
+
+    /// <summary>
+    /// Y0 coordinates for each subband, matching Subbands structure.
+    /// Used for phase detection in inverse DWT.
+    /// </summary>
+    public int[] SubbandY0 { get; set; } = [];
 }
 
 /// <summary>

@@ -25,14 +25,30 @@ internal class JpxDecodeFilter : IStreamFilter
     {
         ArgumentNullException.ThrowIfNull(data);
 
+        Console.WriteLine($"[JPXDecode] Called with {data.Length} bytes");
+
         if (data.Length == 0)
             return [];
 
         try
         {
+            Console.WriteLine($"[JPXDecode] Creating Jp2Decoder...");
             // Decode JPEG 2000 data
             var decoder = new Jp2Decoder(data);
-            byte[] imageBytes = decoder.Decode();
+            Console.WriteLine($"[JPXDecode] Calling Decode()...");
+            byte[] imageBytes;
+            try
+            {
+                imageBytes = decoder.Decode();
+                Console.WriteLine($"[JPXDecode] Decode() returned {imageBytes?.Length ?? 0} bytes");
+                System.IO.File.AppendAllText(@"C:\temp\jp2-decode.log", $"[{DateTime.Now:HH:mm:ss}] Decode returned {imageBytes?.Length ?? 0} bytes\n");
+            }
+            catch (Exception decodeEx)
+            {
+                Console.WriteLine($"[JPXDecode] EXCEPTION during Decode(): {decodeEx.GetType().Name}: {decodeEx.Message}");
+                System.IO.File.AppendAllText(@"C:\temp\jp2-decode.log", $"[{DateTime.Now:HH:mm:ss}] EXCEPTION: {decodeEx.GetType().Name}: {decodeEx.Message}\n{decodeEx.StackTrace}\n");
+                throw;
+            }
             int width = decoder.Width;
             int height = decoder.Height;
             int components = decoder.ComponentCount;

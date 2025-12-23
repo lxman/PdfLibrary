@@ -31,6 +31,8 @@
         <InternalsVisibleTo Include="PdfLibrary.Rendering.SkiaSharp" />
         <!-- Test projects need internal access for thorough testing -->
         <InternalsVisibleTo Include="PdfLibrary.Tests" />
+        <!-- Debug tools need internal access to extract raw streams -->
+        <InternalsVisibleTo Include="ExtractJp2Internal" />
     </ItemGroup>
 
     <ItemGroup>

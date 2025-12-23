@@ -26,10 +26,12 @@ public abstract class PdfContentProcessor
     /// </summary>
     internal void ProcessOperators(List<PdfOperator> operators)
     {
+        Console.WriteLine($"[ProcessOperators] Processing {operators.Count} operators");
         foreach (PdfOperator op in operators)
         {
             ProcessOperator(op);
         }
+        Console.WriteLine($"[ProcessOperators] Finished processing operators");
     }
 
     /// <summary>
@@ -37,6 +39,10 @@ public abstract class PdfContentProcessor
     /// </summary>
     private protected virtual void ProcessOperator(PdfOperator op)
     {
+        if (op is InvokeXObjectOperator xo)
+        {
+            Console.WriteLine($"[ProcessOperator] Found InvokeXObjectOperator: {xo.XObjectName}");
+        }
         switch (op)
         {
             // Graphics state operators

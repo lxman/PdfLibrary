@@ -1386,6 +1386,7 @@ public class PdfRenderer : PdfContentProcessor
 
     protected override void OnInvokeXObject(string name)
     {
+        Console.WriteLine($"[OnInvokeXObject] Called with name={name}");
         PdfLogger.Log(LogCategory.Images, $"OnInvokeXObject: {name}");
 
         if (_currentResources is null)
@@ -1405,33 +1406,43 @@ public class PdfRenderer : PdfContentProcessor
         // PDF spec: XObjects can have an /OC key that references an Optional Content Group
         // If the OCG is in the document's /OFF list, we shouldn't render it
         bool isDisabled = IsOptionalContentDisabled(xobject);
+        Console.WriteLine($"[OnInvokeXObject] Optional content disabled: {isDisabled}");
         PdfLogger.Log(LogCategory.Images, $"  Optional content disabled: {isDisabled}");
 
         if (isDisabled)
         {
+            Console.WriteLine($"[OnInvokeXObject] SKIPPING {name} - Optional Content is disabled");
             PdfLogger.Log(LogCategory.Images, $"  SKIPPING {name} - Optional Content is disabled");
             return;
         }
 
         // Check if this is an image XObject
-        if (PdfImage.IsImageXObject(xobject))
+        bool isImage = PdfImage.IsImageXObject(xobject);
+        Console.WriteLine($"[OnInvokeXObject] IsImageXObject: {isImage}");
+        if (isImage)
         {
             PdfLogger.Log(LogCategory.Images, "  Type: Image XObject");
             try
             {
+                Console.WriteLine($"[OnInvokeXObject] Creating PdfImage...");
                 var imageStopwatch = Stopwatch.StartNew();
                 var image = new PdfImage(xobject, _document);
                 long createMs = imageStopwatch.ElapsedMilliseconds;
+                Console.WriteLine($"[OnInvokeXObject] PdfImage created: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
 
                 PdfLogger.Log(LogCategory.Images, $"  Image: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
+                Console.WriteLine($"[OnInvokeXObject] Calling _target.DrawImage()...");
                 _target.DrawImage(image, CurrentState);
                 imageStopwatch.Stop();
+                Console.WriteLine($"[OnInvokeXObject] DrawImage completed");
 
                 PdfLogger.Log(LogCategory.Timings, $"Image '{name}' ({image.Width}x{image.Height}, {image.ColorSpace}): {imageStopwatch.ElapsedMilliseconds}ms (create: {createMs}ms, draw: {imageStopwatch.ElapsedMilliseconds - createMs}ms)");
                 PdfLogger.Log(LogCategory.Images, "  Image drawn successfully");
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"[OnInvokeXObject] ERROR rendering image: {ex.Message}");
+                Console.WriteLine($"[OnInvokeXObject] Stack trace: {ex.StackTrace}");
                 PdfLogger.Log(LogCategory.Images, $"  ERROR rendering image: {ex.Message}");
             }
         }

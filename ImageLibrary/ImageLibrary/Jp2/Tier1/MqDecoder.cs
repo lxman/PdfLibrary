@@ -8,6 +8,7 @@ internal class MqDecoder
 {
     private readonly byte[] _data;
     private int _bytePos;
+    private bool _endOfData;  // Track if we've reached end of actual bitstream
 
     // MQ decoder state
     private uint _a;  // Interval width
@@ -16,12 +17,21 @@ internal class MqDecoder
     private uint _b;  // Last byte read
     private bool _markerFound;
 
+    // Public properties to expose state for logging
+    public uint A => _a;
+    public uint C => _c;
+    public uint CT => _ct;
+    public uint B => _b;
+
     // Context states (0-46)
     private readonly int[] _contextStates;
     private readonly bool[] _mps; // Most Probable Symbol for each context
 
     // Number of contexts for EBCOT
     public const int NumContexts = 19;
+
+    // Debug logging
+    private readonly System.IO.StreamWriter? _debugLog;
 
     // MQ lookup table (Qe values and state transitions)
     // From JPEG2000 spec Table D.2
@@ -76,10 +86,12 @@ internal class MqDecoder
         new MqState(0x5601, 46, 46, false) // 46 (uniform context)
     ];
 
-    public MqDecoder(byte[] data)
+    public MqDecoder(byte[] data, System.IO.StreamWriter? debugLog = null)
     {
         _data = data;
         _bytePos = 0;
+        _endOfData = false;
+        _debugLog = debugLog;
 
         _contextStates = new int[NumContexts];
         _mps = new bool[NumContexts];
@@ -89,6 +101,14 @@ internal class MqDecoder
 
         // Initialize decoder
         Initialize();
+
+        if (_debugLog != null)
+        {
+            _debugLog.WriteLine("=== MQ DECODER INITIALIZATION ===");
+            _debugLog.WriteLine($"Bitstream length: {_data.Length} bytes");
+            _debugLog.WriteLine($"Initial state: A=0x{_a:X4}, C=0x{_c:X8}, CT={_ct}, B=0x{_b:X2}");
+            _debugLog.WriteLine();
+        }
     }
 
     /// <summary>
@@ -133,7 +153,10 @@ internal class MqDecoder
     private uint ReadByte()
     {
         if (_bytePos >= _data.Length)
-            return 0xFF;
+        {
+            _endOfData = true;
+            return 0xFF;  // Return padding byte
+        }
         return _data[_bytePos++];
     }
 
@@ -142,25 +165,53 @@ internal class MqDecoder
         if (_markerFound)
         {
             _ct = 8;
+            if (_debugLog != null)
+            {
+                _debugLog.WriteLine("  ByteIn: Already found marker, returning");
+            }
             return;
         }
+
+        uint prevB = _b;
 
         // Check if PREVIOUS byte was 0xFF (bit-stuffing case)
         if (_b == 0xFF)
         {
+            bool wasEndOfData = _endOfData;
             _b = ReadByte();  // Read new byte
 
-            if (_b > 0x8F)
+            if (_debugLog != null)
+            {
+                _debugLog.WriteLine($"  ByteIn: Previous byte was 0xFF, read next byte: 0x{_b:X2} (pos={_bytePos}, endOfData={_endOfData})");
+            }
+
+            // Only detect markers if the 0xFF came from actual bitstream data, not padding
+            if (_b > 0x8F && !wasEndOfData)
             {
                 // Marker found
                 _markerFound = true;
                 _ct = 8;
+                if (_debugLog != null)
+                {
+                    _debugLog.WriteLine($"  ByteIn: MARKER FOUND! (0xFF{_b:X2} > 0x8F), setting _markerFound=true");
+                }
             }
             else
             {
                 // Bit-stuffed byte: only 7 bits are valid
                 _c += 0xFE00 - (_b << 9);
                 _ct = 7;
+                if (_debugLog != null)
+                {
+                    if (_endOfData)
+                    {
+                        _debugLog.WriteLine($"  ByteIn: Reading from padding (endOfData=true), treating as bit-stuff. C=0x{_c:X8}, CT={_ct}");
+                    }
+                    else
+                    {
+                        _debugLog.WriteLine($"  ByteIn: Bit-stuffed (0xFF{_b:X2}), using 7 bits. C=0x{_c:X8}, CT={_ct}");
+                    }
+                }
             }
         }
         else
@@ -169,6 +220,10 @@ internal class MqDecoder
             _b = ReadByte();
             _c += 0xFF00 - (_b << 8);
             _ct = 8;
+            if (_debugLog != null)
+            {
+                _debugLog.WriteLine($"  ByteIn: Normal read byte 0x{_b:X2} (pos={_bytePos}). C=0x{_c:X8}, CT={_ct}");
+            }
         }
     }
 

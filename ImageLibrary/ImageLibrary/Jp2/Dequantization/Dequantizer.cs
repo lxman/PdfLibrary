@@ -152,10 +152,14 @@ internal class Dequantizer : IDequantizer
         // Index: level 0 = LL, level n > 0 = [HL, LH, HH] for that decomposition
         int numDecompLevels = numResolutions - 1;
         var dequantized = new List<double[,]>();
+        var subbandX0 = new List<int>();
+        var subbandY0 = new List<int>();
 
         // First add LL subband
         QuantizedSubband llSubband = subbands.First(s => s.Type == SubbandType.LL);
         dequantized.Add(Process(llSubband, componentIndex));
+        subbandX0.Add(llSubband.X0);
+        subbandY0.Add(llSubband.Y0);
 
         // Then add detail subbands for each resolution level > 0
         for (var r = 1; r < numResolutions; r++)
@@ -164,9 +168,24 @@ internal class Dequantizer : IDequantizer
             QuantizedSubband? lh = subbands.FirstOrDefault(s => s.ResolutionLevel == r && s.Type == SubbandType.LH);
             QuantizedSubband? hh = subbands.FirstOrDefault(s => s.ResolutionLevel == r && s.Type == SubbandType.HH);
 
-            if (hl != null) dequantized.Add(Process(hl, componentIndex));
-            if (lh != null) dequantized.Add(Process(lh, componentIndex));
-            if (hh != null) dequantized.Add(Process(hh, componentIndex));
+            if (hl != null)
+            {
+                dequantized.Add(Process(hl, componentIndex));
+                subbandX0.Add(hl.X0);
+                subbandY0.Add(hl.Y0);
+            }
+            if (lh != null)
+            {
+                dequantized.Add(Process(lh, componentIndex));
+                subbandX0.Add(lh.X0);
+                subbandY0.Add(lh.Y0);
+            }
+            if (hh != null)
+            {
+                dequantized.Add(Process(hh, componentIndex));
+                subbandX0.Add(hh.X0);
+                subbandY0.Add(hh.Y0);
+            }
         }
 
         return new DwtCoefficients
@@ -176,6 +195,8 @@ internal class Dequantizer : IDequantizer
             Width = width,
             Height = height,
             Subbands = dequantized.ToArray(),
+            SubbandX0 = subbandX0.ToArray(),
+            SubbandY0 = subbandY0.ToArray(),
         };
     }
 }

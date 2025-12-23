@@ -178,31 +178,41 @@ internal class ImageRenderer
                 // Check if JPXDecode is present
                 if (filters.Contains("JPXDecode"))
                 {
+                    Console.WriteLine($"[ImageRenderer] JPXDecode filter detected, using direct JP2 decoder");
                     try
                     {
                         // Get raw JP2 data
                         byte[] rawJp2Data = stream.Data;
+                        Console.WriteLine($"[ImageRenderer] Raw JP2 data length: {rawJp2Data.Length} bytes");
 
                         // TIMING: Measure JPEG2000 decode
                         DateTime decodeStart = DateTime.Now;
                         var jp2Decoder = new Jp2Decoder(rawJp2Data);
+                        Console.WriteLine($"[ImageRenderer] Jp2Decoder created, calling Decode()...");
                         byte[] pixelData = jp2Decoder.Decode();
+                        Console.WriteLine($"[ImageRenderer] Decode() returned {pixelData.Length} bytes");
                         int jp2Width = jp2Decoder.Width;
                         int jp2Height = jp2Decoder.Height;
                         int components = jp2Decoder.ComponentCount;
+                        Console.WriteLine($"[ImageRenderer] Image: {jp2Width}x{jp2Height}, {components} components");
                         TimeSpan decodeElapsed = DateTime.Now - decodeStart;
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image with {components} components");
 
                         // TIMING: Measure raw bytes→SKBitmap conversion
                         DateTime convertStart = DateTime.Now;
+                        Console.WriteLine($"[ImageRenderer] Converting raw bytes to SKBitmap...");
                         SKBitmap jp2Bitmap = ConvertRawBytesToSkBitmap(pixelData, jp2Width, jp2Height, components);
                         TimeSpan convertElapsed = DateTime.Now - convertStart;
+                        Console.WriteLine($"[ImageRenderer] SKBitmap created: {jp2Bitmap.Width}x{jp2Bitmap.Height}, ColorType={jp2Bitmap.ColorType}");
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] Raw bytes→SKBitmap conversion took {convertElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image");
 
+                        Console.WriteLine($"[ImageRenderer] Returning JP2 bitmap");
                         return jp2Bitmap;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
+                        Console.WriteLine($"[ImageRenderer] EXCEPTION in JP2 decode: {ex.Message}");
+                        Console.WriteLine($"[ImageRenderer] Stack trace: {ex.StackTrace}");
                         // Fall through to standard processing if manual decode fails
                     }
                 }
