@@ -7,8 +7,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.0" />
-      <PackageReference Include="Wacton.Unicolour" Version="6.3.0" />
+      <PackageReference Include="CommunityToolkit.HighPerformance" Version="8.4.2" />
+      <PackageReference Include="Wacton.Unicolour" Version="7.0.0" />
     </ItemGroup>
 
 </Project>
