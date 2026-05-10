@@ -19,7 +19,7 @@
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <!-- Native assets for cross-platform CI testing -->
-        <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.147.0-preview.1.1" />
+        <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="3.119.2-preview.1" />
     </ItemGroup>
 
     <ItemGroup>
