@@ -1,4 +1,5 @@
-using Compressors.Jbig2;
+using Jbig2Decoder;
+using Logging;
 
 namespace PdfLibrary.Filters;
 
@@ -29,25 +30,37 @@ internal class Jbig2DecodeFilter : IStreamFilter
 
         try
         {
+            // Tolerance mode mirrors Chrome / Acrobat: accept malformed streams
+            // (forward references, missing segments) commonly emitted by non-strict producers.
+            var decoder = new JBIG2StreamDecoder { TolerateMissingSegments = true };
+
             // Handle JBIG2Globals parameter if present (shared data across multiple JBIG2 streams)
-            byte[]? globals = null;
-            if (parameters?.TryGetValue("JBIG2Globals", out object? globalsObj) == true)
+            if (parameters?.TryGetValue("JBIG2Globals", out object? globalsObj) == true &&
+                globalsObj is byte[] { Length: > 0 } globals)
             {
-                globals = globalsObj as byte[];
+                decoder.SetGlobalData(globals);
             }
 
-            // Decode to 1-bit bitmap (black=1, white=0)
-            byte[] result = Jbig2.DecompressToBitmap(data, globals, out _, out _);
+            // Decode to 1-bit packed bitmap (1 = black, MSB-first, stride = (width + 7) / 8).
+            byte[] result = decoder.DecodeJBIG2ToPacked(data, out int width, out int height);
 
-            // JBIG2 spec: 0 = white (background), 1 = black (foreground)
-            // PDF DeviceGray for 1-bit images: 0 = black, 1 = white
-            // Need to invert all bits for PDF compatibility
+            int expected = ((width + 7) / 8) * height;
+            if (result.Length == 0 || width <= 0 || height <= 0 || result.Length != expected)
+                return [];
+
+            // JBIG2 spec: 0 = white (background), 1 = black (foreground).
+            // PDF DeviceGray for 1-bit images: 0 = black, 1 = white. Invert for PDF compatibility.
             for (var i = 0; i < result.Length; i++)
-            {
                 result[i] = (byte)~result[i];
-            }
 
             return result;
+        }
+        catch (Exception ex) when (ex is NullReferenceException or IndexOutOfRangeException)
+        {
+            // Malformed JBIG2 streams can throw these from deep in the decoder.
+            // Match the prior wrapper's policy of returning empty rather than propagating.
+            PdfLogger.Log(LogCategory.Images, $"JBIG2 decode failed on malformed stream ({data.Length} bytes): {ex.GetType().Name}: {ex.Message}");
+            return [];
         }
         catch (Exception ex)
         {

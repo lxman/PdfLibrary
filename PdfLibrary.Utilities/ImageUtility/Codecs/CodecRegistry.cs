@@ -211,9 +211,6 @@ public class CodecRegistry
         // Register custom codecs first (higher priority)
         // These are our owned implementations from the Compressors namespace
 
-        // Custom JPEG codec (preferred over ImageSharp for JPEG)
-        Register(new CustomJpegCodec());
-
         // Custom JPEG2000 decoder (decode only)
         Register(new CustomJpeg2000Codec());
 

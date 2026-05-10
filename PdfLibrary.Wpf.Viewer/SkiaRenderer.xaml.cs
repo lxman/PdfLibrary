@@ -1,4 +1,7 @@
+using System;
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Structure;
 using Serilog;
@@ -68,9 +71,14 @@ public partial class SkiaRenderer : UserControl
         _renderedImage?.Dispose();
         _renderedImage = _renderTarget.GetImage();
 
-        // Update element size and trigger redraw
-        SkiaCanvas.Width = _width;
-        SkiaCanvas.Height = _height;
+        // SKElement allocates its Skia surface at (WPF size × DPI scale) actual pixels.
+        // Setting Width/Height in raw pixel units would inflate the surface above the
+        // rendered image's size on high-DPI displays, leaving cleared whitespace
+        // around the image inside the page outline. Convert to DIUs so the surface
+        // size matches the rendered image exactly.
+        DpiScale dpi = VisualTreeHelper.GetDpi(this);
+        SkiaCanvas.Width = _width / dpi.DpiScaleX;
+        SkiaCanvas.Height = _height / dpi.DpiScaleY;
         SkiaCanvas.InvalidateVisual();
 
         Log.Debug("FinalizeRendering: Page {PageNumber} complete", CurrentPageNumber);

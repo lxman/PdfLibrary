@@ -90,6 +90,18 @@ namespace Logging
         }
 
         /// <summary>
+        /// Log a message for the specified category, building the message lazily.
+        /// The factory is invoked only when the category is enabled, so callers on
+        /// hot paths can interpolate freely without paying allocation/format cost
+        /// when the category is disabled.
+        /// </summary>
+        public static void Log(LogCategory category, Func<string> messageFactory)
+        {
+            if (!IsCategoryEnabled(category)) return;
+            Log(category, messageFactory());
+        }
+
+        /// <summary>
         /// Checks if a specific category is enabled in the current configuration.
         /// </summary>
         public static bool IsCategoryEnabled(LogCategory category)

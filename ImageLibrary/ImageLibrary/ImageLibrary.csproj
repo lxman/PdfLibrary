@@ -27,10 +27,5 @@
         <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     </PropertyGroup>
 
-    <ItemGroup>
-      <Folder Include="Ccitt\" />
-      <Folder Include="Lzw\" />
-      <Folder Include="Tiff\" />
-    </ItemGroup>
 
 </Project>

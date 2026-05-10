@@ -1,5 +1,4 @@
-using ImageLibrary.Jbig2;
-using ImageLibrary.Png;
+using ImageLibrary.Container.Png;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -79,21 +78,6 @@ public class SampleFileTests
             yield return [file];
     }
 
-    public static IEnumerable<object[]> GetJbig2Files()
-    {
-        if (!Directory.Exists(TestImagesRoot))
-            yield break;
-
-        foreach (string file in Directory.EnumerateFiles(TestImagesRoot, "*.jb2", SearchOption.AllDirectories))
-            yield return [file];
-        foreach (string file in Directory.EnumerateFiles(TestImagesRoot, "*.jbig2", SearchOption.AllDirectories))
-            yield return [file];
-        foreach (string file in Directory.EnumerateFiles(TestImagesRoot, "*.JB2", SearchOption.AllDirectories))
-            yield return [file];
-        foreach (string file in Directory.EnumerateFiles(TestImagesRoot, "*.JBIG2", SearchOption.AllDirectories))
-            yield return [file];
-    }
-
     [Theory]
     [MemberData(nameof(GetPngFiles))]
     public void DecodePngFile(string filePath)
@@ -129,29 +113,6 @@ public class SampleFileTests
         }
     }
 
-    [Theory]
-    [MemberData(nameof(GetJbig2Files))]
-    public void DecodeJbig2File(string filePath)
-    {
-        string relativePath = Path.GetRelativePath(TestImagesRoot, filePath);
-
-        try
-        {
-            byte[] data = File.ReadAllBytes(filePath);
-            var decoder = new Jbig2Decoder(data);
-            Bitmap bitmap = decoder.Decode();
-
-            Assert.True(bitmap.Width > 0, $"Width should be positive: {relativePath}");
-            Assert.True(bitmap.Height > 0, $"Height should be positive: {relativePath}");
-            Assert.NotNull(bitmap.Data);
-
-            _output.WriteLine($"OK: {relativePath} ({bitmap.Width}x{bitmap.Height}, 1-bit)");
-        }
-        catch (Jbig2Exception ex)
-        {
-            _output.WriteLine($"UNSUPPORTED: {relativePath} - {ex.Message}");
-        }
-    }
 }
 
 /// <summary>
@@ -223,59 +184,4 @@ public class SampleFileSummaryTests
         Assert.True(success > validFiles.Count * 0.5, "At least 50% of PNG files should decode successfully");
     }
 
-    [Fact]
-    public void Jbig2DecodeSummary()
-    {
-        if (!Directory.Exists(TestImagesRoot))
-        {
-            _output.WriteLine("TestImages directory not found, skipping");
-            return;
-        }
-
-        List<string> files = Directory.EnumerateFiles(TestImagesRoot, "*.jb2", SearchOption.AllDirectories)
-            .Concat(Directory.EnumerateFiles(TestImagesRoot, "*.jbig2", SearchOption.AllDirectories))
-            .Concat(Directory.EnumerateFiles(TestImagesRoot, "*.JB2", SearchOption.AllDirectories))
-            .Concat(Directory.EnumerateFiles(TestImagesRoot, "*.JBIG2", SearchOption.AllDirectories))
-            .ToList();
-
-        if (files.Count == 0)
-        {
-            _output.WriteLine("No JBIG2 files found, skipping");
-            return;
-        }
-
-        int success = 0, failed = 0, unsupported = 0;
-        var failures = new List<string>();
-
-        foreach (string file in files)
-        {
-            try
-            {
-                byte[] data = File.ReadAllBytes(file);
-                var decoder = new Jbig2Decoder(data);
-                Bitmap bitmap = decoder.Decode();
-                if (bitmap.Width > 0 && bitmap.Height > 0)
-                    success++;
-                else
-                    failed++;
-            }
-            catch (Jbig2Exception)
-            {
-                unsupported++;
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                failures.Add($"{Path.GetFileName(file)}: {ex.GetType().Name}");
-            }
-        }
-
-        _output.WriteLine($"JBIG2 Summary: {success} success, {unsupported} unsupported, {failed} failed out of {files.Count} files");
-        _output.WriteLine($"Success rate: {100.0 * success / files.Count:F1}%");
-
-        foreach (string f in failures.Take(10))
-            _output.WriteLine($"  Failed: {f}");
-
-        Assert.True(success > files.Count * 0.5, "At least 50% of JBIG2 files should decode successfully");
-    }
 }

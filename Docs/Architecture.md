@@ -564,8 +564,8 @@ public class TextExtractorProcessor : PdfContentProcessor
 |---------|-------|
 | SkiaSharp | High-quality 2D graphics rendering |
 | SixLabors.ImageSharp | Image format handling |
-| Compressors.Lzw | LZW decompression |
-| Compressors.Ccitt | CCITT fax decompression |
-| Compressors.Jbig2 | JBIG2 decompression |
+| ImageLibrary | LZW and CCITT (Group 3/4) decompression, plus image containers (BMP/GIF/PNG/TGA/JP2/TIFF) |
+| ImageLibrary.Jbig2Decoder | JBIG2 decompression (ITU-T T.88, in-house pure C#) |
 | Compressors.Jpeg2000 | JPEG2000 decompression (uses Melville.CSJ2K - pure C# cross-platform) |
+| JpegLibrary | High-performance JPEG (DCTDecode) decompression |
 | Serilog | Logging infrastructure |

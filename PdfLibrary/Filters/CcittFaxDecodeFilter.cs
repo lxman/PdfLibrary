@@ -1,4 +1,4 @@
-using Compressors.Ccitt;
+using ImageLibrary.Compression.Ccitt;
 using Logging;
 
 namespace PdfLibrary.Filters;

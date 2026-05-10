@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jbig2Decoder.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      JBIG2 uses MMR for symbol-dictionary collective bitmaps and for MMR-coded
+      generic regions. Reuse the CCITT/MMR decoder shipped in ImageLibrary
+      rather than duplicating it.
+    -->
+    <ProjectReference Include="..\ImageLibrary\ImageLibrary.csproj" />
+  </ItemGroup>
+
+</Project>

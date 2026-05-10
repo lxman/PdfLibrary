@@ -512,6 +512,44 @@ public class PdfImage
     }
 
     /// <summary>
+    /// For images encoded with /JBIG2Decode, returns the JBIG2 bitstream bytes
+    /// (decrypted if necessary) and the resolved /JBIG2Globals byte sequence
+    /// (or null if the stream has no globals reference). Used by external tooling
+    /// (e.g. side-by-side decoder comparison harnesses) that needs the raw inputs
+    /// to pass through alternative JBIG2 decoders.
+    /// Returns false if this image is not JBIG2-encoded.
+    /// </summary>
+    public bool TryGetJbig2RawComponents(out byte[] streamData, out byte[]? globals)
+    {
+        streamData = Array.Empty<byte>();
+        globals = null;
+        if (!IsJbig2Filter()) return false;
+
+        byte[] data = _stream.Data;
+        if (_document?.Decryptor is not null && _stream.IsIndirect)
+            data = _document.Decryptor.Decrypt(data, _stream.ObjectNumber, _stream.GenerationNumber);
+        streamData = data;
+
+        if (_stream.Dictionary.TryGetValue(PdfName.DecodeParms, out PdfObject decodeParmObj) &&
+            decodeParmObj is PdfDictionary decodeParmDict &&
+            decodeParmDict.TryGetValue(new PdfName("JBIG2Globals"), out PdfObject? globalsObj))
+        {
+            if (globalsObj is PdfIndirectReference globalsRef && _document is not null)
+            {
+                PdfObject? resolved = _document.GetObject(globalsRef.ObjectNumber);
+                if (resolved is PdfStream globalsStream)
+                    globals = globalsStream.GetDecodedData(_document.Decryptor);
+            }
+            else if (globalsObj is PdfStream inlineGlobals)
+            {
+                globals = inlineGlobals.GetDecodedData(_document?.Decryptor);
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Gets the expected size of decoded data in bytes
     /// </summary>
     public int GetExpectedDataSize()

@@ -1,5 +1,5 @@
 using System.Text;
-using ImageLibrary.Png;
+using ImageLibrary.Container.Png;
 using Xunit;
 
 namespace PngCodec.Tests;

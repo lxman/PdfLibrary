@@ -361,9 +361,9 @@ public class PdfPage
                 var image = new PdfImage(xobject, _document);
                 images.Add(image);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Skip malformed images
+                PdfLogger.Log(LogCategory.Images, $"Skipped malformed image XObject: {ex.GetType().Name}: {ex.Message}");
             }
         }
 

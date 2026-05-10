@@ -1,15 +1,6 @@
 <Solution>
   <Folder Name="/Compressors/">
-    <Project Path="Compressors/Compressors.Ccitt.Tests/Compressors.Ccitt.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Ccitt/Compressors.Ccitt.csproj" />
-    <Project Path="Compressors/Compressors.Jbig2.Tests/Compressors.Jbig2.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Jbig2/Compressors.Jbig2.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg.Tests/Compressors.Jpeg.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg/Compressors.Jpeg.csproj" />
-    <Project Path="Compressors/Compressors.Jpeg2000.Tests/Compressors.Jpeg2000.Tests.csproj" />
     <Project Path="Compressors/Compressors.Jpeg2000/Compressors.Jpeg2000.csproj" />
-    <Project Path="Compressors/Compressors.Lzw.Tests/Compressors.Lzw.Tests.csproj" />
-    <Project Path="Compressors/Compressors.Lzw/Compressors.Lzw.csproj" />
   </Folder>
   <Folder Name="/Docs/">
     <File Path="CHANGELOG.md" />
@@ -34,12 +25,13 @@
   </Folder>
   <Folder Name="/ImageLibrary/">
     <Project Path="ImageLibrary/BmpCodec.Tests/BmpCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/Compression.Ccitt.Tests/Compression.Ccitt.Tests.csproj" />
+    <Project Path="ImageLibrary/Compression.Lzw.Tests/Compression.Lzw.Tests.csproj" />
     <Project Path="ImageLibrary/GifCodec.Tests/GifCodec.Tests.csproj" />
     <Project Path="ImageLibrary/ImageLibrary.IntegrationTests/ImageLibrary.IntegrationTests.csproj" />
     <Project Path="ImageLibrary/ImageLibrary/ImageLibrary.csproj" />
-    <Project Path="ImageLibrary/Jbig2Codec.Tests/Jbig2Codec.Tests.csproj" />
-    <Project Path="ImageLibrary/Jp2Codec.Tests/Jp2Codec.Tests.csproj" />
-    <Project Path="ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/Jbig2Decoder/Jbig2Decoder.csproj" />
+    <Project Path="ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj" />
     <Project Path="ImageLibrary/PngCodec.Tests/PngCodec.Tests.csproj" />
     <Project Path="ImageLibrary/TgaCodec.Tests/TgaCodec.Tests.csproj" />
   </Folder>

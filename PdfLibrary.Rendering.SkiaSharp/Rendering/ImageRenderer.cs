@@ -191,9 +191,9 @@ internal class ImageRenderer
 
                         return jp2Bitmap;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // Fall through to standard processing if manual decode fails
+                        PdfLogger.Log(LogCategory.Images, $"Manual JP2/JPEG decode failed, falling back to standard processing: {ex.GetType().Name}: {ex.Message}");
                     }
                 }
             }

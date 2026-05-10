@@ -1004,7 +1004,7 @@ public class StreamFilterTests
 
     #region JBIG2Decode Tests
 
-    // Note: Comprehensive JBIG2 codec tests are in Compressors.Jbig2.Tests
+    // Note: Comprehensive JBIG2 codec tests are in ImageLibrary/Jbig2Decoder.Tests
     // These tests focus on the PdfLibrary filter wrapper interface
 
     [Fact]

@@ -42,13 +42,16 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
 PDF/
 ├── PdfLibrary/                       # Core library
 │   ├── Document/                     # PDF document model
+│   ├── Structure/                    # PDF structure (xref, trailer, objects)
+│   ├── Parsing/                      # PDF lexer/parser
 │   ├── Content/                      # Content stream processing
+│   ├── Filters/                      # Stream decode filters (Flate, JBIG2Decode, etc.)
 │   ├── Rendering/                    # Rendering pipeline
 │   ├── Builder/                      # Fluent API for PDF creation
 │   ├── Fonts/                        # Font handling
-│   ├── Images/                       # Image decompression
-│   ├── ColorSpaces/                  # Color space support
-│   ├── Parsing/                      # PDF parsing (lexer, parser)
+│   ├── Functions/                    # PDF function objects
+│   ├── Fixups/                       # Per-document corrective passes
+│   ├── Core/                         # Primitive types
 │   └── Security/                     # Encryption/decryption
 ├── PdfLibrary.Rendering.SkiaSharp/   # SkiaSharp render target
 ├── PdfLibrary.Tests/                 # Unit tests
@@ -56,17 +59,21 @@ PDF/
 ├── PdfLibrary.Wpf.Viewer/            # WPF PDF viewer application
 ├── PdfLibrary.Utilities/             # Utility applications
 │   └── ImageUtility/                 # Image format viewer with codec system
-├── Compressors/                      # Custom image decompression libraries
-│   ├── Compressors.Lzw/              # LZW decompression
-│   │   └── Compressors.Lzw.Tests/
-│   ├── Compressors.Ccitt/            # CCITT fax (Group 3/4)
-│   │   └── Compressors.Ccitt.Tests/
-│   ├── Compressors.Jbig2/            # JBIG2 decompression
-│   │   └── Compressors.Jbig2.Tests/
-│   ├── Compressors.Jpeg/             # JPEG (DCT) decompression
-│   │   └── Compressors.Jpeg.Tests/
-│   └── Compressors.Jpeg2000/         # JPEG2000 (legacy)
-│       └── Compressors.Jpeg2000.Tests/
+├── PdfLibrary.Examples/              # Standalone usage samples
+├── ImageLibrary/                     # Pure-C# image format library
+│   ├── ImageLibrary/                 # Core: Compression/{Ccitt,Lzw}, Container/{Bmp,Gif,Jp2,Png,Tga,Tiff}
+│   ├── Jbig2Decoder/                 # JBIG2 decoder (ITU-T T.88)
+│   ├── Jbig2Decoder.Tests/
+│   ├── Compression.Ccitt.Tests/
+│   ├── Compression.Lzw.Tests/
+│   ├── BmpCodec.Tests/
+│   ├── GifCodec.Tests/
+│   ├── PngCodec.Tests/
+│   ├── TgaCodec.Tests/
+│   └── ImageLibrary.IntegrationTests/
+├── Compressors/                      # Standalone codec libraries
+│   └── Compressors.Jpeg2000/         # JPEG2000 (Melville.CSJ2K)
+├── JpegLibrary/                      # High-performance JPEG decompression
 ├── FontParser/                       # TrueType/OpenType parsing
 ├── Logging/                          # Logging infrastructure
 └── Docs/                             # Documentation
@@ -179,14 +186,15 @@ foreach (var block in textBlocks)
 PdfLibrary uses custom-built, high-performance decompression libraries for all PDF image formats. These are **pure C# implementations** with no external dependencies:
 
 ### Custom Decompressors
-- **Compressors.Jpeg** - DCTDecode filter with full baseline and progressive JPEG support
-- **Compressors.Jpeg2000** - JPXDecode filter based on CSJ2K for JP2 and J2K codestreams
-- **Compressors.Ccitt** - CCITTFaxDecode filter supporting Group 3 (1D, 2D) and Group 4
-- **Compressors.Jbig2** - JBIG2Decode filter for monochrome document compression
-- **Compressors.Lzw** - LZWDecode filter with support for Early Change optimization
+- **JpegLibrary** - DCTDecode filter (high-performance fork) for baseline and progressive JPEG
+- **Compressors.Jpeg2000** - JPXDecode filter (Melville.CSJ2K) for JP2 and J2K codestreams
+- **ImageLibrary.Compression.Ccitt** - CCITTFaxDecode filter (Group 3 1D/2D and Group 4)
+- **ImageLibrary.Jbig2Decoder** - JBIG2Decode filter for monochrome document compression (ITU-T T.88, used directly by `PdfLibrary.Filters.Jbig2DecodeFilter`)
+- **ImageLibrary.Compression.Lzw** - LZWDecode filter with Early Change support
+- **PdfLibrary.Filters.FlateDecodeFilter** - FlateDecode (DEFLATE) using `System.IO.Compression`
 
 ### Integration
-The core library uses **JpegLibrary** (a high-performance fork) for JPEG images embedded in PDFs. The custom Compressors.Jpeg library is available for standalone image processing and is used in utility applications.
+PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF filter parameters onto the underlying codec library and returns decoded bytes in the layout the renderer expects. Image containers (BMP/GIF/PNG/TGA/JP2/TIFF) live in `ImageLibrary` and are used by the standalone `ImageUtility` application; PDF rendering only consumes the codec layer (CCITT, LZW, JBIG2, JPEG, JPEG2000).
 
 ## Requirements
 
@@ -197,10 +205,9 @@ The core library uses **JpegLibrary** (a high-performance fork) for JPEG images 
 - **Serilog** - Structured logging
 - **Unicolour** - Advanced color space transformations
 - **JpegLibrary** - High-performance JPEG decompression for PDF images
-- **Custom Image Decompression Libraries**:
-  - Compressors.Lzw - LZW decompression
-  - Compressors.Ccitt - CCITT Group 3/4 fax
-  - Compressors.Jbig2 - JBIG2 monochrome compression
+- **In-tree codec libraries**:
+  - ImageLibrary - LZW, CCITT (Group 3/4), and image container formats
+  - ImageLibrary.Jbig2Decoder - JBIG2 monochrome compression (ITU-T T.88)
   - Compressors.Jpeg2000 - JPEG2000 (JP2/J2K) support
 
 **Note**: ImageSharp is NOT a dependency of the core library. It is only used in utility applications for general image format support (PNG, BMP, GIF, TIFF, WebP, etc.).
