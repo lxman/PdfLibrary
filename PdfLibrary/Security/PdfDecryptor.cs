@@ -270,24 +270,11 @@ internal class PdfDecryptor
     }
 
     /// <summary>
-    /// Computes hash for V=5 password validation.
-    /// ISO 32000-2:2020 Algorithm 2.B
+    /// Computes hash for V=5 password validation. Delegates to <see cref="AesV5Hash.Compute"/>
+    /// so the encrypt and decrypt sides share one implementation.
     /// </summary>
     private static byte[] ComputeHashV5(byte[] password, byte[] salt, byte[]? userKey)
-    {
-        // Initial hash: SHA-256(password || salt || userKey)
-        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        sha256.AppendData(password);
-        sha256.AppendData(salt);
-        if (userKey != null)
-            sha256.AppendData(userKey);
-
-        byte[] k = sha256.GetHashAndReset();
-
-        // For R=6, perform additional rounds
-        // (Simplified version - full implementation needs 64+ rounds with AES)
-        return k[..32];
-    }
+        => AesV5Hash.Compute(password, salt, userKey);
 
     /// <summary>
     /// Prepends a zero IV for AES decryption of UE/OE values.

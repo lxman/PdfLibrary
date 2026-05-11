@@ -461,68 +461,11 @@ internal class PdfEncryptor
     }
 
     /// <summary>
-    /// Computes hash for V=5 using Algorithm 2.B (simplified for R=6).
+    /// Computes hash for V=5 using Algorithm 2.B. Delegates to <see cref="AesV5Hash.Compute"/>
+    /// so the encrypt and decrypt sides share one implementation.
     /// </summary>
     private static byte[] ComputeHashV5(byte[] password, byte[] salt, byte[]? userKey)
-    {
-        // For R=6, use the extended hash algorithm
-        // Simplified implementation - concatenate and SHA-256
-        using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        sha256.AppendData(password);
-        sha256.AppendData(salt);
-        if (userKey != null)
-            sha256.AppendData(userKey);
-
-        byte[] k = sha256.GetHashAndReset();
-
-        // R=6 requires additional rounds with AES-CBC
-        // Full implementation of Algorithm 2.B
-        var round = 0;
-        while (round < 64 || round < k[^1] + 32)
-        {
-            // K1 = password + K + userKey (repeated 64 times)
-            int k1Size = password.Length + k.Length + (userKey?.Length ?? 0);
-            var k1 = new byte[k1Size * 64];
-            for (var i = 0; i < 64; i++)
-            {
-                int offset = i * k1Size;
-                Array.Copy(password, 0, k1, offset, password.Length);
-                Array.Copy(k, 0, k1, offset + password.Length, k.Length);
-                if (userKey != null)
-                    Array.Copy(userKey, 0, k1, offset + password.Length + k.Length, userKey.Length);
-            }
-
-            // AES-CBC encrypt K1 with key=K[0:16], IV=K[16:32]
-            var aesKey = new byte[16];
-            var aesIv = new byte[16];
-            Array.Copy(k, 0, aesKey, 0, 16);
-            Array.Copy(k, 16, aesIv, 0, 16);
-
-            byte[] e = AesCipher.EncryptNoPrependIV(aesKey, k1, aesIv);
-
-            // Take first 16 bytes of E as big-endian number mod 3
-            var sum = 0;
-            for (var i = 0; i < 16; i++)
-            {
-                sum += e[i];
-            }
-
-            // Hash with appropriate algorithm
-            k = (sum % 3) switch
-            {
-                0 => SHA256.HashData(e),
-                1 => SHA384.HashData(e),
-                _ => SHA512.HashData(e)
-            };
-
-            round++;
-        }
-
-        // Return first 32 bytes
-        var result = new byte[32];
-        Array.Copy(k, result, 32);
-        return result;
-    }
+        => AesV5Hash.Compute(password, salt, userKey);
 
     /// <summary>
     /// Computes the Perms value for V=5.
