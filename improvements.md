@@ -1,34 +1,22 @@
 # PdfLibrary Improvements
 
-Working notes on issues, gaps, and refactor opportunities. Scoped to in-house code — `JpegLibrary/` is vendored upstream and excluded except where it intersects replacement work; `Compressors.Jpeg2000`'s `Melville.CSJ2K` dependency is also tracked here as a replacement target.
+Working notes on issues, gaps, and refactor opportunities. Scoped to in-house code. `Compressors.Jpeg2000`'s `Melville.CSJ2K` dependency is the remaining third-party codec tracked here as a replacement target.
 
-Project size (in-house, excluding `JpegLibrary/`): ~96K LOC across 877 source files. Top-level: PdfLibrary, PdfLibrary.Rendering.SkiaSharp, PdfLibrary.Tests, PdfLibrary.Integration, PdfLibrary.Wpf.Viewer, PdfLibrary.Utilities/ImageUtility, PdfLibrary.Examples/*, ImageLibrary (+ codec sub-projects, including `Jbig2Decoder`), Compressors/Compressors.Jpeg2000, FontParser, Logging.
+Project size (in-house): ~96K LOC. Top-level: PdfLibrary, PdfLibrary.Rendering.SkiaSharp, PdfLibrary.Tests, PdfLibrary.Integration, PdfLibrary.Wpf.Viewer, PdfLibrary.Utilities/ImageUtility, PdfLibrary.Examples/*, ImageLibrary (per-codec subprojects: BmpCodec, CcittCodec, GifCodec, Jbig2Decoder, JpegCodec, LzwCodec, PngCodec, TgaCodec, TiffCodec), Compressors/Compressors.Jpeg2000, FontParser, Logging.
 
 ---
 
 ## 1. Third-party decoder replacement (primary objective)
 
-Two outstanding third-party decoder dependencies, both replacements deferred until after the next NuGet release:
+### 1a. JpegLibrary — ✅ DONE
 
-### 1a. JpegLibrary (vendored source fork)
+Vendored `JpegLibrary/` submodule has been removed. The in-house `ImageLibrary/JpegCodec` (baseline + progressive, encode + decode) replaces it and is integrated directly at:
 
-Currently vendored at `JpegLibrary/src/JpegLibrary/`, used for `/DCTDecode`. Earlier plans referenced a `Compressors/Compressors.Jpeg/` wrapper as the seam to swap — that wrapper has since been deleted. The replacement should follow the **JBIG2 pattern** instead: write the new decoder, integrate directly in `PdfLibrary/Filters/DctDecodeFilter.cs` (no wrapper layer), then delete the vendored tree.
+- `PdfLibrary/Filters/DctDecodeFilter.cs` — `/DCTDecode` (no wrapper layer, JBIG2 pattern)
+- `PdfLibrary.Rendering.SkiaSharp/Rendering/ImageRenderer.cs` — manual JPEG decode fallback
+- `ImageLibrary/TiffCodec/TiffDecoder.cs` — TIFF JPEG sub-format
 
-Integration points:
-
-| Site | Role |
-|---|---|
-| `PdfLibrary/Filters/DctDecodeFilter.cs` | `/DCTDecode` filter |
-| `PdfLibrary.Rendering.SkiaSharp/Rendering/ImageRenderer.cs` | Manual JPEG decode fallback path (now logs failures — see §3) |
-| `ImageLibrary/ImageLibrary/Container/Tiff/TiffDecoder.cs` | TIFF JPEG sub-format |
-
-Suggested sequence:
-
-1. Inventory every `JpegLibrary` API actually called from PdfLibrary's filter and ImageLibrary's TIFF decoder (small list — wrapper-free integration narrows the surface).
-2. Write the new decoder against that contract.
-3. Run `PdfLibrary.Tests` filtered to JPEG fixtures (`StreamFilterTests`, `ImageRendererTests`) plus `JpegCodec.Tests` if added.
-4. Visual-diff against `mutool draw` output for sample PDFs containing JPEG images (the `wsl bash -c "mutool draw …"` pattern from `CLAUDE.md`).
-5. Once parity is confirmed, delete `JpegLibrary/` from the tree and update `PdfLibrary.slnx`.
+The `JpegLibraryAdapter` wrapper has also been deleted. Test coverage lives in `ImageLibrary/JpegCodec.Tests/`.
 
 ### 1b. Melville.CSJ2K (NuGet, transitive via Compressors.Jpeg2000)
 
@@ -95,7 +83,7 @@ Listed in priority order. Each fights you on every change to the affected area. 
 | `PdfLibrary/Rendering/PdfRenderer.cs` | 1,700 | Separate `ResourceResolver` and `OperatorDispatcher` from rendering orchestration |
 | `PdfLibrary/Fonts/Type1Font.cs` | 1,328 | Already self-contained; consider extracting `Type1CharStringInterpreter` |
 | `PdfLibrary/Fonts/Embedded/EmbeddedFontMetrics.cs` | 1,203 | Static metrics tables — could be data files (JSON/binary) loaded at startup |
-| `ImageLibrary/ImageLibrary/Container/Tiff/TiffDecoder.cs` | 1,120 | Per-compression strategy classes (LZW, CCITT, JPEG already separate libraries) |
+| `ImageLibrary/TiffCodec/TiffDecoder.cs` | 1,120 | Per-compression strategy classes (LZW, CCITT, JPEG already separate libraries) |
 | `PdfLibrary.Rendering.SkiaSharp/Rendering/TextRenderer.cs` | 1,003 | Glyph extraction vs. layout vs. paint |
 | `FontParser/Tables/Cff/CharStringParser.cs` | 1,013 | OK as-is given CFF spec complexity, but `CFF2` extension belongs in a sibling file |
 
@@ -115,8 +103,9 @@ Listed in priority order. Each fights you on every change to the affected area. 
 Codec-level test coverage is healthier:
 
 - `Jbig2Decoder.Tests`: **173 tests** (61 unit + 5 real-world PDF stream regressions + 107 golden-image corpus tests against the Nico Weber jbig2-tests-pdf set)
-- `Compression.Ccitt.Tests`: 59 tests
-- `Compression.Lzw.Tests`: 18 tests
+- `CcittCodec.Tests`: 59 tests
+- `LzwCodec.Tests`: 18 tests
+- `JpegCodec.Tests`: corpus + segment + decode + encode coverage for the in-house JPEG codec
 - `BmpCodec.Tests` / `GifCodec.Tests` / `PngCodec.Tests` / `TgaCodec.Tests`: 18-27 each
 - `ImageLibrary.IntegrationTests`: 31 tests
 
@@ -167,11 +156,10 @@ Worth doing a sweep with `Grep -nE "TODO|FIXME|HACK"` and converting durable TOD
 ## Suggested ordering
 
 1. **NuGet release** — checkpoint current state before further work (the user-stated immediate next step)
-2. **JpegLibrary replacement** — long-running primary objective; the deleted-wrapper precedent (JBIG2) gives a known-good integration pattern
-3. **Melville.CSJ2K replacement** — addresses the JPEG2000 render latency issue and removes the last third-party codec NuGet
-4. **`PdfLibrary` nullable warning cleanup** — ~240 warnings, mechanical, durable correctness benefit
-5. **Embedded Type1 + CFF extraction** — biggest correctness gap that affects text on real PDFs (parsers already exist)
-6. **CalRGB/CalGray transforms** — correctness, smaller scope than fonts
-7. **`PdfDocumentWriter` split** — unlocks future builder work
-8. **`PdfRenderer` split** — unlocks future rendering work
-9. **Test suite expansion** — ongoing, can be folded into other items
+2. **Melville.CSJ2K replacement** — addresses the JPEG2000 render latency issue and removes the last third-party codec NuGet
+3. **`PdfLibrary` nullable warning cleanup** — ~240 warnings, mechanical, durable correctness benefit
+4. **Embedded Type1 + CFF extraction** — biggest correctness gap that affects text on real PDFs (parsers already exist)
+5. **CalRGB/CalGray transforms** — correctness, smaller scope than fonts
+6. **`PdfDocumentWriter` split** — unlocks future builder work
+7. **`PdfRenderer` split** — unlocks future rendering work
+8. **Test suite expansion** — ongoing, can be folded into other items

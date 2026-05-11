@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **In-house JPEG codec** (`ImageLibrary/JpegCodec`) — pure C# baseline + progressive JPEG encoder and decoder; replaces the vendored `JpegLibrary` git submodule. Used by `PdfLibrary.Filters.DctDecodeFilter` and `ImageLibrary.TiffCodec` for TIFF's JPEG sub-format.
+
+### Changed
+- **ImageLibrary reorganized into per-codec projects.** The monolithic `ImageLibrary/ImageLibrary` project has been split. Each codec now lives in its own project under `ImageLibrary/`:
+  - `ImageLibrary/CcittCodec` (was `ImageLibrary/ImageLibrary/Compression/Ccitt`)
+  - `ImageLibrary/LzwCodec` (was `ImageLibrary/ImageLibrary/Compression/Lzw`)
+  - `ImageLibrary/JpegCodec` (new, replaces `JpegLibrary` submodule)
+  - `ImageLibrary/BmpCodec` (was `ImageLibrary/ImageLibrary/Container/Bmp`)
+  - `ImageLibrary/GifCodec` (was `ImageLibrary/ImageLibrary/Container/Gif`)
+  - `ImageLibrary/PngCodec` (was `ImageLibrary/ImageLibrary/Container/Png`)
+  - `ImageLibrary/TgaCodec` (was `ImageLibrary/ImageLibrary/Container/Tga`)
+  - `ImageLibrary/TiffCodec` (was `ImageLibrary/ImageLibrary/Container/Tiff`)
+  - `ImageLibrary/Jbig2Decoder` (unchanged)
+- Test projects renamed accordingly: `Compression.Ccitt.Tests` → `CcittCodec.Tests`, `Compression.Lzw.Tests` → `LzwCodec.Tests`.
+- The `Container/Jp2` decoder has been removed from `ImageLibrary`. JPEG2000 decoding is provided exclusively by `Compressors/Compressors.Jpeg2000` (wrapping `Melville.CSJ2K`) via the `/JPXDecode` filter.
+
+### Removed
+- **`JpegLibrary` git submodule.** The vendored `JpegLibrary` fork has been removed from the tree; cloning no longer requires `--recurse-submodules`. The `PdfLibrary.Filters.JpegLibraryAdapter` wrapper has also been deleted — `DctDecodeFilter` now uses `ImageLibrary.JpegCodec` directly.
+- Removed the legacy aggregated `ImageLibrary.ImageLibrary` project; consumers should reference the specific codec project(s) they need.
+
 ## [0.0.10-beta] - 2025-01-13
 
 ### Added

@@ -19,7 +19,8 @@ This document describes the internal architecture of PdfLibrary, providing an ov
 │   Filters    │    Fonts     │   Security   │     Functions      │
 ├──────────────┴──────────────┴──────────────┴────────────────────┤
 │                      External Dependencies                       │
-│  SkiaSharp  │  ImageSharp  │  Compressors (LZW, CCITT, etc.)   │
+│  SkiaSharp  │  Unicolour  │  In-tree codecs (JpegCodec, LzwCodec,│
+│             │             │  CcittCodec, Jbig2Decoder, JP2)      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -560,12 +561,25 @@ public class TextExtractorProcessor : PdfContentProcessor
 
 ## External Dependencies
 
+### NuGet packages
+
 | Package | Usage |
 |---------|-------|
-| SkiaSharp | High-quality 2D graphics rendering |
-| SixLabors.ImageSharp | Image format handling |
-| ImageLibrary | LZW and CCITT (Group 3/4) decompression, plus image containers (BMP/GIF/PNG/TGA/JP2/TIFF) |
-| ImageLibrary.Jbig2Decoder | JBIG2 decompression (ITU-T T.88, in-house pure C#) |
-| Compressors.Jpeg2000 | JPEG2000 decompression (uses Melville.CSJ2K - pure C# cross-platform) |
-| JpegLibrary | High-performance JPEG (DCTDecode) decompression |
+| SkiaSharp | High-quality 2D graphics rendering (consumed by `PdfLibrary.Rendering.SkiaSharp`) |
+| Wacton.Unicolour | Color space transformations (CalGray/CalRGB/Lab/ICC) |
 | Serilog | Logging infrastructure |
+| Melville.CSJ2K | JPEG2000 codestream decoder (wrapped by `Compressors.Jpeg2000`) |
+| SixLabors.ImageSharp | Used **only** by the `ImageUtility` viewer for general image format support — not a dependency of `PdfLibrary` itself |
+
+### In-tree codec projects
+
+Each codec is its own project under `ImageLibrary/` (or `Compressors/`). The PDF filters in `PdfLibrary/Filters/` are thin adapters over these.
+
+| Project | PDF filter | Notes |
+|---------|------------|-------|
+| `ImageLibrary/JpegCodec` | `/DCTDecode` | In-house baseline + progressive JPEG (encode + decode) |
+| `ImageLibrary/LzwCodec` | `/LZWDecode` | Early Change parameter supported |
+| `ImageLibrary/CcittCodec` | `/CCITTFaxDecode` | Group 3 1D/2D and Group 4 |
+| `ImageLibrary/Jbig2Decoder` | `/JBIG2Decode` | ITU-T T.88; used directly by `PdfLibrary.Filters.Jbig2DecodeFilter` |
+| `Compressors/Compressors.Jpeg2000` | `/JPXDecode` | Wraps `Melville.CSJ2K` |
+| `ImageLibrary/BmpCodec`, `GifCodec`, `PngCodec`, `TgaCodec`, `TiffCodec` | — | Image container codecs (consumed by `ImageUtility`, not by `PdfLibrary`) |
