@@ -59,7 +59,7 @@ namespace FontParser.Tables.Cmap.SubTables
                 IdRangeOffsets.Add(reader.ReadUShort());
             }
 
-            uint remainingBytes = length - 16 - (SegCountX2 * 4);
+            uint remainingBytes = length - 16 - SegCountX2 * 4;
             for (var i = 0; i < remainingBytes / 2; i++)
             {
                 GlyphIdArray.Add(reader.ReadUShort());

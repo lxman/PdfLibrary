@@ -33,11 +33,11 @@ try
     Console.WriteLine($"PDF loaded successfully");
     Console.WriteLine($"Total pages: {document.PageCount}\n");
 
-    int totalImages = 0;
-    int savedImages = 0;
+    var totalImages = 0;
+    var savedImages = 0;
 
     // Process each page (0-based indexing)
-    for (int pageIndex = 0; pageIndex < document.PageCount; pageIndex++)
+    for (var pageIndex = 0; pageIndex < document.PageCount; pageIndex++)
     {
         int pageNum = pageIndex + 1; // For display purposes
         var page = document.GetPage(pageIndex);
@@ -56,7 +56,7 @@ try
             totalImages += images.Count;
 
             // Extract each image
-            for (int imgNum = 0; imgNum < images.Count; imgNum++)
+            for (var imgNum = 0; imgNum < images.Count; imgNum++)
             {
                 var image = images[imgNum];
 
@@ -64,7 +64,7 @@ try
                 {
                     // Determine output format based on filters
                     string extension = DetermineExtension(image);
-                    string filename = $"page{pageNum}_img{imgNum + 1}{extension}";
+                    var filename = $"page{pageNum}_img{imgNum + 1}{extension}";
                     string outputPath = Path.Combine(outputDir, filename);
 
                     // Get image data
@@ -149,8 +149,8 @@ static string DetermineExtension(PdfImage image)
 
 static string FormatBytes(long bytes)
 {
-    string[] suffixes = { "B", "KB", "MB", "GB" };
-    int suffixIndex = 0;
+    string[] suffixes = ["B", "KB", "MB", "GB"];
+    var suffixIndex = 0;
     double size = bytes;
 
     while (size >= 1024 && suffixIndex < suffixes.Length - 1)

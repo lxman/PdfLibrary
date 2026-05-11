@@ -25,8 +25,8 @@ namespace ImageLibrary.Compression.Ccitt
 
         // White terminating codes (run lengths 0-63)
         // Format: code bits read MSB first
-        public static readonly HuffmanCode[] WhiteTerminatingCodes = new HuffmanCode[]
-        {
+        public static readonly HuffmanCode[] WhiteTerminatingCodes =
+        [
             new HuffmanCode(0b00110101, 8),   // 0
             new HuffmanCode(0b000111, 6),     // 1
             new HuffmanCode(0b0111, 4),       // 2
@@ -90,12 +90,12 @@ namespace ImageLibrary.Compression.Ccitt
             new HuffmanCode(0b01001011, 8),   // 60
             new HuffmanCode(0b00110010, 8),   // 61
             new HuffmanCode(0b00110011, 8),   // 62
-            new HuffmanCode(0b00110100, 8),   // 63
-        };
+            new HuffmanCode(0b00110100, 8) // 63
+        ];
 
         // Black terminating codes (run lengths 0-63)
-        public static readonly HuffmanCode[] BlackTerminatingCodes = new HuffmanCode[]
-        {
+        public static readonly HuffmanCode[] BlackTerminatingCodes =
+        [
             new HuffmanCode(0b0000110111, 10),  // 0
             new HuffmanCode(0b010, 3),          // 1
             new HuffmanCode(0b11, 2),           // 2
@@ -159,13 +159,13 @@ namespace ImageLibrary.Compression.Ccitt
             new HuffmanCode(0b000000101100, 12), // 60
             new HuffmanCode(0b000001011010, 12), // 61
             new HuffmanCode(0b000001100110, 12), // 62
-            new HuffmanCode(0b000001100111, 12), // 63
-        };
+            new HuffmanCode(0b000001100111, 12) // 63
+        ];
 
         // White makeup codes (run lengths 64, 128, 192, ... 1728)
         // Index 0 = 64, index 1 = 128, etc.
-        public static readonly HuffmanCode[] WhiteMakeupCodes = new HuffmanCode[]
-        {
+        public static readonly HuffmanCode[] WhiteMakeupCodes =
+        [
             new HuffmanCode(0b11011, 5),       // 64
             new HuffmanCode(0b10010, 5),       // 128
             new HuffmanCode(0b010111, 6),      // 192
@@ -192,12 +192,12 @@ namespace ImageLibrary.Compression.Ccitt
             new HuffmanCode(0b010011001, 9),   // 1536
             new HuffmanCode(0b010011010, 9),   // 1600
             new HuffmanCode(0b011000, 6),      // 1664
-            new HuffmanCode(0b010011011, 9),   // 1728
-        };
+            new HuffmanCode(0b010011011, 9) // 1728
+        ];
 
         // Black makeup codes (run lengths 64, 128, 192, ... 1728)
-        public static readonly HuffmanCode[] BlackMakeupCodes = new HuffmanCode[]
-        {
+        public static readonly HuffmanCode[] BlackMakeupCodes =
+        [
             new HuffmanCode(0b0000001111, 10),    // 64
             new HuffmanCode(0b000011001000, 12),  // 128
             new HuffmanCode(0b000011001001, 12),  // 192
@@ -224,13 +224,13 @@ namespace ImageLibrary.Compression.Ccitt
             new HuffmanCode(0b0000001011010, 13), // 1536
             new HuffmanCode(0b0000001011011, 13), // 1600
             new HuffmanCode(0b0000001100100, 13), // 1664
-            new HuffmanCode(0b0000001100101, 13), // 1728
-        };
+            new HuffmanCode(0b0000001100101, 13) // 1728
+        ];
 
         // Extended makeup codes (run lengths 1792-2560, shared for both white and black)
         // Index 0 = 1792, index 1 = 1856, etc.
-        public static readonly HuffmanCode[] ExtendedMakeupCodes = new HuffmanCode[]
-        {
+        public static readonly HuffmanCode[] ExtendedMakeupCodes =
+        [
             new HuffmanCode(0b00000001000, 11),   // 1792
             new HuffmanCode(0b00000001100, 11),   // 1856
             new HuffmanCode(0b00000001101, 11),   // 1920
@@ -243,8 +243,8 @@ namespace ImageLibrary.Compression.Ccitt
             new HuffmanCode(0b000000011100, 12),  // 2368
             new HuffmanCode(0b000000011101, 12),  // 2432
             new HuffmanCode(0b000000011110, 12),  // 2496
-            new HuffmanCode(0b000000011111, 12),  // 2560
-        };
+            new HuffmanCode(0b000000011111, 12) // 2560
+        ];
 
         /// <summary>
         /// Gets the Huffman code for a given run length.
@@ -277,14 +277,14 @@ namespace ImageLibrary.Compression.Ccitt
                 if (extendedIndex < ExtendedMakeupCodes.Length)
                 {
                     makeupCode = ExtendedMakeupCodes[extendedIndex];
-                    remaining -= 1792 + (extendedIndex * 64);
+                    remaining -= 1792 + extendedIndex * 64;
                 }
             }
 
             // Handle standard makeup codes (64-1728)
             if (remaining >= 64 && remaining <= CcittConstants.MaxStandardMakeupRunLength)
             {
-                int makeupIndex = (remaining / 64) - 1;
+                int makeupIndex = remaining / 64 - 1;
                 var makeupCodes = isWhite ? WhiteMakeupCodes : BlackMakeupCodes;
                 if (makeupIndex < makeupCodes.Length)
                 {

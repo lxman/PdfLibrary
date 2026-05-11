@@ -30,8 +30,8 @@ namespace Jbig2Decoder.Huffman
             bool htOob = (flags & 0x01) != 0;
             int htps = ((flags >> 1) & 0x07) + 1;
             int htrs = ((flags >> 4) & 0x07) + 1;
-            int htLow  = (int)BigEndianI32(data, offset + 1);
-            int htHigh = (int)BigEndianI32(data, offset + 5);
+            var htLow  = (int)BigEndianI32(data, offset + 1);
+            var htHigh = (int)BigEndianI32(data, offset + 5);
 
             if (htLow >= htHigh)
                 throw new InvalidOperationException(
@@ -50,8 +50,8 @@ namespace Jbig2Decoder.Huffman
             {
                 if (bitsRead + htps + htrs > linesBitLen)
                     throw new InvalidOperationException("Huffman table segment truncated mid-range-line");
-                int prefLen = (int)reader.ReadBits(htps);
-                int rangeLen = (int)reader.ReadBits(htrs);
+                var prefLen = (int)reader.ReadBits(htps);
+                var rangeLen = (int)reader.ReadBits(htrs);
                 bitsRead += htps + htrs;
                 lines.Add(new HuffmanLine(prefLen, rangeLen, curRangeLow));
                 if (rangeLen >= 31)
@@ -63,14 +63,14 @@ namespace Jbig2Decoder.Huffman
             // LOWER line.
             if (bitsRead + htps > linesBitLen)
                 throw new InvalidOperationException("Huffman table segment truncated before LOWER line");
-            int lowerPrefLen = (int)reader.ReadBits(htps);
+            var lowerPrefLen = (int)reader.ReadBits(htps);
             bitsRead += htps;
             lines.Add(new HuffmanLine(lowerPrefLen, 32, htLow - 1));
 
             // UPPER line.
             if (bitsRead + htps > linesBitLen)
                 throw new InvalidOperationException("Huffman table segment truncated before UPPER line");
-            int upperPrefLen = (int)reader.ReadBits(htps);
+            var upperPrefLen = (int)reader.ReadBits(htps);
             bitsRead += htps;
             lines.Add(new HuffmanLine(upperPrefLen, 32, htHigh));
 
@@ -79,7 +79,7 @@ namespace Jbig2Decoder.Huffman
             {
                 if (bitsRead + htps > linesBitLen)
                     throw new InvalidOperationException("Huffman table segment truncated before OOB line");
-                int oobPrefLen = (int)reader.ReadBits(htps);
+                var oobPrefLen = (int)reader.ReadBits(htps);
                 lines.Add(new HuffmanLine(oobPrefLen, 0, 0));
             }
 

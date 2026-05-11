@@ -182,7 +182,7 @@ internal class EbcotDecoder : ITier1Decoder
     internal static (int ctx, int xorBit) GetSignContext(int hc, int vc)
     {
         // hc, vc are -1, 0, or +1
-        int idx = (hc + 1) * 3 + (vc + 1);
+        int idx = (hc + 1) * 3 + vc + 1;
         return SignContextLookup[idx];
     }
 }
@@ -336,7 +336,7 @@ internal class CodeBlockDecoder
         // - resetmask clears bits bp and below (preserves sign bit 31)
         // - setmask is the new midpoint at (bp-1)
         int setmask = (1 << bitPlane) >> 1;  // New midpoint = 2^(bp-1)
-        int resetmask = (-1) << (bitPlane + 1);  // Clears bits 0 through bitPlane
+        int resetmask = -1 << (bitPlane + 1);  // Clears bits 0 through bitPlane
 
         // Scan in vertical stripes (4 rows at a time)
         // Per spec: within stripe, columns left-to-right, within column top-to-bottom

@@ -57,13 +57,13 @@ public class ImageSharpCodec : IImageCodec
 
         int width = image.Width;
         int height = image.Height;
-        byte[] pixelData = new byte[width * height * 3]; // RGB24
+        var pixelData = new byte[width * height * 3]; // RGB24
 
         // Extract pixel data using indexer
-        int offset = 0;
-        for (int y = 0; y < height; y++)
+        var offset = 0;
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 var pixel = image[x, y];
                 pixelData[offset++] = pixel.R;
@@ -97,9 +97,9 @@ public class ImageSharpCodec : IImageCodec
             // Convert RGBA32 to RGB24
             var rgbaImage = Image.LoadPixelData<Rgba32>(imageData.Data, imageData.Width, imageData.Height);
             image = new Image<Rgb24>(imageData.Width, imageData.Height);
-            for (int y = 0; y < imageData.Height; y++)
+            for (var y = 0; y < imageData.Height; y++)
             {
-                for (int x = 0; x < imageData.Width; x++)
+                for (var x = 0; x < imageData.Width; x++)
                 {
                     var srcPixel = rgbaImage[x, y];
                     image[x, y] = new Rgb24(srcPixel.R, srcPixel.G, srcPixel.B);
@@ -127,7 +127,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "JPEG",
-            new[] { ".jpg", ".jpeg" },
+            [".jpg", ".jpeg"],
             JpegFormat.Instance,
             new JpegEncoder { Quality = 95 });
     }
@@ -136,7 +136,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "PNG",
-            new[] { ".png" },
+            [".png"],
             PngFormat.Instance,
             new PngEncoder());
     }
@@ -145,7 +145,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "BMP",
-            new[] { ".bmp" },
+            [".bmp"],
             BmpFormat.Instance,
             new BmpEncoder());
     }
@@ -154,7 +154,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "GIF",
-            new[] { ".gif" },
+            [".gif"],
             GifFormat.Instance,
             new GifEncoder());
     }
@@ -163,7 +163,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "TIFF",
-            new[] { ".tif", ".tiff" },
+            [".tif", ".tiff"],
             TiffFormat.Instance,
             new TiffEncoder());
     }
@@ -172,7 +172,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "TGA",
-            new[] { ".tga" },
+            [".tga"],
             TgaFormat.Instance,
             new TgaEncoder());
     }
@@ -181,7 +181,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "WebP",
-            new[] { ".webp" },
+            [".webp"],
             WebpFormat.Instance,
             new WebpEncoder());
     }
@@ -190,7 +190,7 @@ public class ImageSharpCodec : IImageCodec
     {
         return new ImageSharpCodec(
             "PBM",
-            new[] { ".pbm" },
+            [".pbm"],
             PbmFormat.Instance,
             new PbmEncoder());
     }

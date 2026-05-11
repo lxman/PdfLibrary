@@ -163,7 +163,7 @@ internal class ImageRenderer
             if (stream.Dictionary.TryGetValue(new PdfName("Filter"), out PdfObject? filterObj))
             {
                 // Handle both single filter and array of filters
-                List<string> filters = new();
+                List<string> filters = [];
                 if (filterObj is PdfName filterName)
                     filters.Add(filterName.Value);
                 else if (filterObj is PdfArray filterArray)
@@ -402,9 +402,9 @@ internal class ImageRenderer
                                         // Premultiply RGB by alpha for Premul alpha type
                                         if (hasSMask && alpha < 255)
                                         {
-                                            r = (byte)((r * alpha) / 255);
-                                            g = (byte)((g * alpha) / 255);
-                                            b = (byte)((b * alpha) / 255);
+                                            r = (byte)(r * alpha / 255);
+                                            g = (byte)(g * alpha / 255);
+                                            b = (byte)(b * alpha / 255);
                                         }
                                     }
 
@@ -422,7 +422,7 @@ internal class ImageRenderer
                                         // Premultiply gray by alpha for Premul alpha type
                                         if (hasSMask && alpha < 255)
                                         {
-                                            gray = (byte)((gray * alpha) / 255);
+                                            gray = (byte)(gray * alpha / 255);
                                         }
                                     }
 
@@ -513,7 +513,7 @@ internal class ImageRenderer
                         for (var row = 0; row < height; row++)
                         {
                             int srcOffset = row * expectedRowBytes;
-                            IntPtr dstOffset = bitmapPixels + (row * bitmap.RowBytes);
+                            IntPtr dstOffset = bitmapPixels + row * bitmap.RowBytes;
                             Marshal.Copy(pixelBuffer, srcOffset, dstOffset, expectedRowBytes);
                         }
                     }
@@ -662,7 +662,7 @@ internal class ImageRenderer
                                 pixelBuffer[dstOffset] = imageData[srcOffset];
                                 pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
                                 pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
-                                pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                                pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                             }
 
                             // Fill remaining pixels with transparent or white if data is incomplete
@@ -701,7 +701,7 @@ internal class ImageRenderer
                                 pixelBuffer[dstOffset] = gray;
                                 pixelBuffer[dstOffset + 1] = gray;
                                 pixelBuffer[dstOffset + 2] = gray;
-                                pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                                pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                             }
 
                             var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
@@ -738,7 +738,7 @@ internal class ImageRenderer
                                 pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
                                 pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
                                 pixelBuffer[dstOffset + 2] = (byte)((255 - yy) * (255 - k) / 255);
-                                pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                                pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                             }
 
                             var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
@@ -786,7 +786,7 @@ internal class ImageRenderer
                             pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
                             pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
                             pixelBuffer[dstOffset + 2] = (byte)((255 - y) * (255 - k) / 255);
-                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                            pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                         }
                     }
                     else if (imageData.Length >= expectedRgbSize)
@@ -803,7 +803,7 @@ internal class ImageRenderer
                             pixelBuffer[dstOffset] = imageData[srcOffset];
                             pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
                             pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
-                            pixelBuffer[dstOffset + 3] = (smaskData is not null && i < smaskData.Length) ? smaskData[i] : (byte)255;
+                            pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                         }
                     }
                     else

@@ -86,7 +86,7 @@ internal class Dequantizer : IDequantizer
                 {
                     int signMag = input.Coefficients[y, x];
                     // Extract quantized magnitude by shifting
-                    int magnitude = (signMag >= 0) ? (signMag >> shift) : ((signMag & 0x7FFFFFFF) >> shift);
+                    int magnitude = signMag >= 0 ? signMag >> shift : (signMag & 0x7FFFFFFF) >> shift;
                     bool negative = signMag < 0;
 
                     // Reconstruct: value = sign * (|q| + 0.5) * stepSize

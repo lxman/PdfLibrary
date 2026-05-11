@@ -20,7 +20,7 @@ public static class BmpEncoder
             throw new ArgumentException("Only 24-bit and 32-bit output supported", nameof(bitsPerPixel));
 
         int bytesPerPixel = bitsPerPixel / 8;
-        int stride = ((image.Width * bitsPerPixel + 31) / 32) * 4;
+        int stride = (image.Width * bitsPerPixel + 31) / 32 * 4;
         int pixelDataSize = stride * image.Height;
 
         int fileSize = BitmapFileHeader.Size + BitmapInfoHeader.Size + pixelDataSize;

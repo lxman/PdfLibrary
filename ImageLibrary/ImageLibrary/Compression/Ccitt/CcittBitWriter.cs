@@ -20,7 +20,7 @@ namespace ImageLibrary.Compression.Ccitt
         /// </summary>
         public CcittBitWriter()
         {
-            _data = new List<byte>();
+            _data = [];
             _currentByte = 0;
             _bitPosition = 0;
         }
@@ -28,7 +28,7 @@ namespace ImageLibrary.Compression.Ccitt
         /// <summary>
         /// Gets the current bit position in the stream.
         /// </summary>
-        public int Position => (_data.Count * 8) + _bitPosition;
+        public int Position => _data.Count * 8 + _bitPosition;
 
         /// <summary>
         /// Writes a single bit.
@@ -102,7 +102,7 @@ namespace ImageLibrary.Compression.Ccitt
         /// </summary>
         public void WriteRtc()
         {
-            for (int i = 0; i < CcittConstants.RtcEolCount; i++)
+            for (var i = 0; i < CcittConstants.RtcEolCount; i++)
             {
                 WriteEol();
             }

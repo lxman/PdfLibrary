@@ -237,7 +237,7 @@ public class PdfDocument : IDisposable
             if (i + 1 < objectCount)
             {
                 // Length is up to the next object
-                length = (offsets[i + 1] + firstOffset) - offset;
+                length = offsets[i + 1] + firstOffset - offset;
             }
             else
             {

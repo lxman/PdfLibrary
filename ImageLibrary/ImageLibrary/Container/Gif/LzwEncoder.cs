@@ -97,7 +97,7 @@ internal sealed class LzwEncoder
                     _codeTable[hashIndex] = _nextCode++;
 
                     // Increase code size if needed
-                    if (_nextCode > (1 << _codeSize) && _codeSize < MaxCodeSize)
+                    if (_nextCode > 1 << _codeSize && _codeSize < MaxCodeSize)
                     {
                         _codeSize++;
                     }

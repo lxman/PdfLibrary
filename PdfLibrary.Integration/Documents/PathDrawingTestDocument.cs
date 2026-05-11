@@ -125,7 +125,7 @@ public class PathDrawingTestDocument : ITestDocument
             for (var i = 0; i < 5; i++)
             {
                 double outerAngle = (i * 72 - 90) * Math.PI / 180;
-                double innerAngle = ((i * 72) + 36 - 90) * Math.PI / 180;
+                double innerAngle = (i * 72 + 36 - 90) * Math.PI / 180;
 
                 double ox = cx + outerR * Math.Cos(outerAngle);
                 double oy = cy + outerR * Math.Sin(outerAngle);
@@ -187,7 +187,7 @@ public class PathDrawingTestDocument : ITestDocument
             for (var i = 0; i < radii.Length; i++)
             {
                 double r = radii[i];
-                bool goingRight = (i % 2 == 0);
+                bool goingRight = i % 2 == 0;
 
                 // Center is offset from current position by the radius
                 double arcCx = currentX + (goingRight ? r : -r);

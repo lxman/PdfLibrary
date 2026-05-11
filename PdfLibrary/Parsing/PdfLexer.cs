@@ -159,7 +159,7 @@ internal class PdfLexer(Stream stream)
         while (count < 3 && TryPeek(out byte ch) && ch >= '0' && ch <= '7')
         {
             Read();
-            value = (value * 8) + (ch - '0');
+            value = value * 8 + (ch - '0');
             count++;
         }
 

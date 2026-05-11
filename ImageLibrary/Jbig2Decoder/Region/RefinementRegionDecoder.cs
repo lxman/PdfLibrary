@@ -70,7 +70,7 @@ namespace Jbig2Decoder.Region
             // disagreement is what makes most decoders fail the Nico Weber
             // SerenityOS test fixtures (bitmap-refine-template1-tpgron etc.).
             int sltpCtx = p.GrTemplate == 0 ? 0x100 : 0x80;
-            int ltp = 0;
+            var ltp = 0;
 
             for (var y = 0; y < grh; y++)
             {

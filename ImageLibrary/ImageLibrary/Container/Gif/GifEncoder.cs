@@ -243,7 +243,7 @@ public static class GifEncoder
     private static int GetColorBits(int colorTableSize)
     {
         var bits = 1;
-        while ((1 << bits) < colorTableSize)
+        while (1 << bits < colorTableSize)
             bits++;
         return bits;
     }

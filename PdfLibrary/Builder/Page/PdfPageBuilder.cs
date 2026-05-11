@@ -107,7 +107,7 @@ public class PdfPageBuilder(PdfSize size)
     private PdfRect CreateFieldRect(double x, double y, double width, double height)
     {
         // Position the field so its vertical center aligns with y (text baseline)
-        double fieldTop = y - (height / 2);
+        double fieldTop = y - height / 2;
         return PdfRect.Create(x, fieldTop, width, height, _defaultUnit, _defaultOrigin, PageHeight);
     }
 
@@ -192,7 +192,7 @@ public class PdfPageBuilder(PdfSize size)
     public PdfTextBuilder AddTextInches(string text, double left, double top)
     {
         double x = left * 72;
-        double y = PageHeight - (top * 72);
+        double y = PageHeight - top * 72;
         return AddText(text, x, y);
     }
 
@@ -202,7 +202,7 @@ public class PdfPageBuilder(PdfSize size)
     public PdfPageBuilder AddTextInches(string text, double left, double top, string fontName, double fontSize)
     {
         double x = left * 72;
-        double y = PageHeight - (top * 72);
+        double y = PageHeight - top * 72;
         return AddText(text, x, y, fontName, fontSize);
     }
 

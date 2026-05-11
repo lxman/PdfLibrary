@@ -71,9 +71,9 @@ namespace Jbig2Decoder.Region
             sbyte[] gbat = p.Gbat;
             Bitmap skip = p.Skip!;
 
-            for (int y = 0; y < gbh; y++)
+            for (var y = 0; y < gbh; y++)
             {
-                for (int x = 0; x < gbw; x++)
+                for (var x = 0; x < gbw; x++)
                 {
                     if (skip.GetPixel(x, y) != 0)
                     {
@@ -98,7 +98,7 @@ namespace Jbig2Decoder.Region
             {
                 case 0:
                 {
-                    int c = 0;
+                    var c = 0;
                     c |= output.GetPixel(x - 1, y) << 0;
                     c |= output.GetPixel(x - 2, y) << 1;
                     c |= output.GetPixel(x - 3, y) << 2;
@@ -119,7 +119,7 @@ namespace Jbig2Decoder.Region
                 }
                 case 1:
                 {
-                    int c = 0;
+                    var c = 0;
                     c |= output.GetPixel(x - 1, y) << 0;
                     c |= output.GetPixel(x - 2, y) << 1;
                     c |= output.GetPixel(x - 3, y) << 2;
@@ -137,7 +137,7 @@ namespace Jbig2Decoder.Region
                 }
                 case 2:
                 {
-                    int c = 0;
+                    var c = 0;
                     c |= output.GetPixel(x - 1, y) << 0;
                     c |= output.GetPixel(x - 2, y) << 1;
                     c |= output.GetPixel(x + gbat[0], y + gbat[1]) << 2;
@@ -152,7 +152,7 @@ namespace Jbig2Decoder.Region
                 }
                 case 3:
                 {
-                    int c = 0;
+                    var c = 0;
                     c |= output.GetPixel(x - 1, y) << 0;
                     c |= output.GetPixel(x - 2, y) << 1;
                     c |= output.GetPixel(x - 3, y) << 2;

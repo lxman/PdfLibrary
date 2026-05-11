@@ -66,7 +66,7 @@ namespace ImageLibrary.Compression.Lzw
                 {
                     return -1;
                 }
-                _buffer <<= (bitCount - _bitsInBuffer);
+                _buffer <<= bitCount - _bitsInBuffer;
                 _bitsInBuffer = bitCount;
             }
 
@@ -93,7 +93,7 @@ namespace ImageLibrary.Compression.Lzw
                 }
 
                 // Bits accumulate at the high end; the low bits are consumed first.
-                _buffer |= (nextByte << _bitsInBuffer);
+                _buffer |= nextByte << _bitsInBuffer;
                 _bitsInBuffer += 8;
             }
 

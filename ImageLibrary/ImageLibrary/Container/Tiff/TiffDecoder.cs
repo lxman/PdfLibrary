@@ -234,7 +234,7 @@ public static class TiffDecoder
         {
             uint rowsPerStripValue = rowsPerStripObj is uint u ? u : Convert.ToUInt32(rowsPerStripObj);
             // Use full height if the value is 2^32-1 or larger than height
-            rowsPerStrip = (rowsPerStripValue == 0xFFFFFFFF || rowsPerStripValue >= (uint)height)
+            rowsPerStrip = rowsPerStripValue == 0xFFFFFFFF || rowsPerStripValue >= (uint)height
                 ? height
                 : (int)rowsPerStripValue;
         }
@@ -248,7 +248,7 @@ public static class TiffDecoder
                 byte[] compressedStrip = reader.ReadBytes((int)byteCounts[i]);
 
                 // Calculate actual strip height (the last strip may be shorter)
-                int stripHeight = Math.Min(rowsPerStrip, height - (i * rowsPerStrip));
+                int stripHeight = Math.Min(rowsPerStrip, height - i * rowsPerStrip);
 
                 byte[] decompressedStrip = DecompressData(compressedStrip, compression, width, stripHeight, tags);
                 output.Write(decompressedStrip, 0, decompressedStrip.Length);
@@ -720,8 +720,8 @@ public static class TiffDecoder
         {
             for (var x = 0; x < width; x++)
             {
-                int byteIndex = y * bytesPerRow + (x / 8);
-                int bitIndex = 7 - (x % 8);
+                int byteIndex = y * bytesPerRow + x / 8;
+                int bitIndex = 7 - x % 8;
                 bool isSet = (data[byteIndex] & (1 << bitIndex)) != 0;
 
                 byte value;
@@ -833,7 +833,7 @@ public static class TiffDecoder
                 : (ushort)((data[i] << 8) | data[i + 1]);
 
             // Normalize to 0-255 range
-            byte gray = (byte)Math.Min(255, (int)((value16 - minVal) * scale));
+            var gray = (byte)Math.Min(255, (int)((value16 - minVal) * scale));
 
             if (invertColors)
                 gray = (byte)(255 - gray);
@@ -862,9 +862,9 @@ public static class TiffDecoder
                 : (ushort)((data[i + 4] << 8) | data[i + 5]);
 
             // Downsample to 8-bit
-            byte r = (byte)((r16 + 128) >> 8);
-            byte g = (byte)((g16 + 128) >> 8);
-            byte b = (byte)((b16 + 128) >> 8);
+            var r = (byte)((r16 + 128) >> 8);
+            var g = (byte)((g16 + 128) >> 8);
+            var b = (byte)((b16 + 128) >> 8);
 
             pixelData[pixelIndex++] = b; // Blue
             pixelData[pixelIndex++] = g; // Green
@@ -884,9 +884,9 @@ public static class TiffDecoder
         var pixelIndex = 0;
         for (var i = 0; i < pixelCount; i++)
         {
-            int rPos = rOffset + (i * 2);
-            int gPos = gOffset + (i * 2);
-            int bPos = bOffset + (i * 2);
+            int rPos = rOffset + i * 2;
+            int gPos = gOffset + i * 2;
+            int bPos = bOffset + i * 2;
 
             // Read 16-bit values respecting byte order
             ushort r16 = littleEndian
@@ -900,9 +900,9 @@ public static class TiffDecoder
                 : (ushort)((data[bPos] << 8) | data[bPos + 1]);
 
             // Downsample to 8-bit
-            byte r = (byte)((r16 + 128) >> 8);
-            byte g = (byte)((g16 + 128) >> 8);
-            byte b = (byte)((b16 + 128) >> 8);
+            var r = (byte)((r16 + 128) >> 8);
+            var g = (byte)((g16 + 128) >> 8);
+            var b = (byte)((b16 + 128) >> 8);
 
             pixelData[pixelIndex++] = b; // Blue
             pixelData[pixelIndex++] = g; // Green
@@ -931,10 +931,10 @@ public static class TiffDecoder
                 : (ushort)((data[i + 6] << 8) | data[i + 7]);
 
             // Downsample to 8-bit
-            byte r = (byte)((r16 + 128) >> 8);
-            byte g = (byte)((g16 + 128) >> 8);
-            byte b = (byte)((b16 + 128) >> 8);
-            byte a = (byte)((a16 + 128) >> 8);
+            var r = (byte)((r16 + 128) >> 8);
+            var g = (byte)((g16 + 128) >> 8);
+            var b = (byte)((b16 + 128) >> 8);
+            var a = (byte)((a16 + 128) >> 8);
 
             pixelData[pixelIndex++] = b; // Blue
             pixelData[pixelIndex++] = g; // Green

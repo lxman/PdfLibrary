@@ -215,7 +215,7 @@ public partial class CodecSettingsWindow : Window
 
             if (comboBox.SelectedItem is ComboBoxItem item)
             {
-                string? codecName = item.Tag as string;
+                var codecName = item.Tag as string;
                 _configuration.SetPreferredDecoder(extension, codecName);
             }
         }
@@ -228,7 +228,7 @@ public partial class CodecSettingsWindow : Window
 
             if (comboBox.SelectedItem is ComboBoxItem item)
             {
-                string? codecName = item.Tag as string;
+                var codecName = item.Tag as string;
                 _configuration.SetPreferredEncoder(extension, codecName);
             }
         }

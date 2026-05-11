@@ -29,12 +29,12 @@ namespace Jbig2Decoder.Region
             byte fill = p.HDefPixel == 1 ? (byte)0xFF : (byte)0x00;
             if (fill != 0)
             {
-                for (int i = 0; i < output.Data.Length; i++)
+                for (var i = 0; i < output.Data.Length; i++)
                     output.Data[i] = fill;
             }
 
-            int hgw = (int)p.Hgw;
-            int hgh = (int)p.Hgh;
+            var hgw = (int)p.Hgw;
+            var hgh = (int)p.Hgh;
             if (hgw <= 0 || hgh <= 0) return;
 
             // 6.6.5 step 2: HSKIP map (only when HENABLESKIP = 1). One bit per cell:
@@ -46,9 +46,9 @@ namespace Jbig2Decoder.Region
             if (p.HEnableSkip)
             {
                 hskip = new Bitmap(hgw, hgh);
-                for (int mg = 0; mg < hgh; mg++)
+                for (var mg = 0; mg < hgh; mg++)
                 {
-                    for (int ng = 0; ng < hgw; ng++)
+                    for (var ng = 0; ng < hgw; ng++)
                     {
                         long x = ((long)p.Hgx + (long)mg * p.Hry + (long)ng * p.Hrx) >> 8;
                         long y = ((long)p.Hgy + (long)mg * p.Hrx - (long)ng * p.Hry) >> 8;
@@ -59,8 +59,8 @@ namespace Jbig2Decoder.Region
             }
 
             // 6.6.5 step 3: HBPP = ceil(log2(HNUMPATS)).
-            int hbpp = 0;
-            while (hNumPats > (1 << ++hbpp)) { /* loop body intentionally empty */ }
+            var hbpp = 0;
+            while (hNumPats > 1 << ++hbpp) { /* loop body intentionally empty */ }
             if (hbpp > 16)
                 throw new InvalidOperationException($"HBPP {hbpp} > 16 not supported");
 
@@ -68,9 +68,9 @@ namespace Jbig2Decoder.Region
             int[,] gsvals = DecodeGrayScaleImage(p, data, offset, length, hgw, hgh, hbpp, hskip);
 
             // 6.6.5 step 5: place patterns.
-            for (int mg = 0; mg < hgh; mg++)
+            for (var mg = 0; mg < hgh; mg++)
             {
-                for (int ng = 0; ng < hgw; ng++)
+                for (var ng = 0; ng < hgw; ng++)
                 {
                     long x = ((long)p.Hgx + (long)mg * p.Hry + (long)ng * p.Hrx) >> 8;
                     long y = ((long)p.Hgy + (long)mg * p.Hrx - (long)ng * p.Hry) >> 8;
@@ -103,7 +103,7 @@ namespace Jbig2Decoder.Region
             };
 
             var planes = new Bitmap[gsbpp];
-            for (int i = 0; i < gsbpp; i++)
+            for (var i = 0; i < gsbpp; i++)
                 planes[i] = new Bitmap(gsw, gsh);
 
             if (p.HMmr)
@@ -139,7 +139,7 @@ namespace Jbig2Decoder.Region
                     {
                         byte[] hi = planes[j + 1].Data;
                         byte[] lo = planes[j].Data;
-                        for (int i = 0; i < lo.Length; i++) lo[i] ^= hi[i];
+                        for (var i = 0; i < lo.Length; i++) lo[i] ^= hi[i];
                     }
 
                     if (consumed > remaining) consumed = remaining;
@@ -176,18 +176,18 @@ namespace Jbig2Decoder.Region
                     gen.Decode(rp, mq, stats, planes[j]);
                     byte[] hi = planes[j + 1].Data;
                     byte[] lo = planes[j].Data;
-                    for (int i = 0; i < lo.Length; i++) lo[i] ^= hi[i];
+                    for (var i = 0; i < lo.Length; i++) lo[i] ^= hi[i];
                 }
             }
 
             // C.5 step 4: combine planes into gray-scale values.
             var vals = new int[gsw, gsh];
-            for (int x = 0; x < gsw; x++)
+            for (var x = 0; x < gsw; x++)
             {
-                for (int y = 0; y < gsh; y++)
+                for (var y = 0; y < gsh; y++)
                 {
-                    int v = 0;
-                    for (int j = 0; j < gsbpp; j++)
+                    var v = 0;
+                    for (var j = 0; j < gsbpp; j++)
                         v |= planes[j].GetPixel(x, y) << j;
                     vals[x, y] = v;
                 }
@@ -201,11 +201,11 @@ namespace Jbig2Decoder.Region
         {
             int w = pat.Width;
             int h = pat.Height;
-            for (int py = 0; py < h; py++)
+            for (var py = 0; py < h; py++)
             {
                 int oy = dy + py;
                 if ((uint)oy >= (uint)dst.Height) continue;
-                for (int px = 0; px < w; px++)
+                for (var px = 0; px < w; px++)
                 {
                     int ox = dx + px;
                     if ((uint)ox >= (uint)dst.Width) continue;

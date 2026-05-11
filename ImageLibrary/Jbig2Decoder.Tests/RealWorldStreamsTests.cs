@@ -34,6 +34,6 @@ public class RealWorldStreamsTests
 
         Assert.Equal(expectedWidth, width);
         Assert.Equal(expectedHeight, height);
-        Assert.Equal(((expectedWidth + 7) / 8) * expectedHeight, packed.Length);
+        Assert.Equal((expectedWidth + 7) / 8 * expectedHeight, packed.Length);
     }
 }

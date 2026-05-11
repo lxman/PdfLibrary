@@ -14,7 +14,7 @@ public class CodecConfiguration
 
     /// <summary>
     /// Maps file extension to preferred decoder codec name.
-    /// Example: { ".jpg": "JPEG Decoder (JpegLibrary)" }
+    /// Example: { ".jpg": "JPEG Decoder (JpegCodec)" }
     /// </summary>
     public Dictionary<string, string> DecodePreferences { get; set; } = new();
 

@@ -128,7 +128,7 @@ internal class PostProcessor : IPostProcessor
                     // Scale down to 8-bit if precision > 8
                     if (comp.Precision > 8)
                     {
-                        intVal >>= (comp.Precision - 8);
+                        intVal >>= comp.Precision - 8;
                     }
 
                     result[idx++] = (byte)intVal;

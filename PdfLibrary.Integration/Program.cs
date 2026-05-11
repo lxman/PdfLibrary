@@ -104,7 +104,7 @@ static int GenerateBaseline(ITestDocument[] documents, string baseDir, string go
             Console.WriteLine($"    Pages: {pageCount}");
 
             // Render each page to a separate image
-            for (int pageNum = 1; pageNum <= pageCount; pageNum++)
+            for (var pageNum = 1; pageNum <= pageCount; pageNum++)
             {
                 string imagePath = pageCount > 1
                     ? Path.Combine(outputDir, $"{doc.Name}_Page{pageNum}_golden.png")
@@ -166,11 +166,11 @@ static int RunTests(ITestDocument[] documents, string baseDir, string goldenDir,
             int pageCount = PdfImageRenderer.GetPageCount(testPdfPath);
 
             // Test each page
-            bool allPagesPassed = true;
+            var allPagesPassed = true;
             double totalMatchPercentage = 0;
             string? errorMessage = null;
 
-            for (int pageNum = 1; pageNum <= pageCount; pageNum++)
+            for (var pageNum = 1; pageNum <= pageCount; pageNum++)
             {
                 string pageSuffix = pageCount > 1 ? $"_Page{pageNum}" : "";
                 string goldenImagePath = Path.Combine(goldenPath, $"{doc.Name}{pageSuffix}_golden.png");

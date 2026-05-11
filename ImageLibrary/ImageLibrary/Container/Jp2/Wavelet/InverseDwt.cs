@@ -188,8 +188,8 @@ internal class InverseDwt : IInverseDwt
         // s[i] = s[i] - floor((d[i-1] + d[i] + 2) / 4)
         for (int i = sStart; i < n; i += 2)
         {
-            double left = (i > 0) ? x[i - 1] : x[dStart];  // Mirror at boundary
-            double right = (i < n - 1) ? x[i + 1] : x[n - 2 + (n % 2 == 0 ? dStart : sStart)];
+            double left = i > 0 ? x[i - 1] : x[dStart];  // Mirror at boundary
+            double right = i < n - 1 ? x[i + 1] : x[n - 2 + (n % 2 == 0 ? dStart : sStart)];
             x[i] = x[i] - Math.Floor((left + right + 2) / 4.0);
         }
 
@@ -197,8 +197,8 @@ internal class InverseDwt : IInverseDwt
         // d[i] = d[i] + floor((s[i] + s[i+1]) / 2)
         for (int i = dStart; i < n; i += 2)
         {
-            double left = (i > 0) ? x[i - 1] : x[sStart];
-            double right = (i < n - 1) ? x[i + 1] : x[i - 1];
+            double left = i > 0 ? x[i - 1] : x[sStart];
+            double right = i < n - 1 ? x[i + 1] : x[i - 1];
             x[i] = x[i] + Math.Floor((left + right) / 2.0);
         }
     }
@@ -231,32 +231,32 @@ internal class InverseDwt : IInverseDwt
         // Step 4 (inverse): Update low-pass samples
         for (int i = sStart; i < n; i += 2)
         {
-            double left = (i > 0) ? x[i - 1] : x[dStart];
-            double right = (i < n - 1) ? x[i + 1] : x[n - 2 + (n % 2 == 0 ? dStart : sStart)];
+            double left = i > 0 ? x[i - 1] : x[dStart];
+            double right = i < n - 1 ? x[i + 1] : x[n - 2 + (n % 2 == 0 ? dStart : sStart)];
             x[i] = x[i] - Delta_9_7 * (left + right);
         }
 
         // Step 3 (inverse): Update high-pass samples
         for (int i = dStart; i < n; i += 2)
         {
-            double left = (i > 0) ? x[i - 1] : x[sStart];
-            double right = (i < n - 1) ? x[i + 1] : x[i - 1];
+            double left = i > 0 ? x[i - 1] : x[sStart];
+            double right = i < n - 1 ? x[i + 1] : x[i - 1];
             x[i] = x[i] - Gamma_9_7 * (left + right);
         }
 
         // Step 2 (inverse): Update low-pass samples
         for (int i = sStart; i < n; i += 2)
         {
-            double left = (i > 0) ? x[i - 1] : x[dStart];
-            double right = (i < n - 1) ? x[i + 1] : x[n - 2 + (n % 2 == 0 ? dStart : sStart)];
+            double left = i > 0 ? x[i - 1] : x[dStart];
+            double right = i < n - 1 ? x[i + 1] : x[n - 2 + (n % 2 == 0 ? dStart : sStart)];
             x[i] = x[i] - Beta_9_7 * (left + right);
         }
 
         // Step 1 (inverse): Update high-pass samples
         for (int i = dStart; i < n; i += 2)
         {
-            double left = (i > 0) ? x[i - 1] : x[sStart];
-            double right = (i < n - 1) ? x[i + 1] : x[i - 1];
+            double left = i > 0 ? x[i - 1] : x[sStart];
+            double right = i < n - 1 ? x[i + 1] : x[i - 1];
             x[i] = x[i] - Alpha_9_7 * (left + right);
         }
     }

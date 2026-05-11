@@ -80,7 +80,7 @@ namespace Jbig2Decoder.Region
                 // T.88 §6.4.5: SBSYMCODELEN = ceil(log2(SBNUMSYMS)). When SBNUMSYMS = 1
                 // the result is 0 and IAID decodes zero MQ bits (deterministically returns 0).
                 var symCodeLen = 0;
-                while ((1 << symCodeLen) < numSyms) symCodeLen++;
+                while (1 << symCodeLen < numSyms) symCodeLen++;
                 iaid = new IaidDecoder(mq, symCodeLen);
 
                 // Refinement gear, lazily allocated on first refine.
@@ -317,14 +317,14 @@ namespace Jbig2Decoder.Region
         {
             // 1) 35 entries × 4-bit raw PREFLENs form the runcode table.
             var runLines = new HuffmanLine[35];
-            for (int i = 0; i < 35; i++)
+            for (var i = 0; i < 35; i++)
                 runLines[i] = new HuffmanLine((int)r.ReadBits(4), 0, i);
             var runTable = new HuffmanTable(new HuffmanParams { HtOob = false, Lines = runLines });
 
             // 2) Decode SBNUMSYMS symbol-ID PREFLENs using the runcode table.
             var prefLens = new int[sbNumSyms];
-            int idx = 0;
-            int prevLen = 0;
+            var idx = 0;
+            var prevLen = 0;
             while (idx < sbNumSyms)
             {
                 if (!runTable.Decode(r, out int code))
@@ -358,7 +358,7 @@ namespace Jbig2Decoder.Region
                 }
 
                 if (idx + runLen > sbNumSyms) runLen = sbNumSyms - idx;
-                for (int k = 0; k < runLen; k++) prefLens[idx + k] = valLen;
+                for (var k = 0; k < runLen; k++) prefLens[idx + k] = valLen;
                 if (code != 33 && code != 34) prevLen = valLen;
                 idx += runLen;
             }
@@ -368,7 +368,7 @@ namespace Jbig2Decoder.Region
 
             // 4) Build the per-symbol-ID Huffman table.
             var symLines = new HuffmanLine[sbNumSyms];
-            for (int i = 0; i < sbNumSyms; i++)
+            for (var i = 0; i < sbNumSyms; i++)
                 symLines[i] = new HuffmanLine(prefLens[i], 0, i);
             return new HuffmanTable(new HuffmanParams { HtOob = false, Lines = symLines });
         }
@@ -390,7 +390,7 @@ namespace Jbig2Decoder.Region
             HuffmanBitReader r,
             Bitmap output)
         {
-            int sbNumSyms = 0;
+            var sbNumSyms = 0;
             foreach (var d in p.Dicts) sbNumSyms += d.Count;
 
             // Pull selector bits from huffman_flags (T.88 §7.4.3.1.1).
@@ -429,13 +429,13 @@ namespace Jbig2Decoder.Region
 
             // 6.4.5 (1) — clear region to default pixel.
             byte fill = p.SbDefPixel ? (byte)0xFF : (byte)0x00;
-            for (int i = 0; i < output.Data.Length; i++) output.Data[i] = fill;
+            for (var i = 0; i < output.Data.Length; i++) output.Data[i] = fill;
 
             // 6.4.6 — initial STRIPT.
             if (!hDt.Decode(r, out int stript0))
                 throw new InvalidOperationException("OOB decoding initial strip T (Huffman)");
             int stript = -p.SbStrips * stript0;
-            int firsts = 0;
+            var firsts = 0;
             uint ninstances = 0;
 
             while (ninstances < p.SbNumInstances)
@@ -444,8 +444,8 @@ namespace Jbig2Decoder.Region
                     throw new InvalidOperationException("OOB decoding delta T (Huffman)");
                 stript += dt * p.SbStrips;
 
-                bool firstSymbol = true;
-                int curs = 0;
+                var firstSymbol = true;
+                var curs = 0;
                 while (true)
                 {
                     int curt;
@@ -487,7 +487,7 @@ namespace Jbig2Decoder.Region
                         }
                     }
 
-                    int ri = 0;
+                    var ri = 0;
                     if (p.SbRefine)
                         ri = (int)r.ReadBits(1);
 

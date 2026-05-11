@@ -27,17 +27,21 @@ internal class DctDecodeFilter : IStreamFilter
 
         try
         {
-            // Decode JPEG with metadata (get raw component data, not RGB-converted)
-            JpegDecodeResult result = JpegLibraryAdapter.DecodeWithInfo(data, convertToRgb: false);
+            // Phase 8 stage 1: in-house JpegCodec. The output buffer is
+            // interleaved per-pixel component bytes, matching the previous
+            // JpegLibraryAdapter shape. Adobe APP14 flags now flow
+            // through correctly, so the YCCK / inverted-CMYK branches in
+            // DecodeCmykJpeg become reachable for the first time.
+            var decoder = new global::JpegCodec.JpegStreamDecoder();
+            global::JpegCodec.JpegDecodeResult result = decoder.Decode(data);
 
             int width = result.Width;
             int height = result.Height;
-            int componentCount = result.ComponentCount;
-            byte[] componentData = result.Data;  // Already interleaved component data
+            int componentCount = result.NumberOfComponents;
+            byte[] componentData = result.ComponentData;
 
             return componentCount switch
             {
-                // Handle different color spaces
                 4 => DecodeCmykJpeg(componentData, width, height, result.HasAdobeMarker, result.AdobeColorTransform),
                 3 => DecodeRgbJpeg(componentData, width, height),
                 1 => componentData,

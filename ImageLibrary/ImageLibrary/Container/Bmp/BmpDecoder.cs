@@ -220,7 +220,7 @@ public static class BmpDecoder
 
         for (var srcY = 0; srcY < height; srcY++)
         {
-            int dstY = bottomUp ? (height - 1 - srcY) : srcY;
+            int dstY = bottomUp ? height - 1 - srcY : srcY;
             int srcRowOffset = srcY * stride;
             int dstRowOffset = dstY * width * 4;
 
@@ -256,7 +256,7 @@ public static class BmpDecoder
         {
             int byteIndex = x / 8;
             if (byteIndex >= src.Length) break;
-            int bitIndex = 7 - (x % 8);
+            int bitIndex = 7 - x % 8;
             int colorIndex = (src[byteIndex] >> bitIndex) & 1;
 
             RgbQuad color = colorIndex < palette.Length ? palette[colorIndex] : default;
@@ -274,7 +274,7 @@ public static class BmpDecoder
         {
             int byteIndex = x / 2;
             if (byteIndex >= src.Length) break;
-            int colorIndex = (x % 2 == 0)
+            int colorIndex = x % 2 == 0
                 ? (src[byteIndex] >> 4) & 0x0F
                 : src[byteIndex] & 0x0F;
 
@@ -375,7 +375,7 @@ public static class BmpDecoder
                 RgbQuad color = palette[second];
                 for (var j = 0; j < first && x < width; j++, x++)
                 {
-                    int dstY = bottomUp ? (height - 1 - y) : y;
+                    int dstY = bottomUp ? height - 1 - y : y;
                     int offset = (dstY * width + x) * 4;
                     output[offset] = color.Blue;
                     output[offset + 1] = color.Green;
@@ -404,7 +404,7 @@ public static class BmpDecoder
                         {
                             if (i >= data.Length) return;
                             RgbQuad color = palette[data[i++]];
-                            int dstY = bottomUp ? (height - 1 - y) : y;
+                            int dstY = bottomUp ? height - 1 - y : y;
                             int offset = (dstY * width + x) * 4;
                             output[offset] = color.Blue;
                             output[offset + 1] = color.Green;
@@ -441,7 +441,7 @@ public static class BmpDecoder
                 for (var j = 0; j < first && x < width; j++, x++)
                 {
                     RgbQuad color = palette[j % 2 == 0 ? color1Index : color2Index];
-                    int dstY = bottomUp ? (height - 1 - y) : y;
+                    int dstY = bottomUp ? height - 1 - y : y;
                     int offset = (dstY * width + x) * 4;
                     output[offset] = color.Blue;
                     output[offset + 1] = color.Green;
@@ -472,10 +472,10 @@ public static class BmpDecoder
                             int byteIndex = j / 2;
                             if (i + byteIndex >= data.Length) return;
                             byte b = data[i + byteIndex];
-                            int colorIndex = (j % 2 == 0) ? (b >> 4) & 0x0F : b & 0x0F;
+                            int colorIndex = j % 2 == 0 ? (b >> 4) & 0x0F : b & 0x0F;
 
                             RgbQuad color = palette[colorIndex];
-                            int dstY = bottomUp ? (height - 1 - y) : y;
+                            int dstY = bottomUp ? height - 1 - y : y;
                             int offset = (dstY * width + x) * 4;
                             output[offset] = color.Blue;
                             output[offset + 1] = color.Green;

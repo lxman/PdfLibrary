@@ -48,7 +48,7 @@ namespace ImageLibrary.Compression.Ccitt
         {
             consumedBytes = 0;
             if (data == null || data.Length == 0)
-                return Array.Empty<byte>();
+                return [];
 
             var reader = new CcittBitReader(data);
             var lines = new List<byte[]>();
@@ -67,12 +67,12 @@ namespace ImageLibrary.Compression.Ccitt
                 // BlackIs1=false: 0=black, 1=white, so we need all 1s for white
                 if (!_options.BlackIs1)
                 {
-                    for (int i = 0; i < bytesPerRow; i++)
+                    for (var i = 0; i < bytesPerRow; i++)
                         referenceLine[i] = 0xFF;
                 }
             }
 
-            int rowCount = 0;
+            var rowCount = 0;
             int maxRows = _options.Height > 0 ? _options.Height : int.MaxValue;
 
             // Skip initial EOL if present and required
@@ -101,12 +101,12 @@ namespace ImageLibrary.Compression.Ccitt
                     case CcittGroup.Group3TwoDimensional:
                         // In Group 3 2D, EOL is followed by a tag bit
                         // 1 = 1D encoded line, 0 = 2D encoded line
-                        bool is1D = true;
+                        var is1D = true;
                         if (rowCount > 0 && _options.K > 0)
                         {
                             // Check if this should be a 2D line
                             // Every K lines, one is 1D, the rest are 2D
-                            is1D = (rowCount % _options.K) == 0;
+                            is1D = rowCount % _options.K == 0;
                         }
 
                         if (is1D || referenceLine == null)
@@ -179,8 +179,8 @@ namespace ImageLibrary.Compression.Ccitt
         {
             int bytesPerRow = (_options.Width + 7) / 8;
             var row = CreateWhiteRow(bytesPerRow);
-            int pixelPosition = 0;
-            bool isWhite = true; // Always start with white
+            var pixelPosition = 0;
+            var isWhite = true; // Always start with white
 
             while (pixelPosition < _options.Width)
             {
@@ -246,8 +246,8 @@ namespace ImageLibrary.Compression.Ccitt
             int bytesPerRow = (_options.Width + 7) / 8;
             var row = CreateWhiteRow(bytesPerRow);
             int a0 = -1; // Current position (-1 means before the line)
-            bool a0Color = false; // false = white, true = black (at position a0)
-            int modeCount = 0;
+            var a0Color = false; // false = white, true = black (at position a0)
+            var modeCount = 0;
 
             while (a0 < _options.Width)
             {
@@ -487,7 +487,7 @@ namespace ImageLibrary.Compression.Ccitt
                 }
 
                 // Byte has mixed colors - scan bit by bit
-                for (int bit = 6; bit >= 0 && pos + (6 - bit) + 1 < _options.Width; bit--)
+                for (var bit = 6; bit >= 0 && pos + (6 - bit) + 1 < _options.Width; bit--)
                 {
                     int currentPos = pos + (6 - bit) + 1;
                     bool currPixel = GetPixelFromByte(b, bit);
@@ -540,8 +540,8 @@ namespace ImageLibrary.Compression.Ccitt
 
             // Byte pattern for "all b1Color"
             byte allSameColor = b1Color
-                ? (_options.BlackIs1 ? (byte)0xFF : (byte)0x00)  // all black
-                : (_options.BlackIs1 ? (byte)0x00 : (byte)0xFF); // all white
+                ? _options.BlackIs1 ? (byte)0xFF : (byte)0x00  // all black
+                : _options.BlackIs1 ? (byte)0x00 : (byte)0xFF; // all white
 
             int pos = b1 + 1;
             int byteIndex = pos >> 3;
@@ -578,7 +578,7 @@ namespace ImageLibrary.Compression.Ccitt
 
                 // Byte has different color or is mixed - scan bit by bit
                 int bitsToCheck = Math.Min(8, _options.Width - pos);
-                for (int i = 0; i < bitsToCheck; i++)
+                for (var i = 0; i < bitsToCheck; i++)
                 {
                     int bit = 7 - i;
                     bool pixelColor = GetPixelFromByte(b, bit);
@@ -605,7 +605,7 @@ namespace ImageLibrary.Compression.Ccitt
             // BlackIs1=false: 0=black, 1=white, so we need all 1s for white
             if (!_options.BlackIs1)
             {
-                for (int i = 0; i < bytesPerRow; i++)
+                for (var i = 0; i < bytesPerRow; i++)
                     row[i] = 0xFF;
             }
             return row;
@@ -669,7 +669,7 @@ namespace ImageLibrary.Compression.Ccitt
                 // Bit 7 is leftmost (position 0), bit 0 is rightmost (position 7)
                 int numBits = end - start;
                 // Mask: bits from (7 - firstBitInByte) down to (7 - lastBitInByte)
-                byte mask = (byte)(((1 << numBits) - 1) << (7 - lastBitInByte));
+                var mask = (byte)(((1 << numBits) - 1) << (7 - lastBitInByte));
 
                 if (setForBlack)
                     row[firstByte] |= mask;
@@ -685,7 +685,7 @@ namespace ImageLibrary.Compression.Ccitt
                 {
                     // Mask for bits from firstBitInByte to 7 (rest of byte)
                     // e.g., firstBitInByte=3 means positions 3,4,5,6,7 -> bits 4,3,2,1,0
-                    byte mask = (byte)((1 << (8 - firstBitInByte)) - 1);
+                    var mask = (byte)((1 << (8 - firstBitInByte)) - 1);
 
                     if (setForBlack)
                         row[firstByte] |= mask;
@@ -708,7 +708,7 @@ namespace ImageLibrary.Compression.Ccitt
                 {
                     // Mask for bits from 0 to lastBitInByte
                     // e.g., lastBitInByte=3 means positions 0,1,2,3 -> bits 7,6,5,4
-                    byte mask = (byte)(0xFF << (7 - lastBitInByte));
+                    var mask = (byte)(0xFF << (7 - lastBitInByte));
 
                     if (setForBlack)
                         row[lastByte] |= mask;
@@ -769,7 +769,7 @@ namespace ImageLibrary.Compression.Ccitt
         {
             // Look for 11+ zeros followed by a 1
             int startPos = reader.Position;
-            int zeros = 0;
+            var zeros = 0;
 
             while (!reader.IsAtEnd && zeros < 12)
             {
@@ -798,7 +798,7 @@ namespace ImageLibrary.Compression.Ccitt
         private byte[] CombineRows(List<byte[]> rows, int bytesPerRow)
         {
             var result = new byte[rows.Count * bytesPerRow];
-            for (int i = 0; i < rows.Count; i++)
+            for (var i = 0; i < rows.Count; i++)
             {
                 Array.Copy(rows[i], 0, result, i * bytesPerRow, Math.Min(rows[i].Length, bytesPerRow));
             }

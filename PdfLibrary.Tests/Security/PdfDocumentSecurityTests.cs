@@ -128,7 +128,7 @@ public class PdfDocumentSecurityTests
     {
         // Arrange
         string testFilePath = Path.Combine(GetEncryptedTestFilesPath(), "EncryptedRc4_128_WithPassword.pdf");
-        string password = "test123";
+        var password = "test123";
 
         if (!File.Exists(testFilePath))
         {
@@ -150,7 +150,7 @@ public class PdfDocumentSecurityTests
     {
         // Arrange
         string testFilePath = Path.Combine(GetEncryptedTestFilesPath(), "EncryptedRc4_128_WithPassword.pdf");
-        string wrongPassword = "wrongpassword";
+        var wrongPassword = "wrongpassword";
 
         if (!File.Exists(testFilePath))
         {
@@ -188,7 +188,7 @@ public class PdfDocumentSecurityTests
     {
         // Arrange
         string testFilePath = Path.Combine(GetEncryptedTestFilesPath(), "EncryptedAes128_WithPassword.pdf");
-        string password = "test123";
+        var password = "test123";
 
         if (!File.Exists(testFilePath))
         {
@@ -210,7 +210,7 @@ public class PdfDocumentSecurityTests
     {
         // Arrange
         string testFilePath = Path.Combine(GetEncryptedTestFilesPath(), "EncryptedAes128_WithPassword.pdf");
-        string wrongPassword = "wrongpassword";
+        var wrongPassword = "wrongpassword";
 
         if (!File.Exists(testFilePath))
         {

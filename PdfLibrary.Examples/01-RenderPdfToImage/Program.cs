@@ -30,8 +30,8 @@ Console.WriteLine($"Page dimensions: {page.GetCropBox().Width:F2} x {page.GetCro
 
 // ==================== CALCULATE OUTPUT DIMENSIONS ====================
 PdfRectangle cropBox = page.GetCropBox();
-int width = (int)(cropBox.Width * scale);
-int height = (int)(cropBox.Height * scale);
+var width = (int)(cropBox.Width * scale);
+var height = (int)(cropBox.Height * scale);
 
 Console.WriteLine($"Output size:     {width} x {height} pixels\n");
 

@@ -238,7 +238,7 @@ public class BlendModeTestDocument : ITestDocument
             };
 
             double x = leftMargin;
-            int testNum = 1;
+            var testNum = 1;
 
             foreach (var (blend1, blend2, blend3) in testCases)
             {

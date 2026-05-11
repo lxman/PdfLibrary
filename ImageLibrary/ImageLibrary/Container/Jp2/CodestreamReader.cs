@@ -324,7 +324,7 @@ internal class CodestreamReader
         if (tilePartLength > 0)
         {
             // Bitstream ends at sotStartPosition + tilePartLength
-            bitstreamLength = (sotStartPosition + tilePartLength) - _position;
+            bitstreamLength = sotStartPosition + tilePartLength - _position;
         }
         else
         {

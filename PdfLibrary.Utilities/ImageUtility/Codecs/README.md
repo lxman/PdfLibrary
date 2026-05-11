@@ -96,7 +96,7 @@ You can register **different codecs for encoding vs decoding** the same format. 
 **Example:**
 
 ```csharp
-// Decoder-only codec using JpegLibrary
+// Decoder-only codec using JpegDecoder
 public class JpegDecoder : IImageCodec
 {
     public string Name => "JPEG Decoder";
@@ -105,7 +105,7 @@ public class JpegDecoder : IImageCodec
     public bool CanEncode => false;  // Cannot encode
 
     public bool CanHandle(ReadOnlySpan<byte> header) { /* ... */ }
-    public ImageData Decode(byte[] data) { /* Use JpegLibrary */ }
+    public ImageData Decode(byte[] data) { /* Use JpegDecoder */ }
     public byte[] Encode(ImageData imageData, CodecOptions? options = null)
     {
         throw new NotSupportedException("This codec can only decode.");
@@ -147,7 +147,7 @@ The `CodecRegistry` automatically selects the appropriate codec based on the ope
 
 The following codecs are planned for implementation:
 
-- **JPEG** - Based on existing JpegLibrary code
+- **JPEG** - Based on existing JpegDecoder code
 - **PNG** - Deflate + filtering + chunks
 - **TIFF** - Multi-page support, various compressions
 - **BMP** - Simple uncompressed bitmap

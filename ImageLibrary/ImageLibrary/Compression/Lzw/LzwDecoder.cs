@@ -38,9 +38,9 @@ namespace ImageLibrary.Compression.Lzw
             _dictionary.Clear();
 
             // Initialize with single-byte entries (0-255)
-            for (int i = 0; i < LzwConstants.SingleByteEntries; i++)
+            for (var i = 0; i < LzwConstants.SingleByteEntries; i++)
             {
-                _dictionary.Add(new byte[] { (byte)i });
+                _dictionary.Add([(byte)i]);
             }
 
             // Add placeholders for ClearCode (256) and EndOfDataCode (257)
@@ -126,7 +126,7 @@ namespace ImageLibrary.Compression.Lzw
                 // Add new entry to dictionary (previousString + first byte of currentString)
                 if (previousString != null && _nextCode < LzwConstants.MaxDictionarySize)
                 {
-                    byte[] newEntry = new byte[previousString.Length + 1];
+                    var newEntry = new byte[previousString.Length + 1];
                     Array.Copy(previousString, newEntry, previousString.Length);
                     newEntry[previousString.Length] = currentString[0];
 

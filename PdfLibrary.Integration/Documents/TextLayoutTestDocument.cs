@@ -29,7 +29,7 @@ public class TextLayoutTestDocument : ITestDocument
             page.AddText("Character Spacing (Tc operator)", leftMargin, y, "Helvetica-Bold", 14);
             y -= 25;
 
-            double[] charSpacings = new[] { 0.0, 1.0, 2.0, 4.0, -0.5 };
+            double[] charSpacings = [0.0, 1.0, 2.0, 4.0, -0.5];
             foreach (double spacing in charSpacings)
             {
                 string label = spacing >= 0 ? $"+{spacing:F1}pt" : $"{spacing:F1}pt";
@@ -45,7 +45,7 @@ public class TextLayoutTestDocument : ITestDocument
             page.AddText("Word Spacing (Tw operator)", leftMargin, y, "Helvetica-Bold", 14);
             y -= 25;
 
-            double[] wordSpacings = new[] { 0.0, 5.0, 10.0, 20.0, -2.0 };
+            double[] wordSpacings = [0.0, 5.0, 10.0, 20.0, -2.0];
             foreach (double spacing in wordSpacings)
             {
                 string label = spacing >= 0 ? $"+{spacing:F0}pt" : $"{spacing:F0}pt";

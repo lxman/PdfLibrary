@@ -55,7 +55,7 @@ namespace Jbig2Decoder.Stream
             }
 
             // 7.2.5 Referred-to segment numbers — width depends on this segment's number.
-            int refSize = h.Number <= 256 ? 1 : (h.Number <= 65536 ? 2 : 4);
+            int refSize = h.Number <= 256 ? 1 : h.Number <= 65536 ? 2 : 4;
             int paSize = (h.Flags & 0x40) != 0 ? 4 : 1;
             int totalLen = o + (int)refCount * refSize + paSize + 4;
             if (offset + totalLen > buf.Length)

@@ -90,7 +90,7 @@ public class GenericRegionDecoderTests
             _out.WriteLine($"  expected: 0x{fx.BitmapBytes[i]:X2}");
             _out.WriteLine($"  actual:   0x{actual[i]:X2}");
 
-            int prevRowBase = (row - 1 >= 0) ? (row - 1) * fx.BitmapStride : -1;
+            int prevRowBase = row - 1 >= 0 ? (row - 1) * fx.BitmapStride : -1;
             if (prevRowBase >= 0)
                 _out.WriteLine($"  prev row at same byte: 0x{fx.BitmapBytes[prevRowBase + col]:X2} (matches expected? {fx.BitmapBytes[prevRowBase + col] == actual[prevRowBase + col]})");
             Assert.Fail($"GenericRegionDecoder diverges from jbig2dec at byte {i} of fixture {fixtureName}");

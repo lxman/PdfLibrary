@@ -38,7 +38,7 @@ namespace ImageLibrary.Compression.Lzw
             _dictionary.Clear();
 
             // Initialize with single-byte entries (0-255)
-            for (int i = 0; i < LzwConstants.SingleByteEntries; i++)
+            for (var i = 0; i < LzwConstants.SingleByteEntries; i++)
             {
                 _dictionary[((char)i).ToString()] = i;
             }
@@ -93,11 +93,11 @@ namespace ImageLibrary.Compression.Lzw
             }
 
             // Start with first byte
-            string current = ((char)input[offset]).ToString();
+            var current = ((char)input[offset]).ToString();
 
             for (int i = offset + 1; i < offset + count; i++)
             {
-                char next = (char)input[i];
+                var next = (char)input[i];
                 string combined = current + next;
 
                 if (_dictionary.ContainsKey(combined))

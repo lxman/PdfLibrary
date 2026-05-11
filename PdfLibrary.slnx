@@ -32,13 +32,14 @@
     <Project Path="ImageLibrary/ImageLibrary/ImageLibrary.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder/Jbig2Decoder.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj" />
+    <Project Path="ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/JpegCodec/JpegCodec.csproj" />
     <Project Path="ImageLibrary/PngCodec.Tests/PngCodec.Tests.csproj" />
     <Project Path="ImageLibrary/TgaCodec.Tests/TgaCodec.Tests.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>
-  <Project Path="JpegLibrary/src/JpegLibrary/JpegLibrary.csproj" />
   <Project Path="FontParser/FontParser.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />

@@ -166,7 +166,7 @@ public class TransparencyTestDocument : ITestDocument
             {
                 double opacity = (double)(steps - i) / steps;
                 page.AddPath()
-                    .Rectangle(gradX + (i * stepWidth), y - 30, stepWidth + 1, 25)
+                    .Rectangle(gradX + i * stepWidth, y - 30, stepWidth + 1, 25)
                     .FillOpacity(opacity)
                     .Fill(PdfColor.FromCmyk(0.8, 0, 0.8, 0)); // Purple in CMYK
             }
@@ -191,7 +191,7 @@ public class TransparencyTestDocument : ITestDocument
                 PdfColor color = isDark ? PdfColor.FromGray(0.85) : PdfColor.White;
 
                 page.AddRectangle(
-                    PdfRect.FromPoints(x + (col * cellSize), y + (row * cellSize), cellSize, cellSize),
+                    PdfRect.FromPoints(x + col * cellSize, y + row * cellSize, cellSize, cellSize),
                     color,
                     null,
                     0);

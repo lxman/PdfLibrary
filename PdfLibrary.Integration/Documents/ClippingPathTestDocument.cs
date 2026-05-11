@@ -124,7 +124,7 @@ public class ClippingPathTestDocument : ITestDocument
         for (var i = 0; i < 5; i++)
         {
             double outerAngle = (i * 72 - 90) * Math.PI / 180;
-            double innerAngle = ((i * 72) + 36 - 90) * Math.PI / 180;
+            double innerAngle = (i * 72 + 36 - 90) * Math.PI / 180;
 
             double ox = cx + outerR * Math.Cos(outerAngle);
             double oy = cy + outerR * Math.Sin(outerAngle);

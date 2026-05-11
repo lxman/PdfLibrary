@@ -957,7 +957,7 @@ internal class TextRenderer
         // - FontSize < 0 scales glyph by negative value, causing horizontal flip
         // - TextMatrix.M11 < 0 flips via transformation matrix
         // - One flip = backwards, two flips = normal
-        bool flipX = (state.FontSize < 0) != (state.TextMatrix.M11 < 0);  // XOR
+        bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;  // XOR
         double advanceSign = flipX ? -1.0 : 1.0;
         currentX += glyphWidth * advanceSign;
     }

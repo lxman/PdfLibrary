@@ -96,7 +96,7 @@ Central registry managing all codecs:
 
 **Phase 2: In Progress**
 - Custom codec implementations
-  - JPEG codec (can leverage existing JpegLibrary code)
+  - JPEG codec (can leverage existing JpegDecoder code)
   - PNG codec
   - TIFF codec
   - BMP codec

@@ -77,9 +77,9 @@ public class SymbolDictionaryDecoderTests
                     int firstPixelInByte = colByte * 8;
                     int lastPixelInByte = Math.Min(firstPixelInByte + 7, exp.Width - 1);
                     int meaningfulBits = lastPixelInByte - firstPixelInByte + 1;
-                    byte mask = (byte)(0xFF & ~((1 << (8 - meaningfulBits)) - 1));
-                    byte expMasked = (byte)(exp.Bytes[b] & mask);
-                    byte actMasked = (byte)(adata[b] & mask);
+                    var mask = (byte)(0xFF & ~((1 << (8 - meaningfulBits)) - 1));
+                    var expMasked = (byte)(exp.Bytes[b] & mask);
+                    var actMasked = (byte)(adata[b] & mask);
                     if (expMasked == actMasked) continue;
                     _out.WriteLine($"Glyph {i} byte {b} (row {row}, col-byte {colByte}): expected 0x{expMasked:X2}, actual 0x{actMasked:X2} (mask 0x{mask:X2})");
                     Assert.Fail($"Glyph {i} body mismatch in {fixtureName}");

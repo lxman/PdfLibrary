@@ -94,7 +94,7 @@ namespace FontParser.Tables.PostScriptType1
             // Return the glyph name at the specified index
             // Note: Dictionary order may not be insertion order in .NET Framework,
             // but in .NET Core/5+ it preserves insertion order
-            int i = 0;
+            var i = 0;
             foreach (var key in _charStrings.Keys)
             {
                 if (i == index)
@@ -204,12 +204,12 @@ namespace FontParser.Tables.PostScriptType1
             }
 
             // Split the data according to lengths (PFB-style binary eexec)
-            byte[] asciiPart = new byte[System.Math.Min(length1, data.Length)];
+            var asciiPart = new byte[System.Math.Min(length1, data.Length)];
             Array.Copy(data, 0, asciiPart, 0, asciiPart.Length);
 
             int eexecStart = length1;
             int eexecLength = System.Math.Min(length2, data.Length - eexecStart);
-            byte[] eexecPart = new byte[eexecLength];
+            var eexecPart = new byte[eexecLength];
             if (eexecStart < data.Length)
             {
                 Array.Copy(data, eexecStart, eexecPart, 0, eexecLength);
@@ -258,7 +258,7 @@ namespace FontParser.Tables.PostScriptType1
             // Determine if the eexec section is hex-encoded or binary
             // Hex-encoded will have bytes in ranges 0-9 (0x30-0x39), A-F (0x41-0x46), a-f (0x61-0x66)
             // Binary will have bytes outside these ranges
-            bool isHexEncoded = true;
+            var isHexEncoded = true;
             for (int i = eexecStart; i < System.Math.Min(eexecStart + 20, data.Length); i++)
             {
                 byte b = data[i];
@@ -306,8 +306,8 @@ namespace FontParser.Tables.PostScriptType1
                 byte[] cleartomarkBytes = Encoding.ASCII.GetBytes("cleartomark");
                 for (int i = eexecStart; i < data.Length - cleartomarkBytes.Length; i++)
                 {
-                    bool found = true;
-                    for (int j = 0; j < cleartomarkBytes.Length; j++)
+                    var found = true;
+                    for (var j = 0; j < cleartomarkBytes.Length; j++)
                     {
                         if (data[i + j] != cleartomarkBytes[j])
                         {
@@ -323,7 +323,7 @@ namespace FontParser.Tables.PostScriptType1
                 }
 
                 // Also look for trailing zeros (at least 512 zeros)
-                int zeroCount = 0;
+                var zeroCount = 0;
                 for (int i = eexecEnd - 1; i >= eexecStart; i--)
                 {
                     if (data[i] == '0' || data[i] == 0)
@@ -352,10 +352,10 @@ namespace FontParser.Tables.PostScriptType1
 
         private void ParsePfb(byte[] data)
         {
-            List<byte> asciiData = new List<byte>();
-            List<byte> binaryData = new List<byte>();
+            var asciiData = new List<byte>();
+            var binaryData = new List<byte>();
 
-            int i = 0;
+            var i = 0;
             while (i < data.Length)
             {
                 if (data[i] != 0x80)
@@ -373,12 +373,12 @@ namespace FontParser.Tables.PostScriptType1
 
                 if (segmentType == 1) // ASCII
                 {
-                    for (int j = 0; j < segmentLength; j++)
+                    for (var j = 0; j < segmentLength; j++)
                         asciiData.Add(data[i + j]);
                 }
                 else if (segmentType == 2) // Binary
                 {
-                    for (int j = 0; j < segmentLength; j++)
+                    for (var j = 0; j < segmentLength; j++)
                         binaryData.Add(data[i + j]);
                 }
 
@@ -417,7 +417,7 @@ namespace FontParser.Tables.PostScriptType1
             {
                 string[] parts = matrixMatch.Groups[1].Value.Split(new char[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 _fontMatrix = new float[parts.Length];
-                for (int i = 0; i < parts.Length; i++)
+                for (var i = 0; i < parts.Length; i++)
                 {
                     float.TryParse(parts[i], out _fontMatrix[i]);
                 }
@@ -429,7 +429,7 @@ namespace FontParser.Tables.PostScriptType1
             {
                 string[] parts = bboxMatch.Groups[1].Value.Split(new char[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 _fontBBox = new float[parts.Length];
-                for (int i = 0; i < parts.Length; i++)
+                for (var i = 0; i < parts.Length; i++)
                 {
                     float.TryParse(parts[i], out _fontBBox[i]);
                 }
@@ -493,7 +493,7 @@ namespace FontParser.Tables.PostScriptType1
             int numSubrs = int.Parse(subrsMatch.Groups[1].Value);
 
             // Initialize subrs list
-            for (int i = 0; i < numSubrs; i++)
+            for (var i = 0; i < numSubrs; i++)
                 _subrs.Add(new List<byte>());
 
             int searchStart = subrsMatch.Index;
@@ -509,7 +509,7 @@ namespace FontParser.Tables.PostScriptType1
                 int dataStart = match.Index + match.Length;
                 if (dataStart + length <= data.Length && index < _subrs.Count)
                 {
-                    byte[] encryptedSubrData = new byte[length];
+                    var encryptedSubrData = new byte[length];
                     Array.Copy(data, dataStart, encryptedSubrData, 0, length);
 
                     // Decrypt the subroutine - they use the same charstring encryption
@@ -553,7 +553,7 @@ namespace FontParser.Tables.PostScriptType1
                 int dataStart = match.Index + match.Length;
                 if (dataStart + length <= data.Length)
                 {
-                    byte[] charStringData = new byte[length];
+                    var charStringData = new byte[length];
                     Array.Copy(data, dataStart, charStringData, 0, length);
                     _charStrings[glyphName] = charStringData;
                 }
@@ -584,7 +584,7 @@ namespace FontParser.Tables.PostScriptType1
             int numSubrs = int.Parse(subrsMatch.Groups[1].Value);
 
             // Initialize subrs list
-            for (int i = 0; i < numSubrs; i++)
+            for (var i = 0; i < numSubrs; i++)
                 _subrs.Add(new List<byte>());
 
             // Parse individual subrs: dup index length RD ...binary... NP
@@ -609,8 +609,8 @@ namespace FontParser.Tables.PostScriptType1
                 // For now, extract what we can from the string
                 if (dataStart + length <= text.Length && index < _subrs.Count)
                 {
-                    byte[] subrData = new byte[length];
-                    for (int i = 0; i < length && dataStart + i < text.Length; i++)
+                    var subrData = new byte[length];
+                    for (var i = 0; i < length && dataStart + i < text.Length; i++)
                     {
                         subrData[i] = (byte)text[dataStart + i];
                     }
@@ -652,7 +652,7 @@ namespace FontParser.Tables.PostScriptType1
                 System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Found {simpleMatches.Count} simple matches");
 
                 // Show first few matches for debugging
-                int shown = 0;
+                var shown = 0;
                 foreach (Match m in simpleMatches)
                 {
                     if (shown++ < 5)
@@ -673,8 +673,8 @@ namespace FontParser.Tables.PostScriptType1
 
                 if (dataStart + length <= text.Length)
                 {
-                    byte[] charStringData = new byte[length];
-                    for (int i = 0; i < length && dataStart + i < text.Length; i++)
+                    var charStringData = new byte[length];
+                    for (var i = 0; i < length && dataStart + i < text.Length; i++)
                     {
                         charStringData[i] = (byte)text[dataStart + i];
                     }

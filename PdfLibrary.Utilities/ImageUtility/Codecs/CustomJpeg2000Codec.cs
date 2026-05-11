@@ -9,7 +9,7 @@ namespace ImageUtility.Codecs;
 public class CustomJpeg2000Codec : IImageCodec
 {
     public string Name => "Custom JPEG2000 Decoder (Compressors.Jpeg2000)";
-    public string[] Extensions => new[] { ".jp2", ".j2k", ".jpx", ".jpf" };
+    public string[] Extensions => [".jp2", ".j2k", ".jpx", ".jpf"];
     public bool CanDecode => true;
     public bool CanEncode => false; // Encoder not implemented yet
 

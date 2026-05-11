@@ -26,7 +26,7 @@ public class Jbig2TestsPdfCorpusTests
     private static List<ManifestEntry> LoadManifest()
     {
         string manifestPath = Path.Combine(CorpusPath, "manifest.txt");
-        if (!File.Exists(manifestPath)) return new List<ManifestEntry>();
+        if (!File.Exists(manifestPath)) return [];
 
         var entries = new List<ManifestEntry>();
         foreach (string raw in File.ReadAllLines(manifestPath))

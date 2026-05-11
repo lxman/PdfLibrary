@@ -23,7 +23,7 @@ public sealed class PdfVersion : IComparable<PdfVersion>, IEquatable<PdfVersion>
     /// <summary>
     /// Gets the version as a decimal number (e.g., 1.7, 2.0)
     /// </summary>
-    public double AsDecimal => Major + (Minor / 10.0);
+    public double AsDecimal => Major + Minor / 10.0;
 
     /// <summary>
     /// Gets the version string (e.g., "1.7", "2.0")

@@ -13,7 +13,7 @@ namespace FontParser.Extensions
             // Iterate backwards through the bits and perform bitwise operations
             for (int i = start + length - 1; i >= start; i--)
             {
-                idx |= (Convert.ToInt32(ba.Get(i)) << shift);
+                idx |= Convert.ToInt32(ba.Get(i)) << shift;
                 shift--;
             }
             return idx;

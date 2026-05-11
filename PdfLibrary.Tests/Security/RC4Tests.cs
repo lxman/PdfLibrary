@@ -10,7 +10,7 @@ public class RC4Tests
         // Arrange
         byte[] key = "SecretKey"u8.ToArray();
         byte[] plaintext = "Hello, World!"u8.ToArray();
-        byte[] data = (byte[])plaintext.Clone();
+        var data = (byte[])plaintext.Clone();
 
         // Act - encrypt
         var rc4Encrypt = new RC4(key);
@@ -33,7 +33,7 @@ public class RC4Tests
         // Arrange
         byte[] key = "TestKey"u8.ToArray();
         byte[] original = "Original Data"u8.ToArray();
-        byte[] originalCopy = (byte[])original.Clone();
+        var originalCopy = (byte[])original.Clone();
 
         // Act
         var rc4 = new RC4(key);
@@ -103,7 +103,7 @@ public class RC4Tests
         // Arrange - PDF uses 40-bit (5-byte) keys for V=1 encryption
         byte[] key = [0x01, 0x02, 0x03, 0x04, 0x05];
         byte[] data = "Test"u8.ToArray();
-        byte[] originalData = (byte[])data.Clone();
+        var originalData = (byte[])data.Clone();
 
         // Act
         var rc4Encrypt = new RC4(key);
@@ -120,11 +120,11 @@ public class RC4Tests
     public void Process_With128BitKey_ShouldWork()
     {
         // Arrange - PDF uses 128-bit (16-byte) keys for V=2/V=3 encryption
-        byte[] key = new byte[16];
-        for (int i = 0; i < 16; i++) key[i] = (byte)i;
+        var key = new byte[16];
+        for (var i = 0; i < 16; i++) key[i] = (byte)i;
 
         byte[] data = "Test data for 128-bit RC4"u8.ToArray();
-        byte[] originalData = (byte[])data.Clone();
+        var originalData = (byte[])data.Clone();
 
         // Act
         var rc4Encrypt = new RC4(key);
@@ -163,9 +163,9 @@ public class RC4Tests
     {
         // Arrange
         byte[] key = "LargeDataKey"u8.ToArray();
-        byte[] largeData = new byte[10000];
+        var largeData = new byte[10000];
         Random.Shared.NextBytes(largeData);
-        byte[] originalData = (byte[])largeData.Clone();
+        var originalData = (byte[])largeData.Clone();
 
         // Act
         var rc4Encrypt = new RC4(key);
@@ -217,7 +217,7 @@ public class RC4Tests
         rc4Chunked.Process(chunk2);
 
         // Combine chunks
-        byte[] encryptedChunked = new byte[fullData.Length];
+        var encryptedChunked = new byte[fullData.Length];
         Array.Copy(chunk1, 0, encryptedChunked, 0, chunk1.Length);
         Array.Copy(chunk2, 0, encryptedChunked, chunk1.Length, chunk2.Length);
 

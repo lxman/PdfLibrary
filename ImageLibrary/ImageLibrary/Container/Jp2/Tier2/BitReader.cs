@@ -67,7 +67,7 @@ internal class BitReader
                 _bitPosition = 0;
             }
 
-            _lastWasFF = (_currentByte == 0xFF);
+            _lastWasFF = _currentByte == 0xFF;
         }
 
         int bit = (_currentByte >> (7 - _bitPosition)) & 1;

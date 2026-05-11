@@ -386,7 +386,7 @@ public partial class MainWindow : Window
             }
 
             // Print
-            string description = $"PdfLibrary - Page {_currentPage}";
+            var description = $"PdfLibrary - Page {_currentPage}";
             printDialog.PrintVisual(visual, description);
 
             StatusText.Text = $"Printed page {_currentPage}";

@@ -11,7 +11,7 @@ namespace FontParser.Reader
     {
         public long BytesRemaining => _dataLength - Position;
 
-        public long WordsRemaining => (_dataLength / 2) - (Position / 2);
+        public long WordsRemaining => _dataLength / 2 - Position / 2;
 
         public long Position { get; private set; }
 

@@ -521,7 +521,7 @@ public class PdfImage
     /// </summary>
     public bool TryGetJbig2RawComponents(out byte[] streamData, out byte[]? globals)
     {
-        streamData = Array.Empty<byte>();
+        streamData = [];
         globals = null;
         if (!IsJbig2Filter()) return false;
 

@@ -129,7 +129,7 @@ internal class Ascii85DecodeFilter : IStreamFilter
         var chars = new char[5];
         for (var i = 4; i >= 0; i--)
         {
-            chars[i] = (char)((tuple % 85) + 33);
+            chars[i] = (char)(tuple % 85 + 33);
             tuple /= 85;
         }
 

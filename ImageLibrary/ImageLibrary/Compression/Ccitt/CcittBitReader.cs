@@ -28,7 +28,7 @@ namespace ImageLibrary.Compression.Ccitt
         /// <summary>
         /// Gets the current bit position in the stream.
         /// </summary>
-        public int Position => (_bytePosition * 8) + _bitPosition;
+        public int Position => _bytePosition * 8 + _bitPosition;
 
         /// <summary>
         /// Gets whether the end of data has been reached.
@@ -79,8 +79,8 @@ namespace ImageLibrary.Compression.Ccitt
             if (BitsRemaining < count)
                 return -1;
 
-            int result = 0;
-            for (int i = 0; i < count; i++)
+            var result = 0;
+            for (var i = 0; i < count; i++)
             {
                 int bit = ReadBit();
                 if (bit < 0)
@@ -173,7 +173,7 @@ namespace ImageLibrary.Compression.Ccitt
         public bool FindAndSkipEol()
         {
             // Look for 11 zeros followed by a 1
-            int zeroCount = 0;
+            var zeroCount = 0;
 
             while (!IsAtEnd)
             {

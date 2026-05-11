@@ -490,7 +490,7 @@ public static class PngDecoder
                 }
             }
 
-            byte alpha = (transparentValue >= 0 && gray == transparentValue) ? (byte)0 : (byte)255;
+            byte alpha = transparentValue >= 0 && gray == transparentValue ? (byte)0 : (byte)255;
 
             dest[destOffset++] = (byte)gray; // B
             dest[destOffset++] = (byte)gray; // G
@@ -571,7 +571,7 @@ public static class PngDecoder
             if (index < palette.Length)
             {
                 PngColor color = palette[index];
-                byte alpha = (transparency != null && index < transparency.Length)
+                byte alpha = transparency != null && index < transparency.Length
                     ? transparency[index]
                     : (byte)255;
 

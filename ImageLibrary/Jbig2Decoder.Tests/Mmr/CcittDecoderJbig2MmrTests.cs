@@ -71,11 +71,11 @@ public class CcittDecoderJbig2MmrTests
         byte[] data = File.ReadAllBytes(path);
         if (System.Text.Encoding.ASCII.GetString(data, 0, 4) != "MMR1")
             throw new InvalidDataException($"Bad magic in {path}");
-        int p = 4;
-        int width  = BitConverter.ToInt32(data, p); p += 4;
-        int height = BitConverter.ToInt32(data, p); p += 4;
-        int stride = BitConverter.ToInt32(data, p); p += 4;
-        int bmsize = BitConverter.ToInt32(data, p); p += 4;
+        var p = 4;
+        var width  = BitConverter.ToInt32(data, p); p += 4;
+        var height = BitConverter.ToInt32(data, p); p += 4;
+        var stride = BitConverter.ToInt32(data, p); p += 4;
+        var bmsize = BitConverter.ToInt32(data, p); p += 4;
         var mmr = new byte[bmsize];
         Buffer.BlockCopy(data, p, mmr, 0, bmsize);
         p += bmsize;

@@ -56,7 +56,7 @@ namespace Jbig2Decoder.Region
             byte[]? grStats = null;
             RefinementRegionDecoder? refDecoder = null;
             TextRegionContexts? textContexts = null;
-            int sbSymCodeLen = 0;
+            var sbSymCodeLen = 0;
             if (p.SdRefAgg)
             {
                 iaai = new IntegerDecoder(mq, "IAAI");
@@ -199,7 +199,7 @@ namespace Jbig2Decoder.Region
         private static int CeilLog2(int n)
         {
             if (n <= 1) return 0;
-            int r = 0; int v = n - 1;
+            var r = 0; int v = n - 1;
             while (v > 0) { r++; v >>= 1; }
             return r;
         }
@@ -230,7 +230,7 @@ namespace Jbig2Decoder.Region
                 if (!iardy.Decode(out int rdy))
                     throw new InvalidOperationException("OOB decoding IARDY");
 
-                int ninsyms = (int)p.SdNumInSyms;
+                var ninsyms = (int)p.SdNumInSyms;
                 int totalIds = ninsyms + newSyms.Count;
                 if (id < 0 || id >= totalIds)
                     throw new InvalidOperationException($"Refinement references unknown symbol id={id} (have {totalIds})");
@@ -337,8 +337,8 @@ namespace Jbig2Decoder.Region
             // Indexed by NSYMSDECODED at insertion time.
             var newSymWidths = new int[(int)p.SdNumNewSyms];
 
-            int hcheight = 0;
-            int nsymsdecoded = 0;
+            var hcheight = 0;
+            var nsymsdecoded = 0;
 
             while (nsymsdecoded < (int)p.SdNumNewSyms)
             {
@@ -349,8 +349,8 @@ namespace Jbig2Decoder.Region
                     throw new InvalidOperationException("Invalid (negative) height-class height");
 
                 int hcfirstsym = nsymsdecoded;
-                int symwidth = 0;
-                int totwidth = 0;
+                var symwidth = 0;
+                var totwidth = 0;
 
                 while (true)
                 {
@@ -409,13 +409,13 @@ namespace Jbig2Decoder.Region
                 }
 
                 // Slice the collective bitmap into individual glyphs by column.
-                int xCursor = 0;
+                var xCursor = 0;
                 for (int j = hcfirstsym; j < nsymsdecoded; j++)
                 {
                     int gw = newSymWidths[j];
                     var glyph = new Bitmap(gw, hcheight);
-                    for (int y = 0; y < hcheight; y++)
-                        for (int x = 0; x < gw; x++)
+                    for (var y = 0; y < hcheight; y++)
+                        for (var x = 0; x < gw; x++)
                             glyph.SetPixel(x, y, collective.GetPixel(xCursor + x, y));
                     newSyms.Add(glyph);
                     xCursor += gw;
@@ -503,7 +503,7 @@ namespace Jbig2Decoder.Region
             int dataEnd = offset + length;
 
             int sbSymCodeLen = CeilLog2((int)(p.SdNumInSyms + p.SdNumNewSyms));
-            int ninsyms = (int)p.SdNumInSyms;
+            var ninsyms = (int)p.SdNumInSyms;
 
             // Per pdfium's SDDProc: the GR (refinement) arith stats array is
             // allocated ONCE and reused across every per-symbol refinement
@@ -514,8 +514,8 @@ namespace Jbig2Decoder.Region
             var grStatsShared = new byte[RefinementRegionDecoder.StatsSizeFor(p.SdRTemplate)];
 
             var newSyms = new List<Bitmap>((int)p.SdNumNewSyms);
-            int hcheight = 0;
-            int nsymsdecoded = 0;
+            var hcheight = 0;
+            var nsymsdecoded = 0;
 
             while (nsymsdecoded < (int)p.SdNumNewSyms)
             {
@@ -525,7 +525,7 @@ namespace Jbig2Decoder.Region
                 if (hcheight < 0)
                     throw new InvalidOperationException("Invalid (negative) height-class height");
 
-                int symwidth = 0;
+                var symwidth = 0;
 
                 while (true)
                 {
@@ -613,7 +613,7 @@ namespace Jbig2Decoder.Region
         {
             // T.88 §6.5.8.2.2: ID, RDX, RDY, BMSIZE, then byte-align, then
             // arith-coded refinement bitmap.
-            int id = (int)r.ReadBits(sbSymCodeLen);
+            var id = (int)r.ReadBits(sbSymCodeLen);
             if (!hRdx.Decode(r, out int rdx))
                 throw new InvalidOperationException("OOB decoding RDX in SD-single-refagg-Huffman");
             if (!hRdy.Decode(r, out int rdy))
@@ -676,10 +676,10 @@ namespace Jbig2Decoder.Region
             // reading sbSymCodeLen raw bits. This skips the 35-runcode prelude
             // that standalone text regions read at start — encoders for SD
             // multi-instance refagg don't emit that prelude here.
-            int sbNumSyms = 0;
+            var sbNumSyms = 0;
             foreach (var d in refDicts) sbNumSyms += d.Count;
             var trivialLines = new HuffmanLine[sbNumSyms];
-            for (int i = 0; i < sbNumSyms; i++)
+            for (var i = 0; i < sbNumSyms; i++)
                 trivialLines[i] = new HuffmanLine(sbSymCodeLen, 0, i);
             var trivialSbSymCodes = new HuffmanParams { HtOob = false, Lines = trivialLines };
 

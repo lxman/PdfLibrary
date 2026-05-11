@@ -53,9 +53,9 @@ namespace ImageLibrary.Compression.Lzw.Tests
         {
             // Create data that will fill the dictionary and trigger clear codes
             var sb = new StringBuilder();
-            for (int i = 0; i < 10000; i++)
+            for (var i = 0; i < 10000; i++)
             {
-                sb.Append((char)('A' + (i % 26)));
+                sb.Append((char)('A' + i % 26));
             }
             var input = Encoding.ASCII.GetBytes(sb.ToString());
 

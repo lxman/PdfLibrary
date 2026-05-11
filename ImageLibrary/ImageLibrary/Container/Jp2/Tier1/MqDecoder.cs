@@ -188,7 +188,7 @@ internal class MqDecoder
 
         int d;
 
-        if ((_c >> 16) < _a)
+        if (_c >> 16 < _a)
         {
             // MPS path
             if (_a >= 0x8000)

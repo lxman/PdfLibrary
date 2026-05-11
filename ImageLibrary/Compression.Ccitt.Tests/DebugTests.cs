@@ -17,13 +17,13 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Debug_Group4_AllBlack_TraceCompression()
         {
-            int width = 16;
-            int height = 2;
+            var width = 16;
+            var height = 2;
             int bytesPerRow = width / 8;
             var original = new byte[bytesPerRow * height];
 
             // Fill with all black (all 1s)
-            for (int i = 0; i < original.Length; i++)
+            for (var i = 0; i < original.Length; i++)
             {
                 original[i] = 0xFF;
             }
@@ -57,7 +57,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             _output.WriteLine($"\nDecompressed data ({decompressed.Length} bytes): {BitConverter.ToString(decompressed)}");
 
             // Check what we got
-            for (int i = 0; i < Math.Min(10, decompressed.Length); i++)
+            for (var i = 0; i < Math.Min(10, decompressed.Length); i++)
             {
                 _output.WriteLine($"Byte {i}: expected {original[i]:X2}, got {decompressed[i]:X2}");
             }
@@ -68,21 +68,21 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         {
             // Simpler test: just 32 pixels wide, 1 row
             // Using BlackIs1=true so bit=1 means black
-            int width = 32;
-            int height = 1;
-            int stripeWidth = 8;
+            var width = 32;
+            var height = 1;
+            var stripeWidth = 8;
             int bytesPerRow = width / 8;
             var original = new byte[bytesPerRow * height];
 
             // Create striped pattern: W W W W W W W W | B B B B B B B B | W W W W W W W W | B B B B B B B B
             // Bytes: 00 FF 00 FF (when BlackIs1=true)
-            for (int col = 0; col < width; col++)
+            for (var col = 0; col < width; col++)
             {
-                bool isBlack = (col / stripeWidth) % 2 == 1;
+                bool isBlack = col / stripeWidth % 2 == 1;
                 if (isBlack)
                 {
                     int byteIndex = col / 8;
-                    int bitIndex = 7 - (col % 8);
+                    int bitIndex = 7 - col % 8;
                     original[byteIndex] |= (byte)(1 << bitIndex);
                 }
             }
@@ -128,7 +128,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             var decompressed = decoder.Decode(compressed);
             _output.WriteLine($"\nDecompressed: {BitConverter.ToString(decompressed)}");
 
-            for (int i = 0; i < bytesPerRow; i++)
+            for (var i = 0; i < bytesPerRow; i++)
             {
                 string status = original[i] == decompressed[i] ? "OK" : "WRONG";
                 _output.WriteLine($"Byte {i}: expected {original[i]:X2}, got {decompressed[i]:X2} - {status}");
@@ -140,7 +140,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         {
             // Test with all black row (using BlackIs1=true so 0xFF means all black)
             var row = new byte[] { 0xFF, 0xFF }; // 16 bits all set
-            int width = 16;
+            var width = 16;
 
             var options = new CcittOptions { Width = width, BlackIs1 = true };
             var encoder = new CcittEncoder(options);
@@ -151,7 +151,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
             // FindChangingElement(row, after, currentColor)
             // Looking for first element after -1 that differs from white (false)
-            int a1 = (int)method.Invoke(encoder, new object[] { row, -1, false });
+            var a1 = (int)method.Invoke(encoder, [row, -1, false]);
             _output.WriteLine($"FindChangingElement(allBlack, -1, white, BlackIs1=true) = {a1}");
 
             // Should be 0 since pixel 0 is black (different from white)
@@ -163,7 +163,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         {
             // Test with BlackIs1=true (bit=1 means black)
             var row = new byte[] { 0xFF }; // 8 bits all set
-            int width = 8;
+            var width = 8;
 
             var options = new CcittOptions { Width = width, BlackIs1 = true };
             var encoder = new CcittEncoder(options);
@@ -171,9 +171,9 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             var method = typeof(CcittEncoder).GetMethod("GetPixelColor",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
-            for (int i = 0; i < 8; i++)
+            for (var i = 0; i < 8; i++)
             {
-                bool isBlack = (bool)method.Invoke(encoder, new object[] { row, i });
+                var isBlack = (bool)method.Invoke(encoder, [row, i]);
                 _output.WriteLine($"GetPixelColor(0xFF, {i}, BlackIs1=true) = {isBlack}");
                 Assert.True(isBlack, $"Pixel {i} should be black when BlackIs1=true and bit=1");
             }
@@ -182,9 +182,9 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             var options2 = new CcittOptions { Width = width, BlackIs1 = false };
             var encoder2 = new CcittEncoder(options2);
 
-            for (int i = 0; i < 8; i++)
+            for (var i = 0; i < 8; i++)
             {
-                bool isBlack = (bool)method.Invoke(encoder2, new object[] { row, i });
+                var isBlack = (bool)method.Invoke(encoder2, [row, i]);
                 _output.WriteLine($"GetPixelColor(0xFF, {i}, BlackIs1=false) = {isBlack}");
                 Assert.False(isBlack, $"Pixel {i} should be white when BlackIs1=false and bit=1");
             }

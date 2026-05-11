@@ -29,7 +29,7 @@ namespace ImageLibrary.Compression.Ccitt
         public byte[] Encode(byte[] data, int height)
         {
             if (data == null || data.Length == 0)
-                return Array.Empty<byte>();
+                return [];
 
             var writer = new CcittBitWriter();
             int bytesPerRow = (_options.Width + 7) / 8;
@@ -45,12 +45,12 @@ namespace ImageLibrary.Compression.Ccitt
                 // BlackIs1=false: 0=black, 1=white, so we need all 1s for white
                 if (!_options.BlackIs1)
                 {
-                    for (int i = 0; i < bytesPerRow; i++)
+                    for (var i = 0; i < bytesPerRow; i++)
                         referenceLine[i] = 0xFF;
                 }
             }
 
-            for (int row = 0; row < height; row++)
+            for (var row = 0; row < height; row++)
             {
                 if (_options.EncodedByteAlign)
                 {
@@ -58,7 +58,7 @@ namespace ImageLibrary.Compression.Ccitt
                 }
 
                 // Extract current row
-                byte[] currentRow = new byte[bytesPerRow];
+                var currentRow = new byte[bytesPerRow];
                 int srcOffset = row * bytesPerRow;
                 int copyLength = Math.Min(bytesPerRow, data.Length - srcOffset);
                 if (copyLength > 0)
@@ -81,7 +81,7 @@ namespace ImageLibrary.Compression.Ccitt
                         {
                             writer.WriteEol();
                             // Write tag bit: 1 = 1D, 0 = 2D
-                            bool is1D = (row % _options.K) == 0;
+                            bool is1D = row % _options.K == 0;
                             writer.WriteBit(is1D ? 1 : 0);
 
                             if (is1D || referenceLine == null)
@@ -96,7 +96,7 @@ namespace ImageLibrary.Compression.Ccitt
                         else
                         {
                             // Without EOL markers
-                            bool is1D = (row % _options.K) == 0;
+                            bool is1D = row % _options.K == 0;
                             if (is1D || referenceLine == null)
                             {
                                 EncodeGroup3_1DRow(writer, currentRow);
@@ -137,8 +137,8 @@ namespace ImageLibrary.Compression.Ccitt
         /// </summary>
         private void EncodeGroup3_1DRow(CcittBitWriter writer, byte[] row)
         {
-            int position = 0;
-            bool isWhite = true; // Always start with white
+            var position = 0;
+            var isWhite = true; // Always start with white
 
             while (position < _options.Width)
             {
@@ -155,7 +155,7 @@ namespace ImageLibrary.Compression.Ccitt
         private void Encode2DRow(CcittBitWriter writer, byte[] currentRow, byte[] referenceRow)
         {
             int a0 = -1;
-            bool a0Color = false; // White
+            var a0Color = false; // White
 
             while (a0 < _options.Width)
             {
@@ -216,7 +216,7 @@ namespace ImageLibrary.Compression.Ccitt
         /// </summary>
         private int GetRunLength(byte[] row, int start, bool isWhite)
         {
-            int length = 0;
+            var length = 0;
 
             for (int pos = start; pos < _options.Width; pos++)
             {
@@ -318,7 +318,7 @@ namespace ImageLibrary.Compression.Ccitt
                 return false;
 
             int byteIndex = position / 8;
-            int bitIndex = 7 - (position % 8);
+            int bitIndex = 7 - position % 8;
 
             if (byteIndex >= row.Length)
                 return false;

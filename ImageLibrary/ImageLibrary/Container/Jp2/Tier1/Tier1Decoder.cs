@@ -52,7 +52,7 @@ internal class Tier1Decoder
 
         for (var r = 0; r < numResolutions; r++)
         {
-            int numSubbands = (r == 0) ? 1 : 3;
+            int numSubbands = r == 0 ? 1 : 3;
 
             // Calculate resolution dimensions using ceiling division
             int shift = numResolutions - 1 - r;

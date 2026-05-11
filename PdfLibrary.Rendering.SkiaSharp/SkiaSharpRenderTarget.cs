@@ -144,8 +144,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             float rotationRadians = -(float)(rotation * Math.PI / 180.0);
 
             // Calculate dimensions after rotation (swap for 90°/270°)
-            float finalWidth = (rotation == 90 || rotation == 270) ? (float)height : (float)width;
-            float finalHeight = (rotation == 90 || rotation == 270) ? (float)width : (float)height;
+            float finalWidth = rotation == 90 || rotation == 270 ? (float)height : (float)width;
+            float finalHeight = rotation == 90 || rotation == 270 ? (float)width : (float)height;
 
             // Rotate around origin (0,0) in PDF space, then translate to position correctly
             // After rotation, the page bounding box may be in negative coordinate space,

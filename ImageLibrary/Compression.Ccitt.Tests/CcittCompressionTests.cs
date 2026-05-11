@@ -14,10 +14,10 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             int bytesPerRow = (width + 7) / 8;
             var bitmap = new byte[bytesPerRow * height];
 
-            for (int row = 0; row < height; row++)
+            for (var row = 0; row < height; row++)
             {
-                byte fillByte = (pattern && row % 2 == 1) ? (byte)0xFF : (byte)0x00;
-                for (int col = 0; col < bytesPerRow; col++)
+                byte fillByte = pattern && row % 2 == 1 ? (byte)0xFF : (byte)0x00;
+                for (var col = 0; col < bytesPerRow; col++)
                 {
                     bitmap[row * bytesPerRow + col] = fillByte;
                 }
@@ -36,19 +36,19 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             var bitmap = new byte[bytesPerRow * height];
 
             // Start with all white (all 1s for BlackIs1=false)
-            for (int i = 0; i < bitmap.Length; i++)
+            for (var i = 0; i < bitmap.Length; i++)
                 bitmap[i] = 0xFF;
 
-            for (int row = 0; row < height; row++)
+            for (var row = 0; row < height; row++)
             {
-                for (int col = 0; col < width; col++)
+                for (var col = 0; col < width; col++)
                 {
-                    bool isBlack = (col / stripeWidth) % 2 == 1;
+                    bool isBlack = col / stripeWidth % 2 == 1;
                     if (isBlack)
                     {
                         // Clear bit for black (BlackIs1=false: bit=0 is black)
                         int byteIndex = row * bytesPerRow + col / 8;
-                        int bitIndex = 7 - (col % 8);
+                        int bitIndex = 7 - col % 8;
                         bitmap[byteIndex] &= (byte)~(1 << bitIndex);
                     }
                 }
@@ -60,9 +60,9 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group4_RoundTrip_AllWhite()
         {
-            int width = 64;
-            int height = 10;
-            var original = new byte[(width / 8) * height]; // All zeros = all white
+            var width = 64;
+            var height = 10;
+            var original = new byte[width / 8 * height]; // All zeros = all white
 
             var compressed = Ccitt.CompressGroup4(original, width, height);
             var decompressed = Ccitt.DecompressGroup4(compressed, width, height);
@@ -74,13 +74,13 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group4_RoundTrip_AllBlack()
         {
-            int width = 64;
-            int height = 10;
+            var width = 64;
+            var height = 10;
             int bytesPerRow = width / 8;
             var original = new byte[bytesPerRow * height];
 
             // Fill with all black (all 1s in standard CCITT)
-            for (int i = 0; i < original.Length; i++)
+            for (var i = 0; i < original.Length; i++)
             {
                 original[i] = 0xFF;
             }
@@ -95,8 +95,8 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group4_RoundTrip_AlternatingRows()
         {
-            int width = 64;
-            int height = 10;
+            var width = 64;
+            var height = 10;
             var original = CreateTestBitmap(width, height, true);
 
             var compressed = Ccitt.CompressGroup4(original, width, height);
@@ -109,8 +109,8 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group4_RoundTrip_VerticalStripes()
         {
-            int width = 64;
-            int height = 10;
+            var width = 64;
+            var height = 10;
             var original = CreateStripedBitmap(width, height, 8);
 
             var compressed = Ccitt.CompressGroup4(original, width, height);
@@ -123,9 +123,9 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group3_1D_RoundTrip_AllWhite()
         {
-            int width = 64;
-            int height = 10;
-            var original = new byte[(width / 8) * height];
+            var width = 64;
+            var height = 10;
+            var original = new byte[width / 8 * height];
 
             var compressed = Ccitt.CompressGroup3_1D(original, width, height);
             var decompressed = Ccitt.DecompressGroup3_1D(compressed, width, height);
@@ -137,8 +137,8 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group3_1D_RoundTrip_AlternatingRows()
         {
-            int width = 64;
-            int height = 10;
+            var width = 64;
+            var height = 10;
             var original = CreateTestBitmap(width, height, true);
 
             var compressed = Ccitt.CompressGroup3_1D(original, width, height);
@@ -151,9 +151,9 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Group4_Compression_ReducesSize_ForRepetitiveData()
         {
-            int width = 1728; // Standard fax width
-            int height = 100;
-            var original = new byte[(width / 8) * height]; // All white
+            var width = 1728; // Standard fax width
+            var height = 100;
+            var original = new byte[width / 8 * height]; // All white
 
             var compressed = Ccitt.CompressGroup4(original, width, height);
 
@@ -241,14 +241,14 @@ namespace ImageLibrary.Compression.Ccitt.Tests
         [Fact]
         public void Decompress_EmptyData_ReturnsEmptyArray()
         {
-            var result = Ccitt.Decompress(Array.Empty<byte>());
+            var result = Ccitt.Decompress([]);
             Assert.Empty(result);
         }
 
         [Fact]
         public void Compress_EmptyData_ReturnsEmptyArray()
         {
-            var result = Ccitt.Compress(Array.Empty<byte>(), 0);
+            var result = Ccitt.Compress([], 0);
             Assert.Empty(result);
         }
 

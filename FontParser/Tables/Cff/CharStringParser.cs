@@ -61,13 +61,13 @@ namespace FontParser.Tables.Cff
                     case true when b < 0xFB:
                         {
                             byte b0 = _bytes[stackIndex++];
-                            _stack.Push(((b - 0xF7) * 0x100) + b0 + 0x6C);
+                            _stack.Push((b - 0xF7) * 0x100 + b0 + 0x6C);
                             break;
                         }
                     case true when b < 0xFF:
                         {
                             byte b0 = _bytes[stackIndex++];
-                            _stack.Push((-(b - 0xFB) * 0x100) - b0 - 0x6C);
+                            _stack.Push(-(b - 0xFB) * 0x100 - b0 - 0x6C);
                             break;
                         }
                     case true when b == 0xFF:
@@ -515,13 +515,13 @@ namespace FontParser.Tables.Cff
                     case true when b < 0xFB:
                         {
                             byte b0 = _bytes[stackIndex++];
-                            _stack.Push(((b - 0xF7) * 0x100) + b0 + 0x6C);
+                            _stack.Push((b - 0xF7) * 0x100 + b0 + 0x6C);
                             break;
                         }
                     case true when b < 0xFF:
                         {
                             byte b0 = _bytes[stackIndex++];
-                            _stack.Push((-(b - 0xFB) * 0x100) - b0 - 0x6C);
+                            _stack.Push(-(b - 0xFB) * 0x100 - b0 - 0x6C);
                             break;
                         }
                     case true when b == 0xFF:

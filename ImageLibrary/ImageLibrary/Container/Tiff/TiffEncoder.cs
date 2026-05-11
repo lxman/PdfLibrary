@@ -132,7 +132,7 @@ public static class TiffEncoder
         WriteUInt16(writer, (ushort)tags.Count, littleEndian);
 
         // Calculate data offset (after all IFD entries and next IFD pointer)
-        long dataOffset = writer.BaseStream.Position + (tags.Count * 12) + 4;
+        long dataOffset = writer.BaseStream.Position + tags.Count * 12 + 4;
 
         // Write IFD entries
         foreach (IfdEntry? entry in tags)

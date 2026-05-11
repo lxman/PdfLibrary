@@ -85,11 +85,11 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             Assert.Equal(reference.Length, decoded.Length);
 
             // Find differences
-            int differences = 0;
+            var differences = 0;
             int firstDiffByte = -1;
             int firstDiffRow = -1;
 
-            for (int i = 0; i < decoded.Length && i < reference.Length; i++)
+            for (var i = 0; i < decoded.Length && i < reference.Length; i++)
             {
                 if (decoded[i] != reference[i])
                 {
@@ -117,13 +117,13 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
                 // Show first few different rows
                 _output.WriteLine("\nFirst 5 rows with differences:");
-                int diffRowsShown = 0;
-                for (int row = 0; row < Height && diffRowsShown < 5; row++)
+                var diffRowsShown = 0;
+                for (var row = 0; row < Height && diffRowsShown < 5; row++)
                 {
                     int rowStart = row * bytesPerRow;
-                    bool rowHasDiff = false;
+                    var rowHasDiff = false;
 
-                    for (int col = 0; col < bytesPerRow; col++)
+                    for (var col = 0; col < bytesPerRow; col++)
                     {
                         if (decoded[rowStart + col] != reference[rowStart + col])
                         {
@@ -137,7 +137,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
                         _output.WriteLine($"\nRow {row} (bytes {rowStart}-{rowStart + bytesPerRow - 1}):");
 
                         // Find first differing byte in row
-                        for (int col = 0; col < bytesPerRow; col++)
+                        for (var col = 0; col < bytesPerRow; col++)
                         {
                             if (decoded[rowStart + col] != reference[rowStart + col])
                             {
@@ -187,8 +187,8 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             _output.WriteLine(BitConverter.ToString(reference, row55Start, Math.Min(30, bytesPerRow)));
 
             // Check if rows 54 and 55 are identical
-            bool identical = true;
-            for (int i = 0; i < bytesPerRow; i++)
+            var identical = true;
+            for (var i = 0; i < bytesPerRow; i++)
             {
                 if (reference[row54Start + i] != reference[row55Start + i])
                 {
@@ -201,7 +201,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
                 _output.WriteLine("\nRows 54 and 55 are identical");
 
             // Find first non-white byte in row 55
-            for (int i = 0; i < bytesPerRow; i++)
+            for (var i = 0; i < bytesPerRow; i++)
             {
                 if (reference[row55Start + i] != 0xFF)
                 {
@@ -220,7 +220,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
             // Show as bits
             _output.WriteLine("\nBits around position 843:");
-            int showStart = Math.Max(0, (843 / 8) - 2) * 8;
+            int showStart = Math.Max(0, 843 / 8 - 2) * 8;
             for (int b = showStart / 8; b < Math.Min(compressed.Length, showStart / 8 + 8); b++)
             {
                 string bits = Convert.ToString(compressed[b], 2).PadLeft(8, '0');
@@ -248,7 +248,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             // Show as bits
             _output.WriteLine("\nFirst 200 bits:");
             var bits = new System.Text.StringBuilder();
-            for (int i = 0; i < Math.Min(25, compressed.Length); i++)
+            for (var i = 0; i < Math.Min(25, compressed.Length); i++)
             {
                 bits.Append(Convert.ToString(compressed[i], 2).PadLeft(8, '0'));
                 bits.Append(' ');
@@ -276,8 +276,8 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             _output.WriteLine($"Decoded {decoded.Length} bytes = {rowsDecoded} rows (expected {Height})");
 
             // Count non-white bytes in decoded data
-            int nonWhiteBytes = 0;
-            for (int i = 0; i < decoded.Length; i++)
+            var nonWhiteBytes = 0;
+            for (var i = 0; i < decoded.Length; i++)
             {
                 if (decoded[i] != 0xFF) nonWhiteBytes++;
             }
@@ -305,11 +305,11 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             _output.WriteLine("Reference row 0:");
             int row0Start = 0 * bytesPerRow;
             var changes0 = new System.Collections.Generic.List<int>();
-            bool lastColor0 = false;
-            for (int i = 0; i < Width; i++)
+            var lastColor0 = false;
+            for (var i = 0; i < Width; i++)
             {
                 int byteIdx = row0Start + i / 8;
-                int bitIdx = 7 - (i % 8);
+                int bitIdx = 7 - i % 8;
                 bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                 bool isBlack = !bit;
                 if (i == 0 && isBlack) { changes0.Add(0); lastColor0 = true; }
@@ -322,17 +322,17 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
             // Find first row with content in reference
             _output.WriteLine("\nFirst 60 reference rows with content:");
-            bool lastColor = false;
-            int rowsShown = 0;
-            for (int rowNum = 0; rowNum < 60 && rowsShown < 20; rowNum++)
+            var lastColor = false;
+            var rowsShown = 0;
+            for (var rowNum = 0; rowNum < 60 && rowsShown < 20; rowNum++)
             {
                 int rowStart = rowNum * bytesPerRow;
                 var changes = new System.Collections.Generic.List<int>();
                 lastColor = false;
-                for (int i = 0; i < Width; i++)
+                for (var i = 0; i < Width; i++)
                 {
                     int byteIdx = rowStart + i / 8;
-                    int bitIdx = 7 - (i % 8);
+                    int bitIdx = 7 - i % 8;
                     bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                     bool isBlack = !bit;
                     if (i == 0 && isBlack) { changes.Add(0); lastColor = true; }
@@ -347,15 +347,15 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
             // Show reference rows 50-53 (leading up to where error happens)
             _output.WriteLine("\nRows 50-53:");
-            for (int rowNum = 50; rowNum <= 53; rowNum++)
+            for (var rowNum = 50; rowNum <= 53; rowNum++)
             {
                 int rowStart = rowNum * bytesPerRow;
                 var changes = new System.Collections.Generic.List<int>();
                 lastColor = false;
-                for (int i = 0; i < Width; i++)
+                for (var i = 0; i < Width; i++)
                 {
                     int byteIdx = rowStart + i / 8;
-                    int bitIdx = 7 - (i % 8);
+                    int bitIdx = 7 - i % 8;
                     bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                     bool isBlack = !bit;
                     if (i == 0 && isBlack) { changes.Add(0); lastColor = true; }
@@ -371,10 +371,10 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             // Count changing elements in row 54
             var changes54 = new System.Collections.Generic.List<int>();
             lastColor = false; // white (BlackIs1=false, so 1=white, 0xFF = all white)
-            for (int i = 0; i < Width; i++)
+            for (var i = 0; i < Width; i++)
             {
                 int byteIdx = row54Start + i / 8;
-                int bitIdx = 7 - (i % 8);
+                int bitIdx = 7 - i % 8;
                 bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                 bool isBlack = !bit; // BlackIs1=false means bit=0 is black
 
@@ -396,10 +396,10 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             int row55Start = 55 * bytesPerRow;
             var changes55 = new System.Collections.Generic.List<int>();
             lastColor = false;
-            for (int i = 0; i < Width; i++)
+            for (var i = 0; i < Width; i++)
             {
                 int byteIdx = row55Start + i / 8;
-                int bitIdx = 7 - (i % 8);
+                int bitIdx = 7 - i % 8;
                 bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                 bool isBlack = !bit;
 
@@ -446,7 +446,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             // Filter trace to show rows around first mismatch (row 45)
             var trace = sw.ToString();
             var lines = trace.Split('\n');
-            bool inRange = false;
+            var inRange = false;
             foreach (var line in lines)
             {
                 // Show rows 44-47
@@ -464,10 +464,10 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             int row44Start = 44 * bytesPerRow;
             var ref44Changes = new System.Collections.Generic.List<int>();
             lastColor = false;
-            for (int i = 0; i < Width; i++)
+            for (var i = 0; i < Width; i++)
             {
                 int byteIdx = row44Start + i / 8;
-                int bitIdx = 7 - (i % 8);
+                int bitIdx = 7 - i % 8;
                 bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                 bool isBlack = !bit;
                 if (i == 0 && isBlack) { ref44Changes.Add(0); lastColor = true; }
@@ -482,10 +482,10 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             {
                 var dec44Changes = new System.Collections.Generic.List<int>();
                 lastColor = false;
-                for (int i = 0; i < Width; i++)
+                for (var i = 0; i < Width; i++)
                 {
                     int byteIdx = dec44Start + i / 8;
-                    int bitIdx = 7 - (i % 8);
+                    int bitIdx = 7 - i % 8;
                     bool bit = ((partial[byteIdx] >> bitIdx) & 1) != 0;
                     bool isBlack = !bit;
                     if (i == 0 && isBlack) { dec44Changes.Add(0); lastColor = true; }
@@ -498,10 +498,10 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             int row45Start = 45 * bytesPerRow;
             var ref45Changes = new System.Collections.Generic.List<int>();
             lastColor = false;
-            for (int i = 0; i < Width; i++)
+            for (var i = 0; i < Width; i++)
             {
                 int byteIdx = row45Start + i / 8;
-                int bitIdx = 7 - (i % 8);
+                int bitIdx = 7 - i % 8;
                 bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                 bool isBlack = !bit;
                 if (i == 0 && isBlack) { ref45Changes.Add(0); lastColor = true; }
@@ -515,11 +515,11 @@ namespace ImageLibrary.Compression.Ccitt.Tests
             _output.WriteLine("\n--- Finding first mismatch ---");
             int decodedRows = partial.Length / bytesPerRow;
             int firstMismatch = -1;
-            for (int rowNum = 0; rowNum < decodedRows; rowNum++)
+            for (var rowNum = 0; rowNum < decodedRows; rowNum++)
             {
                 int rowStart = rowNum * bytesPerRow;
-                bool match = true;
-                for (int b = 0; b < bytesPerRow && match; b++)
+                var match = true;
+                for (var b = 0; b < bytesPerRow && match; b++)
                 {
                     if (partial[rowStart + b] != reference[rowStart + b])
                         match = false;
@@ -541,11 +541,11 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
                 // Compute changing elements for decoded row
                 var decodedChanges = new System.Collections.Generic.List<int>();
-                bool decLastColor = false;
-                for (int i = 0; i < Width; i++)
+                var decLastColor = false;
+                for (var i = 0; i < Width; i++)
                 {
                     int byteIdx = rowStart + i / 8;
-                    int bitIdx = 7 - (i % 8);
+                    int bitIdx = 7 - i % 8;
                     bool bit = ((partial[byteIdx] >> bitIdx) & 1) != 0;
                     bool isBlack = !bit; // BlackIs1=false
                     if (i == 0 && isBlack) { decodedChanges.Add(0); decLastColor = true; }
@@ -554,11 +554,11 @@ namespace ImageLibrary.Compression.Ccitt.Tests
 
                 // Compute changing elements for reference row
                 var refChanges = new System.Collections.Generic.List<int>();
-                bool refLastColor = false;
-                for (int i = 0; i < Width; i++)
+                var refLastColor = false;
+                for (var i = 0; i < Width; i++)
                 {
                     int byteIdx = rowStart + i / 8;
-                    int bitIdx = 7 - (i % 8);
+                    int bitIdx = 7 - i % 8;
                     bool bit = ((reference[byteIdx] >> bitIdx) & 1) != 0;
                     bool isBlack = !bit;
                     if (i == 0 && isBlack) { refChanges.Add(0); refLastColor = true; }
@@ -568,7 +568,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
                 bool match = decodedChanges.Count == refChanges.Count;
                 if (match)
                 {
-                    for (int i = 0; i < decodedChanges.Count; i++)
+                    for (var i = 0; i < decodedChanges.Count; i++)
                     {
                         if (decodedChanges[i] != refChanges[i]) { match = false; break; }
                     }
@@ -585,7 +585,7 @@ namespace ImageLibrary.Compression.Ccitt.Tests
                         _output.WriteLine($"  Reference ({refChanges.Count}): {string.Join(", ", refChanges)}");
 
                         // Find first different element
-                        for (int i = 0; i < Math.Min(decodedChanges.Count, refChanges.Count); i++)
+                        for (var i = 0; i < Math.Min(decodedChanges.Count, refChanges.Count); i++)
                         {
                             if (decodedChanges[i] != refChanges[i])
                             {

@@ -44,7 +44,7 @@ internal class Jbig2DecodeFilter : IStreamFilter
             // Decode to 1-bit packed bitmap (1 = black, MSB-first, stride = (width + 7) / 8).
             byte[] result = decoder.DecodeJBIG2ToPacked(data, out int width, out int height);
 
-            int expected = ((width + 7) / 8) * height;
+            int expected = (width + 7) / 8 * height;
             if (result.Length == 0 || width <= 0 || height <= 0 || result.Length != expected)
                 return [];
 

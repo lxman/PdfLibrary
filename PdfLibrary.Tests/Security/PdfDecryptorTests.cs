@@ -72,9 +72,9 @@ public class PdfDecryptorTests
     public void Constructor_WithInvalidPassword_ShouldThrowSecurityException()
     {
         // Arrange - create an encryption dict that won't validate
-        byte[] oValue = new byte[32];
-        byte[] uValue = new byte[32];
-        byte[] documentId = new byte[16];
+        var oValue = new byte[32];
+        var uValue = new byte[32];
+        var documentId = new byte[16];
 
         // Fill with random values that won't match any password
         Random.Shared.NextBytes(oValue);

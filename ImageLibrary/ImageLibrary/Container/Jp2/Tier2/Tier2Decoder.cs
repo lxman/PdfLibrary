@@ -112,7 +112,7 @@ internal class TilePartDecoder
                 if (resHeight == 0) resHeight = 1;
 
                 // Number of subbands at this resolution
-                int numSubbands = (r == 0) ? 1 : 3;
+                int numSubbands = r == 0 ? 1 : 3;
 
                 for (var s = 0; s < numSubbands; s++)
                 {
@@ -333,7 +333,7 @@ internal class TilePartDecoder
         }
 
         // Parse code-block contributions
-        int numSubbands = (resolution == 0) ? 1 : 3;
+        int numSubbands = resolution == 0 ? 1 : 3;
 
         var contributions = new List<(int cbx, int cby, int subband, int passes, int length, int zeroBitPlanes)>();
 
@@ -556,7 +556,7 @@ internal class TilePartDecoder
 
         for (var r = 0; r < _numResolutions; r++)
         {
-            int numSubbands = (r == 0) ? 1 : 3;
+            int numSubbands = r == 0 ? 1 : 3;
             resolutionBlocks[r] = new CodeBlockBitstream[numSubbands][];
 
             // Calculate subband dimensions at this resolution using ceiling division

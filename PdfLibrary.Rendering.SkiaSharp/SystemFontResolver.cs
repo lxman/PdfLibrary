@@ -20,7 +20,7 @@ public class SystemFontResolver
     // Prioritize metric-compatible Base14 replacements (URW, Liberation, TeX Gyre)
     // These fonts have identical metrics to Adobe's Base14 fonts
     private static readonly string[] SansSerifFallbacks =
-    {
+    [
         // Metric-compatible Helvetica replacements (HIGHEST PRIORITY)
         "Nimbus Sans L",           // URW font, exact Helvetica metrics
         "Nimbus Sans",             // Newer URW variant
@@ -34,10 +34,10 @@ public class SystemFontResolver
         "DejaVu Sans",
         "Noto Sans",
         "Segoe UI"
-    };
+    ];
 
     private static readonly string[] SerifFallbacks =
-    {
+    [
         // Metric-compatible Times replacements (HIGHEST PRIORITY)
         "Nimbus Roman No9 L",      // URW font, exact Times metrics
         "Nimbus Roman",            // Newer URW variant
@@ -51,10 +51,10 @@ public class SystemFontResolver
         "DejaVu Serif",
         "Noto Serif",
         "Georgia"
-    };
+    ];
 
     private static readonly string[] MonospaceFallbacks =
-    {
+    [
         // Metric-compatible Courier replacements (HIGHEST PRIORITY)
         "Nimbus Mono L",           // URW font, exact Courier metrics
         "Nimbus Mono PS",          // Newer URW variant
@@ -69,23 +69,23 @@ public class SystemFontResolver
         "DejaVu Sans Mono",
         "Noto Sans Mono",
         "Lucida Console"
-    };
+    ];
 
     private static readonly string[] SymbolFallbacks =
-    {
+    [
         "Symbol",
         "Segoe UI Symbol",
         "DejaVu Sans"
-    };
+    ];
 
     private static readonly string[] DingbatsFallbacks =
-    {
+    [
         "Zapf Dingbats",
         "ZapfDingbats",
         "Wingdings",
         "Segoe UI Symbol",
         "DejaVu Sans"
-    };
+    ];
 
     // Resolved fallback fonts for each category (cached at startup)
     private string? _resolvedSansSerif;

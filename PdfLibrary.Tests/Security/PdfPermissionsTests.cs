@@ -42,7 +42,7 @@ public class PdfPermissionsTests
     public void Constructor_WithPrintBit_ShouldAllowPrint()
     {
         // Arrange - bit 3 is print (1 << 2 = 4)
-        int pValue = 0b00000100;
+        var pValue = 0b00000100;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -57,7 +57,7 @@ public class PdfPermissionsTests
     public void Constructor_WithCopyBit_ShouldAllowCopy()
     {
         // Arrange - bit 5 is copy (1 << 4 = 16)
-        int pValue = 0b00010000;
+        var pValue = 0b00010000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -71,7 +71,7 @@ public class PdfPermissionsTests
     public void Constructor_WithModifyBit_ShouldAllowModify()
     {
         // Arrange - bit 4 is modify (1 << 3 = 8)
-        int pValue = 0b00001000;
+        var pValue = 0b00001000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -85,7 +85,7 @@ public class PdfPermissionsTests
     public void Constructor_WithAnnotationsBit_ShouldAllowAnnotations()
     {
         // Arrange - bit 6 is annotations (1 << 5 = 32)
-        int pValue = 0b00100000;
+        var pValue = 0b00100000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -98,7 +98,7 @@ public class PdfPermissionsTests
     public void Constructor_WithFillFormsBit_ShouldAllowFillForms()
     {
         // Arrange - bit 9 is fill forms (1 << 8 = 256)
-        int pValue = 0b100000000;
+        var pValue = 0b100000000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -111,7 +111,7 @@ public class PdfPermissionsTests
     public void Constructor_WithAccessibilityBit_ShouldAllowAccessibility()
     {
         // Arrange - bit 10 is accessibility (1 << 9 = 512)
-        int pValue = 0b1000000000;
+        var pValue = 0b1000000000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -124,7 +124,7 @@ public class PdfPermissionsTests
     public void Constructor_WithAssembleBit_ShouldAllowAssemble()
     {
         // Arrange - bit 11 is assemble (1 << 10 = 1024)
-        int pValue = 0b10000000000;
+        var pValue = 0b10000000000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -137,7 +137,7 @@ public class PdfPermissionsTests
     public void Constructor_WithPrintHighQualityBit_ShouldAllowPrintHighQuality()
     {
         // Arrange - bit 12 is print high quality (1 << 11 = 2048)
-        int pValue = 0b100000000000;
+        var pValue = 0b100000000000;
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -151,7 +151,7 @@ public class PdfPermissionsTests
     {
         // Arrange - typical "print only" value: -3904 (0xFFFF0CC0)
         // This allows: print, print HQ, accessibility
-        int pValue = unchecked((int)0xFFFFF0C0);
+        var pValue = unchecked((int)0xFFFFF0C0);
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -165,7 +165,7 @@ public class PdfPermissionsTests
     public void Constructor_WithAllBitsSet_ShouldParseCorrectly()
     {
         // Arrange - all permission bits set: 0x0F3C (bits 3-12)
-        int pValue = unchecked((int)0xFFFFFFFF);
+        var pValue = unchecked((int)0xFFFFFFFF);
 
         // Act
         var permissions = new PdfPermissions(pValue);
@@ -201,7 +201,7 @@ public class PdfPermissionsTests
         var permissions = new PdfPermissions(0);
 
         // Act
-        string result = permissions.ToString();
+        var result = permissions.ToString();
 
         // Assert
         Assert.Equal("None", result);
@@ -211,11 +211,11 @@ public class PdfPermissionsTests
     public void ToString_WithSomePermissions_ShouldListThem()
     {
         // Arrange - print and copy
-        int pValue = 0b00010100; // bits 3 and 5
+        var pValue = 0b00010100; // bits 3 and 5
 
         // Act
         var permissions = new PdfPermissions(pValue);
-        string result = permissions.ToString();
+        var result = permissions.ToString();
 
         // Assert
         Assert.Contains("Print", result);

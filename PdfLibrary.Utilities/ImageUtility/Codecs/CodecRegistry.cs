@@ -8,7 +8,7 @@ namespace ImageUtility.Codecs;
 public class CodecRegistry
 {
     private static readonly Lazy<CodecRegistry> _instance = new(() => new CodecRegistry());
-    private readonly List<IImageCodec> _codecs = new();
+    private readonly List<IImageCodec> _codecs = [];
     private CodecConfiguration _configuration;
 
     /// <summary>
@@ -137,7 +137,7 @@ public class CodecRegistry
 
         // Read first 16 bytes for magic number detection
         using var stream = File.OpenRead(filePath);
-        byte[] header = new byte[16];
+        var header = new byte[16];
         int bytesRead = stream.Read(header, 0, header.Length);
 
         if (bytesRead == 0)

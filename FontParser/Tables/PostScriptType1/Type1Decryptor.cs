@@ -32,7 +32,7 @@ namespace FontParser.Tables.PostScriptType1
             if (decrypted.Length <= EexecSkipBytes)
                 return Array.Empty<byte>();
 
-            byte[] result = new byte[decrypted.Length - EexecSkipBytes];
+            var result = new byte[decrypted.Length - EexecSkipBytes];
             Array.Copy(decrypted, EexecSkipBytes, result, 0, result.Length);
             return result;
         }
@@ -51,7 +51,7 @@ namespace FontParser.Tables.PostScriptType1
             if (decrypted.Length <= lenIV)
                 return Array.Empty<byte>();
 
-            byte[] result = new byte[decrypted.Length - lenIV];
+            var result = new byte[decrypted.Length - lenIV];
             Array.Copy(decrypted, lenIV, result, 0, result.Length);
             return result;
         }
@@ -61,13 +61,13 @@ namespace FontParser.Tables.PostScriptType1
         /// </summary>
         private static byte[] Decrypt(byte[] data, ushort initialKey)
         {
-            byte[] result = new byte[data.Length];
+            var result = new byte[data.Length];
             ushort r = initialKey;
 
-            for (int i = 0; i < data.Length; i++)
+            for (var i = 0; i < data.Length; i++)
             {
                 byte cipher = data[i];
-                byte plain = (byte)(cipher ^ (r >> 8));
+                var plain = (byte)(cipher ^ (r >> 8));
                 r = (ushort)((cipher + r) * C1 + C2);
                 result[i] = plain;
             }
@@ -88,8 +88,8 @@ namespace FontParser.Tables.PostScriptType1
             if (hexData.Length % 2 != 0)
                 hexData = hexData + "0"; // Pad if odd length
 
-            byte[] result = new byte[hexData.Length / 2];
-            for (int i = 0; i < result.Length; i++)
+            var result = new byte[hexData.Length / 2];
+            for (var i = 0; i < result.Length; i++)
             {
                 result[i] = Convert.ToByte(hexData.Substring(i * 2, 2), 16);
             }

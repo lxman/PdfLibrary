@@ -55,7 +55,7 @@ namespace Jbig2Decoder.Region
                 // §6.7.5 fixes the AT pixels independent of HDTEMPLATE.
                 var gbat = new sbyte[8]
                 {
-                    (sbyte)(-p.HdPw), 0,
+                    (sbyte)-p.HdPw, 0,
                     -3, -1,
                     2, -2,
                     -2, -2,
@@ -80,8 +80,8 @@ namespace Jbig2Decoder.Region
             {
                 var pat = new Bitmap(p.HdPw, p.HdPh);
                 int xCursor = (int)i * p.HdPw;
-                for (int y = 0; y < p.HdPh; y++)
-                    for (int x = 0; x < p.HdPw; x++)
+                for (var y = 0; y < p.HdPh; y++)
+                    for (var x = 0; x < p.HdPw; x++)
                         pat.SetPixel(x, y, collective.GetPixel(xCursor + x, y));
                 patterns[i] = pat;
             }

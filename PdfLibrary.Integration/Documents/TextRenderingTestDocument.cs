@@ -108,13 +108,13 @@ public class TextRenderingTestDocument : ITestDocument
             page.AddText("Fill + Stroke Color Combinations", leftMargin, y, "Helvetica-Bold", 11);
             y -= 28;
 
-            (PdfColor, PdfColor, string)[] colorCombos = new[]
-            {
+            (PdfColor, PdfColor, string)[] colorCombos =
+            [
                 (PdfColor.White, PdfColor.Black, "Wht/Blk"),
                 (PdfColor.Red, PdfColor.Black, "Red/Blk"),
                 (PdfColor.Yellow, PdfColor.Blue, "Yel/Blu"),
-                (PdfColor.FromGray(0.9), PdfColor.Red, "Gry/Red"),
-            };
+                (PdfColor.FromGray(0.9), PdfColor.Red, "Gry/Red")
+            ];
 
             x = leftMargin;
             foreach ((PdfColor fill, PdfColor stroke, string name) in colorCombos)

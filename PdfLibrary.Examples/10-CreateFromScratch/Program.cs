@@ -72,12 +72,12 @@ PdfDocumentBuilder.Create()
             ("Tables", PdfColor.FromHex("#1ABC9C"))
         };
 
-        for (int i = 0; i < features.Length; i++)
+        for (var i = 0; i < features.Length; i++)
         {
             var row = i / 3;
             var col = i % 3;
-            var x = 72 + (col * (boxSize + spacing + 80));
-            var y = featureY + (row * (boxSize + 40));
+            var x = 72 + col * (boxSize + spacing + 80);
+            var y = featureY + row * (boxSize + 40);
 
             // Colored box
             p.AddRectangle(x, y, boxSize, boxSize, features[i].Item2);
@@ -235,10 +235,10 @@ PdfDocumentBuilder.Create()
             .Font("Helvetica-Bold", 14);
 
         var gradientY = 510;
-        for (int i = 0; i < 20; i++)
+        for (var i = 0; i < 20; i++)
         {
-            var gray = (byte)(255 - (i * 12));
-            p.AddRectangle(72 + (i * 23), gradientY, 23, 40, PdfColor.FromRgb(gray, gray, gray));
+            var gray = (byte)(255 - i * 12);
+            p.AddRectangle(72 + i * 23, gradientY, 23, 40, PdfColor.FromRgb(gray, gray, gray));
         }
     })
 
@@ -285,14 +285,14 @@ PdfDocumentBuilder.Create()
 
         var gridSize = 10;
         var gridStartY = 400;
-        for (int row = 0; row < 10; row++)
+        for (var row = 0; row < 10; row++)
         {
-            for (int col = 0; col < 20; col++)
+            for (var col = 0; col < 20; col++)
             {
                 var color = (row + col) % 2 == 0
                     ? PdfColor.FromHex("#3498DB")
                     : PdfColor.FromHex("#ECF0F1");
-                p.AddRectangle(72 + (col * gridSize), gridStartY + (row * gridSize),
+                p.AddRectangle(72 + col * gridSize, gridStartY + row * gridSize,
                     gridSize, gridSize, color);
             }
         }

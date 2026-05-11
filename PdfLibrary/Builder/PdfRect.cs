@@ -73,7 +73,7 @@ public readonly struct PdfRect
         double heightPt = height * 72;
 
         // Convert from top-left origin to bottom-left origin
-        double topPt = pageHeight - (top * 72);
+        double topPt = pageHeight - top * 72;
         double bottomPt = topPt - heightPt;
 
         return new PdfRect(leftPt, bottomPt, leftPt + widthPt, topPt);
@@ -96,7 +96,7 @@ public readonly struct PdfRect
         double heightPt = height * mmToPoints;
 
         // Convert from top-left origin to bottom-left origin
-        double topPt = pageHeight - (top * mmToPoints);
+        double topPt = pageHeight - top * mmToPoints;
         double bottomPt = topPt - heightPt;
 
         return new PdfRect(leftPt, bottomPt, leftPt + widthPt, topPt);

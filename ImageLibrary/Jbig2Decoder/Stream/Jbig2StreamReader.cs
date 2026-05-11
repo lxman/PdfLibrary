@@ -178,14 +178,14 @@ namespace Jbig2Decoder.Stream
             }
             if (p >= end)
                 throw new InvalidOperationException(
-                    $"Deferred-length generic region: end-of-data marker not found in {(_data.Length - bodyStart)} bytes");
+                    $"Deferred-length generic region: end-of-data marker not found in {_data.Length - bodyStart} bytes");
 
             // Marker (2 bytes) + row count (4 bytes) = 6 bytes consumed past p.
             if (p + 6 > _data.Length)
                 throw new InvalidOperationException(
                     "Deferred-length generic region: end-of-data marker has no following row count");
 
-            hdr.DataLength = (uint)((p + 6) - bodyStart);
+            hdr.DataLength = (uint)(p + 6 - bodyStart);
         }
 
         // Random-access organisation (T.88 §7.1):
@@ -360,7 +360,7 @@ namespace Jbig2Decoder.Stream
         private void HandleEndOfStripe(SegmentHeader hdr, int bodyStart, int bodyLen)
         {
             if (bodyLen < 4) return;
-            int yEnd = (int)BigEndian.U32(_data, bodyStart);
+            var yEnd = (int)BigEndian.U32(_data, bodyStart);
             if (_isStriped)
             {
                 // The stripe-ending Y is the row index past the last row of the
@@ -388,7 +388,7 @@ namespace Jbig2Decoder.Stream
             // bit 4 = TPGDOFF (mutually exclusive with TPGDON), bit 5 = template-extension flag.
 
             // MMR generic regions have no AT-pixel field (T.88 §7.4.6.3).
-            int gbatBytes = mmr ? 0 : ((segFlags & 0x06) != 0 ? 2 : 8);
+            int gbatBytes = mmr ? 0 : (segFlags & 0x06) != 0 ? 2 : 8;
             int dataOffset = bodyStart + 18 + gbatBytes;
             int arithLen = bodyStart + bodyLen - dataOffset;
 
@@ -465,7 +465,7 @@ namespace Jbig2Decoder.Stream
             int sdRTemplate = (sdFlags >> 12) & 0x01;
 
             int o = bodyStart + 2;
-            int sdatBytes = sdHuff ? 0 : (sdTemplate == 0 ? 8 : 2);
+            int sdatBytes = sdHuff ? 0 : sdTemplate == 0 ? 8 : 2;
             var sdat = new sbyte[8];
             for (var i = 0; i < sdatBytes; i++) sdat[i] = (sbyte)_data[o++];
             int sdratBytes = sdRefAgg && sdRTemplate == 0 ? 4 : 0;
@@ -523,14 +523,14 @@ namespace Jbig2Decoder.Stream
             if (sdHuff && userTableSegments.Count > 0)
             {
                 userTables = new Huffman.HuffmanParams?[4];
-                int next = 0;
+                var next = 0;
                 int[] sels = {
                     sdHuffDh,                            // Dh
                     sdHuffDw,                            // Dw
                     sdHuffBmsize ? 1 : 0,                // BmSize (1-bit)
                     sdHuffAggInst ? 1 : 0,               // AggInst (1-bit; only meaningful when SdRefAgg)
                 };
-                for (int i = 0; i < 4; i++)
+                for (var i = 0; i < 4; i++)
                 {
                     bool isUser = i < 2 ? sels[i] == 3 : sels[i] == 1;
                     if (i == 3 && !sdRefAgg) continue;   // AggInst is only consumed in refagg path
@@ -601,8 +601,8 @@ namespace Jbig2Decoder.Stream
             // which is why streams like jbig2-tests-pdf bitmap-refine-page-subrect
             // render scribble in the dot positions instead of the source wink.
             Bitmap? reference = null;
-            int refDx = 0;
-            int refDy = 0;
+            var refDx = 0;
+            var refDy = 0;
             if (hdr.ReferredToSegments != null)
             {
                 foreach (uint refSeg in hdr.ReferredToSegments)
@@ -685,8 +685,8 @@ namespace Jbig2Decoder.Stream
 
             uint hgw = BigEndian.U32(_data, o); o += 4;
             uint hgh = BigEndian.U32(_data, o); o += 4;
-            int  hgx = (int)BigEndian.U32(_data, o); o += 4;
-            int  hgy = (int)BigEndian.U32(_data, o); o += 4;
+            var  hgx = (int)BigEndian.U32(_data, o); o += 4;
+            var  hgy = (int)BigEndian.U32(_data, o); o += 4;
             int  hrx = (short)BigEndian.U16(_data, o); o += 2;
             int  hry = (short)BigEndian.U16(_data, o); o += 2;
 
@@ -812,7 +812,7 @@ namespace Jbig2Decoder.Stream
             if (sbHuff && userTableSegments.Count > 0)
             {
                 userTables = new Huffman.HuffmanParams?[8];
-                int next = 0;
+                var next = 0;
                 int[] sels = {
                     (sbHuffFlags >>  0) & 3,    // Fs
                     (sbHuffFlags >>  2) & 3,    // Ds
@@ -823,7 +823,7 @@ namespace Jbig2Decoder.Stream
                     (sbHuffFlags >> 12) & 3,    // Rdy
                     (sbHuffFlags >> 14) & 1,    // Rsize (1-bit selector, user-defined = 1)
                 };
-                for (int i = 0; i < 8; i++)
+                for (var i = 0; i < 8; i++)
                 {
                     bool isUser = i == 7 ? sels[i] == 1 : sels[i] == 3;
                     if (!isUser) continue;

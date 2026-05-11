@@ -359,7 +359,7 @@ public class PdfColorTests
     {
         // Test with very long colorant name (PDF spec allows up to 127 characters in names)
 
-        string longName = new string('A', 120);
+        var longName = new string('A', 120);
         var color = PdfColor.FromSeparation(longName, 0.5);
 
         Assert.Equal(PdfColorSpace.Separation, color.ColorSpace);

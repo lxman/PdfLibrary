@@ -88,7 +88,7 @@ internal readonly struct BitmapInfoHeader
     /// <summary>
     /// Calculate the stride (bytes per row, padded to 4-byte boundary).
     /// </summary>
-    public int Stride => ((Width * BitsPerPixel + 31) / 32) * 4;
+    public int Stride => (Width * BitsPerPixel + 31) / 32 * 4;
 
     public BitmapInfoHeader(
         uint headerSize, int width, int height, ushort planes, ushort bitsPerPixel,

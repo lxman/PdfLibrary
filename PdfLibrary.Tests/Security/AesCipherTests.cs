@@ -10,14 +10,14 @@ public class AesCipherTests
     {
         // Arrange - create known plaintext and encrypt it
         byte[] plaintext = "Hello, PDF World!"u8.ToArray();
-        byte[] key = new byte[16]; // 128-bit key (all zeros for test)
-        byte[] iv = new byte[16];  // IV (all zeros for test)
+        var key = new byte[16]; // 128-bit key (all zeros for test)
+        var iv = new byte[16];  // IV (all zeros for test)
 
         // Encrypt the plaintext
         byte[] encrypted = EncryptAes(plaintext, key, iv);
 
         // Prepend IV to encrypted data (as PDF does)
-        byte[] encryptedWithIv = new byte[iv.Length + encrypted.Length];
+        var encryptedWithIv = new byte[iv.Length + encrypted.Length];
         Array.Copy(iv, 0, encryptedWithIv, 0, iv.Length);
         Array.Copy(encrypted, 0, encryptedWithIv, iv.Length, encrypted.Length);
 
@@ -33,14 +33,14 @@ public class AesCipherTests
     {
         // Arrange - create known plaintext and encrypt it
         byte[] plaintext = "Testing AES-256 encryption for PDF!"u8.ToArray();
-        byte[] key = new byte[32]; // 256-bit key (all zeros for test)
-        byte[] iv = new byte[16];  // IV (all zeros for test)
+        var key = new byte[32]; // 256-bit key (all zeros for test)
+        var iv = new byte[16];  // IV (all zeros for test)
 
         // Encrypt the plaintext
         byte[] encrypted = EncryptAes(plaintext, key, iv);
 
         // Prepend IV to encrypted data
-        byte[] encryptedWithIv = new byte[iv.Length + encrypted.Length];
+        var encryptedWithIv = new byte[iv.Length + encrypted.Length];
         Array.Copy(iv, 0, encryptedWithIv, 0, iv.Length);
         Array.Copy(encrypted, 0, encryptedWithIv, iv.Length, encrypted.Length);
 
@@ -56,7 +56,7 @@ public class AesCipherTests
     {
         // Arrange - data shorter than IV (16 bytes)
         byte[] shortData = [1, 2, 3, 4, 5];
-        byte[] key = new byte[16];
+        var key = new byte[16];
 
         // Act
         byte[] result = AesCipher.Decrypt(key, shortData);
@@ -69,8 +69,8 @@ public class AesCipherTests
     public void Decrypt_WithOnlyIV_ShouldReturnEmpty()
     {
         // Arrange - exactly 16 bytes (IV only, no ciphertext)
-        byte[] ivOnly = new byte[16];
-        byte[] key = new byte[16];
+        var ivOnly = new byte[16];
+        var key = new byte[16];
 
         // Act
         byte[] result = AesCipher.Decrypt(key, ivOnly);
@@ -84,7 +84,7 @@ public class AesCipherTests
     {
         // Arrange
         byte[] emptyData = [];
-        byte[] key = new byte[16];
+        var key = new byte[16];
 
         // Act
         byte[] result = AesCipher.Decrypt(key, emptyData);
@@ -98,16 +98,16 @@ public class AesCipherTests
     {
         // Arrange - use random IV
         byte[] plaintext = "Random IV test data for PDF encryption"u8.ToArray();
-        byte[] key = new byte[16];
+        var key = new byte[16];
         RandomNumberGenerator.Fill(key);
-        byte[] iv = new byte[16];
+        var iv = new byte[16];
         RandomNumberGenerator.Fill(iv);
 
         // Encrypt the plaintext
         byte[] encrypted = EncryptAes(plaintext, key, iv);
 
         // Prepend IV to encrypted data
-        byte[] encryptedWithIv = new byte[iv.Length + encrypted.Length];
+        var encryptedWithIv = new byte[iv.Length + encrypted.Length];
         Array.Copy(iv, 0, encryptedWithIv, 0, iv.Length);
         Array.Copy(encrypted, 0, encryptedWithIv, iv.Length, encrypted.Length);
 
@@ -123,11 +123,11 @@ public class AesCipherTests
     {
         // Arrange - plaintext that requires padding (not multiple of 16)
         byte[] plaintext = "Short"u8.ToArray(); // 5 bytes, will be padded to 16
-        byte[] key = new byte[16];
-        byte[] iv = new byte[16];
+        var key = new byte[16];
+        var iv = new byte[16];
 
         byte[] encrypted = EncryptAes(plaintext, key, iv);
-        byte[] encryptedWithIv = new byte[iv.Length + encrypted.Length];
+        var encryptedWithIv = new byte[iv.Length + encrypted.Length];
         Array.Copy(iv, 0, encryptedWithIv, 0, iv.Length);
         Array.Copy(encrypted, 0, encryptedWithIv, iv.Length, encrypted.Length);
 

@@ -60,7 +60,7 @@ namespace FontParser.Tables.PostScriptType1
 
         private void Execute(byte[] data)
         {
-            int i = 0;
+            var i = 0;
             while (i < data.Length && !_returnFromSubr)
             {
                 byte b = data[i++];
@@ -194,7 +194,7 @@ namespace FontParser.Tables.PostScriptType1
                 case 10: // callsubr
                     if (_stack.Count >= 1 && _subrs != null)
                     {
-                        int subrIndex = (int)Pop();
+                        var subrIndex = (int)Pop();
                         if (subrIndex >= 0 && subrIndex < _subrs.Count)
                         {
                             byte[] subrData = _subrs[subrIndex].ToArray();
@@ -339,8 +339,8 @@ namespace FontParser.Tables.PostScriptType1
                     // OtherSubrs are for flex hints and other special features
                     if (_stack.Count >= 2)
                     {
-                        int subrNum = (int)Pop();
-                        int numArgs = (int)Pop();
+                        var subrNum = (int)Pop();
+                        var numArgs = (int)Pop();
 
                         switch (subrNum)
                         {
@@ -386,7 +386,7 @@ namespace FontParser.Tables.PostScriptType1
                                 break;
 
                             default:
-                                for (int j = 0; j < numArgs && _stack.Count > 0; j++)
+                                for (var j = 0; j < numArgs && _stack.Count > 0; j++)
                                     Pop();
                                 break;
                         }

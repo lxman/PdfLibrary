@@ -75,14 +75,14 @@ public class TextBasicsTestDocument : ITestDocument
             y -= 14;
 
             double x = leftMargin;
-            (PdfColor, string)[] rgbColors = new[]
-            {
+            (PdfColor, string)[] rgbColors =
+            [
                 (PdfColor.Red, "Red"),
                 (PdfColor.Green, "Green"),
                 (PdfColor.Blue, "Blue"),
                 (PdfColor.FromRgb(255, 165, 0), "Orange"),
-                (PdfColor.FromRgb(128, 0, 128), "Purple"),
-            };
+                (PdfColor.FromRgb(128, 0, 128), "Purple")
+            ];
 
             foreach ((PdfColor color, string name) in rgbColors)
             {
@@ -99,14 +99,14 @@ public class TextBasicsTestDocument : ITestDocument
             y -= 14;
 
             x = leftMargin;
-            (PdfColor, string)[] cmykColors = new[]
-            {
+            (PdfColor, string)[] cmykColors =
+            [
                 (PdfColor.CmykCyan, "Cyan"),
                 (PdfColor.CmykMagenta, "Magenta"),
                 (PdfColor.CmykYellow, "Yellow"),
                 (PdfColor.FromCmyk(0, 0, 0, 1), "Black"),
-                (PdfColor.FromCmyk(0.5, 0.5, 0, 0), "Violet"),
-            };
+                (PdfColor.FromCmyk(0.5, 0.5, 0, 0), "Violet")
+            ];
 
             foreach ((PdfColor color, string name) in cmykColors)
             {
