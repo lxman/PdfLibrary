@@ -14,7 +14,13 @@
 
     <ItemGroup>
       <PackageReference Include="Codeuctivity.ImageSharpCompare" Version="4.1.379" />
-      <PackageReference Include="SkiaSharp" Version="4.147.0-preview.1.1" />
+      <!--
+        Do NOT add a direct SkiaSharp reference here. SkiaSharp 4.x has an upstream cctor
+        bug (#3817/#3832/#3865) that's currently blocking the v4 bump, and Rendering.SkiaSharp
+        is pinned to 3.119.2-preview.1. A direct reference here would override that pin
+        transitively and break every test that uses SkiaSharp.SKObject. SkiaSharp flows in
+        transitively via PdfLibrary.Rendering.SkiaSharp.
+      -->
     </ItemGroup>
 
     <PropertyGroup>
