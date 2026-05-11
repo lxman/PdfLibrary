@@ -15,7 +15,7 @@
       generic regions. Reuse the CCITT/MMR decoder shipped in ImageLibrary
       rather than duplicating it.
     -->
-    <ProjectReference Include="..\ImageLibrary\ImageLibrary.csproj" />
+    <ProjectReference Include="..\CcittCodec\CcittCodec.csproj" />
   </ItemGroup>
 
 </Project>

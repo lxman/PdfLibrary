@@ -42,8 +42,8 @@
     <ItemGroup>
       <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
+      <ProjectReference Include="..\ImageLibrary\LzwCodec\LzwCodec.csproj" />
       <ProjectReference Include="..\Logging\Logging.csproj" />
-      <ProjectReference Include="..\ImageLibrary\ImageLibrary\ImageLibrary.csproj" />
       <ProjectReference Include="..\ImageLibrary\Jbig2Decoder\Jbig2Decoder.csproj" />
       <ProjectReference Include="..\Compressors\Compressors.Jpeg2000\Compressors.Jpeg2000.csproj" />
     </ItemGroup>

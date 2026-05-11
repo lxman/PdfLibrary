@@ -1,4 +1,3 @@
-using System;
 using JpegCodec.Stream;
 
 namespace JpegCodec.Tests.Encode;
@@ -84,7 +83,7 @@ public class EncoderEndToEndTests
             new JpegEncodeOptions { Width = 8, Height = 8, NumberOfComponents = 1, Quality = 80 });
 
         // Walk markers, accumulate the sequence.
-        var seq = new System.Collections.Generic.List<JpegMarker>();
+        var seq = new List<JpegMarker>();
         var reader = new JpegMarkerReader(jpeg);
         while (reader.TryReadMarker(out var m))
         {

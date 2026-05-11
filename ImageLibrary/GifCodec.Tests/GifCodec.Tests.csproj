@@ -18,7 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\ImageLibrary\ImageLibrary.csproj" />
+    <ProjectReference Include="..\GifCodec\GifCodec.csproj" />
   </ItemGroup>
 
 </Project>

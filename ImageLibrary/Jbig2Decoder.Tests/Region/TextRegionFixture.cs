@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 namespace Jbig2Decoder.Tests.Region;
 
 internal sealed record TextRegionFixture(

@@ -1,4 +1,3 @@
-using System;
 using JpegCodec.Decode;
 
 namespace JpegCodec.Tests.Decode;

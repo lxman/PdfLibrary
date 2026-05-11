@@ -1,6 +1,3 @@
-using System.IO;
-using JpegCodec.Stream;
-
 namespace JpegCodec.Tests.Corpus;
 
 // Pins the contract that Phase 8's DctDecodeFilter rewrite depends on:

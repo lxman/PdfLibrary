@@ -1,5 +1,3 @@
-using System;
-
 namespace JpegCodec;
 
 public sealed class JpegDecodeResult

@@ -40,8 +40,8 @@ namespace FontParser.Tables.Common.SequenceContext.Format2
             byte classDefFormat = reader.PeekBytes(2)[1];
             ClassDef = classDefFormat switch
             {
-                1 => new ClassDefinition.ClassDefinitionFormat1(reader),
-                2 => new ClassDefinition.ClassDefinitionFormat2(reader),
+                1 => new ClassDefinitionFormat1(reader),
+                2 => new ClassDefinitionFormat2(reader),
                 _ => ClassDef
             };
         }

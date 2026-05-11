@@ -1,7 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-
 namespace JpegCodec.Tests.Corpus;
 
 internal static class CorpusFiles
@@ -10,7 +6,7 @@ internal static class CorpusFiles
     {
         get
         {
-            string baseDir = System.AppContext.BaseDirectory;
+            string baseDir = AppContext.BaseDirectory;
             return Path.Combine(baseDir, "Corpus");
         }
     }
@@ -20,9 +16,9 @@ internal static class CorpusFiles
         if (!Directory.Exists(CorpusRoot))
             yield break;
         foreach (var file in Directory.EnumerateFiles(CorpusRoot, "*.*", SearchOption.AllDirectories)
-                              .Where(f => f.EndsWith(".jpg", System.StringComparison.OrdinalIgnoreCase) ||
-                                          f.EndsWith(".jpeg", System.StringComparison.OrdinalIgnoreCase))
-                              .OrderBy(f => f, System.StringComparer.Ordinal))
+                              .Where(f => f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                          f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
+                              .OrderBy(f => f, StringComparer.Ordinal))
         {
             // xUnit MemberData wants object[]. Pass the path relative to
             // the Corpus root so test display names stay short.

@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using JpegCodec.Stream;
 using JpegCodec.Tests.Corpus;
 
@@ -31,7 +29,7 @@ public class CorpusRoundTripTests
         "cmyk_real/cmyk_ycck_transform2.jpg",
     ];
 
-    public static System.Collections.Generic.IEnumerable<object[]> Files()
+    public static IEnumerable<object[]> Files()
     {
         foreach (var f in s_files)
             yield return [f];

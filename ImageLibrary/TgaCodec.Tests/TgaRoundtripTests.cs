@@ -1,4 +1,3 @@
-using ImageLibrary.Container.Tga;
 using Xunit;
 
 namespace TgaCodec.Tests;

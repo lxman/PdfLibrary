@@ -41,16 +41,16 @@ namespace FontParser.Tables.Bitmap.Ebdt
                     ushort lastGlyph = table.LastGlyphIndex;
                     switch (table.Subtable)
                     {
-                        case Common.IndexSubtables.IndexSubtableFormat1 subtable:
+                        case IndexSubtableFormat1 subtable:
                             break;
 
-                        case Common.IndexSubtables.IndexSubtablesFormat2 subtable:
+                        case IndexSubtablesFormat2 subtable:
                             break;
 
-                        case Common.IndexSubtables.IndexSubtablesFormat3 subtable:
+                        case IndexSubtablesFormat3 subtable:
                             break;
 
-                        case Common.IndexSubtables.IndexSubtablesFormat4 subtable:
+                        case IndexSubtablesFormat4 subtable:
                             {
                                 ushort imageFormat = subtable.ImageFormat;
                                 uint imageDataOffset = subtable.ImageDataOffset;
@@ -67,7 +67,7 @@ namespace FontParser.Tables.Bitmap.Ebdt
                                     {
                                         case 1:
                                             _reader.Seek(imageDataOffset + op.Offset);
-                                            BitmapData.Add(new GlyphObject(op.GlyphId, new Common.GlyphBitmapData.GlyphBitmapDataFormat1(_reader, dataSize)));
+                                            BitmapData.Add(new GlyphObject(op.GlyphId, new GlyphBitmapDataFormat1(_reader, dataSize)));
                                             break;
 
                                         case 2:
@@ -88,7 +88,7 @@ namespace FontParser.Tables.Bitmap.Ebdt
 
                                 break;
                             }
-                        case Common.IndexSubtables.IndexSubtablesFormat5 subtable:
+                        case IndexSubtablesFormat5 subtable:
                             break;
                     }
                 });

@@ -1,6 +1,5 @@
 ﻿using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
-using PdfLibrary.Security;
 
 // ==================== CONFIGURATION ====================
 const string outputDir = @"C:\Users\jorda\RiderProjects\PDF\PdfLibrary.Examples\TestPdfs";

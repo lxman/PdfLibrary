@@ -1,4 +1,4 @@
-using ImageLibrary.Container.Png;
+using PngCodec;
 using Xunit;
 using Xunit.Abstractions;
 

@@ -1,4 +1,3 @@
-using System.Linq;
 using JpegCodec.Segments;
 
 namespace JpegCodec.Tests.Segments;
@@ -126,7 +125,7 @@ public class HuffmanCanonicalTableTests
     public void Build_RejectsBitsHuffvalLengthMismatch()
     {
         // Bits sum says 12, but we pass only 10 values.
-        Assert.Throws<System.InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             HuffmanCanonicalTable.Build(LumaDcBits, LumaDcValues.Take(10).ToArray()));
     }
 
@@ -134,7 +133,7 @@ public class HuffmanCanonicalTableTests
     public void Build_RejectsAllZeroBits()
     {
         var zero = new byte[16];
-        Assert.Throws<System.InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             HuffmanCanonicalTable.Build(zero, []));
     }
 
@@ -145,7 +144,7 @@ public class HuffmanCanonicalTableTests
         var oversubscribed = new byte[16];
         oversubscribed[0] = 3;
         byte[] values = [0, 0, 0];
-        Assert.Throws<System.InvalidOperationException>(() =>
+        Assert.Throws<InvalidOperationException>(() =>
             HuffmanCanonicalTable.Build(oversubscribed, values));
     }
 

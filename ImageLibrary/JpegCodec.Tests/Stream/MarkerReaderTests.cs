@@ -18,7 +18,7 @@ public class MarkerReaderTests
             .ToArray();
 
         var reader = new JpegMarkerReader(data);
-        var seen = new System.Collections.Generic.List<JpegMarker>();
+        var seen = new List<JpegMarker>();
         while (reader.TryReadMarker(out var m))
         {
             seen.Add(m);

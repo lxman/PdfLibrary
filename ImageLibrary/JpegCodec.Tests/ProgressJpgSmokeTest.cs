@@ -1,4 +1,3 @@
-using System.IO;
 using JpegCodec.Stream;
 
 namespace JpegCodec.Tests;

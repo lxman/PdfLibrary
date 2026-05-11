@@ -25,17 +25,23 @@
   </Folder>
   <Folder Name="/ImageLibrary/">
     <Project Path="ImageLibrary/BmpCodec.Tests/BmpCodec.Tests.csproj" />
-    <Project Path="ImageLibrary/Compression.Ccitt.Tests/Compression.Ccitt.Tests.csproj" />
-    <Project Path="ImageLibrary/Compression.Lzw.Tests/Compression.Lzw.Tests.csproj" />
+    <Project Path="ImageLibrary/BmpCodec/BmpCodec.csproj" />
+    <Project Path="ImageLibrary/CcittCodec.Tests/CcittCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/CcittCodec/CcittCodec.csproj" />
     <Project Path="ImageLibrary/GifCodec.Tests/GifCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/GifCodec/GifCodec.csproj" />
     <Project Path="ImageLibrary/ImageLibrary.IntegrationTests/ImageLibrary.IntegrationTests.csproj" />
-    <Project Path="ImageLibrary/ImageLibrary/ImageLibrary.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder/Jbig2Decoder.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj" />
     <Project Path="ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj" />
     <Project Path="ImageLibrary/JpegCodec/JpegCodec.csproj" />
+    <Project Path="ImageLibrary/LzwCodec.Tests/LzwCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/LzwCodec/LzwCodec.csproj" />
     <Project Path="ImageLibrary/PngCodec.Tests/PngCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/PngCodec/PngCodec.csproj" />
     <Project Path="ImageLibrary/TgaCodec.Tests/TgaCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/TgaCodec/TgaCodec.csproj" />
+    <Project Path="ImageLibrary/TiffCodec/TiffCodec.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />

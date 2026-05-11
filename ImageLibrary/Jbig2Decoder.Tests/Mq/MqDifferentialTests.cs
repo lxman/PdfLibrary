@@ -76,8 +76,8 @@ public class MqDifferentialTests
 
             // First-divergence diagnostic: dump the bit index, decoded vs expected,
             // and the surrounding bits so the failure is attribution-friendly.
-            int windowStart = System.Math.Max(0, i - 8);
-            int windowEnd = System.Math.Min(BitCount, i + 8);
+            int windowStart = Math.Max(0, i - 8);
+            int windowEnd = Math.Min(BitCount, i + 8);
             var window = new System.Text.StringBuilder();
             for (int j = windowStart; j < windowEnd; j++)
                 window.Append(ExpectedBitAt(j));

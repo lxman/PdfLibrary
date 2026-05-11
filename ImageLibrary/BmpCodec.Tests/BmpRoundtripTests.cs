@@ -1,4 +1,3 @@
-using ImageLibrary.Container.Bmp;
 using Xunit;
 
 namespace BmpCodec.Tests;

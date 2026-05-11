@@ -1,6 +1,5 @@
 using PdfLibrary.Content;
 using PdfLibrary.Content.Operators;
-using PdfLibrary.Core.Primitives;
 using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Tests.Rendering;

@@ -1,5 +1,3 @@
-using System;
-
 namespace JpegCodec.Encode;
 
 // T.81 Annex K standard tables — luma + chroma quantization (Tables K.1,

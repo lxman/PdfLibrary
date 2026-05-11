@@ -1,5 +1,4 @@
 using System.Text;
-using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 
 namespace PdfLibrary.Tests;

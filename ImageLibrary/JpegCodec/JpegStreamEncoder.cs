@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using JpegCodec.Encode;
 using JpegCodec.Segments;
 using JpegCodec.Stream;
-using JpegCodec.Decode;
 
 namespace JpegCodec;
 

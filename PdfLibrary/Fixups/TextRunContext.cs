@@ -1,5 +1,4 @@
 using PdfLibrary.Content;
-using PdfLibrary.Fonts;
 
 namespace PdfLibrary.Fixups;
 

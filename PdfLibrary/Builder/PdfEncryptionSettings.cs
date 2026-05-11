@@ -1,5 +1,3 @@
-using PdfLibrary.Security;
-
 namespace PdfLibrary.Builder;
 
 /// <summary>

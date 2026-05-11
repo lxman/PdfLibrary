@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Security;
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using CcittCodec;
 using Jbig2Decoder.Image;
 using Jbig2Decoder.Mq;
 using Jbig2Decoder.Region;
@@ -351,7 +352,7 @@ namespace Jbig2Decoder.Stream
 
             Page = new Bitmap((int)width, initialHeight);
             if (_pageDefaultPixel == 1)
-                System.Array.Fill(Page.Data, (byte)0xFF);
+                Array.Fill(Page.Data, (byte)0xFF);
         }
 
         // T.88 §7.4.9 End-of-stripe segment: a single 4-byte big-endian Y-coordinate
@@ -399,9 +400,9 @@ namespace Jbig2Decoder.Stream
                 // Group-4 MMR-coded bitmap (T.88 §6.2.6).
                 var slice = new byte[arithLen];
                 Buffer.BlockCopy(_data, dataOffset, slice, 0, arithLen);
-                var dec = new ImageLibrary.Compression.Ccitt.CcittDecoder(new ImageLibrary.Compression.Ccitt.CcittOptions
+                var dec = new CcittDecoder(new CcittOptions
                 {
-                    Group = ImageLibrary.Compression.Ccitt.CcittGroup.Group4,
+                    Group = CcittGroup.Group4,
                     K = -1,
                     Width = (int)rsi.Width,
                     Height = (int)rsi.Height,

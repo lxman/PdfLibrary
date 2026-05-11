@@ -1,4 +1,3 @@
-using System;
 using JpegCodec.Decode;
 using JpegCodec.Encode;
 

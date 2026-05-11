@@ -1,4 +1,3 @@
-using System.Linq;
 using JpegCodec.Segments;
 using JpegCodec.Stream;
 

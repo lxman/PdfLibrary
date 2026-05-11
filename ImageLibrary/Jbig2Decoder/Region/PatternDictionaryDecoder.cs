@@ -1,5 +1,5 @@
 using System;
-using ImageLibrary.Compression.Ccitt;
+using CcittCodec;
 using Jbig2Decoder.Image;
 using Jbig2Decoder.Mq;
 

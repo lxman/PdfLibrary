@@ -1,4 +1,4 @@
-using ImageLibrary.Container.Tiff;
+using TiffCodec;
 using Xunit;
 
 namespace ImageLibrary.IntegrationTests;
@@ -18,7 +18,7 @@ public class TiffDecoderTests
         byte[] tiff = BuildMinimalTiff(compression: 7);
 
         var ex = Assert.Throws<TiffException>(() => TiffDecoder.Decode(tiff));
-        Assert.Contains("JPEG", ex.Message, System.StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("JPEG", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -26,8 +26,8 @@ public class TiffDecoderTests
     /// </summary>
     private static byte[] BuildMinimalTiff(ushort compression)
     {
-        using var ms = new System.IO.MemoryStream();
-        using var w = new System.IO.BinaryWriter(ms);
+        using var ms = new MemoryStream();
+        using var w = new BinaryWriter(ms);
 
         // Header
         w.Write((byte)'I');

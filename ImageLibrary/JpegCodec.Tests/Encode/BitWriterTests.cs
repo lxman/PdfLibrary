@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using JpegCodec.Encode;
 
 namespace JpegCodec.Tests.Encode;

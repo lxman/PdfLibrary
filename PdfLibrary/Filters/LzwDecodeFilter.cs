@@ -1,4 +1,4 @@
-using ImageLibrary.Compression.Lzw;
+using LzwCodec;
 
 namespace PdfLibrary.Filters;
 

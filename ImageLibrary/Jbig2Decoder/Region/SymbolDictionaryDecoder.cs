@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using ImageLibrary.Compression.Ccitt;
+using CcittCodec;
 using Jbig2Decoder.Arith;
 using Jbig2Decoder.Huffman;
 using Jbig2Decoder.Image;

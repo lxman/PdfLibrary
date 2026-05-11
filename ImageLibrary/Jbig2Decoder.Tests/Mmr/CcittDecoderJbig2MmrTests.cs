@@ -1,4 +1,4 @@
-using ImageLibrary.Compression.Ccitt;
+using CcittCodec;
 using Xunit.Abstractions;
 
 namespace Jbig2Decoder.Tests.Mmr;

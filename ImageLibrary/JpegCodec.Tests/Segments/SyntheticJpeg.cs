@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace JpegCodec.Tests.Segments;
 
 // Small builder for inline synthetic JPEG byte streams. Keeps the tests

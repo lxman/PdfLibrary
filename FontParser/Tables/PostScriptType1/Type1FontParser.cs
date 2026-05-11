@@ -464,7 +464,7 @@ namespace FontParser.Tables.PostScriptType1
         private void ParsePrivateDict(byte[] data)
         {
             // Convert to Latin1 to preserve all byte values 0-255
-            string text = System.Text.Encoding.GetEncoding("ISO-8859-1").GetString(data);
+            string text = Encoding.GetEncoding("ISO-8859-1").GetString(data);
 
             // Extract lenIV (number of random bytes in charstrings)
             var lenIVMatch = Regex.Match(text, @"/lenIV\s+(\d+)\s+def");
