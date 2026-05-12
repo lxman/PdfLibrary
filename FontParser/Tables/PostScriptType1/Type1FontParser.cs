@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 using FontParser.Tables.Cff;
@@ -95,7 +96,7 @@ namespace FontParser.Tables.PostScriptType1
             // Note: Dictionary order may not be insertion order in .NET Framework,
             // but in .NET Core/5+ it preserves insertion order
             var i = 0;
-            foreach (var key in _charStrings.Keys)
+            foreach (string? key in _charStrings.Keys)
             {
                 if (i == index)
                     return key;
@@ -174,7 +175,7 @@ namespace FontParser.Tables.PostScriptType1
         /// </summary>
         public string GetGlyphName(int charCode)
         {
-            foreach (var kvp in _encoding)
+            foreach (KeyValuePair<string, int> kvp in _encoding)
             {
                 if (kvp.Value == charCode)
                     return kvp.Key;
@@ -231,11 +232,11 @@ namespace FontParser.Tables.PostScriptType1
         private void ParsePfa(byte[] data)
         {
             string text = Encoding.ASCII.GetString(data);
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] Text length: {text.Length}");
+            Debug.WriteLine($"[TYPE1-PFA] Text length: {text.Length}");
 
             // Find the eexec keyword
             int eexecIndex = text.IndexOf("eexec", StringComparison.Ordinal);
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] eexec index: {eexecIndex}");
+            Debug.WriteLine($"[TYPE1-PFA] eexec index: {eexecIndex}");
             if (eexecIndex < 0)
             {
                 // No eexec section, just parse header
@@ -246,14 +247,14 @@ namespace FontParser.Tables.PostScriptType1
             // Parse ASCII header (everything before eexec)
             string asciiPart = text.Substring(0, eexecIndex);
             ParseAsciiHeader(asciiPart);
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] FontName after header: {_fontName}");
+            Debug.WriteLine($"[TYPE1-PFA] FontName after header: {_fontName}");
 
             // Find the start of eexec data (skip "eexec" and any whitespace)
             int eexecStart = eexecIndex + 5;
             while (eexecStart < data.Length && (data[eexecStart] == ' ' || data[eexecStart] == '\r' || data[eexecStart] == '\n' || data[eexecStart] == '\t'))
                 eexecStart++;
 
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] eexecStart: {eexecStart}, first bytes: {(eexecStart < data.Length ? data[eexecStart].ToString("X2") : "N/A")}");
+            Debug.WriteLine($"[TYPE1-PFA] eexecStart: {eexecStart}, first bytes: {(eexecStart < data.Length ? data[eexecStart].ToString("X2") : "N/A")}");
 
             // Determine if the eexec section is hex-encoded or binary
             // Hex-encoded will have bytes in ranges 0-9 (0x30-0x39), A-F (0x41-0x46), a-f (0x61-0x66)
@@ -274,7 +275,7 @@ namespace FontParser.Tables.PostScriptType1
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] isHexEncoded: {isHexEncoded}");
+            Debug.WriteLine($"[TYPE1-PFA] isHexEncoded: {isHexEncoded}");
 
             byte[] binaryEexec;
             if (isHexEncoded)
@@ -337,17 +338,17 @@ namespace FontParser.Tables.PostScriptType1
                 int eexecLength = eexecEnd - eexecStart;
                 binaryEexec = new byte[eexecLength];
                 Array.Copy(data, eexecStart, binaryEexec, 0, eexecLength);
-                System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] Binary eexec length: {eexecLength}");
+                Debug.WriteLine($"[TYPE1-PFA] Binary eexec length: {eexecLength}");
             }
 
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] binaryEexec length: {binaryEexec.Length}");
+            Debug.WriteLine($"[TYPE1-PFA] binaryEexec length: {binaryEexec.Length}");
 
             // Decrypt and parse
             byte[] decrypted = Type1Decryptor.DecryptEexec(binaryEexec);
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] decrypted length: {decrypted.Length}");
+            Debug.WriteLine($"[TYPE1-PFA] decrypted length: {decrypted.Length}");
             // Use byte[] overload to preserve binary charstring data
             ParsePrivateDict(decrypted);
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-PFA] CharStrings count: {_charStrings.Count}");
+            Debug.WriteLine($"[TYPE1-PFA] CharStrings count: {_charStrings.Count}");
         }
 
         private void ParsePfb(byte[] data)
@@ -397,25 +398,25 @@ namespace FontParser.Tables.PostScriptType1
         private void ParseAsciiHeader(string text)
         {
             // Extract font name
-            var fontNameMatch = Regex.Match(text, @"/FontName\s*/(\S+)\s+def");
+            Match fontNameMatch = Regex.Match(text, @"/FontName\s*/(\S+)\s+def");
             if (fontNameMatch.Success)
                 _fontName = fontNameMatch.Groups[1].Value;
 
             // Extract family name
-            var familyMatch = Regex.Match(text, @"/FamilyName\s*\(([^)]+)\)\s*def");
+            Match familyMatch = Regex.Match(text, @"/FamilyName\s*\(([^)]+)\)\s*def");
             if (familyMatch.Success)
                 _familyName = familyMatch.Groups[1].Value;
 
             // Extract full name
-            var fullNameMatch = Regex.Match(text, @"/FullName\s*\(([^)]+)\)\s*def");
+            Match fullNameMatch = Regex.Match(text, @"/FullName\s*\(([^)]+)\)\s*def");
             if (fullNameMatch.Success)
                 _fullName = fullNameMatch.Groups[1].Value;
 
             // Extract FontMatrix
-            var matrixMatch = Regex.Match(text, @"/FontMatrix\s*\[\s*([\d.\-e+\s]+)\s*\]");
+            Match matrixMatch = Regex.Match(text, @"/FontMatrix\s*\[\s*([\d.\-e+\s]+)\s*\]");
             if (matrixMatch.Success)
             {
-                string[] parts = matrixMatch.Groups[1].Value.Split(new char[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                string[] parts = matrixMatch.Groups[1].Value.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 _fontMatrix = new float[parts.Length];
                 for (var i = 0; i < parts.Length; i++)
                 {
@@ -424,10 +425,10 @@ namespace FontParser.Tables.PostScriptType1
             }
 
             // Extract FontBBox
-            var bboxMatch = Regex.Match(text, @"/FontBBox\s*\{\s*([\d.\-\s]+)\s*\}");
+            Match bboxMatch = Regex.Match(text, @"/FontBBox\s*\{\s*([\d.\-\s]+)\s*\}");
             if (bboxMatch.Success)
             {
-                string[] parts = bboxMatch.Groups[1].Value.Split(new char[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                string[] parts = bboxMatch.Groups[1].Value.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 _fontBBox = new float[parts.Length];
                 for (var i = 0; i < parts.Length; i++)
                 {
@@ -445,7 +446,7 @@ namespace FontParser.Tables.PostScriptType1
             // It has issues with binary data corruption - use byte[] overload instead
 
             // Extract lenIV (number of random bytes in charstrings)
-            var lenIVMatch = Regex.Match(text, @"/lenIV\s+(\d+)\s+def");
+            Match lenIVMatch = Regex.Match(text, @"/lenIV\s+(\d+)\s+def");
             if (lenIVMatch.Success)
             {
                 int.TryParse(lenIVMatch.Groups[1].Value, out _lenIV);
@@ -467,7 +468,7 @@ namespace FontParser.Tables.PostScriptType1
             string text = Encoding.GetEncoding("ISO-8859-1").GetString(data);
 
             // Extract lenIV (number of random bytes in charstrings)
-            var lenIVMatch = Regex.Match(text, @"/lenIV\s+(\d+)\s+def");
+            Match lenIVMatch = Regex.Match(text, @"/lenIV\s+(\d+)\s+def");
             if (lenIVMatch.Success)
             {
                 int.TryParse(lenIVMatch.Groups[1].Value, out _lenIV);
@@ -486,7 +487,7 @@ namespace FontParser.Tables.PostScriptType1
         private void ParseSubrsFromBytes(byte[] data, string text)
         {
             // Find Subrs array
-            var subrsMatch = Regex.Match(text, @"/Subrs\s+(\d+)\s+array");
+            Match subrsMatch = Regex.Match(text, @"/Subrs\s+(\d+)\s+array");
             if (!subrsMatch.Success)
                 return;
 
@@ -499,7 +500,7 @@ namespace FontParser.Tables.PostScriptType1
             int searchStart = subrsMatch.Index;
             var subrPattern = new Regex(@"dup\s+(\d+)\s+(\d+)\s+(RD|-\|)\s?");
 
-            var matches = subrPattern.Matches(text, searchStart);
+            MatchCollection matches = subrPattern.Matches(text, searchStart);
             foreach (Match match in matches)
             {
                 int index = int.Parse(match.Groups[1].Value);
@@ -525,7 +526,7 @@ namespace FontParser.Tables.PostScriptType1
         private void ParseCharStringsFromBytes(byte[] data, string text)
         {
             // Find CharStrings dictionary
-            var charStringsMatch = Regex.Match(text, @"/CharStrings\s+(\d+)\s+dict");
+            Match charStringsMatch = Regex.Match(text, @"/CharStrings\s+(\d+)\s+dict");
             if (!charStringsMatch.Success)
             {
                 charStringsMatch = Regex.Match(text, @"/CharStrings\s+(\d+)");
@@ -538,7 +539,7 @@ namespace FontParser.Tables.PostScriptType1
             // Parse individual charstrings: /glyphname length RD ...binary... ND
             var charStringPattern = new Regex(@"/(\S+)\s+(\d+)\s+(RD|-\|)\s?");
 
-            var matches = charStringPattern.Matches(text, searchStart);
+            MatchCollection matches = charStringPattern.Matches(text, searchStart);
 
             foreach (Match match in matches)
             {
@@ -563,7 +564,7 @@ namespace FontParser.Tables.PostScriptType1
         private void ParseEncoding(string text)
         {
             // Look for encoding definitions like: dup 65 /A put
-            var encodingMatches = Regex.Matches(text, @"dup\s+(\d+)\s+/(\S+)\s+put");
+            MatchCollection encodingMatches = Regex.Matches(text, @"dup\s+(\d+)\s+/(\S+)\s+put");
             foreach (Match match in encodingMatches)
             {
                 int code;
@@ -577,7 +578,7 @@ namespace FontParser.Tables.PostScriptType1
         private void ParseSubrs(string text)
         {
             // Find Subrs array
-            var subrsMatch = Regex.Match(text, @"/Subrs\s+(\d+)\s+array");
+            Match subrsMatch = Regex.Match(text, @"/Subrs\s+(\d+)\s+array");
             if (!subrsMatch.Success)
                 return;
 
@@ -592,7 +593,7 @@ namespace FontParser.Tables.PostScriptType1
             int searchStart = subrsMatch.Index;
             var subrPattern = new Regex(@"dup\s+(\d+)\s+(\d+)\s+RD\s");
 
-            var matches = subrPattern.Matches(text, searchStart);
+            MatchCollection matches = subrPattern.Matches(text, searchStart);
             foreach (Match match in matches)
             {
                 int index = int.Parse(match.Groups[1].Value);
@@ -622,41 +623,41 @@ namespace FontParser.Tables.PostScriptType1
         private void ParseCharStrings(string text)
         {
             // Find CharStrings dictionary
-            var charStringsMatch = Regex.Match(text, @"/CharStrings\s+(\d+)\s+dict");
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Looking for CharStrings dict, found: {charStringsMatch.Success}");
+            Match charStringsMatch = Regex.Match(text, @"/CharStrings\s+(\d+)\s+dict");
+            Debug.WriteLine($"[TYPE1-CS] Looking for CharStrings dict, found: {charStringsMatch.Success}");
             if (!charStringsMatch.Success)
             {
                 // Try alternative pattern
                 charStringsMatch = Regex.Match(text, @"/CharStrings\s+(\d+)");
-                System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Alternative CharStrings pattern, found: {charStringsMatch.Success}");
+                Debug.WriteLine($"[TYPE1-CS] Alternative CharStrings pattern, found: {charStringsMatch.Success}");
                 if (!charStringsMatch.Success)
                     return;
             }
 
             int searchStart = charStringsMatch.Index;
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] CharStrings at index {searchStart}, context: {text.Substring(searchStart, System.Math.Min(100, text.Length - searchStart))}");
+            Debug.WriteLine($"[TYPE1-CS] CharStrings at index {searchStart}, context: {text.Substring(searchStart, System.Math.Min(100, text.Length - searchStart))}");
 
             // Parse individual charstrings: /glyphname length RD ...binary... ND
             // Note: RD can also be -| in some fonts
             var charStringPattern = new Regex(@"/(\S+)\s+(\d+)\s+(RD|-\|)\s?");
 
-            var matches = charStringPattern.Matches(text, searchStart);
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Found {matches.Count} charstring matches with RD/-|");
+            MatchCollection matches = charStringPattern.Matches(text, searchStart);
+            Debug.WriteLine($"[TYPE1-CS] Found {matches.Count} charstring matches with RD/-|");
 
             // If no matches with RD/-|, look for raw pattern with just bytes after length
             if (matches.Count == 0)
             {
                 // Some fonts use different syntax, try simpler pattern
                 var simplePattern = new Regex(@"/([A-Za-z0-9_.]+)\s+(\d+)\s+");
-                var simpleMatches = simplePattern.Matches(text, searchStart);
-                System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Found {simpleMatches.Count} simple matches");
+                MatchCollection simpleMatches = simplePattern.Matches(text, searchStart);
+                Debug.WriteLine($"[TYPE1-CS] Found {simpleMatches.Count} simple matches");
 
                 // Show first few matches for debugging
                 var shown = 0;
                 foreach (Match m in simpleMatches)
                 {
                     if (shown++ < 5)
-                        System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Simple match: {m.Value}");
+                        Debug.WriteLine($"[TYPE1-CS] Simple match: {m.Value}");
                 }
             }
 
@@ -682,7 +683,7 @@ namespace FontParser.Tables.PostScriptType1
                 }
             }
 
-            System.Diagnostics.Debug.WriteLine($"[TYPE1-CS] Final charstrings count: {_charStrings.Count}");
+            Debug.WriteLine($"[TYPE1-CS] Final charstrings count: {_charStrings.Count}");
         }
 
         private static string GetStandardEncodingName(int charCode)

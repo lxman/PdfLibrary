@@ -1,3 +1,5 @@
+using JpegCodec;
+
 namespace PdfLibrary.Filters;
 
 /// <summary>
@@ -32,8 +34,8 @@ internal class DctDecodeFilter : IStreamFilter
             // JpegLibraryAdapter shape. Adobe APP14 flags now flow
             // through correctly, so the YCCK / inverted-CMYK branches in
             // DecodeCmykJpeg become reachable for the first time.
-            var decoder = new JpegCodec.JpegStreamDecoder();
-            JpegCodec.JpegDecodeResult result = decoder.Decode(data);
+            var decoder = new JpegStreamDecoder();
+            JpegDecodeResult result = decoder.Decode(data);
 
             int width = result.Width;
             int height = result.Height;

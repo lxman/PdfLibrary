@@ -93,7 +93,7 @@ internal sealed class ProgressiveDecoder
         HuffmanCanonicalTable?[] acTables,
         int restartInterval)
     {
-        var scanInfo = BuildScanInfo(scan, dcTables, acTables);
+        ScanComponentInfo[] scanInfo = BuildScanInfo(scan, dcTables, acTables);
         var dcPredictors = new int[scan.NumberOfComponents];
         _eobrun = 0;
         var mcuCounter = 0;
@@ -135,7 +135,7 @@ internal sealed class ProgressiveDecoder
                     bool refine = scan.ApproxHigh != 0;
                     for (var s = 0; s < scan.NumberOfComponents; s++)
                     {
-                        var info = scanInfo[s];
+                        ScanComponentInfo info = scanInfo[s];
                         for (var by = 0; by < info.VerticalSampling; by++)
                         {
                             for (var bx = 0; bx < info.HorizontalSampling; bx++)
@@ -153,7 +153,7 @@ internal sealed class ProgressiveDecoder
                 }
                 else
                 {
-                    var info = scanInfo[0];
+                    ScanComponentInfo info = scanInfo[0];
                     Span<short> block = GetBlock(info.FrameComponentIndex, mx, my);
 
                     if (isDcScan)
@@ -446,9 +446,9 @@ internal sealed class ProgressiveDecoder
         var infos = new ScanComponentInfo[scan.NumberOfComponents];
         for (var s = 0; s < scan.NumberOfComponents; s++)
         {
-            var sc = scan.Components[s];
+            ScanComponent sc = scan.Components[s];
             int frameIdx = FindFrameComponentIndex(sc.ComponentSelector);
-            var fc = _frame.Components[frameIdx];
+            FrameComponent fc = _frame.Components[frameIdx];
             infos[s] = new ScanComponentInfo
             {
                 FrameComponentIndex = frameIdx,

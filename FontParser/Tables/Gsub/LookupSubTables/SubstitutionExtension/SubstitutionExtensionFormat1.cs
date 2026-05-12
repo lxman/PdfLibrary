@@ -1,5 +1,9 @@
 ﻿using FontParser.Reader;
 using FontParser.Tables.Common;
+using FontParser.Tables.Gsub.LookupSubTables.AlternateSubstitution;
+using FontParser.Tables.Gsub.LookupSubTables.LigatureSubstitution;
+using FontParser.Tables.Gsub.LookupSubTables.MultipleSubstitution;
+using FontParser.Tables.Gsub.LookupSubTables.SingleSubstitution;
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 #pragma warning disable CS8601 // Possible null reference assignment.
@@ -20,10 +24,10 @@ namespace FontParser.Tables.Gsub.LookupSubTables.SubstitutionExtension
             reader.Seek(startOfTable + extensionOffset);
             SubstitutionTable = extensionLookupType switch
             {
-                1 => new SingleSubstitution.SingleSubstitutionFormat1(reader),
-                2 => new MultipleSubstitution.MultipleSubstitutionFormat1(reader),
-                3 => new AlternateSubstitution.AlternateSubstitutionFormat1(reader),
-                4 => new LigatureSubstitution.LigatureSubstitutionFormat1(reader),
+                1 => new SingleSubstitutionFormat1(reader),
+                2 => new MultipleSubstitutionFormat1(reader),
+                3 => new AlternateSubstitutionFormat1(reader),
+                4 => new LigatureSubstitutionFormat1(reader),
                 //5 => new ContextSubstitution.Format1(reader),
                 //6 => new ChainingContextualSubstitution.Format1(reader),
                 //7 => new ExtensionSubstitution.Format1(reader),

@@ -1,4 +1,5 @@
 ﻿using FontParser.Reader;
+
 // ReSharper disable SwitchStatementMissingSomeEnumCasesNoDefault
 
 namespace FontParser.Tables.Cmap

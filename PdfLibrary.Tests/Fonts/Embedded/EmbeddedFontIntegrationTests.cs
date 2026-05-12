@@ -68,7 +68,7 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
                         }
                         else
                         {
-                            output.WriteLine($"      Embedded: None");
+                            output.WriteLine("      Embedded: None");
                         }
                     }
                 }

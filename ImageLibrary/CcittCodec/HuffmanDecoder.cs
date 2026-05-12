@@ -1,5 +1,3 @@
-#nullable enable
-
 namespace CcittCodec
 {
     /// <summary>
@@ -59,7 +57,7 @@ namespace CcittCodec
 
         private void AddCode(DecodeNode root, int code, int bitLength, int value)
         {
-            var node = root;
+            DecodeNode? node = root;
             for (int i = bitLength - 1; i >= 0; i--)
             {
                 int bit = (code >> i) & 1;
@@ -84,14 +82,14 @@ namespace CcittCodec
             // Terminating codes (0-63)
             for (var i = 0; i < HuffmanTables.WhiteTerminatingCodes.Length; i++)
             {
-                var code = HuffmanTables.WhiteTerminatingCodes[i];
+                HuffmanTables.HuffmanCode code = HuffmanTables.WhiteTerminatingCodes[i];
                 AddCode(_whiteRoot, code.Code, code.BitLength, i);
             }
 
             // Makeup codes (64, 128, 192, ... 1728)
             for (var i = 0; i < HuffmanTables.WhiteMakeupCodes.Length; i++)
             {
-                var code = HuffmanTables.WhiteMakeupCodes[i];
+                HuffmanTables.HuffmanCode code = HuffmanTables.WhiteMakeupCodes[i];
                 int runLength = (i + 1) * 64;
                 AddCode(_whiteRoot, code.Code, code.BitLength, runLength | MakeupFlag);
             }
@@ -99,7 +97,7 @@ namespace CcittCodec
             // Extended makeup codes (1792-2560)
             for (var i = 0; i < HuffmanTables.ExtendedMakeupCodes.Length; i++)
             {
-                var code = HuffmanTables.ExtendedMakeupCodes[i];
+                HuffmanTables.HuffmanCode code = HuffmanTables.ExtendedMakeupCodes[i];
                 int runLength = 1792 + i * 64;
                 AddCode(_whiteRoot, code.Code, code.BitLength, runLength | MakeupFlag);
             }
@@ -113,14 +111,14 @@ namespace CcittCodec
             // Terminating codes (0-63)
             for (var i = 0; i < HuffmanTables.BlackTerminatingCodes.Length; i++)
             {
-                var code = HuffmanTables.BlackTerminatingCodes[i];
+                HuffmanTables.HuffmanCode code = HuffmanTables.BlackTerminatingCodes[i];
                 AddCode(_blackRoot, code.Code, code.BitLength, i);
             }
 
             // Makeup codes (64, 128, 192, ... 1728)
             for (var i = 0; i < HuffmanTables.BlackMakeupCodes.Length; i++)
             {
-                var code = HuffmanTables.BlackMakeupCodes[i];
+                HuffmanTables.HuffmanCode code = HuffmanTables.BlackMakeupCodes[i];
                 int runLength = (i + 1) * 64;
                 AddCode(_blackRoot, code.Code, code.BitLength, runLength | MakeupFlag);
             }
@@ -128,7 +126,7 @@ namespace CcittCodec
             // Extended makeup codes (1792-2560) - same for black and white
             for (var i = 0; i < HuffmanTables.ExtendedMakeupCodes.Length; i++)
             {
-                var code = HuffmanTables.ExtendedMakeupCodes[i];
+                HuffmanTables.HuffmanCode code = HuffmanTables.ExtendedMakeupCodes[i];
                 int runLength = 1792 + i * 64;
                 AddCode(_blackRoot, code.Code, code.BitLength, runLength | MakeupFlag);
             }
@@ -213,7 +211,7 @@ namespace CcittCodec
         /// </summary>
         private int DecodeValue(CcittBitReader reader, DecodeNode root)
         {
-            var node = root;
+            DecodeNode? node = root;
 
             while (!node.IsLeaf)
             {

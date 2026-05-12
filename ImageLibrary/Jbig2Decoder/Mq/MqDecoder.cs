@@ -191,10 +191,11 @@ namespace Jbig2Decoder.Mq
             else
             {
                 _bp++;
-                if (_bp < _bpEnd)
-                {
-                    _c += (uint)_data[_bp] << 8;
-                }
+                // Past the end, the spec feeds a virtual 0xFF byte so the
+                // running interval keeps advancing rather than stalling on
+                // uninitialised memory (T.88 §E.3.4 end-of-buffer fallback).
+                byte next = _bp < _bpEnd ? _data[_bp] : (byte)0xFF;
+                _c += (uint)next << 8;
                 _ct = 8;
             }
         }

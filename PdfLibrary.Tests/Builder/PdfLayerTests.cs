@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Layer;
 using PdfLibrary.Builder.Page;
@@ -184,7 +185,7 @@ public class PdfLayerTests
         Assert.True(pdfData.Length > 0);
 
         // Verify PDF header
-        string header = System.Text.Encoding.ASCII.GetString(pdfData, 0, 8);
+        string header = Encoding.ASCII.GetString(pdfData, 0, 8);
         Assert.StartsWith("%PDF-", header);
     }
 
@@ -200,7 +201,7 @@ public class PdfLayerTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/OCProperties", pdfContent);
@@ -220,7 +221,7 @@ public class PdfLayerTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("BDC", pdfContent);
@@ -239,7 +240,7 @@ public class PdfLayerTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/OFF", pdfContent);
@@ -257,7 +258,7 @@ public class PdfLayerTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/Locked", pdfContent);
@@ -278,7 +279,7 @@ public class PdfLayerTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("Layer A", pdfContent);

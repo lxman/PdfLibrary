@@ -24,7 +24,7 @@ public partial class CodecSettingsWindow : Window
     private void BuildSettingsUI()
     {
         // Get all unique extensions from registered codecs
-        var allExtensions = CodecRegistry.Instance.GetAllCodecs()
+        List<string> allExtensions = CodecRegistry.Instance.GetAllCodecs()
             .SelectMany(c => c.Extensions)
             .Distinct()
             .OrderBy(ext => ext)
@@ -33,11 +33,11 @@ public partial class CodecSettingsWindow : Window
         foreach (string extension in allExtensions)
         {
             // Get codecs that can handle this extension
-            var decoders = CodecRegistry.Instance.GetAllCodecs()
+            List<IImageCodec> decoders = CodecRegistry.Instance.GetAllCodecs()
                 .Where(c => c.Extensions.Contains(extension) && c.CanDecode)
                 .ToList();
 
-            var encoders = CodecRegistry.Instance.GetAllCodecs()
+            List<IImageCodec> encoders = CodecRegistry.Instance.GetAllCodecs()
                 .Where(c => c.Extensions.Contains(extension) && c.CanEncode)
                 .ToList();
 
@@ -87,7 +87,7 @@ public partial class CodecSettingsWindow : Window
                 });
 
                 // Add codec options
-                foreach (var decoder in decoders)
+                foreach (IImageCodec decoder in decoders)
                 {
                     decoderCombo.Items.Add(new ComboBoxItem
                     {
@@ -104,7 +104,7 @@ public partial class CodecSettingsWindow : Window
                 }
                 else
                 {
-                    var item = decoderCombo.Items.Cast<ComboBoxItem>()
+                    ComboBoxItem? item = decoderCombo.Items.Cast<ComboBoxItem>()
                         .FirstOrDefault(i => i.Tag as string == currentDecoder);
                     if (item != null)
                     {
@@ -149,7 +149,7 @@ public partial class CodecSettingsWindow : Window
                 });
 
                 // Add codec options
-                foreach (var encoder in encoders)
+                foreach (IImageCodec encoder in encoders)
                 {
                     encoderCombo.Items.Add(new ComboBoxItem
                     {
@@ -166,7 +166,7 @@ public partial class CodecSettingsWindow : Window
                 }
                 else
                 {
-                    var item = encoderCombo.Items.Cast<ComboBoxItem>()
+                    ComboBoxItem? item = encoderCombo.Items.Cast<ComboBoxItem>()
                         .FirstOrDefault(i => i.Tag as string == currentEncoder);
                     if (item != null)
                     {
@@ -208,10 +208,10 @@ public partial class CodecSettingsWindow : Window
     private void Save_Click(object sender, RoutedEventArgs e)
     {
         // Save decoder preferences
-        foreach (var kvp in _decoderComboBoxes)
+        foreach (KeyValuePair<string, ComboBox> kvp in _decoderComboBoxes)
         {
             string extension = kvp.Key;
-            var comboBox = kvp.Value;
+            ComboBox comboBox = kvp.Value;
 
             if (comboBox.SelectedItem is ComboBoxItem item)
             {
@@ -221,10 +221,10 @@ public partial class CodecSettingsWindow : Window
         }
 
         // Save encoder preferences
-        foreach (var kvp in _encoderComboBoxes)
+        foreach (KeyValuePair<string, ComboBox> kvp in _encoderComboBoxes)
         {
             string extension = kvp.Key;
-            var comboBox = kvp.Value;
+            ComboBox comboBox = kvp.Value;
 
             if (comboBox.SelectedItem is ComboBoxItem item)
             {
@@ -248,7 +248,7 @@ public partial class CodecSettingsWindow : Window
 
     private void ResetToDefaults_Click(object sender, RoutedEventArgs e)
     {
-        var result = MessageBox.Show(
+        MessageBoxResult result = MessageBox.Show(
             "This will reset all codec preferences to automatic selection.\n\nAre you sure?",
             "Reset to Defaults",
             MessageBoxButton.YesNo,
@@ -261,12 +261,12 @@ public partial class CodecSettingsWindow : Window
             _configuration.EncodePreferences.Clear();
 
             // Reset all combo boxes to "Auto" (first item)
-            foreach (var comboBox in _decoderComboBoxes.Values)
+            foreach (ComboBox comboBox in _decoderComboBoxes.Values)
             {
                 comboBox.SelectedIndex = 0;
             }
 
-            foreach (var comboBox in _encoderComboBoxes.Values)
+            foreach (ComboBox comboBox in _encoderComboBoxes.Values)
             {
                 comboBox.SelectedIndex = 0;
             }

@@ -98,7 +98,6 @@ namespace FontParser.Tables.Cmap
                 {
                     // If parsing this encoding record fails (malformed/truncated data), skip it and continue
                     // This commonly happens with subset fonts that have corrupted cmap tables
-                    continue;
                 }
             }
         }

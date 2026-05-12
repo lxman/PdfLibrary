@@ -47,35 +47,35 @@ public class GenericRegionDecoderTests
 
     private void RunFixture(string fixtureName)
     {
-        var fx = GenericRegionFixture.Load(FixturePath(fixtureName));
+        GenericRegionFixture fx = GenericRegionFixture.Load(FixturePath(fixtureName));
         Assert.False(fx.Mmr, "fixture should be arithmetic-coded");
         Assert.False(fx.UseSkip, "skip not yet supported");
 
-        var asm = typeof(MqDecoder).Assembly;
-        var mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
-        var mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
+        ConstructorInfo mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             .Single(c => c.GetParameters().Length == 3);
         object mq = mqCtor.Invoke([fx.ArithBytes, 0, fx.ArithBytes.Length]);
 
-        var bmpType    = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
-        var bmpCtor    = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 2);
+        Type bmpType    = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
+        ConstructorInfo bmpCtor    = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 2);
         object output  = bmpCtor.Invoke([fx.Width, fx.Height]);
 
-        var paramsType = asm.GetType("Jbig2Decoder.Region.GenericRegionParams", throwOnError: true)!;
+        Type paramsType = asm.GetType("Jbig2Decoder.Region.GenericRegionParams", throwOnError: true)!;
         object pBox = Activator.CreateInstance(paramsType)!;
         paramsType.GetField("GbTemplate")!.SetValue(pBox, fx.GbTemplate);
         paramsType.GetField("TpgdOn")!.SetValue(pBox, fx.TpgdOn);
         paramsType.GetField("UseSkip")!.SetValue(pBox, fx.UseSkip);
         paramsType.GetField("Gbat")!.SetValue(pBox, fx.Gbat);
 
-        var decType = asm.GetType("Jbig2Decoder.Region.GenericRegionDecoder", throwOnError: true)!;
+        Type decType = asm.GetType("Jbig2Decoder.Region.GenericRegionDecoder", throwOnError: true)!;
         object decoder = Activator.CreateInstance(decType)!;
 
         var statsSize = (int)decType.GetMethod("StatsSizeFor", BindingFlags.Public | BindingFlags.Static)!
             .Invoke(null, [fx.GbTemplate])!;
         var gbStats = new byte[statsSize];
 
-        var decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
         decode.Invoke(decoder, [pBox, mq, gbStats, output]);
 
         var actual = (byte[])bmpType.GetProperty("Data")!.GetValue(output)!;

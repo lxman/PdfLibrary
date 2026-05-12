@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jbig2Decoder.Mq;
 using Xunit.Abstractions;
 
 namespace Jbig2Decoder.Tests.Region;
@@ -19,32 +20,32 @@ public class TextRegionDecoderTests
 
     private void RunFixture(string fixtureName)
     {
-        var fx = TextRegionFixture.Load(FixturePath(fixtureName));
+        TextRegionFixture fx = TextRegionFixture.Load(FixturePath(fixtureName));
 
-        var asm = typeof(Jbig2Decoder.Mq.MqDecoder).Assembly;
-        var bmpType   = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
-        var bmp3Ctor  = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 3);
-        var bmp2Ctor  = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 2);
-        var sdType    = asm.GetType("Jbig2Decoder.Region.SymbolDictionary", throwOnError: true)!;
-        var sdCtor    = sdType.GetConstructors().Single();
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type bmpType   = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
+        ConstructorInfo bmp3Ctor  = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 3);
+        ConstructorInfo bmp2Ctor  = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 2);
+        Type sdType    = asm.GetType("Jbig2Decoder.Region.SymbolDictionary", throwOnError: true)!;
+        ConstructorInfo sdCtor    = sdType.GetConstructors().Single();
 
         // Materialise dicts.
-        var bmpArrayType = bmpType.MakeArrayType();
+        Type bmpArrayType = bmpType.MakeArrayType();
         var dicts = (Array)Array.CreateInstance(sdType, fx.Dicts.Length);
         for (var d = 0; d < fx.Dicts.Length; d++)
         {
             var glyphs = (Array)Array.CreateInstance(bmpType, fx.Dicts[d].Length);
             for (var i = 0; i < fx.Dicts[d].Length; i++)
             {
-                var sb = fx.Dicts[d][i];
+                SymbolBitmap sb = fx.Dicts[d][i];
                 glyphs.SetValue(bmp3Ctor.Invoke([sb.Width, sb.Height, sb.Bytes]), i);
             }
             dicts.SetValue(sdCtor.Invoke([glyphs]), d);
         }
 
         // Build params.
-        var paramsType = asm.GetType("Jbig2Decoder.Region.TextRegionParams", throwOnError: true)!;
-        var refCornerType = asm.GetType("Jbig2Decoder.Region.RefCorner", throwOnError: true)!;
+        Type paramsType = asm.GetType("Jbig2Decoder.Region.TextRegionParams", throwOnError: true)!;
+        Type refCornerType = asm.GetType("Jbig2Decoder.Region.RefCorner", throwOnError: true)!;
         object pBox = Activator.CreateInstance(paramsType)!;
         paramsType.GetField("SbHuff")!.SetValue(pBox, fx.SbHuff);
         paramsType.GetField("SbRefine")!.SetValue(pBox, fx.SbRefine);
@@ -63,9 +64,9 @@ public class TextRegionDecoderTests
 
         object output = bmp2Ctor.Invoke([fx.Width, fx.Height]);
 
-        var decType = asm.GetType("Jbig2Decoder.Region.TextRegionDecoder", throwOnError: true)!;
+        Type decType = asm.GetType("Jbig2Decoder.Region.TextRegionDecoder", throwOnError: true)!;
         object decoder = Activator.CreateInstance(decType)!;
-        var decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
         decode.Invoke(decoder, [pBox, fx.ArithBytes, 0, fx.ArithBytes.Length, output]);
 
         var actual = (byte[])bmpType.GetProperty("Data")!.GetValue(output)!;

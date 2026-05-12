@@ -21,7 +21,7 @@ public class IdentifyTests
             .Eoi()
             .ToArray();
 
-        var info = new JpegStreamDecoder().Identify(data);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(data);
 
         Assert.Equal(16, info.Width);
         Assert.Equal(8, info.Height);
@@ -46,7 +46,7 @@ public class IdentifyTests
             .Eoi()
             .ToArray();
 
-        var info = new JpegStreamDecoder().Identify(data);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(data);
 
         Assert.True(info.HasJfif);
     }
@@ -68,7 +68,7 @@ public class IdentifyTests
             .Eoi()
             .ToArray();
 
-        var info = new JpegStreamDecoder().Identify(data);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(data);
 
         Assert.True(info.HasAdobeMarker);
         Assert.Equal(2, info.AdobeColorTransform);
@@ -86,7 +86,7 @@ public class IdentifyTests
             .Eoi()
             .ToArray();
 
-        var info = new JpegStreamDecoder().Identify(data);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(data);
 
         Assert.Equal(JpegMarker.Sof2, info.StartOfFrame);
     }

@@ -1,3 +1,4 @@
+using Generator;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 
@@ -9,7 +10,7 @@ Console.WriteLine("PDF Generator - Creating showcase PDFs...\n");
 
 // Generate company logo
 Console.WriteLine("Generating company logo...");
-Generator.LogoGenerator.GenerateCompanyLogo(Path.Combine(outputDir, "company-logo.jpg"));
+LogoGenerator.GenerateCompanyLogo(Path.Combine(outputDir, "company-logo.jpg"));
 Console.WriteLine("  ✓ Created company-logo.jpg\n");
 
 // ==================== SHOWCASE.PDF ====================
@@ -50,22 +51,22 @@ static void GenerateShowcasePdf(string outputPath)
 
             p.AddRectangle(72, 160, 100, 60, PdfColor.Red);
             p.AddText("Red", 95, 195)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .WithColor(PdfColor.White);
 
             p.AddRectangle(180, 160, 100, 60, PdfColor.Green);
             p.AddText("Green", 200, 195)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .WithColor(PdfColor.White);
 
             p.AddRectangle(288, 160, 100, 60, PdfColor.Blue);
             p.AddText("Blue", 310, 195)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .WithColor(PdfColor.White);
 
             p.AddRectangle(396, 160, 100, 60, PdfColor.Yellow);
             p.AddText("Yellow", 415, 195)
-                .Font("Helvetica", 12)
+                .Font("Helvetica")
                 .WithColor(PdfColor.Black);
 
             // Feature list

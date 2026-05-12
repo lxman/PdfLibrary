@@ -1,3 +1,5 @@
+using System.Text;
+using System.Text.RegularExpressions;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 
@@ -38,7 +40,7 @@ public class PdfColorTests
     [Fact]
     public void FromRgb_IntegerComponents_CreatesCorrectColor()
     {
-        var color = PdfColor.FromRgb(128, 64, 192);
+        PdfColor color = PdfColor.FromRgb(128, 64, 192);
 
         Assert.Equal(PdfColorSpace.DeviceRGB, color.ColorSpace);
         Assert.Equal(128.0 / 255.0, color.Components[0], precision: 4);
@@ -49,7 +51,7 @@ public class PdfColorTests
     [Fact]
     public void FromRgb_FloatComponents_CreatesCorrectColor()
     {
-        var color = PdfColor.FromRgb(0.5, 0.25, 0.75);
+        PdfColor color = PdfColor.FromRgb(0.5, 0.25, 0.75);
 
         Assert.Equal(PdfColorSpace.DeviceRGB, color.ColorSpace);
         Assert.Equal([0.5, 0.25, 0.75], color.Components);
@@ -58,10 +60,10 @@ public class PdfColorTests
     [Fact]
     public void FromRgb_ClampsOutOfRangeValues()
     {
-        var color1 = PdfColor.FromRgb(-0.5, 0.5, 1.5);
+        PdfColor color1 = PdfColor.FromRgb(-0.5, 0.5, 1.5);
         Assert.Equal([0.0, 0.5, 1.0], color1.Components);
 
-        var color2 = PdfColor.FromRgb(-50, 128, 300);
+        PdfColor color2 = PdfColor.FromRgb(-50, 128, 300);
         Assert.Equal([0.0, 128.0 / 255.0, 1.0], color2.Components);
     }
 
@@ -72,7 +74,7 @@ public class PdfColorTests
     [Fact]
     public void FromGray_CreatesCorrectColor()
     {
-        var color = PdfColor.FromGray(0.5);
+        PdfColor color = PdfColor.FromGray(0.5);
 
         Assert.Equal(PdfColorSpace.DeviceGray, color.ColorSpace);
         Assert.Equal([0.5], color.Components);
@@ -81,10 +83,10 @@ public class PdfColorTests
     [Fact]
     public void FromGray_ClampsOutOfRangeValues()
     {
-        var color1 = PdfColor.FromGray(-0.5);
+        PdfColor color1 = PdfColor.FromGray(-0.5);
         Assert.Equal([0.0], color1.Components);
 
-        var color2 = PdfColor.FromGray(1.5);
+        PdfColor color2 = PdfColor.FromGray(1.5);
         Assert.Equal([1.0], color2.Components);
     }
 
@@ -95,7 +97,7 @@ public class PdfColorTests
     [Fact]
     public void FromCmyk_CreatesCorrectColor()
     {
-        var color = PdfColor.FromCmyk(0.0, 0.5, 1.0, 0.0);
+        PdfColor color = PdfColor.FromCmyk(0.0, 0.5, 1.0, 0.0);
 
         Assert.Equal(PdfColorSpace.DeviceCMYK, color.ColorSpace);
         Assert.Equal([0.0, 0.5, 1.0, 0.0], color.Components);
@@ -104,7 +106,7 @@ public class PdfColorTests
     [Fact]
     public void FromCmyk_ClampsOutOfRangeValues()
     {
-        var color = PdfColor.FromCmyk(-0.5, 0.5, 1.5, 0.5);
+        PdfColor color = PdfColor.FromCmyk(-0.5, 0.5, 1.5, 0.5);
 
         Assert.Equal([0.0, 0.5, 1.0, 0.5], color.Components);
     }
@@ -116,7 +118,7 @@ public class PdfColorTests
     [Fact]
     public void FromHex_ParsesCorrectly()
     {
-        var color = PdfColor.FromHex("#8040C0");
+        PdfColor color = PdfColor.FromHex("#8040C0");
 
         Assert.Equal(PdfColorSpace.DeviceRGB, color.ColorSpace);
         Assert.Equal(0x80 / 255.0, color.Components[0], precision: 4);
@@ -127,7 +129,7 @@ public class PdfColorTests
     [Fact]
     public void FromHex_WithoutHash_ParsesCorrectly()
     {
-        var color = PdfColor.FromHex("FF00FF");
+        PdfColor color = PdfColor.FromHex("FF00FF");
 
         Assert.Equal(PdfColorSpace.DeviceRGB, color.ColorSpace);
         Assert.Equal([1.0, 0.0, 1.0], color.Components);
@@ -136,7 +138,7 @@ public class PdfColorTests
     [Fact]
     public void FromHex_ShortFormat_ParsesCorrectly()
     {
-        var color = PdfColor.FromHex("#F0F");
+        PdfColor color = PdfColor.FromHex("#F0F");
 
         Assert.Equal(PdfColorSpace.DeviceRGB, color.ColorSpace);
         Assert.Equal([1.0, 0.0, 1.0], color.Components);
@@ -149,7 +151,7 @@ public class PdfColorTests
     [Fact]
     public void FromSeparation_CreatesCorrectColor()
     {
-        var color = PdfColor.FromSeparation("PANTONE 185 C", 1.0);
+        PdfColor color = PdfColor.FromSeparation("PANTONE 185 C", 1.0);
 
         Assert.Equal(PdfColorSpace.Separation, color.ColorSpace);
         Assert.Equal("PANTONE 185 C", color.ColorantName);
@@ -160,7 +162,7 @@ public class PdfColorTests
     [Fact]
     public void FromSeparation_WithPartialTint_CreatesCorrectColor()
     {
-        var color = PdfColor.FromSeparation("PANTONE 185 C", 0.5);
+        PdfColor color = PdfColor.FromSeparation("PANTONE 185 C", 0.5);
 
         Assert.Equal(PdfColorSpace.Separation, color.ColorSpace);
         Assert.Equal("PANTONE 185 C", color.ColorantName);
@@ -171,11 +173,11 @@ public class PdfColorTests
     [Fact]
     public void FromSeparation_ClampsTintToValidRange()
     {
-        var color1 = PdfColor.FromSeparation("Spot1", -0.5);
+        PdfColor color1 = PdfColor.FromSeparation("Spot1", -0.5);
         Assert.Equal(0.0, color1.Tint);
         Assert.Equal([0.0], color1.Components);
 
-        var color2 = PdfColor.FromSeparation("Spot2", 1.5);
+        PdfColor color2 = PdfColor.FromSeparation("Spot2", 1.5);
         Assert.Equal(1.0, color2.Tint);
         Assert.Equal([1.0], color2.Components);
     }
@@ -183,7 +185,7 @@ public class PdfColorTests
     [Fact]
     public void FromSeparation_ZeroTint_ProducesNoColor()
     {
-        var color = PdfColor.FromSeparation("PANTONE 185 C", 0.0);
+        PdfColor color = PdfColor.FromSeparation("PANTONE 185 C", 0.0);
 
         Assert.Equal(0.0, color.Tint);
         Assert.Equal([0.0], color.Components);
@@ -192,7 +194,7 @@ public class PdfColorTests
     [Fact]
     public void FromSeparation_FullTint_ProducesFullColor()
     {
-        var color = PdfColor.FromSeparation("PANTONE 185 C", 1.0);
+        PdfColor color = PdfColor.FromSeparation("PANTONE 185 C", 1.0);
 
         Assert.Equal(1.0, color.Tint);
         Assert.Equal([1.0], color.Components);
@@ -203,23 +205,23 @@ public class PdfColorTests
     {
         // Tint property should return 0 for non-Separation colors
 
-        var rgb = PdfColor.Red;
+        PdfColor rgb = PdfColor.Red;
         Assert.Equal(0.0, rgb.Tint);
 
-        var gray = PdfColor.Black;
+        PdfColor gray = PdfColor.Black;
         Assert.Equal(0.0, gray.Tint);
 
-        var cmyk = PdfColor.FromCmyk(0, 1, 1, 0);
+        PdfColor cmyk = PdfColor.FromCmyk(0, 1, 1, 0);
         Assert.Equal(0.0, cmyk.Tint);
     }
 
     [Fact]
     public void ColorantName_OnNonSeparationColor_ReturnsNull()
     {
-        var rgb = PdfColor.Red;
+        PdfColor rgb = PdfColor.Red;
         Assert.Null(rgb.ColorantName);
 
-        var gray = PdfColor.Black;
+        PdfColor gray = PdfColor.Black;
         Assert.Null(gray.ColorantName);
     }
 
@@ -231,7 +233,7 @@ public class PdfColorTests
     public void SeparationColor_InBuilder_SerializesCorrectly()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(page =>
             {
                 page.AddText("Spot Color Test", 100, 700)
@@ -240,7 +242,7 @@ public class PdfColorTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
 
         // Verify Separation color space is written
         Assert.Contains("/Separation", pdfContent);
@@ -251,7 +253,7 @@ public class PdfColorTests
     public void SeparationColor_WithPartialTint_SerializesCorrectly()
     {
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(page =>
             {
                 page.AddRectangle(100, 600, 100, 100,
@@ -260,7 +262,7 @@ public class PdfColorTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
 
         Assert.Contains("/Separation", pdfContent);
         Assert.Contains("Spot1", pdfContent);
@@ -274,7 +276,7 @@ public class PdfColorTests
         // Test multiple different spot colors in same document
 
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(page =>
             {
                 page.AddRectangle(50, 700, 50, 50,
@@ -289,7 +291,7 @@ public class PdfColorTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
 
         Assert.Contains("PANTONE 185 C", pdfContent);
         Assert.Contains("PANTONE 286 C", pdfContent);
@@ -302,7 +304,7 @@ public class PdfColorTests
         // Test that Separation colors work alongside DeviceRGB, DeviceGray, etc.
 
         // Arrange & Act
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .AddPage(page =>
             {
                 page.AddRectangle(50, 700, 50, 50,
@@ -317,7 +319,7 @@ public class PdfColorTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
 
         Assert.Contains("/Separation", pdfContent);
         Assert.Contains("Spot1", pdfContent);
@@ -325,7 +327,7 @@ public class PdfColorTests
         // Note: DeviceRGB and DeviceGray are implied by the operators, not always explicitly written
         Assert.True(pdfContent.Contains(" rg") || pdfContent.Contains(" RG"), "Should contain RGB color operator");
         // Gray operator is 'g' or 'G' followed by whitespace (newline, space, or other)
-        Assert.True(System.Text.RegularExpressions.Regex.IsMatch(pdfContent, @"\s+[gG]\s"), "Should contain Gray color operator");
+        Assert.True(Regex.IsMatch(pdfContent, @"\s+[gG]\s"), "Should contain Gray color operator");
     }
 
     #endregion
@@ -338,7 +340,7 @@ public class PdfColorTests
         // Verify behavior with empty colorant name
         // Implementation should either throw ArgumentException or handle gracefully
 
-        var color = PdfColor.FromSeparation("", 1.0);
+        PdfColor color = PdfColor.FromSeparation("", 1.0);
         Assert.NotNull(color);
         // Specific behavior depends on implementation
     }
@@ -360,7 +362,7 @@ public class PdfColorTests
         // Test with very long colorant name (PDF spec allows up to 127 characters in names)
 
         var longName = new string('A', 120);
-        var color = PdfColor.FromSeparation(longName, 0.5);
+        PdfColor color = PdfColor.FromSeparation(longName, 0.5);
 
         Assert.Equal(PdfColorSpace.Separation, color.ColorSpace);
         Assert.Equal(longName, color.ColorantName);

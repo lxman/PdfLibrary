@@ -1,5 +1,5 @@
-using PdfLibrary.Parsing;
 using System.Text;
+using PdfLibrary.Parsing;
 using Xunit.Abstractions;
 
 namespace PdfLibrary.Tests;

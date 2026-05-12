@@ -1,5 +1,3 @@
-#nullable enable
-
 namespace CcittCodec
 {
     /// <summary>
@@ -35,7 +33,7 @@ namespace CcittCodec
             bool blackIs1 = false, bool encodedByteAlign = false,
             bool endOfLine = false, bool endOfBlock = true)
         {
-            var options = CcittOptions.FromPdfK(k, width);
+            CcittOptions options = CcittOptions.FromPdfK(k, width);
             options.Height = height;
             options.BlackIs1 = blackIs1;
             options.EncodedByteAlign = encodedByteAlign;

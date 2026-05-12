@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Jbig2Decoder.Tests.Region;
 
 internal sealed record RefinementRegionFixture(
@@ -12,7 +14,7 @@ internal sealed record RefinementRegionFixture(
     {
         byte[] data = File.ReadAllBytes(path);
         var p = 0;
-        if (System.Text.Encoding.ASCII.GetString(data, 0, 4) != "RR01")
+        if (Encoding.ASCII.GetString(data, 0, 4) != "RR01")
             throw new InvalidDataException($"Bad magic in {path}");
         p += 4;
 

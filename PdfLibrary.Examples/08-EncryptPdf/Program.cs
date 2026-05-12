@@ -9,7 +9,7 @@ Console.WriteLine("This example demonstrates different encryption scenarios:\n")
 
 // ==================== EXAMPLE 1: SIMPLE PASSWORD PROTECTION ====================
 Console.WriteLine("1. Creating simple password-protected PDF...");
-var simpleEncrypted = Path.Combine(outputDir, "encrypted_simple.pdf");
+string simpleEncrypted = Path.Combine(outputDir, "encrypted_simple.pdf");
 
 PdfDocumentBuilder.Create()
     .WithMetadata(m => m
@@ -33,7 +33,7 @@ PdfDocumentBuilder.Create()
             .Font("Helvetica-Bold", 14);
 
         p.AddText("Password: secret123", 72, 145)
-            .Font("Helvetica", 12)
+            .Font("Helvetica")
             .WithColor(PdfColor.DarkGray);
 
         var infoText = new[]
@@ -53,7 +53,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 180;
-        foreach (var line in infoText)
+        foreach (string line in infoText)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -70,11 +70,11 @@ PdfDocumentBuilder.Create()
     .Save(simpleEncrypted);
 
 Console.WriteLine($"   ✓ Created: {simpleEncrypted}");
-Console.WriteLine($"   Password: secret123\n");
+Console.WriteLine("   Password: secret123\n");
 
 // ==================== EXAMPLE 2: RESTRICTED PERMISSIONS ====================
 Console.WriteLine("2. Creating read-only PDF (no printing, no copying)...");
-var restrictedPdf = Path.Combine(outputDir, "encrypted_restricted.pdf");
+string restrictedPdf = Path.Combine(outputDir, "encrypted_restricted.pdf");
 
 PdfDocumentBuilder.Create()
     .WithMetadata(m => m
@@ -103,7 +103,7 @@ PdfDocumentBuilder.Create()
             .Font("Helvetica-Bold", 14);
 
         p.AddText("User Password: view123  |  Owner Password: admin456", 72, 145)
-            .Font("Helvetica", 12)
+            .Font("Helvetica")
             .WithColor(PdfColor.DarkGray);
 
         var infoText = new[]
@@ -126,7 +126,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 180;
-        foreach (var line in infoText)
+        foreach (string line in infoText)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -143,12 +143,12 @@ PdfDocumentBuilder.Create()
     .Save(restrictedPdf);
 
 Console.WriteLine($"   ✓ Created: {restrictedPdf}");
-Console.WriteLine($"   User Password: view123 (read-only)");
-Console.WriteLine($"   Owner Password: admin456 (full access)\n");
+Console.WriteLine("   User Password: view123 (read-only)");
+Console.WriteLine("   Owner Password: admin456 (full access)\n");
 
 // ==================== EXAMPLE 3: SELECTIVE PERMISSIONS ====================
 Console.WriteLine("3. Creating PDF with selective permissions...");
-var selectivePdf = Path.Combine(outputDir, "encrypted_selective.pdf");
+string selectivePdf = Path.Combine(outputDir, "encrypted_selective.pdf");
 
 PdfDocumentBuilder.Create()
     .WithMetadata(m => m
@@ -180,7 +180,7 @@ PdfDocumentBuilder.Create()
             .Font("Helvetica-Bold", 14);
 
         p.AddText("User Password: user789  |  Owner Password: owner999", 72, 140)
-            .Font("Helvetica", 12)
+            .Font("Helvetica")
             .WithColor(PdfColor.DarkGray);
 
         var infoText = new[]
@@ -205,7 +205,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 175;
-        foreach (var line in infoText)
+        foreach (string line in infoText)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -222,8 +222,8 @@ PdfDocumentBuilder.Create()
     .Save(selectivePdf);
 
 Console.WriteLine($"   ✓ Created: {selectivePdf}");
-Console.WriteLine($"   User Password: user789 (selective permissions)");
-Console.WriteLine($"   Owner Password: owner999 (full access)\n");
+Console.WriteLine("   User Password: user789 (selective permissions)");
+Console.WriteLine("   Owner Password: owner999 (full access)\n");
 
 // ==================== SUMMARY ====================
 Console.WriteLine("Summary:");

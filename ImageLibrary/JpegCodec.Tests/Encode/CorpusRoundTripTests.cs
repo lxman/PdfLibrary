@@ -31,7 +31,7 @@ public class CorpusRoundTripTests
 
     public static IEnumerable<object[]> Files()
     {
-        foreach (var f in s_files)
+        foreach (string f in s_files)
             yield return [f];
     }
 
@@ -44,9 +44,9 @@ public class CorpusRoundTripTests
         byte[] data = File.ReadAllBytes(path);
 
         // First decode: ground-truth pixels for the corpus content.
-        var firstInfo = new JpegStreamDecoder().Identify(data);
+        JpegImageInfo firstInfo = new JpegStreamDecoder().Identify(data);
         if (firstInfo.StartOfFrame == JpegMarker.Sof2) return;  // progressive: skip (encoder is sequential-only)
-        var first = new JpegStreamDecoder().Decode(data);
+        JpegDecodeResult first = new JpegStreamDecoder().Decode(data);
         Assert.Equal(firstInfo.Width * firstInfo.Height * firstInfo.NumberOfComponents,
                      first.ComponentData.Length);
 
@@ -64,12 +64,12 @@ public class CorpusRoundTripTests
         byte[] reEncoded = new JpegStreamEncoder().Encode(first.ComponentData, opts);
 
         // Second decode of our own encoder output.
-        var secondInfo = new JpegStreamDecoder().Identify(reEncoded);
+        JpegImageInfo secondInfo = new JpegStreamDecoder().Identify(reEncoded);
         Assert.Equal(first.Width, secondInfo.Width);
         Assert.Equal(first.Height, secondInfo.Height);
         Assert.Equal(first.NumberOfComponents, secondInfo.NumberOfComponents);
 
-        var second = new JpegStreamDecoder().Decode(reEncoded);
+        JpegDecodeResult second = new JpegStreamDecoder().Decode(reEncoded);
         Assert.Equal(first.ComponentData.Length, second.ComponentData.Length);
 
         // PSNR between the two pixel buffers. Two lossy passes accumulate

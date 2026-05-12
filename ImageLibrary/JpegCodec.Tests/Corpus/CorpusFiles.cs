@@ -15,7 +15,7 @@ internal static class CorpusFiles
     {
         if (!Directory.Exists(CorpusRoot))
             yield break;
-        foreach (var file in Directory.EnumerateFiles(CorpusRoot, "*.*", SearchOption.AllDirectories)
+        foreach (string file in Directory.EnumerateFiles(CorpusRoot, "*.*", SearchOption.AllDirectories)
                               .Where(f => f.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
                                           f.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase))
                               .OrderBy(f => f, StringComparer.Ordinal))

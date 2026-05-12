@@ -46,16 +46,16 @@ public class IaidDecoderTests
     [MemberData(nameof(Fixtures))]
     public void Decode_AgainstJbig2dec_ProducesIdenticalIdSequence(int codeLength, int[] expected)
     {
-        var asm = typeof(MqDecoder).Assembly;
-        var mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
-        var mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
+        ConstructorInfo mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             .Single(c => c.GetParameters().Length == 3);
         object mq = mqCtor.Invoke([TestStream, 0, TestStream.Length]);
 
-        var iaidType = asm.GetType("Jbig2Decoder.Arith.IaidDecoder", throwOnError: true)!;
-        var iaidCtor = iaidType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Single();
+        Type iaidType = asm.GetType("Jbig2Decoder.Arith.IaidDecoder", throwOnError: true)!;
+        ConstructorInfo iaidCtor = iaidType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Single();
         object iaid = iaidCtor.Invoke([mq, codeLength]);
-        var decode = iaidType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = iaidType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
 
         for (var i = 0; i < expected.Length; i++)
         {

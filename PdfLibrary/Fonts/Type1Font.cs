@@ -112,10 +112,8 @@ internal class Type1Font : PdfFont
                 PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array[{index}]: {_widths[index]:F1}");
                 return _widths[index];
             }
-            else
-            {
-                PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] PDF widths array index out of bounds: index={index}, _widths.Length={_widths.Length}");
-            }
+
+            PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] PDF widths array index out of bounds: index={index}, _widths.Length={_widths.Length}");
         }
 
         // For standard 14 fonts, use built-in metrics
@@ -133,7 +131,7 @@ internal class Type1Font : PdfFont
         // If no encoding or glyph name not found, try direct charCode lookup as fallback
         if (!standardWidth.HasValue)
         {
-            PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Standard 14 fonts: trying fallback charCode lookup");
+            PdfLogger.Log(LogCategory.Text, "  [WIDTH-PATH] Standard 14 fonts: trying fallback charCode lookup");
             standardWidth = GetStandardFontWidth(charCode);
         }
 

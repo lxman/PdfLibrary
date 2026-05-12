@@ -60,7 +60,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle (foreground layer with blend mode)
                 page.AddPath()
@@ -95,7 +95,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle (foreground layer with blend mode)
                 page.AddPath()
@@ -130,7 +130,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle (foreground layer with blend mode)
                 page.AddPath()
@@ -165,7 +165,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle (foreground layer with blend mode)
                 page.AddPath()
@@ -200,7 +200,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle (foreground layer with blend mode)
                 page.AddPath()
@@ -240,7 +240,7 @@ public class BlendModeTestDocument : ITestDocument
             double x = leftMargin;
             var testNum = 1;
 
-            foreach (var (blend1, blend2, blend3) in testCases)
+            foreach ((string blend1, string blend2, string blend3) in testCases)
             {
                 double centerX = x + 40;
                 double centerY = y - 40;
@@ -299,7 +299,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle with blend mode and 50% opacity
                 page.AddPath()
@@ -325,7 +325,7 @@ public class BlendModeTestDocument : ITestDocument
             foreach (string blendMode in blendModes)
             {
                 // Red rectangle (background layer)
-                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red, null);
+                page.AddRectangle(PdfRect.FromPoints(x, y - 60, 60, 60), PdfColor.Red);
 
                 // Blue circle with blend mode and 25% opacity
                 page.AddPath()

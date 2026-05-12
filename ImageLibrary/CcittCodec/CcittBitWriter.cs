@@ -1,5 +1,3 @@
-#nullable enable
-
 using System;
 using System.Collections.Generic;
 
@@ -152,7 +150,7 @@ namespace CcittCodec
                 runLength -= CcittConstants.MaxExtendedMakeupRunLength;
             }
 
-            HuffmanTables.GetRunLengthCodes(runLength, isWhite, out var makeupCode, out var terminatingCode);
+            HuffmanTables.GetRunLengthCodes(runLength, isWhite, out HuffmanTables.HuffmanCode makeupCode, out HuffmanTables.HuffmanCode terminatingCode);
 
             if (makeupCode.BitLength > 0)
             {
@@ -189,10 +187,8 @@ namespace CcittCodec
                 result[_data.Count] = _currentByte;
                 return result;
             }
-            else
-            {
-                return _data.ToArray();
-            }
+
+            return _data.ToArray();
         }
 
         /// <summary>

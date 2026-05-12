@@ -17,22 +17,22 @@ public class RefinementRegionDecoderTests
 
     private void RunFixture(string fixtureName)
     {
-        var fx = RefinementRegionFixture.Load(FixturePath(fixtureName));
+        RefinementRegionFixture fx = RefinementRegionFixture.Load(FixturePath(fixtureName));
 
-        var asm = typeof(MqDecoder).Assembly;
-        var bmpType = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
-        var bmpFromBytes = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 3);
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type bmpType = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
+        ConstructorInfo bmpFromBytes = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 3);
         object refBmp = bmpFromBytes.Invoke([fx.RefWidth, fx.RefHeight, fx.RefBytes]);
 
-        var mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
-        var mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+        Type mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
+        ConstructorInfo mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             .Single(c => c.GetParameters().Length == 3);
         object mq = mqCtor.Invoke([fx.ArithBytes, 0, fx.ArithBytes.Length]);
 
-        var bmpCtor = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 2);
+        ConstructorInfo bmpCtor = bmpType.GetConstructors().Single(c => c.GetParameters().Length == 2);
         object output = bmpCtor.Invoke([fx.Width, fx.Height]);
 
-        var paramsType = asm.GetType("Jbig2Decoder.Region.RefinementRegionParams", throwOnError: true)!;
+        Type paramsType = asm.GetType("Jbig2Decoder.Region.RefinementRegionParams", throwOnError: true)!;
         object pBox = Activator.CreateInstance(paramsType)!;
         paramsType.GetField("GrTemplate")!.SetValue(pBox, fx.GrTemplate);
         paramsType.GetField("TpgrOn")!.SetValue(pBox, fx.TpgrOn);
@@ -41,13 +41,13 @@ public class RefinementRegionDecoderTests
         paramsType.GetField("ReferenceDy")!.SetValue(pBox, fx.Dy);
         paramsType.GetField("Grat")!.SetValue(pBox, fx.Grat);
 
-        var decType = asm.GetType("Jbig2Decoder.Region.RefinementRegionDecoder", throwOnError: true)!;
+        Type decType = asm.GetType("Jbig2Decoder.Region.RefinementRegionDecoder", throwOnError: true)!;
         object decoder = Activator.CreateInstance(decType)!;
         var statsSize = (int)decType.GetMethod("StatsSizeFor", BindingFlags.Public | BindingFlags.Static)!
             .Invoke(null, [fx.GrTemplate])!;
         var stats = new byte[statsSize];
 
-        var decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
         decode.Invoke(decoder, [pBox, mq, stats, output]);
 
         var actual = (byte[])bmpType.GetProperty("Data")!.GetValue(output)!;

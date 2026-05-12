@@ -96,17 +96,20 @@ namespace FontParser.Tables.PostScriptType1
             {
                 return firstByte - 139;
             }
-            else if (firstByte >= 247 && firstByte <= 250)
+
+            if (firstByte >= 247 && firstByte <= 250)
             {
                 byte b1 = data[i++];
                 return (firstByte - 247) * 256 + b1 + 108;
             }
-            else if (firstByte >= 251 && firstByte <= 254)
+
+            if (firstByte >= 251 && firstByte <= 254)
             {
                 byte b1 = data[i++];
                 return -(firstByte - 251) * 256 - b1 - 108;
             }
-            else if (firstByte == 255)
+
+            if (firstByte == 255)
             {
                 // 4-byte signed integer (fixed point 16.16 in some implementations, but typically integer in Type1)
                 int value = (data[i] << 24) | (data[i + 1] << 16) | (data[i + 2] << 8) | data[i + 3];
@@ -488,7 +491,7 @@ namespace FontParser.Tables.PostScriptType1
             float minX = float.MaxValue, minY = float.MaxValue;
             float maxX = float.MinValue, maxY = float.MinValue;
 
-            foreach (var cmd in _outline.Commands)
+            foreach (PathCommand? cmd in _outline.Commands)
             {
                 if (cmd is MoveToCommand m)
                 {

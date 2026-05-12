@@ -1,4 +1,3 @@
-using CcittCodec;
 using Xunit;
 using static CcittCodec.Ccitt;
 

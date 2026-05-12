@@ -46,16 +46,16 @@ public class IntegerDecoderTests
     [Fact]
     public void Decode_AgainstJbig2dec_ProducesIdenticalIntegerSequence()
     {
-        var asm = typeof(MqDecoder).Assembly;
-        var mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
-        var mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type mqType = asm.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
+        ConstructorInfo mqCtor = mqType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             .Single(c => c.GetParameters().Length == 3);
         object mq = mqCtor.Invoke([TestStream, 0, TestStream.Length]);
 
-        var intType = asm.GetType("Jbig2Decoder.Arith.IntegerDecoder", throwOnError: true)!;
-        var intCtor = intType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Single();
+        Type intType = asm.GetType("Jbig2Decoder.Arith.IntegerDecoder", throwOnError: true)!;
+        ConstructorInfo intCtor = intType.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance).Single();
         object intDecoder = intCtor.Invoke([mq, "INT"]);
-        var decode = intType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = intType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
 
         for (var i = 0; i < Expected.Length; i++)
         {

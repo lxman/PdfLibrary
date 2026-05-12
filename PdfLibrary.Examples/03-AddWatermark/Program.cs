@@ -49,7 +49,7 @@ PdfDocumentBuilder.Create()
 
         // Document body text
         p.AddText("Subject: Quarterly Financial Report Q4 2024", 72, 130)
-            .Font("Helvetica-Bold", 12);
+            .Font("Helvetica-Bold");
 
         p.AddText("Date: January 13, 2025", 72, 150)
             .Font("Helvetica", 10);
@@ -79,7 +79,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 230;
-        foreach (var line in para1Lines)
+        foreach (string line in para1Lines)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -108,7 +108,7 @@ PdfDocumentBuilder.Create()
             "4. Implementation of enhanced security protocols across all operations"
         };
 
-        foreach (var line in para2Lines)
+        foreach (string line in para2Lines)
         {
             p.AddText(line, 72, lineY)
                 .Font("Helvetica", 10);
@@ -125,7 +125,7 @@ PdfDocumentBuilder.Create()
 
     .Save(outputPath);
 
-Console.WriteLine($"  ✓ Document with watermark created successfully!");
+Console.WriteLine("  ✓ Document with watermark created successfully!");
 Console.WriteLine($"\nFile: {outputPath}");
 Console.WriteLine("\nWatermarks applied:");
 Console.WriteLine("  • Diagonal 'CONFIDENTIAL' in light gray");

@@ -1,4 +1,5 @@
 ﻿using System;
+
 // ReSharper disable InconsistentNaming
 
 // ReSharper disable CheckNamespace
@@ -280,7 +281,7 @@ public enum TouchState : ushort
     Both = X | Y
 }
 
-public enum DistanceType : int
+public enum DistanceType
 {
     Grey = 0,
     Black = 1,
@@ -571,7 +572,7 @@ public enum TupleIndexFormat : ushort
 }
 
 [Flags]
-public enum KerxCoverage : int
+public enum KerxCoverage
 {
     Vertical = 1 << 31,
     Horizontal = 1 << 30,

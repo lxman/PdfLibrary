@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Builder;
 
 namespace PdfLibrary.Tests.Builder;
@@ -15,7 +16,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/PageLabels", pdfContent);
         Assert.Contains("/Nums", pdfContent);
         Assert.Contains("/S /D", pdfContent);
@@ -31,7 +32,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/S /r", pdfContent);  // lowercase roman
     }
 
@@ -45,7 +46,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/S /R", pdfContent);  // uppercase roman
     }
 
@@ -58,7 +59,7 @@ public class PdfPageLabelTests
             .SetPageLabels(0, l => l.LowercaseLetters());
 
         byte[] pdf1 = builder1.ToByteArray();
-        string content1 = System.Text.Encoding.ASCII.GetString(pdf1);
+        string content1 = Encoding.ASCII.GetString(pdf1);
         Assert.Contains("/S /a", content1);
 
         // Uppercase letters
@@ -67,7 +68,7 @@ public class PdfPageLabelTests
             .SetPageLabels(0, l => l.UppercaseLetters());
 
         byte[] pdf2 = builder2.ToByteArray();
-        string content2 = System.Text.Encoding.ASCII.GetString(pdf2);
+        string content2 = Encoding.ASCII.GetString(pdf2);
         Assert.Contains("/S /A", content2);
     }
 
@@ -81,7 +82,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/P (Chapter-)", pdfContent);
     }
 
@@ -95,7 +96,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/St 5", pdfContent);
     }
 
@@ -109,7 +110,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/P (Cover)", pdfContent);
         // Style should not be present for NoNumbering
         Assert.DoesNotContain("/S /D", pdfContent);
@@ -131,7 +132,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/PageLabels", pdfContent);
         Assert.Contains("0 <<", pdfContent);  // Cover
         Assert.Contains("1 <<", pdfContent);  // Roman
@@ -148,7 +149,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/S /D", pdfContent);
         Assert.Contains("/P (A-)", pdfContent);
     }
@@ -187,7 +188,7 @@ public class PdfPageLabelTests
         Assert.True(pdfData.Length > 0);
 
         // Verify PDF header
-        string header = System.Text.Encoding.ASCII.GetString(pdfData, 0, 8);
+        string header = Encoding.ASCII.GetString(pdfData, 0, 8);
         Assert.StartsWith("%PDF-", header);
     }
 
@@ -199,7 +200,7 @@ public class PdfPageLabelTests
             .AddPage(p => p.AddText("Simple page", 100, 700));
 
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
 
         // Assert
         Assert.DoesNotContain("/PageLabels", pdfContent);
@@ -219,7 +220,7 @@ public class PdfPageLabelTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/PageLabels", pdfContent);
         Assert.Contains("/Outlines", pdfContent);
     }
@@ -278,7 +279,7 @@ public class PdfPageLabelTests
 
         // Act
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
 
         // Assert - ranges should be ordered by page index in the PDF
         int pos0 = pdfContent.IndexOf("0 <<", StringComparison.Ordinal);

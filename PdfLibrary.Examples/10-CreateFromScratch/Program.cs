@@ -62,7 +62,7 @@ PdfDocumentBuilder.Create()
         var boxSize = 50;
         var spacing = 60;
 
-        var features = new[]
+        (string, PdfColor)[] features = new[]
         {
             ("Text", PdfColor.FromHex("#E74C3C")),
             ("Shapes", PdfColor.FromHex("#3498DB")),
@@ -74,10 +74,10 @@ PdfDocumentBuilder.Create()
 
         for (var i = 0; i < features.Length; i++)
         {
-            var row = i / 3;
-            var col = i % 3;
-            var x = 72 + col * (boxSize + spacing + 80);
-            var y = featureY + row * (boxSize + 40);
+            int row = i / 3;
+            int col = i % 3;
+            int x = 72 + col * (boxSize + spacing + 80);
+            int y = featureY + row * (boxSize + 40);
 
             // Colored box
             p.AddRectangle(x, y, boxSize, boxSize, features[i].Item2);
@@ -123,7 +123,7 @@ PdfDocumentBuilder.Create()
             ("Courier", "The quick brown fox jumps over the lazy dog")
         };
 
-        foreach (var (font, text) in fonts)
+        foreach ((string font, string text) in fonts)
         {
             p.AddText($"{font}:", 72, y)
                 .Font("Helvetica", 9)
@@ -142,7 +142,7 @@ PdfDocumentBuilder.Create()
 
         y += 30;
         var sizes = new[] { 8, 10, 12, 14, 18, 24, 32 };
-        foreach (var size in sizes)
+        foreach (int size in sizes)
         {
             p.AddText($"Size {size}pt", 72, y)
                 .Font("Helvetica", size);
@@ -178,7 +178,7 @@ PdfDocumentBuilder.Create()
 
         var colorY = 150;
         var colorHeight = 30;
-        var colors = new[]
+        (string, PdfColor)[] colors = new[]
         {
             ("Red", PdfColor.Red),
             ("Green", PdfColor.Green),
@@ -192,14 +192,14 @@ PdfDocumentBuilder.Create()
             ("Dark Gray", PdfColor.DarkGray)
         };
 
-        foreach (var (name, color) in colors)
+        foreach ((string name, PdfColor color) in colors)
         {
             p.AddRectangle(72, colorY, 200, colorHeight, color);
-            var textColor = name == "Black" || name == "Dark Gray" || name == "Blue" || name == "Magenta"
+            PdfColor textColor = name == "Black" || name == "Dark Gray" || name == "Blue" || name == "Magenta"
                 ? PdfColor.White
                 : PdfColor.Black;
             p.AddText(name, 82, colorY + 9)
-                .Font("Helvetica-Bold", 12)
+                .Font("Helvetica-Bold")
                 .WithColor(textColor);
 
             colorY += colorHeight + 2;
@@ -220,7 +220,7 @@ PdfDocumentBuilder.Create()
             ("#E74C3C", "Alizarin")
         };
 
-        foreach (var (hex, name) in customColors)
+        foreach ((string hex, string name) in customColors)
         {
             p.AddRectangle(320, colorY, 200, colorHeight, PdfColor.FromHex(hex));
             p.AddText($"{name} ({hex})", 330, colorY + 9)
@@ -289,7 +289,7 @@ PdfDocumentBuilder.Create()
         {
             for (var col = 0; col < 20; col++)
             {
-                var color = (row + col) % 2 == 0
+                PdfColor color = (row + col) % 2 == 0
                     ? PdfColor.FromHex("#3498DB")
                     : PdfColor.FromHex("#ECF0F1");
                 p.AddRectangle(72 + col * gridSize, gridStartY + row * gridSize,
@@ -318,7 +318,7 @@ PdfDocumentBuilder.Create()
 
         // Metadata info
         p.AddText("This PDF was created programmatically using PdfLibrary.", 72, 120)
-            .Font("Helvetica", 12);
+            .Font("Helvetica");
 
         var y = 160.0;
         var infoItems = new[]
@@ -335,7 +335,7 @@ PdfDocumentBuilder.Create()
             .Font("Helvetica-Bold", 14);
         y += 25;
 
-        foreach (var (key, value) in infoItems)
+        foreach ((string key, string value) in infoItems)
         {
             p.AddText($"{key}:", 72, y)
                 .Font("Helvetica-Bold", 11)
@@ -368,7 +368,7 @@ PdfDocumentBuilder.Create()
             "\u2022 Borders and decorative elements"
         };
 
-        foreach (var feature in features)
+        foreach (string feature in features)
         {
             p.AddText(feature, 90, y)
                 .Font("Helvetica", 11);
@@ -390,7 +390,7 @@ PdfDocumentBuilder.Create()
 
     .Save(outputPath);
 
-Console.WriteLine($"\n✓ Document created successfully!\n");
+Console.WriteLine("\n✓ Document created successfully!\n");
 Console.WriteLine($"File: {outputPath}\n");
 Console.WriteLine("Document Structure:");
 Console.WriteLine("  Page 1 - Cover Page with title and feature grid");

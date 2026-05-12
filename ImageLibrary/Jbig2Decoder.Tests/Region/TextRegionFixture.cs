@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Jbig2Decoder.Tests.Region;
 
 internal sealed record TextRegionFixture(
@@ -14,7 +16,7 @@ internal sealed record TextRegionFixture(
     {
         byte[] data = File.ReadAllBytes(path);
         var p = 0;
-        string magic = System.Text.Encoding.ASCII.GetString(data, 0, 4);
+        string magic = Encoding.ASCII.GetString(data, 0, 4);
         if (magic != "TR01" && magic != "TR02")
             throw new InvalidDataException($"Bad magic '{magic}' in {path}");
         bool v2 = magic == "TR02";
@@ -31,7 +33,7 @@ internal sealed record TextRegionFixture(
         ushort huffFlags = 0;
         if (v2)
         {
-            huffFlags = (ushort)BitConverter.ToUInt16(data, p);
+            huffFlags = BitConverter.ToUInt16(data, p);
             p += 2;
             p += 2; // pad
         }

@@ -37,7 +37,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(0, 0, 30, 30)
                 .Fill(PdfColor.Red)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin + 100, y - 40);
             page.AddText("Translate(100,0)", leftMargin + 100, y - 55, "Helvetica", 8);
 
@@ -51,7 +51,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(-15, -15, 30, 30)
                 .Fill(PdfColor.Blue)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin + 20, y - 25);
             page.AddText("0°", leftMargin + 5, y - 55, "Helvetica", 8);
 
@@ -59,7 +59,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(-15, -15, 30, 30)
                 .Fill(PdfColor.Green)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin + 90, y - 25)
                 .Rotate(45);
             page.AddText("45°", leftMargin + 75, y - 55, "Helvetica", 8);
@@ -68,7 +68,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(-15, -15, 30, 30)
                 .Fill(PdfColor.Yellow)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin + 160, y - 25)
                 .Rotate(90);
             page.AddText("90°", leftMargin + 145, y - 55, "Helvetica", 8);
@@ -83,7 +83,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(0, 0, 30, 30)
                 .Fill(PdfColor.Cyan)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin, y - 30);
             page.AddText("1x", leftMargin + 5, y - 50, "Helvetica", 8);
 
@@ -91,7 +91,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(0, 0, 30, 30)
                 .Fill(PdfColor.Magenta)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin + 80, y - 30)
                 .Scale(2, 1);
             page.AddText("Scale(2,1)", leftMargin + 80, y - 50, "Helvetica", 8);
@@ -100,7 +100,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(0, 0, 30, 30)
                 .Fill(PdfColor.Yellow)
-                .Stroke(PdfColor.Black, 1)
+                .Stroke(PdfColor.Black)
                 .Translate(leftMargin + 200, y - 30)
                 .Scale(1, 0.5);
             page.AddText("Scale(1,0.5)", leftMargin + 190, y - 50, "Helvetica", 8);
@@ -173,7 +173,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
             page.AddPath()
                 .Rectangle(leftMargin + 50, y - 45, 100, 30)
                 .Fill(PdfColor.CmykBlack)
-                .WithFillOverprint(true)
+                .WithFillOverprint()
                 .WithOverprintMode(1);
 
             page.AddText("Black CMYK over\nOrange separation", leftMargin + 210, y - 40, "Helvetica", 8);
@@ -244,7 +244,7 @@ public class AdvancedGraphicsStateTestDocument : ITestDocument
                 .Circle(leftMargin + 60, y - 30, 20)
                 .Fill(PdfColor.CmykYellow)
                 .Stroke(PdfColor.CmykBlack, 3)
-                .WithStrokeOverprint(true)
+                .WithStrokeOverprint()
                 .WithOverprintMode(1);
 
             page.AddText("Stroke overprint\nover cyan bg", leftMargin + 130, y - 40, "Helvetica", 8);

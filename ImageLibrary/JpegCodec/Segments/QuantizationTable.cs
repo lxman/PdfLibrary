@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using JpegCodec.Stream;
 
 namespace JpegCodec.Segments;
@@ -20,7 +21,7 @@ internal sealed class QuantizationTable
 
     public static QuantizationTable[] ParseAll(ReadOnlySpan<byte> payload)
     {
-        var tables = new System.Collections.Generic.List<QuantizationTable>(4);
+        var tables = new List<QuantizationTable>(4);
         var pos = 0;
         while (pos < payload.Length)
         {

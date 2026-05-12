@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Jbig2Decoder.Tests.Region;
 
 internal sealed record SymbolBitmap(int Width, int Height, int Stride, byte[] Bytes);
@@ -15,7 +17,7 @@ internal sealed record SymbolDictionaryFixture(
     {
         byte[] data = File.ReadAllBytes(path);
         var p = 0;
-        string magic = System.Text.Encoding.ASCII.GetString(data, 0, 4);
+        string magic = Encoding.ASCII.GetString(data, 0, 4);
         if (magic != "SD01" && magic != "SD02")
             throw new InvalidDataException($"Bad magic '{magic}' in {path}");
         bool v2 = magic == "SD02";

@@ -50,8 +50,8 @@ namespace Jbig2Decoder.Region
                 {
                     for (var ng = 0; ng < hgw; ng++)
                     {
-                        long x = ((long)p.Hgx + (long)mg * p.Hry + (long)ng * p.Hrx) >> 8;
-                        long y = ((long)p.Hgy + (long)mg * p.Hrx - (long)ng * p.Hry) >> 8;
+                        long x = (p.Hgx + (long)mg * p.Hry + (long)ng * p.Hrx) >> 8;
+                        long y = (p.Hgy + (long)mg * p.Hrx - (long)ng * p.Hry) >> 8;
                         bool offEdge = x + hpw <= 0 || x >= output.Width || y + hph <= 0 || y >= output.Height;
                         hskip.SetPixel(ng, mg, offEdge ? 1 : 0);
                     }
@@ -72,8 +72,8 @@ namespace Jbig2Decoder.Region
             {
                 for (var ng = 0; ng < hgw; ng++)
                 {
-                    long x = ((long)p.Hgx + (long)mg * p.Hry + (long)ng * p.Hrx) >> 8;
-                    long y = ((long)p.Hgy + (long)mg * p.Hrx - (long)ng * p.Hry) >> 8;
+                    long x = (p.Hgx + (long)mg * p.Hry + (long)ng * p.Hrx) >> 8;
+                    long y = (p.Hgy + (long)mg * p.Hrx - (long)ng * p.Hry) >> 8;
 
                     int grayVal = gsvals[ng, mg];
                     if (grayVal >= hNumPats) grayVal = hNumPats - 1;

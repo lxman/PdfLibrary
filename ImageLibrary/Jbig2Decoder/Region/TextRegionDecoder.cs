@@ -75,7 +75,7 @@ namespace Jbig2Decoder.Region
                 iardy = p.SbRefine ? new IntegerDecoder(mq, "IARDY") : null;
 
                 var numSyms = 0;
-                foreach (var d in p.Dicts) numSyms += d.Count;
+                foreach (SymbolDictionary d in p.Dicts) numSyms += d.Count;
 
                 // T.88 §6.4.5: SBSYMCODELEN = ceil(log2(SBNUMSYMS)). When SBNUMSYMS = 1
                 // the result is 0 and IAID decodes zero MQ bits (deterministically returns 0).
@@ -149,7 +149,7 @@ namespace Jbig2Decoder.Region
                     Bitmap? ib = null;
                     {
                         int searchId = id;
-                        foreach (var dict in p.Dicts)
+                        foreach (SymbolDictionary dict in p.Dicts)
                         {
                             if (searchId < dict.Count)
                             {
@@ -391,7 +391,7 @@ namespace Jbig2Decoder.Region
             Bitmap output)
         {
             var sbNumSyms = 0;
-            foreach (var d in p.Dicts) sbNumSyms += d.Count;
+            foreach (SymbolDictionary d in p.Dicts) sbNumSyms += d.Count;
 
             // Pull selector bits from huffman_flags (T.88 §7.4.3.1.1).
             int selFs   = (p.SbHuffFlags >>  0) & 3;
@@ -405,15 +405,15 @@ namespace Jbig2Decoder.Region
 
             // User-defined Huffman tables are slotted in selector order: 0=Fs, 1=Ds,
             // 2=Dt, 3=Rdw, 4=Rdh, 5=Rdx, 6=Rdy, 7=Rsize (T.88 §7.4.3.1.7).
-            var ut = p.UserTables;
+            HuffmanParams?[]? ut = p.UserTables;
             var hFs    = new HuffmanTable(TableForFs(selFs, ut, 0));
             var hDs    = new HuffmanTable(TableForDs(selDs, ut, 1));
             var hDt    = new HuffmanTable(TableForDt(selDt, ut, 2));
-            var hRdw   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdw, ut, 3)) : null;
-            var hRdh   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdh, ut, 4)) : null;
-            var hRdx   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdx, ut, 5)) : null;
-            var hRdy   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdy, ut, 6)) : null;
-            var hRsize = p.SbRefine ? new HuffmanTable(TableForRsize(selRsz, ut, 7)) : null;
+            HuffmanTable? hRdw   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdw, ut, 3)) : null;
+            HuffmanTable? hRdh   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdh, ut, 4)) : null;
+            HuffmanTable? hRdx   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdx, ut, 5)) : null;
+            HuffmanTable? hRdy   = p.SbRefine ? new HuffmanTable(TableForRdwxhy(selRdy, ut, 6)) : null;
+            HuffmanTable? hRsize = p.SbRefine ? new HuffmanTable(TableForRsize(selRsz, ut, 7)) : null;
 
             // Caller may supply a pre-built symbol-ID table (SD-internal
             // refagg path uses trivial fixed-length codes — see pdfium's
@@ -480,7 +480,7 @@ namespace Jbig2Decoder.Region
                     Bitmap? ib = null;
                     {
                         int searchId = id;
-                        foreach (var dict in p.Dicts)
+                        foreach (SymbolDictionary dict in p.Dicts)
                         {
                             if (searchId < dict.Count) { ib = dict.Glyphs[searchId]; break; }
                             searchId -= dict.Count;

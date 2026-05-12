@@ -1,5 +1,5 @@
 using System;
-using CcittCodec;
+using System.Reflection;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -39,7 +39,7 @@ namespace CcittCodec.Tests
             };
 
             var encoder = new CcittEncoder(options);
-            var compressed = encoder.Encode(original, height);
+            byte[] compressed = encoder.Encode(original, height);
             _output.WriteLine($"Compressed data ({compressed.Length} bytes): {BitConverter.ToString(compressed)}");
 
             string bits = string.Join("", Array.ConvertAll(compressed, b => Convert.ToString(b, 2).PadLeft(8, '0')));
@@ -47,13 +47,13 @@ namespace CcittCodec.Tests
 
             // Parse the bits manually
             _output.WriteLine("\nParsing compressed bits:");
-            _output.WriteLine($"Expected row 1: 001 (H) + 00110101 (W0) + 0000010111 (B16) = 21 bits");
-            _output.WriteLine($"Expected row 2: 1 (V0) + 1 (V0) = 2 bits");
-            _output.WriteLine($"Total expected: 23 bits");
+            _output.WriteLine("Expected row 1: 001 (H) + 00110101 (W0) + 0000010111 (B16) = 21 bits");
+            _output.WriteLine("Expected row 2: 1 (V0) + 1 (V0) = 2 bits");
+            _output.WriteLine("Total expected: 23 bits");
 
             options.Height = height;
             var decoder = new CcittDecoder(options);
-            var decompressed = decoder.Decode(compressed);
+            byte[] decompressed = decoder.Decode(compressed);
             _output.WriteLine($"\nDecompressed data ({decompressed.Length} bytes): {BitConverter.ToString(decompressed)}");
 
             // Check what we got
@@ -88,8 +88,8 @@ namespace CcittCodec.Tests
             }
 
             _output.WriteLine($"Original: {BitConverter.ToString(original)}");
-            _output.WriteLine($"Pattern: 8 white, 8 black, 8 white, 8 black");
-            _output.WriteLine($"Changing elements at positions: 8, 16, 24, 32(end)");
+            _output.WriteLine("Pattern: 8 white, 8 black, 8 white, 8 black");
+            _output.WriteLine("Changing elements at positions: 8, 16, 24, 32(end)");
 
             // Encode without EOFB for simpler analysis
             // Use BlackIs1=true since we encoded bit=1 as black
@@ -102,7 +102,7 @@ namespace CcittCodec.Tests
             };
 
             var encoder = new CcittEncoder(options);
-            var compressed = encoder.Encode(original, height);
+            byte[] compressed = encoder.Encode(original, height);
 
             string bits = string.Join("", Array.ConvertAll(compressed, b => Convert.ToString(b, 2).PadLeft(8, '0')));
             _output.WriteLine($"\nCompressed ({compressed.Length} bytes): {BitConverter.ToString(compressed)}");
@@ -125,7 +125,7 @@ namespace CcittCodec.Tests
 
             options.Height = height;
             var decoder = new CcittDecoder(options);
-            var decompressed = decoder.Decode(compressed);
+            byte[] decompressed = decoder.Decode(compressed);
             _output.WriteLine($"\nDecompressed: {BitConverter.ToString(decompressed)}");
 
             for (var i = 0; i < bytesPerRow; i++)
@@ -146,8 +146,8 @@ namespace CcittCodec.Tests
             var encoder = new CcittEncoder(options);
 
             // Use reflection to test the private method
-            var method = typeof(CcittEncoder).GetMethod("FindChangingElement",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            MethodInfo? method = typeof(CcittEncoder).GetMethod("FindChangingElement",
+                BindingFlags.NonPublic | BindingFlags.Instance);
 
             // FindChangingElement(row, after, currentColor)
             // Looking for first element after -1 that differs from white (false)
@@ -168,8 +168,8 @@ namespace CcittCodec.Tests
             var options = new CcittOptions { Width = width, BlackIs1 = true };
             var encoder = new CcittEncoder(options);
 
-            var method = typeof(CcittEncoder).GetMethod("GetPixelColor",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            MethodInfo? method = typeof(CcittEncoder).GetMethod("GetPixelColor",
+                BindingFlags.NonPublic | BindingFlags.Instance);
 
             for (var i = 0; i < 8; i++)
             {

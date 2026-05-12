@@ -1,5 +1,3 @@
-#nullable enable
-
 namespace CcittCodec
 {
     /// <summary>
@@ -285,7 +283,7 @@ namespace CcittCodec
             if (remaining >= 64 && remaining <= CcittConstants.MaxStandardMakeupRunLength)
             {
                 int makeupIndex = remaining / 64 - 1;
-                var makeupCodes = isWhite ? WhiteMakeupCodes : BlackMakeupCodes;
+                HuffmanCode[] makeupCodes = isWhite ? WhiteMakeupCodes : BlackMakeupCodes;
                 if (makeupIndex < makeupCodes.Length)
                 {
                     makeupCode = makeupCodes[makeupIndex];

@@ -24,7 +24,7 @@ public class App14MetadataTests
         if (!File.Exists(path)) return;
         byte[] data = File.ReadAllBytes(path);
 
-        var info = new JpegStreamDecoder().Identify(data);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(data);
 
         Assert.Equal(expectedComponents, info.NumberOfComponents);
         Assert.Equal(expectAdobe, info.HasAdobeMarker);
@@ -39,7 +39,7 @@ public class App14MetadataTests
         if (!File.Exists(path)) return;
         byte[] data = File.ReadAllBytes(path);
 
-        var result = new JpegStreamDecoder().Decode(data);
+        JpegDecodeResult result = new JpegStreamDecoder().Decode(data);
 
         Assert.Equal(4, result.NumberOfComponents);
         Assert.Equal(result.Width * result.Height * 4, result.ComponentData.Length);
@@ -54,7 +54,7 @@ public class App14MetadataTests
         if (!File.Exists(path)) return;
         byte[] data = File.ReadAllBytes(path);
 
-        var result = new JpegStreamDecoder().Decode(data);
+        JpegDecodeResult result = new JpegStreamDecoder().Decode(data);
 
         Assert.Equal(4, result.NumberOfComponents);
         Assert.Equal(result.Width * result.Height * 4, result.ComponentData.Length);

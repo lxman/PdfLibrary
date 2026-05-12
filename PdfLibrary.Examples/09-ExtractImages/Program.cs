@@ -28,9 +28,9 @@ Directory.CreateDirectory(outputDir);
 // ==================== EXTRACT IMAGES ====================
 try
 {
-    using var document = PdfDocument.Load(inputPdf);
+    using PdfDocument document = PdfDocument.Load(inputPdf);
 
-    Console.WriteLine($"PDF loaded successfully");
+    Console.WriteLine("PDF loaded successfully");
     Console.WriteLine($"Total pages: {document.PageCount}\n");
 
     var totalImages = 0;
@@ -40,7 +40,7 @@ try
     for (var pageIndex = 0; pageIndex < document.PageCount; pageIndex++)
     {
         int pageNum = pageIndex + 1; // For display purposes
-        var page = document.GetPage(pageIndex);
+        PdfPage? page = document.GetPage(pageIndex);
 
         if (page == null)
         {
@@ -48,7 +48,7 @@ try
             continue;
         }
 
-        var images = page.GetImages();
+        List<PdfImage> images = page.GetImages();
 
         if (images.Count > 0)
         {
@@ -58,7 +58,7 @@ try
             // Extract each image
             for (var imgNum = 0; imgNum < images.Count; imgNum++)
             {
-                var image = images[imgNum];
+                PdfImage image = images[imgNum];
 
                 try
                 {
@@ -109,7 +109,7 @@ try
 
     // ==================== SUMMARY ====================
     Console.WriteLine("Extraction complete!");
-    Console.WriteLine($"\nSummary:");
+    Console.WriteLine("\nSummary:");
     Console.WriteLine($"  Total images found: {totalImages}");
     Console.WriteLine($"  Successfully saved: {savedImages}");
     Console.WriteLine($"  Output directory: {outputDir}");
@@ -128,7 +128,7 @@ catch (Exception ex)
 static string DetermineExtension(PdfImage image)
 {
     // Check filters to determine format
-    var filters = image.Filters;
+    List<string> filters = image.Filters;
 
     if (filters.Count > 0)
     {

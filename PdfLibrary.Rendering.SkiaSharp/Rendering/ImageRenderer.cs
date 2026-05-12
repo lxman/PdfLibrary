@@ -666,7 +666,7 @@ internal class ImageRenderer
                             }
 
                             // Fill remaining pixels with transparent or white if data is incomplete
-                            for (var i = availablePixels; i < width * height; i++)
+                            for (int i = availablePixels; i < width * height; i++)
                             {
                                 int dstOffset = i * 4;
                                 pixelBuffer[dstOffset] = 255;     // R

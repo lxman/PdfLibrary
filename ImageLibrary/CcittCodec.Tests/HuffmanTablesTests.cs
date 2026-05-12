@@ -1,4 +1,3 @@
-using CcittCodec;
 using Xunit;
 
 namespace CcittCodec.Tests
@@ -44,7 +43,7 @@ namespace CcittCodec.Tests
         [InlineData(63, 0b00110100, 8)]  // White run length 63
         public void WhiteTerminatingCodes_HasCorrectValues(int index, int expectedCode, int expectedBits)
         {
-            var code = HuffmanTables.WhiteTerminatingCodes[index];
+            HuffmanTables.HuffmanCode code = HuffmanTables.WhiteTerminatingCodes[index];
             Assert.Equal(expectedCode, code.Code);
             Assert.Equal(expectedBits, code.BitLength);
         }
@@ -56,7 +55,7 @@ namespace CcittCodec.Tests
         [InlineData(3, 0b10, 2)]           // Black run length 3
         public void BlackTerminatingCodes_HasCorrectValues(int index, int expectedCode, int expectedBits)
         {
-            var code = HuffmanTables.BlackTerminatingCodes[index];
+            HuffmanTables.HuffmanCode code = HuffmanTables.BlackTerminatingCodes[index];
             Assert.Equal(expectedCode, code.Code);
             Assert.Equal(expectedBits, code.BitLength);
         }
@@ -64,7 +63,7 @@ namespace CcittCodec.Tests
         [Fact]
         public void GetRunLengthCodes_ShortWhiteRun_ReturnsOnlyTerminating()
         {
-            HuffmanTables.GetRunLengthCodes(10, true, out var makeup, out var terminating);
+            HuffmanTables.GetRunLengthCodes(10, true, out HuffmanTables.HuffmanCode makeup, out HuffmanTables.HuffmanCode terminating);
 
             Assert.Equal(0, makeup.BitLength); // No makeup code
             Assert.Equal(HuffmanTables.WhiteTerminatingCodes[10].Code, terminating.Code);
@@ -73,7 +72,7 @@ namespace CcittCodec.Tests
         [Fact]
         public void GetRunLengthCodes_ShortBlackRun_ReturnsOnlyTerminating()
         {
-            HuffmanTables.GetRunLengthCodes(5, false, out var makeup, out var terminating);
+            HuffmanTables.GetRunLengthCodes(5, false, out HuffmanTables.HuffmanCode makeup, out HuffmanTables.HuffmanCode terminating);
 
             Assert.Equal(0, makeup.BitLength); // No makeup code
             Assert.Equal(HuffmanTables.BlackTerminatingCodes[5].Code, terminating.Code);
@@ -83,7 +82,7 @@ namespace CcittCodec.Tests
         public void GetRunLengthCodes_LongWhiteRun_ReturnsMakeupAndTerminating()
         {
             // 100 = 64 + 36, so makeup for 64, terminating for 36
-            HuffmanTables.GetRunLengthCodes(100, true, out var makeup, out var terminating);
+            HuffmanTables.GetRunLengthCodes(100, true, out HuffmanTables.HuffmanCode makeup, out HuffmanTables.HuffmanCode terminating);
 
             Assert.True(makeup.BitLength > 0); // Should have makeup code
             Assert.Equal(HuffmanTables.WhiteMakeupCodes[0].Code, makeup.Code); // Makeup for 64
@@ -93,7 +92,7 @@ namespace CcittCodec.Tests
         [Fact]
         public void AllWhiteTerminatingCodes_HaveValidBitLength()
         {
-            foreach (var code in HuffmanTables.WhiteTerminatingCodes)
+            foreach (HuffmanTables.HuffmanCode code in HuffmanTables.WhiteTerminatingCodes)
             {
                 Assert.True(code.BitLength >= 2 && code.BitLength <= 13,
                     $"Invalid bit length: {code.BitLength}");
@@ -103,7 +102,7 @@ namespace CcittCodec.Tests
         [Fact]
         public void AllBlackTerminatingCodes_HaveValidBitLength()
         {
-            foreach (var code in HuffmanTables.BlackTerminatingCodes)
+            foreach (HuffmanTables.HuffmanCode code in HuffmanTables.BlackTerminatingCodes)
             {
                 Assert.True(code.BitLength >= 2 && code.BitLength <= 13,
                     $"Invalid bit length: {code.BitLength}");

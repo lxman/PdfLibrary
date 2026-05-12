@@ -96,7 +96,7 @@ namespace FontParser
             bool deferLocaWoff2 = false,
             bool deferHmtxWoff2 = false)
         {
-            Parallel.ForEach(Table.Types, (table) =>
+            Parallel.ForEach(Table.Types, table =>
             {
                 PropertyInfo[] properties = table.GetProperties(BindingFlags.Static | BindingFlags.Public);
                 if (!(properties[0].GetValue(null) is string tag)) return;

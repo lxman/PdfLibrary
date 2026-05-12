@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Text;
 using FontParser.Reader;
 
 namespace FontParser.Tables.Proprietary.Pfed.SubTables
@@ -32,11 +33,11 @@ namespace FontParser.Tables.Proprietary.Pfed.SubTables
                 switch (version)
                 {
                     case 0:
-                        Comments.Add(System.Text.Encoding.BigEndianUnicode.GetString(comment));
+                        Comments.Add(Encoding.BigEndianUnicode.GetString(comment));
                         break;
 
                     case 1:
-                        Comments.Add(System.Text.Encoding.UTF8.GetString(comment));
+                        Comments.Add(Encoding.UTF8.GetString(comment));
                         break;
                 }
             }

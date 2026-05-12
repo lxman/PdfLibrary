@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Jbig2Decoder.Mq;
 using Xunit.Abstractions;
 
@@ -54,12 +55,12 @@ public class MqDifferentialTests
     [Fact]
     public void Decode_AgainstJbig2dec_ProducesIdenticalBitSequence()
     {
-        var t = typeof(QeTable).Assembly.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
-        var ctor = t.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+        Type t = typeof(QeTable).Assembly.GetType("Jbig2Decoder.Mq.MqDecoder", throwOnError: true)!;
+        ConstructorInfo ctor = t.GetConstructors(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
             .Single(c => c.GetParameters().Length == 3);
         object decoder = ctor.Invoke([TestStream, 0, TestStream.Length]);
 
-        var decode = t.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = t.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
 
         // jbig2dec uses a single packed byte (low 7 bits = Qe index, top bit = MPS),
         // initialised to 0 (index 0, MPS 0). Persisted across all 256 calls.
@@ -78,7 +79,7 @@ public class MqDifferentialTests
             // and the surrounding bits so the failure is attribution-friendly.
             int windowStart = Math.Max(0, i - 8);
             int windowEnd = Math.Min(BitCount, i + 8);
-            var window = new System.Text.StringBuilder();
+            var window = new StringBuilder();
             for (int j = windowStart; j < windowEnd; j++)
                 window.Append(ExpectedBitAt(j));
             _out.WriteLine($"First divergence at bit {i}: decoder={bit}, oracle={expected}");

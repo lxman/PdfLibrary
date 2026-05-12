@@ -114,7 +114,7 @@ public sealed class JpegStreamDecoder
             if (marker == JpegMarker.Sos)
             {
                 ReadOnlySpan<byte> sosPayload = reader.ReadPayload(payloadLength);
-                var scan = ScanHeader.Parse(sosPayload);
+                ScanHeader scan = ScanHeader.Parse(sosPayload);
                 int scanDataStart = reader.Position;
 
                 if (stopAtFirstSos)
@@ -166,12 +166,12 @@ public sealed class JpegStreamDecoder
                     break;
 
                 case JpegMarker.Dqt:
-                    foreach (var t in QuantizationTable.ParseAll(payload))
+                    foreach (QuantizationTable t in QuantizationTable.ParseAll(payload))
                         state.QuantTables[t.TableId] = t.Values;
                     break;
 
                 case JpegMarker.Dht:
-                    foreach (var t in HuffmanTable.ParseAll(payload))
+                    foreach (HuffmanTable t in HuffmanTable.ParseAll(payload))
                     {
                         var canonical = HuffmanCanonicalTable.Build(t);
                         if (t.Class == 0) state.DcTables[t.TableId] = canonical;
@@ -188,7 +188,7 @@ public sealed class JpegStreamDecoder
                     break;
 
                 case JpegMarker.App14:
-                    if (AdobeApp14.TryParse(payload, out var adobe))
+                    if (AdobeApp14.TryParse(payload, out AdobeApp14? adobe))
                     {
                         state.HasAdobe = true;
                         state.AdobeColorTransform = adobe!.ColorTransform;
@@ -207,9 +207,6 @@ public sealed class JpegStreamDecoder
                 case JpegMarker.Sof15:
                     throw new NotSupportedException(
                         $"SOF marker {marker} (0x{(byte)marker:X2}) not in v1 scope.");
-
-                default:
-                    break;
             }
         }
     }

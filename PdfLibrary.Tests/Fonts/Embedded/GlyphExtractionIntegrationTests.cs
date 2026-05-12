@@ -1,8 +1,8 @@
 using PdfLibrary.Core;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
-using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
@@ -206,7 +206,6 @@ public class GlyphExtractionIntegrationTests
             catch
             {
                 // Skip fonts that fail to load
-                continue;
             }
         }
 

@@ -1,3 +1,4 @@
+using CoreJ2K;
 using CoreJ2K.Util;
 
 namespace Compressors.Jpeg2000;
@@ -30,7 +31,7 @@ public static class Jpeg2000
 
         // Decode using Melville.CSJ2K
         using var stream = new MemoryStream(data);
-        PortableImage portableImage = CoreJ2K.J2kImage.FromStream(stream);
+        PortableImage portableImage = J2kImage.FromStream(stream);
 
         width = portableImage.Width;
         height = portableImage.Height;

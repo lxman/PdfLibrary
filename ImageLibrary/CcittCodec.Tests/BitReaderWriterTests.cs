@@ -1,4 +1,3 @@
-using CcittCodec;
 using Xunit;
 
 namespace CcittCodec.Tests
@@ -20,7 +19,7 @@ namespace CcittCodec.Tests
             writer.WriteBit(0);
             writer.WriteBit(1);
 
-            var result = writer.ToArray();
+            byte[] result = writer.ToArray();
             Assert.Single(result);
             Assert.Equal(0xB1, result[0]);
         }
@@ -33,7 +32,7 @@ namespace CcittCodec.Tests
             // Write 0xAB (10101011) as 8 bits
             writer.WriteBits(0xAB, 8);
 
-            var result = writer.ToArray();
+            byte[] result = writer.ToArray();
             Assert.Single(result);
             Assert.Equal(0xAB, result[0]);
         }
@@ -46,7 +45,7 @@ namespace CcittCodec.Tests
             // Write 5 bits: 10110
             writer.WriteBits(0b10110, 5);
 
-            var result = writer.ToArray();
+            byte[] result = writer.ToArray();
             Assert.Single(result);
             // Should be 10110000 = 0xB0
             Assert.Equal(0xB0, result[0]);
@@ -109,7 +108,7 @@ namespace CcittCodec.Tests
             writer.WriteBits(0b11110000, 8);
             writer.WriteBits(0b1, 1);
 
-            var data = writer.ToArray();
+            byte[] data = writer.ToArray();
             var reader = new CcittBitReader(data);
 
             Assert.Equal(0b101, reader.ReadBits(3));
@@ -123,7 +122,7 @@ namespace CcittCodec.Tests
             var writer = new CcittBitWriter();
             writer.WriteEol();
 
-            var data = writer.ToArray();
+            byte[] data = writer.ToArray();
             var reader = new CcittBitReader(data);
 
             // EOL is 000000000001 (12 bits)
@@ -151,7 +150,7 @@ namespace CcittCodec.Tests
             writer.AlignToByte();
             writer.WriteBits(0xAA, 8);
 
-            var data = writer.ToArray();
+            byte[] data = writer.ToArray();
             Assert.Equal(2, data.Length);
             Assert.Equal(0b11100000, data[0]);
             Assert.Equal(0xAA, data[1]);

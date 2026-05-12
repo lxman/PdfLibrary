@@ -121,7 +121,7 @@ internal static class MarkerWriter
 
     public static void WriteDri(List<byte> output, ushort interval)
     {
-        var payload = new byte[] { (byte)(interval >> 8), (byte)interval };
+        var payload = new[] { (byte)(interval >> 8), (byte)interval };
         WriteSegment(output, JpegMarker.Dri, payload);
     }
 

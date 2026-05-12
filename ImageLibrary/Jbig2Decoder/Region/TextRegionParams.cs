@@ -1,3 +1,5 @@
+using Jbig2Decoder.Huffman;
+
 namespace Jbig2Decoder.Region
 {
     internal enum RefCorner
@@ -41,7 +43,7 @@ namespace Jbig2Decoder.Region
         /// §7.4.3.1.7 fixes the slot order — caller must resolve referred-to
         /// segment 53s into these slots before calling the decoder).
         /// </summary>
-        public Huffman.HuffmanParams?[]? UserTables;
+        public HuffmanParams?[]? UserTables;
 
         /// <summary>
         /// When non-null, use this pre-built table for symbol-ID decoding
@@ -50,7 +52,7 @@ namespace Jbig2Decoder.Region
         /// where pdfium-style trivial fixed-length codes apply (each symbol
         /// keyed by SBSYMCODELEN raw bits — see PDFium's SddProc).
         /// </summary>
-        public Huffman.HuffmanParams? PrebuiltSbSymCodes;
+        public HuffmanParams? PrebuiltSbSymCodes;
 
         /// <summary>
         /// Caller-supplied generic-refinement arith stats array. When set, the

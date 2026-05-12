@@ -13,10 +13,10 @@ public class SegmentParserTests
         payload[0] = 0x00; // Pq=0, Tq=0
         for (var i = 0; i < 64; i++) payload[1 + i] = 0x01;
 
-        var tables = QuantizationTable.ParseAll(payload);
+        QuantizationTable[] tables = QuantizationTable.ParseAll(payload);
 
         Assert.Single(tables);
-        var t = tables[0];
+        QuantizationTable t = tables[0];
         Assert.Equal(0, t.TableId);
         Assert.Equal(0, t.Precision);
         Assert.All(t.Values, v => Assert.Equal((ushort)1, v));
@@ -34,7 +34,7 @@ public class SegmentParserTests
             BigEndian.WriteUInt16(payload.AsSpan(), 1 + 2 * i, v);
         }
 
-        var tables = QuantizationTable.ParseAll(payload);
+        QuantizationTable[] tables = QuantizationTable.ParseAll(payload);
 
         Assert.Single(tables);
         Assert.Equal(1, tables[0].Precision);
@@ -52,7 +52,7 @@ public class SegmentParserTests
         payload[65] = 0x01;
         for (var i = 0; i < 64; i++) payload[66 + i] = 7;
 
-        var tables = QuantizationTable.ParseAll(payload);
+        QuantizationTable[] tables = QuantizationTable.ParseAll(payload);
 
         Assert.Equal(2, tables.Length);
         Assert.Equal(0, tables[0].TableId);
@@ -73,10 +73,10 @@ public class SegmentParserTests
         bits.CopyTo(payload, 1);
         huffval.CopyTo(payload, 17);
 
-        var tables = HuffmanTable.ParseAll(payload);
+        HuffmanTable[] tables = HuffmanTable.ParseAll(payload);
 
         Assert.Single(tables);
-        var t = tables[0];
+        HuffmanTable t = tables[0];
         Assert.Equal(0, t.Class);
         Assert.Equal(0, t.TableId);
         Assert.Equal(bits, t.Bits);
@@ -99,7 +99,7 @@ public class SegmentParserTests
             0x03, 0x11, 0x01,      // C3: id=3, H=1 V=1, Tq=1  (Cr)
         };
 
-        var sof = FrameHeader.Parse(JpegMarker.Sof0, payload);
+        FrameHeader sof = FrameHeader.Parse(JpegMarker.Sof0, payload);
 
         Assert.Equal(JpegMarker.Sof0, sof.Marker);
         Assert.Equal(8, sof.Precision);
@@ -123,7 +123,7 @@ public class SegmentParserTests
             0x01, 0x11, 0x00,
         };
 
-        var sof = FrameHeader.Parse(JpegMarker.Sof2, payload);
+        FrameHeader sof = FrameHeader.Parse(JpegMarker.Sof2, payload);
 
         Assert.Equal(JpegMarker.Sof2, sof.Marker);
         Assert.Equal(1, sof.NumberOfComponents);
@@ -143,7 +143,7 @@ public class SegmentParserTests
             0x00, 0x3F, 0x00,
         };
 
-        var sos = ScanHeader.Parse(payload);
+        ScanHeader sos = ScanHeader.Parse(payload);
 
         Assert.Equal(3, sos.NumberOfComponents);
         Assert.Equal(0, sos.Components[0].DcTableId);
@@ -165,7 +165,7 @@ public class SegmentParserTests
                                     0x00, 0x00,    // Flags1
                                     0x00 };        // ColorTransform = 0
 
-        Assert.True(AdobeApp14.TryParse(payload, out var adobe));
+        Assert.True(AdobeApp14.TryParse(payload, out AdobeApp14? adobe));
         Assert.Equal(0, adobe!.ColorTransform);
     }
 
@@ -175,7 +175,7 @@ public class SegmentParserTests
         var payload = new byte[] { (byte)'A', (byte)'d', (byte)'o', (byte)'b', (byte)'e',
                                     0x00, 0x64, 0x00, 0x00, 0x00, 0x00, 0x02 };
 
-        Assert.True(AdobeApp14.TryParse(payload, out var adobe));
+        Assert.True(AdobeApp14.TryParse(payload, out AdobeApp14? adobe));
         Assert.Equal(2, adobe!.ColorTransform);
     }
 
@@ -184,7 +184,7 @@ public class SegmentParserTests
     {
         var payload = new byte[] { (byte)'X', (byte)'M', (byte)'P', 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-        Assert.False(AdobeApp14.TryParse(payload, out var adobe));
+        Assert.False(AdobeApp14.TryParse(payload, out AdobeApp14? adobe));
         Assert.Null(adobe);
     }
 

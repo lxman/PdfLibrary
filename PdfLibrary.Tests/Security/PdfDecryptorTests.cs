@@ -98,7 +98,7 @@ public class PdfDecryptorTests
     {
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() =>
-            new PdfDecryptor(null!, [], ""));
+            new PdfDecryptor(null!, []));
     }
 
     [Fact]
@@ -109,7 +109,7 @@ public class PdfDecryptorTests
 
         // Act & Assert
         Assert.Throws<ArgumentNullException>(() =>
-            new PdfDecryptor(encryptDict, null!, ""));
+            new PdfDecryptor(encryptDict, null!));
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public class PdfDecryptorTests
 
         // Act & Assert
         var ex = Assert.Throws<PdfSecurityException>(() =>
-            new PdfDecryptor(encryptDict, new byte[16], ""));
+            new PdfDecryptor(encryptDict, new byte[16]));
         Assert.Contains("/O", ex.Message);
     }
 
@@ -144,7 +144,7 @@ public class PdfDecryptorTests
 
         // Act & Assert
         var ex = Assert.Throws<PdfSecurityException>(() =>
-            new PdfDecryptor(encryptDict, new byte[16], ""));
+            new PdfDecryptor(encryptDict, new byte[16]));
         Assert.Contains("/U", ex.Message);
     }
 
@@ -163,7 +163,7 @@ public class PdfDecryptorTests
 
         // Act & Assert
         Assert.Throws<PdfSecurityException>(() =>
-            new PdfDecryptor(encryptDict, new byte[16], ""));
+            new PdfDecryptor(encryptDict, new byte[16]));
     }
 
 }

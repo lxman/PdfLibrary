@@ -36,7 +36,8 @@ namespace FontParser
             {
                 return await Task.Run(() => ParseTtc(reader, file));
             }
-            else if (file.EndsWith(".woff", StringComparison.OrdinalIgnoreCase))
+
+            if (file.EndsWith(".woff", StringComparison.OrdinalIgnoreCase))
             {
                 FontStructure font = ParseWoff(reader, file);
                 result.Add(font);
@@ -472,7 +473,7 @@ namespace FontParser
         private static CompositeGlyphElement BuildCompositeGlyphElement(TReader<byte> compositeReader,
             CompositeGlyphFlags flag)
         {
-            var info = new CompositeGlyphElement()
+            var info = new CompositeGlyphElement
             {
                 Flags = flag,
                 GlyphIndex = BinaryPrimitives.ReadUInt16BigEndian(compositeReader.Read(2))

@@ -94,7 +94,7 @@ public class CodecRegistry
             string? preferredCodecName = _configuration.GetPreferredDecoder(extension);
             if (preferredCodecName != null)
             {
-                var preferredCodec = _codecs.FirstOrDefault(c => c.Name == preferredCodecName && c.CanDecode);
+                IImageCodec? preferredCodec = _codecs.FirstOrDefault(c => c.Name == preferredCodecName && c.CanDecode);
                 if (preferredCodec != null)
                 {
                     return preferredCodec;
@@ -106,7 +106,7 @@ public class CodecRegistry
             string? preferredCodecName = _configuration.GetPreferredEncoder(extension);
             if (preferredCodecName != null)
             {
-                var preferredCodec = _codecs.FirstOrDefault(c => c.Name == preferredCodecName && c.CanEncode);
+                IImageCodec? preferredCodec = _codecs.FirstOrDefault(c => c.Name == preferredCodecName && c.CanEncode);
                 if (preferredCodec != null)
                 {
                     return preferredCodec;
@@ -136,7 +136,7 @@ public class CodecRegistry
         }
 
         // Read first 16 bytes for magic number detection
-        using var stream = File.OpenRead(filePath);
+        using FileStream stream = File.OpenRead(filePath);
         var header = new byte[16];
         int bytesRead = stream.Read(header, 0, header.Length);
 
@@ -146,7 +146,7 @@ public class CodecRegistry
         }
 
         ReadOnlySpan<byte> headerSpan = header.AsSpan(0, bytesRead);
-        foreach (var codec in _codecs)
+        foreach (IImageCodec codec in _codecs)
         {
             if (codec.CanHandle(headerSpan) &&
                 (!requireDecode || codec.CanDecode) &&
@@ -170,7 +170,7 @@ public class CodecRegistry
     {
         // Try to find codec by file signature first (most reliable)
         // Explicitly require decode capability
-        var codec = FindByFileSignature(filePath, requireDecode: true);
+        IImageCodec? codec = FindByFileSignature(filePath, requireDecode: true);
 
         // Fallback to extension-based lookup with decode requirement
         codec ??= FindByExtension(Path.GetExtension(filePath), requireDecode: true);
@@ -195,7 +195,7 @@ public class CodecRegistry
     public void EncodeFile(ImageData imageData, string filePath, CodecOptions? options = null)
     {
         // Find codec with encode capability
-        var codec = FindByExtension(Path.GetExtension(filePath), requireEncode: true);
+        IImageCodec? codec = FindByExtension(Path.GetExtension(filePath), requireEncode: true);
 
         if (codec == null)
         {

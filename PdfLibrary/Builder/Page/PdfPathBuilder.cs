@@ -1,4 +1,6 @@
-﻿namespace PdfLibrary.Builder.Page;
+﻿using System.Numerics;
+
+namespace PdfLibrary.Builder.Page;
 
 // ==================== CONTENT ELEMENT CLASSES ====================
 
@@ -369,7 +371,7 @@ public class PdfPathBuilder
     /// <summary>
     /// Apply a transformation matrix to this path
     /// </summary>
-    public PdfPathBuilder WithTransform(System.Numerics.Matrix3x2 matrix)
+    public PdfPathBuilder WithTransform(Matrix3x2 matrix)
     {
         _content.Transform = matrix;
         return this;
@@ -380,7 +382,7 @@ public class PdfPathBuilder
     /// </summary>
     public PdfPathBuilder Translate(double x, double y)
     {
-        var translation = System.Numerics.Matrix3x2.CreateTranslation((float)x, (float)y);
+        var translation = Matrix3x2.CreateTranslation((float)x, (float)y);
         _content.Transform = _content.Transform.HasValue
             ? translation * _content.Transform.Value
             : translation;
@@ -392,7 +394,7 @@ public class PdfPathBuilder
     /// </summary>
     public PdfPathBuilder Scale(double sx, double sy)
     {
-        var scale = System.Numerics.Matrix3x2.CreateScale((float)sx, (float)sy);
+        var scale = Matrix3x2.CreateScale((float)sx, (float)sy);
         _content.Transform = _content.Transform.HasValue
             ? scale * _content.Transform.Value
             : scale;
@@ -413,7 +415,7 @@ public class PdfPathBuilder
     public PdfPathBuilder Rotate(double angleDegrees)
     {
         double angleRadians = angleDegrees * Math.PI / 180.0;
-        var rotation = System.Numerics.Matrix3x2.CreateRotation((float)angleRadians);
+        var rotation = Matrix3x2.CreateRotation((float)angleRadians);
         _content.Transform = _content.Transform.HasValue
             ? rotation * _content.Transform.Value
             : rotation;

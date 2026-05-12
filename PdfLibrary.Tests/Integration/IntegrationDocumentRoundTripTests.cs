@@ -96,7 +96,7 @@ public class IntegrationDocumentRoundTripTests : IDisposable
     [InlineData(EncryptedPdfTestDocument.EncryptionType.Aes128, "test123")]
     public void EncryptedDocument_GenerateAndLoad(EncryptedPdfTestDocument.EncryptionType type, string userPassword)
     {
-        var document = new EncryptedPdfTestDocument(type, userPassword, "owner");
+        var document = new EncryptedPdfTestDocument(type, userPassword);
         string outputPath = Path.Combine(_scratchDir, $"{document.Name}.pdf");
 
         document.Generate(outputPath);

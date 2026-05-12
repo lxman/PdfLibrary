@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Jbig2Decoder.Tests.Region;
 
 /// <summary>
@@ -34,7 +36,7 @@ internal sealed record GenericRegionFixture(
         byte[] data = File.ReadAllBytes(path);
         var p = 0;
 
-        string magic = System.Text.Encoding.ASCII.GetString(data, 0, 4);
+        string magic = Encoding.ASCII.GetString(data, 0, 4);
         if (magic != "GR01") throw new InvalidDataException($"Bad magic '{magic}' in {path}");
         p += 4;
 

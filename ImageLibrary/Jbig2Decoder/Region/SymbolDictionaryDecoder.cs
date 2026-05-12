@@ -48,7 +48,7 @@ namespace Jbig2Decoder.Region
                 if (p.UseRetainedContext && p.SeedGbStats != null && p.SeedGbStats.Length == gbSize)
                     Buffer.BlockCopy(p.SeedGbStats, 0, gbStats, 0, gbSize);
             }
-            var genericDecoder = p.SdRefAgg ? null : new GenericRegionDecoder();
+            GenericRegionDecoder? genericDecoder = p.SdRefAgg ? null : new GenericRegionDecoder();
 
             // Refagg gear, allocated lazily so non-refagg decoders pay no cost.
             IntegerDecoder? iaai = null, iardx = null, iardy = null;
@@ -260,7 +260,7 @@ namespace Jbig2Decoder.Region
             // SymbolDictionary; jbig2dec uses an SDNEWSYMS that grows in place
             // but the count is bounded by NSYMSDECODED at this point in the loop,
             // so a snapshot has the same observable contents.
-            var inDict = p.SdInSyms ?? new SymbolDictionary(Array.Empty<Bitmap>());
+            SymbolDictionary inDict = p.SdInSyms ?? new SymbolDictionary(Array.Empty<Bitmap>());
             var newDict = new SymbolDictionary(newSyms.ToArray());
 
             // §6.5.8.2.4 fixes most TextRegionParams to spec defaults (Table 17).
@@ -399,7 +399,7 @@ namespace Jbig2Decoder.Region
                         BlackIs1 = true,
                         EndOfBlock = true,
                     });
-                    var decoded = mmr.Decode(slice);
+                    byte[] decoded = mmr.Decode(slice);
                     int expected = collective.Data.Length;
                     if (decoded.Length < expected)
                         throw new InvalidOperationException(
@@ -677,7 +677,7 @@ namespace Jbig2Decoder.Region
             // that standalone text regions read at start — encoders for SD
             // multi-instance refagg don't emit that prelude here.
             var sbNumSyms = 0;
-            foreach (var d in refDicts) sbNumSyms += d.Count;
+            foreach (SymbolDictionary? d in refDicts) sbNumSyms += d.Count;
             var trivialLines = new HuffmanLine[sbNumSyms];
             for (var i = 0; i < sbNumSyms; i++)
                 trivialLines[i] = new HuffmanLine(sbSymCodeLen, 0, i);

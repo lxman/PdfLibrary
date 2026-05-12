@@ -1,3 +1,4 @@
+using System.Text;
 using CcittCodec;
 using Xunit.Abstractions;
 
@@ -27,7 +28,7 @@ public class CcittDecoderJbig2MmrTests
 
     private void RunFixture(string fixtureName)
     {
-        var (mmrInput, width, height, stride, expected) = LoadFixture(FixturePath(fixtureName));
+        (byte[] mmrInput, int width, int height, int stride, byte[] expected) = LoadFixture(FixturePath(fixtureName));
 
         _out.WriteLine($"Fixture: {width}x{height} stride={stride} mmr_input={mmrInput.Length} bytes");
 
@@ -69,7 +70,7 @@ public class CcittDecoderJbig2MmrTests
     private static (byte[] mmr, int width, int height, int stride, byte[] expected) LoadFixture(string path)
     {
         byte[] data = File.ReadAllBytes(path);
-        if (System.Text.Encoding.ASCII.GetString(data, 0, 4) != "MMR1")
+        if (Encoding.ASCII.GetString(data, 0, 4) != "MMR1")
             throw new InvalidDataException($"Bad magic in {path}");
         var p = 4;
         var width  = BitConverter.ToInt32(data, p); p += 4;

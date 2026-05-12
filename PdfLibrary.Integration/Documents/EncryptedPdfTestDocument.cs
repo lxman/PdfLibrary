@@ -323,42 +323,40 @@ public class EncryptedPdfTestDocument : ITestDocument
             // Algorithm 4: Simply RC4 encrypt the padding string
             return Rc4Encrypt(PdfPasswordPadding, encryptionKey);
         }
-        else
+
+        // Algorithm 5 for R >= 3
+        using var md5 = MD5.Create();
+
+        // Step a: Create MD5 hash of padding + document ID
+        using var hashInput = new MemoryStream();
+        hashInput.Write(PdfPasswordPadding);
+        hashInput.Write(documentId);
+        byte[] hash = md5.ComputeHash(hashInput.ToArray());
+
+        // Step b: RC4 encrypt with key
+        byte[] result = Rc4Encrypt(hash, encryptionKey);
+
+        // Step c: Iterate with XORed keys
+        for (var i = 1; i <= 19; i++)
         {
-            // Algorithm 5 for R >= 3
-            using var md5 = MD5.Create();
-
-            // Step a: Create MD5 hash of padding + document ID
-            using var hashInput = new MemoryStream();
-            hashInput.Write(PdfPasswordPadding);
-            hashInput.Write(documentId);
-            byte[] hash = md5.ComputeHash(hashInput.ToArray());
-
-            // Step b: RC4 encrypt with key
-            byte[] result = Rc4Encrypt(hash, encryptionKey);
-
-            // Step c: Iterate with XORed keys
-            for (var i = 1; i <= 19; i++)
+            var iterKey = new byte[encryptionKey.Length];
+            for (var j = 0; j < encryptionKey.Length; j++)
             {
-                var iterKey = new byte[encryptionKey.Length];
-                for (var j = 0; j < encryptionKey.Length; j++)
-                {
-                    iterKey[j] = (byte)(encryptionKey[j] ^ i);
-                }
-                result = Rc4Encrypt(result, iterKey);
+                iterKey[j] = (byte)(encryptionKey[j] ^ i);
             }
-
-            // Step d: Pad to 32 bytes with arbitrary data
-            var uValue = new byte[32];
-            Array.Copy(result, uValue, 16);
-            // Fill remaining 16 bytes with arbitrary padding
-            for (var i = 16; i < 32; i++)
-            {
-                uValue[i] = (byte)(i - 16);
-            }
-
-            return uValue;
+            result = Rc4Encrypt(result, iterKey);
         }
+
+        // Step d: Pad to 32 bytes with arbitrary data
+        var uValue = new byte[32];
+        Array.Copy(result, uValue, 16);
+        // Fill remaining 16 bytes with arbitrary padding
+        for (var i = 16; i < 32; i++)
+        {
+            uValue[i] = (byte)(i - 16);
+        }
+
+        return uValue;
     }
 
     private byte[] EncryptData(byte[] data, byte[] encryptionKey, int objectNumber, int generationNumber)
@@ -388,10 +386,8 @@ public class EncryptedPdfTestDocument : ITestDocument
         {
             return AesEncrypt(data, finalKey);
         }
-        else
-        {
-            return Rc4Encrypt(data, finalKey);
-        }
+
+        return Rc4Encrypt(data, finalKey);
     }
 
     private static byte[] Rc4Encrypt(byte[] data, byte[] key)

@@ -28,10 +28,10 @@ ITestDocument[] testDocuments =
     new AdvancedGraphicsStateTestDocument(),
     new BlendModeTestDocument(),
     // Encrypted PDF test documents
-    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "", "owner"),
-    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "test123", "owner"),
-    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Aes128, "", "owner"),
-    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Aes128, "test123", "owner"),
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128),
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Rc4_128, "test123"),
+    new EncryptedPdfTestDocument(),
+    new EncryptedPdfTestDocument(EncryptedPdfTestDocument.EncryptionType.Aes128, "test123"),
 ];
 
 switch (mode)

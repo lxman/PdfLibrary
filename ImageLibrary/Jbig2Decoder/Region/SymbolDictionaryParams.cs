@@ -1,3 +1,5 @@
+using Jbig2Decoder.Huffman;
+
 namespace Jbig2Decoder.Region
 {
     /// <summary>
@@ -31,7 +33,7 @@ namespace Jbig2Decoder.Region
         /// when its selector indicates user-defined; caller resolves the
         /// referred-to segment 53s into these slots.
         /// </summary>
-        public Huffman.HuffmanParams?[]? UserTables;
+        public HuffmanParams?[]? UserTables;
 
         /// <summary>
         /// T.88 §7.4.2.1.1 bit 8 (SDREFAGG_REUSE / SDRETAINBMC = "use bitmap

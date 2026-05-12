@@ -287,9 +287,6 @@ internal class ColorSpaceResolver(PdfDocument? document)
                         color = [result[0]];
                         colorSpaceName = "DeviceGray";
                         break;
-                    default:
-                        // Unexpected component count
-                        break;
                 }
             }
             else

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -117,9 +118,9 @@ public partial class SkiaRenderer : UserControl
             {
                 try
                 {
-                    string debugPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_skimage_before_wpf.png");
-                    using var data = _renderedImage.Encode(SKEncodedImageFormat.Png, 100);
-                    using var stream = System.IO.File.OpenWrite(debugPath);
+                    string debugPath = Path.Combine(Path.GetTempPath(), "debug_skimage_before_wpf.png");
+                    using SKData? data = _renderedImage.Encode(SKEncodedImageFormat.Png, 100);
+                    using FileStream stream = File.OpenWrite(debugPath);
                     data.SaveTo(stream);
                     Console.WriteLine($"[WPF DEBUG] Saved SKImage to {debugPath} before WPF display");
                 }
@@ -137,10 +138,10 @@ public partial class SkiaRenderer : UserControl
             {
                 try
                 {
-                    string debugPath2 = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "debug_surface_after_draw.png");
-                    using var snapshot = e.Surface.Snapshot();
-                    using var data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
-                    using var stream = System.IO.File.OpenWrite(debugPath2);
+                    string debugPath2 = Path.Combine(Path.GetTempPath(), "debug_surface_after_draw.png");
+                    using SKImage? snapshot = e.Surface.Snapshot();
+                    using SKData? data = snapshot.Encode(SKEncodedImageFormat.Png, 100);
+                    using FileStream stream = File.OpenWrite(debugPath2);
                     data.SaveTo(stream);
                     Console.WriteLine($"[WPF DEBUG] Saved surface to {debugPath2} after DrawImage");
                 }

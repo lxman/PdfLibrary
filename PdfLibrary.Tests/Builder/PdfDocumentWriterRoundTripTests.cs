@@ -1,6 +1,6 @@
+using System.Text;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Layer;
-using PdfLibrary.Builder.Page;
 using PdfLibrary.Document;
 using PdfLibrary.Security;
 using PdfLibrary.Structure;
@@ -86,7 +86,7 @@ public class PdfDocumentWriterRoundTripTests
         byte[] bytes = builder.ToByteArray();
 
         Assert.NotEmpty(bytes);
-        string header = System.Text.Encoding.ASCII.GetString(bytes, 0, 8);
+        string header = Encoding.ASCII.GetString(bytes, 0, 8);
         Assert.StartsWith("%PDF-", header);
     }
 
@@ -106,7 +106,7 @@ public class PdfDocumentWriterRoundTripTests
             .AddPage(p => p.AddText("body", 100, 700));
 
         byte[] bytes = builder.ToByteArray();
-        string content = System.Text.Encoding.ASCII.GetString(bytes);
+        string content = Encoding.ASCII.GetString(bytes);
 
         // The /Info dictionary is internal; verify via the raw stream that the values made it in.
         Assert.Contains("Round Trip Title", content);
@@ -178,7 +178,7 @@ public class PdfDocumentWriterRoundTripTests
             .AddPage(p => p.AddText("Body 1", 100, 700))
             .AddPage(p => p.AddText("Body 2", 100, 700))
             .SetPageLabels(0, 1, "A-")
-            .SetPageLabels(1, 1);
+            .SetPageLabels(1);
 
         using PdfDocument doc = LoadRoundTrip(builder);
         Assert.Equal(3, doc.PageCount);
@@ -330,7 +330,7 @@ public class PdfDocumentWriterRoundTripTests
             .ToByteArray();
 
         Assert.True(bytes.Length > 16);
-        string header = System.Text.Encoding.ASCII.GetString(bytes, 0, 5);
+        string header = Encoding.ASCII.GetString(bytes, 0, 5);
         Assert.Equal("%PDF-", header);
     }
 
@@ -341,7 +341,7 @@ public class PdfDocumentWriterRoundTripTests
             .AddPage(p => p.AddText("x", 100, 700))
             .ToByteArray();
 
-        string tail = System.Text.Encoding.ASCII.GetString(bytes, Math.Max(0, bytes.Length - 32), Math.Min(32, bytes.Length));
+        string tail = Encoding.ASCII.GetString(bytes, Math.Max(0, bytes.Length - 32), Math.Min(32, bytes.Length));
         Assert.Contains("%%EOF", tail);
     }
 
@@ -352,7 +352,7 @@ public class PdfDocumentWriterRoundTripTests
             .AddPage(p => p.AddText("x", 100, 700))
             .ToByteArray();
 
-        string content = System.Text.Encoding.ASCII.GetString(bytes);
+        string content = Encoding.ASCII.GetString(bytes);
         Assert.Contains("xref", content);
         Assert.Contains("trailer", content);
         Assert.Contains("startxref", content);

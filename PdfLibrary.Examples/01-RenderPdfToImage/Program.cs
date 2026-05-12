@@ -16,8 +16,8 @@ Console.WriteLine($"Page:       {pageNumber}\n");
 
 // ==================== LOAD PDF DOCUMENT ====================
 Console.WriteLine("Loading PDF document...");
-using var stream = File.OpenRead(pdfPath);
-using var document = PdfDocument.Load(stream);
+using FileStream stream = File.OpenRead(pdfPath);
+using PdfDocument document = PdfDocument.Load(stream);
 
 Console.WriteLine($"  ✓ Loaded {document.PageCount} page(s)\n");
 

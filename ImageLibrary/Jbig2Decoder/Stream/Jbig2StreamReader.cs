@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using CcittCodec;
+using Jbig2Decoder.Huffman;
 using Jbig2Decoder.Image;
 using Jbig2Decoder.Mq;
 using Jbig2Decoder.Region;
@@ -126,7 +127,7 @@ namespace Jbig2Decoder.Stream
         {
             while (_pos < _data.Length)
             {
-                var hdr = SegmentParser.Parse(_data, _pos);
+                SegmentHeader hdr = SegmentParser.Parse(_data, _pos);
                 _pos += hdr.HeaderLengthBytes;
 
                 if (hdr.DataLengthDeferred)
@@ -198,14 +199,14 @@ namespace Jbig2Decoder.Stream
             var headers = new List<SegmentHeader>();
             while (_pos < _data.Length)
             {
-                var hdr = SegmentParser.Parse(_data, _pos);
+                SegmentHeader hdr = SegmentParser.Parse(_data, _pos);
                 _pos += hdr.HeaderLengthBytes;
                 headers.Add(hdr);
                 if (hdr.Type == SegmentType.EndOfFile) break;
             }
 
             int bodyCursor = _pos;
-            foreach (var hdr in headers)
+            foreach (SegmentHeader? hdr in headers)
             {
                 if (hdr.DataLengthDeferred)
                     ResolveDeferredDataLength(hdr, bodyCursor);
@@ -297,18 +298,13 @@ namespace Jbig2Decoder.Stream
 
                 case SegmentType.Tables:
                     _segmentResults[hdr.Number] =
-                        Huffman.HuffmanTableSegment.Parse(_data, bodyStart, bodyLen);
+                        HuffmanTableSegment.Parse(_data, bodyStart, bodyLen);
                     break;
 
                 case SegmentType.EndOfPage:
                 case SegmentType.EndOfFile:
                 case SegmentType.Extension:
                     // No-ops at this level.
-                    break;
-
-                default:
-                    // Unsupported types are skipped for now — caller's segment scan
-                    // continues using the declared body length.
                     break;
             }
         }
@@ -482,7 +478,7 @@ namespace Jbig2Decoder.Stream
             // Dh, Dw, BmSize, AggInst.
             SymbolDictionary? inSyms = null;
             uint sdNumInSyms = 0;
-            var userTableSegments = new List<Huffman.HuffmanParams>();
+            var userTableSegments = new List<HuffmanParams>();
             // For "use bitmap coding context" (bit 8), seed stats are taken
             // from the most recent referred-to SD that has retained stats
             // (pdfium picks the last-referred-to SD that carries them).
@@ -493,7 +489,7 @@ namespace Jbig2Decoder.Stream
                 var dictList = new List<SymbolDictionary>();
                 foreach (uint refSeg in hdr.ReferredToSegments)
                 {
-                    if (_segmentResults.TryGetValue(refSeg, out var refRes))
+                    if (_segmentResults.TryGetValue(refSeg, out object? refRes))
                     {
                         if (refRes is SymbolDictionary sd)
                         {
@@ -505,7 +501,7 @@ namespace Jbig2Decoder.Stream
                                 if (sd.RetainedGrStats != null) seedGrStats = sd.RetainedGrStats;
                             }
                         }
-                        else if (refRes is Huffman.HuffmanParams hp)
+                        else if (refRes is HuffmanParams hp)
                         {
                             userTableSegments.Add(hp);
                         }
@@ -514,16 +510,16 @@ namespace Jbig2Decoder.Stream
                 if (dictList.Count > 0)
                 {
                     var combined = new List<Bitmap>();
-                    foreach (var d in dictList) combined.AddRange(d.Glyphs);
+                    foreach (SymbolDictionary? d in dictList) combined.AddRange(d.Glyphs);
                     inSyms = new SymbolDictionary(combined.ToArray());
                 }
             }
 
             // Slot user Huffman tables into selector positions (only when sdHuff).
-            Huffman.HuffmanParams?[]? userTables = null;
+            HuffmanParams?[]? userTables = null;
             if (sdHuff && userTableSegments.Count > 0)
             {
-                userTables = new Huffman.HuffmanParams?[4];
+                userTables = new HuffmanParams?[4];
                 var next = 0;
                 int[] sels = {
                     sdHuffDh,                            // Dh
@@ -565,7 +561,7 @@ namespace Jbig2Decoder.Stream
 
             int arithStart = o;
             int arithLen = bodyStart + bodyLen - arithStart;
-            var dict = new SymbolDictionaryDecoder().Decode(p, _data, arithStart, arithLen);
+            SymbolDictionary dict = new SymbolDictionaryDecoder().Decode(p, _data, arithStart, arithLen);
             _segmentResults[hdr.Number] = dict;
         }
 
@@ -608,7 +604,7 @@ namespace Jbig2Decoder.Stream
             {
                 foreach (uint refSeg in hdr.ReferredToSegments)
                 {
-                    if (_segmentResults.TryGetValue(refSeg, out var refRes) && refRes is Bitmap bmp)
+                    if (_segmentResults.TryGetValue(refSeg, out object? refRes) && refRes is Bitmap bmp)
                     {
                         reference = bmp;
                         break;
@@ -662,7 +658,7 @@ namespace Jbig2Decoder.Stream
 
             int dataOffset = bodyStart + 7;
             int dataLen = bodyStart + bodyLen - dataOffset;
-            var dict = new PatternDictionaryDecoder().Decode(pdParams, _data, dataOffset, dataLen);
+            PatternDictionary dict = new PatternDictionaryDecoder().Decode(pdParams, _data, dataOffset, dataLen);
             _segmentResults[hdr.Number] = dict;
         }
 
@@ -697,7 +693,7 @@ namespace Jbig2Decoder.Stream
             {
                 foreach (uint refSeg in hdr.ReferredToSegments)
                 {
-                    if (_segmentResults.TryGetValue(refSeg, out var refRes) && refRes is PatternDictionary pd)
+                    if (_segmentResults.TryGetValue(refSeg, out object? refRes) && refRes is PatternDictionary pd)
                     {
                         hpats = pd;
                         break;
@@ -762,7 +758,7 @@ namespace Jbig2Decoder.Stream
             ushort sbHuffFlags = 0;
             if (sbHuff)
             {
-                sbHuffFlags = (ushort)BigEndian.U16(_data, o);
+                sbHuffFlags = BigEndian.U16(_data, o);
                 o += 2;
             }
 
@@ -782,15 +778,15 @@ namespace Jbig2Decoder.Stream
             // user-defined (their selector is 0/1/2 = standard) are simply absent
             // from the list, so we walk the user-table selector flags in parallel.
             var dicts = new List<SymbolDictionary>();
-            var userTableSegments = new List<Huffman.HuffmanParams>();
+            var userTableSegments = new List<HuffmanParams>();
             if (hdr.ReferredToSegments != null)
             {
                 foreach (uint refSeg in hdr.ReferredToSegments)
                 {
-                    if (_segmentResults.TryGetValue(refSeg, out var refRes))
+                    if (_segmentResults.TryGetValue(refSeg, out object? refRes))
                     {
                         if (refRes is SymbolDictionary sd) dicts.Add(sd);
-                        else if (refRes is Huffman.HuffmanParams hp) userTableSegments.Add(hp);
+                        else if (refRes is HuffmanParams hp) userTableSegments.Add(hp);
                     }
                 }
             }
@@ -809,10 +805,10 @@ namespace Jbig2Decoder.Stream
             // Slot user Huffman tables into their selector positions. Walking the
             // selector flags in spec order assigns the next un-resolved user table
             // to each user-defined slot.
-            Huffman.HuffmanParams?[]? userTables = null;
+            HuffmanParams?[]? userTables = null;
             if (sbHuff && userTableSegments.Count > 0)
             {
-                userTables = new Huffman.HuffmanParams?[8];
+                userTables = new HuffmanParams?[8];
                 var next = 0;
                 int[] sels = {
                     (sbHuffFlags >>  0) & 3,    // Fs

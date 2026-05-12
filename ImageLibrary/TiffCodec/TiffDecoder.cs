@@ -390,7 +390,7 @@ public static class TiffDecoder
                 Console.WriteLine($"Tile {tileIndex}: compressed={compressedTile.Length} bytes, " +
                                 $"decompressed={decompressedTile.Length} bytes, " +
                                 $"expected={tileWidth * tileHeight * bytesPerPixel} bytes");
-                Console.Write($"  First 16 decompressed bytes: ");
+                Console.Write("  First 16 decompressed bytes: ");
                 for (var i = 0; i < Math.Min(16, decompressedTile.Length); i++)
                     Console.Write($"{decompressedTile[i]:X2} ");
                 Console.WriteLine();

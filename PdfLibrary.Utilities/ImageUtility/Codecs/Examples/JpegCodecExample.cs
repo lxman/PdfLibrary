@@ -1,3 +1,5 @@
+using JpegCodec;
+
 namespace ImageUtility.Codecs.Examples;
 
 /// <summary>
@@ -25,8 +27,8 @@ public class JpegCodecExample : IImageCodec
 
     public ImageData Decode(byte[] data)
     {
-        var decoder = new JpegCodec.JpegStreamDecoder();
-        JpegCodec.JpegDecodeResult result = decoder.Decode(data);
+        var decoder = new JpegStreamDecoder();
+        JpegDecodeResult result = decoder.Decode(data);
 
         // The codec returns raw component bytes in JPEG-native colour:
         //   1 component → grayscale luma
@@ -100,7 +102,7 @@ public class JpegCodecExample : IImageCodec
     //   APP14 transform=2 → Adobe YCCK (Y/Cb/Cr encode inverted C/M/Y; K as-is)
     //   APP14 transform=0 → inverted CMYK (Photoshop default)
     //   no APP14 → raw CMYK
-    private static byte[] CmykOrYcck(JpegCodec.JpegDecodeResult result)
+    private static byte[] CmykOrYcck(JpegDecodeResult result)
     {
         byte[] src = result.ComponentData;
         bool isAdobeYcck = result.HasAdobeMarker && result.AdobeColorTransform == 2;
@@ -189,8 +191,8 @@ public class JpegEncoderExample : IImageCodec
                     $"Unsupported pixel format for JPEG encode: {imageData.PixelFormat}");
         }
 
-        var encoder = new JpegCodec.JpegStreamEncoder();
-        return encoder.Encode(componentData, new JpegCodec.JpegEncodeOptions
+        var encoder = new JpegStreamEncoder();
+        return encoder.Encode(componentData, new JpegEncodeOptions
         {
             Width = imageData.Width,
             Height = imageData.Height,

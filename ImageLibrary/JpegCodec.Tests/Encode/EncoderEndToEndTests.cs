@@ -21,13 +21,13 @@ public class EncoderEndToEndTests
         Assert.Equal(0xFF, jpeg[^2]);
         Assert.Equal(0xD9, jpeg[^1]);
 
-        var info = new JpegStreamDecoder().Identify(jpeg);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(jpeg);
         Assert.Equal(W, info.Width);
         Assert.Equal(H, info.Height);
         Assert.Equal(1, info.NumberOfComponents);
         Assert.Equal(JpegMarker.Sof0, info.StartOfFrame);
 
-        var result = new JpegStreamDecoder().Decode(jpeg);
+        JpegDecodeResult result = new JpegStreamDecoder().Decode(jpeg);
         Assert.Equal(W * H, result.ComponentData.Length);
         for (var i = 0; i < result.ComponentData.Length; i++)
         {
@@ -56,7 +56,7 @@ public class EncoderEndToEndTests
         byte[] jpeg = new JpegStreamEncoder().Encode(data,
             new JpegEncodeOptions { Width = W, Height = H, NumberOfComponents = 3, Quality = 95 });
 
-        var result = new JpegStreamDecoder().Decode(jpeg);
+        JpegDecodeResult result = new JpegStreamDecoder().Decode(jpeg);
         Assert.Equal(3, result.NumberOfComponents);
         Assert.Equal(W * H * 3, result.ComponentData.Length);
 
@@ -85,7 +85,7 @@ public class EncoderEndToEndTests
         // Walk markers, accumulate the sequence.
         var seq = new List<JpegMarker>();
         var reader = new JpegMarkerReader(jpeg);
-        while (reader.TryReadMarker(out var m))
+        while (reader.TryReadMarker(out JpegMarker m))
         {
             seq.Add(m);
             if (m == JpegMarker.Eoi) break;
@@ -128,7 +128,7 @@ public class EncoderEndToEndTests
                 EmitAdobeMarker = true, AdobeColorTransform = 0, EmitJfif = false,
             });
 
-        var info = new JpegStreamDecoder().Identify(jpeg);
+        JpegImageInfo info = new JpegStreamDecoder().Identify(jpeg);
         Assert.Equal(4, info.NumberOfComponents);
         Assert.True(info.HasAdobeMarker);
         Assert.Equal(0, info.AdobeColorTransform);

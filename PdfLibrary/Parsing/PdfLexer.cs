@@ -373,16 +373,21 @@ internal class PdfLexer(Stream stream)
         if (!TryPeek(out byte ch))
             return;
 
-        if (ch == 0x0D) // CR
+        switch (ch)
         {
-            Read();
-            // Check for LF to handle CRLF
-            if (TryPeek(out byte next) && next == 0x0A)
+            // CR
+            case 0x0D:
+            {
                 Read();
-        }
-        else if (ch == 0x0A) // LF
-        {
-            Read();
+                // Check for LF to handle CRLF
+                if (TryPeek(out byte next) && next == 0x0A)
+                    Read();
+                break;
+            }
+            // LF
+            case 0x0A:
+                Read();
+                break;
         }
         // If neither CR nor LF, don't consume anything
     }
@@ -414,20 +419,18 @@ internal class PdfLexer(Stream stream)
     /// <summary>
     /// Gets the underlying stream for direct byte access (e.g., for inline images)
     /// </summary>
-    public Stream? GetStream()
+    public Stream GetStream()
     {
         // Flush any buffered data back to stream position
-        if (_stream.CanSeek)
-        {
-            // Calculate and seek to current logical position
-            long currentLogicalPosition = _streamPosition + _bufferPosition;
-            _stream.Seek(currentLogicalPosition, SeekOrigin.Begin);
-            // Update _streamPosition to reflect the new base position
-            _streamPosition = currentLogicalPosition;
-            // Clear buffer so we don't double-read
-            _bufferLength = 0;
-            _bufferPosition = 0;
-        }
+        if (!_stream.CanSeek) return _stream;
+        // Calculate and seek to current logical position
+        long currentLogicalPosition = _streamPosition + _bufferPosition;
+        _stream.Seek(currentLogicalPosition, SeekOrigin.Begin);
+        // Update _streamPosition to reflect the new base position
+        _streamPosition = currentLogicalPosition;
+        // Clear buffer so we don't double-read
+        _bufferLength = 0;
+        _bufferPosition = 0;
         return _stream;
     }
 
@@ -437,12 +440,10 @@ internal class PdfLexer(Stream stream)
     /// </summary>
     public void SyncPositionFromStream()
     {
-        if (_stream.CanSeek)
-        {
-            _streamPosition = _stream.Position;
-            _bufferLength = 0;
-            _bufferPosition = 0;
-        }
+        if (!_stream.CanSeek) return;
+        _streamPosition = _stream.Position;
+        _bufferLength = 0;
+        _bufferPosition = 0;
     }
 
     /// <summary>
@@ -450,8 +451,7 @@ internal class PdfLexer(Stream stream)
     /// </summary>
     internal byte[] ReadBytes(int count)
     {
-        if (count < 0)
-            throw new ArgumentOutOfRangeException(nameof(count));
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
 
         var result = new byte[count];
         var bytesRead = 0;

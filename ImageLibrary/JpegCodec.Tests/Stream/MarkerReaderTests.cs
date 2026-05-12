@@ -19,7 +19,7 @@ public class MarkerReaderTests
 
         var reader = new JpegMarkerReader(data);
         var seen = new List<JpegMarker>();
-        while (reader.TryReadMarker(out var m))
+        while (reader.TryReadMarker(out JpegMarker m))
         {
             seen.Add(m);
             if (m == JpegMarker.Eoi) break;
@@ -47,16 +47,16 @@ public class MarkerReaderTests
 
         var reader = new JpegMarkerReader(data);
 
-        Assert.True(reader.TryReadMarker(out var soi));
+        Assert.True(reader.TryReadMarker(out JpegMarker soi));
         Assert.Equal(JpegMarker.Soi, soi);
 
-        Assert.True(reader.TryReadMarker(out var app0));
+        Assert.True(reader.TryReadMarker(out JpegMarker app0));
         Assert.Equal(JpegMarker.App0, app0);
         int payloadLen = reader.ReadPayloadLength();
         Assert.Equal(14, payloadLen);
         reader.Skip(payloadLen);
 
-        Assert.True(reader.TryReadMarker(out var eoi));
+        Assert.True(reader.TryReadMarker(out JpegMarker eoi));
         Assert.Equal(JpegMarker.Eoi, eoi);
     }
 
@@ -75,11 +75,11 @@ public class MarkerReaderTests
         var reader = new JpegMarkerReader(data);
         reader.TryReadMarker(out _);   // SOI
 
-        Assert.True(reader.TryReadMarker(out var com));
+        Assert.True(reader.TryReadMarker(out JpegMarker com));
         Assert.Equal(JpegMarker.Com, com);
         int len = reader.ReadPayloadLength();
         Assert.Equal(3, len);
-        var payload = reader.ReadPayload(len);
+        ReadOnlySpan<byte> payload = reader.ReadPayload(len);
         Assert.Equal(comPayload, payload.ToArray());
     }
 

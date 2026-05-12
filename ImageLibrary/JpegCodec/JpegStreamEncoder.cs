@@ -40,10 +40,10 @@ public sealed class JpegStreamEncoder
         // Huffman canonical tables for encoding.
         var lumaDcCanonical = HuffmanCanonicalTable.Build(StandardJpegTables.LumaDcBits, StandardJpegTables.LumaDcValues);
         var lumaAcCanonical = HuffmanCanonicalTable.Build(StandardJpegTables.LumaAcBits, StandardJpegTables.LumaAcValues);
-        var chromaDcCanonical = nc == 1
+        HuffmanCanonicalTable chromaDcCanonical = nc == 1
             ? lumaDcCanonical
             : HuffmanCanonicalTable.Build(StandardJpegTables.ChromaDcBits, StandardJpegTables.ChromaDcValues);
-        var chromaAcCanonical = nc == 1
+        HuffmanCanonicalTable chromaAcCanonical = nc == 1
             ? lumaAcCanonical
             : HuffmanCanonicalTable.Build(StandardJpegTables.ChromaAcBits, StandardJpegTables.ChromaAcValues);
 
@@ -70,8 +70,8 @@ public sealed class JpegStreamEncoder
         for (var c = 0; c < nc; c++)
             frameComponents[c] = new MarkerWriter.FrameComponentSpec(
                 id: (byte)(c + 1),
-                hSampling: (byte)H,
-                vSampling: (byte)V,
+                hSampling: H,
+                vSampling: V,
                 quantTableId: (byte)(c == 0 ? 0 : 1));
         MarkerWriter.WriteSof0(output, width, height, precision: 8, frameComponents);
 
@@ -113,9 +113,9 @@ public sealed class JpegStreamEncoder
                     Span<short> block = stackalloc short[64];
                     LoadBlockFromInterleaved(componentData, width, height, nc, c, blockX * 8, blockY * 8, block);
 
-                    var dcEnc = c == 0 ? lumaDcEnc : chromaDcEnc;
-                    var acEnc = c == 0 ? lumaAcEnc : chromaAcEnc;
-                    var qt = c == 0 ? lumaQ : chromaQ;
+                    HuffmanEncoder dcEnc = c == 0 ? lumaDcEnc : chromaDcEnc;
+                    HuffmanEncoder acEnc = c == 0 ? lumaAcEnc : chromaAcEnc;
+                    ushort[] qt = c == 0 ? lumaQ : chromaQ;
                     dcPredictors[c] = BlockEncoder.EncodeBlock(writer, block, qt, dcEnc, acEnc, dcPredictors[c]);
                 }
             }

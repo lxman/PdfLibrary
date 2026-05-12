@@ -273,21 +273,21 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Literal_SimpleText()
     {
-        var pdfString = new PdfString("Hello World", PdfStringFormat.Literal);
+        var pdfString = new PdfString("Hello World");
         Assert.Equal("(Hello World)", pdfString.ToPdfString());
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesParentheses()
     {
-        var pdfString = new PdfString("(Hello)", PdfStringFormat.Literal);
+        var pdfString = new PdfString("(Hello)");
         Assert.Equal(@"(\(Hello\))", pdfString.ToPdfString());
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesBackslash()
     {
-        var pdfString = new PdfString(@"C:\path\file", PdfStringFormat.Literal);
+        var pdfString = new PdfString(@"C:\path\file");
         string result = pdfString.ToPdfString();
         Assert.StartsWith("(", result);
         Assert.EndsWith(")", result);
@@ -297,7 +297,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesSpecialChars()
     {
-        var pdfString = new PdfString("Line1\nLine2\tTab\rReturn", PdfStringFormat.Literal);
+        var pdfString = new PdfString("Line1\nLine2\tTab\rReturn");
         string result = pdfString.ToPdfString();
         Assert.Contains(@"\n", result);
         Assert.Contains(@"\t", result);

@@ -1,3 +1,5 @@
+using System.Reflection;
+using Jbig2Decoder.Mq;
 using Xunit.Abstractions;
 
 namespace Jbig2Decoder.Tests.Huffman;
@@ -35,20 +37,20 @@ public class HuffmanTableTests
         //     bits[16..23]= 1_0_000000 = 0b10000000 = 0x80
         var input = new byte[] { 0x5B, 0x8F, 0x80 };
 
-        var asm = typeof(Jbig2Decoder.Mq.MqDecoder).Assembly;
-        var paramsType = asm.GetType("Jbig2Decoder.Huffman.HuffmanParams", throwOnError: true)!;
-        var standardType = asm.GetType("Jbig2Decoder.Huffman.StandardHuffmanTables", throwOnError: true)!;
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type paramsType = asm.GetType("Jbig2Decoder.Huffman.HuffmanParams", throwOnError: true)!;
+        Type standardType = asm.GetType("Jbig2Decoder.Huffman.StandardHuffmanTables", throwOnError: true)!;
         object dParams = standardType.GetField("D")!.GetValue(null)!;
 
-        var tableType = asm.GetType("Jbig2Decoder.Huffman.HuffmanTable", throwOnError: true)!;
-        var tableCtor = tableType.GetConstructors().Single();
+        Type tableType = asm.GetType("Jbig2Decoder.Huffman.HuffmanTable", throwOnError: true)!;
+        ConstructorInfo tableCtor = tableType.GetConstructors().Single();
         object table = tableCtor.Invoke([dParams]);
 
-        var readerType = asm.GetType("Jbig2Decoder.Huffman.HuffmanBitReader", throwOnError: true)!;
-        var readerCtor = readerType.GetConstructors().Single();
+        Type readerType = asm.GetType("Jbig2Decoder.Huffman.HuffmanBitReader", throwOnError: true)!;
+        ConstructorInfo readerCtor = readerType.GetConstructors().Single();
         object reader = readerCtor.Invoke([input, 0, input.Length]);
 
-        var decode = tableType.GetMethod("Decode")!;
+        MethodInfo decode = tableType.GetMethod("Decode")!;
         int[] expected = [1, 2, 3, 5, 12];
         for (var i = 0; i < expected.Length; i++)
         {

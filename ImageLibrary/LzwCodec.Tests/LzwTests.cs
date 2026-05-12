@@ -1,5 +1,4 @@
 using System.Text;
-using LzwCodec;
 
 namespace LzwCodec.Tests
 {
@@ -8,8 +7,8 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_EmptyInput_ReturnsValidOutput()
         {
-            var input = Array.Empty<byte>();
-            var compressed = LzwCodec.Lzw.Compress(input);
+            byte[] input = Array.Empty<byte>();
+            byte[] compressed = Lzw.Compress(input);
 
             Assert.NotNull(compressed);
             Assert.True(compressed.Length > 0);
@@ -18,10 +17,10 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_Decompress_RoundTrip_SimpleData()
         {
-            var input = Encoding.ASCII.GetBytes("Hello, World!");
+            byte[] input = Encoding.ASCII.GetBytes("Hello, World!");
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -29,10 +28,10 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_Decompress_RoundTrip_RepeatingPattern()
         {
-            var input = Encoding.ASCII.GetBytes("ABABABABABABABABABABABABABABABABAB");
+            byte[] input = Encoding.ASCII.GetBytes("ABABABABABABABABABABABABABABABABAB");
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -40,10 +39,10 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_Decompress_RoundTrip_AllByteValues()
         {
-            var input = Enumerable.Range(0, 256).Select(i => (byte)i).ToArray();
+            byte[] input = Enumerable.Range(0, 256).Select(i => (byte)i).ToArray();
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -57,10 +56,10 @@ namespace LzwCodec.Tests
             {
                 sb.Append((char)('A' + i % 26));
             }
-            var input = Encoding.ASCII.GetBytes(sb.ToString());
+            byte[] input = Encoding.ASCII.GetBytes(sb.ToString());
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -72,8 +71,8 @@ namespace LzwCodec.Tests
             var input = new byte[5000];
             random.NextBytes(input);
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -84,7 +83,7 @@ namespace LzwCodec.Tests
             var input = new byte[1000];
             Array.Fill(input, (byte)'A');
 
-            var compressed = LzwCodec.Lzw.Compress(input);
+            byte[] compressed = Lzw.Compress(input);
 
             Assert.True(compressed.Length < input.Length,
                 $"Expected compression ratio better than 1:1. Input: {input.Length}, Output: {compressed.Length}");
@@ -93,16 +92,16 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_Decompress_Stream_RoundTrip()
         {
-            var input = Encoding.ASCII.GetBytes("Stream-based compression test data that should compress well.");
+            byte[] input = Encoding.ASCII.GetBytes("Stream-based compression test data that should compress well.");
 
             using var inputStream = new MemoryStream(input);
             using var compressedStream = new MemoryStream();
-            LzwCodec.Lzw.Compress(inputStream, compressedStream);
+            Lzw.Compress(inputStream, compressedStream);
 
-            var compressedData = compressedStream.ToArray();
+            byte[] compressedData = compressedStream.ToArray();
             using var compressedInput = new MemoryStream(compressedData);
             using var decompressedStream = new MemoryStream();
-            LzwCodec.Lzw.Decompress(compressedInput, decompressedStream);
+            Lzw.Decompress(compressedInput, decompressedStream);
 
             Assert.Equal(input, decompressedStream.ToArray());
         }
@@ -110,11 +109,11 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_WithPdfOptions_ProducesValidOutput()
         {
-            var input = Encoding.ASCII.GetBytes("PDF compatible LZW test");
+            byte[] input = Encoding.ASCII.GetBytes("PDF compatible LZW test");
             var options = LzwOptions.PdfDefault;
 
-            var compressed = LzwCodec.Lzw.Compress(input, options);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed, options);
+            byte[] compressed = Lzw.Compress(input, options);
+            byte[] decompressed = Lzw.Decompress(compressed, options);
 
             Assert.Equal(input, decompressed);
         }
@@ -122,11 +121,11 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_WithGifOptions_ProducesValidOutput()
         {
-            var input = Encoding.ASCII.GetBytes("GIF compatible LZW test");
-            var options = LzwOptions.GifCompatible;
+            byte[] input = Encoding.ASCII.GetBytes("GIF compatible LZW test");
+            LzwOptions options = LzwOptions.GifCompatible;
 
-            var compressed = LzwCodec.Lzw.Compress(input, options);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed, options);
+            byte[] compressed = Lzw.Compress(input, options);
+            byte[] decompressed = Lzw.Decompress(compressed, options);
 
             Assert.Equal(input, decompressed);
         }
@@ -134,11 +133,11 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_WithTiffOptions_ProducesValidOutput()
         {
-            var input = Encoding.ASCII.GetBytes("TIFF compatible LZW test");
-            var options = LzwOptions.TiffCompatible;
+            byte[] input = Encoding.ASCII.GetBytes("TIFF compatible LZW test");
+            LzwOptions options = LzwOptions.TiffCompatible;
 
-            var compressed = LzwCodec.Lzw.Compress(input, options);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed, options);
+            byte[] compressed = Lzw.Compress(input, options);
+            byte[] decompressed = Lzw.Decompress(compressed, options);
 
             Assert.Equal(input, decompressed);
         }
@@ -146,13 +145,13 @@ namespace LzwCodec.Tests
         [Fact]
         public void Compress_NullInput_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => LzwCodec.Lzw.Compress(null!));
+            Assert.Throws<ArgumentNullException>(() => Lzw.Compress(null!));
         }
 
         [Fact]
         public void Decompress_NullInput_ThrowsArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => LzwCodec.Lzw.Decompress(null!));
+            Assert.Throws<ArgumentNullException>(() => Lzw.Decompress(null!));
         }
 
         [Fact]
@@ -160,8 +159,8 @@ namespace LzwCodec.Tests
         {
             var input = new byte[] { 0x42 };
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -172,10 +171,10 @@ namespace LzwCodec.Tests
             // This pattern (cScSc where S is a string and c is a character)
             // triggers the special case in LZW decoding where the code
             // is not yet in the table
-            var input = Encoding.ASCII.GetBytes("ABABABAB");
+            byte[] input = Encoding.ASCII.GetBytes("ABABABAB");
 
-            var compressed = LzwCodec.Lzw.Compress(input);
-            var decompressed = LzwCodec.Lzw.Decompress(compressed);
+            byte[] compressed = Lzw.Compress(input);
+            byte[] decompressed = Lzw.Decompress(compressed);
 
             Assert.Equal(input, decompressed);
         }
@@ -183,7 +182,7 @@ namespace LzwCodec.Tests
         [Fact]
         public void LzwEncoder_Dispose_FlushesOutput()
         {
-            var input = Encoding.ASCII.GetBytes("Test");
+            byte[] input = Encoding.ASCII.GetBytes("Test");
 
             using var output = new MemoryStream();
             using (var encoder = new LzwEncoder(output, leaveOpen: true))
@@ -201,7 +200,7 @@ namespace LzwCodec.Tests
             // This is a bit tricky to construct, so we'll test with garbage data
             var invalidData = new byte[] { 0xFF, 0xFF, 0xFF, 0xFF };
 
-            Assert.ThrowsAny<Exception>(() => LzwCodec.Lzw.Decompress(invalidData));
+            Assert.ThrowsAny<Exception>(() => Lzw.Decompress(invalidData));
         }
 
         [Fact]
@@ -230,10 +229,10 @@ namespace LzwCodec.Tests
                 EarlyChange = true
             };
 
-            byte[] msbDecoded = LzwCodec.Lzw.Decompress(msbStream, msbOptions);
-            byte[] lsbDecoded = LzwCodec.Lzw.Decompress(lsbStream, lsbOptions);
+            byte[] msbDecoded = Lzw.Decompress(msbStream, msbOptions);
+            byte[] lsbDecoded = Lzw.Decompress(lsbStream, lsbOptions);
 
-            Assert.Equal(new byte[] { (byte)'A', (byte)'B' }, msbDecoded);
+            Assert.Equal(new[] { (byte)'A', (byte)'B' }, msbDecoded);
             Assert.Equal(msbDecoded, lsbDecoded);
         }
     }

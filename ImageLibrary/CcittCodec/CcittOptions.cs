@@ -1,5 +1,3 @@
-#nullable enable
-
 namespace CcittCodec
 {
     /// <summary>
@@ -69,7 +67,7 @@ namespace CcittCodec
         /// PDF parameter: EndOfLine.
         /// Default: false.
         /// </summary>
-        public bool EndOfLine { get; set; } = false;
+        public bool EndOfLine { get; set; }
 
         /// <summary>
         /// True if end-of-block (EOB) pattern is expected.
@@ -85,7 +83,7 @@ namespace CcittCodec
         /// PDF parameter: BlackIs1.
         /// Default: false (0 = white, 1 = black, standard for CCITT).
         /// </summary>
-        public bool BlackIs1 { get; set; } = false;
+        public bool BlackIs1 { get; set; }
 
         /// <summary>
         /// Number of damaged rows that can be tolerated.

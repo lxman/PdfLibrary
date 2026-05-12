@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Filters;
 
 namespace PdfLibrary.Tests;
@@ -31,7 +32,7 @@ public class StreamFilterTests
     public void FlateDecode_EncodesSimpleData()
     {
         var filter = new FlateDecodeFilter();
-        byte[] data = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+        byte[] data = Encoding.ASCII.GetBytes("Hello, World!");
 
         byte[] encoded = filter.Encode(data);
 
@@ -45,7 +46,7 @@ public class StreamFilterTests
     public void FlateDecode_DecodesSimpleData()
     {
         var filter = new FlateDecodeFilter();
-        byte[] original = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+        byte[] original = Encoding.ASCII.GetBytes("Hello, World!");
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
@@ -57,14 +58,14 @@ public class StreamFilterTests
     public void FlateDecode_RoundTrip_SimpleText()
     {
         var filter = new FlateDecodeFilter();
-        byte[] original = System.Text.Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog.");
+        byte[] original = Encoding.ASCII.GetBytes("The quick brown fox jumps over the lazy dog.");
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal(original, decoded);
         Assert.Equal("The quick brown fox jumps over the lazy dog.",
-            System.Text.Encoding.ASCII.GetString(decoded));
+            Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
@@ -98,7 +99,7 @@ public class StreamFilterTests
     {
         // Predictor = 1 means no prediction
         var filter = new FlateDecodeFilter();
-        byte[] original = System.Text.Encoding.ASCII.GetBytes("ABCDEFGH");
+        byte[] original = Encoding.ASCII.GetBytes("ABCDEFGH");
 
         byte[] encoded = filter.Encode(original);
 
@@ -435,7 +436,7 @@ public class StreamFilterTests
 
         byte[] encoded = filter.Encode(data);
 
-        string result = System.Text.Encoding.ASCII.GetString(encoded);
+        string result = Encoding.ASCII.GetString(encoded);
         Assert.Equal("414243>", result); // EOD marker included
     }
 
@@ -443,7 +444,7 @@ public class StreamFilterTests
     public void ASCIIHexDecode_DecodesSimpleData()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("414243>");
+        byte[] encoded = Encoding.ASCII.GetBytes("414243>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -466,31 +467,31 @@ public class StreamFilterTests
     public void ASCIIHexDecode_RoundTrip_Text()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] original = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+        byte[] original = Encoding.ASCII.GetBytes("Hello, World!");
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal(original, decoded);
-        Assert.Equal("Hello, World!", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("Hello, World!", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
     public void ASCIIHexDecode_HandlesLowercaseHex()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("6162636465>");
+        byte[] encoded = Encoding.ASCII.GetBytes("6162636465>");
 
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal("abcde", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("abcde", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
     public void ASCIIHexDecode_HandlesMixedCaseHex()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("4142636465>");
+        byte[] encoded = Encoding.ASCII.GetBytes("4142636465>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -501,7 +502,7 @@ public class StreamFilterTests
     public void ASCIIHexDecode_HandlesWhitespace()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("41 42 43\n44 45>");
+        byte[] encoded = Encoding.ASCII.GetBytes("41 42 43\n44 45>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -513,7 +514,7 @@ public class StreamFilterTests
     {
         // If odd number of digits, last digit is assumed to be followed by 0
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("4142>");
+        byte[] encoded = Encoding.ASCII.GetBytes("4142>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -524,7 +525,7 @@ public class StreamFilterTests
     public void ASCIIHexDecode_HandlesOddDigitWithImplicitZero()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("414>");
+        byte[] encoded = Encoding.ASCII.GetBytes("414>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -536,7 +537,7 @@ public class StreamFilterTests
     public void ASCIIHexDecode_ThrowsOnInvalidHexCharacter()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("41G2>");
+        byte[] encoded = Encoding.ASCII.GetBytes("41G2>");
 
         Assert.Throws<InvalidDataException>(() => filter.Decode(encoded));
     }
@@ -557,7 +558,7 @@ public class StreamFilterTests
     public void ASCIIHexDecode_StopsAtEODMarker()
     {
         var filter = new AsciiHexDecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("4142>4344");
+        byte[] encoded = Encoding.ASCII.GetBytes("4142>4344");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -598,7 +599,7 @@ public class StreamFilterTests
 
         byte[] encoded = filter.Encode(data);
 
-        string result = System.Text.Encoding.ASCII.GetString(encoded);
+        string result = Encoding.ASCII.GetString(encoded);
         Assert.EndsWith("~>", result); // Should end with EOD marker
         Assert.NotEmpty(result);
     }
@@ -619,13 +620,13 @@ public class StreamFilterTests
     public void ASCII85Decode_RoundTrip_Text()
     {
         var filter = new Ascii85DecodeFilter();
-        byte[] original = System.Text.Encoding.ASCII.GetBytes("Hello, World!");
+        byte[] original = Encoding.ASCII.GetBytes("Hello, World!");
 
         byte[] encoded = filter.Encode(original);
         byte[] decoded = filter.Decode(encoded);
 
         Assert.Equal(original, decoded);
-        Assert.Equal("Hello, World!", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("Hello, World!", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
@@ -633,7 +634,7 @@ public class StreamFilterTests
     {
         // 'z' is shorthand for four zero bytes (0x00000000)
         var filter = new Ascii85DecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("z~>");
+        byte[] encoded = Encoding.ASCII.GetBytes("z~>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -644,7 +645,7 @@ public class StreamFilterTests
     public void ASCII85Decode_HandlesMultipleZeros()
     {
         var filter = new Ascii85DecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("zz~>");
+        byte[] encoded = Encoding.ASCII.GetBytes("zz~>");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -656,7 +657,7 @@ public class StreamFilterTests
     {
         // 'z' can only appear at tuple boundaries
         var filter = new Ascii85DecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("!z~>");
+        byte[] encoded = Encoding.ASCII.GetBytes("!z~>");
 
         Assert.Throws<InvalidDataException>(() => filter.Decode(encoded));
     }
@@ -668,11 +669,11 @@ public class StreamFilterTests
         byte[] original = [0x41, 0x42, 0x43, 0x44];
 
         byte[] encoded = filter.Encode(original);
-        string encodedStr = System.Text.Encoding.ASCII.GetString(encoded);
+        string encodedStr = Encoding.ASCII.GetString(encoded);
 
         // Add whitespace
         string withSpaces = encodedStr.Replace("~>", " \n\t ~>");
-        byte[] spacedEncoded = System.Text.Encoding.ASCII.GetBytes(withSpaces);
+        byte[] spacedEncoded = Encoding.ASCII.GetBytes(withSpaces);
 
         byte[] decoded = filter.Decode(spacedEncoded);
 
@@ -683,7 +684,7 @@ public class StreamFilterTests
     public void ASCII85Decode_ThrowsOnInvalidCharacter()
     {
         var filter = new Ascii85DecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("!!v!!~>"); // 'v' is > 'u', invalid
+        byte[] encoded = Encoding.ASCII.GetBytes("!!v!!~>"); // 'v' is > 'u', invalid
 
         Assert.Throws<InvalidDataException>(() => filter.Decode(encoded));
     }
@@ -717,7 +718,7 @@ public class StreamFilterTests
     public void ASCII85Decode_StopsAtEODMarker()
     {
         var filter = new Ascii85DecodeFilter();
-        byte[] encoded = System.Text.Encoding.ASCII.GetBytes("z~>!!!!!!");
+        byte[] encoded = Encoding.ASCII.GetBytes("z~>!!!!!!");
 
         byte[] decoded = filter.Decode(encoded);
 
@@ -753,7 +754,7 @@ public class StreamFilterTests
         var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal("ABC", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("ABC", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
@@ -766,7 +767,7 @@ public class StreamFilterTests
         var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal("AAAAA", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("AAAAA", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
@@ -784,7 +785,7 @@ public class StreamFilterTests
         var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal("ABCCCDE", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("ABCCCDE", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
@@ -801,7 +802,7 @@ public class StreamFilterTests
         var filter = new RunLengthDecodeFilter();
         byte[] decoded = filter.Decode(encoded);
 
-        Assert.Equal("ABC", System.Text.Encoding.ASCII.GetString(decoded));
+        Assert.Equal("ABC", Encoding.ASCII.GetString(decoded));
     }
 
     [Fact]
@@ -872,7 +873,7 @@ public class StreamFilterTests
     [Fact]
     public void RunLengthDecode_RoundTrip()
     {
-        byte[] original = System.Text.Encoding.ASCII.GetBytes("AAABBBCCCCCCDEEE");
+        byte[] original = Encoding.ASCII.GetBytes("AAABBBCCCCCCDEEE");
 
         var filter = new RunLengthDecodeFilter();
         byte[] encoded = filter.Encode(original);

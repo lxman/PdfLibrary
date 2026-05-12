@@ -1,5 +1,3 @@
-#nullable enable
-
 using System;
 using System.Collections.Generic;
 
@@ -178,7 +176,7 @@ namespace CcittCodec
         private byte[]? DecodeGroup3_1DRow(CcittBitReader reader)
         {
             int bytesPerRow = (_options.Width + 7) / 8;
-            var row = CreateWhiteRow(bytesPerRow);
+            byte[] row = CreateWhiteRow(bytesPerRow);
             var pixelPosition = 0;
             var isWhite = true; // Always start with white
 
@@ -244,7 +242,7 @@ namespace CcittCodec
         private byte[]? Decode2DRow(CcittBitReader reader, byte[] referenceLine)
         {
             int bytesPerRow = (_options.Width + 7) / 8;
-            var row = CreateWhiteRow(bytesPerRow);
+            byte[] row = CreateWhiteRow(bytesPerRow);
             int a0 = -1; // Current position (-1 means before the line)
             var a0Color = false; // false = white, true = black (at position a0)
             var modeCount = 0;
@@ -252,7 +250,7 @@ namespace CcittCodec
             while (a0 < _options.Width)
             {
                 int preModeBitPos = reader.Position;
-                var mode = _huffman.Decode2DMode(reader);
+                TwoDimensionalMode mode = _huffman.Decode2DMode(reader);
                 modeCount++;
                 Trace($"  Mode {modeCount}: {mode} at bit {preModeBitPos}, a0={a0}, a0Color={(a0Color ? "black" : "white")}");
 

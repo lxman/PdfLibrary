@@ -52,7 +52,7 @@ namespace FontParser.Tables.Cff.Type1
         {
             get
             {
-                var entry = _topDictOperatorEntries.FirstOrDefault(e => e.Name == "FontMatrix");
+                CffDictEntry? entry = _topDictOperatorEntries.FirstOrDefault(e => e.Name == "FontMatrix");
                 return entry?.Operand as List<double>;
             }
         }

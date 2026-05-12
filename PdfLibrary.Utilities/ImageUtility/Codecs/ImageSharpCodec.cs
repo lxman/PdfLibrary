@@ -42,7 +42,7 @@ public class ImageSharpCodec : IImageCodec
         // Use ImageSharp's format detection
         try
         {
-            var detectedFormat = Image.DetectFormat(header);
+            IImageFormat? detectedFormat = Image.DetectFormat(header);
             return detectedFormat?.Name == _imageFormat.Name;
         }
         catch
@@ -53,7 +53,7 @@ public class ImageSharpCodec : IImageCodec
 
     public ImageData Decode(byte[] data)
     {
-        using var image = Image.Load<Rgb24>(data);
+        using Image<Rgb24> image = Image.Load<Rgb24>(data);
 
         int width = image.Width;
         int height = image.Height;
@@ -65,7 +65,7 @@ public class ImageSharpCodec : IImageCodec
         {
             for (var x = 0; x < width; x++)
             {
-                var pixel = image[x, y];
+                Rgb24 pixel = image[x, y];
                 pixelData[offset++] = pixel.R;
                 pixelData[offset++] = pixel.G;
                 pixelData[offset++] = pixel.B;
@@ -95,13 +95,13 @@ public class ImageSharpCodec : IImageCodec
         else if (imageData.PixelFormat == PixelFormat.Rgba32)
         {
             // Convert RGBA32 to RGB24
-            var rgbaImage = Image.LoadPixelData<Rgba32>(imageData.Data, imageData.Width, imageData.Height);
+            Image<Rgba32> rgbaImage = Image.LoadPixelData<Rgba32>(imageData.Data, imageData.Width, imageData.Height);
             image = new Image<Rgb24>(imageData.Width, imageData.Height);
             for (var y = 0; y < imageData.Height; y++)
             {
                 for (var x = 0; x < imageData.Width; x++)
                 {
-                    var srcPixel = rgbaImage[x, y];
+                    Rgba32 srcPixel = rgbaImage[x, y];
                     image[x, y] = new Rgb24(srcPixel.R, srcPixel.G, srcPixel.B);
                 }
             }

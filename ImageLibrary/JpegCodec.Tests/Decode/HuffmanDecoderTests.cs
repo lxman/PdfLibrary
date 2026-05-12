@@ -32,7 +32,7 @@ public class HuffmanDecoderTests
             // source from misreading data as a marker.
             if (b == 0xFF) output.Add(0x00);
         }
-        foreach (var (bits, length) in tokens)
+        foreach ((int bits, int length) in tokens)
         {
             bitBuffer = (bitBuffer << length) | bits;
             bitsInBuffer += length;
@@ -54,7 +54,7 @@ public class HuffmanDecoderTests
     [Fact]
     public void DecodeSymbol_LumaDc_Symbol0()
     {
-        var table = LumaDcTable();
+        HuffmanCanonicalTable table = LumaDcTable();
         // Code "00" (length 2) — symbol 0.
         byte[] data = PackBits((0b00, 2));
 
@@ -65,7 +65,7 @@ public class HuffmanDecoderTests
     [Fact]
     public void DecodeSymbol_LumaDc_AllSpecValues()
     {
-        var table = LumaDcTable();
+        HuffmanCanonicalTable table = LumaDcTable();
         (int code, int length, int expectedSymbol)[] cases =
         [
             (0b00,          2, 0x00),
@@ -82,7 +82,7 @@ public class HuffmanDecoderTests
             (0b111111110,   9, 0x0B),
         ];
 
-        foreach (var (code, length, expected) in cases)
+        foreach ((int code, int length, int expected) in cases)
         {
             byte[] data = PackBits((code, length));
             var reader = new JpegBitReader(new JpegByteSource(data, 0));
@@ -93,7 +93,7 @@ public class HuffmanDecoderTests
     [Fact]
     public void DecodeSymbol_ConcatenatedStream_DecodesInSequence()
     {
-        var table = LumaDcTable();
+        HuffmanCanonicalTable table = LumaDcTable();
         // "00" (sym 0) | "010" (sym 1) | "1110" (sym 6) | "111111110" (sym B)
         byte[] data = PackBits(
             (0b00, 2),
@@ -115,7 +115,7 @@ public class HuffmanDecoderTests
         // (category SSSS, then SSSS bits). Here SSSS=4 → symbol byte 4,
         // followed by 4 bits whose value EXTENDed gives the signed DC
         // delta.
-        var table = LumaDcTable();
+        HuffmanCanonicalTable table = LumaDcTable();
         // First emit Huffman code for SSSS=4 (which is "101"), then 4
         // bits = 0011 (representing -12 after EXTEND).
         byte[] data = PackBits(

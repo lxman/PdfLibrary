@@ -82,9 +82,9 @@ internal sealed class McuWalker
         _scanInfo = new ScanComponentDecodeInfo[scan.NumberOfComponents];
         for (var s = 0; s < scan.NumberOfComponents; s++)
         {
-            var sc = scan.Components[s];
+            ScanComponent sc = scan.Components[s];
             int frameIndex = FindFrameComponentIndex(sc.ComponentSelector);
-            var fc = frame.Components[frameIndex];
+            FrameComponent fc = frame.Components[frameIndex];
             _scanInfo[s] = new ScanComponentDecodeInfo
             {
                 FrameComponentIndex = frameIndex,
@@ -159,7 +159,7 @@ internal sealed class McuWalker
     // scan component, addressed at the component's natural block grid.
     private void DecodeNonInterleavedBlock(JpegBitReader bitReader, byte[][] componentRasters, int blockX, int blockY)
     {
-        var info = _scanInfo[0];
+        ScanComponentDecodeInfo info = _scanInfo[0];
         byte[] raster = componentRasters[info.FrameComponentIndex];
         int rasterWidth = _mcusPerLine * 8 * info.HorizontalSampling;
         DecodeBlock(bitReader, info, ref _dcPredictors[0], raster, rasterWidth, blockX, blockY);
@@ -186,7 +186,7 @@ internal sealed class McuWalker
     {
         for (var s = 0; s < _scan.NumberOfComponents; s++)
         {
-            var info = _scanInfo[s];
+            ScanComponentDecodeInfo info = _scanInfo[s];
             byte[] raster = componentRasters[info.FrameComponentIndex];
             int rasterWidth = _mcusPerLine * 8 * info.HorizontalSampling;
 

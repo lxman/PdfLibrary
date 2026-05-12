@@ -8,6 +8,10 @@ using FontParser.Tables.Common.SequenceContext.Format1;
 using FontParser.Tables.Common.SequenceContext.Format2;
 using FontParser.Tables.Common.SequenceContext.Format3;
 using FontParser.Tables.Gpos.LookupSubtables;
+using FontParser.Tables.Gpos.LookupSubtables.CursivePos;
+using FontParser.Tables.Gpos.LookupSubtables.MarkBasePos;
+using FontParser.Tables.Gpos.LookupSubtables.MarkLigPos;
+using FontParser.Tables.Gpos.LookupSubtables.MarkMarkPos;
 using FontParser.Tables.Gpos.LookupSubtables.PairPos;
 
 namespace FontParser.Tables.Common
@@ -53,19 +57,19 @@ namespace FontParser.Tables.Common
                         break;
 
                     case GposLookupType.CursiveAttachment:
-                        SubTables.Add(new Gpos.LookupSubtables.CursivePos.CursivePosFormat1(reader));
+                        SubTables.Add(new CursivePosFormat1(reader));
                         break;
 
                     case GposLookupType.MarkToBaseAttachment:
-                        SubTables.Add(new Gpos.LookupSubtables.MarkBasePos.MarkBasePosFormat1(reader));
+                        SubTables.Add(new MarkBasePosFormat1(reader));
                         break;
 
                     case GposLookupType.MarkToLigatureAttachment:
-                        SubTables.Add(new Gpos.LookupSubtables.MarkLigPos.MarkLigPosFormat1(reader));
+                        SubTables.Add(new MarkLigPosFormat1(reader));
                         break;
 
                     case GposLookupType.MarkToMarkAttachment:
-                        SubTables.Add(new Gpos.LookupSubtables.MarkMarkPos.MarkMarkPosFormat1(reader));
+                        SubTables.Add(new MarkMarkPosFormat1(reader));
                         break;
 
                     case GposLookupType.ContextPositioning:

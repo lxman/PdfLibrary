@@ -180,11 +180,11 @@ PdfDocumentBuilder.Create()
 
         totalsY += 15;  // Increased spacing before total
         p.AddText("TOTAL DUE:", totalsLabelX, totalsY)
-            .Font("Helvetica-Bold", 12)
+            .Font("Helvetica-Bold")
             .WithColor(PdfColor.FromHex("#E74C3C"));
 
         p.AddText($"${total:F2}", totalsValueX, totalsY)
-            .Font("Helvetica-Bold", 12)
+            .Font("Helvetica-Bold")
             .WithColor(PdfColor.FromHex("#E74C3C"));
 
         // ==================== PAYMENT TERMS ====================
@@ -211,9 +211,9 @@ PdfDocumentBuilder.Create()
 
     .Save(outputPath);
 
-Console.WriteLine($"  ✓ Invoice created successfully!");
+Console.WriteLine("  ✓ Invoice created successfully!");
 Console.WriteLine($"\nFile: {outputPath}");
-Console.WriteLine($"\nInvoice Summary:");
+Console.WriteLine("\nInvoice Summary:");
 Console.WriteLine($"  Invoice #: {invoiceNumber}");
 Console.WriteLine($"  Date: {invoiceDate}");
 Console.WriteLine($"  Subtotal: ${subtotal:F2}");

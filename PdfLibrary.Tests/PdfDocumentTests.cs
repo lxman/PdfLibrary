@@ -1,5 +1,5 @@
-using PdfLibrary.Structure;
 using PdfLibrary.Core;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Tests;
 

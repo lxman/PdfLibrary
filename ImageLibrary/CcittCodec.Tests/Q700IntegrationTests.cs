@@ -1,7 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using CcittCodec;
+using System.Text;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -28,8 +29,8 @@ namespace CcittCodec.Tests
         private string GetTestDataPath(string filename)
         {
             // Find TestData directory relative to test assembly
-            var assemblyDir = Path.GetDirectoryName(typeof(Q700IntegrationTests).Assembly.Location);
-            var testDataDir = Path.Combine(assemblyDir!, "..", "..", "..", "TestData");
+            string? assemblyDir = Path.GetDirectoryName(typeof(Q700IntegrationTests).Assembly.Location);
+            string testDataDir = Path.Combine(assemblyDir!, "..", "..", "..", "TestData");
             return Path.Combine(testDataDir, filename);
         }
 
@@ -37,8 +38,8 @@ namespace CcittCodec.Tests
         public void Decode_Q700_Im1_MatchesMutoolReference()
         {
             // Load test data
-            var compressedPath = GetTestDataPath("q700_im1_stream.bin");
-            var referencePath = GetTestDataPath("q700_im1_raw.bin");
+            string compressedPath = GetTestDataPath("q700_im1_stream.bin");
+            string referencePath = GetTestDataPath("q700_im1_raw.bin");
 
             if (!File.Exists(compressedPath))
             {
@@ -52,8 +53,8 @@ namespace CcittCodec.Tests
                 return;
             }
 
-            var compressed = File.ReadAllBytes(compressedPath);
-            var reference = File.ReadAllBytes(referencePath);
+            byte[] compressed = File.ReadAllBytes(compressedPath);
+            byte[] reference = File.ReadAllBytes(referencePath);
 
             _output.WriteLine($"Compressed data: {compressed.Length} bytes");
             _output.WriteLine($"Reference data: {reference.Length} bytes");
@@ -76,7 +77,7 @@ namespace CcittCodec.Tests
             };
 
             var decoder = new CcittDecoder(options);
-            var decoded = decoder.Decode(compressed);
+            byte[] decoded = decoder.Decode(compressed);
 
             _output.WriteLine($"Decoded data: {decoded.Length} bytes");
             _output.WriteLine($"Reference data: {reference.Length} bytes");
@@ -163,8 +164,8 @@ namespace CcittCodec.Tests
         [Fact]
         public void Debug_DecodeRow55()
         {
-            var compressedPath = GetTestDataPath("q700_im1_stream.bin");
-            var referencePath = GetTestDataPath("q700_im1_raw.bin");
+            string compressedPath = GetTestDataPath("q700_im1_stream.bin");
+            string referencePath = GetTestDataPath("q700_im1_raw.bin");
 
             if (!File.Exists(compressedPath) || !File.Exists(referencePath))
             {
@@ -172,8 +173,8 @@ namespace CcittCodec.Tests
                 return;
             }
 
-            var compressed = File.ReadAllBytes(compressedPath);
-            var reference = File.ReadAllBytes(referencePath);
+            byte[] compressed = File.ReadAllBytes(compressedPath);
+            byte[] reference = File.ReadAllBytes(referencePath);
 
             int bytesPerRow = (Width + 7) / 8;
 
@@ -232,7 +233,7 @@ namespace CcittCodec.Tests
         [Fact]
         public void Debug_ShowCompressedDataStructure()
         {
-            var compressedPath = GetTestDataPath("q700_im1_stream.bin");
+            string compressedPath = GetTestDataPath("q700_im1_stream.bin");
 
             if (!File.Exists(compressedPath))
             {
@@ -240,14 +241,14 @@ namespace CcittCodec.Tests
                 return;
             }
 
-            var compressed = File.ReadAllBytes(compressedPath);
+            byte[] compressed = File.ReadAllBytes(compressedPath);
 
             _output.WriteLine($"Compressed data: {compressed.Length} bytes");
             _output.WriteLine($"First 100 bytes: {BitConverter.ToString(compressed, 0, Math.Min(100, compressed.Length))}");
 
             // Show as bits
             _output.WriteLine("\nFirst 200 bits:");
-            var bits = new System.Text.StringBuilder();
+            var bits = new StringBuilder();
             for (var i = 0; i < Math.Min(25, compressed.Length); i++)
             {
                 bits.Append(Convert.ToString(compressed[i], 2).PadLeft(8, '0'));
@@ -269,7 +270,7 @@ namespace CcittCodec.Tests
             };
 
             var decoder = new CcittDecoder(options);
-            var decoded = decoder.Decode(compressed);
+            byte[] decoded = decoder.Decode(compressed);
 
             int bytesPerRow = (Width + 7) / 8;
             int rowsDecoded = decoded.Length / bytesPerRow;
@@ -287,8 +288,8 @@ namespace CcittCodec.Tests
         [Fact]
         public void Debug_TraceRow55Decoding()
         {
-            var compressedPath = GetTestDataPath("q700_im1_stream.bin");
-            var referencePath = GetTestDataPath("q700_im1_raw.bin");
+            string compressedPath = GetTestDataPath("q700_im1_stream.bin");
+            string referencePath = GetTestDataPath("q700_im1_raw.bin");
 
             if (!File.Exists(compressedPath) || !File.Exists(referencePath))
             {
@@ -296,15 +297,15 @@ namespace CcittCodec.Tests
                 return;
             }
 
-            var compressed = File.ReadAllBytes(compressedPath);
-            var reference = File.ReadAllBytes(referencePath);
+            byte[] compressed = File.ReadAllBytes(compressedPath);
+            byte[] reference = File.ReadAllBytes(referencePath);
 
             int bytesPerRow = (Width + 7) / 8;
 
             // Show reference row 0
             _output.WriteLine("Reference row 0:");
             int row0Start = 0 * bytesPerRow;
-            var changes0 = new System.Collections.Generic.List<int>();
+            var changes0 = new List<int>();
             var lastColor0 = false;
             for (var i = 0; i < Width; i++)
             {
@@ -327,7 +328,7 @@ namespace CcittCodec.Tests
             for (var rowNum = 0; rowNum < 60 && rowsShown < 20; rowNum++)
             {
                 int rowStart = rowNum * bytesPerRow;
-                var changes = new System.Collections.Generic.List<int>();
+                var changes = new List<int>();
                 lastColor = false;
                 for (var i = 0; i < Width; i++)
                 {
@@ -350,7 +351,7 @@ namespace CcittCodec.Tests
             for (var rowNum = 50; rowNum <= 53; rowNum++)
             {
                 int rowStart = rowNum * bytesPerRow;
-                var changes = new System.Collections.Generic.List<int>();
+                var changes = new List<int>();
                 lastColor = false;
                 for (var i = 0; i < Width; i++)
                 {
@@ -369,7 +370,7 @@ namespace CcittCodec.Tests
             int row54Start = 54 * bytesPerRow;
 
             // Count changing elements in row 54
-            var changes54 = new System.Collections.Generic.List<int>();
+            var changes54 = new List<int>();
             lastColor = false; // white (BlackIs1=false, so 1=white, 0xFF = all white)
             for (var i = 0; i < Width; i++)
             {
@@ -394,7 +395,7 @@ namespace CcittCodec.Tests
             // Show reference row 55
             _output.WriteLine("\nRow 55 to decode:");
             int row55Start = 55 * bytesPerRow;
-            var changes55 = new System.Collections.Generic.List<int>();
+            var changes55 = new List<int>();
             lastColor = false;
             for (var i = 0; i < Width; i++)
             {
@@ -436,18 +437,18 @@ namespace CcittCodec.Tests
 
             // Capture console output
             var sw = new StringWriter();
-            var oldOut = Console.Out;
+            TextWriter oldOut = Console.Out;
             Console.SetOut(sw);
 
-            var partial = testDecoder.Decode(compressed);
+            byte[] partial = testDecoder.Decode(compressed);
 
             Console.SetOut(oldOut);
 
             // Filter trace to show rows around first mismatch (row 45)
             var trace = sw.ToString();
-            var lines = trace.Split('\n');
+            string[] lines = trace.Split('\n');
             var inRange = false;
-            foreach (var line in lines)
+            foreach (string line in lines)
             {
                 // Show rows 44-47
                 if (line.StartsWith("Row 44:") || line.StartsWith("Row 45:") || line.StartsWith("Row 46:") || line.StartsWith("Row 47:"))
@@ -462,7 +463,7 @@ namespace CcittCodec.Tests
             // Show reference rows 44 and 45
             _output.WriteLine("\n--- Reference row 44 (ref line for row 45 decode) ---");
             int row44Start = 44 * bytesPerRow;
-            var ref44Changes = new System.Collections.Generic.List<int>();
+            var ref44Changes = new List<int>();
             lastColor = false;
             for (var i = 0; i < Width; i++)
             {
@@ -480,7 +481,7 @@ namespace CcittCodec.Tests
             int dec44Start = 44 * bytesPerRow;
             if (dec44Start + bytesPerRow <= partial.Length)
             {
-                var dec44Changes = new System.Collections.Generic.List<int>();
+                var dec44Changes = new List<int>();
                 lastColor = false;
                 for (var i = 0; i < Width; i++)
                 {
@@ -496,7 +497,7 @@ namespace CcittCodec.Tests
 
             _output.WriteLine("\n--- Reference row 45 ---");
             int row45Start = 45 * bytesPerRow;
-            var ref45Changes = new System.Collections.Generic.List<int>();
+            var ref45Changes = new List<int>();
             lastColor = false;
             for (var i = 0; i < Width; i++)
             {
@@ -540,7 +541,7 @@ namespace CcittCodec.Tests
                 int rowStart = rowNum * bytesPerRow;
 
                 // Compute changing elements for decoded row
-                var decodedChanges = new System.Collections.Generic.List<int>();
+                var decodedChanges = new List<int>();
                 var decLastColor = false;
                 for (var i = 0; i < Width; i++)
                 {
@@ -553,7 +554,7 @@ namespace CcittCodec.Tests
                 }
 
                 // Compute changing elements for reference row
-                var refChanges = new System.Collections.Generic.List<int>();
+                var refChanges = new List<int>();
                 var refLastColor = false;
                 for (var i = 0; i < Width; i++)
                 {

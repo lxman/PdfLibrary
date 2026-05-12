@@ -10,7 +10,7 @@ public static class LogoGenerator
         const int height = 60;
 
         using var surface = SKSurface.Create(new SKImageInfo(width, height));
-        var canvas = surface.Canvas;
+        SKCanvas? canvas = surface.Canvas;
 
         // White background
         canvas.Clear(SKColors.White);
@@ -35,16 +35,16 @@ public static class LogoGenerator
             var textBounds = new SKRect();
             paint.MeasureText(text, ref textBounds);
 
-            var x = (width - textBounds.Width) / 2 - textBounds.Left;
-            var y = (height - textBounds.Height) / 2 - textBounds.Top;
+            float x = (width - textBounds.Width) / 2 - textBounds.Left;
+            float y = (height - textBounds.Height) / 2 - textBounds.Top;
 
             canvas.DrawText(text, x, y, paint);
         }
 
         // Save as JPEG
-        using var image = surface.Snapshot();
-        using var data = image.Encode(SKEncodedImageFormat.Jpeg, 100);
-        using var stream = File.OpenWrite(outputPath);
+        using SKImage? image = surface.Snapshot();
+        using SKData? data = image.Encode(SKEncodedImageFormat.Jpeg, 100);
+        using FileStream stream = File.OpenWrite(outputPath);
         data.SaveTo(stream);
     }
 }

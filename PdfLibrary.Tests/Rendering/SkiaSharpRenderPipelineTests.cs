@@ -175,7 +175,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         using var ms = new MemoryStream(pdfBytes);
         using PdfDocument doc = PdfDocument.Load(ms);
 
-        byte[] png = doc.GetPage(0)!.RenderTo().WithScale(1.0).ToBytes(SKEncodedImageFormat.Png);
+        byte[] png = doc.GetPage(0)!.RenderTo().WithScale(1.0).ToBytes();
 
         // PNG signature: 89 50 4E 47 0D 0A 1A 0A
         Assert.True(png.Length > 8);
@@ -307,7 +307,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
     [InlineData(EncryptedPdfTestDocument.EncryptionType.Aes128, "test123")]
     public void EncryptedDocument_DecryptsAndRenders(EncryptedPdfTestDocument.EncryptionType type, string userPassword)
     {
-        var generator = new EncryptedPdfTestDocument(type, userPassword, "owner");
+        var generator = new EncryptedPdfTestDocument(type, userPassword);
         string path = Path.Combine(_scratchDir, $"{generator.Name}.pdf");
         generator.Generate(path);
 

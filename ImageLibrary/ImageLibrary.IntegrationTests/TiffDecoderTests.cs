@@ -44,7 +44,7 @@ public class TiffDecoderTests
         w.Write((ushort)257); w.Write((ushort)4); w.Write((uint)1); w.Write((uint)1);
         // 259 Compression (SHORT, count=1, value=<compression>)
         w.Write((ushort)259); w.Write((ushort)3); w.Write((uint)1);
-        w.Write((ushort)compression); w.Write((ushort)0);
+        w.Write(compression); w.Write((ushort)0);
         // 273 StripOffsets (LONG, count=1, value=74 — start of strip data, just past next-IFD offset)
         w.Write((ushort)273); w.Write((ushort)4); w.Write((uint)1); w.Write((uint)74);
         // 279 StripByteCounts (LONG, count=1, value=1)

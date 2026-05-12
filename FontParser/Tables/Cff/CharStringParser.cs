@@ -10,10 +10,10 @@ namespace FontParser.Tables.Cff
     public class CharStringParser
     {
         private readonly FixedStack<float> _stack = new FixedStack<float>();
-        private float? _width = null;
-        private int _nStems = 0;
-        private float _x = 0;
-        private float _y = 0;
+        private float? _width;
+        private int _nStems;
+        private float _x;
+        private float _y;
         private List<byte> _bytes;
         private readonly List<List<byte>> _globalSubroutines;
         private readonly List<List<byte>> _localSubroutines;
@@ -463,9 +463,6 @@ namespace FontParser.Tables.Cff
                                 break;
                         }
                         break;
-
-                    default:
-                        break;
                 }
             }
             List<string> toReturn = output.ToString().Split(Environment.NewLine).ToList();
@@ -604,7 +601,7 @@ namespace FontParser.Tables.Cff
                                     _bytes = _localSubroutines[index];
                                     if (_bytes.Count > 0)
                                     {
-                                        var subOutline = ParseToOutline();
+                                        GlyphOutline subOutline = ParseToOutline();
                                         outline.Commands.AddRange(subOutline.Commands);
                                     }
                                     (int index, List<byte> bytes) lState = SubroutineNester.Pop();
@@ -722,7 +719,7 @@ namespace FontParser.Tables.Cff
                                 _bytes = _globalSubroutines[index];
                                 if (_bytes.Count > 0)
                                 {
-                                    var subOutline = ParseToOutline();
+                                    GlyphOutline subOutline = ParseToOutline();
                                     outline.Commands.AddRange(subOutline.Commands);
                                 }
                                 (int index, List<byte> bytes) gState = SubroutineNester.Pop();
@@ -846,9 +843,6 @@ namespace FontParser.Tables.Cff
                                 }
                                 break;
                         }
-                        break;
-
-                    default:
                         break;
                 }
             }

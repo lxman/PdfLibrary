@@ -16,8 +16,8 @@ namespace FontParser.Tables.TtTables.Glyf
 
         // Transformation matrix components (default to identity)
         public double A { get; } = 1.0;
-        public double B { get; } = 0.0;
-        public double C { get; } = 0.0;
+        public double B { get; }
+        public double C { get; }
         public double D { get; } = 1.0;
 
         public CompositeGlyphComponent(BigEndianReader reader)

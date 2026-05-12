@@ -1,4 +1,5 @@
-﻿using FontParser.Reader;
+﻿using System;
+using FontParser.Reader;
 
 namespace FontParser.Tables.Gdef
 {
@@ -34,7 +35,7 @@ namespace FontParser.Tables.Gdef
                     break;
 
                 default:
-                    throw new System.Exception($"Unknown format: {Format}");
+                    throw new Exception($"Unknown format: {Format}");
             }
         }
     }

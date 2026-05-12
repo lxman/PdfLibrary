@@ -30,8 +30,8 @@ namespace Jbig2Decoder.Huffman
             bool htOob = (flags & 0x01) != 0;
             int htps = ((flags >> 1) & 0x07) + 1;
             int htrs = ((flags >> 4) & 0x07) + 1;
-            var htLow  = (int)BigEndianI32(data, offset + 1);
-            var htHigh = (int)BigEndianI32(data, offset + 5);
+            int htLow  = BigEndianI32(data, offset + 1);
+            int htHigh = BigEndianI32(data, offset + 5);
 
             if (htLow >= htHigh)
                 throw new InvalidOperationException(

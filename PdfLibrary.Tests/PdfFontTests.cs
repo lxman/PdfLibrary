@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
 
@@ -138,7 +139,7 @@ public class PdfFontTests
     [Fact]
     public void DecodeCharacter_WithToUnicode_UsesToUnicode()
     {
-        byte[] toUnicodeData = System.Text.Encoding.ASCII.GetBytes(@"
+        byte[] toUnicodeData = Encoding.ASCII.GetBytes(@"
 beginbfchar
 <41> <0391>
 endbfchar

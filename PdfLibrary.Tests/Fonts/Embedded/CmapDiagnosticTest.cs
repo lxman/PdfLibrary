@@ -51,7 +51,7 @@ public class CmapDiagnosticTest(ITestOutputHelper output)
                 output.WriteLine($"Is CFF: {metrics.IsCffFont}");
 
                 // Check if cmap table exists
-                output.WriteLine($"\nDiagnostic info:");
+                output.WriteLine("\nDiagnostic info:");
                 output.WriteLine($"Has cmap table: {metrics.HasCmapTable}");
                 output.WriteLine($"Cmap subtable count: {metrics.GetCmapSubtableCount()}");
                 output.WriteLine($"Cmap encoding record count: {metrics.GetCmapEncodingRecordCount()}");

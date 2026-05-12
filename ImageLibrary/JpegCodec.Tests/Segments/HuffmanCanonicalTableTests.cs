@@ -84,7 +84,7 @@ public class HuffmanCanonicalTableTests
         // SSSS=0, code=00, length 2 — top 2 bits 00 → entries 0x00..0x3F.
         for (var p = 0; p < 0x40; p++)
         {
-            var (len, sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[p]);
+            (byte len, byte sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[p]);
             Assert.Equal(2, len);
             Assert.Equal(0, sym);
         }
@@ -92,7 +92,7 @@ public class HuffmanCanonicalTableTests
         // SSSS=1, code=010 (length 3) — top 3 bits 010 → 0x40..0x5F.
         for (var p = 0x40; p < 0x60; p++)
         {
-            var (len, sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[p]);
+            (byte len, byte sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[p]);
             Assert.Equal(3, len);
             Assert.Equal(1, sym);
         }
@@ -100,14 +100,14 @@ public class HuffmanCanonicalTableTests
         // SSSS=6, code=1110 (length 4) — top 4 bits 1110 → 0xE0..0xEF.
         for (var p = 0xE0; p < 0xF0; p++)
         {
-            var (len, sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[p]);
+            (byte len, byte sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[p]);
             Assert.Equal(4, len);
             Assert.Equal(6, sym);
         }
 
         // SSSS=A, code=11111110 (length 8) — exactly one entry 0xFE.
         {
-            var (len, sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[0xFE]);
+            (byte len, byte sym) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[0xFE]);
             Assert.Equal(8, len);
             Assert.Equal(0x0A, sym);
         }
@@ -116,7 +116,7 @@ public class HuffmanCanonicalTableTests
         // every entry whose top 8 bits are 11111111 must fall back
         // (length=0).
         {
-            var (len, _) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[0xFF]);
+            (byte len, _) = HuffmanCanonicalTable.DecodeFastEntry(table.FastLookup[0xFF]);
             Assert.Equal(0, len);
         }
     }

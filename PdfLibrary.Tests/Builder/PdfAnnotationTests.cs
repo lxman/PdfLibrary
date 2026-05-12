@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 
@@ -34,7 +35,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/Subtype /Link", pdfContent);
         Assert.Contains("/URI", pdfContent);
         Assert.Contains("example.com", pdfContent);
@@ -53,7 +54,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/Subtype /Text", pdfContent);
         Assert.Contains("This is a note", pdfContent);
     }
@@ -74,7 +75,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/Name /Help", pdfContent);
         Assert.Contains("/Open true", pdfContent);
     }
@@ -92,7 +93,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/Subtype /Highlight", pdfContent);
         Assert.Contains("/QuadPoints", pdfContent);
     }
@@ -126,12 +127,12 @@ public class PdfAnnotationTests
                 p.AddText("Link", 100, 700);
                 p.AddLink(100, 700, 50, 20, 0, l => l
                     .WithHighlight(PdfLinkHighlightMode.Push)
-                    .WithBorder(1));
+                    .WithBorder());
             });
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/H /P", pdfContent);
     }
 
@@ -150,7 +151,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("Note 1", pdfContent);
         Assert.Contains("Note 2", pdfContent);
         Assert.Contains("/URI", pdfContent);
@@ -169,7 +170,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/Border", pdfContent);
     }
 
@@ -186,7 +187,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/F 4", pdfContent); // Print flag = 4
     }
 
@@ -210,7 +211,7 @@ public class PdfAnnotationTests
         Assert.True(pdfData.Length > 0);
 
         // Verify PDF header
-        string header = System.Text.Encoding.ASCII.GetString(pdfData, 0, 8);
+        string header = Encoding.ASCII.GetString(pdfData, 0, 8);
         Assert.StartsWith("%PDF-", header);
     }
 
@@ -228,7 +229,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/Annots", pdfContent);
         Assert.Contains("/FT /Tx", pdfContent);  // Text field
         Assert.Contains("/Subtype /Text", pdfContent);  // Text annotation
@@ -250,7 +251,7 @@ public class PdfAnnotationTests
 
         // Assert
         byte[] pdf = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdf);
+        string pdfContent = Encoding.ASCII.GetString(pdf);
         Assert.Contains("/QuadPoints", pdfContent);
     }
 

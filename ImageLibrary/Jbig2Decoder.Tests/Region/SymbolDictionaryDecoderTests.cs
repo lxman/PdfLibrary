@@ -1,4 +1,5 @@
 using System.Reflection;
+using Jbig2Decoder.Mq;
 using Xunit.Abstractions;
 
 namespace Jbig2Decoder.Tests.Region;
@@ -19,11 +20,11 @@ public class SymbolDictionaryDecoderTests
 
     private void RunFixture(string fixtureName)
     {
-        var fx = SymbolDictionaryFixture.Load(FixturePath(fixtureName));
+        SymbolDictionaryFixture fx = SymbolDictionaryFixture.Load(FixturePath(fixtureName));
         Assert.False(fx.SdRefAgg, "fixture must be no-refagg");
 
-        var asm = typeof(Jbig2Decoder.Mq.MqDecoder).Assembly;
-        var paramsType = asm.GetType("Jbig2Decoder.Region.SymbolDictionaryParams", throwOnError: true)!;
+        Assembly asm = typeof(MqDecoder).Assembly;
+        Type paramsType = asm.GetType("Jbig2Decoder.Region.SymbolDictionaryParams", throwOnError: true)!;
         object pBox = Activator.CreateInstance(paramsType)!;
         paramsType.GetField("SdHuff")!.SetValue(pBox, fx.SdHuff);
         paramsType.GetField("SdRefAgg")!.SetValue(pBox, fx.SdRefAgg);
@@ -36,29 +37,29 @@ public class SymbolDictionaryDecoderTests
         paramsType.GetField("SdNumExSyms")!.SetValue(pBox, fx.NumEx);
         paramsType.GetField("SdHuffFlags")!.SetValue(pBox, fx.HuffmanFlags);
 
-        var decType = asm.GetType("Jbig2Decoder.Region.SymbolDictionaryDecoder", throwOnError: true)!;
+        Type decType = asm.GetType("Jbig2Decoder.Region.SymbolDictionaryDecoder", throwOnError: true)!;
         object decoder = Activator.CreateInstance(decType)!;
-        var decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
+        MethodInfo decode = decType.GetMethod("Decode", BindingFlags.Public | BindingFlags.Instance)!;
         object result = decode.Invoke(decoder, [pBox, fx.ArithBytes, 0, fx.ArithBytes.Length])!;
 
-        var sdType = asm.GetType("Jbig2Decoder.Region.SymbolDictionary", throwOnError: true)!;
+        Type sdType = asm.GetType("Jbig2Decoder.Region.SymbolDictionary", throwOnError: true)!;
         var glyphs = (Array)sdType.GetProperty("Glyphs")!.GetValue(result)!;
 
         Assert.Equal(fx.NumEx, (uint)glyphs.Length);
 
-        var bmpType = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
-        var widthProp  = bmpType.GetProperty("Width")!;
-        var heightProp = bmpType.GetProperty("Height")!;
-        var dataProp   = bmpType.GetProperty("Data")!;
+        Type bmpType = asm.GetType("Jbig2Decoder.Image.Bitmap", throwOnError: true)!;
+        PropertyInfo widthProp  = bmpType.GetProperty("Width")!;
+        PropertyInfo heightProp = bmpType.GetProperty("Height")!;
+        PropertyInfo dataProp   = bmpType.GetProperty("Data")!;
 
         for (var i = 0; i < fx.NumEx; i++)
         {
-            var actual = glyphs.GetValue(i)!;
+            object actual = glyphs.GetValue(i)!;
             var aw = (int)widthProp.GetValue(actual)!;
             var ah = (int)heightProp.GetValue(actual)!;
             var adata = (byte[])dataProp.GetValue(actual)!;
 
-            var exp = fx.ExSyms[i];
+            SymbolBitmap exp = fx.ExSyms[i];
             if (aw != exp.Width || ah != exp.Height)
             {
                 _out.WriteLine($"Glyph {i}: dims expected={exp.Width}x{exp.Height}, actual={aw}x{ah}");

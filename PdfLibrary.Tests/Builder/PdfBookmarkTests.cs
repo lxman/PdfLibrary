@@ -1,3 +1,4 @@
+using System.Text;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Builder.Page;
@@ -215,7 +216,7 @@ public class PdfBookmarkTests
         Assert.True(pdfData.Length > 0);
 
         // Verify PDF header
-        string header = System.Text.Encoding.ASCII.GetString(pdfData, 0, 8);
+        string header = Encoding.ASCII.GetString(pdfData, 0, 8);
         Assert.StartsWith("%PDF-", header);
     }
 
@@ -229,7 +230,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/Outlines", pdfContent);
@@ -247,7 +248,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/PageMode /UseOutlines", pdfContent);
@@ -265,7 +266,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("Parent", pdfContent);
@@ -285,7 +286,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/F 2", pdfContent); // Bold flag = 2
@@ -301,7 +302,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/F 1", pdfContent); // Italic flag = 1
@@ -317,7 +318,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/F 3", pdfContent); // Bold + Italic = 2 + 1 = 3
@@ -333,7 +334,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/C [", pdfContent);
@@ -349,7 +350,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/Fit]", pdfContent);
@@ -365,7 +366,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/FitH", pdfContent);
@@ -381,7 +382,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/XYZ", pdfContent);
@@ -400,7 +401,7 @@ public class PdfBookmarkTests
 
         // Act
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("/Count -2", pdfContent); // Negative count = collapsed
@@ -414,7 +415,7 @@ public class PdfBookmarkTests
             .AddPage(p => p.AddText("No bookmarks here", 100, 700));
 
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.NotNull(pdfData);
@@ -433,7 +434,7 @@ public class PdfBookmarkTests
                     .AddChild("Level 3")));
 
         byte[] pdfData = builder.ToByteArray();
-        string pdfContent = System.Text.Encoding.ASCII.GetString(pdfData);
+        string pdfContent = Encoding.ASCII.GetString(pdfData);
 
         // Assert
         Assert.Contains("Level 1", pdfContent);

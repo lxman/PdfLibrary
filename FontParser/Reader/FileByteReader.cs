@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Buffers.Binary;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace FontParser.Reader
@@ -47,7 +48,7 @@ namespace FontParser.Reader
 
         public string ReadString(uint count)
         {
-            return System.Text.Encoding.UTF8.GetString(ReadBytes(count));
+            return Encoding.UTF8.GetString(ReadBytes(count));
         }
 
         public uint ReadUInt32()

@@ -102,7 +102,7 @@ public class SeparationColorTestDocument : ITestDocument
                 .Rectangle(leftMargin + 50, y - 30, 100, 40)
                 .Fill(PdfColor.FromSeparation("PMS300", 0.7))
                 .FillOpacity(0.5)
-                .Stroke(PdfColor.Black, 1);
+                .Stroke(PdfColor.Black);
 
             page.AddText("Opacity affects\nseparation color", leftMargin + 5, y - 85, "Helvetica", 8);
 

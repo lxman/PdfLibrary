@@ -36,6 +36,7 @@ using FontParser.Tables.Optional.Dsig;
 using FontParser.Tables.Optional.Hdmx;
 using FontParser.Tables.Proprietary.Aat.Bdat;
 using FontParser.Tables.Proprietary.Aat.Bloc;
+using FontParser.Tables.Proprietary.Aat.Feat;
 using FontParser.Tables.Proprietary.Aat.Kerx;
 using FontParser.Tables.Proprietary.Aat.Morx;
 using FontParser.Tables.Proprietary.Aat.Prop;
@@ -100,7 +101,7 @@ namespace FontParser
             typeof(SvgTable),
             typeof(BaseTable),
             typeof(MorxTable),
-            typeof(Tables.Proprietary.Aat.Feat.FeatTable),
+            typeof(FeatTable),
             typeof(HvarTable),
             typeof(MvarTable),
             typeof(StatTable),

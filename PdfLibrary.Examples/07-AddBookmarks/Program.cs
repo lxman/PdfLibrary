@@ -104,7 +104,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 160;
-        foreach (var line in introText)
+        foreach (string line in introText)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -147,7 +147,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 145;
-        foreach (var line in section11Text)
+        foreach (string line in section11Text)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -179,7 +179,7 @@ PdfDocumentBuilder.Create()
             "\u2022 Enable or disable features as needed"
         };
 
-        foreach (var line in section12Text)
+        foreach (string line in section12Text)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -225,7 +225,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 165;
-        foreach (var line in section21Text)
+        foreach (string line in section21Text)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -256,7 +256,7 @@ PdfDocumentBuilder.Create()
             "\u2022 Implement proper authentication and authorization"
         };
 
-        foreach (var line in section22Text)
+        foreach (string line in section22Text)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -302,7 +302,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 120;
-        foreach (var line in examplesText)
+        foreach (string line in examplesText)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -310,7 +310,7 @@ PdfDocumentBuilder.Create()
             }
             else
             {
-                var indent = line.StartsWith("  ") ? 90 : 72;
+                int indent = line.StartsWith("  ") ? 90 : 72;
                 p.AddText(line, indent, lineY)
                     .Font("Helvetica", 11);
                 lineY += 16;
@@ -346,7 +346,7 @@ PdfDocumentBuilder.Create()
         };
 
         double lineY = 120;
-        foreach (var line in appendixText)
+        foreach (string line in appendixText)
         {
             if (string.IsNullOrEmpty(line))
             {
@@ -354,8 +354,8 @@ PdfDocumentBuilder.Create()
             }
             else
             {
-                var font = line == "Additional Resources" ? "Helvetica-Bold" : "Helvetica";
-                var size = line == "Additional Resources" ? 14 : 11;
+                string font = line == "Additional Resources" ? "Helvetica-Bold" : "Helvetica";
+                int size = line == "Additional Resources" ? 14 : 11;
                 p.AddText(line, 72, lineY)
                     .Font(font, size);
                 lineY += 16;
@@ -365,7 +365,7 @@ PdfDocumentBuilder.Create()
 
     .Save(outputPath);
 
-Console.WriteLine($"  ✓ Document with bookmarks created successfully!\n");
+Console.WriteLine("  ✓ Document with bookmarks created successfully!\n");
 Console.WriteLine($"File: {outputPath}\n");
 Console.WriteLine("Bookmarks created:");
 Console.WriteLine("  • Introduction (bold, dark blue, FitPage)");
