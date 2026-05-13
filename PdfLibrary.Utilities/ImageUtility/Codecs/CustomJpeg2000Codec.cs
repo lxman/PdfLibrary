@@ -1,14 +1,14 @@
-using Compressors.Jpeg2000;
+using Jp2Codec;
 
 namespace ImageUtility.Codecs;
 
 /// <summary>
-/// Custom JPEG2000 decoder using the Compressors.Jpeg2000 library.
+/// Custom JPEG2000 decoder backed by the in-house Jp2Codec library.
 /// Supports .jp2 and .j2k files (decode only).
 /// </summary>
 public class CustomJpeg2000Codec : IImageCodec
 {
-    public string Name => "Custom JPEG2000 Decoder (Compressors.Jpeg2000)";
+    public string Name => "Custom JPEG2000 Decoder (Jp2Codec)";
     public string[] Extensions => [".jp2", ".j2k", ".jpx", ".jpf"];
     public bool CanDecode => true;
     public bool CanEncode => false; // Encoder not implemented yet
@@ -42,7 +42,7 @@ public class CustomJpeg2000Codec : IImageCodec
 
     public ImageData Decode(byte[] data)
     {
-        // Decode using Compressors.Jpeg2000
+        // Decode using Jp2Codec
         byte[] pixelData = Jpeg2000.Decompress(data, out int width, out int height, out int components);
 
         // Determine pixel format based on component count

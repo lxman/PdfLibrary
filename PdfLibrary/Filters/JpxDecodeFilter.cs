@@ -1,4 +1,4 @@
-using Compressors.Jpeg2000;
+using Jp2Codec;
 using Logging;
 
 namespace PdfLibrary.Filters;

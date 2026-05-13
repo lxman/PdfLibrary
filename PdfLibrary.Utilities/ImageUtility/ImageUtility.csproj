@@ -13,7 +13,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\Compressors\Compressors.Jpeg2000\Compressors.Jpeg2000.csproj" />
+      <ProjectReference Include="..\..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" />
       <ProjectReference Include="..\..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
     </ItemGroup>
 

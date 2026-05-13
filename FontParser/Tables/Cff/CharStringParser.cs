@@ -273,17 +273,20 @@ namespace FontParser.Tables.Cff
                                 break;
 
                             case 0x1D:
-                                SubroutineNester.Push(stackIndex, _bytes);
                                 index = Convert.ToInt32(_stack.Pop()) + _globalOffset;
-                                _bytes = _globalSubroutines[index];
-                                if (_bytes.Count > 0)
+                                if (index >= 0 && index < _globalSubroutines.Count)
                                 {
-                                    output.AppendLine(string.Join(Environment.NewLine, Parse()));
-                                }
+                                    SubroutineNester.Push(stackIndex, _bytes);
+                                    _bytes = _globalSubroutines[index];
+                                    if (_bytes.Count > 0)
+                                    {
+                                        output.AppendLine(string.Join(Environment.NewLine, Parse()));
+                                    }
 
-                                (int index, List<byte> bytes) gState = SubroutineNester.Pop();
-                                stackIndex = gState.index;
-                                _bytes = gState.bytes;
+                                    (int index, List<byte> bytes) gState = SubroutineNester.Pop();
+                                    stackIndex = gState.index;
+                                    _bytes = gState.bytes;
+                                }
                                 break;
 
                             case 0x1E:
@@ -714,17 +717,20 @@ namespace FontParser.Tables.Cff
                                 break;
 
                             case 0x1D: // callgsubr
-                                SubroutineNester.Push(stackIndex, _bytes);
                                 index = Convert.ToInt32(_stack.Pop()) + _globalOffset;
-                                _bytes = _globalSubroutines[index];
-                                if (_bytes.Count > 0)
+                                if (index >= 0 && index < _globalSubroutines.Count)
                                 {
-                                    GlyphOutline subOutline = ParseToOutline();
-                                    outline.Commands.AddRange(subOutline.Commands);
+                                    SubroutineNester.Push(stackIndex, _bytes);
+                                    _bytes = _globalSubroutines[index];
+                                    if (_bytes.Count > 0)
+                                    {
+                                        GlyphOutline subOutline = ParseToOutline();
+                                        outline.Commands.AddRange(subOutline.Commands);
+                                    }
+                                    (int index, List<byte> bytes) gState = SubroutineNester.Pop();
+                                    stackIndex = gState.index;
+                                    _bytes = gState.bytes;
                                 }
-                                (int index, List<byte> bytes) gState = SubroutineNester.Pop();
-                                stackIndex = gState.index;
-                                _bytes = gState.bytes;
                                 break;
 
                             case 0x1E: // vhcurveto

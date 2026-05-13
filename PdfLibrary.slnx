@@ -1,7 +1,4 @@
 <Solution>
-  <Folder Name="/Compressors/">
-    <Project Path="Compressors/Compressors.Jpeg2000/Compressors.Jpeg2000.csproj" />
-  </Folder>
   <Folder Name="/Docs/">
     <File Path="CHANGELOG.md" />
     <File Path="Docs/Architecture.md" />
@@ -33,6 +30,8 @@
     <Project Path="ImageLibrary/ImageLibrary.IntegrationTests/ImageLibrary.IntegrationTests.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder/Jbig2Decoder.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj" />
+    <Project Path="ImageLibrary/Jp2Codec/Jp2Codec.csproj" />
+    <Project Path="ImageLibrary/Jp2Codec.Tests/Jp2Codec.Tests.csproj" />
     <Project Path="ImageLibrary/JpegCodec.Tests/JpegCodec.Tests.csproj" />
     <Project Path="ImageLibrary/JpegCodec/JpegCodec.csproj" />
     <Project Path="ImageLibrary/LzwCodec.Tests/LzwCodec.Tests.csproj" />

@@ -9,7 +9,7 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary.Rendering.SkiaSharp</PackageId>
         <Title>PdfLibrary.Rendering.SkiaSharp</Title>
-        <Version>0.2.0-beta</Version>
+        <Version>0.3.0-beta</Version>
         <Authors>Jordan</Authors>
         <Description>SkiaSharp rendering backend for PdfLibrary. Provides high-quality PDF page rendering to images using SkiaSharp.</Description>
         <PackageTags>pdf;pdf-renderer;skiasharp;rendering</PackageTags>
@@ -31,7 +31,7 @@
       <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
       <ProjectReference Include="..\Logging\Logging.csproj" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" />
-      <ProjectReference Include="..\Compressors\Compressors.Jpeg2000\Compressors.Jpeg2000.csproj" />
+      <ProjectReference Include="..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" />
     </ItemGroup>
 
     <ItemGroup>

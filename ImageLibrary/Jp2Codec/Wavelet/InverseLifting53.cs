@@ -1,0 +1,120 @@
+using System;
+
+namespace Jp2Codec.Wavelet
+{
+    /// <summary>
+    /// 1D inverse 5/3 reversible lifting filter per ISO/IEC 15444-1 F.3.8.1
+    /// (1D_FILTR5-3R). Operates on an already-interleaved signal Y produced
+    /// by <see cref="InverseInterleave"/> and produces the reconstructed
+    /// integer signal X in-place.
+    ///
+    /// <para>
+    /// The two lifting steps from the spec are:
+    /// </para>
+    /// <list type="number">
+    /// <item>
+    /// <description>
+    /// <c>F-5: X(2n) = Y(2n) − ⌊(Y(2n−1) + Y(2n+1) + 2) / 4⌋</c>
+    /// </description>
+    /// </item>
+    /// <item>
+    /// <description>
+    /// <c>F-6: X(2n+1) = Y(2n+1) + ⌊(X(2n) + X(2n+2)) / 2⌋</c>
+    /// </description>
+    /// </item>
+    /// </list>
+    ///
+    /// <para>
+    /// Boundary access uses whole-sample symmetric extension (1D_EXTR,
+    /// F.3.7). The padding is refreshed between the two steps so that the
+    /// neighbor accesses in F-6 see the reflected post-update X values.
+    /// </para>
+    /// </summary>
+    internal static class InverseLifting53
+    {
+        private const int Pad = 2;
+
+        /// <summary>
+        /// Inverse 1D 5/3 filter. <paramref name="startingParity"/> is
+        /// <c>i0 mod 2</c> — 0 if the first sample is canvas-even
+        /// (low-pass), 1 if canvas-odd (high-pass). Returns a freshly
+        /// allocated <c>int[]</c> of length <paramref name="y"/>.Length.
+        /// </summary>
+        public static int[] Apply(int[] y, int startingParity)
+        {
+            if (y is null) throw new ArgumentNullException(nameof(y));
+            if (startingParity != 0 && startingParity != 1)
+                throw new ArgumentOutOfRangeException(
+                    nameof(startingParity), startingParity, "Must be 0 or 1.");
+
+            int length = y.Length;
+
+            // Empty input — empty output. Can happen on edge tiles where a
+            // subband at a deep decomposition level falls entirely outside
+            // the tile's reference-grid slice (cf. conformance b1, b3).
+            if (length == 0) return Array.Empty<int>();
+
+            // F.3.6 single-sample case. For canvas-odd i0 the single high-pass
+            // sample is reconstructed as floor(Y/2); reversibility requires
+            // this to be exact, which the forward path guarantees by emitting
+            // 2·X.
+            if (length == 1)
+            {
+                int v = y[0];
+                int x = startingParity == 0 ? v : ArithmeticShiftRight(v, 1);
+                return new[] { x };
+            }
+
+            int bufLen = length + 2 * Pad;
+            var buf = new int[bufLen];
+            Array.Copy(y, 0, buf, Pad, length);
+            SymmetricExtension.Fill(buf, Pad, length);
+
+            // F-5: update step on canvas-even positions.
+            // A canvas-even position has local index k where (k + startingParity)
+            // is even. Iterate over in-canvas local indices only; the padding
+            // already holds the reflected Y values that F-5 may need.
+            int firstEvenLocal = (startingParity == 0) ? 0 : 1;
+            for (int local = firstEvenLocal; local < length; local += 2)
+            {
+                int bufIdx = local + Pad;
+                int sum = buf[bufIdx - 1] + buf[bufIdx + 1] + 2;
+                buf[bufIdx] -= FloorDiv4(sum);
+            }
+
+            // Refresh padding so the canvas-even slots reflect the updated X.
+            // (Canvas-odd slots will still hold Y in the padding, which is
+            // fine since F-6 reads only canvas-even neighbors.)
+            SymmetricExtension.Fill(buf, Pad, length);
+
+            // F-6: predict step on canvas-odd positions.
+            int firstOddLocal = (startingParity == 0) ? 1 : 0;
+            for (int local = firstOddLocal; local < length; local += 2)
+            {
+                int bufIdx = local + Pad;
+                int sum = buf[bufIdx - 1] + buf[bufIdx + 1];
+                buf[bufIdx] += FloorDiv2(sum);
+            }
+
+            var result = new int[length];
+            Array.Copy(buf, Pad, result, 0, length);
+            return result;
+        }
+
+        private static int FloorDiv4(int a)
+        {
+            // Arithmetic shift right by 2 gives floor(a / 4) for both signs.
+            return a >> 2;
+        }
+
+        private static int FloorDiv2(int a)
+        {
+            return a >> 1;
+        }
+
+        private static int ArithmeticShiftRight(int value, int shift)
+        {
+            return value >> shift;
+        }
+    }
+}

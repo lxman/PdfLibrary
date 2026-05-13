@@ -2,7 +2,7 @@ using System.IO.Compression;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
-using Compressors.Jpeg2000;
+using Jp2Codec;
 using PdfLibrary.Builder.Annotation;
 using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Builder.FormField;

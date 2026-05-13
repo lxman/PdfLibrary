@@ -1,5 +1,5 @@
 using System.Runtime.InteropServices;
-using Compressors.Jpeg2000;
+using Jp2Codec;
 using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Core;

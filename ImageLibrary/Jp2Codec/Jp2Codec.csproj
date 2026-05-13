@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Jp2Codec</AssemblyName>
+    <RootNamespace>Jp2Codec</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jp2Codec.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Optional color-management dependency. Used by Jp2Codec.Color.SrgbRenderer
+         to apply embedded ICC profiles and sYCC → sRGB conversion. The core
+         codestream decoder (Jp2StreamDecoder) does not reference Unicolour. -->
+    <PackageReference Include="Wacton.Unicolour" Version="7.0.0" />
+  </ItemGroup>
+
+</Project>

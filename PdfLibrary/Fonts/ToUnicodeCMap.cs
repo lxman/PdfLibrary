@@ -20,6 +20,17 @@ public partial class ToUnicodeCMap
         return _charToUnicode.GetValueOrDefault(charCode);
     }
 
+    // Real-world ToUnicode CMaps sometimes map glyphs to codepoints in the
+    // UTF-16 surrogate range (U+D800..U+DFFF) or out-of-range values. These
+    // are invalid for char.ConvertFromUtf32 and throw. PDF.js / poppler drop
+    // such entries silently; we do the same.
+    private static string SafeConvertFromUtf32(int codePoint)
+    {
+        if ((uint)codePoint > 0x10FFFF) return string.Empty;
+        if ((codePoint & 0xF800) == 0xD800) return string.Empty;
+        return char.ConvertFromUtf32(codePoint);
+    }
+
     /// <summary>
     /// Parses a ToUnicode CMap from stream data
     /// </summary>
@@ -95,7 +106,9 @@ public partial class ToUnicodeCMap
                 for (int charCode = start; charCode <= end; charCode++)
                 {
                     int unicodeValue = unicodeStart + (charCode - start);
-                    cmap._charToUnicode[charCode] = char.ConvertFromUtf32(unicodeValue);
+                    string unicode = SafeConvertFromUtf32(unicodeValue);
+                    if (unicode.Length == 0) continue;
+                    cmap._charToUnicode[charCode] = unicode;
                 }
             }
 
@@ -179,19 +192,19 @@ public partial class ToUnicodeCMap
                     if (high == 0x0000)
                     {
                         // Just use the low part as a single character
-                        return char.ConvertFromUtf32(low);
+                        return SafeConvertFromUtf32(low);
                     }
 
                     // Try the entire 8-digit value as a single code point (only if in valid Unicode range)
                     if (int.TryParse(hex, NumberStyles.HexNumber, null, out int codePoint) &&
                         codePoint is >= 0 and <= 0x10FFFF)
                     {
-                        return char.ConvertFromUtf32(codePoint);
+                        return SafeConvertFromUtf32(codePoint);
                     }
 
                     // If none of the above worked, treat as two separate 4-digit characters
                     // This handles cases like "00660069" which is "fi" (U+0066 U+0069)
-                    return char.ConvertFromUtf32(high) + char.ConvertFromUtf32(low);
+                    return SafeConvertFromUtf32(high) + SafeConvertFromUtf32(low);
                 }
                 break;
             }
@@ -200,7 +213,7 @@ public partial class ToUnicodeCMap
                 // Single 16-bit value
                 if (int.TryParse(hex, NumberStyles.HexNumber, null, out int value))
                 {
-                    return char.ConvertFromUtf32(value);
+                    return SafeConvertFromUtf32(value);
                 }
 
                 break;
@@ -215,7 +228,7 @@ public partial class ToUnicodeCMap
                     {
                         if (int.TryParse(hex.AsSpan(i, 4), NumberStyles.HexNumber, null, out int value))
                         {
-                            sb.Append(char.ConvertFromUtf32(value));
+                            sb.Append(SafeConvertFromUtf32(value));
                         }
                     }
                     return sb.ToString();
