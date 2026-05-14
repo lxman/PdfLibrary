@@ -360,49 +360,58 @@ internal class PdfParser(PdfLexer lexer)
         // Skip EOL after a 'stream' keyword (ISO 32000-1 section 7.3.8.1)
         _lexer.SkipEOL();
 
-        // Read the declared length plus a probe window so we can locate
-        // endstream even when /Length is wrong.  ReadBytesAvailable caps at EOF.
-        const int probeExtra = 64;
-        byte[] raw = _lexer.ReadBytesAvailable(length + probeExtra);
+        // Read stream data at declared length
+        byte[] data = _lexer.ReadBytes(length);
 
-        // Search for "endstream" starting near the declared length
+        // Skip EOL before endstream (ISO 32000-1 section 7.3.8.1)
+        _lexer.SkipEOL();
+
+        // Try normal endstream token. If /Length is correct this succeeds immediately.
+        PdfToken peek = PeekToken();
+        if (peek.Type == PdfTokenType.EndStream)
+        {
+            NextToken();
+            return new PdfStream(dictionary, data);
+        }
+
+        // /Length is wrong (legacy/corrupt PDF). Read extra raw bytes to find
+        // the real endstream keyword. We do NOT consume the peeked token — it
+        // was read from the lexer's buffer and the buffer still holds the bytes
+        // after it. Instead, drain raw bytes and search for the keyword.
+        _tokenBuffer.Clear();
+        const int probeExtra = 64;
+        byte[] tail = _lexer.ReadBytesAvailable(probeExtra);
+
         ReadOnlySpan<byte> marker = "endstream"u8;
         int endstreamPos = -1;
-        int searchFrom = Math.Max(0, length - 2);
-        for (int i = searchFrom; i <= raw.Length - marker.Length; i++)
+        for (int i = 0; i <= tail.Length - marker.Length; i++)
         {
-            if (raw.AsSpan(i, marker.Length).SequenceEqual(marker))
+            if (tail.AsSpan(i, marker.Length).SequenceEqual(marker))
             {
                 endstreamPos = i;
                 break;
             }
         }
 
-        byte[] data;
-        if (endstreamPos >= 0)
-        {
-            // Found endstream — trim trailing EOL before it
-            int dataEnd = endstreamPos;
-            if (dataEnd > 0 && raw[dataEnd - 1] == 0x0A) dataEnd--;
-            if (dataEnd > 0 && raw[dataEnd - 1] == 0x0D) dataEnd--;
-            data = raw.AsSpan(0, dataEnd).ToArray();
+        if (endstreamPos < 0)
+            throw new PdfParseException(
+                $"Could not locate endstream within {length + probeExtra} bytes of stream data start");
 
-            // Push excess bytes back into the lexer
-            int consumed = endstreamPos + marker.Length;
-            int overRead = raw.Length - consumed;
-            if (overRead > 0)
-                _lexer.UnreadBytes(overRead);
-        }
-        else
+        int extraEnd = endstreamPos;
+        if (extraEnd > 0 && tail[extraEnd - 1] == 0x0A) extraEnd--;
+        if (extraEnd > 0 && tail[extraEnd - 1] == 0x0D) extraEnd--;
+
+        if (extraEnd > 0)
         {
-            // endstream not in probe range — use declared length and fall back to tokenizer
-            data = raw.AsSpan(0, Math.Min(length, raw.Length)).ToArray();
-            int overRead = raw.Length - data.Length;
-            if (overRead > 0)
-                _lexer.UnreadBytes(overRead);
-            _lexer.SkipEOL();
-            ExpectToken(PdfTokenType.EndStream);
+            var corrected = new byte[data.Length + extraEnd];
+            data.CopyTo(corrected, 0);
+            Array.Copy(tail, 0, corrected, data.Length, extraEnd);
+            data = corrected;
         }
+
+        int overRead = tail.Length - (endstreamPos + marker.Length);
+        if (overRead > 0)
+            _lexer.UnreadBytes(overRead);
 
         return new PdfStream(dictionary, data);
     }
