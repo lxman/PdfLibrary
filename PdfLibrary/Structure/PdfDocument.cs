@@ -677,9 +677,52 @@ public class PdfDocument : IDisposable
         stream.Position = 0;
         _ = stream.Read(data, 0, data.Length);
 
-        // Scan for "N 0 obj" patterns
+        // Build a set of stream-data ranges to skip (avoids false "N 0 obj" inside encoded data)
+        var skipRanges = new List<(int start, int end)>();
+        ReadOnlySpan<byte> streamKw = "stream"u8;
+        ReadOnlySpan<byte> endstreamKw = "endstream"u8;
+        for (var s = 0; s < data.Length - endstreamKw.Length; s++)
+        {
+            if (data.AsSpan(s, streamKw.Length).SequenceEqual(streamKw)
+                && (s + streamKw.Length < data.Length)
+                && (data[s + streamKw.Length] == 0x0A || data[s + streamKw.Length] == 0x0D))
+            {
+                int dataStart = s + streamKw.Length;
+                if (data[dataStart] == 0x0D && dataStart + 1 < data.Length && data[dataStart + 1] == 0x0A)
+                    dataStart += 2;
+                else
+                    dataStart++;
+
+                int esPos = -1;
+                for (int e = dataStart; e <= data.Length - endstreamKw.Length; e++)
+                {
+                    if (data.AsSpan(e, endstreamKw.Length).SequenceEqual(endstreamKw))
+                    {
+                        esPos = e;
+                        break;
+                    }
+                }
+                if (esPos > 0)
+                {
+                    skipRanges.Add((dataStart, esPos));
+                    s = esPos + endstreamKw.Length;
+                }
+            }
+        }
+
+        // Scan for "N 0 obj" patterns, skipping stream data ranges
+        var skipIndex = 0;
         for (var i = 0; i < data.Length - 10; i++)
         {
+            // Skip past stream data
+            while (skipIndex < skipRanges.Count && i >= skipRanges[skipIndex].end)
+                skipIndex++;
+            if (skipIndex < skipRanges.Count && i >= skipRanges[skipIndex].start && i < skipRanges[skipIndex].end)
+            {
+                i = skipRanges[skipIndex].end;
+                continue;
+            }
+
             if (!char.IsDigit((char)data[i])) continue;
 
             int numStart = i;
@@ -693,7 +736,6 @@ public class PdfDocument : IDisposable
             if (i + 2 >= data.Length) continue;
             if (data[i] != (byte)'o' || data[i + 1] != (byte)'b' || data[i + 2] != (byte)'j') continue;
 
-            // Ensure the marker starts at a line boundary (preceded by whitespace or start of file)
             if (numStart > 0)
             {
                 byte prev = data[numStart - 1];
