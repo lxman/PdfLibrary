@@ -397,18 +397,9 @@ internal class PdfParser(PdfLexer lexer)
             throw new PdfParseException(
                 $"Could not locate endstream within {length + probeExtra} bytes of stream data start");
 
-        int extraEnd = endstreamPos;
-        if (extraEnd > 0 && tail[extraEnd - 1] == 0x0A) extraEnd--;
-        if (extraEnd > 0 && tail[extraEnd - 1] == 0x0D) extraEnd--;
-
-        if (extraEnd > 0)
-        {
-            var corrected = new byte[data.Length + extraEnd];
-            data.CopyTo(corrected, 0);
-            Array.Copy(tail, 0, corrected, data.Length, extraEnd);
-            data = corrected;
-        }
-
+        // Don't extend data with the bytes between declared length and endstream —
+        // they're typically trailing junk from a wrong /Length, not missing data.
+        // The declared length is the best guess for the actual content.
         int overRead = tail.Length - (endstreamPos + marker.Length);
         if (overRead > 0)
             _lexer.UnreadBytes(overRead);
