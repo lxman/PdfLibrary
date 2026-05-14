@@ -367,7 +367,7 @@ internal class PdfParser(PdfLexer lexer)
         // Read declared length + probe window in one shot to avoid tokenizer
         // interference. For valid PDFs, endstream appears right after the data;
         // for corrupt PDFs (wrong /Length), we search forward.
-        const int probeExtra = 256;
+        const int probeExtra = 512;
         byte[] raw = _lexer.ReadBytesAvailable(length + probeExtra);
 
         ReadOnlySpan<byte> marker = "endstream"u8;
