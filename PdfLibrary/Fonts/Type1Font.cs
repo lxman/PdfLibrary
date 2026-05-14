@@ -1289,11 +1289,9 @@ internal class Type1Font : PdfFont
 
     private static PdfFontEncoding GetStandardEncoding(string baseFontName)
     {
-        // Standard 14 fonts use specific encodings
-        if (!IsStandard14Font(baseFontName)) return PdfFontEncoding.GetStandardEncoding("StandardEncoding");
         if (baseFontName.Contains("Symbol") || baseFontName.Contains("ZapfDingbats"))
             return PdfFontEncoding.GetStandardEncoding("SymbolEncoding");
-        return PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+        return PdfFontEncoding.GetStandardEncoding("StandardEncoding");
     }
 
     private static double GetStandardWidth(string baseFontName)

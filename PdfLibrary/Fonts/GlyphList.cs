@@ -239,8 +239,11 @@ public static class GlyphList
             ["ydieresis"] = "ÿ",
 
             // Ligatures
-            ["fi"] = "\uFB01",
-            ["fl"] = "\uFB02",
+            ["fi"] = "\ufb01",
+            ["fl"] = "\ufb02",
+            ["ff"] = "\ufb00",
+            ["ffi"] = "\ufb03",
+            ["ffl"] = "\ufb04",
 
             // Punctuation
             ["endash"] = "\u2013",

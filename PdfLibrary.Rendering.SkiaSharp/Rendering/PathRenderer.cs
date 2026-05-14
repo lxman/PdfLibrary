@@ -88,7 +88,8 @@ internal class PathRenderer
             if (state.DashPattern is not null && state.DashPattern.Length > 0)
             {
                 float[] dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
-                // Ensure dash intervals are at least 0.5 pixels
+                if (dashIntervals.Length % 2 != 0)
+                    dashIntervals = [.. dashIntervals, .. dashIntervals];
                 for (var i = 0; i < dashIntervals.Length; i++)
                     if (dashIntervals[i] < 0.5f) dashIntervals[i] = 0.5f;
                 paint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));
@@ -367,7 +368,8 @@ internal class PathRenderer
                 if (state.DashPattern is not null && state.DashPattern.Length > 0)
                 {
                     float[] dashIntervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
-                    // Ensure dash intervals are at least 0.5 pixels
+                    if (dashIntervals.Length % 2 != 0)
+                        dashIntervals = [.. dashIntervals, .. dashIntervals];
                     for (var i = 0; i < dashIntervals.Length; i++)
                         if (dashIntervals[i] < 0.5f) dashIntervals[i] = 0.5f;
                     strokePaint.PathEffect = SKPathEffect.CreateDash(dashIntervals, (float)(state.DashPhase * ctmScale));

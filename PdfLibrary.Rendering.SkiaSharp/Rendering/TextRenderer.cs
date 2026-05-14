@@ -400,7 +400,7 @@ internal class TextRenderer
                 // Use PDF-specified width for positioning (in glyph space units, typically 1/1000 em)
                 // This maintains correct spacing as specified by the PDF regardless of fallback font metrics
                 float pdfWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
-                var ch = text[i].ToString();
+                var ch = DecomposeLigature(text[i]);
 
                 // DIAGNOSTIC: Measure actual SkiaSharp glyph width vs PDF width
                 float actualWidth = fallbackFont.MeasureText(ch);
@@ -963,6 +963,16 @@ internal class TextRenderer
             Persp2 = 1
         };
     }
+
+    private static string DecomposeLigature(char c) => c switch
+    {
+        'ﬀ' => "ff",
+        'ﬁ' => "fi",
+        'ﬂ' => "fl",
+        'ﬃ' => "ffi",
+        'ﬄ' => "ffl",
+        _ => c.ToString()
+    };
 
     private void AdvancePosition(ref double currentX, double glyphWidth, PdfGraphicsState state)
     {

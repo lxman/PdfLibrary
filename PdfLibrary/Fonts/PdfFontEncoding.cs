@@ -206,14 +206,17 @@ internal class PdfFontEncoding
     /// </summary>
     public static PdfFontEncoding FromDictionary(PdfDictionary dict, PdfFontEncoding? baseEncoding = null)
     {
-        // Get base encoding
-        var baseName = "StandardEncoding";
+        // Per ISO 32000-1 §9.6.6.1: when BaseEncoding is present, use it.
+        // When absent, use StandardEncoding (the font's implicit built-in encoding).
+        PdfFontEncoding encoding;
         if (dict.TryGetValue(new PdfName("BaseEncoding"), out PdfObject baseObj) && baseObj is PdfName basePdfName)
         {
-            baseName = basePdfName.Value;
+            encoding = GetStandardEncoding(basePdfName.Value);
         }
-
-        PdfFontEncoding encoding = baseEncoding ?? GetStandardEncoding(baseName);
+        else
+        {
+            encoding = GetStandardEncoding("StandardEncoding");
+        }
 
         // Apply differences
         if (dict.TryGetValue(new PdfName("Differences"), out PdfObject diffObj) && diffObj is PdfArray differences)
