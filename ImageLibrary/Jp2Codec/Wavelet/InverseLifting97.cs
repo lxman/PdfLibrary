@@ -30,38 +30,49 @@ namespace Jp2Codec.Wavelet
                     nameof(startingParity), startingParity, "Must be 0 or 1.");
 
             int length = y.Length;
-
-            // Empty input — empty output (edge-tile subband entirely outside
-            // the tile slice).
             if (length == 0) return Array.Empty<float>();
 
-            // F.3.6 length-1 case applies to both 5/3 and 9/7. The forward
-            // emits 2·X for a single odd-start sample, so the inverse halves.
             if (length == 1)
             {
                 float v = y[0];
                 return new[] { startingParity == 0 ? v : v * 0.5f };
             }
 
-            int bufLen = length + 2 * Pad;
-            var buf = new float[bufLen];
-            Array.Copy(y, 0, buf, Pad, length);
+            var result = new float[length];
+            var buf = new float[length + 2 * Pad];
+            ApplyCore(y, length, startingParity, buf, result);
+            return result;
+        }
+
+        public static void ApplyInPlace(float[] data, int length, int startingParity, float[] workBuf)
+        {
+            if (length <= 0) return;
+
+            if (length == 1)
+            {
+                if (startingParity != 0) data[0] *= 0.5f;
+                return;
+            }
+
+            ApplyCore(data, length, startingParity, workBuf, data);
+        }
+
+        private static void ApplyCore(float[] input, int length, int startingParity, float[] buf, float[] result)
+        {
+            Array.Copy(input, 0, buf, Pad, length);
             SymmetricExtension.Fill(buf, Pad, length);
 
             int firstEven = (startingParity == 0) ? 0 : 1;
             int firstOdd = (startingParity == 0) ? 1 : 0;
 
-            // STEP 1 — scale canvas-even by K.
             for (int local = firstEven; local < length; local += 2)
                 buf[local + Pad] *= WaveletConstants.K;
 
-            // STEP 2 — scale canvas-odd by 1/K.
             for (int local = firstOdd; local < length; local += 2)
                 buf[local + Pad] *= WaveletConstants.InvK;
 
             SymmetricExtension.Fill(buf, Pad, length);
 
-            // STEP 3 — inverse U1 on canvas-even.
             for (int local = firstEven; local < length; local += 2)
             {
                 int b = local + Pad;
@@ -70,7 +81,6 @@ namespace Jp2Codec.Wavelet
 
             SymmetricExtension.Fill(buf, Pad, length);
 
-            // STEP 4 — inverse P1 on canvas-odd.
             for (int local = firstOdd; local < length; local += 2)
             {
                 int b = local + Pad;
@@ -79,7 +89,6 @@ namespace Jp2Codec.Wavelet
 
             SymmetricExtension.Fill(buf, Pad, length);
 
-            // STEP 5 — inverse U0 on canvas-even.
             for (int local = firstEven; local < length; local += 2)
             {
                 int b = local + Pad;
@@ -88,16 +97,13 @@ namespace Jp2Codec.Wavelet
 
             SymmetricExtension.Fill(buf, Pad, length);
 
-            // STEP 6 — inverse P0 on canvas-odd.
             for (int local = firstOdd; local < length; local += 2)
             {
                 int b = local + Pad;
                 buf[b] -= WaveletConstants.Alpha * (buf[b - 1] + buf[b + 1]);
             }
 
-            var result = new float[length];
             Array.Copy(buf, Pad, result, 0, length);
-            return result;
         }
     }
 }

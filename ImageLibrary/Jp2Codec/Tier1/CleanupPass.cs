@@ -45,6 +45,10 @@ namespace Jp2Codec.Tier1
             int width = state.Width;
             int paddedHeight = state.PaddedHeight;
             int actualHeight = state.Height;
+            byte[] flags = state._flags;
+            int[] magnitudes = state._magnitudes;
+            int stride = state._stride;
+            int magnitudeBit = 1 << bitPlane;
 
             for (var stripeTop = 0; stripeTop < paddedHeight; stripeTop += 4)
             {
@@ -55,7 +59,7 @@ namespace Jp2Codec.Tier1
                 {
                     int processStartY = stripeTop;
 
-                    if (stripeHeight == 4 && IsRunLengthEligible(state, x, stripeTop, vsc))
+                    if (stripeHeight == 4 && IsRunLengthEligibleFast(flags, state.RowBase(stripeTop) + x, stride, vsc))
                     {
                         int rlBit = mq.Decode(ref contexts[Jp2MqContextSet.RunLength]);
                         if (rlBit == 0) continue;
@@ -65,60 +69,73 @@ namespace Jp2Codec.Tier1
                         int k = (high << 1) | low;
 
                         int firstSigY = stripeTop + k;
-                        DecodeNewSignificance(state, mq, contexts, x, firstSigY, bitPlane, vsc);
+                        int firstSigIdx = state.RowBase(firstSigY) + x;
+                        DecodeNewSignificanceFast(flags, magnitudes, stride, mq, contexts,
+                            firstSigIdx, firstSigY, magnitudeBit, vsc);
                         processStartY = firstSigY + 1;
                     }
 
                     for (var y = processStartY; y < stripeBottom; y++)
                     {
-                        if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
-                        if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
+                        int idx = state.RowBase(y) + x;
+                        byte f = flags[idx];
+                        if ((f & Tier1State.SignificanceFlag) != 0) continue;
+                        if ((f & Tier1State.VisitedFlag) != 0) continue;
 
                         bool maskSouth = vsc && (y % 4 == 3);
-                        byte neighbourhood = state.GetSignificanceNeighbourhood(x, y, maskSouth);
+                        byte neighbourhood = maskSouth
+                            ? Tier1State.GetNeighbourhoodFastMaskSouth(flags, idx, stride)
+                            : Tier1State.GetNeighbourhoodFast(flags, idx, stride);
                         int zcContext = Tier1Contexts.ZeroCoding(orientation, neighbourhood);
                         int sigBit = mq.Decode(ref contexts[zcContext]);
                         if (sigBit == 1)
-                            DecodeNewSignificance(state, mq, contexts, x, y, bitPlane, vsc);
+                            DecodeNewSignificanceFast(flags, magnitudes, stride, mq, contexts,
+                                idx, y, magnitudeBit, vsc);
                     }
                 }
             }
         }
 
-        private static bool IsRunLengthEligible(Tier1State state, int x, int stripeTop, bool vsc)
+        private static bool IsRunLengthEligibleFast(byte[] flags, int idx0, int stride, bool vsc)
         {
-            for (var y = stripeTop; y < stripeTop + 4; y++)
+            int idx = idx0;
+            for (var row = 0; row < 4; row++)
             {
-                if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) return false;
-                if (state.HasFlag(x, y, Tier1State.VisitedFlag)) return false;
-                bool maskSouth = vsc && (y % 4 == 3);
-                if (state.GetSignificanceNeighbourhood(x, y, maskSouth) != 0) return false;
+                byte f = flags[idx];
+                if ((f & (Tier1State.SignificanceFlag | Tier1State.VisitedFlag)) != 0) return false;
+                bool maskSouth = vsc && (row == 3);
+                byte neighbourhood = maskSouth
+                    ? Tier1State.GetNeighbourhoodFastMaskSouth(flags, idx, stride)
+                    : Tier1State.GetNeighbourhoodFast(flags, idx, stride);
+                if (neighbourhood != 0) return false;
+                idx += stride;
             }
             return true;
         }
 
-        private static void DecodeNewSignificance(
-            Tier1State state, Jp2MqDecoder mq, byte[] contexts,
-            int x, int y, int bitPlane, bool vsc)
+        private static void DecodeNewSignificanceFast(
+            byte[] flags, int[] magnitudes, int stride,
+            Jp2MqDecoder mq, byte[] contexts,
+            int idx, int y, int magnitudeBit, bool vsc)
         {
             bool maskSouth = vsc && (y % 4 == 3);
             int hContrib = Math.Sign(
-                state.GetSignContribution(x, y, NeighbourDirection.West) +
-                state.GetSignContribution(x, y, NeighbourDirection.East));
+                Tier1State.GetSignContributionFast(flags, idx - 1) +
+                Tier1State.GetSignContributionFast(flags, idx + 1));
             int southContrib = maskSouth
                 ? 0
-                : state.GetSignContribution(x, y, NeighbourDirection.South);
+                : Tier1State.GetSignContributionFast(flags, idx + stride);
             int vContrib = Math.Sign(
-                state.GetSignContribution(x, y, NeighbourDirection.North) +
+                Tier1State.GetSignContributionFast(flags, idx - stride) +
                 southContrib);
             (int scContext, int xorBit) =
                 Tier1Contexts.SignCoding(hContrib, vContrib);
             int decodedSignBit = mq.Decode(ref contexts[scContext]);
             int sign = decodedSignBit ^ xorBit;
 
-            state.SetFlag(x, y, Tier1State.SignificanceFlag);
-            if (sign == 1) state.SetFlag(x, y, Tier1State.SignFlag);
-            state.SetMagnitude(x, y, 1 << bitPlane);
+            flags[idx] |= Tier1State.SignificanceFlag;
+            if (sign == 1) flags[idx] |= Tier1State.SignFlag;
+            magnitudes[idx] = magnitudeBit;
         }
     }
 }

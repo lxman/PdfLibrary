@@ -23,6 +23,8 @@ namespace Jp2Codec.Tier1
             int width = state.Width;
             int paddedHeight = state.PaddedHeight;
             int actualHeight = state.Height;
+            byte[] flags = state._flags;
+            int[] magnitudes = state._magnitudes;
 
             for (var stripeTop = 0; stripeTop < paddedHeight; stripeTop += 4)
             {
@@ -31,14 +33,14 @@ namespace Jp2Codec.Tier1
                 {
                     for (var y = stripeTop; y < stripeBottom; y++)
                     {
-                        if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
-                        if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
+                        int idx = state.RowBase(y) + x;
+                        byte f = flags[idx];
+                        if ((f & Tier1State.SignificanceFlag) == 0) continue;
+                        if ((f & Tier1State.VisitedFlag) != 0) continue;
 
                         int bit = reader.ReadBit();
-                        int magnitude = state.GetMagnitude(x, y);
-                        magnitude |= bit << bitPlane;
-                        state.SetMagnitude(x, y, magnitude);
-                        state.SetFlag(x, y, Tier1State.RefinedFlag);
+                        magnitudes[idx] |= bit << bitPlane;
+                        flags[idx] = (byte)(f | Tier1State.RefinedFlag);
                     }
                 }
             }

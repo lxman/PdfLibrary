@@ -16,6 +16,31 @@ namespace Jp2Codec.Tier1
     /// </summary>
     internal static class MagnitudeRefinementPass
     {
+        private static int CountNeighboursFast(byte[] flags, int idx, int stride)
+        {
+            int count = 0;
+            if ((flags[idx - stride - 1] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx - stride    ] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx - stride + 1] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx - 1          ] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx + 1          ] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx + stride - 1] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx + stride    ] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx + stride + 1] & Tier1State.SignificanceFlag) != 0) count++;
+            return count;
+        }
+
+        private static int CountNeighboursFastMaskSouth(byte[] flags, int idx, int stride)
+        {
+            int count = 0;
+            if ((flags[idx - stride - 1] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx - stride    ] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx - stride + 1] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx - 1          ] & Tier1State.SignificanceFlag) != 0) count++;
+            if ((flags[idx + 1          ] & Tier1State.SignificanceFlag) != 0) count++;
+            return count;
+        }
+
         public static void Run(
             Tier1State state,
             Jp2MqDecoder mq,
@@ -36,6 +61,9 @@ namespace Jp2Codec.Tier1
             int width = state.Width;
             int paddedHeight = state.PaddedHeight;
             int actualHeight = state.Height;
+            byte[] flags = state._flags;
+            int[] magnitudes = state._magnitudes;
+            int stride = state._stride;
 
             for (var stripeTop = 0; stripeTop < paddedHeight; stripeTop += 4)
             {
@@ -44,20 +72,31 @@ namespace Jp2Codec.Tier1
                 {
                     for (var y = stripeTop; y < stripeBottom; y++)
                     {
-                        if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
-                        if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
+                        int idx = state.RowBase(y) + x;
+                        byte f = flags[idx];
+                        if ((f & Tier1State.SignificanceFlag) == 0) continue;
+                        if ((f & Tier1State.VisitedFlag) != 0) continue;
 
-                        bool alreadyRefined = state.HasFlag(x, y, Tier1State.RefinedFlag);
-                        bool maskSouth = vsc && (y % 4 == 3);
-                        int neighbourCount = state.CountSignificantNeighbours(x, y, maskSouth);
+                        bool alreadyRefined = (f & Tier1State.RefinedFlag) != 0;
+                        int neighbourCount;
+                        if (alreadyRefined)
+                        {
+                            neighbourCount = 0;
+                        }
+                        else
+                        {
+                            bool maskSouth = vsc && (y % 4 == 3);
+                            neighbourCount = maskSouth
+                                ? CountNeighboursFastMaskSouth(flags, idx, stride)
+                                : CountNeighboursFast(flags, idx, stride);
+                        }
+
                         int mrContext =
                             Tier1Contexts.MagnitudeRefinement(alreadyRefined, neighbourCount);
                         int bit = mq.Decode(ref contexts[mrContext]);
 
-                        int magnitude = state.GetMagnitude(x, y);
-                        magnitude |= bit << bitPlane;
-                        state.SetMagnitude(x, y, magnitude);
-                        state.SetFlag(x, y, Tier1State.RefinedFlag);
+                        magnitudes[idx] |= bit << bitPlane;
+                        flags[idx] = (byte)(f | Tier1State.RefinedFlag);
                     }
                 }
             }

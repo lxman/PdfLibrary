@@ -48,16 +48,8 @@ namespace Jp2Codec.Wavelet
                     nameof(startingParity), startingParity, "Must be 0 or 1.");
 
             int length = y.Length;
-
-            // Empty input — empty output. Can happen on edge tiles where a
-            // subband at a deep decomposition level falls entirely outside
-            // the tile's reference-grid slice (cf. conformance b1, b3).
             if (length == 0) return Array.Empty<int>();
 
-            // F.3.6 single-sample case. For canvas-odd i0 the single high-pass
-            // sample is reconstructed as floor(Y/2); reversibility requires
-            // this to be exact, which the forward path guarantees by emitting
-            // 2·X.
             if (length == 1)
             {
                 int v = y[0];
@@ -65,15 +57,31 @@ namespace Jp2Codec.Wavelet
                 return new[] { x };
             }
 
+            var result = new int[length];
             int bufLen = length + 2 * Pad;
             var buf = new int[bufLen];
-            Array.Copy(y, 0, buf, Pad, length);
+            ApplyCore(y, length, startingParity, buf, result);
+            return result;
+        }
+
+        public static void ApplyInPlace(int[] data, int length, int startingParity, int[] workBuf)
+        {
+            if (length <= 0) return;
+
+            if (length == 1)
+            {
+                if (startingParity != 0) data[0] = ArithmeticShiftRight(data[0], 1);
+                return;
+            }
+
+            ApplyCore(data, length, startingParity, workBuf, data);
+        }
+
+        private static void ApplyCore(int[] input, int length, int startingParity, int[] buf, int[] result)
+        {
+            Array.Copy(input, 0, buf, Pad, length);
             SymmetricExtension.Fill(buf, Pad, length);
 
-            // F-5: update step on canvas-even positions.
-            // A canvas-even position has local index k where (k + startingParity)
-            // is even. Iterate over in-canvas local indices only; the padding
-            // already holds the reflected Y values that F-5 may need.
             int firstEvenLocal = (startingParity == 0) ? 0 : 1;
             for (int local = firstEvenLocal; local < length; local += 2)
             {
@@ -82,12 +90,8 @@ namespace Jp2Codec.Wavelet
                 buf[bufIdx] -= FloorDiv4(sum);
             }
 
-            // Refresh padding so the canvas-even slots reflect the updated X.
-            // (Canvas-odd slots will still hold Y in the padding, which is
-            // fine since F-6 reads only canvas-even neighbors.)
             SymmetricExtension.Fill(buf, Pad, length);
 
-            // F-6: predict step on canvas-odd positions.
             int firstOddLocal = (startingParity == 0) ? 1 : 0;
             for (int local = firstOddLocal; local < length; local += 2)
             {
@@ -96,9 +100,7 @@ namespace Jp2Codec.Wavelet
                 buf[bufIdx] += FloorDiv2(sum);
             }
 
-            var result = new int[length];
             Array.Copy(buf, Pad, result, 0, length);
-            return result;
         }
 
         private static int FloorDiv4(int a)

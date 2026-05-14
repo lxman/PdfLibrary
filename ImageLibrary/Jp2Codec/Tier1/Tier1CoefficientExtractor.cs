@@ -25,15 +25,19 @@ namespace Jp2Codec.Tier1
 
             int width = state.Width;
             int height = state.Height;
+            byte[] flags = state._flags;
+            int[] magnitudes = state._magnitudes;
             var output = new int[height, width];
             for (var y = 0; y < height; y++)
             {
+                int rowBase = state.RowBase(y);
                 for (var x = 0; x < width; x++)
                 {
-                    if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
-                    int magnitude = state.GetMagnitude(x, y);
-                    bool negative = state.HasFlag(x, y, Tier1State.SignFlag);
-                    output[y, x] = negative ? -magnitude : magnitude;
+                    int idx = rowBase + x;
+                    byte f = flags[idx];
+                    if ((f & Tier1State.SignificanceFlag) == 0) continue;
+                    int magnitude = magnitudes[idx];
+                    output[y, x] = (f & Tier1State.SignFlag) != 0 ? -magnitude : magnitude;
                 }
             }
             return output;

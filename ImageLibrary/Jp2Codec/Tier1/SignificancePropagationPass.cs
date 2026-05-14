@@ -40,6 +40,10 @@ namespace Jp2Codec.Tier1
             int width = state.Width;
             int paddedHeight = state.PaddedHeight;
             int actualHeight = state.Height;
+            byte[] flags = state._flags;
+            int[] magnitudes = state._magnitudes;
+            int stride = state._stride;
+            int magnitudeBit = 1 << bitPlane;
 
             for (var stripeTop = 0; stripeTop < paddedHeight; stripeTop += 4)
             {
@@ -48,10 +52,13 @@ namespace Jp2Codec.Tier1
                 {
                     for (var y = stripeTop; y < stripeBottom; y++)
                     {
-                        if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
+                        int idx = state.RowBase(y) + x;
+                        if ((flags[idx] & Tier1State.SignificanceFlag) != 0) continue;
 
                         bool maskSouth = vsc && (y % 4 == 3);
-                        byte neighbourhood = state.GetSignificanceNeighbourhood(x, y, maskSouth);
+                        byte neighbourhood = maskSouth
+                            ? Tier1State.GetNeighbourhoodFastMaskSouth(flags, idx, stride)
+                            : Tier1State.GetNeighbourhoodFast(flags, idx, stride);
                         if (neighbourhood == 0) continue;
 
                         int zcContext = Tier1Contexts.ZeroCoding(orientation, neighbourhood);
@@ -60,13 +67,13 @@ namespace Jp2Codec.Tier1
                         if (sigBit == 1)
                         {
                             int hContrib = Math.Sign(
-                                state.GetSignContribution(x, y, NeighbourDirection.West) +
-                                state.GetSignContribution(x, y, NeighbourDirection.East));
+                                Tier1State.GetSignContributionFast(flags, idx - 1) +
+                                Tier1State.GetSignContributionFast(flags, idx + 1));
                             int southContrib = maskSouth
                                 ? 0
-                                : state.GetSignContribution(x, y, NeighbourDirection.South);
+                                : Tier1State.GetSignContributionFast(flags, idx + stride);
                             int vContrib = Math.Sign(
-                                state.GetSignContribution(x, y, NeighbourDirection.North) +
+                                Tier1State.GetSignContributionFast(flags, idx - stride) +
                                 southContrib);
 
                             (int scContext, int xorBit) =
@@ -74,12 +81,12 @@ namespace Jp2Codec.Tier1
                             int decodedSignBit = mq.Decode(ref contexts[scContext]);
                             int sign = decodedSignBit ^ xorBit;
 
-                            state.SetFlag(x, y, Tier1State.SignificanceFlag);
-                            if (sign == 1) state.SetFlag(x, y, Tier1State.SignFlag);
-                            state.SetMagnitude(x, y, 1 << bitPlane);
+                            flags[idx] |= Tier1State.SignificanceFlag;
+                            if (sign == 1) flags[idx] |= Tier1State.SignFlag;
+                            magnitudes[idx] = magnitudeBit;
                         }
 
-                        state.SetFlag(x, y, Tier1State.VisitedFlag);
+                        flags[idx] |= Tier1State.VisitedFlag;
                     }
                 }
             }

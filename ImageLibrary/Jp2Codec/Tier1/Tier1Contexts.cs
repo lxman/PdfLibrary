@@ -51,34 +51,36 @@ namespace Jp2Codec.Tier1
         /// <see cref="Tier1State.GetSignContribution"/>.
         /// Returns (context index in [9, 13], xor bit ∈ {0, 1}).
         /// </summary>
+        // Table D-4 packed as (offset, xorBit) indexed by [h+1, v+1].
+        // Row = h ∈ {-1, 0, +1} → index 0..2; col = v ∈ {-1, 0, +1} → index 0..2.
+        private static readonly byte[] ScOffset =
+        {
+            // h=-1: v=-1, v=0, v=+1
+            4, 3, 2,
+            // h=0:  v=-1, v=0, v=+1
+            1, 0, 1,
+            // h=+1: v=-1, v=0, v=+1
+            2, 3, 4,
+        };
+
+        private static readonly byte[] ScXor =
+        {
+            // h=-1: v=-1, v=0, v=+1
+            1, 1, 1,
+            // h=0:  v=-1, v=0, v=+1
+            1, 0, 0,
+            // h=+1: v=-1, v=0, v=+1
+            0, 0, 0,
+        };
+
         public static (int Context, int XorBit) SignCoding(int hContribution, int vContribution)
         {
-            if (hContribution < -1 || hContribution > 1)
-                throw new ArgumentOutOfRangeException(nameof(hContribution), hContribution, null);
-            if (vContribution < -1 || vContribution > 1)
-                throw new ArgumentOutOfRangeException(nameof(vContribution), vContribution, null);
-
-            // Look up offset and XOR per Table D-4. The encoder XORs the
-            // decoded bit with the predictor; the decoder XORs the decoded
-            // bit with the same predictor to recover the raw sign bit
-            // (0 = positive, 1 = negative).
-            int offset;
-            int xor;
-            int h = hContribution;
-            int v = vContribution;
-
-            // Table D-4, written explicitly so intent is unmistakable.
-            if      (h == +1 && v == +1) { offset = 4; xor = 0; }
-            else if (h == +1 && v ==  0) { offset = 3; xor = 0; }
-            else if (h == +1 && v == -1) { offset = 2; xor = 0; }
-            else if (h ==  0 && v == +1) { offset = 1; xor = 0; }
-            else if (h ==  0 && v ==  0) { offset = 0; xor = 0; }
-            else if (h ==  0 && v == -1) { offset = 1; xor = 1; }
-            else if (h == -1 && v == +1) { offset = 2; xor = 1; }
-            else if (h == -1 && v ==  0) { offset = 3; xor = 1; }
-            else                          { offset = 4; xor = 1; } // (-1, -1)
-
-            return (Jp2MqContextSet.SignCoding + offset, xor);
+            uint h = (uint)(hContribution + 1);
+            uint v = (uint)(vContribution + 1);
+            if (h > 2) throw new ArgumentOutOfRangeException(nameof(hContribution), hContribution, null);
+            if (v > 2) throw new ArgumentOutOfRangeException(nameof(vContribution), vContribution, null);
+            int tableIdx = (int)(h * 3 + v);
+            return (Jp2MqContextSet.SignCoding + ScOffset[tableIdx], ScXor[tableIdx]);
         }
 
         /// <summary>

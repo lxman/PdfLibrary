@@ -34,9 +34,9 @@ namespace Jp2Codec.Tier1
         public int PaddedHeight { get; }
         public int StripeCount { get; }
 
-        private readonly byte[] _flags;
-        private readonly int[] _magnitudes;
-        private readonly int _stride;
+        internal readonly byte[] _flags;
+        internal readonly int[] _magnitudes;
+        internal readonly int _stride;
 
         public Tier1State(int width, int height)
         {
@@ -58,6 +58,40 @@ namespace Jp2Codec.Tier1
         // flat index into the padded buffers. Both x and y may be -1 (one
         // step into the guard band) but no further.
         private int Index(int x, int y) => ((y + 1) * _stride) + (x + 1);
+
+        internal int RowBase(int y) => (y + 1) * _stride + 1;
+
+        internal static byte GetNeighbourhoodFast(byte[] flags, int idx, int stride)
+        {
+            byte n = 0;
+            if ((flags[idx - stride - 1] & SignificanceFlag) != 0) n |= 0x01;
+            if ((flags[idx - stride    ] & SignificanceFlag) != 0) n |= 0x02;
+            if ((flags[idx - stride + 1] & SignificanceFlag) != 0) n |= 0x04;
+            if ((flags[idx - 1          ] & SignificanceFlag) != 0) n |= 0x08;
+            if ((flags[idx + 1          ] & SignificanceFlag) != 0) n |= 0x10;
+            if ((flags[idx + stride - 1] & SignificanceFlag) != 0) n |= 0x20;
+            if ((flags[idx + stride    ] & SignificanceFlag) != 0) n |= 0x40;
+            if ((flags[idx + stride + 1] & SignificanceFlag) != 0) n |= 0x80;
+            return n;
+        }
+
+        internal static byte GetNeighbourhoodFastMaskSouth(byte[] flags, int idx, int stride)
+        {
+            byte n = 0;
+            if ((flags[idx - stride - 1] & SignificanceFlag) != 0) n |= 0x01;
+            if ((flags[idx - stride    ] & SignificanceFlag) != 0) n |= 0x02;
+            if ((flags[idx - stride + 1] & SignificanceFlag) != 0) n |= 0x04;
+            if ((flags[idx - 1          ] & SignificanceFlag) != 0) n |= 0x08;
+            if ((flags[idx + 1          ] & SignificanceFlag) != 0) n |= 0x10;
+            return n;
+        }
+
+        internal static int GetSignContributionFast(byte[] flags, int neighbourIdx)
+        {
+            byte f = flags[neighbourIdx];
+            if ((f & SignificanceFlag) == 0) return 0;
+            return (f & SignFlag) != 0 ? -1 : +1;
+        }
 
         public byte GetFlags(int x, int y) => _flags[Index(x, y)];
 

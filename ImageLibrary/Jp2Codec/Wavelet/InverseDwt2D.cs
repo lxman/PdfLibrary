@@ -68,20 +68,22 @@ namespace Jp2Codec.Wavelet
 
             // HOR_SR: 1D inverse lifting per row, parity = u0Parity.
             var rowBuf = new int[parentWidth];
+            var rowWork = new int[parentWidth + 4];
             for (var row = 0; row < parentHeight; row++)
             {
                 for (var col = 0; col < parentWidth; col++) rowBuf[col] = a[row, col];
-                int[] rowResult = InverseLifting53.Apply(rowBuf, u0Parity);
-                for (var col = 0; col < parentWidth; col++) a[row, col] = rowResult[col];
+                InverseLifting53.ApplyInPlace(rowBuf, parentWidth, u0Parity, rowWork);
+                for (var col = 0; col < parentWidth; col++) a[row, col] = rowBuf[col];
             }
 
             // VER_SR: 1D inverse lifting per column, parity = v0Parity.
             var colBuf = new int[parentHeight];
+            var colWork = new int[parentHeight + 4];
             for (var col = 0; col < parentWidth; col++)
             {
                 for (var row = 0; row < parentHeight; row++) colBuf[row] = a[row, col];
-                int[] colResult = InverseLifting53.Apply(colBuf, v0Parity);
-                for (var row = 0; row < parentHeight; row++) a[row, col] = colResult[row];
+                InverseLifting53.ApplyInPlace(colBuf, parentHeight, v0Parity, colWork);
+                for (var row = 0; row < parentHeight; row++) a[row, col] = colBuf[row];
             }
 
             return a;
@@ -126,19 +128,21 @@ namespace Jp2Codec.Wavelet
             }
 
             var rowBuf = new float[parentWidth];
+            var rowWork = new float[parentWidth + 4];
             for (var row = 0; row < parentHeight; row++)
             {
                 for (var col = 0; col < parentWidth; col++) rowBuf[col] = a[row, col];
-                float[] rowResult = InverseLifting97.Apply(rowBuf, u0Parity);
-                for (var col = 0; col < parentWidth; col++) a[row, col] = rowResult[col];
+                InverseLifting97.ApplyInPlace(rowBuf, parentWidth, u0Parity, rowWork);
+                for (var col = 0; col < parentWidth; col++) a[row, col] = rowBuf[col];
             }
 
             var colBuf = new float[parentHeight];
+            var colWork = new float[parentHeight + 4];
             for (var col = 0; col < parentWidth; col++)
             {
                 for (var row = 0; row < parentHeight; row++) colBuf[row] = a[row, col];
-                float[] colResult = InverseLifting97.Apply(colBuf, v0Parity);
-                for (var row = 0; row < parentHeight; row++) a[row, col] = colResult[row];
+                InverseLifting97.ApplyInPlace(colBuf, parentHeight, v0Parity, colWork);
+                for (var row = 0; row < parentHeight; row++) a[row, col] = colBuf[row];
             }
 
             return a;
