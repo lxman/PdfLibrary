@@ -852,6 +852,18 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Resolves a character code to a glyph name using the Type1 font program's
+    /// built-in encoding. Returns null for non-Type1 fonts or unmapped codes.
+    /// </summary>
+    public string? GetType1GlyphNameByCharCode(int charCode)
+    {
+        if (!_isType1Font || _type1Parser is null)
+            return null;
+        string name = _type1Parser.GetGlyphName(charCode);
+        return name != ".notdef" && _type1Parser.HasGlyph(name) ? name : null;
+    }
+
+    /// <summary>
     /// Get raw CFF-style glyph outline for a Type1 font using the glyph name.
     /// Returns the outline with cubic Bezier commands for proper rendering.
     /// </summary>

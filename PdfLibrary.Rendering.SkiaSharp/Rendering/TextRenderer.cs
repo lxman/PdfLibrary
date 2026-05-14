@@ -609,8 +609,20 @@ internal class TextRenderer
             resolvedGlyphName = font.Encoding.GetGlyphName(charCode);
             glyphId = resolvedGlyphName is not null
                 ? embeddedMetrics.GetGlyphIdByName(resolvedGlyphName)
-                // Fall back to direct lookup
-                : embeddedMetrics.GetGlyphId(charCode);
+                : (ushort)0;
+
+            // If the PDF encoding mapped to a name the font doesn't have (common
+            // with CM math fonts that get a wrong default StandardEncoding), try
+            // the Type1 font program's built-in encoding instead.
+            if (glyphId == 0 && embeddedMetrics.IsType1Font)
+            {
+                string? builtInName = embeddedMetrics.GetType1GlyphNameByCharCode(charCode);
+                if (builtInName is not null)
+                {
+                    resolvedGlyphName = builtInName;
+                    glyphId = embeddedMetrics.GetGlyphIdByName(builtInName);
+                }
+            }
         }
         // For Type0 fonts with embedded Type1 data, use ToUnicode → glyph name mapping
         else if (font is Type0Font type0Font && embeddedMetrics.IsType1Font && type0Font.ToUnicode is not null)
