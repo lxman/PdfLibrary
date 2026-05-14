@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using SkiaSharp;
 
 namespace PdfLibrary.Rendering.SkiaSharp.State;
@@ -127,18 +128,36 @@ internal class SoftMaskManager
     /// </summary>
     public static SKBitmap ConvertToLuminosityMask(SKBitmap source)
     {
-        var result = new SKBitmap(source.Width, source.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+        int width = source.Width;
+        int height = source.Height;
+        var result = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
 
-        for (var y = 0; y < source.Height; y++)
+        int pixelCount = width * height;
+        var srcPixels = new byte[pixelCount * 4];
+        var dstPixels = new byte[pixelCount * 4];
+
+        IntPtr srcPtr = source.GetPixels();
+        if (srcPtr != IntPtr.Zero)
+            Marshal.Copy(srcPtr, srcPixels, 0, srcPixels.Length);
+
+        for (var i = 0; i < pixelCount; i++)
         {
-            for (var x = 0; x < source.Width; x++)
-            {
-                SKColor pixel = source.GetPixel(x, y);
-                // Calculate luminosity: 0.299*R + 0.587*G + 0.114*B
-                var luminosity = (byte)(0.299 * pixel.Red + 0.587 * pixel.Green + 0.114 * pixel.Blue);
-                // Use luminosity as alpha, with white (255, 255, 255) for the color
-                result.SetPixel(x, y, new SKColor(255, 255, 255, luminosity));
-            }
+            int off = i * 4;
+            byte r = srcPixels[off];
+            byte g = srcPixels[off + 1];
+            byte b = srcPixels[off + 2];
+            var luminosity = (byte)((r * 77 + g * 150 + b * 29) >> 8);
+            dstPixels[off] = 255;
+            dstPixels[off + 1] = 255;
+            dstPixels[off + 2] = 255;
+            dstPixels[off + 3] = luminosity;
+        }
+
+        IntPtr dstPtr = result.GetPixels();
+        if (dstPtr != IntPtr.Zero)
+        {
+            Marshal.Copy(dstPixels, 0, dstPtr, dstPixels.Length);
+            result.NotifyPixelsChanged();
         }
 
         return result;

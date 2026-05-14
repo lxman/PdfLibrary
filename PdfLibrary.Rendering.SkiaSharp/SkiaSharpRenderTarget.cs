@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Numerics;
 using Logging;
 using PdfLibrary.Content;
@@ -38,6 +39,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     private static readonly Lock DocumentLock = new();
 
     public int CurrentPageNumber { get; private set; }
+
+    // Lightweight per-page timing — set EnablePerfTrace to see breakdown on Console
+    public static bool EnablePerfTrace { get; set; }
+    private long _perfImageMs, _perfTextMs, _perfPathMs, _perfSoftMaskMs;
+    private int _perfImageCount, _perfTextCount, _perfPathCount, _perfSoftMaskCount;
+    private readonly Stopwatch _perfSw = new();
 
     // Track if we need transparent output (for masks) vs. transparent rendering with white composite (for blend modes)
     private readonly bool _transparentOutput;
@@ -202,6 +209,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     public void EndPage()
     {
         _canvas.Flush();
+        if (EnablePerfTrace)
+        {
+            Console.WriteLine($"    [perf] images={_perfImageMs}ms({_perfImageCount}x) text={_perfTextMs}ms({_perfTextCount}x) paths={_perfPathMs}ms({_perfPathCount}x) softMasks={_perfSoftMaskMs}ms({_perfSoftMaskCount}x)");
+            _perfImageMs = _perfTextMs = _perfPathMs = _perfSoftMaskMs = 0;
+            _perfImageCount = _perfTextCount = _perfPathCount = _perfSoftMaskCount = 0;
+        }
     }
 
     public void Clear()
@@ -297,6 +310,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     /// <param name="renderMaskContent">Callback that renders the mask content to the provided render target</param>
     public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)
     {
+        if (EnablePerfTrace) _perfSw.Restart();
         try
         {
             (int width, int height, double scale) = GetPageDimensions();
@@ -342,25 +356,32 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         {
             PdfLogger.Log(LogCategory.Graphics, $"RenderSoftMask: Error rendering mask: {ex.Message}");
         }
+        if (EnablePerfTrace) { _perfSw.Stop(); _perfSoftMaskMs += _perfSw.ElapsedMilliseconds; _perfSoftMaskCount++; }
     }
 
     // ==================== TEXT RENDERING ====================
 
     public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
     {
+        if (EnablePerfTrace) _perfSw.Restart();
         _textRenderer.DrawText(text, glyphWidths, state, font, charCodes);
+        if (EnablePerfTrace) { _perfSw.Stop(); _perfTextMs += _perfSw.ElapsedMilliseconds; _perfTextCount++; }
     }
 
     // ==================== PATH OPERATIONS ====================
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
     {
+        if (EnablePerfTrace) _perfSw.Restart();
         _pathRenderer.StrokePath(path, state);
+        if (EnablePerfTrace) { _perfSw.Stop(); _perfPathMs += _perfSw.ElapsedMilliseconds; _perfPathCount++; }
     }
 
     public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
+        if (EnablePerfTrace) _perfSw.Restart();
         _pathRenderer.FillPath(path, state, evenOdd);
+        if (EnablePerfTrace) { _perfSw.Stop(); _perfPathMs += _perfSw.ElapsedMilliseconds; _perfPathCount++; }
     }
 
     public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
@@ -387,7 +408,9 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
     public void DrawImage(PdfImage image, PdfGraphicsState state)
     {
+        if (EnablePerfTrace) _perfSw.Restart();
         _imageRenderer.DrawImage(image, state);
+        if (EnablePerfTrace) { _perfSw.Stop(); _perfImageMs += _perfSw.ElapsedMilliseconds; _perfImageCount++; }
     }
 
     // ==================== PUBLIC API ====================
