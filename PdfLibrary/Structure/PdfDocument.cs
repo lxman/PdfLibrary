@@ -497,92 +497,25 @@ public class PdfDocument : IDisposable
             // Adjust startxref by header offset (PDF 2.0 files may have data before the header)
             long actualXrefPosition = startxref + headerOffset;
 
+            // Validate that the startxref offset actually points to an xref table or stream.
+            // Some corrupt/legacy PDFs have a wrong startxref; fall back to scanning.
+            actualXrefPosition = ValidateOrRecoverXrefPosition(stream, actualXrefPosition);
+
             // Parse cross-reference table(s) - follow /Prev chain for incremental updates
             phaseStopwatch.Restart();
-            long xrefPosition = actualXrefPosition;
-            var xrefChainDepth = 0;
-            const int maxXrefChainDepth = 100; // Prevent infinite loops
-
-            while (xrefPosition >= 0 && xrefChainDepth < maxXrefChainDepth)
+            bool rebuilt = false;
+            try
             {
-                stream.Position = xrefPosition;
-                var xrefParser = new PdfXrefParser(stream, document);
-                PdfXrefParseResult xrefResult = xrefParser.Parse();
-
-                // Add entries to document xref table
-                // Note: Later entries (higher chain depth) take precedence over earlier ones
-                // for the same object number (incremental updates)
-                foreach (PdfXrefEntry entry in xrefResult.Table.Entries)
-                {
-                    // Check if this object already exists in the table (O(1) dictionary lookup)
-                    if (!document.XrefTable.Contains(entry.ObjectNumber))
-                    {
-                        document.XrefTable.Add(entry);
-                    }
-                }
-
-                // Save trailer from the most recent xref (first one in chain)
-                // Also get the current trailer for checking /Prev
-                PdfDictionary? currentTrailer = null;
-
-                if (xrefChainDepth == 0)
-                {
-                    document.Trailer.Dictionary.Clear();
-
-                    if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
-                    {
-                        // Cross-reference stream - trailer is embedded in the stream dictionary
-                        foreach (KeyValuePair<PdfName, PdfObject> kvp in xrefResult.TrailerDictionary)
-                        {
-                            document.Trailer.Dictionary[kvp.Key] = kvp.Value;
-                        }
-                        currentTrailer = xrefResult.TrailerDictionary;
-                    }
-                    else
-                    {
-                        // Traditional xref table - trailer follows separately
-                        var trailerParser = new PdfTrailerParser(stream);
-                        (PdfTrailer trailer, _) = trailerParser.Parse();
-
-                        foreach (KeyValuePair<PdfName, PdfObject> kvp in trailer.Dictionary)
-                        {
-                            document.Trailer.Dictionary[kvp.Key] = kvp.Value;
-                        }
-                        currentTrailer = trailer.Dictionary;
-                    }
-                }
-                else
-                {
-                    // For subsequent xrefs in the chain, get the trailer to check for /Prev
-                    if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
-                    {
-                        currentTrailer = xrefResult.TrailerDictionary;
-                    }
-                    else if (!xrefResult.IsXRefStream)
-                    {
-                        // For traditional xref, read the trailer
-                        var trailerParser = new PdfTrailerParser(stream);
-                        (PdfTrailer trailer, _) = trailerParser.Parse();
-                        currentTrailer = trailer.Dictionary;
-                    }
-                }
-
-                long prevXrefPosition = -1;
-                if (currentTrailer is not null &&
-                    currentTrailer.TryGetValue(new PdfName("Prev"), out PdfObject prevObj) &&
-                    prevObj is PdfInteger prevInt)
-                {
-                    prevXrefPosition = prevInt.Value + headerOffset;
-                }
-
-                xrefPosition = prevXrefPosition;
-                xrefChainDepth++;
+                ParseXrefChain(stream, document, actualXrefPosition, headerOffset);
+            }
+            catch (PdfParseException)
+            {
+                document.XrefTable.Clear();
+                RebuildXrefFromScan(stream, document, actualXrefPosition);
+                rebuilt = true;
             }
 
-            int xrefEntryCount = document.XrefTable.Entries.Count;
-            int compressedCount = document.XrefTable.Entries.Count(e => e.EntryType == PdfXrefEntryType.Compressed);
-            int uncompressedCount = document.XrefTable.Entries.Count(e => e.IsInUse && e.EntryType != PdfXrefEntryType.Compressed);
-            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Xref parsed in {phaseStopwatch.ElapsedMilliseconds}ms ({xrefEntryCount} entries: {uncompressedCount} uncompressed, {compressedCount} compressed, chain depth {xrefChainDepth})");
+            PdfLogger.Log(LogCategory.Timings, $"PDF Load: Xref {(rebuilt ? "rebuilt" : "parsed")} in {phaseStopwatch.ElapsedMilliseconds}ms ({document.XrefTable.Entries.Count} entries)");
 
             // Check for encryption and initialize decryptor
             if (document.Trailer.Encrypt is not null)
@@ -595,57 +528,20 @@ public class PdfDocument : IDisposable
             // Load uncompressed indirect objects
             // Compressed objects (type 2) will be loaded on-demand from object streams
             phaseStopwatch.Restart();
-            var loadedObjects = 0;
-            foreach (PdfXrefEntry entry in document.XrefTable.Entries)
+            int loadedObjects;
+            try
             {
-                if (!entry.IsInUse)
-                    continue;
-
-                // Skip compressed objects - they'll be loaded from object streams on-demand
-                if (entry.EntryType == PdfXrefEntryType.Compressed)
-                    continue;
-
-                try
-                {
-                    // Seek to object position (adjust for header offset)
-                    long targetPosition = entry.ByteOffset + headerOffset;
-                    stream.Position = targetPosition;
-
-                    // Try to find the object header, with error recovery for malformed xref offsets
-                    // Some PDFs have xref entries that point a few bytes before the actual object
-                    long? actualPosition = FindObjectHeader(stream, entry.ObjectNumber, entry.GenerationNumber, targetPosition);
-                    if (actualPosition is null)
-                    {
-                        PdfLogger.Log(LogCategory.Melville, $"Could not find object {entry.ObjectNumber} {entry.GenerationNumber} at or near offset {entry.ByteOffset}");
-                        continue;
-                    }
-
-                    stream.Position = actualPosition.Value;
-
-                    // Create a new parser for each object to ensure the lexer buffer is synchronized
-                    var parser = new PdfParser(stream);
-
-                    // Set the reference resolver so streams can resolve indirect Length references
-                    parser.SetReferenceResolver(reference => document.GetObject(reference.ObjectNumber));
-
-                    // Set the decryptor if the document is encrypted
-                    if (document.Decryptor is not null)
-                        parser.SetDecryptor(document.Decryptor);
-
-                    // Read the indirect object
-                    PdfObject? obj = parser.ReadObject();
-                    if (obj is not null)
-                    {
-                        document.AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
-                        loadedObjects++;
-                    }
-                }
-                catch (PdfParseException ex)
-                {
-                    throw new PdfParseException(
-                        $"Error parsing object {entry.ObjectNumber} at byte offset {entry.ByteOffset}: {ex.Message}",
-                        ex);
-                }
+                loadedObjects = LoadUncompressedObjects(stream, document, headerOffset, rebuilt);
+            }
+            catch (PdfParseException) when (!rebuilt)
+            {
+                // Object loading failed with the parsed xref — offsets are bad, rebuild
+                document.XrefTable.Clear();
+                document._objects.Clear();
+                RebuildXrefFromScan(stream, document, actualXrefPosition);
+                loadedObjects = LoadUncompressedObjects(stream, document, headerOffset, true);
+                rebuilt = true;
+                PdfLogger.Log(LogCategory.PdfTool, $"Xref rebuild after object-load failure: {loadedObjects} objects loaded");
             }
             PdfLogger.Log(LogCategory.Timings, $"PDF Load: Loaded {loadedObjects} uncompressed objects in {phaseStopwatch.ElapsedMilliseconds}ms");
 
@@ -666,6 +562,230 @@ public class PdfDocument : IDisposable
     /// ISO 32000-2:2020 allows the header to appear anywhere within the first 1024 bytes
     /// </summary>
     /// <returns>A tuple containing the PDF version and the byte offset of the header</returns>
+    private static int LoadUncompressedObjects(Stream stream, PdfDocument document, long headerOffset, bool tolerant)
+    {
+        var loaded = 0;
+        foreach (PdfXrefEntry entry in document.XrefTable.Entries)
+        {
+            if (!entry.IsInUse || entry.EntryType == PdfXrefEntryType.Compressed)
+                continue;
+
+            try
+            {
+                long targetPosition = entry.ByteOffset + headerOffset;
+                stream.Position = targetPosition;
+
+                long? actualPosition = FindObjectHeader(stream, entry.ObjectNumber, entry.GenerationNumber, targetPosition);
+                if (actualPosition is null)
+                    continue;
+
+                stream.Position = actualPosition.Value;
+                var parser = new PdfParser(stream);
+                parser.SetReferenceResolver(reference => document.GetObject(reference.ObjectNumber));
+                if (document.Decryptor is not null)
+                    parser.SetDecryptor(document.Decryptor);
+
+                PdfObject? obj = parser.ReadObject();
+                if (obj is not null)
+                {
+                    document.AddObject(entry.ObjectNumber, entry.GenerationNumber, obj);
+                    loaded++;
+                }
+            }
+            catch (PdfParseException) when (tolerant)
+            {
+                // In tolerant mode (rebuild), skip objects that fail to parse
+            }
+            catch (PdfParseException ex) when (!tolerant)
+            {
+                throw new PdfParseException(
+                    $"Error parsing object {entry.ObjectNumber} at byte offset {entry.ByteOffset}: {ex.Message}", ex);
+            }
+        }
+        return loaded;
+    }
+
+    private static void ParseXrefChain(Stream stream, PdfDocument document, long actualXrefPosition, long headerOffset)
+    {
+        long xrefPosition = actualXrefPosition;
+        var xrefChainDepth = 0;
+        const int maxXrefChainDepth = 100;
+
+        while (xrefPosition >= 0 && xrefChainDepth < maxXrefChainDepth)
+        {
+            stream.Position = xrefPosition;
+            var xrefParser = new PdfXrefParser(stream, document);
+            PdfXrefParseResult xrefResult = xrefParser.Parse();
+
+            foreach (PdfXrefEntry entry in xrefResult.Table.Entries)
+            {
+                if (!document.XrefTable.Contains(entry.ObjectNumber))
+                    document.XrefTable.Add(entry);
+            }
+
+            PdfDictionary? currentTrailer = null;
+
+            if (xrefChainDepth == 0)
+            {
+                document.Trailer.Dictionary.Clear();
+
+                if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
+                {
+                    foreach (KeyValuePair<PdfName, PdfObject> kvp in xrefResult.TrailerDictionary)
+                        document.Trailer.Dictionary[kvp.Key] = kvp.Value;
+                    currentTrailer = xrefResult.TrailerDictionary;
+                }
+                else
+                {
+                    var trailerParser = new PdfTrailerParser(stream);
+                    (PdfTrailer trailer, _) = trailerParser.Parse();
+                    foreach (KeyValuePair<PdfName, PdfObject> kvp in trailer.Dictionary)
+                        document.Trailer.Dictionary[kvp.Key] = kvp.Value;
+                    currentTrailer = trailer.Dictionary;
+                }
+            }
+            else
+            {
+                if (xrefResult is { IsXRefStream: true, TrailerDictionary: not null })
+                    currentTrailer = xrefResult.TrailerDictionary;
+                else if (!xrefResult.IsXRefStream)
+                {
+                    var trailerParser = new PdfTrailerParser(stream);
+                    (PdfTrailer trailer, _) = trailerParser.Parse();
+                    currentTrailer = trailer.Dictionary;
+                }
+            }
+
+            long prevXrefPosition = -1;
+            if (currentTrailer is not null &&
+                currentTrailer.TryGetValue(new PdfName("Prev"), out PdfObject prevObj) &&
+                prevObj is PdfInteger prevInt)
+            {
+                prevXrefPosition = prevInt.Value + headerOffset;
+            }
+
+            xrefPosition = prevXrefPosition;
+            xrefChainDepth++;
+        }
+    }
+
+    private static void RebuildXrefFromScan(Stream stream, PdfDocument document, long xrefPosition)
+    {
+        PdfLogger.Log(LogCategory.PdfTool, "Rebuilding xref by scanning for object markers");
+
+        var data = new byte[stream.Length];
+        stream.Position = 0;
+        _ = stream.Read(data, 0, data.Length);
+
+        // Scan for "N 0 obj" patterns
+        for (var i = 0; i < data.Length - 10; i++)
+        {
+            if (!char.IsDigit((char)data[i])) continue;
+
+            int numStart = i;
+            while (i < data.Length && char.IsDigit((char)data[i])) i++;
+            if (i >= data.Length || data[i] != (byte)' ') continue;
+            i++;
+            if (i >= data.Length || data[i] != (byte)'0') continue;
+            i++;
+            if (i >= data.Length || data[i] != (byte)' ') continue;
+            i++;
+            if (i + 2 >= data.Length) continue;
+            if (data[i] != (byte)'o' || data[i + 1] != (byte)'b' || data[i + 2] != (byte)'j') continue;
+
+            // Ensure the marker starts at a line boundary (preceded by whitespace or start of file)
+            if (numStart > 0)
+            {
+                byte prev = data[numStart - 1];
+                if (prev != (byte)'\n' && prev != (byte)'\r' && prev != (byte)' ' && prev != (byte)'\t')
+                    continue;
+            }
+
+            int objNum = int.Parse(System.Text.Encoding.ASCII.GetString(data, numStart, i - 3 - numStart));
+            if (!document.XrefTable.Contains(objNum))
+            {
+                document.XrefTable.Add(new PdfXrefEntry(objNum, numStart, 0, true));
+            }
+        }
+
+        // Parse the trailer from the xref location (the traditional xref + trailer should still be parseable)
+        document.Trailer.Dictionary.Clear();
+        try
+        {
+            stream.Position = xrefPosition;
+            var xrefParser = new PdfXrefParser(stream, document);
+            xrefParser.Parse(); // ignore the xref table entries, just advance past them
+            var trailerParser = new PdfTrailerParser(stream);
+            (PdfTrailer trailer, _) = trailerParser.Parse();
+            foreach (KeyValuePair<PdfName, PdfObject> kvp in trailer.Dictionary)
+                document.Trailer.Dictionary[kvp.Key] = kvp.Value;
+        }
+        catch
+        {
+            // If trailer parse fails, scan for "trailer" keyword
+            int trailerPos = FindLastOccurrence(data, "trailer"u8);
+            if (trailerPos >= 0)
+            {
+                stream.Position = trailerPos;
+                var trailerParser = new PdfTrailerParser(stream);
+                (PdfTrailer trailer, _) = trailerParser.Parse();
+                foreach (KeyValuePair<PdfName, PdfObject> kvp in trailer.Dictionary)
+                    document.Trailer.Dictionary[kvp.Key] = kvp.Value;
+            }
+        }
+
+        PdfLogger.Log(LogCategory.PdfTool, $"Xref rebuild found {document.XrefTable.Entries.Count} objects");
+    }
+
+    private static int FindLastOccurrence(byte[] data, ReadOnlySpan<byte> pattern)
+    {
+        for (int i = data.Length - pattern.Length; i >= 0; i--)
+        {
+            if (data.AsSpan(i, pattern.Length).SequenceEqual(pattern))
+                return i;
+        }
+        return -1;
+    }
+
+    private static long ValidateOrRecoverXrefPosition(Stream stream, long candidate)
+    {
+        if (candidate >= 0 && candidate < stream.Length)
+        {
+            stream.Position = candidate;
+            Span<byte> peek = stackalloc byte[4];
+            int read = stream.Read(peek);
+            if (read >= 4)
+            {
+                // Traditional xref starts with "xref"; xref stream starts with a digit (obj number)
+                if ((peek[0] == (byte)'x' && peek[1] == (byte)'r' && peek[2] == (byte)'e' && peek[3] == (byte)'f')
+                    || char.IsDigit((char)peek[0]))
+                    return candidate;
+            }
+        }
+
+        // startxref offset is invalid — scan backward from EOF for the "xref" keyword
+        const int scanSize = 65536;
+        long scanStart = Math.Max(0, stream.Length - scanSize);
+        int bufLen = (int)(stream.Length - scanStart);
+        var buf = new byte[bufLen];
+        stream.Position = scanStart;
+        _ = stream.Read(buf, 0, bufLen);
+
+        for (int i = bufLen - 4; i >= 0; i--)
+        {
+            if (buf[i] == (byte)'x' && buf[i + 1] == (byte)'r' && buf[i + 2] == (byte)'e' && buf[i + 3] == (byte)'f'
+                && (i == 0 || buf[i - 1] == (byte)'\n' || buf[i - 1] == (byte)'\r'))
+            {
+                long recovered = scanStart + i;
+                PdfLogger.Log(LogCategory.PdfTool,
+                    $"startxref offset {candidate} invalid — recovered xref at {recovered}");
+                return recovered;
+            }
+        }
+
+        return candidate;
+    }
+
     private static (PdfVersion version, long headerOffset) ParseHeader(Stream stream)
     {
         stream.Position = 0;
