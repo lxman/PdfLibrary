@@ -386,7 +386,13 @@ internal class PdfParser(PdfLexer lexer)
         byte[] data;
         if (endstreamPos >= 0)
         {
-            data = raw.AsSpan(0, Math.Min(length, endstreamPos)).ToArray();
+            // Use actual data up to endstream (stripping trailing EOL).
+            // The declared /Length may be short, cutting off valid encoded data
+            // (e.g. the ASCII85 ~> end marker).
+            int dataEnd = endstreamPos;
+            if (dataEnd > 0 && raw[dataEnd - 1] == 0x0A) dataEnd--;
+            if (dataEnd > 0 && raw[dataEnd - 1] == 0x0D) dataEnd--;
+            data = raw.AsSpan(0, dataEnd).ToArray();
 
             // Seek lexer to right after "endstream" using absolute positioning
             long targetPosition = dataStart + endstreamPos + marker.Length;
