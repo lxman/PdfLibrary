@@ -446,6 +446,15 @@ internal class PdfLexer(Stream stream)
         _bufferPosition = 0;
     }
 
+    internal void SeekAbsolute(long position)
+    {
+        if (!_stream.CanSeek) return;
+        _stream.Position = position;
+        _streamPosition = position;
+        _bufferPosition = 0;
+        _bufferLength = 0;
+    }
+
     internal void UnreadBytes(int count)
     {
         if (_bufferPosition >= count)

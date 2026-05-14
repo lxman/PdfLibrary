@@ -360,49 +360,46 @@ internal class PdfParser(PdfLexer lexer)
         // Skip EOL after a 'stream' keyword (ISO 32000-1 section 7.3.8.1)
         _lexer.SkipEOL();
 
-        // Read stream data at declared length
-        byte[] data = _lexer.ReadBytes(length);
+        // Record position before reading so we can seek back reliably
+        // (UnreadBytes is fragile across buffer refills for large reads).
+        long dataStart = _lexer.Position;
 
-        // Skip EOL before endstream (ISO 32000-1 section 7.3.8.1)
-        _lexer.SkipEOL();
-
-        // Try normal endstream token. If /Length is correct this succeeds immediately.
-        PdfToken peek = PeekToken();
-        if (peek.Type == PdfTokenType.EndStream)
-        {
-            NextToken();
-            return new PdfStream(dictionary, data);
-        }
-
-        // /Length is wrong (legacy/corrupt PDF). Read extra raw bytes to find
-        // the real endstream keyword. We do NOT consume the peeked token — it
-        // was read from the lexer's buffer and the buffer still holds the bytes
-        // after it. Instead, drain raw bytes and search for the keyword.
-        _tokenBuffer.Clear();
-        const int probeExtra = 64;
-        byte[] tail = _lexer.ReadBytesAvailable(probeExtra);
+        // Read declared length + probe window in one shot to avoid tokenizer
+        // interference. For valid PDFs, endstream appears right after the data;
+        // for corrupt PDFs (wrong /Length), we search forward.
+        const int probeExtra = 256;
+        byte[] raw = _lexer.ReadBytesAvailable(length + probeExtra);
 
         ReadOnlySpan<byte> marker = "endstream"u8;
         int endstreamPos = -1;
-        for (int i = 0; i <= tail.Length - marker.Length; i++)
+        int searchFrom = Math.Max(0, length - 2);
+        for (int i = searchFrom; i <= raw.Length - marker.Length; i++)
         {
-            if (tail.AsSpan(i, marker.Length).SequenceEqual(marker))
+            if (raw.AsSpan(i, marker.Length).SequenceEqual(marker)
+                && (i == 0 || raw[i - 1] == 0x0A || raw[i - 1] == 0x0D))
             {
                 endstreamPos = i;
                 break;
             }
         }
 
-        if (endstreamPos < 0)
-            throw new PdfParseException(
-                $"Could not locate endstream within {length + probeExtra} bytes of stream data start");
+        byte[] data;
+        if (endstreamPos >= 0)
+        {
+            data = raw.AsSpan(0, Math.Min(length, endstreamPos)).ToArray();
 
-        // Don't extend data with the bytes between declared length and endstream —
-        // they're typically trailing junk from a wrong /Length, not missing data.
-        // The declared length is the best guess for the actual content.
-        int overRead = tail.Length - (endstreamPos + marker.Length);
-        if (overRead > 0)
-            _lexer.UnreadBytes(overRead);
+            // Seek lexer to right after "endstream" using absolute positioning
+            long targetPosition = dataStart + endstreamPos + marker.Length;
+            _lexer.SeekAbsolute(targetPosition);
+        }
+        else
+        {
+            data = raw.AsSpan(0, Math.Min(length, raw.Length)).ToArray();
+            long targetPosition = dataStart + data.Length;
+            _lexer.SeekAbsolute(targetPosition);
+            _lexer.SkipEOL();
+            ExpectToken(PdfTokenType.EndStream);
+        }
 
         return new PdfStream(dictionary, data);
     }
