@@ -718,10 +718,11 @@ internal class TextRenderer
 
     private SKPath GetOrCreateGlyphPath(PdfFont font, ushort glyphId, PdfGraphicsState state, EmbeddedFontMetrics embeddedMetrics, GlyphOutline glyphOutline, string? resolvedGlyphName)
     {
-        // Create a cache key: font name + glyph ID + font size (rounded for precision)
-        string fontKey = font.BaseFont ?? "unknown";
+        // Cache key must distinguish font instances, not just font names — different
+        // subsets can share the same BaseFont (e.g. Foxit reuses the FPEFAA+ prefix).
+        int fontId = System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(embeddedMetrics);
         var roundedSize = (int)(state.FontSize * 10); // 0.1pt precision
-        var cacheKey = $"{fontKey}_{glyphId}_{roundedSize}";
+        var cacheKey = $"{fontId}_{glyphId}_{roundedSize}";
 
         // Try to get from the cache first
         SKPath glyphPath;
