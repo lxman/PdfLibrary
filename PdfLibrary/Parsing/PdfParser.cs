@@ -360,15 +360,50 @@ internal class PdfParser(PdfLexer lexer)
         // Skip EOL after a 'stream' keyword (ISO 32000-1 section 7.3.8.1)
         _lexer.SkipEOL();
 
-        // Read stream data
-        byte[] data = _lexer.ReadBytes(length);
+        // Read the declared length plus a probe window so we can locate
+        // endstream even when /Length is wrong.  ReadBytesAvailable caps at EOF.
+        const int probeExtra = 64;
+        byte[] raw = _lexer.ReadBytesAvailable(length + probeExtra);
 
-        // Skip EOL after stream data before 'endstream' (ISO 32000-1 section 7.3.8.1)
-        // Per spec: "There should be an end-of-line marker after the data and before
-        // endstream; this marker shall not be included in the stream length."
-        _lexer.SkipEOL();
+        // Search for "endstream" starting near the declared length
+        ReadOnlySpan<byte> marker = "endstream"u8;
+        int endstreamPos = -1;
+        int searchFrom = Math.Max(0, length - 2);
+        for (int i = searchFrom; i <= raw.Length - marker.Length; i++)
+        {
+            if (raw.AsSpan(i, marker.Length).SequenceEqual(marker))
+            {
+                endstreamPos = i;
+                break;
+            }
+        }
 
-        ExpectToken(PdfTokenType.EndStream);
+        byte[] data;
+        if (endstreamPos >= 0)
+        {
+            // Found endstream — trim trailing EOL before it
+            int dataEnd = endstreamPos;
+            if (dataEnd > 0 && raw[dataEnd - 1] == 0x0A) dataEnd--;
+            if (dataEnd > 0 && raw[dataEnd - 1] == 0x0D) dataEnd--;
+            data = raw.AsSpan(0, dataEnd).ToArray();
+
+            // Push excess bytes back into the lexer
+            int consumed = endstreamPos + marker.Length;
+            int overRead = raw.Length - consumed;
+            if (overRead > 0)
+                _lexer.UnreadBytes(overRead);
+        }
+        else
+        {
+            // endstream not in probe range — use declared length and fall back to tokenizer
+            data = raw.AsSpan(0, Math.Min(length, raw.Length)).ToArray();
+            int overRead = raw.Length - data.Length;
+            if (overRead > 0)
+                _lexer.UnreadBytes(overRead);
+            _lexer.SkipEOL();
+            ExpectToken(PdfTokenType.EndStream);
+        }
+
         return new PdfStream(dictionary, data);
     }
 

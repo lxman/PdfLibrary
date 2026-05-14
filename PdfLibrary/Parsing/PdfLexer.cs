@@ -446,6 +446,22 @@ internal class PdfLexer(Stream stream)
         _bufferPosition = 0;
     }
 
+    internal void UnreadBytes(int count)
+    {
+        if (_bufferPosition >= count)
+        {
+            _bufferPosition -= count;
+        }
+        else if (_stream.CanSeek)
+        {
+            int seekBack = count - _bufferPosition;
+            _stream.Position -= seekBack;
+            _streamPosition = _stream.Position;
+            _bufferPosition = 0;
+            _bufferLength = 0;
+        }
+    }
+
     /// <summary>
     /// Reads raw bytes from the stream (for stream content)
     /// </summary>
@@ -458,7 +474,6 @@ internal class PdfLexer(Stream stream)
 
         while (bytesRead < count)
         {
-            // Read from buffer if available
             int availableInBuffer = _bufferLength - _bufferPosition;
             if (availableInBuffer > 0)
             {
@@ -469,12 +484,40 @@ internal class PdfLexer(Stream stream)
             }
             else
             {
-                // Need to fill buffer
                 if (!FillBuffer())
                     throw new EndOfStreamException($"Unexpected end of stream: expected {count} bytes, got {bytesRead}");
             }
         }
 
+        return result;
+    }
+
+    internal byte[] ReadBytesAvailable(int maxCount)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxCount);
+
+        var result = new byte[maxCount];
+        var bytesRead = 0;
+
+        while (bytesRead < maxCount)
+        {
+            int availableInBuffer = _bufferLength - _bufferPosition;
+            if (availableInBuffer > 0)
+            {
+                int toRead = Math.Min(maxCount - bytesRead, availableInBuffer);
+                Array.Copy(_buffer, _bufferPosition, result, bytesRead, toRead);
+                _bufferPosition += toRead;
+                bytesRead += toRead;
+            }
+            else
+            {
+                if (!FillBuffer())
+                    break;
+            }
+        }
+
+        if (bytesRead < maxCount)
+            Array.Resize(ref result, bytesRead);
         return result;
     }
 
