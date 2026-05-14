@@ -246,20 +246,113 @@ public sealed class JpegStreamDecoder
         int width = frame.Width;
         int height = frame.Height;
         int nf = frame.NumberOfComponents;
+        int mcusPerLine = (width + 8 * maxH - 1) / (8 * maxH);
 
+        if (nf == 1)
+            return InterleaveGrayscale(componentRasters[0], width, height, mcusPerLine * 8);
+
+        if (nf == 3 && maxH == 1 && maxV == 1)
+            return Interleave444(componentRasters, width, height, mcusPerLine * 8);
+
+        if (nf == 3 && maxH == 2 && maxV == 2
+            && frame.Components[0].HorizontalSampling == 2 && frame.Components[0].VerticalSampling == 2
+            && frame.Components[1].HorizontalSampling == 1 && frame.Components[1].VerticalSampling == 1
+            && frame.Components[2].HorizontalSampling == 1 && frame.Components[2].VerticalSampling == 1)
+            return Interleave420(componentRasters, width, height, mcusPerLine);
+
+        if (nf == 3 && maxH == 2 && maxV == 1
+            && frame.Components[0].HorizontalSampling == 2 && frame.Components[0].VerticalSampling == 1
+            && frame.Components[1].HorizontalSampling == 1 && frame.Components[1].VerticalSampling == 1
+            && frame.Components[2].HorizontalSampling == 1 && frame.Components[2].VerticalSampling == 1)
+            return Interleave422(componentRasters, width, height, mcusPerLine);
+
+        return InterleaveGeneric(frame, componentRasters, maxH, maxV, nf, width, height, mcusPerLine);
+    }
+
+    private static byte[] InterleaveGrayscale(byte[] raster, int width, int height, int rasterWidth)
+    {
+        if (rasterWidth == width)
+            return raster.AsSpan(0, width * height).ToArray();
+
+        var output = new byte[width * height];
+        for (var y = 0; y < height; y++)
+            Buffer.BlockCopy(raster, y * rasterWidth, output, y * width, width);
+        return output;
+    }
+
+    private static byte[] Interleave444(byte[][] rasters, int width, int height, int rasterWidth)
+    {
+        var output = new byte[width * height * 3];
+        for (var y = 0; y < height; y++)
+        {
+            int srcRow = y * rasterWidth;
+            int dstRow = y * width * 3;
+            for (var x = 0; x < width; x++)
+            {
+                int src = srcRow + x;
+                int dst = dstRow + x * 3;
+                output[dst] = rasters[0][src];
+                output[dst + 1] = rasters[1][src];
+                output[dst + 2] = rasters[2][src];
+            }
+        }
+        return output;
+    }
+
+    private static byte[] Interleave420(byte[][] rasters, int width, int height, int mcusPerLine)
+    {
+        int yStride = mcusPerLine * 16;
+        int cStride = mcusPerLine * 8;
+        var output = new byte[width * height * 3];
+
+        for (var y = 0; y < height; y++)
+        {
+            int yRow = y * yStride;
+            int cRow = (y >> 1) * cStride;
+            int dstRow = y * width * 3;
+            for (var x = 0; x < width; x++)
+            {
+                int dst = dstRow + x * 3;
+                output[dst] = rasters[0][yRow + x];
+                output[dst + 1] = rasters[1][cRow + (x >> 1)];
+                output[dst + 2] = rasters[2][cRow + (x >> 1)];
+            }
+        }
+        return output;
+    }
+
+    private static byte[] Interleave422(byte[][] rasters, int width, int height, int mcusPerLine)
+    {
+        int yStride = mcusPerLine * 16;
+        int cStride = mcusPerLine * 8;
+        var output = new byte[width * height * 3];
+
+        for (var y = 0; y < height; y++)
+        {
+            int yRow = y * yStride;
+            int cRow = y * cStride;
+            int dstRow = y * width * 3;
+            for (var x = 0; x < width; x++)
+            {
+                int dst = dstRow + x * 3;
+                output[dst] = rasters[0][yRow + x];
+                output[dst + 1] = rasters[1][cRow + (x >> 1)];
+                output[dst + 2] = rasters[2][cRow + (x >> 1)];
+            }
+        }
+        return output;
+    }
+
+    private static byte[] InterleaveGeneric(
+        FrameHeader frame, byte[][] componentRasters,
+        int maxH, int maxV, int nf, int width, int height, int mcusPerLine)
+    {
         var output = new byte[width * height * nf];
         var rasterWidths = new int[nf];
         var hSamps = new int[nf];
         var vSamps = new int[nf];
         for (var c = 0; c < nf; c++)
         {
-            int rasterW = componentRasters[c].Length /
-                          ((height * frame.Components[c].VerticalSampling + maxV - 1) / maxV is var h && h > 0 ? h : 1);
-            // Safer: derive raster width from componentRasters length and
-            // sampling. Use mcusPerLine * 8 * H(c) — we can compute that
-            // from frame dimensions.
-            // mcusPerLine = ceil(width / (8 * maxH))
-            int mcusPerLine = (width + 8 * maxH - 1) / (8 * maxH);
             rasterWidths[c] = mcusPerLine * 8 * frame.Components[c].HorizontalSampling;
             hSamps[c] = frame.Components[c].HorizontalSampling;
             vSamps[c] = frame.Components[c].VerticalSampling;

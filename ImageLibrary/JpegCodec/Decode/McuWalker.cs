@@ -211,16 +211,15 @@ internal sealed class McuWalker
         int blockX,
         int blockY)
     {
-        Span<short> zigzag = stackalloc short[64];
-        zigzag.Clear();
+        Span<short> natural = stackalloc short[64];
 
-        // DC: Huffman SSSS + Receive + add to predictor.
+        // DC: Huffman SSSS + Receive + add to predictor → dequant → natural order.
         int ssss = HuffmanDecoder.DecodeSymbol(bitReader, info.DcTable);
         if (ssss > 0)
             dcPredictor += bitReader.Receive(ssss);
-        zigzag[0] = (short)dcPredictor;
+        natural[0] = (short)(dcPredictor * info.QuantTable[0]);
 
-        // AC: 63 entries, possibly EOB or ZRL terminated.
+        // AC: decode, de-zigzag, and dequant in one pass.
         var k = 1;
         while (k < 64)
         {
@@ -243,13 +242,9 @@ internal sealed class McuWalker
                 throw new InvalidOperationException(
                     $"AC run overflow at position {k} (run={run}, size={size}).");
             int value = bitReader.Receive(size);
-            zigzag[k] = (short)value;
+            natural[ZigZag.ZigzagToNatural[k]] = (short)(value * info.QuantTable[k]);
             k++;
         }
-
-        Span<short> natural = stackalloc short[64];
-        for (var i = 0; i < 64; i++)
-            natural[ZigZag.ZigzagToNatural[i]] = (short)(zigzag[i] * info.QuantTable[i]);
 
         Span<short> idctOut = stackalloc short[64];
         InverseDct.Apply(natural, idctOut);

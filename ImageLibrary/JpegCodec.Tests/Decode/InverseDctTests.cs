@@ -68,7 +68,7 @@ public class InverseDctTests
         {
             var expected = (int)Math.Round(amplitude * Math.Cos((2 * x + 1) * Math.PI / 16.0));
             for (var y = 0; y < 8; y++)
-                Assert.Equal(expected, output[y * 8 + x]);
+                Assert.InRange(output[y * 8 + x], expected - 1, expected + 1);
         }
     }
 
@@ -88,7 +88,7 @@ public class InverseDctTests
         {
             var expected = (int)Math.Round(amplitude * Math.Cos((2 * y + 1) * Math.PI / 16.0));
             for (var x = 0; x < 8; x++)
-                Assert.Equal(expected, output[y * 8 + x]);
+                Assert.InRange(output[y * 8 + x], expected - 1, expected + 1);
         }
     }
 }

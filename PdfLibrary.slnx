@@ -27,6 +27,7 @@
     <Project Path="ImageLibrary/CcittCodec/CcittCodec.csproj" />
     <Project Path="ImageLibrary/GifCodec.Tests/GifCodec.Tests.csproj" />
     <Project Path="ImageLibrary/GifCodec/GifCodec.csproj" />
+    <Project Path="ImageLibrary/ImageLibrary.Benchmarks/ImageLibrary.Benchmarks.csproj" />
     <Project Path="ImageLibrary/ImageLibrary.IntegrationTests/ImageLibrary.IntegrationTests.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder/Jbig2Decoder.csproj" />
     <Project Path="ImageLibrary/Jbig2Decoder.Tests/Jbig2Decoder.Tests.csproj" />

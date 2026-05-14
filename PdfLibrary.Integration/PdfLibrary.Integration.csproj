@@ -13,7 +13,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Codeuctivity.ImageSharpCompare" Version="4.1.379" />
+      <PackageReference Include="Codeuctivity.ImageSharpCompare" Version="4.1.390" />
       <!--
         Do NOT add a direct SkiaSharp reference here. SkiaSharp 4.x has an upstream cctor
         bug (#3817/#3832/#3865) that's currently blocking the v4 bump, and Rendering.SkiaSharp
