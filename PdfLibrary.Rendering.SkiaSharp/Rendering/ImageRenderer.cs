@@ -156,6 +156,18 @@ internal class ImageRenderer
             int bitsPerComponent = image.BitsPerComponent;
             string colorSpace = image.ColorSpace;
 
+            if (colorSpace == "ICCBased")
+            {
+                int iccComponents = GetIccBasedComponentCount(image);
+                colorSpace = iccComponents switch
+                {
+                    1 => "DeviceGray",
+                    3 => "ICCBased",
+                    4 => "ICCBased",
+                    _ => "ICCBased"
+                };
+            }
+
             // CRITICAL FIX: CoreJ2K.Skia returns Rgb888x which has a known SkiaSharp rendering bug
             // See: https://github.com/mono/SkiaSharp/issues/2671
             // Workaround: Use Decompress() for raw bytes, manually create Rgba8888 bitmap
