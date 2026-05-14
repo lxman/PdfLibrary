@@ -375,19 +375,66 @@ internal class ImageRenderer
                     // Debug: Log first few pixels
                     int debugPixelCount = Math.Min(10, width * height);
 
+                    // Bytes per row depends on bit depth: ceil(width * bpc / 8)
+                    int bitsPerPixel = bitsPerComponent;
+                    int bytesPerRowIdx = (width * bitsPerPixel + 7) / 8;
+
                     // Convert indexed pixels to RGBA
                     for (var y = 0; y < height; y++)
                     {
                         for (var x = 0; x < width; x++)
                         {
-                            int pixelIndex = y * width + x;
-                            if (pixelIndex >= imageData.Length)
-                                continue;
+                            byte paletteIndex;
+                            switch (bitsPerPixel)
+                            {
+                                case 8:
+                                {
+                                    int idx = y * bytesPerRowIdx + x;
+                                    paletteIndex = idx < imageData.Length ? imageData[idx] : (byte)0;
+                                    break;
+                                }
+                                case 4:
+                                {
+                                    int idx = y * bytesPerRowIdx + (x >> 1);
+                                    if (idx < imageData.Length)
+                                    {
+                                        paletteIndex = (x & 1) == 0
+                                            ? (byte)((imageData[idx] >> 4) & 0x0F)
+                                            : (byte)(imageData[idx] & 0x0F);
+                                    }
+                                    else paletteIndex = 0;
+                                    break;
+                                }
+                                case 2:
+                                {
+                                    int idx = y * bytesPerRowIdx + (x >> 2);
+                                    int shift = (3 - (x & 3)) * 2;
+                                    paletteIndex = idx < imageData.Length
+                                        ? (byte)((imageData[idx] >> shift) & 0x03)
+                                        : (byte)0;
+                                    break;
+                                }
+                                case 1:
+                                {
+                                    int idx = y * bytesPerRowIdx + (x >> 3);
+                                    int shift = 7 - (x & 7);
+                                    paletteIndex = idx < imageData.Length
+                                        ? (byte)((imageData[idx] >> shift) & 0x01)
+                                        : (byte)0;
+                                    break;
+                                }
+                                default:
+                                {
+                                    int idx = y * width + x;
+                                    paletteIndex = idx < imageData.Length ? imageData[idx] : (byte)0;
+                                    break;
+                                }
+                            }
 
-                            byte paletteIndex = imageData[pixelIndex];
                             if (paletteIndex > hival)
                                 paletteIndex = (byte)hival;
 
+                            int pixelIndex = y * width + x;
                             int paletteOffset = paletteIndex * componentsPerEntry;
                             int bufferOffset = pixelIndex * 4;
 
