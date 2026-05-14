@@ -282,18 +282,19 @@ public sealed class JpegStreamDecoder
 
     private static byte[] Interleave444(byte[][] rasters, int width, int height, int rasterWidth)
     {
+        byte[] r0 = rasters[0], r1 = rasters[1], r2 = rasters[2];
         var output = new byte[width * height * 3];
+        var dst = 0;
         for (var y = 0; y < height; y++)
         {
             int srcRow = y * rasterWidth;
-            int dstRow = y * width * 3;
             for (var x = 0; x < width; x++)
             {
                 int src = srcRow + x;
-                int dst = dstRow + x * 3;
-                output[dst] = rasters[0][src];
-                output[dst + 1] = rasters[1][src];
-                output[dst + 2] = rasters[2][src];
+                output[dst] = r0[src];
+                output[dst + 1] = r1[src];
+                output[dst + 2] = r2[src];
+                dst += 3;
             }
         }
         return output;
@@ -301,21 +302,38 @@ public sealed class JpegStreamDecoder
 
     private static byte[] Interleave420(byte[][] rasters, int width, int height, int mcusPerLine)
     {
+        byte[] yRaster = rasters[0], cbRaster = rasters[1], crRaster = rasters[2];
         int yStride = mcusPerLine * 16;
         int cStride = mcusPerLine * 8;
         var output = new byte[width * height * 3];
+        int widthPairs = width & ~1;
 
+        var dst = 0;
         for (var y = 0; y < height; y++)
         {
             int yRow = y * yStride;
             int cRow = (y >> 1) * cStride;
-            int dstRow = y * width * 3;
-            for (var x = 0; x < width; x++)
+            var x = 0;
+            for (; x < widthPairs; x += 2)
             {
-                int dst = dstRow + x * 3;
-                output[dst] = rasters[0][yRow + x];
-                output[dst + 1] = rasters[1][cRow + (x >> 1)];
-                output[dst + 2] = rasters[2][cRow + (x >> 1)];
+                int cx = x >> 1;
+                byte cb = cbRaster[cRow + cx];
+                byte cr = crRaster[cRow + cx];
+                output[dst] = yRaster[yRow + x];
+                output[dst + 1] = cb;
+                output[dst + 2] = cr;
+                output[dst + 3] = yRaster[yRow + x + 1];
+                output[dst + 4] = cb;
+                output[dst + 5] = cr;
+                dst += 6;
+            }
+            if (x < width)
+            {
+                int cx = x >> 1;
+                output[dst] = yRaster[yRow + x];
+                output[dst + 1] = cbRaster[cRow + cx];
+                output[dst + 2] = crRaster[cRow + cx];
+                dst += 3;
             }
         }
         return output;
@@ -323,21 +341,38 @@ public sealed class JpegStreamDecoder
 
     private static byte[] Interleave422(byte[][] rasters, int width, int height, int mcusPerLine)
     {
+        byte[] yRaster = rasters[0], cbRaster = rasters[1], crRaster = rasters[2];
         int yStride = mcusPerLine * 16;
         int cStride = mcusPerLine * 8;
         var output = new byte[width * height * 3];
+        int widthPairs = width & ~1;
 
+        var dst = 0;
         for (var y = 0; y < height; y++)
         {
             int yRow = y * yStride;
             int cRow = y * cStride;
-            int dstRow = y * width * 3;
-            for (var x = 0; x < width; x++)
+            var x = 0;
+            for (; x < widthPairs; x += 2)
             {
-                int dst = dstRow + x * 3;
-                output[dst] = rasters[0][yRow + x];
-                output[dst + 1] = rasters[1][cRow + (x >> 1)];
-                output[dst + 2] = rasters[2][cRow + (x >> 1)];
+                int cx = x >> 1;
+                byte cb = cbRaster[cRow + cx];
+                byte cr = crRaster[cRow + cx];
+                output[dst] = yRaster[yRow + x];
+                output[dst + 1] = cb;
+                output[dst + 2] = cr;
+                output[dst + 3] = yRaster[yRow + x + 1];
+                output[dst + 4] = cb;
+                output[dst + 5] = cr;
+                dst += 6;
+            }
+            if (x < width)
+            {
+                int cx = x >> 1;
+                output[dst] = yRaster[yRow + x];
+                output[dst + 1] = cbRaster[cRow + cx];
+                output[dst + 2] = crRaster[cRow + cx];
+                dst += 3;
             }
         }
         return output;

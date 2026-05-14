@@ -24,6 +24,13 @@ internal sealed class JpegBitReader
 
     private void Fill()
     {
+        if (_bitsInBuffer <= 0 && _source.TryReadFourCleanBytes(out uint packed))
+        {
+            _buffer = packed;
+            _bitsInBuffer = 32;
+            return;
+        }
+
         while (_bitsInBuffer <= 24)
         {
             int b = _source.ReadByte();

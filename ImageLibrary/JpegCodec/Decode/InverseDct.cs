@@ -206,6 +206,117 @@ internal static class InverseDct
         output[32 + col] = Descale(tmp13 - t0, shift);
     }
 
+    public static void ApplyAndShiftToBytes(
+        ReadOnlySpan<short> input,
+        byte[] raster,
+        int rasterOffset,
+        int rasterStride)
+    {
+        Span<int> workspace = stackalloc int[64];
+
+        for (var row = 0; row < 8; row++)
+        {
+            int b = row * 8;
+
+            if (input[b + 1] == 0 && input[b + 2] == 0 && input[b + 3] == 0 &&
+                input[b + 4] == 0 && input[b + 5] == 0 && input[b + 6] == 0 &&
+                input[b + 7] == 0)
+            {
+                int dc = input[b] << Pass1Bits;
+                workspace[b] = dc;
+                workspace[b + 1] = dc;
+                workspace[b + 2] = dc;
+                workspace[b + 3] = dc;
+                workspace[b + 4] = dc;
+                workspace[b + 5] = dc;
+                workspace[b + 6] = dc;
+                workspace[b + 7] = dc;
+                continue;
+            }
+
+            RowPass(
+                input[b], input[b + 1], input[b + 2], input[b + 3],
+                input[b + 4], input[b + 5], input[b + 6], input[b + 7],
+                workspace, b);
+        }
+
+        for (var col = 0; col < 8; col++)
+        {
+            int rowOff = rasterOffset + col;
+
+            if (workspace[8 + col] == 0 && workspace[16 + col] == 0 &&
+                workspace[24 + col] == 0 && workspace[32 + col] == 0 &&
+                workspace[40 + col] == 0 && workspace[48 + col] == 0 &&
+                workspace[56 + col] == 0)
+            {
+                byte dc = LevelShift.Shift(Descale(workspace[col], Pass1Bits + 3));
+                raster[rowOff] = dc;
+                raster[rowOff + rasterStride] = dc;
+                raster[rowOff + rasterStride * 2] = dc;
+                raster[rowOff + rasterStride * 3] = dc;
+                raster[rowOff + rasterStride * 4] = dc;
+                raster[rowOff + rasterStride * 5] = dc;
+                raster[rowOff + rasterStride * 6] = dc;
+                raster[rowOff + rasterStride * 7] = dc;
+                continue;
+            }
+
+            ColPassToBytes(
+                workspace[col], workspace[8 + col], workspace[16 + col], workspace[24 + col],
+                workspace[32 + col], workspace[40 + col], workspace[48 + col], workspace[56 + col],
+                raster, rowOff, rasterStride);
+        }
+    }
+
+    private static void ColPassToBytes(
+        int d0, int d1, int d2, int d3,
+        int d4, int d5, int d6, int d7,
+        byte[] raster, int off, int stride)
+    {
+        const int shift = ConstBits + Pass1Bits + 3;
+
+        int tmp0 = (d0 + d4) << ConstBits;
+        int tmp1 = (d0 - d4) << ConstBits;
+
+        int z1 = (d2 + d6) * Fix0541;
+        int tmp2 = z1 - d6 * Fix1847;
+        int tmp3 = z1 + d2 * Fix0765;
+
+        int tmp10 = tmp0 + tmp3;
+        int tmp13 = tmp0 - tmp3;
+        int tmp11 = tmp1 + tmp2;
+        int tmp12 = tmp1 - tmp2;
+
+        int z1o = d7 + d1;
+        int z2o = d5 + d3;
+        int z3 = d7 + d3;
+        int z4 = d5 + d1;
+        int z5 = (z3 + z4) * Fix1175;
+
+        int t0 = d7 * Fix0298;
+        int t1 = d5 * Fix2053;
+        int t2 = d3 * Fix3072;
+        int t3 = d1 * Fix1501;
+        z1o *= -Fix0899;
+        z2o *= -Fix2562;
+        z3 = z3 * -Fix1961 + z5;
+        z4 = z4 * -Fix0390 + z5;
+
+        t0 += z1o + z3;
+        t1 += z2o + z4;
+        t2 += z2o + z3;
+        t3 += z1o + z4;
+
+        raster[off]              = LevelShift.Shift(Descale(tmp10 + t3, shift));
+        raster[off + stride * 7] = LevelShift.Shift(Descale(tmp10 - t3, shift));
+        raster[off + stride]     = LevelShift.Shift(Descale(tmp11 + t2, shift));
+        raster[off + stride * 6] = LevelShift.Shift(Descale(tmp11 - t2, shift));
+        raster[off + stride * 2] = LevelShift.Shift(Descale(tmp12 + t1, shift));
+        raster[off + stride * 5] = LevelShift.Shift(Descale(tmp12 - t1, shift));
+        raster[off + stride * 3] = LevelShift.Shift(Descale(tmp13 + t0, shift));
+        raster[off + stride * 4] = LevelShift.Shift(Descale(tmp13 - t0, shift));
+    }
+
     private static short Descale(int value, int shift)
     {
         return (short)((value + (1 << (shift - 1))) >> shift);

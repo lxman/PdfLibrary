@@ -213,13 +213,11 @@ internal sealed class McuWalker
     {
         Span<short> natural = stackalloc short[64];
 
-        // DC: Huffman SSSS + Receive + add to predictor → dequant → natural order.
         int ssss = HuffmanDecoder.DecodeSymbol(bitReader, info.DcTable);
         if (ssss > 0)
             dcPredictor += bitReader.Receive(ssss);
         natural[0] = (short)(dcPredictor * info.QuantTable[0]);
 
-        // AC: decode, de-zigzag, and dequant in one pass.
         var k = 1;
         while (k < 64)
         {
@@ -246,18 +244,8 @@ internal sealed class McuWalker
             k++;
         }
 
-        Span<short> idctOut = stackalloc short[64];
-        InverseDct.Apply(natural, idctOut);
-
-        int dstY0 = blockY * 8;
-        int dstX0 = blockX * 8;
-        for (var y = 0; y < 8; y++)
-        {
-            int rowOff = (dstY0 + y) * rasterWidth + dstX0;
-            int blockRowOff = y * 8;
-            for (var x = 0; x < 8; x++)
-                raster[rowOff + x] = LevelShift.Shift(idctOut[blockRowOff + x]);
-        }
+        int rasterOffset = blockY * 8 * rasterWidth + blockX * 8;
+        InverseDct.ApplyAndShiftToBytes(natural, raster, rasterOffset, rasterWidth);
     }
 
     private int FindFrameComponentIndex(byte componentId)

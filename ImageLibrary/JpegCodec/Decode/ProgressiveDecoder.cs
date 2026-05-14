@@ -408,10 +408,7 @@ internal sealed class ProgressiveDecoder
             int blockW = _componentBlockWidth[c];
             int blockH = _componentBlockHeight[c];
             short[] coefs = _coefficients[c];
-            // stackalloc lifetime is per METHOD, not per scope — so the
-            // buffers go OUTSIDE the loop.
             Span<short> natural = stackalloc short[64];
-            Span<short> idctOut = stackalloc short[64];
             for (var by = 0; by < blockH; by++)
             {
                 for (var bx = 0; bx < blockW; bx++)
@@ -420,17 +417,9 @@ internal sealed class ProgressiveDecoder
                     natural.Clear();
                     for (var k = 0; k < 64; k++)
                         natural[ZigZag.ZigzagToNatural[k]] = (short)(coefs[blockOff + k] * quant[k]);
-                    InverseDct.Apply(natural, idctOut);
 
-                    int dstY0 = by * 8;
-                    int dstX0 = bx * 8;
-                    for (var y = 0; y < 8; y++)
-                    {
-                        int rowOff = (dstY0 + y) * rasterW + dstX0;
-                        int blkRow = y * 8;
-                        for (var x = 0; x < 8; x++)
-                            raster[rowOff + x] = LevelShift.Shift(idctOut[blkRow + x]);
-                    }
+                    int rasterOffset = by * 8 * rasterW + bx * 8;
+                    InverseDct.ApplyAndShiftToBytes(natural, raster, rasterOffset, rasterW);
                 }
             }
             rasters[c] = raster;

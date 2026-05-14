@@ -70,6 +70,27 @@ internal sealed class JpegByteSource
         return -1;
     }
 
+    public bool TryReadFourCleanBytes(out uint packed)
+    {
+        packed = 0;
+        if (_atMarker) return false;
+        int remaining = _data.Length - _position;
+        if (remaining < 4) return false;
+
+        byte b0 = _data[_position];
+        if (b0 == 0xFF) return false;
+        byte b1 = _data[_position + 1];
+        if (b1 == 0xFF) return false;
+        byte b2 = _data[_position + 2];
+        if (b2 == 0xFF) return false;
+        byte b3 = _data[_position + 3];
+        if (b3 == 0xFF) return false;
+
+        packed = ((uint)b0 << 24) | ((uint)b1 << 16) | ((uint)b2 << 8) | b3;
+        _position += 4;
+        return true;
+    }
+
     // Step past the marker after the caller has acknowledged it.
     public void ConsumeMarker()
     {
