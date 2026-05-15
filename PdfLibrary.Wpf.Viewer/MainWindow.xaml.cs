@@ -19,13 +19,18 @@ namespace PdfLibrary.Wpf.Viewer;
 /// </summary>
 public partial class MainWindow : Window
 {
+    // PDF points are 1/72 inch; WPF DIUs are 1/96 inch. Both are on-screen lengths,
+    // so one PDF point equals 96/72 DIUs regardless of monitor DPI.
+    private const double DiusPerPdfPoint = 96.0 / 72.0;
+
     // Document state
     private PdfDocument? _pdfDoc;
     private int _currentPage;
     private int _totalPages;
     private string? _currentFilePath;
 
-    // Zoom state
+    // Zoom state expressed as a fraction of physical-actual-size on screen
+    // (1.0 = 1 inch of PDF renders as 1 inch on the monitor).
     private double _zoomLevel = 1.0;
     private bool _isUpdatingZoom;
 
@@ -171,17 +176,22 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                // Translate user-facing zoom (fraction of actual size) into the pixel
+                // scale the renderer expects (Skia pixels per PDF point). The DPI scale
+                // factor here is what makes physical-actual-size match what's on screen.
+                double pixelScale = _zoomLevel * DiusPerPdfPoint * VisualTreeHelper.GetDpi(this).DpiScaleX;
+
                 // Get or create the render target with proper dimensions
                 // Use page.Width/Height which account for rotation (swap dimensions for 90°/270°)
-                SkiaSharpRenderTarget renderTarget = PdfRenderer.GetOrCreateRenderTarget(page.Width, page.Height, _zoomLevel);
+                SkiaSharpRenderTarget renderTarget = PdfRenderer.GetOrCreateRenderTarget(page.Width, page.Height, pixelScale);
 
                 // Use the simplified public API
-                page.Render(renderTarget, _currentPage, _zoomLevel);
+                page.Render(renderTarget, _currentPage, pixelScale);
 
                 // Finalize and display the rendered content
                 PdfRenderer.FinalizeRendering(_currentPage);
 
-                Log.Information("PdfLibrary rendered page {Page} at {Zoom}%", _currentPage, _zoomLevel * 100);
+                Log.Information("PdfLibrary rendered page {Page} at {Zoom}% (pixel scale {PixelScale:F3})", _currentPage, _zoomLevel * 100, pixelScale);
             });
         }
         catch (Exception ex)
@@ -205,23 +215,27 @@ public partial class MainWindow : Window
 
     private async void FitToPage_Click(object sender, RoutedEventArgs e)
     {
-        // Calculate zoom to fit page height in the viewport
+        // Fit the entire page in the viewport (limiting dimension wins).
         PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
         if (page is null) return;
-        double viewportHeight = PdfScroll.ActualHeight - 50; // Account for margins and prevent scrollbar
-        // Use page.Height which accounts for rotation
-        double zoom = viewportHeight / page.Height;
+        double viewportWidth = PdfScroll.ActualWidth - 60;
+        double viewportHeight = PdfScroll.ActualHeight - 50;
+        double pageWidthDiu = page.Width * DiusPerPdfPoint;
+        double pageHeightDiu = page.Height * DiusPerPdfPoint;
+        double zoom = Math.Min(viewportWidth / pageWidthDiu, viewportHeight / pageHeightDiu);
         await SetZoomAsync(zoom);
     }
 
     private async void FitToWidth_Click(object sender, RoutedEventArgs e)
     {
-        // Calculate zoom to fit page width in the viewport
+        // Fit the page width to the viewport. _zoomLevel is now a fraction of
+        // actual-screen-size, so we compare DIUs to DIUs and the render path
+        // handles the DPI conversion.
         PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
         if (page is null) return;
-        double viewportWidth = PdfScroll.ActualWidth - 60; // Account for margins and prevent scrollbar
-        // Use page.Width which accounts for rotation
-        double zoom = viewportWidth / page.Width;
+        double viewportWidth = PdfScroll.ActualWidth - 60;
+        double pageWidthDiu = page.Width * DiusPerPdfPoint;
+        double zoom = viewportWidth / pageWidthDiu;
         await SetZoomAsync(zoom);
     }
 
