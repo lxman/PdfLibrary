@@ -188,6 +188,41 @@ foreach (var block in textBlocks)
 }
 ```
 
+## Thread Safety
+
+PdfLibrary is **not currently thread-safe**. The two main constraints:
+
+- `PdfDocument` instances are not safe to share across threads — they lazy-load objects by mutating internal state and seeking a shared `Stream`.
+- The renderer's static glyph cache is cleared whenever `SkiaSharpRenderTarget` sees a different document, which can race when multiple renders run concurrently and cause silent rendering glitches under load.
+
+For ASP.NET Core or any multi-threaded server use, the safe pattern today is:
+
+1. **Load and dispose a fresh `PdfDocument` per request** — never cache or share instances across requests.
+2. **Serialize render calls** with a process-wide `SemaphoreSlim(1, 1)`.
+
+```csharp
+private static readonly SemaphoreSlim RenderLock = new(1, 1);
+
+public async Task<byte[]> RenderFirstPageAsync(string pdfPath)
+{
+    await RenderLock.WaitAsync();
+    try
+    {
+        using var document = PdfDocument.Load(pdfPath);
+        return document.GetPage(0)!
+            .RenderTo()
+            .WithDpi(150)
+            .ToBytes();
+    }
+    finally
+    {
+        RenderLock.Release();
+    }
+}
+```
+
+Proper concurrent rendering is on the roadmap. Until then the throughput ceiling is one render at a time per process — fine for occasional PDF generation, not ideal for high-traffic endpoints. If the same PDFs are requested repeatedly, cache the rendered output at the HTTP layer rather than re-rendering.
+
 ## Image Decompression Architecture
 
 PdfLibrary uses custom-built, high-performance decompression libraries for all PDF image formats. These are **pure C# implementations** with no external dependencies:
