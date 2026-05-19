@@ -205,10 +205,10 @@ byte[] imageData = File.ReadAllBytes("photo.png");
     .AddImage(imageData, 100, 500, 200, 150))
 ```
 
-**Supported Image Formats** (automatically detected):
-- **JPEG** (.jpg, .jpeg) - Passed through with DCTDecode filter
-- **JPEG2000** (.jp2, .j2k) - Passed through with JPXDecode filter (uses Melville.CSJ2K)
-- **PNG, BMP, TIFF, GIF, etc.** - Decoded via ImageSharp, then compressed with FlateDecode
+**Supported Image Formats** (automatically detected by magic bytes):
+- **JPEG** (.jpg, .jpeg) — passed through with the `DCTDecode` filter
+- **JPEG2000** (.jp2, .j2k) — passed through with the `JPXDecode` filter (decoded via the in-house `Jp2Codec` when needed)
+- **Other formats (PNG, BMP, TIFF, GIF, …)** — *not supported directly by the builder.* Convert to JPEG or JPEG2000 before calling `AddImage`; `PdfDocumentWriter` throws `NotSupportedException` for unrecognised signatures.
 
 ### Image Builder Methods
 

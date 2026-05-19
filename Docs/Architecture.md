@@ -568,17 +568,17 @@ public class TextExtractorProcessor : PdfContentProcessor
 | SkiaSharp | High-quality 2D graphics rendering (consumed by `PdfLibrary.Rendering.SkiaSharp`) |
 | Wacton.Unicolour | Color space transformations (CalGray/CalRGB/Lab/ICC) |
 | Serilog | Logging infrastructure |
-| Melville.CSJ2K | JPEG2000 codestream decoder (wrapped by `Compressors.Jpeg2000`) |
+| Melville.CSJ2K | *Test-time only* — differential reference used by `ImageLibrary/Jp2Codec.Tests` for JPEG 2000 conformance; not referenced at runtime |
 
 ### In-tree codec projects
 
-Each codec is its own project under `ImageLibrary/` (or `Compressors/`). The PDF filters in `PdfLibrary/Filters/` are thin adapters over these.
+Each codec is its own project under `ImageLibrary/`. The PDF filters in `PdfLibrary/Filters/` are thin adapters over these.
 
 | Project | PDF filter | Notes |
 |---------|------------|-------|
 | `ImageLibrary/JpegCodec` | `/DCTDecode` | In-house baseline + progressive JPEG (encode + decode) |
+| `ImageLibrary/Jp2Codec` | `/JPXDecode` | In-house JPEG 2000 decoder (decode only) |
 | `ImageLibrary/LzwCodec` | `/LZWDecode` | Early Change parameter supported |
 | `ImageLibrary/CcittCodec` | `/CCITTFaxDecode` | Group 3 1D/2D and Group 4 |
 | `ImageLibrary/Jbig2Decoder` | `/JBIG2Decode` | ITU-T T.88; used directly by `PdfLibrary.Filters.Jbig2DecodeFilter` |
-| `Compressors/Compressors.Jpeg2000` | `/JPXDecode` | Wraps `Melville.CSJ2K` |
-| `ImageLibrary/BmpCodec`, `GifCodec`, `PngCodec`, `TgaCodec`, `TiffCodec` | — | Image container codecs (consumed by `ImageUtility`, not by `PdfLibrary`) |
+| `ImageLibrary/BmpCodec`, `GifCodec`, `PngCodec`, `TgaCodec`, `TiffCodec`, `PbmCodec` | — | Image container codecs (consumed by `ImageUtility`, not by `PdfLibrary`) |

@@ -4,7 +4,7 @@ This directory contains the pluggable codec architecture for ImageUtility.
 
 ## Overview
 
-The codec system is designed to support custom image format implementations that you own and control, eliminating reliance on third-party libraries and licensing issues.
+The codec system supports custom image format implementations that you own and control. As of the current release every supported format is backed by an in-tree codec from `ImageLibrary/`; ImageUtility has no third-party image-format dependencies.
 
 ## Architecture
 
@@ -143,25 +143,27 @@ The `CodecRegistry` automatically selects the appropriate codec based on the ope
 - `DecodeFile()` only considers codecs where `CanDecode == true`
 - `EncodeFile()` only considers codecs where `CanEncode == true`
 
-## Planned Codecs
+## Registered Codecs
 
-The following codecs are planned for implementation:
+All formats supported by ImageUtility are backed by in-house codecs from `ImageLibrary/`:
 
-- **JPEG** - Based on existing JpegDecoder code
-- **PNG** - Deflate + filtering + chunks
-- **TIFF** - Multi-page support, various compressions
-- **BMP** - Simple uncompressed bitmap
-- **GIF** - LZW compression, animation support
-- **JPEG2000** - Wavelet-based compression
+| Codec class | Backing library | Formats | Decode | Encode |
+|---|---|---|---|---|
+| `CustomJpegCodec` | `ImageLibrary/JpegCodec` | `.jpg`, `.jpeg` | ✓ (baseline + progressive, 1/3/4 components) | ✓ |
+| `CustomPngCodec` | `ImageLibrary/PngCodec` | `.png` | ✓ | ✓ |
+| `CustomBmpCodec` | `ImageLibrary/BmpCodec` | `.bmp` | ✓ | ✓ |
+| `CustomGifCodec` | `ImageLibrary/GifCodec` | `.gif` | ✓ (first frame for animated) | ✓ |
+| `CustomTgaCodec` | `ImageLibrary/TgaCodec` | `.tga` | ✓ | ✓ |
+| `CustomTiffCodec` | `ImageLibrary/TiffCodec` | `.tif`, `.tiff` | ✓ | ✓ (LZW default) |
+| `CustomJpeg2000Codec` | `ImageLibrary/Jp2Codec` | `.jp2`, `.j2k`, `.jpx`, `.jpf` | ✓ | — |
+| `CustomPbmCodec` | `ImageLibrary/PbmCodec` | `.pbm`, `.pgm`, `.ppm`, `.pnm` | ✓ (P1–P6) | ✓ (P4/P5/P6 binary) |
 
-## Current State
-
-Currently, the ImageUtility application uses WPF's built-in codecs as a fallback. As custom codec implementations are added, they will be registered and take priority over the built-in ones.
+`MainWindow` still uses WPF's `BitmapImage` for on-screen display, but every transcoding operation that flows through `CodecRegistry.DecodeFile` / `EncodeFile` runs through one of the in-house codecs above.
 
 ## Benefits
 
-- **Full source control** - Own and maintain all codec code
-- **No licensing issues** - No dependency on third-party libraries
-- **Customizable** - Add format extensions or optimizations as needed
-- **Independent updates** - Fix bugs and add features on your schedule
-- **Cross-format operations** - Unified API for all image formats
+- **Full source control** — own and maintain all codec code
+- **No third-party image dependencies** — `ImageUtility.csproj` references only its own per-codec libraries
+- **Customizable** — add format extensions or optimizations as needed
+- **Independent updates** — fix bugs and add features on your schedule
+- **Cross-format operations** — unified API for all image formats

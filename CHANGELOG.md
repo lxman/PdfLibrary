@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Added
 - **In-house JPEG codec** (`ImageLibrary/JpegCodec`) — pure C# baseline + progressive JPEG encoder and decoder; replaces the vendored `JpegLibrary` git submodule. Used by `PdfLibrary.Filters.DctDecodeFilter` and `ImageLibrary.TiffCodec` for TIFF's JPEG sub-format.
+- **In-house Netpbm codec** (`ImageLibrary/PbmCodec`) — pure C# decoder for `P1`–`P6` (ASCII + binary bitmap/graymap/pixmap) and binary encoder (`P4`/`P5`/`P6`). Wired into ImageUtility as `CustomPbmCodec` for `.pbm` / `.pgm` / `.ppm` / `.pnm`.
+- **`CustomJpegCodec`, `CustomPngCodec`, `CustomBmpCodec`, `CustomGifCodec`, `CustomTgaCodec`, `CustomTiffCodec`** wrappers in `PdfLibrary.Utilities/ImageUtility/Codecs/`, making the in-tree `ImageLibrary` codecs the primary implementations in ImageUtility's `CodecRegistry`.
+- **Thread-safety note in `README.md`** documenting that `PdfDocument` instances and the static glyph cache in `SkiaSharpRenderTarget` are not safe to share across threads, with the recommended per-request-load + `SemaphoreSlim` workaround for ASP.NET / multi-threaded server use.
 
 ### Changed
 - **ImageLibrary reorganized into per-codec projects.** The monolithic `ImageLibrary/ImageLibrary` project has been split. Each codec now lives in its own project under `ImageLibrary/`:
@@ -19,13 +22,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `ImageLibrary/PngCodec` (was `ImageLibrary/ImageLibrary/Container/Png`)
   - `ImageLibrary/TgaCodec` (was `ImageLibrary/ImageLibrary/Container/Tga`)
   - `ImageLibrary/TiffCodec` (was `ImageLibrary/ImageLibrary/Container/Tiff`)
+  - `ImageLibrary/PbmCodec` (new)
   - `ImageLibrary/Jbig2Decoder` (unchanged)
 - Test projects renamed accordingly: `Compression.Ccitt.Tests` → `CcittCodec.Tests`, `Compression.Lzw.Tests` → `LzwCodec.Tests`.
-- The `Container/Jp2` decoder has been removed from `ImageLibrary`. JPEG2000 decoding is provided exclusively by `Compressors/Compressors.Jpeg2000` (wrapping `Melville.CSJ2K`) via the `/JPXDecode` filter.
+- The legacy `Container/Jp2` decoder has been removed from `ImageLibrary` and replaced by the in-house `ImageLibrary/Jp2Codec` (pure C# JPEG 2000 decoder). `PdfLibrary.Filters.JpxDecodeFilter` now calls `Jp2Codec` directly. The earlier `Compressors/Compressors.Jpeg2000` wrapper (over `Melville.CSJ2K`) has been deleted; `Melville.CSJ2K` is retained only as a test-time differential reference in `ImageLibrary/Jp2Codec.Tests`.
+- **Solution-wide warning cleanup**: build now produces 0 warnings, 0 errors. Real fixes for null-safety (`CS8602`/`CS8603`/`CS8604`/`CS8600`/`CS8625`), unreachable code (`CS0162`), obsolete SkiaSharp API usage (`CS0618` — `SKPaint.TextSize`/`Typeface`/`FilterQuality` migrated to `SKFont` + `SKSamplingOptions`), malformed XML doc comments, unused variables/fields, and several xUnit lint suggestions (`xUnit2013`/`xUnit2017`/`xUnit2002`/`xUnit1026`). Policy suppressions (documented in csproj) for `CS1591` in the two NuGet-published libraries and `NU1701` in `PdfLibrary.Wpf.Viewer`.
+- **FontParser**: renamed the AAT-bloc `ImageFormat` enum to `BlocImageFormat` to resolve a `CS0436` type-conflict with `PdfLibrary`'s rendering `ImageFormat` enum (both were in the global namespace). External callers using the bloc-table image format must update accordingly.
 
 ### Removed
 - **`JpegLibrary` git submodule.** The vendored `JpegLibrary` fork has been removed from the tree; cloning no longer requires `--recurse-submodules`. The `PdfLibrary.Filters.JpegLibraryAdapter` wrapper has also been deleted — `DctDecodeFilter` now uses `ImageLibrary.JpegCodec` directly.
 - Removed the legacy aggregated `ImageLibrary.ImageLibrary` project; consumers should reference the specific codec project(s) they need.
+- **ImageSharp dependency.** `SixLabors.ImageSharp` has been removed from `ImageUtility.csproj`. Every supported format is now backed by an in-tree codec; WebP support has been intentionally dropped (no in-house VP8/VP8L implementation is planned — WebP is not a PDF image filter).
+- **Codec Settings UI in ImageUtility.** The Tools → Codec Settings dialog (`CodecSettingsWindow`) and the supporting `CodecConfiguration` preference store have been removed. With one codec per format there is no preference to express; `CodecRegistry.FindByExtension` now resolves directly without consulting user preferences.
 
 ## [0.0.10-beta] - 2025-01-13
 

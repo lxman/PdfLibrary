@@ -1,8 +1,8 @@
 # PdfLibrary Improvements
 
-Working notes on issues, gaps, and refactor opportunities. Scoped to in-house code. `Compressors.Jpeg2000`'s `Melville.CSJ2K` dependency is the remaining third-party codec tracked here as a replacement target.
+Working notes on issues, gaps, and refactor opportunities. Scoped to in-house code. All runtime image-codec dependencies are now in-tree.
 
-Project size (in-house): ~96K LOC. Top-level: PdfLibrary, PdfLibrary.Rendering.SkiaSharp, PdfLibrary.Tests, PdfLibrary.Integration, PdfLibrary.Wpf.Viewer, PdfLibrary.Utilities/ImageUtility, PdfLibrary.Examples/*, ImageLibrary (per-codec subprojects: BmpCodec, CcittCodec, GifCodec, Jbig2Decoder, JpegCodec, LzwCodec, PngCodec, TgaCodec, TiffCodec), Compressors/Compressors.Jpeg2000, FontParser, Logging.
+Project size (in-house): ~96K LOC. Top-level: PdfLibrary, PdfLibrary.Rendering.SkiaSharp, PdfLibrary.Tests, PdfLibrary.Integration, PdfLibrary.Wpf.Viewer, PdfLibrary.Utilities/ImageUtility, PdfLibrary.Examples/*, ImageLibrary (per-codec subprojects: BmpCodec, CcittCodec, GifCodec, Jbig2Decoder, Jp2Codec, JpegCodec, LzwCodec, PbmCodec, PngCodec, TgaCodec, TiffCodec), FontParser, Logging.
 
 ---
 
@@ -18,11 +18,11 @@ Vendored `JpegLibrary/` submodule has been removed. The in-house `ImageLibrary/J
 
 The `JpegLibraryAdapter` wrapper has also been deleted. Test coverage lives in `ImageLibrary/JpegCodec.Tests/`.
 
-### 1b. Melville.CSJ2K (NuGet, transitive via Compressors.Jpeg2000)
+### 1b. Melville.CSJ2K — ✅ DONE
 
-`Compressors.Jpeg2000` wraps `Melville.CSJ2K` 0.6.4 for `/JPXDecode`. CSJ2K is an IKVM-converted port of a Java JPEG2000 decoder, modernized as Melville's fork — slow, verbose stack traces, awkward to debug. Replacement is one of the longer-tail items because JPEG2000 is genuinely complex (DWT + EBCOT + tile-component-resolution-precinct-codeblock layout).
+The `Compressors/Compressors.Jpeg2000` wrapper has been deleted. `PdfLibrary.Filters.JpxDecodeFilter` now calls the in-house `ImageLibrary/Jp2Codec` (pure C# JPEG 2000 decoder) directly. `Melville.CSJ2K` is retained only as a test-time differential reference in `ImageLibrary/Jp2Codec.Tests` — not a runtime dependency anywhere.
 
-The page-2-takes-2-seconds rendering issue documented in performance work was traced to JPEG2000 decode; replacing CSJ2K with a pure C# implementation would address that latency directly.
+The page-2-takes-2-seconds latency issue documented in earlier performance work was specific to CSJ2K's IKVM-converted code path; the in-house decoder closes that gap.
 
 ---
 
@@ -147,7 +147,7 @@ Concentrated in three areas:
 
 - **FontParser** — proprietary tables (`Pfed`, `Webf`, `Prop`), AAT/Graphite, CFF2, bitmap fonts (`Cbdt`)
 - **PdfLibrary** — the issues already covered in §2 plus minor renderer notes
-- **ImageLibrary / Compressors / Utilities** — image codec example sites and TIFF compression-strategy stubs
+- **ImageLibrary / Utilities** — image codec example sites and TIFF compression-strategy stubs
 
 Worth doing a sweep with `Grep -nE "TODO|FIXME|HACK"` and converting durable TODOs into GitHub issues so they don't decay into noise.
 
@@ -156,10 +156,10 @@ Worth doing a sweep with `Grep -nE "TODO|FIXME|HACK"` and converting durable TOD
 ## Suggested ordering
 
 1. **NuGet release** — checkpoint current state before further work (the user-stated immediate next step)
-2. **Melville.CSJ2K replacement** — addresses the JPEG2000 render latency issue and removes the last third-party codec NuGet
-3. **`PdfLibrary` nullable warning cleanup** — ~240 warnings, mechanical, durable correctness benefit
-4. **Embedded Type1 + CFF extraction** — biggest correctness gap that affects text on real PDFs (parsers already exist)
-5. **CalRGB/CalGray transforms** — correctness, smaller scope than fonts
-6. **`PdfDocumentWriter` split** — unlocks future builder work
-7. **`PdfRenderer` split** — unlocks future rendering work
-8. **Test suite expansion** — ongoing, can be folded into other items
+2. **Embedded Type1 + CFF extraction** — biggest correctness gap that affects text on real PDFs (parsers already exist)
+3. **CalRGB/CalGray transforms** — correctness, smaller scope than fonts
+4. **`PdfDocumentWriter` split** — unlocks future builder work
+5. **`PdfRenderer` split** — unlocks future rendering work
+6. **Test suite expansion** — ongoing, can be folded into other items
+
+*Completed since the prior list:* `JpegLibrary` submodule replacement; `Melville.CSJ2K` runtime replacement (in-house `Jp2Codec`); solution-wide nullable/warning cleanup (0 warnings).

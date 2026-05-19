@@ -14,7 +14,7 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
 - Comprehensive color space support (DeviceRGB, DeviceCMYK, DeviceGray, ICCBased, Separation, Lab)
 - Image handling with custom high-performance decompressors:
   - JPEG (in-house JpegCodec — baseline and progressive)
-  - JPEG2000 (JP2/J2K via custom CSJ2K-based decoder)
+  - JPEG2000 (JP2/J2K via in-house Jp2Codec)
   - CCITT Group 3 and Group 4 fax compression
   - JBIG2 monochrome compression
   - LZW compression
@@ -79,8 +79,6 @@ PDF/
 │   ├── PngCodec.Tests/
 │   ├── TgaCodec.Tests/
 │   └── ImageLibrary.IntegrationTests/
-├── Compressors/                      # Standalone codec libraries
-│   └── Compressors.Jpeg2000/         # JPEG2000 (Melville.CSJ2K)
 ├── FontParser/                       # TrueType/OpenType parsing
 ├── Logging/                          # Logging infrastructure
 └── Docs/                             # Documentation
@@ -229,14 +227,14 @@ PdfLibrary uses custom-built, high-performance decompression libraries for all P
 
 ### Custom Decompressors
 - **JpegCodec** - DCTDecode filter (in-house, baseline + progressive JPEG, encode + decode)
-- **Compressors.Jpeg2000** - JPXDecode filter (Melville.CSJ2K) for JP2 and J2K codestreams
+- **Jp2Codec** - JPXDecode filter, in-house JPEG 2000 decoder (decode only)
 - **CcittCodec** - CCITTFaxDecode filter (Group 3 1D/2D and Group 4)
 - **Jbig2Decoder** - JBIG2Decode filter for monochrome document compression (ITU-T T.88, used directly by `PdfLibrary.Filters.Jbig2DecodeFilter`)
 - **LzwCodec** - LZWDecode filter with Early Change support
 - **PdfLibrary.Filters.FlateDecodeFilter** - FlateDecode (DEFLATE) using `System.IO.Compression`
 
 ### Integration
-PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF filter parameters onto the underlying codec library and returns decoded bytes in the layout the renderer expects. Image containers (BMP/GIF/PNG/TGA/TIFF) live in their own per-codec projects under `ImageLibrary/` and are used by the standalone `ImageUtility` application; PDF rendering only consumes the codec layer (`JpegCodec`, `LzwCodec`, `CcittCodec`, `Jbig2Decoder`, `Compressors.Jpeg2000`).
+PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF filter parameters onto the underlying codec library and returns decoded bytes in the layout the renderer expects. Image containers (BMP/GIF/PNG/TGA/TIFF/PBM) live in their own per-codec projects under `ImageLibrary/` and are used by the standalone `ImageUtility` application; PDF rendering only consumes the codec layer (`JpegCodec`, `Jp2Codec`, `LzwCodec`, `CcittCodec`, `Jbig2Decoder`).
 
 ## Requirements
 
@@ -248,10 +246,10 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
 - **Unicolour** - Advanced color space transformations
 - **In-tree codec libraries** (all pure C#, no third-party codec dependencies):
   - `ImageLibrary/JpegCodec` - JPEG (DCTDecode) baseline and progressive
+  - `ImageLibrary/Jp2Codec` - JPEG 2000 (JPXDecode), decode only
   - `ImageLibrary/LzwCodec` - LZW (LZWDecode) with Early Change support
   - `ImageLibrary/CcittCodec` - CCITT (CCITTFaxDecode) Group 3 1D/2D and Group 4
   - `ImageLibrary/Jbig2Decoder` - JBIG2 (JBIG2Decode, ITU-T T.88)
-  - `Compressors/Compressors.Jpeg2000` - JPEG2000 (JPXDecode, wraps Melville.CSJ2K)
 
 **Note**: PdfLibrary has no third-party image-format dependencies. All image handling is backed by in-tree codecs.
 
@@ -347,4 +345,6 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 - [SkiaSharp](https://github.com/mono/SkiaSharp) - 2D graphics library for PDF rendering
 - [Serilog](https://serilog.net/) - Structured logging framework
 - [Unicolour](https://github.com/waacton/Unicolour) - Advanced color space handling and transformations
-- [Melville.CSJ2K](https://www.nuget.org/packages/Melville.CSJ2K) - JPEG2000 decoder (wrapped by `Compressors.Jpeg2000`)
+
+### Test-time references
+- [Melville.CSJ2K](https://www.nuget.org/packages/Melville.CSJ2K) - Used only by `ImageLibrary/Jp2Codec.Tests` as a differential reference for in-house JPEG 2000 conformance testing; not a runtime dependency of `PdfLibrary`.
