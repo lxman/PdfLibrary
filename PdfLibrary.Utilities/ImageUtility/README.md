@@ -94,16 +94,20 @@ Central registry managing all codecs:
 - Status bar with image info
 - Codec architecture defined
 
-**Phase 2: In Progress**
-- Custom codec implementations
-  - JPEG codec (can leverage existing JpegDecoder code)
-  - PNG codec
-  - TIFF codec
-  - BMP codec
-  - GIF codec
+**Phase 2: Complete** ✓
+- In-house codecs registered as primary implementations:
+  - `CustomJpegCodec` (JpegCodec — baseline + progressive, 1/3/4 components)
+  - `CustomPngCodec` (PngCodec)
+  - `CustomBmpCodec` (BmpCodec)
+  - `CustomGifCodec` (GifCodec — single-frame; first frame for animated)
+  - `CustomTgaCodec` (TgaCodec)
+  - `CustomTiffCodec` (TiffCodec — LZW by default)
+  - `CustomJpeg2000Codec` (Jp2Codec — decode only)
+  - `CustomPbmCodec` (PbmCodec — Netpbm P1–P6 decode, P4/P5/P6 binary encode)
+- No third-party image format dependencies; ImageSharp has been removed. WebP is not supported (it isn't a PDF image filter and a pure-C# VP8/VP8L implementation is out of scope).
 
 **Current Behavior:**
-The application currently uses WPF's built-in codecs for loading and saving. As custom codec implementations are added to the `Codecs/` directory and registered in `CodecRegistry.RegisterBuiltInCodecs()`, they will take priority over the built-in ones.
+`CodecRegistry.RegisterBuiltInCodecs()` registers the in-house codecs first, so they win the format-by-signature and format-by-extension lookups. MainWindow still uses WPF's `BitmapImage` for on-screen display, but transcoding workflows flowing through `CodecRegistry.DecodeFile`/`EncodeFile` now use the in-house implementations.
 
 ## Building and Running
 

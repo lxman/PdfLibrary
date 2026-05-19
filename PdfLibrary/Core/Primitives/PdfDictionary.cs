@@ -6,7 +6,7 @@ namespace PdfLibrary.Core.Primitives;
 /// <summary>
 /// Represents a PDF dictionary object (ISO 32000-1:2008 section 7.3.7)
 /// Dictionaries are associative tables with name keys and any-type values
-/// Written as << key value key value >> in PDF files
+/// Written as <c>&lt;&lt; key value key value &gt;&gt;</c> in PDF files
 /// </summary>
 internal sealed class PdfDictionary : PdfObject, IDictionary<PdfName, PdfObject>
 {

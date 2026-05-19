@@ -145,7 +145,7 @@ namespace FontParser.Tables.PostScriptType1
         /// <summary>
         /// Get glyph outline for a glyph by name
         /// </summary>
-        public GlyphOutline GetGlyphOutline(string glyphName)
+        public GlyphOutline? GetGlyphOutline(string glyphName)
         {
             byte[] encryptedData;
             if (!_charStrings.TryGetValue(glyphName, out encryptedData))
@@ -161,9 +161,9 @@ namespace FontParser.Tables.PostScriptType1
         /// <summary>
         /// Get glyph outline by character code (using encoding)
         /// </summary>
-        public GlyphOutline GetGlyphOutlineByCode(int charCode)
+        public GlyphOutline? GetGlyphOutlineByCode(int charCode)
         {
-            string glyphName = GetGlyphName(charCode);
+            string? glyphName = GetGlyphName(charCode);
             if (glyphName == null)
                 return null;
 
@@ -173,7 +173,7 @@ namespace FontParser.Tables.PostScriptType1
         /// <summary>
         /// Get glyph name for a character code
         /// </summary>
-        public string GetGlyphName(int charCode)
+        public string? GetGlyphName(int charCode)
         {
             foreach (KeyValuePair<string, int> kvp in _encoding)
             {
@@ -686,7 +686,7 @@ namespace FontParser.Tables.PostScriptType1
             Debug.WriteLine($"[TYPE1-CS] Final charstrings count: {_charStrings.Count}");
         }
 
-        private static string GetStandardEncodingName(int charCode)
+        private static string? GetStandardEncodingName(int charCode)
         {
             // Standard encoding mapping (partial - common characters)
             switch (charCode)

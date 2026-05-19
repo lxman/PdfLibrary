@@ -9,41 +9,15 @@ public class CodecRegistry
 {
     private static readonly Lazy<CodecRegistry> _instance = new(() => new CodecRegistry());
     private readonly List<IImageCodec> _codecs = [];
-    private CodecConfiguration _configuration;
 
     /// <summary>
     /// Gets the singleton instance of the codec registry.
     /// </summary>
     public static CodecRegistry Instance => _instance.Value;
 
-    /// <summary>
-    /// Gets the current codec configuration.
-    /// </summary>
-    public CodecConfiguration Configuration => _configuration;
-
     private CodecRegistry()
     {
-        // Load configuration
-        _configuration = CodecConfiguration.Load();
-
-        // Initialize with built-in codecs
         RegisterBuiltInCodecs();
-    }
-
-    /// <summary>
-    /// Reloads configuration from disk.
-    /// </summary>
-    public void ReloadConfiguration()
-    {
-        _configuration = CodecConfiguration.Load();
-    }
-
-    /// <summary>
-    /// Saves current configuration to disk.
-    /// </summary>
-    public void SaveConfiguration()
-    {
-        _configuration.Save();
     }
 
     /// <summary>
@@ -74,7 +48,6 @@ public class CodecRegistry
 
     /// <summary>
     /// Finds a codec that can handle the given file extension.
-    /// Checks user preferences first, then falls back to automatic selection.
     /// </summary>
     /// <param name="extension">File extension (e.g., ".jpg").</param>
     /// <param name="requireDecode">If true, only return codecs that can decode.</param>
@@ -88,33 +61,6 @@ public class CodecRegistry
             extension = "." + extension;
         }
 
-        // Check user preferences first
-        if (requireDecode)
-        {
-            string? preferredCodecName = _configuration.GetPreferredDecoder(extension);
-            if (preferredCodecName != null)
-            {
-                IImageCodec? preferredCodec = _codecs.FirstOrDefault(c => c.Name == preferredCodecName && c.CanDecode);
-                if (preferredCodec != null)
-                {
-                    return preferredCodec;
-                }
-            }
-        }
-        else if (requireEncode)
-        {
-            string? preferredCodecName = _configuration.GetPreferredEncoder(extension);
-            if (preferredCodecName != null)
-            {
-                IImageCodec? preferredCodec = _codecs.FirstOrDefault(c => c.Name == preferredCodecName && c.CanEncode);
-                if (preferredCodec != null)
-                {
-                    return preferredCodec;
-                }
-            }
-        }
-
-        // Fallback to automatic selection
         return _codecs.FirstOrDefault(c =>
             c.Extensions.Contains(extension) &&
             (!requireDecode || c.CanDecode) &&
@@ -208,24 +154,14 @@ public class CodecRegistry
 
     private void RegisterBuiltInCodecs()
     {
-        // Register custom codecs first (higher priority)
-        // These are our owned implementations from the Compressors namespace
-
-        // Custom JPEG2000 decoder (decode only)
+        // In-house codecs from the ImageLibrary projects — primary implementations.
+        Register(new CustomJpegCodec());
+        Register(new CustomPngCodec());
+        Register(new CustomBmpCodec());
+        Register(new CustomGifCodec());
+        Register(new CustomTgaCodec());
+        Register(new CustomTiffCodec());
         Register(new CustomJpeg2000Codec());
-
-        // Register ImageSharp codecs as fallback for all formats
-        // These provide broad format support when custom codecs aren't available
-        Register(ImageSharpCodec.CreateJpegCodec());  // Fallback JPEG (lower priority)
-        Register(ImageSharpCodec.CreatePngCodec());
-        Register(ImageSharpCodec.CreateBmpCodec());
-        Register(ImageSharpCodec.CreateGifCodec());
-        Register(ImageSharpCodec.CreateTiffCodec());
-        Register(ImageSharpCodec.CreateTgaCodec());
-        Register(ImageSharpCodec.CreateWebPCodec());
-        Register(ImageSharpCodec.CreatePbmCodec());
-
-        // As more custom codecs are implemented (PNG, TIFF, etc.),
-        // register them before their ImageSharp equivalents to give them priority
+        Register(new CustomPbmCodec());
     }
 }

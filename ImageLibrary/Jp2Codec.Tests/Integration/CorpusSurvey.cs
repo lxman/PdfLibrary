@@ -16,7 +16,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class CorpusSurvey
 {
-    private const bool Run = false;
+    private static readonly bool Run = false;
 
     private static readonly string CorpusRoot =
         @"C:\Users\jorda\RiderProjects\PDF\ImageLibrary\TestImages\jp2_test";

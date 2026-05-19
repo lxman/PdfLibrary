@@ -365,7 +365,7 @@ public class CorePrimitivesTests
     public void PdfArray_Constructor_Empty()
     {
         var array = new PdfArray();
-        Assert.Equal(0, array.Count);
+        Assert.Empty(array);
         Assert.False(array.IsReadOnly);
     }
 
@@ -416,7 +416,7 @@ public class CorePrimitivesTests
         bool removed = array.Remove(item);
 
         Assert.True(removed);
-        Assert.Equal(1, array.Count);
+        Assert.Single(array);
     }
 
     [Fact]
@@ -425,7 +425,7 @@ public class CorePrimitivesTests
         var array = new PdfArray(new PdfInteger(1), new PdfInteger(2));
         array.Clear();
 
-        Assert.Equal(0, array.Count);
+        Assert.Empty(array);
     }
 
     [Fact]
@@ -444,8 +444,8 @@ public class CorePrimitivesTests
         var item = new PdfInteger(42);
         var array = new PdfArray(item);
 
-        Assert.True(array.Contains(item));
-        Assert.False(array.Contains(new PdfInteger(99)));
+        Assert.Contains(item, array);
+        Assert.DoesNotContain(new PdfInteger(99), array);
     }
 
     [Fact]

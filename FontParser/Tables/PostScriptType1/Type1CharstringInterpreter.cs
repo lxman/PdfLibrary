@@ -9,7 +9,7 @@ namespace FontParser.Tables.PostScriptType1
     /// </summary>
     public class Type1CharstringInterpreter
     {
-        private readonly List<List<byte>> _subrs;
+        private readonly List<List<byte>>? _subrs;
         private readonly Stack<float> _stack = new Stack<float>();
         private float _currentX;
         private float _currentY;
@@ -22,7 +22,7 @@ namespace FontParser.Tables.PostScriptType1
         private readonly List<PointF> _flexPoints = new List<PointF>();
         private bool _inFlex;
 
-        public Type1CharstringInterpreter(List<List<byte>> subrs = null)
+        public Type1CharstringInterpreter(List<List<byte>>? subrs = null)
         {
             _subrs = subrs;
         }

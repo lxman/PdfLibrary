@@ -21,9 +21,6 @@
                 <MenuItem Header="_Actual Size" Click="ActualSize_Click" InputGestureText="Ctrl+0"/>
                 <MenuItem Header="_Fit to Window" Click="FitToWindow_Click" InputGestureText="Ctrl+F"/>
             </MenuItem>
-            <MenuItem Header="_Tools">
-                <MenuItem Header="_Codec Settings..." Click="CodecSettings_Click"/>
-            </MenuItem>
         </Menu>
 
         <!-- Status Bar -->

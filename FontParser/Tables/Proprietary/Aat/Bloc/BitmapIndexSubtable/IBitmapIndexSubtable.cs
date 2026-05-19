@@ -4,6 +4,6 @@
     {
         IndexFormat IndexFormat { get; }
 
-        ImageFormat ImageFormat { get; }
+        BlocImageFormat ImageFormat { get; }
     }
 }

@@ -151,7 +151,7 @@ namespace CcittCodec.Tests
 
             // FindChangingElement(row, after, currentColor)
             // Looking for first element after -1 that differs from white (false)
-            var a1 = (int)method.Invoke(encoder, [row, -1, false]);
+            var a1 = (int)method!.Invoke(encoder, [row, -1, false])!;
             _output.WriteLine($"FindChangingElement(allBlack, -1, white, BlackIs1=true) = {a1}");
 
             // Should be 0 since pixel 0 is black (different from white)
@@ -173,7 +173,7 @@ namespace CcittCodec.Tests
 
             for (var i = 0; i < 8; i++)
             {
-                var isBlack = (bool)method.Invoke(encoder, [row, i]);
+                var isBlack = (bool)method!.Invoke(encoder, [row, i])!;
                 _output.WriteLine($"GetPixelColor(0xFF, {i}, BlackIs1=true) = {isBlack}");
                 Assert.True(isBlack, $"Pixel {i} should be black when BlackIs1=true and bit=1");
             }
@@ -184,7 +184,7 @@ namespace CcittCodec.Tests
 
             for (var i = 0; i < 8; i++)
             {
-                var isBlack = (bool)method.Invoke(encoder2, [row, i]);
+                var isBlack = (bool)method!.Invoke(encoder2, [row, i])!;
                 _output.WriteLine($"GetPixelColor(0xFF, {i}, BlackIs1=false) = {isBlack}");
                 Assert.False(isBlack, $"Pixel {i} should be white when BlackIs1=false and bit=1");
             }

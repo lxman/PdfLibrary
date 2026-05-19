@@ -25,20 +25,21 @@ public static class LogoGenerator
 
         // White "PDF" text
         using (var paint = new SKPaint())
+        using (var font = new SKFont(
+            SKTypeface.FromFamilyName("Arial", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright),
+            32))
         {
             paint.Color = SKColors.White;
-            paint.TextSize = 32;
             paint.IsAntialias = true;
-            paint.Typeface = SKTypeface.FromFamilyName("Arial", SKFontStyleWeight.Bold, SKFontStyleWidth.Normal, SKFontStyleSlant.Upright);
 
             var text = "PdfLibrary";
             var textBounds = new SKRect();
-            paint.MeasureText(text, ref textBounds);
+            font.MeasureText(text, out textBounds);
 
             float x = (width - textBounds.Width) / 2 - textBounds.Left;
             float y = (height - textBounds.Height) / 2 - textBounds.Top;
 
-            canvas.DrawText(text, x, y, paint);
+            canvas.DrawText(text, x, y, SKTextAlign.Left, font, paint);
         }
 
         // Save as JPEG

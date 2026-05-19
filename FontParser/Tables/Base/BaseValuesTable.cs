@@ -26,7 +26,6 @@ namespace FontParser.Tables.Base
             {
                 reader.Seek(baseCoordOffsets[i] + position);
                 ushort format = reader.ReadUShort();
-                IBaseCoordFormat table;
                 switch (format)
                 {
                     case 1:

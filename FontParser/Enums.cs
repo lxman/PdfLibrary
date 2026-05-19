@@ -248,7 +248,7 @@ public enum BitmapDepth : byte
     ThirtyTwoBits = 32
 }
 
-public enum ImageFormat : ushort
+public enum BlocImageFormat : ushort
 {
     ProportionalFormat1 = 1,
     ProportionalFormat2 = 2,

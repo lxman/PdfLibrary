@@ -117,7 +117,6 @@ namespace FontParser
 
                 case FileType.Woff2:
                     return new List<FontStructure> { ParseWoff2(reader, file) };
-                    break;
 
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -135,8 +134,8 @@ namespace FontParser
         public List<(string, List<string>)> GetTableNames(string file)
         {
             var toReturn = new List<(string, List<string>)>();
-            List<(string, List<IFontTable>)> tables = GetTables(file);
-            tables.ForEach(t =>
+            List<(string, List<IFontTable>)>? tables = GetTables(file);
+            tables?.ForEach(t =>
             {
                 toReturn.Add((t.Item1,
                     t.Item2.Select(i => i.GetType().GetProperty("Tag").GetValue(i).ToString()).ToList()));

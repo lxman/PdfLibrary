@@ -177,8 +177,10 @@ public class GlyphExtractionIntegrationTests
     /// <summary>
     /// Find the first embedded font metrics on a PDF page
     /// </summary>
-    private EmbeddedFontMetrics? FindFirstEmbeddedFontMetrics(PdfPage page)
+    private EmbeddedFontMetrics? FindFirstEmbeddedFontMetrics(PdfPage? page)
     {
+        if (page is null)
+            return null;
         // Try to get fonts from page resources
         PdfResources? resources = page.GetResources();
 

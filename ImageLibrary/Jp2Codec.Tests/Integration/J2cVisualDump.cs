@@ -22,7 +22,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class J2cVisualDump
 {
-    private const bool Run = true;
+    private static readonly bool Run = true;
 
     private static readonly string[] Files =
     {

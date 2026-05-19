@@ -15,7 +15,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class Csj2kImageEquality
 {
-    private const bool Run = false;
+    private static readonly bool Run = false;
     private readonly ITestOutputHelper _output;
 
     public Csj2kImageEquality(ITestOutputHelper output) => _output = output;

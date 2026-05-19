@@ -6,7 +6,7 @@ namespace FontParser.Tables.Cff
     {
         public int Capacity { private get; set; }
 
-        public T PopBottom()
+        public T? PopBottom()
         {
             if (Count == 0)
             {

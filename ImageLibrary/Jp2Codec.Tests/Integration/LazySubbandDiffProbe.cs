@@ -23,7 +23,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class LazySubbandDiffProbe
 {
-    private const bool Run = false;
+    private static readonly bool Run = false;
     private readonly ITestOutputHelper _output;
 
     public LazySubbandDiffProbe(ITestOutputHelper output) => _output = output;
@@ -62,9 +62,9 @@ public class LazySubbandDiffProbe
         int totalDiffSubbands = 0;
         foreach (SubbandKey key in keyList)
         {
-            bool hasC1 = c1.TryGetValue(key, out int[,] g1);
-            bool hasF1 = f1.TryGetValue(key, out int[,] g2);
-            if (!hasC1 || !hasF1)
+            bool hasC1 = c1.TryGetValue(key, out int[,]? g1);
+            bool hasF1 = f1.TryGetValue(key, out int[,]? g2);
+            if (!hasC1 || !hasF1 || g1 is null || g2 is null)
             {
                 report.AppendLine($"comp={key.Component} res={key.Resolution} orient={key.Orientation}: " +
                     $"present in c1={hasC1}, f1={hasF1}");

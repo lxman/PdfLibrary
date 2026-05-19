@@ -216,7 +216,7 @@ internal sealed class ProgressiveDecoder
     private static void DecodeDcRefine(JpegBitReader reader, Span<short> block, int al)
     {
         if (reader.ReadBit() == 1)
-            block[0] = (short)(block[0] | (1 << al));
+            block[0] = (short)((ushort)block[0] | (1U << al));
     }
 
     // T.81 §G.1.2.3 — AC first-scan: decode AC band Ss..Se using EOB run.
@@ -228,6 +228,8 @@ internal sealed class ProgressiveDecoder
         int se,
         int al)
     {
+        if (info.AcTable is null)
+            throw new InvalidOperationException("AC first scan called with null AC table.");
         if (_eobrun > 0)
         {
             _eobrun--;
@@ -275,6 +277,8 @@ internal sealed class ProgressiveDecoder
         int se,
         int al)
     {
+        if (info.AcTable is null)
+            throw new InvalidOperationException("AC refinement scan called with null AC table.");
         int p1 = 1 << al;
         int m1 = -1 << al;
         int k = ss;

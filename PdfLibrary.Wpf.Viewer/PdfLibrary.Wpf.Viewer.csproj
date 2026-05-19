@@ -6,6 +6,10 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <UseWPF>true</UseWPF>
+        <!-- NU1701: SkiaSharp.Views.WPF ships only .NETFramework targets; NuGet falls back
+             to them on net10-windows. The integration works in practice; suppressing the
+             noise until SkiaSharp ships a net10 build. -->
+        <NoWarn>$(NoWarn);NU1701</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>

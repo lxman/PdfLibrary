@@ -253,7 +253,7 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
   - `ImageLibrary/Jbig2Decoder` - JBIG2 (JBIG2Decode, ITU-T T.88)
   - `Compressors/Compressors.Jpeg2000` - JPEG2000 (JPXDecode, wraps Melville.CSJ2K)
 
-**Note**: ImageSharp is NOT a dependency of the core library. It is only used in the `ImageUtility` viewer for general image format support (PNG, BMP, GIF, TIFF, WebP, etc.).
+**Note**: PdfLibrary has no third-party image-format dependencies. All image handling is backed by in-tree codecs.
 
 ## Building
 
@@ -348,6 +348,3 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 - [Serilog](https://serilog.net/) - Structured logging framework
 - [Unicolour](https://github.com/waacton/Unicolour) - Advanced color space handling and transformations
 - [Melville.CSJ2K](https://www.nuget.org/packages/Melville.CSJ2K) - JPEG2000 decoder (wrapped by `Compressors.Jpeg2000`)
-
-### Utilities
-- [ImageSharp](https://github.com/SixLabors/ImageSharp) - Used in ImageUtility viewer for general image format support (not a dependency of PdfLibrary itself)

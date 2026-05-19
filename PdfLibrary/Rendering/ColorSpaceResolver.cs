@@ -297,7 +297,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color?.Select(c => c.ToString("F3")) ?? [])}]");
     }
 
     /// <summary>

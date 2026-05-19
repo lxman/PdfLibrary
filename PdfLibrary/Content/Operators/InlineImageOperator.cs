@@ -36,7 +36,7 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
     /// <summary>
     /// Color space (CS or ColorSpace)
     /// </summary>
-    public string ColorSpace => GetNameParameter("CS", "ColorSpace", "DeviceGray");
+    public string ColorSpace => GetNameParameter("CS", "ColorSpace", "DeviceGray")!;
 
     /// <summary>
     /// Decode array (D or Decode)

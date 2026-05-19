@@ -20,6 +20,8 @@
 
         <!-- Generate documentation XML for IntelliSense -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <!-- CS1591: do not require XML docs on every public member while the library is pre-1.0 -->
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
 
     <ItemGroup>

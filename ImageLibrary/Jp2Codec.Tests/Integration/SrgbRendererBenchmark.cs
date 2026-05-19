@@ -13,7 +13,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class SrgbRendererBenchmark
 {
-    private const bool Run = true;
+    private static readonly bool Run = true;
     private readonly ITestOutputHelper _output;
 
     public SrgbRendererBenchmark(ITestOutputHelper output) => _output = output;

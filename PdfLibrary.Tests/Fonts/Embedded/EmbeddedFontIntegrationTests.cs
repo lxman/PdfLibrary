@@ -182,7 +182,7 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
                 PdfFont? font = resources.GetFontObject(fontName);
 
                 EmbeddedFontMetrics? metrics = font?.GetEmbeddedMetrics();
-                if (metrics is not { IsValid: true }) continue;
+                if (font is null || metrics is not { IsValid: true }) continue;
 
                 output.WriteLine($"\n=== {fontName}: {font.BaseFont} ===");
 
@@ -249,7 +249,7 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
                 PdfFont? font = resources.GetFontObject(fontName);
 
                 EmbeddedFontMetrics? metrics = font?.GetEmbeddedMetrics();
-                if (metrics is not { IsValid: true }) continue;
+                if (font is null || metrics is not { IsValid: true }) continue;
 
                 output.WriteLine($"\n=== Testing cmap for {fontName}: {font.BaseFont} ===");
 

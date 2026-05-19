@@ -569,7 +569,6 @@ public class TextExtractorProcessor : PdfContentProcessor
 | Wacton.Unicolour | Color space transformations (CalGray/CalRGB/Lab/ICC) |
 | Serilog | Logging infrastructure |
 | Melville.CSJ2K | JPEG2000 codestream decoder (wrapped by `Compressors.Jpeg2000`) |
-| SixLabors.ImageSharp | Used **only** by the `ImageUtility` viewer for general image format support — not a dependency of `PdfLibrary` itself |
 
 ### In-tree codec projects
 

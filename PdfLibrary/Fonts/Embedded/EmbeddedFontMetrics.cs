@@ -859,7 +859,9 @@ internal class EmbeddedFontMetrics
     {
         if (!_isType1Font || _type1Parser is null)
             return null;
-        string name = _type1Parser.GetGlyphName(charCode);
+        string? name = _type1Parser.GetGlyphName(charCode);
+        if (name is null)
+            return null;
         return name != ".notdef" && _type1Parser.HasGlyph(name) ? name : null;
     }
 

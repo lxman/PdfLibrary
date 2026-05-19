@@ -18,7 +18,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class CodeBlockPassCountProbe
 {
-    private const bool Run = false;
+    private static readonly bool Run = false;
     private readonly ITestOutputHelper _output;
 
     public CodeBlockPassCountProbe(ITestOutputHelper output) => _output = output;

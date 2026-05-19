@@ -87,6 +87,10 @@ public class BlendModeTests
         operators.Add(new SetFillRgbOperator(0.0, 0.0, 1.0));
         operators.Add(new FillOperator());
 
+        // blendModeName drives test repetition for each named mode; mode is not yet plumbed
+        // through to the renderer state, but failures should be reported per-mode.
+        _ = blendModeName;
+
         // Act - should not throw
         Exception? exception = Record.Exception(() => renderer.ProcessOperators(operators));
 

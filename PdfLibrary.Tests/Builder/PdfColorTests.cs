@@ -341,8 +341,8 @@ public class PdfColorTests
         // Implementation should either throw ArgumentException or handle gracefully
 
         PdfColor color = PdfColor.FromSeparation("", 1.0);
-        Assert.NotNull(color);
-        // Specific behavior depends on implementation
+        _ = color;
+        // PdfColor is a value type — just confirm the call did not throw.
     }
 
     [Fact]

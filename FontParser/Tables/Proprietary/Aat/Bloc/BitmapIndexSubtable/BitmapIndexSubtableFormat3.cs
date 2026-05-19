@@ -7,14 +7,14 @@ namespace FontParser.Tables.Proprietary.Aat.Bloc.BitmapIndexSubtable
     {
         public IndexFormat IndexFormat { get; }
 
-        public ImageFormat ImageFormat { get; }
+        public BlocImageFormat ImageFormat { get; }
 
         public List<ushort> OffsetArray { get; } = new List<ushort>();
 
         public BitmapIndexSubtableFormat3(BigEndianReader reader)
         {
             IndexFormat = (IndexFormat)reader.ReadUShort();
-            ImageFormat = (ImageFormat)reader.ReadUShort();
+            ImageFormat = (BlocImageFormat)reader.ReadUShort();
             ushort offsetArrayCount = reader.ReadUShort();
             for (var i = 0; i < offsetArrayCount; i++)
             {

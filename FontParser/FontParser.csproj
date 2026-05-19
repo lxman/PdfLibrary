@@ -4,6 +4,9 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <Nullable>enable</Nullable>
     <LangVersion>9</LangVersion>
+    <!-- CS8618: parser DTOs are populated by the reader, not the constructor. Suppressing
+         that one check by design; CS8602/8603/etc. remain enabled to catch real null derefs. -->
+    <NoWarn>$(NoWarn);CS8618</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

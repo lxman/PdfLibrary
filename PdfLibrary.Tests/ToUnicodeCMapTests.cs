@@ -186,7 +186,7 @@ endbfchar
         ToUnicodeCMap cmap = ToUnicodeCMap.Parse(data);
 
         // Emoji or other characters beyond BMP
-        string result = cmap.Lookup(0x01);
+        string? result = cmap.Lookup(0x01);
         Assert.NotNull(result);
         Assert.NotEmpty(result);
     }

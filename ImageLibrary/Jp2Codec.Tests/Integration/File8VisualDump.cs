@@ -22,7 +22,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class File8VisualDump
 {
-    private const bool Run = true;
+    private static readonly bool Run = true;
 
     // (file, folder, hasIccOrSyccProfile). hasIccOrSyccProfile=true → also emit
     // reference_no_icc.bmp (CSJ2K with nocolorspace=on) which should be

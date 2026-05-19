@@ -14,7 +14,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class File8DiffProbe
 {
-    private const bool Run = false;
+    private static readonly bool Run = false;
 
     [Fact]
     public void ProbeFile8()

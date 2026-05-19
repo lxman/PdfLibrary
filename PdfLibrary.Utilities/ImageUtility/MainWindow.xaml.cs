@@ -211,17 +211,4 @@ public partial class MainWindow : Window
         }
     }
 
-    private void CodecSettings_Click(object sender, RoutedEventArgs e)
-    {
-        var settingsWindow = new CodecSettingsWindow
-        {
-            Owner = this
-        };
-
-        if (settingsWindow.ShowDialog() == true)
-        {
-            // Settings were saved
-            StatusText.Text = "Codec preferences updated";
-        }
-    }
 }

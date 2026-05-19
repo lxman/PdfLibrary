@@ -14,8 +14,6 @@ namespace FontParser.Tables.WOFF2
             BuildRecords();
         }
 
-        private static int count;
-
         public Point? Transform(int index, byte[] data)
         {
             TransformRecord? record = _records[index];

@@ -17,7 +17,7 @@ namespace Jp2Codec.Tests.Integration;
 /// </summary>
 public class J2cConformanceSurvey
 {
-    private const bool Run = true;
+    private static readonly bool Run = true;
     private readonly ITestOutputHelper _output;
 
     private static readonly string CorpusRoot =

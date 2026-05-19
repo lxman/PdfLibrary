@@ -9,12 +9,14 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
-    </ItemGroup>
-
-    <ItemGroup>
+      <ProjectReference Include="..\..\ImageLibrary\BmpCodec\BmpCodec.csproj" />
+      <ProjectReference Include="..\..\ImageLibrary\GifCodec\GifCodec.csproj" />
       <ProjectReference Include="..\..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" />
       <ProjectReference Include="..\..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
+      <ProjectReference Include="..\..\ImageLibrary\PbmCodec\PbmCodec.csproj" />
+      <ProjectReference Include="..\..\ImageLibrary\PngCodec\PngCodec.csproj" />
+      <ProjectReference Include="..\..\ImageLibrary\TgaCodec\TgaCodec.csproj" />
+      <ProjectReference Include="..\..\ImageLibrary\TiffCodec\TiffCodec.csproj" />
     </ItemGroup>
 
 </Project>

@@ -35,8 +35,8 @@ namespace FontParser.Tables.Bitmap.Ebdt
                 bs.IndexSubtableList.IndexSubtables.ForEach(table =>
                 {
                     return;
-                    // TODO: Implement this
-                    // Not working correctly
+                    // TODO: Implement this — not working correctly. Draft kept for reference.
+#pragma warning disable CS0162 // Unreachable code (intentional — draft)
                     ushort firstGlyph = table.FirstGlyphIndex;
                     ushort lastGlyph = table.LastGlyphIndex;
                     switch (table.Subtable)
@@ -91,6 +91,7 @@ namespace FontParser.Tables.Bitmap.Ebdt
                         case IndexSubtablesFormat5 subtable:
                             break;
                     }
+#pragma warning restore CS0162
                 });
             });
         }

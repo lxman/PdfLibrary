@@ -129,6 +129,11 @@ public class PdfRenderer : PdfContentProcessor
             foreach (var stream in contents)
             {
                 PdfLogger.Log(LogCategory.PdfTool, $"Processing stream {streamIndex}, stream type={stream?.GetType().Name ?? "null"}");
+                if (stream is null)
+                {
+                    streamIndex++;
+                    continue;
+                }
                 byte[] decodedData;
                 try
                 {
@@ -750,7 +755,7 @@ public class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Text, $"[RENDERER-DEBUG] Before fixup call: text='{textToRender}' font='{font.BaseFont}' IsBase14={context.IsBase14Font} HasEmbedded={context.HasEmbeddedFontData} fixupManager!=null={_fixupManager != null}");
 
             // Apply fixups
-            _fixupManager.ApplyTextRunFixups(context);
+            _fixupManager?.ApplyTextRunFixups(context);
 
             // Check if fixup wants to skip this text
             if (context.ShouldSkip)

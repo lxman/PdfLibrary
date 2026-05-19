@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using FontParser.Extensions;
 using FontParser.Reader;
@@ -213,7 +214,8 @@ namespace FontParser.Tables.Cff.Type1
             {
                 CffDictEntry privateDictEntry = oe.Entries.First(e => e.Name == "Private");
                 CffDictEntry fontNameEntry = oe.Entries.First(e => e.Name == "FontName");
-                var entries = (List<double>?)privateDictEntry.Operand;
+                var entries = (List<double>?)privateDictEntry.Operand
+                    ?? throw new InvalidDataException("Private dict entry has no operand");
                 reader.Seek(Convert.ToInt64(entries[1]));
                 long pdStart = reader.Position;
                 ReadPrivateDictEntries(reader, entries[0]);

@@ -600,7 +600,12 @@ public class PdfImage
         // Extract base color space (index 1) - keep as PdfObject for now
         PdfObject baseObj = csArray[1];
         if (baseObj is PdfIndirectReference baseRef && _document is not null)
-            baseObj = _document.ResolveReference(baseRef);
+        {
+            PdfObject? resolved = _document.ResolveReference(baseRef);
+            if (resolved is null)
+                return null;
+            baseObj = resolved;
+        }
 
         // We'll set baseColorSpace after checking for ICC transformation
         string? resolvedBaseColorSpace = null;

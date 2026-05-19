@@ -64,7 +64,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
             ctm.M11, ctm.M21, ctm.M31,
             ctm.M12, ctm.M22, ctm.M32,
             0, 0, 1);
-        _canvas.Concat(ref skMatrix);
+        _canvas.Concat(in skMatrix);
     }
 
     public void OnGraphicsStateChanged(PdfGraphicsState state) { }
@@ -156,7 +156,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
                 combined.M11, combined.M21, combined.M31,
                 combined.M12, combined.M22, combined.M32,
                 0, 0, 1);
-            _canvas.Concat(ref skMatrix);
+            _canvas.Concat(in skMatrix);
 
             // Calculate font size
             var effectiveSize = (float)(state.FontSize * Math.Sqrt(textMatrix.M21 * textMatrix.M21 + textMatrix.M22 * textMatrix.M22));
@@ -166,11 +166,10 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
             {
                 Color = ColorConverter.ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace),
                 IsAntialias = true,
-                TextSize = effectiveSize,
-                Typeface = SKTypeface.Default
             };
+            using var skFont = new SKFont(SKTypeface.Default, effectiveSize);
 
-            _canvas.DrawText(text, 0, 0, paint);
+            _canvas.DrawText(text, 0, 0, SKTextAlign.Left, skFont, paint);
         }
         finally
         {
@@ -211,8 +210,9 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
 
             using var paint = new SKPaint();
             paint.IsAntialias = true;
-            paint.FilterQuality = SKFilterQuality.High;
-            _canvas.DrawBitmap(bitmap, new SKRect(0, 0, 1, 1), paint);
+            var sampling = new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+            using SKImage img = SKImage.FromBitmap(bitmap);
+            _canvas.DrawImage(img, new SKRect(0, 0, 1, 1), sampling, paint);
             PdfLogger.Log(LogCategory.Images, "PATTERN DrawImage: Drew bitmap to (0,0,1,1)");
         }
         finally
@@ -264,7 +264,7 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
             ctm.M11, ctm.M21, ctm.M31,
             ctm.M12, ctm.M22, ctm.M32,
             0, 0, 1);
-        _canvas.Concat(ref skMatrix);
+        _canvas.Concat(in skMatrix);
     }
 
     private static SKBitmap? CreateBitmapFromImageData(PdfImage image, byte[] imageData)

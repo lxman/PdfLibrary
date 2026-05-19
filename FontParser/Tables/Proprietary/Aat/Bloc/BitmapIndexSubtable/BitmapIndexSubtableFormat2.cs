@@ -7,14 +7,14 @@ namespace FontParser.Tables.Proprietary.Aat.Bloc.BitmapIndexSubtable
     {
         public IndexFormat IndexFormat { get; }
 
-        public ImageFormat ImageFormat { get; }
+        public BlocImageFormat ImageFormat { get; }
 
         public BigGlyphMetricsRecord BigGlyphMetrics { get; }
 
         public BitmapIndexSubtableFormat2(BigEndianReader reader)
         {
             IndexFormat = (IndexFormat)reader.ReadUShort();
-            ImageFormat = (ImageFormat)reader.ReadUShort();
+            ImageFormat = (BlocImageFormat)reader.ReadUShort();
             uint imageDataOffset = reader.ReadUInt32();
             uint imageSize = reader.ReadUInt32();
             BigGlyphMetrics = new BigGlyphMetricsRecord(reader);

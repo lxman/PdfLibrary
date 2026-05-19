@@ -32,6 +32,9 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
             if (value is PdfIndirectReference reference && document is not null)
                 value = document.ResolveReference(reference);
 
+            if (value is null)
+                continue;
+
             switch (key)
             {
                 case "Type":

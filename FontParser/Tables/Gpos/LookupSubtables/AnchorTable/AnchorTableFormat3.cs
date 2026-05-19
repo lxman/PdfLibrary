@@ -25,6 +25,7 @@ namespace FontParser.Tables.Gpos.LookupSubtables.AnchorTable
             ushort xDeviceOffset = reader.ReadUShort();
             ushort yDeviceOffset = reader.ReadUShort();
             return;
+#pragma warning disable CS0162 // Unreachable code (intentional — draft, see comment above)
             long before = reader.Position;
             if (xDeviceOffset != 0)
             {
@@ -40,6 +41,7 @@ namespace FontParser.Tables.Gpos.LookupSubtables.AnchorTable
             reader.Seek(startOfTable + yDeviceOffset);
             DeviceY = new DeviceTable(reader);
             reader.Seek(before);
+#pragma warning restore CS0162
         }
     }
 }
