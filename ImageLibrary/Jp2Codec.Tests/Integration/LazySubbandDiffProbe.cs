@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using Jp2Codec;
 using Jp2Codec.Tier1;
 using Jp2Codec.Tiles;
 using Xunit.Abstractions;

@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Wavelet;
 
 namespace Jp2Codec.Tests.Wavelet

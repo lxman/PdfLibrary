@@ -1,5 +1,3 @@
-using System.IO;
-using Jp2Codec;
 using Jp2Codec.Color;
 using Wacton.Unicolour;
 using Wacton.Unicolour.Icc;

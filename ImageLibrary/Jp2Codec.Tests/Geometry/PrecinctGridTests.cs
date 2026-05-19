@@ -1,5 +1,4 @@
 using Jp2Codec.Geometry;
-using Jp2Codec.Tier1;
 
 namespace Jp2Codec.Tests.Geometry;
 

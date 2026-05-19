@@ -1,6 +1,4 @@
 using System;
-using Jp2Codec.Codestream.Segments;
-using Jp2Codec.Tier1;
 
 namespace Jp2Codec.Geometry
 {

@@ -1,6 +1,3 @@
-using System.IO;
-using Jp2Codec;
-
 namespace Jp2Codec.Tests.Integration;
 
 /// <summary>

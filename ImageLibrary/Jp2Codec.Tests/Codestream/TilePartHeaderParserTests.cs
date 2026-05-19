@@ -1,4 +1,3 @@
-using System.IO;
 using Jp2Codec.Codestream;
 
 namespace Jp2Codec.Tests.Codestream

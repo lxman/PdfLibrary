@@ -4,7 +4,6 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Filters;
 using PdfLibrary.Structure;
-using Wacton.Unicolour;
 
 namespace PdfLibrary.Document;
 
@@ -776,63 +775,37 @@ public class PdfImage
     }
 
     /// <summary>
-    /// Transforms palette bytes from ICC color space to device RGB using sRGB conversion
+    /// Transforms an indexed-image palette from an ICC profile color space to device-sRGB using
+    /// the embedded profile. Returns the original palette bytes on any failure (malformed profile,
+    /// channel-count mismatch, etc.).
     /// </summary>
     private static byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace)
     {
-        try
+        // Get the number of components from the ICC profile dictionary.
+        var numComponents = 3;
+        if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
         {
-            // Get the number of components from the ICC profile
-            var numComponents = 3; // Default to RGB
-            if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
-            {
-                numComponents = nInt.Value;
-            }
-
-            // Only handle 3-component (RGB) ICC profiles for now
-            if (numComponents != 3 || paletteBytes.Length % 3 != 0)
-            {
-                PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM SKIPPED: numComponents={numComponents}, palette length={paletteBytes.Length}");
-                return paletteBytes;
-            }
-
-            int numColors = paletteBytes.Length / 3;
-            var transformedBytes = new byte[paletteBytes.Length];
-
-            PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM: Starting transformation of {numColors} palette colors");
-
-            // Transform each RGB triple
-            for (var i = 0; i < numColors; i++)
-            {
-                int offset = i * 3;
-
-                // Read ICC color values (normalized to 0-1 range)
-                double r = paletteBytes[offset] / 255.0;
-                double g = paletteBytes[offset + 1] / 255.0;
-                double b = paletteBytes[offset + 2] / 255.0;
-
-                // Create an sRGB color and convert through XYZ to ensure proper color space transformation
-                // This ensures gamma correction is applied
-                var iccColor = new Unicolour(ColourSpace.Rgb, r, g, b);
-
-                // Convert through CIE XYZ and back to RGB
-                Xyz xyz = iccColor.Xyz;
-                var deviceColor = new Unicolour(ColourSpace.Xyz, xyz.X, xyz.Y, xyz.Z);
-
-                // Convert back to 0-255 range
-                transformedBytes[offset] = (byte)Math.Clamp((int)(deviceColor.Rgb.R * 255.0 + 0.5), 0, 255);
-                transformedBytes[offset + 1] = (byte)Math.Clamp((int)(deviceColor.Rgb.G * 255.0 + 0.5), 0, 255);
-                transformedBytes[offset + 2] = (byte)Math.Clamp((int)(deviceColor.Rgb.B * 255.0 + 0.5), 0, 255);
-            }
-
-            PdfLogger.Log(LogCategory.Images, "ICC TRANSFORM: Completed transformation");
-            return transformedBytes;
+            numComponents = nInt.Value;
         }
-        catch (Exception ex)
+
+        if (paletteBytes.Length % numComponents != 0)
         {
-            PdfLogger.Log(LogCategory.Images, $"ICC TRANSFORM ERROR: {ex.Message}");
-            return paletteBytes; // Return untransformed on error
+            PdfLogger.Log(LogCategory.Images,
+                $"ICC PALETTE SKIPPED: palette length {paletteBytes.Length} not a multiple of {numComponents} channels.");
+            return paletteBytes;
         }
+
+        Rendering.Icc.IccColorConverter converter = new();
+        byte[]? transformed = converter.TryConvertPaletteToSrgb(iccStream, paletteBytes, numComponents);
+        if (transformed is null)
+        {
+            PdfLogger.Log(LogCategory.Images, "ICC PALETTE FALLBACK: returning original palette bytes.");
+            return paletteBytes;
+        }
+
+        PdfLogger.Log(LogCategory.Images,
+            $"ICC PALETTE OK: transformed {paletteBytes.Length / numComponents} entries from {numComponents}-channel ICC to sRGB.");
+        return transformed;
     }
 
     /// <summary>

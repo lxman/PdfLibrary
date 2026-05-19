@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 namespace ImageLibrary.Benchmarks;
 
 internal static class BenchmarkAssets

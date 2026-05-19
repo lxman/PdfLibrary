@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Mq;
 using Jp2Codec.Tier1;
 

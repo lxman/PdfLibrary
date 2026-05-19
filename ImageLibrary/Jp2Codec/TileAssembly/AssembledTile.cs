@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Jp2Codec.Codestream;
 using Jp2Codec.Codestream.Segments;
 
 namespace Jp2Codec.TileAssembly

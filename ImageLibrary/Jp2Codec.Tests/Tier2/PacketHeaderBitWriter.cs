@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-
 namespace Jp2Codec.Tests.Tier2
 {
     /// <summary>

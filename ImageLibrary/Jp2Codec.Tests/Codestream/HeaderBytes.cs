@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
-
 namespace Jp2Codec.Tests.Codestream
 {
     /// <summary>

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using Jp2Codec.Mq;
 using Jp2Codec.Tests.Mq;
 using Jp2Codec.Tier1;

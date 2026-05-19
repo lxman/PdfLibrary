@@ -1,6 +1,5 @@
 using Jp2Codec.Codestream;
 using Jp2Codec.Codestream.Segments;
-using Jp2Codec.Tests.Codestream;
 
 namespace Jp2Codec.Tests.Codestream.Segments
 {

@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Mq;
 
 namespace Jp2Codec.Tests.Mq

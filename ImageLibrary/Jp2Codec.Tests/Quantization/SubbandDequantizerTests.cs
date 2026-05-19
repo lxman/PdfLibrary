@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Quantization;
 
 namespace Jp2Codec.Tests.Quantization

@@ -1,8 +1,4 @@
-using System;
-using System.IO;
-using System.Linq;
 using System.Text;
-using Jp2Codec;
 using Jp2Codec.Codestream;
 using Jp2Codec.Codestream.Segments;
 

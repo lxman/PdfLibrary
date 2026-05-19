@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Codestream.Segments;
 using Jp2Codec.TileAssembly;
 

@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Color;
 
 namespace Jp2Codec.Tests.Color

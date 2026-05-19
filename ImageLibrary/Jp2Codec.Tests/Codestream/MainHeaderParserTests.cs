@@ -1,4 +1,3 @@
-using System.IO;
 using Jp2Codec.Codestream;
 using Jp2Codec.Codestream.Segments;
 

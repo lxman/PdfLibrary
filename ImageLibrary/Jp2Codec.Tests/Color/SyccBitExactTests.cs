@@ -1,7 +1,5 @@
-using System.IO;
 using CoreJ2K;
 using CoreJ2K.Util;
-using Jp2Codec;
 using Jp2Codec.Color;
 
 namespace Jp2Codec.Tests.Color;

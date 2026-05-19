@@ -1,4 +1,3 @@
-using System;
 using Jp2Codec.Tier1;
 
 namespace Jp2Codec.Tests.Tier1

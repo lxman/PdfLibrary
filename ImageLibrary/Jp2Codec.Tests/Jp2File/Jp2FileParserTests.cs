@@ -1,5 +1,3 @@
-using System.IO;
-using Jp2Codec;
 using Jp2Codec.Jp2File;
 
 namespace Jp2Codec.Tests.Jp2File

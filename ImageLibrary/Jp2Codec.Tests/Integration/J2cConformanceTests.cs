@@ -1,9 +1,6 @@
-using System.IO;
-using System.Linq;
 using CoreJ2K;
 using CoreJ2K.j2k.util;
 using CoreJ2K.Util;
-using Jp2Codec;
 
 namespace Jp2Codec.Tests.Integration;
 

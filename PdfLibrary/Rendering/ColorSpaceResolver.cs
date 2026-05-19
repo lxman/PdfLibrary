@@ -2,8 +2,8 @@ using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Functions;
+using PdfLibrary.Rendering.Icc;
 using PdfLibrary.Structure;
-using Wacton.Unicolour;
 
 namespace PdfLibrary.Rendering;
 
@@ -13,6 +13,8 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 internal class ColorSpaceResolver(PdfDocument? document)
 {
+    private readonly IccColorConverter _iccConverter = new();
+
     /// <summary>
     /// Resolves a named color space from resources to a device color space
     /// </summary>
@@ -162,7 +164,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ICCBased '{colorSpaceName}': N={numComponents}, current color has {color.Count} components, color=[{string.Join(", ", color.Select(c => c.ToString("F2")))}]");
 
-        // Get /Alternate color space
+        // Get /Alternate color space (fallback when the ICC transform can't be built).
         string? alternateSpace = null;
         if (streamDict.TryGetValue(new PdfName("Alternate"), out PdfObject altObj))
         {
@@ -172,25 +174,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        // For now, use the alternate color space directly with the color values
-        // This is a simplification - ideally we'd process the ICC profile
-        if (alternateSpace is not null)
-        {
-            colorSpaceName = alternateSpace;
-        }
-        else
-        {
-            // No alternate specified, infer from component count
-            colorSpaceName = numComponents switch
-            {
-                1 => "DeviceGray",
-                3 => "DeviceRGB",
-                4 => "DeviceCMYK",
-                _ => "DeviceGray"
-            };
-        }
-
-        // Initialize default colors if the component count doesn't match
+        // Initialize default colors if the component count doesn't match so that downstream
+        // calls have a well-formed tuple to work with (whether or not the ICC path succeeds).
         if (color.Count != numComponents)
         {
             color = numComponents switch
@@ -199,6 +184,33 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 3 => [0.0, 0.0, 0.0],
                 4 => [0.0, 0.0, 0.0, 1.0],
                 _ => [0.0]
+            };
+        }
+
+        // Try to transform the color through the embedded ICC profile to device-sRGB. If that
+        // works, we replace the color tuple with the sRGB equivalent and treat the result as
+        // DeviceRGB. On failure we fall back to the /Alternate path.
+        double[]? srgb = _iccConverter.TryConvertToSrgb(iccStream, color);
+        if (srgb is not null)
+        {
+            color = [srgb[0], srgb[1], srgb[2]];
+            colorSpaceName = "DeviceRGB";
+            return;
+        }
+
+        if (alternateSpace is not null)
+        {
+            colorSpaceName = alternateSpace;
+        }
+        else
+        {
+            // No alternate specified, infer from component count.
+            colorSpaceName = numComponents switch
+            {
+                1 => "DeviceGray",
+                3 => "DeviceRGB",
+                4 => "DeviceCMYK",
+                _ => "DeviceGray"
             };
         }
     }
@@ -622,15 +634,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        // Use Unicolour for Lab→RGB conversion
-        // Note: Using default D65 white point from Unicolour for now
-        // TODO: Investigate how to properly configure custom white points in Unicolour if needed
-
-        // Create Lab color and convert to RGB (Unicolour expects Lab in range: L=0-100, a/b=-128 to 127)
-        var unicolour = new Unicolour(ColourSpace.Lab, L, a, b);
-        Rgb rgb = unicolour.Rgb;
-
-        // RGB values are already in 0.0-1.0 range and clamped by Unicolour
-        return [rgb.R, rgb.G, rgb.B];
+        // Convert Lab → sRGB respecting the PDF-specified WhitePoint. Falls back to the D65 values
+        // initialised at the top of this method if WhitePoint is missing.
+        return LabToSrgb.Convert(L, a, b, new ICCSharp.IO.XyzNumber(xn, yn, zn));
     }
 }

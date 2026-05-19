@@ -1,5 +1,3 @@
-using System;
-
 namespace Jp2Codec.Wavelet
 {
     /// <summary>
