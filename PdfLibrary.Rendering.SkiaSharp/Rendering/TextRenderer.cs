@@ -666,14 +666,26 @@ internal class TextRenderer
         }
         else
         {
-            // For Type0/CID fonts, map CID to GID using CIDToGIDMap
+            // For Type0/CID fonts, map CID to GID. For TrueType-based (FontFile2) descendants
+            // the CIDToGIDMap provides CID→GID directly. For CFF-based (FontFile3) descendants
+            // the CIDToGIDMap is irrelevant — the CFF's own charset table provides the mapping,
+            // because the embedded CFF preserves the original (Adobe-Japan1, GB1, K1, …) CIDs
+            // and assigns its own sequential GIDs.
             if (font is Type0Font { DescendantFont: CidFont cidFont })
             {
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH: Type0/CID font path, charCode={charCode}");
-                // For Type0 fonts, use CIDToGIDMap directly - the mapped value IS the glyph ID
-                int mappedGid = cidFont.MapCidToGid(charCode);
-                glyphId = (ushort)mappedGid;
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH: Type0 MapCidToGid returned glyphId={glyphId}");
+                int cidAfterMap = cidFont.MapCidToGid(charCode);
+                if (embeddedMetrics.IsCffFont)
+                {
+                    glyphId = embeddedMetrics.GetGlyphIdByCid((ushort)cidAfterMap);
+                    PdfLogger.Log(LogCategory.Text,
+                        $"GLYPH-PATH: Type0/CID(CFF) charCode={charCode}, postMapCid={cidAfterMap}, charset→glyphId={glyphId}");
+                }
+                else
+                {
+                    glyphId = (ushort)cidAfterMap;
+                    PdfLogger.Log(LogCategory.Text,
+                        $"GLYPH-PATH: Type0/CID(TrueType) charCode={charCode}, MapCidToGid→{glyphId}");
+                }
             }
             else
             {

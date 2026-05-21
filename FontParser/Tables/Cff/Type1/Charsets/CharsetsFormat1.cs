@@ -9,11 +9,14 @@ namespace FontParser.Tables.Cff.Type1.Charsets
 
         public CharsetsFormat1(BigEndianReader reader, ushort numGlyphs)
         {
-            ushort nLeft = numGlyphs;
-            while (nLeft > 0)
+            // Charset covers all glyphs except GID 0 (.notdef). Each Range1 covers (NumberLeft + 1)
+            // glyphs; the number of ranges is implicit, deduced by accumulating coverage.
+            int remaining = numGlyphs - 1;
+            while (remaining > 0)
             {
-                Ranges.Add(new Range1(reader));
-                nLeft--;
+                var range = new Range1(reader);
+                Ranges.Add(range);
+                remaining -= range.NumberLeft + 1;
             }
         }
     }

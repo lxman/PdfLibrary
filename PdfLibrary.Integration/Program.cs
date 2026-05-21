@@ -46,6 +46,14 @@ switch (mode)
         // Legacy mode: just generate PDFs without images (for backwards compatibility)
         return GeneratePdfsOnly(testDocuments, baseDir);
 
+    case "font-diagnose":
+        if (args.Length < 3 || !int.TryParse(args[2], out int diagPage))
+        {
+            Console.Error.WriteLine("Usage: font-diagnose <pdf-path> <page-number>");
+            return 1;
+        }
+        return FontDiagnostic.Run(args[1], diagPage);
+
     default:
         PrintHelp();
         return 0;

@@ -1,7 +1,9 @@
 using ICCSharp;
 using ICCSharp.Profile;
 using Logging;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering.Icc;
 
@@ -21,6 +23,12 @@ internal sealed class IccColorConverter
 {
     // Keyed by the PdfStream instance — same stream returns the same transform without re-parsing.
     private readonly Dictionary<PdfStream, IccTransform?> _cache = new();
+    private readonly PdfDocument? _document;
+
+    public IccColorConverter(PdfDocument? document = null)
+    {
+        _document = document;
+    }
 
     /// <summary>
     /// Converts <paramref name="sourceColor"/> from the ICC profile carried by
@@ -106,7 +114,9 @@ internal sealed class IccColorConverter
         IccTransform? transform = null;
         try
         {
-            byte[] profileBytes = iccStream.GetDecodedData();
+            // The PDF may be encrypted; pass the document's decryptor so the stream is
+            // properly decrypted before Flate decompression.
+            byte[] profileBytes = iccStream.GetDecodedData(_document?.Decryptor);
             IccProfile profile = IccProfile.Parse(profileBytes);
             transform = IccTransform.Create(profile, BuiltInProfiles.Srgb);
             PdfLogger.Log(LogCategory.Graphics,

@@ -13,7 +13,7 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 internal class ColorSpaceResolver(PdfDocument? document)
 {
-    private readonly IccColorConverter _iccConverter = new();
+    private readonly IccColorConverter _iccConverter = new(document);
 
     /// <summary>
     /// Resolves a named color space from resources to a device color space

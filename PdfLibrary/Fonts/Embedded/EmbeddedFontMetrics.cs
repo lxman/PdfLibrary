@@ -552,6 +552,57 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Looks up the GID for a CID in a CID-keyed CFF font via the charset table. In CID-keyed
+    /// CFF the charset entries are CIDs (not SIDs), so the same Format 0/1/2 traversal works —
+    /// just compare against the CID instead of an SID.
+    /// </summary>
+    /// <param name="cid">Character ID to look up.</param>
+    /// <returns>GID, or 0 (.notdef) if the CID isn't in the subset.</returns>
+    public ushort GetGlyphIdByCid(ushort cid)
+    {
+        if (!_isCffFont || _cffTable is null) return 0;
+        // CID 0 is always .notdef.
+        if (cid == 0) return 0;
+
+        ICharset? charset = _cffTable.CharSet;
+        switch (charset)
+        {
+            case null:
+                return 0;
+            case CharsetsFormat0 format0:
+                for (var i = 0; i < format0.Glyphs.Count; i++)
+                {
+                    if (format0.Glyphs[i] == cid)
+                        return (ushort)(i + 1); // +1 because .notdef (GID 0) is not in the array.
+                }
+                break;
+            case CharsetsFormat1 format1:
+            {
+                var glyphIndex = 1;
+                foreach (Range1 range in format1.Ranges)
+                {
+                    if (cid >= range.First && cid <= range.First + range.NumberLeft)
+                        return (ushort)(glyphIndex + (cid - range.First));
+                    glyphIndex += range.NumberLeft + 1;
+                }
+                break;
+            }
+            case CharsetsFormat2 format2:
+            {
+                var glyphIndex = 1;
+                foreach (FontParser.Tables.Cff.Type1.Charsets.Range2 range in format2.Ranges)
+                {
+                    if (cid >= range.First && cid <= range.First + range.NumberLeft)
+                        return (ushort)(glyphIndex + (cid - range.First));
+                    glyphIndex += range.NumberLeft + 1;
+                }
+                break;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
     /// Gets the glyph ID for a glyph name (used for CFF and Type1 fonts)
     /// </summary>
     /// <param name="glyphName">Glyph name (e.g., "o", "C", "space")</param>

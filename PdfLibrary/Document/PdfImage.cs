@@ -779,7 +779,7 @@ public class PdfImage
     /// the embedded profile. Returns the original palette bytes on any failure (malformed profile,
     /// channel-count mismatch, etc.).
     /// </summary>
-    private static byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace)
+    private byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace)
     {
         // Get the number of components from the ICC profile dictionary.
         var numComponents = 3;
@@ -795,7 +795,7 @@ public class PdfImage
             return paletteBytes;
         }
 
-        Rendering.Icc.IccColorConverter converter = new();
+        Rendering.Icc.IccColorConverter converter = new(_document);
         byte[]? transformed = converter.TryConvertPaletteToSrgb(iccStream, paletteBytes, numComponents);
         if (transformed is null)
         {

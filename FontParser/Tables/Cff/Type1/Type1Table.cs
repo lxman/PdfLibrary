@@ -69,6 +69,12 @@ namespace FontParser.Tables.Cff.Type1
         private readonly List<CidFontDictEntry> _type1FontDictOperatorEntries = new List<CidFontDictEntry>();
         private readonly List<List<byte>> _localSubroutines = new List<List<byte>>();
 
+        /// <summary>
+        /// For CID-keyed CFF: maps glyph index → the font-dict entry whose private dict / local
+        /// subroutines apply to that glyph. Null for non-CID fonts.
+        /// </summary>
+        private Dictionary<ushort, NameDictEntry>? _cidFdSelect;
+
         public Type1Table(byte[] data)
         {
             using var reader = new BigEndianReader(data);
@@ -148,12 +154,24 @@ namespace FontParser.Tables.Cff.Type1
             if (glyphIndex < 0 || glyphIndex >= RawCharStrings.Count)
                 return null;
 
+            // For CID-keyed CFF, each glyph is assigned to one of multiple font dicts via the
+            // FDSelect table; subroutines and nominalWidthX are per-FD, not table-wide.
+            List<List<byte>> localSubrs = _localSubroutines;
+            int nominalWidth = NominalWidthX;
+            if (_cidFdSelect is not null &&
+                _cidFdSelect.TryGetValue((ushort)glyphIndex, out NameDictEntry? fd))
+            {
+                localSubrs = fd.LocalSubroutines;
+                object? nwxOp = fd.Private.Find(e => e.Name == "nominalWidthX")?.Operand;
+                nominalWidth = nwxOp is null ? 0 : Convert.ToInt32(nwxOp);
+            }
+
             var parser = new CharStringParser(
                 48,
                 RawCharStrings[glyphIndex],
                 GlobalSubroutines,
-                _localSubroutines,
-                NominalWidthX
+                localSubrs,
+                nominalWidth
             );
 
             return parser.ParseToOutline();
@@ -206,6 +224,11 @@ namespace FontParser.Tables.Cff.Type1
 
         private void ProcessCid(BigEndianReader reader, Type1Index charStrings, List<List<byte>> globalSubroutines)
         {
+            // Make raw CharStrings + global subroutines available to GetGlyphOutline. Without
+            // this the non-CID code path treats CID fonts as having zero glyphs.
+            RawCharStrings = charStrings.Data;
+            GlobalSubroutines = globalSubroutines;
+
             reader.Seek(Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "FDArray").Operand));
             var fdArrayIndex = new Type1Index(reader);
             ReadFontDictEntries(fdArrayIndex.Data);
@@ -239,7 +262,9 @@ namespace FontParser.Tables.Cff.Type1
                 _type1PrivateDictOperatorEntries.Clear();
             });
             reader.Seek(Convert.ToInt64(_topDictOperatorEntries.Find(e => e.Name == "FDSelect").Operand));
-            Dictionary<ushort, NameDictEntry> fdSelectEntries = ReadFdSelectEntries(reader, fontDictEntries);
+            Dictionary<ushort, NameDictEntry> fdSelectEntries =
+                ReadFdSelectEntries(reader, fontDictEntries, charStrings.Data.Count);
+            _cidFdSelect = fdSelectEntries;
             for (ushort x = 0; x < fdSelectEntries.Count; x++)
             {
                 BuildCharStringCid(charStrings.Data[x], globalSubroutines, fdSelectEntries[x]);
@@ -254,18 +279,21 @@ namespace FontParser.Tables.Cff.Type1
             }
         }
 
-        private static Dictionary<ushort, NameDictEntry> ReadFdSelectEntries(BigEndianReader reader, List<NameDictEntry> fontDictEntries)
+        private static Dictionary<ushort, NameDictEntry> ReadFdSelectEntries(
+            BigEndianReader reader, List<NameDictEntry> fontDictEntries, int numGlyphs)
         {
             var fdSelect = new Dictionary<ushort, NameDictEntry>();
             byte fdSelectFormat = reader.ReadByte();
             switch (fdSelectFormat)
             {
                 case 0:
-                    byte[] selects = reader.ReadBytes(fontDictEntries.Count + 1);
-                    ushort index = 0;
-                    foreach (byte select in selects)
+                    // Format 0: one byte per glyph giving the FD index. CFF spec §19.
+                    byte[] selects = reader.ReadBytes(numGlyphs);
+                    for (ushort i = 0; i < selects.Length; i++)
                     {
-                        fdSelect.Add(index++, fontDictEntries[select]);
+                        byte fdIdx0 = selects[i];
+                        if (fdIdx0 >= fontDictEntries.Count) continue;
+                        fdSelect.Add(i, fontDictEntries[fdIdx0]);
                     }
                     break;
                 case 3:

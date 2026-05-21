@@ -50,15 +50,16 @@ public partial class App : Application
             Log.Information("Command line argument: {FilePath}", e.Args[0]);
         }
 
-        // Initialize PdfLibrary logger
+        // Initialize PdfLibrary logger — all categories off by default; flip individual flags
+        // back to true when investigating a specific subsystem.
         string pdfLibraryLogFile = Path.Combine(appDirectory, "logs", "pdflibrary.log");
         PdfLogger.Initialize(new PdfLogConfiguration
         {
-            LogImages = true,
+            LogImages = false,
             LogText = false,
-            LogGraphics = true,
-            LogTransforms = true,
-            LogPdfTool = true,
+            LogGraphics = false,
+            LogTransforms = false,
+            LogPdfTool = false,
             LogMelville = false,
             LogTimings = false,
             AppendToLog = false,

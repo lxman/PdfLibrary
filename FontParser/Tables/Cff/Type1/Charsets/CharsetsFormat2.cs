@@ -9,9 +9,14 @@ namespace FontParser.Tables.Cff.Type1.Charsets
 
         public CharsetsFormat2(BigEndianReader reader, ushort numGlyphs)
         {
-            for (var i = 0; i < numGlyphs; i++)
+            // Same shape as Format 1 but with uint16 NumberLeft (used when a single range may
+            // cover more than 256 glyphs). Number of ranges is implicit.
+            int remaining = numGlyphs - 1;
+            while (remaining > 0)
             {
-                Ranges.Add(new Range2(reader));
+                var range = new Range2(reader);
+                Ranges.Add(range);
+                remaining -= range.NumberLeft + 1;
             }
         }
     }
