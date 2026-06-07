@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-06
+
 ### Added
 - **Performance and Memory Optimizations**:
   - Integrated `ArrayPool<byte>` in `ImageRenderer` (SkiaSharp) to reduce GC pressure during image decoding.
@@ -140,7 +142,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 | Version | Date | Highlights |
 |---------|------|------------|
 | 0.9.0 | TBD | Core rendering engine, font support, image decompression |
-| Unreleased | - | Fluent builder API, annotations, bookmarks, page labels, encryption |
+| 0.0.10-beta | 2025-01-13 | Fluent builder API, annotations, bookmarks, page labels, encryption |
+| 1.0.0 | 2026-06-06 | Production-ready: thread-safe concurrent rendering, pure-C# in-house image codecs (no third-party deps), performance + memory optimizations |
 
 ---
 
