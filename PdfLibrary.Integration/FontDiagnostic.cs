@@ -22,13 +22,13 @@ internal static class FontDiagnostic
     {
         Console.WriteLine($"== Font diagnostic for {pdfPath}, page {pageNumber} ==\n");
 
-        if (!System.IO.File.Exists(pdfPath))
+        if (!File.Exists(pdfPath))
         {
             Console.Error.WriteLine($"PDF not found: {pdfPath}");
             return 1;
         }
 
-        using var doc = PdfDocument.Load(pdfPath);
+        using PdfDocument doc = PdfDocument.Load(pdfPath);
         if (pageNumber < 1 || pageNumber > doc.PageCount)
         {
             Console.Error.WriteLine($"Page {pageNumber} out of range (1..{doc.PageCount}).");
@@ -49,7 +49,7 @@ internal static class FontDiagnostic
             return 0;
         }
 
-        System.Collections.Generic.List<string> names = resources.GetFontNames();
+        List<string> names = resources.GetFontNames();
         Console.WriteLine($"Fonts on page: {names.Count} ({string.Join(", ", names)})\n");
 
         foreach (string name in names)

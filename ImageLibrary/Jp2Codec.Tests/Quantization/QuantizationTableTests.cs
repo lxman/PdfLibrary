@@ -169,10 +169,10 @@ namespace Jp2Codec.Tests.Quantization
                 1, 0, QuantizationStyle.ScalarDerived, eps0, mu0, componentBitDepth: 8, isReversible: false);
 
             // Same eps everywhere → Delta varies only by R_b: 2^(R_b - 12).
-            Assert.Equal(System.Math.Pow(2, 8 - 12), table[0].StepSize, 12); // LL
-            Assert.Equal(System.Math.Pow(2, 9 - 12), table[1].StepSize, 12); // HL
-            Assert.Equal(System.Math.Pow(2, 9 - 12), table[2].StepSize, 12); // LH
-            Assert.Equal(System.Math.Pow(2, 10 - 12), table[3].StepSize, 12); // HH
+            Assert.Equal(Math.Pow(2, 8 - 12), table[0].StepSize, 12); // LL
+            Assert.Equal(Math.Pow(2, 9 - 12), table[1].StepSize, 12); // HL
+            Assert.Equal(Math.Pow(2, 9 - 12), table[2].StepSize, 12); // LH
+            Assert.Equal(Math.Pow(2, 10 - 12), table[3].StepSize, 12); // HH
         }
 
         [Fact]

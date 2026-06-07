@@ -43,8 +43,8 @@ namespace Jp2Codec.Tests.Tier2
             {
                 int leafLeft = x << level;
                 int leafTop = y << level;
-                int leafRight = System.Math.Min(leafLeft + (1 << level), _values.GetLength(1));
-                int leafBottom = System.Math.Min(leafTop + (1 << level), _values.GetLength(0));
+                int leafRight = Math.Min(leafLeft + (1 << level), _values.GetLength(1));
+                int leafBottom = Math.Min(leafTop + (1 << level), _values.GetLength(0));
                 int min = int.MaxValue;
                 for (int iy = leafTop; iy < leafBottom; iy++)
                     for (int ix = leafLeft; ix < leafRight; ix++)
@@ -60,7 +60,7 @@ namespace Jp2Codec.Tests.Tier2
                 {
                     int xi = x >> level;
                     int yi = y >> level;
-                    int low = System.Math.Max(_low[level][yi, xi], parentLow);
+                    int low = Math.Max(_low[level][yi, xi], parentLow);
                     bool known = _known[level][yi, xi];
                     int realValue = MinUnder(level, xi, yi);
 
@@ -223,8 +223,8 @@ namespace Jp2Codec.Tests.Tier2
         {
             var d = new TagTreeDecoder(4, 4);
             var r = new PacketHeaderBitReader(new byte[] { 0 }, 0, 1);
-            Assert.Throws<System.ArgumentOutOfRangeException>(() => d.DecodeLessThan(-1, 0, 1, r));
-            Assert.Throws<System.ArgumentOutOfRangeException>(() => d.DecodeLessThan(0, 4, 1, r));
+            Assert.Throws<ArgumentOutOfRangeException>(() => d.DecodeLessThan(-1, 0, 1, r));
+            Assert.Throws<ArgumentOutOfRangeException>(() => d.DecodeLessThan(0, 4, 1, r));
         }
     }
 }

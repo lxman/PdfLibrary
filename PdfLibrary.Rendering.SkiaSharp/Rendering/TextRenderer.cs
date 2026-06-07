@@ -351,11 +351,6 @@ internal class TextRenderer
             return;
         }
 
-        // Calculate CTM scaling factor for stroke width
-        Matrix3x2 ctm = state.Ctm;
-        double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
-        // Note: Small scale factors are valid - they correctly scale large PDF values to device pixels
-
         // Prepare stroke paint if needed
         SKPaint? strokePaint = null;
         if (shouldStroke)
@@ -363,14 +358,24 @@ internal class TextRenderer
             SKColor strokeColor = ColorConverter.ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
             strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
 
-            double scaledStrokeWidth = state.LineWidth * ctmScale;
-            if (scaledStrokeWidth < 0.5) scaledStrokeWidth = 0.5; // Minimum 0.5 device pixel
+            // Glyphs are stroked in the per-glyph local space, which maps to device by the
+            // ambient canvas matrix (user→device = CTM × render scale). The PDF line width is a
+            // user-space pen, so the correct device width is LineWidth × (user→device scale);
+            // expressing that back in local space divides by the same scale and leaves exactly
+            // LineWidth. The old `LineWidth * ctmScale` double-counted the CTM (the local space
+            // already carries it via the canvas), which bloated stroked text into a solid blob
+            // whenever the font size was carried in the CTM. The minimum is enforced in device px.
+            SKMatrix canvasMatrix = _canvas.TotalMatrix;
+            double canvasScale = Math.Sqrt(Math.Abs(canvasMatrix.ScaleX * canvasMatrix.ScaleY - canvasMatrix.SkewX * canvasMatrix.SkewY));
+            double localStrokeWidth = state.LineWidth;
+            if (canvasScale > 0 && localStrokeWidth * canvasScale < 0.5)
+                localStrokeWidth = 0.5 / canvasScale;
 
             strokePaint = new SKPaint();
             strokePaint.Color = strokeColor;
             strokePaint.IsAntialias = true;
             strokePaint.Style = SKPaintStyle.Stroke;
-            strokePaint.StrokeWidth = (float)scaledStrokeWidth;
+            strokePaint.StrokeWidth = (float)localStrokeWidth;
         }
 
         // Update fill paint style based on rendering mode
@@ -392,7 +397,7 @@ internal class TextRenderer
                 // Use PDF-specified width for positioning (in glyph space units, typically 1/1000 em)
                 // This maintains correct spacing as specified by the PDF regardless of fallback font metrics
                 float pdfWidth = i < glyphWidths.Count ? (float)glyphWidths[i] : 0;
-                var ch = DecomposeLigature(text[i]);
+                string ch = DecomposeLigature(text[i]);
 
                 // DIAGNOSTIC: Measure actual SkiaSharp glyph width vs PDF width
                 float actualWidth = fallbackFont.MeasureText(ch);
@@ -469,21 +474,24 @@ internal class TextRenderer
         PdfLogger.Log(LogCategory.Text, $"######## GLYPH-ENTRY: TryRenderWithGlyphOutlines called for text='{text}' ########");
         try
         {
-            // Check if the font should be rendered as bold (for synthetic bold)
+            // Synthetic ("faux") bold only makes sense when we must render a bold face from an
+            // outline that isn't actually bold. On THIS path we draw the font's *embedded*
+            // outline, so a real bold master already carries the correct weight and must not be
+            // emboldened again — stroking it just thickens an already-bold glyph. We therefore
+            // synth-bold only when the descriptor carries the ForceBold flag AND the embedded
+            // font does not itself look bold (no "Bold" in its name, stem width in the regular
+            // range). Genuine bold substitution is handled by RenderWithFallbackFont, which
+            // selects a real bold system typeface rather than stroking an outline.
             var applyBold = false;
             PdfFontDescriptor? descriptor = font.GetDescriptor();
             if (descriptor is not null)
             {
-                // Check font flags for bold, or check the font name for "Bold"
-                bool isBoldFlag = descriptor.IsBold;
+                bool isForceBoldFlag = descriptor.IsBold; // FontDescriptor ForceBold flag (0x40000)
                 bool isBoldName = font.BaseFont?.Contains("Bold", StringComparison.OrdinalIgnoreCase) == true;
+                bool isBoldStemV = descriptor.StemV >= 120; // bold-range vertical stem width
 
-                // Also use StemV as heuristic - higher values indicate bolder fonts
-                // Regular fonts typically have StemV < 100, bold fonts > 150
-                // Values 120-150 suggest semi-bold or bold variants without "Bold" in the name
-                bool isBoldStemV = descriptor.StemV >= 120;
-
-                applyBold = isBoldFlag || isBoldName || isBoldStemV;
+                bool embeddedOutlineAlreadyBold = isBoldName || isBoldStemV;
+                applyBold = isForceBoldFlag && !embeddedOutlineAlreadyBold;
             }
 
             // Get embedded font metrics
@@ -803,13 +811,15 @@ internal class TextRenderer
 
         if (!isInvisible)
         {
-            Matrix3x2 ctm = state.Ctm;
-            double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
-
             // Combine the current canvas matrix with the glyph placement matrix.
             // DrawPath will map each glyph-space point through this combined matrix to device space.
             SKMatrix canvasMatrix = _canvas.TotalMatrix;
             SKMatrix combined = SKMatrix.Concat(canvasMatrix, skGlyphMatrix);
+
+            // Geometric scale of the glyph-space → device map. Both the Tr-mode stroke and the
+            // synthetic-bold stroke specify their widths in glyph space (the cached path's
+            // space), so this lets us convert a desired *device* width back into glyph space.
+            double combinedScale = Math.Sqrt(Math.Abs(combined.ScaleX * combined.ScaleY - combined.SkewX * combined.SkewY));
 
             PdfLogger.Log(LogCategory.Text, () => $"GLYPH-RENDER: char='{displayChar}', canvasMatrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2};{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
             PdfLogger.Log(LogCategory.Text, () => $"GLYPH-PATH-INFO: char='{displayChar}', PointCount={cachedPath.PointCount}, IsEmpty={cachedPath.IsEmpty}");
@@ -834,14 +844,23 @@ internal class TextRenderer
                 SKColor strokeColor = ColorConverter.ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
                 strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
 
-                double scaledStrokeWidth = state.LineWidth * ctmScale;
-                if (scaledStrokeWidth < 0.5) scaledStrokeWidth = 0.5;
+                // The PDF line width is a pen width in *user* space, so it scales to device by
+                // the user→device (canvas) matrix — not by the text/font scaling. Compute the
+                // device width that way, floor it at 0.5 device px, then express it back in glyph
+                // space for the matrix-based draw. The old `LineWidth * ctmScale` in glyph space
+                // double-counted the CTM (and ignored the text-matrix scaling that `combined`
+                // applies), so stroked text bloated into a blob whenever the real size was carried
+                // in the text/CTM matrix — the same defect that smudged synthetic bold.
+                double canvasScale = Math.Sqrt(Math.Abs(canvasMatrix.ScaleX * canvasMatrix.ScaleY - canvasMatrix.SkewX * canvasMatrix.SkewY));
+                double deviceStrokeWidth = state.LineWidth * canvasScale;
+                if (deviceStrokeWidth < 0.5) deviceStrokeWidth = 0.5;
+                double glyphStrokeWidth = combinedScale > 0 ? deviceStrokeWidth / combinedScale : deviceStrokeWidth;
 
                 using var strokePaint = new SKPaint();
                 strokePaint.Color = strokeColor;
                 strokePaint.IsAntialias = true;
                 strokePaint.Style = SKPaintStyle.Stroke;
-                strokePaint.StrokeWidth = (float)scaledStrokeWidth;
+                strokePaint.StrokeWidth = (float)glyphStrokeWidth;
 
                 _canvas.Save();
                 _canvas.SetMatrix(combined);
@@ -850,14 +869,32 @@ internal class TextRenderer
             }
             else if (applyBold && shouldFill)
             {
-                double scaledBoldWidth = state.FontSize * 0.04 * ctmScale;
-                if (scaledBoldWidth < 0.5) scaledBoldWidth = 0.5;
+                // Synthetic (faux) bold: stroke the glyph outline to fatten it.
+                // The cached path is in glyph space (already scaled by FontSize), and
+                // `combined` maps glyph space → device, carrying the CTM *and* the page
+                // render scale. The stroke width must therefore be expressed in glyph
+                // space — roughly 4% of the em. Multiplying by ctmScale here (as the old
+                // code did) double-counts the CTM that `combined` already applies; for a
+                // PDF that scales text via `cm` (small Tf, large CTM) that inflated the
+                // stroke until the counters filled in and the glyph rendered as a blob.
+                double boldWidth = state.FontSize * 0.04;
+
+                // Keep faux-bold visible at very small render sizes by enforcing a minimum
+                // *device* width, converted back into glyph space via the combined scale.
+                // A fixed glyph-space floor (the old 0.5) is itself a blob when FontSize is
+                // tiny and the real size is carried in the text/CTM matrix.
+                if (combinedScale > 0)
+                {
+                    const double minDeviceWidth = 0.5;
+                    double minGlyphWidth = minDeviceWidth / combinedScale;
+                    if (boldWidth < minGlyphWidth) boldWidth = minGlyphWidth;
+                }
 
                 using var boldPaint = new SKPaint();
                 boldPaint.Color = paint.Color;
                 boldPaint.IsAntialias = true;
                 boldPaint.Style = SKPaintStyle.Stroke;
-                boldPaint.StrokeWidth = (float)scaledBoldWidth;
+                boldPaint.StrokeWidth = (float)boldWidth;
 
                 _canvas.Save();
                 _canvas.SetMatrix(combined);

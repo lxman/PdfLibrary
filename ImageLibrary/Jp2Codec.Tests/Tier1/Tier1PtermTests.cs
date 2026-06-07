@@ -85,8 +85,8 @@ namespace Jp2Codec.Tests.Tier1
             // bit 7 is 0. Reading MSB-first the byte is 000 01010 = 0x0A.
             Assert.Equal(0x0A, altPad[0]);
 
-            var decZero = MakeDriverWithSeed();
-            var decAlt = MakeDriverWithSeed();
+            Tier1CodeBlockDecoder decZero = MakeDriverWithSeed();
+            Tier1CodeBlockDecoder decAlt = MakeDriverWithSeed();
 
             // We need to make pass 10 (the first raw slot) the one being
             // tested. Build a minimal stream of passes 0..9 first (all

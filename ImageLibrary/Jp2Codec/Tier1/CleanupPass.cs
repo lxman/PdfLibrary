@@ -75,7 +75,7 @@ namespace Jp2Codec.Tier1
                         processStartY = firstSigY + 1;
                     }
 
-                    for (var y = processStartY; y < stripeBottom; y++)
+                    for (int y = processStartY; y < stripeBottom; y++)
                     {
                         int idx = state.RowBase(y) + x;
                         byte f = flags[idx];

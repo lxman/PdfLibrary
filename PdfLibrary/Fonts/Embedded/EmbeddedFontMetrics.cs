@@ -590,7 +590,7 @@ internal class EmbeddedFontMetrics
             case CharsetsFormat2 format2:
             {
                 var glyphIndex = 1;
-                foreach (FontParser.Tables.Cff.Type1.Charsets.Range2 range in format2.Ranges)
+                foreach (Range2 range in format2.Ranges)
                 {
                     if (cid >= range.First && cid <= range.First + range.NumberLeft)
                         return (ushort)(glyphIndex + (cid - range.First));

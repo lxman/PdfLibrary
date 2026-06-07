@@ -41,7 +41,7 @@ namespace Jp2Codec.Tests.Mq
         {
             byte[] ctx = Jp2MqContextSet.CreateInitialised();
             // ZeroCoding 1..8, SignCoding 9..13, MagnitudeRefinement 14..16.
-            for (var i = Jp2MqContextSet.ZeroCoding + 1; i <= Jp2MqContextSet.MagnitudeRefinement + 2; i++)
+            for (int i = Jp2MqContextSet.ZeroCoding + 1; i <= Jp2MqContextSet.MagnitudeRefinement + 2; i++)
                 Assert.Equal(0, ctx[i]);
         }
 

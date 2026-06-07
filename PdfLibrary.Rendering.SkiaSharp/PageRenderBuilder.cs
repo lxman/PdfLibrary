@@ -58,8 +58,22 @@ public class PageRenderBuilder
     /// <returns>The rendered image (caller must dispose)</returns>
     public SKImage ToImage()
     {
-        var width = (int)Math.Ceiling(_page.Width * _scale);
-        var height = (int)Math.Ceiling(_page.Height * _scale);
+        // Size the surface to the CropBox (the visible area), matching the dimensions
+        // PdfRenderer/BeginPage actually render into. PdfPage.Width/Height report the full
+        // MediaBox, so for pages whose CropBox is smaller than the MediaBox (e.g. print-to-PDF
+        // output with a tight crop) sizing to Width/Height would render the artwork into a
+        // corner of an oversized canvas and leak content that lies outside the CropBox.
+        PdfRectangle cropBox = _page.GetCropBox();
+        double boxWidth = cropBox.Width;
+        double boxHeight = cropBox.Height;
+
+        // BeginPage swaps the page dimensions for 90°/270° rotation; match that here so the
+        // surface and the render transform agree.
+        if (_page.Rotate is 90 or 270)
+            (boxWidth, boxHeight) = (boxHeight, boxWidth);
+
+        var width = (int)Math.Ceiling(boxWidth * _scale);
+        var height = (int)Math.Ceiling(boxHeight * _scale);
 
         using var target = new SkiaSharpRenderTarget(width, height, _document, _transparentBackground);
 

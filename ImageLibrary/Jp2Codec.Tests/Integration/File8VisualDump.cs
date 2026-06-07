@@ -149,7 +149,7 @@ internal static class BmpWriter
         }
         else
         {
-            throw new System.NotSupportedException($"BMP output: unsupported component count {numComps}.");
+            throw new NotSupportedException($"BMP output: unsupported component count {numComps}.");
         }
     }
 
@@ -164,7 +164,7 @@ internal static class BmpWriter
         int pixelDataOffset = 14 + 40;
         int fileSize = pixelDataOffset + pixelDataSize;
 
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         using var w = new BinaryWriter(fs);
 
         w.Write((byte)'B'); w.Write((byte)'M');
@@ -185,7 +185,7 @@ internal static class BmpWriter
         w.Write(0);
 
         var rowBuf = new byte[rowSize];
-        for (var y = height - 1; y >= 0; y--)
+        for (int y = height - 1; y >= 0; y--)
         {
             int srcBase = y * width * 3;
             for (var x = 0; x < width; x++)
@@ -197,7 +197,7 @@ internal static class BmpWriter
                 rowBuf[di + 1] = srgb[si + 1];
                 rowBuf[di + 2] = srgb[si];
             }
-            for (var x = width * 3; x < rowSize; x++) rowBuf[x] = 0;
+            for (int x = width * 3; x < rowSize; x++) rowBuf[x] = 0;
             w.Write(rowBuf);
         }
     }
@@ -212,7 +212,7 @@ internal static class BmpWriter
         int pixelDataOffset = fileHeaderSize + dibHeaderSize + paletteSize;
         int fileSize = pixelDataOffset + pixelDataSize;
 
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         using var w = new BinaryWriter(fs);
 
         // BMP file header.
@@ -242,11 +242,11 @@ internal static class BmpWriter
 
         // Pixel data, bottom-up.
         var rowBuf = new byte[rowSize];
-        for (var y = height - 1; y >= 0; y--)
+        for (int y = height - 1; y >= 0; y--)
         {
             int srcBase = y * width;
             for (var x = 0; x < width; x++) rowBuf[x] = NormaliseToByte(samples[srcBase + x], precision);
-            for (var x = width; x < rowSize; x++) rowBuf[x] = 0;
+            for (int x = width; x < rowSize; x++) rowBuf[x] = 0;
             w.Write(rowBuf);
         }
     }
@@ -260,7 +260,7 @@ internal static class BmpWriter
         int pixelDataOffset = fileHeaderSize + dibHeaderSize;
         int fileSize = pixelDataOffset + pixelDataSize;
 
-        using var fs = File.Create(path);
+        using FileStream fs = File.Create(path);
         using var w = new BinaryWriter(fs);
 
         // BMP file header.
@@ -283,7 +283,7 @@ internal static class BmpWriter
         w.Write(0);
 
         var rowBuf = new byte[rowSize];
-        for (var y = height - 1; y >= 0; y--)
+        for (int y = height - 1; y >= 0; y--)
         {
             int srcBase = y * width;
             for (var x = 0; x < width; x++)
@@ -293,7 +293,7 @@ internal static class BmpWriter
                 rowBuf[bi + 1] = NormaliseToByte(g[srcBase + x], pG);
                 rowBuf[bi + 2] = NormaliseToByte(r[srcBase + x], pR);
             }
-            for (var x = width * 3; x < rowSize; x++) rowBuf[x] = 0;
+            for (int x = width * 3; x < rowSize; x++) rowBuf[x] = 0;
             w.Write(rowBuf);
         }
     }

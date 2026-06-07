@@ -33,7 +33,7 @@ public class RgbIcc3dLutTests
         int over1 = 0, over3 = 0;
         for (var i = 0; i < pixels * 3; i++)
         {
-            int d = System.Math.Abs(fast[i] - slow[i]);
+            int d = Math.Abs(fast[i] - slow[i]);
             if (d > worst) worst = d;
             sumAbs += d;
             if (d > 1) over1++;

@@ -31,7 +31,7 @@ namespace Jp2Codec.Tier1
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
                 {
-                    for (var y = stripeTop; y < stripeBottom; y++)
+                    for (int y = stripeTop; y < stripeBottom; y++)
                     {
                         int idx = state.RowBase(y) + x;
                         byte f = flags[idx];

@@ -8,7 +8,7 @@ public class ChromaUpsamplerTests
     public void Full_Res_Component_Returned_Unchanged()
     {
         var data = new int[] { 1, 2, 3, 4, 5, 6 }; // 3x2
-        var result = MakeResult(
+        Jp2DecodeResult result = MakeResult(
             width: 3, height: 2,
             components: new[] { (data, 3, 2, 8, false) });
 
@@ -30,7 +30,7 @@ public class ChromaUpsamplerTests
         var cr     = new int[] { 50, 60,
                                  70, 80 };
 
-        var result = MakeResult(
+        Jp2DecodeResult result = MakeResult(
             width: 4, height: 4,
             components: new[]
             {
@@ -67,7 +67,7 @@ public class ChromaUpsamplerTests
         for (var i = 0; i < 16; i++) luma[i] = i;
         var chroma = new int[] { 42 };
 
-        var result = MakeResult(
+        Jp2DecodeResult result = MakeResult(
             width: 4, height: 4,
             components: new[]
             {
@@ -88,7 +88,7 @@ public class ChromaUpsamplerTests
         var luma = new int[] { 1, 2, 3, 4, 5, 6 };
         var cb   = new int[] { 10, 20 };
 
-        var result = MakeResult(
+        Jp2DecodeResult result = MakeResult(
             width: 3, height: 2,
             components: new[]
             {

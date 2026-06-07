@@ -249,7 +249,7 @@ namespace Jp2Codec.Tests.Tier1
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
                 {
-                    for (var y = stripeTop; y < stripeBottom; y++)
+                    for (int y = stripeTop; y < stripeBottom; y++)
                     {
                         if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
 

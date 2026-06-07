@@ -49,7 +49,7 @@ namespace Jp2Codec.Tests.Tier1
             // Height 5 → PaddedHeight 8. Writing into padded rows 5..7 must
             // not appear in the output, which is [Height, Width].
             var s = new Tier1State(4, 5);
-            for (var y = s.Height; y < s.PaddedHeight; y++)
+            for (int y = s.Height; y < s.PaddedHeight; y++)
             for (var x = 0; x < s.Width; x++)
             {
                 s.SetFlag(x, y, Tier1State.SignificanceFlag);
@@ -165,7 +165,7 @@ namespace Jp2Codec.Tests.Tier1
             const int W = 4, H = 4;
             const int FirstBp = 5;
 
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
             for (var c = 0; c < W; c++)
                 enc.Encode(0, ref encContexts[Jp2MqContextSet.RunLength]);

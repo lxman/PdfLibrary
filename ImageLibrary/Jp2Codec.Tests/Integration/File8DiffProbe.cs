@@ -32,18 +32,18 @@ public class File8DiffProbe
 
         int matches = 0;
         int maxAbs = 0;
-        var hist = new System.Collections.Generic.Dictionary<int, int>();
+        var hist = new Dictionary<int, int>();
         for (var i = 0; i < reference.Length; i++)
         {
             int d = mine[i] - reference[i];
             if (d == 0) matches++;
-            int abs = System.Math.Abs(d);
+            int abs = Math.Abs(d);
             if (abs > maxAbs) maxAbs = abs;
             hist[d] = hist.GetValueOrDefault(d, 0) + 1;
         }
         sb.AppendLine($"matches: {matches} ({100.0 * matches / reference.Length:F2}%), max|diff|={maxAbs}");
         sb.AppendLine($"diff histogram (diff -> count, top 15):");
-        foreach (var kvp in hist.OrderByDescending(kv => kv.Value).Take(15))
+        foreach (KeyValuePair<int, int> kvp in hist.OrderByDescending(kv => kv.Value).Take(15))
             sb.AppendLine($"  diff={kvp.Key,5}  count={kvp.Value}");
 
         // Spatial map: where are the diffs? Bin by row.
@@ -52,9 +52,9 @@ public class File8DiffProbe
         for (var y = 0; y < h; y++)
             for (var x = 0; x < w; x++)
                 if (mine[y * w + x] != reference[y * w + x]) rowDiffs[y]++;
-        for (var y = 0; y < System.Math.Min(8, h); y++)
+        for (var y = 0; y < Math.Min(8, h); y++)
             sb.AppendLine($"  row {y,3}: {rowDiffs[y]} diffs / {w}");
-        for (var y = System.Math.Max(0, h - 8); y < h; y++)
+        for (int y = Math.Max(0, h - 8); y < h; y++)
             sb.AppendLine($"  row {y,3}: {rowDiffs[y]} diffs / {w}");
 
         sb.AppendLine($"diffs per column (first 8, last 8):");
@@ -62,9 +62,9 @@ public class File8DiffProbe
         for (var y = 0; y < h; y++)
             for (var x = 0; x < w; x++)
                 if (mine[y * w + x] != reference[y * w + x]) colDiffs[x]++;
-        for (var x = 0; x < System.Math.Min(8, w); x++)
+        for (var x = 0; x < Math.Min(8, w); x++)
             sb.AppendLine($"  col {x,3}: {colDiffs[x]} diffs / {h}");
-        for (var x = System.Math.Max(0, w - 8); x < w; x++)
+        for (int x = Math.Max(0, w - 8); x < w; x++)
             sb.AppendLine($"  col {x,3}: {colDiffs[x]} diffs / {h}");
 
         // First/last 8 mismatched samples with context.

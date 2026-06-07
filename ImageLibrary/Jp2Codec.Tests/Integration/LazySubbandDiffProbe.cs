@@ -44,7 +44,7 @@ public class LazySubbandDiffProbe
         report.AppendLine();
 
         var allKeys = new HashSet<SubbandKey>(c1.Keys);
-        foreach (var k in f1.Keys) allKeys.Add(k);
+        foreach (SubbandKey k in f1.Keys) allKeys.Add(k);
 
         var keyList = new List<SubbandKey>(allKeys);
         keyList.Sort((a, b) =>
@@ -89,7 +89,7 @@ public class LazySubbandDiffProbe
                 if (v1 != v2)
                 {
                     diffCount++;
-                    int delta = System.Math.Abs(v1 - v2);
+                    int delta = Math.Abs(v1 - v2);
                     if (delta > maxDelta) maxDelta = delta;
                     diffs.Add((x, y, v1, v2));
                 }

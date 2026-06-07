@@ -501,7 +501,7 @@ namespace Jp2Codec.Tiles
                 {
                     var concat = new byte[groupBytes];
                     int offset = 0;
-                    for (var i = groupStart; i < groupEnd; i++)
+                    for (int i = groupStart; i < groupEnd; i++)
                     {
                         byte[] segBytes = segments[i].Bytes;
                         Buffer.BlockCopy(segBytes, 0, concat, offset, segBytes.Length);

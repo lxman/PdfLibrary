@@ -118,7 +118,7 @@ namespace Jp2Codec.Tests.Wavelet
             int[,] x, int u0Parity, int v0Parity)
         {
             int h = x.GetLength(0), w = x.GetLength(1);
-            var a = Clone2D(x);
+            int[,] a = Clone2D(x);
 
             // VER_SD then HOR_SD (matches the inverse pipeline's HOR_SR then VER_SR).
             var colBuf = new int[h];
@@ -231,7 +231,7 @@ namespace Jp2Codec.Tests.Wavelet
             float[,] x, int u0Parity, int v0Parity)
         {
             int h = x.GetLength(0), w = x.GetLength(1);
-            var a = Clone2D(x);
+            float[,] a = Clone2D(x);
 
             var colBuf = new float[h];
             for (var c = 0; c < w; c++)

@@ -72,7 +72,7 @@ namespace Jp2Codec.Tests.Tier1
 
             // Without-VSC decoder visits (0,3) and (1,3) and marks them
             // visited. Sig flags stay zero.
-            var stateNoVsc = SeedAtRow4(W, H);
+            Tier1State stateNoVsc = SeedAtRow4(W, H);
             SignificancePropagationPass.Run(stateNoVsc, new Jp2MqDecoder(data, 0, data.Length),
                 Jp2MqContextSet.CreateInitialised(),
                 SubbandOrientation.LL, Bp, vsc: false);
@@ -81,7 +81,7 @@ namespace Jp2Codec.Tests.Tier1
             Assert.True(stateNoVsc.HasFlag(1, 3, Tier1State.VisitedFlag));
 
             // With-VSC decoder skips the same cells.
-            var stateVsc = SeedAtRow4(W, H);
+            Tier1State stateVsc = SeedAtRow4(W, H);
             SignificancePropagationPass.Run(stateVsc, new Jp2MqDecoder(data, 0, data.Length),
                 Jp2MqContextSet.CreateInitialised(),
                 SubbandOrientation.LL, Bp, vsc: true);
@@ -115,7 +115,7 @@ namespace Jp2Codec.Tests.Tier1
             encVsc.Flush();
             byte[] dataVsc = encVsc.ToArray();
 
-            var stateVsc = SeedAtRow4(W, H);
+            Tier1State stateVsc = SeedAtRow4(W, H);
             CleanupPass.Run(stateVsc, new Jp2MqDecoder(dataVsc, 0, dataVsc.Length),
                 Jp2MqContextSet.CreateInitialised(),
                 SubbandOrientation.LL, FirstBp, vsc: true);
@@ -360,7 +360,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     bool mask = vsc && (y % 4 == 3);
@@ -386,7 +386,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -430,7 +430,7 @@ namespace Jp2Codec.Tests.Tier1
                         EncodeMqNewSig(state, enc, contexts, x, stripeTop + k, bitPlane, pickSign, vsc);
                         processStartY = stripeTop + k + 1;
                     }
-                    for (var y = processStartY; y < stripeBottom; y++)
+                    for (int y = processStartY; y < stripeBottom; y++)
                     {
                         if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                         if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -456,7 +456,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     bool mask = vsc && (y % 4 == 3);
@@ -488,7 +488,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -524,7 +524,7 @@ namespace Jp2Codec.Tests.Tier1
 
         private static bool IsRunLengthEligible(Tier1State state, int x, int stripeTop, bool vsc)
         {
-            for (var y = stripeTop; y < stripeTop + 4; y++)
+            for (int y = stripeTop; y < stripeTop + 4; y++)
             {
                 if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) return false;
                 if (state.HasFlag(x, y, Tier1State.VisitedFlag)) return false;

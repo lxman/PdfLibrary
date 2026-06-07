@@ -130,8 +130,8 @@ namespace Jp2Codec.Tests.Tier1
         {
             var s = new Tier1State(5, 5);
             // Set every neighbour of (2,2) significant; (2,2) itself stays clear.
-            for (var dy = -1; dy <= 1; dy++)
-            for (var dx = -1; dx <= 1; dx++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
             {
                 if (dx == 0 && dy == 0) continue;
                 s.SetFlag(2 + dx, 2 + dy, Tier1State.SignificanceFlag);
@@ -174,7 +174,7 @@ namespace Jp2Codec.Tests.Tier1
             // Codeblock height 5 → padded height 8 → rows 5..7 are stripe-padding.
             var s = new Tier1State(4, 5);
             Assert.Equal(8, s.PaddedHeight);
-            for (var y = s.Height; y < s.PaddedHeight; y++)
+            for (int y = s.Height; y < s.PaddedHeight; y++)
             for (var x = 0; x < s.Width; x++)
             {
                 Assert.Equal(0, s.GetFlags(x, y));

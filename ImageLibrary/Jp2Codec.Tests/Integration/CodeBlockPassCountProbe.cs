@@ -44,8 +44,8 @@ public class CodeBlockPassCountProbe
         report.AppendLine();
 
         var allKeys = new HashSet<BlockKey>(c1.Keys);
-        foreach (var k in a1.Keys) allKeys.Add(k);
-        var keyList = allKeys.OrderBy(k => k.Resolution).ThenBy(k => k.Orientation)
+        foreach (BlockKey k in a1.Keys) allKeys.Add(k);
+        List<BlockKey> keyList = allKeys.OrderBy(k => k.Resolution).ThenBy(k => k.Orientation)
             .ThenBy(k => k.BlockY).ThenBy(k => k.BlockX).ToList();
 
         int matchCount = 0;

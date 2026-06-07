@@ -39,7 +39,7 @@ namespace Jp2Codec.Tests.Tier1
 
             // Reference state: run CleanupPass directly with a hand-built MQ
             // stream that says "every column RL-skip = 0-bit at RL ctx".
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
             for (var c = 0; c < W; c++)
                 enc.Encode(0, ref encContexts[Jp2MqContextSet.RunLength]);
@@ -52,7 +52,7 @@ namespace Jp2Codec.Tests.Tier1
 
             // Path B: direct CUP call on a fresh state
             var directState = new Tier1State(W, H);
-            var directContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] directContexts = Jp2MqContextSet.CreateInitialised();
             CleanupPass.Run(directState, new Jp2MqDecoder(data, 0, data.Length),
                 directContexts, SubbandOrientation.LL, BitPlane);
 
@@ -80,7 +80,7 @@ namespace Jp2Codec.Tests.Tier1
             const int W = 4, H = 4;
             const int FirstBp = 5;
 
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
             for (var c = 0; c < W; c++)
                 enc.Encode(0, ref encContexts[Jp2MqContextSet.RunLength]);
@@ -110,7 +110,7 @@ namespace Jp2Codec.Tests.Tier1
             const int W = 4, H = 4;
             const int FirstBp = 5;
 
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
             for (var c = 0; c < W; c++)
                 enc.Encode(0, ref encContexts[Jp2MqContextSet.RunLength]);
@@ -141,7 +141,7 @@ namespace Jp2Codec.Tests.Tier1
             // bit-plane -1.
             var driver = new Tier1CodeBlockDecoder(4, 4, SubbandOrientation.LL, firstBitPlane: 0);
             var enc = new Jp2MqEncoder();
-            var ctx = Jp2MqContextSet.CreateInitialised();
+            byte[] ctx = Jp2MqContextSet.CreateInitialised();
             for (var c = 0; c < 4; c++) enc.Encode(0, ref ctx[Jp2MqContextSet.RunLength]);
             enc.Flush();
             byte[] data = enc.ToArray();
@@ -170,7 +170,7 @@ namespace Jp2Codec.Tests.Tier1
             const int Passes = 7; // CUP at 4, then SPP/MRP/CUP at 3, then SPP/MRP/CUP at 2
 
             var planState = new Tier1State(W, H);
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
 
             EncodeReferenceDriver(planState, enc, encContexts, SubbandOrientation.LL,
@@ -254,7 +254,7 @@ namespace Jp2Codec.Tests.Tier1
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
                 {
-                    for (var y = stripeTop; y < stripeBottom; y++)
+                    for (int y = stripeTop; y < stripeBottom; y++)
                     {
                         if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                         byte neigh = state.GetSignificanceNeighbourhood(x, y);
@@ -282,7 +282,7 @@ namespace Jp2Codec.Tests.Tier1
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
                 {
-                    for (var y = stripeTop; y < stripeBottom; y++)
+                    for (int y = stripeTop; y < stripeBottom; y++)
                     {
                         if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                         if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -327,7 +327,7 @@ namespace Jp2Codec.Tests.Tier1
                         EncodeNewSig(state, enc, contexts, x, stripeTop + k, bitPlane, pickSign);
                         processStartY = stripeTop + k + 1;
                     }
-                    for (var y = processStartY; y < stripeBottom; y++)
+                    for (int y = processStartY; y < stripeBottom; y++)
                     {
                         if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                         if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -344,7 +344,7 @@ namespace Jp2Codec.Tests.Tier1
 
         private static bool IsRunLengthEligible(Tier1State state, int x, int stripeTop)
         {
-            for (var y = stripeTop; y < stripeTop + 4; y++)
+            for (int y = stripeTop; y < stripeTop + 4; y++)
             {
                 if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) return false;
                 if (state.HasFlag(x, y, Tier1State.VisitedFlag)) return false;

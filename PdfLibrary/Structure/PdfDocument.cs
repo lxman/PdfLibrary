@@ -743,7 +743,7 @@ public class PdfDocument : IDisposable
                     continue;
             }
 
-            int objNum = int.Parse(System.Text.Encoding.ASCII.GetString(data, numStart, i - 3 - numStart));
+            int objNum = int.Parse(Encoding.ASCII.GetString(data, numStart, i - 3 - numStart));
             if (!document.XrefTable.Contains(objNum))
             {
                 document.XrefTable.Add(new PdfXrefEntry(objNum, numStart, 0, true));

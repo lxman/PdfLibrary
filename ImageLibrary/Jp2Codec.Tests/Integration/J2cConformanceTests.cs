@@ -239,7 +239,7 @@ public class J2cConformanceTests
             // (it just sees uniform comp 0 dims). Trim to whichever is
             // smaller and compare prefix — full coverage comes from the
             // per-component dimension assertions in the corpus survey.
-            int n = System.Math.Min(expected.Length, actual.Length);
+            int n = Math.Min(expected.Length, actual.Length);
             if (!expected.AsSpan(0, n).SequenceEqual(actual.AsSpan(0, n)))
             {
                 int firstDiff = -1;

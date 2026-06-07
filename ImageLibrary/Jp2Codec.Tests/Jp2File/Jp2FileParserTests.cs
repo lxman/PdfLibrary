@@ -45,7 +45,7 @@ namespace Jp2Codec.Tests.Jp2File
 
             // Codestream byte range should round-trip the original bytes.
             byte[] sliced = new byte[info.CodestreamLength];
-            System.Buffer.BlockCopy(file, info.CodestreamOffset, sliced, 0, sliced.Length);
+            Buffer.BlockCopy(file, info.CodestreamOffset, sliced, 0, sliced.Length);
             Assert.Equal(cs, sliced);
         }
 
@@ -98,7 +98,7 @@ namespace Jp2Codec.Tests.Jp2File
             // Build a pclr with one column at 8-bit SIGNED (high bit set) and
             // entries that span the negative range. Confirm sign-extension
             // through to the int entry table.
-            var b = new Jp2Bytes()
+            Jp2Bytes b = new Jp2Bytes()
                 .SignatureBox()
                 .FtypBoxWithJp2();
 
@@ -147,7 +147,7 @@ namespace Jp2Codec.Tests.Jp2File
         {
             // Build a jp2h with pclr but no cmap; per ISO 15444-1 the two must
             // appear together.
-            var b = new Jp2Bytes()
+            Jp2Bytes b = new Jp2Bytes()
                 .SignatureBox()
                 .FtypBoxWithJp2();
 
@@ -207,7 +207,7 @@ namespace Jp2Codec.Tests.Jp2File
         public void Parse_FtypMissingJp2Brand_Throws()
         {
             // Build an ftyp listing a non-jp2 brand only.
-            var b = new Jp2Bytes().SignatureBox();
+            Jp2Bytes b = new Jp2Bytes().SignatureBox();
             int at = b.BeginBox(0x66747970);
             b.U32(0x6A707820); // 'jpx ' major
             b.U32(0);
@@ -224,7 +224,7 @@ namespace Jp2Codec.Tests.Jp2File
         public void Parse_Jp2WithMixedBitDepthsViaBpcc_ReturnsPerComponentDepths()
         {
             // Hand-build a jp2h with ihdr.BPC=0xFF followed by a bpcc box.
-            var b = new Jp2Bytes()
+            Jp2Bytes b = new Jp2Bytes()
                 .SignatureBox()
                 .FtypBoxWithJp2();
             int jp2hAt = b.BeginBox(0x6A703268);

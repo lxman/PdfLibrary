@@ -101,7 +101,7 @@ namespace Jp2Codec.Tests.Jp2File
         {
             int numEntries = paletteRgb.GetLength(0);
             if (paletteRgb.GetLength(1) != 3)
-                throw new System.ArgumentException("Palette must have 3 columns (R, G, B).");
+                throw new ArgumentException("Palette must have 3 columns (R, G, B).");
 
             int superAt = BeginBox(0x6A703268); // 'jp2h'
 

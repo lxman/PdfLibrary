@@ -81,7 +81,7 @@ namespace Jp2Codec.Tests.Tier1
             const int FirstBp = 5;
             const int Passes = 4;
 
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
 
             // Pass 0 (CUP @ bp 5): 4 RL-skip + segsym
@@ -115,7 +115,7 @@ namespace Jp2Codec.Tests.Tier1
             const int FirstBp = 5;
             const int Passes = 4;
 
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
 
             for (var c = 0; c < W; c++)
@@ -140,7 +140,7 @@ namespace Jp2Codec.Tests.Tier1
 
         private static byte[] EncodeCupWithRlSkip(bool emitSegSym)
         {
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
             for (var c = 0; c < W; c++)
                 enc.Encode(0, ref encContexts[Jp2MqContextSet.RunLength]);
@@ -151,7 +151,7 @@ namespace Jp2Codec.Tests.Tier1
 
         private static byte[] EncodeCupWithSegSymOverride(int b0, int b1, int b2, int b3)
         {
-            var encContexts = Jp2MqContextSet.CreateInitialised();
+            byte[] encContexts = Jp2MqContextSet.CreateInitialised();
             var enc = new Jp2MqEncoder();
             for (var c = 0; c < W; c++)
                 enc.Encode(0, ref encContexts[Jp2MqContextSet.RunLength]);

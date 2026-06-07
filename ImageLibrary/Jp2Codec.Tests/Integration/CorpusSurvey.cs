@@ -26,7 +26,7 @@ public class CorpusSurvey
         sb.AppendLine("file | WxH | C | bd | NL | xform | MCT | L | style | sub | tiles | notes");
         sb.AppendLine("-----|-----|---|----|----|-------|-----|---|-------|-----|-------|------");
 
-        var files = Directory.EnumerateFiles(CorpusRoot, "*.jp2", SearchOption.AllDirectories)
+        IOrderedEnumerable<string> files = Directory.EnumerateFiles(CorpusRoot, "*.jp2", SearchOption.AllDirectories)
                              .OrderBy(p => p, StringComparer.OrdinalIgnoreCase);
         foreach (string path in files)
         {
@@ -68,7 +68,7 @@ public class CorpusSurvey
         string mct = cod.UseMultipleComponentTransform ? "Y" : "N";
         string style = cod.CodeBlockStyle == CodeBlockStyle.None ? "-" : cod.CodeBlockStyle.ToString();
 
-        var notes = new System.Collections.Generic.List<string>();
+        var notes = new List<string>();
         if (cod.UseSopMarkers) notes.Add("SOP");
         if (cod.UseEphMarkers) notes.Add("EPH");
         if (cod.UseExplicitPrecincts) notes.Add("explicit-precincts");

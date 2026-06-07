@@ -28,7 +28,7 @@ namespace Jp2Codec.Tests.Tier2
             // 33 ones — no terminating zero.
             int[] bits = new int[40];
             for (var i = 0; i < 33; i++) bits[i] = 1;
-            Assert.Throws<System.IO.InvalidDataException>(() => Read(bits));
+            Assert.Throws<InvalidDataException>(() => Read(bits));
         }
     }
 }

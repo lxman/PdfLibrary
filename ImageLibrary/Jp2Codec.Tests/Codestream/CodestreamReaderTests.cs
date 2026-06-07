@@ -69,7 +69,7 @@ namespace Jp2Codec.Tests.Codestream
         public void ReadSpan_ReturnsViewOverBuffer_WithoutCopy_AndAdvances()
         {
             var r = new CodestreamReader([0x01, 0x02, 0x03, 0x04, 0x05]);
-            var span = r.ReadSpan(2);
+            ReadOnlySpan<byte> span = r.ReadSpan(2);
             Assert.Equal(2, span.Length);
             Assert.Equal(0x01, span[0]);
             Assert.Equal(0x02, span[1]);
@@ -159,7 +159,7 @@ namespace Jp2Codec.Tests.Codestream
                 0xFF, 0x90, // following marker (SOT) — should not be consumed
             };
             var parent = new CodestreamReader(data);
-            var sub = parent.ReadSegment();
+            CodestreamReader sub = parent.ReadSegment();
 
             Assert.Equal(4, sub.Length);
             Assert.Equal(0xAA, sub.ReadByte());

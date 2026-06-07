@@ -101,14 +101,14 @@ namespace Jp2Codec.Tiles
 
         private static CocSegment? FindCoc(IReadOnlyList<CocSegment> list, int componentIndex)
         {
-            for (var i = list.Count - 1; i >= 0; i--)
+            for (int i = list.Count - 1; i >= 0; i--)
                 if (list[i].ComponentIndex == componentIndex) return list[i];
             return null;
         }
 
         private static QccSegment? FindQcc(IReadOnlyList<QccSegment> list, int componentIndex)
         {
-            for (var i = list.Count - 1; i >= 0; i--)
+            for (int i = list.Count - 1; i >= 0; i--)
                 if (list[i].ComponentIndex == componentIndex) return list[i];
             return null;
         }

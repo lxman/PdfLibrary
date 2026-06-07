@@ -360,7 +360,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     byte neigh = state.GetSignificanceNeighbourhood(x, y);
@@ -386,7 +386,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -429,7 +429,7 @@ namespace Jp2Codec.Tests.Tier1
                         EncodeMqNewSig(state, enc, contexts, x, stripeTop + k, bitPlane, pickSign);
                         processStartY = stripeTop + k + 1;
                     }
-                    for (var y = processStartY; y < stripeBottom; y++)
+                    for (int y = processStartY; y < stripeBottom; y++)
                     {
                         if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                         if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -455,7 +455,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     byte neigh = state.GetSignificanceNeighbourhood(x, y);
@@ -486,7 +486,7 @@ namespace Jp2Codec.Tests.Tier1
             {
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
-                for (var y = stripeTop; y < stripeBottom; y++)
+                for (int y = stripeTop; y < stripeBottom; y++)
                 {
                     if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                     if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;
@@ -528,7 +528,7 @@ namespace Jp2Codec.Tests.Tier1
 
         private static bool IsRunLengthEligible(Tier1State state, int x, int stripeTop)
         {
-            for (var y = stripeTop; y < stripeTop + 4; y++)
+            for (int y = stripeTop; y < stripeTop + 4; y++)
             {
                 if (state.HasFlag(x, y, Tier1State.SignificanceFlag)) return false;
                 if (state.HasFlag(x, y, Tier1State.VisitedFlag)) return false;

@@ -26,7 +26,7 @@ public class J2cConformanceSurvey
     {
         if (!Run) return;
 
-        var files = Directory.EnumerateFiles(CorpusRoot, "*.j2c")
+        List<string> files = Directory.EnumerateFiles(CorpusRoot, "*.j2c")
                              .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                              .ToList();
         int pass = 0, fail = 0;
@@ -83,7 +83,7 @@ public class J2cConformanceSurvey
         string xform = cod.WaveletTransform == WaveletTransform.Reversible5x3 ? "5/3" : "9/7";
         string style = cod.CodeBlockStyle == CodeBlockStyle.None ? "-" : cod.CodeBlockStyle.ToString();
 
-        var notes = new System.Collections.Generic.List<string>();
+        var notes = new List<string>();
         if (cod.UseSopMarkers) notes.Add("SOP");
         if (cod.UseEphMarkers) notes.Add("EPH");
         if (cod.UseExplicitPrecincts) notes.Add("explicit-precincts");

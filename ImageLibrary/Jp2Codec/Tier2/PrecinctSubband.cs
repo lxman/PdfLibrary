@@ -35,10 +35,10 @@ namespace Jp2Codec.Tier2
                     blocks[y, x] = new CodeBlockState();
             CodeBlocks = blocks;
 
-            InclusionTree = new TagTreeDecoder(System.Math.Max(codeBlockColumnCount, 1),
-                                                System.Math.Max(codeBlockRowCount, 1));
-            ZeroBitPlanesTree = new TagTreeDecoder(System.Math.Max(codeBlockColumnCount, 1),
-                                                    System.Math.Max(codeBlockRowCount, 1));
+            InclusionTree = new TagTreeDecoder(Math.Max(codeBlockColumnCount, 1),
+                                                Math.Max(codeBlockRowCount, 1));
+            ZeroBitPlanesTree = new TagTreeDecoder(Math.Max(codeBlockColumnCount, 1),
+                                                    Math.Max(codeBlockRowCount, 1));
         }
     }
 }

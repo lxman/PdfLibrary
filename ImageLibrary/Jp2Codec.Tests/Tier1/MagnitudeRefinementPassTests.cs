@@ -128,7 +128,7 @@ namespace Jp2Codec.Tests.Tier1
             Func<int, int, int> pickBit)
         {
             var planState = new Tier1State(width, height);
-            foreach ((var coord, bool visited) in preSignificant)
+            foreach (((int, int) coord, bool visited) in preSignificant)
             {
                 planState.SetFlag(coord.Item1, coord.Item2, Tier1State.SignificanceFlag);
                 if (visited) planState.SetFlag(coord.Item1, coord.Item2, Tier1State.VisitedFlag);
@@ -147,7 +147,7 @@ namespace Jp2Codec.Tests.Tier1
 
             // Build decode-side state with the SAME initial conditions.
             var decodeState = new Tier1State(width, height);
-            foreach ((var coord, bool visited) in preSignificant)
+            foreach (((int, int) coord, bool visited) in preSignificant)
             {
                 decodeState.SetFlag(coord.Item1, coord.Item2, Tier1State.SignificanceFlag);
                 if (visited) decodeState.SetFlag(coord.Item1, coord.Item2, Tier1State.VisitedFlag);
@@ -187,7 +187,7 @@ namespace Jp2Codec.Tests.Tier1
                 int stripeBottom = Math.Min(stripeTop + 4, actualHeight);
                 for (var x = 0; x < width; x++)
                 {
-                    for (var y = stripeTop; y < stripeBottom; y++)
+                    for (int y = stripeTop; y < stripeBottom; y++)
                     {
                         if (!state.HasFlag(x, y, Tier1State.SignificanceFlag)) continue;
                         if (state.HasFlag(x, y, Tier1State.VisitedFlag)) continue;

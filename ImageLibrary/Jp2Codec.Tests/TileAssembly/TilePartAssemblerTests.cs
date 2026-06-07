@@ -30,7 +30,7 @@ public class TilePartAssemblerTests
         int o = 0;
         foreach (byte[] p in parts)
         {
-            System.Buffer.BlockCopy(p, 0, buf, o, p.Length);
+            Buffer.BlockCopy(p, 0, buf, o, p.Length);
             o += p.Length;
         }
         buf[o] = 0xFF;
@@ -109,7 +109,7 @@ public class TilePartAssemblerTests
         byte[] tp2 = BuildTilePart(0, 0, 2, body);
         CodestreamReader r = ReaderOver(tp1, tp2);
 
-        Assert.Throws<System.IO.InvalidDataException>(() =>
+        Assert.Throws<InvalidDataException>(() =>
             TilePartAssembler.Assemble(r, numberOfComponents: 1));
     }
 
