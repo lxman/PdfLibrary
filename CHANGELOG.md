@@ -7,12 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 ### Added
+- **Performance and Memory Optimizations**:
+  - Integrated `ArrayPool<byte>` in `ImageRenderer` (SkiaSharp) to reduce GC pressure during image decoding.
+  - Optimized `FlateDecodeFilter` and PNG/TIFF predictor functions with pre-allocated buffer capacities.
+  - Improved `TextRenderer` with granular glyph path caching and more efficient matrix transformations.
+  - Enhanced path rendering accuracy in `TextRenderer` and `PathRenderer` by correctly applying transformations during drawing.
+  - Removed document-level cache clearing in `SkiaSharpRenderTarget` in favor of more granular caching, improving the safety of concurrent rendering.
 - **In-house JPEG codec** (`ImageLibrary/JpegCodec`) — pure C# baseline + progressive JPEG encoder and decoder; replaces the vendored `JpegLibrary` git submodule. Used by `PdfLibrary.Filters.DctDecodeFilter` and `ImageLibrary.TiffCodec` for TIFF's JPEG sub-format.
 - **In-house Netpbm codec** (`ImageLibrary/PbmCodec`) — pure C# decoder for `P1`–`P6` (ASCII + binary bitmap/graymap/pixmap) and binary encoder (`P4`/`P5`/`P6`). Wired into ImageUtility as `CustomPbmCodec` for `.pbm` / `.pgm` / `.ppm` / `.pnm`.
 - **`CustomJpegCodec`, `CustomPngCodec`, `CustomBmpCodec`, `CustomGifCodec`, `CustomTgaCodec`, `CustomTiffCodec`** wrappers in `PdfLibrary.Utilities/ImageUtility/Codecs/`, making the in-tree `ImageLibrary` codecs the primary implementations in ImageUtility's `CodecRegistry`.
-- **Thread-safety note in `README.md`** documenting that `PdfDocument` instances and the static glyph cache in `SkiaSharpRenderTarget` are not safe to share across threads, with the recommended per-request-load + `SemaphoreSlim` workaround for ASP.NET / multi-threaded server use.
-
-### Changed
+- **Thread-safety improvements**: Removed global glyph cache clearing in `SkiaSharpRenderTarget`, making concurrent rendering of different documents safer. Updated `README.md` with refined thread-safety guidance.
 - **ImageLibrary reorganized into per-codec projects.** The monolithic `ImageLibrary/ImageLibrary` project has been split. Each codec now lives in its own project under `ImageLibrary/`:
   - `ImageLibrary/CcittCodec` (was `ImageLibrary/ImageLibrary/Compression/Ccitt`)
   - `ImageLibrary/LzwCodec` (was `ImageLibrary/ImageLibrary/Compression/Lzw`)

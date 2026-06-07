@@ -9,8 +9,9 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
 
 ### PDF Rendering
 - Full PDF 1.x and 2.0 parsing support
-- High-quality rendering using SkiaSharp
+- High-quality rendering using SkiaSharp with optimized glyph and path caching
 - Support for complex graphics operations (paths, clipping, transparency)
+- Memory-efficient image processing using `ArrayPool<byte>` and pre-allocated buffers
 - Comprehensive color space support (DeviceRGB, DeviceCMYK, DeviceGray, ICCBased, Separation, Lab)
 - Image handling with custom high-performance decompressors:
   - JPEG (in-house JpegCodec — baseline and progressive)
@@ -18,9 +19,9 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
   - CCITT Group 3 and Group 4 fax compression
   - JBIG2 monochrome compression
   - LZW compression
-  - FlateDecode (zlib/PNG)
+  - FlateDecode (zlib/PNG) with optimized predictor functions
   - RunLength, ASCII85, ASCIIHex encoding
-- Font rendering (Type1, TrueType, CID, embedded fonts)
+- Font rendering (Type1, TrueType, CID, embedded fonts) with optimized glyph path extraction
 - Text extraction and positioning
 
 ### PDF Creation (Fluent Builder API)
@@ -188,12 +189,12 @@ foreach (var block in textBlocks)
 
 ## Thread Safety
 
-PdfLibrary is **not currently thread-safe**. The two main constraints:
+PdfLibrary is **not fully thread-safe**. The main constraints:
 
 - `PdfDocument` instances are not safe to share across threads — they lazy-load objects by mutating internal state and seeking a shared `Stream`.
-- The renderer's static glyph cache is cleared whenever `SkiaSharpRenderTarget` sees a different document, which can race when multiple renders run concurrently and cause silent rendering glitches under load.
+- While recent improvements have removed document-level cache clearing in `SkiaSharpRenderTarget` in favor of granular caching, concurrent rendering of different documents is now safer but still recommended to be handled with caution.
 
-For ASP.NET Core or any multi-threaded server use, the safe pattern today is:
+For ASP.NET Core or any multi-threaded server use, the safe pattern remains:
 
 1. **Load and dispose a fresh `PdfDocument` per request** — never cache or share instances across requests.
 2. **Serialize render calls** with a process-wide `SemaphoreSlim(1, 1)`.

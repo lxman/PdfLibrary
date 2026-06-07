@@ -260,10 +260,10 @@ The SkiaSharp-based render target is organized into specialized renderer classes
 
 | Component | Responsibility |
 |-----------|----------------|
-| `SkiaSharpRenderTarget` | Main render target implementation |
-| `PathRenderer` | Path filling/stroking with blend mode support |
-| `TextRenderer` | Text rendering with font metrics |
-| `ImageRenderer` | Image XObject rendering |
+| `SkiaSharpRenderTarget` | Main render target implementation; manages granular caching |
+| `PathRenderer` | Path filling/stroking with optimized path caching and blend mode support |
+| `TextRenderer` | Text rendering with optimized glyph path caching and metrics |
+| `ImageRenderer` | Image XObject rendering with `ArrayPool<byte>` for memory efficiency |
 | `ColorConverter` | PDF to SkiaSharp color conversion |
 | `PathConverter` | PDF to SkiaSharp path conversion |
 | `CanvasStateManager` | Canvas save/restore stack management |
@@ -515,8 +515,9 @@ byte[] decoded = filter.Decode(encoded);
 ## Memory Management
 
 - Large streams are processed incrementally when possible
-- Image data is decoded on-demand
-- Font metrics are cached per document
+- Image data is decoded on-demand using `ArrayPool<byte>` to minimize allocations
+- `FlateDecodeFilter` and PNG/TIFF predictors use pre-allocated buffer capacities
+- Font metrics and glyph paths are cached at a granular level
 - Use `using` statements for render targets
 
 ---
