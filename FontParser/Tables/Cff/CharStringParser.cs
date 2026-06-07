@@ -17,7 +17,7 @@ namespace FontParser.Tables.Cff
         private List<byte> _bytes;
         private readonly List<List<byte>> _globalSubroutines;
         private readonly List<List<byte>> _localSubroutines;
-        private readonly FixedStack<List<byte>> _byteStack = new FixedStack<List<byte>>();
+        private readonly SubroutineNester _nester = new SubroutineNester();
         private readonly int _nominalWidthX;
         private readonly int _globalOffset;
         private readonly int _localOffset;
@@ -33,7 +33,6 @@ namespace FontParser.Tables.Cff
             int nominalWidthX)
         {
             _stack.Capacity = capacity;
-            _byteStack.Capacity = 11;
             _bytes = bytes;
             _originalBytes = bytes;
             _globalSubroutines = globalSubroutines;
@@ -147,13 +146,13 @@ namespace FontParser.Tables.Cff
                                 index = Convert.ToInt32(_stack.Pop()) + _localOffset;
                                 if (index < _localSubroutines.Count)
                                 {
-                                    SubroutineNester.Push(stackIndex, _bytes);
+                                    _nester.Push(stackIndex, _bytes);
                                     _bytes = _localSubroutines[index];
                                     if (_bytes.Count > 0)
                                     {
                                         output.AppendLine(string.Join(Environment.NewLine, Parse()));
                                     }
-                                    (int index, List<byte> bytes) lState = SubroutineNester.Pop();
+                                    (int index, List<byte> bytes) lState = _nester.Pop();
                                     stackIndex = lState.index;
                                     _bytes = lState.bytes;
                                 }
@@ -276,14 +275,14 @@ namespace FontParser.Tables.Cff
                                 index = Convert.ToInt32(_stack.Pop()) + _globalOffset;
                                 if (index >= 0 && index < _globalSubroutines.Count)
                                 {
-                                    SubroutineNester.Push(stackIndex, _bytes);
+                                    _nester.Push(stackIndex, _bytes);
                                     _bytes = _globalSubroutines[index];
                                     if (_bytes.Count > 0)
                                     {
                                         output.AppendLine(string.Join(Environment.NewLine, Parse()));
                                     }
 
-                                    (int index, List<byte> bytes) gState = SubroutineNester.Pop();
+                                    (int index, List<byte> bytes) gState = _nester.Pop();
                                     stackIndex = gState.index;
                                     _bytes = gState.bytes;
                                 }
@@ -600,14 +599,14 @@ namespace FontParser.Tables.Cff
                                 index = Convert.ToInt32(_stack.Pop()) + _localOffset;
                                 if (index < _localSubroutines.Count)
                                 {
-                                    SubroutineNester.Push(stackIndex, _bytes);
+                                    _nester.Push(stackIndex, _bytes);
                                     _bytes = _localSubroutines[index];
                                     if (_bytes.Count > 0)
                                     {
                                         GlyphOutline subOutline = ParseToOutline();
                                         outline.Commands.AddRange(subOutline.Commands);
                                     }
-                                    (int index, List<byte> bytes) lState = SubroutineNester.Pop();
+                                    (int index, List<byte> bytes) lState = _nester.Pop();
                                     stackIndex = lState.index;
                                     _bytes = lState.bytes;
                                 }
@@ -720,14 +719,14 @@ namespace FontParser.Tables.Cff
                                 index = Convert.ToInt32(_stack.Pop()) + _globalOffset;
                                 if (index >= 0 && index < _globalSubroutines.Count)
                                 {
-                                    SubroutineNester.Push(stackIndex, _bytes);
+                                    _nester.Push(stackIndex, _bytes);
                                     _bytes = _globalSubroutines[index];
                                     if (_bytes.Count > 0)
                                     {
                                         GlyphOutline subOutline = ParseToOutline();
                                         outline.Commands.AddRange(subOutline.Commands);
                                     }
-                                    (int index, List<byte> bytes) gState = SubroutineNester.Pop();
+                                    (int index, List<byte> bytes) gState = _nester.Pop();
                                     stackIndex = gState.index;
                                     _bytes = gState.bytes;
                                 }

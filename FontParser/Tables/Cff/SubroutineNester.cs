@@ -1,28 +1,35 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace FontParser.Tables.Cff
 {
-    public static class SubroutineNester
+    /// <summary>
+    /// Per-parse save/restore stack for nested CFF subroutine (callsubr/callgsubr) calls.
+    /// An instance is owned by a single <see cref="CharStringParser"/> and must NOT be shared
+    /// across threads — each glyph parse creates its own parser and therefore its own nester.
+    /// (Previously a static class, which silently corrupted output when two threads decoded
+    /// CFF glyphs concurrently.)
+    /// </summary>
+    public class SubroutineNester
     {
-        private static readonly FixedStack<List<byte>> ByteStack = new FixedStack<List<byte>>();
-        private static readonly FixedStack<int> Indices = new FixedStack<int>();
+        private readonly FixedStack<List<byte>> _byteStack = new FixedStack<List<byte>>();
+        private readonly FixedStack<int> _indices = new FixedStack<int>();
 
-        static SubroutineNester()
+        public SubroutineNester()
         {
-            ByteStack.Capacity = 11;
-            Indices.Capacity = 11;
+            _byteStack.Capacity = 11;
+            _indices.Capacity = 11;
         }
 
-        public static void Push(int index, List<byte> bytes)
+        public void Push(int index, List<byte> bytes)
         {
             var copy = new List<byte>(bytes);
-            ByteStack.Push(copy);
-            Indices.Push(index);
+            _byteStack.Push(copy);
+            _indices.Push(index);
         }
 
-        public static (int index, List<byte> bytes) Pop()
+        public (int index, List<byte> bytes) Pop()
         {
-            return (Indices.Pop(), ByteStack.Pop());
+            return (_indices.Pop(), _byteStack.Pop());
         }
     }
 }

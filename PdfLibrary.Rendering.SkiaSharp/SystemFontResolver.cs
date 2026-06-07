@@ -118,20 +118,19 @@ public class SystemFontResolver
     {
         var cacheKey = $"{pdfFontName}|{bold}|{italic}";
 
+        // Hold the lock across resolve+store so concurrent first-use of the same key resolves
+        // the typeface exactly once. (ConcurrentDictionary.GetOrAdd would still let racing
+        // threads each run the factory and create a native SKTypeface, leaking all but the
+        // winner — SKTypeface is an undisposed native handle. A single lock is the correct fix.)
         lock (_lock)
         {
             if (_typefaceCache.TryGetValue(cacheKey, out SKTypeface? cached))
                 return cached;
-        }
 
-        SKTypeface typeface = ResolveTypeface(pdfFontName, bold, italic);
-
-        lock (_lock)
-        {
+            SKTypeface typeface = ResolveTypeface(pdfFontName, bold, italic);
             _typefaceCache[cacheKey] = typeface;
+            return typeface;
         }
-
-        return typeface;
     }
 
     /// <summary>

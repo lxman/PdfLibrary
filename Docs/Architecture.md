@@ -505,10 +505,13 @@ byte[] decoded = filter.Decode(encoded);
 
 ## Threading Considerations
 
-- `PdfDocument` instances are **not thread-safe**
-- Create separate `PdfDocument` instances per thread
-- `PdfDocumentBuilder` is **not thread-safe** during construction
-- Render targets should be used from a single thread
+PdfLibrary is built for **concurrent rendering using one document per thread** — the typical web-server model:
+
+- Load a separate `PdfDocument` per thread/request. A single instance is **not** safe to share: it lazy-loads objects by mutating internal state and seeking a shared `Stream`.
+- Use a separate render target per render. `SkiaSharpRenderTarget` wraps a single `SKCanvas`, which is not thread-safe.
+- `PdfDocumentBuilder` is **not thread-safe** during construction.
+
+Under that model the library is thread-safe. The process-wide state shared across renders is synchronized: the glyph-path cache (bounded `MemoryCache`, keyed per font instance), the system-font/typeface resolver, built-in ICC profiles and the Lab→sRGB transform (`volatile` double-checked locking), the codec registry (lock + snapshot-on-read), and font lookup tables (immutable). CFF/Type1 charstring decoding uses per-parse state rather than shared static stacks. Concurrent rendering of independent documents is validated by a stress harness that hash-compares concurrent output against a single-threaded baseline.
 
 ---
 

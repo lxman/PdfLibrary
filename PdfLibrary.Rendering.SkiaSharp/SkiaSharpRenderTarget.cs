@@ -36,7 +36,12 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     public int CurrentPageNumber { get; private set; }
 
     // Lightweight per-page timing — set EnablePerfTrace to see breakdown on Console
-    public static bool EnablePerfTrace { get; set; }
+    private static volatile bool _enablePerfTrace;
+    public static bool EnablePerfTrace
+    {
+        get => _enablePerfTrace;
+        set => _enablePerfTrace = value;
+    }
     private long _perfImageMs, _perfTextMs, _perfPathMs, _perfSoftMaskMs;
     private int _perfImageCount, _perfTextCount, _perfPathCount, _perfSoftMaskCount;
     private readonly Stopwatch _perfSw = new();

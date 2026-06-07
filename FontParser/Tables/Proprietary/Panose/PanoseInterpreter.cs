@@ -405,7 +405,7 @@ namespace FontParser.Tables.Proprietary.Panose
             [9] = "Very Narrow"
         };
 
-        private static byte[]? _values;
+        private readonly byte[]? _values;
 
         public PanoseInterpreter(byte[] values)
         {

@@ -11,8 +11,8 @@ namespace Logging
     /// </summary>
     public static class PdfLogger
     {
-        private static PdfLogConfiguration _config = new PdfLogConfiguration();
-        private static Logger? _logger;
+        private static volatile PdfLogConfiguration _config = new PdfLogConfiguration();
+        private static volatile Logger? _logger;
         private static readonly object LockObject = new object();
         private static volatile bool _isInitialized;
 
@@ -85,8 +85,10 @@ namespace Logging
             // Get category prefix
             string prefix = GetCategoryPrefix(category);
 
-            // Log with category prefix
-            _logger?.Information($"{prefix} {message}");
+            // Snapshot the volatile logger reference so the null-check and the call act on the
+            // same instance even if another thread reinitializes logging concurrently.
+            Logger? logger = _logger;
+            logger?.Information($"{prefix} {message}");
         }
 
         /// <summary>

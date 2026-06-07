@@ -189,38 +189,31 @@ foreach (var block in textBlocks)
 
 ## Thread Safety
 
-PdfLibrary is **not fully thread-safe**. The main constraints:
+PdfLibrary supports **concurrent rendering using the one-document-per-thread model** — the standard pattern for ASP.NET Core and other multi-threaded servers. Each request loads its own `PdfDocument`, renders it on its own render target, and disposes both. Under this model the library is thread-safe: the process-wide caches and lookup tables shared across renders (glyph-path cache, system-font/typeface resolver, built-in ICC profiles, codec registry, font lookup tables) are synchronized, and CFF/Type1 glyph decoding uses per-parse state.
 
-- `PdfDocument` instances are not safe to share across threads — they lazy-load objects by mutating internal state and seeking a shared `Stream`.
-- While recent improvements have removed document-level cache clearing in `SkiaSharpRenderTarget` in favor of granular caching, concurrent rendering of different documents is now safer but still recommended to be handled with caution.
+This is verified by a stress harness that renders a corpus concurrently at 2× core count and compares every page's output pixel-for-pixel against a single-threaded baseline — zero divergence, with managed memory bounded across thousands of renders. No process-wide render lock is required; throughput scales with cores.
 
-For ASP.NET Core or any multi-threaded server use, the safe pattern remains:
-
-1. **Load and dispose a fresh `PdfDocument` per request** — never cache or share instances across requests.
-2. **Serialize render calls** with a process-wide `SemaphoreSlim(1, 1)`.
+### Supported pattern (do this)
 
 ```csharp
-private static readonly SemaphoreSlim RenderLock = new(1, 1);
-
+// Per request/thread: load → render → dispose. No shared state, no global lock.
 public async Task<byte[]> RenderFirstPageAsync(string pdfPath)
 {
-    await RenderLock.WaitAsync();
-    try
-    {
-        using var document = PdfDocument.Load(pdfPath);
-        return document.GetPage(0)!
-            .RenderTo()
-            .WithDpi(150)
-            .ToBytes();
-    }
-    finally
-    {
-        RenderLock.Release();
-    }
+    using var document = PdfDocument.Load(pdfPath);
+    return document.GetPage(0)!     // 0-based
+        .RenderTo()
+        .WithDpi(150)
+        .ToBytes();                 // PNG bytes
 }
 ```
 
-Proper concurrent rendering is on the roadmap. Until then the throughput ceiling is one render at a time per process — fine for occasional PDF generation, not ideal for high-traffic endpoints. If the same PDFs are requested repeatedly, cache the rendered output at the HTTP layer rather than re-rendering.
+### Constraints (don't do this)
+
+- **Do not share one `PdfDocument` across threads.** It lazy-loads objects by mutating internal state and seeking a shared `Stream`; concurrent access to a single instance is unsafe. Load one per request instead.
+- **Do not share a `SkiaSharpRenderTarget` (or render into one) from multiple threads.** A render target wraps a single `SKCanvas`, which is not thread-safe by design. Use one render target per render.
+- `PdfDocumentBuilder` is not thread-safe during construction — build a document on a single thread.
+
+If the same PDFs are rendered repeatedly, caching the rendered output at the HTTP layer is still worthwhile — but as an optimization, not a correctness requirement.
 
 ## Image Decompression Architecture
 

@@ -6,7 +6,7 @@ namespace FontParser.Models
 {
     public static class Language
     {
-        public static Dictionary<int, string> Ids = new Dictionary<int, string>
+        public static readonly IReadOnlyDictionary<int, string> Ids = new Dictionary<int, string>
         {
             [0] = "Macintosh - Roman",
             // Don't know these yet
