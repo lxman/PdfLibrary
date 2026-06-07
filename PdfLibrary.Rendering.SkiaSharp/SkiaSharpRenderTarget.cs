@@ -33,11 +33,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     // Background color for the canvas (white for normal pages, transparent for mask rendering)
     private readonly SKColor _backgroundColor;
 
-    // Track the last document to detect when a new document is loaded
-    // WeakReference prevents keeping old documents alive in memory
-    private static WeakReference<PdfDocument>? _lastDocument;
-    private static readonly Lock DocumentLock = new();
-
     public int CurrentPageNumber { get; private set; }
 
     // Lightweight per-page timing — set EnablePerfTrace to see breakdown on Console
@@ -56,26 +51,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         // ALWAYS use transparent during rendering for correct blend mode behavior
         // We'll composite onto white in SaveToFile (unless transparentOutput is true)
         _backgroundColor = SKColors.Transparent;
-
-        // Clear glyph cache when a new document is loaded to prevent
-        // cached glyphs from one PDF's subset fonts being reused for another
-        if (document is not null)
-        {
-            lock (DocumentLock)
-            {
-                var isNewDocument = true;
-                if (_lastDocument is not null && _lastDocument.TryGetTarget(out PdfDocument? lastDoc))
-                {
-                    isNewDocument = !ReferenceEquals(lastDoc, document);
-                }
-
-                if (isNewDocument)
-                {
-                    TextRenderer.ClearCache();
-                    _lastDocument = new WeakReference<PdfDocument>(document);
-                }
-            }
-        }
 
         // Create SkiaSharp surface
         var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);

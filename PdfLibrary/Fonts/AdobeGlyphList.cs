@@ -200,7 +200,7 @@ namespace PdfLibrary.Fonts
         }
 
         // Reverse mapping: Unicode to glyph name (lazily initialized)
-        private static Dictionary<string, string>? _unicodeToGlyph;
+        private static volatile Dictionary<string, string>? _unicodeToGlyph;
         private static readonly object _initLock = new();
 
         /// <summary>

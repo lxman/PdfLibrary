@@ -69,7 +69,7 @@ namespace FontParser
     // These are the tables that we know about.
     public static class Table
     {
-        public static List<Type> Types = new List<Type>
+        public static readonly IReadOnlyList<Type> Types = new List<Type>
         {
             typeof(CmapTable),
             typeof(HeadTable),

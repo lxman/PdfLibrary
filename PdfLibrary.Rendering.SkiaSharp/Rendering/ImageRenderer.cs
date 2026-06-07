@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.InteropServices;
 using Jp2Codec;
 using Logging;
@@ -93,11 +94,11 @@ internal class ImageRenderer
                 SKRectI deviceClipBounds = _canvas.DeviceClipBounds;
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: ClipBounds Local=({clipBounds.Left:F2},{clipBounds.Top:F2},{clipBounds.Right:F2},{clipBounds.Bottom:F2}), Device=({deviceClipBounds.Left},{deviceClipBounds.Top},{deviceClipBounds.Right},{deviceClipBounds.Bottom})");
 
-                // Convert bitmap to SKImage for drawing
-                using SKImage? skImage = SKImage.FromBitmap(bitmap);
+                // Wrap the bitmap pixels without copying — bitmap stays alive for the duration of Draw.
+                using SKImage? skImage = SKImage.FromPixels(bitmap.Info, bitmap.GetPixels(), bitmap.RowBytes);
                 if (skImage == null)
                 {
-                    PdfLogger.Log(LogCategory.Images, "DrawImage: SKImage.FromBitmap returned null!");
+                    PdfLogger.Log(LogCategory.Images, "DrawImage: SKImage.FromPixels returned null!");
                     _canvas.SetMatrix(oldMatrix);
                     return;
                 }
@@ -212,6 +213,7 @@ internal class ImageRenderer
 
             // Check for SMask (alpha channel / transparency)
             byte[]? smaskData = null;
+            byte[]? rentedSmask = null; // returned in finally if we rented from ArrayPool
 
             // Check if image has SMask (soft mask - actual alpha channel)
             bool hasActualSMask = stream.Dictionary.ContainsKey(new PdfName("SMask"));
@@ -243,13 +245,12 @@ internal class ImageRenderer
 
                         if (rawSmaskData.Length == expectedRgbSize)
                         {
-                            // DCTDecode returned RGB - extract just the first component (they should all be the same for grayscale)
-                            smaskData = new byte[expectedGrayscaleSize];
+                            // DCTDecode returned RGB — extract the R channel (R=G=B for grayscale JPEG).
+                            // Rent from ArrayPool to avoid a heap allocation for this temporary buffer.
+                            rentedSmask = ArrayPool<byte>.Shared.Rent(expectedGrayscaleSize);
                             for (var i = 0; i < expectedGrayscaleSize; i++)
-                            {
-                                // Take just the R channel (R=G=B for grayscale JPEG)
-                                smaskData[i] = rawSmaskData[i * 3];
-                            }
+                                rentedSmask[i] = rawSmaskData[i * 3];
+                            smaskData = rentedSmask;
                         }
                         else
                         {
@@ -260,8 +261,11 @@ internal class ImageRenderer
                 }
             }
 
-            // Determine SkiaSharp color type based on PDF color space
+            // Determine SkiaSharp color type based on PDF color space.
+            // rentedSmask is returned in the finally block below.
             SKBitmap? bitmap;
+            try
+            {
 
             // Diagnostic: log actual values for image creation
             double[]? imgDecodeArray = image.DecodeArray;
@@ -287,7 +291,8 @@ internal class ImageRenderer
                 int bytesPerRow = (width + 7) / 8;
 
                 // Use direct pixel buffer for performance - SetPixel is very slow for large images
-                var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                int pixelBufferSize = width * height * 4;
+                byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
                 byte colorR = color.Red, colorG = color.Green, colorB = color.Blue, colorA = color.Alpha;
                 var paintedPixels = 0;
 
@@ -344,10 +349,14 @@ internal class ImageRenderer
 
                 // Copy pixel buffer to bitmap using Marshal.Copy for performance
                 IntPtr bitmapPixels = bitmap.GetPixels();
-                if (bitmapPixels == IntPtr.Zero) return bitmap;
-                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                if (bitmapPixels == IntPtr.Zero)
+                {
+                    ArrayPool<byte>.Shared.Return(pixelBuffer);
+                    return bitmap;
+                }
+                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
                 bitmap.NotifyPixelsChanged();
-
+                ArrayPool<byte>.Shared.Return(pixelBuffer);
 
                 return bitmap;
             }
@@ -370,7 +379,8 @@ internal class ImageRenderer
 
                     // Build pixel buffer directly - SKBitmap.SetPixel has issues with certain alpha types
                     SKAlphaType alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
-                    var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                    int pixelBufferSize = width * height * 4;
+                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
 
                     // Debug: Log first few pixels
                     int debugPixelCount = Math.Min(10, width * height);
@@ -512,7 +522,8 @@ internal class ImageRenderer
                         return null;
 
                     // Copy pixel data directly into bitmap's memory
-                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                    ArrayPool<byte>.Shared.Return(pixelBuffer);
 
                     // CRITICAL: Notify SkiaSharp that we modified the pixels externally
                     bitmap.NotifyPixelsChanged();
@@ -527,7 +538,8 @@ internal class ImageRenderer
                         return null;
 
                     // Use direct pixel buffer for performance - SetPixel is very slow for large images
-                    var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                    int pixelBufferSize = width * height * 4;
+                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
 
                     for (var y = 0; y < height; y++)
                     {
@@ -568,7 +580,6 @@ internal class ImageRenderer
                     // If RowBytes doesn't match, we need to copy row by row
                     if (bitmap.RowBytes != expectedRowBytes)
                     {
-                        // Copy row by row to handle row padding
                         for (var row = 0; row < height; row++)
                         {
                             int srcOffset = row * expectedRowBytes;
@@ -578,8 +589,9 @@ internal class ImageRenderer
                     }
                     else
                     {
-                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
                     }
+                    ArrayPool<byte>.Shared.Return(pixelBuffer);
                     bitmap.NotifyPixelsChanged();
 
                     break;
@@ -593,7 +605,8 @@ internal class ImageRenderer
                     int expectedSize = bytesPerRow * height;
 
                     // Use direct pixel buffer for performance
-                    var pixelBuffer1Bit = new byte[width * height * 4]; // RGBA8888
+                    int pixelBufferSize1Bit = width * height * 4;
+                    byte[] pixelBuffer1Bit = ArrayPool<byte>.Shared.Rent(pixelBufferSize1Bit);
 
                     for (var y = 0; y < height; y++)
                     {
@@ -630,8 +643,12 @@ internal class ImageRenderer
                     bitmap = new SKBitmap(imageInfo1Bit);
                     IntPtr bitmapPixels1Bit = bitmap.GetPixels();
                     if (bitmapPixels1Bit == IntPtr.Zero)
+                    {
+                        ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
                         return null;
-                    Marshal.Copy(pixelBuffer1Bit, 0, bitmapPixels1Bit, pixelBuffer1Bit.Length);
+                    }
+                    Marshal.Copy(pixelBuffer1Bit, 0, bitmapPixels1Bit, pixelBufferSize1Bit);
+                    ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
                     bitmap.NotifyPixelsChanged();
 
                     break;
@@ -646,20 +663,21 @@ internal class ImageRenderer
                     // The DctDecodeFilter always decodes to RGB, so we need to extract one channel
                     if (imageData.Length == expectedRgbSize)
                     {
-                        var grayData = new byte[expectedSize];
+                        byte[] grayData = ArrayPool<byte>.Shared.Rent(expectedSize);
                         for (var i = 0; i < expectedSize; i++)
-                        {
-                            // For grayscale JPEG, R=G=B, so just take the first channel
                             grayData[i] = imageData[i * 3];
-                        }
-                        imageData = grayData;
+                        // Note: grayData may be larger than expectedSize — use slice semantics
+                        // We replace imageData reference; original is unaffected (caller's array).
+                        imageData = grayData[..expectedSize];
+                        ArrayPool<byte>.Shared.Return(grayData);
                     }
 
                     if (imageData.Length < expectedSize)
                         return null;
 
                     // Use direct pixel buffer for performance - SetPixel is very slow for large images
-                    var pixelBuffer = new byte[width * height * 4]; // RGBA8888
+                    int pixelBufferSize = width * height * 4;
+                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
 
                     for (var y = 0; y < height; y++)
                     {
@@ -689,8 +707,12 @@ internal class ImageRenderer
                     bitmap = new SKBitmap(imageInfo);
                     IntPtr bitmapPixels = bitmap.GetPixels();
                     if (bitmapPixels == IntPtr.Zero)
+                    {
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
                         return null;
-                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    }
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                    ArrayPool<byte>.Shared.Return(pixelBuffer);
                     bitmap.NotifyPixelsChanged();
 
                     break;
@@ -711,7 +733,8 @@ internal class ImageRenderer
                             // Handle truncated data more gracefully - render what we can instead of failing completely
 
                             // Use direct pixel buffer for performance
-                            var pixelBuffer = new byte[width * height * 4];
+                            int pixelBufferSize = width * height * 4;
+                            byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
                             int availablePixels = Math.Min(imageData.Length / 3, width * height);
 
                             for (var i = 0; i < availablePixels; i++)
@@ -737,8 +760,13 @@ internal class ImageRenderer
                             var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
-                            if (bitmapPixels == IntPtr.Zero) return null;
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            if (bitmapPixels == IntPtr.Zero)
+                            {
+                                ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                return null;
+                            }
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                            ArrayPool<byte>.Shared.Return(pixelBuffer);
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -750,8 +778,8 @@ internal class ImageRenderer
                             if (imageData.Length < expectedSize)
                                 return null;
 
-                            // Use direct pixel buffer for performance
-                            var pixelBuffer = new byte[width * height * 4];
+                            int pixelBufferSize = width * height * 4;
+                            byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
                             int pixelCount = width * height;
                             for (var i = 0; i < pixelCount; i++)
                             {
@@ -766,8 +794,13 @@ internal class ImageRenderer
                             var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
-                            if (bitmapPixels == IntPtr.Zero) return null;
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            if (bitmapPixels == IntPtr.Zero)
+                            {
+                                ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                return null;
+                            }
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                            ArrayPool<byte>.Shared.Return(pixelBuffer);
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -779,8 +812,8 @@ internal class ImageRenderer
                             if (imageData.Length < expectedSize)
                                 return null;
 
-                            // Use direct pixel buffer for performance
-                            var pixelBuffer = new byte[width * height * 4];
+                            int pixelBufferSize = width * height * 4;
+                            byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
                             int pixelCount = width * height;
                             for (var i = 0; i < pixelCount; i++)
                             {
@@ -803,8 +836,13 @@ internal class ImageRenderer
                             var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
                             bitmap = new SKBitmap(imageInfo);
                             IntPtr bitmapPixels = bitmap.GetPixels();
-                            if (bitmapPixels == IntPtr.Zero) return null;
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                            if (bitmapPixels == IntPtr.Zero)
+                            {
+                                ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                return null;
+                            }
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                            ArrayPool<byte>.Shared.Return(pixelBuffer);
                             bitmap.NotifyPixelsChanged();
                             break;
                         }
@@ -825,7 +863,8 @@ internal class ImageRenderer
                     int pixelCount = width * height;
 
                     // Use direct pixel buffer for performance
-                    var pixelBuffer = new byte[width * height * 4];
+                    int pixelBufferSize = width * height * 4;
+                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
 
                     if (imageData.Length >= expectedCmykSize)
                     {
@@ -852,7 +891,7 @@ internal class ImageRenderer
                     {
                         // DCTDecode already converted CMYK to RGB
                         // ImageSharp handles Adobe CMYK convention internally
-                        PdfLogger.Log(LogCategory.Images, $"DeviceCMYK->RGB first pixels: [{imageData[0]},{imageData[1]},{imageData[2]}] [{imageData[3]},{imageData[4]},{imageData[5]}] [{imageData[6]},{imageData[7]},{imageData[8]}]");
+                        PdfLogger.Log(LogCategory.Images, () => $"DeviceCMYK->RGB first pixels: [{imageData[0]},{imageData[1]},{imageData[2]}] [{imageData[3]},{imageData[4]},{imageData[5]}] [{imageData[6]},{imageData[7]},{imageData[8]}]");
 
                         for (var i = 0; i < pixelCount; i++)
                         {
@@ -868,14 +907,20 @@ internal class ImageRenderer
                     else
                     {
                         // Data too small for either format
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
                         return null;
                     }
 
                     var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
                     bitmap = new SKBitmap(imageInfo);
                     IntPtr bitmapPixels = bitmap.GetPixels();
-                    if (bitmapPixels == IntPtr.Zero) return null;
-                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBuffer.Length);
+                    if (bitmapPixels == IntPtr.Zero)
+                    {
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+                        return null;
+                    }
+                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                    ArrayPool<byte>.Shared.Return(pixelBuffer);
                     bitmap.NotifyPixelsChanged();
                     break;
                 }
@@ -886,6 +931,12 @@ internal class ImageRenderer
 
 
             return bitmap;
+            }
+            finally
+            {
+                if (rentedSmask != null)
+                    ArrayPool<byte>.Shared.Return(rentedSmask);
+            }
         }
         catch (Exception ex)
         {
@@ -959,7 +1010,8 @@ internal class ImageRenderer
             case 3: // RGB - convert to RGBA8888 for SkiaSharp
             {
                 var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
-                var rgbaBuffer = new byte[width * height * 4];
+                int rgbaBufferSize = width * height * 4;
+                byte[] rgbaBuffer = ArrayPool<byte>.Shared.Rent(rgbaBufferSize);
 
                 for (var i = 0; i < width * height; i++)
                 {
@@ -972,9 +1024,10 @@ internal class ImageRenderer
                 IntPtr bitmapPixels = bitmap.GetPixels();
                 if (bitmapPixels != IntPtr.Zero)
                 {
-                    Marshal.Copy(rgbaBuffer, 0, bitmapPixels, rgbaBuffer.Length);
+                    Marshal.Copy(rgbaBuffer, 0, bitmapPixels, rgbaBufferSize);
                     bitmap.NotifyPixelsChanged();
                 }
+                ArrayPool<byte>.Shared.Return(rgbaBuffer);
                 return bitmap;
             }
             case 4: // RGBA

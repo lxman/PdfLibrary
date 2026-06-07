@@ -41,12 +41,13 @@ internal class FlateDecodeFilter : IStreamFilter
             : "too short";
         PdfLogger.Log(LogCategory.PdfTool, $"FlateDecode: {data.Length} bytes, header: {headerHex}");
 
+        int decompressedSizeHint = Math.Max(data.Length * 4, 4096);
         try
         {
             // First try ZLibStream (handles zlib header 78 xx)
             using var inputStream = new MemoryStream(data);
             using var zlibStream = new ZLibStream(inputStream, CompressionMode.Decompress);
-            using var outputStream = new MemoryStream();
+            using var outputStream = new MemoryStream(decompressedSizeHint);
             zlibStream.CopyTo(outputStream);
             decoded = outputStream.ToArray();
         }
@@ -58,7 +59,7 @@ internal class FlateDecodeFilter : IStreamFilter
             {
                 using var inputStream = new MemoryStream(data);
                 using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
-                using var outputStream = new MemoryStream();
+                using var outputStream = new MemoryStream(decompressedSizeHint);
                 deflateStream.CopyTo(outputStream);
                 decoded = outputStream.ToArray();
             }
@@ -72,7 +73,7 @@ internal class FlateDecodeFilter : IStreamFilter
                     {
                         using var inputStream = new MemoryStream(data, 2, data.Length - 2);
                         using var deflateStream = new DeflateStream(inputStream, CompressionMode.Decompress);
-                        using var outputStream = new MemoryStream();
+                        using var outputStream = new MemoryStream(decompressedSizeHint);
                         deflateStream.CopyTo(outputStream);
                         decoded = outputStream.ToArray();
                     }
@@ -136,9 +137,10 @@ internal class FlateDecodeFilter : IStreamFilter
 
     private static byte[] ApplyPngPredictor(byte[] data, int rowLength, int bytesPerPixel)
     {
-        using var output = new MemoryStream();
+        using var output = new MemoryStream(data.Length);
         var pos = 0;
         var previousRow = new byte[rowLength];
+        var currentRow = new byte[rowLength];
 
         while (pos < data.Length)
         {
@@ -147,7 +149,6 @@ internal class FlateDecodeFilter : IStreamFilter
 
             // Read the PNG predictor type (first byte of each row)
             byte predictor = data[pos++];
-            var currentRow = new byte[rowLength];
 
             // Decode row based on predictor
             for (var i = 0; i < rowLength; i++)
@@ -169,7 +170,8 @@ internal class FlateDecodeFilter : IStreamFilter
             }
 
             output.Write(currentRow, 0, rowLength);
-            previousRow = currentRow;
+            // Swap buffers — previous row becomes current, reuse current as next previous
+            (previousRow, currentRow) = (currentRow, previousRow);
         }
 
         return output.ToArray();
@@ -177,15 +179,14 @@ internal class FlateDecodeFilter : IStreamFilter
 
     private static byte[] ApplyTiffPredictor(byte[] data, int rowLength, int bytesPerPixel)
     {
-        using var output = new MemoryStream();
+        using var output = new MemoryStream(data.Length);
         var pos = 0;
+        var row = new byte[rowLength];
 
         while (pos < data.Length)
         {
             if (pos + rowLength > data.Length)
                 break;
-
-            var row = new byte[rowLength];
 
             for (var i = 0; i < rowLength; i++)
             {

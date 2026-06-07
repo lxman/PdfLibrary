@@ -15,7 +15,7 @@ namespace PdfLibrary.Rendering.Icc;
 /// </summary>
 internal static class LabToSrgb
 {
-    private static IccTransform? _xyzToSrgb;
+    private static volatile IccTransform? _xyzToSrgb;
     private static readonly object Lock = new();
 
     /// <summary>
@@ -74,16 +74,21 @@ internal static class LabToSrgb
         ];
     }
 
-    private static IToneCurve? _srgbToneCurve;
+    private static volatile IToneCurve? _srgbToneCurve;
 
     private static IToneCurve BuildSrgbToneCurve()
     {
         if (_srgbToneCurve is not null) return _srgbToneCurve;
-        // Pull the rTRC from the built-in sRGB profile and wrap it as a tone curve.
-        IccProfile srgb = BuiltInProfiles.Srgb;
-        if (srgb.RedTrc is null)
-            throw new InvalidOperationException("Built-in sRGB profile is missing rTRC tag.");
-        _srgbToneCurve = ToneCurve.FromTag(srgb.RedTrc);
+        lock (Lock)
+        {
+            if (_srgbToneCurve is null)
+            {
+                IccProfile srgb = BuiltInProfiles.Srgb;
+                if (srgb.RedTrc is null)
+                    throw new InvalidOperationException("Built-in sRGB profile is missing rTRC tag.");
+                _srgbToneCurve = ToneCurve.FromTag(srgb.RedTrc);
+            }
+        }
         return _srgbToneCurve;
     }
 

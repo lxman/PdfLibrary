@@ -28,7 +28,7 @@ internal class TextRenderer
     {
         var cacheOptions = new MemoryCacheOptions
         {
-            SizeLimit = 1000 // Limit to 1000 cached glyph paths
+            SizeLimit = 5000 // Limit to 5000 cached glyph paths (~5 MB)
         };
         GlyphPathCache = new MemoryCache(cacheOptions);
 
@@ -192,14 +192,6 @@ internal class TextRenderer
         width *= tHs;
 
         return width;
-    }
-
-    /// <summary>
-    /// Clear the glyph path cache (called when clearing the render target).
-    /// </summary>
-    public static void ClearCache()
-    {
-        GlyphPathCache.Compact(1.0); // Remove all entries
     }
 
     /// <summary>
@@ -407,7 +399,7 @@ internal class TextRenderer
                 if (i < 3 && Math.Abs(actualWidth - pdfWidth) > 0.1f)
                 {
                     PdfLogger.Log(LogCategory.Text,
-                        $"  [WIDTH-MISMATCH] '{text}' Char[{i}]='{ch}': PDF={pdfWidth:F3}, Actual={actualWidth:F3}, Diff={actualWidth - pdfWidth:F3}");
+                        () => $"  [WIDTH-MISMATCH] '{text}' Char[{i}]='{ch}': PDF={pdfWidth:F3}, Actual={actualWidth:F3}, Diff={actualWidth - pdfWidth:F3}");
                 }
 
                 // The canvas has a Y-flip applied, which makes text render upside down
@@ -426,7 +418,7 @@ internal class TextRenderer
                 if (i == 0) // Log for first character only to avoid spam
                 {
                     PdfLogger.Log(LogCategory.Text,
-                        $"[ROTATION-DEBUG] Char '{ch}' pos=({position.X:F2},{position.Y:F2}) localRot={localRotationDeg:F2}° fallbackMatrix=[{fallbackMatrix.M11:F4},{fallbackMatrix.M12:F4},{fallbackMatrix.M21:F4},{fallbackMatrix.M22:F4}]");
+                        () => $"[ROTATION-DEBUG] Char '{ch}' pos=({position.X:F2},{position.Y:F2}) localRot={localRotationDeg:F2}° fallbackMatrix=[{fallbackMatrix.M11:F4},{fallbackMatrix.M12:F4},{fallbackMatrix.M21:F4},{fallbackMatrix.M22:F4}]");
                 }
 
                 // Apply transformations in order:
@@ -512,11 +504,11 @@ internal class TextRenderer
             // One character code can decode to multiple Unicode chars (e.g., ligatures)
             int loopCount = charCodes?.Count ?? text.Length;
 
-            PdfLogger.Log(LogCategory.Text, $"GLYPH-LOOP: About to render {loopCount} characters, text.Length={text.Length}, charCodes={(charCodes == null ? "null" : charCodes.Count.ToString())}");
+            PdfLogger.Log(LogCategory.Text, () => $"GLYPH-LOOP: About to render {loopCount} characters, text.Length={text.Length}, charCodes={(charCodes == null ? "null" : charCodes.Count.ToString())}");
 
             for (var i = 0; i < loopCount; i++)
             {
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-LOOP-ITER: Starting iteration {i} of {loopCount}");
+                PdfLogger.Log(LogCategory.Text, () => $"GLYPH-LOOP-ITER: Starting iteration {i} of {loopCount}");
 
                 // Get character code - either from original PDF codes or fall back to Unicode
                 ushort charCode = charCodes is not null && i < charCodes.Count
@@ -530,7 +522,7 @@ internal class TextRenderer
 
                 if (glyphId == 0)
                 {
-                    PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-ZERO: char='{displayChar}' (charCode={charCode}), glyphId=0, skipping");
+                    PdfLogger.Log(LogCategory.Text, () => $"GLYPH-SKIP-ZERO: char='{displayChar}' (charCode={charCode}), glyphId=0, skipping");
                     // Glyph not found, skip this character
                     if (i < glyphWidths.Count)
                     {
@@ -547,7 +539,7 @@ internal class TextRenderer
 
                 if (glyphOutline is null)
                 {
-                    PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-NULL: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline is null");
+                    PdfLogger.Log(LogCategory.Text, () => $"GLYPH-SKIP-NULL: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline is null");
 
                     // Try to render em dash fallback if applicable
                     if (charCode == 151 && i < glyphWidths.Count && glyphWidths[i] > 0.1f)
@@ -564,7 +556,7 @@ internal class TextRenderer
 
                 if (glyphOutline.IsEmpty)
                 {
-                    PdfLogger.Log(LogCategory.Text, $"GLYPH-SKIP-EMPTY: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline.IsEmpty=true");
+                    PdfLogger.Log(LogCategory.Text, () => $"GLYPH-SKIP-EMPTY: char='{displayChar}' (charCode={charCode}), glyphId={glyphId}, glyphOutline.IsEmpty=true");
                     // Empty glyph (e.g., space), just advance
                     if (i < glyphWidths.Count)
                     {
@@ -573,14 +565,16 @@ internal class TextRenderer
                     continue;
                 }
 
-                // Get or create glyph path
-                SKPath glyphPath = GetOrCreateGlyphPath(font, glyphId, state, embeddedMetrics, glyphOutline, resolvedGlyphName);
+                // Get the canonical cached path — must not be transformed or disposed by caller.
+                SKPath? glyphPath = GetCachedGlyphPath(font, glyphId, state, embeddedMetrics, glyphOutline, resolvedGlyphName);
+                if (glyphPath is null)
+                {
+                    if (i < glyphWidths.Count) AdvancePosition(ref currentX, glyphWidths[i], state);
+                    continue;
+                }
 
-                // Transform and render the glyph
+                // Render the glyph using canvas matrix transforms (no path mutation).
                 RenderGlyph(glyphPath, state, paint, currentX, tHs, displayChar, applyBold);
-
-                // Clean up path
-                glyphPath.Dispose();
 
                 // Advance to the next glyph position
                 if (i < glyphWidths.Count)
@@ -740,7 +734,9 @@ internal class TextRenderer
         _canvas.DrawPath(emDashPath, paint);
     }
 
-    private SKPath GetOrCreateGlyphPath(PdfFont font, ushort glyphId, PdfGraphicsState state, EmbeddedFontMetrics embeddedMetrics, GlyphOutline glyphOutline, string? resolvedGlyphName)
+    // Returns the cached canonical path directly — caller must NOT transform or dispose it.
+    // FillType is set to EvenOdd on the path at cache-insertion time.
+    private SKPath? GetCachedGlyphPath(PdfFont font, ushort glyphId, PdfGraphicsState state, EmbeddedFontMetrics embeddedMetrics, GlyphOutline glyphOutline, string? resolvedGlyphName)
     {
         // Cache key must distinguish font instances, not just font names — different
         // subsets can share the same BaseFont (e.g. Foxit reuses the FPEFAA+ prefix).
@@ -748,184 +744,125 @@ internal class TextRenderer
         var roundedSize = (int)(state.FontSize * 10); // 0.1pt precision
         var cacheKey = $"{fontId}_{glyphId}_{roundedSize}";
 
-        // Try to get from the cache first
-        SKPath glyphPath;
         if (GlyphPathCache.TryGetValue(cacheKey, out SKPath? cachedPath) && cachedPath is not null)
+            return cachedPath;
+
+        SKPath glyphPath;
+        if (embeddedMetrics.IsCffFont)
         {
-            glyphPath = new SKPath(cachedPath);
+            FontParser.Tables.Cff.GlyphOutline? cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
+            glyphPath = cffOutline is not null
+                ? _glyphConverter.ConvertCffToPath(cffOutline, (float)state.FontSize, embeddedMetrics.UnitsPerEm)
+                : _glyphConverter.ConvertToPath(glyphOutline, (float)state.FontSize, embeddedMetrics.UnitsPerEm);
+        }
+        else if (embeddedMetrics.IsType1Font && resolvedGlyphName is not null)
+        {
+            FontParser.Tables.Cff.GlyphOutline? type1Outline = embeddedMetrics.GetType1GlyphOutlineDirect(resolvedGlyphName);
+            glyphPath = type1Outline is not null
+                ? _glyphConverter.ConvertCffToPath(type1Outline, (float)state.FontSize, embeddedMetrics.UnitsPerEm)
+                : _glyphConverter.ConvertToPath(glyphOutline, (float)state.FontSize, embeddedMetrics.UnitsPerEm);
         }
         else
         {
-            // Convert glyph outline to SKPath
-            // Check if this is a CFF or Type1 font for proper cubic Bezier rendering
-            if (embeddedMetrics.IsCffFont)
-            {
-                FontParser.Tables.Cff.GlyphOutline? cffOutline = embeddedMetrics.GetCffGlyphOutlineDirect(glyphId);
-                if (cffOutline is not null)
-                {
-                    glyphPath = _glyphConverter.ConvertCffToPath(
-                        cffOutline,
-                        (float)state.FontSize,
-                        embeddedMetrics.UnitsPerEm
-                    );
-                }
-                else
-                {
-                    // Fall back to contour-based conversion
-                    glyphPath = _glyphConverter.ConvertToPath(
-                        glyphOutline,
-                        (float)state.FontSize,
-                        embeddedMetrics.UnitsPerEm
-                    );
-                }
-            }
-            else if (embeddedMetrics.IsType1Font && resolvedGlyphName is not null)
-            {
-                // Type1 font - use cubic Bezier conversion (same as CFF)
-                FontParser.Tables.Cff.GlyphOutline? type1Outline = embeddedMetrics.GetType1GlyphOutlineDirect(resolvedGlyphName);
-                if (type1Outline is not null)
-                {
-                    glyphPath = _glyphConverter.ConvertCffToPath(
-                        type1Outline,
-                        (float)state.FontSize,
-                        embeddedMetrics.UnitsPerEm
-                    );
-                }
-                else
-                {
-                    // Fall back to contour-based conversion
-                    glyphPath = _glyphConverter.ConvertToPath(
-                        glyphOutline,
-                        (float)state.FontSize,
-                        embeddedMetrics.UnitsPerEm
-                    );
-                }
-            }
-            else
-            {
-                // TrueType font - use quadratic Bezier conversion
-                glyphPath = _glyphConverter.ConvertToPath(
-                    glyphOutline,
-                    (float)state.FontSize,
-                    embeddedMetrics.UnitsPerEm
-                );
-            }
-
-            // Cache the path (clone it since we'll transform the original)
-            var pathToCache = new SKPath(glyphPath);
-            GlyphPathCache.Set(cacheKey, pathToCache, CacheOptions);
+            glyphPath = _glyphConverter.ConvertToPath(glyphOutline, (float)state.FontSize, embeddedMetrics.UnitsPerEm);
         }
 
+        // Set fill type before caching so every consumer gets EvenOdd without per-call mutation.
+        glyphPath.FillType = SKPathFillType.EvenOdd;
+        GlyphPathCache.Set(cacheKey, glyphPath, CacheOptions);
         return glyphPath;
     }
 
-    private void RenderGlyph(SKPath glyphPath, PdfGraphicsState state, SKPaint paint, double currentX, float tHs, char displayChar, bool applyBold)
+    private void RenderGlyph(SKPath cachedPath, PdfGraphicsState state, SKPaint paint, double currentX, float tHs, char displayChar, bool applyBold)
     {
-        // IMPORTANT: The glyph converter (ConvertToPath/ConvertCffToPath) already scales
-        // the glyph by FontSize when converting from font units to device units.
-        // Therefore, we should NOT include FontSize in the transformation matrix here,
-        // or we'll get double font size scaling!
+        // The glyph converter already scales by FontSize, so the path is in glyph space.
+        // We build the full glyph→device matrix and push it onto the canvas rather than
+        // transforming the cached path — this eliminates both the per-glyph clone and the
+        // intermediate devicePath allocation.
 
         var tRise = (float)state.TextRise;
 
         var textStateMatrix = new Matrix3x2(
-            tHs, 0,      // Scale X by HorizontalScale only (NO FontSize - already in path!)
-            0, 1,        // No Y scaling (FontSize already in path!)
-            0, tRise     // Translate Y by TextRise
+            tHs, 0,
+            0, 1,
+            0, tRise
         );
 
-        // Multiply by text matrix to get the complete glyph transformation
         Matrix3x2 glyphMatrix = textStateMatrix * state.TextMatrix;
-
-        // Add translation for the current glyph position (in text space)
         var translationMatrix = Matrix3x2.CreateTranslation((float)currentX, 0);
         Matrix3x2 fullGlyphMatrix = translationMatrix * glyphMatrix;
 
-        // Apply rotation-aware Y-flip compensation
         SKMatrix skGlyphMatrix = CreateYFlipCompensatedMatrix(fullGlyphMatrix, displayChar);
-        glyphPath.Transform(skGlyphMatrix);
 
-        // Render the glyph based on text rendering mode
         int renderMode = state.RenderingMode;
         bool shouldFill = renderMode == 0 || renderMode == 2 || renderMode == 4 || renderMode == 6;
         bool shouldStroke = renderMode == 1 || renderMode == 2 || renderMode == 5 || renderMode == 6;
         bool isInvisible = renderMode == 3 || renderMode == 7;
 
-        PdfLogger.Log(LogCategory.Text, $"GLYPH-MODE: char='{displayChar}', renderMode={renderMode}, shouldFill={shouldFill}, shouldStroke={shouldStroke}, isInvisible={isInvisible}");
+        PdfLogger.Log(LogCategory.Text, () => $"GLYPH-MODE: char='{displayChar}', renderMode={renderMode}, shouldFill={shouldFill}, shouldStroke={shouldStroke}, isInvisible={isInvisible}");
 
         if (!isInvisible)
         {
-            // Calculate CTM scaling factor for stroke width
             Matrix3x2 ctm = state.Ctm;
             double ctmScale = Math.Sqrt(Math.Abs(ctm.M11 * ctm.M22 - ctm.M12 * ctm.M21));
 
+            // Combine the current canvas matrix with the glyph placement matrix.
+            // DrawPath will map each glyph-space point through this combined matrix to device space.
+            SKMatrix canvasMatrix = _canvas.TotalMatrix;
+            SKMatrix combined = SKMatrix.Concat(canvasMatrix, skGlyphMatrix);
+
+            PdfLogger.Log(LogCategory.Text, () => $"GLYPH-RENDER: char='{displayChar}', canvasMatrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2};{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
+            PdfLogger.Log(LogCategory.Text, () => $"GLYPH-PATH-INFO: char='{displayChar}', PointCount={cachedPath.PointCount}, IsEmpty={cachedPath.IsEmpty}");
+
+            if (displayChar == 'a')
+                LogPathDetails(cachedPath);
+
             if (shouldFill)
             {
-                // Transform path to device coordinates and draw with identity matrix
-                SKMatrix canvasMatrix = _canvas.TotalMatrix;
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-RENDER: char='{displayChar}', canvasMatrix=[{canvasMatrix.ScaleX:F2},{canvasMatrix.SkewX:F2},{canvasMatrix.TransX:F2};{canvasMatrix.SkewY:F2},{canvasMatrix.ScaleY:F2},{canvasMatrix.TransY:F2}]");
-
-                using var devicePath = new SKPath();
-                glyphPath.Transform(canvasMatrix, devicePath);
-                devicePath.FillType = SKPathFillType.EvenOdd;
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-FILLTYPE: char='{displayChar}', devicePath FillType explicitly set to EvenOdd (testing)");
-
-                SKRect deviceBounds = devicePath.Bounds;
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-RENDER: devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
-
-                // DEBUG: Log path contour information
-                PdfLogger.Log(LogCategory.Text, $"GLYPH-PATH-INFO: char='{displayChar}', ContourCount={devicePath.PointCount}, IsEmpty={devicePath.IsEmpty}");
-
-                // DEBUG: Dump detailed path data for 'a' to see if inner contour is present
-                if (displayChar == 'a')
-                {
-                    LogPathDetails(devicePath);
-                }
-
-                // DEBUG: Check if there's a clip region active BEFORE drawing
                 SKRect localClip = _canvas.LocalClipBounds;
                 SKRect deviceClip = _canvas.DeviceClipBounds;
-                PdfLogger.Log(LogCategory.Text, $"CLIP-BEFORE-GLYPH: char='{displayChar}', LocalClip=({localClip.Left:F2},{localClip.Top:F2},{localClip.Right:F2},{localClip.Bottom:F2}), DeviceClip=({deviceClip.Left:F2},{deviceClip.Top:F2},{deviceClip.Right:F2},{deviceClip.Bottom:F2})");
+                PdfLogger.Log(LogCategory.Text, () => $"CLIP-BEFORE-GLYPH: char='{displayChar}', LocalClip=({localClip.Left:F2},{localClip.Top:F2},{localClip.Right:F2},{localClip.Bottom:F2}), DeviceClip=({deviceClip.Left:F2},{deviceClip.Top:F2},{deviceClip.Right:F2},{deviceClip.Bottom:F2})");
 
                 _canvas.Save();
-                _canvas.ResetMatrix();
-
-                // DEBUG: Check clip bounds AFTER ResetMatrix
-                SKRect clipAfterReset = _canvas.LocalClipBounds;
-                PdfLogger.Log(LogCategory.Text, $"CLIP-AFTER-RESET: char='{displayChar}', LocalClip=({clipAfterReset.Left:F2},{clipAfterReset.Top:F2},{clipAfterReset.Right:F2},{clipAfterReset.Bottom:F2}), devicePath bounds=({deviceBounds.Left:F2},{deviceBounds.Top:F2},{deviceBounds.Right:F2},{deviceBounds.Bottom:F2})");
-                _canvas.DrawPath(devicePath, paint);
+                _canvas.SetMatrix(combined);
+                _canvas.DrawPath(cachedPath, paint);
                 _canvas.Restore();
             }
 
             if (shouldStroke)
             {
-                // Stroke the glyph outline
                 SKColor strokeColor = ColorConverter.ConvertColor(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
                 strokeColor = ApplyAlpha(strokeColor, state.StrokeAlpha);
 
                 double scaledStrokeWidth = state.LineWidth * ctmScale;
-                if (scaledStrokeWidth < 0.5) scaledStrokeWidth = 0.5; // Minimum 0.5 device pixel
+                if (scaledStrokeWidth < 0.5) scaledStrokeWidth = 0.5;
 
                 using var strokePaint = new SKPaint();
                 strokePaint.Color = strokeColor;
                 strokePaint.IsAntialias = true;
                 strokePaint.Style = SKPaintStyle.Stroke;
-                // Use the line width from graphics state for text stroke
                 strokePaint.StrokeWidth = (float)scaledStrokeWidth;
-                _canvas.DrawPath(glyphPath, strokePaint);
+
+                _canvas.Save();
+                _canvas.SetMatrix(combined);
+                _canvas.DrawPath(cachedPath, strokePaint);
+                _canvas.Restore();
             }
             else if (applyBold && shouldFill)
             {
-                // Apply synthetic bold by stroking the glyph outline (only if not already stroking)
                 double scaledBoldWidth = state.FontSize * 0.04 * ctmScale;
-                if (scaledBoldWidth < 0.5) scaledBoldWidth = 0.5; // Minimum 0.5 device pixel
+                if (scaledBoldWidth < 0.5) scaledBoldWidth = 0.5;
 
                 using var boldPaint = new SKPaint();
                 boldPaint.Color = paint.Color;
                 boldPaint.IsAntialias = true;
                 boldPaint.Style = SKPaintStyle.Stroke;
                 boldPaint.StrokeWidth = (float)scaledBoldWidth;
-                _canvas.DrawPath(glyphPath, boldPaint);
+
+                _canvas.Save();
+                _canvas.SetMatrix(combined);
+                _canvas.DrawPath(cachedPath, boldPaint);
+                _canvas.Restore();
             }
         }
     }

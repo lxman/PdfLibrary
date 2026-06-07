@@ -8,7 +8,7 @@ namespace ICCSharp.Profile;
 /// </summary>
 public static class BuiltInProfiles
 {
-    private static IccProfile? _srgb;
+    private static volatile IccProfile? _srgb;
     private static readonly object SrgbLock = new();
 
     /// <summary>

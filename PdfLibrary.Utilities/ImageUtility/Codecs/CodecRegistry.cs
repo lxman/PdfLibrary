@@ -9,6 +9,7 @@ public class CodecRegistry
 {
     private static readonly Lazy<CodecRegistry> _instance = new(() => new CodecRegistry());
     private readonly List<IImageCodec> _codecs = [];
+    private readonly Lock _lock = new();
 
     /// <summary>
     /// Gets the singleton instance of the codec registry.
@@ -26,9 +27,10 @@ public class CodecRegistry
     /// <param name="codec">The codec to register.</param>
     public void Register(IImageCodec codec)
     {
-        if (!_codecs.Contains(codec))
+        lock (_lock)
         {
-            _codecs.Add(codec);
+            if (!_codecs.Contains(codec))
+                _codecs.Add(codec);
         }
     }
 
@@ -38,13 +40,22 @@ public class CodecRegistry
     /// <param name="codec">The codec to unregister.</param>
     public void Unregister(IImageCodec codec)
     {
-        _codecs.Remove(codec);
+        lock (_lock)
+        {
+            _codecs.Remove(codec);
+        }
     }
 
     /// <summary>
     /// Gets all registered codecs.
     /// </summary>
-    public IReadOnlyList<IImageCodec> GetAllCodecs() => _codecs.AsReadOnly();
+    public IReadOnlyList<IImageCodec> GetAllCodecs()
+    {
+        lock (_lock)
+        {
+            return _codecs.ToList().AsReadOnly();
+        }
+    }
 
     /// <summary>
     /// Finds a codec that can handle the given file extension.
@@ -61,7 +72,9 @@ public class CodecRegistry
             extension = "." + extension;
         }
 
-        return _codecs.FirstOrDefault(c =>
+        IReadOnlyList<IImageCodec> snapshot;
+        lock (_lock) { snapshot = _codecs.ToList(); }
+        return snapshot.FirstOrDefault(c =>
             c.Extensions.Contains(extension) &&
             (!requireDecode || c.CanDecode) &&
             (!requireEncode || c.CanEncode));
@@ -92,7 +105,9 @@ public class CodecRegistry
         }
 
         ReadOnlySpan<byte> headerSpan = header.AsSpan(0, bytesRead);
-        foreach (IImageCodec codec in _codecs)
+        IReadOnlyList<IImageCodec> snapshot;
+        lock (_lock) { snapshot = _codecs.ToList(); }
+        foreach (IImageCodec codec in snapshot)
         {
             if (codec.CanHandle(headerSpan) &&
                 (!requireDecode || codec.CanDecode) &&
