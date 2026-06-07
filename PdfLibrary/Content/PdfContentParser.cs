@@ -1,3 +1,4 @@
+using System.Globalization;
 using Logging;
 using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
@@ -11,6 +12,16 @@ namespace PdfLibrary.Content;
 /// </summary>
 internal class PdfContentParser
 {
+    // Some producers emit malformed numeric operands in content streams (a bare "-" or ".", a
+    // doubled sign, an over-long integer, etc.). Conformant readers treat these as 0 rather than
+    // aborting the page, and PDF numbers always use '.' as the decimal separator — so parse
+    // leniently and with invariant culture instead of the throwing, culture-sensitive *.Parse.
+    private static int ParseInt(string s) =>
+        int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
+
+    private static double ParseReal(string s) =>
+        double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 0.0;
+
     /// <summary>
     /// Parses a content stream and returns a list of operators
     /// </summary>
@@ -44,11 +55,11 @@ internal class PdfContentParser
             switch (token.Type)
             {
                 case PdfTokenType.Integer:
-                    operands.Push(new PdfInteger(int.Parse(token.Value)));
+                    operands.Push(new PdfInteger(ParseInt(token.Value)));
                     break;
 
                 case PdfTokenType.Real:
-                    operands.Push(new PdfReal(double.Parse(token.Value)));
+                    operands.Push(new PdfReal(ParseReal(token.Value)));
                     break;
 
                 case PdfTokenType.String:
@@ -285,11 +296,11 @@ internal class PdfContentParser
             switch (token.Type)
             {
                 case PdfTokenType.Integer:
-                    array.Add(new PdfInteger(int.Parse(token.Value)));
+                    array.Add(new PdfInteger(ParseInt(token.Value)));
                     break;
 
                 case PdfTokenType.Real:
-                    array.Add(new PdfReal(double.Parse(token.Value)));
+                    array.Add(new PdfReal(ParseReal(token.Value)));
                     break;
 
                 case PdfTokenType.String:
@@ -343,8 +354,8 @@ internal class PdfContentParser
                 // Parse the value for the current key
                 PdfObject? value = token.Type switch
                 {
-                    PdfTokenType.Integer => new PdfInteger(int.Parse(token.Value)),
-                    PdfTokenType.Real => new PdfReal(double.Parse(token.Value)),
+                    PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
+                    PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
                     PdfTokenType.String => new PdfString(token.Value),
                     PdfTokenType.Name => PdfName.Parse(token.Value),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
@@ -402,8 +413,8 @@ internal class PdfContentParser
             {
                 PdfObject? value = token.Type switch
                 {
-                    PdfTokenType.Integer => new PdfInteger(int.Parse(token.Value)),
-                    PdfTokenType.Real => new PdfReal(double.Parse(token.Value)),
+                    PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
+                    PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
                     PdfTokenType.String => new PdfString(token.Value),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,

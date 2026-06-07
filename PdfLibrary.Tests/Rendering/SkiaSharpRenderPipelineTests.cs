@@ -567,6 +567,30 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         Assert.Equal(100, image.Height);
     }
 
+    [Fact]
+    public void MalformedNumericOperand_IsToleratedNotThrown()
+    {
+        // Regression: a bare "-" numeric token in a content stream made the parser throw
+        // (int/double.Parse), aborting the entire page. Conformant readers treat a malformed
+        // number as 0; the stray leading "-" must be tolerated and the rectangle still drawn.
+        byte[] pdf = BuildBoxedPdf(
+            mediaBox: "[0 0 100 100]",
+            cropBox:  "[0 0 100 100]",
+            content:  "- q 0 0 1 rg 20 20 60 60 re f Q\n");  // leading bare '-' crashed pre-fix
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        PdfPage page = doc.GetPage(0)!;
+
+        using SKImage image = page.RenderTo().WithScale(2.0).ToImage();   // must not throw
+        using SKBitmap bitmap = SKBitmap.FromImage(image);
+
+        // Centre of the rect (user 20..80 → device 40..160 at 2x). Blue proves the page rendered.
+        SKColor px = bitmap.GetPixel(100, 100);
+        Assert.True(px.Blue > 200 && px.Red < 80 && px.Green < 80,
+            $"rectangle did not render after a malformed numeric operand (got {px.Red},{px.Green},{px.Blue},{px.Alpha})");
+    }
+
     /// <summary>Hand-assembles a minimal single-page PDF with explicit MediaBox and CropBox.</summary>
     private static byte[] BuildBoxedPdf(string mediaBox, string cropBox, string content)
     {

@@ -110,10 +110,19 @@ internal class ImageRenderer
                 const float epsilon = 0.002f;  // Small expansion to cover sub-pixel gaps
                 var destRect = new SKRect(-epsilon, -epsilon, 1 + epsilon, 1 + epsilon);
 
-                // Use high-quality cubic filtering for downscaling images.
-                // CatmullRom (B=0, C=0.5) is commonly used for photo-quality downsampling.
-                // Linear filtering can cause dithering artifacts when scaling significantly.
-                var sampling = new SKSamplingOptions(new SKCubicResampler(0, 0.5f));
+                // Pick sampling based on whether this draw minifies the image. A fixed-kernel cubic
+                // resampler samples only a 4x4 source neighbourhood per output pixel and uses no
+                // mipmaps, so shrinking a high-resolution scan to page resolution undersamples it —
+                // thin dark strokes fall between sample points and the page washes out lighter than
+                // reference renderers (seen on scanned manuals). Mipmapped trilinear pre-averages the
+                // source and preserves density when minifying; cubic stays for 1:1/upscaling, where
+                // it is sharper and mipmaps don't apply.
+                float deviceW = MathF.Sqrt(combinedMatrix.ScaleX * combinedMatrix.ScaleX + combinedMatrix.SkewY * combinedMatrix.SkewY);
+                float deviceH = MathF.Sqrt(combinedMatrix.SkewX * combinedMatrix.SkewX + combinedMatrix.ScaleY * combinedMatrix.ScaleY);
+                bool minifying = bitmap.Width > deviceW * 1.1f || bitmap.Height > deviceH * 1.1f;
+                SKSamplingOptions sampling = minifying
+                    ? new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)
+                    : new SKSamplingOptions(new SKCubicResampler(0, 0.5f));
 
                 // Apply fill alpha from graphics state to images
                 // PDF uses CA for stroke alpha and ca for fill alpha; images use fill alpha
