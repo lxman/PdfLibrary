@@ -107,7 +107,23 @@ internal class PdfLexer(Stream stream)
 
             if (escaped)
             {
+                escaped = false;
                 escapeCount++;
+
+                // A REVERSE SOLIDUS followed by an end-of-line marker is a line continuation:
+                // both the backslash and the EOL (CR, LF, or CRLF) are dropped and emit nothing
+                // (ISO 32000-1, 7.3.4.2). Generators use this to split long string literals across
+                // physical lines, sometimes mid-word. Without this the stray CR/LF survived as a
+                // control character with a default advance, inserting a visible gap.
+                if (ch == (byte)'\r')
+                {
+                    if (TryPeek(out byte lf) && lf == (byte)'\n')
+                        Read(); // consume the LF of a CRLF pair
+                    continue;
+                }
+                if (ch == (byte)'\n')
+                    continue;
+
                 // Handle escape sequences (7.3.4.2)
                 sb.Append(ch switch
                 {
@@ -122,7 +138,6 @@ internal class PdfLexer(Stream stream)
                     >= (byte)'0' and <= (byte)'7' => (char)ReadOctalEscape(ch),
                     _ => (char)ch
                 });
-                escaped = false;
             }
             else if (ch == (byte)'\\')
             {

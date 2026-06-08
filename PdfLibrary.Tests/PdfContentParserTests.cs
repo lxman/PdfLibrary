@@ -153,6 +153,27 @@ public class PdfContentParserTests
         Assert.Equal("Hello, World!", ((PdfString)operators[0].Operands[0]).Value);
     }
 
+    [Theory]
+    [InlineData("(sanctio\\\rn) Tj", "sanction")]    // backslash + CR  (line continuation)
+    [InlineData("(sanctio\\\nn) Tj", "sanction")]    // backslash + LF
+    [InlineData("(sanctio\\\r\nn) Tj", "sanction")]  // backslash + CRLF
+    public void Parse_BackslashEolLineContinuation_DropsTheEol(string content, string expected)
+    {
+        // ISO 32000-1 7.3.4.2: a REVERSE SOLIDUS followed by an end-of-line marker is a line
+        // continuation — both the backslash and the EOL are dropped. Generators use this to wrap
+        // long string literals across physical lines (sometimes mid-word). Regression: the stray
+        // CR/LF used to survive as a control char with a default advance, inserting a visible gap.
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        List<PdfOperator> operators = PdfContentParser.Parse(bytes);
+
+        Assert.Single(operators);
+        var str = Assert.IsType<PdfString>(operators[0].Operands[0]);
+        Assert.Equal(expected, str.Value);
+        Assert.DoesNotContain('\r', str.Value);
+        Assert.DoesNotContain('\n', str.Value);
+    }
+
     [Fact]
     public void Parse_ShowTextWithPositioning_WithArray()
     {
