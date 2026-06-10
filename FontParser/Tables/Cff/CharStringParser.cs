@@ -773,21 +773,34 @@ namespace FontParser.Tables.Cff
 
                                 switch (b)
                                 {
-                                    case 0x22: // hflex
-                                        c1 = new PointF(_x + _stack.PopBottom(), _y);
-                                        c2 = new PointF(c1.X + _stack.PopBottom(), c1.Y + _stack.PopBottom());
-                                        var c3 = new PointF(c2.X + _stack.PopBottom(), c2.Y);
-                                        var c4 = new PointF(c3.X + _stack.PopBottom(), c3.Y);
-                                        var c5 = new PointF(c4.X + _stack.PopBottom(), c4.Y);
-                                        var c6 = new PointF(c5.X + _stack.PopBottom(), c5.Y);
-                                        _x = c6.X;
-                                        _y = c6.Y;
-                                        _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
-                                        _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
-                                        UpdateBounds(_x, _y);
+                                    case 0x22: // hflex: dx1 dx2 dy2 dx3 dx4 dx5 dx6
+                                        {
+                                            // Start/end and the outer control points share the original
+                                            // y; the joining point sits at y0+dy2, and the second curve
+                                            // applies -dy2 so the endpoint returns to y0.
+                                            float y0 = _y;
+                                            float dx1 = _stack.PopBottom();
+                                            float dx2 = _stack.PopBottom(), dy2 = _stack.PopBottom();
+                                            float dx3 = _stack.PopBottom();
+                                            float dx4 = _stack.PopBottom();
+                                            float dx5 = _stack.PopBottom();
+                                            float dx6 = _stack.PopBottom();
+                                            c1 = new PointF(_x + dx1, y0);
+                                            c2 = new PointF(c1.X + dx2, y0 + dy2);
+                                            var c3 = new PointF(c2.X + dx3, y0 + dy2);
+                                            var c4 = new PointF(c3.X + dx4, y0 + dy2);
+                                            var c5 = new PointF(c4.X + dx5, y0);
+                                            var c6 = new PointF(c5.X + dx6, y0);
+                                            _x = c6.X;
+                                            _y = c6.Y;
+                                            _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
+                                            _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
+                                            UpdateBounds(_x, _y);
+                                        }
+                                        _stack.Clear();
                                         break;
 
-                                    case 0x23: // flex
+                                    case 0x23: // flex: dx1 dy1 dx2 dy2 dx3 dy3 dx4 dy4 dx5 dy5 dx6 dy6 fd
                                         {
                                             float dx1 = _stack.PopBottom(), dy1 = _stack.PopBottom();
                                             float dx2 = _stack.PopBottom(), dy2 = _stack.PopBottom();
@@ -798,10 +811,10 @@ namespace FontParser.Tables.Cff
 
                                             c1 = new PointF(_x + dx1, _y + dy1);
                                             c2 = new PointF(c1.X + dx2, c1.Y + dy2);
-                                            c3 = new PointF(c2.X + dx3, c2.Y + dy3);
-                                            c4 = new PointF(c3.X + dx4, c3.Y + dy4);
-                                            c5 = new PointF(c4.X + dx5, c4.Y + dy5);
-                                            c6 = new PointF(c5.X + dx6, c5.Y + dy6);
+                                            var c3 = new PointF(c2.X + dx3, c2.Y + dy3);
+                                            var c4 = new PointF(c3.X + dx4, c3.Y + dy4);
+                                            var c5 = new PointF(c4.X + dx5, c4.Y + dy5);
+                                            var c6 = new PointF(c5.X + dx6, c5.Y + dy6);
                                             _x = c6.X;
                                             _y = c6.Y;
                                             _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
@@ -811,18 +824,28 @@ namespace FontParser.Tables.Cff
                                         _stack.Clear();
                                         break;
 
-                                    case 0x24: // hflex1
-                                        c1 = new PointF(_x + _stack.PopBottom(), _y + _stack.PopBottom());
-                                        c2 = new PointF(c1.X + _stack.PopBottom(), c1.Y + _stack.PopBottom());
-                                        c3 = new PointF(c2.X + _stack.PopBottom(), c2.Y);
-                                        c4 = new PointF(c3.X + _stack.PopBottom(), c3.Y);
-                                        c5 = new PointF(c4.X + _stack.PopBottom(), c4.Y + _stack.PopBottom());
-                                        c6 = new PointF(c5.X + _stack.PopBottom(), c5.Y);
-                                        _x = c6.X;
-                                        _y = c6.Y;
-                                        _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
-                                        _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
-                                        UpdateBounds(_x, _y);
+                                    case 0x24: // hflex1: dx1 dy1 dx2 dy2 dx3 dx4 dx5 dy5 dx6
+                                        {
+                                            // Endpoint y returns to the start: dy6 = -(dy1+dy2+dy5).
+                                            float y0 = _y;
+                                            float dx1 = _stack.PopBottom(), dy1 = _stack.PopBottom();
+                                            float dx2 = _stack.PopBottom(), dy2 = _stack.PopBottom();
+                                            float dx3 = _stack.PopBottom();
+                                            float dx4 = _stack.PopBottom();
+                                            float dx5 = _stack.PopBottom(), dy5 = _stack.PopBottom();
+                                            float dx6 = _stack.PopBottom();
+                                            c1 = new PointF(_x + dx1, y0 + dy1);
+                                            c2 = new PointF(c1.X + dx2, c1.Y + dy2);
+                                            var c3 = new PointF(c2.X + dx3, c2.Y);
+                                            var c4 = new PointF(c3.X + dx4, c3.Y);
+                                            var c5 = new PointF(c4.X + dx5, c4.Y + dy5);
+                                            var c6 = new PointF(c5.X + dx6, y0);
+                                            _x = c6.X;
+                                            _y = c6.Y;
+                                            _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
+                                            _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
+                                            UpdateBounds(_x, _y);
+                                        }
                                         _stack.Clear();
                                         break;
 
@@ -851,7 +874,35 @@ namespace FontParser.Tables.Cff
                                         HandleArithmeticOperator(b);
                                         break;
 
-                                    case 0x25: // flex1
+                                    case 0x25: // flex1: dx1 dy1 dx2 dy2 dx3 dy3 dx4 dy4 dx5 dy5 d6
+                                        {
+                                            // The final delta d6 is dx6 or dy6 depending on whether the
+                                            // flex runs more horizontally or vertically; the other axis
+                                            // returns to the starting value (TN#5177).
+                                            float x0 = _x, y0 = _y;
+                                            float dx1 = _stack.PopBottom(), dy1 = _stack.PopBottom();
+                                            float dx2 = _stack.PopBottom(), dy2 = _stack.PopBottom();
+                                            float dx3 = _stack.PopBottom(), dy3 = _stack.PopBottom();
+                                            float dx4 = _stack.PopBottom(), dy4 = _stack.PopBottom();
+                                            float dx5 = _stack.PopBottom(), dy5 = _stack.PopBottom();
+                                            float d6 = _stack.PopBottom();
+                                            c1 = new PointF(x0 + dx1, y0 + dy1);
+                                            c2 = new PointF(c1.X + dx2, c1.Y + dy2);
+                                            var c3 = new PointF(c2.X + dx3, c2.Y + dy3);
+                                            var c4 = new PointF(c3.X + dx4, c3.Y + dy4);
+                                            var c5 = new PointF(c4.X + dx5, c4.Y + dy5);
+                                            float dxSum = dx1 + dx2 + dx3 + dx4 + dx5;
+                                            float dySum = dy1 + dy2 + dy3 + dy4 + dy5;
+                                            var c6 = System.Math.Abs(dxSum) > System.Math.Abs(dySum)
+                                                ? new PointF(c5.X + d6, y0)
+                                                : new PointF(x0, c5.Y + d6);
+                                            _x = c6.X;
+                                            _y = c6.Y;
+                                            _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
+                                            _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
+                                            UpdateBounds(_x, _y);
+                                        }
+                                        _stack.Clear();
                                         break;
                                 }
                                 break;
