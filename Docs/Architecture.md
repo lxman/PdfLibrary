@@ -364,9 +364,7 @@ Font handling and text rendering.
 | Component | Responsibility |
 |-----------|----------------|
 | `EmbeddedFontExtractor` | Extract font programs |
-| `EmbeddedFontMetrics` | Parse TrueType metrics |
-| `TrueTypeParser` | Parse TrueType tables |
-| `GlyphExtractor` | Extract glyph outlines |
+| `EmbeddedFontMetrics` | Parse font metrics/glyphs (via `FontParser.SfntFont`) |
 | `GlyphOutline` | Glyph path data |
 
 ### 9. Filters (`Filters/`)

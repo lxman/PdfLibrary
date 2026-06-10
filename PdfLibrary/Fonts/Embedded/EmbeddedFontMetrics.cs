@@ -24,7 +24,7 @@ namespace PdfLibrary.Fonts.Embedded;
 /// </summary>
 internal class EmbeddedFontMetrics
 {
-    private readonly TrueTypeParser _parser;
+    private FontParser.SfntFont? _sfnt;
     private readonly HeadTable? _headTable;
     private readonly HheaTable? _hheaTable;
     private readonly MaxPTable? _maxpTable;
@@ -223,8 +223,8 @@ internal class EmbeddedFontMetrics
                 NumGlyphs = (ushort)_cffTable.RawCharStrings.Count;
                 IsValid = true;
 
-                // Create a dummy parser (won't be used for CFF)
-                _parser = new TrueTypeParser(fontData);
+                // Raw CFF is not an sfnt; the sfnt reader stays null (unused for this branch).
+                _sfnt = null;
                 return;
             }
             catch
@@ -234,10 +234,13 @@ internal class EmbeddedFontMetrics
             }
         }
 
-        _parser = new TrueTypeParser(fontData);
+        // Parse the sfnt directory once via FontParser's entry point. A non-sfnt/malformed
+        // program leaves _sfnt null, so the table lookups below return null and IsValid=false.
+        try { _sfnt = new FontParser.SfntFont(fontData); }
+        catch { _sfnt = null; }
 
         // Parse head table (required)
-        byte[]? headData = _parser.GetTable("head");
+        byte[]? headData = _sfnt?.GetTableBytes("head");
         if (headData is not null)
         {
             try
@@ -256,7 +259,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse maxp table (required for glyph count)
-        byte[]? maxpData = _parser.GetTable("maxp");
+        byte[]? maxpData = _sfnt?.GetTableBytes("maxp");
         if (maxpData is not null)
         {
             try
@@ -271,7 +274,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse hhea table (required for horizontal metrics)
-        byte[]? hheaData = _parser.GetTable("hhea");
+        byte[]? hheaData = _sfnt?.GetTableBytes("hhea");
         if (hheaData is not null)
         {
             try
@@ -285,7 +288,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse hmtx table (required for glyph widths)
-        byte[]? hmtxData = _parser.GetTable("hmtx");
+        byte[]? hmtxData = _sfnt?.GetTableBytes("hmtx");
         if (hmtxData is not null && _hheaTable is not null && NumGlyphs > 0)
         {
             try
@@ -300,7 +303,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse name table (optional but useful)
-        byte[]? nameData = _parser.GetTable("name");
+        byte[]? nameData = _sfnt?.GetTableBytes("name");
         if (nameData is not null)
         {
             try
@@ -314,7 +317,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Parse cmap table (required for character->glyph mapping)
-        byte[]? cmapData = _parser.GetTable("cmap");
+        byte[]? cmapData = _sfnt?.GetTableBytes("cmap");
         if (cmapData is not null)
         {
             try
@@ -335,7 +338,7 @@ internal class EmbeddedFontMetrics
         }
 
         // Check for CFF font (OpenType with CFF outlines)
-        byte[]? cffData = _parser.GetTable("CFF ");
+        byte[]? cffData = _sfnt?.GetTableBytes("CFF ");
         if (cffData is not null)
         {
             try
@@ -367,7 +370,7 @@ internal class EmbeddedFontMetrics
         // Font is valid if we have the essential tables for rendering
         // cmap is optional - Type0/CID fonts use CIDToGIDMap instead
         // We need head + hmtx + either glyf (TrueType) or CFF outlines
-        bool hasGlyphData = _parser.GetTable("glyf") is not null || _cffTable is not null;
+        bool hasGlyphData = _sfnt?.GetTableBytes("glyf") is not null || _cffTable is not null;
         IsValid = _headTable is not null && _hmtxTable is not null && hasGlyphData;
     }
 
@@ -380,8 +383,8 @@ internal class EmbeddedFontMetrics
     /// <param name="length3">Length of trailer portion (optional)</param>
     public EmbeddedFontMetrics(byte[] fontData, int length1, int length2, int length3 = 0)
     {
-        // Initialize non-nullable parser field (won't be used for Type1)
-        _parser = null!;
+        // Type1 (PostScript) fonts are not sfnt; the sfnt reader is unused here.
+        _sfnt = null;
 
         PdfLogger.Log(LogCategory.Text,
             $"[TYPE1] Attempting to parse Type1 font: dataLen={fontData.Length}, Length1={length1}, Length2={length2}, Length3={length3}");
@@ -1233,7 +1236,7 @@ internal class EmbeddedFontMetrics
         try
         {
             // Parse loca table (required for glyph offsets)
-            byte[]? locaData = _parser.GetTable("loca");
+            byte[]? locaData = _sfnt?.GetTableBytes("loca");
             if (locaData is null || _headTable is null || NumGlyphs == 0)
                 return;
 
@@ -1242,7 +1245,7 @@ internal class EmbeddedFontMetrics
             _locaTable.Process(NumGlyphs, isShortFormat);
 
             // Parse glyf table (contains glyph outlines)
-            byte[]? glyfData = _parser.GetTable("glyf");
+            byte[]? glyfData = _sfnt?.GetTableBytes("glyf");
             if (glyfData is null)
                 return;
 

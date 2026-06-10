@@ -7,7 +7,7 @@ namespace PdfLibrary.Fonts.Embedded
     /// </summary>
     internal class EmbeddedFontExtractor
     {
-        private readonly Dictionary<int, string>? _glyphNames;
+        private readonly IReadOnlyDictionary<int, string>? _glyphNames;
         private readonly bool _isValid;
 
         /// <summary>
@@ -26,8 +26,9 @@ namespace PdfLibrary.Fonts.Embedded
             byte[]? fontData = fontDescriptor.GetFontFile2();
             if (fontData is not null)
             {
-                // Parse TrueType font for glyph names
-                _glyphNames = TrueTypeParser.GetAllGlyphNames(fontData);
+                // Parse the embedded sfnt and read post-table glyph names via FontParser.
+                try { _glyphNames = new FontParser.SfntFont(fontData).Post?.GlyphNames; }
+                catch { _glyphNames = null; }
                 _isValid = _glyphNames is { Count: > 0 };
                 return;
             }
