@@ -55,6 +55,9 @@ namespace FontParser.Reader
 
         public byte[] PeekBytes(int count)
         {
+            if (Position + count > _dataLength)
+                throw new ArgumentException(
+                    $"PeekBytes({count}) past end of data (position {Position}, length {_dataLength}).", nameof(count));
             var result = new byte[count];
             Array.Copy(_data, Position, result, 0, count);
             return result;
@@ -62,6 +65,9 @@ namespace FontParser.Reader
 
         public byte ReadByte()
         {
+            if (Position >= _dataLength)
+                throw new ArgumentException(
+                    $"ReadByte past end of data (position {Position}, length {_dataLength}).");
             return _data[Position++];
         }
 
@@ -72,6 +78,9 @@ namespace FontParser.Reader
 
         public sbyte[] ReadSbytes(int count)
         {
+            if (Position + count > _dataLength)
+                throw new ArgumentException(
+                    $"ReadSbytes({count}) past end of data (position {Position}, length {_dataLength}).", nameof(count));
             var result = new sbyte[count];
             Array.Copy(_data, Position, result, 0, count);
             Position += count;
@@ -194,14 +203,18 @@ namespace FontParser.Reader
             var data = new List<byte>();
             if (isUnicode)
             {
-                while (PeekBytes(2) != new byte[] { 0, 0 })
+                // sfnt text is UTF-16 big-endian; terminate on a 0x0000 unit. (The old
+                // `PeekBytes(2) != new byte[]{0,0}` compared array references — always true.)
+                while (true)
                 {
+                    byte[] peek = PeekBytes(2);
+                    if (peek[0] == 0 && peek[1] == 0) break;
                     data.Add(ReadByte());
                     data.Add(ReadByte());
                 }
                 _ = ReadBytes(2);
 
-                return Encoding.Unicode.GetString(data.ToArray());
+                return Encoding.BigEndianUnicode.GetString(data.ToArray());
             }
             while (PeekBytes(1)[0] != 0)
             {
