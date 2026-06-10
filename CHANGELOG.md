@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-06-10
+
+### Added
+- **Axial/radial shading rendering.** The `sh` operator and PatternType 2 shading patterns now paint as gradients (ShadingType 2 axial / 3 radial). Previously `sh` was an unimplemented no-op, so gradients were silently dropped and only the flat base fill showed.
+- **Complete PDF function support.** Implemented Type 3 (stitching) and Type 4 (PostScript calculator) functions. PdfLibrary now evaluates every PDF function type (0, 2, 3, 4), so shadings and Separation/DeviceN tint transforms that rely on them render correctly.
+
+### Fixed
+- **Page `/Rotate` normalization.** `/Rotate` is normalized into `[0, 360)`, so negative or out-of-range angles (e.g. `-90` from Distiller, equivalent to 270) render correctly instead of producing a blank page.
+- **WinAnsiEncoding `/Widths`** calculation in `PdfDocumentWriter`.
+- **Character spacing** on long lines.
+
+### Changed
+- **FontParser consolidated into a single embedded-font layer.** Pruned FontParser to the PDF-relevant core and routed embedded-font parsing through a new `SfntFont` entry point. Corrected CFF charstring subroutine execution (no state reset on recursion — previously corrupted subroutinized glyphs), the flex-family operators (`hflex`/`flex`/`hflex1`/`flex1`), `seac` accented composites, and cmap format 2/4 parsing; hardened `BigEndianReader` bounds checks.
+
 ## [1.0.0-rc.1] - 2026-06-06
 
 ### Added
