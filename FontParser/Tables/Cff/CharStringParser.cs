@@ -25,6 +25,13 @@ namespace FontParser.Tables.Cff
         private readonly Dictionary<int, float> _transients = new Dictionary<int, float>();
         private bool _drawing;
 
+        // Active-parse state for ParseToOutline/RunCharString: the outline being built,
+        // its running bounds, and the subroutine-call depth guard. Reset once per glyph.
+        private GlyphOutline _outline = new GlyphOutline();
+        private float _minX, _minY, _maxX, _maxY;
+        private int _subrDepth;
+        private const int MaxSubrDepth = 60;
+
         public CharStringParser(
             int capacity,
             List<byte> bytes,
@@ -477,11 +484,10 @@ namespace FontParser.Tables.Cff
         /// </summary>
         public GlyphOutline ParseToOutline()
         {
-            var outline = new GlyphOutline();
-            var stackIndex = 0;
-            var endChar = false;
-
-            // Reset state
+            // Reset interpreter state ONCE for the whole charstring. Subroutines continue
+            // with this same state (position, operand stack, hint count, width); they must
+            // not reset it. (The previous version recursed into ParseToOutline, which reset
+            // everything on entry and so corrupted every subroutinized glyph's outline.)
             _stack.Clear();
             _width = null;
             _nStems = 0;
@@ -489,22 +495,37 @@ namespace FontParser.Tables.Cff
             _y = 0;
             _drawing = false;
             _transients.Clear();
+            _subrDepth = 0;
+            _outline = new GlyphOutline();
+            _minX = float.MaxValue;
+            _minY = float.MaxValue;
+            _maxX = float.MinValue;
+            _maxY = float.MinValue;
 
-            // Track bounds
-            float minX = float.MaxValue, minY = float.MaxValue;
-            float maxX = float.MinValue, maxY = float.MinValue;
+            RunCharString(_originalBytes);
 
-            void UpdateBounds(float x, float y)
+            if (_minX != float.MaxValue)
             {
-                if (x < minX) minX = x;
-                if (y < minY) minY = y;
-                if (x > maxX) maxX = x;
-                if (y > maxY) maxY = y;
+                _outline.MinX = _minX;
+                _outline.MinY = _minY;
+                _outline.MaxX = _maxX;
+                _outline.MaxY = _maxY;
             }
 
-            while (!endChar && stackIndex < _bytes.Count)
+            _outline.Width = _width;
+            return _outline;
+        }
+
+        // Interprets one charstring — the glyph's, or a sub-routine's — against the shared
+        // interpreter state, appending to _outline. callsubr/callgsubr recurse here for the
+        // byte position only (state is shared, never reset). Returns true once an endchar
+        // has terminated the whole glyph, so the signal unwinds through every nested call.
+        private bool RunCharString(List<byte> bytes)
+        {
+            var stackIndex = 0;
+            while (stackIndex < bytes.Count)
             {
-                byte b = _bytes[stackIndex++];
+                byte b = bytes[stackIndex++];
                 switch (b >= 0x20)
                 {
                     case true when b < 0xF7:
@@ -513,23 +534,23 @@ namespace FontParser.Tables.Cff
 
                     case true when b < 0xFB:
                         {
-                            byte b0 = _bytes[stackIndex++];
+                            byte b0 = bytes[stackIndex++];
                             _stack.Push((b - 0xF7) * 0x100 + b0 + 0x6C);
                             break;
                         }
                     case true when b < 0xFF:
                         {
-                            byte b0 = _bytes[stackIndex++];
+                            byte b0 = bytes[stackIndex++];
                             _stack.Push(-(b - 0xFB) * 0x100 - b0 - 0x6C);
                             break;
                         }
                     case true when b == 0xFF:
                     case false when b == 0:
                         {
-                            byte b0 = _bytes[stackIndex++];
-                            byte b1 = _bytes[stackIndex++];
-                            byte b2 = _bytes[stackIndex++];
-                            byte b3 = _bytes[stackIndex++];
+                            byte b0 = bytes[stackIndex++];
+                            byte b1 = bytes[stackIndex++];
+                            byte b2 = bytes[stackIndex++];
+                            byte b3 = bytes[stackIndex++];
                             float val = BinaryPrimitives.ReadInt32BigEndian(new[] { b0, b1, b2, b3 });
                             _stack.Push(val / 0x10000);
                             break;
@@ -553,7 +574,7 @@ namespace FontParser.Tables.Cff
                             case 0x04: // vmoveto
                                 if (_stack.Count > 1) WidthCalculation();
                                 _y += _stack.PopBottom();
-                                outline.Commands.Add(new MoveToCommand(_x, _y));
+                                _outline.Commands.Add(new MoveToCommand(_x, _y));
                                 UpdateBounds(_x, _y);
                                 _drawing = true;
                                 _stack.Clear();
@@ -564,7 +585,7 @@ namespace FontParser.Tables.Cff
                                 {
                                     _x += _stack.PopBottom();
                                     _y += _stack.PopBottom();
-                                    outline.Commands.Add(new LineToCommand(_x, _y));
+                                    _outline.Commands.Add(new LineToCommand(_x, _y));
                                     UpdateBounds(_x, _y);
                                 }
                                 _stack.Clear();
@@ -579,7 +600,7 @@ namespace FontParser.Tables.Cff
                                         _x += _stack.PopBottom();
                                     else
                                         _y += _stack.PopBottom();
-                                    outline.Commands.Add(new LineToCommand(_x, _y));
+                                    _outline.Commands.Add(new LineToCommand(_x, _y));
                                     UpdateBounds(_x, _y);
                                     phase = !phase;
                                 }
@@ -589,7 +610,7 @@ namespace FontParser.Tables.Cff
                             case 0x08: // rrcurveto
                                 while (_stack.Count > 0)
                                 {
-                                    outline.Commands.Add(GetCubicBezierCommand(ref _x, ref _y));
+                                    _outline.Commands.Add(GetCubicBezierCommand(ref _x, ref _y));
                                     UpdateBounds(_x, _y);
                                 }
                                 _stack.Clear();
@@ -597,30 +618,23 @@ namespace FontParser.Tables.Cff
 
                             case 0x0A: // callsubr
                                 index = Convert.ToInt32(_stack.Pop()) + _localOffset;
-                                if (index < _localSubroutines.Count)
+                                if (index >= 0 && index < _localSubroutines.Count && _subrDepth < MaxSubrDepth)
                                 {
-                                    _nester.Push(stackIndex, _bytes);
-                                    _bytes = _localSubroutines[index];
-                                    if (_bytes.Count > 0)
-                                    {
-                                        GlyphOutline subOutline = ParseToOutline();
-                                        outline.Commands.AddRange(subOutline.Commands);
-                                    }
-                                    (int index, List<byte> bytes) lState = _nester.Pop();
-                                    stackIndex = lState.index;
-                                    _bytes = lState.bytes;
+                                    _subrDepth++;
+                                    bool ended = RunCharString(_localSubroutines[index]);
+                                    _subrDepth--;
+                                    if (ended) return true;
                                 }
                                 break;
 
-                            case 0x0B: // return
-                                break;
+                            case 0x0B: // return — end this subroutine frame
+                                return false;
 
-                            case 0x0E: // endchar
+                            case 0x0E: // endchar — end the whole charstring
                                 if (_stack.Count > 0)
                                     WidthCalculation();
-                                outline.Commands.Add(new ClosePathCommand());
-                                endChar = true;
-                                break;
+                                _outline.Commands.Add(new ClosePathCommand());
+                                return true;
 
                             case 0x13:
                             case 0x14:
@@ -633,7 +647,7 @@ namespace FontParser.Tables.Cff
                                     WidthCalculation();
                                 _x += _stack.PopBottom();
                                 _y += _stack.PopBottom();
-                                outline.Commands.Add(new MoveToCommand(_x, _y));
+                                _outline.Commands.Add(new MoveToCommand(_x, _y));
                                 UpdateBounds(_x, _y);
                                 _drawing = true;
                                 _stack.Clear();
@@ -643,7 +657,7 @@ namespace FontParser.Tables.Cff
                                 if (_stack.Count > 1)
                                     WidthCalculation();
                                 _x += _stack.PopBottom();
-                                outline.Commands.Add(new MoveToCommand(_x, _y));
+                                _outline.Commands.Add(new MoveToCommand(_x, _y));
                                 UpdateBounds(_x, _y);
                                 _drawing = true;
                                 _stack.Clear();
@@ -652,12 +666,12 @@ namespace FontParser.Tables.Cff
                             case 0x18: // rcurveline
                                 while (_stack.Count >= 8)
                                 {
-                                    outline.Commands.Add(GetCubicBezierCommand(ref _x, ref _y));
+                                    _outline.Commands.Add(GetCubicBezierCommand(ref _x, ref _y));
                                     UpdateBounds(_x, _y);
                                 }
                                 _x += _stack.PopBottom();
                                 _y += _stack.PopBottom();
-                                outline.Commands.Add(new LineToCommand(_x, _y));
+                                _outline.Commands.Add(new LineToCommand(_x, _y));
                                 UpdateBounds(_x, _y);
                                 break;
 
@@ -666,14 +680,14 @@ namespace FontParser.Tables.Cff
                                 {
                                     _x += _stack.PopBottom();
                                     _y += _stack.PopBottom();
-                                    outline.Commands.Add(new LineToCommand(_x, _y));
+                                    _outline.Commands.Add(new LineToCommand(_x, _y));
                                     UpdateBounds(_x, _y);
                                 }
                                 c1 = new PointF(_x + _stack.PopBottom(), _y + _stack.PopBottom());
                                 c2 = new PointF(c1.X + _stack.PopBottom(), c1.Y + _stack.PopBottom());
                                 _x = c2.X + _stack.PopBottom();
                                 _y = c2.Y + _stack.PopBottom();
-                                outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
+                                _outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
                                 UpdateBounds(_x, _y);
                                 _stack.Clear();
                                 break;
@@ -687,7 +701,7 @@ namespace FontParser.Tables.Cff
                                     c2 = new PointF(c1.X + _stack.PopBottom(), c1.Y + _stack.PopBottom());
                                     _x = c2.X;
                                     _y = c2.Y + _stack.PopBottom();
-                                    outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
+                                    _outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
                                     UpdateBounds(_x, _y);
                                 }
                                 _stack.Clear();
@@ -702,7 +716,7 @@ namespace FontParser.Tables.Cff
                                     c2 = new PointF(c1.X + _stack.PopBottom(), c1.Y + _stack.PopBottom());
                                     _x = c2.X + _stack.PopBottom();
                                     _y = c2.Y;
-                                    outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
+                                    _outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
                                     UpdateBounds(_x, _y);
                                 }
                                 _stack.Clear();
@@ -710,25 +724,19 @@ namespace FontParser.Tables.Cff
 
                             case 0x1C:
                                 var data = new byte[2];
-                                data[0] = _bytes[stackIndex++];
-                                data[1] = _bytes[stackIndex++];
+                                data[0] = bytes[stackIndex++];
+                                data[1] = bytes[stackIndex++];
                                 _stack.Push(BinaryPrimitives.ReadInt16BigEndian(data));
                                 break;
 
                             case 0x1D: // callgsubr
                                 index = Convert.ToInt32(_stack.Pop()) + _globalOffset;
-                                if (index >= 0 && index < _globalSubroutines.Count)
+                                if (index >= 0 && index < _globalSubroutines.Count && _subrDepth < MaxSubrDepth)
                                 {
-                                    _nester.Push(stackIndex, _bytes);
-                                    _bytes = _globalSubroutines[index];
-                                    if (_bytes.Count > 0)
-                                    {
-                                        GlyphOutline subOutline = ParseToOutline();
-                                        outline.Commands.AddRange(subOutline.Commands);
-                                    }
-                                    (int index, List<byte> bytes) gState = _nester.Pop();
-                                    stackIndex = gState.index;
-                                    _bytes = gState.bytes;
+                                    _subrDepth++;
+                                    bool ended = RunCharString(_globalSubroutines[index]);
+                                    _subrDepth--;
+                                    if (ended) return true;
                                 }
                                 break;
 
@@ -751,7 +759,7 @@ namespace FontParser.Tables.Cff
                                         _x = c2.X + _stack.PopBottom();
                                         _y = c2.Y + (_stack.Count == 1 ? _stack.PopBottom() : 0);
                                     }
-                                    outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
+                                    _outline.Commands.Add(new CubicBezierCommand(c1, c2, new PointF(_x, _y)));
                                     UpdateBounds(_x, _y);
                                     phase = !phase;
                                 }
@@ -759,7 +767,7 @@ namespace FontParser.Tables.Cff
                                 break;
 
                             case 0x0C: // Two-byte operators
-                                b = _bytes[stackIndex++];
+                                b = bytes[stackIndex++];
                                 if (b >= 0x26)
                                     throw new ArgumentOutOfRangeException();
 
@@ -774,8 +782,8 @@ namespace FontParser.Tables.Cff
                                         var c6 = new PointF(c5.X + _stack.PopBottom(), c5.Y);
                                         _x = c6.X;
                                         _y = c6.Y;
-                                        outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
-                                        outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
+                                        _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
+                                        _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
                                         UpdateBounds(_x, _y);
                                         break;
 
@@ -796,8 +804,8 @@ namespace FontParser.Tables.Cff
                                             c6 = new PointF(c5.X + dx6, c5.Y + dy6);
                                             _x = c6.X;
                                             _y = c6.Y;
-                                            outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
-                                            outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
+                                            _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
+                                            _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
                                             UpdateBounds(_x, _y);
                                         }
                                         _stack.Clear();
@@ -812,8 +820,8 @@ namespace FontParser.Tables.Cff
                                         c6 = new PointF(c5.X + _stack.PopBottom(), c5.Y);
                                         _x = c6.X;
                                         _y = c6.Y;
-                                        outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
-                                        outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
+                                        _outline.Commands.Add(new CubicBezierCommand(c1, c2, c3));
+                                        _outline.Commands.Add(new CubicBezierCommand(c4, c5, c6));
                                         UpdateBounds(_x, _y);
                                         _stack.Clear();
                                         break;
@@ -852,17 +860,15 @@ namespace FontParser.Tables.Cff
                 }
             }
 
-            // Set bounds
-            if (minX != float.MaxValue)
-            {
-                outline.MinX = minX;
-                outline.MinY = minY;
-                outline.MaxX = maxX;
-                outline.MaxY = maxY;
-            }
+            return false;
+        }
 
-            outline.Width = _width;
-            return outline;
+        private void UpdateBounds(float x, float y)
+        {
+            if (x < _minX) _minX = x;
+            if (y < _minY) _minY = y;
+            if (x > _maxX) _maxX = x;
+            if (y > _maxY) _maxY = y;
         }
 
         private void HandleArithmeticOperator(byte op)
