@@ -790,6 +790,31 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Gets the advance width for a Unicode code point, resolving the glyph through the
+    /// font's cmap. Use this when emitting a /Widths array under a declared text encoding
+    /// (e.g. WinAnsiEncoding): the caller decodes each byte to Unicode first, then asks here.
+    /// This differs from <see cref="GetCharacterAdvanceWidth"/>, which feeds the raw byte to
+    /// the cmap — correct only when byte value == Unicode code point (i.e. not for the
+    /// WinAnsi 0x80-0x9F band, which remaps to euro/smart-quotes/dashes/etc.).
+    /// </summary>
+    /// <param name="unicode">Unicode code point (BMP)</param>
+    /// <returns>Advance width in font units, or 0 if the code point is unmapped</returns>
+    public ushort GetUnicodeAdvanceWidth(int unicode)
+    {
+        if (unicode <= 0 || unicode > 0xFFFF)
+            return 0;
+
+        ushort glyphId = _cmapTable is not null
+            ? _cmapTable.GetGlyphId((ushort)unicode)
+            // No cmap (e.g. subset font): fall back to direct code->glyph mapping.
+            : unicode < NumGlyphs ? (ushort)unicode : (ushort)0;
+
+        return glyphId == 0
+            ? (ushort)0
+            : GetAdvanceWidth(glyphId);
+    }
+
+    /// <summary>
     /// Scales a font unit value to user units
     /// </summary>
     /// <param name="fontUnitValue">Value in font units</param>

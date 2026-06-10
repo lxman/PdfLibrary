@@ -1558,15 +1558,22 @@ public class PdfDocumentWriter
         writer.WriteLine("   /FirstChar 32");
         writer.WriteLine("   /LastChar 255");
 
-        // Generate Widths array (scaled to PDF's 1000-unit coordinate system)
+        // Generate Widths array (scaled to PDF's 1000-unit coordinate system).
+        // The font dict declares /Encoding /WinAnsiEncoding, so each byte 32..255 must be
+        // interpreted via WinAnsi (CP1252) -> Unicode before the glyph/width lookup — the same
+        // CP1252 mapping GenerateContentStream uses to emit the text bytes, so widths line up
+        // with the bytes we write. Feeding the raw byte to the cmap is wrong for 0x80-0x9F,
+        // where WinAnsi remaps to typographic Unicode (euro, smart quotes, en/em dash, …).
         double scale = 1000.0 / metrics.UnitsPerEm;
+        Encoding winAnsi = Encoding.GetEncoding(1252);
         writer.Write("   /Widths [");
         for (var charCode = 32; charCode <= 255; charCode++)
         {
             if ((charCode - 32) % 16 == 0)
                 writer.Write("\n      ");
 
-            ushort rawWidth = metrics.GetCharacterAdvanceWidth((ushort)charCode);
+            int unicode = winAnsi.GetString(new[] { (byte)charCode })[0];
+            ushort rawWidth = metrics.GetUnicodeAdvanceWidth(unicode);
             var width = (int)Math.Round(rawWidth * scale);
             writer.Write($"{width} ");
         }
