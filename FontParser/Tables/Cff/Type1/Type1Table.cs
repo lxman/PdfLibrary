@@ -149,7 +149,9 @@ namespace FontParser.Tables.Cff.Type1
         /// </summary>
         /// <param name="glyphIndex">Index of the glyph (0-based)</param>
         /// <returns>GlyphOutline with path commands, or null if invalid index</returns>
-        public GlyphOutline? GetGlyphOutline(int glyphIndex)
+        public GlyphOutline? GetGlyphOutline(int glyphIndex) => GetGlyphOutline(glyphIndex, true);
+
+        private GlyphOutline? GetGlyphOutline(int glyphIndex, bool allowSeac)
         {
             if (glyphIndex < 0 || glyphIndex >= RawCharStrings.Count)
                 return null;
@@ -174,7 +176,102 @@ namespace FontParser.Tables.Cff.Type1
                 nominalWidth
             );
 
-            return parser.ParseToOutline();
+            GlyphOutline outline = parser.ParseToOutline();
+
+            // Deprecated seac: the glyph is a composite of a base + accent glyph, both referenced
+            // by StandardEncoding code, with the accent shifted by (adx, ady). Compose them.
+            // One level only (allowSeac=false on the recursive lookups) to avoid seac cycles.
+            if (allowSeac && parser.Seac is { } seac)
+            {
+                GlyphOutline? composed = ComposeSeac(seac, outline.Width);
+                if (composed is not null) return composed;
+            }
+
+            return outline;
+        }
+
+        private GlyphOutline? ComposeSeac((float Adx, float Ady, int Bchar, int Achar) seac, float? width)
+        {
+            string? baseName = StandardEncoding.GetName(seac.Bchar);
+            string? accentName = StandardEncoding.GetName(seac.Achar);
+            if (baseName is null || accentName is null) return null;
+
+            int baseGid = GetGlyphIndexByName(baseName);
+            int accentGid = GetGlyphIndexByName(accentName);
+            if (baseGid <= 0 || accentGid <= 0) return null;
+
+            GlyphOutline? baseOutline = GetGlyphOutline(baseGid, false);
+            GlyphOutline? accentOutline = GetGlyphOutline(accentGid, false);
+            if (baseOutline is null || accentOutline is null) return null;
+
+            var composed = new GlyphOutline { Width = width };
+            composed.Commands.AddRange(baseOutline.Commands);
+            foreach (PathCommand cmd in accentOutline.Commands)
+            {
+                composed.Commands.Add(Translate(cmd, seac.Adx, seac.Ady));
+            }
+
+            composed.MinX = Math.Min(baseOutline.MinX, accentOutline.MinX + seac.Adx);
+            composed.MinY = Math.Min(baseOutline.MinY, accentOutline.MinY + seac.Ady);
+            composed.MaxX = Math.Max(baseOutline.MaxX, accentOutline.MaxX + seac.Adx);
+            composed.MaxY = Math.Max(baseOutline.MaxY, accentOutline.MaxY + seac.Ady);
+            return composed;
+        }
+
+        private static PathCommand Translate(PathCommand cmd, float dx, float dy)
+        {
+            switch (cmd)
+            {
+                case MoveToCommand m: return new MoveToCommand(m.Point.X + dx, m.Point.Y + dy);
+                case LineToCommand l: return new LineToCommand(l.Point.X + dx, l.Point.Y + dy);
+                case CubicBezierCommand c:
+                    return new CubicBezierCommand(
+                        c.Control1.X + dx, c.Control1.Y + dy,
+                        c.Control2.X + dx, c.Control2.Y + dy,
+                        c.EndPoint.X + dx, c.EndPoint.Y + dy);
+                default: return cmd; // ClosePathCommand has no coordinates
+            }
+        }
+
+        private Dictionary<string, int>? _nameToGid;
+
+        /// <summary>Resolves a glyph name to its GID via the charset, or -1 if not present.</summary>
+        public int GetGlyphIndexByName(string name)
+        {
+            if (_nameToGid is null) BuildNameToGid();
+            return _nameToGid!.TryGetValue(name, out int gid) ? gid : -1;
+        }
+
+        private void BuildNameToGid()
+        {
+            _nameToGid = new Dictionary<string, int> { [".notdef"] = 0 };
+
+            void Add(int gid, ushort sid)
+            {
+                string n = ResolveSid(sid);
+                if (!string.IsNullOrEmpty(n) && !_nameToGid!.ContainsKey(n)) _nameToGid![n] = gid;
+            }
+
+            switch (CharSet)
+            {
+                case CharsetsFormat0 f0:
+                    for (var i = 0; i < f0.Glyphs.Count; i++) Add(i + 1, f0.Glyphs[i]);
+                    break;
+                case CharsetsFormat1 f1:
+                {
+                    var gid = 1;
+                    foreach (var r in f1.Ranges)
+                        for (var k = 0; k <= r.NumberLeft; k++) Add(gid++, (ushort)(r.First + k));
+                    break;
+                }
+                case CharsetsFormat2 f2:
+                {
+                    var gid = 1;
+                    foreach (var r in f2.Ranges)
+                        for (var k = 0; k <= r.NumberLeft; k++) Add(gid++, (ushort)(r.First + k));
+                    break;
+                }
+            }
         }
 
         // Standard CFF

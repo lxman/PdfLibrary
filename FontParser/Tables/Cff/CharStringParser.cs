@@ -32,6 +32,13 @@ namespace FontParser.Tables.Cff
         private int _subrDepth;
         private const int MaxSubrDepth = 60;
 
+        // Set when endchar carried seac operands (adx ady bchar achar): the glyph is a
+        // composite of two StandardEncoding glyphs. Resolved/composed by Type1Table.
+        private (float Adx, float Ady, int Bchar, int Achar)? _seac;
+
+        /// <summary>Seac composition operands from a deprecated endchar-seac, or null.</summary>
+        public (float Adx, float Ady, int Bchar, int Achar)? Seac => _seac;
+
         public CharStringParser(
             int capacity,
             List<byte> bytes,
@@ -496,6 +503,7 @@ namespace FontParser.Tables.Cff
             _drawing = false;
             _transients.Clear();
             _subrDepth = 0;
+            _seac = null;
             _outline = new GlyphOutline();
             _minX = float.MaxValue;
             _minY = float.MaxValue;
@@ -630,9 +638,20 @@ namespace FontParser.Tables.Cff
                             case 0x0B: // return — end this subroutine frame
                                 return false;
 
-                            case 0x0E: // endchar — end the whole charstring
-                                if (_stack.Count > 0)
+                            case 0x0E: // endchar — end the whole charstring (may carry seac)
+                                // endchar args: 0 = plain, 1 = width, 4 = seac, 5 = width+seac.
+                                // Only pop a leading width when the count is odd-by-one (1 or 5);
+                                // popping on count 4 would consume seac's adx as a width.
+                                if (_stack.Count == 1 || _stack.Count == 5)
                                     WidthCalculation();
+                                if (_stack.Count >= 4)
+                                {
+                                    float adx = _stack.PopBottom();
+                                    float ady = _stack.PopBottom();
+                                    var bchar = (int)_stack.PopBottom();
+                                    var achar = (int)_stack.PopBottom();
+                                    _seac = (adx, ady, bchar, achar);
+                                }
                                 _outline.Commands.Add(new ClosePathCommand());
                                 return true;
 
