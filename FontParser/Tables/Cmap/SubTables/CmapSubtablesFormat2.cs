@@ -1,75 +1,97 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using FontParser.Reader;
 
 namespace FontParser.Tables.Cmap.SubTables
 {
+    /// <summary>
+    /// cmap format 2 — high-byte mapping for mixed 8/16-bit CJK encodings (Shift-JIS, Big5,
+    /// etc.). subHeaderKeys[firstByte] gives subHeaderIndex*8; subHeader 0 handles single-byte
+    /// codes, others handle the trailing byte of a two-byte code.
+    /// </summary>
     public class CmapSubtablesFormat2 : ICmapSubtable
     {
         public int Language { get; }
 
+        // Raw subHeaderKeys values (each = subHeaderIndex * 8), indexed by first byte.
         public List<ushort> SubHeaderKeys { get; } = new List<ushort>();
 
         public List<Format2SubHeader> SubHeaders { get; } = new List<Format2SubHeader>();
 
         public List<ushort> GlyphIndexArray { get; } = new List<ushort>();
 
+        private readonly int _numSubHeaders;
+
         public CmapSubtablesFormat2(BigEndianReader reader)
         {
-            ushort format = reader.ReadUShort();
+            _ = reader.ReadUShort();              // format (2)
             uint length = reader.ReadUShort();
-            _ = reader.ReadUShort();
             Language = reader.ReadInt16();
+
+            var maxKey = 0;
             for (var i = 0; i < 256; i++)
             {
-                SubHeaderKeys.Add((byte)(reader.ReadUShort() >> 8));
+                ushort key = reader.ReadUShort(); // = subHeaderIndex * 8 (NOT a high byte)
+                SubHeaderKeys.Add(key);
+                if (key > maxKey) maxKey = key;
             }
-            foreach (ushort key in SubHeaderKeys)
+
+            _numSubHeaders = maxKey / 8 + 1;
+            for (var i = 0; i < _numSubHeaders; i++)
             {
-                reader.Seek(key);
                 SubHeaders.Add(new Format2SubHeader(reader.ReadBytes(Format2SubHeader.RecordSize)));
             }
-            foreach (Format2SubHeader subHeader in SubHeaders)
+
+            // glyphIndexArray is whatever remains after header(6) + keys(512) + subHeaders.
+            long remaining = (long)length - 6 - 512 - (long)_numSubHeaders * Format2SubHeader.RecordSize;
+            for (var i = 0; i < remaining / 2 && reader.BytesRemaining >= 2; i++)
             {
-                for (var i = 0; i < subHeader.EntryCount; i++)
-                {
-                    GlyphIndexArray.Add(reader.ReadUShort());
-                }
+                GlyphIndexArray.Add(reader.ReadUShort());
             }
         }
 
         public ushort GetGlyphId(ushort codePoint)
         {
-            // Determine the high byte of the codePoint
-            var highByte = (byte)(codePoint >> 8);
+            if (SubHeaderKeys.Count < 256 || SubHeaders.Count == 0) return 0;
 
-            // Get the subheader key for the high byte
-            ushort subHeaderKey = SubHeaderKeys[highByte];
+            int high = codePoint >> 8;
+            int low = codePoint & 0xFF;
 
-            // Get the corresponding subheader
-            Format2SubHeader subHeader = SubHeaders[subHeaderKey];
+            int subHeaderIndex;
+            int entryByte; // the byte indexed within the chosen subHeader
+            if (high == 0)
+            {
+                // Single byte: subHeader 0 maps it directly, unless `low` is actually a lead byte.
+                if (SubHeaderKeys[low] / 8 != 0) return 0;
+                subHeaderIndex = 0;
+                entryByte = low;
+            }
+            else
+            {
+                subHeaderIndex = SubHeaderKeys[high] / 8;
+                entryByte = low;
+            }
 
-            // Determine the low byte of the codePoint
-            var lowByte = (byte)(codePoint & 0xFF);
+            if (subHeaderIndex < 0 || subHeaderIndex >= SubHeaders.Count) return 0;
+            Format2SubHeader subHeader = SubHeaders[subHeaderIndex];
 
-            // Calculate the index in the GlyphIndexArray
-            int index = subHeader.IdRangeOffset / 2 + lowByte - subHeader.FirstCode;
-
-            // Check if the index is within the bounds of the GlyphIndexArray
-            if (index < 0 || index >= GlyphIndexArray.Count)
+            if (entryByte < subHeader.FirstCode || entryByte >= subHeader.FirstCode + subHeader.EntryCount)
             {
                 return 0;
             }
 
-            // Get the glyph index
+            // idRangeOffset is relative to its own field position. With the arrays flattened in
+            // order, the glyphIndexArray list index reduces to (derivation in the review notes):
+            //   idRangeOffset/2 + (entryByte - firstCode) + 3 + 4*(subHeaderIndex - numSubHeaders)
+            int index = subHeader.IdRangeOffset / 2
+                        + (entryByte - subHeader.FirstCode)
+                        + 3
+                        + 4 * (subHeaderIndex - _numSubHeaders);
+
+            if (index < 0 || index >= GlyphIndexArray.Count) return 0;
+
             ushort glyphIndex = GlyphIndexArray[index];
-
-            // If the glyph index is not 0, apply the idDelta
-            if (glyphIndex != 0)
-            {
-                glyphIndex = (ushort)((glyphIndex + subHeader.IdDelta) % 65536);
-            }
-
-            return glyphIndex;
+            if (glyphIndex == 0) return 0;
+            return (ushort)((glyphIndex + subHeader.IdDelta) % 65536);
         }
     }
 }

@@ -59,8 +59,10 @@ namespace FontParser.Tables.Cmap.SubTables
                 IdRangeOffsets.Add(reader.ReadUShort());
             }
 
-            uint remainingBytes = length - 16 - SegCountX2 * 4;
-            for (var i = 0; i < remainingBytes / 2; i++)
+            // Signed math + a BytesRemaining guard: a malformed length must not underflow
+            // (uint) into an unbounded read.
+            long remainingBytes = (long)length - 16 - (long)SegCountX2 * 4;
+            for (var i = 0; i < remainingBytes / 2 && reader.BytesRemaining >= 2; i++)
             {
                 GlyphIdArray.Add(reader.ReadUShort());
             }
@@ -91,7 +93,13 @@ namespace FontParser.Tables.Cmap.SubTables
                 return (ushort)((codePoint + IdDeltas[segmentIndex]) % 65536);
             }
             int offset = IdRangeOffsets[segmentIndex] / 2 + (codePoint - StartCodes[segmentIndex]) - (segCount - segmentIndex);
-            return GlyphIdArray[offset];
+            if (offset < 0 || offset >= GlyphIdArray.Count)
+            {
+                return 0;
+            }
+            ushort glyph = GlyphIdArray[offset];
+            // idDelta still applies to a non-zero glyphIdArray entry (spec); only .notdef stays 0.
+            return glyph == 0 ? (ushort)0 : (ushort)((glyph + IdDeltas[segmentIndex]) % 65536);
         }
     }
 }
