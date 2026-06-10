@@ -119,15 +119,21 @@ public class PdfPage
         {
             // Try page first
             if (_dictionary.TryGetValue(new PdfName("Rotate"), out PdfObject obj) && obj is PdfInteger rotate)
-                return rotate.Value;
+                return NormalizeRotation(rotate.Value);
 
             // Inherit from the parent
             if (_parentNode is not null && _parentNode.TryGetValue(new PdfName("Rotate"), out obj) && obj is PdfInteger parentRotate)
-                return parentRotate.Value;
+                return NormalizeRotation(parentRotate.Value);
 
             return 0;
         }
     }
+
+    // /Rotate must be a multiple of 90 but may be negative or exceed 360 (e.g. Distiller emits -90,
+    // which is equivalent to 270). Normalize into [0, 360) so the renderer's 90/180/270 handling and
+    // the Width/Height swap apply; without this, -90 falls through every check and renders blank
+    // (content is rotated off-canvas). ISO 32000-1 §7.7.3.3.
+    private static int NormalizeRotation(int degrees) => ((degrees % 360) + 360) % 360;
 
     /// <summary>
     /// Gets the page contents (content streams)

@@ -158,7 +158,8 @@ internal class PdfPageTree
     public int? GetRotate()
     {
         if (_dictionary.TryGetValue(new PdfName("Rotate"), out PdfObject obj) && obj is PdfInteger rotate)
-            return rotate.Value;
+            // Normalize into [0, 360): /Rotate may be negative (e.g. -90 == 270). ISO 32000-1 §7.7.3.3.
+            return ((rotate.Value % 360) + 360) % 360;
         return null;
     }
 }
