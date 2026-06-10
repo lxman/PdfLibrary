@@ -1,78 +1,110 @@
-﻿using System.Collections.Generic;
+using System;
+using System.Collections.Generic;
 using System.Text;
 using FontParser.Reader;
 
 namespace FontParser.Tables
 {
+    /// <summary>
+    /// 'post' table — PostScript-oriented glyph metadata and, for format 2.0, an
+    /// explicit per-glyph name list. The names enable the name→GID fallback the PDF
+    /// spec requires when a font's cmap has no entry for a glyph's name
+    /// (ISO 32000-2 §9.6.5.4).
+    /// </summary>
     public class PostTable : IFontTable
     {
         public static string Tag => "post";
 
-        public ushort Version1 { get; }
+        /// <summary>Table version (1.0, 2.0, 2.5, 3.0…), read as Fixed 16.16.</summary>
+        public float Version { get; }
 
-        public ushort Version2 { get; }
+        /// <summary>Italic angle in counter-clockwise degrees, read as Fixed 16.16.</summary>
+        public float ItalicAngle { get; }
 
-        public string ItalicAngle { get; }
+        public short UnderlinePosition { get; }
 
-        public string UnderlinePosition { get; }
+        public short UnderlineThickness { get; }
 
-        public string UnderlineThickness { get; }
+        public bool IsFixedPitch { get; }
 
-        public string IsFixedPitch { get; }
+        public uint MinMemType42 { get; }
 
-        public string MinMemType42 { get; }
-
-        public string MaxMemType42 { get; }
+        public uint MaxMemType42 { get; }
 
         public uint MinMemType1 { get; }
 
         public uint MaxMemType1 { get; }
 
+        /// <summary>Glyph count carried by a format-2.0 post table (0 otherwise).</summary>
         public ushort NumGlyphs { get; }
 
-        public List<ushort> GlyphNameIndex { get; } = new List<ushort>();
+        private readonly Dictionary<int, string> _gidToName = new Dictionary<int, string>();
+        private readonly Dictionary<string, int> _nameToGid = new Dictionary<string, int>();
 
-        public List<byte> GlyphNames { get; } = new List<byte>();
+        /// <summary>Glyph-id → glyph-name map (format 2.0 only; empty otherwise).</summary>
+        public IReadOnlyDictionary<int, string> GlyphNames => _gidToName;
 
         public PostTable(byte[] data)
         {
             using var reader = new BigEndianReader(data);
-            Version1 = reader.ReadUShort();
-            Version2 = reader.ReadUShort();
-            ItalicAngle = $"{data[2]}.{data[3]}";
-            UnderlinePosition = $"{data[4]}.{data[5]}";
-            UnderlineThickness = $"{data[6]}.{data[7]}";
-            IsFixedPitch = $"{data[8]}.{data[9]}";
-            MinMemType42 = $"{data[10]}.{data[11]}";
-            MaxMemType42 = $"{data[12]}.{data[13]}";
-            reader.Seek(16);
+
+            Version = reader.ReadF16Dot16();
+            ItalicAngle = reader.ReadF16Dot16();
+            UnderlinePosition = reader.ReadShort();
+            UnderlineThickness = reader.ReadShort();
+            IsFixedPitch = reader.ReadUInt32() != 0;
+            MinMemType42 = reader.ReadUInt32();
+            MaxMemType42 = reader.ReadUInt32();
             MinMemType1 = reader.ReadUInt32();
             MaxMemType1 = reader.ReadUInt32();
-            if (Version1 != 2 || Version2 != 0) return;
+
+            // Only format 2.0 carries explicit per-glyph names. (1.0 = standard Mac order,
+            // 3.0 = no names, 2.5 = deprecated.)
+            if (Math.Abs(Version - 2.0f) > 0.001f) return;
+
             NumGlyphs = reader.ReadUShort();
+
+            var glyphNameIndex = new ushort[NumGlyphs];
             for (var i = 0; i < NumGlyphs; i++)
             {
-                GlyphNameIndex.Add(reader.ReadUShort());
+                glyphNameIndex[i] = reader.ReadUShort();
             }
-            for (var i = 0; i < NumGlyphs; i++)
+
+            // Remaining bytes are Pascal strings (length byte + ASCII chars) for indices >= 258.
+            var customNames = new List<string>();
+            while (reader.BytesRemaining > 0)
             {
-                GlyphNames.Add(reader.ReadByte());
+                byte length = reader.ReadByte();
+                if (reader.BytesRemaining < length) break; // truncated/malformed — stop
+                customNames.Add(Encoding.ASCII.GetString(reader.ReadBytes(length)));
+            }
+
+            for (var gid = 0; gid < NumGlyphs; gid++)
+            {
+                int nameIndex = glyphNameIndex[gid];
+                string? name;
+                if (nameIndex < MacintoshGlyphNames.StandardNameCount)
+                {
+                    name = MacintoshGlyphNames.GetStandardName(nameIndex);
+                }
+                else
+                {
+                    int customIndex = nameIndex - MacintoshGlyphNames.StandardNameCount;
+                    name = customIndex >= 0 && customIndex < customNames.Count ? customNames[customIndex] : null;
+                }
+
+                if (name is null) continue;
+                _gidToName[gid] = name;
+                if (!_nameToGid.ContainsKey(name)) _nameToGid[name] = gid; // first GID wins
             }
         }
 
-        public string GetJson()
-        {
-            var builder = new StringBuilder();
-            builder.Append("{");
-            builder.Append($"\"Version\": \"{Version1}.{Version2}\",");
-            builder.Append($"\"ItalicAngle\": \"{ItalicAngle}\",");
-            builder.Append($"\"UnderlinePosition\": \"{UnderlinePosition}\",");
-            builder.Append($"\"UnderlineThickness\": \"{UnderlineThickness}\",");
-            builder.Append($"\"IsFixedPitch\": \"{IsFixedPitch}\",");
-            builder.Append($"\"MinMemType42\": \"{MinMemType42}\",");
-            builder.Append($"\"MaxMemType42\": \"{MaxMemType42}\"");
-            builder.Append("}");
-            return builder.ToString();
-        }
+        /// <summary>Glyph name for a glyph id, or null if absent.</summary>
+        public string? GetGlyphName(int glyphId) =>
+            _gidToName.TryGetValue(glyphId, out string? name) ? name : null;
+
+        /// <summary>Glyph id for a glyph name, or -1 if the name isn't in this table.</summary>
+        public int GetGlyphIndex(string glyphName) =>
+            _nameToGid.TryGetValue(glyphName, out int gid) ? gid : -1;
     }
 }
