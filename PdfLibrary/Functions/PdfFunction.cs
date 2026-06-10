@@ -70,7 +70,8 @@ internal abstract class PdfFunction
         {
             0 => SampledFunction.Create(obj as PdfStream, domain, range, document),
             2 => ExponentialFunction.Create(dict, domain, range),
-            // Type 3 (stitching) and Type 4 (PostScript calculator) not yet implemented
+            3 => StitchingFunction.Create(dict, domain, range, document),
+            4 => PostScriptCalculatorFunction.Create(obj as PdfStream, domain, range, document),
             _ => null
         };
     }
