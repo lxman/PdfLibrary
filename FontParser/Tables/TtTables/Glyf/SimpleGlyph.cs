@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using FontParser.Reader;
-using FontParser.Tables.WOFF2.GlyfReconstruct;
 
 namespace FontParser.Tables.TtTables.Glyf
 {
@@ -18,10 +17,8 @@ namespace FontParser.Tables.TtTables.Glyf
 
         public SimpleGlyph(
             BigEndianReader reader,
-            GlyphHeader glyphHeader,
-            bool woff2Fill = false)
+            GlyphHeader glyphHeader)
         {
-            if (woff2Fill) return;
             EndPtsOfContours = reader.ReadUShortArray(Convert.ToUInt32(glyphHeader.NumberOfContours)).ToList();
             ushort instructionLength = reader.ReadUShort();
             Instructions = reader.ReadBytes(instructionLength).ToList();
@@ -99,15 +96,6 @@ namespace FontParser.Tables.TtTables.Glyf
             ArrayPool<short>.Shared.Return(xCoordinates);
             ArrayPool<short>.Shared.Return(yCoordinates);
             ArrayPool<SimpleGlyphFlags>.Shared.Return(flags);
-        }
-
-        public void Woff2Reconstruct(SimpleGlyphInfo simpleGlyphInfo)
-        {
-            Coordinates.AddRange(simpleGlyphInfo.Coordinates);
-            EndPtsOfContours = new List<ushort>();
-            EndPtsOfContours.AddRange(simpleGlyphInfo.EndPointsOfContours);
-            Instructions = new List<byte>();
-            Instructions.AddRange(simpleGlyphInfo.Instructions);
         }
     }
 }
