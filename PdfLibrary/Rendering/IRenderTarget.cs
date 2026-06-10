@@ -78,6 +78,17 @@ public interface IRenderTarget
         PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent);
 
     /// <summary>
+    /// Paint an axial/radial shading across the current clip (the PDF <c>sh</c> operator).
+    /// Default no-op so targets that don't render shadings need not implement it.
+    /// </summary>
+    void PaintShading(ShadingDescriptor shading, PdfGraphicsState state) { }
+
+    /// <summary>
+    /// Fill a path with a PatternType 2 shading pattern (axial/radial gradient). Default no-op.
+    /// </summary>
+    void FillPathWithShadingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd, ShadingDescriptor shading) { }
+
+    /// <summary>
     /// Set the clipping path for subsequent operations.
     /// </summary>
     /// <param name="path">The clipping path</param>

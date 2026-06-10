@@ -570,6 +570,14 @@ public class PdfRenderer : PdfContentProcessor
             return;
         }
 
+        // PatternType 2 = shading pattern (axial/radial gradient); handled separately from tiling (type 1).
+        if (patternStream.Dictionary.TryGetValue(new PdfName("PatternType"), out PdfObject? ptObj)
+            && ptObj is PdfInteger { Value: 2 })
+        {
+            FillWithShadingPattern(path, evenOdd, patternName, patternStream.Dictionary);
+            return;
+        }
+
         // Create pattern object from dictionary, including the content stream
         PdfTilingPattern? pattern = PdfTilingPattern.FromDictionary(patternStream.Dictionary, _document, patternStream);
         if (pattern is null)
@@ -605,6 +613,62 @@ public class PdfRenderer : PdfContentProcessor
 
         // Call the render target to fill with the pattern
         _target.FillPathWithTilingPattern(path, CurrentState, evenOdd, pattern, RenderPatternContent);
+    }
+
+    /// <summary>
+    /// Fills a path with a PatternType 2 shading pattern (axial/radial gradient).
+    /// </summary>
+    private void FillWithShadingPattern(IPathBuilder path, bool evenOdd, string patternName, PdfDictionary patternDict)
+    {
+        if (!patternDict.TryGetValue(new PdfName("Shading"), out PdfObject? shadingObj))
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"SHADING PATTERN: '{patternName}' has no /Shading");
+            return;
+        }
+
+        Matrix3x2 matrix = ReadShadingMatrix(patternDict);
+        ShadingDescriptor? descriptor = ShadingBuilder.Build(shadingObj, _document, matrix);
+        if (descriptor is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"SHADING PATTERN: '{patternName}' shading type/function unsupported (skipped)");
+            return;
+        }
+
+        _target.FillPathWithShadingPattern(path, CurrentState, evenOdd, descriptor);
+    }
+
+    /// <summary>
+    /// sh - paint the named shading (axial/radial gradient) across the current clip.
+    /// </summary>
+    protected override void OnPaintShading(string name)
+    {
+        if (_currentResources is null) return;
+
+        PdfDictionary? shadings = _currentResources.GetShadings();
+        if (shadings is null || !shadings.TryGetValue(new PdfName(name), out PdfObject? shadingObj))
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"SHADING: '{name}' not found in resources (sh skipped)");
+            return;
+        }
+
+        ShadingDescriptor? descriptor = ShadingBuilder.Build(shadingObj, _document);
+        if (descriptor is null)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"SHADING: '{name}' unsupported shading type/function (sh skipped)");
+            return;
+        }
+
+        _target.PaintShading(descriptor, CurrentState);
+    }
+
+    private static Matrix3x2 ReadShadingMatrix(PdfDictionary dict)
+    {
+        if (dict.TryGetValue(new PdfName("Matrix"), out PdfObject? m) && m is PdfArray a && a.Count >= 6)
+            return new Matrix3x2(
+                (float)a[0].ToDouble(), (float)a[1].ToDouble(),
+                (float)a[2].ToDouble(), (float)a[3].ToDouble(),
+                (float)a[4].ToDouble(), (float)a[5].ToDouble());
+        return Matrix3x2.Identity;
     }
 
     protected override void OnFillAndStroke()

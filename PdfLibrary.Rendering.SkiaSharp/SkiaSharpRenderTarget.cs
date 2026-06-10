@@ -4,6 +4,7 @@ using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
+using PdfLibrary.Rendering.SkiaSharp.Conversion;
 using PdfLibrary.Rendering.SkiaSharp.Rendering;
 using PdfLibrary.Rendering.SkiaSharp.State;
 using PdfLibrary.Structure;
@@ -368,6 +369,20 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)
     {
         _pathRenderer.FillPathWithTilingPattern(path, state, evenOdd, pattern, renderPatternContent);
+    }
+
+    public void PaintShading(ShadingDescriptor shading, PdfGraphicsState state)
+    {
+        var renderer = new ShadingRenderer(_canvas, () => _initialTransform);
+        renderer.PaintShading(shading, state);
+    }
+
+    public void FillPathWithShadingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd, ShadingDescriptor shading)
+    {
+        using SKPath skPath = PathConverter.ConvertToSkPath(path);
+        skPath.FillType = evenOdd ? SKPathFillType.EvenOdd : SKPathFillType.Winding;
+        var renderer = new ShadingRenderer(_canvas, () => _initialTransform);
+        renderer.FillPathWithShadingPattern(skPath, shading, state);
     }
 
     public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)

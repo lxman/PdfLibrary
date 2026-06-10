@@ -169,6 +169,16 @@ internal class InvokeXObjectOperator(PdfName name) : PdfOperator("Do", [name])
 }
 
 /// <summary>
+/// sh - Paint the named shading (axial/radial gradient) within the current clip.
+/// </summary>
+internal class PaintShadingOperator(PdfName name) : PdfOperator("sh", [name])
+{
+    public string ShadingName { get; } = name.Value;
+
+    public override OperatorCategory Category => OperatorCategory.Shading;
+}
+
+/// <summary>
 /// Generic operator for unrecognized or simple operators
 /// </summary>
 internal class GenericOperator(string name, List<PdfObject> operands) : PdfOperator(name, operands)

@@ -249,6 +249,9 @@ internal class PdfContentParser
                 // XObject operator
                 "Do" when operands is [PdfName xobjName, ..] => new InvokeXObjectOperator(xobjName),
 
+                // Shading operator
+                "sh" when operands is [PdfName shadingName, ..] => new PaintShadingOperator(shadingName),
+
                 // Generic/unknown operator
                 _ => new GenericOperator(name, operands)
             };

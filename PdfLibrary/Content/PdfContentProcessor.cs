@@ -258,6 +258,11 @@ public abstract class PdfContentProcessor
                 OnInvokeXObject(xobj.XObjectName);
                 break;
 
+            // Shading operator
+            case PaintShadingOperator shading:
+                OnPaintShading(shading.ShadingName);
+                break;
+
             // Inline image operator
             case InlineImageOperator inlineImg:
                 OnInlineImage(inlineImg);
@@ -374,6 +379,7 @@ public abstract class PdfContentProcessor
     protected virtual void OnFillAndStroke() { }
     protected virtual void OnEndPath() { }
     protected virtual void OnInvokeXObject(string name) { }
+    protected virtual void OnPaintShading(string name) { }
     private protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
     protected virtual void OnColorChanged() { }
     private protected virtual void OnGenericOperator(GenericOperator op) { }

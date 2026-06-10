@@ -1,0 +1,155 @@
+using System.Numerics;
+using PdfLibrary.Core;
+using PdfLibrary.Core.Primitives;
+using PdfLibrary.Functions;
+using PdfLibrary.Structure;
+
+namespace PdfLibrary.Rendering;
+
+/// <summary>
+/// Builds a <see cref="ShadingDescriptor"/> from a PDF shading dictionary — the /Shading resource
+/// painted by the <c>sh</c> operator, or the /Shading inside a PatternType 2 pattern. Only axial
+/// (type 2) and radial (type 3) shadings are produced; the colour ramp is pre-sampled by evaluating
+/// the shading's /Function across its /Domain. Returns null for shading types/functions we don't
+/// model yet, so the caller can skip the paint cleanly.
+/// </summary>
+internal static class ShadingBuilder
+{
+    private const int StopCount = 64;
+
+    public static ShadingDescriptor? Build(PdfObject? shadingObj, PdfDocument? document, Matrix3x2? patternMatrix = null)
+    {
+        if (shadingObj is PdfIndirectReference iref && document is not null)
+            shadingObj = document.ResolveReference(iref);
+
+        PdfDictionary? dict = shadingObj switch
+        {
+            PdfStream stream => stream.Dictionary,
+            PdfDictionary d => d,
+            _ => null
+        };
+        if (dict is null) return null;
+
+        if (!dict.TryGetValue(new PdfName("ShadingType"), out PdfObject typeObj) || typeObj is not PdfInteger typeInt)
+            return null;
+        int shadingType = typeInt.Value;
+        if (shadingType is not (2 or 3)) return null; // axial / radial only
+
+        double[]? coords = GetNumbers(dict, "Coords", document);
+        if (coords is null) return null;
+        if (shadingType == 2 && coords.Length < 4) return null;
+        if (shadingType == 3 && coords.Length < 6) return null;
+
+        if (!dict.TryGetValue(new PdfName("Function"), out PdfObject funcObj)) return null;
+        List<PdfFunction> functions = ResolveFunctions(funcObj, document);
+        if (functions.Count == 0) return null; // e.g. a type 3 stitching / type 4 function we can't evaluate yet
+
+        double[] domain = GetNumbers(dict, "Domain", document) ?? [0.0, 1.0];
+        double t0 = domain.Length > 0 ? domain[0] : 0.0;
+        double t1 = domain.Length > 1 ? domain[1] : 1.0;
+
+        bool extendStart = false, extendEnd = false;
+        if (dict.TryGetValue(new PdfName("Extend"), out PdfObject extObj) && extObj is PdfArray extArr && extArr.Count >= 2)
+        {
+            extendStart = extArr[0] is PdfBoolean b0 && b0.Value;
+            extendEnd = extArr[1] is PdfBoolean b1 && b1.Value;
+        }
+
+        var stops = new float[StopCount];
+        var colors = new uint[StopCount];
+        for (var i = 0; i < StopCount; i++)
+        {
+            double s = i / (double)(StopCount - 1);
+            double t = t0 + (t1 - t0) * s;
+            colors[i] = ToArgb(EvaluateColor(functions, t));
+            stops[i] = (float)s;
+        }
+
+        return new ShadingDescriptor
+        {
+            ShadingType = shadingType,
+            Coords = Array.ConvertAll(coords, x => (float)x),
+            ExtendStart = extendStart,
+            ExtendEnd = extendEnd,
+            Stops = stops,
+            Colors = colors,
+            PatternMatrix = patternMatrix
+        };
+    }
+
+    // A shading's /Function is either a single n-output function, or an array of n single-output
+    // functions (one per colour component).
+    private static List<PdfFunction> ResolveFunctions(PdfObject funcObj, PdfDocument? document)
+    {
+        if (funcObj is PdfIndirectReference r && document is not null)
+            funcObj = document.ResolveReference(r);
+
+        var list = new List<PdfFunction>();
+        if (funcObj is PdfArray arr)
+        {
+            for (var i = 0; i < arr.Count; i++)
+            {
+                PdfFunction? f = PdfFunction.Create(arr[i], document);
+                if (f is not null) list.Add(f);
+            }
+        }
+        else
+        {
+            PdfFunction? f = PdfFunction.Create(funcObj, document);
+            if (f is not null) list.Add(f);
+        }
+        return list;
+    }
+
+    private static double[] EvaluateColor(List<PdfFunction> functions, double t)
+    {
+        if (functions.Count == 1)
+            return functions[0].Evaluate([t]);
+
+        var outv = new double[functions.Count];
+        for (var i = 0; i < functions.Count; i++)
+        {
+            double[] r = functions[i].Evaluate([t]);
+            outv[i] = r.Length > 0 ? r[0] : 0.0;
+        }
+        return outv;
+    }
+
+    // Map the shading colour-space components to RGB by component count: 1 = gray, 3 = RGB,
+    // 4 = CMYK. ICCBased N=3 yields 3 components → RGB. (Lab / Separation shadings are rare and
+    // approximated as RGB here.)
+    private static uint ToArgb(double[] c)
+    {
+        double r, g, b;
+        switch (c.Length)
+        {
+            case 1:
+                r = g = b = c[0];
+                break;
+            case 4:
+                double k = c[3];
+                r = (1.0 - c[0]) * (1.0 - k);
+                g = (1.0 - c[1]) * (1.0 - k);
+                b = (1.0 - c[2]) * (1.0 - k);
+                break;
+            default: // 3 (or anything else): first three components as RGB
+                r = c.Length > 0 ? c[0] : 0.0;
+                g = c.Length > 1 ? c[1] : 0.0;
+                b = c.Length > 2 ? c[2] : 0.0;
+                break;
+        }
+        return 0xFF000000u | ((uint)Clamp255(r) << 16) | ((uint)Clamp255(g) << 8) | (uint)Clamp255(b);
+    }
+
+    private static int Clamp255(double v) => v <= 0.0 ? 0 : v >= 1.0 ? 255 : (int)Math.Round(v * 255.0);
+
+    private static double[]? GetNumbers(PdfDictionary dict, string key, PdfDocument? document)
+    {
+        if (!dict.TryGetValue(new PdfName(key), out PdfObject obj)) return null;
+        if (obj is PdfIndirectReference r && document is not null) obj = document.ResolveReference(r);
+        if (obj is not PdfArray arr) return null;
+        var nums = new double[arr.Count];
+        for (var i = 0; i < arr.Count; i++) nums[i] = arr[i].ToDouble();
+        return nums;
+    }
+}
