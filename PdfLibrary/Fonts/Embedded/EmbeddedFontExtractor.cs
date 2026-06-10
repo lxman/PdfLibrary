@@ -69,8 +69,8 @@ namespace PdfLibrary.Fonts.Embedded
             if (glyphName is null)
                 return null;
 
-            // Map glyph name to Unicode using Adobe Glyph List
-            return AdobeGlyphList.GetUnicode(glyphName);
+            // Map glyph name to Unicode using the Adobe Glyph List
+            return GlyphList.GetUnicode(glyphName);
         }
 
         /// <summary>

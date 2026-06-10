@@ -25,6 +25,38 @@ public static class GlyphList
             : null;
     }
 
+    // Reverse mapping (Unicode -> glyph name), lazily built; first name in table order wins.
+    private static volatile Dictionary<string, string>? _unicodeToGlyph;
+    private static readonly object _reverseLock = new();
+
+    /// <summary>
+    /// Gets a PostScript glyph name for a Unicode string (reverse of <see cref="GetUnicode"/>).
+    /// Used when mapping ToUnicode values back to glyph names for name-keyed fonts.
+    /// </summary>
+    public static string? GetGlyphName(string unicode)
+    {
+        if (string.IsNullOrEmpty(unicode)) return null;
+
+        if (_unicodeToGlyph is null)
+        {
+            lock (_reverseLock)
+            {
+                if (_unicodeToGlyph is null)
+                {
+                    var reverse = new Dictionary<string, string>();
+                    foreach (KeyValuePair<string, string> kvp in _glyphToUnicode)
+                        if (!reverse.ContainsKey(kvp.Value)) reverse[kvp.Value] = kvp.Key;
+                    _unicodeToGlyph = reverse;
+                }
+            }
+        }
+
+        return _unicodeToGlyph.TryGetValue(unicode, out string? name) ? name : null;
+    }
+
+    /// <summary>Gets a PostScript glyph name for a Unicode code point, or null.</summary>
+    public static string? GetGlyphName(int codePoint) => GetGlyphName(char.ConvertFromUtf32(codePoint));
+
     private static Dictionary<string, string> InitializeGlyphList()
     {
         // Adobe Glyph List - common glyph name to Unicode mappings
@@ -341,6 +373,29 @@ public static class GlyphList
             ["arrowup"] = "\u2191",
             ["arrowright"] = "\u2192",
             ["arrowdown"] = "\u2193",
+
+            // Merged from the former AdobeGlyphList (names not already mapped above)
+            ["trademark"] = "\u2122",
+            ["florin"] = "\u0192",
+            ["nonbreakingspace"] = "\u00a0",
+            ["minus"] = "\u2212",
+            ["dotlessi"] = "\u0131",
+            ["OE"] = "\u0152",
+            ["oe"] = "\u0153",
+            ["Scaron"] = "\u0160",
+            ["scaron"] = "\u0161",
+            ["Ydieresis"] = "\u0178",
+            ["Zcaron"] = "\u017d",
+            ["zcaron"] = "\u017e",
+            ["Lslash"] = "\u0141",
+            ["lslash"] = "\u0142",
+            ["onethird"] = "\u2153",
+            ["twothirds"] = "\u2154",
+            ["oneeighth"] = "\u215b",
+            ["threeeighths"] = "\u215c",
+            ["fiveeighths"] = "\u215d",
+            ["seveneighths"] = "\u215e",
+            [".notdef"] = "\ufffd",
         };
     }
 }

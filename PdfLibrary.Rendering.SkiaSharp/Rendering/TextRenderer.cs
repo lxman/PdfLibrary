@@ -633,8 +633,8 @@ internal class TextRenderer
             string? unicode = type0Font.ToUnicode.Lookup(charCode);
             if (unicode is not null)
             {
-                // Map Unicode to PostScript glyph name via Adobe Glyph List
-                resolvedGlyphName = AdobeGlyphList.GetGlyphName(unicode);
+                // Map Unicode to PostScript glyph name via the Adobe Glyph List
+                resolvedGlyphName = GlyphList.GetGlyphName(unicode);
                 if (resolvedGlyphName is not null)
                 {
                     glyphId = embeddedMetrics.GetGlyphIdByName(resolvedGlyphName);
