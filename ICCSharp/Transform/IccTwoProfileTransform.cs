@@ -126,8 +126,11 @@ public sealed class IccTwoProfileTransform : IColorTransform
         if (p.HasMatrixTrc)
             return (new MatrixTrcToPcs(p), PcsBoundary.AbsoluteXyz);
 
+        if (p.HasGrayTrc)
+            return (new GrayTrcToPcs(p), PcsBoundary.AbsoluteXyz);
+
         throw new IccTransformException(
-            $"Source profile has no usable to-PCS path (no A2B0, no matrix/TRC). Class={p.Header.Class}.");
+            $"Source profile has no usable to-PCS path (no A2B0, no matrix/TRC, no gray TRC). Class={p.Header.Class}.");
     }
 
     private static (IColorTransform, PcsBoundary) BuildFromPcs(IccProfile p, RenderingIntent intent)
@@ -143,8 +146,11 @@ public sealed class IccTwoProfileTransform : IColorTransform
         if (p.HasMatrixTrc)
             return (new MatrixTrcFromPcs(p), PcsBoundary.AbsoluteXyz);
 
+        if (p.HasGrayTrc)
+            return (new GrayTrcFromPcs(p), PcsBoundary.AbsoluteXyz);
+
         throw new IccTransformException(
-            $"Destination profile has no usable from-PCS path (no B2A0, no matrix/TRC). Class={p.Header.Class}.");
+            $"Destination profile has no usable from-PCS path (no B2A0, no matrix/TRC, no gray TRC). Class={p.Header.Class}.");
     }
 
     private static TagElement? SelectAToB(IccProfile p, RenderingIntent intent)

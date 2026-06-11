@@ -20,6 +20,11 @@
     <Project Path="PdfLibrary.Examples/09-ExtractImages/ExtractImages.csproj" />
     <Project Path="PdfLibrary.Examples/10-CreateFromScratch/CreateFromScratch.csproj" />
   </Folder>
+  <Folder Name="/ICCSharp/">
+    <Project Path="ICCSharp.Diff/ICCSharp.Diff.csproj" />
+    <Project Path="ICCSharp.Tests/ICCSharp.Tests.csproj" />
+    <Project Path="ICCSharp/ICCSharp.csproj" />
+  </Folder>
   <Folder Name="/ImageLibrary/">
     <Project Path="ImageLibrary/BmpCodec.Tests/BmpCodec.Tests.csproj" />
     <Project Path="ImageLibrary/BmpCodec/BmpCodec.csproj" />
@@ -48,7 +53,6 @@
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>
   <Project Path="FontParser/FontParser.csproj" />
-  <Project Path="ICCSharp/ICCSharp.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
   <Project Path="PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj" />

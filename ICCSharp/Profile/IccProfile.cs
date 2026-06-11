@@ -130,6 +130,13 @@ public sealed class IccProfile
     /// </summary>
     public bool HasAToB => Has(IccTagSignatures.AToB0) || Has(IccTagSignatures.AToB1) || Has(IccTagSignatures.AToB2);
 
+    /// <summary>
+    /// True iff the profile is a monochrome GRAY profile carrying a kTRC curve — the 1-channel
+    /// analog of the matrix/TRC family. Such profiles have neither an A2B LUT nor RGB colorants.
+    /// </summary>
+    public bool HasGrayTrc =>
+        Header.DataColorSpace == ColorSpaceSignatures.Gray && Has(IccTagSignatures.GrayTrc);
+
     // ---- Helpers --------------------------------------------------------
 
     private XyzNumber? FirstXyz(IccSignature sig)

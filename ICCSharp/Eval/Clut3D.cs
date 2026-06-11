@@ -44,6 +44,12 @@ public sealed class Clut3D : IClut
         _gB = clut.GridPoints[2];
         _output = clut.OutputChannels;
 
+        // Each axis needs ≥ 2 grid points: interpolation reads floor index + 1, and a single-sample
+        // axis would produce a negative neighbour offset. (ClutND enforces the same lower bound.)
+        if (_gR < 2 || _gG < 2 || _gB < 2)
+            throw new ArgumentException(
+                $"Clut3D requires ≥ 2 grid points per axis; got {_gR}×{_gG}×{_gB}.", nameof(clut));
+
         int expected = _gR * _gG * _gB * _output;
         if (clut.Values.Count != expected)
             throw new ArgumentException(

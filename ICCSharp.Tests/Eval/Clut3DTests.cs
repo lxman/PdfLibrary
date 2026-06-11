@@ -186,4 +186,13 @@ public class Clut3DTests
         byte[] grid = { 2, 2, 2 };
         Assert.Throws<ArgumentException>(() => new Clut3D(new LutClutData(grid, 2, new double[7], 1)));
     }
+
+    [Fact]
+    public void Grid_dimension_below_two_rejected()
+    {
+        // A 3-D grid with a single-sample axis can't be interpolated (floor index + 1 falls off the
+        // axis). The value count still matches (1×2×2×1 = 4), so only an explicit guard rejects it.
+        byte[] grid = { 1, 2, 2 };
+        Assert.Throws<ArgumentException>(() => new Clut3D(new LutClutData(grid, 2, new double[1 * 2 * 2 * 1], 1)));
+    }
 }
