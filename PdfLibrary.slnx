@@ -43,6 +43,7 @@
     <Project Path="ImageLibrary/LzwCodec.Tests/LzwCodec.Tests.csproj" />
     <Project Path="ImageLibrary/LzwCodec/LzwCodec.csproj" />
     <Project Path="ImageLibrary/PbmCodec/PbmCodec.csproj" />
+    <Project Path="ImageLibrary/PbmCodec.Tests/PbmCodec.Tests.csproj" />
     <Project Path="ImageLibrary/PngCodec.Tests/PngCodec.Tests.csproj" />
     <Project Path="ImageLibrary/PngCodec/PngCodec.csproj" />
     <Project Path="ImageLibrary/TgaCodec.Tests/TgaCodec.Tests.csproj" />

@@ -33,6 +33,11 @@ public static class PbmDecoder
         if (width <= 0 || height <= 0)
             throw new PbmException($"Invalid image dimensions: {width}x{height}");
 
+        // Cap the BGRA allocation (width*height*4) computed in long, so a hostile header can't
+        // overflow the int multiply into a small/negative allocation.
+        if ((long)width * height * 4 > (1L << 30))
+            throw new PbmException($"Image dimensions too large: {width}x{height}");
+
         if (format is PbmFormat.AsciiGraymap or PbmFormat.AsciiPixmap or PbmFormat.BinaryGraymap or PbmFormat.BinaryPixmap)
         {
             if (maxval is <= 0 or > 65535)
@@ -141,7 +146,7 @@ public static class PbmDecoder
     private static void DecodeBinaryGraymap(ReadOnlySpan<byte> raster, int width, int height, int maxval, byte[] pixels)
     {
         int bytesPerSample = maxval > 255 ? 2 : 1;
-        int required = width * height * bytesPerSample;
+        long required = (long)width * height * bytesPerSample;
         if (raster.Length < required)
             throw new PbmException($"Truncated P5 raster: need {required} bytes, have {raster.Length}");
 
@@ -183,7 +188,7 @@ public static class PbmDecoder
     private static void DecodeBinaryPixmap(ReadOnlySpan<byte> raster, int width, int height, int maxval, byte[] pixels)
     {
         int bytesPerSample = maxval > 255 ? 2 : 1;
-        int required = width * height * 3 * bytesPerSample;
+        long required = (long)width * height * 3 * bytesPerSample;
         if (raster.Length < required)
             throw new PbmException($"Truncated P6 raster: need {required} bytes, have {raster.Length}");
 
@@ -269,9 +274,11 @@ public static class PbmDecoder
             int value = 0;
             for (int i = start; i < _pos; i++)
             {
-                value = value * 10 + (_data[i] - '0');
-                if (value > int.MaxValue / 10)
+                int digit = _data[i] - '0';
+                // Guard BEFORE the multiply: checking afterwards lets the last digit overflow first.
+                if (value > (int.MaxValue - digit) / 10)
                     throw new PbmException("Netpbm header integer overflow");
+                value = value * 10 + digit;
             }
 
             // Consume the single trailing whitespace byte that terminates this token.
@@ -354,7 +361,12 @@ public static class PbmDecoder
 
             int value = 0;
             for (int i = start; i < _pos; i++)
-                value = value * 10 + (_data[i] - '0');
+            {
+                int digit = _data[i] - '0';
+                if (value > (int.MaxValue - digit) / 10)
+                    throw new PbmException("Netpbm raster integer overflow");
+                value = value * 10 + digit;
+            }
             return value;
         }
     }
