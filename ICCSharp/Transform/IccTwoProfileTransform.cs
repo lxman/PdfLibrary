@@ -42,6 +42,7 @@ public sealed class IccTwoProfileTransform : IColorTransform
     private readonly IccSignature _sourcePcs;
     private readonly IccSignature _destPcs;
     private readonly MatrixTransform? _bpc;
+    private readonly (double X, double Y, double Z)? _absoluteScale;
 
     public int InputChannels => _toPcs.InputChannels;
     public int OutputChannels => _fromPcs.OutputChannels;
@@ -72,6 +73,14 @@ public sealed class IccTwoProfileTransform : IColorTransform
                 source.BlackPoint ?? new XyzNumber(0, 0, 0),
                 destination.BlackPoint ?? new XyzNumber(0, 0, 0))
             : null;
+
+        // Absolute colorimetric reproduces the source's actual media white literally instead of
+        // normalising it to the destination's (which is what relative colorimetric does). Precompute
+        // the PCS scale srcMediaWhite / dstMediaWhite, applied per-pixel in Apply; other intents
+        // leave it null and behave as relative.
+        _absoluteScale = intent == RenderingIntent.AbsoluteColorimetric
+            ? ComputeAbsoluteScale(source, destination)
+            : null;
     }
 
     public void Apply(ReadOnlySpan<double> input, Span<double> output)
@@ -93,6 +102,13 @@ public sealed class IccTwoProfileTransform : IColorTransform
             case PcsBoundary.AbsoluteXyz:   srcOut.CopyTo(pcsXyz); break;
             case PcsBoundary.ModernEncoded: PcsCodec.Decode(srcOut, pcsXyz, _sourcePcs, legacyV2Lab: false); break;
             case PcsBoundary.LegacyEncoded: PcsCodec.Decode(srcOut, pcsXyz, _sourcePcs, legacyV2Lab: true); break;
+        }
+
+        if (_absoluteScale is { } scale)
+        {
+            pcsXyz[0] *= scale.X;
+            pcsXyz[1] *= scale.Y;
+            pcsXyz[2] *= scale.Z;
         }
 
         if (_bpc is not null)
@@ -177,5 +193,47 @@ public sealed class IccTwoProfileTransform : IColorTransform
             _ => IccTagSignatures.BToA0,
         };
         return p.GetTag(primary) ?? p.GetTag(IccTagSignatures.BToA0);
+    }
+
+    // ---- absolute colorimetric -----------------------------------------
+
+    /// <summary>Per-axis PCS scale that carries the source media white onto the destination's.</summary>
+    private static (double X, double Y, double Z) ComputeAbsoluteScale(IccProfile src, IccProfile dst)
+    {
+        XyzNumber s = MediaWhite(src);
+        XyzNumber d = MediaWhite(dst);
+        return (d.X == 0 ? 1.0 : s.X / d.X,
+                d.Y == 0 ? 1.0 : s.Y / d.Y,
+                d.Z == 0 ? 1.0 : s.Z / d.Z);
+    }
+
+    /// <summary>
+    /// The profile's actual media white. The 'chad' tag (when present) is the matrix that adapted
+    /// the real illuminant to the D50 PCS, so its inverse applied to D50 recovers the actual white.
+    /// Otherwise the 'wtpt' tag is the media white (v2 convention); failing that, D50.
+    /// </summary>
+    private static XyzNumber MediaWhite(IccProfile p)
+    {
+        S15Fixed16ArrayTagElement? chad =
+            p.GetTag<S15Fixed16ArrayTagElement>(IccTagSignatures.ChromaticAdaptation);
+        if (chad is not null && chad.Values.Count >= 9)
+        {
+            var m = new Matrix3x3(
+                chad.Values[0], chad.Values[1], chad.Values[2],
+                chad.Values[3], chad.Values[4], chad.Values[5],
+                chad.Values[6], chad.Values[7], chad.Values[8]);
+            try
+            {
+                (double x, double y, double z) = m.Inverse().Transform(
+                    StandardIlluminants.D50.X, StandardIlluminants.D50.Y, StandardIlluminants.D50.Z);
+                return new XyzNumber(x, y, z);
+            }
+            catch (InvalidOperationException)
+            {
+                // Singular chad — fall back to wtpt/D50.
+            }
+        }
+
+        return p.WhitePoint ?? StandardIlluminants.D50;
     }
 }

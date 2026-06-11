@@ -106,4 +106,35 @@ public class CmykProfileSmokeTests
         Assert.True(cmykBlack[3] > 0.5,
             $"Expected K > 0.5 for sRGB black; got K = {cmykBlack[3]:F3}, full = ({cmykBlack[0]:F3}, {cmykBlack[1]:F3}, {cmykBlack[2]:F3}, {cmykBlack[3]:F3})");
     }
+
+    [Fact]
+    public void Absolute_colorimetric_reproduces_swop_media_white_not_pure_white()
+    {
+        if (!File.Exists(CmykPath)) return;
+        IccProfile swop = IccProfile.Parse(File.ReadAllBytes(CmykPath));
+
+        IccTransform rel = IccTransform.Create(swop, BuiltInProfiles.Srgb,
+            new TransformOptions { Intent = RenderingIntent.RelativeColorimetric });
+        IccTransform abs = IccTransform.Create(swop, BuiltInProfiles.Srgb,
+            new TransformOptions { Intent = RenderingIntent.AbsoluteColorimetric });
+
+        // Paper white = no ink. Relative colorimetric normalises SWOP's media white to the
+        // destination's → ~pure white. Absolute reproduces SWOP's actual paper white, which is
+        // dimmer and slightly warm. (Before this fix, absolute silently equalled relative.)
+        double[] relWhite = rel.Apply(0, 0, 0, 0);
+        double[] absWhite = abs.Apply(0, 0, 0, 0);
+
+        Assert.True(relWhite[0] > 0.99 && relWhite[1] > 0.99,
+            $"relative paper white should be ~pure white; got ({relWhite[0]:F3}, {relWhite[1]:F3}, {relWhite[2]:F3})");
+
+        // Absolute differs from relative (not the silent-equals-relative bug) and is dimmer.
+        Assert.True(relWhite[1] - absWhite[1] > 0.01,
+            $"absolute paper white should differ from relative; abs={absWhite[1]:F3} rel={relWhite[1]:F3}");
+        Assert.True(absWhite[0] < 0.99,
+            $"absolute paper white should be below pure white; got R={absWhite[0]:F3}");
+
+        // ...and warm/neutral (red >= blue), since SWOP paper is not a neutral pure white.
+        Assert.True(absWhite[0] >= absWhite[2] - 1e-6,
+            $"absolute paper white should be warm/neutral; got ({absWhite[0]:F3}, {absWhite[1]:F3}, {absWhite[2]:F3})");
+    }
 }
