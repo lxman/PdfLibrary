@@ -63,43 +63,46 @@ internal class PdfTrailerParser(Stream stream)
         if (!stream.CanSeek)
             throw new ArgumentException("Stream must be seekable", nameof(stream));
 
-        // Read the last 1024 bytes (should be enough to find startxref)
-        const int searchSize = 1024;
+        // startxref is normally in the last KiB, but some files pad or append junk after %%EOF (e.g.
+        // padded to a fixed block size). Grow the search window from the end until the keyword is
+        // found or the whole file has been scanned, matching the tolerance of mainstream readers.
         long fileSize = stream.Length;
-        long searchStart = Math.Max(0, fileSize - searchSize);
-
-        stream.Position = searchStart;
-        var buffer = new byte[Math.Min(searchSize, fileSize)];
-        int bytesRead = stream.Read(buffer, 0, buffer.Length);
-
-        // Convert to string and search for "startxref"
-        string text = Encoding.ASCII.GetString(buffer, 0, bytesRead);
-        int startxrefIndex = text.LastIndexOf("startxref", StringComparison.Ordinal);
-
-        if (startxrefIndex == -1)
-            throw new PdfParseException("Could not find 'startxref' keyword at end of PDF file");
-
-        // Find the number after "startxref"
-        int numberStart = startxrefIndex + "startxref".Length;
-
-        // Skip whitespace
-        while (numberStart < text.Length && char.IsWhiteSpace(text[numberStart]))
-            numberStart++;
-
-        // Extract number
-        var sb = new StringBuilder();
-        while (numberStart < text.Length && char.IsDigit(text[numberStart]))
+        for (var window = 1024; ; window *= 8)
         {
-            sb.Append(text[numberStart]);
-            numberStart++;
+            long searchStart = Math.Max(0, fileSize - window);
+            var len = (int)(fileSize - searchStart);
+            stream.Position = searchStart;
+            var buffer = new byte[len];
+            stream.ReadExactly(buffer, 0, len);
+
+            string text = Encoding.ASCII.GetString(buffer, 0, len);
+            int startxrefIndex = text.LastIndexOf("startxref", StringComparison.Ordinal);
+
+            if (startxrefIndex != -1)
+            {
+                // Find the number after "startxref"
+                int numberStart = startxrefIndex + "startxref".Length;
+                while (numberStart < text.Length && char.IsWhiteSpace(text[numberStart]))
+                    numberStart++;
+
+                var sb = new StringBuilder();
+                while (numberStart < text.Length && char.IsDigit(text[numberStart]))
+                {
+                    sb.Append(text[numberStart]);
+                    numberStart++;
+                }
+
+                if (sb.Length == 0)
+                    throw new PdfParseException("Could not parse startxref value");
+
+                return !long.TryParse(sb.ToString(), out long startxref)
+                    ? throw new PdfParseException($"Invalid startxref value: {sb}")
+                    : startxref;
+            }
+
+            if (searchStart == 0)
+                throw new PdfParseException("Could not find 'startxref' keyword in PDF file");
         }
-
-        if (sb.Length == 0)
-            throw new PdfParseException("Could not parse startxref value");
-
-        return !long.TryParse(sb.ToString(), out long startxref)
-            ? throw new PdfParseException($"Invalid startxref value: {sb}")
-            : startxref;
     }
 
     /// <summary>
