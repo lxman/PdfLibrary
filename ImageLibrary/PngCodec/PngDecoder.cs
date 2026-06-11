@@ -91,9 +91,13 @@ public static class PngDecoder
         if (ihdr.Width == 0 || ihdr.Height == 0)
             throw new PngException("Invalid image dimensions");
 
-        // Validate dimensions won't cause overflow (limit to 32K x 32K)
-        if (ihdr.Width > 32768 || ihdr.Height > 32768)
+        // Validate dimensions before allocating the BGRA buffer. The previous `> 32768` check let
+        // 32768x32768 through, where width*height*4 == 2^32 overflows int and `new byte[...]` wraps
+        // to a zero-length buffer. Bound each axis, then cap the byte count computed in long.
+        if (ihdr.Width > 65535 || ihdr.Height > 65535)
             throw new PngException($"Image dimensions too large: {ihdr.Width}x{ihdr.Height}");
+        if ((long)ihdr.Width * ihdr.Height * 4 > (1L << 30)) // 1 GiB BGRA (~268 MP)
+            throw new PngException($"Image too large to decode: {ihdr.Width}x{ihdr.Height}");
 
         if (ihdr.CompressionMethod != 0)
             throw new PngException($"Unsupported compression method: {ihdr.CompressionMethod}");
@@ -157,7 +161,8 @@ public static class PngDecoder
         string type = Encoding.ASCII.GetString(data, offset + 4, 4);
         int dataOffset = offset + 8;
 
-        if (dataOffset + length + 4 > data.Length)
+        // length is uint; evaluate in long so a hostile chunk length can't wrap the bounds check.
+        if ((long)dataOffset + length + 4 > data.Length)
             throw new PngException($"Chunk {type} extends past end of data");
 
         uint crc = ReadUInt32BE(data, (int)(dataOffset + length));
@@ -461,26 +466,30 @@ public static class PngDecoder
 
         for (var x = 0; x < width; x++)
         {
-            int gray;
+            // sample is the value at the image's native bit depth (used for the tRNS comparison);
+            // gray8 is the 8-bit value written to the BGRA buffer. The tRNS key is a native-depth
+            // value, so comparing the scaled/truncated 8-bit value (the old code) never matched for
+            // 16-bit and was wrong for sub-byte depths.
+            int sample;
+            byte gray8;
             if (bitDepth == 16)
             {
-                gray = src[srcByte++];
-                int low = src[srcByte++];
-                // Use high byte only for 8-bit output
+                int hi = src[srcByte++];
+                int lo = src[srcByte++];
+                sample = (hi << 8) | lo;
+                gray8 = (byte)hi; // high byte == sample >> 8
             }
             else if (bitDepth == 8)
             {
-                gray = src[srcByte++];
+                sample = src[srcByte++];
+                gray8 = (byte)sample;
             }
             else
             {
-                // Sub-byte bit depths
                 int shift = 8 - bitDepth - srcBit;
                 int mask = (1 << bitDepth) - 1;
-                gray = (src[srcByte] >> shift) & mask;
-
-                // Scale to 0-255
-                gray = gray * 255 / ((1 << bitDepth) - 1);
+                sample = (src[srcByte] >> shift) & mask;
+                gray8 = (byte)(sample * 255 / mask); // scale to 0-255 for display
 
                 srcBit += bitDepth;
                 if (srcBit >= 8)
@@ -490,12 +499,12 @@ public static class PngDecoder
                 }
             }
 
-            byte alpha = transparentValue >= 0 && gray == transparentValue ? (byte)0 : (byte)255;
+            byte alpha = transparentValue >= 0 && sample == transparentValue ? (byte)0 : (byte)255;
 
-            dest[destOffset++] = (byte)gray; // B
-            dest[destOffset++] = (byte)gray; // G
-            dest[destOffset++] = (byte)gray; // R
-            dest[destOffset++] = alpha;      // A
+            dest[destOffset++] = gray8; // B
+            dest[destOffset++] = gray8; // G
+            dest[destOffset++] = gray8; // R
+            dest[destOffset++] = alpha; // A
         }
     }
 
@@ -513,30 +522,31 @@ public static class PngDecoder
         var srcOffset = 0;
         for (var x = 0; x < width; x++)
         {
-            byte r, g, b;
+            // rs/gs/bs are native-depth samples (for the tRNS comparison); r8/g8/b8 are the 8-bit
+            // output. The tRNS key is at native depth, so a 16-bit image must compare the full
+            // 16-bit samples — comparing the truncated high byte (the old code) never matched.
+            int rs, gs, bs;
+            byte r8, g8, b8;
             if (bitDepth == 16)
             {
-                r = src[srcOffset++];
-                srcOffset++; // Skip low byte
-                g = src[srcOffset++];
-                srcOffset++;
-                b = src[srcOffset++];
-                srcOffset++;
+                rs = (src[srcOffset] << 8) | src[srcOffset + 1]; r8 = src[srcOffset]; srcOffset += 2;
+                gs = (src[srcOffset] << 8) | src[srcOffset + 1]; g8 = src[srcOffset]; srcOffset += 2;
+                bs = (src[srcOffset] << 8) | src[srcOffset + 1]; b8 = src[srcOffset]; srcOffset += 2;
             }
             else
             {
-                r = src[srcOffset++];
-                g = src[srcOffset++];
-                b = src[srcOffset++];
+                rs = r8 = src[srcOffset++];
+                gs = g8 = src[srcOffset++];
+                bs = b8 = src[srcOffset++];
             }
 
             byte alpha = 255;
-            if (transR >= 0 && r == transR && g == transG && b == transB)
+            if (transR >= 0 && rs == transR && gs == transG && bs == transB)
                 alpha = 0;
 
-            dest[destOffset++] = b;
-            dest[destOffset++] = g;
-            dest[destOffset++] = r;
+            dest[destOffset++] = b8;
+            dest[destOffset++] = g8;
+            dest[destOffset++] = r8;
             dest[destOffset++] = alpha;
         }
     }

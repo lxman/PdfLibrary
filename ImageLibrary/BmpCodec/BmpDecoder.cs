@@ -45,9 +45,13 @@ namespace BmpCodec
                 if (infoHeader.AbsoluteHeight == 0)
                     throw new BmpException("Invalid height: 0");
 
-                // Validate dimensions won't cause overflow (limit to 32K x 32K)
-                if (infoHeader.Width > 32768 || infoHeader.AbsoluteHeight > 32768)
+                // Validate dimensions before allocating the BGRA buffer. A plain `> 32768` check let
+                // 32768x32768 through, where width*height*4 == 2^32 overflows int and the allocation
+                // wraps to a zero-length buffer. Bound each axis, then cap the byte count in long.
+                if (infoHeader.Width > 65535 || infoHeader.AbsoluteHeight > 65535)
                     throw new BmpException($"Image dimensions too large: {infoHeader.Width}x{infoHeader.AbsoluteHeight}");
+                if ((long)infoHeader.Width * infoHeader.AbsoluteHeight * 4 > (1L << 30)) // 1 GiB BGRA
+                    throw new BmpException($"Image too large to decode: {infoHeader.Width}x{infoHeader.AbsoluteHeight}");
 
                 // Validate pixel data offset
                 if (fileHeader.PixelDataOffset > data.Length)
@@ -73,10 +77,27 @@ namespace BmpCodec
                     palette = ReadPalette(data.Slice(paletteOffset), paletteSize);
                 }
 
+                // For BITFIELDS / ALPHABITFIELDS, read the channel masks. They live at the same file
+                // offset (info-header start + 40 = 54) whether they trail a 40-byte BITMAPINFOHEADER
+                // or are embedded in a BITMAPV4/V5HEADER.
+                uint maskR = 0, maskG = 0, maskB = 0, maskA = 0;
+                if (infoHeader.Compression is BmpCompression.BitFields or BmpCompression.AlphaBitFields)
+                {
+                    int maskOffset = BitmapFileHeader.Size + 40;
+                    int maskCount = infoHeader.Compression == BmpCompression.AlphaBitFields ? 4 : 3;
+                    if (maskOffset + maskCount * 4 > data.Length)
+                        throw new BmpException("BITFIELDS masks extend beyond end of file");
+                    maskR = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(maskOffset));
+                    maskG = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(maskOffset + 4));
+                    maskB = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(maskOffset + 8));
+                    if (maskCount == 4)
+                        maskA = BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(maskOffset + 12));
+                }
+
                 // Read pixel data
                 ReadOnlySpan<byte> pixelData = data.Slice((int)fileHeader.PixelDataOffset);
 
-                return DecodePixels(infoHeader, palette, pixelData);
+                return DecodePixels(infoHeader, palette, pixelData, maskR, maskG, maskB, maskA);
             }
             catch (BmpException)
             {
@@ -168,7 +189,8 @@ namespace BmpCodec
             return palette;
         }
 
-        private static BmpImage DecodePixels(BitmapInfoHeader header, RgbQuad[]? palette, ReadOnlySpan<byte> pixelData)
+        private static BmpImage DecodePixels(BitmapInfoHeader header, RgbQuad[]? palette, ReadOnlySpan<byte> pixelData,
+            uint maskR, uint maskG, uint maskB, uint maskA)
         {
             int width = header.Width;
             int height = header.AbsoluteHeight;
@@ -184,7 +206,8 @@ namespace BmpCodec
                     break;
 
                 case BmpCompression.BitFields:
-                    DecodeBitFields(header, pixelData, output, bottomUp);
+                case BmpCompression.AlphaBitFields:
+                    DecodeBitFields(header, pixelData, output, bottomUp, maskR, maskG, maskB, maskA);
                     break;
 
                 case BmpCompression.Rle8:
@@ -349,11 +372,77 @@ namespace BmpCodec
             }
         }
 
-        private static void DecodeBitFields(BitmapInfoHeader header, ReadOnlySpan<byte> pixelData, byte[] output, bool bottomUp)
+        private static void DecodeBitFields(BitmapInfoHeader header, ReadOnlySpan<byte> pixelData, byte[] output, bool bottomUp,
+            uint maskR, uint maskG, uint maskB, uint maskA)
         {
-            // For simplicity, assume standard masks for 16-bit (5-6-5) or 32-bit (8-8-8-8)
-            // A full implementation would read the masks from the header
-            DecodeRgb(header, null, pixelData, output, bottomUp);
+            int width = header.Width;
+            int height = header.AbsoluteHeight;
+            int stride = header.Stride;
+            int bpp = header.BitsPerPixel;
+            if (bpp != 16 && bpp != 32)
+                throw new BmpException($"BITFIELDS supports 16 or 32 bits per pixel, not {bpp}");
+
+            // Some encoders set BITFIELDS but leave the masks zero; fall back to the conventional
+            // layouts (5-6-5 for 16-bit, 8-8-8 for 32-bit).
+            if (maskR == 0 && maskG == 0 && maskB == 0)
+            {
+                if (bpp == 16) { maskR = 0xF800; maskG = 0x07E0; maskB = 0x001F; }
+                else { maskR = 0x00FF0000; maskG = 0x0000FF00; maskB = 0x000000FF; }
+            }
+
+            int rShift = TrailingZeros(maskR), rBits = PopCount(maskR);
+            int gShift = TrailingZeros(maskG), gBits = PopCount(maskG);
+            int bShift = TrailingZeros(maskB), bBits = PopCount(maskB);
+            int aShift = TrailingZeros(maskA), aBits = PopCount(maskA);
+            int bytesPerPixel = bpp / 8;
+
+            for (var srcY = 0; srcY < height; srcY++)
+            {
+                int dstY = bottomUp ? height - 1 - srcY : srcY;
+                int srcRowOffset = srcY * stride;
+                int dstRowOffset = dstY * width * 4;
+                for (var x = 0; x < width; x++)
+                {
+                    int srcOffset = srcRowOffset + x * bytesPerPixel;
+                    if (srcOffset + bytesPerPixel > pixelData.Length) return; // tolerate truncation
+
+                    uint pixel = bpp == 16
+                        ? BinaryPrimitives.ReadUInt16LittleEndian(pixelData.Slice(srcOffset))
+                        : BinaryPrimitives.ReadUInt32LittleEndian(pixelData.Slice(srcOffset));
+
+                    int dstOffset = dstRowOffset + x * 4;
+                    output[dstOffset] = ScaleChannel(pixel, maskB, bShift, bBits);
+                    output[dstOffset + 1] = ScaleChannel(pixel, maskG, gShift, gBits);
+                    output[dstOffset + 2] = ScaleChannel(pixel, maskR, rShift, rBits);
+                    output[dstOffset + 3] = maskA != 0 ? ScaleChannel(pixel, maskA, aShift, aBits) : (byte)255;
+                }
+            }
+        }
+
+        // Extracts a channel masked out of a packed pixel and scales it to 0-255.
+        private static byte ScaleChannel(uint pixel, uint mask, int shift, int bits)
+        {
+            if (bits == 0) return 0;
+            uint raw = (pixel & mask) >> shift;
+            int max = (1 << bits) - 1;
+            return (byte)(raw * 255 / max);
+        }
+
+        // netstandard2.1 has no System.Numerics.BitOperations, so these are spelled out. Masks are
+        // at most 32 bits, so the loops are trivially bounded.
+        private static int TrailingZeros(uint v)
+        {
+            if (v == 0) return 0;
+            var n = 0;
+            while ((v & 1) == 0) { v >>= 1; n++; }
+            return n;
+        }
+
+        private static int PopCount(uint v)
+        {
+            var n = 0;
+            while (v != 0) { n += (int)(v & 1); v >>= 1; }
+            return n;
         }
 
         private static void DecodeRle8(BitmapInfoHeader header, RgbQuad[] palette, ReadOnlySpan<byte> data, byte[] output, bool bottomUp)
