@@ -104,6 +104,17 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
                     }
                     break;
 
+                // Black-point compensation (UseBlackPtComp) - PDF 2.0, ISO 32000-2
+                case "UseBlackPtComp":
+                    if (value is PdfName bpc)
+                    {
+                        // /ON enables, /OFF disables; /Default leaves the current (off-by-default) behaviour.
+                        if (bpc.Value == "ON") currentState.UseBlackPointCompensation = true;
+                        else if (bpc.Value == "OFF") currentState.UseBlackPointCompensation = false;
+                        PdfLogger.Log(LogCategory.Graphics, $"  UseBlackPtComp = {bpc.Value}");
+                    }
+                    break;
+
                 // Overprint for stroking (OP)
                 case "OP":
                     if (value is PdfBoolean op)

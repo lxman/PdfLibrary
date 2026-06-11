@@ -143,6 +143,13 @@ public class PdfGraphicsState
     /// <summary>Overprint mode (OPM) - 0 or 1</summary>
     public int OverprintMode { get; set; }
 
+    /// <summary>
+    /// Black-point compensation flag (PDF 2.0 /UseBlackPtComp, ISO 32000-2 Table 57). When true,
+    /// ICC colour conversions map the source profile's darkest reproducible black to the
+    /// destination's, so dark CMYK shadows render full rather than washed-out grey. Default false.
+    /// </summary>
+    public bool UseBlackPointCompensation { get; set; }
+
     /// <summary>Smoothness tolerance (SM)</summary>
     public double Smoothness { get; set; }
 

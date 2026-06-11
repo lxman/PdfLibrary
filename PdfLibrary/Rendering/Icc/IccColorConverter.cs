@@ -22,8 +22,9 @@ namespace PdfLibrary.Rendering.Icc;
 /// </summary>
 internal sealed class IccColorConverter
 {
-    // Keyed by the PdfStream instance — same stream returns the same transform without re-parsing.
-    private readonly Dictionary<PdfStream, IccTransform?> _cache = new();
+    // Keyed by (profile stream, black-point-compensation) — same stream + BPC flag reuses the
+    // parsed transform; the ON and OFF variants are cached separately.
+    private readonly Dictionary<(PdfStream Stream, bool Bpc), IccTransform?> _cache = new();
     private readonly PdfDocument? _document;
 
     public IccColorConverter(PdfDocument? document = null)
@@ -37,12 +38,12 @@ internal sealed class IccColorConverter
     /// conversion cannot be performed; the caller should then fall back to the profile's
     /// <c>/Alternate</c> color space.
     /// </summary>
-    public double[]? TryConvertToSrgb(PdfStream iccStream, IReadOnlyList<double> sourceColor)
+    public double[]? TryConvertToSrgb(PdfStream iccStream, IReadOnlyList<double> sourceColor, bool blackPointCompensation = false)
     {
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
         if (sourceColor is null) throw new ArgumentNullException(nameof(sourceColor));
 
-        IccTransform? transform = GetOrCreate(iccStream);
+        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation);
         if (transform is null) return null;
 
         if (sourceColor.Count != transform.InputChannels)
@@ -65,13 +66,13 @@ internal sealed class IccColorConverter
     /// palettes and full image pixel buffers. Returns <see langword="null"/> on failure; the caller
     /// should fall back to a device interpretation of the original bytes.
     /// </summary>
-    public byte[]? TryConvertInterleavedToSrgb(PdfStream iccStream, byte[] data, int sourceChannels)
+    public byte[]? TryConvertInterleavedToSrgb(PdfStream iccStream, byte[] data, int sourceChannels, bool blackPointCompensation = false)
     {
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
         if (data is null) throw new ArgumentNullException(nameof(data));
         if (sourceChannels < 1) throw new ArgumentOutOfRangeException(nameof(sourceChannels));
 
-        IccTransform? transform = GetOrCreate(iccStream);
+        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation);
         if (transform is null) return null;
 
         if (transform.InputChannels != sourceChannels)
@@ -134,9 +135,10 @@ internal sealed class IccColorConverter
         rgb[dstOff + 2] = ToByte(output[2]);
     }
 
-    private IccTransform? GetOrCreate(PdfStream iccStream)
+    private IccTransform? GetOrCreate(PdfStream iccStream, bool blackPointCompensation)
     {
-        if (_cache.TryGetValue(iccStream, out IccTransform? cached))
+        (PdfStream iccStream, bool blackPointCompensation) key = (iccStream, blackPointCompensation);
+        if (_cache.TryGetValue(key, out IccTransform? cached))
             return cached;
 
         IccTransform? transform = null;
@@ -146,16 +148,17 @@ internal sealed class IccColorConverter
             // properly decrypted before Flate decompression.
             byte[] profileBytes = iccStream.GetDecodedData(_document?.Decryptor);
             IccProfile profile = IccProfile.Parse(profileBytes);
-            transform = IccTransform.Create(profile, BuiltInProfiles.Srgb);
+            transform = IccTransform.Create(profile, BuiltInProfiles.Srgb,
+                new TransformOptions { BlackPointCompensation = blackPointCompensation });
             PdfLogger.Log(LogCategory.Graphics,
-                $"ICC OK: parsed {profile.Header.Class} profile, {transform.InputChannels} → 3 channels.");
+                $"ICC OK: parsed {profile.Header.Class} profile, {transform.InputChannels} → 3 channels (BPC={blackPointCompensation}).");
         }
         catch (Exception ex)
         {
             PdfLogger.Log(LogCategory.Graphics, $"ICC FAIL: {ex.GetType().Name}: {ex.Message}");
         }
 
-        _cache[iccStream] = transform;
+        _cache[key] = transform;
         return transform;
     }
 

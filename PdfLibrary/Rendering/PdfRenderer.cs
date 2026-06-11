@@ -870,7 +870,7 @@ public class PdfRenderer : PdfContentProcessor
         var beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
 
         PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
-        _colorSpaceResolver.ResolveColorSpace(ref fillCs, ref fillColor, colorSpaces);
+        _colorSpaceResolver.ResolveColorSpace(ref fillCs, ref fillColor, colorSpaces, CurrentState.UseBlackPointCompensation);
 
         string afterFillCs = fillCs ?? "null";
         string afterFillColor = fillColor is not null ? $"[{string.Join(", ", fillColor.Select(c => c.ToString("F3")))}]" : "null";
@@ -886,7 +886,7 @@ public class PdfRenderer : PdfContentProcessor
 
         string? strokeCs = CurrentState.StrokeColorSpace;
         List<double>? strokeColor = [..CurrentState.StrokeColor]; // Copy to avoid modifying original
-        _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces);
+        _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces, CurrentState.UseBlackPointCompensation);
         CurrentState.ResolvedStrokeColorSpace = strokeCs ?? string.Empty;
         CurrentState.ResolvedStrokeColor = strokeColor ?? [];
     }

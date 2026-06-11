@@ -82,4 +82,24 @@ public class IccCmykImageTests
         for (int i = 0; i < parallel.Length; i++)
             Assert.Equal(scalar[i % scalar.Length], parallel[i]);
     }
+
+    [Fact]
+    public void Black_point_compensation_darkens_the_raised_cmyk_black()
+    {
+        if (!File.Exists(SwopPath)) return;
+        var iccStream = new PdfStream(File.ReadAllBytes(SwopPath));
+        var conv = new IccColorConverter();
+
+        // 100% K. SWOP's darkest black sits at PCS Y ≈ 0.043 (a raised black), so without BPC it
+        // renders as a dark grey; with BPC it maps to the destination's true black → strictly darker.
+        byte[] black = [0, 0, 0, 255];
+        byte[]? off = conv.TryConvertInterleavedToSrgb(iccStream, black, 4, blackPointCompensation: false);
+        byte[]? on = conv.TryConvertInterleavedToSrgb(iccStream, black, 4, blackPointCompensation: true);
+
+        Assert.NotNull(off);
+        Assert.NotNull(on);
+        int sumOff = off![0] + off[1] + off[2];
+        int sumOn = on![0] + on[1] + on[2];
+        Assert.True(sumOn < sumOff, $"BPC ON should darken the raised SWOP black; off-sum={sumOff}, on-sum={sumOn}");
+    }
 }
