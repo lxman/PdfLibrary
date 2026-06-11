@@ -162,7 +162,6 @@ public class TextBasicsTestDocument : ITestDocument
             y -= 20;
 
             // Draw a grid to show positioning
-            double gridX = leftMargin;
             double gridY = y - 50;
             double gridSize = 16;
             var gridCols = 10;
@@ -172,15 +171,15 @@ public class TextBasicsTestDocument : ITestDocument
             for (var row = 0; row <= gridRows; row++)
             {
                 page.AddPath()
-                    .MoveTo(gridX, gridY + row * gridSize)
-                    .LineTo(gridX + gridCols * gridSize, gridY + row * gridSize)
+                    .MoveTo(leftMargin, gridY + row * gridSize)
+                    .LineTo(leftMargin + gridCols * gridSize, gridY + row * gridSize)
                     .Stroke(PdfColor.FromGray(0.85), 0.5);
             }
             for (var col = 0; col <= gridCols; col++)
             {
                 page.AddPath()
-                    .MoveTo(gridX + col * gridSize, gridY)
-                    .LineTo(gridX + col * gridSize, gridY + gridRows * gridSize)
+                    .MoveTo(leftMargin + col * gridSize, gridY)
+                    .LineTo(leftMargin + col * gridSize, gridY + gridRows * gridSize)
                     .Stroke(PdfColor.FromGray(0.85), 0.5);
             }
 
@@ -188,12 +187,12 @@ public class TextBasicsTestDocument : ITestDocument
             var letters = "ABCDEFGHIJ";
             for (var i = 0; i < letters.Length; i++)
             {
-                page.AddText(letters[i].ToString(), gridX + i * gridSize, gridY + 2 * gridSize)
+                page.AddText(letters[i].ToString(), leftMargin + i * gridSize, gridY + 2 * gridSize)
                     .Font("Helvetica")
                     .Color(PdfColor.Black);
             }
 
-            page.AddText("Grid cell = 16pt, letters at intersections", gridX, gridY - 12, "Helvetica", 8);
+            page.AddText("Grid cell = 16pt, letters at intersections", leftMargin, gridY - 12, "Helvetica", 8);
         });
 
         doc.Save(outputPath);

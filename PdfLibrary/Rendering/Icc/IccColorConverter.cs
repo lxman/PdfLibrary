@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using ICCSharp;
 using ICCSharp.Profile;
 using Logging;
-using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
 
@@ -91,7 +90,6 @@ internal sealed class IccColorConverter
         int sampleCount = data.Length / sourceChannels;
         byte[] rgb = new byte[sampleCount * 3];
         int channels = sourceChannels;
-        IccTransform t = transform;
 
         // Below this, thread-scheduling overhead outweighs the work, so palettes and tiny images
         // stay scalar; above it (real images) the conversion fans out across cores. The transform
@@ -105,7 +103,7 @@ internal sealed class IccColorConverter
                 Span<double> input = stackalloc double[channels];
                 Span<double> output = stackalloc double[3];
                 for (int i = range.Item1; i < range.Item2; i++)
-                    ConvertSample(t, data, rgb, i, channels, input, output);
+                    ConvertSample(transform, data, rgb, i, channels, input, output);
             });
         }
         else
@@ -113,7 +111,7 @@ internal sealed class IccColorConverter
             Span<double> input = stackalloc double[channels];
             Span<double> output = stackalloc double[3];
             for (int i = 0; i < sampleCount; i++)
-                ConvertSample(t, data, rgb, i, channels, input, output);
+                ConvertSample(transform, data, rgb, i, channels, input, output);
         }
         return rgb;
     }

@@ -1,8 +1,5 @@
-using ICCSharp;
-using ICCSharp.IO;
 using ICCSharp.Profile;
 using ICCSharp.Tags;
-using ICCSharp.Transform;
 
 namespace ICCSharp.Tests.Transform;
 

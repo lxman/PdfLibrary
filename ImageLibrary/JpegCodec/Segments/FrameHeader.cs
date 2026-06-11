@@ -68,6 +68,27 @@ internal sealed class FrameHeader
                 quantizationTableId: tq);
         }
 
+        // Validate dimensions and sampling factors against an untrusted SOF before any
+        // downstream raster allocation. Sampling factors are 4-bit nibbles from the wire;
+        // T.81 §A.1.1 limits them to 1..4, so 0 (divide-by-zero in MCU sizing) or 5..15
+        // (an oversized MCU grid) are malformed. The raster-size cap rejects a hostile SOF
+        // whose width*height*components would force a multi-gigabyte allocation.
+        if (width == 0 || height == 0)
+            throw new InvalidOperationException($"SOF declares a zero dimension ({width}x{height}).");
+
+        foreach (FrameComponent fc in components)
+        {
+            if (fc.HorizontalSampling is < 1 or > 4 || fc.VerticalSampling is < 1 or > 4)
+                throw new InvalidOperationException(
+                    $"SOF sampling factors out of range (H={fc.HorizontalSampling}, V={fc.VerticalSampling}); must be 1..4.");
+        }
+
+        const long MaxRasterBytes = 512L << 20; // 512 MiB of 8-bit samples (~178 MP RGB)
+        long rasterBytes = (long)width * height * nf;
+        if (rasterBytes > MaxRasterBytes)
+            throw new InvalidOperationException(
+                $"JPEG raster {width}x{height}x{nf} ({rasterBytes} bytes) exceeds the {MaxRasterBytes}-byte limit.");
+
         return new FrameHeader(marker, precision, height, width, nf, components);
     }
 }

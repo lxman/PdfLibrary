@@ -108,10 +108,8 @@ public sealed class JpegStreamEncoder
             {
                 for (var c = 0; c < nc; c++)
                 {
-                    int blockX = mx;
-                    int blockY = my;
                     Span<short> block = stackalloc short[64];
-                    LoadBlockFromInterleaved(componentData, width, height, nc, c, blockX * 8, blockY * 8, block);
+                    LoadBlockFromInterleaved(componentData, width, height, nc, c, mx * 8, my * 8, block);
 
                     HuffmanEncoder dcEnc = c == 0 ? lumaDcEnc : chromaDcEnc;
                     HuffmanEncoder acEnc = c == 0 ? lumaAcEnc : chromaAcEnc;

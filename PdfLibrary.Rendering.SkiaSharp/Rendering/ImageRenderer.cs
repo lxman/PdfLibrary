@@ -244,8 +244,7 @@ internal class ImageRenderer
 
             // Only treat as having alpha if there's an actual SMask stream
             // Mask entries are for color key masking, not soft masks
-            bool hasSMask = hasActualSMask;
-            if (hasSMask)
+            if (hasActualSMask)
             {
                 // Extract SMask from the image stream
                 if (stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj))
@@ -289,356 +288,33 @@ internal class ImageRenderer
             try
             {
 
-            // Diagnostic: log actual values for image creation
-            double[]? imgDecodeArray = image.DecodeArray;
-            string decodeStr = imgDecodeArray != null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
-            int debugExpectedRgb = width * height * 3;
-            PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, ExpectedRGB={debugExpectedRgb}, Decode={decodeStr}");
+                // Diagnostic: log actual values for image creation
+                double[]? imgDecodeArray = image.DecodeArray;
+                string decodeStr = imgDecodeArray != null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
+                int debugExpectedRgb = width * height * 3;
+                PdfLogger.Log(LogCategory.Images, $"CreateBitmapFromPdfImage: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, ExpectedRGB={debugExpectedRgb}, Decode={decodeStr}");
 
-            // Handle image masks (1-bit stencil images)
-            if (image.IsImageMask && imageMaskColor.HasValue)
-            {
-                // Image masks are 1-bit images where painted pixels use the fill color
-                // Use Premul alpha for better compositing when the mask is scaled
-                bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
-                SKColor color = imageMaskColor.Value;
-
-                // Check for Decode array - determines how mask bits map to paint/transparent
-                // Default [0 1]: sample 0 → paint, sample 1 → transparent
-                // Inverted [1 0]: sample 0 → transparent, sample 1 → paint
-                double[]? decodeArray = image.DecodeArray;
-                bool invertMask = decodeArray is { Length: >= 2 } && decodeArray[0] > decodeArray[1];
-
-                // Each row is byte-aligned (CCITT output is row-padded, not packed)
-                int bytesPerRow = (width + 7) / 8;
-
-                // Use direct pixel buffer for performance - SetPixel is very slow for large images
-                int pixelBufferSize = width * height * 4;
-                byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-                byte colorR = color.Red, colorG = color.Green, colorB = color.Blue, colorA = color.Alpha;
-                var paintedPixels = 0;
-
-                for (var y = 0; y < height; y++)
+                // Handle image masks (1-bit stencil images)
+                if (image.IsImageMask && imageMaskColor.HasValue)
                 {
-                    int rowStart = y * bytesPerRow;
-                    int bufferRowStart = y * width * 4;
+                    // Image masks are 1-bit images where painted pixels use the fill color
+                    // Use Premul alpha for better compositing when the mask is scaled
+                    bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Premul);
+                    SKColor color = imageMaskColor.Value;
 
-                    for (var x = 0; x < width; x++)
-                    {
-                        // Calculate byte and bit position (row-aligned data, MSB first)
-                        int byteIndex = rowStart + (x >> 3);  // x / 8
-                        int bitOffset = 7 - (x & 7);  // 7 - (x % 8), MSB first within each byte
+                    // Check for Decode array - determines how mask bits map to paint/transparent
+                    // Default [0 1]: sample 0 → paint, sample 1 → transparent
+                    // Inverted [1 0]: sample 0 → transparent, sample 1 → paint
+                    double[]? decodeArray = image.DecodeArray;
+                    bool invertMask = decodeArray is { Length: >= 2 } && decodeArray[0] > decodeArray[1];
 
-                        int bufferOffset = bufferRowStart + (x << 2);  // x * 4
-
-                        if (byteIndex >= imageData.Length)
-                        {
-                            // Transparent pixel (RGBA = 0,0,0,0)
-                            pixelBuffer[bufferOffset] = 0;
-                            pixelBuffer[bufferOffset + 1] = 0;
-                            pixelBuffer[bufferOffset + 2] = 0;
-                            pixelBuffer[bufferOffset + 3] = 0;
-                            continue;
-                        }
-
-                        // Get the mask bit
-                        // With CCITT default (BlackIs1=false): 0=black (paint), 1=white (transparent)
-                        // With Decode default [0 1]: sample 0 → paint, sample 1 → transparent
-                        // So with defaults: bit=0 → paint, bit=1 → transparent
-                        bool bitIsSet = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
-                        // Default: paint when bit is 0 (not set), i.e., !bitIsSet
-                        // With invertMask: paint when bit is 1 (set), i.e., bitIsSet
-                        bool paint = invertMask ? bitIsSet : !bitIsSet;
-
-                        if (paint)
-                        {
-                            pixelBuffer[bufferOffset] = colorR;
-                            pixelBuffer[bufferOffset + 1] = colorG;
-                            pixelBuffer[bufferOffset + 2] = colorB;
-                            pixelBuffer[bufferOffset + 3] = colorA;
-                            paintedPixels++;
-                        }
-                        else
-                        {
-                            // Transparent pixel (RGBA = 0,0,0,0)
-                            pixelBuffer[bufferOffset] = 0;
-                            pixelBuffer[bufferOffset + 1] = 0;
-                            pixelBuffer[bufferOffset + 2] = 0;
-                            pixelBuffer[bufferOffset + 3] = 0;
-                        }
-                    }
-                }
-
-                // Copy pixel buffer to bitmap using Marshal.Copy for performance
-                IntPtr bitmapPixels = bitmap.GetPixels();
-                if (bitmapPixels == IntPtr.Zero)
-                {
-                    ArrayPool<byte>.Shared.Return(pixelBuffer);
-                    return bitmap;
-                }
-                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                bitmap.NotifyPixelsChanged();
-                ArrayPool<byte>.Shared.Return(pixelBuffer);
-
-                return bitmap;
-            }
-
-            switch (colorSpace)
-            {
-                case "Indexed":
-                {
-                    // Handle indexed color images
-                    byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
-                    if (paletteData is null || baseColorSpace is null)
-                        return null;
-
-                    int componentsPerEntry = baseColorSpace switch
-                    {
-                        "DeviceRGB" => 3,
-                        "DeviceGray" => 1,
-                        _ => 3
-                    };
-
-                    // Build pixel buffer directly - SKBitmap.SetPixel has issues with certain alpha types
-                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
-                    int pixelBufferSize = width * height * 4;
-                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-
-                    // Debug: Log first few pixels
-                    int debugPixelCount = Math.Min(10, width * height);
-
-                    // Bytes per row depends on bit depth: ceil(width * bpc / 8)
-                    int bitsPerPixel = bitsPerComponent;
-                    int bytesPerRowIdx = (width * bitsPerPixel + 7) / 8;
-
-                    // Convert indexed pixels to RGBA
-                    for (var y = 0; y < height; y++)
-                    {
-                        for (var x = 0; x < width; x++)
-                        {
-                            byte paletteIndex;
-                            switch (bitsPerPixel)
-                            {
-                                case 8:
-                                {
-                                    int idx = y * bytesPerRowIdx + x;
-                                    paletteIndex = idx < imageData.Length ? imageData[idx] : (byte)0;
-                                    break;
-                                }
-                                case 4:
-                                {
-                                    int idx = y * bytesPerRowIdx + (x >> 1);
-                                    if (idx < imageData.Length)
-                                    {
-                                        paletteIndex = (x & 1) == 0
-                                            ? (byte)((imageData[idx] >> 4) & 0x0F)
-                                            : (byte)(imageData[idx] & 0x0F);
-                                    }
-                                    else paletteIndex = 0;
-                                    break;
-                                }
-                                case 2:
-                                {
-                                    int idx = y * bytesPerRowIdx + (x >> 2);
-                                    int shift = (3 - (x & 3)) * 2;
-                                    paletteIndex = idx < imageData.Length
-                                        ? (byte)((imageData[idx] >> shift) & 0x03)
-                                        : (byte)0;
-                                    break;
-                                }
-                                case 1:
-                                {
-                                    int idx = y * bytesPerRowIdx + (x >> 3);
-                                    int shift = 7 - (x & 7);
-                                    paletteIndex = idx < imageData.Length
-                                        ? (byte)((imageData[idx] >> shift) & 0x01)
-                                        : (byte)0;
-                                    break;
-                                }
-                                default:
-                                {
-                                    int idx = y * width + x;
-                                    paletteIndex = idx < imageData.Length ? imageData[idx] : (byte)0;
-                                    break;
-                                }
-                            }
-
-                            if (paletteIndex > hival)
-                                paletteIndex = (byte)hival;
-
-                            int pixelIndex = y * width + x;
-                            int paletteOffset = paletteIndex * componentsPerEntry;
-                            int bufferOffset = pixelIndex * 4;
-
-                            byte r, g, b, alpha;
-                            switch (componentsPerEntry)
-                            {
-                                case 3 when paletteOffset + 2 < paletteData.Length:
-                                {
-                                    r = paletteData[paletteOffset];
-                                    g = paletteData[paletteOffset + 1];
-                                    b = paletteData[paletteOffset + 2];
-
-                                    // Debug: Log first few pixels
-                                    if (pixelIndex < debugPixelCount)
-                                    {
-                                        PdfLogger.Log(LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
-                                    }
-
-                                    // Apply SMask alpha channel if present
-                                    alpha = 255;
-                                    if (smaskData is not null && pixelIndex < smaskData.Length)
-                                    {
-                                        alpha = smaskData[pixelIndex];
-                                        // Premultiply RGB by alpha for Premul alpha type
-                                        if (hasSMask && alpha < 255)
-                                        {
-                                            r = (byte)(r * alpha / 255);
-                                            g = (byte)(g * alpha / 255);
-                                            b = (byte)(b * alpha / 255);
-                                        }
-                                    }
-
-                                    break;
-                                }
-                                case 1 when paletteOffset < paletteData.Length:
-                                {
-                                    byte gray = paletteData[paletteOffset];
-
-                                    // Apply SMask alpha channel if present
-                                    alpha = 255;
-                                    if (smaskData is not null && pixelIndex < smaskData.Length)
-                                    {
-                                        alpha = smaskData[pixelIndex];
-                                        // Premultiply gray by alpha for Premul alpha type
-                                        if (hasSMask && alpha < 255)
-                                        {
-                                            gray = (byte)(gray * alpha / 255);
-                                        }
-                                    }
-
-                                    r = g = b = gray;
-                                    break;
-                                }
-                                default:
-                                    r = g = b = 0;
-                                    alpha = 255;
-                                    break;
-                            }
-
-                            // RGBA8888 format: R, G, B, A
-                            pixelBuffer[bufferOffset] = r;
-                            pixelBuffer[bufferOffset + 1] = g;
-                            pixelBuffer[bufferOffset + 2] = b;
-                            pixelBuffer[bufferOffset + 3] = alpha;
-                        }
-                    }
-
-                    // Create bitmap that owns its own memory, then copy pixels into it
-                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                    bitmap = new SKBitmap(imageInfo);
-
-                    // Get pointer to bitmap's pixel buffer and copy our data into it
-                    IntPtr bitmapPixels = bitmap.GetPixels();
-                    if (bitmapPixels == IntPtr.Zero)
-                        return null;
-
-                    // Copy pixel data directly into bitmap's memory
-                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                    ArrayPool<byte>.Shared.Return(pixelBuffer);
-
-                    // CRITICAL: Notify SkiaSharp that we modified the pixels externally
-                    bitmap.NotifyPixelsChanged();
-
-                    break;
-                }
-                case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:
-                {
-                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                    int expectedSize = width * height * 3;
-                    if (imageData.Length < expectedSize)
-                        return null;
-
-                    // CalRGB: calibrate the decoded device values to sRGB (gamma + matrix) before
-                    // they become bitmap pixels. Wide-gamut CalRGB renders visibly different from a
-                    // raw DeviceRGB read. Falls through unchanged if the params can't be parsed.
-                    if (colorSpace == "CalRGB")
-                    {
-                        CalRgbConverter? cal = CalRgbConverter.FromCalRgbArray(image.ColorSpaceArray, _document);
-                        if (cal is not null)
-                            imageData = CalibrateCalRgbBuffer(imageData, expectedSize, cal);
-                    }
+                    // Each row is byte-aligned (CCITT output is row-padded, not packed)
+                    int bytesPerRow = (width + 7) / 8;
 
                     // Use direct pixel buffer for performance - SetPixel is very slow for large images
                     int pixelBufferSize = width * height * 4;
                     byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-
-                    for (var y = 0; y < height; y++)
-                    {
-                        int rowStart = y * width;
-
-                        for (var x = 0; x < width; x++)
-                        {
-                            int pixelIndex = rowStart + x;
-                            int srcOffset = pixelIndex * 3;
-                            int dstOffset = pixelIndex * 4;
-
-                            byte r = imageData[srcOffset];
-                            byte g = imageData[srcOffset + 1];
-                            byte b = imageData[srcOffset + 2];
-
-                            // Apply SMask alpha channel if present
-                            byte alpha = 255;
-                            if (smaskData is not null && pixelIndex < smaskData.Length)
-                                alpha = smaskData[pixelIndex];
-
-                            pixelBuffer[dstOffset] = r;
-                            pixelBuffer[dstOffset + 1] = g;
-                            pixelBuffer[dstOffset + 2] = b;
-                            pixelBuffer[dstOffset + 3] = alpha;
-                        }
-                    }
-
-                    // Create bitmap and copy pixel buffer
-                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                    bitmap = new SKBitmap(imageInfo);
-                    IntPtr bitmapPixels = bitmap.GetPixels();
-                    if (bitmapPixels == IntPtr.Zero)
-                        return null;
-
-                    // DEBUG: Check if RowBytes matches our expectation
-                    int expectedRowBytes = width * 4;
-
-                    // If RowBytes doesn't match, we need to copy row by row
-                    if (bitmap.RowBytes != expectedRowBytes)
-                    {
-                        for (var row = 0; row < height; row++)
-                        {
-                            int srcOffset = row * expectedRowBytes;
-                            IntPtr dstOffset = bitmapPixels + row * bitmap.RowBytes;
-                            Marshal.Copy(pixelBuffer, srcOffset, dstOffset, expectedRowBytes);
-                        }
-                    }
-                    else
-                    {
-                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                    }
-                    ArrayPool<byte>.Shared.Return(pixelBuffer);
-                    bitmap.NotifyPixelsChanged();
-
-                    break;
-                }
-                case "DeviceGray" or "CalGray" when bitsPerComponent == 1:
-                {
-                    // 1-bit grayscale image (not an image mask) - commonly from JBIG2Decode or CCITTFaxDecode
-                    // Each bit represents a pixel: 0=white (255), 1=black (0)
-                    var alphaType = SKAlphaType.Opaque;
-                    int bytesPerRow = (width + 7) / 8;
-                    int expectedSize = bytesPerRow * height;
-
-                    // Use direct pixel buffer for performance
-                    int pixelBufferSize1Bit = width * height * 4;
-                    byte[] pixelBuffer1Bit = ArrayPool<byte>.Shared.Rent(pixelBufferSize1Bit);
+                    byte colorR = color.Red, colorG = color.Green, colorB = color.Blue, colorA = color.Alpha;
 
                     for (var y = 0; y < height; y++)
                     {
@@ -647,227 +323,601 @@ internal class ImageRenderer
 
                         for (var x = 0; x < width; x++)
                         {
+                            // Calculate byte and bit position (row-aligned data, MSB first)
                             int byteIndex = rowStart + (x >> 3);  // x / 8
-                            int bitOffset = 7 - (x & 7);  // MSB first within each byte
+                            int bitOffset = 7 - (x & 7);  // 7 - (x % 8), MSB first within each byte
 
                             int bufferOffset = bufferRowStart + (x << 2);  // x * 4
 
-                            // Default to white if data is incomplete
-                            byte gray = 255;
-                            if (byteIndex < imageData.Length)
+                            if (byteIndex >= imageData.Length)
                             {
-                                // After decoding (JBIG2/CCITT filters already invert to PDF convention):
-                                // 0=black, 1=white - this matches PDF DeviceGray sample-to-color mapping
-                                bool bitIsSet = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
-                                gray = bitIsSet ? (byte)255 : (byte)0;  // 1=white, 0=black
+                                // Transparent pixel (RGBA = 0,0,0,0)
+                                pixelBuffer[bufferOffset] = 0;
+                                pixelBuffer[bufferOffset + 1] = 0;
+                                pixelBuffer[bufferOffset + 2] = 0;
+                                pixelBuffer[bufferOffset + 3] = 0;
+                                continue;
                             }
 
-                            // RGBA8888 format: R, G, B, A
-                            pixelBuffer1Bit[bufferOffset] = gray;
-                            pixelBuffer1Bit[bufferOffset + 1] = gray;
-                            pixelBuffer1Bit[bufferOffset + 2] = gray;
-                            pixelBuffer1Bit[bufferOffset + 3] = 255;
+                            // Get the mask bit
+                            // With CCITT default (BlackIs1=false): 0=black (paint), 1=white (transparent)
+                            // With Decode default [0 1]: sample 0 → paint, sample 1 → transparent
+                            // So with defaults: bit=0 → paint, bit=1 → transparent
+                            bool bitIsSet = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
+                            // Default: paint when bit is 0 (not set), i.e., !bitIsSet
+                            // With invertMask: paint when bit is 1 (set), i.e., bitIsSet
+                            bool paint = invertMask ? bitIsSet : !bitIsSet;
+
+                            if (paint)
+                            {
+                                pixelBuffer[bufferOffset] = colorR;
+                                pixelBuffer[bufferOffset + 1] = colorG;
+                                pixelBuffer[bufferOffset + 2] = colorB;
+                                pixelBuffer[bufferOffset + 3] = colorA;
+                            }
+                            else
+                            {
+                                // Transparent pixel (RGBA = 0,0,0,0)
+                                pixelBuffer[bufferOffset] = 0;
+                                pixelBuffer[bufferOffset + 1] = 0;
+                                pixelBuffer[bufferOffset + 2] = 0;
+                                pixelBuffer[bufferOffset + 3] = 0;
+                            }
                         }
                     }
 
-                    // Create bitmap and copy pixel buffer
-                    var imageInfo1Bit = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                    bitmap = new SKBitmap(imageInfo1Bit);
-                    IntPtr bitmapPixels1Bit = bitmap.GetPixels();
-                    if (bitmapPixels1Bit == IntPtr.Zero)
-                    {
-                        ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
-                        return null;
-                    }
-                    Marshal.Copy(pixelBuffer1Bit, 0, bitmapPixels1Bit, pixelBufferSize1Bit);
-                    ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
-                    bitmap.NotifyPixelsChanged();
-
-                    break;
-                }
-                case "DeviceGray" or "CalGray" when bitsPerComponent == 8:
-                {
-                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                    int expectedSize = width * height;
-                    int expectedRgbSize = expectedSize * 3;
-
-                    // Handle DCTDecode (JPEG) returning RGB data for grayscale images
-                    // The DctDecodeFilter always decodes to RGB, so we need to extract one channel
-                    if (imageData.Length == expectedRgbSize)
-                    {
-                        byte[] grayData = ArrayPool<byte>.Shared.Rent(expectedSize);
-                        for (var i = 0; i < expectedSize; i++)
-                            grayData[i] = imageData[i * 3];
-                        // Note: grayData may be larger than expectedSize — use slice semantics
-                        // We replace imageData reference; original is unaffected (caller's array).
-                        imageData = grayData[..expectedSize];
-                        ArrayPool<byte>.Shared.Return(grayData);
-                    }
-
-                    if (imageData.Length < expectedSize)
-                        return null;
-
-                    // Use direct pixel buffer for performance - SetPixel is very slow for large images
-                    int pixelBufferSize = width * height * 4;
-                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-
-                    for (var y = 0; y < height; y++)
-                    {
-                        int rowStart = y * width;
-                        int bufferRowStart = rowStart * 4;
-
-                        for (var x = 0; x < width; x++)
-                        {
-                            int pixelIndex = rowStart + x;
-                            int bufferOffset = bufferRowStart + (x << 2);  // x * 4
-                            byte gray = imageData[pixelIndex];
-
-                            // Apply SMask alpha channel if present
-                            byte alpha = 255;
-                            if (smaskData is not null && pixelIndex < smaskData.Length)
-                                alpha = smaskData[pixelIndex];
-
-                            pixelBuffer[bufferOffset] = gray;
-                            pixelBuffer[bufferOffset + 1] = gray;
-                            pixelBuffer[bufferOffset + 2] = gray;
-                            pixelBuffer[bufferOffset + 3] = alpha;
-                        }
-                    }
-
-                    // Create a bitmap and copy pixel buffer
-                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                    bitmap = new SKBitmap(imageInfo);
+                    // Copy pixel buffer to bitmap using Marshal.Copy for performance
                     IntPtr bitmapPixels = bitmap.GetPixels();
                     if (bitmapPixels == IntPtr.Zero)
                     {
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
-                        return null;
+                        return bitmap;
                     }
                     Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                    ArrayPool<byte>.Shared.Return(pixelBuffer);
                     bitmap.NotifyPixelsChanged();
+                    ArrayPool<byte>.Shared.Return(pixelBuffer);
 
-                    break;
+                    return bitmap;
                 }
-                case "ICCBased" when bitsPerComponent == 8:
+
+                switch (colorSpace)
                 {
-                    // ICCBased images: determine component count from the ICC profile stream
-                    int numComponents = GetIccBasedComponentCount(image);
-
-                    // Colour-manage through the embedded profile when possible. On success the buffer
-                    // is now sRGB (3-channel) and falls into the RGB blit below; on failure the raw /
-                    // naive per-component paths handle it. This is what turns a CMYK press image from
-                    // a naive (1-c)(1-k) approximation into the profile's actual colours.
-                    PdfStream? iccProfile = GetIccProfileStream(image);
-                    if (iccProfile is not null && numComponents is 1 or 3 or 4)
+                    case "Indexed":
                     {
-                        int needed = width * height * numComponents;
-                        if (imageData.Length >= needed)
+                        // Handle indexed color images
+                        byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
+                        if (paletteData is null || baseColorSpace is null)
+                            return null;
+
+                        int componentsPerEntry = baseColorSpace switch
                         {
-                            byte[] src = imageData.Length == needed ? imageData : imageData[..needed];
-                            byte[]? managed = new IccColorConverter(_document)
-                                .TryConvertInterleavedToSrgb(iccProfile, src, numComponents, blackPointCompensation, renderingIntent);
-                            if (managed is not null)
+                            "DeviceRGB" => 3,
+                            "DeviceGray" => 1,
+                            _ => 3
+                        };
+
+                        // Build pixel buffer directly - SKBitmap.SetPixel has issues with certain alpha types
+                        SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Premul : SKAlphaType.Opaque;
+                        int pixelBufferSize = width * height * 4;
+                        byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        // Debug: Log first few pixels
+                        int debugPixelCount = Math.Min(10, width * height);
+
+                        // Bytes per row depends on bit depth: ceil(width * bpc / 8)
+                        int bytesPerRowIdx = (width * bitsPerComponent + 7) / 8;
+
+                        // Convert indexed pixels to RGBA
+                        for (var y = 0; y < height; y++)
+                        {
+                            for (var x = 0; x < width; x++)
                             {
-                                imageData = managed;
-                                numComponents = 3;
+                                byte paletteIndex;
+                                switch (bitsPerComponent)
+                                {
+                                    case 8:
+                                    {
+                                        int idx = y * bytesPerRowIdx + x;
+                                        paletteIndex = idx < imageData.Length ? imageData[idx] : (byte)0;
+                                        break;
+                                    }
+                                    case 4:
+                                    {
+                                        int idx = y * bytesPerRowIdx + (x >> 1);
+                                        if (idx < imageData.Length)
+                                        {
+                                            paletteIndex = (x & 1) == 0
+                                                ? (byte)((imageData[idx] >> 4) & 0x0F)
+                                                : (byte)(imageData[idx] & 0x0F);
+                                        }
+                                        else paletteIndex = 0;
+                                        break;
+                                    }
+                                    case 2:
+                                    {
+                                        int idx = y * bytesPerRowIdx + (x >> 2);
+                                        int shift = (3 - (x & 3)) * 2;
+                                        paletteIndex = idx < imageData.Length
+                                            ? (byte)((imageData[idx] >> shift) & 0x03)
+                                            : (byte)0;
+                                        break;
+                                    }
+                                    case 1:
+                                    {
+                                        int idx = y * bytesPerRowIdx + (x >> 3);
+                                        int shift = 7 - (x & 7);
+                                        paletteIndex = idx < imageData.Length
+                                            ? (byte)((imageData[idx] >> shift) & 0x01)
+                                            : (byte)0;
+                                        break;
+                                    }
+                                    default:
+                                    {
+                                        int idx = y * width + x;
+                                        paletteIndex = idx < imageData.Length ? imageData[idx] : (byte)0;
+                                        break;
+                                    }
+                                }
+
+                                if (paletteIndex > hival)
+                                    paletteIndex = (byte)hival;
+
+                                int pixelIndex = y * width + x;
+                                int paletteOffset = paletteIndex * componentsPerEntry;
+                                int bufferOffset = pixelIndex * 4;
+
+                                byte r, g, b, alpha;
+                                switch (componentsPerEntry)
+                                {
+                                    case 3 when paletteOffset + 2 < paletteData.Length:
+                                    {
+                                        r = paletteData[paletteOffset];
+                                        g = paletteData[paletteOffset + 1];
+                                        b = paletteData[paletteOffset + 2];
+
+                                        // Debug: Log first few pixels
+                                        if (pixelIndex < debugPixelCount)
+                                        {
+                                            PdfLogger.Log(LogCategory.Images, $"INDEXED PIXEL[{pixelIndex}]: index={paletteIndex}, offset={paletteOffset}, RGB=({r}, {g}, {b})");
+                                        }
+
+                                        // Apply SMask alpha channel if present
+                                        alpha = 255;
+                                        if (smaskData is not null && pixelIndex < smaskData.Length)
+                                        {
+                                            alpha = smaskData[pixelIndex];
+                                            // Premultiply RGB by alpha for Premul alpha type
+                                            if (hasActualSMask && alpha < 255)
+                                            {
+                                                r = (byte)(r * alpha / 255);
+                                                g = (byte)(g * alpha / 255);
+                                                b = (byte)(b * alpha / 255);
+                                            }
+                                        }
+
+                                        break;
+                                    }
+                                    case 1 when paletteOffset < paletteData.Length:
+                                    {
+                                        byte gray = paletteData[paletteOffset];
+
+                                        // Apply SMask alpha channel if present
+                                        alpha = 255;
+                                        if (smaskData is not null && pixelIndex < smaskData.Length)
+                                        {
+                                            alpha = smaskData[pixelIndex];
+                                            // Premultiply gray by alpha for Premul alpha type
+                                            if (hasActualSMask && alpha < 255)
+                                            {
+                                                gray = (byte)(gray * alpha / 255);
+                                            }
+                                        }
+
+                                        r = g = b = gray;
+                                        break;
+                                    }
+                                    default:
+                                        r = g = b = 0;
+                                        alpha = 255;
+                                        break;
+                                }
+
+                                // RGBA8888 format: R, G, B, A
+                                pixelBuffer[bufferOffset] = r;
+                                pixelBuffer[bufferOffset + 1] = g;
+                                pixelBuffer[bufferOffset + 2] = b;
+                                pixelBuffer[bufferOffset + 3] = alpha;
                             }
                         }
+
+                        // Create bitmap that owns its own memory, then copy pixels into it
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+
+                        // Get pointer to bitmap's pixel buffer and copy our data into it
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero)
+                            return null;
+
+                        // Copy pixel data directly into bitmap's memory
+                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+
+                        // CRITICAL: Notify SkiaSharp that we modified the pixels externally
+                        bitmap.NotifyPixelsChanged();
+
+                        break;
                     }
-
-                    switch (numComponents)
+                    case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:
                     {
-                        case 3:
+                        SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                        int expectedSize = width * height * 3;
+                        if (imageData.Length < expectedSize)
+                            return null;
+
+                        // CalRGB: calibrate the decoded device values to sRGB (gamma + matrix) before
+                        // they become bitmap pixels. Wide-gamut CalRGB renders visibly different from a
+                        // raw DeviceRGB read. Falls through unchanged if the params can't be parsed.
+                        if (colorSpace == "CalRGB")
                         {
-                            // Treat as RGB
-                            SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                            int expectedSize = width * height * 3;
-
-                            // Handle truncated data more gracefully - render what we can instead of failing completely
-
-                            // Use direct pixel buffer for performance
-                            int pixelBufferSize = width * height * 4;
-                            byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-                            int availablePixels = Math.Min(imageData.Length / 3, width * height);
-
-                            for (var i = 0; i < availablePixels; i++)
-                            {
-                                int srcOffset = i * 3;
-                                int dstOffset = i * 4;
-                                pixelBuffer[dstOffset] = imageData[srcOffset];
-                                pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
-                                pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
-                                pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
-                            }
-
-                            // Fill remaining pixels with transparent or white if data is incomplete
-                            for (int i = availablePixels; i < width * height; i++)
-                            {
-                                int dstOffset = i * 4;
-                                pixelBuffer[dstOffset] = 255;     // R
-                                pixelBuffer[dstOffset + 1] = 255; // G
-                                pixelBuffer[dstOffset + 2] = 255; // B
-                                pixelBuffer[dstOffset + 3] = 0;   // A - transparent
-                            }
-
-                            var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                            bitmap = new SKBitmap(imageInfo);
-                            IntPtr bitmapPixels = bitmap.GetPixels();
-                            if (bitmapPixels == IntPtr.Zero)
-                            {
-                                ArrayPool<byte>.Shared.Return(pixelBuffer);
-                                return null;
-                            }
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                            ArrayPool<byte>.Shared.Return(pixelBuffer);
-                            bitmap.NotifyPixelsChanged();
-                            break;
+                            CalRgbConverter? cal = CalRgbConverter.FromCalRgbArray(image.ColorSpaceArray, _document);
+                            if (cal is not null)
+                                imageData = CalibrateCalRgbBuffer(imageData, expectedSize, cal);
                         }
-                        case 1:
+
+                        // Use direct pixel buffer for performance - SetPixel is very slow for large images
+                        int pixelBufferSize = width * height * 4;
+                        byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        for (var y = 0; y < height; y++)
                         {
-                            // Treat as grayscale
-                            SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                            int expectedSize = width * height;
-                            if (imageData.Length < expectedSize)
-                                return null;
+                            int rowStart = y * width;
 
-                            int pixelBufferSize = width * height * 4;
-                            byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-                            int pixelCount = width * height;
-                            for (var i = 0; i < pixelCount; i++)
+                            for (var x = 0; x < width; x++)
                             {
-                                byte gray = imageData[i];
-                                int dstOffset = i * 4;
-                                pixelBuffer[dstOffset] = gray;
-                                pixelBuffer[dstOffset + 1] = gray;
-                                pixelBuffer[dstOffset + 2] = gray;
-                                pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
-                            }
+                                int pixelIndex = rowStart + x;
+                                int srcOffset = pixelIndex * 3;
+                                int dstOffset = pixelIndex * 4;
 
-                            var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                            bitmap = new SKBitmap(imageInfo);
-                            IntPtr bitmapPixels = bitmap.GetPixels();
-                            if (bitmapPixels == IntPtr.Zero)
-                            {
-                                ArrayPool<byte>.Shared.Return(pixelBuffer);
-                                return null;
+                                byte r = imageData[srcOffset];
+                                byte g = imageData[srcOffset + 1];
+                                byte b = imageData[srcOffset + 2];
+
+                                // Apply SMask alpha channel if present
+                                byte alpha = 255;
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
+                                    alpha = smaskData[pixelIndex];
+
+                                pixelBuffer[dstOffset] = r;
+                                pixelBuffer[dstOffset + 1] = g;
+                                pixelBuffer[dstOffset + 2] = b;
+                                pixelBuffer[dstOffset + 3] = alpha;
                             }
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                            ArrayPool<byte>.Shared.Return(pixelBuffer);
-                            bitmap.NotifyPixelsChanged();
-                            break;
                         }
-                        case 4:
-                        {
-                            // Treat as CMYK - convert to RGB
-                            SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                            int expectedSize = width * height * 4;
-                            if (imageData.Length < expectedSize)
-                                return null;
 
-                            int pixelBufferSize = width * height * 4;
-                            byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-                            int pixelCount = width * height;
+                        // Create bitmap and copy pixel buffer
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero)
+                            return null;
+
+                        // DEBUG: Check if RowBytes matches our expectation
+                        int expectedRowBytes = width * 4;
+
+                        // If RowBytes doesn't match, we need to copy row by row
+                        if (bitmap.RowBytes != expectedRowBytes)
+                        {
+                            for (var row = 0; row < height; row++)
+                            {
+                                int srcOffset = row * expectedRowBytes;
+                                IntPtr dstOffset = bitmapPixels + row * bitmap.RowBytes;
+                                Marshal.Copy(pixelBuffer, srcOffset, dstOffset, expectedRowBytes);
+                            }
+                        }
+                        else
+                        {
+                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                        }
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+                        bitmap.NotifyPixelsChanged();
+
+                        break;
+                    }
+                    case "DeviceGray" or "CalGray" when bitsPerComponent == 1:
+                    {
+                        // 1-bit grayscale image (not an image mask) - commonly from JBIG2Decode or CCITTFaxDecode
+                        // Each bit represents a pixel: 0=white (255), 1=black (0)
+                        var alphaType = SKAlphaType.Opaque;
+                        int bytesPerRow = (width + 7) / 8;
+                        int expectedSize = bytesPerRow * height;
+
+                        // Use direct pixel buffer for performance
+                        int pixelBufferSize1Bit = width * height * 4;
+                        byte[] pixelBuffer1Bit = ArrayPool<byte>.Shared.Rent(pixelBufferSize1Bit);
+
+                        for (var y = 0; y < height; y++)
+                        {
+                            int rowStart = y * bytesPerRow;
+                            int bufferRowStart = y * width * 4;
+
+                            for (var x = 0; x < width; x++)
+                            {
+                                int byteIndex = rowStart + (x >> 3);  // x / 8
+                                int bitOffset = 7 - (x & 7);  // MSB first within each byte
+
+                                int bufferOffset = bufferRowStart + (x << 2);  // x * 4
+
+                                // Default to white if data is incomplete
+                                byte gray = 255;
+                                if (byteIndex < imageData.Length)
+                                {
+                                    // After decoding (JBIG2/CCITT filters already invert to PDF convention):
+                                    // 0=black, 1=white - this matches PDF DeviceGray sample-to-color mapping
+                                    bool bitIsSet = ((imageData[byteIndex] >> bitOffset) & 1) == 1;
+                                    gray = bitIsSet ? (byte)255 : (byte)0;  // 1=white, 0=black
+                                }
+
+                                // RGBA8888 format: R, G, B, A
+                                pixelBuffer1Bit[bufferOffset] = gray;
+                                pixelBuffer1Bit[bufferOffset + 1] = gray;
+                                pixelBuffer1Bit[bufferOffset + 2] = gray;
+                                pixelBuffer1Bit[bufferOffset + 3] = 255;
+                            }
+                        }
+
+                        // Create bitmap and copy pixel buffer
+                        var imageInfo1Bit = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo1Bit);
+                        IntPtr bitmapPixels1Bit = bitmap.GetPixels();
+                        if (bitmapPixels1Bit == IntPtr.Zero)
+                        {
+                            ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
+                            return null;
+                        }
+                        Marshal.Copy(pixelBuffer1Bit, 0, bitmapPixels1Bit, pixelBufferSize1Bit);
+                        ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
+                        bitmap.NotifyPixelsChanged();
+
+                        break;
+                    }
+                    case "DeviceGray" or "CalGray" when bitsPerComponent == 8:
+                    {
+                        SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                        int expectedSize = width * height;
+                        int expectedRgbSize = expectedSize * 3;
+
+                        // Handle DCTDecode (JPEG) returning RGB data for grayscale images
+                        // The DctDecodeFilter always decodes to RGB, so we need to extract one channel
+                        if (imageData.Length == expectedRgbSize)
+                        {
+                            byte[] grayData = ArrayPool<byte>.Shared.Rent(expectedSize);
+                            for (var i = 0; i < expectedSize; i++)
+                                grayData[i] = imageData[i * 3];
+                            // Note: grayData may be larger than expectedSize — use slice semantics
+                            // We replace imageData reference; original is unaffected (caller's array).
+                            imageData = grayData[..expectedSize];
+                            ArrayPool<byte>.Shared.Return(grayData);
+                        }
+
+                        if (imageData.Length < expectedSize)
+                            return null;
+
+                        // Use direct pixel buffer for performance - SetPixel is very slow for large images
+                        int pixelBufferSize = width * height * 4;
+                        byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        for (var y = 0; y < height; y++)
+                        {
+                            int rowStart = y * width;
+                            int bufferRowStart = rowStart * 4;
+
+                            for (var x = 0; x < width; x++)
+                            {
+                                int pixelIndex = rowStart + x;
+                                int bufferOffset = bufferRowStart + (x << 2);  // x * 4
+                                byte gray = imageData[pixelIndex];
+
+                                // Apply SMask alpha channel if present
+                                byte alpha = 255;
+                                if (smaskData is not null && pixelIndex < smaskData.Length)
+                                    alpha = smaskData[pixelIndex];
+
+                                pixelBuffer[bufferOffset] = gray;
+                                pixelBuffer[bufferOffset + 1] = gray;
+                                pixelBuffer[bufferOffset + 2] = gray;
+                                pixelBuffer[bufferOffset + 3] = alpha;
+                            }
+                        }
+
+                        // Create a bitmap and copy pixel buffer
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero)
+                        {
+                            ArrayPool<byte>.Shared.Return(pixelBuffer);
+                            return null;
+                        }
+                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+                        bitmap.NotifyPixelsChanged();
+
+                        break;
+                    }
+                    case "ICCBased" when bitsPerComponent == 8:
+                    {
+                        // ICCBased images: determine component count from the ICC profile stream
+                        int numComponents = GetIccBasedComponentCount(image);
+
+                        // Colour-manage through the embedded profile when possible. On success the buffer
+                        // is now sRGB (3-channel) and falls into the RGB blit below; on failure the raw /
+                        // naive per-component paths handle it. This is what turns a CMYK press image from
+                        // a naive (1-c)(1-k) approximation into the profile's actual colours.
+                        PdfStream? iccProfile = GetIccProfileStream(image);
+                        if (iccProfile is not null && numComponents is 1 or 3 or 4)
+                        {
+                            int needed = width * height * numComponents;
+                            if (imageData.Length >= needed)
+                            {
+                                byte[] src = imageData.Length == needed ? imageData : imageData[..needed];
+                                byte[]? managed = new IccColorConverter(_document)
+                                    .TryConvertInterleavedToSrgb(iccProfile, src, numComponents, blackPointCompensation, renderingIntent);
+                                if (managed is not null)
+                                {
+                                    imageData = managed;
+                                    numComponents = 3;
+                                }
+                            }
+                        }
+
+                        switch (numComponents)
+                        {
+                            case 3:
+                            {
+                                // Treat as RGB
+                                SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                                int expectedSize = width * height * 3;
+
+                                // Handle truncated data more gracefully - render what we can instead of failing completely
+
+                                // Use direct pixel buffer for performance
+                                int pixelBufferSize = width * height * 4;
+                                byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+                                int availablePixels = Math.Min(imageData.Length / 3, width * height);
+
+                                for (var i = 0; i < availablePixels; i++)
+                                {
+                                    int srcOffset = i * 3;
+                                    int dstOffset = i * 4;
+                                    pixelBuffer[dstOffset] = imageData[srcOffset];
+                                    pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
+                                    pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
+                                    pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
+                                }
+
+                                // Fill remaining pixels with transparent or white if data is incomplete
+                                for (int i = availablePixels; i < width * height; i++)
+                                {
+                                    int dstOffset = i * 4;
+                                    pixelBuffer[dstOffset] = 255;     // R
+                                    pixelBuffer[dstOffset + 1] = 255; // G
+                                    pixelBuffer[dstOffset + 2] = 255; // B
+                                    pixelBuffer[dstOffset + 3] = 0;   // A - transparent
+                                }
+
+                                var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                                bitmap = new SKBitmap(imageInfo);
+                                IntPtr bitmapPixels = bitmap.GetPixels();
+                                if (bitmapPixels == IntPtr.Zero)
+                                {
+                                    ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                    return null;
+                                }
+                                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                                ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                bitmap.NotifyPixelsChanged();
+                                break;
+                            }
+                            case 1:
+                            {
+                                // Treat as grayscale
+                                SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                                int expectedSize = width * height;
+                                if (imageData.Length < expectedSize)
+                                    return null;
+
+                                int pixelBufferSize = width * height * 4;
+                                byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+                                int pixelCount = width * height;
+                                for (var i = 0; i < pixelCount; i++)
+                                {
+                                    byte gray = imageData[i];
+                                    int dstOffset = i * 4;
+                                    pixelBuffer[dstOffset] = gray;
+                                    pixelBuffer[dstOffset + 1] = gray;
+                                    pixelBuffer[dstOffset + 2] = gray;
+                                    pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
+                                }
+
+                                var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                                bitmap = new SKBitmap(imageInfo);
+                                IntPtr bitmapPixels = bitmap.GetPixels();
+                                if (bitmapPixels == IntPtr.Zero)
+                                {
+                                    ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                    return null;
+                                }
+                                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                                ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                bitmap.NotifyPixelsChanged();
+                                break;
+                            }
+                            case 4:
+                            {
+                                // Treat as CMYK - convert to RGB
+                                SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                                int expectedSize = width * height * 4;
+                                if (imageData.Length < expectedSize)
+                                    return null;
+
+                                int pixelBufferSize = width * height * 4;
+                                byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+                                int pixelCount = width * height;
+                                for (var i = 0; i < pixelCount; i++)
+                                {
+                                    int srcOffset = i * 4;
+                                    int dstOffset = i * 4;
+                                    // CMYK values are in range 0-255
+                                    int c = imageData[srcOffset];
+                                    int m = imageData[srcOffset + 1];
+                                    int yy = imageData[srcOffset + 2];
+                                    int k = imageData[srcOffset + 3];
+
+                                    // Convert CMYK to RGB using integer math for performance
+                                    // r = 255 * (1 - c/255) * (1 - k/255) = (255 - c) * (255 - k) / 255
+                                    pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
+                                    pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
+                                    pixelBuffer[dstOffset + 2] = (byte)((255 - yy) * (255 - k) / 255);
+                                    pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
+                                }
+
+                                var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                                bitmap = new SKBitmap(imageInfo);
+                                IntPtr bitmapPixels = bitmap.GetPixels();
+                                if (bitmapPixels == IntPtr.Zero)
+                                {
+                                    ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                    return null;
+                                }
+                                Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                                ArrayPool<byte>.Shared.Return(pixelBuffer);
+                                bitmap.NotifyPixelsChanged();
+                                break;
+                            }
+                            default:
+                                // Unknown component count
+                                return null;
+                        }
+
+                        break;
+                    }
+                    case "DeviceCMYK" when bitsPerComponent == 8:
+                    {
+                        // CMYK images - convert to RGB
+                        // Note: DCTDecode (JPEG) often converts CMYK to RGB automatically during decompression
+                        SKAlphaType alphaType = hasActualSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
+                        int expectedCmykSize = width * height * 4;
+                        int expectedRgbSize = width * height * 3;
+                        int pixelCount = width * height;
+
+                        // Use direct pixel buffer for performance
+                        int pixelBufferSize = width * height * 4;
+                        byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        if (imageData.Length >= expectedCmykSize)
+                        {
+                            // True CMYK data - convert to RGB
                             for (var i = 0; i < pixelCount; i++)
                             {
                                 int srcOffset = i * 4;
@@ -875,115 +925,61 @@ internal class ImageRenderer
                                 // CMYK values are in range 0-255
                                 int c = imageData[srcOffset];
                                 int m = imageData[srcOffset + 1];
-                                int yy = imageData[srcOffset + 2];
+                                int y = imageData[srcOffset + 2];
                                 int k = imageData[srcOffset + 3];
 
                                 // Convert CMYK to RGB using integer math for performance
                                 // r = 255 * (1 - c/255) * (1 - k/255) = (255 - c) * (255 - k) / 255
                                 pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
                                 pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
-                                pixelBuffer[dstOffset + 2] = (byte)((255 - yy) * (255 - k) / 255);
+                                pixelBuffer[dstOffset + 2] = (byte)((255 - y) * (255 - k) / 255);
                                 pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                             }
+                        }
+                        else if (imageData.Length >= expectedRgbSize)
+                        {
+                            // DCTDecode already converted CMYK to RGB
+                            // ImageSharp handles Adobe CMYK convention internally
+                            PdfLogger.Log(LogCategory.Images, () => $"DeviceCMYK->RGB first pixels: [{imageData[0]},{imageData[1]},{imageData[2]}] [{imageData[3]},{imageData[4]},{imageData[5]}] [{imageData[6]},{imageData[7]},{imageData[8]}]");
 
-                            var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                            bitmap = new SKBitmap(imageInfo);
-                            IntPtr bitmapPixels = bitmap.GetPixels();
-                            if (bitmapPixels == IntPtr.Zero)
+                            for (var i = 0; i < pixelCount; i++)
                             {
-                                ArrayPool<byte>.Shared.Return(pixelBuffer);
-                                return null;
+                                int srcOffset = i * 3;
+                                int dstOffset = i * 4;
+                                // Use RGB values directly - ImageSharp has already converted from CMYK
+                                pixelBuffer[dstOffset] = imageData[srcOffset];
+                                pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
+                                pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
+                                pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                             }
-                            Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
+                        }
+                        else
+                        {
+                            // Data too small for either format
                             ArrayPool<byte>.Shared.Return(pixelBuffer);
-                            bitmap.NotifyPixelsChanged();
-                            break;
-                        }
-                        default:
-                            // Unknown component count
                             return null;
-                    }
-
-                    break;
-                }
-                case "DeviceCMYK" when bitsPerComponent == 8:
-                {
-                    // CMYK images - convert to RGB
-                    // Note: DCTDecode (JPEG) often converts CMYK to RGB automatically during decompression
-                    SKAlphaType alphaType = hasSMask ? SKAlphaType.Unpremul : SKAlphaType.Opaque;
-                    int expectedCmykSize = width * height * 4;
-                    int expectedRgbSize = width * height * 3;
-                    int pixelCount = width * height;
-
-                    // Use direct pixel buffer for performance
-                    int pixelBufferSize = width * height * 4;
-                    byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
-
-                    if (imageData.Length >= expectedCmykSize)
-                    {
-                        // True CMYK data - convert to RGB
-                        for (var i = 0; i < pixelCount; i++)
-                        {
-                            int srcOffset = i * 4;
-                            int dstOffset = i * 4;
-                            // CMYK values are in range 0-255
-                            int c = imageData[srcOffset];
-                            int m = imageData[srcOffset + 1];
-                            int y = imageData[srcOffset + 2];
-                            int k = imageData[srcOffset + 3];
-
-                            // Convert CMYK to RGB using integer math for performance
-                            // r = 255 * (1 - c/255) * (1 - k/255) = (255 - c) * (255 - k) / 255
-                            pixelBuffer[dstOffset] = (byte)((255 - c) * (255 - k) / 255);
-                            pixelBuffer[dstOffset + 1] = (byte)((255 - m) * (255 - k) / 255);
-                            pixelBuffer[dstOffset + 2] = (byte)((255 - y) * (255 - k) / 255);
-                            pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                         }
-                    }
-                    else if (imageData.Length >= expectedRgbSize)
-                    {
-                        // DCTDecode already converted CMYK to RGB
-                        // ImageSharp handles Adobe CMYK convention internally
-                        PdfLogger.Log(LogCategory.Images, () => $"DeviceCMYK->RGB first pixels: [{imageData[0]},{imageData[1]},{imageData[2]}] [{imageData[3]},{imageData[4]},{imageData[5]}] [{imageData[6]},{imageData[7]},{imageData[8]}]");
 
-                        for (var i = 0; i < pixelCount; i++)
+                        var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
+                        bitmap = new SKBitmap(imageInfo);
+                        IntPtr bitmapPixels = bitmap.GetPixels();
+                        if (bitmapPixels == IntPtr.Zero)
                         {
-                            int srcOffset = i * 3;
-                            int dstOffset = i * 4;
-                            // Use RGB values directly - ImageSharp has already converted from CMYK
-                            pixelBuffer[dstOffset] = imageData[srcOffset];
-                            pixelBuffer[dstOffset + 1] = imageData[srcOffset + 1];
-                            pixelBuffer[dstOffset + 2] = imageData[srcOffset + 2];
-                            pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
+                            ArrayPool<byte>.Shared.Return(pixelBuffer);
+                            return null;
                         }
-                    }
-                    else
-                    {
-                        // Data too small for either format
+                        Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
-                        return null;
+                        bitmap.NotifyPixelsChanged();
+                        break;
                     }
-
-                    var imageInfo = new SKImageInfo(width, height, SKColorType.Rgba8888, alphaType);
-                    bitmap = new SKBitmap(imageInfo);
-                    IntPtr bitmapPixels = bitmap.GetPixels();
-                    if (bitmapPixels == IntPtr.Zero)
-                    {
-                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+                    default:
+                        // Unsupported color space/bits per component combination
                         return null;
-                    }
-                    Marshal.Copy(pixelBuffer, 0, bitmapPixels, pixelBufferSize);
-                    ArrayPool<byte>.Shared.Return(pixelBuffer);
-                    bitmap.NotifyPixelsChanged();
-                    break;
                 }
-                default:
-                    // Unsupported color space/bits per component combination
-                    return null;
-            }
 
 
-            return bitmap;
+                return bitmap;
             }
             finally
             {
@@ -1081,7 +1077,7 @@ internal class ImageRenderer
     /// <param name="height">Image height</param>
     /// <param name="components">Number of components (1=Gray, 3=RGB, 4=RGBA)</param>
     /// <returns>SKBitmap with decoded image data</returns>
-    private static SKBitmap ConvertRawBytesToSkBitmap(byte[] pixelData, int width, int height, int components)
+    internal static SKBitmap ConvertRawBytesToSkBitmap(byte[] pixelData, int width, int height, int components)
     {
         switch (components)
         {
@@ -1119,15 +1115,38 @@ internal class ImageRenderer
                 ArrayPool<byte>.Shared.Return(rgbaBuffer);
                 return bitmap;
             }
-            case 4: // RGBA
+            case 4: // CMYK
             {
-                var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+                // A 4-component JPEG 2000 image in a PDF is CMYK, not RGBA — PDF carries alpha via
+                // /SMask, never an inline 4th channel. Copying the bytes straight into an RGBA bitmap
+                // (the previous behaviour) put the K plate into the alpha channel and rendered the
+                // image as garbage. Convert CMYK→RGB with the same naive (255-c)(255-k)/255 the
+                // DeviceCMYK image path uses.
+                var bitmap = new SKBitmap(width, height, SKColorType.Rgba8888, SKAlphaType.Opaque);
+                int rgbaBufferSize = width * height * 4;
+                byte[] rgbaBuffer = ArrayPool<byte>.Shared.Rent(rgbaBufferSize);
+                int pixelCount = width * height;
+
+                for (var i = 0; i < pixelCount; i++)
+                {
+                    int s = i * 4;
+                    int c = pixelData[s];
+                    int m = pixelData[s + 1];
+                    int y = pixelData[s + 2];
+                    int k = pixelData[s + 3];
+                    rgbaBuffer[s + 0] = (byte)((255 - c) * (255 - k) / 255);
+                    rgbaBuffer[s + 1] = (byte)((255 - m) * (255 - k) / 255);
+                    rgbaBuffer[s + 2] = (byte)((255 - y) * (255 - k) / 255);
+                    rgbaBuffer[s + 3] = 255;
+                }
+
                 IntPtr bitmapPixels = bitmap.GetPixels();
                 if (bitmapPixels != IntPtr.Zero)
                 {
-                    Marshal.Copy(pixelData, 0, bitmapPixels, pixelData.Length);
+                    Marshal.Copy(rgbaBuffer, 0, bitmapPixels, rgbaBufferSize);
                     bitmap.NotifyPixelsChanged();
                 }
+                ArrayPool<byte>.Shared.Return(rgbaBuffer);
                 return bitmap;
             }
             default:

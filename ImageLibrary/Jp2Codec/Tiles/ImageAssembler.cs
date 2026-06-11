@@ -33,11 +33,19 @@ namespace Jp2Codec.Tiles
             var componentSamples = new int[numComponents][];
             var componentPrecision = new int[numComponents];
             var componentSigned = new bool[numComponents];
+            // Largest per-component sample grid we will allocate. The SIZ marker is untrusted;
+            // computing the product in long and capping it stops a crafted Xsiz/Ysiz/subsampling
+            // combination from overflowing the int[] length or forcing a multi-gigabyte allocation.
+            const long MaxComponentSamples = 1L << 28; // 268M samples (~1 GiB int[])
             for (var c = 0; c < numComponents; c++)
             {
                 componentWidth[c] = siz.ComponentWidth(c);
                 componentHeight[c] = siz.ComponentHeight(c);
-                componentSamples[c] = new int[componentWidth[c] * componentHeight[c]];
+                long samples = (long)componentWidth[c] * componentHeight[c];
+                if (componentWidth[c] <= 0 || componentHeight[c] <= 0 || samples > MaxComponentSamples)
+                    throw new InvalidDataException(
+                        $"JPEG 2000 component {c} grid {componentWidth[c]}x{componentHeight[c]} is invalid or exceeds the {MaxComponentSamples}-sample limit.");
+                componentSamples[c] = new int[(int)samples];
                 componentPrecision[c] = siz.Components[c].BitDepth;
                 componentSigned[c] = siz.Components[c].IsSigned;
             }

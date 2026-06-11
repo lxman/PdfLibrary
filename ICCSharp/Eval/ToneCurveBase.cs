@@ -1,5 +1,3 @@
-using System;
-
 namespace ICCSharp.Eval;
 
 /// <summary>Common machinery for tone curves; supplies bisection-based inverse fallback.</summary>

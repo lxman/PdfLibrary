@@ -48,6 +48,24 @@ namespace CcittCodec
             if (data == null || data.Length == 0)
                 return [];
 
+            // Reject absurd dimensions before allocating per-row buffers. Width is the PDF
+            // /Columns parameter and is fully attacker-controlled; a non-positive value makes
+            // bytesPerRow zero/negative and a huge value overflows the row allocation.
+            const int MaxDimension = 1 << 20;     // 1,048,576 px per axis
+            const long MaxImageBytes = 1L << 30;  // 1 GiB of packed rows
+            if (_options.Width <= 0 || _options.Width > MaxDimension)
+                throw new ArgumentOutOfRangeException(
+                    nameof(CcittOptions.Width), _options.Width,
+                    $"CCITT Columns must be between 1 and {MaxDimension}.");
+            if (_options.Height > 0)
+            {
+                long imageBytes = (long)((_options.Width + 7) / 8) * _options.Height;
+                if (imageBytes > MaxImageBytes)
+                    throw new ArgumentOutOfRangeException(
+                        nameof(CcittOptions.Height), _options.Height,
+                        $"CCITT image {_options.Width}x{_options.Height} exceeds the {MaxImageBytes}-byte limit.");
+            }
+
             var reader = new CcittBitReader(data);
             var lines = new List<byte[]>();
 

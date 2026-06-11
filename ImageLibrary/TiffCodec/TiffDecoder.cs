@@ -180,19 +180,18 @@ public static class TiffDecoder
         double xResolution = ReadRational(reader, tags, TiffTag.XResolution, littleEndian);
         double yResolution = ReadRational(reader, tags, TiffTag.YResolution, littleEndian);
 
-        int outputWidth = width;
         int outputHeight = height;
 
         // If resolutions differ significantly, scale to correct the aspect ratio
-        if (!(xResolution > 0) || !(yResolution > 0)) return new TiffImage(outputWidth, outputHeight, pixelData);
+        if (!(xResolution > 0) || !(yResolution > 0)) return new TiffImage(width, outputHeight, pixelData);
         double ratio = xResolution / yResolution;
 
         // Only apply correction if the difference is > 5% (to avoid rounding errors for square pixels)
-        if (!(Math.Abs(ratio - 1.0) > 0.05)) return new TiffImage(outputWidth, outputHeight, pixelData);
+        if (!(Math.Abs(ratio - 1.0) > 0.05)) return new TiffImage(width, outputHeight, pixelData);
         outputHeight = (int)Math.Round(height * ratio);
         pixelData = ScaleImageVertical(pixelData, width, height, outputHeight);
 
-        return new TiffImage(outputWidth, outputHeight, pixelData);
+        return new TiffImage(width, outputHeight, pixelData);
     }
 
     private static byte[] ReadStripData(BinaryReader reader, Dictionary<TiffTag, object> tags, bool littleEndian, TiffCompression compression, int width, int height)
@@ -771,14 +770,13 @@ public static class TiffDecoder
         // Planar format: all R values, then all G values, then all B values
         int pixelCount = width * height;
         var rOffset = 0;
-        int gOffset = pixelCount;
         int bOffset = pixelCount * 2;
 
         var pixelIndex = 0;
         for (var i = 0; i < pixelCount; i++)
         {
             byte r = data[rOffset + i];
-            byte g = data[gOffset + i];
+            byte g = data[pixelCount + i];
             byte b = data[bOffset + i];
 
             pixelData[pixelIndex++] = b; // Blue

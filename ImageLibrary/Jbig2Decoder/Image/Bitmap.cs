@@ -15,22 +15,35 @@ namespace Jbig2Decoder.Image
         public int Stride { get; }
         public byte[] Data { get; }
 
+        // Largest backing buffer a single bitmap may allocate. Region/page dimensions come
+        // straight from untrusted segment headers (cast from uint); the product is computed in
+        // long and capped so a hostile width/height cannot overflow the byte[] length or force a
+        // runaway allocation. 1 GiB of packed rows is ~8 gigapixels — far beyond any real page.
+        private const long MaxDataBytes = 1L << 30;
+
         public Bitmap(int width, int height)
+        {
+            if (width < 0) throw new ArgumentOutOfRangeException(nameof(width));
+            if (height < 0) throw new ArgumentOutOfRangeException(nameof(height));
+            int stride = (width + 7) / 8;
+            long bytes = (long)stride * height;
+            if (bytes > MaxDataBytes)
+                throw new ArgumentOutOfRangeException(nameof(width),
+                    $"JBIG2 bitmap {width}x{height} ({bytes} bytes) exceeds the {MaxDataBytes}-byte limit.");
+            Width = width;
+            Height = height;
+            Stride = stride;
+            Data = new byte[(int)bytes];
+        }
+
+        public Bitmap(int width, int height, byte[] data)
         {
             if (width < 0) throw new ArgumentOutOfRangeException(nameof(width));
             if (height < 0) throw new ArgumentOutOfRangeException(nameof(height));
             Width = width;
             Height = height;
             Stride = (width + 7) / 8;
-            Data = new byte[Stride * height];
-        }
-
-        public Bitmap(int width, int height, byte[] data)
-        {
-            Width = width;
-            Height = height;
-            Stride = (width + 7) / 8;
-            int expected = Stride * height;
+            long expected = (long)Stride * height;
             if (data is null) throw new ArgumentNullException(nameof(data));
             if (data.Length != expected) throw new ArgumentException($"Expected {expected} bytes, got {data.Length}");
             Data = data;

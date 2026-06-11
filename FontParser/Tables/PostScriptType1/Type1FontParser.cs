@@ -208,12 +208,11 @@ namespace FontParser.Tables.PostScriptType1
             var asciiPart = new byte[System.Math.Min(length1, data.Length)];
             Array.Copy(data, 0, asciiPart, 0, asciiPart.Length);
 
-            int eexecStart = length1;
-            int eexecLength = System.Math.Min(length2, data.Length - eexecStart);
+            int eexecLength = System.Math.Min(length2, data.Length - length1);
             var eexecPart = new byte[eexecLength];
-            if (eexecStart < data.Length)
+            if (length1 < data.Length)
             {
-                Array.Copy(data, eexecStart, eexecPart, 0, eexecLength);
+                Array.Copy(data, length1, eexecPart, 0, eexecLength);
             }
 
             // Parse ASCII header

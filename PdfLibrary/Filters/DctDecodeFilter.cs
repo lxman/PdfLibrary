@@ -45,7 +45,7 @@ internal class DctDecodeFilter : IStreamFilter
             return componentCount switch
             {
                 4 => DecodeCmykJpeg(componentData, width, height, result.HasAdobeMarker, result.AdobeColorTransform),
-                3 => DecodeRgbJpeg(componentData, width, height),
+                3 => DecodeRgbJpeg(componentData, width, height, result.HasAdobeMarker, result.AdobeColorTransform),
                 1 => componentData,
                 _ => throw new NotSupportedException($"Unsupported JPEG component count: {componentCount}")
             };
@@ -131,11 +131,19 @@ internal class DctDecodeFilter : IStreamFilter
     }
 
     /// <summary>
-    /// Converts YCbCr component data to RGB.
+    /// Converts a 3-component JPEG to RGB. A 3-component JPEG is YCbCr by default (JFIF, or Adobe
+    /// APP14 transform = 1) and is converted with the BT.601 matrix. Adobe APP14 transform = 0 marks
+    /// the data as ALREADY RGB (no chroma transform); converting it again would colour-shift every
+    /// pixel, so it is passed through unchanged. (The 4-component path honours the Adobe transform
+    /// the same way — this brings 3-component into line with it.)
     /// Returns RGB data (3 components per pixel).
     /// </summary>
-    private static byte[] DecodeRgbJpeg(byte[] componentData, int width, int height)
+    private static byte[] DecodeRgbJpeg(byte[] componentData, int width, int height, bool hasAdobeMarker, byte adobeColorTransform)
     {
+        // Adobe transform 0 on a 3-component image = native RGB, no YCbCr decode required.
+        if (hasAdobeMarker && adobeColorTransform == 0)
+            return componentData;
+
         // Convert YCbCr to RGB
         var rgbData = new byte[width * height * 3];
         int pixelCount = width * height;

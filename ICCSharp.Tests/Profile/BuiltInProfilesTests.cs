@@ -1,5 +1,3 @@
-using ICCSharp;
-using ICCSharp.IO;
 using ICCSharp.Profile;
 
 namespace ICCSharp.Tests.Profile;

@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using ICCSharp;
 using ICCSharp.Profile;
 using Xunit.Abstractions;
 

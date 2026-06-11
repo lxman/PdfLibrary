@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Text;
-using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
 

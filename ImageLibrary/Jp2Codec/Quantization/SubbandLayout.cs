@@ -52,11 +52,10 @@ namespace Jp2Codec.Quantization
                 throw new ArgumentOutOfRangeException(
                     nameof(numDecompositionLevels), numDecompositionLevels, null);
 
-            int nl = numDecompositionLevels;
-            var result = new SubbandDescriptor[1 + 3 * nl];
-            result[0] = new SubbandDescriptor(SubbandOrientation.LL, nl);
+            var result = new SubbandDescriptor[1 + 3 * numDecompositionLevels];
+            result[0] = new SubbandDescriptor(SubbandOrientation.LL, numDecompositionLevels);
             int idx = 1;
-            for (int lev = nl; lev >= 1; lev--)
+            for (int lev = numDecompositionLevels; lev >= 1; lev--)
             {
                 result[idx++] = new SubbandDescriptor(SubbandOrientation.HL, lev);
                 result[idx++] = new SubbandDescriptor(SubbandOrientation.LH, lev);

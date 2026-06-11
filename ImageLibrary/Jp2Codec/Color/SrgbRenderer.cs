@@ -289,21 +289,20 @@ namespace Jp2Codec.Color
         {
             // Sample the ICC at a 33×33×33 grid of normalised inputs.
             // Layout: lut[((b * G) + g) * G + r) * 3 + {R, G, B}] where G = 33.
-            int G = RgbLutGrid;
-            var lut = new byte[G * G * G * 3];
+            var lut = new byte[RgbLutGrid * RgbLutGrid * RgbLutGrid * 3];
             var chan = new double[3];
-            for (var bi = 0; bi < G; bi++)
+            for (var bi = 0; bi < RgbLutGrid; bi++)
             {
-                chan[2] = bi / (double)(G - 1);
-                for (var gi = 0; gi < G; gi++)
+                chan[2] = bi / (double)(RgbLutGrid - 1);
+                for (var gi = 0; gi < RgbLutGrid; gi++)
                 {
-                    chan[1] = gi / (double)(G - 1);
-                    for (var ri = 0; ri < G; ri++)
+                    chan[1] = gi / (double)(RgbLutGrid - 1);
+                    for (var ri = 0; ri < RgbLutGrid; ri++)
                     {
-                        chan[0] = ri / (double)(G - 1);
+                        chan[0] = ri / (double)(RgbLutGrid - 1);
                         var colour = new Unicolour(config, new Channels((double[])chan.Clone()));
                         Rgb255 clip = colour.Rgb.Byte255.Clipped;
-                        int idx = ((bi * G + gi) * G + ri) * 3;
+                        int idx = ((bi * RgbLutGrid + gi) * RgbLutGrid + ri) * 3;
                         lut[idx]     = (byte)clip.R;
                         lut[idx + 1] = (byte)clip.G;
                         lut[idx + 2] = (byte)clip.B;
@@ -315,8 +314,7 @@ namespace Jp2Codec.Color
 
         private static void ApplyRgbIcc3dLut(int[][] components, int[] precisions, byte[] lut, byte[] output)
         {
-            int G = RgbLutGrid;
-            int gridMax = G - 1;
+            int gridMax = RgbLutGrid - 1;
             double m0 = (1 << precisions[0]) - 1;
             double m1 = (1 << precisions[1]) - 1;
             double m2 = (1 << precisions[2]) - 1;
@@ -341,13 +339,13 @@ namespace Jp2Codec.Color
                 double f2 = t2 - i2;
 
                 // 8 corner indices (each * 3 for RGB triplet).
-                int b00 = ((i2 * G + i1) * G + i0) * 3;
+                int b00 = ((i2 * RgbLutGrid + i1) * RgbLutGrid + i0) * 3;
                 int b01 = b00 + 3;                   // (i0+1, i1,   i2)
-                int b10 = b00 + G * 3;               // (i0,   i1+1, i2)
+                int b10 = b00 + RgbLutGrid * 3;               // (i0,   i1+1, i2)
                 int b11 = b10 + 3;
-                int b100 = b00 + G * G * 3;          // (i0,   i1,   i2+1)
+                int b100 = b00 + RgbLutGrid * RgbLutGrid * 3;          // (i0,   i1,   i2+1)
                 int b101 = b100 + 3;
-                int b110 = b100 + G * 3;
+                int b110 = b100 + RgbLutGrid * 3;
                 int b111 = b110 + 3;
 
                 // Trilinear interpolation per channel.

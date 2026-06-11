@@ -83,18 +83,17 @@ public sealed class Clut3D : IClut
         (int k0, double db) = LocateIndex(b, _gB);
 
         // Stride between adjacent grid points along each axis (in flat array units of `output` size).
-        int stride2 = _output;
         int stride1 = _gB * _output;
         int stride0 = _gG * _gB * _output;
 
         int v000 = ((i0 * _gG + j0) * _gB + k0) * _output;
         int v100 = v000 + stride0;
         int v010 = v000 + stride1;
-        int v001 = v000 + stride2;
+        int v001 = v000 + _output;
         int v110 = v100 + stride1;
-        int v101 = v100 + stride2;
-        int v011 = v010 + stride2;
-        int v111 = v110 + stride2;
+        int v101 = v100 + _output;
+        int v011 = v010 + _output;
+        int v111 = v110 + _output;
 
         // Pick the tetrahedron based on ordering of (dr, dg, db). The six branches each blend
         // four vertices; weights sum to 1 in every branch.

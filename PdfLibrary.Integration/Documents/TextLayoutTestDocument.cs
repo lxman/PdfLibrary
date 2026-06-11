@@ -209,28 +209,27 @@ public class TextLayoutTestDocument : ITestDocument
             page.AddText("Text Positioning Demo", leftMargin, y, "Helvetica-Bold", 14);
             y -= 25;
 
-            double boxX = leftMargin;
             double boxWidth = 200;
 
             // Draw reference box
             page.AddPath()
-                .Rectangle(boxX, y - 60, boxWidth, 55)
+                .Rectangle(leftMargin, y - 60, boxWidth, 55)
                 .Stroke(PdfColor.FromGray(0.7));
 
             // Left-positioned text
-            page.AddText("Left edge", boxX, y - 15, "Helvetica", 11);
+            page.AddText("Left edge", leftMargin, y - 15, "Helvetica", 11);
 
             // Right-positioned text (manually calculated)
             var rightText = "Right edge";
             double textWidth = PdfPageBuilder.MeasureText(rightText, "Helvetica", 11);
-            page.AddText(rightText, boxX + boxWidth - textWidth, y - 35, "Helvetica", 11);
+            page.AddText(rightText, leftMargin + boxWidth - textWidth, y - 35, "Helvetica", 11);
 
             // Center-positioned text
             var centerText = "Centered";
             textWidth = PdfPageBuilder.MeasureText(centerText, "Helvetica", 11);
-            page.AddText(centerText, boxX + (boxWidth - textWidth) / 2, y - 55, "Helvetica", 11);
+            page.AddText(centerText, leftMargin + (boxWidth - textWidth) / 2, y - 55, "Helvetica", 11);
 
-            page.AddText("Manual positioning using MeasureText()", boxX + boxWidth + 20, y - 35, "Helvetica", 9);
+            page.AddText("Manual positioning using MeasureText()", leftMargin + boxWidth + 20, y - 35, "Helvetica", 9);
         });
 
         doc.Save(outputPath);

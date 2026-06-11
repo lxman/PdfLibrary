@@ -1,9 +1,6 @@
-using System;
-using PdfLibrary.Core;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
-using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Integration;

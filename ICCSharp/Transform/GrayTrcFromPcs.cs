@@ -1,6 +1,5 @@
 using System;
 using ICCSharp.Eval;
-using ICCSharp.IO;
 using ICCSharp.Profile;
 using ICCSharp.Tags;
 

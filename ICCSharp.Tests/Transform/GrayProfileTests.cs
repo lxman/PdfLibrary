@@ -1,4 +1,3 @@
-using ICCSharp;
 using ICCSharp.Profile;
 
 namespace ICCSharp.Tests.Transform;
@@ -122,8 +121,7 @@ public class GrayProfileTests
         const int xyzSize = 20;    // 8-byte type header + 12-byte body
         const int curvSize = 16;   // 8-byte type header + 4-byte count + 2-byte sample (+2 pad)
 
-        int wtptOff = dataStart;
-        int kTrcOff = wtptOff + xyzSize;
+        int kTrcOff = dataStart + xyzSize;
         int totalSize = kTrcOff + curvSize;
 
         byte[] d = new byte[totalSize];
@@ -139,14 +137,14 @@ public class GrayProfileTests
         WriteS15Fixed16(d, 76, 0.82521);
 
         WriteUInt32(d, header, 2);      // tag count
-        WriteTagEntry(d, tableStart + 0 * 12, "wtpt", (uint)wtptOff, xyzSize);
+        WriteTagEntry(d, tableStart + 0 * 12, "wtpt", (uint)dataStart, xyzSize);
         WriteTagEntry(d, tableStart + 1 * 12, "kTRC", (uint)kTrcOff, curvSize);
 
         // wtpt = D50
-        WriteAscii(d, wtptOff, "XYZ ");
-        WriteS15Fixed16(d, wtptOff + 8, 0.96422);
-        WriteS15Fixed16(d, wtptOff + 12, 1.00000);
-        WriteS15Fixed16(d, wtptOff + 16, 0.82521);
+        WriteAscii(d, dataStart, "XYZ ");
+        WriteS15Fixed16(d, dataStart + 8, 0.96422);
+        WriteS15Fixed16(d, dataStart + 12, 1.00000);
+        WriteS15Fixed16(d, dataStart + 16, 0.82521);
 
         // kTRC = single-gamma curv (count == 1, u8Fixed8 gamma sample)
         WriteAscii(d, kTrcOff, "curv");

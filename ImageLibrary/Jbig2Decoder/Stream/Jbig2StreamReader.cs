@@ -444,8 +444,7 @@ namespace Jbig2Decoder.Stream
         {
             if (bodyLen < 10) throw new InvalidOperationException("Symbol dictionary segment too short");
 
-            int p0 = bodyStart;
-            int sdFlags = (_data[p0] << 8) | _data[p0 + 1];
+            int sdFlags = (_data[bodyStart] << 8) | _data[bodyStart + 1];
             bool sdHuff = (sdFlags & 0x01) != 0;
             bool sdRefAgg = (sdFlags & 0x02) != 0;
             int sdHuffDh = (sdFlags >> 2) & 0x03;     // ignored when SdHuff = 0

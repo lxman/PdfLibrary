@@ -65,8 +65,7 @@ public static class BuiltInProfiles
         const int xyzSize = 20;
         const int trcSize = 32;
 
-        int rXyzOff = dataStart;
-        int gXyzOff = rXyzOff + xyzSize;
+        int gXyzOff = dataStart + xyzSize;
         int bXyzOff = gXyzOff + xyzSize;
         int rTrcOff = bXyzOff + xyzSize;
         int gTrcOff = rTrcOff + trcSize;
@@ -90,14 +89,14 @@ public static class BuiltInProfiles
 
         // Tag table
         WriteUInt32(data, header, 6);
-        WriteTagEntry(data, tableStart + 0 * 12, "rXYZ", (uint)rXyzOff, xyzSize);
+        WriteTagEntry(data, tableStart + 0 * 12, "rXYZ", (uint)dataStart, xyzSize);
         WriteTagEntry(data, tableStart + 1 * 12, "gXYZ", (uint)gXyzOff, xyzSize);
         WriteTagEntry(data, tableStart + 2 * 12, "bXYZ", (uint)bXyzOff, xyzSize);
         WriteTagEntry(data, tableStart + 3 * 12, "rTRC", (uint)rTrcOff, trcSize);
         WriteTagEntry(data, tableStart + 4 * 12, "gTRC", (uint)gTrcOff, trcSize);
         WriteTagEntry(data, tableStart + 5 * 12, "bTRC", (uint)bTrcOff, trcSize);
 
-        WriteXyzTag(data, rXyzOff, red);
+        WriteXyzTag(data, dataStart, red);
         WriteXyzTag(data, gXyzOff, green);
         WriteXyzTag(data, bXyzOff, blue);
         WriteParaTag(data, rTrcOff, g, a, b, c, d);

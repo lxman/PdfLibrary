@@ -1,6 +1,5 @@
 using System.Numerics;
 using PdfLibrary.Content;
-using PdfLibrary.Rendering;
 using SkiaSharp;
 
 namespace PdfLibrary.Rendering.SkiaSharp.Rendering;

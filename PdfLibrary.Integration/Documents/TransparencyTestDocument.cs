@@ -157,7 +157,6 @@ public class TransparencyTestDocument : ITestDocument
             y -= 15;
 
             // Horizontal gradient effect
-            double gradX = leftMargin;
             double gradWidth = 350;
             var steps = 20;
             double stepWidth = gradWidth / steps;
@@ -166,7 +165,7 @@ public class TransparencyTestDocument : ITestDocument
             {
                 double opacity = (double)(steps - i) / steps;
                 page.AddPath()
-                    .Rectangle(gradX + i * stepWidth, y - 30, stepWidth + 1, 25)
+                    .Rectangle(leftMargin + i * stepWidth, y - 30, stepWidth + 1, 25)
                     .FillOpacity(opacity)
                     .Fill(PdfColor.FromCmyk(0.8, 0, 0.8, 0)); // Purple in CMYK
             }

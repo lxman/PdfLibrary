@@ -1,4 +1,3 @@
-using System;
 using ICCSharp.IO;
 using ICCSharp.Profile;
 
