@@ -761,6 +761,27 @@ internal class ImageRenderer
                     // ICCBased images: determine component count from the ICC profile stream
                     int numComponents = GetIccBasedComponentCount(image);
 
+                    // Colour-manage through the embedded profile when possible. On success the buffer
+                    // is now sRGB (3-channel) and falls into the RGB blit below; on failure the raw /
+                    // naive per-component paths handle it. This is what turns a CMYK press image from
+                    // a naive (1-c)(1-k) approximation into the profile's actual colours.
+                    PdfStream? iccProfile = GetIccProfileStream(image);
+                    if (iccProfile is not null && numComponents is 1 or 3 or 4)
+                    {
+                        int needed = width * height * numComponents;
+                        if (imageData.Length >= needed)
+                        {
+                            byte[] src = imageData.Length == needed ? imageData : imageData[..needed];
+                            byte[]? managed = new IccColorConverter(_document)
+                                .TryConvertInterleavedToSrgb(iccProfile, src, numComponents);
+                            if (managed is not null)
+                            {
+                                imageData = managed;
+                                numComponents = 3;
+                            }
+                        }
+                    }
+
                     switch (numComponents)
                     {
                         case 3:
@@ -987,6 +1008,18 @@ internal class ImageRenderer
     /// <summary>
     /// Gets the number of components for an ICCBased colorspace image.
     /// </summary>
+    // The embedded ICC profile stream for an ICCBased image's colour space, or null.
+    private PdfStream? GetIccProfileStream(PdfImage image)
+    {
+        PdfArray? cs = image.ColorSpaceArray;
+        if (cs is not { Count: >= 2 } || cs[0] is not PdfName { Value: "ICCBased" })
+            return null;
+        PdfObject? streamObj = cs[1];
+        if (streamObj is PdfIndirectReference r && _document is not null)
+            streamObj = _document.ResolveReference(r);
+        return streamObj as PdfStream;
+    }
+
     private int GetIccBasedComponentCount(PdfImage image)
     {
         try

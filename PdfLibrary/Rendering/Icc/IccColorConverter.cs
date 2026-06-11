@@ -58,15 +58,16 @@ internal sealed class IccColorConverter
     }
 
     /// <summary>
-    /// Bulk-converts a palette of indexed-image entries (each <paramref name="sourceChannels"/>
-    /// bytes laid out contiguously in <paramref name="palette"/>) to a freshly-allocated RGB-byte
-    /// palette (<c>entryCount × 3</c> bytes). Returns <see langword="null"/> on failure; caller
-    /// should fall through with the original palette.
+    /// Bulk-converts an interleaved byte buffer — <paramref name="sourceChannels"/> bytes per
+    /// sample laid out contiguously in <paramref name="data"/> — through the embedded ICC profile
+    /// to a freshly-allocated RGB-byte buffer (<c>sampleCount × 3</c>). Serves both indexed-image
+    /// palettes and full image pixel buffers. Returns <see langword="null"/> on failure; the caller
+    /// should fall back to a device interpretation of the original bytes.
     /// </summary>
-    public byte[]? TryConvertPaletteToSrgb(PdfStream iccStream, byte[] palette, int sourceChannels)
+    public byte[]? TryConvertInterleavedToSrgb(PdfStream iccStream, byte[] data, int sourceChannels)
     {
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
-        if (palette is null) throw new ArgumentNullException(nameof(palette));
+        if (data is null) throw new ArgumentNullException(nameof(data));
         if (sourceChannels < 1) throw new ArgumentOutOfRangeException(nameof(sourceChannels));
 
         IccTransform? transform = GetOrCreate(iccStream);
@@ -75,26 +76,26 @@ internal sealed class IccColorConverter
         if (transform.InputChannels != sourceChannels)
         {
             PdfLogger.Log(LogCategory.Graphics,
-                $"ICC PALETTE SKIP: palette has {sourceChannels}-channel entries but profile expects {transform.InputChannels}.");
+                $"ICC BUFFER SKIP: {sourceChannels}-channel samples but profile expects {transform.InputChannels}.");
             return null;
         }
-        if (palette.Length % sourceChannels != 0)
+        if (data.Length % sourceChannels != 0)
         {
             PdfLogger.Log(LogCategory.Graphics,
-                $"ICC PALETTE SKIP: palette length {palette.Length} not a multiple of {sourceChannels} channels.");
+                $"ICC BUFFER SKIP: buffer length {data.Length} not a multiple of {sourceChannels} channels.");
             return null;
         }
 
-        int entryCount = palette.Length / sourceChannels;
-        byte[] rgb = new byte[entryCount * 3];
+        int sampleCount = data.Length / sourceChannels;
+        byte[] rgb = new byte[sampleCount * 3];
         Span<double> input = stackalloc double[sourceChannels];
         Span<double> output = stackalloc double[3];
 
-        for (int i = 0; i < entryCount; i++)
+        for (int i = 0; i < sampleCount; i++)
         {
             int srcOff = i * sourceChannels;
             for (int c = 0; c < sourceChannels; c++)
-                input[c] = palette[srcOff + c] / 255.0;
+                input[c] = data[srcOff + c] / 255.0;
 
             transform.Apply(input, output);
 

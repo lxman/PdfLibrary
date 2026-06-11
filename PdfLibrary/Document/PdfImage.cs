@@ -814,7 +814,7 @@ public class PdfImage
         }
 
         Rendering.Icc.IccColorConverter converter = new(_document);
-        byte[]? transformed = converter.TryConvertPaletteToSrgb(iccStream, paletteBytes, numComponents);
+        byte[]? transformed = converter.TryConvertInterleavedToSrgb(iccStream, paletteBytes, numComponents);
         if (transformed is null)
         {
             PdfLogger.Log(LogCategory.Images, "ICC PALETTE FALLBACK: returning original palette bytes.");
