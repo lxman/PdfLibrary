@@ -33,12 +33,15 @@ public static class TgaDecoder
             if (header.Width == 0 || header.Height == 0)
                 throw new TgaException("Invalid image dimensions");
 
-            // Validate dimensions won't cause overflow (limit to 32K x 32K)
-            if (header.Width > 32768 || header.Height > 32768)
+            // Validate dimensions before allocating width*height*4. Bounding each axis at 32768 still
+            // let 32768*32768*4 overflow int; cap the byte count computed in long instead.
+            if ((long)header.Width * header.Height * 4 > (1L << 30))
                 throw new TgaException($"Image dimensions too large: {header.Width}x{header.Height}");
 
             // Skip image ID
             offset += header.IdLength;
+            if (offset > dataArray.Length)
+                throw new TgaException("Image ID extends past end of data");
 
             // Read color map if present
             byte[]? colorMap = null;
@@ -58,6 +61,9 @@ public static class TgaDecoder
             int width = header.Width;
             int height = header.Height;
             var pixelData = new byte[width * height * 4];
+
+            if (header.ImageType is TgaImageType.ColorMapped or TgaImageType.RleColorMapped && colorMap is null)
+                throw new TgaException("Colour-mapped image is missing its colour map");
 
             switch (header.ImageType)
             {
@@ -187,7 +193,7 @@ public static class TgaDecoder
     {
         int width = header.Width;
         int height = header.Height;
-        int bytesPerPixel = header.PixelDepth / 8;
+        int bytesPerPixel = (header.PixelDepth + 7) / 8; // ceiling: 15-bit TGA is 2 bytes/pixel
 
         for (var y = 0; y < height; y++)
         {
@@ -206,7 +212,7 @@ public static class TgaDecoder
     {
         int width = header.Width;
         int height = header.Height;
-        int bytesPerPixel = header.PixelDepth / 8;
+        int bytesPerPixel = (header.PixelDepth + 7) / 8; // ceiling: 15-bit TGA is 2 bytes/pixel
 
         for (var y = 0; y < height; y++)
         {
@@ -297,7 +303,7 @@ public static class TgaDecoder
         int width = header.Width;
         int height = header.Height;
         int totalPixels = width * height;
-        int bytesPerPixel = header.PixelDepth / 8;
+        int bytesPerPixel = (header.PixelDepth + 7) / 8; // ceiling: 15-bit TGA is 2 bytes/pixel
         var pixelIndex = 0;
         var iterations = 0;
         const int maxIterations = 100_000_000;
@@ -353,7 +359,7 @@ public static class TgaDecoder
         int width = header.Width;
         int height = header.Height;
         int totalPixels = width * height;
-        int bytesPerPixel = header.PixelDepth / 8;
+        int bytesPerPixel = (header.PixelDepth + 7) / 8; // ceiling: 15-bit TGA is 2 bytes/pixel
         var pixelIndex = 0;
         var iterations = 0;
         const int maxIterations = 100_000_000;
@@ -418,11 +424,15 @@ public static class TgaDecoder
     {
         switch (bytesPerPixel)
         {
-            case 2: // 16-bit (5-5-5 or 5-5-5-1)
+            case 2: // 16-bit ARRRRRGGGGGBBBBB (5-5-5 + 1 attribute bit)
                 ushort pixel16 = ReadUInt16(data, ref offset);
-                dest[destOffset + 2] = (byte)((pixel16 & 0x7C00) >> 7); // R (5 bits -> 8 bits)
-                dest[destOffset + 1] = (byte)((pixel16 & 0x03E0) >> 2); // G
-                dest[destOffset] = (byte)((pixel16 & 0x001F) << 3);     // B
+                int r5 = (pixel16 >> 10) & 0x1F;
+                int g5 = (pixel16 >> 5) & 0x1F;
+                int b5 = pixel16 & 0x1F;
+                // 5->8 bits by replicating the high bits into the low 3, so 31 maps to 255 (not 248).
+                dest[destOffset + 2] = (byte)((r5 << 3) | (r5 >> 2)); // R
+                dest[destOffset + 1] = (byte)((g5 << 3) | (g5 >> 2)); // G
+                dest[destOffset] = (byte)((b5 << 3) | (b5 >> 2));     // B
                 dest[destOffset + 3] = alphaBits > 0 && (pixel16 & 0x8000) == 0 ? (byte)0 : (byte)255; // A
                 break;
 
@@ -450,12 +460,18 @@ public static class TgaDecoder
     {
         switch (bytesPerEntry)
         {
-            case 2: // 16-bit
+            case 2: // 16-bit 5-5-5
                 var pixel16 = (ushort)(colorMap[entryOffset] | (colorMap[entryOffset + 1] << 8));
-                dest[destOffset + 2] = (byte)((pixel16 & 0x7C00) >> 7);
-                dest[destOffset + 1] = (byte)((pixel16 & 0x03E0) >> 2);
-                dest[destOffset] = (byte)((pixel16 & 0x001F) << 3);
-                dest[destOffset + 3] = (pixel16 & 0x8000) == 0 ? (byte)255 : (byte)0;
+                int r5 = (pixel16 >> 10) & 0x1F;
+                int g5 = (pixel16 >> 5) & 0x1F;
+                int b5 = pixel16 & 0x1F;
+                dest[destOffset + 2] = (byte)((r5 << 3) | (r5 >> 2));
+                dest[destOffset + 1] = (byte)((g5 << 3) | (g5 >> 2));
+                dest[destOffset] = (byte)((b5 << 3) | (b5 >> 2));
+                // Colour-map entries are opaque. (The direct-pixel path treats bit 15 as the
+                // attribute bit; the previous code here inverted that and made bit-15-clear entries —
+                // the overwhelmingly common case — spuriously transparent. Treat the map as opaque.)
+                dest[destOffset + 3] = 255;
                 break;
 
             case 3: // 24-bit BGR

@@ -43,7 +43,9 @@ internal sealed class LzwDecoder
 
     public LzwDecoder(byte[] data, int offset, int length, int minCodeSize)
     {
-        if (minCodeSize < 2 || minCodeSize > 11)
+        // minCodeSize 1 is used by 2-colour GIFs (clear code 2, end code 3, indices 0/1); the code
+        // table init below handles it, so accept it rather than rejecting valid bi-level images.
+        if (minCodeSize < 1 || minCodeSize > 11)
             throw new GifException($"Invalid LZW minimum code size: {minCodeSize}");
 
         _data = data;

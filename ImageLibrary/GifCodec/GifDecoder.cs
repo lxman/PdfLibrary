@@ -264,10 +264,11 @@ public static class GifDecoder
         // Read image descriptor
         ImageDescriptor imageDesc = ReadImageDescriptor(data, ref offset);
 
-        // Validate frame dimensions
+        // Validate frame dimensions before allocating the BGRA buffer (width*height*4). Bounding each
+        // axis at 32768 still let 32768*32768*4 overflow int; cap the byte count in long instead.
         if (imageDesc.Width == 0 || imageDesc.Height == 0)
             throw new GifException("Invalid frame dimensions");
-        if (imageDesc.Width > 32768 || imageDesc.Height > 32768)
+        if ((long)imageDesc.Width * imageDesc.Height * 4 > (1L << 30))
             throw new GifException($"Frame dimensions too large: {imageDesc.Width}x{imageDesc.Height}");
 
         // Read local color table if present
@@ -298,6 +299,10 @@ public static class GifDecoder
             byte subBlockSize = data[imageDataEnd++];
             if (subBlockSize == 0)
                 break;
+            // Reject a sub-block that runs past the buffer rather than letting imageDataEnd exceed
+            // data.Length and feeding a bogus length into the LZW decoder.
+            if (imageDataEnd + subBlockSize > data.Length)
+                throw new GifException("LZW sub-block extends past end of data");
             imageDataEnd += subBlockSize;
         }
 
