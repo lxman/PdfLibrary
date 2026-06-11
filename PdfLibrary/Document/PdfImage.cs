@@ -322,6 +322,21 @@ public class PdfImage
     }
 
     /// <summary>
+    /// The /Interpolate flag (ISO 32000-1 §8.9.5.3). When false — the default — viewers should not
+    /// smooth the image on magnification, so a low-resolution image renders crisp (nearest-neighbour)
+    /// rather than blurring its pixels together. When true, smooth (cubic) upscaling is requested.
+    /// </summary>
+    public bool Interpolate
+    {
+        get
+        {
+            if (_stream.Dictionary.TryGetValue(new PdfName("Interpolate"), out PdfObject obj) && obj is PdfBoolean b)
+                return b.Value;
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Checks if this is an image mask (1-bit stencil mask)
     /// </summary>
     public bool IsImageMask

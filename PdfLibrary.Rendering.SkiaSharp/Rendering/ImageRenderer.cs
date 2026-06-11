@@ -130,19 +130,11 @@ internal class ImageRenderer
                 const float epsilon = 0.002f;  // Small expansion to cover sub-pixel gaps
                 var destRect = new SKRect(-epsilon, -epsilon, 1 + epsilon, 1 + epsilon);
 
-                // Pick sampling based on whether this draw minifies the image. A fixed-kernel cubic
-                // resampler samples only a 4x4 source neighbourhood per output pixel and uses no
-                // mipmaps, so shrinking a high-resolution scan to page resolution undersamples it —
-                // thin dark strokes fall between sample points and the page washes out lighter than
-                // reference renderers (seen on scanned manuals). Mipmapped trilinear pre-averages the
-                // source and preserves density when minifying; cubic stays for 1:1/upscaling, where
-                // it is sharper and mipmaps don't apply.
+                // Resampler choice depends on scale direction and the image's /Interpolate flag —
+                // see ChooseImageSampling.
                 float deviceW = MathF.Sqrt(combinedMatrix.ScaleX * combinedMatrix.ScaleX + combinedMatrix.SkewY * combinedMatrix.SkewY);
                 float deviceH = MathF.Sqrt(combinedMatrix.SkewX * combinedMatrix.SkewX + combinedMatrix.ScaleY * combinedMatrix.ScaleY);
-                bool minifying = bitmap.Width > deviceW * 1.1f || bitmap.Height > deviceH * 1.1f;
-                SKSamplingOptions sampling = minifying
-                    ? new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear)
-                    : new SKSamplingOptions(new SKCubicResampler(0, 0.5f));
+                SKSamplingOptions sampling = ChooseImageSampling(bitmap.Width, bitmap.Height, deviceW, deviceH, image.Interpolate);
 
                 // Apply fill alpha from graphics state to images
                 // PDF uses CA for stroke alpha and ca for fill alpha; images use fill alpha
@@ -1008,6 +1000,30 @@ internal class ImageRenderer
     /// <summary>
     /// Gets the number of components for an ICCBased colorspace image.
     /// </summary>
+    /// <summary>
+    /// Chooses the SkiaSharp resampler for drawing an image of <paramref name="bitmapWidth"/>×
+    /// <paramref name="bitmapHeight"/> source pixels into a target of <paramref name="deviceWidth"/>×
+    /// <paramref name="deviceHeight"/> device pixels.
+    ///
+    /// Minifying (source larger than target) always uses mipmapped linear: a fixed-kernel cubic
+    /// undersamples a high-resolution scan and washes out thin strokes, while mipmaps pre-average.
+    /// Magnifying or 1:1 honours the PDF /Interpolate flag: the default (false) means do not smooth
+    /// on upscaling, so a low-resolution image stays crisp (nearest-neighbour) rather than blurring
+    /// its pixels into one another — matching PDFium/Acrobat. Cubic is used only when /Interpolate
+    /// is true.
+    /// </summary>
+    internal static SKSamplingOptions ChooseImageSampling(
+        int bitmapWidth, int bitmapHeight, float deviceWidth, float deviceHeight, bool interpolate)
+    {
+        bool minifying = bitmapWidth > deviceWidth * 1.1f || bitmapHeight > deviceHeight * 1.1f;
+        if (minifying)
+            return new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
+
+        return interpolate
+            ? new SKSamplingOptions(new SKCubicResampler(0, 0.5f))
+            : new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None);
+    }
+
     // The embedded ICC profile stream for an ICCBased image's colour space, or null.
     private PdfStream? GetIccProfileStream(PdfImage image)
     {
