@@ -99,7 +99,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
                 case "RI":
                     if (value is PdfName ri)
                     {
-                        // Store rendering intent if needed
+                        currentState.RenderingIntent = ri.Value;
                         PdfLogger.Log(LogCategory.Graphics, $"  RI (RenderingIntent) = {ri.Value}");
                     }
                     break;

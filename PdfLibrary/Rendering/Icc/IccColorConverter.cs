@@ -22,9 +22,9 @@ namespace PdfLibrary.Rendering.Icc;
 /// </summary>
 internal sealed class IccColorConverter
 {
-    // Keyed by (profile stream, black-point-compensation) — same stream + BPC flag reuses the
-    // parsed transform; the ON and OFF variants are cached separately.
-    private readonly Dictionary<(PdfStream Stream, bool Bpc), IccTransform?> _cache = new();
+    // Keyed by (profile stream, black-point-compensation, rendering intent) — same stream reuses the
+    // parsed transform; each BPC/intent combination is cached separately.
+    private readonly Dictionary<(PdfStream Stream, bool Bpc, RenderingIntent Intent), IccTransform?> _cache = new();
     private readonly PdfDocument? _document;
 
     public IccColorConverter(PdfDocument? document = null)
@@ -38,12 +38,12 @@ internal sealed class IccColorConverter
     /// conversion cannot be performed; the caller should then fall back to the profile's
     /// <c>/Alternate</c> color space.
     /// </summary>
-    public double[]? TryConvertToSrgb(PdfStream iccStream, IReadOnlyList<double> sourceColor, bool blackPointCompensation = false)
+    public double[]? TryConvertToSrgb(PdfStream iccStream, IReadOnlyList<double> sourceColor, bool blackPointCompensation = false, string? renderingIntent = null)
     {
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
         if (sourceColor is null) throw new ArgumentNullException(nameof(sourceColor));
 
-        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation);
+        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation, MapIntent(renderingIntent));
         if (transform is null) return null;
 
         if (sourceColor.Count != transform.InputChannels)
@@ -66,13 +66,13 @@ internal sealed class IccColorConverter
     /// palettes and full image pixel buffers. Returns <see langword="null"/> on failure; the caller
     /// should fall back to a device interpretation of the original bytes.
     /// </summary>
-    public byte[]? TryConvertInterleavedToSrgb(PdfStream iccStream, byte[] data, int sourceChannels, bool blackPointCompensation = false)
+    public byte[]? TryConvertInterleavedToSrgb(PdfStream iccStream, byte[] data, int sourceChannels, bool blackPointCompensation = false, string? renderingIntent = null)
     {
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
         if (data is null) throw new ArgumentNullException(nameof(data));
         if (sourceChannels < 1) throw new ArgumentOutOfRangeException(nameof(sourceChannels));
 
-        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation);
+        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation, MapIntent(renderingIntent));
         if (transform is null) return null;
 
         if (transform.InputChannels != sourceChannels)
@@ -135,9 +135,9 @@ internal sealed class IccColorConverter
         rgb[dstOff + 2] = ToByte(output[2]);
     }
 
-    private IccTransform? GetOrCreate(PdfStream iccStream, bool blackPointCompensation)
+    private IccTransform? GetOrCreate(PdfStream iccStream, bool blackPointCompensation, RenderingIntent intent)
     {
-        (PdfStream iccStream, bool blackPointCompensation) key = (iccStream, blackPointCompensation);
+        (PdfStream iccStream, bool blackPointCompensation, RenderingIntent intent) key = (iccStream, blackPointCompensation, intent);
         if (_cache.TryGetValue(key, out IccTransform? cached))
             return cached;
 
@@ -149,9 +149,9 @@ internal sealed class IccColorConverter
             byte[] profileBytes = iccStream.GetDecodedData(_document?.Decryptor);
             IccProfile profile = IccProfile.Parse(profileBytes);
             transform = IccTransform.Create(profile, BuiltInProfiles.Srgb,
-                new TransformOptions { BlackPointCompensation = blackPointCompensation });
+                new TransformOptions { Intent = intent, BlackPointCompensation = blackPointCompensation });
             PdfLogger.Log(LogCategory.Graphics,
-                $"ICC OK: parsed {profile.Header.Class} profile, {transform.InputChannels} → 3 channels (BPC={blackPointCompensation}).");
+                $"ICC OK: parsed {profile.Header.Class} profile, {transform.InputChannels} → 3 channels (intent={intent}, BPC={blackPointCompensation}).");
         }
         catch (Exception ex)
         {
@@ -161,6 +161,16 @@ internal sealed class IccColorConverter
         _cache[key] = transform;
         return transform;
     }
+
+    // Maps a PDF rendering-intent name (ri operator / ExtGState /RI / image /Intent) to the ICC
+    // intent. Unknown or absent → relative colorimetric (the PDF and ICC default).
+    private static RenderingIntent MapIntent(string? pdfIntent) => pdfIntent switch
+    {
+        "Perceptual" => RenderingIntent.Perceptual,
+        "Saturation" => RenderingIntent.Saturation,
+        "AbsoluteColorimetric" => RenderingIntent.AbsoluteColorimetric,
+        _ => RenderingIntent.RelativeColorimetric,
+    };
 
     private static byte ToByte(double v)
     {

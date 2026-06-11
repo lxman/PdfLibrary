@@ -62,7 +62,8 @@ internal class ImageRenderer
                 fillColor = ColorConverter.ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace);
                 fillColor = ApplyAlpha(fillColor.Value, state.FillAlpha);
             }
-            SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor, state.UseBlackPointCompensation);
+            // An image's own /Intent overrides the current graphics-state rendering intent.
+            SKBitmap? bitmap = CreateBitmapFromPdfImage(image, fillColor, state.UseBlackPointCompensation, image.Intent ?? state.RenderingIntent);
             if (bitmap is null)
             {
                 PdfLogger.Log(LogCategory.Images, "DrawImage: CreateBitmapFromPdfImage returned null!");
@@ -168,7 +169,7 @@ internal class ImageRenderer
     /// <summary>
     /// Creates a SkiaSharp bitmap from PDF image data, handling various color spaces and formats.
     /// </summary>
-    private SKBitmap? CreateBitmapFromPdfImage(PdfImage image, SKColor? imageMaskColor = null, bool blackPointCompensation = false)
+    private SKBitmap? CreateBitmapFromPdfImage(PdfImage image, SKColor? imageMaskColor = null, bool blackPointCompensation = false, string? renderingIntent = null)
     {
         try
         {
@@ -765,7 +766,7 @@ internal class ImageRenderer
                         {
                             byte[] src = imageData.Length == needed ? imageData : imageData[..needed];
                             byte[]? managed = new IccColorConverter(_document)
-                                .TryConvertInterleavedToSrgb(iccProfile, src, numComponents, blackPointCompensation);
+                                .TryConvertInterleavedToSrgb(iccProfile, src, numComponents, blackPointCompensation, renderingIntent);
                             if (managed is not null)
                             {
                                 imageData = managed;

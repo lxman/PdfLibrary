@@ -102,4 +102,26 @@ public class IccCmykImageTests
         int sumOn = on![0] + on[1] + on[2];
         Assert.True(sumOn < sumOff, $"BPC ON should darken the raised SWOP black; off-sum={sumOff}, on-sum={sumOn}");
     }
+
+    [Fact]
+    public void Rendering_intent_name_flows_through_to_the_transform()
+    {
+        if (!File.Exists(SwopPath)) return;
+        var iccStream = new PdfStream(File.ReadAllBytes(SwopPath));
+        var conv = new IccColorConverter();
+
+        double[] paperWhite = [0.0, 0.0, 0.0, 0.0]; // CMYK, no ink
+
+        double[]? rel = conv.TryConvertToSrgb(iccStream, paperWhite, blackPointCompensation: false, renderingIntent: "RelativeColorimetric");
+        double[]? abs = conv.TryConvertToSrgb(iccStream, paperWhite, blackPointCompensation: false, renderingIntent: "AbsoluteColorimetric");
+
+        Assert.NotNull(rel);
+        Assert.NotNull(abs);
+
+        // The intent name must actually reach the ICC transform: relative normalises SWOP's media
+        // white to ~pure white, absolute reproduces the dimmer real paper. If the name were ignored
+        // the two would be identical.
+        Assert.True(rel![1] > 0.99, $"relative paper white should be ~pure white; got G={rel[1]:F3}");
+        Assert.True(rel[1] - abs![1] > 0.01, $"absolute should differ (dimmer); rel G={rel[1]:F3}, abs G={abs[1]:F3}");
+    }
 }

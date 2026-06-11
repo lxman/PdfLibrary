@@ -90,6 +90,10 @@ public abstract class PdfContentProcessor
                 CurrentState.Flatness = flatness.Flatness;
                 break;
 
+            case SetRenderingIntentOperator ri:
+                CurrentState.RenderingIntent = ri.Intent;
+                break;
+
             case SetGraphicsStateOperator gs:
                 OnSetGraphicsState(gs.DictName);
                 break;

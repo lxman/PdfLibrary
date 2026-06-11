@@ -153,6 +153,14 @@ public class PdfGraphicsState
     /// </summary>
     public bool UseBlackPointCompensation { get; set; } = true;
 
+    /// <summary>
+    /// Colour rendering intent (PDF <c>ri</c> operator / ExtGState /RI), as the PDF name —
+    /// "Perceptual", "RelativeColorimetric", "Saturation", or "AbsoluteColorimetric". Selects the
+    /// ICC rendering intent for colour conversions. Defaults to relative colorimetric (the PDF and
+    /// ICC default); an image's own /Intent overrides this for that image.
+    /// </summary>
+    public string RenderingIntent { get; set; } = "RelativeColorimetric";
+
     /// <summary>Smoothness tolerance (SM)</summary>
     public double Smoothness { get; set; }
 
@@ -258,6 +266,7 @@ public class PdfGraphicsState
             FillOverprint = FillOverprint,
             OverprintMode = OverprintMode,
             UseBlackPointCompensation = UseBlackPointCompensation,
+            RenderingIntent = RenderingIntent,
             Smoothness = Smoothness
         };
     }

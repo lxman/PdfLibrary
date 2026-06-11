@@ -22,7 +22,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <param name="color">The color components (may be modified based on color space conversion)</param>
     /// <param name="colorSpaces">The ColorSpace resource dictionary</param>
     /// <param name="blackPointCompensation">When true, ICC conversions apply black-point compensation (PDF 2.0 /UseBlackPtComp).</param>
-    public void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color, PdfDictionary? colorSpaces, bool blackPointCompensation = false)
+    /// <param name="renderingIntent">PDF rendering-intent name (ri / RI) selecting the ICC intent for ICC conversions; null = relative colorimetric.</param>
+    public void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color, PdfDictionary? colorSpaces, bool blackPointCompensation = false, string? renderingIntent = null)
     {
         if (string.IsNullOrEmpty(colorSpaceName))
             return;
@@ -108,7 +109,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         switch (csType.Value)
         {
             case "ICCBased" when csArray.Count >= 2:
-                ResolveICCBased(csArray, ref colorSpaceName, ref color, blackPointCompensation);
+                ResolveICCBased(csArray, ref colorSpaceName, ref color, blackPointCompensation, renderingIntent);
                 break;
 
             case "Separation" when csArray.Count >= 4:
@@ -142,7 +143,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <summary>
     /// Resolves an ICCBased color space: [/ICCBased stream]
     /// </summary>
-    private void ResolveICCBased(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color, bool blackPointCompensation = false)
+    private void ResolveICCBased(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color, bool blackPointCompensation = false, string? renderingIntent = null)
     {
         color ??= [];
 
@@ -191,7 +192,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Try to transform the color through the embedded ICC profile to device-sRGB. If that
         // works, we replace the color tuple with the sRGB equivalent and treat the result as
         // DeviceRGB. On failure we fall back to the /Alternate path.
-        double[]? srgb = _iccConverter.TryConvertToSrgb(iccStream, color, blackPointCompensation);
+        double[]? srgb = _iccConverter.TryConvertToSrgb(iccStream, color, blackPointCompensation, renderingIntent);
         if (srgb is not null)
         {
             color = [srgb[0], srgb[1], srgb[2]];
