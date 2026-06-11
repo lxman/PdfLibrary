@@ -48,6 +48,7 @@
     <Project Path="ImageLibrary/TgaCodec.Tests/TgaCodec.Tests.csproj" />
     <Project Path="ImageLibrary/TgaCodec/TgaCodec.csproj" />
     <Project Path="ImageLibrary/TiffCodec/TiffCodec.csproj" />
+    <Project Path="ImageLibrary/TiffCodec.Tests/TiffCodec.Tests.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />

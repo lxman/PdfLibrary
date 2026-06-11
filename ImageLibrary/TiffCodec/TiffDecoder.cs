@@ -86,6 +86,8 @@ public static class TiffDecoder
 
     private static TiffImage DecodeIfd(BinaryReader reader, uint ifdOffset, bool littleEndian)
     {
+        if (ifdOffset < 8 || ifdOffset >= reader.BaseStream.Length)
+            throw new TiffException($"IFD offset {ifdOffset} is outside the file (length {reader.BaseStream.Length}).");
         reader.BaseStream.Seek(ifdOffset, SeekOrigin.Begin);
 
         // Read the number of directory entries
@@ -164,6 +166,9 @@ public static class TiffDecoder
             throw new TiffException("Missing StripOffsets or TileOffsets tag");
         }
 
+        // Palette images carry a ColorMap (tag 320) of 16-bit R/G/B entries.
+        ushort[]? colorMap = tags.TryGetValue(TiffTag.ColorMap, out object? cmObj) && cmObj is ushort[] cm ? cm : null;
+
         // Convert to BGRA format
         // Note: JPEG decompression already produces BGRA data, so skip conversion for JPEG
         byte[] pixelData;
@@ -173,7 +178,7 @@ public static class TiffDecoder
         }
         else
         {
-            pixelData = ConvertToBgra(decompressedData, width, height, photometric, samplesPerPixel, bitsPerSample, planarConfiguration, littleEndian);
+            pixelData = ConvertToBgra(decompressedData, width, height, photometric, samplesPerPixel, bitsPerSample, planarConfiguration, littleEndian, colorMap);
         }
 
         // Apply aspect ratio correction for images with non-square pixels
@@ -197,7 +202,7 @@ public static class TiffDecoder
     private static byte[] ReadStripData(BinaryReader reader, Dictionary<TiffTag, object> tags, bool littleEndian, TiffCompression compression, int width, int height)
     {
         object offsetsObj = tags[TiffTag.StripOffsets];
-        object byteCountsObj = tags[TiffTag.StripByteCounts];
+        object byteCountsObj = RequireTag(tags, TiffTag.StripByteCounts);
 
         uint[] offsets = ConvertToUInt32Array(offsetsObj);
         uint[] byteCounts = ConvertToUInt32Array(byteCountsObj);
@@ -210,7 +215,7 @@ public static class TiffDecoder
         bool hasTileDimensions = tags.ContainsKey(TiffTag.TileWidth) && tags.ContainsKey(TiffTag.TileLength);
         if (hasTileDimensions)
         {
-            return ReadStripDataAsTiles(reader, tags, offsets, byteCounts, compression, width, height);
+            return ReadStripDataAsTiles(reader, tags, offsets, byteCounts, compression, width, height, littleEndian);
         }
 
         // For uncompressed data, we can concatenate directly
@@ -249,14 +254,14 @@ public static class TiffDecoder
                 // Calculate actual strip height (the last strip may be shorter)
                 int stripHeight = Math.Min(rowsPerStrip, height - i * rowsPerStrip);
 
-                byte[] decompressedStrip = DecompressData(compressedStrip, compression, width, stripHeight, tags);
+                byte[] decompressedStrip = DecompressData(compressedStrip, compression, width, stripHeight, tags, littleEndian);
                 output.Write(decompressedStrip, 0, decompressedStrip.Length);
             }
             return output.ToArray();
         }
     }
 
-    private static byte[] ReadStripDataAsTiles(BinaryReader reader, Dictionary<TiffTag, object> tags, uint[] offsets, uint[] byteCounts, TiffCompression compression, int width, int height)
+    private static byte[] ReadStripDataAsTiles(BinaryReader reader, Dictionary<TiffTag, object> tags, uint[] offsets, uint[] byteCounts, TiffCompression compression, int width, int height, bool littleEndian)
     {
         var tileWidth = Convert.ToInt32(tags[TiffTag.TileWidth]);
         var tileHeight = Convert.ToInt32(tags[TiffTag.TileLength]);
@@ -285,10 +290,9 @@ public static class TiffDecoder
 
         // Calculate tile layout
         int tilesAcross = (width + tileWidth - 1) / tileWidth;
-        int tilesDown = (height + tileHeight - 1) / tileHeight;
 
         // Allocate output buffer for entire image
-        var output = new byte[width * height * bytesPerPixel];
+        var output = new byte[EnsureImageByteCount(width, height, bytesPerPixel)];
 
         // Process each strip as a tile and place it at the correct position
         for (var stripIndex = 0; stripIndex < offsets.Length; stripIndex++)
@@ -306,7 +310,7 @@ public static class TiffDecoder
             byte[] compressedStrip = reader.ReadBytes((int)byteCounts[stripIndex]);
             byte[] decompressedStrip = compression == TiffCompression.None
                 ? compressedStrip
-                : DecompressData(compressedStrip, compression, tileWidth, tileHeight, tags);
+                : DecompressData(compressedStrip, compression, tileWidth, tileHeight, tags, littleEndian);
 
             // Calculate actual tile dimensions (edge tiles may be smaller)
             int actualTileWidth = Math.Min(tileWidth, width - pixelX);
@@ -329,9 +333,9 @@ public static class TiffDecoder
     private static byte[] ReadTileData(BinaryReader reader, Dictionary<TiffTag, object> tags, bool littleEndian, int width, int height, TiffCompression compression)
     {
         object offsetsObj = tags[TiffTag.TileOffsets];
-        object byteCountsObj = tags[TiffTag.TileByteCounts];
-        var tileWidth = Convert.ToInt32(tags[TiffTag.TileWidth]);
-        var tileHeight = Convert.ToInt32(tags[TiffTag.TileLength]);
+        object byteCountsObj = RequireTag(tags, TiffTag.TileByteCounts);
+        var tileWidth = Convert.ToInt32(RequireTag(tags, TiffTag.TileWidth));
+        var tileHeight = Convert.ToInt32(RequireTag(tags, TiffTag.TileLength));
 
         uint[] offsets = ConvertToUInt32Array(offsetsObj);
         uint[] byteCounts = ConvertToUInt32Array(byteCountsObj);
@@ -360,17 +364,16 @@ public static class TiffDecoder
 
         // Calculate tile layout
         int tilesAcross = (width + tileWidth - 1) / tileWidth;
-        int tilesDown = (height + tileHeight - 1) / tileHeight;
 
         // Allocate output buffer for entire image
-        var output = new byte[width * height * bytesPerPixel];
+        var output = new byte[EnsureImageByteCount(width, height, bytesPerPixel)];
 
         // Process each tile and place it at the correct position
         for (var tileIndex = 0; tileIndex < offsets.Length; tileIndex++)
         {
-            // Calculate tile position in the grid (column-major order: down first, then across)
-            int tileX = tileIndex / tilesDown;
-            int tileY = tileIndex % tilesDown;
+            // Tiles are stored left-to-right, top-to-bottom (row-major), TIFF 6.0 §15.
+            int tileX = tileIndex % tilesAcross;
+            int tileY = tileIndex / tilesAcross;
 
             // Calculate pixel position in the image
             int pixelX = tileX * tileWidth;
@@ -381,19 +384,7 @@ public static class TiffDecoder
             byte[] compressedTile = reader.ReadBytes((int)byteCounts[tileIndex]);
             byte[] decompressedTile = compression == TiffCompression.None
                 ? compressedTile
-                : DecompressData(compressedTile, compression, tileWidth, tileHeight, tags);
-
-            // Debug logging for tiles
-            if (tileIndex < 4)
-            {
-                Console.WriteLine($"Tile {tileIndex}: compressed={compressedTile.Length} bytes, " +
-                                $"decompressed={decompressedTile.Length} bytes, " +
-                                $"expected={tileWidth * tileHeight * bytesPerPixel} bytes");
-                Console.Write("  First 16 decompressed bytes: ");
-                for (var i = 0; i < Math.Min(16, decompressedTile.Length); i++)
-                    Console.Write($"{decompressedTile[i]:X2} ");
-                Console.WriteLine();
-            }
+                : DecompressData(compressedTile, compression, tileWidth, tileHeight, tags, littleEndian);
 
             // Calculate actual tile dimensions (edge tiles may be smaller)
             int actualTileWidth = Math.Min(tileWidth, width - pixelX);
@@ -413,19 +404,27 @@ public static class TiffDecoder
         return output;
     }
 
-    private static byte[] DecompressData(byte[] data, TiffCompression compression, int width, int height, Dictionary<TiffTag, object> tags)
+    private static byte[] DecompressData(byte[] data, TiffCompression compression, int width, int height, Dictionary<TiffTag, object> tags, bool littleEndian)
     {
-        return compression switch
+        byte[] result = compression switch
         {
             TiffCompression.None => data,
             TiffCompression.CcittRle or TiffCompression.CcittGroup3 or TiffCompression.CcittGroup4 => DecompressCcitt(
                 data, compression, width, height, tags),
             TiffCompression.Lzw => DecompressLzw(data, tags),
-            TiffCompression.AdobeDeflate or TiffCompression.Deflate => DecompressDeflate(data, width, height, tags),
+            TiffCompression.AdobeDeflate or TiffCompression.Deflate => DecompressDeflate(data),
             TiffCompression.PackBits => DecompressPackBits(data),
             TiffCompression.Jpeg or TiffCompression.OldJpeg => DecompressJpeg(data, width, height, tags),
             _ => throw new TiffException($"Unsupported TIFF compression: {compression}")
         };
+
+        // TIFF Predictor 2 (horizontal differencing) applies to LZW and Deflate output (TIFF 6.0
+        // §14). It was previously applied to Deflate only, and byte-wise, which corrupts any image
+        // with more than one sample per pixel.
+        if (compression is TiffCompression.Lzw or TiffCompression.AdobeDeflate or TiffCompression.Deflate)
+            result = ApplyPredictor(result, width, tags, littleEndian);
+
+        return result;
     }
 
     private static byte[] DecompressCcitt(byte[] data, TiffCompression compression, int width, int height, Dictionary<TiffTag, object> tags)
@@ -568,11 +567,13 @@ public static class TiffDecoder
         throw lastException ?? new InvalidDataException("Failed to decompress LZW data");
     }
 
-    private static byte[] DecompressDeflate(byte[] data, int width, int height, Dictionary<TiffTag, object> tags)
+    private static byte[] DecompressDeflate(byte[] data)
     {
         using var input = new MemoryStream(data);
         using var output = new MemoryStream();
-        // Skip zlib header (2 bytes) for raw DEFLATE
+        // TIFF Deflate (both tag 8 and 32946) is a zlib (RFC 1950) stream: skip the 2-byte zlib
+        // header so .NET's raw-DEFLATE DeflateStream consumes the body. (The predictor, when present,
+        // is applied by the caller after decompression — it also applies to LZW.)
         input.Seek(2, SeekOrigin.Begin);
 
         using (var deflate = new DeflateStream(input, CompressionMode.Decompress))
@@ -580,17 +581,7 @@ public static class TiffDecoder
             deflate.CopyTo(output);
         }
 
-        byte[] decompressed = output.ToArray();
-
-        // Apply predictor if present
-        if (!tags.TryGetValue(TiffTag.Predictor, out object? tag)) return decompressed;
-        var predictor = Convert.ToInt32(tag);
-        if (predictor == 2) // Horizontal differencing
-        {
-            decompressed = ApplyHorizontalDifferencing(decompressed, width, height);
-        }
-
-        return decompressed;
+        return output.ToArray();
     }
 
     private static byte[] DecompressPackBits(byte[] data)
@@ -634,30 +625,93 @@ public static class TiffDecoder
         throw new TiffException("TIFF JPEG compression is temporarily unsupported.");
     }
 
-    private static byte[] ApplyHorizontalDifferencing(byte[] data, int width, int height)
+    private static byte[] ApplyPredictor(byte[] data, int width, Dictionary<TiffTag, object> tags, bool littleEndian)
     {
-        // TIFF Predictor 2: horizontal differencing (similar to PNG Sub filter)
-        var result = new byte[data.Length];
-        int bytesPerRow = data.Length / height;
+        if (!tags.TryGetValue(TiffTag.Predictor, out object? tag) || Convert.ToInt32(tag) != 2)
+            return data;
 
-        for (var row = 0; row < height; row++)
+        int samplesPerPixel = tags.TryGetValue(TiffTag.SamplesPerPixel, out object? sppObj)
+            ? Convert.ToInt32(sppObj)
+            : 1;
+
+        var bitsPerSample = 8;
+        if (tags.TryGetValue(TiffTag.BitsPerSample, out object? bpsValue))
         {
-            int rowOffset = row * bytesPerRow;
-            result[rowOffset] = data[rowOffset]; // First pixel unchanged
-
-            for (var col = 1; col < bytesPerRow; col++)
+            bitsPerSample = bpsValue switch
             {
-                result[rowOffset + col] = (byte)(data[rowOffset + col] + result[rowOffset + col - 1]);
-            }
+                int[] arr when arr.Length > 0 => arr[0],
+                ushort[] arr2 when arr2.Length > 0 => arr2[0],
+                _ => Convert.ToInt32(bpsValue)
+            };
         }
 
-        return result;
+        return ApplyHorizontalDifferencing(data, width, samplesPerPixel, bitsPerSample, littleEndian);
+    }
+
+    private static byte[] ApplyHorizontalDifferencing(byte[] data, int width, int samplesPerPixel, int bitsPerSample, bool littleEndian)
+    {
+        // TIFF Predictor 2: each sample is stored as the delta from the SAME component of the
+        // previous pixel. Reconstruction therefore adds the sample `samplesPerPixel` positions back,
+        // not the adjacent byte (the old code added the adjacent byte, corrupting any RGB/RGBA image).
+        // Operates in place.
+        if (samplesPerPixel <= 0 || width <= 0) return data;
+
+        if (bitsPerSample == 8)
+        {
+            int bytesPerRow = width * samplesPerPixel;
+            if (bytesPerRow <= 0) return data;
+            int rows = data.Length / bytesPerRow;
+            for (var row = 0; row < rows; row++)
+            {
+                int rowOffset = row * bytesPerRow;
+                for (int col = samplesPerPixel; col < bytesPerRow; col++)
+                    data[rowOffset + col] = (byte)(data[rowOffset + col] + data[rowOffset + col - samplesPerPixel]);
+            }
+            return data;
+        }
+
+        if (bitsPerSample == 16)
+        {
+            int samplesPerRow = width * samplesPerPixel;
+            int bytesPerRow = samplesPerRow * 2;
+            if (bytesPerRow <= 0) return data;
+            int rows = data.Length / bytesPerRow;
+            for (var row = 0; row < rows; row++)
+            {
+                int rowBase = row * bytesPerRow;
+                for (int s = samplesPerPixel; s < samplesPerRow; s++)
+                {
+                    int cur = rowBase + s * 2;
+                    int prev = cur - samplesPerPixel * 2;
+                    var sum = (ushort)(ReadUInt16FromBytes(data, cur, littleEndian) + ReadUInt16FromBytes(data, prev, littleEndian));
+                    WriteUInt16ToBytes(data, cur, sum, littleEndian);
+                }
+            }
+            return data;
+        }
+
+        // Other bit depths (1/4-bit palettes, 32-bit float) — predictor not supported; leave as-is.
+        return data;
+    }
+
+    private static void WriteUInt16ToBytes(byte[] data, int offset, ushort value, bool littleEndian)
+    {
+        if (littleEndian)
+        {
+            data[offset] = (byte)(value & 0xFF);
+            data[offset + 1] = (byte)(value >> 8);
+        }
+        else
+        {
+            data[offset] = (byte)(value >> 8);
+            data[offset + 1] = (byte)(value & 0xFF);
+        }
     }
 
     private static byte[] ConvertToBgra(byte[] data, int width, int height, TiffPhotometricInterpretation photometric,
-        int samplesPerPixel, int[] bitsPerSample, int planarConfiguration, bool littleEndian)
+        int samplesPerPixel, int[] bitsPerSample, int planarConfiguration, bool littleEndian, ushort[]? colorMap)
     {
-        var pixelData = new byte[width * height * 4];
+        var pixelData = new byte[EnsureImageByteCount(width, height, 4)];
 
         switch (photometric)
         {
@@ -671,7 +725,15 @@ public static class TiffDecoder
                 break;
             case TiffPhotometricInterpretation.BlackIsZero when bitsPerSample[0] == 8 && samplesPerPixel == 1:
                 // 8-bit grayscale
-                ConvertGrayscaleToBgra(data, pixelData, width, height);
+                ConvertGrayscaleToBgra(data, pixelData, width, height, invert: false);
+                break;
+            case TiffPhotometricInterpretation.WhiteIsZero when bitsPerSample[0] == 8 && samplesPerPixel == 1:
+                // 8-bit grayscale, inverted (0 = white)
+                ConvertGrayscaleToBgra(data, pixelData, width, height, invert: true);
+                break;
+            case TiffPhotometricInterpretation.Palette when bitsPerSample[0] is 8 or 4 && samplesPerPixel == 1:
+                // Palette-colour: sample is an index into the ColorMap (R[], G[], B[] of 16-bit values).
+                ConvertPaletteToBgra(data, pixelData, width, height, bitsPerSample[0], colorMap);
                 break;
             case TiffPhotometricInterpretation.BlackIsZero when bitsPerSample[0] == 16 && samplesPerPixel == 1:
                 // 16-bit grayscale
@@ -737,16 +799,64 @@ public static class TiffDecoder
         }
     }
 
-    private static void ConvertGrayscaleToBgra(byte[] data, byte[] pixelData, int width, int height)
+    private static void ConvertGrayscaleToBgra(byte[] data, byte[] pixelData, int width, int height, bool invert)
     {
+        int pixelCount = Math.Min(width * height, data.Length);
         var pixelIndex = 0;
-        foreach (byte gray in data)
+        for (var i = 0; i < pixelCount; i++)
         {
+            byte gray = invert ? (byte)(255 - data[i]) : data[i];
             pixelData[pixelIndex++] = gray; // Blue
             pixelData[pixelIndex++] = gray; // Green
             pixelData[pixelIndex++] = gray; // Red
             pixelData[pixelIndex++] = 255;  // Alpha
         }
+    }
+
+    private static void ConvertPaletteToBgra(byte[] data, byte[] pixelData, int width, int height, int bitsPerSample, ushort[]? colorMap)
+    {
+        if (colorMap is null)
+            throw new TiffException("Palette-colour image is missing its ColorMap tag.");
+
+        // The ColorMap is laid out as all R entries, then all G, then all B — each a 16-bit value
+        // (0..65535). The number of entries per channel is 2^bitsPerSample.
+        int entries = 1 << bitsPerSample;
+        if (colorMap.Length < entries * 3)
+            throw new TiffException($"ColorMap has {colorMap.Length} entries; expected {entries * 3} for {bitsPerSample}-bit palette.");
+
+        int gBase = entries;
+        int bBase = entries * 2;
+        var pixelIndex = 0;
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                int index = ReadPaletteIndex(data, y, x, width, bitsPerSample);
+                if (index >= entries) index = entries - 1; // clamp malformed indices
+                pixelData[pixelIndex++] = (byte)(colorMap[bBase + index] >> 8); // Blue
+                pixelData[pixelIndex++] = (byte)(colorMap[gBase + index] >> 8); // Green
+                pixelData[pixelIndex++] = (byte)(colorMap[index] >> 8);         // Red
+                pixelData[pixelIndex++] = 255;                                  // Alpha
+            }
+        }
+    }
+
+    // Reads the palette index for pixel (x, y). 8-bit indices are one byte each; 4-bit indices are
+    // packed two-per-byte (high nibble first) with each row starting on a byte boundary.
+    private static int ReadPaletteIndex(byte[] data, int y, int x, int width, int bitsPerSample)
+    {
+        if (bitsPerSample == 8)
+        {
+            int pos = y * width + x;
+            return pos < data.Length ? data[pos] : 0;
+        }
+
+        // 4-bit
+        int bytesPerRow = (width + 1) / 2;
+        int bytePos = y * bytesPerRow + x / 2;
+        if (bytePos >= data.Length) return 0;
+        byte b = data[bytePos];
+        return (x & 1) == 0 ? b >> 4 : b & 0x0F;
     }
 
     private static void ConvertRgbToBgra(byte[] data, byte[] pixelData, int width, int height)
@@ -805,34 +915,17 @@ public static class TiffDecoder
 
     private static void ConvertGrayscale16ToBgra(byte[] data, byte[] pixelData, int width, int height, bool littleEndian, bool invertColors = false)
     {
-        // First pass: find min/max for normalization
-        ushort minVal = ushort.MaxValue, maxVal = 0;
-
-        for (var i = 0; i < data.Length; i += 2)
-        {
-            ushort value16 = littleEndian
-                ? (ushort)(data[i] | (data[i + 1] << 8))
-                : (ushort)((data[i] << 8) | data[i + 1]);
-
-            minVal = Math.Min(minVal, value16);
-            maxVal = Math.Max(maxVal, value16);
-        }
-
-        // Calculate scaling factor for normalization
-        float range = maxVal - minVal;
-        float scale = range > 0 ? 255.0f / range : 0;
-
-        // Second pass: convert with normalization
+        // 16-bit samples map linearly to 8-bit by taking the high byte (value >> 8). The previous
+        // code histogram-normalised (min/max stretch), which changes pixel values relative to every
+        // other renderer and turns a low-contrast image into a high-contrast one.
         var pixelIndex = 0;
-        for (var i = 0; i < data.Length; i += 2)
+        for (var i = 0; i + 1 < data.Length; i += 2)
         {
             ushort value16 = littleEndian
                 ? (ushort)(data[i] | (data[i + 1] << 8))
                 : (ushort)((data[i] << 8) | data[i + 1]);
 
-            // Normalize to 0-255 range
-            var gray = (byte)Math.Min(255, (int)((value16 - minVal) * scale));
-
+            var gray = (byte)(value16 >> 8);
             if (invertColors)
                 gray = (byte)(255 - gray);
 
@@ -860,9 +953,9 @@ public static class TiffDecoder
                 : (ushort)((data[i + 4] << 8) | data[i + 5]);
 
             // Downsample to 8-bit
-            var r = (byte)((r16 + 128) >> 8);
-            var g = (byte)((g16 + 128) >> 8);
-            var b = (byte)((b16 + 128) >> 8);
+            var r = (byte)(r16 >> 8);
+            var g = (byte)(g16 >> 8);
+            var b = (byte)(b16 >> 8);
 
             pixelData[pixelIndex++] = b; // Blue
             pixelData[pixelIndex++] = g; // Green
@@ -898,9 +991,9 @@ public static class TiffDecoder
                 : (ushort)((data[bPos] << 8) | data[bPos + 1]);
 
             // Downsample to 8-bit
-            var r = (byte)((r16 + 128) >> 8);
-            var g = (byte)((g16 + 128) >> 8);
-            var b = (byte)((b16 + 128) >> 8);
+            var r = (byte)(r16 >> 8);
+            var g = (byte)(g16 >> 8);
+            var b = (byte)(b16 >> 8);
 
             pixelData[pixelIndex++] = b; // Blue
             pixelData[pixelIndex++] = g; // Green
@@ -929,10 +1022,10 @@ public static class TiffDecoder
                 : (ushort)((data[i + 6] << 8) | data[i + 7]);
 
             // Downsample to 8-bit
-            var r = (byte)((r16 + 128) >> 8);
-            var g = (byte)((g16 + 128) >> 8);
-            var b = (byte)((b16 + 128) >> 8);
-            var a = (byte)((a16 + 128) >> 8);
+            var r = (byte)(r16 >> 8);
+            var g = (byte)(g16 >> 8);
+            var b = (byte)(b16 >> 8);
+            var a = (byte)(a16 >> 8);
 
             pixelData[pixelIndex++] = b; // Blue
             pixelData[pixelIndex++] = g; // Green
@@ -955,10 +1048,34 @@ public static class TiffDecoder
         };
     }
 
+    // Largest decoded image / tag payload this decoder will allocate. TIFF dimensions and tag counts
+    // are read from untrusted input; computing sizes in long against this cap turns an overflowing or
+    // hostile value into a clean TiffException instead of an int-overflow (bad allocation) or OOM.
+    private const long MaxImageBytes = 1L << 30; // 1 GiB
+
+    private static object RequireTag(Dictionary<TiffTag, object> tags, TiffTag tag)
+    {
+        if (!tags.TryGetValue(tag, out object? value))
+            throw new TiffException($"Missing required {tag} tag.");
+        return value;
+    }
+
+    private static int EnsureImageByteCount(int width, int height, int bytesPerPixel)
+    {
+        if (width <= 0 || height <= 0)
+            throw new TiffException($"Invalid TIFF image dimensions {width}x{height}.");
+        if (bytesPerPixel <= 0)
+            throw new TiffException($"Invalid TIFF bytes-per-pixel {bytesPerPixel}.");
+        long bytes = (long)width * height * bytesPerPixel;
+        if (bytes > MaxImageBytes)
+            throw new TiffException($"TIFF image {width}x{height} ({bytes} bytes) exceeds the {MaxImageBytes}-byte limit.");
+        return (int)bytes;
+    }
+
     private static object ReadTagValue(BinaryReader reader, ushort fieldType, uint count, uint valueOffset, bool littleEndian)
     {
         int typeSize = GetFieldTypeSize(fieldType);
-        uint dataSize = count * (uint)typeSize;
+        long dataSize = (long)count * typeSize; // long: count is a 32-bit field, count*8 overflows uint
 
         // If data fits in 4 bytes, it's stored directly in valueOffset
         byte[] data;
@@ -970,6 +1087,9 @@ public static class TiffDecoder
         }
         else
         {
+            if (dataSize > MaxImageBytes)
+                throw new TiffException($"TIFF tag (type {fieldType}, count {count}) data size {dataSize} exceeds the {MaxImageBytes}-byte limit.");
+
             // Otherwise, valueOffset points to the data
             long currentPosition = reader.BaseStream.Position;
             reader.BaseStream.Seek(valueOffset, SeekOrigin.Begin);
