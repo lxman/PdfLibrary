@@ -6,6 +6,7 @@ using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
+using PdfLibrary.Rendering.Icc;
 using PdfLibrary.Rendering.SkiaSharp.Conversion;
 using PdfLibrary.Structure;
 using SkiaSharp;
@@ -26,6 +27,25 @@ internal class ImageRenderer
         _canvas = canvas;
         _document = document;
     }
+
+    // Calibrate a decoded CalRGB pixel buffer (W×H×3 bytes) to sRGB, replacing the raw DeviceRGB
+    // interpretation. Returns a fresh buffer; any bytes past the colour data are preserved.
+    private static byte[] CalibrateCalRgbBuffer(byte[] rgb, int count, CalRgbConverter converter)
+    {
+        var dst = new byte[rgb.Length];
+        if (rgb.Length > count)
+            Array.Copy(rgb, count, dst, count, rgb.Length - count);
+        for (int i = 0; i + 2 < count; i += 3)
+        {
+            double[] s = converter.ToSrgb(rgb[i] / 255.0, rgb[i + 1] / 255.0, rgb[i + 2] / 255.0);
+            dst[i]     = ToSrgbByte(s[0]);
+            dst[i + 1] = ToSrgbByte(s[1]);
+            dst[i + 2] = ToSrgbByte(s[2]);
+        }
+        return dst;
+    }
+
+    private static byte ToSrgbByte(double v) => v <= 0.0 ? (byte)0 : v >= 1.0 ? (byte)255 : (byte)Math.Round(v * 255.0);
 
     /// <summary>
     /// Draws a PDF image to the canvas using the current graphics state.
@@ -545,6 +565,16 @@ internal class ImageRenderer
                     int expectedSize = width * height * 3;
                     if (imageData.Length < expectedSize)
                         return null;
+
+                    // CalRGB: calibrate the decoded device values to sRGB (gamma + matrix) before
+                    // they become bitmap pixels. Wide-gamut CalRGB renders visibly different from a
+                    // raw DeviceRGB read. Falls through unchanged if the params can't be parsed.
+                    if (colorSpace == "CalRGB")
+                    {
+                        CalRgbConverter? cal = CalRgbConverter.FromCalRgbArray(image.ColorSpaceArray, _document);
+                        if (cal is not null)
+                            imageData = CalibrateCalRgbBuffer(imageData, expectedSize, cal);
+                    }
 
                     // Use direct pixel buffer for performance - SetPixel is very slow for large images
                     int pixelBufferSize = width * height * 4;

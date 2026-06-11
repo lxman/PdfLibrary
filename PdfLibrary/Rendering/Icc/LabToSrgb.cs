@@ -1,4 +1,3 @@
-using ICCSharp;
 using ICCSharp.Eval;
 using ICCSharp.IO;
 using ICCSharp.Profile;
@@ -15,7 +14,6 @@ namespace PdfLibrary.Rendering.Icc;
 /// </summary>
 internal static class LabToSrgb
 {
-    private static volatile IccTransform? _xyzToSrgb;
     private static readonly object Lock = new();
 
     /// <summary>
@@ -36,24 +34,16 @@ internal static class LabToSrgb
             xyz = new XyzNumber(X, Y, Z);
         }
 
-        IccTransform t = GetXyzToSrgbTransform();
-        // The transform is sRGB → sRGB, so its "input" path is RGB. We need to feed it XYZ
-        // directly. Bypass the IccTransform abstraction and apply the destination's matrix-TRC
-        // inverse path manually using the built-in sRGB profile.
-        return BuildSrgbFromXyz(xyz);
+        // Feed the (already D50) XYZ straight into the destination's matrix-TRC inverse path,
+        // built from the built-in sRGB profile.
+        return D50XyzToSrgb(xyz);
     }
 
-    private static IccTransform GetXyzToSrgbTransform()
-    {
-        if (_xyzToSrgb is not null) return _xyzToSrgb;
-        lock (Lock)
-        {
-            _xyzToSrgb ??= IccTransform.Create(BuiltInProfiles.Srgb, BuiltInProfiles.Srgb);
-        }
-        return _xyzToSrgb;
-    }
-
-    private static double[] BuildSrgbFromXyz(XyzNumber xyz)
+    /// <summary>
+    /// Converts an absolute D50 PCS-XYZ triple to display sRGB in [0, 1], using the built-in sRGB
+    /// profile's colorants and tone curve. Shared by the Lab and CalRGB conversion paths.
+    /// </summary>
+    internal static double[] D50XyzToSrgb(XyzNumber xyz)
     {
         // Use the sRGB profile colorants directly to invert PCS-XYZ → linear sRGB → display sRGB.
         IccProfile srgb = BuiltInProfiles.Srgb;
@@ -92,7 +82,7 @@ internal static class LabToSrgb
         return _srgbToneCurve;
     }
 
-    private static bool AreClose(XyzNumber a, XyzNumber b)
+    internal static bool AreClose(XyzNumber a, XyzNumber b)
         => Math.Abs(a.X - b.X) < 1e-4 && Math.Abs(a.Y - b.Y) < 1e-4 && Math.Abs(a.Z - b.Z) < 1e-4;
 
     private static double Clamp01(double v) => v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);

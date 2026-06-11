@@ -553,10 +553,17 @@ internal class ColorSpaceResolver(PdfDocument? document)
             return;
         }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalRGB: R={color[0]:F3}, G={color[1]:F3}, B={color[2]:F3} (passing through to DeviceRGB)");
+        // Calibrate through the CalRGB gamma + matrix to sRGB; fall back to a raw DeviceRGB
+        // interpretation only if the dictionary can't be parsed.
+        CalRgbConverter? converter = CalRgbConverter.FromCalRgbArray(csArray, document);
+        if (converter is not null)
+        {
+            double[] rgb = converter.ToSrgb(color[0], color[1], color[2]);
+            PdfLogger.Log(LogCategory.Graphics,
+                $"RESOLVE CalRGB: ({color[0]:F3},{color[1]:F3},{color[2]:F3}) calibrated to sRGB ({rgb[0]:F3},{rgb[1]:F3},{rgb[2]:F3})");
+            color = [rgb[0], rgb[1], rgb[2]];
+        }
 
-        // For now, treat CalRGB as DeviceRGB
-        // TODO: Apply gamma and matrix transformations from the CalRGB dictionary
         colorSpaceName = "DeviceRGB";
     }
 
@@ -575,10 +582,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
             return;
         }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: Gray={color[0]:F3} (passing through to DeviceGray)");
+        // Calibrate through the CalGray gamma to sRGB (a neutral grey); fall back to raw
+        // DeviceGray only if the dictionary can't be parsed.
+        CalGrayConverter? converter = CalGrayConverter.FromCalGrayArray(csArray, document);
+        if (converter is not null)
+        {
+            double[] rgb = converter.ToSrgb(color[0]);
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: {color[0]:F3} calibrated to sRGB ({rgb[0]:F3})");
+            color = [rgb[0], rgb[1], rgb[2]];
+            colorSpaceName = "DeviceRGB";
+            return;
+        }
 
-        // For now, treat CalGray as DeviceGray
-        // TODO: Apply gamma transformation from the CalGray dictionary
         colorSpaceName = "DeviceGray";
     }
 

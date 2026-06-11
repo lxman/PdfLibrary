@@ -231,6 +231,24 @@ public class PdfImage
     }
 
     /// <summary>
+    /// The color-space definition as an array (e.g. <c>[/CalRGB &lt;&lt;…&gt;&gt;]</c>,
+    /// <c>[/ICCBased …]</c>), resolving an indirect <c>/ColorSpace</c> reference. Null when the
+    /// color space is a bare name. Lets the renderer read calibration parameters the
+    /// <see cref="ColorSpace"/> string alone can't carry.
+    /// </summary>
+    internal PdfArray? ColorSpaceArray
+    {
+        get
+        {
+            if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
+                return null;
+            if (obj is PdfIndirectReference reference && _document is not null)
+                obj = _document.ResolveReference(reference);
+            return obj as PdfArray;
+        }
+    }
+
+    /// <summary>
     /// Gets the number of color components (1 for Gray, 3 for RGB, 4 for CMYK, etc.)
     /// </summary>
     public int ComponentCount
