@@ -30,7 +30,7 @@ internal class StitchingFunction : PdfFunction
         // A stitching function takes exactly one input.
         if (domain.Length < 2) return null;
 
-        if (!dict.TryGetValue(new PdfName("Functions"), out PdfObject functionsObj)) return null;
+        if (!dict.TryGetValue(new PdfName("Functions"), out PdfObject? functionsObj)) return null;
         if (functionsObj is PdfIndirectReference fref && document is not null)
             functionsObj = document.ResolveReference(fref);
         if (functionsObj is not PdfArray functionsArray || functionsArray.Count == 0) return null;

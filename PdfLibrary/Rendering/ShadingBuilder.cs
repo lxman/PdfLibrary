@@ -79,7 +79,7 @@ internal static class ShadingBuilder
 
     // A shading's /Function is either a single n-output function, or an array of n single-output
     // functions (one per colour component).
-    private static List<PdfFunction> ResolveFunctions(PdfObject funcObj, PdfDocument? document)
+    private static List<PdfFunction> ResolveFunctions(PdfObject? funcObj, PdfDocument? document)
     {
         if (funcObj is PdfIndirectReference r && document is not null)
             funcObj = document.ResolveReference(r);
@@ -145,7 +145,7 @@ internal static class ShadingBuilder
 
     private static double[]? GetNumbers(PdfDictionary dict, string key, PdfDocument? document)
     {
-        if (!dict.TryGetValue(new PdfName(key), out PdfObject obj)) return null;
+        if (!dict.TryGetValue(new PdfName(key), out PdfObject? obj)) return null;
         if (obj is PdfIndirectReference r && document is not null) obj = document.ResolveReference(r);
         if (obj is not PdfArray arr) return null;
         var nums = new double[arr.Count];
