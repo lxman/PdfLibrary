@@ -55,4 +55,31 @@ public class IccCmykImageTests
 
         Assert.Null(result);
     }
+
+    [Fact]
+    public void Parallel_path_matches_scalar_path_byte_for_byte()
+    {
+        if (!File.Exists(SwopPath)) return;
+        var iccStream = new PdfStream(File.ReadAllBytes(SwopPath));
+        var conv = new IccColorConverter();
+
+        // 4 CMYK swatches (16 bytes). As a 4-sample buffer this stays under the parallel threshold
+        // (scalar path); repeated to 20 000 samples it crosses it (parallel path). They must agree.
+        byte[] swatch = [255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255];
+        byte[]? scalar = conv.TryConvertInterleavedToSrgb(iccStream, swatch, 4);
+        Assert.NotNull(scalar);
+
+        const int reps = 5000; // 4 * 5000 = 20 000 samples > threshold
+        byte[] big = new byte[swatch.Length * reps];
+        for (int k = 0; k < reps; k++)
+            Array.Copy(swatch, 0, big, k * swatch.Length, swatch.Length);
+
+        byte[]? parallel = conv.TryConvertInterleavedToSrgb(iccStream, big, 4);
+        Assert.NotNull(parallel);
+        Assert.Equal(reps * scalar!.Length, parallel!.Length);
+
+        // Each output sample must byte-match the scalar conversion of the repeating swatch.
+        for (int i = 0; i < parallel.Length; i++)
+            Assert.Equal(scalar[i % scalar.Length], parallel[i]);
+    }
 }

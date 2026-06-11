@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using ICCSharp;
 using ICCSharp.Profile;
 using Logging;
@@ -88,23 +89,49 @@ internal sealed class IccColorConverter
 
         int sampleCount = data.Length / sourceChannels;
         byte[] rgb = new byte[sampleCount * 3];
-        Span<double> input = stackalloc double[sourceChannels];
-        Span<double> output = stackalloc double[3];
+        int channels = sourceChannels;
+        IccTransform t = transform;
 
-        for (int i = 0; i < sampleCount; i++)
+        // Below this, thread-scheduling overhead outweighs the work, so palettes and tiny images
+        // stay scalar; above it (real images) the conversion fans out across cores. The transform
+        // is immutable and Apply uses only stack-local scratch, so concurrent calls are safe; each
+        // partition writes a disjoint output range, so the result is identical to the scalar path.
+        const int parallelThreshold = 16384;
+        if (sampleCount >= parallelThreshold)
         {
-            int srcOff = i * sourceChannels;
-            for (int c = 0; c < sourceChannels; c++)
-                input[c] = data[srcOff + c] / 255.0;
-
-            transform.Apply(input, output);
-
-            int dstOff = i * 3;
-            rgb[dstOff + 0] = ToByte(output[0]);
-            rgb[dstOff + 1] = ToByte(output[1]);
-            rgb[dstOff + 2] = ToByte(output[2]);
+            Parallel.ForEach(Partitioner.Create(0, sampleCount), range =>
+            {
+                Span<double> input = stackalloc double[channels];
+                Span<double> output = stackalloc double[3];
+                for (int i = range.Item1; i < range.Item2; i++)
+                    ConvertSample(t, data, rgb, i, channels, input, output);
+            });
+        }
+        else
+        {
+            Span<double> input = stackalloc double[channels];
+            Span<double> output = stackalloc double[3];
+            for (int i = 0; i < sampleCount; i++)
+                ConvertSample(t, data, rgb, i, channels, input, output);
         }
         return rgb;
+    }
+
+    // Converts one interleaved sample (data[i*channels ..]) to rgb[i*3 ..]. The caller supplies
+    // thread-local scratch spans so this is safe to invoke concurrently across disjoint indices.
+    private static void ConvertSample(
+        IccTransform transform, byte[] data, byte[] rgb, int i, int channels, Span<double> input, Span<double> output)
+    {
+        int srcOff = i * channels;
+        for (int c = 0; c < channels; c++)
+            input[c] = data[srcOff + c] / 255.0;
+
+        transform.Apply(input, output);
+
+        int dstOff = i * 3;
+        rgb[dstOff + 0] = ToByte(output[0]);
+        rgb[dstOff + 1] = ToByte(output[1]);
+        rgb[dstOff + 2] = ToByte(output[2]);
     }
 
     private IccTransform? GetOrCreate(PdfStream iccStream)
