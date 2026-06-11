@@ -146,9 +146,12 @@ public class PdfGraphicsState
     /// <summary>
     /// Black-point compensation flag (PDF 2.0 /UseBlackPtComp, ISO 32000-2 Table 57). When true,
     /// ICC colour conversions map the source profile's darkest reproducible black to the
-    /// destination's, so dark CMYK shadows render full rather than washed-out grey. Default false.
+    /// destination's, so dark CMYK shadows render full rather than washed-out grey. Defaults to
+    /// true to match Adobe/Acrobat's default colour management — a no-op for profiles without a
+    /// raised black point, so only CMYK/ink content changes; an explicit /UseBlackPtComp /OFF
+    /// disables it.
     /// </summary>
-    public bool UseBlackPointCompensation { get; set; }
+    public bool UseBlackPointCompensation { get; set; } = true;
 
     /// <summary>Smoothness tolerance (SM)</summary>
     public double Smoothness { get; set; }
@@ -254,6 +257,7 @@ public class PdfGraphicsState
             StrokeOverprint = StrokeOverprint,
             FillOverprint = FillOverprint,
             OverprintMode = OverprintMode,
+            UseBlackPointCompensation = UseBlackPointCompensation,
             Smoothness = Smoothness
         };
     }
