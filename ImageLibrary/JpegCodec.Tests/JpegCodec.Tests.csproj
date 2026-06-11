@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\JpegCodec\JpegCodec.csproj" />
+    <!-- Reference decoder for the grayscale-subsampling regression fixture (decodes the PNG reference). -->
+    <ProjectReference Include="..\PngCodec\PngCodec.csproj" />
   </ItemGroup>
 
   <ItemGroup>

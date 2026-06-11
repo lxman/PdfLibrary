@@ -16,11 +16,14 @@ public class CustomTgaCodec : IImageCodec
     {
         // TGA has no leading magic — validate the header byte fields instead:
         //   byte 1: color map type (0 = none, 1 = present)
-        //   byte 2: image type (0 = none, 1/2/3 = uncompressed, 9/10/11 = RLE)
+        //   byte 2: image type (1/2/3 = uncompressed, 9/10/11 = RLE)
+        // Image type 0 ("no image data") is rejected: it isn't decodable anyway, and accepting it made
+        // this magic-less codec claim other formats that merely start with zero bytes — notably the
+        // JPEG 2000 signature box (00 00 00 0C ...), whose .jp2 files were all hijacked and failed here.
         if (header.Length < 3) return false;
         if (header[1] > 1) return false;
         byte imageType = header[2];
-        return imageType is 0 or 1 or 2 or 3 or 9 or 10 or 11;
+        return imageType is 1 or 2 or 3 or 9 or 10 or 11;
     }
 
     public ImageData Decode(byte[] data)

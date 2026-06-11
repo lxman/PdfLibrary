@@ -67,6 +67,20 @@ internal static class PixelConverter
                 }
                 break;
 
+            case PixelFormat.Cmyk32:
+                // Naive CMYK -> RGB (matches the renderer's DeviceCMYK path). Without this, every CMYK
+                // image (CMYK JPEG / TIFF) threw here even though the codecs decoded it fine.
+                for (var i = 0; i < pixelCount; i++)
+                {
+                    int o = i * 4;
+                    int c = data[o], m = data[o + 1], y = data[o + 2], k = data[o + 3];
+                    output[o]     = (byte)((255 - y) * (255 - k) / 255); // B
+                    output[o + 1] = (byte)((255 - m) * (255 - k) / 255); // G
+                    output[o + 2] = (byte)((255 - c) * (255 - k) / 255); // R
+                    output[o + 3] = 255;
+                }
+                break;
+
             default:
                 throw new NotSupportedException(
                     $"Cannot convert pixel format {format} to BGRA32");

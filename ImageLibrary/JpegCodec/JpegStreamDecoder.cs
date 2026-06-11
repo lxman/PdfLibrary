@@ -249,7 +249,12 @@ public sealed class JpegStreamDecoder
         int mcusPerLine = (width + 8 * maxH - 1) / (8 * maxH);
 
         if (nf == 1)
-            return InterleaveGrayscale(componentRasters[0], width, height, mcusPerLine * 8);
+            // The single component's raster is allocated mcusPerLine*8*HorizontalSampling wide (see
+            // AllocateSequentialRasters). Passing only mcusPerLine*8 read every row at half the true
+            // stride for a sub-sampled grayscale (H=2), squishing the image to half width and doubling
+            // it. Use the component's own sampling factor.
+            return InterleaveGrayscale(componentRasters[0], width, height,
+                mcusPerLine * 8 * frame.Components[0].HorizontalSampling);
 
         if (nf == 3 && maxH == 1 && maxV == 1)
             return Interleave444(componentRasters, width, height, mcusPerLine * 8);

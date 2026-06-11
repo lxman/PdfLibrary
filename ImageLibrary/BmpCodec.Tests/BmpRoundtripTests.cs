@@ -36,8 +36,12 @@ public class BmpRoundtripTests
     }
 
     [Fact]
-    public void RoundTrip_32Bit_PreservesPixels()
+    public void RoundTrip_32Bit_DecodesRgbOpaque()
     {
+        // The encoder emits BI_RGB (uncompressed) 32-bit, where the 4th byte is undefined. Even though
+        // these source pixels carry alpha 128/64, a spec-correct decode treats BI_RGB 32-bit as opaque
+        // (matching other decoders) — so the alpha comes back as 255. This guards the fix that stopped
+        // real BI_RGB icons (which store 0 in that byte) decoding as fully transparent.
         var original = new BmpImage(3, 3);
         original.SetPixel(0, 0, 255, 0, 0);
         original.SetPixel(1, 1, 0, 255, 0, 128);
@@ -48,9 +52,9 @@ public class BmpRoundtripTests
 
         Assert.Equal(original.Width, decoded.Width);
         Assert.Equal(original.Height, decoded.Height);
-        Assert.Equal((255, 0, 0, 255), decoded.GetPixel(0, 0));
-        Assert.Equal((0, 255, 0, 128), decoded.GetPixel(1, 1));
-        Assert.Equal((0, 0, 255, 64), decoded.GetPixel(2, 2));
+        Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), decoded.GetPixel(0, 0));
+        Assert.Equal(((byte)0, (byte)255, (byte)0, (byte)255), decoded.GetPixel(1, 1));
+        Assert.Equal(((byte)0, (byte)0, (byte)255, (byte)255), decoded.GetPixel(2, 2));
     }
 
     [Theory]

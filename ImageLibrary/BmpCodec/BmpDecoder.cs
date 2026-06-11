@@ -360,6 +360,11 @@ namespace BmpCodec
 
         private static void Decode32Bpp(ReadOnlySpan<byte> src, Span<byte> dst, int width)
         {
+            // This path is only reached for BI_RGB (uncompressed) 32-bit BMPs, where the 4th byte is
+            // undefined ("X8R8G8B8") — most writers leave it 0. Treat it as opaque, matching the spec
+            // and other decoders; a 32-bit BMP that genuinely carries alpha uses (ALPHA)BITFIELDS,
+            // which goes through DecodeBitFields. Honouring the undefined byte washed real images
+            // (e.g. Visual Studio icon BMPs, which store 0 there) to fully transparent.
             for (var x = 0; x < width; x++)
             {
                 int srcOffset = x * 4;
@@ -368,7 +373,7 @@ namespace BmpCodec
                 dst[dstOffset] = src[srcOffset];         // Blue
                 dst[dstOffset + 1] = src[srcOffset + 1]; // Green
                 dst[dstOffset + 2] = src[srcOffset + 2]; // Red
-                dst[dstOffset + 3] = src[srcOffset + 3]; // Alpha (or ignored)
+                dst[dstOffset + 3] = 255;                // Alpha: BI_RGB 32-bit is opaque
             }
         }
 

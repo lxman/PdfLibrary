@@ -170,13 +170,16 @@ public class CodecRegistry
     private void RegisterBuiltInCodecs()
     {
         // In-house codecs from the ImageLibrary projects — primary implementations.
+        // Order matters for signature-based dispatch (first CanHandle wins). TGA is registered LAST
+        // because it has no magic number: its header-field heuristic can otherwise claim files that
+        // belong to a magic-bearing codec registered after it.
         Register(new CustomJpegCodec());
         Register(new CustomPngCodec());
         Register(new CustomBmpCodec());
         Register(new CustomGifCodec());
-        Register(new CustomTgaCodec());
         Register(new CustomTiffCodec());
         Register(new CustomJpeg2000Codec());
         Register(new CustomPbmCodec());
+        Register(new CustomTgaCodec());
     }
 }
