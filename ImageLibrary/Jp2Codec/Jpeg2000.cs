@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Jp2Codec.Color;
 
 namespace Jp2Codec
@@ -51,32 +52,57 @@ namespace Jp2Codec
                 return Array.Empty<byte>();
             }
 
-            Jp2DecodeResult result = new Jp2StreamDecoder().Decode(data);
-
-            width = result.Width;
-            height = result.Height;
-
-            // Managed colour spaces — let SrgbRenderer handle upsampling, sYCC
-            // conversion, and ICC mapping so PDF consumers don't replicate it.
-            switch (result.ColorSpace)
+            try
             {
-                case Jp2ColorSpace.Srgb:
-                case Jp2ColorSpace.SrgbYcc:
-                case Jp2ColorSpace.RestrictedIcc:
-                case Jp2ColorSpace.AnyIcc:
-                    components = 3;
-                    return SrgbRenderer.RenderToSrgb(result);
+                Jp2DecodeResult result = new Jp2StreamDecoder().Decode(data);
 
-                case Jp2ColorSpace.Greyscale:
-                    components = 1;
-                    return RenderGreyscale(result);
+                width = result.Width;
+                height = result.Height;
+
+                // Managed colour spaces — let SrgbRenderer handle upsampling, sYCC
+                // conversion, and ICC mapping so PDF consumers don't replicate it.
+                switch (result.ColorSpace)
+                {
+                    case Jp2ColorSpace.Srgb:
+                    case Jp2ColorSpace.SrgbYcc:
+                    case Jp2ColorSpace.RestrictedIcc:
+                    case Jp2ColorSpace.AnyIcc:
+                        components = 3;
+                        return SrgbRenderer.RenderToSrgb(result);
+
+                    case Jp2ColorSpace.Greyscale:
+                        components = 1;
+                        return RenderGreyscale(result);
+                }
+
+                // Unspecified (raw .j2c, or JP2 with no colr box). Hand back raw
+                // component samples — the caller's surrounding metadata is what
+                // tells the consumer how to interpret them.
+                components = result.NumberOfComponents;
+                return InterleaveRawComponents(result);
             }
-
-            // Unspecified (raw .j2c, or JP2 with no colr box). Hand back raw
-            // component samples — the caller's surrounding metadata is what
-            // tells the consumer how to interpret them.
-            components = result.NumberOfComponents;
-            return InterleaveRawComponents(result);
+            catch (InvalidDataException)
+            {
+                // Already the canonical "corrupt / malformed input" signal — pass through.
+                throw;
+            }
+            catch (Exception ex) when (ex is ArgumentException
+                                          or IndexOutOfRangeException
+                                          or OverflowException
+                                          or FormatException
+                                          or EndOfStreamException
+                                          or InvalidOperationException)
+            {
+                // A malformed or hostile codestream drove an internal invariant past a
+                // low-level guard (e.g. a negative subband shift reaching CoordMath, a
+                // truncated packet header, an out-of-range marker length). Normalise it
+                // to the same InvalidDataException contract every other parse failure
+                // already uses, so callers can treat "bad JPEG 2000 input" uniformly
+                // instead of having raw framework exceptions leak through. The fuzzer /
+                // crash-test corpus (gdal_fuzzer_*, *.SIGSEGV.*, issue*-null-image-size)
+                // exercises exactly these paths — they must reject cleanly, not throw raw.
+                throw new InvalidDataException($"Malformed JPEG 2000 data: {ex.Message}", ex);
+            }
         }
 
         private static byte[] RenderGreyscale(Jp2DecodeResult result)
