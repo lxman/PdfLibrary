@@ -871,46 +871,16 @@ namespace Jbig2Decoder.Stream
         {
             if (Page is null) throw new InvalidOperationException();
 
-            int w = region.Width;
-            int h = region.Height;
-
             if (_isStriped)
             {
+                int h = region.Height;
                 EnsurePageHeight(y + h);
                 if (y + h > _actualHeight) _actualHeight = y + h;
             }
 
-            for (var ry = 0; ry < h; ry++)
-            {
-                int dy = y + ry;
-                if ((uint)dy >= (uint)Page.Height) continue;
-
-                for (var rx = 0; rx < w; rx++)
-                {
-                    int dx = x + rx;
-                    if ((uint)dx >= (uint)Page.Width) continue;
-
-                    int srcBit = region.GetPixel(rx, ry);
-                    int dstBitIdx = dy * Page.Stride + (dx >> 3);
-                    int dstShift = 7 - (dx & 7);
-                    int dstBit = (Page.Data[dstBitIdx] >> dstShift) & 1;
-
-                    int newBit = op switch
-                    {
-                        0 => srcBit | dstBit,        // OR
-                        1 => srcBit & dstBit,        // AND
-                        2 => srcBit ^ dstBit,        // XOR
-                        3 => 1 - (srcBit ^ dstBit),  // XNOR
-                        4 => srcBit,                  // REPLACE
-                        _ => srcBit | dstBit,
-                    };
-
-                    if (newBit == 1)
-                        Page.Data[dstBitIdx] = (byte)(Page.Data[dstBitIdx] | (1 << dstShift));
-                    else
-                        Page.Data[dstBitIdx] = (byte)(Page.Data[dstBitIdx] & ~(1 << dstShift));
-                }
-            }
+            // Byte-aligned compositor — 8 pixels per read-modify-write. Clipping to
+            // the page edges and the combination operators are handled inside.
+            BitBlit.Compose(Page, region, x, y, op);
         }
     }
 }

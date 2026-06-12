@@ -588,35 +588,10 @@ namespace Jbig2Decoder.Region
             }
         }
 
+        // Glyph-instance compositor. Byte-aligned (8 pixels per read-modify-write);
+        // clipping and the SbCombOp combination operator are handled inside. Matches
+        // jbig2dec's jbig2_image_compose for 1-bit images.
         private static void Compose(Bitmap dst, Bitmap src, int dx, int dy, int op)
-        {
-            // Bit-level compositor. Slow but correct; matches jbig2dec's
-            // jbig2_image_compose for 1-bit images.
-            int sw = src.Width;
-            int sh = src.Height;
-            for (var sy = 0; sy < sh; sy++)
-            {
-                int ty = dy + sy;
-                if ((uint)ty >= (uint)dst.Height) continue;
-                for (var sx = 0; sx < sw; sx++)
-                {
-                    int tx = dx + sx;
-                    if ((uint)tx >= (uint)dst.Width) continue;
-
-                    int s = src.GetPixel(sx, sy);
-                    int d = dst.GetPixel(tx, ty);
-                    int n = op switch
-                    {
-                        0 => s | d,
-                        1 => s & d,
-                        2 => s ^ d,
-                        3 => 1 - (s ^ d),
-                        4 => s,
-                        _ => s | d,
-                    };
-                    dst.SetPixel(tx, ty, n);
-                }
-            }
-        }
+            => BitBlit.Compose(dst, src, dx, dy, op);
     }
 }
