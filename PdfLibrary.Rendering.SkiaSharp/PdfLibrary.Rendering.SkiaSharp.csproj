@@ -9,7 +9,7 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary.Rendering.SkiaSharp</PackageId>
         <Title>PdfLibrary.Rendering.SkiaSharp</Title>
-        <Version>1.0.0-rc.4</Version>
+        <Version>1.0.0-rc.5</Version>
         <Authors>Jordan</Authors>
         <Description>SkiaSharp rendering backend for PdfLibrary. Provides high-quality PDF page rendering to images using SkiaSharp.</Description>
         <PackageTags>pdf;pdf-renderer;skiasharp;rendering</PackageTags>
@@ -34,10 +34,15 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- The only NuGet dependency this package needs is Lxman.PdfLibrary, which is now
+           self-contained (it bundles Logging, FontParser, Jp2Codec, etc.). The other three
+           are compile-time references only, marked PrivateAssets=all so they are NOT emitted
+           as (unpublished) package dependencies; at runtime they are supplied by the bundled
+           DLLs inside Lxman.PdfLibrary. -->
       <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
-      <ProjectReference Include="..\Logging\Logging.csproj" />
-      <ProjectReference Include="..\FontParser\FontParser.csproj" />
-      <ProjectReference Include="..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" />
+      <ProjectReference Include="..\Logging\Logging.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\FontParser\FontParser.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>

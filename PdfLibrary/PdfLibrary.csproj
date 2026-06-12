@@ -8,7 +8,7 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
         <Title>PdfLibrary</Title>
-        <Version>1.0.0-rc.4</Version>
+        <Version>1.0.0-rc.5</Version>
         <Authors>Jordan</Authors>
         <Description>A comprehensive .NET library for parsing, rendering, and creating PDF documents. Pure C# implementation with support for PDF 1.x and 2.0.</Description>
         <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;document</PackageTags>
@@ -22,6 +22,11 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <!-- CS1591: XML docs are not required on every public member -->
         <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+        <!-- This package bundles its internal project-reference DLLs into lib/<tfm> (see the
+             CopyProjectReferencesToPackage target) so it ships as ONE self-contained package
+             instead of depending on internal libraries that are not published to NuGet. -->
+        <TargetsForTfmSpecificBuildOutput>$(TargetsForTfmSpecificBuildOutput);CopyProjectReferencesToPackage</TargetsForTfmSpecificBuildOutput>
     </PropertyGroup>
 
     <ItemGroup>
@@ -40,20 +45,48 @@
       <PackageReference Include="Serilog" Version="4.3.2-dev-02433" />
       <PackageReference Include="Serilog.Sinks.File" Version="8.0.0-nblumhardt-02322" />
       <PackageReference Include="Wacton.Unicolour" Version="7.0.0" />
+      <!-- Transitive runtime dependencies of the bundled internal DLLs (FontParser needs
+           System.Text.Json; Logging needs Serilog.Sinks.Console). These must be declared
+           here because the project references below use PrivateAssets=all, which otherwise
+           suppresses their transitive package dependencies from this package. (FontParser's
+           Microsoft.CSharp dependency is provided by the net10.0 shared framework, so it is
+           intentionally not re-declared here.) -->
+      <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
+      <PackageReference Include="System.Text.Json" Version="11.0.0-preview.4.26230.115" />
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" />
-      <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
-      <ProjectReference Include="..\FontParser\FontParser.csproj" />
-      <ProjectReference Include="..\ImageLibrary\LzwCodec\LzwCodec.csproj" />
-      <ProjectReference Include="..\Logging\Logging.csproj" />
-      <ProjectReference Include="..\ImageLibrary\Jbig2Decoder\Jbig2Decoder.csproj" />
-      <ProjectReference Include="..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" />
+      <!-- PrivateAssets=all: these internal libraries are bundled INTO this package
+           (CopyProjectReferencesToPackage target) rather than referenced as separate
+           NuGet packages, so they must NOT be emitted as package dependencies. -->
+      <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\FontParser\FontParser.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\ImageLibrary\LzwCodec\LzwCodec.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\Logging\Logging.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\ImageLibrary\Jbig2Decoder\Jbig2Decoder.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\ImageLibrary\Jp2Codec\Jp2Codec.csproj" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>
       <Folder Include="Fixups\" />
     </ItemGroup>
+
+    <!-- Bundle the internal project-reference assemblies into lib/<tfm> so the package is
+         self-contained. The set is the full local closure of PdfLibrary's project references,
+         including CcittCodec (a transitive reference via Jbig2Decoder). If a new internal
+         project is added to the reference graph, add its DLL here. -->
+    <Target Name="CopyProjectReferencesToPackage">
+        <ItemGroup>
+            <BuildOutputInPackage Include="$(OutputPath)ICCSharp.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)JpegCodec.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)FontParser.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)LzwCodec.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)Logging.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)Jbig2Decoder.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)Jp2Codec.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)CcittCodec.dll" />
+        </ItemGroup>
+    </Target>
 
 </Project>

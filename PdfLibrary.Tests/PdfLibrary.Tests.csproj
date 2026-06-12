@@ -30,6 +30,11 @@
         <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj"/>
         <ProjectReference Include="..\PdfLibrary.Rendering.SkiaSharp\PdfLibrary.Rendering.SkiaSharp.csproj"/>
         <ProjectReference Include="..\PdfLibrary.Integration\PdfLibrary.Integration.csproj" />
+        <!-- Direct references: these tests use FontParser.Reader (BigEndianReaderTests) and
+             JpegCodec (DctDecodeCmykTests) types directly. PdfLibrary now bundles them
+             privately (PrivateAssets=all), so they no longer flow transitively. -->
+        <ProjectReference Include="..\FontParser\FontParser.csproj" />
+        <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
     </ItemGroup>
 
 </Project>

@@ -14,6 +14,9 @@
 
     <ItemGroup>
       <ProjectReference Include="..\PdfLibrary.Rendering.SkiaSharp\PdfLibrary.Rendering.SkiaSharp.csproj" />
+      <!-- Direct reference: App.xaml.cs uses the Logging namespace directly. The renderer now
+           bundles Logging privately (PrivateAssets=all) so it no longer flows transitively. -->
+      <ProjectReference Include="..\Logging\Logging.csproj" />
     </ItemGroup>
 
     <ItemGroup>
