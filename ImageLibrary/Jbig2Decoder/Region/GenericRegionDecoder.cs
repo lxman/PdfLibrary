@@ -224,7 +224,10 @@ namespace Jbig2Decoder.Region
         {
             switch (p.GbTemplate)
             {
-                case 0: DecodeTemplate0Row(p, mq, gbStats, output, y); return;
+                case 0:
+                    if (IsNominalTemplate0At(p.Gbat)) DecodeTemplate0RowOpt(p, mq, gbStats, output, y);
+                    else DecodeTemplate0Row(p, mq, gbStats, output, y);
+                    return;
                 case 1: DecodeTemplate1Row(p, mq, gbStats, output, y); return;
                 case 2: DecodeTemplate2Row(p, mq, gbStats, output, y); return;
                 case 3: DecodeTemplate3Row(p, mq, gbStats, output, y); return;
@@ -436,11 +439,98 @@ namespace Jbig2Decoder.Region
             }
         }
 
-        // Port of jbig2_decode_generic_template0_unopt — the general (non-AT-fixed) path.
+        // Nominal template-0 AT pixel positions: A1=(+3,-1), A2=(-3,-1),
+        // A3=(+2,-2), A4=(-2,-2); see GenericRegionParams.DefaultTemplate0. At
+        // these defaults all four AT pixels fall inside the pline/ppline shift
+        // windows, so DecodeTemplate0RowOpt can fold them into the context masks
+        // instead of issuing four GetPixel calls per pixel.
+        private static bool IsNominalTemplate0At(sbyte[] g) =>
+            g.Length == 8 &&
+            g[0] == 3 && g[1] == -1 && g[2] == -3 && g[3] == -1 &&
+            g[4] == 2 && g[5] == -2 && g[6] == -2 && g[7] == -2;
+
+        // Port of jbig2_decode_generic_template0_unopt — picks the AT-folded fast
+        // row path when the AT pixels are nominal, else the general per-pixel path.
         private static void DecodeTemplate0(GenericRegionParams p, MqDecoder mq, byte[] gbStats, Bitmap output)
         {
+            bool nominalAt = IsNominalTemplate0At(p.Gbat);
             for (var y = 0; y < output.Height; y++)
-                DecodeTemplate0Row(p, mq, gbStats, output, y);
+            {
+                if (nominalAt) DecodeTemplate0RowOpt(p, mq, gbStats, output, y);
+                else DecodeTemplate0Row(p, mq, gbStats, output, y);
+            }
+        }
+
+        // AT-folded fast path for nominal template 0. Identical to
+        // DecodeTemplate0Row except the four AT pixels are read from the pline
+        // (A1=x+3, A2=x-3) and ppline (A3=x+2, A4=x-2) shift windows by widening
+        // the context masks (0x03E0->0x07F0, 0x7000->0xF800) — no per-pixel
+        // GetPixel. The context bit layout is byte-for-byte identical to the
+        // general path (proven in GenericRegionTemplate0OptTests and by the
+        // jbig2dec-parity fixture Template0_DefaultAt_042_1).
+        private static void DecodeTemplate0RowOpt(GenericRegionParams p, MqDecoder mq, byte[] gbStats, Bitmap output, int y)
+        {
+            int gbw = output.Width;
+
+            var outByte = 0;
+            var outBitsToGo = 8;
+            int dst = y * output.Stride;
+            var dstByte = 0;
+
+            uint pd = 0, ppd = 0;
+            var plineByteIdx = 2;
+            bool hasPline = y >= 1;
+            bool hasPpline = y >= 2;
+
+            if (hasPline)
+            {
+                int basePline = (y - 1) * output.Stride;
+                pd = (uint)output.Data[basePline] << 8;
+                if (gbw > 8) pd |= output.Data[basePline + 1];
+            }
+            if (hasPpline)
+            {
+                int basePpline = (y - 2) * output.Stride;
+                ppd = (uint)output.Data[basePpline] << 8;
+                if (gbw > 8) ppd |= output.Data[basePpline + 1];
+            }
+
+            for (var x = 0; x < gbw; x++)
+            {
+                // bits 0-3: current row x-1..x-4; bits 4-10: A1(x+3), x+2..x-2,
+                // A2(x-3) from pline; bits 11-15: A3(x+2), x+1..x-1, A4(x-2) from ppline.
+                int context = (outByte & 0x000F)
+                            | (int)((pd >> 8) & 0x07F0)
+                            | (int)((ppd >> 2) & 0xF800);
+
+                int bit = mq.Decode(ref gbStats[context]);
+
+                pd <<= 1;
+                ppd <<= 1;
+                outByte = (outByte << 1) | bit;
+                outBitsToGo--;
+                output.Data[dst + dstByte] = (byte)(outByte << outBitsToGo);
+
+                if (outBitsToGo == 0)
+                {
+                    outBitsToGo = 8;
+                    dstByte++;
+
+                    if (x + 9 < gbw && hasPline)
+                    {
+                        int basePline = (y - 1) * output.Stride;
+                        if (plineByteIdx < output.Stride)
+                            pd |= output.Data[basePline + plineByteIdx];
+                        if (hasPpline)
+                        {
+                            int basePpline = (y - 2) * output.Stride;
+                            if (plineByteIdx < output.Stride)
+                                ppd |= output.Data[basePpline + plineByteIdx];
+                        }
+                        plineByteIdx++;
+                    }
+                }
+            }
         }
 
         private static void DecodeTemplate0Row(GenericRegionParams p, MqDecoder mq, byte[] gbStats, Bitmap output, int y)
