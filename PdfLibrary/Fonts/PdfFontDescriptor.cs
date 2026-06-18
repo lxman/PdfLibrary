@@ -269,6 +269,28 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     }
 
     /// <summary>
+    /// Gets the raw PdfStream object for /FontFile2 without decoding.
+    /// Used by the font subsetter to replace the embedded program.
+    /// </summary>
+    internal PdfStream? GetFontFile2Stream()
+    {
+        if (!_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject? obj))
+            return null;
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+        return obj as PdfStream;
+    }
+
+    /// <summary>
+    /// Replaces the /FontFile2 entry with the provided stream.
+    /// </summary>
+    internal void SetFontFile2(PdfStream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        _dictionary[new PdfName("FontFile2")] = stream;
+    }
+
+    /// <summary>
     /// Gets the FontFile3 stream (CFF/OpenType font program)
     /// </summary>
     public byte[]? GetFontFile3()

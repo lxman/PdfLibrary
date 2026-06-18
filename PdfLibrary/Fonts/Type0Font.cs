@@ -28,6 +28,31 @@ internal class Type0Font : PdfFont
     internal override PdfFontType FontType => PdfFontType.Type0;
 
     /// <summary>
+    /// Returns the raw PdfDictionary of the descendant CIDFont (for subsetting).
+    /// </summary>
+    internal PdfDictionary? DescendantCidFontDictionary =>
+        (_descendantFont as CidFont)?.RawDictionary;
+
+    /// <summary>
+    /// Returns the font descriptor from the descendant CIDFont (for subsetting).
+    /// </summary>
+    internal PdfFontDescriptor? DescendantDescriptor =>
+        _descendantFont?.GetDescriptor();
+
+    /// <summary>
+    /// Returns the /Encoding value (e.g. "Identity-H") from the Type0 dictionary.
+    /// </summary>
+    internal string? Encoding
+    {
+        get
+        {
+            if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
+                return null;
+            return obj is PdfName n ? n.Value : null;
+        }
+    }
+
+    /// <summary>
     /// Gets the descendant CIDFont
     /// </summary>
     public PdfFont? DescendantFont => _descendantFont;

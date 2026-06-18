@@ -83,6 +83,11 @@ internal class CidFont : PdfFont
 
     internal override PdfFontType FontType => PdfFontType.Type0;
 
+    /// <summary>
+    /// Exposes the underlying dictionary for subsetting write-back (e.g. /CIDToGIDMap).
+    /// </summary>
+    internal PdfDictionary RawDictionary => _dictionary;
+
     public override double GetCharacterWidth(int charCode)
     {
         if (_widths is not null && _widths.TryGetValue(charCode, out double width))

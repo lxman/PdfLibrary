@@ -26,6 +26,11 @@ internal class TrueTypeFont : PdfFont
 
     internal override PdfFontType FontType => PdfFontType.TrueType;
 
+    /// <summary>
+    /// Returns the font descriptor for this font (for subsetting).
+    /// </summary>
+    internal PdfFontDescriptor? Descriptor => GetDescriptor();
+
     public override double GetCharacterWidth(int charCode)
     {
         // Try to use embedded font metrics first for more accurate widths
