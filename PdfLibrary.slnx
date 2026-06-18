@@ -50,6 +50,8 @@
     <Project Path="ImageLibrary/TgaCodec/TgaCodec.csproj" />
     <Project Path="ImageLibrary/TiffCodec/TiffCodec.csproj" />
     <Project Path="ImageLibrary/TiffCodec.Tests/TiffCodec.Tests.csproj" />
+    <Project Path="ImageLibrary/PixelResampler/PixelResampler.csproj" />
+    <Project Path="ImageLibrary/PixelResampler.Tests/PixelResampler.Tests.csproj" />
   </Folder>
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
