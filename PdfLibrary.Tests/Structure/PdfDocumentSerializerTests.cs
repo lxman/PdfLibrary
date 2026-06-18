@@ -1,4 +1,5 @@
 using System.Text;
+using PdfLibrary.Builder;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
 using Xunit;
@@ -52,5 +53,24 @@ public class PdfDocumentSerializerTests
         Assert.Contains("hello stream", text);              // real data...
         Assert.DoesNotContain("bytes of binary data", text); // ...not the ToPdfString placeholder
         Assert.Contains("endstream", text);
+    }
+
+    [Fact]
+    public void Save_BuiltDocument_RoundTripsPageCount()
+    {
+        byte[] original = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("Hello", 100, 700))
+            .AddPage(p => p.AddText("World", 100, 700))
+            .ToByteArray();
+
+        using PdfDocument loaded = PdfDocument.Load(new MemoryStream(original));
+
+        using var saved = new MemoryStream();
+        loaded.Save(saved);
+        saved.Position = 0;
+
+        using PdfDocument reloaded = PdfDocument.Load(saved);
+        Assert.Equal(2, reloaded.PageCount);
+        Assert.NotNull(reloaded.GetPage(0));
     }
 }
