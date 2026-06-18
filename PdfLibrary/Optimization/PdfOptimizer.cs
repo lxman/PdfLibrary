@@ -11,7 +11,25 @@ namespace PdfLibrary.Optimization;
 public static class PdfOptimizer
 {
     public static void Optimize(PdfDocument document, Stream output, PdfOptimizationOptions? options = null)
-        => throw new NotImplementedException();
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(output);
+        options ??= PdfOptimizationOptions.Default;
+
+        if (document.IsEncrypted)
+            throw new NotSupportedException("Optimizing encrypted documents is not yet supported.");
+
+        document.MaterializeAllObjects();
+
+        if (options.CompressStreams)
+            CompressUncompressedStreams(document);
+
+        ISet<int>? live = options.RemoveUnusedObjects
+            ? ObjectGraphWalker.CollectReachable(document)
+            : null;
+
+        PdfDocumentSerializer.Write(document, output, live);
+    }
 
     /// <summary>Flate-compresses every stream that currently has no filter (lossless). Already-encoded
     /// streams — images (DCTDecode), existing FlateDecode, filter arrays — are left untouched.</summary>
