@@ -73,4 +73,41 @@ public class PdfDocumentSerializerTests
         Assert.Equal(2, reloaded.PageCount);
         Assert.NotNull(reloaded.GetPage(0));
     }
+
+    private const string CorpusRoot = @"C:\Users\jorda\RiderProjects\PDF";
+
+    [Theory]
+    [InlineData(@"TestPDFs\SimpleTest1.pdf")]
+    [InlineData(@"TestPDFs\Resume.pdf")]
+    [InlineData(@"PDFs\pdf20examples\Simple PDF 2.0 file.pdf")]
+    [InlineData(@"PdfLibrary.Examples\TestPdfs\comprehensive.pdf")]
+    public void Save_CorpusFile_PreservesPagesAndText(string relPath)
+    {
+        string path = System.IO.Path.Combine(CorpusRoot, relPath);
+        if (!System.IO.File.Exists(path)) return; // corpus-dependent; skip if absent
+
+        using PdfDocument original = PdfDocument.Load(path);
+        int pages = original.PageCount;
+        int textLen = original.ExtractAllText().Length;
+
+        using var ms = new MemoryStream();
+        original.Save(ms);
+        ms.Position = 0;
+
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+        Assert.Equal(pages, reloaded.PageCount);
+        Assert.Equal(textLen, reloaded.ExtractAllText().Length);
+    }
+
+    [Fact]
+    public void Save_EncryptedDocument_ThrowsNotSupported()
+    {
+        string path = System.IO.Path.Combine(CorpusRoot,
+            @"TestPDFs\targeted_custom_generated\EncryptedAes128_EmptyPassword.pdf");
+        if (!System.IO.File.Exists(path)) return;
+
+        using PdfDocument doc = PdfDocument.Load(path, "");
+        using var ms = new MemoryStream();
+        Assert.Throws<NotSupportedException>(() => doc.Save(ms));
+    }
 }
