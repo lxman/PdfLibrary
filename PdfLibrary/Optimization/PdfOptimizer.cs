@@ -1,3 +1,5 @@
+using ImageResampling;
+using JpegCodec;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -62,7 +64,12 @@ public static class PdfOptimizer
     /// phase3-image branch.</summary>
     internal static void RecompressImages(PdfDocument document, PdfOptimizationOptions options)
     {
-        // Intentionally empty until the Phase 3 image-recompression transform lands.
+        foreach (PdfObject obj in document.Objects.Values)
+        {
+            if (obj is not PdfStream s) continue;
+            if (!ImageRecompressor.IsImageRecompressible(s, document)) continue;
+            ImageRecompressor.TryRecompress(s, document, options);
+        }
     }
 
     /// <summary>Subsets embedded TrueType (/FontFile2) programs to the glyphs actually used
