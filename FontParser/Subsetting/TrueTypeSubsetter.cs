@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using FontParser.Tables.Cmap;
 
@@ -25,13 +26,44 @@ namespace FontParser.Subsetting
     public static class TrueTypeSubsetter
     {
         /// <summary>
+        /// Create a subset font, returning the old→new GID mapping so callers can rewrite
+        /// /CIDToGIDMap entries.
+        /// </summary>
+        /// <param name="font">Fully parsed source TrueType font.</param>
+        /// <param name="requestedGlyphIds">GIDs that must be retained (closure is computed internally).</param>
+        /// <param name="oldToNewGid">On return: old GID → new (compacted) GID for all retained glyphs.</param>
+        /// <returns>Raw bytes of a self-consistent subset sfnt font.</returns>
+        public static byte[] Subset(SfntFont font, IEnumerable<ushort> requestedGlyphIds,
+            out IReadOnlyDictionary<ushort, ushort> oldToNewGid)
+        {
+            if (font is null) throw new ArgumentNullException(nameof(font));
+            if (requestedGlyphIds is null) throw new ArgumentNullException(nameof(requestedGlyphIds));
+
+            // GID 0 (.notdef) must always be present per TrueType spec / ISO 32000-1 §9.6.3.
+            // Prepend it so GlyphClosure sees it even if the caller omitted it; idempotent if
+            // already in the set (closure deduplicates via SortedSet.Add).
+            var withNotdef = requestedGlyphIds.Prepend((ushort)0);
+
+            // 1. Closure
+            var closure = GlyphClosure.Compute(font, withNotdef);
+            // 2. Remap
+            var remap = new GlyphIdRemap(closure);
+            oldToNewGid = remap.OldToNew;
+
+            // Delegate the rest to the existing implementation, but we've already computed
+            // closure+remap so we replicate the remainder inline to avoid double-computing.
+            return SubsetWithRemap(font, remap);
+        }
+
+        /// <summary>
         /// Create a subset font.
         /// </summary>
         /// <param name="font">Fully parsed source TrueType font.</param>
         /// <param name="requestedGlyphIds">
         /// The glyph IDs that must be retained.  GID 0 (.notdef) is always added
-        /// unless the closure is empty.  Components of composite glyphs are added
-        /// automatically via <see cref="GlyphClosure"/>.
+        /// regardless of whether the caller includes it — a subset without .notdef
+        /// violates the TrueType spec and ISO 32000-1 §9.6.3.  Components of
+        /// composite glyphs are added automatically via <see cref="GlyphClosure"/>.
         /// </param>
         /// <returns>Raw bytes of a self-consistent subset sfnt font.</returns>
         public static byte[] Subset(SfntFont font, IEnumerable<ushort> requestedGlyphIds)
@@ -39,11 +71,17 @@ namespace FontParser.Subsetting
             if (font is null) throw new ArgumentNullException(nameof(font));
             if (requestedGlyphIds is null) throw new ArgumentNullException(nameof(requestedGlyphIds));
 
-            // 1. Closure
-            var closure = GlyphClosure.Compute(font, requestedGlyphIds);
-
-            // 2. Remap
+            // GID 0 (.notdef) must always be present per TrueType spec / ISO 32000-1 §9.6.3.
+            var withNotdef = requestedGlyphIds.Prepend((ushort)0);
+            var closure = GlyphClosure.Compute(font, withNotdef);
             var remap = new GlyphIdRemap(closure);
+            return SubsetWithRemap(font, remap);
+        }
+
+        // Shared implementation used by both Subset overloads.
+        private static byte[] SubsetWithRemap(SfntFont font, GlyphIdRemap remap)
+        {
+            // Closure and remap already computed by caller.
 
             // 3. glyf + loca
             byte[] origGlyf = font.GetTableBytes("glyf")

@@ -84,9 +84,9 @@ public static class PdfOptimizer
     /// <summary>Subsets embedded TrueType (/FontFile2) programs to the glyphs actually used
     /// (Phase 3, font track): computes glyph usage from page content streams, subsets via
     /// FontParser's TrueTypeSubsetter, replaces /FontFile2 and keeps the font dictionary
-    /// consistent. No-op stub — the real transform is built on the phase3-font branch.</summary>
+    /// consistent.</summary>
     internal static void SubsetFonts(PdfDocument document, PdfOptimizationOptions options)
     {
-        // Intentionally empty until the Phase 3 font-subsetting transform lands.
+        FontSubsetter.Run(document, options);
     }
 }
