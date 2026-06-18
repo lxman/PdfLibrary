@@ -28,7 +28,10 @@ public static class PdfOptimizer
             ? ObjectGraphWalker.CollectReachable(document)
             : null;
 
-        PdfDocumentSerializer.Write(document, output, live);
+        if (options.UseObjectStreams)
+            ObjectStreamWriter.Write(document, output, live);
+        else
+            PdfDocumentSerializer.Write(document, output, live);
     }
 
     /// <summary>Flate-compresses every stream that currently has no filter (lossless). Already-encoded

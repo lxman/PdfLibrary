@@ -9,5 +9,9 @@ public sealed class PdfOptimizationOptions
     /// <summary>Drop objects unreachable from the catalog/info (garbage collection).</summary>
     public bool RemoveUnusedObjects { get; set; } = true;
 
+    /// <summary>Pack objects into object streams + a cross-reference stream (PDF 1.5+). Much smaller
+    /// output on object-heavy documents.</summary>
+    public bool UseObjectStreams { get; set; } = true;
+
     public static PdfOptimizationOptions Default => new();
 }
