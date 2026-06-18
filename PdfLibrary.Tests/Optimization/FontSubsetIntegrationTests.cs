@@ -177,13 +177,21 @@ public class FontSubsetIntegrationTests
             afterFontBytes = GetFontFile2EncodedSize(after);
         }
 
-        // The font data may differ slightly due to FlateDecode compression applied by
-        // CompressStreams, but the decoded length should equal the original uncompressed.
-        // The key assertion is that SubsetFonts=false does NOT reduce the glyph count.
-        // We verify this by checking the subset font parses to the same NumGlyphs as original.
-        var origSfnt = new FontParser.SfntFont(File.ReadAllBytes(ArialPath));
         Assert.True(origFontBytes > 0, "Original font must be present");
         Assert.True(afterFontBytes > 0, "After-optimize font must be present");
+
+        // The key invariant: SubsetFonts=false must NOT reduce the glyph count.
+        // Re-parse both the reference Arial and the /FontFile2 from the optimized document
+        // and assert NumGlyphs is unchanged.
+        // Note: capture output bytes before the stream is disposed by the using-block above.
+        byte[] outputBytes = output.ToArray();
+        var origSfnt = new FontParser.SfntFont(File.ReadAllBytes(ArialPath));
+        using PdfDocument afterDoc = PdfDocument.Load(new MemoryStream(outputBytes));
+        afterDoc.MaterializeAllObjects();
+        byte[]? afterFontFile2 = GetFontFile2Bytes(afterDoc);
+        Assert.NotNull(afterFontFile2);
+        var afterSfnt = new FontParser.SfntFont(afterFontFile2!);
+        Assert.Equal(origSfnt.NumGlyphs, afterSfnt.NumGlyphs);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

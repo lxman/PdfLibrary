@@ -22,9 +22,6 @@ public class GlyphUsageCollectorTests
 
     private static PdfDocument BuildArialDocument(string text)
     {
-        if (!File.Exists(ArialPath))
-            throw new SkipTestException("Arial not available on this system.");
-
         const string alias = "Arial";
         byte[] bytes = PdfDocumentBuilder.Create()
             .LoadFont(ArialPath, alias)
@@ -169,5 +166,3 @@ public class GlyphUsageCollectorTests
     }
 }
 
-/// <summary>Thrown to skip a test when a required system resource is unavailable.</summary>
-file sealed class SkipTestException(string message) : Exception(message);

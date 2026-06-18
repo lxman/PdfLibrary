@@ -103,7 +103,7 @@ internal static class FontSubsetter
 
             // 3b. For Identity-H CIDFontType2, write a /CIDToGIDMap stream.
             //     Register it as a proper document object so the serializer writes it correctly.
-            if (usage.Kind == FontUsageKind.IdentityHCidType2 &&
+            if (usage.Kind == FontUsageKind.IdentityCidType2 &&
                 usage.DescendantCidFontDict is { } cidDict)
             {
                 byte[] cidToGidMapBytes = BuildCidToGidMap(usage.Gids, oldToNew);
@@ -111,8 +111,13 @@ internal static class FontSubsetter
                 cidToGidStream.SetEncodedData(cidToGidMapBytes, "FlateDecode");
 
                 // Allocate the next available object number.
-                int nextObjNum = document.Objects.Count == 0 ? 1
-                    : document.Objects.Keys.Max() + 1;
+                // Take the maximum across both the in-memory object dictionary AND the
+                // xref table (which may contain on-disk objects not yet materialized),
+                // so the new object never collides with an existing one.
+                int maxFromObjects = document.Objects.Count == 0 ? 0 : document.Objects.Keys.Max();
+                int maxFromXref    = document.XrefTable.Entries.Count == 0 ? 0
+                    : document.XrefTable.Entries.Max(e => e.ObjectNumber);
+                int nextObjNum = Math.Max(maxFromObjects, maxFromXref) + 1;
                 document.AddObject(nextObjNum, 0, cidToGidStream);
 
                 // Store an indirect reference so the serializer writes "N 0 R".

@@ -282,15 +282,6 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     }
 
     /// <summary>
-    /// Replaces the /FontFile2 entry with the provided stream.
-    /// </summary>
-    internal void SetFontFile2(PdfStream stream)
-    {
-        ArgumentNullException.ThrowIfNull(stream);
-        _dictionary[new PdfName("FontFile2")] = stream;
-    }
-
-    /// <summary>
     /// Gets the FontFile3 stream (CFF/OpenType font program)
     /// </summary>
     public byte[]? GetFontFile3()

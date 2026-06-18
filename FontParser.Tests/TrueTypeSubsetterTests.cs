@@ -273,4 +273,41 @@ public class TrueTypeSubsetterTests
         Assert.True(subsetBytes.Length > 0,
             $"Original: {origBytes.Length:N0} bytes. Subset: {subsetBytes.Length:N0} bytes.");
     }
+
+    // =========================================================================
+    // GID 0 (.notdef) is always present even when not in the requested set
+    // =========================================================================
+
+    [Fact]
+    public void Subset_AlwaysIncludesGid0_EvenWhenNotRequested()
+    {
+        SfntFont font = LoadArial();
+
+        // Request a set of glyphs that deliberately excludes GID 0.
+        // GIDs 36–40 are simple glyphs in Arial (digits / letters depending on version).
+        var requestedWithoutNotdef = new ushort[] { 36, 37, 38, 39, 40 };
+        Assert.DoesNotContain((ushort)0, requestedWithoutNotdef);
+
+        byte[] subsetBytes = TrueTypeSubsetter.Subset(font, requestedWithoutNotdef,
+            out IReadOnlyDictionary<ushort, ushort> oldToNew);
+
+        // The mapping must contain GID 0.
+        Assert.True(oldToNew.ContainsKey(0),
+            "GID 0 (.notdef) must always appear in the old→new mapping regardless of the requested set.");
+
+        // GID 0 must map to new GID 0 (.notdef must remain first).
+        Assert.Equal((ushort)0, oldToNew[0]);
+
+        // The re-parsed subset font must have at least 1 glyph (GID 0) and parse cleanly.
+        var subsetSfnt = new SfntFont(subsetBytes);
+        Assert.True(subsetSfnt.NumGlyphs > 0,
+            "Re-parsed subset must have at least one glyph (GID 0 / .notdef).");
+
+        // The glyph table (if present) must have a slot for GID 0.
+        if (subsetSfnt.Glyf is not null)
+        {
+            // GetGlyphData(0) must not throw; it may return null for an empty .notdef outline.
+            var _ = subsetSfnt.Glyf.GetGlyphData(0);
+        }
+    }
 }

@@ -15,7 +15,7 @@ internal enum FontUsageKind
     /// <summary>Simple /Subtype /TrueType font with single-byte codes and /FontFile2.</summary>
     SimpleTrueType,
     /// <summary>/Subtype /Type0 with /Encoding /Identity-H or /Identity-V and CIDFontType2 descendant.</summary>
-    IdentityHCidType2,
+    IdentityCidType2,
 }
 
 /// <summary>
@@ -135,7 +135,7 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         {
             Descriptor = descriptor,
             DescendantCidFontDict = cidDict,
-            Kind = FontUsageKind.IdentityHCidType2,
+            Kind = FontUsageKind.IdentityCidType2,
         });
 
         // Identity-H: 2-byte big-endian code = CID = GID
@@ -144,11 +144,8 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
             ushort gid = (ushort)((bytes[i] << 8) | bytes[i + 1]);
             usage.Gids.Add(gid);
         }
-        // If odd number of bytes, handle trailing byte (shouldn't happen in valid PDFs)
-        if (bytes.Length % 2 == 1)
-        {
-            usage.Gids.Add(bytes[^1]);
-        }
+        // If odd number of bytes, the trailing byte is not a complete 2-byte code —
+        // skip it (shouldn't happen in valid PDFs, but avoid treating a lone byte as a GID).
     }
 
     // -----------------------------------------------------------------
