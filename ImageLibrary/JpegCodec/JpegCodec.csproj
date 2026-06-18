@@ -11,4 +11,8 @@
     <InternalsVisibleTo Include="JpegCodec.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\PixelResampler\PixelResampler.csproj" />
+  </ItemGroup>
+
 </Project>

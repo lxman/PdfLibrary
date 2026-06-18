@@ -11,4 +11,11 @@ public sealed class JpegEncodeOptions
     public bool EmitAdobeMarker { get; init; }
     public byte AdobeColorTransform { get; init; }
     public int? RestartInterval { get; init; }
+
+    /// <summary>
+    /// Chroma subsampling mode. Only meaningful for 3-component (RGB/YCbCr)
+    /// images. Defaults to <see cref="ChromaSubsampling.Yuv444"/> so all
+    /// existing callers are unaffected.
+    /// </summary>
+    public ChromaSubsampling ChromaSubsampling { get; init; } = ChromaSubsampling.Yuv444;
 }

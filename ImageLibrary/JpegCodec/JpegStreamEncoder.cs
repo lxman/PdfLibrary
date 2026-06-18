@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using ImageResampling;
 using JpegCodec.Encode;
+using JpegCodec.Internal;
 using JpegCodec.Segments;
 using JpegCodec.Stream;
 
@@ -28,16 +30,29 @@ public sealed class JpegStreamEncoder
                 $"componentData length {componentData.Length} too small for {width}x{height}x{nc} = {expected}.",
                 nameof(componentData));
 
-        // No subsampling for v1 — all components at H=V=1.
+        bool use420 = options.ChromaSubsampling == ChromaSubsampling.Yuv420 && nc == 3;
+
+        return use420
+            ? Encode420(componentData, options)
+            : Encode444(componentData, options);
+    }
+
+    // -----------------------------------------------------------------------
+    // 4:4:4 path — original behaviour, all components H=V=1
+    // -----------------------------------------------------------------------
+    private static byte[] Encode444(byte[] componentData, JpegEncodeOptions options)
+    {
+        int width = options.Width;
+        int height = options.Height;
+        int nc = options.NumberOfComponents;
+
         const int H = 1, V = 1;
 
-        // Quantization tables — luma uses table 0, others (chroma/CMYK) use 1.
         ushort[] lumaQ = StandardJpegTables.ScaleQuantTable(StandardJpegTables.LumaQuantBase50, options.Quality);
         ushort[] chromaQ = nc == 1
             ? lumaQ
             : StandardJpegTables.ScaleQuantTable(StandardJpegTables.ChromaQuantBase50, options.Quality);
 
-        // Huffman canonical tables for encoding.
         var lumaDcCanonical = HuffmanCanonicalTable.Build(StandardJpegTables.LumaDcBits, StandardJpegTables.LumaDcValues);
         var lumaAcCanonical = HuffmanCanonicalTable.Build(StandardJpegTables.LumaAcBits, StandardJpegTables.LumaAcValues);
         HuffmanCanonicalTable chromaDcCanonical = nc == 1
@@ -52,8 +67,7 @@ public sealed class JpegStreamEncoder
         var chromaDcEnc = new HuffmanEncoder(chromaDcCanonical);
         var chromaAcEnc = new HuffmanEncoder(chromaAcCanonical);
 
-        // Output construction.
-        var output = new List<byte>(expected / 4);
+        var output = new List<byte>(componentData.Length / 4);
 
         MarkerWriter.WriteMarker(output, JpegMarker.Soi);
 
@@ -95,13 +109,12 @@ public sealed class JpegStreamEncoder
                 acTableId: (byte)(c == 0 ? 0 : 1));
         MarkerWriter.WriteSos(output, scanComponents, ss: 0, se: 63, ah: 0, al: 0);
 
-        // Entropy-coded scan.
         var writer = new BitWriter(output);
         var dcPredictors = new int[nc];
 
         int mcuW = 8 * H, mcuH = 8 * V;
         int mcusPerLine = (width + mcuW - 1) / mcuW;
-        int mcusPerCol = (height + mcuH - 1) / mcuH;
+        int mcusPerCol  = (height + mcuH - 1) / mcuH;
         for (var my = 0; my < mcusPerCol; my++)
         {
             for (var mx = 0; mx < mcusPerLine; mx++)
@@ -125,6 +138,133 @@ public sealed class JpegStreamEncoder
         return output.ToArray();
     }
 
+    // -----------------------------------------------------------------------
+    // 4:2:0 path — luma H=2/V=2, chroma H=1/V=1
+    // -----------------------------------------------------------------------
+    private static byte[] Encode420(byte[] componentData, JpegEncodeOptions options)
+    {
+        int width  = options.Width;
+        int height = options.Height;
+
+        // RGB → separate Y, Cb, Cr planes (full resolution).
+        YCbCrConverter.RgbToYCbCrPlanar(componentData, width, height,
+            out byte[] yPlane, out byte[] cbPlane, out byte[] crPlane);
+
+        // Downsample chroma planes 2:1 in both axes using the box-filter resampler.
+        int chromaW = (width  + 1) >> 1;   // ceil(width/2)
+        int chromaH = (height + 1) >> 1;   // ceil(height/2)
+        byte[] cbDown = ImageResampler.Resample(cbPlane, width, height, 1, chromaW, chromaH);
+        byte[] crDown = ImageResampler.Resample(crPlane, width, height, 1, chromaW, chromaH);
+
+        // Quantization tables.
+        ushort[] lumaQ   = StandardJpegTables.ScaleQuantTable(StandardJpegTables.LumaQuantBase50,   options.Quality);
+        ushort[] chromaQ = StandardJpegTables.ScaleQuantTable(StandardJpegTables.ChromaQuantBase50, options.Quality);
+
+        // Huffman tables.
+        var lumaDcCanonical   = HuffmanCanonicalTable.Build(StandardJpegTables.LumaDcBits,   StandardJpegTables.LumaDcValues);
+        var lumaAcCanonical   = HuffmanCanonicalTable.Build(StandardJpegTables.LumaAcBits,   StandardJpegTables.LumaAcValues);
+        var chromaDcCanonical = HuffmanCanonicalTable.Build(StandardJpegTables.ChromaDcBits, StandardJpegTables.ChromaDcValues);
+        var chromaAcCanonical = HuffmanCanonicalTable.Build(StandardJpegTables.ChromaAcBits, StandardJpegTables.ChromaAcValues);
+
+        var lumaDcEnc   = new HuffmanEncoder(lumaDcCanonical);
+        var lumaAcEnc   = new HuffmanEncoder(lumaAcCanonical);
+        var chromaDcEnc = new HuffmanEncoder(chromaDcCanonical);
+        var chromaAcEnc = new HuffmanEncoder(chromaAcCanonical);
+
+        var output = new List<byte>(width * height * 3 / 4);
+
+        MarkerWriter.WriteMarker(output, JpegMarker.Soi);
+
+        if (options.EmitJfif)
+            MarkerWriter.WriteJfif(output);
+
+        if (options.EmitAdobeMarker)
+            MarkerWriter.WriteAdobeApp14(output, options.AdobeColorTransform);
+
+        MarkerWriter.WriteDqt(output, 0, lumaQ);
+        MarkerWriter.WriteDqt(output, 1, chromaQ);
+
+        // SOF0: luma (comp 1) H=2/V=2, chroma Cb (2) and Cr (3) H=1/V=1.
+        var frameComponents = new[]
+        {
+            new MarkerWriter.FrameComponentSpec(id: 1, hSampling: 2, vSampling: 2, quantTableId: 0),
+            new MarkerWriter.FrameComponentSpec(id: 2, hSampling: 1, vSampling: 1, quantTableId: 1),
+            new MarkerWriter.FrameComponentSpec(id: 3, hSampling: 1, vSampling: 1, quantTableId: 1),
+        };
+        MarkerWriter.WriteSof0(output, width, height, precision: 8, frameComponents);
+
+        MarkerWriter.WriteDht(output, tableClass: 0, tableId: 0,
+            StandardJpegTables.LumaDcBits, StandardJpegTables.LumaDcValues);
+        MarkerWriter.WriteDht(output, tableClass: 1, tableId: 0,
+            StandardJpegTables.LumaAcBits, StandardJpegTables.LumaAcValues);
+        MarkerWriter.WriteDht(output, tableClass: 0, tableId: 1,
+            StandardJpegTables.ChromaDcBits, StandardJpegTables.ChromaDcValues);
+        MarkerWriter.WriteDht(output, tableClass: 1, tableId: 1,
+            StandardJpegTables.ChromaAcBits, StandardJpegTables.ChromaAcValues);
+
+        var scanComponents = new[]
+        {
+            new MarkerWriter.ScanComponentSpec(id: 1, dcTableId: 0, acTableId: 0),
+            new MarkerWriter.ScanComponentSpec(id: 2, dcTableId: 1, acTableId: 1),
+            new MarkerWriter.ScanComponentSpec(id: 3, dcTableId: 1, acTableId: 1),
+        };
+        MarkerWriter.WriteSos(output, scanComponents, ss: 0, se: 63, ah: 0, al: 0);
+
+        var writer = new BitWriter(output);
+
+        // For 4:2:0 (maxH=2, maxV=2):
+        //   MCU size = 16×16 pixels.
+        //   Each MCU contains: 4 Y-blocks (2×2), 1 Cb-block, 1 Cr-block.
+        int mcusPerLine = (width  + 15) / 16;
+        int mcusPerCol  = (height + 15) / 16;
+
+        int dcY = 0, dcCb = 0, dcCr = 0;
+
+        for (var my = 0; my < mcusPerCol; my++)
+        {
+            for (var mx = 0; mx < mcusPerLine; mx++)
+            {
+                // 4 luma blocks, order: (0,0), (1,0), (0,1), (1,1)
+                // bx/by are sub-block offsets within the MCU (0 or 1).
+                for (var by = 0; by < 2; by++)
+                {
+                    for (var bx = 0; bx < 2; bx++)
+                    {
+                        Span<short> block = stackalloc short[64];
+                        LoadBlockFromPlanar(yPlane, width, height, mx * 16 + bx * 8, my * 16 + by * 8, block);
+                        dcY = BlockEncoder.EncodeBlock(writer, block, lumaQ, lumaDcEnc, lumaAcEnc, dcY);
+                    }
+                }
+
+                // 1 Cb block (on the downsampled chroma plane).
+                {
+                    Span<short> block = stackalloc short[64];
+                    LoadBlockFromPlanar(cbDown, chromaW, chromaH, mx * 8, my * 8, block);
+                    dcCb = BlockEncoder.EncodeBlock(writer, block, chromaQ, chromaDcEnc, chromaAcEnc, dcCb);
+                }
+
+                // 1 Cr block.
+                {
+                    Span<short> block = stackalloc short[64];
+                    LoadBlockFromPlanar(crDown, chromaW, chromaH, mx * 8, my * 8, block);
+                    dcCr = BlockEncoder.EncodeBlock(writer, block, chromaQ, chromaDcEnc, chromaAcEnc, dcCr);
+                }
+            }
+        }
+
+        writer.Flush();
+        MarkerWriter.WriteMarker(output, JpegMarker.Eoi);
+
+        return output.ToArray();
+    }
+
+    // -----------------------------------------------------------------------
+    // Block loaders
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// Load an 8×8 block from an interleaved (multi-component) pixel buffer.
+    /// </summary>
     private static void LoadBlockFromInterleaved(
         byte[] data, int width, int height, int nc,
         int component, int x0, int y0, Span<short> block)
@@ -138,8 +278,29 @@ public sealed class JpegStreamEncoder
                 int sx = x0 + x;
                 int clampedX = sx < width ? sx : width - 1;
                 int idx = (clampedY * width + clampedX) * nc + component;
-                // Level-shift to signed range [-128, 127].
                 block[y * 8 + x] = (short)(data[idx] - 128);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Load an 8×8 block from a single-channel planar pixel buffer.
+    /// Edge pixels are replicated when the block extends past the buffer boundary.
+    /// </summary>
+    private static void LoadBlockFromPlanar(
+        byte[] plane, int planeWidth, int planeHeight,
+        int x0, int y0, Span<short> block)
+    {
+        for (var y = 0; y < 8; y++)
+        {
+            int sy = y0 + y;
+            int clampedY = sy < planeHeight ? sy : planeHeight - 1;
+            for (var x = 0; x < 8; x++)
+            {
+                int sx = x0 + x;
+                int clampedX = sx < planeWidth ? sx : planeWidth - 1;
+                int idx = clampedY * planeWidth + clampedX;
+                block[y * 8 + x] = (short)(plane[idx] - 128);
             }
         }
     }
