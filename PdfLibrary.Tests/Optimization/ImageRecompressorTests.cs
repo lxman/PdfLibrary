@@ -186,7 +186,7 @@ public class ImageRecompressorTests
         Assert.False(ImageRecompressor.IsImageRecompressible(s, null));
     }
 
-    // ── Rejection: soft mask / image mask / decode ────────────────────────────
+    // ── Rejection: soft mask / image mask / color-key mask / decode ──────────
 
     [Fact]
     public void Reject_HasSMask()
@@ -201,6 +201,15 @@ public class ImageRecompressorTests
     {
         PdfStream s = MakeEligibleRgb();
         s.Dictionary[new PdfName("ImageMask")] = PdfBoolean.True;
+        Assert.False(ImageRecompressor.IsImageRecompressible(s, null));
+    }
+
+    [Fact]
+    public void Reject_HasMask()
+    {
+        // /Mask is a color-key or stencil mask — re-encoding would corrupt the masking.
+        PdfStream s = MakeEligibleRgb();
+        s.Dictionary[new PdfName("Mask")] = new PdfArray { new PdfInteger(0), new PdfInteger(0) };
         Assert.False(ImageRecompressor.IsImageRecompressible(s, null));
     }
 

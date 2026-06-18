@@ -1,3 +1,4 @@
+using JpegCodec;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Optimization;
 using Xunit;
@@ -60,6 +61,34 @@ public class ImageRecompressorReencodeTests
         var s = new PdfStream(dict, rawPixels);
         // Compress with FlateDecode so the raw bytes become the encoded stream.
         s.SetEncodedData(rawPixels, "FlateDecode");
+        return s;
+    }
+
+    /// <summary>
+    /// Creates a DCTDecode image stream from raw pixels (pre-encoded as JPEG).
+    /// </summary>
+    private static PdfStream MakeDctStream(byte[] rawPixels, int w, int h, string csName, int quality = 90)
+    {
+        int channels = csName == "DeviceGray" ? 1 : 3;
+        byte[] jpeg = new JpegStreamEncoder().Encode(rawPixels, new JpegEncodeOptions
+        {
+            Width               = w,
+            Height              = h,
+            NumberOfComponents  = channels,
+            Quality             = quality,
+            ChromaSubsampling   = channels == 3 ? ChromaSubsampling.Yuv444 : ChromaSubsampling.Yuv444,
+        });
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Subtype")]  = new PdfName("Image"),
+            [PdfName.Filter]           = new PdfName("DCTDecode"),
+            [PdfName.Width]            = new PdfInteger(w),
+            [PdfName.Height]           = new PdfInteger(h),
+            [PdfName.ColorSpace]       = new PdfName(csName),
+            [PdfName.BitsPerComponent] = new PdfInteger(8),
+        };
+        var s = new PdfStream(dict, jpeg);
+        s.Data = jpeg;
         return s;
     }
 
@@ -192,32 +221,82 @@ public class ImageRecompressorReencodeTests
             MaxImagePixelDimension = 200,
         };
 
-        ImageRecompressor.TryRecompress(s, null, opts);
+        bool result = ImageRecompressor.TryRecompress(s, null, opts);
+        Assert.True(result, "TryRecompress with tall-image downsample should succeed");
 
         int newH = ((PdfInteger)s.Dictionary[PdfName.Height]).Value;
         Assert.True(newH <= 200, $"Height should be <= 200, was {newH}");
     }
 
     [Fact]
-    public void TryRecompress_NoDowsample_WhenBelowCap()
+    public void TryRecompress_NoDownsample_WhenBelowCap()
     {
-        const int W = 128, H = 128;
-        byte[] pixels = MakeGrayGradient(W, H);
-        PdfStream s = MakeFlatStream(pixels, W, H, "DeviceGray");
+        // Use a large RGB gradient so JPEG beats FlateDecode — ensures the size guard
+        // passes and we can verify dimensions are not changed when image is below the cap.
+        const int W = 512, H = 256;
+        byte[] pixels = MakeRgbGradient(W, H);
+        PdfStream s = MakeFlatStream(pixels, W, H, "DeviceRGB");
 
-        // Cap is larger than the image — no resize should occur.
+        // Cap is larger than the larger side (512) — no resize should occur.
         var opts = new PdfOptimizationOptions
         {
-            ImageJpegQuality       = 60,
-            MaxImagePixelDimension = 300,
+            ImageJpegQuality       = 75,
+            MaxImagePixelDimension = 600,
         };
 
-        ImageRecompressor.TryRecompress(s, null, opts);
+        bool result = ImageRecompressor.TryRecompress(s, null, opts);
+        Assert.True(result, "TryRecompress below cap should recompress the FlateDecode image (size guard must pass for this gradient)");
 
         int newW = ((PdfInteger)s.Dictionary[PdfName.Width]).Value;
         int newH = ((PdfInteger)s.Dictionary[PdfName.Height]).Value;
         Assert.Equal(W, newW);
         Assert.Equal(H, newH);
+    }
+
+    // ── Fix 3: DCTDecode no-cap is left untouched ─────────────────────────────
+
+    [Fact]
+    public void TryRecompress_DctSource_NoCap_ReturnsFalse_FilterUnchanged()
+    {
+        // A DCTDecode source with no pixel cap — re-encoding would be pure quality loss;
+        // TryRecompress must return false and leave the stream untouched.
+        const int W = 256, H = 256;
+        byte[] pixels = MakeRgbGradient(W, H);
+        PdfStream s = MakeDctStream(pixels, W, H, "DeviceRGB", quality: 90);
+        byte[] originalBytes = s.Data!.ToArray();
+        int originalLen = s.Length;
+
+        bool result = ImageRecompressor.TryRecompress(s, null, DefaultOpts()); // MaxImagePixelDimension = 0
+
+        Assert.False(result, "DCTDecode source with no cap must not be re-encoded (second-generation loss)");
+        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out var f));
+        Assert.Equal("DCTDecode", ((PdfName)f).Value);
+        Assert.Equal(originalLen, s.Length);
+    }
+
+    [Fact]
+    public void TryRecompress_DctSource_WithCapBelowLargerDim_IsDownsampled()
+    {
+        // A DCTDecode source where the cap triggers a downsample — should be recompressed.
+        const int W = 512, H = 256;
+        byte[] pixels = MakeRgbGradient(W, H);
+        PdfStream s = MakeDctStream(pixels, W, H, "DeviceRGB", quality: 90);
+
+        var opts = new PdfOptimizationOptions
+        {
+            ImageJpegQuality       = 75,
+            MaxImagePixelDimension = 200, // larger side 512 > 200 → downsample applies
+        };
+
+        bool result = ImageRecompressor.TryRecompress(s, null, opts);
+        Assert.True(result, "DCTDecode source with cap below larger dimension should be downsampled and recompressed");
+
+        int newW = ((PdfInteger)s.Dictionary[PdfName.Width]).Value;
+        int newH = ((PdfInteger)s.Dictionary[PdfName.Height]).Value;
+        Assert.True(newW <= 200 && newH <= 200,
+            $"After downsample expected ≤200×200, got {newW}×{newH}");
+        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out var f));
+        Assert.Equal("DCTDecode", ((PdfName)f).Value);
     }
 
     // ── Size measurement (captured as assertion message) ──────────────────────

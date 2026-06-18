@@ -1,5 +1,6 @@
 using ImageResampling;
 using JpegCodec;
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -64,9 +65,10 @@ internal static class ImageRecompressor
         if (!RgbNames.Contains(csName.Value) && !GrayNames.Contains(csName.Value))
             return false;
 
-        // 5. No soft mask, image mask, or decode array.
+        // 5. No soft mask, image mask, color-key/stencil mask, or decode array.
         if (s.Dictionary.ContainsKey(new PdfName("SMask")))    return false;
         if (s.Dictionary.ContainsKey(new PdfName("ImageMask"))) return false;
+        if (s.Dictionary.ContainsKey(new PdfName("Mask")))     return false;
         if (s.Dictionary.ContainsKey(new PdfName("Decode")))   return false;
 
         // 6. Pixel count must be at least 16384 (128×128).
@@ -80,7 +82,7 @@ internal static class ImageRecompressor
     /// <summary>
     /// Attempts to re-encode <paramref name="s"/> as a smaller JPEG.
     /// Returns <c>true</c> if the stream was replaced; <c>false</c> if it was
-    /// left unchanged (size guard or codec error).
+    /// left unchanged (source is DCTDecode with no cap triggered, size guard, or codec error).
     /// </summary>
     internal static bool TryRecompress(PdfStream s, PdfDocument? document,
         PdfOptimizationOptions options)
@@ -94,6 +96,18 @@ internal static class ImageRecompressor
         // Read original dimensions.
         int w = ((PdfInteger)s.Dictionary[PdfName.Width]).Value;
         int h = ((PdfInteger)s.Dictionary[PdfName.Height]).Value;
+
+        // For DCTDecode sources, only proceed if a pixel-cap downsample will actually happen.
+        // Re-encoding an already-JPEG stream at the same quality is a pointless second-generation
+        // quality loss; skip it unless the image also needs downsampling.
+        if (s.Dictionary.TryGetValue(PdfName.Filter, out PdfObject? srcFilterObj) &&
+            srcFilterObj is PdfName { Value: "DCTDecode" })
+        {
+            bool willDownsample = options.MaxImagePixelDimension > 0 &&
+                                  Math.Max(w, h) > options.MaxImagePixelDimension;
+            if (!willDownsample)
+                return false;
+        }
 
         // Record original encoded size BEFORE decoding (avoids touching the data setter).
         int originalLen = s.Length;

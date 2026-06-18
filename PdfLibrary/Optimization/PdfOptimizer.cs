@@ -1,5 +1,3 @@
-using ImageResampling;
-using JpegCodec;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -68,7 +66,18 @@ public static class PdfOptimizer
         {
             if (obj is not PdfStream s) continue;
             if (!ImageRecompressor.IsImageRecompressible(s, document)) continue;
-            ImageRecompressor.TryRecompress(s, document, options);
+            try
+            {
+                ImageRecompressor.TryRecompress(s, document, options);
+            }
+            catch (Exception ex)
+            {
+                // Skip this image and continue — a corrupt or undecodable image stream
+                // must not abort the entire Optimize pass.
+                Logging.PdfLogger.Log(
+                    Logging.LogCategory.Images,
+                    $"RecompressImages: skipping object {s.ObjectNumber} due to error: {ex.GetType().Name}: {ex.Message}");
+            }
         }
     }
 
