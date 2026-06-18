@@ -61,6 +61,7 @@
            NuGet packages, so they must NOT be emitted as package dependencies. -->
       <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\ImageLibrary\PixelResampler\PixelResampler.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\ImageLibrary\LzwCodec\LzwCodec.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\Logging\Logging.csproj" PrivateAssets="all" />
@@ -80,6 +81,7 @@
         <ItemGroup>
             <BuildOutputInPackage Include="$(OutputPath)ICCSharp.dll" />
             <BuildOutputInPackage Include="$(OutputPath)JpegCodec.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)PixelResampler.dll" />
             <BuildOutputInPackage Include="$(OutputPath)FontParser.dll" />
             <BuildOutputInPackage Include="$(OutputPath)LzwCodec.dll" />
             <BuildOutputInPackage Include="$(OutputPath)Logging.dll" />

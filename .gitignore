@@ -6,6 +6,7 @@ riderModule.iml
 logs/
 *.pdf
 .claude/
+.worktrees/
 
 # Abandoned Jpeg2k implementation
 Compressors/Compressors.Jpeg2k/
