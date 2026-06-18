@@ -19,6 +19,11 @@ internal static class ImageRecompressor
     private static readonly HashSet<string> RgbNames  = ["DeviceRGB", "RGB"];
     private static readonly HashSet<string> GrayNames = ["DeviceGray", "G"];
 
+    // Upper bound on image pixel count. Decoding yields width×height×channels raw bytes, so an
+    // absurdly large image (or a misread dimension) must never be decoded — recompressing it could
+    // exhaust memory. 40 MP ≈ 120 MB decoded at RGB; above this we skip and leave the image as-is.
+    private const long MaxRecompressPixels = 40_000_000;
+
     // ── Public surface ──────────────────────────────────────────────────────────
 
     /// <summary>
@@ -32,7 +37,7 @@ internal static class ImageRecompressor
     ///   <item><c>/ColorSpace</c> (indirect references resolved) is a bare
     ///         <see cref="PdfName"/> in the DeviceRGB/RGB or DeviceGray/G sets.</item>
     ///   <item>No <c>/SMask</c>, <c>/ImageMask</c>, or <c>/Decode</c> entry.</item>
-    ///   <item><c>Width × Height ≥ 16384</c> (images smaller than 128×128 are skipped).</item>
+    ///   <item><c>16384 ≤ Width × Height ≤ 40,000,000</c> (tiny images skipped; huge images skipped to bound decode memory).</item>
     /// </list>
     /// </summary>
     internal static bool IsImageRecompressible(PdfStream s, PdfDocument? document)
@@ -71,10 +76,12 @@ internal static class ImageRecompressor
         if (s.Dictionary.ContainsKey(new PdfName("Mask")))     return false;
         if (s.Dictionary.ContainsKey(new PdfName("Decode")))   return false;
 
-        // 6. Pixel count must be at least 16384 (128×128).
+        // 6. Pixel count must be within a sane range: at least 16384 (128×128) to skip tiny images,
+        //    and at most MaxRecompressPixels so decoding cannot allocate a runaway raw-pixel buffer.
         if (!s.Dictionary.TryGetValue(PdfName.Width,  out PdfObject wObj) || wObj  is not PdfInteger wInt) return false;
         if (!s.Dictionary.TryGetValue(PdfName.Height, out PdfObject hObj) || hObj is not PdfInteger hInt) return false;
-        if ((long)wInt.Value * hInt.Value < 16384) return false;
+        long pixelCount = (long)wInt.Value * hInt.Value;
+        if (pixelCount < 16384 || pixelCount > MaxRecompressPixels) return false;
 
         return true;
     }

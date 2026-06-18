@@ -238,4 +238,37 @@ public class ImageRecompressorTests
         PdfStream s = MakeEligibleRgb(128, 128);
         Assert.True(ImageRecompressor.IsImageRecompressible(s, null));
     }
+
+    // ── Rejection: pixel count too large (memory guard) ───────────────────────
+
+    /// <summary>Build an image stream with the given declared dimensions but a 1-byte backing
+    /// array — the predicate reads /Width and /Height from the dictionary only, so this tests the
+    /// upper bound without allocating a giant buffer.</summary>
+    private static PdfStream MakeImageDims(int w, int h)
+    {
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Subtype")]   = new PdfName("Image"),
+            [PdfName.Filter]            = new PdfName("FlateDecode"),
+            [PdfName.Width]             = new PdfInteger(w),
+            [PdfName.Height]            = new PdfInteger(h),
+            [PdfName.ColorSpace]        = new PdfName("DeviceRGB"),
+            [PdfName.BitsPerComponent]  = new PdfInteger(8),
+        };
+        return new PdfStream(dict, new byte[1]);
+    }
+
+    [Fact]
+    public void Reject_TooLarge_ExceedsPixelCap()
+    {
+        // 50000 × 50000 = 2.5e9 px, far above the 40 MP cap. Must reject WITHOUT decoding.
+        Assert.False(ImageRecompressor.IsImageRecompressible(MakeImageDims(50000, 50000), null));
+    }
+
+    [Fact]
+    public void Accept_JustUnderPixelCap()
+    {
+        // 6000 × 6000 = 36e6 px < 40 MP cap.
+        Assert.True(ImageRecompressor.IsImageRecompressible(MakeImageDims(6000, 6000), null));
+    }
 }
