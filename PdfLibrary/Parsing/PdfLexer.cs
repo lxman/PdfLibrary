@@ -320,6 +320,19 @@ internal class PdfLexer(Stream stream)
             sb.Append((char)ch);
         }
 
+        // Guarantee forward progress. If the loop consumed nothing, the next byte is a delimiter
+        // NextToken doesn't route here (')', '{' or '}'). A stray one of these — common in malformed
+        // content or mis-skipped inline-image data — would otherwise yield a zero-width token and
+        // spin any caller's parse loop forever. Consume the single byte as Unknown so NextToken
+        // always advances.
+        if (sb.Length == 0)
+        {
+            if (!TryPeek(out byte stray))
+                return new PdfToken(PdfTokenType.EndOfFile, string.Empty, position);
+            Read();
+            return new PdfToken(PdfTokenType.Unknown, ((char)stray).ToString(), position);
+        }
+
         var value = sb.ToString();
 
         PdfTokenType type = value switch

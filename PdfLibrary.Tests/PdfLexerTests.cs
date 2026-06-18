@@ -64,6 +64,31 @@ public class PdfLexerTests
 
     #endregion
 
+    #region Forward-progress guarantee (stray delimiters)
+
+    [Theory]
+    [InlineData(")")]
+    [InlineData("{")]
+    [InlineData("}")]
+    public void Lexer_StrayDelimiter_ConsumesByteAndAdvances(string delim)
+    {
+        // ')', '{' and '}' are delimiters that NextToken's switch does not route. They must be
+        // consumed as a single-char Unknown token so the lexer always advances. Regression: a
+        // zero-width token here used to spin content-stream parsers forever (OOM).
+        PdfLexer lexer = CreateLexer(delim + "X");
+
+        PdfToken first = lexer.NextToken();
+        Assert.Equal(PdfTokenType.Unknown, first.Type);
+        Assert.Equal(delim, first.Value);
+        Assert.True(lexer.Position > 0, "lexer must advance past the stray delimiter");
+
+        // Must reach the following token, not loop on the delimiter.
+        PdfToken second = lexer.NextToken();
+        Assert.Equal("X", second.Value);
+    }
+
+    #endregion
+
     #region Real Number Tests
 
     [Fact]

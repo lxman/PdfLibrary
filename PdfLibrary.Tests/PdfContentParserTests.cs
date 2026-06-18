@@ -58,6 +58,42 @@ public class PdfContentParserTests
         Assert.Equal("Q", operators[1].Name);
     }
 
+    [Theory]
+    [InlineData("q ) Q")]
+    [InlineData("q } Q")]
+    [InlineData("q { Q")]
+    public void Parse_StrayDelimiter_TerminatesWithBoundedOutput(string content)
+    {
+        // Regression: a ')', '{' or '}' outside a string literal reached the lexer, which returned a
+        // zero-width Unknown token without advancing -> the parse loop appended operators forever
+        // until OutOfMemory. Parse must terminate with a bounded operator list.
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        List<PdfOperator> operators = PdfContentParser.Parse(bytes);
+
+        Assert.True(operators.Count < 100, $"operator count must be bounded, was {operators.Count}");
+        Assert.Contains(operators, o => o.Name == "q");
+        Assert.Contains(operators, o => o.Name == "Q");
+    }
+
+    [Fact]
+    public void Parse_InlineImageWithCloseParenInData_IsConsumedAndTerminates()
+    {
+        // An inline image whose binary data contains a ')' (0x29) must be skipped to EI as raw
+        // bytes, never tokenized, so the parser cannot stall. Operators after EI must still parse.
+        byte[] prefix = Encoding.ASCII.GetBytes("q BI /W 2 /H 2 /BPC 8 /CS /G ID ");
+        byte[] data = [0x29, 0x00, 0xFF, 0x29];
+        byte[] suffix = Encoding.ASCII.GetBytes(" EI Q");
+        byte[] content = [.. prefix, .. data, .. suffix];
+
+        List<PdfOperator> operators = PdfContentParser.Parse(content);
+
+        Assert.True(operators.Count < 100, $"operator count must be bounded, was {operators.Count}");
+        Assert.Contains(operators, o => o.Name == "q");
+        Assert.Contains(operators, o => o.Name == "Q");
+        Assert.Contains(operators, o => o is InlineImageOperator);
+    }
+
     [Fact]
     public void Parse_PathOperators_MoveLineClose()
     {

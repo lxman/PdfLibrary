@@ -44,12 +44,23 @@ internal class PdfContentParser
 
         var lexer = new PdfLexer(stream);
 
+        long lastPosition = -1;
         while (true)
         {
             PdfToken token = lexer.NextToken();
 
             if (token.Type == PdfTokenType.EndOfFile)
                 break;
+
+            // Termination backstop: every iteration must advance the stream. If the lexer position
+            // has not moved since the previous iteration, a malformed construct has stalled parsing
+            // — stop instead of appending operators forever. (NextToken already guarantees per-token
+            // advancement; this also bounds ParseArray/ParseDictionary/ParseInlineImage, which drive
+            // the same lexer.)
+            long currentPosition = lexer.Position;
+            if (currentPosition == lastPosition)
+                break;
+            lastPosition = currentPosition;
 
             // Handle operands (objects that come before operators)
             switch (token.Type)
@@ -472,7 +483,11 @@ internal class PdfContentParser
                 {
                     // Peek next byte to verify it's whitespace or EOF
                     int next = stream.ReadByte();
-                    if (next is -1 or ' ' or '\n' or '\r' or '\t' or 'Q' or 'q')
+                    // EI terminates an inline image and, per tokenization, is followed by whitespace,
+                    // a delimiter, or end-of-stream. (Previously only whitespace and Q/q were accepted,
+                    // so an EI followed by any other operator went undetected and the rest of the
+                    // stream was swallowed as image data.)
+                    if (next == -1 || IsWhitespace((byte)next) || IsDelimiter((byte)next))
                     {
                         // Found EI, put back the next byte if it's not EOF
                         if (next != -1 && stream.CanSeek)
@@ -507,4 +522,8 @@ internal class PdfContentParser
     {
         return b == ' ' || b == '\n' || b == '\r' || b == '\t';
     }
+
+    private static bool IsDelimiter(byte b) =>
+        b is (byte)'(' or (byte)')' or (byte)'<' or (byte)'>' or (byte)'[' or (byte)']'
+          or (byte)'{' or (byte)'}' or (byte)'/' or (byte)'%';
 }
