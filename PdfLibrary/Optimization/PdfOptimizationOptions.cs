@@ -15,12 +15,15 @@ public sealed partial class PdfOptimizationOptions
     /// output on object-heavy documents.</summary>
     public bool UseObjectStreams { get; set; } = true;
 
-    /// <summary>Downsample and re-compress embedded image XObjects (Phase 3, image track). Off until
-    /// the image integration lands and is validated.</summary>
+    /// <summary>OPT-IN switch (default false). When true, re-encodes eligible embedded image XObjects
+    /// as JPEG to shrink them. LOSSY — it converts lossless raster (e.g. FlateDecode) to JPEG — so it
+    /// is off by default to keep Optimize lossless. Tuning: <see cref="ImageJpegQuality"/>,
+    /// <see cref="MaxImagePixelDimension"/>.</summary>
     public bool RecompressImages { get; set; } = false;
 
-    /// <summary>Subset embedded TrueType (/FontFile2) programs to the glyphs actually used (Phase 3,
-    /// font track). Off until the font integration lands and is validated.</summary>
+    /// <summary>OPT-IN switch (default false). When true, subsets embedded TrueType (/FontFile2)
+    /// programs to the glyphs actually used — large savings on font-heavy files, rendering preserved.
+    /// EDIT-DESTRUCTIVE — glyphs not currently drawn are discarded — so it is off by default.</summary>
     public bool SubsetFonts { get; set; } = false;
 
     public static PdfOptimizationOptions Default => new();
