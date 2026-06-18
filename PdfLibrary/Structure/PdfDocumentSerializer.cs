@@ -33,7 +33,7 @@ internal static class PdfDocumentSerializer
             PdfIndirectReference.ToIndirectObjectDefinition(objectNumber, generationNumber, obj) + "\n");
     }
 
-    public static void Write(PdfDocument document, Stream stream)
+    public static void Write(PdfDocument document, Stream stream, ISet<int>? liveObjects = null)
     {
         if (document.IsEncrypted)
             throw new NotSupportedException(
@@ -51,6 +51,7 @@ internal static class PdfDocumentSerializer
         var offsets = new Dictionary<int, long>();
         foreach (KeyValuePair<int, PdfObject> kvp in document.Objects.OrderBy(p => p.Key))
         {
+            if (liveObjects is not null && !liveObjects.Contains(kvp.Key)) continue; // GC: skip dead objects
             offsets[kvp.Key] = stream.Position;
             stream.Write(SerializeIndirectObject(kvp.Key, kvp.Value.GenerationNumber, kvp.Value));
         }
