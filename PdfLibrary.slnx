@@ -57,6 +57,7 @@
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>
   <Project Path="FontParser/FontParser.csproj" />
+  <Project Path="FontParser.Tests/FontParser.Tests.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
   <Project Path="PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj" />
