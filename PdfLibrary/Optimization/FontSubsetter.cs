@@ -87,26 +87,37 @@ internal static class FontSubsetter
                 continue;
             }
 
-            // Size guard: never bloat.  Compare encoded (compressed) lengths.
-            // Build the new Flate-compressed stream first.
-            var newStream = new PdfStream(new byte[0]);
-            newStream.SetEncodedData(subsetBytes, "FlateDecode");
-            newStream.Dictionary[new PdfName("Length1")] = new PdfInteger(subsetBytes.Length);
+            // Size guard: compare encoded sizes.  Encode the subset first so we have
+            // an apples-to-apples comparison of compressed bytes.
+            // We encode to a temporary buffer; only commit if size wins.
+            var tempStream = new PdfStream(new byte[0]);
+            tempStream.SetEncodedData(subsetBytes, "FlateDecode");
 
-            if (newStream.Length >= fontFile2Stream.Length)
+            if (tempStream.Length >= fontFile2Stream.Length)
                 continue; // Subsetting didn't help — leave the original.
 
-            // 3a. Write back the new /FontFile2 stream.
-            usage.Descriptor.SetFontFile2(newStream);
+            // 3a. Mutate the EXISTING FontFile2 stream in place so the document
+            //     object graph stays consistent (no orphaned objects, no dangling refs).
+            fontFile2Stream.SetEncodedData(subsetBytes, "FlateDecode");
+            fontFile2Stream.Dictionary[new PdfName("Length1")] = new PdfInteger(subsetBytes.Length);
 
             // 3b. For Identity-H CIDFontType2, write a /CIDToGIDMap stream.
+            //     Register it as a proper document object so the serializer writes it correctly.
             if (usage.Kind == FontUsageKind.IdentityHCidType2 &&
                 usage.DescendantCidFontDict is { } cidDict)
             {
                 byte[] cidToGidMapBytes = BuildCidToGidMap(usage.Gids, oldToNew);
                 var cidToGidStream = new PdfStream(new byte[0]);
                 cidToGidStream.SetEncodedData(cidToGidMapBytes, "FlateDecode");
-                cidDict[new PdfName("CIDToGIDMap")] = cidToGidStream;
+
+                // Allocate the next available object number.
+                int nextObjNum = document.Objects.Count == 0 ? 1
+                    : document.Objects.Keys.Max() + 1;
+                document.AddObject(nextObjNum, 0, cidToGidStream);
+
+                // Store an indirect reference so the serializer writes "N 0 R".
+                cidDict[new PdfName("CIDToGIDMap")] =
+                    new PdfIndirectReference(nextObjNum, 0);
             }
         }
     }
