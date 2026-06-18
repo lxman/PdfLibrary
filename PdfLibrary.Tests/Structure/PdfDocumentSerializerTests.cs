@@ -8,6 +8,23 @@ namespace PdfLibrary.Tests.Structure;
 public class PdfDocumentSerializerTests
 {
     [Fact]
+    public void MaterializeAllObjects_LoadsEveryInUseXrefEntry()
+    {
+        string path = System.IO.Path.Combine(
+            @"C:\Users\jorda\RiderProjects\PDF",
+            @"PDFs\pdf20examples\Simple PDF 2.0 file.pdf");
+        if (!System.IO.File.Exists(path)) return; // corpus-dependent; skip if absent
+
+        using PdfDocument doc = PdfDocument.Load(path);
+        doc.MaterializeAllObjects();
+
+        int inUse = doc.XrefTable.Entries.Count(e => e.IsInUse);
+        Assert.True(doc.Objects.Count >= inUse,
+            $"materialized {doc.Objects.Count} objects but xref has {inUse} in-use entries");
+    }
+
+
+    [Fact]
     public void SerializeIndirectObject_Dictionary_WrapsInObjEndobj()
     {
         var dict = new PdfDictionary();

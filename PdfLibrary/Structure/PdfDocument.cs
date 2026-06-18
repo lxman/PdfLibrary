@@ -296,6 +296,18 @@ public class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// Forces every in-use object referenced by the xref to be loaded into the object cache.
+    /// Load() is lazy (object streams and on-demand objects), so a full rewrite must call this first.
+    /// </summary>
+    internal void MaterializeAllObjects()
+    {
+        // ToList() first: GetObject for a compressed entry adds extracted objects to _objects,
+        // so snapshot the xref entries before iterating.
+        foreach (PdfXrefEntry entry in XrefTable.Entries.Where(e => e.IsInUse).ToList())
+            _ = GetObject(entry.ObjectNumber);
+    }
+
+    /// <summary>
     /// Gets the page count
     /// </summary>
     public int GetPageCount()
@@ -888,21 +900,10 @@ public class PdfDocument : IDisposable
     public void Save(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
-
         if (!stream.CanWrite)
             throw new ArgumentException("Stream must be writable", nameof(stream));
 
-        using var writer = new StreamWriter(stream, leaveOpen: true);
-
-        // Write header
-        writer.WriteLine($"%PDF-{Version}");
-        writer.WriteLine("%âãÏÓ"); // Binary marker
-
-        // TODO: Write body (all indirect objects)
-        // TODO: Write cross-reference table
-        // TODO: Write trailer
-
-        writer.Flush();
+        PdfDocumentSerializer.Write(this, stream);
     }
 
     public void Dispose()
