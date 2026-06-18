@@ -71,7 +71,14 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
                     break;
                 default:
                     if (b is < 32 or > 126)
-                        sb.Append($"\\{b:000}"); // Octal escape
+                        // PDF literal-string escapes are OCTAL (\ddd). This previously emitted the
+                        // byte in DECIMAL, which the parser then read back as octal — corrupting every
+                        // byte >= 64 on a save/optimize round-trip (e.g. a UTF-16 BOM FE FF came back
+                        // as AC AD, garbling titles, URLs and any binary string).
+                        sb.Append('\\')
+                          .Append((char)('0' + ((b >> 6) & 7)))
+                          .Append((char)('0' + ((b >> 3) & 7)))
+                          .Append((char)('0' + (b & 7)));
                     else
                         sb.Append(c);
                     break;
