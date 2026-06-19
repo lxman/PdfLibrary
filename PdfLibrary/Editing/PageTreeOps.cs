@@ -39,6 +39,25 @@ internal static class PageTreeOps
         kids.Insert(to, item);
     }
 
+    internal static PdfDictionary RemoveAt(PdfDocument doc, int index)
+    {
+        PdfArray kids = Kids(doc);
+        if (index < 0 || index >= kids.Count) throw new ArgumentOutOfRangeException(nameof(index));
+        PdfObject kid = kids[index];
+        PdfDictionary pageDict = (kid is PdfIndirectReference r ? doc.GetObject(r.ObjectNumber) : kid) as PdfDictionary
+            ?? throw new InvalidOperationException("Page kid is not a dictionary.");
+        kids.RemoveAt(index);
+        SetCount(doc, kids.Count);
+        return pageDict;
+    }
+
+    internal static void SetCount(PdfDocument doc, int count)
+    {
+        PdfDictionary root = doc.PageTreeRootDictionary
+            ?? throw new InvalidOperationException("Document has no page tree root.");
+        root[new PdfName("Count")] = new PdfInteger(count);
+    }
+
     /// <summary>The catalog's /Pages indirect reference (promotes a direct /Pages dict to indirect if needed).</summary>
     internal static PdfIndirectReference RootRef(PdfDocument doc)
     {

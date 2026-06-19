@@ -59,4 +59,11 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
     }
 
     public void Move(int fromIndex, int toIndex) => PageTreeOps.Move(_document, fromIndex, toIndex);
+
+    public void RemoveAt(int index)
+    {
+        if (Count <= 1)
+            throw new InvalidOperationException("Cannot remove the last remaining page.");
+        PageTreeOps.RemoveAt(_document, index);
+    }
 }
