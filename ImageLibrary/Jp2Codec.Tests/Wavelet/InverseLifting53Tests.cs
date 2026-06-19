@@ -57,7 +57,7 @@ namespace Jp2Codec.Tests.Wavelet
         {
             // Forward 5/3 of [c,c,c,c,c,c,c,c] produces low=[c,c,c,c], high=[0,0,0,0]
             // interleaved as [c,0,c,0,c,0,c,0]. The inverse should recover [c]*8.
-            int c = 42;
+            var c = 42;
             int[] y = { c, 0, c, 0, c, 0, c, 0 };
             int[] x = InverseLifting53.Apply(y, startingParity: 0);
             Assert.Equal(Repeat(c, 8), x);
@@ -136,7 +136,7 @@ namespace Jp2Codec.Tests.Wavelet
             }
 
             const int pad = 2;
-            int[] buf = new int[length + 2 * pad];
+            var buf = new int[length + 2 * pad];
             Array.Copy(x, 0, buf, pad, length);
             SymmetricExtension.Fill(buf, pad, length);
 
@@ -163,7 +163,7 @@ namespace Jp2Codec.Tests.Wavelet
                 buf[b] += sum >> 2;
             }
 
-            int[] result = new int[length];
+            var result = new int[length];
             Array.Copy(buf, pad, result, 0, length);
             return result;
         }

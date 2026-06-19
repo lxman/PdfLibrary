@@ -32,8 +32,10 @@ public class RealProfileSmokeTests
             $"Header declares size {header.ProfileSize} but file is {bytes.Length} bytes.");
 
         // Tag table sits at offset 128.
-        IccBinaryReader r = new(bytes);
-        r.Position = ProfileHeader.Size;
+        IccBinaryReader r = new(bytes)
+        {
+            Position = ProfileHeader.Size
+        };
         TagTable table = TagTable.Parse(r, header.ProfileSize);
         Assert.True(table.Count > 0);
 
@@ -50,8 +52,10 @@ public class RealProfileSmokeTests
 
         byte[] bytes = File.ReadAllBytes(SrgbPath);
         ProfileHeader header = ProfileHeader.Parse(bytes);
-        IccBinaryReader r = new(bytes);
-        r.Position = ProfileHeader.Size;
+        IccBinaryReader r = new(bytes)
+        {
+            Position = ProfileHeader.Size
+        };
         TagTable table = TagTable.Parse(r, header.ProfileSize);
 
         // Walk every tag — no exceptions, every result non-null. Unknown types are allowed

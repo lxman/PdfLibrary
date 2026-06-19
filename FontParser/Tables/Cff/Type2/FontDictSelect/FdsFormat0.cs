@@ -7,7 +7,7 @@ namespace FontParser.Tables.Cff.Type2.FontDictSelect
     {
         public byte Format { get; }
 
-        public List<byte> FdIndex { get; } = new List<byte>();
+        public List<byte> FdIndex { get; } = new();
 
         public FdsFormat0(BigEndianReader reader, ushort numGlyphs)
         {

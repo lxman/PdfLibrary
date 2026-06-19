@@ -9,7 +9,7 @@ namespace FontParser.Tables.TtTables.Glyf
 {
     public class SimpleGlyph : IGlyphSpec
     {
-        public List<SimpleGlyphCoordinate> Coordinates { get; } = new List<SimpleGlyphCoordinate>();
+        public List<SimpleGlyphCoordinate> Coordinates { get; } = new();
 
         public List<ushort> EndPtsOfContours { get; private set; }
 

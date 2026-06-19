@@ -89,7 +89,7 @@ namespace Jp2Codec.Codestream
         public static bool IsValidMarker(ushort code)
         {
             if ((code & 0xFF00) != 0xFF00) return false;
-            byte low = (byte)(code & 0xFF);
+            var low = (byte)(code & 0xFF);
             // Part 1 markers are sparse. Whitelist what we model so a stray 0xFF
             // followed by an arbitrary byte does not silently look like a marker.
             switch (code)

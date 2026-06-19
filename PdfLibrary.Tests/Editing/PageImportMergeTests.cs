@@ -12,7 +12,7 @@ public class PageImportMergeTests
 
     private static byte[] Pages(params string[] texts)
     {
-        PdfDocumentBuilder b = PdfDocumentBuilder.Create();
+        var b = PdfDocumentBuilder.Create();
         foreach (string t in texts) b.AddPage(p => p.AddText(t, 100, 700));
         return b.ToByteArray();
     }

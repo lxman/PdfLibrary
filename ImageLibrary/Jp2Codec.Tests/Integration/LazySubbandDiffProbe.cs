@@ -56,7 +56,7 @@ public class LazySubbandDiffProbe
             return a.Orientation.CompareTo(b.Orientation);
         });
 
-        int totalDiffSubbands = 0;
+        var totalDiffSubbands = 0;
         foreach (SubbandKey key in keyList)
         {
             bool hasC1 = c1.TryGetValue(key, out int[,]? g1);
@@ -78,8 +78,8 @@ public class LazySubbandDiffProbe
                 continue;
             }
 
-            int diffCount = 0;
-            int maxDelta = 0;
+            var diffCount = 0;
+            var maxDelta = 0;
             var diffs = new List<(int X, int Y, int V1, int V2)>();
             for (var y = 0; y < h1; y++)
             for (var x = 0; x < w1; x++)
@@ -94,7 +94,7 @@ public class LazySubbandDiffProbe
                     diffs.Add((x, y, v1, v2));
                 }
             }
-            string label = $"comp={key.Component} res={key.Resolution} orient={key.Orientation} ({w1}x{h1})";
+            var label = $"comp={key.Component} res={key.Resolution} orient={key.Orientation} ({w1}x{h1})";
             if (diffCount == 0)
             {
                 report.AppendLine($"{label}: MATCH ({w1 * h1} samples).");
@@ -114,7 +114,7 @@ public class LazySubbandDiffProbe
         report.AppendLine();
         report.AppendLine($"Subbands with differences: {totalDiffSubbands} / {keyList.Count}.");
 
-        string outDir = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c";
+        var outDir = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c";
         Directory.CreateDirectory(outDir);
         File.WriteAllText(Path.Combine(outDir, "lazy_subband_diff.txt"), report.ToString());
         _output.WriteLine(report.ToString());

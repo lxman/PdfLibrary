@@ -25,7 +25,7 @@ public sealed class ColorantOrderTagElement : TagElement
         if (count > (uint)(payloadBytes - 4))
             throw new IccParseException(
                 $"colorantOrderType declares {count} entries but only {payloadBytes - 4} bytes follow the count.");
-        byte[] order = new byte[count];
+        var order = new byte[count];
         for (uint i = 0; i < count; i++) order[i] = reader.ReadUInt8();
         return new ColorantOrderTagElement(order);
     }

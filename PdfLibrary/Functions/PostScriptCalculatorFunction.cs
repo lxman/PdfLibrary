@@ -120,7 +120,7 @@ internal class PostScriptCalculatorFunction : PdfFunction
             case "or": BinaryBoolOrInt(s, (x, y) => x || y, (x, y) => x | y); break;
             case "xor": BinaryBoolOrInt(s, (x, y) => x ^ y, (x, y) => x ^ y); break;
             case "not": { object o = Pop(s); s.Add(o is bool b ? !b : (double)~(long)ToNum(o)); break; }
-            case "bitshift": { int shift = (int)PopNum(s); long v = (long)PopNum(s); s.Add((double)(shift >= 0 ? v << shift : v >> -shift)); break; }
+            case "bitshift": { var shift = (int)PopNum(s); var v = (long)PopNum(s); s.Add((double)(shift >= 0 ? v << shift : v >> -shift)); break; }
             case "true": s.Add(true); break;
             case "false": s.Add(false); break;
 
@@ -132,9 +132,9 @@ internal class PostScriptCalculatorFunction : PdfFunction
             case "pop": Pop(s); break;
             case "exch": { object b = Pop(s), a = Pop(s); s.Add(b); s.Add(a); break; }
             case "dup": s.Add(s[^1]); break;
-            case "copy": { int n = (int)PopNum(s); int c = s.Count; for (var i = 0; i < n; i++) s.Add(s[c - n + i]); break; }
-            case "index": { int n = (int)PopNum(s); s.Add(s[s.Count - 1 - n]); break; }
-            case "roll": { int j = (int)PopNum(s); int n = (int)PopNum(s); Roll(s, n, j); break; }
+            case "copy": { var n = (int)PopNum(s); int c = s.Count; for (var i = 0; i < n; i++) s.Add(s[c - n + i]); break; }
+            case "index": { var n = (int)PopNum(s); s.Add(s[s.Count - 1 - n]); break; }
+            case "roll": { var j = (int)PopNum(s); var n = (int)PopNum(s); Roll(s, n, j); break; }
 
             default: throw new InvalidOperationException($"unsupported PostScript operator '{op}'");
         }

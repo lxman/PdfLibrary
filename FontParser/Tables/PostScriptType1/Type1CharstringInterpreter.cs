@@ -10,7 +10,7 @@ namespace FontParser.Tables.PostScriptType1
     public class Type1CharstringInterpreter
     {
         private readonly List<List<byte>>? _subrs;
-        private readonly Stack<float> _stack = new Stack<float>();
+        private readonly Stack<float> _stack = new();
         private float _currentX;
         private float _currentY;
         private GlyphOutline _outline;
@@ -19,7 +19,7 @@ namespace FontParser.Tables.PostScriptType1
         private float _pathStartY;
 
         // For flex hints
-        private readonly List<PointF> _flexPoints = new List<PointF>();
+        private readonly List<PointF> _flexPoints = new();
         private bool _inFlex;
 
         public Type1CharstringInterpreter(List<List<byte>>? subrs = null)

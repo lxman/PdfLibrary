@@ -24,7 +24,7 @@ public class GrayProfileTests
         IccProfile gray = IccProfile.Parse(BuildGrayProfile(2.2));
         Assert.Equal(ColorSpaceSignatures.Gray, gray.Header.DataColorSpace);
 
-        IccTransform t = IccTransform.Create(gray, BuiltInProfiles.Srgb);
+        var t = IccTransform.Create(gray, BuiltInProfiles.Srgb);
         Assert.Equal(1, t.InputChannels);
         Assert.Equal(3, t.OutputChannels);
     }
@@ -32,7 +32,7 @@ public class GrayProfileTests
     [Fact]
     public void Synthetic_gray_white_and_black_map_to_neutral_srgb_endpoints()
     {
-        IccTransform t = IccTransform.Create(IccProfile.Parse(BuildGrayProfile(2.2)), BuiltInProfiles.Srgb);
+        var t = IccTransform.Create(IccProfile.Parse(BuildGrayProfile(2.2)), BuiltInProfiles.Srgb);
 
         double[] white = t.Apply(1.0);
         double[] black = t.Apply(0.0);
@@ -50,7 +50,7 @@ public class GrayProfileTests
     [Fact]
     public void Synthetic_gray_midpoint_is_neutral_and_near_half()
     {
-        IccTransform t = IccTransform.Create(IccProfile.Parse(BuildGrayProfile(2.2)), BuiltInProfiles.Srgb);
+        var t = IccTransform.Create(IccProfile.Parse(BuildGrayProfile(2.2)), BuiltInProfiles.Srgb);
 
         double[] mid = t.Apply(0.5);
 
@@ -63,10 +63,10 @@ public class GrayProfileTests
     [Fact]
     public void Synthetic_gray_ramp_is_monotonic()
     {
-        IccTransform t = IccTransform.Create(IccProfile.Parse(BuildGrayProfile(2.2)), BuiltInProfiles.Srgb);
+        var t = IccTransform.Create(IccProfile.Parse(BuildGrayProfile(2.2)), BuiltInProfiles.Srgb);
 
         double prev = -1.0;
-        for (int i = 0; i <= 10; i++)
+        for (var i = 0; i <= 10; i++)
         {
             double r = t.Apply(i / 10.0)[0];
             Assert.True(r >= prev - 1e-9, $"ramp not monotonic at step {i}: {r:F4} < {prev:F4}");
@@ -84,7 +84,7 @@ public class GrayProfileTests
         IccProfile gray = IccProfile.Parse(File.ReadAllBytes(GrayPath));
         Assert.Equal(ColorSpaceSignatures.Gray, gray.Header.DataColorSpace);
 
-        IccTransform t = IccTransform.Create(gray, BuiltInProfiles.Srgb);
+        var t = IccTransform.Create(gray, BuiltInProfiles.Srgb);
         Assert.Equal(1, t.InputChannels);
         Assert.Equal(3, t.OutputChannels);
 
@@ -98,7 +98,7 @@ public class GrayProfileTests
         Assert.Equal(black[0], black[2], 2);
 
         double prev = -1.0;
-        for (int i = 0; i <= 10; i++)
+        for (var i = 0; i <= 10; i++)
         {
             double v = t.Apply(i / 10.0)[0];
             Assert.True(v >= prev - 1e-9, $"non-monotonic ramp at step {i}");
@@ -124,7 +124,7 @@ public class GrayProfileTests
         int kTrcOff = dataStart + xyzSize;
         int totalSize = kTrcOff + curvSize;
 
-        byte[] d = new byte[totalSize];
+        var d = new byte[totalSize];
 
         WriteUInt32(d, 0, (uint)totalSize);
         WriteAscii(d, 12, "mntr");      // display class
@@ -156,7 +156,7 @@ public class GrayProfileTests
 
     private static void WriteTagEntry(byte[] buf, int offset, string sig, uint dataOffset, int size)
     {
-        for (int i = 0; i < 4; i++) buf[offset + i] = (byte)sig[i];
+        for (var i = 0; i < 4; i++) buf[offset + i] = (byte)sig[i];
         WriteUInt32(buf, offset + 4, dataOffset);
         WriteUInt32(buf, offset + 8, (uint)size);
     }
@@ -177,12 +177,12 @@ public class GrayProfileTests
 
     private static void WriteAscii(byte[] buf, int offset, string s)
     {
-        for (int i = 0; i < s.Length; i++) buf[offset + i] = (byte)s[i];
+        for (var i = 0; i < s.Length; i++) buf[offset + i] = (byte)s[i];
     }
 
     private static void WriteS15Fixed16(byte[] buf, int offset, double value)
     {
-        int raw = (int)Math.Round(value * 65536.0);
+        var raw = (int)Math.Round(value * 65536.0);
         buf[offset]     = (byte)((raw >> 24) & 0xFF);
         buf[offset + 1] = (byte)((raw >> 16) & 0xFF);
         buf[offset + 2] = (byte)((raw >> 8) & 0xFF);

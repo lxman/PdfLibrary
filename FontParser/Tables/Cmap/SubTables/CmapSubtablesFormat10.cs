@@ -9,7 +9,7 @@ namespace FontParser.Tables.Cmap.SubTables
 
         public uint StartChar { get; }
 
-        public List<uint> GlyphIndexArray { get; } = new List<uint>();
+        public List<uint> GlyphIndexArray { get; } = new();
 
         private readonly uint _numChars;
 

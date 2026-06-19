@@ -5,7 +5,7 @@ namespace FontParser.Tables.Cmap.SubTables
 {
     public class DefaultUvsTableHeader
     {
-        public List<UnicodeRangeRecord> UnicodeRangeRecords { get; } = new List<UnicodeRangeRecord>();
+        public List<UnicodeRangeRecord> UnicodeRangeRecords { get; } = new();
 
         public DefaultUvsTableHeader(BigEndianReader reader)
         {

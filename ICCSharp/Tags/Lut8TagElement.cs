@@ -63,8 +63,8 @@ public sealed class Lut8TagElement : TagElement
         int clutGridPoints = reader.ReadUInt8();
         reader.Skip(1); // reserved
 
-        double[] matrix = new double[9];
-        for (int i = 0; i < 9; i++) matrix[i] = reader.ReadS15Fixed16();
+        var matrix = new double[9];
+        for (var i = 0; i < 9; i++) matrix[i] = reader.ReadS15Fixed16();
 
         long inputTableBytes = 256L * inputChannels;
         long clutEntries = LongPow(clutGridPoints, inputChannels);
@@ -78,16 +78,16 @@ public sealed class Lut8TagElement : TagElement
         if (clutEntries > int.MaxValue / Math.Max(1, outputChannels))
             throw new IccParseException($"mft1 CLUT size {clutEntries}×{outputChannels} exceeds int.MaxValue.");
 
-        byte[][] inputTables = new byte[inputChannels][];
-        for (int c = 0; c < inputChannels; c++)
+        var inputTables = new byte[inputChannels][];
+        for (var c = 0; c < inputChannels; c++)
         {
             inputTables[c] = reader.ReadBytes(256).ToArray();
         }
 
         byte[] clut = reader.ReadBytes((int)clutBytes).ToArray();
 
-        byte[][] outputTables = new byte[outputChannels][];
-        for (int c = 0; c < outputChannels; c++)
+        var outputTables = new byte[outputChannels][];
+        for (var c = 0; c < outputChannels; c++)
         {
             outputTables[c] = reader.ReadBytes(256).ToArray();
         }
@@ -99,7 +99,7 @@ public sealed class Lut8TagElement : TagElement
     internal static long LongPow(long b, int e)
     {
         long result = 1;
-        for (int i = 0; i < e; i++) result *= b;
+        for (var i = 0; i < e; i++) result *= b;
         return result;
     }
 }

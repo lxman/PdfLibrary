@@ -54,12 +54,12 @@ public class PdfOptimizerTests
         using PdfDocument doc = LoadBuilt();
         doc.MaterializeAllObjects();
 
-        var before = doc.Objects.Values.OfType<PdfStream>()
+        Dictionary<int, byte[]> before = doc.Objects.Values.OfType<PdfStream>()
             .ToDictionary(s => s.ObjectNumber, s => s.GetDecodedData());
 
         PdfOptimizer.CompressUncompressedStreamsForTest(doc);
 
-        bool anyFlate = false;
+        var anyFlate = false;
         foreach (PdfStream s in doc.Objects.Values.OfType<PdfStream>())
         {
             Assert.Equal(before[s.ObjectNumber], s.GetDecodedData()); // lossless
@@ -114,7 +114,11 @@ public class PdfOptimizerTests
     [Fact]
     public void BuildObjectStream_HasObjStmShape()
     {
-        var a = new PdfDictionary(); a[new PdfName("K")] = new PdfInteger(1); a.ObjectNumber = 4;
+        var a = new PdfDictionary
+        {
+            [new PdfName("K")] = new PdfInteger(1),
+            ObjectNumber = 4
+        };
         var b = new PdfArray { new PdfInteger(2) }; b.ObjectNumber = 5;
 
         (PdfStream objStm, Dictionary<int, int> idx) =

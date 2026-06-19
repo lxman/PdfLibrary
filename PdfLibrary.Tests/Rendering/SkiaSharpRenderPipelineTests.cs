@@ -361,7 +361,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         // Sample inside the rectangle (100,600 page coords → PDF bottom-origin).
         // PDF origin is bottom-left; the renderer flips to top-left. Use the page-height-based
         // conversion to find a point that's safely inside the rectangle.
-        int sampleX = 150;                            // 100 < x < 300
+        var sampleX = 150;                            // 100 < x < 300
         int sampleY = (int)page.Height - 650;         // 600 < y < 700 in PDF coords → flipped
         SKColor px = bitmap.GetPixel(sampleX, sampleY);
 
@@ -493,9 +493,9 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         int cy = (minY + maxY) / 2;
         var openAtCentre = 0;
         var samples = 0;
-        for (var dy = -2; dy <= 2; dy++)
+        for (int dy = -2; dy <= 2; dy++)
         {
-            for (var dx = -2; dx <= 2; dx++)
+            for (int dx = -2; dx <= 2; dx++)
             {
                 SKColor c = bitmap.GetPixel(cx + dx, cy + dy);
                 samples++;
@@ -519,10 +519,6 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         var buf = new List<byte>();
         var offsets = new int[6];
 
-        void Ascii(string s) => buf.AddRange(System.Text.Encoding.Latin1.GetBytes(s));
-        void StartObj(int n) { offsets[n] = buf.Count; Ascii($"{n} 0 obj\n"); }
-        void EndObj() => Ascii("\nendobj\n");
-
         Ascii("%PDF-1.7\n");
         buf.AddRange(new byte[] { 0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A }); // binary marker comment
         StartObj(1); Ascii("<< /Type /Catalog /Pages 2 0 R >>"); EndObj();
@@ -539,6 +535,12 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         Ascii($"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n{xrefOff}\n%%EOF\n");
 
         return buf.ToArray();
+
+        void Ascii(string s) => buf.AddRange(System.Text.Encoding.Latin1.GetBytes(s));
+
+        void StartObj(int n) { offsets[n] = buf.Count; Ascii($"{n} 0 obj\n"); }
+
+        void EndObj() => Ascii("\nendobj\n");
     }
 
     // ----- Regression: the fluent render path must size to the CropBox, not the MediaBox -----
@@ -598,10 +600,6 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         var buf = new List<byte>();
         var offsets = new int[5];
 
-        void Ascii(string s) => buf.AddRange(System.Text.Encoding.Latin1.GetBytes(s));
-        void StartObj(int n) { offsets[n] = buf.Count; Ascii($"{n} 0 obj\n"); }
-        void EndObj() => Ascii("\nendobj\n");
-
         Ascii("%PDF-1.7\n");
         buf.AddRange(new byte[] { 0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A });
         StartObj(1); Ascii("<< /Type /Catalog /Pages 2 0 R >>"); EndObj();
@@ -616,5 +614,11 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         Ascii($"trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n{xrefOff}\n%%EOF\n");
 
         return buf.ToArray();
+
+        void Ascii(string s) => buf.AddRange(System.Text.Encoding.Latin1.GetBytes(s));
+
+        void StartObj(int n) { offsets[n] = buf.Count; Ascii($"{n} 0 obj\n"); }
+
+        void EndObj() => Ascii("\nendobj\n");
     }
 }

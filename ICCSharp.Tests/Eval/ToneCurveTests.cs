@@ -32,7 +32,7 @@ public class ToneCurveTests
     public void Sampled_single_gamma_2_2_matches_analytical()
     {
         // gamma 2.2 → u8Fixed8 = 2.2 * 256 = 563.2 → 563 (0x0233 = 563); back to gamma = 563/256 = 2.19921875.
-        ushort g = (ushort)Math.Round(2.2 * 256.0);
+        var g = (ushort)Math.Round(2.2 * 256.0);
         SampledToneCurve c = new(new CurveTagElement(new ushort[] { g }));
         double gammaActual = g / 256.0;
         Assert.Equal(Math.Pow(0.5, gammaActual), c.Evaluate(0.5), 9);
@@ -42,7 +42,7 @@ public class ToneCurveTests
     [Fact]
     public void Sampled_single_gamma_inverse_undoes_forward()
     {
-        ushort g = (ushort)Math.Round(2.2 * 256.0);
+        var g = (ushort)Math.Round(2.2 * 256.0);
         SampledToneCurve c = new(new CurveTagElement(new ushort[] { g }));
         foreach (double x in new[] { 0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0 })
             Assert.Equal(x, c.EvaluateInverse(c.Evaluate(x)), 9);
@@ -54,8 +54,8 @@ public class ToneCurveTests
     public void Sampled_lookup_linear_ramp_is_near_identity()
     {
         // 256-entry linear ramp: samples[i] = i * 65535 / 255 = i * 257.
-        ushort[] ramp = new ushort[256];
-        for (int i = 0; i < 256; i++) ramp[i] = (ushort)(i * 257);
+        var ramp = new ushort[256];
+        for (var i = 0; i < 256; i++) ramp[i] = (ushort)(i * 257);
         SampledToneCurve c = new(new CurveTagElement(ramp));
         Assert.Equal(0.0, c.Evaluate(0.0), 6);
         Assert.Equal(0.5, c.Evaluate(0.5), 5);
@@ -67,9 +67,9 @@ public class ToneCurveTests
     {
         // 257-entry x^2 LUT (i goes 0..256 — but ICC sample arrays count grid points, so use 257).
         // Actually ICC samples represent uniformly spaced points over [0,1]; n samples → n-1 intervals.
-        int n = 257;
-        ushort[] samples = new ushort[n];
-        for (int i = 0; i < n; i++)
+        var n = 257;
+        var samples = new ushort[n];
+        for (var i = 0; i < n; i++)
         {
             double x = i / (double)(n - 1);
             samples[i] = (ushort)Math.Round(x * x * 65535.0);
@@ -85,9 +85,9 @@ public class ToneCurveTests
     [Fact]
     public void Sampled_lookup_inverse_recovers_input()
     {
-        int n = 257;
-        ushort[] samples = new ushort[n];
-        for (int i = 0; i < n; i++)
+        var n = 257;
+        var samples = new ushort[n];
+        for (var i = 0; i < n; i++)
         {
             double x = i / (double)(n - 1);
             samples[i] = (ushort)Math.Round(x * x * 65535.0);

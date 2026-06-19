@@ -10,7 +10,7 @@ namespace FontParser.Tables.Name
 
         public ushort Format { get; }
 
-        public List<NameRecord> NameRecords { get; } = new List<NameRecord>();
+        public List<NameRecord> NameRecords { get; } = new();
 
         public List<LangTagRecord>? LangTagRecords { get; }
 

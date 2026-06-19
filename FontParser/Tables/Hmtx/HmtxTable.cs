@@ -7,9 +7,9 @@ namespace FontParser.Tables.Hmtx
     {
         public static string Tag => "hmtx";
 
-        public List<LongHMetricRecord> LongHMetricRecords { get; } = new List<LongHMetricRecord>();
+        public List<LongHMetricRecord> LongHMetricRecords { get; } = new();
 
-        public List<short> LeftSideBearings { get; } = new List<short>();
+        public List<short> LeftSideBearings { get; } = new();
 
         private readonly BigEndianReader _reader;
 

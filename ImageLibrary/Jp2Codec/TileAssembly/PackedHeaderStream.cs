@@ -31,10 +31,10 @@ namespace Jp2Codec.TileAssembly
             // assert strict monotonicity to surface the wraparound case
             // if it ever appears.
             PpmSegment[] sorted = ppmSegments.OrderBy(p => p.ZppmIndex).ToArray();
-            int total = 0;
+            var total = 0;
             for (var i = 0; i < sorted.Length; i++) total += sorted[i].Payload.Length;
             _stream = new byte[total];
-            int offset = 0;
+            var offset = 0;
             for (var i = 0; i < sorted.Length; i++)
             {
                 Buffer.BlockCopy(sorted[i].Payload, 0, _stream, offset, sorted[i].Payload.Length);
@@ -86,10 +86,10 @@ namespace Jp2Codec.TileAssembly
             if (pptSegments.Count == 0) return Array.Empty<byte>();
 
             PptSegment[] sorted = pptSegments.OrderBy(p => p.ZpptIndex).ToArray();
-            int total = 0;
+            var total = 0;
             for (var i = 0; i < sorted.Length; i++) total += sorted[i].Payload.Length;
             var result = new byte[total];
-            int offset = 0;
+            var offset = 0;
             for (var i = 0; i < sorted.Length; i++)
             {
                 Buffer.BlockCopy(sorted[i].Payload, 0, result, offset, sorted[i].Payload.Length);

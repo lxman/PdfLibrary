@@ -1,5 +1,6 @@
 using FontParser;
 using FontParser.Subsetting;
+using FontParser.Tables.Cmap;
 using FontParser.Tables.TtTables.Glyf;
 
 namespace FontParser.Tests;
@@ -21,8 +22,7 @@ public class GlyphClosureTests
 
     private static readonly string ArialPath = @"C:\Windows\Fonts\arial.ttf";
 
-    private static SfntFont LoadArial() =>
-        new SfntFont(File.ReadAllBytes(ArialPath));
+    private static SfntFont LoadArial() => new(File.ReadAllBytes(ArialPath));
 
     // ---------------------------------------------------------------------------
     // Helper: find the first composite glyph in the font
@@ -30,10 +30,10 @@ public class GlyphClosureTests
 
     private static (int GlyphId, List<ushort> ComponentIds)? FindFirstComposite(SfntFont font)
     {
-        var glyf = font.Glyf;
+        GlyphTable? glyf = font.Glyf;
         if (glyf is null) return null;
 
-        foreach (var gd in glyf.Glyphs)
+        foreach (GlyphData gd in glyf.Glyphs)
         {
             if (gd.GlyphSpec is CompositeGlyph composite && composite.Components.Count > 0)
             {
@@ -61,7 +61,7 @@ public class GlyphClosureTests
     public void Arial_ContainsCompositeGlyphs()
     {
         SfntFont font = LoadArial();
-        var composite = FindFirstComposite(font);
+        (int GlyphId, List<ushort> ComponentIds)? composite = FindFirstComposite(font);
         Assert.True(composite.HasValue,
             "Arial is expected to contain composite glyphs (accented letters).");
     }
@@ -74,10 +74,10 @@ public class GlyphClosureTests
     public void SimpleGlyph_ClosureContainsOnlyItself()
     {
         SfntFont font = LoadArial();
-        var glyf = font.Glyf!;
+        GlyphTable glyf = font.Glyf!;
 
         // Find a simple glyph (SimpleGlyph, not CompositeGlyph).
-        ushort simpleId = (ushort)glyf.Glyphs
+        var simpleId = (ushort)glyf.Glyphs
             .First(g => g.GlyphSpec is SimpleGlyph)
             .Index;
 
@@ -95,10 +95,10 @@ public class GlyphClosureTests
     public void CompositeGlyph_ClosureIncludesComponents()
     {
         SfntFont font = LoadArial();
-        var found = FindFirstComposite(font);
+        (int GlyphId, List<ushort> ComponentIds)? found = FindFirstComposite(font);
         Assert.True(found.HasValue, "No composite glyph found in Arial.");
 
-        var (compositeId, componentIds) = found!.Value;
+        (int compositeId, List<ushort> componentIds) = found!.Value;
 
         ushort[] closure = GlyphClosure.Compute(font, new[] { (ushort)compositeId });
 
@@ -124,16 +124,16 @@ public class GlyphClosureTests
     public void CompositeGlyph_TransitiveClosureReachesAllLevels()
     {
         SfntFont font = LoadArial();
-        var glyf = font.Glyf!;
+        GlyphTable glyf = font.Glyf!;
 
         // Find a composite glyph whose component is also a composite.
         (int GlyphId, List<ushort> Level1Components)? level2 = null;
-        foreach (var gd in glyf.Glyphs)
+        foreach (GlyphData gd in glyf.Glyphs)
         {
             if (gd.GlyphSpec is not CompositeGlyph outer) continue;
-            foreach (var comp in outer.Components)
+            foreach (CompositeGlyphComponent comp in outer.Components)
             {
-                var inner = glyf.GetGlyphData(comp.GlyphIndex);
+                GlyphData? inner = glyf.GetGlyphData(comp.GlyphIndex);
                 if (inner?.GlyphSpec is CompositeGlyph)
                 {
                     level2 = (gd.Index, outer.Components.Select(c => c.GlyphIndex).ToList());
@@ -146,7 +146,7 @@ public class GlyphClosureTests
         if (!level2.HasValue)
             return; // Arial doesn't have depth-2 composites — skip gracefully.
 
-        ushort rootId = (ushort)level2.Value.GlyphId;
+        var rootId = (ushort)level2.Value.GlyphId;
         ushort[] closure = GlyphClosure.Compute(font, new[] { rootId });
 
         Assert.Contains(rootId, closure);
@@ -162,12 +162,12 @@ public class GlyphClosureTests
     public void MultipleSeeds_ClosureIsUnion()
     {
         SfntFont font = LoadArial();
-        var glyf = font.Glyf!;
+        GlyphTable glyf = font.Glyf!;
 
-        ushort simple = (ushort)glyf.Glyphs.First(g => g.GlyphSpec is SimpleGlyph).Index;
-        var compositeFound = FindFirstComposite(font);
+        var simple = (ushort)glyf.Glyphs.First(g => g.GlyphSpec is SimpleGlyph).Index;
+        (int GlyphId, List<ushort> ComponentIds)? compositeFound = FindFirstComposite(font);
         Assert.True(compositeFound.HasValue);
-        ushort composite = (ushort)compositeFound!.Value.GlyphId;
+        var composite = (ushort)compositeFound!.Value.GlyphId;
 
         ushort[] individualSimple    = GlyphClosure.Compute(font, new[] { simple });
         ushort[] individualComposite = GlyphClosure.Compute(font, new[] { composite });
@@ -185,13 +185,13 @@ public class GlyphClosureTests
     public void Closure_ResultIsSortedAscending()
     {
         SfntFont font = LoadArial();
-        var glyf = font.Glyf!;
+        GlyphTable glyf = font.Glyf!;
 
         // Take first 20 glyph IDs as seeds (mix of simple and composite).
-        var seeds = glyf.Glyphs.Take(20).Select(g => (ushort)g.Index).ToArray();
+        ushort[] seeds = glyf.Glyphs.Take(20).Select(g => (ushort)g.Index).ToArray();
         ushort[] closure = GlyphClosure.Compute(font, seeds);
 
-        for (int i = 1; i < closure.Length; i++)
+        for (var i = 1; i < closure.Length; i++)
             Assert.True(closure[i] > closure[i - 1],
                 $"Closure is not strictly ascending at index {i}: " +
                 $"{closure[i - 1]} then {closure[i]}");
@@ -205,9 +205,9 @@ public class GlyphClosureTests
     public void Closure_DuplicateSeedsProduceDedupedResult()
     {
         SfntFont font = LoadArial();
-        var compositeFound = FindFirstComposite(font);
+        (int GlyphId, List<ushort> ComponentIds)? compositeFound = FindFirstComposite(font);
         Assert.True(compositeFound.HasValue);
-        ushort id = (ushort)compositeFound!.Value.GlyphId;
+        var id = (ushort)compositeFound!.Value.GlyphId;
 
         ushort[] closure1 = GlyphClosure.Compute(font, new[] { id });
         ushort[] closure2 = GlyphClosure.Compute(font, new[] { id, id, id });
@@ -239,7 +239,7 @@ public class GlyphClosureTests
     {
         SfntFont font = LoadArial();
 
-        var cmap = font.Cmap;
+        CmapTable? cmap = font.Cmap;
         Assert.NotNull(cmap);
 
         // U+00C0 = 'À' (Latin capital A with grave)
@@ -250,8 +250,8 @@ public class GlyphClosureTests
             return;
         }
 
-        var glyf = font.Glyf!;
-        var compositeData = glyf.GetGlyphData(agrave);
+        GlyphTable glyf = font.Glyf!;
+        GlyphData? compositeData = glyf.GetGlyphData(agrave);
         if (compositeData?.GlyphSpec is not CompositeGlyph composite)
         {
             // Agrave is a simple outline in this Arial variant — skip.
@@ -261,7 +261,7 @@ public class GlyphClosureTests
         ushort[] closure = GlyphClosure.Compute(font, new[] { agrave });
 
         Assert.Contains(agrave, closure);
-        foreach (var comp in composite.Components)
+        foreach (CompositeGlyphComponent comp in composite.Components)
             Assert.Contains(comp.GlyphIndex, closure);
     }
 
@@ -275,9 +275,9 @@ public class GlyphClosureTests
     public void FullFontClosure_NoExceptionAndContainsAllSeeds()
     {
         SfntFont font = LoadArial();
-        var glyf = font.Glyf!;
+        GlyphTable glyf = font.Glyf!;
 
-        var allIds = glyf.Glyphs.Select(g => (ushort)g.Index).ToArray();
+        ushort[] allIds = glyf.Glyphs.Select(g => (ushort)g.Index).ToArray();
         ushort[] closure = GlyphClosure.Compute(font, allIds);
 
         // Every seed must appear in the closure.

@@ -46,7 +46,7 @@ namespace FontParser.Subsetting
             // --- Step 1: enumerate retained (codepoint, newGid) pairs ---
             // Scan full BMP. This is at most 65536 iterations — cheap.
             var pairs = new SortedList<ushort, ushort>(); // codepoint → newGid
-            for (int cp = 0; cp <= 0xFFFF; cp++)
+            for (var cp = 0; cp <= 0xFFFF; cp++)
             {
                 ushort oldGid = originalCmap.GetGlyphId((ushort)cp);
                 if (oldGid == 0 && cp != 0) continue; // mapping to .notdef means not mapped
@@ -58,7 +58,7 @@ namespace FontParser.Subsetting
             }
 
             // --- Step 2: build Format-4 segments ---
-            var segments = BuildFormat4Segments(pairs);
+            List<Segment> segments = BuildFormat4Segments(pairs);
 
             // --- Step 3: serialise ---
             return SerialiseFormat4Cmap(segments);
@@ -110,17 +110,17 @@ namespace FontParser.Subsetting
                 return segments;
             }
 
-            var keys   = pairs.Keys;
-            var values = pairs.Values;
+            IList<ushort> keys   = pairs.Keys;
+            IList<ushort> values = pairs.Values;
 
-            int i = 0;
+            var i = 0;
             while (i < keys.Count)
             {
                 ushort segStart = keys[i];
                 ushort segStartGid = values[i];
 
                 // Determine the idDelta if this first codepoint starts a linear run.
-                short delta = (short)(segStartGid - segStart);
+                var delta = (short)(segStartGid - segStart);
 
                 // Extend as far as the linear delta holds and codepoints are contiguous.
                 int j = i;
@@ -148,7 +148,7 @@ namespace FontParser.Subsetting
                     // Emit a glyphIdArray segment for [i..k].
                     int len = k - i + 1;
                     var gids = new ushort[len];
-                    for (int m = 0; m < len; m++)
+                    for (var m = 0; m < len; m++)
                         gids[m] = values[i + m];
                     segments.Add(new Segment(segStart, keys[k], gids));
                     i = k + 1;
@@ -170,7 +170,7 @@ namespace FontParser.Subsetting
             int segCountX2 = segCount * 2;
 
             // searchRange = 2 × (2^floor(log2(segCount)))
-            int pow = 1;
+            var pow = 1;
             while (pow * 2 <= segCount) pow *= 2;
             int searchRange = pow * 2;
             int entrySelector = Log2(pow);
@@ -180,7 +180,7 @@ namespace FontParser.Subsetting
             // We also need to compute idRangeOffset for each segment.
             var glyphIdArrayParts = new List<ushort[]>();
             var idRangeOffsets = new ushort[segCount];
-            for (int si = 0; si < segCount; si++)
+            for (var si = 0; si < segCount; si++)
             {
                 Segment seg = segments[si];
                 if (seg.GlyphIds != null && seg.GlyphIds.Length > 0)
@@ -193,8 +193,8 @@ namespace FontParser.Subsetting
                     // relative byte offset to the glyphIdArray start is:
                     //   (segCount - si) * 2  [remainder of idRangeOffset array]
                     //   + (sum of all previous glyphIdArray entries) * 2
-                    int glyphIdArrayOffset = 0;
-                    for (int prev = 0; prev < glyphIdArrayParts.Count; prev++)
+                    var glyphIdArrayOffset = 0;
+                    for (var prev = 0; prev < glyphIdArrayParts.Count; prev++)
                         glyphIdArrayOffset += glyphIdArrayParts[prev].Length;
                     int remainingRangeOffsetEntries = segCount - si;
                     idRangeOffsets[si] = (ushort)((remainingRangeOffsetEntries + glyphIdArrayOffset) * 2);
@@ -207,11 +207,11 @@ namespace FontParser.Subsetting
             }
 
             // Flatten glyphIdArray.
-            int totalGlyphIds = 0;
-            foreach (var part in glyphIdArrayParts) totalGlyphIds += part.Length;
+            var totalGlyphIds = 0;
+            foreach (ushort[]? part in glyphIdArrayParts) totalGlyphIds += part.Length;
             var glyphIdArray = new ushort[totalGlyphIds];
-            int gIdx = 0;
-            foreach (var part in glyphIdArrayParts)
+            var gIdx = 0;
+            foreach (ushort[]? part in glyphIdArrayParts)
             {
                 foreach (ushort g in part) glyphIdArray[gIdx++] = g;
             }
@@ -230,11 +230,11 @@ namespace FontParser.Subsetting
                 + totalGlyphIds * 2;
 
             // cmap outer table: version(2) + numTables(2) + EncodingRecord(8) = 12 bytes.
-            int subtableOffset = 12;
+            var subtableOffset = 12;
             int totalLength = subtableOffset + subtableLength;
 
             var buf = new byte[totalLength];
-            int p = 0;
+            var p = 0;
 
             // --- cmap header ---
             WriteU16(buf, ref p, 0);          // version
@@ -256,17 +256,17 @@ namespace FontParser.Subsetting
             WriteU16(buf, ref p, (ushort)rangeShift);
 
             // endCode array
-            for (int si = 0; si < segCount; si++)
+            for (var si = 0; si < segCount; si++)
                 WriteU16(buf, ref p, segments[si].EndCode);
 
             WriteU16(buf, ref p, 0);          // reservedPad
 
             // startCode array
-            for (int si = 0; si < segCount; si++)
+            for (var si = 0; si < segCount; si++)
                 WriteU16(buf, ref p, segments[si].StartCode);
 
             // idDelta array
-            for (int si = 0; si < segCount; si++)
+            for (var si = 0; si < segCount; si++)
             {
                 Segment seg = segments[si];
                 short delta = (seg.GlyphIds != null && seg.GlyphIds.Length > 0) ? (short)0 : seg.IdDelta;
@@ -274,11 +274,11 @@ namespace FontParser.Subsetting
             }
 
             // idRangeOffset array
-            for (int si = 0; si < segCount; si++)
+            for (var si = 0; si < segCount; si++)
                 WriteU16(buf, ref p, idRangeOffsets[si]);
 
             // glyphIdArray
-            for (int gi = 0; gi < totalGlyphIds; gi++)
+            for (var gi = 0; gi < totalGlyphIds; gi++)
                 WriteU16(buf, ref p, glyphIdArray[gi]);
 
             return buf;
@@ -304,7 +304,7 @@ namespace FontParser.Subsetting
 
         private static int Log2(int n)
         {
-            int r = 0;
+            var r = 0;
             while (n > 1) { n >>= 1; r++; }
             return r;
         }

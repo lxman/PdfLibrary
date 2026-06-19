@@ -57,7 +57,7 @@ internal sealed class JpegBitReader
             _buffer = (uint)b << 24;
             _bitsInBuffer = 8;
         }
-        int bit = (int)(_buffer >> 31);
+        var bit = (int)(_buffer >> 31);
         _buffer <<= 1;
         _bitsInBuffer--;
         return bit;
@@ -85,7 +85,7 @@ internal sealed class JpegBitReader
 
         if (_bitsInBuffer >= n)
         {
-            int val = (int)(_buffer >> (32 - n));
+            var val = (int)(_buffer >> (32 - n));
             _buffer <<= n;
             _bitsInBuffer -= n;
             return val;

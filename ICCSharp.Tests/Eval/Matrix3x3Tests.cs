@@ -32,7 +32,7 @@ public class Matrix3x3Tests
         Matrix3x3 m = new(1, 2, 3, 0, 1, 4, 5, 6, 0);
         Matrix3x3 inv = m.Inverse();
 
-        (double x, double y, double z) = (0.4, 0.6, 0.8);
+        (var x, var y, var z) = (0.4, 0.6, 0.8);
         (double tx, double ty, double tz) = m.Transform(x, y, z);
         (double bx, double by, double bz) = inv.Transform(tx, ty, tz);
         Assert.Equal(x, bx, 10);

@@ -7,7 +7,7 @@ namespace FontParser.Tables.Cff.Type2.FontDictSelect
     {
         public byte Format { get; }
 
-        public List<Range4Record> Ranges { get; } = new List<Range4Record>();
+        public List<Range4Record> Ranges { get; } = new();
 
         public uint Sentinel { get; }
 

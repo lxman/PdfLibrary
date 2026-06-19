@@ -31,7 +31,7 @@ namespace LzwCodec
         /// <summary>
         /// Creates default options suitable for PDF streams.
         /// </summary>
-        public static LzwOptions PdfDefault => new LzwOptions
+        public static LzwOptions PdfDefault => new()
         {
             EarlyChange = true,
             EmitInitialClearCode = true
@@ -40,7 +40,7 @@ namespace LzwCodec
         /// <summary>
         /// Creates options compatible with GIF format.
         /// </summary>
-        public static LzwOptions GifCompatible => new LzwOptions
+        public static LzwOptions GifCompatible => new()
         {
             EarlyChange = false,
             EmitInitialClearCode = true
@@ -49,7 +49,7 @@ namespace LzwCodec
         /// <summary>
         /// Creates options compatible with TIFF format.
         /// </summary>
-        public static LzwOptions TiffCompatible => new LzwOptions
+        public static LzwOptions TiffCompatible => new()
         {
             EarlyChange = true,
             EmitInitialClearCode = false

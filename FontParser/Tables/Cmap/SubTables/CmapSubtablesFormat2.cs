@@ -13,11 +13,11 @@ namespace FontParser.Tables.Cmap.SubTables
         public int Language { get; }
 
         // Raw subHeaderKeys values (each = subHeaderIndex * 8), indexed by first byte.
-        public List<ushort> SubHeaderKeys { get; } = new List<ushort>();
+        public List<ushort> SubHeaderKeys { get; } = new();
 
-        public List<Format2SubHeader> SubHeaders { get; } = new List<Format2SubHeader>();
+        public List<Format2SubHeader> SubHeaders { get; } = new();
 
-        public List<ushort> GlyphIndexArray { get; } = new List<ushort>();
+        public List<ushort> GlyphIndexArray { get; } = new();
 
         private readonly int _numSubHeaders;
 

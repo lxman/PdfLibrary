@@ -110,7 +110,7 @@ namespace FontParser.Subsetting
 
             // --- Pass 1: copy + patch glyph bytes, record per-glyph lengths ----
             var glyphChunks = new byte[n][];
-            for (int newGid = 0; newGid < n; newGid++)
+            for (var newGid = 0; newGid < n; newGid++)
             {
                 ushort oldGid = remap.NewToOld[newGid];
 
@@ -143,7 +143,7 @@ namespace FontParser.Subsetting
                 if (glyphLen >= 2)
                 {
                     // numberOfContours is the first short in the glyph header.
-                    short numberOfContours = (short)((chunk[0] << 8) | chunk[1]);
+                    var numberOfContours = (short)((chunk[0] << 8) | chunk[1]);
                     if (numberOfContours < 0) // composite
                     {
                         PatchCompositeComponents(chunk, remap.OldToNew);
@@ -159,16 +159,16 @@ namespace FontParser.Subsetting
 
             // Pre-compute total size with padding to allocate the output buffer once.
             uint totalSize = 0;
-            for (int i = 0; i < n; i++)
+            for (var i = 0; i < n; i++)
             {
-                uint len = (uint)glyphChunks[i].Length;
+                var len = (uint)glyphChunks[i].Length;
                 // Round up to 2-byte boundary (TrueType alignment requirement).
                 uint paddedLen = (len + 1) & ~1u;
                 totalSize += paddedLen;
             }
 
             var newGlyfBytes = new byte[totalSize];
-            for (int newGid = 0; newGid < n; newGid++)
+            for (var newGid = 0; newGid < n; newGid++)
             {
                 locaOffsets[newGid] = runningOffset;
                 byte[] chunk = glyphChunks[newGid];
@@ -190,9 +190,9 @@ namespace FontParser.Subsetting
             if (useShort)
             {
                 locaBytes = new byte[(n + 1) * 2];
-                for (int i = 0; i <= n; i++)
+                for (var i = 0; i <= n; i++)
                 {
-                    ushort halfOffset = (ushort)(locaOffsets[i] / 2);
+                    var halfOffset = (ushort)(locaOffsets[i] / 2);
                     locaBytes[i * 2]     = (byte)(halfOffset >> 8);
                     locaBytes[i * 2 + 1] = (byte)(halfOffset & 0xFF);
                 }
@@ -200,7 +200,7 @@ namespace FontParser.Subsetting
             else
             {
                 locaBytes = new byte[(n + 1) * 4];
-                for (int i = 0; i <= n; i++)
+                for (var i = 0; i <= n; i++)
                 {
                     uint off = locaOffsets[i];
                     locaBytes[i * 4]     = (byte)(off >> 24);
@@ -231,7 +231,7 @@ namespace FontParser.Subsetting
             IReadOnlyDictionary<ushort, ushort> oldToNew)
         {
             // Skip the 10-byte glyph header.
-            int pos = 10;
+            var pos = 10;
 
             while (pos + 4 <= glyphBytes.Length) // need at least flags + glyphIndex (4 bytes)
             {

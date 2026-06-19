@@ -5,7 +5,7 @@ namespace FontParser.Tables.Cff.Type1.FdSelect
 {
     public class FdsFormat3
     {
-        public List<Range3> Ranges { get; } = new List<Range3>();
+        public List<Range3> Ranges { get; } = new();
 
         public ushort Sentinel { get; }
 

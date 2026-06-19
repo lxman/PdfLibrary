@@ -38,8 +38,10 @@ public sealed class IccProfile
             throw new IccParseException(
                 $"Header declares profile size {header.ProfileSize} but only {data.Length} bytes supplied.");
 
-        IccBinaryReader reader = new(data);
-        reader.Position = ProfileHeader.Size;
+        IccBinaryReader reader = new(data)
+        {
+            Position = ProfileHeader.Size
+        };
         TagTable table = TagTable.Parse(reader, header.ProfileSize);
 
         // Cache by (offset,size) so aliased tags share a parsed instance.
@@ -65,7 +67,7 @@ public sealed class IccProfile
 
     /// <summary>Returns the parsed tag, or null if absent.</summary>
     public TagElement? GetTag(IccSignature signature)
-        => _bySignature.TryGetValue(signature.Value, out TagElement? el) ? el : null;
+        => _bySignature.GetValueOrDefault(signature.Value);
 
     /// <summary>Returns the parsed tag cast to <typeparamref name="T"/>, or null if absent or the wrong type.</summary>
     public T? GetTag<T>(IccSignature signature) where T : TagElement
@@ -141,7 +143,7 @@ public sealed class IccProfile
 
     private XyzNumber? FirstXyz(IccSignature sig)
     {
-        XyzTagElement? t = GetTag<XyzTagElement>(sig);
+        var t = GetTag<XyzTagElement>(sig);
         return t is null || t.Values.Count == 0 ? null : t.Values[0];
     }
 

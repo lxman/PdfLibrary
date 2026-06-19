@@ -52,8 +52,8 @@ internal sealed class IccColorConverter
             return null;
         }
 
-        double[] input = new double[sourceColor.Count];
-        for (int i = 0; i < sourceColor.Count; i++) input[i] = sourceColor[i];
+        var input = new double[sourceColor.Count];
+        for (var i = 0; i < sourceColor.Count; i++) input[i] = sourceColor[i];
 
         return transform.Apply(input);
     }
@@ -88,7 +88,7 @@ internal sealed class IccColorConverter
         }
 
         int sampleCount = data.Length / sourceChannels;
-        byte[] rgb = new byte[sampleCount * 3];
+        var rgb = new byte[sampleCount * 3];
         int channels = sourceChannels;
 
         // Below this, thread-scheduling overhead outweighs the work, so palettes and tiny images
@@ -110,7 +110,7 @@ internal sealed class IccColorConverter
         {
             Span<double> input = stackalloc double[channels];
             Span<double> output = stackalloc double[3];
-            for (int i = 0; i < sampleCount; i++)
+            for (var i = 0; i < sampleCount; i++)
                 ConvertSample(transform, data, rgb, i, channels, input, output);
         }
         return rgb;
@@ -122,7 +122,7 @@ internal sealed class IccColorConverter
         IccTransform transform, byte[] data, byte[] rgb, int i, int channels, Span<double> input, Span<double> output)
     {
         int srcOff = i * channels;
-        for (int c = 0; c < channels; c++)
+        for (var c = 0; c < channels; c++)
             input[c] = data[srcOff + c] / 255.0;
 
         transform.Apply(input, output);

@@ -1565,7 +1565,7 @@ public class PdfDocumentWriter
         // with the bytes we write. Feeding the raw byte to the cmap is wrong for 0x80-0x9F,
         // where WinAnsi remaps to typographic Unicode (euro, smart quotes, en/em dash, …).
         double scale = 1000.0 / metrics.UnitsPerEm;
-        Encoding winAnsi = Encoding.GetEncoding(1252);
+        var winAnsi = Encoding.GetEncoding(1252);
         writer.Write("   /Widths [");
         for (var charCode = 32; charCode <= 255; charCode++)
         {

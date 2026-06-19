@@ -46,9 +46,9 @@ namespace FontParser.Subsetting
 
             // 4 bytes per glyph: AdvanceWidth (uint16) + Lsb (int16).
             var bytes = new byte[n * 4];
-            int pos = 0;
+            var pos = 0;
 
-            for (int newGid = 0; newGid < n; newGid++)
+            for (var newGid = 0; newGid < n; newGid++)
             {
                 ushort oldGid = remap.NewToOld[newGid];
                 ushort aw = originalHmtx.GetAdvanceWidth(oldGid);

@@ -228,7 +228,7 @@ namespace Jp2Codec.Tests.Tier1
             var contributions = new List<LazyContribution>();
             byte[] contexts = Jp2MqContextSet.CreateInitialised();
 
-            int p = 0;
+            var p = 0;
             while (p < totalPasses)
             {
                 bool raw = IsRawSlot(p);

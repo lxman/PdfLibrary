@@ -48,8 +48,8 @@ public class CodeBlockPassCountProbe
         List<BlockKey> keyList = allKeys.OrderBy(k => k.Resolution).ThenBy(k => k.Orientation)
             .ThenBy(k => k.BlockY).ThenBy(k => k.BlockX).ToList();
 
-        int matchCount = 0;
-        int diffCount = 0;
+        var matchCount = 0;
+        var diffCount = 0;
         foreach (BlockKey key in keyList)
         {
             bool has1 = c1.TryGetValue(key, out BlockInfo? i1);
@@ -70,7 +70,7 @@ public class CodeBlockPassCountProbe
         report.AppendLine();
         report.AppendLine($"Matching: {matchCount}.  Differing: {diffCount}.");
 
-        string outDir = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c";
+        var outDir = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c";
         Directory.CreateDirectory(outDir);
         File.WriteAllText(Path.Combine(outDir, "passcount_diff.txt"), report.ToString());
         _output.WriteLine(report.ToString());
@@ -83,7 +83,7 @@ public class CodeBlockPassCountProbe
         {
             TileDecoder.OnCodeBlockTrace = (c, r, o, bx, by, passCount, segments, firstBp, zbp) =>
             {
-                int totalBytes = 0;
+                var totalBytes = 0;
                 var sb = new StringBuilder();
                 for (var i = 0; i < segments.Count; i++)
                 {

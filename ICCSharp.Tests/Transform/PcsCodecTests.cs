@@ -16,7 +16,7 @@ public class PcsCodecTests
     public void Xyz_decode_scales_by_IccMaxXyz()
     {
         double[] raw = { 0.5, 0.5, 0.5 };
-        double[] xyz = new double[3];
+        var xyz = new double[3];
         PcsCodec.Decode(raw, xyz, XyzPcs);
         Assert.Equal(0.5 * IccConstants.IccMaxXyz, xyz[0], 12);
         Assert.Equal(0.5 * IccConstants.IccMaxXyz, xyz[1], 12);
@@ -27,11 +27,11 @@ public class PcsCodecTests
     public void Xyz_round_trip_recovers_input()
     {
         double[] original = { 0.3, 0.7, 0.42 };
-        double[] absolute = new double[3];
-        double[] backToRaw = new double[3];
+        var absolute = new double[3];
+        var backToRaw = new double[3];
         PcsCodec.Decode(original, absolute, XyzPcs);
         PcsCodec.Encode(absolute, backToRaw, XyzPcs);
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
             Assert.Equal(original[i], backToRaw[i], 12);
     }
 
@@ -40,7 +40,7 @@ public class PcsCodecTests
     {
         // D50 white has Y = 1.0. Encoded = 1.0 / IccMaxXyz ≈ 0.5.
         double[] xyz = { StandardIlluminants.D50.X, StandardIlluminants.D50.Y, StandardIlluminants.D50.Z };
-        double[] raw = new double[3];
+        var raw = new double[3];
         PcsCodec.Encode(xyz, raw, XyzPcs);
         Assert.Equal(0.5, raw[1], 4); // Y component
     }
@@ -57,7 +57,7 @@ public class PcsCodecTests
         raw[1] = 128.0 / 255.0;
         raw[2] = 128.0 / 255.0;
 
-        double[] xyz = new double[3];
+        var xyz = new double[3];
         PcsCodec.Decode(raw, xyz, LabPcs);
         Assert.Equal(StandardIlluminants.D50.X, xyz[0], 4);
         Assert.Equal(StandardIlluminants.D50.Y, xyz[1], 4);
@@ -68,7 +68,7 @@ public class PcsCodecTests
     public void Lab_decode_black_to_zero()
     {
         double[] raw = { 0.0, 128.0 / 255.0, 128.0 / 255.0 };
-        double[] xyz = new double[3];
+        var xyz = new double[3];
         PcsCodec.Decode(raw, xyz, LabPcs);
         Assert.Equal(0.0, xyz[0], 6);
         Assert.Equal(0.0, xyz[1], 6);
@@ -81,11 +81,11 @@ public class PcsCodecTests
         // Use raw values that lie within the cube-root segment of the Lab function (i.e. above
         // the linear-toe threshold), since the inverse only round-trips perfectly there.
         double[] original = { 0.6, 130.0 / 255.0, 100.0 / 255.0 };
-        double[] absolute = new double[3];
-        double[] backToRaw = new double[3];
+        var absolute = new double[3];
+        var backToRaw = new double[3];
         PcsCodec.Decode(original, absolute, LabPcs);
         PcsCodec.Encode(absolute, backToRaw, LabPcs);
-        for (int i = 0; i < 3; i++)
+        for (var i = 0; i < 3; i++)
             Assert.Equal(original[i], backToRaw[i], 9);
     }
 
@@ -94,7 +94,7 @@ public class PcsCodecTests
     {
         // Absolute XYZ = D50 → Lab (100, 0, 0) → normalized (1.0, 0.502, 0.502).
         double[] xyz = { StandardIlluminants.D50.X, StandardIlluminants.D50.Y, StandardIlluminants.D50.Z };
-        double[] raw = new double[3];
+        var raw = new double[3];
         PcsCodec.Encode(xyz, raw, LabPcs);
         Assert.Equal(1.0, raw[0], 4);
         Assert.Equal(128.0 / 255.0, raw[1], 3);

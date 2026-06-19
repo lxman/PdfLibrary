@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using FontParser.Tables.Cmap;
+using FontParser.Tables.Hmtx;
+using FontParser.Tables.TtTables;
 
 namespace FontParser.Subsetting
 {
@@ -42,10 +44,10 @@ namespace FontParser.Subsetting
             // GID 0 (.notdef) must always be present per TrueType spec / ISO 32000-1 §9.6.3.
             // Prepend it so GlyphClosure sees it even if the caller omitted it; idempotent if
             // already in the set (closure deduplicates via SortedSet.Add).
-            var withNotdef = requestedGlyphIds.Prepend((ushort)0);
+            IEnumerable<ushort> withNotdef = requestedGlyphIds.Prepend((ushort)0);
 
             // 1. Closure
-            var closure = GlyphClosure.Compute(font, withNotdef);
+            ushort[] closure = GlyphClosure.Compute(font, withNotdef);
             // 2. Remap
             var remap = new GlyphIdRemap(closure);
             oldToNewGid = remap.OldToNew;
@@ -72,8 +74,8 @@ namespace FontParser.Subsetting
             if (requestedGlyphIds is null) throw new ArgumentNullException(nameof(requestedGlyphIds));
 
             // GID 0 (.notdef) must always be present per TrueType spec / ISO 32000-1 §9.6.3.
-            var withNotdef = requestedGlyphIds.Prepend((ushort)0);
-            var closure = GlyphClosure.Compute(font, withNotdef);
+            IEnumerable<ushort> withNotdef = requestedGlyphIds.Prepend((ushort)0);
+            ushort[] closure = GlyphClosure.Compute(font, withNotdef);
             var remap = new GlyphIdRemap(closure);
             return SubsetWithRemap(font, remap);
         }
@@ -86,21 +88,21 @@ namespace FontParser.Subsetting
             // 3. glyf + loca
             byte[] origGlyf = font.GetTableBytes("glyf")
                 ?? throw new InvalidOperationException("Source font has no glyf table — not a TrueType font.");
-            var origLoca = font.Loca
-                ?? throw new InvalidOperationException("Source font has no loca table.");
+            LocaTable origLoca = font.Loca
+                                 ?? throw new InvalidOperationException("Source font has no loca table.");
 
             GlyfLocaRebuilder.RebuildResult glyfLoca =
                 GlyfLocaRebuilder.Rebuild(origGlyf, origLoca, remap, font.Glyf);
 
             // 4. hmtx
-            var origHmtx = font.Hmtx
-                ?? throw new InvalidOperationException("Source font has no hmtx table.");
+            HmtxTable origHmtx = font.Hmtx
+                                 ?? throw new InvalidOperationException("Source font has no hmtx table.");
             (byte[] hmtxBytes, ushort numberOfHMetrics) =
                 HmtxRebuilder.Rebuild(origHmtx, remap);
 
             // 5. cmap
-            var origCmap = font.Cmap
-                ?? throw new InvalidOperationException("Source font has no cmap table.");
+            CmapTable origCmap = font.Cmap
+                                 ?? throw new InvalidOperationException("Source font has no cmap table.");
             byte[] cmapBytes = CmapRebuilder.Rebuild(origCmap, remap);
 
             // 6a. Patch maxp — copy original bytes and overwrite numGlyphs at offset 4.
@@ -180,11 +182,11 @@ namespace FontParser.Subsetting
             // Tables must start at 4-byte aligned offsets.
             // Compute per-table offsets.
             var tableOffsets = new uint[numTables];
-            uint runningOffset = (uint)headerSize;
-            for (int i = 0; i < numTables; i++)
+            var runningOffset = (uint)headerSize;
+            for (var i = 0; i < numTables; i++)
             {
                 tableOffsets[i] = runningOffset;
-                uint len = (uint)tables[i].data.Length;
+                var len = (uint)tables[i].data.Length;
                 // Pad to 4-byte boundary.
                 uint paddedLen = (len + 3) & ~3u;
                 runningOffset += paddedLen;
@@ -192,13 +194,13 @@ namespace FontParser.Subsetting
             uint totalSize = runningOffset;
 
             var buf = new byte[totalSize];
-            int p = 0;
+            var p = 0;
 
             // --- sfnt offset table (12 bytes) ---
             WriteU32(buf, ref p, 0x00010000u);  // sfntVersion = TrueType
 
             // searchRange = (2^floor(log2(numTables))) × 16
-            int pow = 1;
+            var pow = 1;
             while (pow * 2 <= numTables) pow *= 2;
             int searchRange16   = pow * 16;
             int entrySelector   = Log2(pow);
@@ -212,8 +214,8 @@ namespace FontParser.Subsetting
             // --- table directory (numTables × 16 bytes) ---
             // We'll fill in checksums after copying data.
             int dirStart = p;
-            int[] checksumFieldOffsets = new int[numTables];
-            for (int i = 0; i < numTables; i++)
+            var checksumFieldOffsets = new int[numTables];
+            for (var i = 0; i < numTables; i++)
             {
                 byte[] tagBytes = Encoding.ASCII.GetBytes(tables[i].tag);
                 Array.Copy(tagBytes, 0, buf, p, 4);
@@ -225,7 +227,7 @@ namespace FontParser.Subsetting
             }
 
             // --- table data ---
-            for (int i = 0; i < numTables; i++)
+            for (var i = 0; i < numTables; i++)
             {
                 byte[] data = tables[i].data;
                 Array.Copy(data, 0, buf, (int)tableOffsets[i], data.Length);
@@ -233,7 +235,7 @@ namespace FontParser.Subsetting
             }
 
             // --- compute per-table checksums and write into directory ---
-            for (int i = 0; i < numTables; i++)
+            for (var i = 0; i < numTables; i++)
             {
                 uint cksum = TableChecksum(buf, (int)tableOffsets[i], tables[i].data.Length);
                 int fOff = checksumFieldOffsets[i];
@@ -246,7 +248,7 @@ namespace FontParser.Subsetting
             // --- compute whole-font checksum and store in head.checkSumAdjustment ---
             // head.checkSumAdjustment = 0xB1B0AFBA − (sum of ALL uint32s in the file).
             uint fontSum = 0;
-            for (int i = 0; i + 3 < buf.Length; i += 4)
+            for (var i = 0; i + 3 < buf.Length; i += 4)
             {
                 fontSum += (uint)((buf[i] << 24) | (buf[i + 1] << 16) | (buf[i + 2] << 8) | buf[i + 3]);
             }
@@ -256,7 +258,7 @@ namespace FontParser.Subsetting
             {
                 uint last = 0;
                 int base_ = buf.Length - remainder;
-                for (int k = 0; k < remainder; k++)
+                for (var k = 0; k < remainder; k++)
                     last |= (uint)buf[base_ + k] << (24 - k * 8);
                 fontSum += last;
             }
@@ -265,7 +267,7 @@ namespace FontParser.Subsetting
 
             // Locate the head table in the buffer to write checkSumAdjustment.
             int headTableIdx = -1;
-            for (int i = 0; i < numTables; i++)
+            for (var i = 0; i < numTables; i++)
             {
                 if (tables[i].tag == "head") { headTableIdx = i; break; }
             }
@@ -296,7 +298,7 @@ namespace FontParser.Subsetting
             for (int i = offset; i < end; i += 4)
             {
                 uint word = 0;
-                for (int k = 0; k < 4; k++)
+                for (var k = 0; k < 4; k++)
                 {
                     word <<= 8;
                     if (i + k < end)
@@ -355,7 +357,7 @@ namespace FontParser.Subsetting
 
         private static int Log2(int n)
         {
-            int r = 0;
+            var r = 0;
             while (n > 1) { n >>= 1; r++; }
             return r;
         }

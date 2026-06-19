@@ -9,7 +9,7 @@ public class ProfileHeaderTests
     {
         // 128-byte synthetic header per ICC.1:2010 §7.2. Values are recognizable so we can
         // assert every field independently.
-        byte[] buf = new byte[ProfileHeader.Size];
+        var buf = new byte[ProfileHeader.Size];
 
         // 0   profile size = 512 (0x00000200)
         buf[0] = 0x00; buf[1] = 0x00; buf[2] = 0x02; buf[3] = 0x00;
@@ -68,7 +68,7 @@ public class ProfileHeaderTests
         WriteAscii(buf, 80, "CRTR");
 
         // 84..99  profile ID = bytes 0..15
-        for (int i = 0; i < 16; i++) buf[84 + i] = (byte)i;
+        for (var i = 0; i < 16; i++) buf[84 + i] = (byte)i;
 
         // 100..127 reserved = zero (already)
         return buf;
@@ -109,7 +109,7 @@ public class ProfileHeaderTests
     [Fact]
     public void Parse_advances_reader_exactly_128_bytes()
     {
-        byte[] padded = new byte[ProfileHeader.Size + 16];
+        var padded = new byte[ProfileHeader.Size + 16];
         Buffer.BlockCopy(BuildValidHeader(), 0, padded, 0, ProfileHeader.Size);
         IccBinaryReader r = new(padded);
         _ = ProfileHeader.Parse(r);
@@ -121,7 +121,7 @@ public class ProfileHeaderTests
     {
         byte[] buf = BuildValidHeader();
         WriteAscii(buf, 36, "XXXX");
-        IccParseException ex = Assert.Throws<IccParseException>(() => ProfileHeader.Parse(buf));
+        var ex = Assert.Throws<IccParseException>(() => ProfileHeader.Parse(buf));
         Assert.Contains("acsp", ex.Message);
     }
 
@@ -172,7 +172,7 @@ public class ProfileHeaderTests
     public void Zero_profile_id_is_reported_as_unset()
     {
         byte[] buf = BuildValidHeader();
-        for (int i = 0; i < 16; i++) buf[84 + i] = 0;
+        for (var i = 0; i < 16; i++) buf[84 + i] = 0;
         ProfileHeader h = ProfileHeader.Parse(buf);
         Assert.False(h.HasProfileId);
     }
@@ -192,7 +192,7 @@ public class ProfileHeaderTests
 
     private static void WriteAscii(byte[] buf, int offset, string fourChars)
     {
-        for (int i = 0; i < 4; i++) buf[offset + i] = (byte)fourChars[i];
+        for (var i = 0; i < 4; i++) buf[offset + i] = (byte)fourChars[i];
     }
 
     private static void WriteUInt16(byte[] buf, int offset, ushort value)

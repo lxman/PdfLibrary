@@ -30,7 +30,7 @@ public sealed class ColorantTableTagElement : TagElement
             throw new IccParseException(
                 $"colorantTableType declares {count} entries ({needed} bytes); only {payloadBytes - 4} remain.");
 
-        Entry[] entries = new Entry[count];
+        var entries = new Entry[count];
         for (uint i = 0; i < count; i++)
         {
             string name = TrimAsciiToNul(reader.ReadBytes(32));
@@ -45,7 +45,7 @@ public sealed class ColorantTableTagElement : TagElement
     internal static string TrimAsciiToNul(System.ReadOnlySpan<byte> bytes)
     {
         int end = bytes.Length;
-        for (int i = 0; i < bytes.Length; i++)
+        for (var i = 0; i < bytes.Length; i++)
             if (bytes[i] == 0) { end = i; break; }
         return Encoding.ASCII.GetString(bytes.Slice(0, end).ToArray());
     }

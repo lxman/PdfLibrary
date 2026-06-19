@@ -21,7 +21,7 @@ namespace Jp2Codec.Tier2
         {
             if (reader is null) throw new ArgumentNullException(nameof(reader));
 
-            int increment = 0;
+            var increment = 0;
             while (reader.ReadBit() == 1)
             {
                 increment++;

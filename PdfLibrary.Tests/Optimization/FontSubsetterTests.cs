@@ -1,6 +1,7 @@
 using FontParser;
 using FontParser.Subsetting;
 using PdfLibrary.Builder;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Optimization;
@@ -31,7 +32,7 @@ public class FontSubsetterTests
         var sfnt = new SfntFont(File.ReadAllBytes(ArialPath));
         var gids = new ushort[] { 0, 36, 37, 38, 39 }; // .notdef + a few glyphs
 
-        byte[] subset = TrueTypeSubsetter.Subset(sfnt, gids, out var oldToNew);
+        byte[] subset = TrueTypeSubsetter.Subset(sfnt, gids, out IReadOnlyDictionary<ushort, ushort> oldToNew);
 
         Assert.NotNull(subset);
         Assert.NotEmpty(oldToNew);
@@ -46,8 +47,8 @@ public class FontSubsetterTests
                 $"Requested GID {gid} should be in the old→new mapping");
 
         // New GIDs must be contiguous 0..N.
-        var newGids = oldToNew.Values.Distinct().OrderBy(g => g).ToList();
-        for (int i = 0; i < newGids.Count; i++)
+        List<ushort> newGids = oldToNew.Values.Distinct().OrderBy(g => g).ToList();
+        for (var i = 0; i < newGids.Count; i++)
             Assert.Equal((ushort)i, newGids[i]);
     }
 
@@ -84,7 +85,7 @@ public class FontSubsetterTests
         // and any composite components. Use only simple glyphs to keep count predictable.
         var gids = new ushort[] { 1, 2, 3, 4, 5 };
 
-        byte[] subset = TrueTypeSubsetter.Subset(sfnt, gids, out var oldToNew);
+        byte[] subset = TrueTypeSubsetter.Subset(sfnt, gids, out IReadOnlyDictionary<ushort, ushort> oldToNew);
         var subsetSfnt = new SfntFont(subset);
 
         // The subset must have exactly as many glyphs as the mapping (closure-computed).
@@ -104,11 +105,11 @@ public class FontSubsetterTests
         // Use small known GIDs so the map stays tiny and checkable.
         var requestedGids = new ushort[] { 0, 10, 20 };
 
-        TrueTypeSubsetter.Subset(sfnt, requestedGids, out var oldToNew);
+        TrueTypeSubsetter.Subset(sfnt, requestedGids, out IReadOnlyDictionary<ushort, ushort> oldToNew);
 
         // Simulate BuildCidToGidMap logic: map[oldGid*2] = newGid (big-endian)
         ushort maxOld = requestedGids.Max();
-        byte[] map = new byte[(maxOld + 1) * 2];
+        var map = new byte[(maxOld + 1) * 2];
         foreach (ushort oldGid in requestedGids)
         {
             if (!oldToNew.TryGetValue(oldGid, out ushort newGid)) continue;
@@ -118,13 +119,13 @@ public class FontSubsetterTests
         }
 
         // GID 0 always maps to new GID 0 — entry at byte 0,1
-        ushort entry0 = (ushort)((map[0] << 8) | map[1]);
+        var entry0 = (ushort)((map[0] << 8) | map[1]);
         Assert.Equal((ushort)0, entry0);
 
         // GID 10 should map to some positive new GID if retained
         if (oldToNew.TryGetValue(10, out ushort newGid10))
         {
-            ushort entry10 = (ushort)((map[20] << 8) | map[21]);
+            var entry10 = (ushort)((map[20] << 8) | map[21]);
             Assert.Equal(newGid10, entry10);
         }
     }
@@ -185,7 +186,7 @@ public class FontSubsetterTests
                 else if (font is Type0Font t0)
                     desc = t0.DescendantDescriptor;
 
-                var stream = desc?.GetFontFile2Stream();
+                PdfStream? stream = desc?.GetFontFile2Stream();
                 if (stream is not null)
                     return stream.Length;
             }

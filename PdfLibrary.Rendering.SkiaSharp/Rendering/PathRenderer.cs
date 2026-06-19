@@ -87,12 +87,12 @@ internal class PathRenderer
             // Apply a dash pattern if present (scale by CTM as well)
             if (state.DashPattern is not null && state.DashPattern.Length > 0)
             {
-                float[] dashIntervals = new float[state.DashPattern.Length];
+                var dashIntervals = new float[state.DashPattern.Length];
                 for (var di = 0; di < state.DashPattern.Length; di++)
                     dashIntervals[di] = (float)(state.DashPattern[di] * ctmScale);
                 if (dashIntervals.Length % 2 != 0)
                 {
-                    float[] doubled = new float[dashIntervals.Length * 2];
+                    var doubled = new float[dashIntervals.Length * 2];
                     Array.Copy(dashIntervals, 0, doubled, 0, dashIntervals.Length);
                     Array.Copy(dashIntervals, 0, doubled, dashIntervals.Length, dashIntervals.Length);
                     dashIntervals = doubled;
@@ -374,12 +374,12 @@ internal class PathRenderer
                 // Apply a dash pattern if present (scale by CTM as well)
                 if (state.DashPattern is not null && state.DashPattern.Length > 0)
                 {
-                    float[] dashIntervals = new float[state.DashPattern.Length];
+                    var dashIntervals = new float[state.DashPattern.Length];
                     for (var di = 0; di < state.DashPattern.Length; di++)
                         dashIntervals[di] = (float)(state.DashPattern[di] * ctmScale);
                     if (dashIntervals.Length % 2 != 0)
                     {
-                        float[] doubled = new float[dashIntervals.Length * 2];
+                        var doubled = new float[dashIntervals.Length * 2];
                         Array.Copy(dashIntervals, 0, doubled, 0, dashIntervals.Length);
                         Array.Copy(dashIntervals, 0, doubled, dashIntervals.Length, dashIntervals.Length);
                         dashIntervals = doubled;

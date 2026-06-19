@@ -20,7 +20,7 @@ public class BuiltInProfilesTests
         // Round-trip through the synthetic profile must recover the input to within s15Fixed16
         // precision (~1e-4 max delta).
         IccProfile p = BuiltInProfiles.Srgb;
-        IccTransform t = IccTransform.Create(p, p);
+        var t = IccTransform.Create(p, p);
 
         foreach ((double r, double g, double b) in new[]
         {

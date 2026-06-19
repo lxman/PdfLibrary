@@ -28,7 +28,7 @@ public class RgbIcc3dLutTests
         byte[] slow = SlowReferenceRender(result);
 
         int pixels = result.Width * result.Height;
-        int worst = 0;
+        var worst = 0;
         long sumAbs = 0;
         int over1 = 0, over3 = 0;
         for (var i = 0; i < pixels * 3; i++)

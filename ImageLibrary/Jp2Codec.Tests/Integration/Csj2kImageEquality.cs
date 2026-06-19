@@ -24,15 +24,17 @@ public class Csj2kImageEquality
         if (!Run) return;
 
         string[] files = { "a1_mono.j2c", "f1_mono.j2c", "f2_mono.j2c", "c1_mono.j2c", "c2_mono.j2c" };
-        int[][] arrays = new int[files.Length][];
+        var arrays = new int[files.Length][];
         for (var i = 0; i < files.Length; i++)
         {
             byte[] bytes = File.ReadAllBytes(Path.Combine("TestData", files[i]));
             using var ms = new MemoryStream(bytes);
             try
             {
-                var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList());
-                pl["nocolorspace"] = "on";
+                var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList())
+                {
+                    ["nocolorspace"] = "on"
+                };
                 PortableImage img = J2kImage.FromStream(ms, pl);
                 arrays[i] = img.GetComponent(0);
             }
@@ -50,8 +52,8 @@ public class Csj2kImageEquality
             {
                 if (arrays[j] == null) continue;
                 int n = Math.Min(arrays[i].Length, arrays[j].Length);
-                int diff = 0;
-                int maxD = 0;
+                var diff = 0;
+                var maxD = 0;
                 for (var k = 0; k < n; k++)
                 {
                     int d = Math.Abs(arrays[i][k] - arrays[j][k]);

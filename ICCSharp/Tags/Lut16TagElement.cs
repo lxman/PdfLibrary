@@ -63,8 +63,8 @@ public sealed class Lut16TagElement : TagElement
         int clutGridPoints = reader.ReadUInt8();
         reader.Skip(1);
 
-        double[] matrix = new double[9];
-        for (int i = 0; i < 9; i++) matrix[i] = reader.ReadS15Fixed16();
+        var matrix = new double[9];
+        for (var i = 0; i < 9; i++) matrix[i] = reader.ReadS15Fixed16();
 
         int n = reader.ReadUInt16();
         int m = reader.ReadUInt16();
@@ -81,25 +81,25 @@ public sealed class Lut16TagElement : TagElement
             throw new IccParseException(
                 $"mft2 declares i={inputChannels} o={outputChannels} g={clutGridPoints} n={n} m={m}; needs {needed} bytes but payload is {payloadBytes}.");
 
-        ushort[][] inputTables = new ushort[inputChannels][];
-        for (int c = 0; c < inputChannels; c++)
+        var inputTables = new ushort[inputChannels][];
+        for (var c = 0; c < inputChannels; c++)
         {
-            ushort[] table = new ushort[n];
-            for (int i = 0; i < n; i++) table[i] = reader.ReadUInt16();
+            var table = new ushort[n];
+            for (var i = 0; i < n; i++) table[i] = reader.ReadUInt16();
             inputTables[c] = table;
         }
 
         long totalClutValues = clutEntries * outputChannels;
         if (totalClutValues > int.MaxValue)
             throw new IccParseException($"mft2 CLUT size {totalClutValues} exceeds int.MaxValue.");
-        ushort[] clut = new ushort[(int)totalClutValues];
-        for (int i = 0; i < clut.Length; i++) clut[i] = reader.ReadUInt16();
+        var clut = new ushort[(int)totalClutValues];
+        for (var i = 0; i < clut.Length; i++) clut[i] = reader.ReadUInt16();
 
-        ushort[][] outputTables = new ushort[outputChannels][];
-        for (int c = 0; c < outputChannels; c++)
+        var outputTables = new ushort[outputChannels][];
+        for (var c = 0; c < outputChannels; c++)
         {
-            ushort[] table = new ushort[m];
-            for (int i = 0; i < m; i++) table[i] = reader.ReadUInt16();
+            var table = new ushort[m];
+            for (var i = 0; i < m; i++) table[i] = reader.ReadUInt16();
             outputTables[c] = table;
         }
 

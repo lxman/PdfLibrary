@@ -25,7 +25,7 @@ public class PostScriptCalculatorFunctionTests
         dict.Add(new PdfName("Domain"), Reals(domain));
         dict.Add(new PdfName("Range"), Reals(range));
         var stream = new PdfStream(dict, Encoding.Latin1.GetBytes(program));
-        PdfFunction? fn = PdfFunction.Create(stream, null);
+        var fn = PdfFunction.Create(stream, null);
         Assert.NotNull(fn);
         return fn!;
     }

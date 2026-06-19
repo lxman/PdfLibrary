@@ -89,13 +89,13 @@ internal static class ShadingBuilder
         {
             for (var i = 0; i < arr.Count; i++)
             {
-                PdfFunction? f = PdfFunction.Create(arr[i], document);
+                var f = PdfFunction.Create(arr[i], document);
                 if (f is not null) list.Add(f);
             }
         }
         else
         {
-            PdfFunction? f = PdfFunction.Create(funcObj, document);
+            var f = PdfFunction.Create(funcObj, document);
             if (f is not null) list.Add(f);
         }
         return list;

@@ -15,9 +15,9 @@ public class DctDecodeCmykTests
     public void Cmyk_jpeg_decodes_to_four_channels_so_icc_can_run()
     {
         const int w = 16, h = 8;
-        byte[] cmyk = new byte[w * h * 4];
+        var cmyk = new byte[w * h * 4];
         // A constant CMYK fill round-trips through JPEG near-losslessly (no edges → DC-only blocks).
-        for (int i = 0; i < w * h; i++)
+        for (var i = 0; i < w * h; i++)
         {
             cmyk[i * 4 + 0] = 200; // C
             cmyk[i * 4 + 1] = 100; // M

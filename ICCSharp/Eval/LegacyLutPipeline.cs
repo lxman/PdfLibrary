@@ -33,18 +33,18 @@ public sealed class LegacyLutPipeline : IColorTransform
         // Promote byte tables to ushort via replication (0xAB → 0xABAB) so the existing
         // SampledToneCurve evaluator can read them directly.
         _inputCurves = new SampledToneCurve[InputChannels];
-        for (int c = 0; c < InputChannels; c++)
+        for (var c = 0; c < InputChannels; c++)
             _inputCurves[c] = BuildCurveFromBytes(tag.InputTables[c]);
 
         // CLUT body — promote 8-bit values to normalized doubles.
-        double[] values = new double[tag.Clut.Length];
-        for (int i = 0; i < values.Length; i++) values[i] = tag.Clut[i] / 255.0;
-        byte[] gridPoints = new byte[InputChannels];
-        for (int i = 0; i < InputChannels; i++) gridPoints[i] = (byte)tag.ClutGridPoints;
+        var values = new double[tag.Clut.Length];
+        for (var i = 0; i < values.Length; i++) values[i] = tag.Clut[i] / 255.0;
+        var gridPoints = new byte[InputChannels];
+        for (var i = 0; i < InputChannels; i++) gridPoints[i] = (byte)tag.ClutGridPoints;
         _clut = Clut.FromTag(new LutClutData(gridPoints, 1, values, OutputChannels));
 
         _outputCurves = new SampledToneCurve[OutputChannels];
-        for (int c = 0; c < OutputChannels; c++)
+        for (var c = 0; c < OutputChannels; c++)
             _outputCurves[c] = BuildCurveFromBytes(tag.OutputTables[c]);
     }
 
@@ -56,24 +56,24 @@ public sealed class LegacyLutPipeline : IColorTransform
         _matrix = Matrix3x3.FromRowMajor(tag.Matrix);
 
         _inputCurves = new SampledToneCurve[InputChannels];
-        for (int c = 0; c < InputChannels; c++)
+        for (var c = 0; c < InputChannels; c++)
             _inputCurves[c] = new SampledToneCurve(tag.InputTables[c]);
 
-        double[] values = new double[tag.Clut.Length];
-        for (int i = 0; i < values.Length; i++) values[i] = tag.Clut[i] / 65535.0;
-        byte[] gridPoints = new byte[InputChannels];
-        for (int i = 0; i < InputChannels; i++) gridPoints[i] = (byte)tag.ClutGridPoints;
+        var values = new double[tag.Clut.Length];
+        for (var i = 0; i < values.Length; i++) values[i] = tag.Clut[i] / 65535.0;
+        var gridPoints = new byte[InputChannels];
+        for (var i = 0; i < InputChannels; i++) gridPoints[i] = (byte)tag.ClutGridPoints;
         _clut = Clut.FromTag(new LutClutData(gridPoints, 2, values, OutputChannels));
 
         _outputCurves = new SampledToneCurve[OutputChannels];
-        for (int c = 0; c < OutputChannels; c++)
+        for (var c = 0; c < OutputChannels; c++)
             _outputCurves[c] = new SampledToneCurve(tag.OutputTables[c]);
     }
 
     private static SampledToneCurve BuildCurveFromBytes(byte[] bytes)
     {
-        ushort[] samples = new ushort[bytes.Length];
-        for (int i = 0; i < bytes.Length; i++)
+        var samples = new ushort[bytes.Length];
+        for (var i = 0; i < bytes.Length; i++)
             samples[i] = (ushort)(bytes[i] * 257); // 0xAB → 0xABAB; preserves full [0, 0xFFFF] range.
         return new SampledToneCurve(samples);
     }
@@ -99,7 +99,7 @@ public sealed class LegacyLutPipeline : IColorTransform
         }
 
         // 2. Input curves.
-        for (int c = 0; c < InputChannels; c++)
+        for (var c = 0; c < InputChannels; c++)
             buf[c] = _inputCurves[c].Evaluate(buf[c]);
 
         // 3. CLUT (i → o).
@@ -107,7 +107,7 @@ public sealed class LegacyLutPipeline : IColorTransform
         _clut.Apply(buf.Slice(0, InputChannels), clutOut);
 
         // 4. Output curves.
-        for (int c = 0; c < OutputChannels; c++)
+        for (var c = 0; c < OutputChannels; c++)
             output[c] = _outputCurves[c].Evaluate(clutOut[c]);
     }
 }

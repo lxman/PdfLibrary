@@ -1,5 +1,6 @@
 using JpegCodec;
 using PdfLibrary.Builder;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Optimization;
 using PdfLibrary.Structure;
@@ -71,12 +72,14 @@ public class ImageRecompressIntegrationTests
             [PdfName.BitsPerComponent]        = new PdfInteger(8),
         };
         // Garbage bytes — zlib inflate will throw.
-        byte[] garbage = new byte[1024];
+        var garbage = new byte[1024];
         for (var i = 0; i < garbage.Length; i++) garbage[i] = (byte)(i & 0xFF);
-        var s = new PdfStream(dict, garbage);
-        s.Data = garbage; // set as pre-encoded (the garbage is the "encoded" bytes)
-        s.IsIndirect = true;
-        s.ObjectNumber = objNum;
+        var s = new PdfStream(dict, garbage)
+        {
+            Data = garbage, // set as pre-encoded (the garbage is the "encoded" bytes)
+            IsIndirect = true,
+            ObjectNumber = objNum
+        };
         return s;
     }
 
@@ -140,7 +143,7 @@ public class ImageRecompressIntegrationTests
 
         // Optimize must not throw even though one image is corrupt.
         using var outStream = new MemoryStream();
-        var ex = Record.Exception(() => PdfOptimizer.Optimize(doc, outStream, opts));
+        Exception? ex = Record.Exception(() => PdfOptimizer.Optimize(doc, outStream, opts));
         Assert.Null(ex);
 
         // The output must still be a parseable PDF.
@@ -150,7 +153,7 @@ public class ImageRecompressIntegrationTests
 
         // The valid FlateDecode image must have been recompressed to DCTDecode.
         // We check the in-memory stream object directly (it was mutated by RecompressImages).
-        Assert.True(validStream.Dictionary.TryGetValue(PdfName.Filter, out var fObj),
+        Assert.True(validStream.Dictionary.TryGetValue(PdfName.Filter, out PdfObject fObj),
             "Filter must be present on valid stream after optimization");
         Assert.Equal("DCTDecode", ((PdfName)fObj!).Value);
     }
@@ -176,12 +179,12 @@ public class ImageRecompressIntegrationTests
 
         // Image filter must remain DCTDecode — the image was not touched.
         reloaded.MaterializeAllObjects();
-        bool foundDctImage = false;
-        foreach (var obj in reloaded.Objects.Values)
+        var foundDctImage = false;
+        foreach (PdfObject obj in reloaded.Objects.Values)
         {
             if (obj is not PdfLibrary.Core.Primitives.PdfStream s) continue;
             if (!PdfLibrary.Document.PdfImage.IsImageXObject(s)) continue;
-            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Filter, out var fObj)) continue;
+            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Filter, out PdfObject fObj)) continue;
             if (fObj is PdfLibrary.Core.Primitives.PdfName { Value: "DCTDecode" })
                 foundDctImage = true;
         }
@@ -229,31 +232,31 @@ public class ImageRecompressIntegrationTests
         // 3. The image XObject in the reloaded document must be DCTDecode with W=128, H=128,
         //    BitsPerComponent=8, and DeviceRGB color space.
         reloaded.MaterializeAllObjects();
-        bool foundDctImage = false;
-        foreach (var obj in reloaded.Objects.Values)
+        var foundDctImage = false;
+        foreach (PdfObject obj in reloaded.Objects.Values)
         {
             if (obj is not PdfLibrary.Core.Primitives.PdfStream s) continue;
             if (!PdfLibrary.Document.PdfImage.IsImageXObject(s)) continue;
 
             // Check filter
-            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Filter, out var filterObj)) continue;
+            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Filter, out PdfObject filterObj)) continue;
             if (filterObj is not PdfLibrary.Core.Primitives.PdfName filterName) continue;
             if (filterName.Value != "DCTDecode") continue;
 
             // Check dimensions (downsampled to 128×128)
-            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Width, out var wObj)) continue;
-            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Height, out var hObj)) continue;
+            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Width, out PdfObject wObj)) continue;
+            if (!s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.Height, out PdfObject hObj)) continue;
             int w = ((PdfLibrary.Core.Primitives.PdfInteger)wObj).Value;
             int h = ((PdfLibrary.Core.Primitives.PdfInteger)hObj).Value;
             Assert.True(w <= 128 && h <= 128,
                 $"Expected dimensions ≤128×128 after downsample, got {w}×{h}");
 
             // Check BitsPerComponent = 8.
-            if (s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.BitsPerComponent, out var bpcObj))
+            if (s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.BitsPerComponent, out PdfObject bpcObj))
                 Assert.Equal(8, ((PdfLibrary.Core.Primitives.PdfInteger)bpcObj).Value);
 
             // Check ColorSpace = DeviceRGB.
-            if (s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.ColorSpace, out var csObj) &&
+            if (s.Dictionary.TryGetValue(PdfLibrary.Core.Primitives.PdfName.ColorSpace, out PdfObject csObj) &&
                 csObj is PdfLibrary.Core.Primitives.PdfName csName)
                 Assert.Equal("DeviceRGB", csName.Value);
 
@@ -327,7 +330,7 @@ public class ImageRecompressIntegrationTests
         PdfOptimizer.RecompressImages(doc, opts);
 
         // The stream must now be DCTDecode.
-        Assert.True(imgStream.Dictionary.TryGetValue(PdfName.Filter, out var fObj2),
+        Assert.True(imgStream.Dictionary.TryGetValue(PdfName.Filter, out PdfObject fObj2),
             "Filter must be present after recompression");
         Assert.Equal("DCTDecode", ((PdfName)fObj2!).Value);
 
@@ -336,7 +339,7 @@ public class ImageRecompressIntegrationTests
             $"JPEG ({imgStream.Length}) should be smaller than FlateDecode ({flatLen}) for this gradient");
 
         // ColorSpace must still be DeviceGray.
-        Assert.True(imgStream.Dictionary.TryGetValue(PdfName.ColorSpace, out var csObj2));
+        Assert.True(imgStream.Dictionary.TryGetValue(PdfName.ColorSpace, out PdfObject csObj2));
         Assert.Equal("DeviceGray", ((PdfName)csObj2!).Value);
     }
 }

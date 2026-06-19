@@ -47,14 +47,14 @@ public sealed class NamedColor2TagElement : TagElement
             throw new IccParseException(
                 $"namedColor2Type declares {count} entries × {entrySize} bytes ({entriesBytes}); only {payloadBytes - 76} remain.");
 
-        Entry[] entries = new Entry[count];
+        var entries = new Entry[count];
         for (uint i = 0; i < count; i++)
         {
             string name = ColorantTableTagElement.TrimAsciiToNul(reader.ReadBytes(32));
-            ushort[] pcs = new ushort[3];
-            for (int j = 0; j < 3; j++) pcs[j] = reader.ReadUInt16();
-            ushort[] dev = new ushort[n];
-            for (int j = 0; j < n; j++) dev[j] = reader.ReadUInt16();
+            var pcs = new ushort[3];
+            for (var j = 0; j < 3; j++) pcs[j] = reader.ReadUInt16();
+            var dev = new ushort[n];
+            for (var j = 0; j < n; j++) dev[j] = reader.ReadUInt16();
             entries[i] = new Entry(name, pcs, dev);
         }
         return new NamedColor2TagElement(vendor, n, prefix, suffix, entries);

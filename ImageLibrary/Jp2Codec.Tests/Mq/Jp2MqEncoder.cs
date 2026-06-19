@@ -43,7 +43,7 @@ namespace Jp2Codec.Tests.Mq
         public void Encode(int d, ref byte cx)
         {
             if (d != 0 && d != 1) throw new ArgumentOutOfRangeException(nameof(d));
-            byte index = (byte)(cx & 0x7F);
+            var index = (byte)(cx & 0x7F);
             int mps = (cx >> 7) & 1;
             uint qe = QeTable.Qe[index];
 

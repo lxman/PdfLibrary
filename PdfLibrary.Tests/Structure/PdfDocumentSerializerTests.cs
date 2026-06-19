@@ -28,8 +28,10 @@ public class PdfDocumentSerializerTests
     [Fact]
     public void SerializeIndirectObject_Dictionary_WrapsInObjEndobj()
     {
-        var dict = new PdfDictionary();
-        dict[new PdfName("Type")] = new PdfName("Catalog");
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Catalog")
+        };
 
         string text = Encoding.ASCII.GetString(
             PdfDocumentSerializer.SerializeIndirectObject(5, 0, dict));

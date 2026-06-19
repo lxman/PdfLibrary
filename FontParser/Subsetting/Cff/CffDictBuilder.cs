@@ -10,7 +10,7 @@ namespace FontParser.Subsetting.Cff
     /// </summary>
     public sealed class CffDictBuilder
     {
-        private readonly List<byte> _bytes = new List<byte>();
+        private readonly List<byte> _bytes = new();
 
         /// <summary>Current encoded length (the DICT's size, stable once all operators are added).</summary>
         public int Length => _bytes.Count;

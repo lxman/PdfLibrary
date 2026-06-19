@@ -214,7 +214,7 @@ public sealed class IccTwoProfileTransform : IColorTransform
     /// </summary>
     private static XyzNumber MediaWhite(IccProfile p)
     {
-        S15Fixed16ArrayTagElement? chad =
+        var chad =
             p.GetTag<S15Fixed16ArrayTagElement>(IccTagSignatures.ChromaticAdaptation);
         if (chad is not null && chad.Values.Count >= 9)
         {

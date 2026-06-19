@@ -26,7 +26,7 @@ internal static class AcroFormMerger
         if (topFieldRefs.Count == 0) return;
 
         PdfArray fields = EnsureAcroFormFields(target);
-        var existingNames = ExistingTopFieldNames(target, fields);
+        HashSet<string> existingNames = ExistingTopFieldNames(target, fields);
         foreach (PdfIndirectReference fieldRef in topFieldRefs)
         {
             if (target.GetObject(fieldRef.ObjectNumber) is PdfDictionary field)
@@ -62,8 +62,10 @@ internal static class AcroFormMerger
             acro = existing;
         else
         {
-            acro = new PdfDictionary();
-            acro[new PdfName("Fields")] = new PdfArray();
+            acro = new PdfDictionary
+            {
+                [new PdfName("Fields")] = new PdfArray()
+            };
             catalog[new PdfName("AcroForm")] = doc.RegisterObject(acro);
         }
         if (Resolve(doc, acro.Get(new PdfName("Fields"))) is PdfArray fields) return fields;
@@ -92,7 +94,7 @@ internal static class AcroFormMerger
         }
         var n = 2;
         while (existingNames.Contains($"{baseName}#{n}")) n++;
-        string qualified = $"{baseName}#{n}";
+        var qualified = $"{baseName}#{n}";
         existingNames.Add(qualified);
         field[new PdfName("T")] = new PdfString(qualified);
     }

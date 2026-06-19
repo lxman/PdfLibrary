@@ -38,8 +38,7 @@ namespace FontParser
     public sealed class SfntFont
     {
         private readonly byte[] _data;
-        private readonly Dictionary<string, (uint Offset, uint Length)> _directory =
-            new Dictionary<string, (uint, uint)>();
+        private readonly Dictionary<string, (uint Offset, uint Length)> _directory = new();
 
         public SfntOutlineKind OutlineKind { get; }
 

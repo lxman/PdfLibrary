@@ -26,17 +26,17 @@ public readonly struct ProfileVersion : IEquatable<ProfileVersion>, IComparable<
     /// <summary>Reads the four-byte field as written in a profile header.</summary>
     public static ProfileVersion FromRaw(uint raw)
     {
-        byte major = (byte)((raw >> 24) & 0xFF);
-        byte byte1 = (byte)((raw >> 16) & 0xFF);
-        byte minor = (byte)((byte1 >> 4) & 0x0F);
-        byte bug   = (byte)(byte1 & 0x0F);
-        ushort reserved = (ushort)(raw & 0xFFFF);
+        var major = (byte)((raw >> 24) & 0xFF);
+        var byte1 = (byte)((raw >> 16) & 0xFF);
+        var minor = (byte)((byte1 >> 4) & 0x0F);
+        var bug   = (byte)(byte1 & 0x0F);
+        var reserved = (ushort)(raw & 0xFFFF);
         return new ProfileVersion(major, minor, bug, reserved);
     }
 
     public uint ToRaw()
     {
-        byte byte1 = (byte)(((Minor & 0x0F) << 4) | (BugFix & 0x0F));
+        var byte1 = (byte)(((Minor & 0x0F) << 4) | (BugFix & 0x0F));
         return ((uint)Major << 24) | ((uint)byte1 << 16) | Reserved;
     }
 

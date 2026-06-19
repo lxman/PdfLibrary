@@ -61,7 +61,7 @@ namespace Jp2Codec.Codestream
         public ushort ReadUInt16BigEndian()
         {
             if (_pos + 1 >= _end) throw EndOfStream(2);
-            ushort v = (ushort)((_buffer[_pos] << 8) | _buffer[_pos + 1]);
+            var v = (ushort)((_buffer[_pos] << 8) | _buffer[_pos + 1]);
             _pos += 2;
             return v;
         }

@@ -31,8 +31,10 @@ public class J2cConformanceTests
         PortableImage img;
         if (noColorSpace)
         {
-            var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList());
-            pl["nocolorspace"] = "on";
+            var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList())
+            {
+                ["nocolorspace"] = "on"
+            };
             img = J2kImage.FromStream(ms, pl);
         }
         else

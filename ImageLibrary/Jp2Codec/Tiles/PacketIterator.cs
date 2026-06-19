@@ -62,7 +62,7 @@ namespace Jp2Codec.Tiles
             if (components is null) throw new ArgumentNullException(nameof(components));
             if (numLayers < 1) throw new ArgumentOutOfRangeException(nameof(numLayers));
 
-            int maxResolutions = 0;
+            var maxResolutions = 0;
             for (var c = 0; c < components.Count; c++)
             {
                 int n = components[c].Resolutions.Length;

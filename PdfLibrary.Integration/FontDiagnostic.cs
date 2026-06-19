@@ -113,7 +113,7 @@ internal static class FontDiagnostic
                           $"FontFile3={(ff3 is null ? "(none)" : $"{ff3.Length} bytes")}");
         if (ff3 is not null && ff3.Length >= 4)
         {
-            string header = $"{ff3[0]:X2} {ff3[1]:X2} {ff3[2]:X2} {ff3[3]:X2}";
+            var header = $"{ff3[0]:X2} {ff3[1]:X2} {ff3[2]:X2} {ff3[3]:X2}";
             string interpretation = ff3[0] == 0x01
                 ? "(CFF major version)"
                 : ff3[0] == 'O' && ff3[1] == 'T' && ff3[2] == 'T' && ff3[3] == 'O'
@@ -136,19 +136,19 @@ internal static class FontDiagnostic
             {
                 case FontParser.Tables.Cff.Type1.Charsets.CharsetsFormat0 f0:
                     Console.Write("    Format 0 SIDs/CIDs (GID 1..): ");
-                    for (int i = 0; i < Math.Min(20, f0.Glyphs.Count); i++) Console.Write($"{f0.Glyphs[i]} ");
+                    for (var i = 0; i < Math.Min(20, f0.Glyphs.Count); i++) Console.Write($"{f0.Glyphs[i]} ");
                     if (f0.Glyphs.Count > 20) Console.Write($"... ({f0.Glyphs.Count} total)");
                     Console.WriteLine();
                     break;
                 case FontParser.Tables.Cff.Type1.Charsets.CharsetsFormat1 f1:
                     Console.WriteLine($"    Format 1 ranges: {f1.Ranges.Count}");
-                    for (int i = 0; i < Math.Min(10, f1.Ranges.Count); i++)
+                    for (var i = 0; i < Math.Min(10, f1.Ranges.Count); i++)
                         Console.WriteLine($"      Range {i}: First={f1.Ranges[i].First}, NumberLeft={f1.Ranges[i].NumberLeft} (covers CIDs {f1.Ranges[i].First}..{f1.Ranges[i].First + f1.Ranges[i].NumberLeft})");
                     if (f1.Ranges.Count > 10) Console.WriteLine($"      ... ({f1.Ranges.Count} total ranges)");
                     break;
                 case FontParser.Tables.Cff.Type1.Charsets.CharsetsFormat2 f2:
                     Console.WriteLine($"    Format 2 ranges: {f2.Ranges.Count}");
-                    for (int i = 0; i < Math.Min(10, f2.Ranges.Count); i++)
+                    for (var i = 0; i < Math.Min(10, f2.Ranges.Count); i++)
                         Console.WriteLine($"      Range {i}: First={f2.Ranges[i].First}, NumberLeft={f2.Ranges[i].NumberLeft} (covers CIDs {f2.Ranges[i].First}..{f2.Ranges[i].First + f2.Ranges[i].NumberLeft})");
                     if (f2.Ranges.Count > 10) Console.WriteLine($"      ... ({f2.Ranges.Count} total ranges)");
                     break;

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using FontParser.Subsetting.Cff;
+using FontParser.Tables.Cff;
 using FontParser.Tables.Cff.Type1;
 using Xunit;
 
@@ -51,8 +52,8 @@ public class CffSubsetterTests
         // Every retained glyph's outline is byte-identical -> same command count and bounding box.
         foreach (int g in keep)
         {
-            var a = srcTable.GetGlyphOutline(g);
-            var b = subTable.GetGlyphOutline(g);
+            GlyphOutline? a = srcTable.GetGlyphOutline(g);
+            GlyphOutline? b = subTable.GetGlyphOutline(g);
             Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
             Assert.Equal(a?.MinX, b?.MinX);
             Assert.Equal(a?.MaxX, b?.MaxX);
@@ -88,8 +89,8 @@ public class CffSubsetterTests
         // EVERY glyph identical — exercises glyphs that call local/global subrs (the subr-retention hinge).
         for (var g = 0; g < n; g++)
         {
-            var a = srcTable.GetGlyphOutline(g);
-            var b = subTable.GetGlyphOutline(g);
+            GlyphOutline? a = srcTable.GetGlyphOutline(g);
+            GlyphOutline? b = subTable.GetGlyphOutline(g);
             Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
             Assert.Equal(a?.MinX, b?.MinX);
             Assert.Equal(a?.MaxX, b?.MaxX);
@@ -121,8 +122,8 @@ public class CffSubsetterTests
         Assert.Equal(n, subTable.RawCharStrings.Count);
         foreach (int g in keep)
         {
-            var a = srcTable.GetGlyphOutline(g);
-            var b = subTable.GetGlyphOutline(g);
+            GlyphOutline? a = srcTable.GetGlyphOutline(g);
+            GlyphOutline? b = subTable.GetGlyphOutline(g);
             Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
             Assert.Equal(a?.MinX, b?.MinX);
             Assert.Equal(a?.MaxX, b?.MaxX);
@@ -151,8 +152,8 @@ public class CffSubsetterTests
         // Every glyph identical across all FDs — exercises FDArray/FDSelect/per-FD-Private serialization.
         for (var g = 0; g < n; g++)
         {
-            var a = srcTable.GetGlyphOutline(g);
-            var b = subTable.GetGlyphOutline(g);
+            GlyphOutline? a = srcTable.GetGlyphOutline(g);
+            GlyphOutline? b = subTable.GetGlyphOutline(g);
             Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
             Assert.Equal(a?.MinX, b?.MinX);
             Assert.Equal(a?.MaxX, b?.MaxX);

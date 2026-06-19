@@ -8,7 +8,7 @@ namespace FontParser.Tables.Cff.Type1
 
         public List<CffDictEntry> Private { get; }
 
-        public List<List<byte>> LocalSubroutines { get; } = new List<List<byte>>();
+        public List<List<byte>> LocalSubroutines { get; } = new();
 
         public NameDictEntry(string name, List<CffDictEntry> privateDict)
         {

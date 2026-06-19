@@ -48,7 +48,7 @@ public class StitchingFunctionTests
             bounds: [0.5],
             encode: [0, 1, 0, 1]);
 
-        PdfFunction? fn = PdfFunction.Create(dict, null);
+        var fn = PdfFunction.Create(dict, null);
 
         Assert.NotNull(fn);
         Assert.Equal(0.0, fn!.Evaluate([0.0])[0], 3);
@@ -69,7 +69,7 @@ public class StitchingFunctionTests
             bounds: [0.5],
             encode: [0, 1, 0, 1]);
 
-        PdfFunction fn = PdfFunction.Create(dict, null)!;
+        var fn = PdfFunction.Create(dict, null)!;
 
         double[] mid0 = fn.Evaluate([0.25]); // halfway red -> green
         Assert.Equal(0.5, mid0[0], 3);
@@ -85,7 +85,7 @@ public class StitchingFunctionTests
     [Fact]
     public void InputOutsideDomain_IsClamped()
     {
-        PdfFunction fn = PdfFunction.Create(
+        var fn = PdfFunction.Create(
             Stitch(new PdfArray(Type2([0], [1], 1), Type2([1], [0], 1)), [0.5], [0, 1, 0, 1]), null)!;
 
         Assert.Equal(0.0, fn.Evaluate([-5.0])[0], 3); // clamps to x = 0
@@ -96,7 +96,7 @@ public class StitchingFunctionTests
     public void EncodeReversesSubfunctionInput()
     {
         // Encode [1 0] on the (single) segment flips the input, so a 0->1 ramp evaluates reversed.
-        PdfFunction fn = PdfFunction.Create(
+        var fn = PdfFunction.Create(
             Stitch(new PdfArray(Type2([0], [1], 1)), bounds: [], encode: [1, 0]), null)!;
 
         Assert.Equal(1.0, fn.Evaluate([0.0])[0], 3); // x=0 -> encoded 1 -> ramp = 1

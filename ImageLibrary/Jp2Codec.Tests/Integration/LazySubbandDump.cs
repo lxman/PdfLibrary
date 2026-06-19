@@ -25,7 +25,7 @@ public class LazySubbandDump
     {
         if (!Run) return;
 
-        string outDir = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c/c1_subbands";
+        var outDir = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c/c1_subbands";
         Directory.CreateDirectory(outDir);
 
         // Capture (and keep per-tile by appending tile index). c1 is
@@ -53,7 +53,7 @@ public class LazySubbandDump
         {
             int h = grid.GetLength(0);
             int w = grid.GetLength(1);
-            int nonZero = 0;
+            var nonZero = 0;
             int minV = int.MaxValue, maxV = int.MinValue;
             for (var y = 0; y < h; y++)
                 for (var x = 0; x < w; x++)
@@ -63,7 +63,7 @@ public class LazySubbandDump
                     if (v < minV) minV = v;
                     if (v > maxV) maxV = v;
                 }
-            string fileName = $"c{key.Component}_r{key.Resolution}_{key.Orientation}.txt";
+            var fileName = $"c{key.Component}_r{key.Resolution}_{key.Orientation}.txt";
             summary.AppendLine($"comp={key.Component} res={key.Resolution} orient={key.Orientation} " +
                 $"size={w}x{h} nonZero={nonZero}/{w * h} min={minV} max={maxV} → {fileName}");
 

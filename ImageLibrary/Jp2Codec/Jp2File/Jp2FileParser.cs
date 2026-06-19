@@ -63,7 +63,7 @@ namespace Jp2Codec.Jp2File
             int width = 0, height = 0, components = 0;
             int[] bpc = Array.Empty<int>();
             bool[] signedFlags = Array.Empty<bool>();
-            Jp2ColorSpace cs = Jp2ColorSpace.Unspecified;
+            var cs = Jp2ColorSpace.Unspecified;
             byte[]? iccProfile = null;
             int codestreamOffset = -1, codestreamLength = 0;
             JpPalette? palette = null;
@@ -146,7 +146,7 @@ namespace Jp2Codec.Jp2File
                 throw new InvalidDataException($"ftyp compatibility list length {ftyp.ContentLength - 8} not a multiple of 4.");
 
             int n = (int)(ftyp.ContentLength - 8) / 4;
-            bool seenJp2 = false;
+            var seenJp2 = false;
             for (var i = 0; i < n; i++)
             {
                 int at = ftyp.ContentStart + 8 + i * 4;
@@ -168,9 +168,9 @@ namespace Jp2Codec.Jp2File
             ref JpComponentMapping? componentMapping,
             ref JpChannelDefinition? channelDefinition)
         {
-            bool sawIhdr = false;
+            var sawIhdr = false;
             int ihdrBpc = -1;
-            bool sawColr = false;
+            var sawColr = false;
 
             while (child.ReadNext(out BoxHeader box))
             {
@@ -239,7 +239,7 @@ namespace Jp2Codec.Jp2File
                             cs = meth == 2 ? Jp2ColorSpace.RestrictedIcc : Jp2ColorSpace.AnyIcc;
                             // ICC profile bytes follow the 3-byte (METH/PREC/APPROX)
                             // prefix (I.5.3.3, Figure I.10).
-                            int profileLength = (int)(box.ContentLength - 3);
+                            var profileLength = (int)(box.ContentLength - 3);
                             if (profileLength > 0)
                             {
                                 iccProfile = new byte[profileLength];
@@ -306,7 +306,7 @@ namespace Jp2Codec.Jp2File
 
             var bitDepths = new int[numColumns];
             var signed = new bool[numColumns];
-            int totalEntryBytes = 0;
+            var totalEntryBytes = 0;
             for (var j = 0; j < numColumns; j++)
             {
                 byte b = buffer[cursor + j];
@@ -332,7 +332,7 @@ namespace Jp2Codec.Jp2File
                 {
                     int bd = bitDepths[j];
                     int bytes = (bd + 7) / 8;
-                    int raw = 0;
+                    var raw = 0;
                     for (var k = 0; k < bytes; k++)
                     {
                         raw = (raw << 8) | buffer[cursor];
@@ -357,7 +357,7 @@ namespace Jp2Codec.Jp2File
             // I.5.3.5: a stream of 4-byte tuples (CMP: uint16, MTYP: uint8, PCOL: uint8).
             if (box.ContentLength % 4 != 0)
                 throw new InvalidDataException($"cmap content length {box.ContentLength} not a multiple of 4.");
-            int numChannels = (int)(box.ContentLength / 4);
+            var numChannels = (int)(box.ContentLength / 4);
             var cmp = new int[numChannels];
             var mtyp = new byte[numChannels];
             var pcol = new byte[numChannels];

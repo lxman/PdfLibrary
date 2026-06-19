@@ -20,9 +20,9 @@ public class CmykDiffTests
     private static IReadOnlyList<double[]> SampleGrid3()
     {
         List<double[]> pixels = new();
-        for (int r = 0; r <= 4; r++)
-        for (int g = 0; g <= 4; g++)
-        for (int b = 0; b <= 4; b++)
+        for (var r = 0; r <= 4; r++)
+        for (var g = 0; g <= 4; g++)
+        for (var b = 0; b <= 4; b++)
             pixels.Add(new[] { r / 4.0, g / 4.0, b / 4.0 });
         return pixels;
     }
@@ -30,10 +30,10 @@ public class CmykDiffTests
     private static IReadOnlyList<double[]> SampleGrid4()
     {
         List<double[]> pixels = new();
-        for (int c = 0; c <= 3; c++)
-        for (int m = 0; m <= 3; m++)
-        for (int y = 0; y <= 3; y++)
-        for (int k = 0; k <= 3; k++)
+        for (var c = 0; c <= 3; c++)
+        for (var m = 0; m <= 3; m++)
+        for (var y = 0; y <= 3; y++)
+        for (var k = 0; k <= 3; k++)
             pixels.Add(new[] { c / 3.0, m / 3.0, y / 3.0, k / 3.0 });
         return pixels;
     }
@@ -46,7 +46,7 @@ public class CmykDiffTests
 
         IccProfile srgb = IccProfile.Parse(System.IO.File.ReadAllBytes(SrgbPath));
         IccProfile cmyk = IccProfile.Parse(System.IO.File.ReadAllBytes(CmykPath));
-        IccTransform t = IccTransform.Create(srgb, cmyk);
+        var t = IccTransform.Create(srgb, cmyk);
 
         IReadOnlyList<double[]> inputs = SampleGrid3();
         List<double[]> iccsharp = new();
@@ -70,7 +70,7 @@ public class CmykDiffTests
 
         IccProfile srgb = IccProfile.Parse(System.IO.File.ReadAllBytes(SrgbPath));
         IccProfile cmyk = IccProfile.Parse(System.IO.File.ReadAllBytes(CmykPath));
-        IccTransform t = IccTransform.Create(cmyk, srgb);
+        var t = IccTransform.Create(cmyk, srgb);
 
         IReadOnlyList<double[]> inputs = SampleGrid4();
         List<double[]> iccsharp = new();

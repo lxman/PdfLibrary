@@ -8,16 +8,16 @@ public class ClutNDTests
     private static ClutND BuildClut(int[] gridPoints, int outputChannels, Func<double[], int, double> f)
     {
         long total = 1; foreach (int g in gridPoints) total *= g;
-        double[] values = new double[total * outputChannels];
+        var values = new double[total * outputChannels];
 
-        int[] idx = new int[gridPoints.Length];
-        int flat = 0;
+        var idx = new int[gridPoints.Length];
+        var flat = 0;
         while (true)
         {
-            double[] coords = new double[gridPoints.Length];
-            for (int i = 0; i < gridPoints.Length; i++)
+            var coords = new double[gridPoints.Length];
+            for (var i = 0; i < gridPoints.Length; i++)
                 coords[i] = idx[i] / (double)(gridPoints[i] - 1);
-            for (int c = 0; c < outputChannels; c++)
+            for (var c = 0; c < outputChannels; c++)
                 values[flat++] = f(coords, c);
 
             int dim = gridPoints.Length - 1;
@@ -31,8 +31,8 @@ public class ClutNDTests
             if (dim < 0) break;
         }
 
-        byte[] gb = new byte[gridPoints.Length];
-        for (int i = 0; i < gridPoints.Length; i++) gb[i] = (byte)gridPoints[i];
+        var gb = new byte[gridPoints.Length];
+        for (var i = 0; i < gridPoints.Length; i++) gb[i] = (byte)gridPoints[i];
         return new ClutND(new LutClutData(gb, 2, values, outputChannels));
     }
 
@@ -90,12 +90,12 @@ public class ClutNDTests
 
     private static Clut3D BuildLinear3D()
     {
-        int g = 4;
-        double[] values = new double[g * g * g];
-        int idx = 0;
-        for (int i = 0; i < g; i++)
-        for (int j = 0; j < g; j++)
-        for (int k = 0; k < g; k++)
+        var g = 4;
+        var values = new double[g * g * g];
+        var idx = 0;
+        for (var i = 0; i < g; i++)
+        for (var j = 0; j < g; j++)
+        for (var k = 0; k < g; k++)
         {
             double r = i / 3.0, gv = j / 3.0, b = k / 3.0;
             values[idx++] = 0.1 + 0.3 * r + 0.4 * gv + 0.2 * b;
@@ -169,8 +169,8 @@ public class ClutNDTests
     [Fact]
     public void Too_many_dims_rejected()
     {
-        byte[] tooMany = new byte[ClutND.MaxInputDims + 1];
-        for (int i = 0; i < tooMany.Length; i++) tooMany[i] = 2;
+        var tooMany = new byte[ClutND.MaxInputDims + 1];
+        for (var i = 0; i < tooMany.Length; i++) tooMany[i] = 2;
         long total = 1L << tooMany.Length;
         Assert.Throws<ArgumentException>(() => new ClutND(new LutClutData(tooMany, 2, new double[total], 1)));
     }

@@ -78,7 +78,7 @@ internal static class PngBuilder
 
     private static uint Crc32(byte[] type, byte[] data)
     {
-        uint crc = 0xFFFFFFFF;
+        var crc = 0xFFFFFFFF;
         crc = Update(crc, type);
         crc = Update(crc, data);
         return crc ^ 0xFFFFFFFF;

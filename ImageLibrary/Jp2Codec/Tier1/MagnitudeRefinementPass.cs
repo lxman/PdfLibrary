@@ -18,7 +18,7 @@ namespace Jp2Codec.Tier1
     {
         private static int CountNeighboursFast(byte[] flags, int idx, int stride)
         {
-            int count = 0;
+            var count = 0;
             if ((flags[idx - stride - 1] & Tier1State.SignificanceFlag) != 0) count++;
             if ((flags[idx - stride    ] & Tier1State.SignificanceFlag) != 0) count++;
             if ((flags[idx - stride + 1] & Tier1State.SignificanceFlag) != 0) count++;
@@ -32,7 +32,7 @@ namespace Jp2Codec.Tier1
 
         private static int CountNeighboursFastMaskSouth(byte[] flags, int idx, int stride)
         {
-            int count = 0;
+            var count = 0;
             if ((flags[idx - stride - 1] & Tier1State.SignificanceFlag) != 0) count++;
             if ((flags[idx - stride    ] & Tier1State.SignificanceFlag) != 0) count++;
             if ((flags[idx - stride + 1] & Tier1State.SignificanceFlag) != 0) count++;

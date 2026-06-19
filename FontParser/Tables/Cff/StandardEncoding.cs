@@ -9,7 +9,7 @@ namespace FontParser.Tables.Cff
     /// </summary>
     public static class StandardEncoding
     {
-        private static readonly Dictionary<int, string> Names = new Dictionary<int, string>();
+        private static readonly Dictionary<int, string> Names = new();
 
         static StandardEncoding()
         {
@@ -44,6 +44,6 @@ namespace FontParser.Tables.Cff
         }
 
         /// <summary>Glyph name for a StandardEncoding code, or null if the code is undefined.</summary>
-        public static string? GetName(int code) => Names.TryGetValue(code, out string? n) ? n : null;
+        public static string? GetName(int code) => Names.GetValueOrDefault(code);
     }
 }

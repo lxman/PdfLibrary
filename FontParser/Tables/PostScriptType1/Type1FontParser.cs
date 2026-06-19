@@ -20,9 +20,9 @@ namespace FontParser.Tables.PostScriptType1
         private float[] _fontBBox;
         private int _lenIV = 4; // Default number of random bytes in charstrings
 
-        private readonly Dictionary<string, byte[]> _charStrings = new Dictionary<string, byte[]>();
-        private readonly List<List<byte>> _subrs = new List<List<byte>>();
-        private readonly Dictionary<string, int> _encoding = new Dictionary<string, int>();
+        private readonly Dictionary<string, byte[]> _charStrings = new();
+        private readonly List<List<byte>> _subrs = new();
+        private readonly Dictionary<string, int> _encoding = new();
 
         private Type1CharstringInterpreter _interpreter;
 

@@ -7,8 +7,8 @@ public class CurveTagTests
 {
     private static byte[] WithHeader(string typeSig, params byte[] payload)
     {
-        byte[] buf = new byte[8 + payload.Length];
-        for (int i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
+        var buf = new byte[8 + payload.Length];
+        for (var i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
         Buffer.BlockCopy(payload, 0, buf, 8, payload.Length);
         return buf;
     }
@@ -26,7 +26,7 @@ public class CurveTagTests
     [Fact]
     public void Curve_identity_when_count_zero()
     {
-        CurveTagElement c = Assert.IsType<CurveTagElement>(
+        var c = Assert.IsType<CurveTagElement>(
             TagElementReader.Parse(WithHeader("curv", U32Be(0))));
         Assert.True(c.IsIdentity);
         Assert.False(c.IsSingleGamma);
@@ -37,7 +37,7 @@ public class CurveTagTests
     public void Curve_single_gamma_when_count_one()
     {
         // gamma 2.2 encoded as u8Fixed8 = 2.2 * 256 = 563.2 → 0x0233
-        CurveTagElement c = Assert.IsType<CurveTagElement>(
+        var c = Assert.IsType<CurveTagElement>(
             TagElementReader.Parse(WithHeader("curv", [..U32Be(1), ..U16Be(0x0233)])));
         Assert.True(c.IsSingleGamma);
         Assert.False(c.IsIdentity);
@@ -55,7 +55,7 @@ public class CurveTagTests
             ..U16Be(0xAAAA),
             ..U16Be(0xFFFF),
         ];
-        CurveTagElement c = Assert.IsType<CurveTagElement>(
+        var c = Assert.IsType<CurveTagElement>(
             TagElementReader.Parse(WithHeader("curv", payload)));
         Assert.Equal(4, c.Samples.Count);
         Assert.Equal(0x0000, c.Samples[0]);
@@ -101,7 +101,7 @@ public class CurveTagTests
             ..U16Be(0), ..U16Be(0),       // function type 0 + reserved
             ..U32Be(0x00026666),          // g = 2.4
         ];
-        ParametricCurveTagElement p = Assert.IsType<ParametricCurveTagElement>(
+        var p = Assert.IsType<ParametricCurveTagElement>(
             TagElementReader.Parse(WithHeader("para", payload)));
         Assert.Equal(0, p.FunctionType);
         Assert.Single(p.Parameters);
@@ -122,7 +122,7 @@ public class CurveTagTests
             ..U32Be(0x0000139A),  // c  ≈ 0.0774
             ..U32Be(0x00000A5B),  // d  ≈ 0.04045
         ];
-        ParametricCurveTagElement p = Assert.IsType<ParametricCurveTagElement>(
+        var p = Assert.IsType<ParametricCurveTagElement>(
             TagElementReader.Parse(WithHeader("para", payload)));
         Assert.Equal(3, p.FunctionType);
         Assert.Equal(5, p.Parameters.Count);

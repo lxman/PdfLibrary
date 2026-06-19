@@ -40,14 +40,14 @@ public sealed class DiffReport
         PixelCount = inputs.Count;
         OutputChannels = outputChannels;
 
-        double[] perPixel = new double[PixelCount];
+        var perPixel = new double[PixelCount];
         double globalMax = 0;
-        int worstIdx = 0;
+        var worstIdx = 0;
 
-        for (int i = 0; i < PixelCount; i++)
+        for (var i = 0; i < PixelCount; i++)
         {
             double maxForPixel = 0;
-            for (int c = 0; c < outputChannels; c++)
+            for (var c = 0; c < outputChannels; c++)
             {
                 double diff = Math.Abs(iccSharp[i][c] - reference[i][c]);
                 if (diff > maxForPixel) maxForPixel = diff;
@@ -64,7 +64,7 @@ public sealed class DiffReport
         GlobalMaxDelta = globalMax;
 
         double sum = 0;
-        for (int i = 0; i < PixelCount; i++) sum += perPixel[i];
+        for (var i = 0; i < PixelCount; i++) sum += perPixel[i];
         MeanDelta = PixelCount == 0 ? 0 : sum / PixelCount;
 
         WorstInput = inputs[worstIdx];

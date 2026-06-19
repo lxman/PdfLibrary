@@ -45,7 +45,7 @@ namespace Jp2Codec.Tests.Tier2
                 int leafTop = y << level;
                 int leafRight = Math.Min(leafLeft + (1 << level), _values.GetLength(1));
                 int leafBottom = Math.Min(leafTop + (1 << level), _values.GetLength(0));
-                int min = int.MaxValue;
+                var min = int.MaxValue;
                 for (int iy = leafTop; iy < leafBottom; iy++)
                     for (int ix = leafLeft; ix < leafRight; ix++)
                         if (_values[iy, ix] < min) min = _values[iy, ix];
@@ -55,7 +55,7 @@ namespace Jp2Codec.Tests.Tier2
             public List<int> Encode(int x, int y, int threshold)
             {
                 var bits = new List<int>();
-                int parentLow = 0;
+                var parentLow = 0;
                 for (int level = _levels - 1; level >= 0; level--)
                 {
                     int xi = x >> level;

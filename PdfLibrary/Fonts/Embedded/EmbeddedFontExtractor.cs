@@ -55,7 +55,7 @@ namespace PdfLibrary.Fonts.Embedded
                 return null;
 
             // For Type0 fonts, character code typically maps directly to glyph ID
-            return _glyphNames.TryGetValue(charCode, out string? glyphName) ? glyphName : null;
+            return _glyphNames.GetValueOrDefault(charCode);
         }
 
         /// <summary>

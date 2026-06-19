@@ -138,12 +138,12 @@ public readonly struct PdfColor
     public static readonly PdfColor DarkGray = FromGray(0.25);
 
     // Common RGB colors (DeviceRGB)
-    public static readonly PdfColor Red = new PdfColor(1, 0, 0);
-    public static readonly PdfColor Green = new PdfColor(0, 1, 0);
-    public static readonly PdfColor Blue = new PdfColor(0, 0, 1);
-    public static readonly PdfColor Yellow = new PdfColor(1, 1, 0);
-    public static readonly PdfColor Cyan = new PdfColor(0, 1, 1);
-    public static readonly PdfColor Magenta = new PdfColor(1, 0, 1);
+    public static readonly PdfColor Red = new(1, 0, 0);
+    public static readonly PdfColor Green = new(0, 1, 0);
+    public static readonly PdfColor Blue = new(0, 0, 1);
+    public static readonly PdfColor Yellow = new(1, 1, 0);
+    public static readonly PdfColor Cyan = new(0, 1, 1);
+    public static readonly PdfColor Magenta = new(1, 0, 1);
 
     // Common CMYK colors
     public static readonly PdfColor CmykBlack = FromCmyk(0, 0, 0, 1);

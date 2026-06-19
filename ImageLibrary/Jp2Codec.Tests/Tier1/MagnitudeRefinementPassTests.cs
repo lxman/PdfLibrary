@@ -11,7 +11,7 @@ namespace Jp2Codec.Tests.Tier1
         {
             var state = new Tier1State(8, 8);
             byte[] contexts = Jp2MqContextSet.CreateInitialised();
-            byte[] before = (byte[])contexts.Clone();
+            var before = (byte[])contexts.Clone();
             var mq = new Jp2MqDecoder(new byte[] { 0x00, 0x00 }, 0, 2);
 
             MagnitudeRefinementPass.Run(state, mq, contexts, bitPlane: 4);
@@ -39,7 +39,7 @@ namespace Jp2Codec.Tests.Tier1
             }
 
             byte[] contexts = Jp2MqContextSet.CreateInitialised();
-            byte[] before = (byte[])contexts.Clone();
+            var before = (byte[])contexts.Clone();
             var mq = new Jp2MqDecoder(new byte[] { 0x00, 0x00 }, 0, 2);
 
             MagnitudeRefinementPass.Run(state, mq, contexts, bitPlane: 0);

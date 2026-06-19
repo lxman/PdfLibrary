@@ -25,7 +25,7 @@ namespace Jp2Codec.Tests.Tier1
             // Two bytes neither equal to 0xFF — the second byte uses all 8
             // bits, no stuff-bit skip applies. 0x0F = 0000 1111, 0x33 = 0011 0011.
             var reader = new Tier1RawBitReader([0x0F, 0x33], 0, 2);
-            int seen = 0;
+            var seen = 0;
             for (var i = 0; i < 16; i++) seen = (seen << 1) | reader.ReadBit();
             Assert.Equal(0x0F33, seen);
         }
@@ -63,7 +63,7 @@ namespace Jp2Codec.Tests.Tier1
             for (var i = 0; i < 8 + 7; i++) reader.ReadBit();
 
             // Third byte: 8 full bits.
-            int seen = 0;
+            var seen = 0;
             for (var i = 0; i < 8; i++) seen = (seen << 1) | reader.ReadBit();
             Assert.Equal(0x7E, seen);
         }

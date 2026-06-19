@@ -125,7 +125,7 @@ namespace CcittCodec
         /// <summary>
         /// Default PDF options (Group 4, width 1728).
         /// </summary>
-        public static CcittOptions PdfDefault => new CcittOptions
+        public static CcittOptions PdfDefault => new()
         {
             Group = CcittGroup.Group4,
             K = -1,
@@ -137,7 +137,7 @@ namespace CcittCodec
         /// <summary>
         /// Group 3 1D options (Modified Huffman).
         /// </summary>
-        public static CcittOptions Group3_1D => new CcittOptions
+        public static CcittOptions Group3_1D => new()
         {
             Group = CcittGroup.Group3OneDimensional,
             K = 0,
@@ -149,7 +149,7 @@ namespace CcittCodec
         /// <summary>
         /// Group 3 2D options (Modified READ).
         /// </summary>
-        public static CcittOptions Group3_2D => new CcittOptions
+        public static CcittOptions Group3_2D => new()
         {
             Group = CcittGroup.Group3TwoDimensional,
             K = 4,
@@ -161,7 +161,7 @@ namespace CcittCodec
         /// <summary>
         /// Group 4 options (MMR).
         /// </summary>
-        public static CcittOptions Group4_MMR => new CcittOptions
+        public static CcittOptions Group4_MMR => new()
         {
             Group = CcittGroup.Group4,
             K = -1,
@@ -172,7 +172,7 @@ namespace CcittCodec
         /// <summary>
         /// TIFF-compatible Group 4 options.
         /// </summary>
-        public static CcittOptions TiffGroup4 => new CcittOptions
+        public static CcittOptions TiffGroup4 => new()
         {
             Group = CcittGroup.Group4,
             K = -1,

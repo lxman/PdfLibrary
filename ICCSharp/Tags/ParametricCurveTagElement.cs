@@ -54,8 +54,8 @@ public sealed class ParametricCurveTagElement : TagElement
             throw new IccParseException(
                 $"parametricCurve type {functionType} needs {paramBytes} parameter bytes but only {payloadBytes - 4} remain.");
 
-        double[] parameters = new double[required];
-        for (int i = 0; i < required; i++) parameters[i] = reader.ReadS15Fixed16();
+        var parameters = new double[required];
+        for (var i = 0; i < required; i++) parameters[i] = reader.ReadS15Fixed16();
         return new ParametricCurveTagElement(functionType, parameters);
     }
 }

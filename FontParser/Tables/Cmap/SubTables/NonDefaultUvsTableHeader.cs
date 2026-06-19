@@ -5,7 +5,7 @@ namespace FontParser.Tables.Cmap.SubTables
 {
     public class NonDefaultUvsTableHeader
     {
-        public List<UvsMappingRecord> UvsMappings { get; } = new List<UvsMappingRecord>();
+        public List<UvsMappingRecord> UvsMappings { get; } = new();
 
         public NonDefaultUvsTableHeader(BigEndianReader reader)
         {

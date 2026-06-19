@@ -522,7 +522,7 @@ public partial class PdfDocument : IDisposable
 
             // Parse cross-reference table(s) - follow /Prev chain for incremental updates
             phaseStopwatch.Restart();
-            bool rebuilt = false;
+            var rebuilt = false;
             try
             {
                 ParseXrefChain(stream, document, actualXrefPosition, headerOffset);
@@ -698,8 +698,8 @@ public partial class PdfDocument : IDisposable
 
         // Build a set of stream-data ranges to skip (avoids false "N 0 obj" inside encoded data)
         var skipRanges = new List<(int start, int end)>();
-        ReadOnlySpan<byte> streamKw = "stream"u8;
-        ReadOnlySpan<byte> endstreamKw = "endstream"u8;
+        var streamKw = "stream"u8;
+        var endstreamKw = "endstream"u8;
         for (var s = 0; s < data.Length - endstreamKw.Length; s++)
         {
             if (data.AsSpan(s, streamKw.Length).SequenceEqual(streamKw)
@@ -827,7 +827,7 @@ public partial class PdfDocument : IDisposable
         // startxref offset is invalid — scan backward from EOF for the "xref" keyword
         const int scanSize = 65536;
         long scanStart = Math.Max(0, stream.Length - scanSize);
-        int bufLen = (int)(stream.Length - scanStart);
+        var bufLen = (int)(stream.Length - scanStart);
         var buf = new byte[bufLen];
         stream.Position = scanStart;
         _ = stream.Read(buf, 0, bufLen);

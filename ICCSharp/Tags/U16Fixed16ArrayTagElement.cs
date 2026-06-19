@@ -20,8 +20,8 @@ public sealed class U16Fixed16ArrayTagElement : TagElement
         if (payloadBytes < 0 || payloadBytes % 4 != 0)
             throw new IccParseException($"uf32 payload length {payloadBytes} is not a multiple of 4.");
         int count = payloadBytes / 4;
-        double[] values = new double[count];
-        for (int i = 0; i < count; i++) values[i] = reader.ReadU16Fixed16();
+        var values = new double[count];
+        for (var i = 0; i < count; i++) values[i] = reader.ReadU16Fixed16();
         return new U16Fixed16ArrayTagElement(values);
     }
 }

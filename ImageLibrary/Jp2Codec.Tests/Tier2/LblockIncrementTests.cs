@@ -26,7 +26,7 @@ namespace Jp2Codec.Tests.Tier2
         public void RunsPastSanityCap_Throws()
         {
             // 33 ones — no terminating zero.
-            int[] bits = new int[40];
+            var bits = new int[40];
             for (var i = 0; i < 33; i++) bits[i] = 1;
             Assert.Throws<InvalidDataException>(() => Read(bits));
         }

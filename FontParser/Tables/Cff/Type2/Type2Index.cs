@@ -5,7 +5,7 @@ namespace FontParser.Tables.Cff.Type2
 {
     public class Type2Index
     {
-        public List<List<byte>> Data { get; } = new List<List<byte>>();
+        public List<List<byte>> Data { get; } = new();
 
         public Type2Index(BigEndianReader reader)
         {

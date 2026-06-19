@@ -55,7 +55,7 @@ namespace Jp2Codec.TileAssembly
 
                 int sotStartPosition = reader.Position; // position OF the SOT marker
 
-                ReadOnlySpan<byte> _ = ReadOnlySpan<byte>.Empty;
+                var _ = ReadOnlySpan<byte>.Empty;
                 TilePartHeader header = TilePartHeaderParser.Parse(reader, numberOfComponents);
                 SotSegment sot = header.Sot;
 
@@ -155,12 +155,11 @@ namespace Jp2Codec.TileAssembly
         private sealed class TileAccumulator
         {
             public int TileIndex { get; }
-            private readonly SortedDictionary<int, (byte[] body, byte[] packedHeaders)> _partsByOrder
-                = new SortedDictionary<int, (byte[], byte[])>();
+            private readonly SortedDictionary<int, (byte[] body, byte[] packedHeaders)> _partsByOrder = new();
             private CodSegment? _codOverride;
             private QcdSegment? _qcdOverride;
-            private readonly List<CocSegment> _cocs = new List<CocSegment>();
-            private readonly List<QccSegment> _qccs = new List<QccSegment>();
+            private readonly List<CocSegment> _cocs = new();
+            private readonly List<QccSegment> _qccs = new();
 
             public TileAccumulator(int tileIndex)
             {
@@ -200,7 +199,7 @@ namespace Jp2Codec.TileAssembly
             public AssembledTile ToAssembledTile()
             {
                 // Sanity check: ensure tile-part indices are dense from 0.
-                int expected = 0;
+                var expected = 0;
                 foreach (int idx in _partsByOrder.Keys)
                 {
                     if (idx != expected)
@@ -209,8 +208,8 @@ namespace Jp2Codec.TileAssembly
                     expected++;
                 }
 
-                int bodyTotal = 0;
-                int headerTotal = 0;
+                var bodyTotal = 0;
+                var headerTotal = 0;
                 foreach ((byte[] body, byte[] packedHeaders) in _partsByOrder.Values)
                 {
                     bodyTotal += body.Length;
@@ -218,8 +217,8 @@ namespace Jp2Codec.TileAssembly
                 }
                 var bodyConcat = new byte[bodyTotal];
                 var headerConcat = new byte[headerTotal];
-                int bodyOffset = 0;
-                int headerOffset = 0;
+                var bodyOffset = 0;
+                var headerOffset = 0;
                 foreach ((byte[] body, byte[] packedHeaders) in _partsByOrder.Values)
                 {
                     Buffer.BlockCopy(body, 0, bodyConcat, bodyOffset, body.Length);

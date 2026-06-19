@@ -184,7 +184,7 @@ internal static class FontSubsetter
                 maxOld = gid;
 
         int entryCount = maxOld + 1;
-        byte[] map = new byte[entryCount * 2];
+        var map = new byte[entryCount * 2];
 
         foreach (ushort oldGid in retainedGids)
         {

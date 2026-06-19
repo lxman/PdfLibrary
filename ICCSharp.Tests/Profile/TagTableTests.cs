@@ -11,12 +11,12 @@ public class TagTableTests
     /// </summary>
     private static byte[] BuildTagTable(params (string Sig, uint Offset, uint Size)[] entries)
     {
-        byte[] buf = new byte[4 + 12 * entries.Length];
+        var buf = new byte[4 + 12 * entries.Length];
         WriteUInt32(buf, 0, (uint)entries.Length);
-        for (int i = 0; i < entries.Length; i++)
+        for (var i = 0; i < entries.Length; i++)
         {
             int p = 4 + i * 12;
-            for (int j = 0; j < 4; j++) buf[p + j] = (byte)entries[i].Sig[j];
+            for (var j = 0; j < 4; j++) buf[p + j] = (byte)entries[i].Sig[j];
             WriteUInt32(buf, p + 4, entries[i].Offset);
             WriteUInt32(buf, p + 8, entries[i].Size);
         }
@@ -96,7 +96,7 @@ public class TagTableTests
     public void Tag_count_exceeding_remaining_buffer_throws()
     {
         // Declare 1000 entries but only supply enough bytes for the count itself
-        byte[] bytes = new byte[4];
+        var bytes = new byte[4];
         WriteUInt32(bytes, 0, 1000);
         Assert.Throws<IccParseException>(() => TagTable.Parse(new IccBinaryReader(bytes), profileSize: 1_000_000));
     }

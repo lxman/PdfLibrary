@@ -18,13 +18,13 @@ namespace Jbig2Decoder.Stream
             if (offset + 11 > buf.Length)
                 throw new InvalidOperationException("Truncated segment header (need at least 11 bytes)");
 
-            var h = new SegmentHeader();
-
-            // 7.2.2 Segment number (4 bytes BE).
-            h.Number = BigEndian.U32(buf, offset);
-
-            // 7.2.3 Segment header flags (1 byte).
-            h.Flags = buf[offset + 4];
+            var h = new SegmentHeader
+            {
+                // 7.2.2 Segment number (4 bytes BE).
+                Number = BigEndian.U32(buf, offset),
+                // 7.2.3 Segment header flags (1 byte).
+                Flags = buf[offset + 4]
+            };
 
             // 7.2.4 Retention flags + referred-to segment count.
             byte rtscarf = buf[offset + 5];

@@ -8,8 +8,8 @@ public class AdvancedTagTests
 {
     private static byte[] WithHeader(string typeSig, params byte[] payload)
     {
-        byte[] buf = new byte[8 + payload.Length];
-        for (int i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
+        var buf = new byte[8 + payload.Length];
+        for (var i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
         Buffer.BlockCopy(payload, 0, buf, 8, payload.Length);
         return buf;
     }
@@ -22,12 +22,12 @@ public class AdvancedTagTests
     };
     private static byte[] U32BeS15F16(double v)
     {
-        int raw = (int)Math.Round(v * 65536.0);
+        var raw = (int)Math.Round(v * 65536.0);
         return U32Be(unchecked((uint)raw));
     }
     private static byte[] U32BeU16F16(double v)
     {
-        uint raw = (uint)Math.Round(v * 65536.0);
+        var raw = (uint)Math.Round(v * 65536.0);
         return U32Be(raw);
     }
 
@@ -45,7 +45,7 @@ public class AdvancedTagTests
             ..U32BeU16F16(0.3000), ..U32BeU16F16(0.6000), // G
             ..U32BeU16F16(0.1500), ..U32BeU16F16(0.0600), // B
         ];
-        ChromaticityTagElement t = Assert.IsType<ChromaticityTagElement>(
+        var t = Assert.IsType<ChromaticityTagElement>(
             TagElementReader.Parse(WithHeader("chrm", payload)));
         Assert.Equal(3, t.DeviceChannels);
         Assert.Equal((ushort)1, t.PhosphorOrColorantType);
@@ -69,7 +69,7 @@ public class AdvancedTagTests
     {
         // BT.2020 / PQ / RGB / full range
         byte[] payload = { 9, 16, 0, 1 };
-        CicpTagElement t = Assert.IsType<CicpTagElement>(TagElementReader.Parse(WithHeader("cicp", payload)));
+        var t = Assert.IsType<CicpTagElement>(TagElementReader.Parse(WithHeader("cicp", payload)));
         Assert.Equal(9, t.ColourPrimaries);
         Assert.Equal(16, t.TransferCharacteristics);
         Assert.Equal(0, t.MatrixCoefficients);
@@ -95,7 +95,7 @@ public class AdvancedTagTests
             ..U32BeU16F16(0.005),                                    // flare
             ..U32Be(1),                                              // illuminant = D50
         ];
-        MeasurementTagElement t = Assert.IsType<MeasurementTagElement>(
+        var t = Assert.IsType<MeasurementTagElement>(
             TagElementReader.Parse(WithHeader("meas", payload)));
         Assert.Equal(1u, t.StandardObserver);
         Assert.Equal(0.9642, t.BackingMeasurement.X, 3);
@@ -115,7 +115,7 @@ public class AdvancedTagTests
             ..U32BeS15F16(0.1928), ..U32BeS15F16(0.2),  ..U32BeS15F16(0.165),
             ..U32Be(1),
         ];
-        ViewingConditionsTagElement t = Assert.IsType<ViewingConditionsTagElement>(
+        var t = Assert.IsType<ViewingConditionsTagElement>(
             TagElementReader.Parse(WithHeader("view", payload)));
         Assert.Equal(0.9642, t.Illuminant.X, 3);
         Assert.Equal(0.2, t.Surround.Y, 3);
@@ -127,15 +127,15 @@ public class AdvancedTagTests
     [Fact]
     public void Colorant_table_with_two_entries()
     {
-        byte[] name1 = new byte[32]; Encoding.ASCII.GetBytes("Cyan").CopyTo(name1, 0);
-        byte[] name2 = new byte[32]; Encoding.ASCII.GetBytes("Magenta").CopyTo(name2, 0);
+        var name1 = new byte[32]; Encoding.ASCII.GetBytes("Cyan").CopyTo(name1, 0);
+        var name2 = new byte[32]; Encoding.ASCII.GetBytes("Magenta").CopyTo(name2, 0);
         byte[] payload =
         [
             ..U32Be(2),
             ..name1, ..U16Be(0x1000), ..U16Be(0x2000), ..U16Be(0x3000),
             ..name2, ..U16Be(0x4000), ..U16Be(0x5000), ..U16Be(0x6000),
         ];
-        ColorantTableTagElement t = Assert.IsType<ColorantTableTagElement>(
+        var t = Assert.IsType<ColorantTableTagElement>(
             TagElementReader.Parse(WithHeader("clrt", payload)));
         Assert.Equal(2, t.Entries.Count);
         Assert.Equal("Cyan", t.Entries[0].Name);
@@ -157,7 +157,7 @@ public class AdvancedTagTests
     public void Colorant_order_reads_index_array()
     {
         byte[] payload = [..U32Be(4), 3, 0, 1, 2];
-        ColorantOrderTagElement t = Assert.IsType<ColorantOrderTagElement>(
+        var t = Assert.IsType<ColorantOrderTagElement>(
             TagElementReader.Parse(WithHeader("clro", payload)));
         Assert.Equal(4, t.Order.Count);
         Assert.Equal(3, t.Order[0]);
@@ -176,9 +176,9 @@ public class AdvancedTagTests
     [Fact]
     public void NamedColor2_with_cmyk_palette_one_entry()
     {
-        byte[] prefix = new byte[32]; Encoding.ASCII.GetBytes("PANTONE").CopyTo(prefix, 0);
-        byte[] suffix = new byte[32]; // empty
-        byte[] entryName = new byte[32]; Encoding.ASCII.GetBytes("185 C").CopyTo(entryName, 0);
+        var prefix = new byte[32]; Encoding.ASCII.GetBytes("PANTONE").CopyTo(prefix, 0);
+        var suffix = new byte[32]; // empty
+        var entryName = new byte[32]; Encoding.ASCII.GetBytes("185 C").CopyTo(entryName, 0);
 
         byte[] payload =
         [
@@ -192,7 +192,7 @@ public class AdvancedTagTests
             ..U16Be(0x0000), ..U16Be(0xFFFF), ..U16Be(0x1111), ..U16Be(0x2222), // device CMYK
         ];
 
-        NamedColor2TagElement t = Assert.IsType<NamedColor2TagElement>(
+        var t = Assert.IsType<NamedColor2TagElement>(
             TagElementReader.Parse(WithHeader("ncl2", payload)));
         Assert.Equal(0u, t.VendorFlag);
         Assert.Equal(4u, t.DeviceCoordCount);

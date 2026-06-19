@@ -47,7 +47,7 @@ public class File8VisualDump
     {
         if (!Run) return;
 
-        string visualRoot = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual";
+        const string visualRoot = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual";
         Directory.CreateDirectory(visualRoot);
 
         foreach ((string fileName, string folderName, bool hasColorProfile) in TestImages)
@@ -102,8 +102,10 @@ public class File8VisualDump
             if (hasColorProfile && uniformComponents)
             {
                 using var ms = new MemoryStream(bytes);
-                ParameterList pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList());
-                pl["nocolorspace"] = "on";
+                var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList())
+                {
+                    ["nocolorspace"] = "on"
+                };
                 PortableImage img = J2kImage.FromStream(ms, pl);
                 var data = new int[img.NumberOfComponents][];
                 for (var c = 0; c < img.NumberOfComponents; c++)
@@ -135,21 +137,24 @@ internal static class BmpWriter
 {
     public static void Save(string path, int width, int height, int numComps, int[][] componentData, int[]? componentPrecision = null)
     {
-        if (numComps == 1)
+        switch (numComps)
         {
-            int prec = componentPrecision?[0] ?? 8;
-            SaveGrayscale(path, width, height, componentData[0], prec);
-        }
-        else if (numComps == 3)
-        {
-            int p0 = componentPrecision?[0] ?? 8;
-            int p1 = componentPrecision?[1] ?? 8;
-            int p2 = componentPrecision?[2] ?? 8;
-            SaveRgb(path, width, height, componentData[0], componentData[1], componentData[2], p0, p1, p2);
-        }
-        else
-        {
-            throw new NotSupportedException($"BMP output: unsupported component count {numComps}.");
+            case 1:
+            {
+                int prec = componentPrecision?[0] ?? 8;
+                SaveGrayscale(path, width, height, componentData[0], prec);
+                break;
+            }
+            case 3:
+            {
+                int p0 = componentPrecision?[0] ?? 8;
+                int p1 = componentPrecision?[1] ?? 8;
+                int p2 = componentPrecision?[2] ?? 8;
+                SaveRgb(path, width, height, componentData[0], componentData[1], componentData[2], p0, p1, p2);
+                break;
+            }
+            default:
+                throw new NotSupportedException($"BMP output: unsupported component count {numComps}.");
         }
     }
 
@@ -207,8 +212,8 @@ internal static class BmpWriter
         int rowSize = (width + 3) & ~3; // padded to multiple of 4
         int pixelDataSize = rowSize * height;
         int paletteSize = 256 * 4;
-        int fileHeaderSize = 14;
-        int dibHeaderSize = 40;
+        var fileHeaderSize = 14;
+        var dibHeaderSize = 40;
         int pixelDataOffset = fileHeaderSize + dibHeaderSize + paletteSize;
         int fileSize = pixelDataOffset + pixelDataSize;
 
@@ -255,8 +260,8 @@ internal static class BmpWriter
     {
         int rowSize = (width * 3 + 3) & ~3;
         int pixelDataSize = rowSize * height;
-        int fileHeaderSize = 14;
-        int dibHeaderSize = 40;
+        var fileHeaderSize = 14;
+        var dibHeaderSize = 40;
         int pixelDataOffset = fileHeaderSize + dibHeaderSize;
         int fileSize = pixelDataOffset + pixelDataSize;
 

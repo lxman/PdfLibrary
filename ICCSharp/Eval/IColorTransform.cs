@@ -20,7 +20,7 @@ public static class ColorTransformExtensions
     /// <summary>Allocating overload for convenience; calls the Span-based <see cref="IColorTransform.Apply"/>.</summary>
     public static double[] Apply(this IColorTransform t, ReadOnlySpan<double> input)
     {
-        double[] result = new double[t.OutputChannels];
+        var result = new double[t.OutputChannels];
         t.Apply(input, result);
         return result;
     }

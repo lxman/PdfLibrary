@@ -36,14 +36,14 @@ namespace FontParser.Subsetting
         /// </returns>
         public static ushort[] Compute(SfntFont font, IEnumerable<ushort> usedGlyphIds)
         {
-            var glyphTable = font.Glyf;
+            GlyphTable? glyphTable = font.Glyf;
 
             // Work set: BFS / iterative DFS — we use a stack for DFS which naturally
             // handles arbitrary-depth composite trees without deep recursion.
             var closure = new SortedSet<ushort>();
             var stack = new Stack<ushort>();
 
-            foreach (var id in usedGlyphIds)
+            foreach (ushort id in usedGlyphIds)
             {
                 if (closure.Add(id))
                     stack.Push(id);
@@ -66,7 +66,7 @@ namespace FontParser.Subsetting
                 if (data?.GlyphSpec is not CompositeGlyph composite)
                     continue; // Simple glyph or missing glyph — no components to expand.
 
-                foreach (var component in composite.Components)
+                foreach (CompositeGlyphComponent? component in composite.Components)
                 {
                     ushort componentId = component.GlyphIndex;
                     // closure.Add returns true only when the id was NOT already present.

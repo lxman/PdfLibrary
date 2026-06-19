@@ -8,7 +8,7 @@ namespace FontParser.Tables.TtTables.Glyf
     {
         public static string Tag => "glyf";
 
-        public List<GlyphData> Glyphs { get; private set; } = new List<GlyphData>();
+        public List<GlyphData> Glyphs { get; private set; } = new();
 
         private readonly BigEndianReader _reader;
 

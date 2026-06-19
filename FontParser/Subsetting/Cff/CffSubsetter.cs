@@ -124,7 +124,6 @@ namespace FontParser.Subsetting.Cff
             // 6. Concatenate.
             var outBuf = new byte[pos];
             var w = 0;
-            void Append(byte[] b) { Array.Copy(b, 0, outBuf, w, b.Length); w += b.Length; }
             Append(header);
             Append(nameIndex);
             Append(topDictIndexBytes);
@@ -135,6 +134,7 @@ namespace FontParser.Subsetting.Cff
             Append(localSubrBytes);
             Append(charStringsBytes);
             return outBuf;
+            void Append(byte[] b) { Array.Copy(b, 0, outBuf, w, b.Length); w += b.Length; }
         }
 
         private static byte[] SubsetCid(Type1Table source, ISet<int> usedGids)
@@ -253,7 +253,6 @@ namespace FontParser.Subsetting.Cff
             // 9. Concatenate.
             var outBuf = new byte[pos];
             var w = 0;
-            void Append(byte[] b) { Array.Copy(b, 0, outBuf, w, b.Length); w += b.Length; }
             Append(header);
             Append(nameIndex);
             Append(topDictIndexBytes);
@@ -269,6 +268,7 @@ namespace FontParser.Subsetting.Cff
                 Append(localSubrBytes[fd]);
             }
             return outBuf;
+            void Append(byte[] b) { Array.Copy(b, 0, outBuf, w, b.Length); w += b.Length; }
         }
 
         private static void PatchBE32(byte[] buf, int pos, int value)

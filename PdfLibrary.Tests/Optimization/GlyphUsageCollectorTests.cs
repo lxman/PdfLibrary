@@ -44,7 +44,7 @@ public class GlyphUsageCollectorTests
         using PdfDocument doc = BuildArialDocument("Hello");
         doc.MaterializeAllObjects();
 
-        var allUsage = CollectAllPages(doc);
+        Dictionary<PdfStream, FontUsage> allUsage = CollectAllPages(doc);
 
         Assert.NotEmpty(allUsage);
         FontUsage usage = Assert.Single(allUsage.Values);
@@ -66,7 +66,7 @@ public class GlyphUsageCollectorTests
         using PdfDocument doc = BuildArialDocument("ABC");
         doc.MaterializeAllObjects();
 
-        var allUsage = CollectAllPages(doc);
+        Dictionary<PdfStream, FontUsage> allUsage = CollectAllPages(doc);
 
         // It's acceptable for the collector not to include GID 0 when text is printable
         // (GID 0 is the .notdef glyph — added by the subsetter, not the collector).
@@ -93,8 +93,8 @@ public class GlyphUsageCollectorTests
         docA.MaterializeAllObjects();
         docB.MaterializeAllObjects();
 
-        var usageA = CollectAllPages(docA);
-        var usageB = CollectAllPages(docB);
+        Dictionary<PdfStream, FontUsage> usageA = CollectAllPages(docA);
+        Dictionary<PdfStream, FontUsage> usageB = CollectAllPages(docB);
 
         Assert.NotEmpty(usageA);
         Assert.NotEmpty(usageB);
@@ -124,7 +124,7 @@ public class GlyphUsageCollectorTests
 
         // Manually verify the decoding logic: 2-byte big-endian → GID
         var decoded = new List<ushort>();
-        for (int i = 0; i + 1 < fakeTextBytes.Length; i += 2)
+        for (var i = 0; i + 1 < fakeTextBytes.Length; i += 2)
             decoded.Add((ushort)((fakeTextBytes[i] << 8) | fakeTextBytes[i + 1]));
 
         Assert.Equal(expectedGids, decoded.ToHashSet());

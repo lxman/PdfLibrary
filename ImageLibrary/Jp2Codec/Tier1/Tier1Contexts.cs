@@ -75,11 +75,11 @@ namespace Jp2Codec.Tier1
 
         public static (int Context, int XorBit) SignCoding(int hContribution, int vContribution)
         {
-            uint h = (uint)(hContribution + 1);
-            uint v = (uint)(vContribution + 1);
+            var h = (uint)(hContribution + 1);
+            var v = (uint)(vContribution + 1);
             if (h > 2) throw new ArgumentOutOfRangeException(nameof(hContribution), hContribution, null);
             if (v > 2) throw new ArgumentOutOfRangeException(nameof(vContribution), vContribution, null);
-            int tableIdx = (int)(h * 3 + v);
+            var tableIdx = (int)(h * 3 + v);
             return (Jp2MqContextSet.SignCoding + ScOffset[tableIdx], ScXor[tableIdx]);
         }
 

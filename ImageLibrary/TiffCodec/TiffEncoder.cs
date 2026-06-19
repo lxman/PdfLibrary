@@ -113,19 +113,19 @@ public static class TiffEncoder
     {
         var tags = new List<IfdEntry>
         {
-            new IfdEntry { Tag = TiffTag.ImageWidth, Type = 4, Count = 1, Value = (uint)width },
-            new IfdEntry { Tag = TiffTag.ImageHeight, Type = 4, Count = 1, Value = (uint)height },
-            new IfdEntry { Tag = TiffTag.BitsPerSample, Type = 3, Count = 3, Value = new ushort[] { 8, 8, 8 } },
-            new IfdEntry { Tag = TiffTag.Compression, Type = 3, Count = 1, Value = (ushort)compression },
-            new IfdEntry { Tag = TiffTag.PhotometricInterpretation, Type = 3, Count = 1, Value = (ushort)TiffPhotometricInterpretation.Rgb },
-            new IfdEntry { Tag = TiffTag.StripOffsets, Type = 4, Count = 1, Value = 8u }, // Image data starts at offset 8
-            new IfdEntry { Tag = TiffTag.SamplesPerPixel, Type = 3, Count = 1, Value = (ushort)3 },
-            new IfdEntry { Tag = TiffTag.RowsPerStrip, Type = 4, Count = 1, Value = (uint)height },
-            new IfdEntry { Tag = TiffTag.StripByteCounts, Type = 4, Count = 1, Value = (uint)imageDataLength },
-            new IfdEntry { Tag = TiffTag.XResolution, Type = 5, Count = 1, Value = new uint[] { 72, 1 } }, // 72 DPI
-            new IfdEntry { Tag = TiffTag.YResolution, Type = 5, Count = 1, Value = new uint[] { 72, 1 } }, // 72 DPI
-            new IfdEntry { Tag = TiffTag.PlanarConfiguration, Type = 3, Count = 1, Value = (ushort)1 }, // Chunky
-            new IfdEntry { Tag = TiffTag.ResolutionUnit, Type = 3, Count = 1, Value = (ushort)2 } // Inches
+            new() { Tag = TiffTag.ImageWidth, Type = 4, Count = 1, Value = (uint)width },
+            new() { Tag = TiffTag.ImageHeight, Type = 4, Count = 1, Value = (uint)height },
+            new() { Tag = TiffTag.BitsPerSample, Type = 3, Count = 3, Value = new ushort[] { 8, 8, 8 } },
+            new() { Tag = TiffTag.Compression, Type = 3, Count = 1, Value = (ushort)compression },
+            new() { Tag = TiffTag.PhotometricInterpretation, Type = 3, Count = 1, Value = (ushort)TiffPhotometricInterpretation.Rgb },
+            new() { Tag = TiffTag.StripOffsets, Type = 4, Count = 1, Value = 8u }, // Image data starts at offset 8
+            new() { Tag = TiffTag.SamplesPerPixel, Type = 3, Count = 1, Value = (ushort)3 },
+            new() { Tag = TiffTag.RowsPerStrip, Type = 4, Count = 1, Value = (uint)height },
+            new() { Tag = TiffTag.StripByteCounts, Type = 4, Count = 1, Value = (uint)imageDataLength },
+            new() { Tag = TiffTag.XResolution, Type = 5, Count = 1, Value = new uint[] { 72, 1 } }, // 72 DPI
+            new() { Tag = TiffTag.YResolution, Type = 5, Count = 1, Value = new uint[] { 72, 1 } }, // 72 DPI
+            new() { Tag = TiffTag.PlanarConfiguration, Type = 3, Count = 1, Value = (ushort)1 }, // Chunky
+            new() { Tag = TiffTag.ResolutionUnit, Type = 3, Count = 1, Value = (ushort)2 } // Inches
         };
 
         // Write number of entries

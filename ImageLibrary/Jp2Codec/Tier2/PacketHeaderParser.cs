@@ -112,7 +112,7 @@ namespace Jp2Codec.Tier2
         // floor(log2(value)) for value >= 1.
         private static int FloorLog2(int value)
         {
-            int result = 0;
+            var result = 0;
             while ((value >>= 1) != 0) result++;
             return result;
         }

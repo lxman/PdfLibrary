@@ -70,7 +70,7 @@ namespace Jp2Codec.Tests.Codestream
             U32(0);              // XTOsiz
             U32(0);              // YTOsiz
             U16(components);     // Csiz
-            byte ssiz = (byte)((isSigned ? 0x80 : 0) | ((bitDepth - 1) & 0x7F));
+            var ssiz = (byte)((isSigned ? 0x80 : 0) | ((bitDepth - 1) & 0x7F));
             for (var c = 0; c < components; c++)
             {
                 U8(ssiz);
@@ -92,7 +92,7 @@ namespace Jp2Codec.Tests.Codestream
             bool sop = false, bool eph = false)
         {
             int at = BeginSegment(0xFF52);
-            byte scod = (byte)((sop ? 0x02 : 0) | (eph ? 0x04 : 0));
+            var scod = (byte)((sop ? 0x02 : 0) | (eph ? 0x04 : 0));
             U8(scod);
             U8(progressionOrder);
             U16(layers);
@@ -111,7 +111,7 @@ namespace Jp2Codec.Tests.Codestream
         {
             int subbands = 3 * decompositionLevels + 1;
             int at = BeginSegment(0xFF5C);
-            byte sqcd = (byte)((guardBits & 0x07) << 5); // style = 0 (None)
+            var sqcd = (byte)((guardBits & 0x07) << 5); // style = 0 (None)
             U8(sqcd);
             for (var i = 0; i < subbands; i++)
                 U8((exponent & 0x1F) << 3); // exponent in top 5 bits, low 3 bits unused

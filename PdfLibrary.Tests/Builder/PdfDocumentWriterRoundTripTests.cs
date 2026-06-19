@@ -81,7 +81,7 @@ public class PdfDocumentWriterRoundTripTests
     public void EmptyDocument_NoPages_StillProducesValidPdf()
     {
         // No pages — writer must still emit a parseable shell.
-        PdfDocumentBuilder builder = PdfDocumentBuilder.Create();
+        var builder = PdfDocumentBuilder.Create();
 
         byte[] bytes = builder.ToByteArray();
 
@@ -361,16 +361,17 @@ public class PdfDocumentWriterRoundTripTests
     [Fact]
     public void Output_TwoConsecutiveBuilds_AreDeterministicInShape()
     {
-        // Builders may differ in bytes (timestamps, ids), but a second identical build
-        // should produce a document with the same structural shape.
-        PdfDocumentBuilder Build() => PdfDocumentBuilder.Create()
-            .AddPage(p => p.AddText("deterministic", 100, 700))
-            .AddPage(p => p.AddText("page two", 100, 700));
-
         using PdfDocument doc1 = LoadRoundTrip(Build());
         using PdfDocument doc2 = LoadRoundTrip(Build());
 
         Assert.Equal(doc1.PageCount, doc2.PageCount);
         Assert.Equal(doc1.Version, doc2.Version);
+        return;
+
+        // Builders may differ in bytes (timestamps, ids), but a second identical build
+        // should produce a document with the same structural shape.
+        PdfDocumentBuilder Build() => PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("deterministic", 100, 700))
+            .AddPage(p => p.AddText("page two", 100, 700));
     }
 }

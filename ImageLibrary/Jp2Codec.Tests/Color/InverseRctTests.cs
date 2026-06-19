@@ -111,9 +111,9 @@ namespace Jp2Codec.Tests.Color
         [Fact]
         public void MismatchedDimensions_Throws()
         {
-            int[,] c0 = new int[2, 3];
-            int[,] c1 = new int[2, 3];
-            int[,] c2 = new int[2, 4]; // wrong width
+            var c0 = new int[2, 3];
+            var c1 = new int[2, 3];
+            var c2 = new int[2, 4]; // wrong width
 
             Assert.Throws<ArgumentException>(() => InverseRct.Apply(c0, c1, c2));
         }
@@ -121,9 +121,9 @@ namespace Jp2Codec.Tests.Color
         [Fact]
         public void MismatchedHeights_Throws()
         {
-            int[,] c0 = new int[2, 3];
-            int[,] c1 = new int[3, 3]; // wrong height
-            int[,] c2 = new int[2, 3];
+            var c0 = new int[2, 3];
+            var c1 = new int[3, 3]; // wrong height
+            var c2 = new int[2, 3];
 
             Assert.Throws<ArgumentException>(() => InverseRct.Apply(c0, c1, c2));
         }
@@ -131,8 +131,8 @@ namespace Jp2Codec.Tests.Color
         [Fact]
         public void NullArg_Throws()
         {
-            int[,] c0 = new int[1, 1];
-            int[,] c1 = new int[1, 1];
+            var c0 = new int[1, 1];
+            var c1 = new int[1, 1];
             Assert.Throws<ArgumentNullException>(() => InverseRct.Apply(null!, c1, c0));
             Assert.Throws<ArgumentNullException>(() => InverseRct.Apply(c0, null!, c0));
             Assert.Throws<ArgumentNullException>(() => InverseRct.Apply(c0, c1, null!));

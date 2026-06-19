@@ -34,7 +34,7 @@ public class J2cVisualDump
     {
         if (!Run) return;
 
-        string visualRoot = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c";
+        var visualRoot = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/visual/j2c";
         Directory.CreateDirectory(visualRoot);
 
         foreach (string fileName in Files)
@@ -54,7 +54,7 @@ public class J2cVisualDump
             int height = ours.Height;
             int numComps = ours.NumberOfComponents;
             int[][] oursData = ours.ComponentArrays;
-            int[] precisions = new int[numComps];
+            var precisions = new int[numComps];
             for (var c = 0; c < numComps; c++) precisions[c] = ours.ComponentPrecision[c];
 
             BmpWriter.Save(Path.Combine(dir, "ours.bmp"),
@@ -63,8 +63,10 @@ public class J2cVisualDump
             int[][] refData;
             using (var ms = new MemoryStream(bytes))
             {
-                var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList());
-                pl["nocolorspace"] = "on";
+                var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList())
+                {
+                    ["nocolorspace"] = "on"
+                };
                 PortableImage img;
                 try
                 {
@@ -105,8 +107,8 @@ public class J2cVisualDump
         for (var c = 0; c < numComps; c++)
         {
             int n = Math.Min(oursData[c].Length, refData[c].Length);
-            int diffCount = 0;
-            int maxDelta = 0;
+            var diffCount = 0;
+            var maxDelta = 0;
             long sumDelta = 0;
             int firstDiff = -1;
             int minRow = int.MaxValue, maxRow = int.MinValue;

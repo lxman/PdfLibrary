@@ -25,13 +25,6 @@ public class HuffmanDecoderTests
         var output = new List<byte>();
         var bitBuffer = 0;
         var bitsInBuffer = 0;
-        void Emit(byte b)
-        {
-            output.Add(b);
-            // T.81 §F.1.2.3 byte stuffing — required to prevent the byte
-            // source from misreading data as a marker.
-            if (b == 0xFF) output.Add(0x00);
-        }
         foreach ((int bits, int length) in tokens)
         {
             bitBuffer = (bitBuffer << length) | bits;
@@ -49,6 +42,14 @@ public class HuffmanDecoderTests
             Emit((byte)(((bitBuffer << shift) | ((1 << shift) - 1)) & 0xFF));
         }
         return output.ToArray();
+
+        void Emit(byte b)
+        {
+            output.Add(b);
+            // T.81 §F.1.2.3 byte stuffing — required to prevent the byte
+            // source from misreading data as a marker.
+            if (b == 0xFF) output.Add(0x00);
+        }
     }
 
     [Fact]

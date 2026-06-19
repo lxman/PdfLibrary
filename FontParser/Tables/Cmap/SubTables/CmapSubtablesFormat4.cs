@@ -15,17 +15,17 @@ namespace FontParser.Tables.Cmap.SubTables
 
         public uint RangeShift { get; }
 
-        public List<ushort> EndCodes { get; } = new List<ushort>();
+        public List<ushort> EndCodes { get; } = new();
 
         public ushort ReservedPad { get; }
 
-        public List<ushort> StartCodes { get; } = new List<ushort>();
+        public List<ushort> StartCodes { get; } = new();
 
-        public List<short> IdDeltas { get; } = new List<short>();
+        public List<short> IdDeltas { get; } = new();
 
-        public List<ushort> IdRangeOffsets { get; } = new List<ushort>();
+        public List<ushort> IdRangeOffsets { get; } = new();
 
-        public List<ushort> GlyphIdArray { get; } = new List<ushort>();
+        public List<ushort> GlyphIdArray { get; } = new();
 
         public CmapSubtablesFormat4(BigEndianReader reader)
         {

@@ -7,7 +7,7 @@ namespace FontParser.Tables.Cff.Type1
     {
         public byte Format => 1;
 
-        public List<Range1> Ranges { get; } = new List<Range1>();
+        public List<Range1> Ranges { get; } = new();
 
         public Encoding1(BigEndianReader reader)
         {

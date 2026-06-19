@@ -20,21 +20,21 @@ namespace FontParser.Tables.Cff.Type1
 
         public ICharset CharSet { get; }
 
-        public List<string> Names { get; } = new List<string>();
+        public List<string> Names { get; } = new();
 
-        public List<string> Strings { get; } = new List<string>();
+        public List<string> Strings { get; } = new();
 
-        public List<List<string>> CharStringList { get; } = new List<List<string>>();
+        public List<List<string>> CharStringList { get; } = new();
 
         /// <summary>
         /// Raw charstring data for each glyph (for direct parsing)
         /// </summary>
-        public List<List<byte>> RawCharStrings { get; private set; } = new List<List<byte>>();
+        public List<List<byte>> RawCharStrings { get; private set; } = new();
 
         /// <summary>
         /// Global subroutines for charstring parsing
         /// </summary>
-        public List<List<byte>> GlobalSubroutines { get; private set; } = new List<List<byte>>();
+        public List<List<byte>> GlobalSubroutines { get; private set; } = new();
 
         /// <summary>
         /// Local subroutines for charstring parsing
@@ -46,7 +46,7 @@ namespace FontParser.Tables.Cff.Type1
         /// copies non-offset operators from here verbatim (preserving original SIDs) and replaces only
         /// the offset operators, so no SID re-encoding is needed.
         /// </summary>
-        public byte[] RawTopDict { get; private set; } = Array.Empty<byte>();
+        public byte[] RawTopDict { get; private set; }
 
         /// <summary>
         /// Raw bytes of the (non-CID) Private DICT, for verbatim re-emit during subsetting.
@@ -57,7 +57,7 @@ namespace FontParser.Tables.Cff.Type1
         /// Raw bytes of a CUSTOM charset (Top DICT charset offset &gt; 2), for verbatim re-emit. Empty
         /// when the font uses a predefined charset (0/1/2), which the subsetter copies as a literal.
         /// </summary>
-        public byte[] RawCharset { get; private set; } = Array.Empty<byte>();
+        public byte[] RawCharset { get; private set; }
 
         /// <summary>
         /// True for a CID-keyed CFF (the Top DICT carries a ROS operator with FDArray/FDSelect).
@@ -66,12 +66,12 @@ namespace FontParser.Tables.Cff.Type1
 
         /// <summary>Raw Name INDEX entries, for byte-exact verbatim re-emit (the decoded
         /// <see cref="Names"/> strings are lossy for bytes &gt;= 0x80).</summary>
-        public List<List<byte>> RawNameIndex { get; private set; } = new List<List<byte>>();
+        public List<List<byte>> RawNameIndex { get; private set; }
 
         /// <summary>Raw String INDEX entries, for byte-exact verbatim re-emit (the decoded
         /// <see cref="Strings"/> are lossy for bytes &gt;= 0x80; SID-&gt;string consistency requires
         /// the original bytes since charset is kept verbatim).</summary>
-        public List<List<byte>> RawStringIndex { get; private set; } = new List<List<byte>>();
+        public List<List<byte>> RawStringIndex { get; private set; }
 
         /// <summary>Per-FD raw data for a CID-keyed CFF (FDArray order); empty for non-CID. Used by the
         /// subsetter to re-emit the FDArray + per-FD Private DICTs + local subrs.</summary>
@@ -98,15 +98,15 @@ namespace FontParser.Tables.Cff.Type1
         }
 
         private readonly Type1TopDictOperatorEntries _type1TopDictOperatorEntries =
-            new Type1TopDictOperatorEntries(new Dictionary<ushort, CffDictEntry?>());
+            new(new Dictionary<ushort, CffDictEntry?>());
 
         private readonly PrivateDictOperatorEntries _privateDictOperatorEntries =
-            new PrivateDictOperatorEntries(new Dictionary<ushort, CffDictEntry?>());
+            new(new Dictionary<ushort, CffDictEntry?>());
 
-        private readonly List<CffDictEntry> _topDictOperatorEntries = new List<CffDictEntry>();
-        private readonly List<CffDictEntry> _type1PrivateDictOperatorEntries = new List<CffDictEntry>();
-        private readonly List<CidFontDictEntry> _type1FontDictOperatorEntries = new List<CidFontDictEntry>();
-        private readonly List<List<byte>> _localSubroutines = new List<List<byte>>();
+        private readonly List<CffDictEntry> _topDictOperatorEntries = new();
+        private readonly List<CffDictEntry> _type1PrivateDictOperatorEntries = new();
+        private readonly List<CidFontDictEntry> _type1FontDictOperatorEntries = new();
+        private readonly List<List<byte>> _localSubroutines = new();
 
         /// <summary>
         /// For CID-keyed CFF: maps glyph index → the font-dict entry whose private dict / local
@@ -158,7 +158,7 @@ namespace FontParser.Tables.Cff.Type1
 
             var charStrings = new Type1Index(reader);
 
-            long charsetOffset = Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "charset").Operand);
+            var charsetOffset = Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "charset").Operand);
             reader.Seek(charsetOffset);
             long charsetStart = reader.Position;
 
@@ -287,7 +287,7 @@ namespace FontParser.Tables.Cff.Type1
         public int GetGlyphIndexByName(string name)
         {
             if (_nameToGid is null) BuildNameToGid();
-            return _nameToGid!.TryGetValue(name, out int gid) ? gid : -1;
+            return _nameToGid!.GetValueOrDefault(name, -1);
         }
 
         private Dictionary<int, int>? _cidToGid;
@@ -297,7 +297,7 @@ namespace FontParser.Tables.Cff.Type1
         public int GetGlyphIndexByCid(int cid)
         {
             if (_cidToGid is null) BuildCidToGid();
-            return _cidToGid!.TryGetValue(cid, out int gid) ? gid : -1;
+            return _cidToGid!.GetValueOrDefault(cid, -1);
         }
 
         private void BuildCidToGid()
@@ -311,14 +311,14 @@ namespace FontParser.Tables.Cff.Type1
                 case CharsetsFormat1 f1:
                 {
                     var gid = 1;
-                    foreach (var r in f1.Ranges)
+                    foreach (Charsets.Range1? r in f1.Ranges)
                         for (var k = 0; k <= r.NumberLeft; k++) _cidToGid.TryAdd(r.First + k, gid++);
                     break;
                 }
                 case CharsetsFormat2 f2:
                 {
                     var gid = 1;
-                    foreach (var r in f2.Ranges)
+                    foreach (Range2? r in f2.Ranges)
                         for (var k = 0; k <= r.NumberLeft; k++) _cidToGid.TryAdd(r.First + k, gid++);
                     break;
                 }
@@ -329,12 +329,6 @@ namespace FontParser.Tables.Cff.Type1
         {
             _nameToGid = new Dictionary<string, int> { [".notdef"] = 0 };
 
-            void Add(int gid, ushort sid)
-            {
-                string n = ResolveSid(sid);
-                if (!string.IsNullOrEmpty(n) && !_nameToGid!.ContainsKey(n)) _nameToGid![n] = gid;
-            }
-
             switch (CharSet)
             {
                 case CharsetsFormat0 f0:
@@ -343,17 +337,25 @@ namespace FontParser.Tables.Cff.Type1
                 case CharsetsFormat1 f1:
                 {
                     var gid = 1;
-                    foreach (var r in f1.Ranges)
+                    foreach (Charsets.Range1? r in f1.Ranges)
                         for (var k = 0; k <= r.NumberLeft; k++) Add(gid++, (ushort)(r.First + k));
                     break;
                 }
                 case CharsetsFormat2 f2:
                 {
                     var gid = 1;
-                    foreach (var r in f2.Ranges)
+                    foreach (Range2? r in f2.Ranges)
                         for (var k = 0; k <= r.NumberLeft; k++) Add(gid++, (ushort)(r.First + k));
                     break;
                 }
+            }
+
+            return;
+
+            void Add(int gid, ushort sid)
+            {
+                string n = ResolveSid(sid);
+                if (!string.IsNullOrEmpty(n) && !_nameToGid!.ContainsKey(n)) _nameToGid![n] = gid;
             }
         }
 
@@ -446,7 +448,7 @@ namespace FontParser.Tables.Cff.Type1
             }
             CidFds = cidFds;
 
-            long fdSelectOffset = Convert.ToInt64(_topDictOperatorEntries.Find(e => e.Name == "FDSelect").Operand);
+            var fdSelectOffset = Convert.ToInt64(_topDictOperatorEntries.Find(e => e.Name == "FDSelect").Operand);
             reader.Seek(fdSelectOffset);
             Dictionary<ushort, NameDictEntry> fdSelectEntries =
                 ReadFdSelectEntries(reader, fontDictEntries, charStrings.Data.Count);

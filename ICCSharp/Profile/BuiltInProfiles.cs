@@ -72,7 +72,7 @@ public static class BuiltInProfiles
         int bTrcOff = gTrcOff + trcSize;
         int totalSize = bTrcOff + trcSize;
 
-        byte[] data = new byte[totalSize];
+        var data = new byte[totalSize];
 
         // Header — only the fields needed to make IccProfile.Parse happy.
         WriteUInt32(data, 0, (uint)totalSize);          // profile size
@@ -108,7 +108,7 @@ public static class BuiltInProfiles
 
     private static void WriteTagEntry(byte[] buf, int offset, string sig, uint dataOffset, int size)
     {
-        for (int i = 0; i < 4; i++) buf[offset + i] = (byte)sig[i];
+        for (var i = 0; i < 4; i++) buf[offset + i] = (byte)sig[i];
         WriteUInt32(buf, offset + 4, dataOffset);
         WriteUInt32(buf, offset + 8, (uint)size);
     }
@@ -150,12 +150,12 @@ public static class BuiltInProfiles
 
     private static void WriteAscii(byte[] buf, int offset, string s)
     {
-        for (int i = 0; i < s.Length; i++) buf[offset + i] = (byte)s[i];
+        for (var i = 0; i < s.Length; i++) buf[offset + i] = (byte)s[i];
     }
 
     private static void WriteS15Fixed16(byte[] buf, int offset, double value)
     {
-        int raw = (int)Math.Round(value * 65536.0);
+        var raw = (int)Math.Round(value * 65536.0);
         buf[offset]     = (byte)((raw >> 24) & 0xFF);
         buf[offset + 1] = (byte)((raw >> 16) & 0xFF);
         buf[offset + 2] = (byte)((raw >> 8) & 0xFF);

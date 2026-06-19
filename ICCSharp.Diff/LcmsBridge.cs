@@ -83,7 +83,7 @@ public static class LcmsBridge
         StreamWriter stdin = proc.StandardInput;
         foreach (double[] pixel in inputPixels)
         {
-            for (int i = 0; i < pixel.Length; i++)
+            for (var i = 0; i < pixel.Length; i++)
             {
                 if (i > 0) stdin.Write(' ');
                 stdin.Write(pixel[i].ToString("R", System.Globalization.CultureInfo.InvariantCulture));
@@ -111,8 +111,8 @@ public static class LcmsBridge
             if (parts.Length != outputChannels)
                 throw new InvalidOperationException(
                     $"Expected {outputChannels} output channels, got {parts.Length} in line '{trimmed}'.");
-            double[] pixel = new double[outputChannels];
-            for (int c = 0; c < outputChannels; c++)
+            var pixel = new double[outputChannels];
+            for (var c = 0; c < outputChannels; c++)
                 pixel[c] = double.Parse(parts[c], System.Globalization.CultureInfo.InvariantCulture);
             result.Add(pixel);
         }

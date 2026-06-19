@@ -38,7 +38,7 @@ public sealed class PdfDocumentEditor : IDisposable
     /// <summary>Creates a blank, editable document (zero pages).</summary>
     public static PdfDocumentEditor CreateBlank()
     {
-        PdfDocument document = PdfDocument.CreateEmpty();
+        var document = PdfDocument.CreateEmpty();
         PdfDocumentEditor editor = document.Edit();
         editor._ownsDocument = true;
         return editor;
@@ -65,7 +65,7 @@ public sealed class PdfDocumentEditor : IDisposable
 
     public PdfDocument Extract(int start, int count)
     {
-        PdfDocument target = PdfDocument.CreateEmpty();
+        var target = PdfDocument.CreateEmpty();
         for (var i = 0; i < count; i++)
         {
             PdfPage srcPage = _document.GetPage(start + i)
@@ -78,7 +78,7 @@ public sealed class PdfDocumentEditor : IDisposable
     public static PdfDocument Merge(IEnumerable<PdfDocument> sources)
     {
         ArgumentNullException.ThrowIfNull(sources);
-        PdfDocument target = PdfDocument.CreateEmpty();
+        var target = PdfDocument.CreateEmpty();
         foreach (PdfDocument source in sources)
         {
             int count = source.PageCount;

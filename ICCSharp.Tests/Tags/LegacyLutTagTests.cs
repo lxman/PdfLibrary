@@ -7,8 +7,8 @@ public class LegacyLutTagTests
 {
     private static byte[] WithHeader(string typeSig, byte[] payload)
     {
-        byte[] buf = new byte[8 + payload.Length];
-        for (int i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
+        var buf = new byte[8 + payload.Length];
+        for (var i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
         Buffer.BlockCopy(payload, 0, buf, 8, payload.Length);
         return buf;
     }
@@ -24,7 +24,7 @@ public class LegacyLutTagTests
         // Input tables: 256 × 3 = 768 bytes. Output: 256 × 3 = 768.
         // Fixed header in payload: 4 + 36 = 40.
         // Total payload: 40 + 768 + 24 + 768 = 1600.
-        byte[] payload = new byte[1600];
+        var payload = new byte[1600];
         payload[0] = 3; // i
         payload[1] = 3; // o
         payload[2] = 2; // g
@@ -37,14 +37,14 @@ public class LegacyLutTagTests
 
         // Fill input tables with identity ramp (i / 255 → i). Bytes already 0-init; set each
         // 256-entry table to 0,1,2,...,255 per channel for channel 0; leave others zero for the test.
-        for (int i = 0; i < 256; i++) payload[40 + i] = (byte)i;
+        for (var i = 0; i < 256; i++) payload[40 + i] = (byte)i;
 
         // Fill CLUT with recognizable values: 0,1,2,...
-        for (int i = 0; i < 24; i++) payload[40 + 768 + i] = (byte)i;
+        for (var i = 0; i < 24; i++) payload[40 + 768 + i] = (byte)i;
 
         // Output tables — leave zero; just need them present.
 
-        Lut8TagElement t = Assert.IsType<Lut8TagElement>(TagElementReader.Parse(WithHeader("mft1", payload)));
+        var t = Assert.IsType<Lut8TagElement>(TagElementReader.Parse(WithHeader("mft1", payload)));
         Assert.Equal(3, t.InputChannels);
         Assert.Equal(3, t.OutputChannels);
         Assert.Equal(2, t.ClutGridPoints);
@@ -70,7 +70,7 @@ public class LegacyLutTagTests
     public void Mft1_truncated_payload_throws()
     {
         // Declare i=3, o=3, g=17 (huge CLUT), but supply only the fixed header.
-        byte[] payload = new byte[40];
+        var payload = new byte[40];
         payload[0] = 3; payload[1] = 3; payload[2] = 17;
         Assert.Throws<IccParseException>(() => TagElementReader.Parse(WithHeader("mft1", payload)));
     }
@@ -92,7 +92,7 @@ public class LegacyLutTagTests
         // bytes: 44 fixed + 2*n*i + 2*clut*o + 2*m*o
         //      = 44 + 12 + 48 + 12 = 116
         int payloadLen = 44 + (2 * n * i) + (int)(2 * clutEntries * o) + (2 * m * o);
-        byte[] payload = new byte[payloadLen];
+        var payload = new byte[payloadLen];
 
         payload[0] = (byte)i;
         payload[1] = (byte)o;
@@ -110,10 +110,10 @@ public class LegacyLutTagTests
         WriteUInt16(payload, 46, 0xFFFF);
 
         // CLUT: fill ascending uint16 values 0, 256, 512, ...
-        for (int k = 0; k < clutEntries * o; k++)
+        for (var k = 0; k < clutEntries * o; k++)
             WriteUInt16(payload, 44 + 2 * n * i + 2 * k, (ushort)(k * 256));
 
-        Lut16TagElement t = Assert.IsType<Lut16TagElement>(TagElementReader.Parse(WithHeader("mft2", payload)));
+        var t = Assert.IsType<Lut16TagElement>(TagElementReader.Parse(WithHeader("mft2", payload)));
         Assert.Equal(3, t.InputChannels);
         Assert.Equal(3, t.OutputChannels);
         Assert.Equal(2, t.ClutGridPoints);
@@ -128,7 +128,7 @@ public class LegacyLutTagTests
     [Fact]
     public void Mft2_rejects_table_size_below_two()
     {
-        byte[] payload = new byte[44];
+        var payload = new byte[44];
         payload[0] = 1; payload[1] = 1; payload[2] = 2;
         WriteUInt16(payload, 40, 1); // n = 1
         WriteUInt16(payload, 42, 2);
@@ -151,7 +151,7 @@ public class LegacyLutTagTests
 
     private static void WriteS15Fixed16(byte[] buf, int offset, double value)
     {
-        int raw = (int)Math.Round(value * 65536.0);
+        var raw = (int)Math.Round(value * 65536.0);
         buf[offset]     = (byte)((raw >> 24) & 0xFF);
         buf[offset + 1] = (byte)((raw >> 16) & 0xFF);
         buf[offset + 2] = (byte)((raw >> 8) & 0xFF);

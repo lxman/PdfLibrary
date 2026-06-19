@@ -36,7 +36,7 @@ public sealed class ClutND : IClut
 
         _gridPoints = new int[_inputDims];
         long total = 1;
-        for (int i = 0; i < _inputDims; i++)
+        for (var i = 0; i < _inputDims; i++)
         {
             _gridPoints[i] = clut.GridPoints[i];
             if (_gridPoints[i] < 2)
@@ -53,7 +53,7 @@ public sealed class ClutND : IClut
                 nameof(clut));
 
         _values = new double[(int)expected];
-        for (int i = 0; i < _values.Length; i++) _values[i] = clut.Values[i];
+        for (var i = 0; i < _values.Length; i++) _values[i] = clut.Values[i];
 
         // Row-major: first dim slowest. stride[N-1] = output; stride[i] = stride[i+1] * grid[i+1].
         _strides = new int[_inputDims];
@@ -64,7 +64,7 @@ public sealed class ClutND : IClut
 
     public double[] Apply(ReadOnlySpan<double> inputs)
     {
-        double[] result = new double[_outputChannels];
+        var result = new double[_outputChannels];
         Apply(inputs, result);
         return result;
     }
@@ -83,8 +83,8 @@ public sealed class ClutND : IClut
         Span<int> idx = stackalloc int[MaxInputDims];
         Span<double> frac = stackalloc double[MaxInputDims];
 
-        int baseOffset = 0;
-        for (int i = 0; i < _inputDims; i++)
+        var baseOffset = 0;
+        for (var i = 0; i < _inputDims; i++)
         {
             (int ii, double f) = LocateIndex(inputs[i], _gridPoints[i]);
             idx[i] = ii;
@@ -95,11 +95,11 @@ public sealed class ClutND : IClut
         outputs.Slice(0, _outputChannels).Clear();
 
         int cornerCount = 1 << _inputDims;
-        for (int corner = 0; corner < cornerCount; corner++)
+        for (var corner = 0; corner < cornerCount; corner++)
         {
             int offset = baseOffset;
-            double weight = 1.0;
-            for (int i = 0; i < _inputDims; i++)
+            var weight = 1.0;
+            for (var i = 0; i < _inputDims; i++)
             {
                 if (((corner >> i) & 1) != 0)
                 {
@@ -112,7 +112,7 @@ public sealed class ClutND : IClut
                 }
             }
             if (weight == 0.0) continue;
-            for (int c = 0; c < _outputChannels; c++)
+            for (var c = 0; c < _outputChannels; c++)
                 outputs[c] += weight * _values[offset + c];
         }
     }
@@ -122,7 +122,7 @@ public sealed class ClutND : IClut
         if (x <= 0.0) return (0, 0.0);
         if (x >= 1.0) return (gridPoints - 2, 1.0);
         double scaled = x * (gridPoints - 1);
-        int idx = (int)Math.Floor(scaled);
+        var idx = (int)Math.Floor(scaled);
         if (idx >= gridPoints - 1) idx = gridPoints - 2;
         return (idx, scaled - idx);
     }

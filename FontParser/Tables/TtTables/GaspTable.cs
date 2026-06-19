@@ -9,7 +9,7 @@ namespace FontParser.Tables.TtTables
 
         public ushort Version { get; set; }
 
-        public List<GaspRange> GaspRanges { get; set; } = new List<GaspRange>();
+        public List<GaspRange> GaspRanges { get; set; } = new();
 
         public GaspTable(byte[] data)
         {

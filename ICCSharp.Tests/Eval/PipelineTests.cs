@@ -23,8 +23,8 @@ public class PipelineTests
 
     private static TagElement[] Identity(int n)
     {
-        TagElement[] arr = new TagElement[n];
-        for (int i = 0; i < n; i++) arr[i] = IdCurve();
+        var arr = new TagElement[n];
+        for (var i = 0; i < n; i++) arr[i] = IdCurve();
         return arr;
     }
 
@@ -63,12 +63,12 @@ public class PipelineTests
     public void Mab_with_A_clut_and_B_routes_through_each_block()
     {
         // 3D identity CLUT
-        int g = 2;
-        double[] values = new double[g * g * g * 3];
-        int idx = 0;
-        for (int i = 0; i < g; i++)
-        for (int j = 0; j < g; j++)
-        for (int k = 0; k < g; k++)
+        var g = 2;
+        var values = new double[g * g * g * 3];
+        var idx = 0;
+        for (var i = 0; i < g; i++)
+        for (var j = 0; j < g; j++)
+        for (var k = 0; k < g; k++)
         {
             values[idx++] = i / 1.0;
             values[idx++] = j / 1.0;

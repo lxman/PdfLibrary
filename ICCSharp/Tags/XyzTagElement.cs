@@ -24,8 +24,8 @@ public sealed class XyzTagElement : TagElement
         if (payloadBytes < 0 || payloadBytes % 12 != 0)
             throw new IccParseException($"XYZType payload length {payloadBytes} is not a multiple of 12.");
         int count = payloadBytes / 12;
-        XyzNumber[] values = new XyzNumber[count];
-        for (int i = 0; i < count; i++) values[i] = reader.ReadXyz();
+        var values = new XyzNumber[count];
+        for (var i = 0; i < count; i++) values[i] = reader.ReadXyz();
         return new XyzTagElement(values);
     }
 }

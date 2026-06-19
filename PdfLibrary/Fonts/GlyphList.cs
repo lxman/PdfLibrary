@@ -51,7 +51,7 @@ public static class GlyphList
             }
         }
 
-        return _unicodeToGlyph.TryGetValue(unicode, out string? name) ? name : null;
+        return _unicodeToGlyph.GetValueOrDefault(unicode);
     }
 
     /// <summary>Gets a PostScript glyph name for a Unicode code point, or null.</summary>

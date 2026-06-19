@@ -27,8 +27,7 @@ public class GlyfLocaRebuilderTests
 
     private static readonly string ArialPath = @"C:\Windows\Fonts\arial.ttf";
 
-    private static SfntFont LoadArial() =>
-        new SfntFont(File.ReadAllBytes(ArialPath));
+    private static SfntFont LoadArial() => new(File.ReadAllBytes(ArialPath));
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -40,10 +39,10 @@ public class GlyfLocaRebuilderTests
     /// </summary>
     private static (ushort CompositeGid, ushort[] ComponentGids)? FindFirstCompositeWithComponents(SfntFont font)
     {
-        var glyf = font.Glyf;
+        GlyphTable? glyf = font.Glyf;
         if (glyf is null) return null;
 
-        foreach (var gd in glyf.Glyphs)
+        foreach (GlyphData gd in glyf.Glyphs)
         {
             if (gd.GlyphSpec is CompositeGlyph composite && composite.Components.Count > 0)
             {
@@ -63,25 +62,25 @@ public class GlyfLocaRebuilderTests
     {
         SfntFont font = LoadArial();
 
-        var found = FindFirstCompositeWithComponents(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstCompositeWithComponents(font);
         Assert.True(found.HasValue, "Arial must contain a composite glyph for these tests.");
 
-        var (compositeGid, componentGids) = found!.Value;
+        (ushort compositeGid, ushort[] componentGids) = found!.Value;
 
         // Find a simple (non-composite) glyph that is NOT already a component.
         var componentSet = new System.Collections.Generic.HashSet<ushort>(componentGids);
         componentSet.Add(compositeGid);
 
-        ushort simpleGid = (ushort)font.Glyf!.Glyphs
+        var simpleGid = (ushort)font.Glyf!.Glyphs
             .First(g => g.GlyphSpec is SimpleGlyph && !componentSet.Contains((ushort)g.Index))
             .Index;
 
         // Seeds: .notdef + simple + composite (GlyphClosure adds components).
         var seeds = new ushort[] { 0, simpleGid, compositeGid };
-        var closure = GlyphClosure.Compute(font, seeds);
+        ushort[] closure = GlyphClosure.Compute(font, seeds);
 
         var remap  = new GlyphIdRemap(closure);
-        var result = GlyfLocaRebuilder.Rebuild(
+        GlyfLocaRebuilder.RebuildResult result = GlyfLocaRebuilder.Rebuild(
             font.GetTableBytes("glyf")!,
             font.Loca!,
             remap,
@@ -98,16 +97,16 @@ public class GlyfLocaRebuilderTests
     public void Remap_ContiguousNewGids()
     {
         SfntFont font = LoadArial();
-        var found = FindFirstCompositeWithComponents(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstCompositeWithComponents(font);
         Assert.True(found.HasValue);
-        var (compositeGid, _) = found!.Value;
+        (ushort compositeGid, _) = found!.Value;
 
-        var closure = GlyphClosure.Compute(font, new ushort[] { compositeGid });
+        ushort[] closure = GlyphClosure.Compute(font, new ushort[] { compositeGid });
         var remap   = new GlyphIdRemap(closure);
 
         // New GIDs must be exactly 0..N-1.
-        var newGids = remap.OldToNew.Values.OrderBy(x => x).ToArray();
-        for (int i = 0; i < newGids.Length; i++)
+        ushort[] newGids = remap.OldToNew.Values.OrderBy(x => x).ToArray();
+        for (var i = 0; i < newGids.Length; i++)
             Assert.Equal((ushort)i, newGids[i]);
     }
 
@@ -115,13 +114,13 @@ public class GlyfLocaRebuilderTests
     public void Remap_Bijection_OldToNew_And_NewToOld()
     {
         SfntFont font = LoadArial();
-        var glyf   = font.Glyf!;
-        var seeds  = glyf.Glyphs.Take(30).Select(g => (ushort)g.Index).ToArray();
-        var closure = GlyphClosure.Compute(font, seeds);
+        GlyphTable glyf   = font.Glyf!;
+        ushort[] seeds  = glyf.Glyphs.Take(30).Select(g => (ushort)g.Index).ToArray();
+        ushort[] closure = GlyphClosure.Compute(font, seeds);
         var remap   = new GlyphIdRemap(closure);
 
         // OldToNew and NewToOld must be mutual inverses.
-        for (int newGid = 0; newGid < remap.Count; newGid++)
+        for (var newGid = 0; newGid < remap.Count; newGid++)
         {
             ushort oldGid = remap.NewToOld[newGid];
             Assert.True(remap.OldToNew.TryGetValue(oldGid, out ushort roundTrip));
@@ -129,7 +128,7 @@ public class GlyfLocaRebuilderTests
         }
 
         // Every entry in OldToNew must appear in NewToOld at the correct index.
-        foreach (var kv in remap.OldToNew)
+        foreach (KeyValuePair<ushort, ushort> kv in remap.OldToNew)
         {
             ushort expectedOld = remap.NewToOld[kv.Value];
             Assert.Equal(kv.Key, expectedOld);
@@ -140,11 +139,11 @@ public class GlyfLocaRebuilderTests
     public void Remap_CountMatchesClosure()
     {
         SfntFont font = LoadArial();
-        var found = FindFirstCompositeWithComponents(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstCompositeWithComponents(font);
         Assert.True(found.HasValue);
-        var (compositeGid, _) = found!.Value;
+        (ushort compositeGid, _) = found!.Value;
 
-        var closure = GlyphClosure.Compute(font, new ushort[] { compositeGid });
+        ushort[] closure = GlyphClosure.Compute(font, new ushort[] { compositeGid });
         var remap   = new GlyphIdRemap(closure);
 
         Assert.Equal(closure.Length, remap.Count);
@@ -159,15 +158,15 @@ public class GlyfLocaRebuilderTests
     [Fact]
     public void NewLoca_LengthIsNumGlyphsPlusOne()
     {
-        var (remap, result, _) = BuildSmallSubset();
+        (GlyphIdRemap remap, GlyfLocaRebuilder.RebuildResult result, _) = BuildSmallSubset();
         Assert.Equal(remap.Count + 1, result.LocaOffsets.Length);
     }
 
     [Fact]
     public void NewLoca_IsMonotonicallyNonDecreasing()
     {
-        var (_, result, _) = BuildSmallSubset();
-        for (int i = 1; i <= result.NumGlyphs; i++)
+        (_, GlyfLocaRebuilder.RebuildResult result, _) = BuildSmallSubset();
+        for (var i = 1; i <= result.NumGlyphs; i++)
         {
             Assert.True(result.LocaOffsets[i] >= result.LocaOffsets[i - 1],
                 $"loca is not monotonic at index {i}: {result.LocaOffsets[i - 1]} > {result.LocaOffsets[i]}");
@@ -177,23 +176,23 @@ public class GlyfLocaRebuilderTests
     [Fact]
     public void NewLoca_ByteEncodingMatchesOffsets()
     {
-        var (_, result, _) = BuildSmallSubset();
+        (_, GlyfLocaRebuilder.RebuildResult result, _) = BuildSmallSubset();
 
         if (result.UseShortLoca)
         {
             Assert.Equal((result.NumGlyphs + 1) * 2, result.LocaBytes.Length);
-            for (int i = 0; i <= result.NumGlyphs; i++)
+            for (var i = 0; i <= result.NumGlyphs; i++)
             {
-                ushort encoded = (ushort)((result.LocaBytes[i * 2] << 8) | result.LocaBytes[i * 2 + 1]);
+                var encoded = (ushort)((result.LocaBytes[i * 2] << 8) | result.LocaBytes[i * 2 + 1]);
                 Assert.Equal(result.LocaOffsets[i], (uint)(encoded * 2));
             }
         }
         else
         {
             Assert.Equal((result.NumGlyphs + 1) * 4, result.LocaBytes.Length);
-            for (int i = 0; i <= result.NumGlyphs; i++)
+            for (var i = 0; i <= result.NumGlyphs; i++)
             {
-                uint encoded = (uint)(
+                var encoded = (uint)(
                     (result.LocaBytes[i * 4]     << 24) |
                     (result.LocaBytes[i * 4 + 1] << 16) |
                     (result.LocaBytes[i * 4 + 2] << 8)  |
@@ -208,7 +207,7 @@ public class GlyfLocaRebuilderTests
     {
         // A small subset (a handful of glyphs from a typical font) must always fit in
         // short loca format (max offset well under 0x1FFFE).
-        var (_, result, _) = BuildSmallSubset();
+        (_, GlyfLocaRebuilder.RebuildResult result, _) = BuildSmallSubset();
         Assert.True(result.UseShortLoca,
             "A tiny subset should always produce short-format loca.");
     }
@@ -222,11 +221,11 @@ public class GlyfLocaRebuilderTests
     {
         // For every new GID k, the glyph data in the rebuilt glyf table must start at
         // loca[k] and end at loca[k+1] (with possible 2-byte padding).
-        var (remap, result, font) = BuildSmallSubset();
+        (GlyphIdRemap remap, GlyfLocaRebuilder.RebuildResult result, SfntFont font) = BuildSmallSubset();
 
         byte[] origGlyf = font.GetTableBytes("glyf")!;
 
-        for (int newGid = 0; newGid < result.NumGlyphs; newGid++)
+        for (var newGid = 0; newGid < result.NumGlyphs; newGid++)
         {
             ushort oldGid = remap.NewToOld[newGid];
 
@@ -257,22 +256,22 @@ public class GlyfLocaRebuilderTests
     {
         SfntFont font = LoadArial();
 
-        var found = FindFirstCompositeWithComponents(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstCompositeWithComponents(font);
         Assert.True(found.HasValue);
-        var (compositeGid, componentGids) = found!.Value;
+        (ushort compositeGid, ushort[] componentGids) = found!.Value;
 
         // Find a simple glyph that is NOT a component of the composite we picked.
         var componentSet = new System.Collections.Generic.HashSet<ushort>(componentGids);
         componentSet.Add(compositeGid);
 
-        ushort simpleGid = (ushort)font.Glyf!.Glyphs
+        var simpleGid = (ushort)font.Glyf!.Glyphs
             .First(g => g.GlyphSpec is SimpleGlyph && !componentSet.Contains((ushort)g.Index))
             .Index;
 
         var seeds   = new ushort[] { simpleGid, compositeGid };
-        var closure = GlyphClosure.Compute(font, seeds);
+        ushort[] closure = GlyphClosure.Compute(font, seeds);
         var remap   = new GlyphIdRemap(closure);
-        var result  = GlyfLocaRebuilder.Rebuild(
+        GlyfLocaRebuilder.RebuildResult result  = GlyfLocaRebuilder.Rebuild(
             font.GetTableBytes("glyf")!,
             font.Loca!,
             remap,
@@ -292,7 +291,7 @@ public class GlyfLocaRebuilderTests
         uint origLen   = font.Loca.Offsets[simpleGid + 1] - origStart;
 
         // The copy must be byte-identical for the original glyph length.
-        for (int i = 0; i < (int)origLen; i++)
+        for (var i = 0; i < (int)origLen; i++)
         {
             byte expected = origGlyf[origStart + i];
             byte actual   = result.GlyfBytes[newStart + i];
@@ -310,14 +309,14 @@ public class GlyfLocaRebuilderTests
     {
         SfntFont font = LoadArial();
 
-        var found = FindFirstCompositeWithComponents(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstCompositeWithComponents(font);
         Assert.True(found.HasValue);
-        var (compositeGid, componentGids) = found!.Value;
+        (ushort compositeGid, ushort[] componentGids) = found!.Value;
 
         var seeds   = new ushort[] { compositeGid };
-        var closure = GlyphClosure.Compute(font, seeds);
+        ushort[] closure = GlyphClosure.Compute(font, seeds);
         var remap   = new GlyphIdRemap(closure);
-        var result  = GlyfLocaRebuilder.Rebuild(
+        GlyfLocaRebuilder.RebuildResult result  = GlyfLocaRebuilder.Rebuild(
             font.GetTableBytes("glyf")!,
             font.Loca!,
             remap,
@@ -332,7 +331,7 @@ public class GlyfLocaRebuilderTests
 
         // Parse the rebuilt composite glyph raw bytes to verify patched GIDs.
         // Walk the component chain in the rebuilt glyf bytes.
-        var rebuiltComponents = ReadCompositeComponentGids(result.GlyfBytes, (int)newStart);
+        List<ushort> rebuiltComponents = ReadCompositeComponentGids(result.GlyfBytes, (int)newStart);
 
         // Every rebuilt component GID must be a valid new GID (< remap.Count).
         foreach (ushort rebuiltGid in rebuiltComponents)
@@ -343,7 +342,7 @@ public class GlyfLocaRebuilderTests
 
         // Each old component GID must map to the GID we see in the rebuilt bytes.
         Assert.Equal(componentGids.Length, rebuiltComponents.Count);
-        for (int i = 0; i < componentGids.Length; i++)
+        for (var i = 0; i < componentGids.Length; i++)
         {
             ushort expectedNew = remap.OldToNew[componentGids[i]];
             Assert.Equal(expectedNew, rebuiltComponents[i]);
@@ -353,22 +352,22 @@ public class GlyfLocaRebuilderTests
     [Fact]
     public void CompositeGlyph_PatchedComponentsResolveToValidNewIndices()
     {
-        var (remap, result, font) = BuildSmallSubset();
+        (GlyphIdRemap remap, GlyfLocaRebuilder.RebuildResult result, SfntFont font) = BuildSmallSubset();
 
         byte[] origGlyf = font.GetTableBytes("glyf")!;
-        var glyfTable   = font.Glyf!;
+        GlyphTable glyfTable   = font.Glyf!;
 
-        for (int newGid = 0; newGid < result.NumGlyphs; newGid++)
+        for (var newGid = 0; newGid < result.NumGlyphs; newGid++)
         {
             ushort oldGid = remap.NewToOld[newGid];
-            var gd = glyfTable.GetGlyphData(oldGid);
+            GlyphData? gd = glyfTable.GetGlyphData(oldGid);
             if (gd?.GlyphSpec is not CompositeGlyph) continue;
 
             uint start = result.LocaOffsets[newGid];
             uint end   = result.LocaOffsets[newGid + 1];
             if (end <= start) continue;
 
-            var patchedComponentGids = ReadCompositeComponentGids(result.GlyfBytes, (int)start);
+            List<ushort> patchedComponentGids = ReadCompositeComponentGids(result.GlyfBytes, (int)start);
 
             foreach (ushort componentNewGid in patchedComponentGids)
             {
@@ -388,7 +387,7 @@ public class GlyfLocaRebuilderTests
     {
         SfntFont font = LoadArial();
         var remap  = new GlyphIdRemap(Array.Empty<ushort>());
-        var result = GlyfLocaRebuilder.Rebuild(
+        GlyfLocaRebuilder.RebuildResult result = GlyfLocaRebuilder.Rebuild(
             font.GetTableBytes("glyf")!,
             font.Loca!,
             remap,
@@ -404,20 +403,20 @@ public class GlyfLocaRebuilderTests
     {
         // Rebuild the entire font as a smoke test; verify loca is monotonic end-to-end.
         SfntFont font   = LoadArial();
-        var glyf        = font.Glyf!;
-        var allIds      = glyf.Glyphs.Select(g => (ushort)g.Index).ToArray();
+        GlyphTable glyf        = font.Glyf!;
+        ushort[] allIds      = glyf.Glyphs.Select(g => (ushort)g.Index).ToArray();
 
         // The closure of all IDs should be all IDs (no new ones appear).
-        var closure = GlyphClosure.Compute(font, allIds);
+        ushort[] closure = GlyphClosure.Compute(font, allIds);
         var remap   = new GlyphIdRemap(closure);
-        var result  = GlyfLocaRebuilder.Rebuild(
+        GlyfLocaRebuilder.RebuildResult result  = GlyfLocaRebuilder.Rebuild(
             font.GetTableBytes("glyf")!,
             font.Loca!,
             remap,
             glyf);
 
         Assert.Equal(remap.Count + 1, result.LocaOffsets.Length);
-        for (int i = 1; i <= result.NumGlyphs; i++)
+        for (var i = 1; i <= result.NumGlyphs; i++)
         {
             Assert.True(result.LocaOffsets[i] >= result.LocaOffsets[i - 1],
                 $"Full-font rebuild: loca not monotonic at {i}");
@@ -447,10 +446,10 @@ public class GlyfLocaRebuilderTests
 
         while (pos + 4 <= glyfBytes.Length)
         {
-            ushort flags = (ushort)((glyfBytes[pos] << 8) | glyfBytes[pos + 1]);
+            var flags = (ushort)((glyfBytes[pos] << 8) | glyfBytes[pos + 1]);
             pos += 2;
 
-            ushort gid = (ushort)((glyfBytes[pos] << 8) | glyfBytes[pos + 1]);
+            var gid = (ushort)((glyfBytes[pos] << 8) | glyfBytes[pos + 1]);
             result.Add(gid);
             pos += 2;
 

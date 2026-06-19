@@ -14,30 +14,42 @@ public class PageTreeNormalizerTests
     {
         var doc = new PdfDocument();
 
-        var page5 = new PdfDictionary(); page5[PdfName.TypeName] = new PdfName("Page");
-        var page6 = new PdfDictionary(); page6[PdfName.TypeName] = new PdfName("Page");
+        var page5 = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Page")
+        };
+        var page6 = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Page")
+        };
         doc.AddObject(5, 0, page5);
         doc.AddObject(6, 0, page6);
 
-        var mid = new PdfDictionary();
-        mid[PdfName.TypeName] = new PdfName("Pages");
-        mid[new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(5, 0), new PdfIndirectReference(6, 0));
-        mid[new PdfName("Count")] = new PdfInteger(2);
-        mid[new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(200), new PdfReal(200));
+        var mid = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(5, 0), new PdfIndirectReference(6, 0)),
+            [new PdfName("Count")] = new PdfInteger(2),
+            [new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(200), new PdfReal(200))
+        };
         doc.AddObject(4, 0, mid);
         page5[new PdfName("Parent")] = new PdfIndirectReference(4, 0);
         page6[new PdfName("Parent")] = new PdfIndirectReference(4, 0);
 
-        var root = new PdfDictionary();
-        root[PdfName.TypeName] = new PdfName("Pages");
-        root[new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(4, 0));
-        root[new PdfName("Count")] = new PdfInteger(2);
+        var root = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(4, 0)),
+            [new PdfName("Count")] = new PdfInteger(2)
+        };
         doc.AddObject(1, 0, root);
         mid[new PdfName("Parent")] = new PdfIndirectReference(1, 0);
 
-        var catalog = new PdfDictionary();
-        catalog[PdfName.TypeName] = new PdfName("Catalog");
-        catalog[new PdfName("Pages")] = new PdfIndirectReference(1, 0);
+        var catalog = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Catalog"),
+            [new PdfName("Pages")] = new PdfIndirectReference(1, 0)
+        };
         doc.AddObject(3, 0, catalog);
         doc.Trailer.Root = new PdfIndirectReference(3, 0);
         return doc;

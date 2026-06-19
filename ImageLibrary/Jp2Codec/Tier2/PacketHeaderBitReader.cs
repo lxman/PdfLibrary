@@ -64,7 +64,7 @@ namespace Jp2Codec.Tier2
         public int ReadBits(int count)
         {
             if (count < 0 || count > 31) throw new ArgumentOutOfRangeException(nameof(count));
-            int value = 0;
+            var value = 0;
             for (var i = 0; i < count; i++)
             {
                 value = (value << 1) | ReadBit();

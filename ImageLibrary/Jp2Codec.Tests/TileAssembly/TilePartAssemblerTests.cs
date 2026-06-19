@@ -14,7 +14,7 @@ public class TilePartAssemblerTests
         // SOT marker segment is 12 bytes (FF90 + Lsot=10 + 8-byte payload).
         // Add 2-byte SOD then the body. Psot = total tile-part length, measured
         // from the first byte of the SOT marker.
-        uint psot = (uint)(12 + 2 + body.Length);
+        var psot = (uint)(12 + 2 + body.Length);
         b.Sot(tileIndex: tileIndex, psot: psot, tpsot: tpsot, tnsot: tnsot);
         b.Marker(0xFF93); // SOD
         b.Bytes(body);
@@ -23,11 +23,11 @@ public class TilePartAssemblerTests
 
     private static CodestreamReader ReaderOver(params byte[][] parts)
     {
-        int total = 0;
+        var total = 0;
         foreach (byte[] p in parts) total += p.Length;
         // Append EOC at the end to mirror a real codestream.
         var buf = new byte[total + 2];
-        int o = 0;
+        var o = 0;
         foreach (byte[] p in parts)
         {
             Buffer.BlockCopy(p, 0, buf, o, p.Length);

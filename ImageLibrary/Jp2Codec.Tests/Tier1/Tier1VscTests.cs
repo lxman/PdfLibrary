@@ -172,7 +172,7 @@ namespace Jp2Codec.Tests.Tier1
             var segments = new List<(byte[] Bytes, bool Raw, int Passes)>();
             byte[] contexts = Jp2MqContextSet.CreateInitialised();
 
-            int p = 0;
+            var p = 0;
             while (p < Passes)
             {
                 bool raw = IsRawSlot(p);
@@ -275,8 +275,8 @@ namespace Jp2Codec.Tests.Tier1
             // (0,3): south bit set → neighbourhood 0x40. ZC context for LL +
             // 0x40 is one specific lookup; we don't care about the exact
             // value since we're encoding 0 anyway. Same for (1,3).
-            byte ctx1 = (byte)Tier1Contexts.ZeroCoding(SubbandOrientation.LL, 0x40);
-            byte ctx2 = (byte)Tier1Contexts.ZeroCoding(SubbandOrientation.LL, 0x20);
+            var ctx1 = (byte)Tier1Contexts.ZeroCoding(SubbandOrientation.LL, 0x40);
+            var ctx2 = (byte)Tier1Contexts.ZeroCoding(SubbandOrientation.LL, 0x20);
             enc.Encode(0, ref contexts[ctx1]);
             enc.Encode(0, ref contexts[ctx2]);
             enc.Flush();

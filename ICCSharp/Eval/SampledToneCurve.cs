@@ -23,7 +23,7 @@ public sealed class SampledToneCurve : ToneCurveBase
     internal SampledToneCurve(IReadOnlyList<ushort> samples)
     {
         _samples = new ushort[samples.Count];
-        for (int i = 0; i < samples.Count; i++) _samples[i] = samples[i];
+        for (var i = 0; i < samples.Count; i++) _samples[i] = samples[i];
 
         if (_samples.Length == 0)
         {
@@ -70,7 +70,7 @@ public sealed class SampledToneCurve : ToneCurveBase
     {
         int n = _samples.Length;
         double pos = x * (n - 1);
-        int i = (int)Math.Floor(pos);
+        var i = (int)Math.Floor(pos);
         if (i >= n - 1) return _samples[n - 1] / 65535.0;
         double frac = pos - i;
         double lo = _samples[i];

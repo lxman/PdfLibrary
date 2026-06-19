@@ -67,7 +67,7 @@ public sealed class IccTransform : IColorTransform
     public double[] Apply(params double[] input)
     {
         if (input is null) throw new ArgumentNullException(nameof(input));
-        double[] output = new double[OutputChannels];
+        var output = new double[OutputChannels];
         Apply(input, output);
         return output;
     }
@@ -92,7 +92,7 @@ public sealed class IccTransform : IColorTransform
                 $"Output buffer too short: need {needed} samples for {pixels} pixels, got {outputs.Length}.",
                 nameof(outputs));
 
-        for (int i = 0; i < pixels; i++)
+        for (var i = 0; i < pixels; i++)
         {
             ReadOnlySpan<double> pixIn = inputs.Slice(i * inStride, inStride);
             Span<double> pixOut = outputs.Slice(i * outStride, outStride);

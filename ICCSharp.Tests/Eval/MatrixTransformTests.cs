@@ -34,7 +34,7 @@ public class MatrixTransformTests
         MatrixTransform t = MatrixTransform.FromMabArray(a);
         MatrixTransform inv = t.Inverse();
 
-        (double x, double y, double z) = (0.4, 0.6, 0.8);
+        (var x, var y, var z) = (0.4, 0.6, 0.8);
         (double tx, double ty, double tz) = t.Transform(x, y, z);
         (double bx, double by, double bz) = inv.Transform(tx, ty, tz);
         Assert.Equal(x, bx, 10);

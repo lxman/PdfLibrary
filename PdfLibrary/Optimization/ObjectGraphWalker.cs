@@ -16,11 +16,6 @@ internal static class ObjectGraphWalker
         var live = new HashSet<int>();
         var queue = new Queue<int>();
 
-        void Seed(PdfIndirectReference? r)
-        {
-            if (r is not null && live.Add(r.ObjectNumber)) queue.Enqueue(r.ObjectNumber);
-        }
-
         Seed(document.Trailer.Root);
         Seed(document.Trailer.Info);
 
@@ -30,6 +25,11 @@ internal static class ObjectGraphWalker
             if (obj is not null) Visit(obj, live, queue);
         }
         return live;
+
+        void Seed(PdfIndirectReference? r)
+        {
+            if (r is not null && live.Add(r.ObjectNumber)) queue.Enqueue(r.ObjectNumber);
+        }
     }
 
     // Recurses through one object's *direct* structure; indirect refs are queued (bounded recursion).

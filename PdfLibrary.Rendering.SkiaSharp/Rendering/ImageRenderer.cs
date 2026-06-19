@@ -35,7 +35,7 @@ internal class ImageRenderer
         var dst = new byte[rgb.Length];
         if (rgb.Length > count)
             Array.Copy(rgb, count, dst, count, rgb.Length - count);
-        for (int i = 0; i + 2 < count; i += 3)
+        for (var i = 0; i + 2 < count; i += 3)
         {
             double[] s = converter.ToSrgb(rgb[i] / 255.0, rgb[i + 1] / 255.0, rgb[i + 2] / 255.0);
             dst[i]     = ToSrgbByte(s[0]);

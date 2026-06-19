@@ -72,9 +72,9 @@ internal static class ModernLutSections
 
     private static IReadOnlyList<TagElement> ReadCurves(ReadOnlyMemory<byte> tagData, int offset, int count)
     {
-        TagElement[] curves = new TagElement[count];
+        var curves = new TagElement[count];
         int cursor = offset;
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
             (TagElement el, int size) = ReadOneCurve(tagData, cursor);
             curves[i] = el;
@@ -128,10 +128,12 @@ internal static class ModernLutSections
     {
         if (offset < 0 || offset + 48 > tagData.Length)
             throw new IccParseException($"Matrix at offset {offset} (+48) past end of tag ({tagData.Length}).");
-        IccBinaryReader r = new(tagData);
-        r.Position = offset;
-        double[] m = new double[12];
-        for (int i = 0; i < 12; i++) m[i] = r.ReadS15Fixed16();
+        IccBinaryReader r = new(tagData)
+        {
+            Position = offset
+        };
+        var m = new double[12];
+        for (var i = 0; i < 12; i++) m[i] = r.ReadS15Fixed16();
         return m;
     }
 
@@ -141,8 +143,10 @@ internal static class ModernLutSections
         if (offset < 0 || offset + 20 > tagData.Length)
             throw new IccParseException($"CLUT at offset {offset} (+20) past end of tag ({tagData.Length}).");
 
-        IccBinaryReader r = new(tagData);
-        r.Position = offset;
+        IccBinaryReader r = new(tagData)
+        {
+            Position = offset
+        };
 
         byte[] gridAll = r.ReadBytes(16).ToArray();
         int precision = r.ReadUInt8();
@@ -151,11 +155,11 @@ internal static class ModernLutSections
         if (precision != 1 && precision != 2)
             throw new IccParseException($"CLUT precision must be 1 or 2; got {precision}.");
 
-        byte[] gridPoints = new byte[inputChannels];
+        var gridPoints = new byte[inputChannels];
         Array.Copy(gridAll, 0, gridPoints, 0, inputChannels);
 
         long totalEntries = 1;
-        for (int i = 0; i < inputChannels; i++)
+        for (var i = 0; i < inputChannels; i++)
         {
             if (gridPoints[i] < 2)
                 throw new IccParseException($"CLUT grid dimension {i} must be ≥ 2; got {gridPoints[i]}.");
@@ -169,15 +173,15 @@ internal static class ModernLutSections
         if (totalValues > int.MaxValue)
             throw new IccParseException($"CLUT entry count {totalValues} exceeds int.MaxValue.");
 
-        double[] values = new double[(int)totalValues];
+        var values = new double[(int)totalValues];
         if (precision == 1)
         {
             ReadOnlySpan<byte> b = r.ReadBytes((int)totalBytes);
-            for (int i = 0; i < values.Length; i++) values[i] = b[i] / 255.0;
+            for (var i = 0; i < values.Length; i++) values[i] = b[i] / 255.0;
         }
         else
         {
-            for (int i = 0; i < values.Length; i++)
+            for (var i = 0; i < values.Length; i++)
             {
                 ushort v = r.ReadUInt16();
                 values[i] = v / 65535.0;

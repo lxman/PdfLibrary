@@ -88,10 +88,10 @@ namespace Jp2Codec.Tests.Wavelet
         [Fact]
         public void Reverse53_InconsistentSubbandShapes_Throws()
         {
-            int[,] ll = new int[2, 2];
-            int[,] hl = new int[3, 2]; // wrong row count
-            int[,] lh = new int[2, 2];
-            int[,] hh = new int[2, 2];
+            var ll = new int[2, 2];
+            var hl = new int[3, 2]; // wrong row count
+            var lh = new int[2, 2];
+            var hh = new int[2, 2];
             Assert.Throws<ArgumentException>(() =>
                 InverseDwt2D.Reverse53(ll, hl, lh, hh, 0, 0));
         }
@@ -99,10 +99,10 @@ namespace Jp2Codec.Tests.Wavelet
         [Fact]
         public void Reverse97_InconsistentSubbandShapes_Throws()
         {
-            float[,] ll = new float[2, 2];
-            float[,] hl = new float[2, 2];
-            float[,] lh = new float[2, 3]; // wrong column count
-            float[,] hh = new float[2, 2];
+            var ll = new float[2, 2];
+            var hl = new float[2, 2];
+            var lh = new float[2, 3]; // wrong column count
+            var hh = new float[2, 2];
             Assert.Throws<ArgumentException>(() =>
                 InverseDwt2D.Reverse97(ll, hl, lh, hh, 0, 0));
         }
@@ -144,10 +144,10 @@ namespace Jp2Codec.Tests.Wavelet
             int llH = (h + (v0Parity == 0 ? 1 : 0)) / 2;
             int lhH = h - llH;
 
-            int[,] ll = new int[llH, llW];
-            int[,] hl = new int[llH, hlW];
-            int[,] lh = new int[lhH, llW];
-            int[,] hh = new int[lhH, hlW];
+            var ll = new int[llH, llW];
+            var hl = new int[llH, hlW];
+            var lh = new int[lhH, llW];
+            var hh = new int[lhH, hlW];
 
             for (var r = 0; r < h; r++)
             {
@@ -231,10 +231,10 @@ namespace Jp2Codec.Tests.Wavelet
             int llH = (h + (v0Parity == 0 ? 1 : 0)) / 2;
             int lhH = h - llH;
 
-            float[,] ll = new float[llH, llW];
-            float[,] hl = new float[llH, hlW];
-            float[,] lh = new float[lhH, llW];
-            float[,] hh = new float[lhH, hlW];
+            var ll = new float[llH, llW];
+            var hl = new float[llH, hlW];
+            var lh = new float[lhH, llW];
+            var hh = new float[lhH, hlW];
 
             for (var r = 0; r < h; r++)
             {

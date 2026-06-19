@@ -31,15 +31,19 @@ public partial class PdfDocument
     {
         var doc = new PdfDocument();
 
-        var pages = new PdfDictionary();
-        pages[PdfName.TypeName] = new PdfName("Pages");
-        pages[new PdfName("Kids")] = new PdfArray();
-        pages[new PdfName("Count")] = new PdfInteger(0);
+        var pages = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(),
+            [new PdfName("Count")] = new PdfInteger(0)
+        };
         doc.AddObject(1, 0, pages);
 
-        var catalog = new PdfDictionary();
-        catalog[PdfName.TypeName] = new PdfName("Catalog");
-        catalog[new PdfName("Pages")] = new PdfIndirectReference(1, 0);
+        var catalog = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Catalog"),
+            [new PdfName("Pages")] = new PdfIndirectReference(1, 0)
+        };
         doc.AddObject(2, 0, catalog);
 
         doc.Trailer.Root = new PdfIndirectReference(2, 0);

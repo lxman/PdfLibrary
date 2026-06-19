@@ -41,10 +41,12 @@ internal static class ObjectStreamWriter
         byte[] bodyBytes = Encoding.ASCII.GetBytes(body.ToString());
         byte[] payload = headerBytes.Concat(bodyBytes).ToArray();
 
-        var dict = new PdfDictionary();
-        dict[new PdfName("Type")] = new PdfName("ObjStm");
-        dict[new PdfName("N")] = new PdfInteger(eligible.Count);
-        dict[new PdfName("First")] = new PdfInteger(headerBytes.Length);
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("ObjStm"),
+            [new PdfName("N")] = new PdfInteger(eligible.Count),
+            [new PdfName("First")] = new PdfInteger(headerBytes.Length)
+        };
 
         // PdfStream constructor sets /Length from raw data; SetEncodedData replaces with compressed
         var stream = new PdfStream(dict, payload);
@@ -78,11 +80,13 @@ internal static class ObjectStreamWriter
             WriteBigEndian(data, ref p, f3, w2);
         }
 
-        var dict = new PdfDictionary();
-        dict[new PdfName("Type")] = new PdfName("XRef");
-        dict[new PdfName("Size")] = new PdfInteger(entries.Length);
-        dict[new PdfName("W")] = new PdfArray { new PdfInteger(w0), new PdfInteger(w1), new PdfInteger(w2) };
-        dict[new PdfName("Root")] = root;
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XRef"),
+            [new PdfName("Size")] = new PdfInteger(entries.Length),
+            [new PdfName("W")] = new PdfArray { new PdfInteger(w0), new PdfInteger(w1), new PdfInteger(w2) },
+            [new PdfName("Root")] = root
+        };
         if (info is not null) dict[new PdfName("Info")] = info;
 
         var stream = new PdfStream(dict, data);
@@ -120,8 +124,8 @@ internal static class ObjectStreamWriter
 
         // Split: eligible for packing = non-stream objects with gen 0
         // Streams (content/images/etc.) and gen>0 objects stay as regular indirect objects
-        var eligible = objects.Where(o => o.obj is not PdfStream && o.obj.GenerationNumber == 0).ToList();
-        var regular = objects.Where(o => o.obj is PdfStream || o.obj.GenerationNumber != 0).ToList();
+        List<(int num, PdfObject obj)> eligible = objects.Where(o => o.obj is not PdfStream && o.obj.GenerationNumber == 0).ToList();
+        List<(int num, PdfObject obj)> regular = objects.Where(o => o.obj is PdfStream || o.obj.GenerationNumber != 0).ToList();
 
         // Build the ObjStm (may be empty if no eligible objects, but that's valid)
         (PdfStream objStm, Dictionary<int, int> idxInStm) = BuildObjectStream(eligible);
@@ -133,7 +137,7 @@ internal static class ObjectStreamWriter
         for (var i = 1; i < size; i++) entries[i] = (0, 0, 0); // other gaps: free
 
         // Write PDF header (object/xref streams require ≥ PDF 1.5)
-        string versionStr = document.Version.ToString();
+        var versionStr = document.Version.ToString();
         bool needsBump = string.CompareOrdinal(versionStr, "1.5") < 0;
         stream.Write(Encoding.ASCII.GetBytes($"%PDF-{(needsBump ? "1.5" : versionStr)}\n"));
         stream.Write(BinaryMarker);

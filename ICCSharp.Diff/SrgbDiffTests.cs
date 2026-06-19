@@ -19,9 +19,9 @@ public class SrgbDiffTests
     private static IReadOnlyList<double[]> SampleGrid3()
     {
         List<double[]> pixels = new();
-        for (int r = 0; r <= 4; r++)
-        for (int g = 0; g <= 4; g++)
-        for (int b = 0; b <= 4; b++)
+        for (var r = 0; r <= 4; r++)
+        for (var g = 0; g <= 4; g++)
+        for (var b = 0; b <= 4; b++)
             pixels.Add(new[] { r / 4.0, g / 4.0, b / 4.0 });
         return pixels;
     }
@@ -33,7 +33,7 @@ public class SrgbDiffTests
         if (!System.IO.File.Exists(SrgbPath)) return;
 
         IccProfile profile = IccProfile.Parse(System.IO.File.ReadAllBytes(SrgbPath));
-        IccTransform t = IccTransform.Create(profile, profile);
+        var t = IccTransform.Create(profile, profile);
 
         IReadOnlyList<double[]> inputs = SampleGrid3();
         List<double[]> iccsharp = new();
@@ -56,7 +56,7 @@ public class SrgbDiffTests
         if (!System.IO.File.Exists(SrgbPath)) return;
 
         IccProfile profile = IccProfile.Parse(System.IO.File.ReadAllBytes(SrgbPath));
-        IccTransform t = IccTransform.Create(profile, profile,
+        var t = IccTransform.Create(profile, profile,
             new TransformOptions { BlackPointCompensation = true });
 
         IReadOnlyList<double[]> inputs = SampleGrid3();

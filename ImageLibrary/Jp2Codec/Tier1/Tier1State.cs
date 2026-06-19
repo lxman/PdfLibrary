@@ -152,7 +152,7 @@ namespace Jp2Codec.Tier1
         public int CountSignificantNeighbours(int x, int y, bool maskSouthRow = false)
         {
             int idx = Index(x, y);
-            int count = 0;
+            var count = 0;
             if ((_flags[idx - _stride - 1] & SignificanceFlag) != 0) count++;
             if ((_flags[idx - _stride    ] & SignificanceFlag) != 0) count++;
             if ((_flags[idx - _stride + 1] & SignificanceFlag) != 0) count++;

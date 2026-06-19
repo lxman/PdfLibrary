@@ -95,9 +95,9 @@ public static class PbmDecoder
     private static void DecodeAsciiBitmap(ReadOnlySpan<byte> raster, int width, int height, byte[] pixels)
     {
         var sampler = new AsciiSampleReader(raster);
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int sample = sampler.ReadInt();
                 // PBM: 1 = black, 0 = white
@@ -114,10 +114,10 @@ public static class PbmDecoder
         if (raster.Length < required)
             throw new PbmException($"Truncated P4 raster: need {required} bytes, have {raster.Length}");
 
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
             int rowOffset = y * rowBytes;
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int b = raster[rowOffset + (x >> 3)];
                 int bit = (b >> (7 - (x & 7))) & 1;
@@ -132,9 +132,9 @@ public static class PbmDecoder
     private static void DecodeAsciiGraymap(ReadOnlySpan<byte> raster, int width, int height, int maxval, byte[] pixels)
     {
         var sampler = new AsciiSampleReader(raster);
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int sample = sampler.ReadInt();
                 byte g = ScaleSample(sample, maxval);
@@ -150,10 +150,10 @@ public static class PbmDecoder
         if (raster.Length < required)
             throw new PbmException($"Truncated P5 raster: need {required} bytes, have {raster.Length}");
 
-        int p = 0;
-        for (int y = 0; y < height; y++)
+        var p = 0;
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int sample = bytesPerSample == 1
                     ? raster[p]
@@ -170,9 +170,9 @@ public static class PbmDecoder
     private static void DecodeAsciiPixmap(ReadOnlySpan<byte> raster, int width, int height, int maxval, byte[] pixels)
     {
         var sampler = new AsciiSampleReader(raster);
-        for (int y = 0; y < height; y++)
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int r = sampler.ReadInt();
                 int g = sampler.ReadInt();
@@ -192,10 +192,10 @@ public static class PbmDecoder
         if (raster.Length < required)
             throw new PbmException($"Truncated P6 raster: need {required} bytes, have {raster.Length}");
 
-        int p = 0;
-        for (int y = 0; y < height; y++)
+        var p = 0;
+        for (var y = 0; y < height; y++)
         {
-            for (int x = 0; x < width; x++)
+            for (var x = 0; x < width; x++)
             {
                 int r, g, b;
                 if (bytesPerSample == 1)
@@ -271,7 +271,7 @@ public static class PbmDecoder
             if (_pos == start)
                 throw new PbmException($"Expected integer in Netpbm header at offset {start} (got 0x{_data[start]:X2})");
 
-            int value = 0;
+            var value = 0;
             for (int i = start; i < _pos; i++)
             {
                 int digit = _data[i] - '0';
@@ -359,7 +359,7 @@ public static class PbmDecoder
             if (_pos == start)
                 throw new PbmException($"Expected integer in Netpbm raster at offset {start}");
 
-            int value = 0;
+            var value = 0;
             for (int i = start; i < _pos; i++)
             {
                 int digit = _data[i] - '0';

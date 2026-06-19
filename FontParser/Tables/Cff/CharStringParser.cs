@@ -9,7 +9,7 @@ namespace FontParser.Tables.Cff
 {
     public class CharStringParser
     {
-        private readonly FixedStack<float> _stack = new FixedStack<float>();
+        private readonly FixedStack<float> _stack = new();
         private float? _width;
         private int _nStems;
         private float _x;
@@ -17,17 +17,17 @@ namespace FontParser.Tables.Cff
         private List<byte> _bytes;
         private readonly List<List<byte>> _globalSubroutines;
         private readonly List<List<byte>> _localSubroutines;
-        private readonly SubroutineNester _nester = new SubroutineNester();
+        private readonly SubroutineNester _nester = new();
         private readonly int _nominalWidthX;
         private readonly int _globalOffset;
         private readonly int _localOffset;
         private readonly List<byte> _originalBytes;
-        private readonly Dictionary<int, float> _transients = new Dictionary<int, float>();
+        private readonly Dictionary<int, float> _transients = new();
         private bool _drawing;
 
         // Active-parse state for ParseToOutline/RunCharString: the outline being built,
         // its running bounds, and the subroutine-call depth guard. Reset once per glyph.
-        private GlyphOutline _outline = new GlyphOutline();
+        private GlyphOutline _outline = new();
         private float _minX, _minY, _maxX, _maxY;
         private int _subrDepth;
         private const int MaxSubrDepth = 60;
@@ -912,7 +912,7 @@ namespace FontParser.Tables.Cff
                                             var c5 = new PointF(c4.X + dx5, c4.Y + dy5);
                                             float dxSum = dx1 + dx2 + dx3 + dx4 + dx5;
                                             float dySum = dy1 + dy2 + dy3 + dy4 + dy5;
-                                            var c6 = System.Math.Abs(dxSum) > System.Math.Abs(dySum)
+                                            PointF c6 = System.Math.Abs(dxSum) > System.Math.Abs(dySum)
                                                 ? new PointF(c5.X + d6, y0)
                                                 : new PointF(x0, c5.Y + d6);
                                             _x = c6.X;

@@ -141,10 +141,10 @@ namespace Jp2Codec.Tests.Wavelet
             int llH = (h + (v0Parity == 0 ? 1 : 0)) / 2;
             int lhH = h - llH;
 
-            int[,] ll = new int[llH, llW];
-            int[,] hl = new int[llH, hlW];
-            int[,] lh = new int[lhH, llW];
-            int[,] hh = new int[lhH, hlW];
+            var ll = new int[llH, llW];
+            var hl = new int[llH, hlW];
+            var lh = new int[lhH, llW];
+            var hh = new int[lhH, hlW];
 
             for (var r = 0; r < h; r++)
             {
@@ -253,10 +253,10 @@ namespace Jp2Codec.Tests.Wavelet
             int llH = (h + (v0Parity == 0 ? 1 : 0)) / 2;
             int lhH = h - llH;
 
-            float[,] ll = new float[llH, llW];
-            float[,] hl = new float[llH, hlW];
-            float[,] lh = new float[lhH, llW];
-            float[,] hh = new float[lhH, hlW];
+            var ll = new float[llH, llW];
+            var hl = new float[llH, hlW];
+            var lh = new float[lhH, llW];
+            var hh = new float[lhH, hlW];
 
             for (var r = 0; r < h; r++)
             {

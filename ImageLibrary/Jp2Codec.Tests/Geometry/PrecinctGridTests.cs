@@ -9,7 +9,7 @@ public class PrecinctGridTests
     {
         // 16x16 canvas, PPx/PPy = 15 (32768). One giant precinct.
         var canvas = new CanvasRect(0, 0, 16, 16);
-        PrecinctGrid g = PrecinctGrid.Build(resolution: 2, ppx: 15, ppy: 15, canvas);
+        var g = PrecinctGrid.Build(resolution: 2, ppx: 15, ppy: 15, canvas);
         Assert.Equal(1, g.NumPrecinctsWide);
         Assert.Equal(1, g.NumPrecinctsHigh);
         Assert.Equal(canvas, g.PrecinctRectOnResolution(0, 0));
@@ -20,7 +20,7 @@ public class PrecinctGridTests
     {
         // 16x16 canvas, PPx=PPy=2 (precinct = 4x4). 4x4 grid.
         var canvas = new CanvasRect(0, 0, 16, 16);
-        PrecinctGrid g = PrecinctGrid.Build(resolution: 1, ppx: 2, ppy: 2, canvas);
+        var g = PrecinctGrid.Build(resolution: 1, ppx: 2, ppy: 2, canvas);
         Assert.Equal(4, g.NumPrecinctsWide);
         Assert.Equal(4, g.NumPrecinctsHigh);
         Assert.Equal(new CanvasRect(0, 0, 4, 4), g.PrecinctRectOnResolution(0, 0));
@@ -35,7 +35,7 @@ public class PrecinctGridTests
         // floor(3/4)=0, ceil(5/4)=2 → 2 precincts wide.
         // floor(4/4)=1, ceil(6/4)=2 → 1 precinct high.
         var canvas = new CanvasRect(3, 4, 5, 6);
-        PrecinctGrid g = PrecinctGrid.Build(resolution: 1, ppx: 2, ppy: 2, canvas);
+        var g = PrecinctGrid.Build(resolution: 1, ppx: 2, ppy: 2, canvas);
         Assert.Equal(2, g.NumPrecinctsWide);
         Assert.Equal(1, g.NumPrecinctsHigh);
         // First precinct on canvas: bounded by [0..4) × [4..8) anchored on
@@ -50,7 +50,7 @@ public class PrecinctGridTests
     {
         // Resolution 0 (LL only): subband canvas == resolution canvas.
         var resCanvas = new CanvasRect(0, 0, 4, 4);
-        PrecinctGrid g = PrecinctGrid.Build(resolution: 0, ppx: 1, ppy: 1, resCanvas);
+        var g = PrecinctGrid.Build(resolution: 0, ppx: 1, ppy: 1, resCanvas);
         var subCanvas = new CanvasRect(0, 0, 4, 4);
         Assert.Equal(new CanvasRect(0, 0, 2, 2), g.PrecinctRectOnSubband(0, 0, subCanvas));
         Assert.Equal(new CanvasRect(2, 0, 4, 2), g.PrecinctRectOnSubband(1, 0, subCanvas));
@@ -62,7 +62,7 @@ public class PrecinctGridTests
         // Resolution 1 with PPx=PPy=2 → precinct is 4x4 on resolution canvas.
         // Subband (HL/LH/HH) sits at half-scale; precinct [0,4)×[0,4) → [0,2)×[0,2).
         var resCanvas = new CanvasRect(0, 0, 8, 8);
-        PrecinctGrid g = PrecinctGrid.Build(resolution: 1, ppx: 2, ppy: 2, resCanvas);
+        var g = PrecinctGrid.Build(resolution: 1, ppx: 2, ppy: 2, resCanvas);
         var hlCanvas = new CanvasRect(0, 0, 4, 4); // subband at half scale
         Assert.Equal(new CanvasRect(0, 0, 2, 2), g.PrecinctRectOnSubband(0, 0, hlCanvas));
         Assert.Equal(new CanvasRect(2, 0, 4, 2), g.PrecinctRectOnSubband(1, 0, hlCanvas));
@@ -76,7 +76,7 @@ public class PrecinctGridTests
         // slice 8x8 → one code-block 8x8.
         var subCanvas = new CanvasRect(0, 0, 8, 8);
         var slice = new CanvasRect(0, 0, 8, 8);
-        CodeBlockGrid g = CodeBlockGrid.Build(
+        var g = CodeBlockGrid.Build(
             xcb: 6, ycb: 6, ppxOnSubband: 15, ppyOnSubband: 15,
             subCanvas, slice);
         Assert.Equal(6, g.CodeBlockWidthExponent);
@@ -94,7 +94,7 @@ public class PrecinctGridTests
         // Subband canvas 16x16, precinct slice 16x16 → 4x4 grid of 4x4 blocks.
         var subCanvas = new CanvasRect(0, 0, 16, 16);
         var slice = new CanvasRect(0, 0, 16, 16);
-        CodeBlockGrid g = CodeBlockGrid.Build(
+        var g = CodeBlockGrid.Build(
             xcb: 5, ycb: 5, ppxOnSubband: 2, ppyOnSubband: 2,
             subCanvas, slice);
         Assert.Equal(2, g.CodeBlockWidthExponent);
@@ -108,7 +108,7 @@ public class PrecinctGridTests
     {
         var sub = new CanvasRect(0, 0, 16, 16);
         var empty = new CanvasRect(5, 5, 5, 5);
-        CodeBlockGrid g = CodeBlockGrid.Build(
+        var g = CodeBlockGrid.Build(
             xcb: 6, ycb: 6, ppxOnSubband: 15, ppyOnSubband: 15,
             sub, empty);
         Assert.Equal(0, g.CodeBlockColumns);
@@ -124,7 +124,7 @@ public class PrecinctGridTests
         // Block (0, 0) on subband: raw [0..4) × [4..8) clipped to slice = [3..4) × [5..8).
         // Block (1, 0): raw [4..8) × [4..8) clipped → [4..8) × [5..8).
         var subCanvas = new CanvasRect(3, 5, 11, 13);
-        CodeBlockGrid g = CodeBlockGrid.Build(
+        var g = CodeBlockGrid.Build(
             xcb: 2, ycb: 2, ppxOnSubband: 15, ppyOnSubband: 15,
             subCanvas, subCanvas);
         Assert.Equal(3, g.CodeBlockColumns);

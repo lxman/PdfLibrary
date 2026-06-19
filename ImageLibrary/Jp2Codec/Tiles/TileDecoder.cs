@@ -363,7 +363,7 @@ namespace Jp2Codec.Tiles
 
         private static int TotalPasses(List<CodeBlockSegment> segments)
         {
-            int total = 0;
+            var total = 0;
             for (var i = 0; i < segments.Count; i++) total += segments[i].PassCount;
             return total;
         }
@@ -478,7 +478,7 @@ namespace Jp2Codec.Tiles
 
             // Group consecutive same-type segments and dispatch as one
             // stream per group.
-            int groupStart = 0;
+            var groupStart = 0;
             while (groupStart < segments.Count)
             {
                 while (groupStart < segments.Count && segments[groupStart].PassCount == 0)
@@ -487,8 +487,8 @@ namespace Jp2Codec.Tiles
 
                 bool groupIsRaw = segments[groupStart].IsRaw;
                 int groupEnd = groupStart;
-                int groupPasses = 0;
-                int groupBytes = 0;
+                var groupPasses = 0;
+                var groupBytes = 0;
                 while (groupEnd < segments.Count &&
                        (segments[groupEnd].PassCount == 0 || segments[groupEnd].IsRaw == groupIsRaw))
                 {
@@ -500,7 +500,7 @@ namespace Jp2Codec.Tiles
                 if (groupPasses > 0)
                 {
                     var concat = new byte[groupBytes];
-                    int offset = 0;
+                    var offset = 0;
                     for (int i = groupStart; i < groupEnd; i++)
                     {
                         byte[] segBytes = segments[i].Bytes;
@@ -596,7 +596,7 @@ namespace Jp2Codec.Tiles
             for (var y = 0; y < height; y++)
                 for (var x = 0; x < width; x++)
                 {
-                    int v = (int)Math.Round(grid[y, x], MidpointRounding.AwayFromZero);
+                    var v = (int)Math.Round(grid[y, x], MidpointRounding.AwayFromZero);
                     result[y, x] = Math.Min(max, Math.Max(min, v));
                 }
             return result;

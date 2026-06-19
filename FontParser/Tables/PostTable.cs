@@ -38,8 +38,8 @@ namespace FontParser.Tables
         /// <summary>Glyph count carried by a format-2.0 post table (0 otherwise).</summary>
         public ushort NumGlyphs { get; }
 
-        private readonly Dictionary<int, string> _gidToName = new Dictionary<int, string>();
-        private readonly Dictionary<string, int> _nameToGid = new Dictionary<string, int>();
+        private readonly Dictionary<int, string> _gidToName = new();
+        private readonly Dictionary<string, int> _nameToGid = new();
 
         /// <summary>Glyph-id → glyph-name map (format 2.0 only; empty otherwise).</summary>
         public IReadOnlyDictionary<int, string> GlyphNames => _gidToName;
@@ -101,10 +101,10 @@ namespace FontParser.Tables
 
         /// <summary>Glyph name for a glyph id, or null if absent.</summary>
         public string? GetGlyphName(int glyphId) =>
-            _gidToName.TryGetValue(glyphId, out string? name) ? name : null;
+            _gidToName.GetValueOrDefault(glyphId);
 
         /// <summary>Glyph id for a glyph name, or -1 if the name isn't in this table.</summary>
         public int GetGlyphIndex(string glyphName) =>
-            _nameToGid.TryGetValue(glyphName, out int gid) ? gid : -1;
+            _nameToGid.GetValueOrDefault(glyphName, -1);
     }
 }

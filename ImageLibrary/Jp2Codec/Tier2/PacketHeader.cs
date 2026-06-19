@@ -20,7 +20,6 @@ namespace Jp2Codec.Tier2
             Contributions = contributions ?? throw new ArgumentNullException(nameof(contributions));
         }
 
-        public static PacketHeader Empty { get; } =
-            new PacketHeader(true, Array.Empty<CodeBlockContribution>());
+        public static PacketHeader Empty { get; } = new(true, Array.Empty<CodeBlockContribution>());
     }
 }

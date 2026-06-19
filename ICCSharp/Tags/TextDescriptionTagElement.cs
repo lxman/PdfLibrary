@@ -71,7 +71,7 @@ public sealed class TextDescriptionTagElement : TagElement
             if (uniCount > 0)
             {
                 ReadOnlySpan<byte> u = reader.ReadBytes((int)uniBytes);
-                int charCount = (int)uniCount;
+                var charCount = (int)uniCount;
                 while (charCount > 0)
                 {
                     int idx = (charCount - 1) * 2;

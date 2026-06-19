@@ -43,7 +43,7 @@ public sealed class MultiLocalizedUnicodeTagElement : TagElement
             throw new IccParseException(
                 $"mluc record table needs {tableBytes} bytes but only {payloadBytes - 8} remain in payload.");
 
-        LocalizedString[] records = new LocalizedString[recordCount];
+        var records = new LocalizedString[recordCount];
         ReadOnlySpan<byte> fullSpan = fullTagData.Span;
         int tagLength = fullTagData.Length;
 
@@ -62,7 +62,7 @@ public sealed class MultiLocalizedUnicodeTagElement : TagElement
                 throw new IccParseException($"mluc record {i} length {length} not a multiple of 2 (UTF-16).");
 
             ReadOnlySpan<byte> strBytes = fullSpan.Slice((int)offset, (int)length);
-            int charCount = (int)(length / 2);
+            var charCount = (int)(length / 2);
             // Some encoders include trailing NUL; trim defensively.
             while (charCount > 0)
             {
@@ -84,8 +84,8 @@ public sealed class MultiLocalizedUnicodeTagElement : TagElement
     private static string LangCodeToString(ushort code)
     {
         if (code == 0) return string.Empty;
-        char a = (char)((code >> 8) & 0xFF);
-        char b = (char)(code & 0xFF);
+        var a = (char)((code >> 8) & 0xFF);
+        var b = (char)(code & 0xFF);
         return new string(new[] { a, b });
     }
 }

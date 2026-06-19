@@ -126,14 +126,14 @@ public sealed class ProfileHeader
         IccSignature rawPlatform = reader.ReadSignature();
         PrimaryPlatform platform = PrimaryPlatformSignatures.FromSignature(rawPlatform);
 
-        ProfileFlags flags = (ProfileFlags)reader.ReadUInt32();
+        var flags = (ProfileFlags)reader.ReadUInt32();
         IccSignature deviceManufacturer = reader.ReadSignature();
         IccSignature deviceModel = reader.ReadSignature();
-        DeviceAttributes deviceAttributes = (DeviceAttributes)reader.ReadUInt64();
+        var deviceAttributes = (DeviceAttributes)reader.ReadUInt64();
 
         uint intentField = reader.ReadUInt32();
-        RenderingIntent intent = (RenderingIntent)(intentField & 0xFFFF);
-        ushort intentHigh = (ushort)((intentField >> 16) & 0xFFFF);
+        var intent = (RenderingIntent)(intentField & 0xFFFF);
+        var intentHigh = (ushort)((intentField >> 16) & 0xFFFF);
 
         XyzNumber illuminant = reader.ReadXyz();
         IccSignature creator = reader.ReadSignature();
@@ -160,7 +160,7 @@ public sealed class ProfileHeader
         get
         {
             ReadOnlySpan<byte> id = ProfileId.Span;
-            for (int i = 0; i < id.Length; i++)
+            for (var i = 0; i < id.Length; i++)
                 if (id[i] != 0) return true;
             return false;
         }

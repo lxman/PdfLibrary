@@ -1,4 +1,5 @@
 using JpegCodec;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Optimization;
 using Xunit;
@@ -87,8 +88,10 @@ public class ImageRecompressorReencodeTests
             [PdfName.ColorSpace]       = new PdfName(csName),
             [PdfName.BitsPerComponent] = new PdfInteger(8),
         };
-        var s = new PdfStream(dict, jpeg);
-        s.Data = jpeg;
+        var s = new PdfStream(dict, jpeg)
+        {
+            Data = jpeg
+        };
         return s;
     }
 
@@ -110,7 +113,7 @@ public class ImageRecompressorReencodeTests
         Assert.True(result, "TryRecompress should return true for a large RGB FlateDecode image");
 
         // Filter must now be DCTDecode.
-        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out var filterObj));
+        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out PdfObject filterObj));
         Assert.IsType<PdfName>(filterObj);
         Assert.Equal("DCTDecode", ((PdfName)filterObj).Value);
 
@@ -172,7 +175,7 @@ public class ImageRecompressorReencodeTests
         Assert.False(result, "Size guard should prevent replacing when JPEG is not smaller");
         Assert.Equal(beforeLen, s.Length);
         // Filter must remain FlateDecode.
-        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out var f));
+        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out PdfObject f));
         Assert.Equal("FlateDecode", ((PdfName)f).Value);
     }
 
@@ -269,7 +272,7 @@ public class ImageRecompressorReencodeTests
         bool result = ImageRecompressor.TryRecompress(s, null, DefaultOpts()); // MaxImagePixelDimension = 0
 
         Assert.False(result, "DCTDecode source with no cap must not be re-encoded (second-generation loss)");
-        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out var f));
+        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out PdfObject f));
         Assert.Equal("DCTDecode", ((PdfName)f).Value);
         Assert.Equal(originalLen, s.Length);
     }
@@ -295,7 +298,7 @@ public class ImageRecompressorReencodeTests
         int newH = ((PdfInteger)s.Dictionary[PdfName.Height]).Value;
         Assert.True(newW <= 200 && newH <= 200,
             $"After downsample expected ≤200×200, got {newW}×{newH}");
-        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out var f));
+        Assert.True(s.Dictionary.TryGetValue(PdfName.Filter, out PdfObject f));
         Assert.Equal("DCTDecode", ((PdfName)f).Value);
     }
 

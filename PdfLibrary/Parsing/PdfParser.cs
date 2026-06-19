@@ -370,7 +370,7 @@ internal class PdfParser(PdfLexer lexer)
         const int probeExtra = 512;
         byte[] raw = _lexer.ReadBytesAvailable(length + probeExtra);
 
-        ReadOnlySpan<byte> marker = "endstream"u8;
+        var marker = "endstream"u8;
         int endstreamPos = -1;
         int searchFrom = Math.Max(0, length - 2);
         for (int i = searchFrom; i <= raw.Length - marker.Length; i++)

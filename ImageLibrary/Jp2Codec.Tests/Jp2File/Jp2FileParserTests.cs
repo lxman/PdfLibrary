@@ -44,7 +44,7 @@ namespace Jp2Codec.Tests.Jp2File
             Assert.Equal(Jp2ColorSpace.Srgb, info.ColorSpace);
 
             // Codestream byte range should round-trip the original bytes.
-            byte[] sliced = new byte[info.CodestreamLength];
+            var sliced = new byte[info.CodestreamLength];
             Buffer.BlockCopy(file, info.CodestreamOffset, sliced, 0, sliced.Length);
             Assert.Equal(cs, sliced);
         }
@@ -60,7 +60,7 @@ namespace Jp2Codec.Tests.Jp2File
         public void Parse_IndexedJp2WithPaletteAndCmap_ReturnsPaletteAndMapping()
         {
             byte[] cs = MinimalCodestream();
-            byte[,] paletteRgb = new byte[4, 3]
+            var paletteRgb = new byte[4, 3]
             {
                 {   0,   0,   0 },  // index 0 → black
                 { 255,   0,   0 },  // index 1 → red

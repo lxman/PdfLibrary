@@ -44,7 +44,7 @@ public class CorpusSurvey
             }
         }
 
-        string outPath = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/corpus_survey.txt";
+        var outPath = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/corpus_survey.txt";
         File.WriteAllText(outPath, sb.ToString());
     }
 
@@ -91,8 +91,8 @@ public class CorpusSurvey
         long ysiz = siz.ReferenceGridHeight;
         long ytosiz = siz.TileVerticalOffset;
         long ytsiz = siz.TileHeight;
-        int numX = (int)((xsiz - xtosiz + xtsiz - 1) / xtsiz);
-        int numY = (int)((ysiz - ytosiz + ytsiz - 1) / ytsiz);
+        var numX = (int)((xsiz - xtosiz + xtsiz - 1) / xtsiz);
+        var numY = (int)((ysiz - ytosiz + ytsiz - 1) / ytsiz);
         return numX * numY;
     }
 }

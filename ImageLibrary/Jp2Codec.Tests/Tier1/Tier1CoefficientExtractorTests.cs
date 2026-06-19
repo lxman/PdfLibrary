@@ -149,7 +149,7 @@ namespace Jp2Codec.Tests.Tier1
             for (var y = 0; y < 4; y++)
             for (var x = 0; x < 4; x++)
             {
-                bool isEntry = false;
+                var isEntry = false;
                 foreach ((int ex, int ey, _, _) in entries)
                     if (ex == x && ey == y) { isEntry = true; break; }
                 if (!isEntry) Assert.Equal(0, grid[y, x]);

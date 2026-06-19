@@ -52,9 +52,9 @@ public static class PbmEncoder
         int dst = header.Length;
         byte[] src = image.PixelData;
 
-        for (int y = 0; y < image.Height; y++)
+        for (var y = 0; y < image.Height; y++)
         {
-            for (int x = 0; x < image.Width; x++)
+            for (var x = 0; x < image.Width; x++)
             {
                 int srcOffset = (y * image.Width + x) * 4;
                 byte luma = Luminance(src[srcOffset + 2], src[srcOffset + 1], src[srcOffset]);
@@ -80,7 +80,7 @@ public static class PbmEncoder
         byte[] src = image.PixelData;
         int pixelCount = image.Width * image.Height;
 
-        for (int i = 0; i < pixelCount; i++)
+        for (var i = 0; i < pixelCount; i++)
         {
             int srcOffset = i * 4;
             output[dst++] = Luminance(src[srcOffset + 2], src[srcOffset + 1], src[srcOffset]);
@@ -99,7 +99,7 @@ public static class PbmEncoder
         byte[] src = image.PixelData;
         int pixelCount = image.Width * image.Height;
 
-        for (int i = 0; i < pixelCount; i++)
+        for (var i = 0; i < pixelCount; i++)
         {
             int srcOffset = i * 4;
             output[dst++] = src[srcOffset + 2]; // R

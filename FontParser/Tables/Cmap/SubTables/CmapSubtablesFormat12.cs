@@ -8,7 +8,7 @@ namespace FontParser.Tables.Cmap.SubTables
     {
         public int Language { get; }
 
-        public List<SequentialMapGroup> Groups { get; } = new List<SequentialMapGroup>();
+        public List<SequentialMapGroup> Groups { get; } = new();
 
         public CmapSubtablesFormat12(BigEndianReader reader)
         {

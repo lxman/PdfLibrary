@@ -5,7 +5,7 @@ namespace FontParser.Tables.Cff.Type1.Charsets
 {
     public class CharsetsFormat2 : ICharset
     {
-        public List<Range2> Ranges { get; } = new List<Range2>();
+        public List<Range2> Ranges { get; } = new();
 
         public CharsetsFormat2(BigEndianReader reader, ushort numGlyphs)
         {

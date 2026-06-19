@@ -11,8 +11,8 @@ namespace FontParser.Tables.Cff
     /// </summary>
     public class SubroutineNester
     {
-        private readonly FixedStack<List<byte>> _byteStack = new FixedStack<List<byte>>();
-        private readonly FixedStack<int> _indices = new FixedStack<int>();
+        private readonly FixedStack<List<byte>> _byteStack = new();
+        private readonly FixedStack<int> _indices = new();
 
         public SubroutineNester()
         {

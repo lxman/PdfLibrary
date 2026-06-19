@@ -17,7 +17,7 @@ internal sealed class PerChannelCurves
     public PerChannelCurves(IReadOnlyList<TagElement> tags)
     {
         _curves = new IToneCurve[tags.Count];
-        for (int i = 0; i < tags.Count; i++)
+        for (var i = 0; i < tags.Count; i++)
             _curves[i] = ToneCurve.FromTag(tags[i]);
     }
 
@@ -27,7 +27,7 @@ internal sealed class PerChannelCurves
         if (buffer.Length != _curves.Length)
             throw new ArgumentException(
                 $"Buffer length {buffer.Length} does not match curve count {_curves.Length}.", nameof(buffer));
-        for (int i = 0; i < _curves.Length; i++)
+        for (var i = 0; i < _curves.Length; i++)
             buffer[i] = _curves[i].Evaluate(buffer[i]);
     }
 
@@ -37,7 +37,7 @@ internal sealed class PerChannelCurves
         if (buffer.Length != _curves.Length)
             throw new ArgumentException(
                 $"Buffer length {buffer.Length} does not match curve count {_curves.Length}.", nameof(buffer));
-        for (int i = 0; i < _curves.Length; i++)
+        for (var i = 0; i < _curves.Length; i++)
             buffer[i] = _curves[i].EvaluateInverse(buffer[i]);
     }
 }

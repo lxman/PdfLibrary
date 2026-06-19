@@ -57,7 +57,7 @@ public static class ImageResampler
             // Source row range for this destination row.
             double srcY0 = dy * yScale;
             double srcY1 = srcY0 + yScale;
-            int iy0 = (int)srcY0;
+            var iy0 = (int)srcY0;
             int iy1 = Math.Min((int)Math.Ceiling(srcY1), srcHeight);
 
             for (var dx = 0; dx < dstWidth; dx++)
@@ -65,12 +65,12 @@ public static class ImageResampler
                 // Source column range for this destination column.
                 double srcX0 = dx * xScale;
                 double srcX1 = srcX0 + xScale;
-                int ix0 = (int)srcX0;
+                var ix0 = (int)srcX0;
                 int ix1 = Math.Min((int)Math.Ceiling(srcX1), srcWidth);
 
                 // Accumulate weighted sum for each channel.
                 Span<double> accum = stackalloc double[4]; // max 4 channels
-                double totalWeight = 0.0;
+                var totalWeight = 0.0;
 
                 for (int sy = iy0; sy < iy1; sy++)
                 {

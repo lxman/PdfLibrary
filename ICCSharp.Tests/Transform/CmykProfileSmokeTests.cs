@@ -51,8 +51,8 @@ public class CmykProfileSmokeTests
 
         // sRGB → CMYK → sRGB. The CMYK gamut is smaller, so colors outside it are clipped, but
         // mid-tone neutrals should survive the round trip reasonably.
-        IccTransform srgbToCmyk = IccTransform.Create(srgb, cmyk);
-        IccTransform cmykToSrgb = IccTransform.Create(cmyk, srgb);
+        var srgbToCmyk = IccTransform.Create(srgb, cmyk);
+        var cmykToSrgb = IccTransform.Create(cmyk, srgb);
 
         Assert.Equal(3, srgbToCmyk.InputChannels);
         Assert.Equal(4, srgbToCmyk.OutputChannels);
@@ -79,7 +79,7 @@ public class CmykProfileSmokeTests
         if (!File.Exists(SrgbPath) || !File.Exists(CmykPath)) return;
         IccProfile srgb = IccProfile.Parse(File.ReadAllBytes(SrgbPath));
         IccProfile cmyk = IccProfile.Parse(File.ReadAllBytes(CmykPath));
-        IccTransform t = IccTransform.Create(srgb, cmyk);
+        var t = IccTransform.Create(srgb, cmyk);
 
         double[] cmykWhite = t.Apply(1.0, 1.0, 1.0);
         // Paper white in CMYK should be near (0, 0, 0, 0) — no ink.
@@ -96,7 +96,7 @@ public class CmykProfileSmokeTests
         if (!File.Exists(SrgbPath) || !File.Exists(CmykPath)) return;
         IccProfile srgb = IccProfile.Parse(File.ReadAllBytes(SrgbPath));
         IccProfile cmyk = IccProfile.Parse(File.ReadAllBytes(CmykPath));
-        IccTransform t = IccTransform.Create(srgb, cmyk);
+        var t = IccTransform.Create(srgb, cmyk);
 
         double[] cmykBlack = t.Apply(0.0, 0.0, 0.0);
         // Black should have substantial K (black ink). SWOP typically maxes near full K + some CMY.
@@ -110,9 +110,9 @@ public class CmykProfileSmokeTests
         if (!File.Exists(CmykPath)) return;
         IccProfile swop = IccProfile.Parse(File.ReadAllBytes(CmykPath));
 
-        IccTransform rel = IccTransform.Create(swop, BuiltInProfiles.Srgb,
+        var rel = IccTransform.Create(swop, BuiltInProfiles.Srgb,
             new TransformOptions { Intent = RenderingIntent.RelativeColorimetric });
-        IccTransform abs = IccTransform.Create(swop, BuiltInProfiles.Srgb,
+        var abs = IccTransform.Create(swop, BuiltInProfiles.Srgb,
             new TransformOptions { Intent = RenderingIntent.AbsoluteColorimetric });
 
         // Paper white = no ink. Relative colorimetric normalises SWOP's media white to the

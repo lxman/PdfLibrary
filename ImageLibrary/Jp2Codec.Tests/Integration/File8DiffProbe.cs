@@ -30,8 +30,8 @@ public class File8DiffProbe
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"file8.jp2: {w}x{h} = {reference.Length} samples");
 
-        int matches = 0;
-        int maxAbs = 0;
+        var matches = 0;
+        var maxAbs = 0;
         var hist = new Dictionary<int, int>();
         for (var i = 0; i < reference.Length; i++)
         {
@@ -80,7 +80,7 @@ public class File8DiffProbe
             }
         }
 
-        string outPath = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/file8_diff_probe.txt";
+        var outPath = "C:/Users/jorda/RiderProjects/ImageLibraries/Jp2Codec.Tests/bin/Debug/net10.0/file8_diff_probe.txt";
         File.WriteAllText(outPath, sb.ToString());
     }
 }

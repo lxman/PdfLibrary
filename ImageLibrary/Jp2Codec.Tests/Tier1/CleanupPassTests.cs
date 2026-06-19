@@ -57,8 +57,7 @@ namespace Jp2Codec.Tests.Tier1
         [Fact]
         public void Cup_RoundTrip_RlOnly_AlternatingFirstSigPositions()
         {
-            int seed = 0;
-            int RlIdx(int x) => x & 3;
+            var seed = 0;
             RunRoundTrip(
                 width: 8, height: 4,
                 preState: _ => { },
@@ -68,6 +67,8 @@ namespace Jp2Codec.Tests.Tier1
                 pickRlIndex: RlIdx,     // first-sig row varies by column
                 pickSig: (_, _) => seed++ & 1,
                 pickSign: (_, _) => 0);
+            return;
+            int RlIdx(int x) => x & 3;
         }
 
         [Fact]

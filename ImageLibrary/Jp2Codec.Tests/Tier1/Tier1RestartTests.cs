@@ -160,7 +160,7 @@ namespace Jp2Codec.Tests.Tier1
             var driver = new Tier1CodeBlockDecoder(W, H, SubbandOrientation.LL,
                 firstBitPlane: FirstBp, restart: false);
 
-            bool matchedPlanned = true;
+            var matchedPlanned = true;
             try
             {
                 driver.RunPasses(new Jp2MqDecoder(data, 0, data.Length), Passes);

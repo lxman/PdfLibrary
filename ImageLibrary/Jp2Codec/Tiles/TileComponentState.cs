@@ -164,23 +164,6 @@ namespace Jp2Codec.Tiles
                     compBitDepth,
                     isReversible: !parameters.IsIrreversible);
 
-            // Map "QCD index" → "(resolution, orientation)".
-            int QcdIndex(int resolution, SubbandOrientation orientation)
-            {
-                if (resolution == 0)
-                    return 0; // NLLL is always the first
-                int decompLevel = nl - resolution + 1;
-                int blockOfLevel = nl - decompLevel; // 0 = level NL, increases for lower levels
-                int baseIndex = 1 + blockOfLevel * 3;
-                return orientation switch
-                {
-                    SubbandOrientation.HL => baseIndex + 0,
-                    SubbandOrientation.LH => baseIndex + 1,
-                    SubbandOrientation.HH => baseIndex + 2,
-                    _ => throw new InvalidOperationException("LL only appears at resolution 0"),
-                };
-            }
-
             var resolutions = new ResolutionState[numResolutions];
             for (var r = 0; r < numResolutions; r++)
             {
@@ -188,7 +171,7 @@ namespace Jp2Codec.Tiles
                 CanvasRect resCanvas = TileGeometry.ResolutionRect(tcRect, nl, r);
                 int ppx = parameters.PrecinctWidthExponents[r];
                 int ppy = parameters.PrecinctHeightExponents[r];
-                PrecinctGrid grid = PrecinctGrid.Build(r, ppx, ppy, resCanvas);
+                var grid = PrecinctGrid.Build(r, ppx, ppy, resCanvas);
                 int totalPrecincts = grid.TotalPrecincts;
 
                 // r=0 holds LL only; r>0 holds HL/LH/HH (in that fixed order, the
@@ -213,7 +196,7 @@ namespace Jp2Codec.Tiles
                         CanvasRect slice = grid.PrecinctRectOnSubband(px, py, subCanvas);
                         int ppxOnSub = r == 0 ? ppx : (ppx - 1);
                         int ppyOnSub = r == 0 ? ppy : (ppy - 1);
-                        CodeBlockGrid cbGrid = CodeBlockGrid.Build(
+                        var cbGrid = CodeBlockGrid.Build(
                             parameters.CodeBlockWidthExponent, parameters.CodeBlockHeightExponent,
                             ppxOnSub, ppyOnSub, subCanvas, slice);
                         precinctSubbands[s] = new PrecinctSubband(
@@ -257,6 +240,23 @@ namespace Jp2Codec.Tiles
 
             return new TileComponentState(
                 componentIndex, parameters, tcRect, resolutions, siz.Components[componentIndex]);
+
+            // Map "QCD index" → "(resolution, orientation)".
+            int QcdIndex(int resolution, SubbandOrientation orientation)
+            {
+                if (resolution == 0)
+                    return 0; // NLLL is always the first
+                int decompLevel = nl - resolution + 1;
+                int blockOfLevel = nl - decompLevel; // 0 = level NL, increases for lower levels
+                int baseIndex = 1 + blockOfLevel * 3;
+                return orientation switch
+                {
+                    SubbandOrientation.HL => baseIndex + 0,
+                    SubbandOrientation.LH => baseIndex + 1,
+                    SubbandOrientation.HH => baseIndex + 2,
+                    _ => throw new InvalidOperationException("LL only appears at resolution 0"),
+                };
+            }
         }
     }
 }

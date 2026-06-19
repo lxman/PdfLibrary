@@ -174,9 +174,9 @@ namespace Jp2Codec.Color
                 int yc  = y[i]  - shiftY;
                 int cbc = cb[i] - shiftCb;
                 int crc = cr[i] - shiftCr;
-                int r = (int)(yc + SyccMatrix02 * crc);
-                int g = (int)(yc + SyccMatrix11 * cbc + SyccMatrix12 * crc);
-                int b = (int)(yc + SyccMatrix21 * cbc);
+                var r = (int)(yc + SyccMatrix02 * crc);
+                var g = (int)(yc + SyccMatrix11 * cbc + SyccMatrix12 * crc);
+                var b = (int)(yc + SyccMatrix21 * cbc);
                 r += shiftY;
                 g += shiftY;
                 b += shiftY;
@@ -331,9 +331,9 @@ namespace Jp2Codec.Color
                 if (t0 < 0) t0 = 0; else if (t0 > gridMax) t0 = gridMax;
                 if (t1 < 0) t1 = 0; else if (t1 > gridMax) t1 = gridMax;
                 if (t2 < 0) t2 = 0; else if (t2 > gridMax) t2 = gridMax;
-                int i0 = (int)t0; if (i0 >= gridMax) i0 = gridMax - 1;
-                int i1 = (int)t1; if (i1 >= gridMax) i1 = gridMax - 1;
-                int i2 = (int)t2; if (i2 >= gridMax) i2 = gridMax - 1;
+                var i0 = (int)t0; if (i0 >= gridMax) i0 = gridMax - 1;
+                var i1 = (int)t1; if (i1 >= gridMax) i1 = gridMax - 1;
+                var i2 = (int)t2; if (i2 >= gridMax) i2 = gridMax - 1;
                 double f0 = t0 - i0;
                 double f1 = t1 - i1;
                 double f2 = t2 - i2;

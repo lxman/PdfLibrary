@@ -15,26 +15,34 @@ public class ObjectGraphClonerTests
     public void Clone_SharedObject_IsCopiedOnce()
     {
         var source = new PdfDocument();
-        var font = new PdfDictionary();
-        font[PdfName.TypeName] = new PdfName("Font");
-        font[PdfName.Subtype] = new PdfName("Type1");
-        font[new PdfName("BaseFont")] = new PdfName("Helvetica");
+        var font = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Font"),
+            [PdfName.Subtype] = new PdfName("Type1"),
+            [new PdfName("BaseFont")] = new PdfName("Helvetica")
+        };
         source.AddObject(7, 0, font);
 
-        var fontDict = new PdfDictionary();
-        fontDict[new PdfName("F1")] = new PdfIndirectReference(7, 0);
-        fontDict[new PdfName("F2")] = new PdfIndirectReference(7, 0);
-        var resources = new PdfDictionary();
-        resources[new PdfName("Font")] = fontDict;
+        var fontDict = new PdfDictionary
+        {
+            [new PdfName("F1")] = new PdfIndirectReference(7, 0),
+            [new PdfName("F2")] = new PdfIndirectReference(7, 0)
+        };
+        var resources = new PdfDictionary
+        {
+            [new PdfName("Font")] = fontDict
+        };
         source.AddObject(6, 0, resources);
 
-        var page = new PdfDictionary();
-        page[PdfName.TypeName] = new PdfName("Page");
-        page[new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10));
-        page[new PdfName("Resources")] = new PdfIndirectReference(6, 0);
+        var page = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Page"),
+            [new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10)),
+            [new PdfName("Resources")] = new PdfIndirectReference(6, 0)
+        };
         source.AddObject(5, 0, page);
 
-        PdfDocument target = PdfDocument.CreateEmpty();
+        var target = PdfDocument.CreateEmpty();
         PdfIndirectReference cloned = ObjectGraphCloner.CloneInto(target, source, page);
 
         var clonedPage = (PdfDictionary)target.GetObject(cloned.ObjectNumber)!;
@@ -53,18 +61,22 @@ public class ObjectGraphClonerTests
     public void Clone_BackReferenceToPage_Terminates_AndRewires()
     {
         var source = new PdfDocument();
-        var annot = new PdfDictionary();
-        annot[PdfName.Subtype] = new PdfName("Widget");
-        annot[new PdfName("P")] = new PdfIndirectReference(5, 0);
+        var annot = new PdfDictionary
+        {
+            [PdfName.Subtype] = new PdfName("Widget"),
+            [new PdfName("P")] = new PdfIndirectReference(5, 0)
+        };
         source.AddObject(10, 0, annot);
 
-        var page = new PdfDictionary();
-        page[PdfName.TypeName] = new PdfName("Page");
-        page[new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10));
-        page[new PdfName("Annots")] = new PdfArray(new PdfIndirectReference(10, 0));
+        var page = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Page"),
+            [new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10)),
+            [new PdfName("Annots")] = new PdfArray(new PdfIndirectReference(10, 0))
+        };
         source.AddObject(5, 0, page);
 
-        PdfDocument target = PdfDocument.CreateEmpty();
+        var target = PdfDocument.CreateEmpty();
         PdfIndirectReference cloned = ObjectGraphCloner.CloneInto(target, source, page);
 
         var clonedPage = (PdfDictionary)target.GetObject(cloned.ObjectNumber)!;
@@ -86,13 +98,15 @@ public class ObjectGraphClonerTests
         var stream = new PdfStream(new PdfDictionary(), content);
         source.AddObject(8, 0, stream);
 
-        var page = new PdfDictionary();
-        page[PdfName.TypeName] = new PdfName("Page");
-        page[new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10));
-        page[new PdfName("Contents")] = new PdfIndirectReference(8, 0);
+        var page = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Page"),
+            [new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10)),
+            [new PdfName("Contents")] = new PdfIndirectReference(8, 0)
+        };
         source.AddObject(5, 0, page);
 
-        PdfDocument target = PdfDocument.CreateEmpty();
+        var target = PdfDocument.CreateEmpty();
         PdfIndirectReference cloned = ObjectGraphCloner.CloneInto(target, source, page);
 
         var clonedPage = (PdfDictionary)target.GetObject(cloned.ObjectNumber)!;
@@ -108,13 +122,15 @@ public class ObjectGraphClonerTests
         var len = new PdfInteger(42);
         source.AddObject(7, 0, len);
 
-        var page = new PdfDictionary();
-        page[PdfName.TypeName] = new PdfName("Page");
-        page[new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10));
-        page[new PdfName("CustomLen")] = new PdfIndirectReference(7, 0);
+        var page = new PdfDictionary
+        {
+            [PdfName.TypeName] = new PdfName("Page"),
+            [new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10)),
+            [new PdfName("CustomLen")] = new PdfIndirectReference(7, 0)
+        };
         source.AddObject(5, 0, page);
 
-        PdfDocument target = PdfDocument.CreateEmpty();
+        var target = PdfDocument.CreateEmpty();
         PdfIndirectReference cloned = ObjectGraphCloner.CloneInto(target, source, page);
 
         // The SOURCE object 7 must keep its identity (object number 7), not be stomped to a target number.

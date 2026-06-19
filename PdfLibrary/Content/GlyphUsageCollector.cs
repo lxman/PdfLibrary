@@ -236,9 +236,9 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         });
 
         // Identity-H: 2-byte big-endian code = CID = GID
-        for (int i = 0; i + 1 < bytes.Length; i += 2)
+        for (var i = 0; i + 1 < bytes.Length; i += 2)
         {
-            ushort gid = (ushort)((bytes[i] << 8) | bytes[i + 1]);
+            var gid = (ushort)((bytes[i] << 8) | bytes[i + 1]);
             usage.Gids.Add(gid);
         }
         // If odd number of bytes, the trailing byte is not a complete 2-byte code —
@@ -274,7 +274,7 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         });
 
         // Identity-H/V: 2-byte big-endian code = CID -> GID via the CFF charset.
-        for (int i = 0; i + 1 < bytes.Length; i += 2)
+        for (var i = 0; i + 1 < bytes.Length; i += 2)
         {
             int cid = (bytes[i] << 8) | bytes[i + 1];
             int gid = cff.GetGlyphIndexByCid(cid);

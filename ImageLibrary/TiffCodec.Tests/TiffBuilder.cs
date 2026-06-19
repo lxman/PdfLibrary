@@ -67,7 +67,7 @@ internal sealed class TiffBuilder
         var externalOffset = new int[n];
         for (var i = 0; i < n; i++)
         {
-            int size = (int)(_entries[i].Count * TypeSize(_entries[i].Type));
+            var size = (int)(_entries[i].Count * TypeSize(_entries[i].Type));
             if (size <= 4) continue;
             externalOffset[i] = cursor;
             cursor += Align(size);
@@ -93,7 +93,7 @@ internal sealed class TiffBuilder
         WriteUInt16(file, 2, 42);
         WriteUInt32(file, 4, 8);
 
-        int p = 8;
+        var p = 8;
         WriteUInt16(file, p, (ushort)n); p += 2;
         for (var i = 0; i < n; i++)
         {

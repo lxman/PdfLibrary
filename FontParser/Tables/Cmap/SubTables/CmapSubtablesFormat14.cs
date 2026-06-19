@@ -8,7 +8,7 @@ namespace FontParser.Tables.Cmap.SubTables
     {
         public int Language => -1;
 
-        public List<VariationSelectorRecord> VarSelectorRecords { get; } = new List<VariationSelectorRecord>();
+        public List<VariationSelectorRecord> VarSelectorRecords { get; } = new();
 
         public CmapSubtablesFormat14(BigEndianReader reader)
         {

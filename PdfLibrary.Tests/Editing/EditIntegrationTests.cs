@@ -11,7 +11,7 @@ public class EditIntegrationTests
 {
     private static byte[] Pages(params string[] texts)
     {
-        PdfDocumentBuilder b = PdfDocumentBuilder.Create();
+        var b = PdfDocumentBuilder.Create();
         foreach (string t in texts) b.AddPage(p => p.AddText(t, 100, 700));
         return b.ToByteArray();
     }
@@ -97,7 +97,7 @@ public class EditIntegrationTests
     [Fact]
     public void CreateBlank_StartsEmpty_AcceptsInsertedPage()
     {
-        using PdfDocumentEditor edit = PdfDocumentEditor.CreateBlank();
+        using var edit = PdfDocumentEditor.CreateBlank();
         Assert.Empty(edit.Pages);
         edit.Pages.InsertBlank(0, 200, 300);
         Assert.Single(edit.Pages);

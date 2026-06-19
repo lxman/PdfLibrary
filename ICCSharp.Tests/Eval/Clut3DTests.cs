@@ -11,16 +11,16 @@ public class Clut3DTests
     /// </summary>
     private static Clut3D BuildClut(int g, int outputChannels, Func<double, double, double, int, double> f)
     {
-        double[] values = new double[g * g * g * outputChannels];
-        int idx = 0;
-        for (int i = 0; i < g; i++)
-        for (int j = 0; j < g; j++)
-        for (int k = 0; k < g; k++)
+        var values = new double[g * g * g * outputChannels];
+        var idx = 0;
+        for (var i = 0; i < g; i++)
+        for (var j = 0; j < g; j++)
+        for (var k = 0; k < g; k++)
         {
             double r = i / (double)(g - 1);
             double gv = j / (double)(g - 1);
             double b = k / (double)(g - 1);
-            for (int c = 0; c < outputChannels; c++)
+            for (var c = 0; c < outputChannels; c++)
                 values[idx++] = f(r, gv, b, c);
         }
         byte[] grid = { (byte)g, (byte)g, (byte)g };
@@ -70,7 +70,7 @@ public class Clut3DTests
         // Identity CLUT on g=3: tetrahedral should reproduce neutrals (r==g==b) exactly,
         // which is the property that motivates tetrahedral over trilinear in the first place.
         Clut3D clut = BuildClut(g: 3, outputChannels: 3, (r, g, b, c) => c switch { 0 => r, 1 => g, _ => b });
-        for (int n = 0; n <= 20; n++)
+        for (var n = 0; n <= 20; n++)
         {
             double t = n / 20.0;
             double[] res = clut.Apply(t, t, t);
@@ -133,12 +133,12 @@ public class Clut3DTests
     {
         // 2×3×4 grid, single output channel = r-coordinate.
         int gR = 2, gG = 3, gB = 4;
-        int o = 1;
-        double[] values = new double[gR * gG * gB * o];
-        int idx = 0;
-        for (int i = 0; i < gR; i++)
-        for (int j = 0; j < gG; j++)
-        for (int k = 0; k < gB; k++)
+        var o = 1;
+        var values = new double[gR * gG * gB * o];
+        var idx = 0;
+        for (var i = 0; i < gR; i++)
+        for (var j = 0; j < gG; j++)
+        for (var k = 0; k < gB; k++)
             values[idx++] = i / (double)(gR - 1);
 
         Clut3D clut = new(new LutClutData(new byte[] { (byte)gR, (byte)gG, (byte)gB }, 2, values, o));
@@ -166,7 +166,7 @@ public class Clut3DTests
         Clut3D clut = BuildClut(g: 2, outputChannels: 3, (_, _, _, _) => 0.0);
         Assert.Throws<ArgumentException>(() =>
         {
-            double[] tooSmall = new double[2];
+            var tooSmall = new double[2];
             clut.Apply(0.5, 0.5, 0.5, tooSmall);
         });
     }

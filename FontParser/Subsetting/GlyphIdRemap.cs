@@ -37,7 +37,7 @@ namespace FontParser.Subsetting
             var oldToNew = new Dictionary<ushort, ushort>(Count);
             var newToOld = new ushort[Count];
 
-            for (int i = 0; i < sortedRetainedGids.Length; i++)
+            for (var i = 0; i < sortedRetainedGids.Length; i++)
             {
                 ushort oldGid = sortedRetainedGids[i];
                 var newGid = (ushort)i;

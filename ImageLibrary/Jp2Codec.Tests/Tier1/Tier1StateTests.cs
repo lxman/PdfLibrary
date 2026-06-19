@@ -56,7 +56,7 @@ namespace Jp2Codec.Tests.Tier1
             s.SetFlag(2, 1, Tier1State.SignificanceFlag);
             s.SetFlag(2, 1, Tier1State.RefinedFlag);
 
-            byte expected = (byte)(Tier1State.SignificanceFlag | Tier1State.RefinedFlag);
+            var expected = (byte)(Tier1State.SignificanceFlag | Tier1State.RefinedFlag);
             Assert.Equal(expected, s.GetFlags(2, 1));
             Assert.True(s.HasFlag(2, 1, Tier1State.SignificanceFlag));
             Assert.True(s.HasFlag(2, 1, Tier1State.RefinedFlag));
@@ -88,7 +88,7 @@ namespace Jp2Codec.Tests.Tier1
         public void ResetVisited_ClearsOnlyVisitedBit()
         {
             var s = new Tier1State(4, 4);
-            byte allFour = (byte)(
+            var allFour = (byte)(
                 Tier1State.SignificanceFlag |
                 Tier1State.SignFlag |
                 Tier1State.VisitedFlag |
@@ -100,7 +100,7 @@ namespace Jp2Codec.Tests.Tier1
 
             s.ResetVisited();
 
-            byte expected = (byte)(allFour & ~Tier1State.VisitedFlag);
+            var expected = (byte)(allFour & ~Tier1State.VisitedFlag);
             for (var y = 0; y < s.Height; y++)
             for (var x = 0; x < s.Width; x++)
                 Assert.Equal(expected, s.GetFlags(x, y));

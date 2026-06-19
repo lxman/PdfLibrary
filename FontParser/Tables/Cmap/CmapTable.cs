@@ -13,11 +13,11 @@ namespace FontParser.Tables.Cmap
 
         public ushort Version { get; }
 
-        public List<CmapEncoding> Encodings { get; } = new List<CmapEncoding>();
+        public List<CmapEncoding> Encodings { get; } = new();
 
-        public List<EncodingRecord> EncodingRecords { get; } = new List<EncodingRecord>();
+        public List<EncodingRecord> EncodingRecords { get; } = new();
 
-        public List<ICmapSubtable> SubTables { get; } = new List<ICmapSubtable>();
+        public List<ICmapSubtable> SubTables { get; } = new();
 
         public CmapTable(byte[] cmapData)
         {

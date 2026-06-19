@@ -8,8 +8,8 @@ public class NumericTagTests
 {
     private static byte[] WithTypeHeader(string typeSig, params byte[] payload)
     {
-        byte[] buf = new byte[8 + payload.Length];
-        for (int i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
+        var buf = new byte[8 + payload.Length];
+        for (var i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
         // bytes 4-7 reserved = 0
         Buffer.BlockCopy(payload, 0, buf, 8, payload.Length);
         return buf;
@@ -34,7 +34,7 @@ public class NumericTagTests
             ..U32Be(0x0000D332),
         ];
         TagElement el = TagElementReader.Parse(WithTypeHeader("XYZ ", payload));
-        XyzTagElement xyz = Assert.IsType<XyzTagElement>(el);
+        var xyz = Assert.IsType<XyzTagElement>(el);
         Assert.Single(xyz.Values);
         Assert.Equal(0.9642, xyz.Values[0].X, 3);
         Assert.Equal(1.0000, xyz.Values[0].Y, 4);
@@ -50,7 +50,7 @@ public class NumericTagTests
             ..U32Be(0x00040000), ..U32Be(0x00050000), ..U32Be(0x00060000),
             ..U32Be(0x00070000), ..U32Be(0x00080000), ..U32Be(0x00090000),
         ];
-        XyzTagElement xyz = Assert.IsType<XyzTagElement>(TagElementReader.Parse(WithTypeHeader("XYZ ", one)));
+        var xyz = Assert.IsType<XyzTagElement>(TagElementReader.Parse(WithTypeHeader("XYZ ", one)));
         Assert.Equal(3, xyz.Values.Count);
         Assert.Equal(new XyzNumber(1, 2, 3), xyz.Values[0]);
         Assert.Equal(new XyzNumber(4, 5, 6), xyz.Values[1]);
@@ -60,7 +60,7 @@ public class NumericTagTests
     [Fact]
     public void XyzType_payload_not_multiple_of_12_throws()
     {
-        byte[] payload = new byte[11];
+        var payload = new byte[11];
         Assert.Throws<IccParseException>(() => TagElementReader.Parse(WithTypeHeader("XYZ ", payload)));
     }
 
@@ -76,7 +76,7 @@ public class NumericTagTests
             ..U32Be(0xFFFF0000),                  // -1.0
             ..U32Be(0x80000000),                  // -32768.0
         ];
-        S15Fixed16ArrayTagElement t = Assert.IsType<S15Fixed16ArrayTagElement>(
+        var t = Assert.IsType<S15Fixed16ArrayTagElement>(
             TagElementReader.Parse(WithTypeHeader("sf32", payload)));
         Assert.Equal(4, t.Values.Count);
         Assert.Equal(1.0, t.Values[0]);
@@ -94,7 +94,7 @@ public class NumericTagTests
     [Fact]
     public void Sf32_with_empty_payload_yields_zero_values()
     {
-        S15Fixed16ArrayTagElement t = Assert.IsType<S15Fixed16ArrayTagElement>(
+        var t = Assert.IsType<S15Fixed16ArrayTagElement>(
             TagElementReader.Parse(WithTypeHeader("sf32")));
         Assert.Empty(t.Values);
     }
@@ -109,7 +109,7 @@ public class NumericTagTests
             ..U32Be(0x00010000),                  // 1.0
             ..U32Be(0xFFFFFFFF),                  // 65535.99998474
         ];
-        U16Fixed16ArrayTagElement t = Assert.IsType<U16Fixed16ArrayTagElement>(
+        var t = Assert.IsType<U16Fixed16ArrayTagElement>(
             TagElementReader.Parse(WithTypeHeader("uf32", payload)));
         Assert.Equal(2, t.Values.Count);
         Assert.Equal(1.0, t.Values[0]);
@@ -122,7 +122,7 @@ public class NumericTagTests
     public void SignatureType_reads_one_signature()
     {
         // 'CRT ' as a signature value (e.g. tech tag indicating cathode-ray tube)
-        SignatureTagElement t = Assert.IsType<SignatureTagElement>(
+        var t = Assert.IsType<SignatureTagElement>(
             TagElementReader.Parse(WithTypeHeader("sig ", (byte)'C', (byte)'R', (byte)'T', (byte)' ')));
         Assert.Equal("CRT ", t.Value.ToString());
     }
@@ -143,7 +143,7 @@ public class NumericTagTests
             0x07, 0xE8, 0x00, 0x06, 0x00, 0x0F, // 2024-06-15
             0x00, 0x0C, 0x00, 0x1E, 0x00, 0x2D, // 12:30:45
         ];
-        DateTimeTagElement t = Assert.IsType<DateTimeTagElement>(
+        var t = Assert.IsType<DateTimeTagElement>(
             TagElementReader.Parse(WithTypeHeader("dtim", payload)));
         Assert.Equal(new IccDateTime(2024, 6, 15, 12, 30, 45), t.Value);
     }
@@ -161,7 +161,7 @@ public class NumericTagTests
     {
         byte[] payload = { 0xAA, 0xBB, 0xCC, 0xDD };
         TagElement el = TagElementReader.Parse(WithTypeHeader("zzzz", payload));
-        UnknownTagElement u = Assert.IsType<UnknownTagElement>(el);
+        var u = Assert.IsType<UnknownTagElement>(el);
         Assert.Equal("zzzz", u.TypeSignature.ToString());
         Assert.Equal(4, u.Payload.Length);
         Assert.Equal(0xAA, u.Payload.Span[0]);

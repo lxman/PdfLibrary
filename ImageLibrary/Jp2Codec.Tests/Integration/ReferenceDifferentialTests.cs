@@ -34,8 +34,10 @@ public class ReferenceDifferentialTests
             // outer list holds overrides and chains a defaults list so that
             // FileBitstreamReaderAgent can still resolve base values via
             // DefaultParameterList.
-            ParameterList pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList());
-            pl["nocolorspace"] = "on";
+            var pl = new ParameterList(J2kImage.GetDefaultDecoderParameterList())
+            {
+                ["nocolorspace"] = "on"
+            };
             img = J2kImage.FromStream(ms, pl);
         }
         else

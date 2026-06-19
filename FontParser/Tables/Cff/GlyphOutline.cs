@@ -16,7 +16,7 @@ namespace FontParser.Tables.Cff
         /// <summary>
         /// List of path commands that make up the glyph
         /// </summary>
-        public List<PathCommand> Commands { get; } = new List<PathCommand>();
+        public List<PathCommand> Commands { get; } = new();
 
         /// <summary>
         /// Bounding box minimum X

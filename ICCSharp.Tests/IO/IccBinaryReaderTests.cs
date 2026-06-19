@@ -238,8 +238,10 @@ public class IccBinaryReaderTests
     [Fact]
     public void Position_setter_can_seek_anywhere_within_buffer()
     {
-        IccBinaryReader r = new(new byte[] { 0xAA, 0xBB, 0xCC, 0xDD });
-        r.Position = 2;
+        IccBinaryReader r = new(new byte[] { 0xAA, 0xBB, 0xCC, 0xDD })
+        {
+            Position = 2
+        };
         Assert.Equal((byte)0xCC, r.ReadUInt8());
         r.Position = 0;
         Assert.Equal((byte)0xAA, r.ReadUInt8());
@@ -277,7 +279,7 @@ public class IccBinaryReaderTests
     public void ReadUInt32_at_end_of_buffer_throws_with_counts()
     {
         IccBinaryReader r = new(new byte[] { 1, 2, 3 });
-        IccEndOfStreamException ex = Assert.Throws<IccEndOfStreamException>(() => r.ReadUInt32());
+        var ex = Assert.Throws<IccEndOfStreamException>(() => r.ReadUInt32());
         Assert.Equal(4, ex.Requested);
         Assert.Equal(3, ex.Available);
     }

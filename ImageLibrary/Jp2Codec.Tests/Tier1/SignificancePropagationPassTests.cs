@@ -13,7 +13,7 @@ namespace Jp2Codec.Tests.Tier1
         {
             var state = new Tier1State(8, 8);
             byte[] contexts = Jp2MqContextSet.CreateInitialised();
-            byte[] beforeContexts = (byte[])contexts.Clone();
+            var beforeContexts = (byte[])contexts.Clone();
             // Empty body — would throw if SPP tried to decode anything,
             // because the decoder would walk into virtual 0xFF bytes.
             var mq = new Jp2MqDecoder(new byte[] { 0x00, 0x00 }, 0, 2);
@@ -39,7 +39,7 @@ namespace Jp2Codec.Tests.Tier1
                 state.SetFlag(x, y, Tier1State.SignificanceFlag);
 
             byte[] contexts = Jp2MqContextSet.CreateInitialised();
-            byte[] before = (byte[])contexts.Clone();
+            var before = (byte[])contexts.Clone();
             var mq = new Jp2MqDecoder(new byte[] { 0x00, 0x00 }, 0, 2);
 
             SignificancePropagationPass.Run(state, mq, contexts, SubbandOrientation.LL, bitPlane: 5);

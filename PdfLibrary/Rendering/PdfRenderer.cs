@@ -588,6 +588,10 @@ public class PdfRenderer : PdfContentProcessor
 
         PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: Using pattern '{patternName}': PaintType={pattern.PaintType}, TilingType={pattern.TilingType}, BBox={pattern.BBox}, XStep={pattern.XStep}, YStep={pattern.YStep}");
 
+        // Call the render target to fill with the pattern
+        _target.FillPathWithTilingPattern(path, CurrentState, evenOdd, pattern, RenderPatternContent);
+        return;
+
         // Create callback to render pattern content
         void RenderPatternContent(IRenderTarget target)
         {
@@ -610,9 +614,6 @@ public class PdfRenderer : PdfContentProcessor
                 patternRenderer.ProcessOperator(op);
             }
         }
-
-        // Call the render target to fill with the pattern
-        _target.FillPathWithTilingPattern(path, CurrentState, evenOdd, pattern, RenderPatternContent);
     }
 
     /// <summary>
@@ -810,11 +811,12 @@ public class PdfRenderer : PdfContentProcessor
                 isFallbackFont: false, // TODO: Determine if using fallback font
                 intendedWidth: (float)totalAdvance,
                 actualWidth: (float)totalAdvance, // TODO: Measure actual width with system font
-                graphicsState: CurrentState);
-
-            // Set detection flags for Base14 fonts
-            context.IsBase14Font = IsBase14Font(font);
-            context.HasEmbeddedFontData = HasEmbeddedFontData(font);
+                graphicsState: CurrentState)
+            {
+                // Set detection flags for Base14 fonts
+                IsBase14Font = IsBase14Font(font),
+                HasEmbeddedFontData = HasEmbeddedFontData(font)
+            };
 
             PdfLogger.Log(LogCategory.Text, $"[RENDERER-DEBUG] Before fixup call: text='{textToRender}' font='{font.BaseFont}' IsBase14={context.IsBase14Font} HasEmbedded={context.HasEmbeddedFontData} fixupManager!=null={_fixupManager != null}");
 

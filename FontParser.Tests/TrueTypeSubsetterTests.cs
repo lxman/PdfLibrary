@@ -21,8 +21,7 @@ public class TrueTypeSubsetterTests
 {
     private static readonly string ArialPath = @"C:\Windows\Fonts\arial.ttf";
 
-    private static SfntFont LoadArial() =>
-        new SfntFont(File.ReadAllBytes(ArialPath));
+    private static SfntFont LoadArial() => new(File.ReadAllBytes(ArialPath));
 
     // =========================================================================
     // Helper: find a composite glyph and its components
@@ -30,10 +29,10 @@ public class TrueTypeSubsetterTests
 
     private static (ushort CompositeGid, ushort[] ComponentGids)? FindFirstComposite(SfntFont font)
     {
-        var glyf = font.Glyf;
+        GlyphTable? glyf = font.Glyf;
         if (glyf is null) return null;
 
-        foreach (var gd in glyf.Glyphs)
+        foreach (GlyphData gd in glyf.Glyphs)
         {
             if (gd.GlyphSpec is CompositeGlyph composite && composite.Components.Count > 0)
                 return ((ushort)gd.Index, composite.Components.Select(c => c.GlyphIndex).ToArray());
@@ -49,7 +48,7 @@ public class TrueTypeSubsetterTests
     public void Subset_DoesNotThrow()
     {
         SfntFont font = LoadArial();
-        var found = FindFirstComposite(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(font);
         Assert.True(found.HasValue, "Arial must have a composite glyph.");
 
         var seeds = new ushort[] { 0, found!.Value.CompositeGid };
@@ -68,7 +67,7 @@ public class TrueTypeSubsetterTests
         SfntFont font = LoadArial();
         byte[] origBytes = File.ReadAllBytes(ArialPath);
 
-        var found = FindFirstComposite(font);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(font);
         Assert.True(found.HasValue);
 
         var seeds = new ushort[] { 0, found!.Value.CompositeGid };
@@ -86,14 +85,14 @@ public class TrueTypeSubsetterTests
     public void RoundTrip_SubsetParsesWithoutError()
     {
         SfntFont origFont = LoadArial();
-        var found = FindFirstComposite(origFont);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(origFont);
         Assert.True(found.HasValue);
 
-        var (compositeGid, componentGids) = found!.Value;
+        (ushort compositeGid, ushort[] componentGids) = found!.Value;
 
         // Find a simple glyph not already involved.
         var involved = new System.Collections.Generic.HashSet<ushort>(componentGids) { compositeGid };
-        ushort simpleGid = (ushort)origFont.Glyf!.Glyphs
+        var simpleGid = (ushort)origFont.Glyf!.Glyphs
             .First(g => g.GlyphSpec is SimpleGlyph && g.Index != 0 && !involved.Contains((ushort)g.Index))
             .Index;
 
@@ -101,7 +100,7 @@ public class TrueTypeSubsetterTests
         byte[] subsetBytes = TrueTypeSubsetter.Subset(origFont, seeds);
 
         // Re-parse — must not throw.
-        SfntFont subsetFont = new SfntFont(subsetBytes);
+        var subsetFont = new SfntFont(subsetBytes);
 
         Assert.Equal(SfntOutlineKind.TrueType, subsetFont.OutlineKind);
         Assert.True(subsetFont.NumGlyphs > 0, "Re-parsed subset must have at least one glyph.");
@@ -115,16 +114,16 @@ public class TrueTypeSubsetterTests
     public void RoundTrip_NumGlyphsMatchesRetainedCount()
     {
         SfntFont origFont = LoadArial();
-        var found = FindFirstComposite(origFont);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(origFont);
         Assert.True(found.HasValue);
 
-        var (compositeGid, _) = found!.Value;
+        (ushort compositeGid, _) = found!.Value;
         var seeds = new ushort[] { 0, compositeGid };
-        var closure = GlyphClosure.Compute(origFont, seeds);
+        ushort[] closure = GlyphClosure.Compute(origFont, seeds);
         int expectedCount = closure.Length;
 
         byte[] subsetBytes = TrueTypeSubsetter.Subset(origFont, seeds);
-        SfntFont subsetFont = new SfntFont(subsetBytes);
+        var subsetFont = new SfntFont(subsetBytes);
 
         Assert.Equal(expectedCount, subsetFont.NumGlyphs);
     }
@@ -137,29 +136,29 @@ public class TrueTypeSubsetterTests
     public void RoundTrip_SimpleGlyphContoursMatchOriginal()
     {
         SfntFont origFont = LoadArial();
-        var found = FindFirstComposite(origFont);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(origFont);
         Assert.True(found.HasValue);
 
-        var (compositeGid, componentGids) = found!.Value;
+        (ushort compositeGid, ushort[] componentGids) = found!.Value;
         var involved = new System.Collections.Generic.HashSet<ushort>(componentGids) { compositeGid };
-        ushort simpleGid = (ushort)origFont.Glyf!.Glyphs
+        var simpleGid = (ushort)origFont.Glyf!.Glyphs
             .First(g => g.GlyphSpec is SimpleGlyph && g.Index != 0 && !involved.Contains((ushort)g.Index))
             .Index;
 
         var seeds = new ushort[] { 0, simpleGid, compositeGid };
-        var closure = GlyphClosure.Compute(origFont, seeds);
+        ushort[] closure = GlyphClosure.Compute(origFont, seeds);
         var remap = new GlyphIdRemap(closure);
 
         byte[] subsetBytes = TrueTypeSubsetter.Subset(origFont, seeds);
-        SfntFont subsetFont = new SfntFont(subsetBytes);
+        var subsetFont = new SfntFont(subsetBytes);
 
         Assert.NotNull(subsetFont.Glyf);
 
         // Find the new GID for the simple glyph.
         Assert.True(remap.OldToNew.TryGetValue(simpleGid, out ushort newSimpleGid));
 
-        var origGlyphData   = origFont.Glyf!.GetGlyphData(simpleGid);
-        var subsetGlyphData = subsetFont.Glyf!.GetGlyphData(newSimpleGid);
+        GlyphData? origGlyphData   = origFont.Glyf!.GetGlyphData(simpleGid);
+        GlyphData? subsetGlyphData = subsetFont.Glyf!.GetGlyphData(newSimpleGid);
 
         Assert.NotNull(origGlyphData);
         Assert.NotNull(subsetGlyphData);
@@ -180,27 +179,27 @@ public class TrueTypeSubsetterTests
     public void RoundTrip_CompositeResolvesToValidComponents()
     {
         SfntFont origFont = LoadArial();
-        var found = FindFirstComposite(origFont);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(origFont);
         Assert.True(found.HasValue);
 
-        var (compositeGid, _) = found!.Value;
+        (ushort compositeGid, _) = found!.Value;
         var seeds = new ushort[] { 0, compositeGid };
-        var closure = GlyphClosure.Compute(origFont, seeds);
+        ushort[] closure = GlyphClosure.Compute(origFont, seeds);
         var remap = new GlyphIdRemap(closure);
 
         byte[] subsetBytes = TrueTypeSubsetter.Subset(origFont, seeds);
-        SfntFont subsetFont = new SfntFont(subsetBytes);
+        var subsetFont = new SfntFont(subsetBytes);
 
         Assert.True(remap.OldToNew.TryGetValue(compositeGid, out ushort newCompositeGid));
 
-        var compositeGlyphData = subsetFont.Glyf!.GetGlyphData(newCompositeGid);
+        GlyphData? compositeGlyphData = subsetFont.Glyf!.GetGlyphData(newCompositeGid);
         Assert.NotNull(compositeGlyphData);
 
         var composite = compositeGlyphData!.GlyphSpec as CompositeGlyph;
         Assert.NotNull(composite);
 
         // Each component GID in the subset must be a valid GID < subsetFont.NumGlyphs.
-        foreach (var comp in composite!.Components)
+        foreach (CompositeGlyphComponent comp in composite!.Components)
         {
             Assert.True(comp.GlyphIndex < subsetFont.NumGlyphs,
                 $"Component GID {comp.GlyphIndex} is out of range (numGlyphs={subsetFont.NumGlyphs}).");
@@ -226,11 +225,11 @@ public class TrueTypeSubsetterTests
         if (origGidAgrave == 0) return; // Skip if not present.
 
         var seeds = new ushort[] { 0, origGidA, origGidAgrave };
-        var closure = GlyphClosure.Compute(origFont, seeds);
+        ushort[] closure = GlyphClosure.Compute(origFont, seeds);
         var remap = new GlyphIdRemap(closure);
 
         byte[] subsetBytes = TrueTypeSubsetter.Subset(origFont, seeds);
-        SfntFont subsetFont = new SfntFont(subsetBytes);
+        var subsetFont = new SfntFont(subsetBytes);
 
         Assert.NotNull(subsetFont.Cmap);
 
@@ -255,7 +254,7 @@ public class TrueTypeSubsetterTests
         SfntFont origFont = LoadArial();
         byte[] origBytes = File.ReadAllBytes(ArialPath);
 
-        var found = FindFirstComposite(origFont);
+        (ushort CompositeGid, ushort[] ComponentGids)? found = FindFirstComposite(origFont);
         Assert.True(found.HasValue);
 
         // Include printable ASCII (GID lookup for ' '..'~') + composite.
@@ -307,7 +306,7 @@ public class TrueTypeSubsetterTests
         if (subsetSfnt.Glyf is not null)
         {
             // GetGlyphData(0) must not throw; it may return null for an empty .notdef outline.
-            var _ = subsetSfnt.Glyf.GetGlyphData(0);
+            GlyphData? _ = subsetSfnt.Glyf.GetGlyphData(0);
         }
     }
 }

@@ -74,7 +74,7 @@ namespace FontParser.Tables.TtTables.Glyf
 
     public class CompositeGlyph : IGlyphSpec
     {
-        public List<CompositeGlyphComponent> Components { get; } = new List<CompositeGlyphComponent>();
+        public List<CompositeGlyphComponent> Components { get; } = new();
 
         public CompositeGlyph(
             BigEndianReader reader,

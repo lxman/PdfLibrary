@@ -16,7 +16,7 @@ public abstract class ToneCurveBase : IToneCurve
         if (target <= Evaluate(0.0)) return 0.0;
         if (target >= Evaluate(1.0)) return 1.0;
         double lo = 0.0, hi = 1.0;
-        for (int i = 0; i < 40; i++)
+        for (var i = 0; i < 40; i++)
         {
             double mid = 0.5 * (lo + hi);
             if (Evaluate(mid) < target) lo = mid;

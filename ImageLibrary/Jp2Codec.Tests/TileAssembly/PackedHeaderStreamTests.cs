@@ -13,11 +13,9 @@ namespace Jp2Codec.Tests.TileAssembly;
 /// </summary>
 public class PackedHeaderStreamTests
 {
-    private static PpmSegment Ppm(byte zppm, params byte[] payload) =>
-        new PpmSegment(zppm, payload);
+    private static PpmSegment Ppm(byte zppm, params byte[] payload) => new(zppm, payload);
 
-    private static PptSegment Ppt(byte zppt, params byte[] payload) =>
-        new PptSegment(zppt, payload);
+    private static PptSegment Ppt(byte zppt, params byte[] payload) => new(zppt, payload);
 
     [Fact]
     public void PpmSlicer_SingleSegmentTwoTileParts_ReturnsExpectedChunks()

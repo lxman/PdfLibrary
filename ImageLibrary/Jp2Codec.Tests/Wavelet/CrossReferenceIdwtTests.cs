@@ -26,7 +26,7 @@ namespace Jp2Codec.Tests.Wavelet
             else outSig[ik] = low[lk];
             lk++; hk++; ik += 2;
 
-            for (int i = 2; i < outLen - 1; i += 2)
+            for (var i = 2; i < outLen - 1; i += 2)
             {
                 outSig[ik] = low[lk] - ((high[hk - 1] + high[hk] + 2) >> 2);
                 lk++; hk++; ik += 2;
@@ -40,7 +40,7 @@ namespace Jp2Codec.Tests.Wavelet
 
             // Generate odd samples.
             hk = 0; ik = 1;
-            for (int i = 1; i < outLen - 1; i += 2)
+            for (var i = 1; i < outLen - 1; i += 2)
             {
                 outSig[ik] = high[hk] + ((outSig[ik - 1] + outSig[ik + 1]) >> 1);
                 hk++; ik += 2;
@@ -69,7 +69,7 @@ namespace Jp2Codec.Tests.Wavelet
             // Generate even samples (output indices 1, 3, ... since the first
             // canvas-even output is at index 1 when start parity is odd).
             ik = 1;
-            for (int i = 1; i < outLen - 1; i += 2)
+            for (var i = 1; i < outLen - 1; i += 2)
             {
                 outSig[ik] = low[lk] - ((high[hk] + high[hk + 1] + 2) >> 2);
                 lk++; hk++; ik += 2;
@@ -87,7 +87,7 @@ namespace Jp2Codec.Tests.Wavelet
             else outSig[ik] = high[hk] >> 1;
             hk++; ik += 2;
 
-            for (int i = 2; i < outLen - 1; i += 2)
+            for (var i = 2; i < outLen - 1; i += 2)
             {
                 outSig[ik] = high[hk] + ((outSig[ik - 1] + outSig[ik + 1]) >> 1);
                 hk++; ik += 2;

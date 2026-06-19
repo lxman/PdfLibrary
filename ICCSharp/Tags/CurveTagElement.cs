@@ -41,7 +41,7 @@ public sealed class CurveTagElement : TagElement
             throw new IccParseException(
                 $"curveType declares {count} samples ({bytesNeeded} bytes) but only {payloadBytes - 4} remain.");
 
-        ushort[] samples = new ushort[count];
+        var samples = new ushort[count];
         for (uint i = 0; i < count; i++) samples[i] = reader.ReadUInt16();
         return new CurveTagElement(samples);
     }

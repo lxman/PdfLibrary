@@ -70,8 +70,8 @@ public class IccCmykImageTests
         Assert.NotNull(scalar);
 
         const int reps = 5000; // 4 * 5000 = 20 000 samples > threshold
-        byte[] big = new byte[swatch.Length * reps];
-        for (int k = 0; k < reps; k++)
+        var big = new byte[swatch.Length * reps];
+        for (var k = 0; k < reps; k++)
             Array.Copy(swatch, 0, big, k * swatch.Length, swatch.Length);
 
         byte[]? parallel = conv.TryConvertInterleavedToSrgb(iccStream, big, 4);
@@ -79,7 +79,7 @@ public class IccCmykImageTests
         Assert.Equal(reps * scalar!.Length, parallel!.Length);
 
         // Each output sample must byte-match the scalar conversion of the repeating swatch.
-        for (int i = 0; i < parallel.Length; i++)
+        for (var i = 0; i < parallel.Length; i++)
             Assert.Equal(scalar[i % scalar.Length], parallel[i]);
     }
 

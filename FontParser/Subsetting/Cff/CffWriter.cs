@@ -46,7 +46,7 @@ namespace FontParser.Subsetting.Cff
 
             for (var i = 0; i <= count; i++)  // offset array, big-endian, offSize bytes each
             {
-                uint off = (uint)offsets[i];
+                var off = (uint)offsets[i];
                 for (int b = offSize - 1; b >= 0; b--)
                     buf[p++] = (byte)(off >> (b * 8));
             }
@@ -64,7 +64,7 @@ namespace FontParser.Subsetting.Cff
         public static int IndexEntryDataOffset(IReadOnlyList<int> entryLengths, int entryIndex)
         {
             int count = entryLengths.Count;
-            int maxOffset = 1;
+            var maxOffset = 1;
             for (var i = 0; i < count; i++) maxOffset += entryLengths[i];
             int offSize = maxOffset <= 0xFF ? 1 : maxOffset <= 0xFFFF ? 2 : maxOffset <= 0xFFFFFF ? 3 : 4;
 
@@ -101,7 +101,7 @@ namespace FontParser.Subsetting.Cff
         /// <summary>Encodes a real as a CFF DICT operand (0x1E + 4-bit nibbles, no exponent; mirrors <c>Calc.Double</c>).</summary>
         public static byte[] EncodeReal(double value)
         {
-            string s = value.ToString("0.0###############", CultureInfo.InvariantCulture);
+            var s = value.ToString("0.0###############", CultureInfo.InvariantCulture);
             var nibbles = new List<byte>();
             foreach (char c in s)
             {

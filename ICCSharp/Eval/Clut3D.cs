@@ -57,7 +57,7 @@ public sealed class Clut3D : IClut
                 nameof(clut));
 
         _values = new double[expected];
-        for (int i = 0; i < expected; i++) _values[i] = clut.Values[i];
+        for (var i = 0; i < expected; i++) _values[i] = clut.Values[i];
     }
 
     /// <summary>
@@ -66,7 +66,7 @@ public sealed class Clut3D : IClut
     /// </summary>
     public double[] Apply(double r, double g, double b)
     {
-        double[] result = new double[_output];
+        var result = new double[_output];
         Apply(r, g, b, result);
         return result;
     }
@@ -97,7 +97,7 @@ public sealed class Clut3D : IClut
 
         // Pick the tetrahedron based on ordering of (dr, dg, db). The six branches each blend
         // four vertices; weights sum to 1 in every branch.
-        for (int c = 0; c < _output; c++)
+        for (var c = 0; c < _output; c++)
         {
             double V000 = _values[v000 + c];
             double V100 = _values[v100 + c];
@@ -140,7 +140,7 @@ public sealed class Clut3D : IClut
         if (x <= 0.0) return (0, 0.0);
         if (x >= 1.0) return (gridPoints - 2, 1.0);
         double scaled = x * (gridPoints - 1);
-        int idx = (int)Math.Floor(scaled);
+        var idx = (int)Math.Floor(scaled);
         if (idx >= gridPoints - 1) idx = gridPoints - 2;
         return (idx, scaled - idx);
     }

@@ -123,9 +123,9 @@ namespace Jp2Codec.Tests.Color
         [Fact]
         public void MismatchedDimensions_Throws()
         {
-            float[,] c0 = new float[2, 3];
-            float[,] c1 = new float[2, 3];
-            float[,] c2 = new float[2, 4];
+            var c0 = new float[2, 3];
+            var c1 = new float[2, 3];
+            var c2 = new float[2, 4];
 
             Assert.Throws<ArgumentException>(() => InverseIct.Apply(c0, c1, c2));
         }
@@ -133,8 +133,8 @@ namespace Jp2Codec.Tests.Color
         [Fact]
         public void NullArg_Throws()
         {
-            float[,] c0 = new float[1, 1];
-            float[,] c1 = new float[1, 1];
+            var c0 = new float[1, 1];
+            var c1 = new float[1, 1];
             Assert.Throws<ArgumentNullException>(() => InverseIct.Apply(null!, c1, c0));
             Assert.Throws<ArgumentNullException>(() => InverseIct.Apply(c0, null!, c0));
             Assert.Throws<ArgumentNullException>(() => InverseIct.Apply(c0, c1, null!));

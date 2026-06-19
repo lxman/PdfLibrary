@@ -35,8 +35,8 @@ public sealed class ChromaticityTagElement : TagElement
             throw new IccParseException(
                 $"chromaticityType needs {needed} body bytes for {channels} channels; only {payloadBytes - 4} remain.");
 
-        (double, double)[] coords = new (double, double)[channels];
-        for (int i = 0; i < channels; i++)
+        var coords = new (double, double)[channels];
+        for (var i = 0; i < channels; i++)
         {
             double x = reader.ReadU16Fixed16();
             double y = reader.ReadU16Fixed16();

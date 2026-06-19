@@ -59,7 +59,7 @@ namespace Jp2Codec.Tier2
             // Walk from root down to leaf, decoding bits along the way.
             // Track the "inherited low" — a child's value cannot be lower than
             // its parent's, since parents hold the minimum over their subtree.
-            int parentLow = 0;
+            var parentLow = 0;
             for (int level = _levels.Length - 1; level >= 0; level--)
             {
                 int xi = x >> level;
@@ -103,7 +103,7 @@ namespace Jp2Codec.Tier2
         /// </summary>
         public int DecodeValue(int x, int y, PacketHeaderBitReader reader)
         {
-            int t = 0;
+            var t = 0;
             while (!DecodeLessThan(x, y, t + 1, reader))
             {
                 t++;

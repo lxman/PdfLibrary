@@ -25,8 +25,8 @@ public sealed class ParametricToneCurve : ToneCurveBase
         FunctionType = tag.FunctionType;
         // Pull params with safe defaults — the tag parser already validated the count, but reading
         // beyond what a function type uses just leaves zeros.
-        double[] p = new double[7];
-        for (int i = 0; i < tag.Parameters.Count && i < 7; i++) p[i] = tag.Parameters[i];
+        var p = new double[7];
+        for (var i = 0; i < tag.Parameters.Count && i < 7; i++) p[i] = tag.Parameters[i];
         _g = p[0]; _a = p[1]; _b = p[2]; _c = p[3]; _d = p[4]; _e = p[5]; _f = p[6];
     }
 

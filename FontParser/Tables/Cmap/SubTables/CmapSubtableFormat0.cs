@@ -9,7 +9,7 @@ namespace FontParser.Tables.Cmap.SubTables
 
         public int Language { get; }
 
-        public List<uint> GlyphIndexArray { get; } = new List<uint>();
+        public List<uint> GlyphIndexArray { get; } = new();
 
         public CmapSubtableFormat0(BigEndianReader reader)
         {

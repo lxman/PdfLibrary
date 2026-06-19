@@ -8,8 +8,8 @@ public class TextTagTests
 {
     private static byte[] WithHeader(string typeSig, params byte[] payload)
     {
-        byte[] buf = new byte[8 + payload.Length];
-        for (int i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
+        var buf = new byte[8 + payload.Length];
+        for (var i = 0; i < 4; i++) buf[i] = (byte)typeSig[i];
         Buffer.BlockCopy(payload, 0, buf, 8, payload.Length);
         return buf;
     }
@@ -28,14 +28,14 @@ public class TextTagTests
     public void TextType_returns_ascii_string_without_trailing_nul()
     {
         byte[] payload = Encoding.ASCII.GetBytes("Copyright (c) 1998 Hewlett-Packard\0");
-        TextTagElement t = Assert.IsType<TextTagElement>(TagElementReader.Parse(WithHeader("text", payload)));
+        var t = Assert.IsType<TextTagElement>(TagElementReader.Parse(WithHeader("text", payload)));
         Assert.Equal("Copyright (c) 1998 Hewlett-Packard", t.Value);
     }
 
     [Fact]
     public void TextType_with_empty_payload_returns_empty_string()
     {
-        TextTagElement t = Assert.IsType<TextTagElement>(TagElementReader.Parse(WithHeader("text")));
+        var t = Assert.IsType<TextTagElement>(TagElementReader.Parse(WithHeader("text")));
         Assert.Equal(string.Empty, t.Value);
     }
 
@@ -55,7 +55,7 @@ public class TextTagTests
             (byte)0,            // mac description length
             ..new byte[67],     // mac block
         ];
-        TextDescriptionTagElement t = Assert.IsType<TextDescriptionTagElement>(
+        var t = Assert.IsType<TextDescriptionTagElement>(
             TagElementReader.Parse(WithHeader("desc", payload)));
 
         Assert.Equal("sRGB IEC61966-2.1", t.AsciiDescription);
@@ -69,7 +69,7 @@ public class TextTagTests
         byte[] asciiBytes = Encoding.ASCII.GetBytes("Hello\0");
         // UTF-16BE "Bonjour" + NUL: 0x00 'B' 0x00 'o' ... 0x00 0x00
         byte[] unicodeBytes = Encoding.BigEndianUnicode.GetBytes("Bonjour\0");
-        uint unicodeCount = (uint)(unicodeBytes.Length / 2);
+        var unicodeCount = (uint)(unicodeBytes.Length / 2);
 
         byte[] payload =
         [
@@ -82,7 +82,7 @@ public class TextTagTests
             (byte)0,
             ..new byte[67],
         ];
-        TextDescriptionTagElement t = Assert.IsType<TextDescriptionTagElement>(
+        var t = Assert.IsType<TextDescriptionTagElement>(
             TagElementReader.Parse(WithHeader("desc", payload)));
 
         Assert.Equal("Hello", t.AsciiDescription);
@@ -94,7 +94,7 @@ public class TextTagTests
     public void TextDescription_with_macintosh_section()
     {
         byte[] asciiBytes = Encoding.ASCII.GetBytes("Hi\0");
-        byte[] macBlock = new byte[67];
+        var macBlock = new byte[67];
         byte[] macStr = Encoding.ASCII.GetBytes("MacHi");
         Buffer.BlockCopy(macStr, 0, macBlock, 0, macStr.Length);
         byte[] payload =
@@ -107,7 +107,7 @@ public class TextTagTests
             (byte)macStr.Length,
             ..macBlock,
         ];
-        TextDescriptionTagElement t = Assert.IsType<TextDescriptionTagElement>(
+        var t = Assert.IsType<TextDescriptionTagElement>(
             TagElementReader.Parse(WithHeader("desc", payload)));
 
         Assert.Equal("MacHi", t.MacintoshDescription);
@@ -135,7 +135,7 @@ public class TextTagTests
         //   12..15 recordSize  = 12
         //   16..27 record: langCode(2) + countryCode(2) + length(4) + offset(4)
         //   28..   UTF-16BE text
-        string text = "Hello";
+        var text = "Hello";
         byte[] uniBytes = Encoding.BigEndianUnicode.GetBytes(text);
 
         byte[] payload =
@@ -149,7 +149,7 @@ public class TextTagTests
             ..U32Be(28),                             // offset from start of tag (8 header + 4+4 count/size + 12 record = 28)
             ..uniBytes,
         ];
-        MultiLocalizedUnicodeTagElement t = Assert.IsType<MultiLocalizedUnicodeTagElement>(
+        var t = Assert.IsType<MultiLocalizedUnicodeTagElement>(
             TagElementReader.Parse(WithHeader("mluc", payload)));
 
         Assert.Single(t.Records);
@@ -162,8 +162,8 @@ public class TextTagTests
     [Fact]
     public void Mluc_with_two_records_at_different_offsets()
     {
-        string en = "Color";
-        string fr = "Couleur";
+        var en = "Color";
+        var fr = "Couleur";
         byte[] enBytes = Encoding.BigEndianUnicode.GetBytes(en);
         byte[] frBytes = Encoding.BigEndianUnicode.GetBytes(fr);
 
@@ -184,7 +184,7 @@ public class TextTagTests
             ..enBytes,
             ..frBytes,
         ];
-        MultiLocalizedUnicodeTagElement t = Assert.IsType<MultiLocalizedUnicodeTagElement>(
+        var t = Assert.IsType<MultiLocalizedUnicodeTagElement>(
             TagElementReader.Parse(WithHeader("mluc", payload)));
 
         Assert.Equal(2, t.Records.Count);
@@ -217,7 +217,7 @@ public class TextTagTests
     public void Mluc_with_zero_records()
     {
         byte[] payload = [..U32Be(0), ..U32Be(12)];
-        MultiLocalizedUnicodeTagElement t = Assert.IsType<MultiLocalizedUnicodeTagElement>(
+        var t = Assert.IsType<MultiLocalizedUnicodeTagElement>(
             TagElementReader.Parse(WithHeader("mluc", payload)));
         Assert.Empty(t.Records);
         Assert.Equal(string.Empty, t.FirstText);

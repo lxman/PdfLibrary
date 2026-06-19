@@ -20,8 +20,8 @@ public sealed class S15Fixed16ArrayTagElement : TagElement
         if (payloadBytes < 0 || payloadBytes % 4 != 0)
             throw new IccParseException($"sf32 payload length {payloadBytes} is not a multiple of 4.");
         int count = payloadBytes / 4;
-        double[] values = new double[count];
-        for (int i = 0; i < count; i++) values[i] = reader.ReadS15Fixed16();
+        var values = new double[count];
+        for (var i = 0; i < count; i++) values[i] = reader.ReadS15Fixed16();
         return new S15Fixed16ArrayTagElement(values);
     }
 }

@@ -243,7 +243,7 @@ public class FontSubsetIntegrationTests
             {
                 PdfFont? font = resources.GetFontObject(fontName);
                 PdfFontDescriptor? desc = GetDescriptor(font);
-                var stream = desc?.GetFontFile2Stream();
+                PdfStream? stream = desc?.GetFontFile2Stream();
                 if (stream is not null)
                     return stream.Length;
             }
