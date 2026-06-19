@@ -435,34 +435,19 @@ namespace FontParser.Tables.Cff.Type1
                     }
                     break;
                 case 3:
+                    // Format 3 (CFF spec §19): nRanges ranges + a Sentinel. Range r covers glyphs
+                    // [Ranges[r].First, next) where next = Ranges[r+1].First, or Sentinel for the last
+                    // range. A single-range FDSelect is valid and common (single-FD CID fonts) — the
+                    // previous code assumed >= 2 ranges and threw on Ranges[1].
                     var ranges = new FdsFormat3(reader);
-                    ushort rangeIndex = 0;
-                    byte fdIndex = ranges.Ranges[0].FontDictIndex;
-                    Range3 nextRange = ranges.Ranges[1];
-                    ushort nextTerminator = nextRange.First;
-                    ushort currentIndex = 0;
-                    while (true)
+                    for (var r = 0; r < ranges.Ranges.Count; r++)
                     {
-                        while (currentIndex < nextTerminator)
-                        {
-                            fdSelect.Add(currentIndex, fontDictEntries[fdIndex]);
-                            currentIndex++;
-                        }
-                        fdIndex = nextRange.FontDictIndex;
-                        rangeIndex++;
-                        if (rangeIndex >= ranges.Ranges.Count)
-                        {
-                            break;
-                        }
-                        if (rangeIndex == ranges.Ranges.Count - 1)
-                        {
-                            nextTerminator = ranges.Sentinel;
-                        }
-                        else
-                        {
-                            nextRange = ranges.Ranges[rangeIndex + 1];
-                            nextTerminator = nextRange.First;
-                        }
+                        int first = ranges.Ranges[r].First;
+                        int next = r + 1 < ranges.Ranges.Count ? ranges.Ranges[r + 1].First : ranges.Sentinel;
+                        byte fd = ranges.Ranges[r].FontDictIndex;
+                        if (fd >= fontDictEntries.Count) continue; // defensive: malformed FD index
+                        for (int gid = first; gid < next && gid < numGlyphs; gid++)
+                            fdSelect[(ushort)gid] = fontDictEntries[fd];
                     }
                     break;
             }
