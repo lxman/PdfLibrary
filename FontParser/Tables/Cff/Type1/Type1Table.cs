@@ -73,6 +73,13 @@ namespace FontParser.Tables.Cff.Type1
         /// the original bytes since charset is kept verbatim).</summary>
         public List<List<byte>> RawStringIndex { get; private set; } = new List<List<byte>>();
 
+        /// <summary>Per-FD raw data for a CID-keyed CFF (FDArray order); empty for non-CID. Used by the
+        /// subsetter to re-emit the FDArray + per-FD Private DICTs + local subrs.</summary>
+        public IReadOnlyList<CffCidFd> CidFds { get; private set; } = new List<CffCidFd>();
+
+        /// <summary>Raw bytes of the FDSelect table (CID only), kept verbatim by the subsetter.</summary>
+        public byte[] RawFdSelect { get; private set; } = Array.Empty<byte>();
+
         /// <summary>
         /// Nominal width for glyph width calculations
         /// </summary>
@@ -173,7 +180,7 @@ namespace FontParser.Tables.Cff.Type1
             IsCid = _topDictOperatorEntries.Any(e => e.Name == "ROS");
             if (IsCid)
             {
-                ProcessCid(reader, charStrings, globalSubroutines);
+                ProcessCid(data, reader, charStrings, globalSubroutines);
                 return;
             }
             var privateDictInfo = (List<double>?)_topDictOperatorEntries.FirstOrDefault(e => e.Name == "Private")?.Operand;
@@ -360,7 +367,7 @@ namespace FontParser.Tables.Cff.Type1
             CharStringList.Add(parser.Parse());
         }
 
-        private void ProcessCid(BigEndianReader reader, Type1Index charStrings, List<List<byte>> globalSubroutines)
+        private void ProcessCid(byte[] data, BigEndianReader reader, Type1Index charStrings, List<List<byte>> globalSubroutines)
         {
             // Make raw CharStrings + global subroutines available to GetGlyphOutline. Without
             // this the non-CID code path treats CID fonts as having zero glyphs.
@@ -371,37 +378,44 @@ namespace FontParser.Tables.Cff.Type1
             var fdArrayIndex = new Type1Index(reader);
             ReadFontDictEntries(fdArrayIndex.Data);
             var fontDictEntries = new List<NameDictEntry>();
-            _type1FontDictOperatorEntries.ForEach(oe =>
+            var cidFds = new List<CffCidFd>();
+
+            for (var fd = 0; fd < _type1FontDictOperatorEntries.Count; fd++)
             {
+                CidFontDictEntry oe = _type1FontDictOperatorEntries[fd];
                 CffDictEntry privateDictEntry = oe.Entries.First(e => e.Name == "Private");
                 CffDictEntry fontNameEntry = oe.Entries.First(e => e.Name == "FontName");
                 List<double> entries = (List<double>?)privateDictEntry.Operand
                                        ?? throw new InvalidDataException("Private dict entry has no operand");
                 reader.Seek(Convert.ToInt64(entries[1]));
                 long pdStart = reader.Position;
-                ReadPrivateDictEntries(reader, entries[0]);
+                ReadPrivateDictEntries(reader, entries[0]); // sets RawPrivateDict to this FD's bytes
+                byte[] rawPrivate = RawPrivateDict;
                 var ndEntry = new NameDictEntry(ResolveSid(Convert.ToUInt16(fontNameEntry.Operand)),
                     _type1PrivateDictOperatorEntries.Clone());
                 if (ndEntry.Private.Find(p => p.Name == "Subrs") is { } pd)
                 {
                     reader.Seek(pdStart + Convert.ToInt64(pd.Operand));
                     ushort localSubrCount = reader.ReadUShort();
-                    if (localSubrCount == 0) return;
-                    byte offSize = reader.ReadByte();
-                    List<uint> localSubrOffsets = reader.ReadOffsets(offSize, localSubrCount + 1u).ToList();
-                    var subrIndex = 0;
-                    while (subrIndex < localSubrOffsets.Count - 1)
+                    if (localSubrCount > 0) // 0 local subrs is valid — keep the FD, just no subr INDEX
                     {
-                        ndEntry.LocalSubroutines.Add(new List<byte>(reader.ReadBytes(localSubrOffsets[subrIndex + 1] - localSubrOffsets[subrIndex])));
-                        subrIndex++;
+                        byte offSize = reader.ReadByte();
+                        List<uint> localSubrOffsets = reader.ReadOffsets(offSize, localSubrCount + 1u).ToList();
+                        for (var subrIndex = 0; subrIndex < localSubrOffsets.Count - 1; subrIndex++)
+                            ndEntry.LocalSubroutines.Add(new List<byte>(reader.ReadBytes(localSubrOffsets[subrIndex + 1] - localSubrOffsets[subrIndex])));
                     }
                 }
                 fontDictEntries.Add(ndEntry);
+                cidFds.Add(new CffCidFd(fdArrayIndex.Data[fd].ToArray(), rawPrivate, ndEntry.LocalSubroutines));
                 _type1PrivateDictOperatorEntries.Clear();
-            });
-            reader.Seek(Convert.ToInt64(_topDictOperatorEntries.Find(e => e.Name == "FDSelect").Operand));
+            }
+            CidFds = cidFds;
+
+            long fdSelectOffset = Convert.ToInt64(_topDictOperatorEntries.Find(e => e.Name == "FDSelect").Operand);
+            reader.Seek(fdSelectOffset);
             Dictionary<ushort, NameDictEntry> fdSelectEntries =
                 ReadFdSelectEntries(reader, fontDictEntries, charStrings.Data.Count);
+            RawFdSelect = data[(int)fdSelectOffset..(int)reader.Position];
             _cidFdSelect = fdSelectEntries;
             for (ushort x = 0; x < fdSelectEntries.Count; x++)
             {

@@ -101,4 +101,63 @@ public class CffSubsetterTests
         Assert.Equal(srcTable.RawNameIndex, subTable.RawNameIndex);
         Assert.Equal(srcTable.RawStringIndex, subTable.RawStringIndex);
     }
+
+    [Fact]
+    public void Subset_CidFontType0C_KeepsRequestedGlyphs_BlanksRest_Smaller()
+    {
+        string path = Fix("Kazuraki-CID-96g.cff");
+        if (!File.Exists(path)) return; // untracked CJK CID fixture; guarded
+
+        byte[] src = File.ReadAllBytes(path);
+        var srcTable = new Type1Table(src);
+        Assert.True(srcTable.IsCid);
+        int n = srcTable.RawCharStrings.Count;
+        var keep = new HashSet<int> { 0, 1, 2, 3, 4, 5 };
+
+        byte[] sub = CffSubsetter.Subset(srcTable, keep);
+        var subTable = new Type1Table(sub); // must re-parse as CID
+
+        Assert.True(subTable.IsCid);
+        Assert.Equal(n, subTable.RawCharStrings.Count);
+        foreach (int g in keep)
+        {
+            var a = srcTable.GetGlyphOutline(g);
+            var b = subTable.GetGlyphOutline(g);
+            Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
+            Assert.Equal(a?.MinX, b?.MinX);
+            Assert.Equal(a?.MaxX, b?.MaxX);
+        }
+        Assert.True(sub.Length < src.Length, $"subset {sub.Length} not smaller than source {src.Length}");
+    }
+
+    [Theory]
+    [InlineData("Kazuraki-CID-32g.cff")]
+    [InlineData("Kazuraki-CID-96g.cff")]
+    public void Subset_Cid_KeepingAllGlyphs_PreservesEveryOutline(string fixture)
+    {
+        string path = Fix(fixture);
+        if (!File.Exists(path)) return;
+
+        var srcTable = new Type1Table(File.ReadAllBytes(path));
+        Assert.True(srcTable.IsCid);
+        int n = srcTable.RawCharStrings.Count;
+        var keepAll = new HashSet<int>(Enumerable.Range(0, n));
+
+        byte[] sub = CffSubsetter.Subset(srcTable, keepAll);
+        var subTable = new Type1Table(sub);
+
+        Assert.True(subTable.IsCid);
+        Assert.Equal(n, subTable.RawCharStrings.Count);
+        // Every glyph identical across all FDs — exercises FDArray/FDSelect/per-FD-Private serialization.
+        for (var g = 0; g < n; g++)
+        {
+            var a = srcTable.GetGlyphOutline(g);
+            var b = subTable.GetGlyphOutline(g);
+            Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
+            Assert.Equal(a?.MinX, b?.MinX);
+            Assert.Equal(a?.MaxX, b?.MaxX);
+            Assert.Equal(a?.MinY, b?.MinY);
+            Assert.Equal(a?.MaxY, b?.MaxY);
+        }
+    }
 }

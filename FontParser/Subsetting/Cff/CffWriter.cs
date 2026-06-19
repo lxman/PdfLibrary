@@ -58,6 +58,21 @@ namespace FontParser.Subsetting.Cff
             return buf;
         }
 
+        /// <summary>Byte offset of entry <paramref name="entryIndex"/>'s data within the INDEX that
+        /// <see cref="WriteIndex"/> would produce for the given entry lengths. Lets callers locate
+        /// fixed-width offset placeholders inside a wrapped multi-entry INDEX (e.g. the FDArray).</summary>
+        public static int IndexEntryDataOffset(IReadOnlyList<int> entryLengths, int entryIndex)
+        {
+            int count = entryLengths.Count;
+            int maxOffset = 1;
+            for (var i = 0; i < count; i++) maxOffset += entryLengths[i];
+            int offSize = maxOffset <= 0xFF ? 1 : maxOffset <= 0xFFFF ? 2 : maxOffset <= 0xFFFFFF ? 3 : 4;
+
+            int dataStart = 2 + 1 + (count + 1) * offSize; // count + offSize + offset array
+            for (var i = 0; i < entryIndex; i++) dataStart += entryLengths[i];
+            return dataStart;
+        }
+
         /// <summary>Encodes an integer as a CFF DICT operand in the shortest form (mirrors <c>Calc.Integer</c>).</summary>
         public static byte[] EncodeInteger(int value)
         {

@@ -20,29 +20,35 @@ namespace FontParser.Subsetting.Cff
         private const int OpCharStrings = 17;
         private const int OpPrivate = 18;
         private const int OpSubrs = 19;
+        private const int OpFdArray = 0x0C24;
+        private const int OpFdSelect = 0x0C25;
 
         /// <summary>Produces a subset CFF retaining <paramref name="usedGids"/> (GID 0 is always kept).</summary>
         public static byte[] Subset(Type1Table source, ISet<int> usedGids)
         {
             if (source is null) throw new ArgumentNullException(nameof(source));
             if (usedGids is null) throw new ArgumentNullException(nameof(usedGids));
-            if (source.IsCid)
-                throw new NotSupportedException("CID-keyed CFF subsetting is handled separately.");
-            return SubsetNonCid(source, usedGids);
+            return source.IsCid ? SubsetCid(source, usedGids) : SubsetNonCid(source, usedGids);
         }
 
-        private static byte[] SubsetNonCid(Type1Table source, ISet<int> usedGids)
+        /// <summary>New CharStrings INDEX entries: used glyphs (and GID 0) verbatim, the rest blanked to
+        /// a 1-byte endchar. Glyph count and numbering are preserved.</summary>
+        private static List<byte[]> BuildSubsetCharStrings(Type1Table source, ISet<int> usedGids)
         {
             int numGlyphs = source.RawCharStrings.Count;
-
-            // 1. CharStrings INDEX: keep used + GID 0 verbatim, blank the rest to a 1-byte endchar.
             var endchar = new byte[] { 0x0e };
             var charStrings = new List<byte[]>(numGlyphs);
             for (var gid = 0; gid < numGlyphs; gid++)
                 charStrings.Add(gid == 0 || usedGids.Contains(gid)
                     ? source.RawCharStrings[gid].ToArray()
                     : endchar);
-            byte[] charStringsBytes = CffWriter.WriteIndex(charStrings);
+            return charStrings;
+        }
+
+        private static byte[] SubsetNonCid(Type1Table source, ISet<int> usedGids)
+        {
+            // 1. CharStrings INDEX: keep used + GID 0 verbatim, blank the rest to a 1-byte endchar.
+            byte[] charStringsBytes = CffWriter.WriteIndex(BuildSubsetCharStrings(source, usedGids));
 
             // 2. Private DICT: copy every operator except Subrs verbatim; re-add Subrs pointing just past
             //    the Private DICT (where the Local Subr INDEX is placed) when local subrs exist.
@@ -126,6 +132,134 @@ namespace FontParser.Subsetting.Cff
             Append(privateBytes);
             Append(localSubrBytes);
             Append(charStringsBytes);
+            return outBuf;
+        }
+
+        private static byte[] SubsetCid(Type1Table source, ISet<int> usedGids)
+        {
+            // 1. CharStrings INDEX (same blank-unused strategy as non-CID).
+            byte[] charStringsBytes = CffWriter.WriteIndex(BuildSubsetCharStrings(source, usedGids));
+
+            int nFds = source.CidFds.Count;
+
+            // 2. Per-FD Private DICT (Subrs re-pointed just past it) + Local Subr INDEX.
+            var privateBytes = new byte[nFds][];
+            var localSubrBytes = new byte[nFds][];
+            for (var fd = 0; fd < nFds; fd++)
+            {
+                CffCidFd f = source.CidFds[fd];
+                bool hasLocal = f.LocalSubrs.Count > 0;
+                var priv = new CffDictBuilder();
+                foreach (DictEntry e in Tokenize(f.RawPrivateDict))
+                    if (e.Operator != OpSubrs)
+                        priv.AppendRaw(e.Raw);
+                if (hasLocal)
+                {
+                    int sp = priv.AddOffset(OpSubrs);
+                    priv.PatchOffset(sp, priv.Length); // relative to the Private DICT start
+                }
+                privateBytes[fd] = priv.Build();
+                localSubrBytes[fd] = hasLocal ? CffWriter.WriteIndex(f.LocalSubrs) : Array.Empty<byte>();
+            }
+
+            // 3. FDArray INDEX: re-encode each font DICT, its Private (size, offset) -> fixed placeholders.
+            var fontDictBytes = new List<byte[]>(nFds);
+            var privSizePos = new int[nFds];
+            var privOffPos = new int[nFds];
+            for (var fd = 0; fd < nFds; fd++)
+            {
+                var fdb = new CffDictBuilder();
+                foreach (DictEntry e in Tokenize(source.CidFds[fd].RawFontDict))
+                {
+                    if (e.Operator == OpPrivate)
+                        (privSizePos[fd], privOffPos[fd]) = fdb.AddOffsetPair(OpPrivate);
+                    else
+                        fdb.AppendRaw(e.Raw);
+                }
+                fontDictBytes.Add(fdb.Build());
+            }
+            byte[] fdArrayBytes = CffWriter.WriteIndex(fontDictBytes);
+
+            // 4. Top DICT: copy verbatim except the offset operators. ROS and the rest are copied raw
+            //    (their SIDs reference the kept-verbatim String INDEX). No Encoding/Private at top level.
+            bool customCharset = source.RawCharset.Length > 0;
+            var top = new CffDictBuilder();
+            int charsetPos = -1, charStringsPos = -1, fdArrayPos = -1, fdSelectPos = -1;
+            foreach (DictEntry e in Tokenize(source.RawTopDict))
+            {
+                switch (e.Operator)
+                {
+                    case OpCharset:
+                        if (customCharset) charsetPos = top.AddOffset(OpCharset);
+                        else top.AppendRaw(e.Raw);
+                        break;
+                    case OpCharStrings: charStringsPos = top.AddOffset(OpCharStrings); break;
+                    case OpFdArray: fdArrayPos = top.AddOffset(OpFdArray); break;
+                    case OpFdSelect: fdSelectPos = top.AddOffset(OpFdSelect); break;
+                    default: top.AppendRaw(e.Raw); break;
+                }
+            }
+            byte[] topDictBytes = top.Build();
+            byte[] topDictIndexBytes = CffWriter.WriteIndex(new[] { topDictBytes });
+            int topDataStart = topDictIndexBytes.Length - topDictBytes.Length;
+
+            // 5. Verbatim sections.
+            byte[] header = { 1, 0, 4, 1 };
+            byte[] nameIndex = CffWriter.WriteIndex(source.RawNameIndex);
+            byte[] stringIndex = CffWriter.WriteIndex(source.RawStringIndex);
+            byte[] globalSubr = CffWriter.WriteIndex(source.GlobalSubroutines);
+            byte[] charset = customCharset ? source.RawCharset : Array.Empty<byte>();
+            byte[] fdSelect = source.RawFdSelect;
+
+            // 6. Layout: header, name, topDictIdx, string, globalSubr, charset, fdSelect, charStrings,
+            //    fdArray, then per-FD [Private DICT][Local Subr INDEX].
+            int pos = header.Length + nameIndex.Length + topDictIndexBytes.Length
+                      + stringIndex.Length + globalSubr.Length;
+            int charsetAbs = pos; pos += charset.Length;
+            int fdSelectAbs = pos; pos += fdSelect.Length;
+            int charStringsAbs = pos; pos += charStringsBytes.Length;
+            int fdArrayAbs = pos; pos += fdArrayBytes.Length;
+            var privateAbs = new int[nFds];
+            for (var fd = 0; fd < nFds; fd++)
+            {
+                privateAbs[fd] = pos; pos += privateBytes[fd].Length;
+                pos += localSubrBytes[fd].Length;
+            }
+
+            // 7. Backfill Top DICT offsets.
+            if (customCharset) PatchBE32(topDictIndexBytes, topDataStart + charsetPos, charsetAbs);
+            PatchBE32(topDictIndexBytes, topDataStart + fdSelectPos, fdSelectAbs);
+            PatchBE32(topDictIndexBytes, topDataStart + charStringsPos, charStringsAbs);
+            PatchBE32(topDictIndexBytes, topDataStart + fdArrayPos, fdArrayAbs);
+
+            // 8. Backfill each FDArray font DICT's Private (size, offset).
+            var fdLens = new List<int>(nFds);
+            foreach (byte[] b in fontDictBytes) fdLens.Add(b.Length);
+            for (var fd = 0; fd < nFds; fd++)
+            {
+                int entryStart = CffWriter.IndexEntryDataOffset(fdLens, fd);
+                PatchBE32(fdArrayBytes, entryStart + privSizePos[fd], privateBytes[fd].Length);
+                PatchBE32(fdArrayBytes, entryStart + privOffPos[fd], privateAbs[fd]);
+            }
+
+            // 9. Concatenate.
+            var outBuf = new byte[pos];
+            var w = 0;
+            void Append(byte[] b) { Array.Copy(b, 0, outBuf, w, b.Length); w += b.Length; }
+            Append(header);
+            Append(nameIndex);
+            Append(topDictIndexBytes);
+            Append(stringIndex);
+            Append(globalSubr);
+            Append(charset);
+            Append(fdSelect);
+            Append(charStringsBytes);
+            Append(fdArrayBytes);
+            for (var fd = 0; fd < nFds; fd++)
+            {
+                Append(privateBytes[fd]);
+                Append(localSubrBytes[fd]);
+            }
             return outBuf;
         }
 
