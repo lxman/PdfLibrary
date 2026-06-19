@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Security;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Optimization;
@@ -16,10 +17,14 @@ public static class PdfOptimizer
         ArgumentNullException.ThrowIfNull(output);
         options ??= PdfOptimizationOptions.Default;
 
-        if (document.IsEncrypted)
-            throw new NotSupportedException("Optimizing encrypted documents is not yet supported.");
-
         document.MaterializeAllObjects();
+
+        // Encrypted input -> unencrypted output: decrypt every stream in place and drop the decryptor
+        // BEFORE any transform that reads stream data (compression / image / font passes all decode
+        // without a decryptor). Strings are already plaintext (decrypted at parse time) and the
+        // serializer omits /Encrypt, so the result is a valid unencrypted PDF.
+        if (document.IsEncrypted)
+            DecryptStreamsInPlace(document);
 
         if (options.CompressStreams)
             CompressUncompressedStreams(document);
@@ -54,6 +59,24 @@ public static class PdfOptimizer
 
     internal static void CompressUncompressedStreamsForTest(PdfDocument document)
         => CompressUncompressedStreams(document);
+
+    /// <summary>Turns an encrypted document into an equivalent unencrypted one: decrypts every indirect
+    /// stream's raw data in place, then clears the decryptor. Must run after MaterializeAllObjects so
+    /// every in-use stream is present. Strings are already decrypted at parse time, so only streams need
+    /// handling; with the decryptor gone the serializer omits /Encrypt and the output is unencrypted.</summary>
+    internal static void DecryptStreamsInPlace(PdfDocument document)
+    {
+        PdfDecryptor? decryptor = document.Decryptor;
+        if (decryptor is null) return;
+
+        foreach (PdfObject obj in document.Objects.Values)
+        {
+            if (obj is not PdfStream { IsIndirect: true } s) continue;
+            s.Data = decryptor.Decrypt(s.Data, s.ObjectNumber, s.GenerationNumber);
+        }
+
+        document.ClearDecryptor();
+    }
 
     /// <summary>Downsamples and re-compresses embedded image XObjects (Phase 3, image track):
     /// scans /Subtype /Image XObjects, downsamples via ImageLibrary's resampler and re-encodes,

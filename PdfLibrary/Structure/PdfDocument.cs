@@ -60,6 +60,13 @@ public class PdfDocument : IDisposable
     public bool IsEncrypted => Decryptor is not null;
 
     /// <summary>
+    /// Drops the decryptor so the document is treated as unencrypted. Callers must have already
+    /// decrypted every stream's data in place (strings are decrypted at parse time); afterwards
+    /// <see cref="IsEncrypted"/> is false and stream access no longer attempts decryption.
+    /// </summary>
+    internal void ClearDecryptor() => Decryptor = null;
+
+    /// <summary>
     /// Gets the document permissions for encrypted documents.
     /// Returns full permissions for unencrypted documents.
     /// </summary>

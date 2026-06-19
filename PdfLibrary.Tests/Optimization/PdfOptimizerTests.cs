@@ -211,4 +211,33 @@ public class PdfOptimizerTests
         // The object-stream rewrite must not balloon a compact object-stream PDF the way classic xref did.
         Assert.True(ms.Length <= orig * 1.05, $"{rel}: optimized {ms.Length} vs original {orig} — still bloating");
     }
+
+    // ── Encrypted input -> unencrypted output ─────────────────────────────────
+
+    [Fact]
+    public void Optimize_EncryptedDoc_ProducesUnencryptedOutput_PreservingText()
+    {
+        // RC4-40 (empty user password) TCPDF spec sheet; body lives in a Form XObject.
+        string path = Path.Combine(@"C:\Users\jorda\RiderProjects\PDF",
+            @"ImageLibrary\TestImages\jpeg_test\allmand-backhoe-loaders-spec-e15132.pdf");
+        if (!File.Exists(path)) return; // guarded fixture
+
+        string originalText;
+        using (PdfDocument src = PdfDocument.Load(path))
+        {
+            Assert.True(src.IsEncrypted);
+            originalText = src.ExtractAllText();
+        }
+        Assert.Contains("alphabetical notation", originalText);
+
+        using var opt = new MemoryStream();
+        using (PdfDocument d = PdfDocument.Load(path))
+            PdfOptimizer.Optimize(d, opt); // previously threw NotSupportedException for encrypted input
+        opt.Position = 0;
+
+        using PdfDocument reloaded = PdfDocument.Load(opt);
+        Assert.False(reloaded.IsEncrypted);          // /Encrypt dropped
+        Assert.Null(reloaded.Decryptor);
+        Assert.Equal(originalText, reloaded.ExtractAllText()); // text preserved exactly
+    }
 }
