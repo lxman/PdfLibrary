@@ -1,4 +1,5 @@
 using System.Collections;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
@@ -32,4 +33,28 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
     }
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+    private PdfDictionary PageAt(int index)
+    {
+        IReadOnlyList<PdfDictionary> pages = PageTreeOps.PageDicts(_document);
+        if (index < 0 || index >= pages.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+        return pages[index];
+    }
+
+    public void Rotate(int index, int degrees)
+    {
+        if (degrees % 90 != 0)
+            throw new ArgumentException("Rotation must be a multiple of 90 degrees.", nameof(degrees));
+        PageAt(index)[new PdfName("Rotate")] = new PdfInteger(((degrees % 360) + 360) % 360);
+    }
+
+    public void RotateBy(int index, int delta)
+    {
+        if (delta % 90 != 0)
+            throw new ArgumentException("Rotation must be a multiple of 90 degrees.", nameof(delta));
+        PdfDictionary page = PageAt(index);
+        int current = page.TryGetValue(new PdfName("Rotate"), out PdfObject o) && o is PdfInteger r ? r.Value : 0;
+        page[new PdfName("Rotate")] = new PdfInteger((((current + delta) % 360) + 360) % 360);
+    }
 }
