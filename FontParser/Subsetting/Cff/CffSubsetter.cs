@@ -95,6 +95,8 @@ namespace FontParser.Subsetting.Cff
                         break;
                 }
             }
+            if (charStringsPos < 0 || privSizePos < 0)
+                throw new InvalidOperationException("Top DICT is missing a CharStrings or Private operator.");
             byte[] topDictBytes = top.Build();
             byte[] topDictIndexBytes = CffWriter.WriteIndex(new[] { topDictBytes });
             int dataStart = topDictIndexBytes.Length - topDictBytes.Length; // INDEX data sits at the end
@@ -168,6 +170,8 @@ namespace FontParser.Subsetting.Cff
             var privOffPos = new int[nFds];
             for (var fd = 0; fd < nFds; fd++)
             {
+                privSizePos[fd] = -1;
+                privOffPos[fd] = -1;
                 var fdb = new CffDictBuilder();
                 foreach (DictEntry e in Tokenize(source.CidFds[fd].RawFontDict))
                 {
@@ -176,6 +180,8 @@ namespace FontParser.Subsetting.Cff
                     else
                         fdb.AppendRaw(e.Raw);
                 }
+                if (privSizePos[fd] < 0)
+                    throw new InvalidOperationException("CID font DICT is missing a Private operator.");
                 fontDictBytes.Add(fdb.Build());
             }
             byte[] fdArrayBytes = CffWriter.WriteIndex(fontDictBytes);
@@ -199,6 +205,8 @@ namespace FontParser.Subsetting.Cff
                     default: top.AppendRaw(e.Raw); break;
                 }
             }
+            if (charStringsPos < 0 || fdArrayPos < 0 || fdSelectPos < 0)
+                throw new InvalidOperationException("CID Top DICT is missing a required offset operator.");
             byte[] topDictBytes = top.Build();
             byte[] topDictIndexBytes = CffWriter.WriteIndex(new[] { topDictBytes });
             int topDataStart = topDictIndexBytes.Length - topDictBytes.Length;
@@ -297,6 +305,7 @@ namespace FontParser.Subsetting.Cff
                 byte b = dict[i];
                 if (b <= 21) // operator (12 = escape -> 2 bytes)
                 {
+                    if (b == 12 && i + 1 >= dict.Length) break; // truncated escape -> stop (malformed DICT)
                     int op = b == 12 ? (0x0C00 | dict[i + 1]) : b;
                     i += b == 12 ? 2 : 1;
                     var raw = new byte[i - entryStart];

@@ -10,7 +10,9 @@ namespace FontParser.Tables.Cff.Type1.Charsets
 
         public CharsetsFormat0(BigEndianReader reader, ushort numGlyphs)
         {
-            Glyphs = reader.ReadUShortArray(numGlyphs).ToList();
+            // A format-0 charset stores numGlyphs-1 SIDs/CIDs: GID 0 (.notdef / CID 0) is implicit and
+            // not encoded. Reading numGlyphs entries over-reads one phantom value from the next section.
+            Glyphs = reader.ReadUShortArray(numGlyphs > 0 ? (uint)(numGlyphs - 1) : 0u).ToList();
         }
     }
 }
