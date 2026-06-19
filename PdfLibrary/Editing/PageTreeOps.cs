@@ -29,6 +29,16 @@ internal static class PageTreeOps
         return result;
     }
 
+    internal static void Move(PdfDocument doc, int from, int to)
+    {
+        PdfArray kids = Kids(doc);
+        if (from < 0 || from >= kids.Count) throw new ArgumentOutOfRangeException(nameof(from));
+        if (to < 0 || to >= kids.Count) throw new ArgumentOutOfRangeException(nameof(to));
+        PdfObject item = kids[from];
+        kids.RemoveAt(from);
+        kids.Insert(to, item);
+    }
+
     /// <summary>The catalog's /Pages indirect reference (promotes a direct /Pages dict to indirect if needed).</summary>
     internal static PdfIndirectReference RootRef(PdfDocument doc)
     {

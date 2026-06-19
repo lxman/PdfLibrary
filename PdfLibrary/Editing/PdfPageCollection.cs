@@ -57,4 +57,6 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
         int current = page.TryGetValue(new PdfName("Rotate"), out PdfObject o) && o is PdfInteger r ? r.Value : 0;
         page[new PdfName("Rotate")] = new PdfInteger((((current + delta) % 360) + 360) % 360);
     }
+
+    public void Move(int fromIndex, int toIndex) => PageTreeOps.Move(_document, fromIndex, toIndex);
 }
