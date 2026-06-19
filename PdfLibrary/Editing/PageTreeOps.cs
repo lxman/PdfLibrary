@@ -58,6 +58,16 @@ internal static class PageTreeOps
         root[new PdfName("Count")] = new PdfInteger(count);
     }
 
+    internal static void InsertPageRef(PdfDocument doc, PdfIndirectReference pageRef, int at)
+    {
+        PdfArray kids = Kids(doc);
+        if (at < 0 || at > kids.Count) throw new ArgumentOutOfRangeException(nameof(at));
+        kids.Insert(at, pageRef);
+        if (doc.GetObject(pageRef.ObjectNumber) is PdfDictionary page)
+            page[new PdfName("Parent")] = RootRef(doc);
+        SetCount(doc, kids.Count);
+    }
+
     /// <summary>The catalog's /Pages indirect reference (promotes a direct /Pages dict to indirect if needed).</summary>
     internal static PdfIndirectReference RootRef(PdfDocument doc)
     {

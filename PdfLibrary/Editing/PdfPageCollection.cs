@@ -66,4 +66,15 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
             throw new InvalidOperationException("Cannot remove the last remaining page.");
         PageTreeOps.RemoveAt(_document, index);
     }
+
+    public PdfPage InsertBlank(int at, double width, double height)
+    {
+        var page = new PdfDictionary();
+        page[PdfName.TypeName] = new PdfName("Page");
+        page[new PdfName("MediaBox")] =
+            new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(width), new PdfReal(height));
+        PdfIndirectReference pageRef = _document.RegisterObject(page);
+        PageTreeOps.InsertPageRef(_document, pageRef, at);
+        return new PdfPage(page, _document, _document.PageTreeRootDictionary);
+    }
 }
