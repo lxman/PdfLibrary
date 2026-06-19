@@ -1,5 +1,7 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Editing;
+using PdfLibrary.Optimization;
 
 namespace PdfLibrary.Structure;
 
@@ -74,4 +76,17 @@ public partial class PdfDocument
 
     /// <summary>Removes the object at <paramref name="number"/> from the in-memory graph.</summary>
     internal void RemoveObject(int number) => _objects.Remove(number);
+
+    /// <summary>Enters edit mode: materializes the graph, decrypts in place if encrypted, flattens
+    /// the page tree, and returns a <see cref="PdfDocumentEditor"/>.</summary>
+    public PdfDocumentEditor Edit()
+    {
+        if (Trailer.Root is null)
+            throw new InvalidOperationException("Document has no /Root catalog; cannot edit.");
+        MaterializeAllObjects();
+        if (IsEncrypted)
+            PdfOptimizer.DecryptStreamsInPlace(this);
+        PageTreeNormalizer.Normalize(this);
+        return new PdfDocumentEditor(this);
+    }
 }
