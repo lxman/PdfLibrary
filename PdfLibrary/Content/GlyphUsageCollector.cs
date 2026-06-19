@@ -1,3 +1,4 @@
+using FontParser.Tables.Cff.Type1;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -16,6 +17,8 @@ internal enum FontUsageKind
     SimpleTrueType,
     /// <summary>/Subtype /Type0 with /Encoding /Identity-H or /Identity-V and CIDFontType2 descendant.</summary>
     IdentityCidType2,
+    /// <summary>Simple /Subtype /Type1 font with single-byte codes and a Type1C /FontFile3 (CFF).</summary>
+    SimpleType1C,
 }
 
 /// <summary>
@@ -47,6 +50,9 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
     // Accumulates usage keyed by the font-file PdfStream object (reference equality).
     private readonly Dictionary<PdfStream, FontUsage> _result = new(ReferenceEqualityComparer.Instance);
 
+    // Parsed CFF per /FontFile3 stream (cached; null = unparseable). Used to map glyph names -> GIDs.
+    private readonly Dictionary<PdfStream, Type1Table?> _cffCache = new(ReferenceEqualityComparer.Instance);
+
     public GlyphUsageCollector(PdfResources? resources, PdfDocument? document)
     {
         _resources = resources;
@@ -77,6 +83,44 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         }
     }
 
+    /// <summary>
+    /// Recurse into Form XObjects so glyph usage inside forms is collected too. Without this, a font
+    /// used only inside a form (e.g. an imposed page) would have its glyphs dropped on subsetting.
+    /// Mirrors <see cref="PdfTextExtractor"/>'s form handling.
+    /// </summary>
+    protected override void OnInvokeXObject(string name)
+    {
+        PdfStream? xobject = _resources?.GetXObject(name);
+        if (xobject is null || PdfImage.IsImageXObject(xobject) || !IsFormXObject(xobject))
+            return;
+
+        byte[] contentData = xobject.GetDecodedData(_document?.Decryptor);
+
+        PdfResources? formResources = _resources;
+        if (xobject.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resObj))
+        {
+            if (resObj is PdfIndirectReference r && _document is not null)
+                resObj = _document.ResolveReference(r);
+            if (resObj is PdfDictionary resDict)
+                formResources = new PdfResources(resDict, _document);
+        }
+
+        var nested = new GlyphUsageCollector(formResources, _document);
+        nested.ProcessOperators(PdfContentParser.Parse(contentData));
+
+        foreach ((PdfStream fs, FontUsage u) in nested.Result)
+        {
+            if (!_result.TryGetValue(fs, out FontUsage? existing))
+                _result[fs] = u;
+            else
+                foreach (ushort gid in u.Gids)
+                    existing.Gids.Add(gid);
+        }
+    }
+
+    private static bool IsFormXObject(PdfStream stream) =>
+        stream.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject obj) && obj is PdfName { Value: "Form" };
+
     // -----------------------------------------------------------------
     // Core accumulation logic
     // -----------------------------------------------------------------
@@ -99,7 +143,57 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
             case TrueTypeFont tt:
                 AccumulateSimpleTrueType(tt, bytes);
                 break;
+
+            case Type1Font t1:
+                AccumulateSimpleType1C(t1, bytes);
+                break;
         }
+    }
+
+    // -----------------------------------------------------------------
+    // Simple Type1C (single-byte codes, /FontFile3 CFF)
+    // -----------------------------------------------------------------
+
+    private void AccumulateSimpleType1C(Type1Font font, byte[] bytes)
+    {
+        PdfFontDescriptor? descriptor = font.GetDescriptor();
+        PdfStream? fontFile3 = descriptor?.GetFontFile3Stream();
+        if (descriptor is null || fontFile3 is null)
+            return;
+
+        Type1Table? cff = GetCff(fontFile3);
+        if (cff is null || cff.IsCid)
+            return; // unparseable, or CID-keyed (handled via the Type0 path)
+
+        FontUsage usage = GetOrAddUsage(fontFile3, new FontUsage
+        {
+            Descriptor = descriptor,
+            DescendantCidFontDict = null,
+            Kind = FontUsageKind.SimpleType1C,
+        });
+
+        // Single-byte code -> glyph name (PDF /Encoding) -> GID (CFF charset). GID 0 (.notdef) is
+        // always retained by the subsetter, so codes that resolve to it are simply not added here.
+        foreach (byte b in bytes)
+        {
+            string? name = font.Encoding?.GetGlyphName(b);
+            if (string.IsNullOrEmpty(name))
+                continue;
+            int gid = cff.GetGlyphIndexByName(name);
+            if (gid > 0)
+                usage.Gids.Add((ushort)gid);
+        }
+    }
+
+    private Type1Table? GetCff(PdfStream fontFile3)
+    {
+        if (_cffCache.TryGetValue(fontFile3, out Type1Table? cached))
+            return cached;
+        Type1Table? table;
+        try { table = new Type1Table(fontFile3.GetDecodedData(_document?.Decryptor)); }
+        catch { table = null; }
+        _cffCache[fontFile3] = table;
+        return table;
     }
 
     // -----------------------------------------------------------------

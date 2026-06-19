@@ -282,6 +282,19 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     }
 
     /// <summary>
+    /// Gets the raw PdfStream object for /FontFile3 (CFF) without decoding.
+    /// Used by the font subsetter to replace the embedded program in place.
+    /// </summary>
+    internal PdfStream? GetFontFile3Stream()
+    {
+        if (!_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject? obj))
+            return null;
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+        return obj as PdfStream;
+    }
+
+    /// <summary>
     /// Gets the FontFile3 stream (CFF/OpenType font program)
     /// </summary>
     public byte[]? GetFontFile3()

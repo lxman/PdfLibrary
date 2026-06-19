@@ -1,4 +1,7 @@
+using System.Linq;
 using PdfLibrary.Builder;
+using PdfLibrary.Core;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Optimization;
@@ -276,5 +279,50 @@ public class FontSubsetIntegrationTests
             Type0Font t0 => t0.DescendantDescriptor,
             _ => null
         };
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CFF (/FontFile3 Type1C) subsetting — allmand spec sheet (body in a Form XObject, AbadiMT)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private static string AllmandPath() => Path.GetFullPath(Path.Combine(
+        AppContext.BaseDirectory, "..", "..", "..", "..",
+        "ImageLibrary", "TestImages", "jpeg_test", "allmand-backhoe-loaders-spec-e15132.pdf"));
+
+    [Fact]
+    public void SubsetFonts_AllmandType1C_PreservesText_AndShrinksFontFile3()
+    {
+        string path = AllmandPath();
+        if (!File.Exists(path)) return; // untracked fixture; guarded
+
+        string before;
+        long fontBytesBefore;
+        using (PdfDocument d = PdfDocument.Load(path))
+        {
+            before = d.ExtractAllText();
+            fontBytesBefore = TotalType1CBytes(d);
+        }
+        Assert.Contains("alphabetical notation", before); // body text (Form XObject) must be present
+
+        using var ms = new MemoryStream();
+        using (PdfDocument d = PdfDocument.Load(path))
+            PdfOptimizer.Optimize(d, ms, new PdfOptimizationOptions { SubsetFonts = true });
+        ms.Position = 0;
+
+        using PdfDocument re = PdfDocument.Load(ms);
+        Assert.Equal(before, re.ExtractAllText());           // text byte-identical (no dropped glyphs)
+        long fontBytesAfter = TotalType1CBytes(re);
+        Assert.True(fontBytesAfter < fontBytesBefore,
+            $"Type1C font bytes {fontBytesAfter} not < {fontBytesBefore}");
+    }
+
+    private static long TotalType1CBytes(PdfDocument doc)
+    {
+        doc.MaterializeAllObjects();
+        long total = 0;
+        foreach (PdfStream s in doc.Objects.Values.OfType<PdfStream>())
+            if (s.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject st) && st.ToString() == "/Type1C")
+                total += s.Length;
+        return total;
     }
 }

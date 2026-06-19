@@ -1,5 +1,7 @@
 using FontParser;
 using FontParser.Subsetting;
+using FontParser.Subsetting.Cff;
+using FontParser.Tables.Cff.Type1;
 using PdfLibrary.Content;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -8,17 +10,17 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Optimization;
 
 /// <summary>
-/// Subsets embedded TrueType (/FontFile2) programs to the glyphs actually used on
-/// each page.  Called by <see cref="PdfOptimizer.SubsetFonts"/> when
-/// <see cref="PdfOptimizationOptions.SubsetFonts"/> is true.
+/// Subsets embedded font programs to the glyphs actually used on each page.  Called by
+/// <see cref="PdfOptimizer.SubsetFonts"/> when <see cref="PdfOptimizationOptions.SubsetFonts"/> is true.
 ///
 /// Supported:
 ///   • /Subtype /Type0, /Encoding /Identity-H or /Identity-V, descendant /CIDFontType2
-///     with /FontFile2 — PRIMARY target.
-///   • /Subtype /TrueType with /FontFile2 — SECONDARY; deferred if round-trip uncertain.
+///     with /FontFile2 — TrueType CID.
+///   • /Subtype /TrueType with /FontFile2 — simple TrueType.
+///   • /Subtype /Type1 with a Type1C /FontFile3 (CFF) — simple CFF.
 ///
-/// Skipped entirely: CFF (/FontFile3), Type1 (/FontFile), Type3, non-embedded fonts,
-/// Type0 with non-Identity CMaps, sfnt fonts whose OutlineKind is CFF.
+/// Skipped: Type1 (/FontFile), Type3, non-embedded fonts, Type0 with non-Identity CMaps,
+/// CID-keyed CFF (CIDFontType0C — pending). Any font that fails to parse/subset is left untouched.
 /// </summary>
 internal static class FontSubsetter
 {
@@ -51,11 +53,18 @@ internal static class FontSubsetter
             }
         }
 
-        // 2. For each unique font-file stream, attempt subsetting.
+        // 2. For each unique font-program stream, attempt subsetting.
         foreach ((PdfStream fontFile2Stream, FontUsage usage) in merged)
         {
             if (usage.Gids.Count == 0)
                 continue;
+
+            // CFF (/FontFile3) programs go through the CFF subsetter.
+            if (usage.Kind == FontUsageKind.SimpleType1C)
+            {
+                TrySubsetCff(fontFile2Stream, usage, document);
+                continue;
+            }
 
             // Parse the embedded font program.
             SfntFont sfnt;
@@ -125,6 +134,38 @@ internal static class FontSubsetter
                     new PdfIndirectReference(nextObjNum, 0);
             }
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Subset a CFF (/FontFile3) program in place. Keeps only the used glyphs (GID 0 always retained
+    // by CffSubsetter). No /Length1 (CFF FontFile3 uses /Length only) and no /CIDToGIDMap (CID-keyed
+    // CFF maps CID->GID via its own charset; this path is non-CID Type1C anyway).
+    // -------------------------------------------------------------------------
+
+    private static void TrySubsetCff(PdfStream fontFile3Stream, FontUsage usage, PdfDocument document)
+    {
+        byte[] subsetBytes;
+        try
+        {
+            byte[] raw = fontFile3Stream.GetDecodedData(document.Decryptor);
+            var cff = new Type1Table(raw);
+            var used = new HashSet<int>();
+            foreach (ushort gid in usage.Gids)
+                used.Add(gid);
+            subsetBytes = CffSubsetter.Subset(cff, used);
+        }
+        catch
+        {
+            return; // unparseable or unsupported (e.g. CID) — leave the original
+        }
+
+        // Size guard: only commit if the Flate-encoded subset is smaller than the existing stream.
+        var tempStream = new PdfStream([]);
+        tempStream.SetEncodedData(subsetBytes, "FlateDecode");
+        if (tempStream.Length >= fontFile3Stream.Length)
+            return;
+
+        fontFile3Stream.SetEncodedData(subsetBytes, "FlateDecode");
     }
 
     // -------------------------------------------------------------------------
