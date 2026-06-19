@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using PdfLibrary.Optimization;
 using PdfLibrary.Rendering.SkiaSharp;
 using Serilog;
 using SkiaSharp;
@@ -95,6 +96,7 @@ public partial class MainWindow : Window
             PrevPageButton.IsEnabled = false;
             ExportButton.IsEnabled = true;
             PrintButton.IsEnabled = true;
+            OptimizeButton.IsEnabled = true;
             EnableZoomControls(true);
 
             // Render first page
@@ -446,5 +448,78 @@ public partial class MainWindow : Window
         bitmapImage.Freeze();
 
         return bitmapImage;
+    }
+
+    // ==================== OPTIMIZE ====================
+
+    private async void OptimizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_pdfDoc == null || _currentFilePath == null)
+        {
+            MessageBox.Show("Please load a PDF first.", "No Document",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        string sourcePath = _currentFilePath;
+        long originalBytes = new FileInfo(sourcePath).Length;
+
+        var optionsDialog = new OptimizeDialog(originalBytes) { Owner = this };
+        if (optionsDialog.ShowDialog() != true) return;
+
+        var saveDialog = new SaveFileDialog
+        {
+            Filter = "PDF Files (*.pdf)|*.pdf",
+            Title = "Save Optimized PDF",
+            FileName = $"{Path.GetFileNameWithoutExtension(sourcePath)}.optimized.pdf"
+        };
+        if (saveDialog.ShowDialog() != true) return;
+
+        string outputPath = saveDialog.FileName;
+        // Never optimize over the file that's currently open — it would fight the loaded document.
+        if (string.Equals(Path.GetFullPath(outputPath), Path.GetFullPath(sourcePath), StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("Choose an output file different from the source.", "Optimize",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            StatusText.Text = "Optimizing...";
+            await Task.Run(() => OptimizeToFile(sourcePath, outputPath, optionsDialog.Options));
+
+            long optimizedBytes = new FileInfo(outputPath).Length;
+            string result = FormatOptimizeResult(originalBytes, optimizedBytes);
+
+            // Per design: open the optimized result, then surface the size delta. LoadPdfAsync
+            // overwrites StatusText, so set the result text afterwards.
+            await LoadPdfAsync(outputPath);
+            StatusText.Text = result;
+            Log.Information("Optimized {Src} -> {Out}: {Result}", sourcePath, outputPath, result);
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = "Optimize failed";
+            MessageBox.Show($"Failed to optimize: {ex.Message}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Log.Error(ex, "Optimize failed");
+        }
+    }
+
+    private static void OptimizeToFile(string sourcePath, string outputPath, PdfOptimizationOptions options)
+    {
+        // Fresh load: Optimize mutates the model, and the displayed _pdfDoc came from a closed stream.
+        // The viewer already opened this file (empty password), so a fresh Load by path succeeds too.
+        using PdfDocument doc = PdfDocument.Load(sourcePath);
+        using FileStream outStream = File.Create(outputPath);
+        PdfOptimizer.Optimize(doc, outStream, options);
+    }
+
+    private static string FormatOptimizeResult(long original, long optimized)
+    {
+        double pct = original > 0 ? (1.0 - (double)optimized / original) * 100.0 : 0;
+        string sign = pct >= 0 ? "−" : "+"; // shrink shows −, growth shows +
+        return $"Optimized {OptimizeDialog.FormatSize(original)} → {OptimizeDialog.FormatSize(optimized)} ({sign}{Math.Abs(pct):F0}%)";
     }
 }

@@ -1,0 +1,66 @@
+<Window x:Class="PdfLibrary.Wpf.Viewer.OptimizeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Optimize PDF" Width="430" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Lossless (safe) -->
+        <GroupBox Grid.Row="0" Header="Lossless (safe)" Padding="8">
+            <StackPanel>
+                <CheckBox x:Name="CompressStreamsCheck" Content="Compress streams" IsChecked="True" Margin="0,2"
+                          ToolTip="Flate-compress streams that are stored uncompressed."/>
+                <CheckBox x:Name="RemoveUnusedCheck" Content="Remove unused objects" IsChecked="True" Margin="0,2"
+                          ToolTip="Drop objects unreachable from the catalog (garbage collection)."/>
+                <CheckBox x:Name="UseObjectStreamsCheck" Content="Use object streams" IsChecked="True" Margin="0,2"
+                          ToolTip="Pack objects into object streams + a cross-reference stream (PDF 1.5+)."/>
+            </StackPanel>
+        </GroupBox>
+
+        <!-- Advanced (changes content) -->
+        <GroupBox Grid.Row="1" Header="Advanced (changes content)" Padding="8" Margin="0,10,0,0">
+            <StackPanel>
+                <CheckBox x:Name="RecompressImagesCheck" Content="Recompress images (lossy)" Margin="0,2"
+                          Checked="RecompressImagesCheck_Changed" Unchecked="RecompressImagesCheck_Changed"
+                          ToolTip="Re-encode eligible images as JPEG to shrink them. Lossy."/>
+                <Grid Margin="22,4,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Quality" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <Slider x:Name="QualitySlider" Grid.Row="0" Grid.Column="1" Minimum="1" Maximum="100" Value="75"
+                            IsSnapToTickEnabled="True" TickFrequency="1" IsEnabled="False"
+                            ValueChanged="QualitySlider_ValueChanged" VerticalAlignment="Center"/>
+                    <TextBlock x:Name="QualityValueText" Grid.Row="0" Grid.Column="2" Text="75" MinWidth="28"
+                               TextAlignment="Right" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Max pixels" VerticalAlignment="Center" Margin="0,6,8,0"/>
+                    <TextBox x:Name="MaxPixelsBox" Grid.Row="1" Grid.Column="1" Text="0" IsEnabled="False"
+                             HorizontalAlignment="Left" Width="80" Margin="0,6,0,0"
+                             ToolTip="Downsample any image whose larger side exceeds this. 0 = no downsampling."/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="0 = off" VerticalAlignment="Center" Margin="8,6,0,0" Foreground="Gray"/>
+                </Grid>
+                <CheckBox x:Name="SubsetFontsCheck" Content="Subset fonts (drops unused glyphs · TrueType only)" Margin="0,6,0,2"
+                          ToolTip="Subset embedded TrueType (/FontFile2) fonts to glyphs in use. No-op on CFF-only files."/>
+            </StackPanel>
+        </GroupBox>
+
+        <TextBlock x:Name="OriginalSizeText" Grid.Row="2" Margin="2,10,0,0" Foreground="Gray" Text="Original: —"/>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button Content="Optimize &amp; Save As…" Click="Optimize_Click" Padding="12,5" IsDefault="True"/>
+            <Button Content="Cancel" Click="Cancel_Click" Padding="12,5" Margin="8,0,0,0" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

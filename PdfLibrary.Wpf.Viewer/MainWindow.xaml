@@ -49,6 +49,8 @@
             <!-- Export -->
             <Button x:Name="ExportButton" Content="📷 Export Image" Click="ExportButton_Click" Padding="10,5" IsEnabled="False"/>
             <Button x:Name="PrintButton" Content="🖨️ Print" Click="PrintButton_Click" Padding="10,5" IsEnabled="False"/>
+            <Separator/>
+            <Button x:Name="OptimizeButton" Content="🗜 Optimize…" Click="OptimizeButton_Click" Padding="10,5" IsEnabled="False" ToolTip="Optimize / compress this PDF and save a copy"/>
         </ToolBar>
 
         <!-- Single-panel layout -->
