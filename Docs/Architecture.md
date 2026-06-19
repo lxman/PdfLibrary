@@ -39,6 +39,8 @@ PdfLibrary/
 │   └── Operators/         # PDF operator implementations
 ├── Rendering/             # Rendering pipeline
 ├── Builder/               # Fluent API for PDF creation
+├── Editing/               # Mutate loaded documents (pages, merge, split)
+├── Optimization/          # Optimize/compress loaded documents
 ├── Fonts/                 # Font handling
 │   └── Embedded/          # Embedded font extraction
 ├── Filters/               # Stream decompression
@@ -416,6 +418,39 @@ Encryption methods:
 - AES-128 (PDF 1.5)
 - AES-256 (PDF 1.7 Extension Level 3)
 
+### 12. Editing (`Editing/`)
+
+Mutation API over a **loaded** document (distinct from the `Builder/` creation API). `PdfDocument.Edit()` returns a `PdfDocumentEditor` facade.
+
+| Component | Responsibility |
+|-----------|----------------|
+| `PdfDocumentEditor` | Public facade: `Pages`, `Append`/`Extract`/`Merge`, `Save`, `Open`/`CreateBlank`. `IDisposable`. |
+| `PdfPageCollection` | `edit.Pages` — live page view + mutators (rotate, move, remove, insert, import, duplicate, append). |
+| `PageTreeNormalizer` | Flattens the page tree to one level and materializes inheritable page attributes on `Edit()`. |
+| `ObjectGraphCloner` | Deep-copies a page's reachable object subgraph across documents (the merge/import engine); dedupes shared objects and handles cycles. |
+| `DestinationRepairer` | On delete, strips bookmarks/named-destinations/link-annotations that targeted the removed page. |
+| `AcroFormMerger` | Registers imported pages' form fields in the target's AcroForm, qualifying name collisions. |
+| `PdfSaveOptions` | `RemoveOrphans` (GC) + `UseObjectStreams`. |
+| `PdfDocument.Mutation.cs` | Foundation on `PdfDocument`: object-number allocation, register/replace/remove, `CreateEmpty`, `Edit()`. |
+
+`Save` reuses the same serializers as optimization (`PdfDocumentSerializer` / `ObjectStreamWriter`) with the `ObjectGraphWalker` reachability GC — so deleting a page is just unlinking it; orphaned objects disappear at save. Editing is currently an API-only feature (no WPF viewer UI yet).
+
+### 13. Optimization (`Optimization/`)
+
+Shrinks a **loaded** document and writes it back. `PdfOptimizer.Optimize(document, output, options)` runs transforms over the in-memory object graph, then serializes.
+
+| Component | Responsibility |
+|-----------|----------------|
+| `PdfOptimizer` | Orchestrates the passes (stream compression, image recompress, font subset, GC) and writes via the serializer. |
+| `PdfOptimizationOptions` | Which passes run + tuning (image quality, downsample cap). |
+| `ObjectGraphWalker` | Computes the live object set (reachable from catalog/info) for garbage collection. |
+| `PdfDocumentSerializer` | Classic full-rewrite serializer (header/body/xref/trailer); original object numbers preserved. |
+| `ObjectStreamWriter` | Object-stream + cross-reference-stream writer (PDF 1.5+) for smaller output. |
+| `ImageRecompressor` | Opt-in lossy image re-encode (Flate→JPEG) with optional downsampling. |
+| `FontSubsetter` | Opt-in subsetting of embedded TrueType (`/FontFile2`) and CFF (`/FontFile3`) programs to used glyphs. |
+
+Lossless by default (`CompressStreams`/`RemoveUnusedObjects`/`UseObjectStreams`); `RecompressImages` and `SubsetFonts` are opt-in. Encrypted input is decrypted and written unencrypted. The WPF viewer surfaces this through an **Optimize…** dialog.
+
 ---
 
 ## Data Flow
@@ -450,6 +485,34 @@ Encryption methods:
    - Resources (fonts, images)
    - Cross-reference table
    - Trailer
+```
+
+### Editing a PDF
+
+```
+1. PdfDocument.Load() → read the document
+2. doc.Edit():
+   - MaterializeAllObjects (whole graph into memory)
+   - decrypt in place if encrypted (output is unencrypted)
+   - PageTreeNormalizer flattens the tree + materializes inherited attrs
+3. Mutate via editor.Pages (rotate/move/remove/insert/import) or Append/Extract/Merge
+   - cross-document copies go through ObjectGraphCloner
+   - delete runs DestinationRepairer; import runs AcroFormMerger
+4. editor.Save():
+   - ObjectGraphWalker.CollectReachable (GC) when RemoveOrphans
+   - PdfDocumentSerializer (classic) or ObjectStreamWriter (packed)
+```
+
+### Optimizing a PDF
+
+```
+1. PdfDocument.Load() → read the document
+2. PdfOptimizer.Optimize(doc, output, options):
+   - decrypt in place if encrypted
+   - CompressUncompressedStreams (Flate)
+   - optionally RecompressImages / SubsetFonts
+   - ObjectGraphWalker.CollectReachable (GC) when RemoveUnusedObjects
+3. Serialize via ObjectStreamWriter (packed) or PdfDocumentSerializer (classic)
 ```
 
 ---

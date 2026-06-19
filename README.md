@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
 
-A comprehensive .NET library for parsing, rendering, and creating PDF documents. Built with C# and targeting .NET 10.
+A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Built with C# and targeting .NET 10.
 
 ## Features
 
@@ -37,6 +37,20 @@ A comprehensive .NET library for parsing, rendering, and creating PDF documents.
 - Encryption (RC4, AES-128, AES-256)
 - Custom font embedding (TrueType, OpenType)
 
+### PDF Editing
+- Edit a loaded document via `PdfDocument.Edit()` → `PdfDocumentEditor`
+- Page operations: rotate, reorder, delete, insert blank pages
+- Merge multiple PDFs, split out page ranges, import/duplicate pages
+- Deleting a page cleans up bookmarks, named destinations, and links that pointed at it
+- Importing a page brings its interactive form fields across
+- Full-rewrite save (classic xref or object streams) with automatic garbage collection
+
+### PDF Optimization
+- Optimize a loaded document via `PdfOptimizer.Optimize()`
+- Lossless by default: Flate-compress uncompressed streams, drop unused objects, pack into object streams
+- Opt-in lossy passes: re-encode images as JPEG (with optional downsampling), subset embedded fonts (TrueType and CFF) to the glyphs actually used
+- Encrypted input is decrypted and written out unencrypted
+
 ## Project Structure
 
 ```
@@ -49,6 +63,8 @@ PDF/
 │   ├── Filters/                      # Stream decode filters (Flate, JBIG2Decode, etc.)
 │   ├── Rendering/                    # Rendering pipeline
 │   ├── Builder/                      # Fluent API for PDF creation
+│   ├── Editing/                      # Edit/mutate loaded documents (pages, merge, split)
+│   ├── Optimization/                 # Optimize/compress loaded documents
 │   ├── Fonts/                        # Font handling
 │   ├── Functions/                    # PDF function objects
 │   ├── Fixups/                       # Per-document corrective passes
@@ -187,6 +203,50 @@ foreach (var block in textBlocks)
 }
 ```
 
+### Editing an Existing PDF
+
+```csharp
+using PdfLibrary.Structure;
+using PdfLibrary.Editing;
+
+using var doc = PdfDocument.Load("input.pdf");
+var edit = doc.Edit();
+
+edit.Pages.RemoveAt(2);       // delete the 3rd page
+edit.Pages.Rotate(0, 90);     // rotate the 1st page 90°
+edit.Pages.Move(4, 0);        // move the 5th page to the front
+
+edit.Save("edited.pdf");
+
+// Merge several PDFs into one
+using var a = PdfDocument.Load("part1.pdf");
+using var b = PdfDocument.Load("part2.pdf");
+using PdfDocument merged = PdfDocumentEditor.Merge([a, b]);
+merged.Save("combined.pdf");
+```
+
+See the [Editing API Reference](Docs/EditingApi.md) for the full surface.
+
+### Optimizing a PDF
+
+```csharp
+using PdfLibrary.Structure;
+using PdfLibrary.Optimization;
+
+using var doc = PdfDocument.Load("input.pdf");
+using var output = File.Create("optimized.pdf");
+
+// Lossless by default (Flate + object streams + unused-object GC)
+PdfOptimizer.Optimize(doc, output);
+
+// Opt in to lossy size reductions
+PdfOptimizer.Optimize(doc, output, new PdfOptimizationOptions
+{
+    RecompressImages = true,   // lossy: re-encode images as JPEG
+    SubsetFonts      = true,   // discard unused glyphs in embedded fonts
+});
+```
+
 ## Thread Safety
 
 PdfLibrary supports **concurrent rendering using the one-document-per-thread model** — the standard pattern for ASP.NET Core and other multi-threaded servers. Each request loads its own `PdfDocument`, renders it on its own render target, and disposes both. Under this model the library is thread-safe: the process-wide caches and lookup tables shared across renders (glyph-path cache, system-font/typeface resolver, built-in ICC profiles, codec registry, font lookup tables) are synchronized, and CFF/Type1 glyph decoding uses per-parse state.
@@ -266,6 +326,7 @@ All codec implementations are in-tree (no git submodules required).
 ## Documentation
 
 - [Fluent API Reference](Docs/FluentApi.md) - Complete guide to the PDF creation API
+- [Editing API Reference](Docs/EditingApi.md) - Editing, merging, and splitting existing PDFs
 - [Getting Started](Docs/GettingStarted.md) - Step-by-step introduction
 - [Architecture](Docs/Architecture.md) - Technical architecture overview
 
