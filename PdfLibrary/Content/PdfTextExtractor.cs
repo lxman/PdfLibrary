@@ -42,23 +42,26 @@ public class PdfTextExtractor : PdfContentProcessor
     public List<TextFragment> GetTextFragments() => [.._fragments];
 
     /// <summary>
-    /// Extracts text from a content stream
+    /// Extracts text from a content stream. The <paramref name="document"/> must be threaded through
+    /// so nested Form XObjects can be decrypted and their fonts (indirect ToUnicode/encoding/descriptor
+    /// streams) resolved — without it, encrypted form content is dropped and form fonts fail to resolve.
     /// </summary>
-    internal static string ExtractText(byte[] contentData, PdfResources? resources = null)
+    internal static string ExtractText(byte[] contentData, PdfResources? resources = null, PdfDocument? document = null)
     {
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
-        var extractor = new PdfTextExtractor(resources);
+        var extractor = new PdfTextExtractor(resources, document);
         extractor.ProcessOperators(operators);
         return extractor.GetText();
     }
 
     /// <summary>
-    /// Extracts text with fragments from a content stream
+    /// Extracts text with fragments from a content stream. See <see cref="ExtractText"/> for why
+    /// <paramref name="document"/> must be threaded through.
     /// </summary>
-    internal static (string Text, List<TextFragment> Fragments) ExtractTextWithFragments(byte[] contentData, PdfResources? resources = null)
+    internal static (string Text, List<TextFragment> Fragments) ExtractTextWithFragments(byte[] contentData, PdfResources? resources = null, PdfDocument? document = null)
     {
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
-        var extractor = new PdfTextExtractor(resources);
+        var extractor = new PdfTextExtractor(resources, document);
         extractor.ProcessOperators(operators);
         return (extractor.GetText(), extractor.GetTextFragments());
     }
@@ -235,13 +238,14 @@ public class PdfTextExtractor : PdfContentProcessor
         // Get the Form XObject's content data
         byte[] contentData = formStream.GetDecodedData(_document?.Decryptor);
 
-        // Get the Form's Resources dictionary if present
+        // Get the Form's Resources dictionary if present. Pass the document so the form's own fonts
+        // (typically indirect references) and their ToUnicode/encoding/descriptor streams resolve.
         PdfResources? formResources = _resources;
         if (formStream.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resourcesObj))
         {
             if (resourcesObj is PdfDictionary resourcesDict)
             {
-                formResources = new PdfResources(resourcesDict);
+                formResources = new PdfResources(resourcesDict, _document);
             }
         }
 

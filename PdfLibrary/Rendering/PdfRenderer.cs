@@ -933,7 +933,7 @@ public class PdfRenderer : PdfContentProcessor
             if (resourcesObj is PdfIndirectReference resRef && _document is not null)
                 resourcesObj = _document.ResolveReference(resRef);
             if (resourcesObj is PdfDictionary resourcesDict)
-                formResources = new PdfResources(resourcesDict);
+                formResources = new PdfResources(resourcesDict, _document);
         }
 
         // Check for Matrix entry in the form XObject
