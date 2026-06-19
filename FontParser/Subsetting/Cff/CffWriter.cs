@@ -17,6 +17,9 @@ namespace FontParser.Subsetting.Cff
         public static byte[] WriteIndex(IReadOnlyList<IReadOnlyList<byte>> entries)
         {
             int count = entries.Count;
+            if (count > ushort.MaxValue)
+                throw new ArgumentException(
+                    $"A CFF INDEX cannot hold more than {ushort.MaxValue} entries (got {count}).", nameof(entries));
             if (count == 0)
                 return new byte[] { 0, 0 }; // empty INDEX: count = 0, no offSize/offsets/data
 

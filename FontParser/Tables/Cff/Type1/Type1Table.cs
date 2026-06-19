@@ -64,6 +64,15 @@ namespace FontParser.Tables.Cff.Type1
         /// </summary>
         public bool IsCid { get; private set; }
 
+        /// <summary>Raw Name INDEX entries, for byte-exact verbatim re-emit (the decoded
+        /// <see cref="Names"/> strings are lossy for bytes &gt;= 0x80).</summary>
+        public List<List<byte>> RawNameIndex { get; private set; } = new List<List<byte>>();
+
+        /// <summary>Raw String INDEX entries, for byte-exact verbatim re-emit (the decoded
+        /// <see cref="Strings"/> are lossy for bytes &gt;= 0x80; SID-&gt;string consistency requires
+        /// the original bytes since charset is kept verbatim).</summary>
+        public List<List<byte>> RawStringIndex { get; private set; } = new List<List<byte>>();
+
         /// <summary>
         /// Nominal width for glyph width calculations
         /// </summary>
@@ -105,6 +114,7 @@ namespace FontParser.Tables.Cff.Type1
             var header = new Type1Header(reader);
 
             var nameIndex = new Type1Index(reader);
+            RawNameIndex = nameIndex.Data;
 
             foreach (List<byte> bytes in nameIndex.Data)
             {
@@ -117,6 +127,7 @@ namespace FontParser.Tables.Cff.Type1
             RawTopDict = topDictIndex.Data.Count > 0 ? topDictIndex.Data[0].ToArray() : Array.Empty<byte>();
 
             var stringIndex = new Type1Index(reader);
+            RawStringIndex = stringIndex.Data;
 
             foreach (List<byte> bytes in stringIndex.Data)
             {

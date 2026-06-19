@@ -69,4 +69,36 @@ public class CffSubsetterTests
 
         Assert.True(sub.Length < src.Length, $"subset {sub.Length} not smaller than source {src.Length}");
     }
+
+    [Fact]
+    public void Subset_KeepingAllGlyphs_PreservesEveryOutline_AndRawIndexes()
+    {
+        string path = Fix("AbadiMT-CondensedLight.cff");
+        if (!File.Exists(path)) return; // untracked fixture; guarded
+
+        var srcTable = new Type1Table(File.ReadAllBytes(path));
+        int n = srcTable.RawCharStrings.Count;
+        var keepAll = new HashSet<int>(Enumerable.Range(0, n));
+
+        byte[] sub = CffSubsetter.Subset(srcTable, keepAll);
+        var subTable = new Type1Table(sub);
+
+        Assert.Equal(n, subTable.RawCharStrings.Count);
+
+        // EVERY glyph identical — exercises glyphs that call local/global subrs (the subr-retention hinge).
+        for (var g = 0; g < n; g++)
+        {
+            var a = srcTable.GetGlyphOutline(g);
+            var b = subTable.GetGlyphOutline(g);
+            Assert.Equal(a?.Commands.Count ?? 0, b?.Commands.Count ?? 0);
+            Assert.Equal(a?.MinX, b?.MinX);
+            Assert.Equal(a?.MaxX, b?.MaxX);
+            Assert.Equal(a?.MinY, b?.MinY);
+            Assert.Equal(a?.MaxY, b?.MaxY);
+        }
+
+        // Name/String INDEX preserved byte-for-byte (guards the ASCII round-trip corruption, C1).
+        Assert.Equal(srcTable.RawNameIndex, subTable.RawNameIndex);
+        Assert.Equal(srcTable.RawStringIndex, subTable.RawStringIndex);
+    }
 }

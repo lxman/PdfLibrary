@@ -95,8 +95,8 @@ namespace FontParser.Subsetting.Cff
 
             // 4. Verbatim sections + layout. CharStrings is LAST so shrinking it shifts nothing else.
             byte[] header = { 1, 0, 4, 1 };
-            byte[] nameIndex = CffWriter.WriteIndex(source.Names.Select(Ascii).ToList());
-            byte[] stringIndex = CffWriter.WriteIndex(source.Strings.Select(Ascii).ToList());
+            byte[] nameIndex = CffWriter.WriteIndex(source.RawNameIndex);     // verbatim (byte-exact)
+            byte[] stringIndex = CffWriter.WriteIndex(source.RawStringIndex); // verbatim (preserves SIDs)
             byte[] globalSubr = CffWriter.WriteIndex(source.GlobalSubroutines);
             byte[] charset = customCharset ? source.RawCharset : Array.Empty<byte>();
 
@@ -128,8 +128,6 @@ namespace FontParser.Subsetting.Cff
             Append(charStringsBytes);
             return outBuf;
         }
-
-        private static byte[] Ascii(string s) => System.Text.Encoding.ASCII.GetBytes(s);
 
         private static void PatchBE32(byte[] buf, int pos, int value)
         {
