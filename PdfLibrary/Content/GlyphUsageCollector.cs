@@ -19,6 +19,8 @@ internal enum FontUsageKind
     IdentityCidType2,
     /// <summary>Simple /Subtype /Type1 font with single-byte codes and a Type1C /FontFile3 (CFF).</summary>
     SimpleType1C,
+    /// <summary>/Subtype /Type0, Identity-H/V, descendant /CIDFontType0 with a /FontFile3 (CID-keyed CFF).</summary>
+    IdentityCidType0,
 }
 
 /// <summary>
@@ -137,7 +139,8 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         switch (font)
         {
             case Type0Font t0 when IsIdentityHOrV(t0):
-                AccumulateType0Identity(t0, bytes);
+                AccumulateType0Identity(t0, bytes);  // CIDFontType2 (TrueType /FontFile2)
+                AccumulateType0CidType0(t0, bytes);  // CIDFontType0 (CFF /FontFile3)
                 break;
 
             case TrueTypeFont tt:
@@ -240,6 +243,44 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         }
         // If odd number of bytes, the trailing byte is not a complete 2-byte code —
         // skip it (shouldn't happen in valid PDFs, but avoid treating a lone byte as a GID).
+    }
+
+    // -----------------------------------------------------------------
+    // Identity-H / Identity-V CIDFontType0 (CID-keyed CFF, /FontFile3)
+    // -----------------------------------------------------------------
+
+    private void AccumulateType0CidType0(Type0Font font, byte[] bytes)
+    {
+        PdfDictionary? cidDict = font.DescendantCidFontDictionary;
+        if (cidDict is null ||
+            !cidDict.TryGetValue(new PdfName("Subtype"), out PdfObject? stObj) ||
+            stObj is not PdfName { Value: "CIDFontType0" })
+            return;
+
+        PdfFontDescriptor? descriptor = font.DescendantDescriptor;
+        PdfStream? fontFile3 = descriptor?.GetFontFile3Stream();
+        if (descriptor is null || fontFile3 is null)
+            return;
+
+        Type1Table? cff = GetCff(fontFile3);
+        if (cff is null || !cff.IsCid)
+            return;
+
+        FontUsage usage = GetOrAddUsage(fontFile3, new FontUsage
+        {
+            Descriptor = descriptor,
+            DescendantCidFontDict = cidDict,
+            Kind = FontUsageKind.IdentityCidType0,
+        });
+
+        // Identity-H/V: 2-byte big-endian code = CID -> GID via the CFF charset.
+        for (int i = 0; i + 1 < bytes.Length; i += 2)
+        {
+            int cid = (bytes[i] << 8) | bytes[i + 1];
+            int gid = cff.GetGlyphIndexByCid(cid);
+            if (gid > 0)
+                usage.Gids.Add((ushort)gid);
+        }
     }
 
     // -----------------------------------------------------------------

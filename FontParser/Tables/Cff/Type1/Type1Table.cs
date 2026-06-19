@@ -290,6 +290,41 @@ namespace FontParser.Tables.Cff.Type1
             return _nameToGid!.TryGetValue(name, out int gid) ? gid : -1;
         }
 
+        private Dictionary<int, int>? _cidToGid;
+
+        /// <summary>Resolves a CID to its GID via the charset, or -1 if not present. For a CID-keyed CFF
+        /// the charset stores CIDs (not SIDs), so this inverts that mapping.</summary>
+        public int GetGlyphIndexByCid(int cid)
+        {
+            if (_cidToGid is null) BuildCidToGid();
+            return _cidToGid!.TryGetValue(cid, out int gid) ? gid : -1;
+        }
+
+        private void BuildCidToGid()
+        {
+            _cidToGid = new Dictionary<int, int> { [0] = 0 }; // GID 0 -> CID 0 by convention
+            switch (CharSet)
+            {
+                case CharsetsFormat0 f0:
+                    for (var i = 0; i < f0.Glyphs.Count; i++) _cidToGid.TryAdd(f0.Glyphs[i], i + 1);
+                    break;
+                case CharsetsFormat1 f1:
+                {
+                    var gid = 1;
+                    foreach (var r in f1.Ranges)
+                        for (var k = 0; k <= r.NumberLeft; k++) _cidToGid.TryAdd(r.First + k, gid++);
+                    break;
+                }
+                case CharsetsFormat2 f2:
+                {
+                    var gid = 1;
+                    foreach (var r in f2.Ranges)
+                        for (var k = 0; k <= r.NumberLeft; k++) _cidToGid.TryAdd(r.First + k, gid++);
+                    break;
+                }
+            }
+        }
+
         private void BuildNameToGid()
         {
             _nameToGid = new Dictionary<string, int> { [".notdef"] = 0 };

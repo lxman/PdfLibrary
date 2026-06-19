@@ -325,4 +325,45 @@ public class FontSubsetIntegrationTests
                 total += s.Length;
         return total;
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CID-keyed CFF (/FontFile3 CIDFontType0C) — Adobe Kazuraki tutorial (Japanese)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void SubsetFonts_KazurakiCidType0C_PreservesText_AndShrinks()
+    {
+        const string path = @"Z:\PDF Standards\Legacy_Adobe\5901.Kazuraki_Tutorial.pdf";
+        if (!File.Exists(path)) return; // untracked CJK CID fixture; guarded
+
+        string before;
+        long fontBytesBefore;
+        using (PdfDocument d = PdfDocument.Load(path))
+        {
+            before = d.ExtractAllText();
+            fontBytesBefore = TotalCffFontBytes(d);
+        }
+
+        using var ms = new MemoryStream();
+        using (PdfDocument d = PdfDocument.Load(path))
+            PdfOptimizer.Optimize(d, ms, new PdfOptimizationOptions { SubsetFonts = true });
+        ms.Position = 0;
+
+        using PdfDocument re = PdfDocument.Load(ms);
+        Assert.Equal(before, re.ExtractAllText());          // extraction unchanged
+        long fontBytesAfter = TotalCffFontBytes(re);
+        Assert.True(fontBytesAfter < fontBytesBefore,
+            $"CFF font bytes {fontBytesAfter} not < {fontBytesBefore}");
+    }
+
+    private static long TotalCffFontBytes(PdfDocument doc)
+    {
+        doc.MaterializeAllObjects();
+        long total = 0;
+        foreach (PdfStream s in doc.Objects.Values.OfType<PdfStream>())
+            if (s.Dictionary.TryGetValue(new PdfName("Subtype"), out PdfObject st) &&
+                (st.ToString() == "/Type1C" || st.ToString() == "/CIDFontType0C"))
+                total += s.Length;
+        return total;
+    }
 }

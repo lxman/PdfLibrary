@@ -59,8 +59,8 @@ internal static class FontSubsetter
             if (usage.Gids.Count == 0)
                 continue;
 
-            // CFF (/FontFile3) programs go through the CFF subsetter.
-            if (usage.Kind == FontUsageKind.SimpleType1C)
+            // CFF (/FontFile3) programs go through the CFF subsetter (simple Type1C or CID-keyed).
+            if (usage.Kind is FontUsageKind.SimpleType1C or FontUsageKind.IdentityCidType0)
             {
                 TrySubsetCff(fontFile2Stream, usage, document);
                 continue;
