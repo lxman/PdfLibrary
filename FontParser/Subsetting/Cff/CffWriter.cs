@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace FontParser.Subsetting.Cff
 {
@@ -53,5 +54,56 @@ namespace FontParser.Subsetting.Cff
 
             return buf;
         }
+
+        /// <summary>Encodes an integer as a CFF DICT operand in the shortest form (mirrors <c>Calc.Integer</c>).</summary>
+        public static byte[] EncodeInteger(int value)
+        {
+            if (value >= -107 && value <= 107)
+                return new[] { (byte)(value + 139) };
+            if (value >= 108 && value <= 1131)
+            {
+                int w = value - 108;
+                return new[] { (byte)(247 + (w >> 8)), (byte)(w & 0xFF) };
+            }
+            if (value >= -1131 && value <= -108)
+            {
+                int w = -value - 108;
+                return new[] { (byte)(251 + (w >> 8)), (byte)(w & 0xFF) };
+            }
+            if (value >= short.MinValue && value <= short.MaxValue)
+                return new[] { (byte)0x1C, (byte)(value >> 8), (byte)value };
+            return new[] { (byte)0x1D, (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value };
+        }
+
+        /// <summary>Encodes an integer in the FIXED 5-byte form (0x1D + int32 BE). Used for DICT offset
+        /// operands so the DICT size is invariant to the offset value, enabling single-pass layout.</summary>
+        public static byte[] EncodeFixedOffset(int value) =>
+            new[] { (byte)0x1D, (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value };
+
+        /// <summary>Encodes a real as a CFF DICT operand (0x1E + 4-bit nibbles, no exponent; mirrors <c>Calc.Double</c>).</summary>
+        public static byte[] EncodeReal(double value)
+        {
+            string s = value.ToString("0.0###############", CultureInfo.InvariantCulture);
+            var nibbles = new List<byte>();
+            foreach (char c in s)
+            {
+                if (c == '-') nibbles.Add(0xE);
+                else if (c == '.') nibbles.Add(0xA);
+                else if (c >= '0' && c <= '9') nibbles.Add((byte)(c - '0'));
+            }
+            nibbles.Add(0xF);                          // end marker
+            if ((nibbles.Count & 1) == 1) nibbles.Add(0xF); // pad to a full byte
+
+            var bytes = new List<byte>(1 + nibbles.Count / 2) { 0x1E };
+            for (var i = 0; i < nibbles.Count; i += 2)
+                bytes.Add((byte)((nibbles[i] << 4) | nibbles[i + 1]));
+            return bytes.ToArray();
+        }
+
+        /// <summary>Encodes a DICT operator: 1 byte, or 2 bytes for escaped (0x0Cxx) operators.</summary>
+        public static byte[] EncodeOperator(int operatorCode) =>
+            operatorCode > 0xFF
+                ? new[] { (byte)(operatorCode >> 8), (byte)(operatorCode & 0xFF) }
+                : new[] { (byte)operatorCode };
     }
 }
