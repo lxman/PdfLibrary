@@ -77,4 +77,39 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
         PageTreeOps.InsertPageRef(_document, pageRef, at);
         return new PdfPage(page, _document, _document.PageTreeRootDictionary);
     }
+
+    public PdfPage Import(PdfDocument source, int sourceIndex, int at)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        PdfPage srcPage = source.GetPage(sourceIndex)
+            ?? throw new ArgumentOutOfRangeException(nameof(sourceIndex));
+        PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(_document, source, srcPage.Dictionary);
+        PageTreeOps.InsertPageRef(_document, newRef, at);
+        var page = (PdfDictionary)_document.GetObject(newRef.ObjectNumber)!;
+        return new PdfPage(page, _document, _document.PageTreeRootDictionary);
+    }
+
+    public PdfPage Duplicate(int index, int at)
+    {
+        PdfDictionary src = PageAt(index);
+        PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(_document, _document, src);
+        PageTreeOps.InsertPageRef(_document, newRef, at);
+        var page = (PdfDictionary)_document.GetObject(newRef.ObjectNumber)!;
+        return new PdfPage(page, _document, _document.PageTreeRootDictionary);
+    }
+
+    public void Append(PdfDocument source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        int count = source.PageCount;
+        for (var i = 0; i < count; i++)
+            Import(source, i, Count);
+    }
+
+    public void AppendRange(PdfDocument source, int start, int count)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        for (var i = 0; i < count; i++)
+            Import(source, start + i, Count);
+    }
 }

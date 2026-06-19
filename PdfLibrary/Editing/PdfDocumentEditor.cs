@@ -1,3 +1,5 @@
+using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Optimization;
 using PdfLibrary.Structure;
 
@@ -39,5 +41,38 @@ public sealed class PdfDocumentEditor
             ObjectStreamWriter.Write(_document, stream, live);
         else
             PdfDocumentSerializer.Write(_document, stream, live);
+    }
+
+    public void Append(PdfDocument source) => Pages.Append(source);
+
+    public PdfDocument Extract(int start, int count)
+    {
+        PdfDocument target = PdfDocument.CreateEmpty();
+        for (var i = 0; i < count; i++)
+        {
+            PdfPage srcPage = _document.GetPage(start + i)
+                ?? throw new ArgumentOutOfRangeException(nameof(start));
+            AppendClonedPage(target, _document, srcPage);
+        }
+        return target;
+    }
+
+    public static PdfDocument Merge(IEnumerable<PdfDocument> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+        PdfDocument target = PdfDocument.CreateEmpty();
+        foreach (PdfDocument source in sources)
+        {
+            int count = source.PageCount;
+            for (var i = 0; i < count; i++)
+                AppendClonedPage(target, source, source.GetPage(i)!);
+        }
+        return target;
+    }
+
+    private static void AppendClonedPage(PdfDocument target, PdfDocument source, PdfPage srcPage)
+    {
+        PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(target, source, srcPage.Dictionary);
+        PageTreeOps.InsertPageRef(target, newRef, PageTreeOps.PageDicts(target).Count);
     }
 }
