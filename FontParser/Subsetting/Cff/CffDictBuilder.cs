@@ -48,6 +48,13 @@ namespace FontParser.Subsetting.Cff
             return (firstPos, secondPos);
         }
 
+        /// <summary>Append a pre-encoded DICT entry (operands + operator) verbatim.</summary>
+        public CffDictBuilder AppendRaw(byte[] entryBytes)
+        {
+            _bytes.AddRange(entryBytes);
+            return this;
+        }
+
         /// <summary>Backfill a 4-byte big-endian value at a position returned by <see cref="AddOffset"/>/<see cref="AddOffsetPair"/>.</summary>
         public void PatchOffset(int valuePos, int value)
         {

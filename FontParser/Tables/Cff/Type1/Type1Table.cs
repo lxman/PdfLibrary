@@ -54,6 +54,12 @@ namespace FontParser.Tables.Cff.Type1
         public byte[] RawPrivateDict { get; private set; } = Array.Empty<byte>();
 
         /// <summary>
+        /// Raw bytes of a CUSTOM charset (Top DICT charset offset &gt; 2), for verbatim re-emit. Empty
+        /// when the font uses a predefined charset (0/1/2), which the subsetter copies as a literal.
+        /// </summary>
+        public byte[] RawCharset { get; private set; } = Array.Empty<byte>();
+
+        /// <summary>
         /// True for a CID-keyed CFF (the Top DICT carries a ROS operator with FDArray/FDSelect).
         /// </summary>
         public bool IsCid { get; private set; }
@@ -134,7 +140,9 @@ namespace FontParser.Tables.Cff.Type1
 
             var charStrings = new Type1Index(reader);
 
-            reader.Seek(Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "charset").Operand));
+            long charsetOffset = Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "charset").Operand);
+            reader.Seek(charsetOffset);
+            long charsetStart = reader.Position;
 
             byte charsetFormat = reader.ReadByte();
             CharSet = charsetFormat switch
@@ -147,6 +155,10 @@ namespace FontParser.Tables.Cff.Type1
                     Convert.ToUInt16(charStrings.Data.Count)),
                 _ => CharSet
             };
+            // Custom charset (offset > 2) is kept verbatim by the subsetter; predefined (0/1/2) is no table.
+            RawCharset = charsetOffset > 2
+                ? data[(int)charsetStart..(int)reader.Position]
+                : Array.Empty<byte>();
             IsCid = _topDictOperatorEntries.Any(e => e.Name == "ROS");
             if (IsCid)
             {
