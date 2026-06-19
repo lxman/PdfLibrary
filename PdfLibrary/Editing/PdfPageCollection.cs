@@ -64,7 +64,8 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
     {
         if (Count <= 1)
             throw new InvalidOperationException("Cannot remove the last remaining page.");
-        PageTreeOps.RemoveAt(_document, index);
+        PdfDictionary removed = PageTreeOps.RemoveAt(_document, index);
+        DestinationRepairer.OnPageRemoved(_document, removed);
     }
 
     public PdfPage InsertBlank(int at, double width, double height)
