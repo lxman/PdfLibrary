@@ -5,8 +5,8 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Editing;
 
 /// <summary>
-/// Deep-copies a page's reachable object subgraph from <paramref name="source"/> into
-/// <paramref name="target"/>, allocating fresh object numbers and rewriting indirect references
+/// Deep-copies a page's reachable object subgraph from <c>source</c> into
+/// <c>target</c>, allocating fresh object numbers and rewriting indirect references
 /// through a visited-map so shared objects copy once and cycles terminate.
 /// </summary>
 internal static class ObjectGraphCloner
@@ -76,8 +76,20 @@ internal static class ObjectGraphCloner
                     : stream.Data;
                 return new PdfStream(dictClone, raw);
             }
+            // Primitives carry mutable object-identity fields (ObjectNumber/IsIndirect). A primitive reached
+            // as the content of an INDIRECT object would be handed to ReplaceObject/AddObject, which would
+            // stomp those fields on the source-owned instance. Return a fresh copy so the target never
+            // mutates a source object (or a shared PdfName singleton).
+            case PdfName name:
+                return new PdfName(name.Value);
+            case PdfInteger integer:
+                return new PdfInteger(integer.LongValue);
+            case PdfReal real:
+                return new PdfReal(real.Value);
+            case PdfString str:
+                return new PdfString(str.Bytes);
             default:
-                return obj;
+                return obj; // PdfBoolean/PdfNull are immutable singletons; their identity fields don't affect output
         }
     }
 

@@ -99,4 +99,32 @@ public class ObjectGraphClonerTests
         var clonedStream = (PdfStream)Deref(target, clonedPage[new PdfName("Contents")])!;
         Assert.Equal(content, clonedStream.GetDecodedData());
     }
+
+    [Fact]
+    public void Clone_IndirectPrimitive_DoesNotMutateSourceIdentity()
+    {
+        // page(5) has /CustomLen 7 0 R, where object 7 is an indirect integer.
+        var source = new PdfDocument();
+        var len = new PdfInteger(42);
+        source.AddObject(7, 0, len);
+
+        var page = new PdfDictionary();
+        page[PdfName.TypeName] = new PdfName("Page");
+        page[new PdfName("MediaBox")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(10), new PdfReal(10));
+        page[new PdfName("CustomLen")] = new PdfIndirectReference(7, 0);
+        source.AddObject(5, 0, page);
+
+        PdfDocument target = PdfDocument.CreateEmpty();
+        PdfIndirectReference cloned = ObjectGraphCloner.CloneInto(target, source, page);
+
+        // The SOURCE object 7 must keep its identity (object number 7), not be stomped to a target number.
+        PdfObject src7 = source.GetObject(7)!;
+        Assert.Equal(7, src7.ObjectNumber);
+
+        // The TARGET has its own independent copy with value 42, NOT the same instance as the source's.
+        var clonedPage = (PdfDictionary)target.GetObject(cloned.ObjectNumber)!;
+        var targetLen = (PdfInteger)Deref(target, clonedPage[new PdfName("CustomLen")])!;
+        Assert.Equal(42, targetLen.Value);
+        Assert.NotSame(src7, targetLen);
+    }
 }

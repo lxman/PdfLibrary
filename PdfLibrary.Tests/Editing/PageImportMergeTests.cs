@@ -100,4 +100,31 @@ public class PageImportMergeTests
         Assert.Contains("EX1", reloaded.GetPage(0)!.ExtractText());
         Assert.DoesNotContain("EX0", reloaded.ExtractAllText());
     }
+
+    [Fact]
+    public void Import_FromEncryptedSource_PreservesText()
+    {
+        // Encrypted source, loaded (NOT edited) — the cloner must decrypt stream bytes during the copy.
+        byte[] enc = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("SECRETPAGE", 100, 700))
+            .WithPassword("pw")
+            .ToByteArray();
+
+        using var ms = new MemoryStream();
+        using (PdfDocument target = PdfDocument.Load(new MemoryStream(OnePage("HOSTPAGE"))))
+        using (PdfDocument source = PdfDocument.Load(new MemoryStream(enc), "pw"))
+        {
+            Assert.True(source.IsEncrypted);
+            PdfDocumentEditor edit = target.Edit();
+            edit.Pages.Import(source, 0, 1);
+            edit.Save(ms);
+        }
+        ms.Position = 0;
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+        Assert.False(reloaded.IsEncrypted);
+        Assert.Equal(2, reloaded.PageCount);
+        string text = reloaded.ExtractAllText();
+        Assert.Contains("HOSTPAGE", text);
+        Assert.Contains("SECRETPAGE", text);
+    }
 }
