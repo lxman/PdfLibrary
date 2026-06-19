@@ -87,6 +87,7 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
         PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(_document, source, srcPage.Dictionary);
         PageTreeOps.InsertPageRef(_document, newRef, at);
         var page = (PdfDictionary)_document.GetObject(newRef.ObjectNumber)!;
+        AcroFormMerger.MergeImportedFields(_document, source, page);
         return new PdfPage(page, _document, _document.PageTreeRootDictionary);
     }
 
@@ -96,6 +97,7 @@ public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
         PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(_document, _document, src);
         PageTreeOps.InsertPageRef(_document, newRef, at);
         var page = (PdfDictionary)_document.GetObject(newRef.ObjectNumber)!;
+        AcroFormMerger.MergeImportedFields(_document, _document, page);
         return new PdfPage(page, _document, _document.PageTreeRootDictionary);
     }
 

@@ -74,5 +74,6 @@ public sealed class PdfDocumentEditor
     {
         PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(target, source, srcPage.Dictionary);
         PageTreeOps.InsertPageRef(target, newRef, PageTreeOps.PageDicts(target).Count);
+        AcroFormMerger.MergeImportedFields(target, source, (PdfDictionary)target.GetObject(newRef.ObjectNumber)!);
     }
 }
