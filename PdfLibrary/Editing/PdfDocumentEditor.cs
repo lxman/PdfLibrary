@@ -6,9 +6,10 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Editing;
 
 /// <summary>Mutation facade over a loaded <see cref="PdfDocument"/>. Obtain via <see cref="PdfDocument.Edit"/>.</summary>
-public sealed class PdfDocumentEditor
+public sealed class PdfDocumentEditor : IDisposable
 {
     private readonly PdfDocument _document;
+    private bool _ownsDocument;
 
     internal PdfDocumentEditor(PdfDocument document)
     {
@@ -19,12 +20,29 @@ public sealed class PdfDocumentEditor
     /// <summary>The document's pages and page operations.</summary>
     public PdfPageCollection Pages { get; }
 
+    /// <summary>Disposes the underlying document only if this editor created it (via <see cref="Open"/>/<see cref="CreateBlank"/>).</summary>
+    public void Dispose()
+    {
+        if (_ownsDocument) _document.Dispose();
+    }
+
     /// <summary>Loads a document and enters edit mode.</summary>
-    public static PdfDocumentEditor Open(string path, string? password = null) =>
-        PdfDocument.Load(path, password ?? "").Edit();
+    public static PdfDocumentEditor Open(string path, string? password = null)
+    {
+        PdfDocument document = PdfDocument.Load(path, password ?? "");
+        PdfDocumentEditor editor = document.Edit();
+        editor._ownsDocument = true;
+        return editor;
+    }
 
     /// <summary>Creates a blank, editable document (zero pages).</summary>
-    public static PdfDocumentEditor CreateBlank() => PdfDocument.CreateEmpty().Edit();
+    public static PdfDocumentEditor CreateBlank()
+    {
+        PdfDocument document = PdfDocument.CreateEmpty();
+        PdfDocumentEditor editor = document.Edit();
+        editor._ownsDocument = true;
+        return editor;
+    }
 
     public void Save(string path, PdfSaveOptions? options = null)
     {

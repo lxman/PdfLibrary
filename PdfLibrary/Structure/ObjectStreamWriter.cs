@@ -157,6 +157,7 @@ internal static class ObjectStreamWriter
         long xrefOffset = stream.Position;
         entries[xrefNum] = (1, xrefOffset, 0);
         PdfStream xref = BuildXrefStream(entries, document.Trailer.Root!, document.Trailer.Info);
+        if (document.Trailer.Id is { } id) xref.Dictionary[new PdfName("ID")] = id;
         stream.Write(PdfDocumentSerializer.SerializeIndirectObject(xrefNum, 0, xref));
 
         // startxref + %%EOF
