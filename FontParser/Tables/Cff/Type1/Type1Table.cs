@@ -42,6 +42,23 @@ namespace FontParser.Tables.Cff.Type1
         public List<List<byte>> LocalSubroutines => _localSubroutines;
 
         /// <summary>
+        /// Raw bytes of the single Top DICT entry, captured before SID resolution. The CFF subsetter
+        /// copies non-offset operators from here verbatim (preserving original SIDs) and replaces only
+        /// the offset operators, so no SID re-encoding is needed.
+        /// </summary>
+        public byte[] RawTopDict { get; private set; } = Array.Empty<byte>();
+
+        /// <summary>
+        /// Raw bytes of the (non-CID) Private DICT, for verbatim re-emit during subsetting.
+        /// </summary>
+        public byte[] RawPrivateDict { get; private set; } = Array.Empty<byte>();
+
+        /// <summary>
+        /// True for a CID-keyed CFF (the Top DICT carries a ROS operator with FDArray/FDSelect).
+        /// </summary>
+        public bool IsCid { get; private set; }
+
+        /// <summary>
         /// Nominal width for glyph width calculations
         /// </summary>
         public int NominalWidthX { get; private set; }
@@ -91,6 +108,7 @@ namespace FontParser.Tables.Cff.Type1
             var topDictIndex = new Type1Index(reader);
 
             ReadTopDictEntries(topDictIndex.Data);
+            RawTopDict = topDictIndex.Data.Count > 0 ? topDictIndex.Data[0].ToArray() : Array.Empty<byte>();
 
             var stringIndex = new Type1Index(reader);
 
@@ -129,8 +147,8 @@ namespace FontParser.Tables.Cff.Type1
                     Convert.ToUInt16(charStrings.Data.Count)),
                 _ => CharSet
             };
-            bool isCid = _topDictOperatorEntries.Any(e => e.Name == "ROS");
-            if (isCid)
+            IsCid = _topDictOperatorEntries.Any(e => e.Name == "ROS");
+            if (IsCid)
             {
                 ProcessCid(reader, charStrings, globalSubroutines);
                 return;
@@ -441,6 +459,7 @@ namespace FontParser.Tables.Cff.Type1
         private void ReadPrivateDictEntries(BigEndianReader reader, double size)
         {
             List<byte> bytes = reader.ReadBytes(Convert.ToInt32(size)).ToList();
+            RawPrivateDict = bytes.ToArray();
             DictEntryReader.Read(bytes, _privateDictOperatorEntries, _type1PrivateDictOperatorEntries);
         }
 
