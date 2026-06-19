@@ -13,7 +13,7 @@ namespace PdfLibrary.Structure;
 /// Represents a complete PDF document (ISO 32000-1:2008 section 7.5)
 /// Provides access to the document structure, objects, and metadata
 /// </summary>
-public class PdfDocument : IDisposable
+public partial class PdfDocument : IDisposable
 {
     private readonly Dictionary<int, PdfObject> _objects = new();
     private Stream? _stream;
