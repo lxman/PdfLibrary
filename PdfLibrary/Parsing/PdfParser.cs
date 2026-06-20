@@ -1,3 +1,4 @@
+using System.Globalization;
 using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -62,7 +63,7 @@ internal class PdfParser(PdfLexer lexer)
             PdfTokenType.Null => PdfNull.Instance,
             PdfTokenType.Boolean => ParseBoolean(token),
             PdfTokenType.Integer => ParseIntegerOrReference(token),
-            PdfTokenType.Real => new PdfReal(double.Parse(token.Value)),
+            PdfTokenType.Real => new PdfReal(double.Parse(token.Value, NumberStyles.Float, CultureInfo.InvariantCulture)),
             PdfTokenType.String => ParseString(token),
             PdfTokenType.Name => ParseName(token),
             PdfTokenType.ArrayStart => ParseArray(),

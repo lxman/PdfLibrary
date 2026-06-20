@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO.Compression;
 using System.Numerics;
 using System.Security.Cryptography;
@@ -62,6 +63,22 @@ public class PdfDocumentWriter
     /// Write a document to a stream
     /// </summary>
     public void Write(PdfDocumentBuilder builder, Stream stream)
+    {
+        // PDF numeric syntax is fixed `.`-decimal; force invariant formatting for the entire write so the
+        // builder's many `:F`/ToString number emissions are correct under any thread culture (e.g. de-DE/fr-FR).
+        CultureInfo previousCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            WriteInternal(builder, stream);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+    }
+
+    private void WriteInternal(PdfDocumentBuilder builder, Stream stream)
     {
         _nextObjectNumber = 1;
         _objectOffsets.Clear();
