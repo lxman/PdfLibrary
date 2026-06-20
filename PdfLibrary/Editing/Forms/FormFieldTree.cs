@@ -378,7 +378,7 @@ internal static class FormFieldTree
         PdfObject? resolved = Resolve(doc, vRaw);
         return resolved switch
         {
-            PdfString s => s.Value,
+            PdfString s => s.GetText(),
             PdfName n   => n.Value == "Off" ? null : n.Value,
             _           => null
         };
@@ -402,7 +402,7 @@ internal static class FormFieldTree
 
     private static string StringFrom(PdfObject? obj) => obj switch
     {
-        PdfString s => s.Value,
+        PdfString s => s.GetText(),
         PdfName n   => n.Value,
         _           => string.Empty
     };
