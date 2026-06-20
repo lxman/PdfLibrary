@@ -369,16 +369,16 @@ public class PdfDocumentWriter
         if (!string.IsNullOrEmpty(meta.Title))
             writer.WriteLine($"   /Title {PdfTextString(meta.Title, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Author))
-            writer.WriteLine($"   /Author {PdfEncryptedString(meta.Author, infoObj)}");
+            writer.WriteLine($"   /Author {PdfTextString(meta.Author, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Subject))
-            writer.WriteLine($"   /Subject {PdfEncryptedString(meta.Subject, infoObj)}");
+            writer.WriteLine($"   /Subject {PdfTextString(meta.Subject, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Keywords))
-            writer.WriteLine($"   /Keywords {PdfEncryptedString(meta.Keywords, infoObj)}");
+            writer.WriteLine($"   /Keywords {PdfTextString(meta.Keywords, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Creator))
-            writer.WriteLine($"   /Creator {PdfEncryptedString(meta.Creator, infoObj)}");
+            writer.WriteLine($"   /Creator {PdfTextString(meta.Creator, infoObj)}");
 
         string producer = meta.Producer ?? "PdfLibrary";
-        writer.WriteLine($"   /Producer {PdfEncryptedString(producer, infoObj)}");
+        writer.WriteLine($"   /Producer {PdfTextString(producer, infoObj)}");
 
         DateTime creationDate = meta.CreationDate ?? DateTime.Now;
         writer.WriteLine($"   /CreationDate {PdfEncryptedDate(creationDate, infoObj)}");
