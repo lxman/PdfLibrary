@@ -154,4 +154,37 @@ public class TextAppearanceMultilineTests
             File.Delete(outPath);
         }
     }
+
+    [Fact]
+    public void Comb_MaxLenZero_FallsBackToSingleLine()
+    {
+        // Ff bit 25 (1-based) = bit 24 (0-based) = 16777216 (Comb flag)
+        const int combFf = 1 << 24;
+        const double rectW = 100;
+        const double rectH = 20;
+
+        // Build a comb field with MaxLen = 0 (degenerate — comb needs a positive cell count).
+        // With MaxLen=0 the comb path computes cellW = Infinity and draws 0 characters,
+        // so the value "AB" is silently lost.  The fix is to fall back to single-line rendering.
+        byte[] pdf = FormTestDocs.WithTextFieldEx(
+            name: "comb0",
+            value: null,
+            ff: combFf,
+            maxLen: 0,
+            rectW: rectW,
+            rectH: rectH);
+
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
+        var edit = doc.Edit();
+        var field = (PdfTextField)edit.Forms["comb0"]!;
+        field.Value = "AB";
+
+        string ap = ApStreamText(doc, field);
+
+        // Must not contain "Infinity" (guard against the division-by-zero leaking)
+        Assert.DoesNotContain("Infinity", ap, StringComparison.OrdinalIgnoreCase);
+
+        // The value "AB" must appear in the stream — single-line fallback shows the text
+        Assert.Contains("(AB)", ap);
+    }
 }
