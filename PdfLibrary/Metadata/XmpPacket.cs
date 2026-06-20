@@ -19,6 +19,9 @@ public sealed class XmpPacket
     // Namespace-uri → preferred prefix; populated during parse, used during serialize.
     private readonly Dictionary<string, string> _prefixMap = new(StringComparer.Ordinal);
 
+    // Reverse map: prefix -> namespace-uri, for collision detection.
+    private readonly Dictionary<string, string> _reversePrefixMap = new(StringComparer.Ordinal);
+
     private XmpPacket() { }
 
     // ── Factory ───────────────────────────────────────────────────────────────
@@ -98,7 +101,8 @@ public sealed class XmpPacket
         ArgumentNullException.ThrowIfNull(localName);
         ArgumentNullException.ThrowIfNull(value);
         RegisterPrefix(namespaceUri, prefix);
-        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, prefix, localName, value);
+        string actualPrefixSimple = _prefixMap[namespaceUri];
+        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixSimple, localName, value);
     }
 
     /// <summary>Sets or replaces an array property (Seq when <paramref name="ordered"/>=true, Bag otherwise).</summary>
@@ -110,8 +114,9 @@ public sealed class XmpPacket
         ArgumentNullException.ThrowIfNull(localName);
         ArgumentNullException.ThrowIfNull(items);
         RegisterPrefix(namespaceUri, prefix);
+        string actualPrefixArr = _prefixMap[namespaceUri];
         IReadOnlyList<string> list = items.ToList();
-        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, prefix, localName, list, ordered);
+        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixArr, localName, list, ordered);
     }
 
     /// <summary>Sets or merges a language alternative property.</summary>
@@ -123,6 +128,7 @@ public sealed class XmpPacket
         ArgumentNullException.ThrowIfNull(localName);
         ArgumentNullException.ThrowIfNull(text);
         RegisterPrefix(namespaceUri, prefix);
+        string actualPrefixLa = _prefixMap[namespaceUri];
 
         // If a LangAlt property already exists, merge into it; otherwise create fresh.
         Dictionary<string, string> map;
@@ -136,8 +142,7 @@ public sealed class XmpPacket
             map = new Dictionary<string, string>(StringComparer.Ordinal);
         }
         map[lang] = text;
-        // Ensure x-default mirrors the value when lang is x-default
-        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, prefix, localName, map);
+        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixLa, localName, map);
     }
 
     /// <summary>Removes a property. No-op if absent.</summary>
@@ -155,8 +160,11 @@ public sealed class XmpPacket
     {
         var sb = new StringBuilder();
 
-        // Header PI (the "﻿" is the Unicode BOM character U+FEFF embedded as UTF-8 text, per XMP spec)
-        sb.Append("<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
+
+        // The begin attribute is the Unicode BOM character U+FEFF.
+        // When encoded to UTF-8 it produces the canonical 3-byte sequence EF BB BF.
+        // Do NOT use ï»¿ (three separate Latin-1 escapes) -- those produce mojibake.
+        sb.Append("<?xpacket begin=\"﻿\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
 
         // x:xmpmeta
         sb.Append("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n");
@@ -174,7 +182,8 @@ public sealed class XmpPacket
         // Properties
         foreach (XmpProperty prop in _props.Values)
         {
-            string qname = $"{prop.Prefix}:{prop.LocalName}";
+            string resolvedPfx = _prefixMap.TryGetValue(prop.NamespaceUri, out string? mpfx) ? mpfx : prop.Prefix;
+            string qname = $"{resolvedPfx}:{prop.LocalName}";
             switch (prop.Kind)
             {
                 case XmpValueKind.Simple:
@@ -332,19 +341,44 @@ public sealed class XmpPacket
         RegisterPrefix(XmpSchemas.X,   XmpSchemas.XPrefix);
     }
 
+    /// <summary>
+    /// Registers ns-&gt;prefix with collision-safe de-duplication.
+    /// No-op when ns already mapped (first-one-wins).
+    /// Appends a numeric suffix (2, 3, ...) when the desired prefix is already taken
+    /// by a different namespace URI -- prevents duplicate xmlns: attrs (malformed XML).
+    /// </summary>
     private void RegisterPrefix(string ns, string prefix)
     {
-        if (!_prefixMap.ContainsKey(ns))
+        if (_prefixMap.ContainsKey(ns))
+            return;
+
+        if (!_reversePrefixMap.TryGetValue(prefix, out string? existingNs) || existingNs == ns)
+        {
             _prefixMap[ns] = prefix;
+            _reversePrefixMap[prefix] = ns;
+            return;
+        }
+
+        int counter = 2;
+        string candidate;
+        do
+        {
+            candidate = prefix + counter.ToString(CultureInfo.InvariantCulture);
+            counter++;
+        }
+        while (_reversePrefixMap.ContainsKey(candidate));
+
+        _prefixMap[ns] = candidate;
+        _reversePrefixMap[candidate] = ns;
     }
 
     private string PrefixFor(string ns, string localNameHint)
     {
         if (_prefixMap.TryGetValue(ns, out string? p)) return p;
-        // Generate a fallback prefix from the last path segment of the URI
+        // Generate a fallback from hash; RegisterPrefix de-duplicates collisions.
         string fallback = "ns" + Math.Abs(ns.GetHashCode() % 1000).ToString(CultureInfo.InvariantCulture);
-        _prefixMap[ns] = fallback;
-        return fallback;
+        RegisterPrefix(ns, fallback);
+        return _prefixMap[ns]; // may differ if fallback collided
     }
 
     private static string XmlEncode(string s)
