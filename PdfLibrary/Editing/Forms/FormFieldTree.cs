@@ -178,15 +178,16 @@ internal static class FormFieldTree
         else if (inherited.Q.HasValue)
             q = inherited.Q.Value;
 
-        return new PdfTextField
+        var tf = new PdfTextField
         {
-            Value       = valueStr,
             MaxLength   = maxLen,
             IsMultiline = FieldFlags.Has(ff, FieldFlags.Multiline),
             IsComb      = FieldFlags.Has(ff, FieldFlags.Comb),
             IsPassword  = FieldFlags.Has(ff, FieldFlags.Password),
             Quadding    = q
         };
+        tf.SetValueInternal(valueStr);
+        return tf;
     }
 
     private static PdfButtonField BuildButtonField(

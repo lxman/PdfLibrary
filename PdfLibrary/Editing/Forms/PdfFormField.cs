@@ -37,8 +37,26 @@ public abstract class PdfFormField
 /// <summary>A /Tx (text) field.</summary>
 public sealed class PdfTextField : PdfFormField
 {
-    /// <summary>Current value (/V), or null if unset.</summary>
-    public string? Value { get; internal set; }
+    private string? _value;
+
+    /// <summary>Current value (/V). Setting regenerates the field's appearance stream.</summary>
+    public string? Value
+    {
+        get => _value;
+        set
+        {
+            _value = value;
+            // Write /V into the field dict
+            Dict[new PdfName("V")] = value is null
+                ? (PdfObject)PdfNull.Instance
+                : PdfString.FromText(value);
+            // Regenerate the appearance stream
+            FieldAppearanceGenerator.Regenerate(Doc, this);
+        }
+    }
+
+    /// <summary>Internal setter used by the field-tree builder (does not trigger AP regeneration).</summary>
+    internal void SetValueInternal(string? value) => _value = value;
 
     /// <summary>/MaxLen, or null if not set.</summary>
     public int? MaxLength { get; internal set; }
