@@ -62,7 +62,7 @@ internal static class DestinationRepairer
         }
     }
 
-    private static PdfObject? LookupNamedDest(PdfDocument doc, string name)
+    internal static PdfObject? LookupNamedDest(PdfDocument doc, string name)
     {
         PdfDictionary? catalog = doc.CatalogDictionary;
         if (catalog is null) return null;
@@ -75,7 +75,7 @@ internal static class DestinationRepairer
         return null;
     }
 
-    private static PdfObject? NameTreeLookup(PdfDocument doc, PdfDictionary node, string name)
+    internal static PdfObject? NameTreeLookup(PdfDocument doc, PdfDictionary node, string name)
     {
         if (Resolve(doc, node.Get(new PdfName("Names"))) is PdfArray names)
             for (var i = 0; i + 1 < names.Count; i += 2)
