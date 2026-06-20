@@ -13,7 +13,7 @@ internal static class PdfPageAnnotator
         double x, double y, string contents)
     {
         PdfDictionary annot = NewAnnot(doc, page, pageRef, "Text", new PdfRect(x, y - 24, x + 24, y));
-        annot[new PdfName("Contents")] = new PdfString(contents);
+        annot[new PdfName("Contents")] = PdfString.FromText(contents);
         annot[new PdfName("Name")] = new PdfName("Note");
     }
 

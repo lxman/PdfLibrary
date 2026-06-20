@@ -90,7 +90,7 @@ internal static class PageLabelTree
             if (Resolve(doc, nums[i + 1]) is not PdfDictionary dict) continue;
 
             PdfPageLabelStyle style = ReadStyle(dict.Get(new PdfName("S")));
-            string? prefix = Resolve(doc, dict.Get(new PdfName("P"))) is PdfString p ? p.Value : null;
+            string? prefix = Resolve(doc, dict.Get(new PdfName("P"))) is PdfString p ? p.GetText() : null;
             int start = Resolve(doc, dict.Get(new PdfName("St"))) is PdfInteger st ? st.Value : 1;
 
             result.Add(MakeRange(key.Value, style, prefix, start));
@@ -142,7 +142,7 @@ internal static class PageLabelTree
         if (r.Style != PdfPageLabelStyle.None)
             entry[new PdfName("S")] = new PdfName(StyleCode(r.Style));
         if (!string.IsNullOrEmpty(r.Prefix))
-            entry[new PdfName("P")] = new PdfString(r.Prefix);
+            entry[new PdfName("P")] = PdfString.FromText(r.Prefix);
         if (r.StartNumber != 1)
             entry[new PdfName("St")] = new PdfInteger(r.StartNumber);
         return entry;

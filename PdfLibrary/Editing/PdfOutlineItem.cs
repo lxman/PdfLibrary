@@ -1,4 +1,3 @@
-using System.Text;
 using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -121,26 +120,13 @@ public sealed class PdfOutlineItem
     internal static PdfString EncodeTitle(string title)
     {
         ArgumentNullException.ThrowIfNull(title);
-        bool isAscii = title.All(c => c <= 0x7E && c >= 0x20 || c is '\t' or '\n' or '\r');
-        if (isAscii)
-            return new PdfString(title);
-
-        // UTF-16BE with BOM (FE FF), per ISO 32000 text-string convention.
-        byte[] utf16 = Encoding.BigEndianUnicode.GetBytes(title);
-        var bytes = new byte[utf16.Length + 2];
-        bytes[0] = 0xFE;
-        bytes[1] = 0xFF;
-        Array.Copy(utf16, 0, bytes, 2, utf16.Length);
-        return new PdfString(bytes);
+        return PdfString.FromText(title);
     }
 
     internal static string DecodeTitle(PdfObject? title)
     {
         if (title is not PdfString s) return string.Empty;
-        byte[] bytes = s.Bytes;
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
-        return s.Value;
+        return s.GetText();
     }
 
     internal static PdfArray EncodeDestination(PdfDocument doc, PdfDestination dest)

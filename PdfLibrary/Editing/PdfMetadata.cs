@@ -149,7 +149,7 @@ public sealed class PdfMetadata
         if (_document.Trailer.Info is null) return null;
         if (_document.GetObject(_document.Trailer.Info.ObjectNumber) is not PdfDictionary info) return null;
         if (!info.TryGetValue(new PdfName(key), out PdfObject obj)) return null;
-        return obj is PdfString s ? s.Value : null;
+        return obj is PdfString s ? s.GetText() : null;
     }
 
     private void SetInfoString(string key, string? value)
@@ -158,7 +158,7 @@ public sealed class PdfMetadata
         if (value is null)
             info.Remove(new PdfName(key));
         else
-            info[new PdfName(key)] = new PdfString(value);
+            info[new PdfName(key)] = PdfString.FromText(value);
     }
 
     private DateTimeOffset? GetInfoDate(string key)
