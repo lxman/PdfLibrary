@@ -45,6 +45,26 @@ public sealed class PdfFormFields : IEnumerable<PdfFormField>
         return false;
     }
 
+    /// <summary>
+    /// Flattens all fields: bakes each field's normal appearance into the page content and
+    /// removes all form interactivity (/AcroForm is dropped when no fields remain).
+    /// </summary>
+    public void Flatten() => FormFlattener.FlattenAll(_document);
+
+    /// <summary>
+    /// Flattens the field with the given fully-qualified name.
+    /// Throws <see cref="KeyNotFoundException"/> if the field is not found.
+    /// Removes /AcroForm from the catalog if no fields remain after flattening.
+    /// </summary>
+    public void Flatten(string fullName)
+    {
+        PdfFormField? field = this[fullName];
+        if (field is null)
+            throw new KeyNotFoundException($"Form field '{fullName}' not found.");
+        FormFlattener.FlattenField(_document, field);
+        FormFlattener.PruneAcroFormIfEmpty(_document);
+    }
+
     /// <inheritdoc/>
     public IEnumerator<PdfFormField> GetEnumerator() =>
         FormFieldTree.Read(_document).GetEnumerator();
