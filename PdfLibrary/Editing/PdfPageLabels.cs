@@ -9,6 +9,11 @@ namespace PdfLibrary.Editing;
 /// A live view of the document's page-label ranges (<c>/Catalog /PageLabels</c> number tree).
 /// Reads/writes a single flat <c>/Nums</c> node, kept sorted by start index.
 /// </summary>
+/// <remarks>
+/// Page-label ranges are keyed to physical page positions and are NOT adjusted automatically
+/// when pages are inserted, removed, moved, or imported. After rearranging pages, call
+/// <see cref="Set"/>/<see cref="Remove"/> to renumber as needed.
+/// </remarks>
 public sealed class PdfPageLabels
 {
     private readonly PdfDocument _document;

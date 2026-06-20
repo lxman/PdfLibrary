@@ -61,7 +61,6 @@ public sealed partial class PdfPageCollection : IReadOnlyList<PdfPage>
     public void Move(int fromIndex, int toIndex)
     {
         PageTreeOps.Move(_document, fromIndex, toIndex);
-        PageLabelReindexer.OnPageMoved(_document, fromIndex, toIndex);
     }
 
     public void RemoveAt(int index)
@@ -70,7 +69,6 @@ public sealed partial class PdfPageCollection : IReadOnlyList<PdfPage>
             throw new InvalidOperationException("Cannot remove the last remaining page.");
         PdfDictionary removed = PageTreeOps.RemoveAt(_document, index);
         DestinationRepairer.OnPageRemoved(_document, removed);
-        PageLabelReindexer.OnPageRemoved(_document, index);
     }
 
     public PdfPage InsertBlank(int at, double width, double height)
@@ -82,7 +80,6 @@ public sealed partial class PdfPageCollection : IReadOnlyList<PdfPage>
         };
         PdfIndirectReference pageRef = _document.RegisterObject(page);
         PageTreeOps.InsertPageRef(_document, pageRef, at);
-        PageLabelReindexer.OnPageInserted(_document, at);
         return new PdfPage(page, _document, _document.PageTreeRootDictionary);
     }
 
@@ -93,7 +90,6 @@ public sealed partial class PdfPageCollection : IReadOnlyList<PdfPage>
             ?? throw new ArgumentOutOfRangeException(nameof(sourceIndex));
         PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(_document, source, srcPage.Dictionary);
         PageTreeOps.InsertPageRef(_document, newRef, at);
-        PageLabelReindexer.OnPageInserted(_document, at);
         var page = (PdfDictionary)_document.GetObject(newRef.ObjectNumber)!;
         AcroFormMerger.MergeImportedFields(_document, source, page);
         return new PdfPage(page, _document, _document.PageTreeRootDictionary);
@@ -104,7 +100,6 @@ public sealed partial class PdfPageCollection : IReadOnlyList<PdfPage>
         PdfDictionary src = PageAt(index);
         PdfIndirectReference newRef = ObjectGraphCloner.CloneInto(_document, _document, src);
         PageTreeOps.InsertPageRef(_document, newRef, at);
-        PageLabelReindexer.OnPageInserted(_document, at);
         var page = (PdfDictionary)_document.GetObject(newRef.ObjectNumber)!;
         AcroFormMerger.MergeImportedFields(_document, _document, page);
         return new PdfPage(page, _document, _document.PageTreeRootDictionary);
