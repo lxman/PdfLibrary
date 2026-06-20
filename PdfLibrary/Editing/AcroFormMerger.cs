@@ -96,7 +96,7 @@ internal static class AcroFormMerger
         while (existingNames.Contains($"{baseName}#{n}")) n++;
         var qualified = $"{baseName}#{n}";
         existingNames.Add(qualified);
-        field[new PdfName("T")] = new PdfString(qualified);
+        field[new PdfName("T")] = PdfString.FromText(qualified);
     }
 
     private static void CarryDefaultResources(PdfDocument target, PdfDocument source)

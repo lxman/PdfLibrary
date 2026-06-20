@@ -252,7 +252,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_Constructor_FromString()
     {
-        var pdfString = new PdfString("Hello");
+        var pdfString = PdfString.FromByteLiteral("Hello");
         Assert.Equal("Hello", pdfString.Value);
     }
 
@@ -267,27 +267,27 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_Type_ReturnsString()
     {
-        Assert.Equal(PdfObjectType.String, new PdfString("test").Type);
+        Assert.Equal(PdfObjectType.String, PdfString.FromByteLiteral("test").Type);
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_SimpleText()
     {
-        var pdfString = new PdfString("Hello World");
+        var pdfString = PdfString.FromByteLiteral("Hello World");
         Assert.Equal("(Hello World)", pdfString.ToPdfString());
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesParentheses()
     {
-        var pdfString = new PdfString("(Hello)");
+        var pdfString = PdfString.FromByteLiteral("(Hello)");
         Assert.Equal(@"(\(Hello\))", pdfString.ToPdfString());
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesBackslash()
     {
-        var pdfString = new PdfString(@"C:\path\file");
+        var pdfString = PdfString.FromByteLiteral(@"C:\path\file");
         string result = pdfString.ToPdfString();
         Assert.StartsWith("(", result);
         Assert.EndsWith(")", result);
@@ -297,7 +297,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesSpecialChars()
     {
-        var pdfString = new PdfString("Line1\nLine2\tTab\rReturn");
+        var pdfString = PdfString.FromByteLiteral("Line1\nLine2\tTab\rReturn");
         string result = pdfString.ToPdfString();
         Assert.Contains(@"\n", result);
         Assert.Contains(@"\t", result);
@@ -307,7 +307,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Hexadecimal_Simple()
     {
-        var pdfString = new PdfString("Hello", PdfStringFormat.Hexadecimal);
+        var pdfString = new PdfString(System.Text.Encoding.Latin1.GetBytes("Hello"), PdfStringFormat.Hexadecimal);
         // "Hello" = 48 65 6C 6C 6F in hex
         Assert.Equal("<48656C6C6F>", pdfString.ToPdfString());
     }
@@ -335,9 +335,9 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_Equals_ComparesBytes()
     {
-        var str1 = new PdfString("Hello");
-        var str2 = new PdfString("Hello");
-        var str3 = new PdfString("World");
+        var str1 = PdfString.FromByteLiteral("Hello");
+        var str2 = PdfString.FromByteLiteral("Hello");
+        var str3 = PdfString.FromByteLiteral("World");
 
         Assert.True(str1.Equals(str2));
         Assert.False(str1.Equals(str3));
@@ -346,14 +346,15 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ImplicitConversion_ToString()
     {
-        string value = new PdfString("Hello");
+        string value = PdfString.FromByteLiteral("Hello");
         Assert.Equal("Hello", value);
     }
 
     [Fact]
     public void PdfString_ImplicitConversion_FromString()
     {
-        PdfString pdfString = "Hello";
+        // Implicit string→PdfString is removed; explicit factory used instead.
+        PdfString pdfString = PdfString.FromByteLiteral("Hello");
         Assert.Equal("Hello", pdfString.Value);
     }
 

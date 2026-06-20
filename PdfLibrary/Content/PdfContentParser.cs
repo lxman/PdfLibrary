@@ -74,7 +74,7 @@ internal class PdfContentParser
                     break;
 
                 case PdfTokenType.String:
-                    operands.Push(new PdfString(token.Value));
+                    operands.Push(PdfString.FromByteLiteral(token.Value));
                     break;
 
                 case PdfTokenType.Name:
@@ -318,7 +318,7 @@ internal class PdfContentParser
                     break;
 
                 case PdfTokenType.String:
-                    array.Add(new PdfString(token.Value));
+                    array.Add(PdfString.FromByteLiteral(token.Value));
                     break;
 
                 case PdfTokenType.Name:
@@ -370,7 +370,7 @@ internal class PdfContentParser
                 {
                     PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
                     PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
-                    PdfTokenType.String => new PdfString(token.Value),
+                    PdfTokenType.String => PdfString.FromByteLiteral(token.Value),
                     PdfTokenType.Name => PdfName.Parse(token.Value),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,
@@ -429,7 +429,7 @@ internal class PdfContentParser
                 {
                     PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
                     PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
-                    PdfTokenType.String => new PdfString(token.Value),
+                    PdfTokenType.String => PdfString.FromByteLiteral(token.Value),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,
                     PdfTokenType.ArrayStart => ParseArray(lexer),

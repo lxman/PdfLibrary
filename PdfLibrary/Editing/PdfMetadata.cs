@@ -174,7 +174,7 @@ public sealed class PdfMetadata
         if (!value.HasValue)
             info.Remove(new PdfName(key));
         else
-            info[new PdfName(key)] = new PdfString(PdfDate.FormatPdf(value.Value));
+            info[new PdfName(key)] = PdfString.FromByteLiteral(PdfDate.FormatPdf(value.Value));
     }
 
     // ---- XMP sync -----------------------------------------------------------

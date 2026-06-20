@@ -12,11 +12,6 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
     private readonly byte[] _bytes = bytes ?? throw new ArgumentNullException(nameof(bytes));
     private readonly PdfStringFormat _format = format;
 
-    public PdfString(string value, PdfStringFormat format = PdfStringFormat.Literal)
-        : this(Encoding.Latin1.GetBytes(value), format)
-    {
-    }
-
     public override PdfObjectType Type => PdfObjectType.String;
 
     /// <summary>
@@ -137,5 +132,4 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
         new(Encoding.Latin1.GetBytes(value), PdfStringFormat.Literal);
 
     public static implicit operator string(PdfString pdfString) => pdfString.Value;
-    public static implicit operator PdfString(string value) => new(value);
 }

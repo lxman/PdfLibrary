@@ -32,7 +32,7 @@ internal static class PdfPageAnnotator
         var action = new PdfDictionary();
         action[PdfName.TypeName] = new PdfName("Action");
         action[new PdfName("S")] = new PdfName("URI");
-        action[new PdfName("URI")] = new PdfString(url);
+        action[new PdfName("URI")] = PdfString.FromByteLiteral(url);
         annot[new PdfName("A")] = action;
         annot[new PdfName("H")] = new PdfName("I");
     }

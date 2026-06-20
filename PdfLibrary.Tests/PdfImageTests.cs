@@ -154,7 +154,7 @@ public class PdfImageTests
             new PdfName("Indexed"),
             new PdfName("DeviceRGB"),
             new PdfInteger(255),
-            new PdfString("palette data")
+            PdfString.FromByteLiteral("palette data")
         };
 
         var imageDict = new PdfDictionary

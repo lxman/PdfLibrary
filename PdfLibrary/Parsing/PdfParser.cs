@@ -224,7 +224,7 @@ internal class PdfParser(PdfLexer lexer)
 
         // Simply return the string as-is - the PdfString constructor will use Latin-1
         // to convert back to the original bytes that the lexer parsed from hex.
-        var pdfString = new PdfString(token.Value);
+        var pdfString = PdfString.FromByteLiteral(token.Value);
 
         // If we're inside an indirect object and have a decryptor, decrypt the string
         // Per PDF spec ISO 32000-1 section 7.6.2: "All strings in the document are encrypted"

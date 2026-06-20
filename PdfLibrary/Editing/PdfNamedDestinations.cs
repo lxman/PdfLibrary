@@ -209,7 +209,7 @@ public sealed class PdfNamedDestinations : IReadOnlyCollection<string>
         var newArr = new PdfArray();
         foreach (KeyValuePair<string, PdfArray> kv in pairs)
         {
-            newArr.Add(new PdfString(kv.Key));
+            newArr.Add(PdfString.FromByteLiteral(kv.Key));
             newArr.Add(kv.Value);
         }
         destsNode[new PdfName("Names")] = newArr;
