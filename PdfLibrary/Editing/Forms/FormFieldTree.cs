@@ -352,7 +352,7 @@ internal static class FormFieldTree
         PdfObject? raw = dict.Get(new PdfName(key));
         return raw switch
         {
-            PdfString s => s.Value,
+            PdfString s => s.GetText(),
             PdfName n   => n.Value,
             _           => null
         };
