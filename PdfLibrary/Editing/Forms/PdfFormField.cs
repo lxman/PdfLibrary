@@ -68,14 +68,51 @@ public sealed class PdfButtonField : PdfFormField
     /// <summary>For radio groups: union of non-Off on-state names across all widgets.</summary>
     public IReadOnlyList<string> Options { get; internal set; } = Array.Empty<string>();
 
+    private string? _selectedOption;
+
     /// <summary>For radio groups: the current /V (selected option), or null.</summary>
-    public string? SelectedOption { get; internal set; }
+    public string? SelectedOption
+    {
+        get => _selectedOption;
+        set
+        {
+            switch (Kind)
+            {
+                case ButtonKind.Radio:
+                    ButtonStateWriter.SetRadio(Doc, this, value
+                        ?? throw new ArgumentNullException(nameof(value)));
+                    _selectedOption = value;
+                    break;
+                case ButtonKind.Checkbox:
+                    throw new InvalidOperationException(
+                        "Use Check() / Uncheck() for checkbox fields; SelectedOption is radio-only.");
+                default:
+                    throw new InvalidOperationException("Push buttons hold no value.");
+            }
+        }
+    }
 
-    /// <summary>Sets the checkbox to its on-state. Not yet implemented — write path is Task 3.</summary>
-    public void Check() => throw new NotImplementedException("Value write path is implemented in Task 3.");
+    internal void SetSelectedOptionInternal(string? value) => _selectedOption = value;
 
-    /// <summary>Sets the checkbox to /Off. Not yet implemented — write path is Task 3.</summary>
-    public void Uncheck() => throw new NotImplementedException("Value write path is implemented in Task 3.");
+    /// <summary>Sets the checkbox to its on-state.</summary>
+    /// <exception cref="InvalidOperationException">Thrown when the field is not a checkbox.</exception>
+    public void Check()
+    {
+        if (Kind != ButtonKind.Checkbox)
+            throw new InvalidOperationException("Check() is only valid for checkbox fields.");
+        ButtonStateWriter.SetCheckbox(Doc, this, true);
+        IsChecked = true;
+    }
+
+    /// <summary>Sets the checkbox to /Off.</summary>
+    /// <exception cref="InvalidOperationException">Thrown when the field is not a checkbox.</exception>
+    public void Uncheck()
+    {
+        if (Kind != ButtonKind.Checkbox)
+            throw new InvalidOperationException("Uncheck() is only valid for checkbox fields.");
+        ButtonStateWriter.SetCheckbox(Doc, this, false);
+        IsChecked = false;
+    }
 }
 
 /// <summary>A /Ch (choice) field — combo box or list box.</summary>

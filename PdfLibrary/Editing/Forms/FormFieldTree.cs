@@ -250,13 +250,14 @@ internal static class FormFieldTree
             }
         }
 
-        return new PdfButtonField
+        var buttonField = new PdfButtonField
         {
-            Kind           = kind,
-            IsChecked      = isChecked,
-            Options        = options,
-            SelectedOption = selectedOption
+            Kind      = kind,
+            IsChecked = isChecked,
+            Options   = options
         };
+        buttonField.SetSelectedOptionInternal(selectedOption);
+        return buttonField;
     }
 
     private static PdfChoiceField BuildChoiceField(
