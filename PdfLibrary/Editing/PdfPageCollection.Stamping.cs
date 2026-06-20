@@ -9,6 +9,18 @@ public sealed partial class PdfPageCollection
 {
     private readonly HashSet<int> _wrappedPages = [];
 
+    public void StampAll(Action<PdfStampBuilder> configure)
+    {
+        for (var i = 0; i < Count; i++)
+            Stamp(i, configure);
+    }
+
+    public void StampRange(int start, int count, Action<PdfStampBuilder> configure)
+    {
+        for (var i = 0; i < count; i++)
+            Stamp(start + i, configure);
+    }
+
     public void Stamp(int index, Action<PdfStampBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);

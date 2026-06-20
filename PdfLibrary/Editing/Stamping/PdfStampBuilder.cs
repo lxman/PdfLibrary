@@ -1,3 +1,4 @@
+using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Editing.Stamping;
@@ -36,4 +37,24 @@ public sealed class PdfStampBuilder
     public PdfStampBuilder Opacity(double alpha) { OpacityValue = Math.Clamp(alpha, 0.0, 1.0); return this; }
     public PdfStampBuilder Overlay() { IsUnderlay = false; return this; }
     public PdfStampBuilder Underlay() { IsUnderlay = true; return this; }
+
+    /// <summary>Sugar: a bold text stamp sized to fit the text. Pair with a placement preset (e.g. Diagonal/Center).</summary>
+    public PdfStampBuilder Watermark(string text)
+    {
+        const double fontSize = 48;
+        double w = PdfPageBuilder.MeasureText(text, "Helvetica-Bold", fontSize);
+        Width = Math.Max(w, 1);
+        Height = fontSize * 1.3;
+        Author = p => p.AddText(text, 0, fontSize * 0.25, "Helvetica-Bold", fontSize);
+        return this;
+    }
+
+    /// <summary>Sugar: an image stamp filling a width×height box (placement positions/scales it).</summary>
+    public PdfStampBuilder Image(byte[] data, double width, double height)
+    {
+        Width = width;
+        Height = height;
+        Author = p => p.AddImage(data, new PdfRect(0, 0, width, height));
+        return this;
+    }
 }
