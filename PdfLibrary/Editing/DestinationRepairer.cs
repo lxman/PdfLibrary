@@ -97,39 +97,17 @@ internal static class DestinationRepairer
         else dict[new PdfName(key)] = value;
     }
 
-    private sealed class OutlineNode
-    {
-        public PdfDictionary Dict = null!;
-        public PdfObject Ref = null!;
-        public List<OutlineNode> Children = [];
-    }
-
     private static void RepairOutlines(PdfDocument doc, int pageObjNum)
     {
         PdfObject? outlinesRef = doc.CatalogDictionary?.Get(new PdfName("Outlines"));
         if (outlinesRef is null || Resolve(doc, outlinesRef) is not PdfDictionary outlines) return;
 
-        List<OutlineNode> top = BuildChildren(doc, outlines.Get(new PdfName("First")));
+        List<OutlineNode> top = OutlineTree.Build(doc, outlines.Get(new PdfName("First")));
         List<OutlineNode> pruned = Prune(doc, top, pageObjNum);
-        (PdfObject? first, PdfObject? last, int count) = Rewire(outlinesRef, pruned);
+        (PdfObject? first, PdfObject? last, int count) = OutlineTree.Rewire(outlinesRef, pruned);
         SetOrRemove(outlines, "First", first);
         SetOrRemove(outlines, "Last", last);
         outlines[new PdfName("Count")] = new PdfInteger(count);
-    }
-
-    private static List<OutlineNode> BuildChildren(PdfDocument doc, PdfObject? firstRef)
-    {
-        var list = new List<OutlineNode>();
-        PdfObject? cur = firstRef;
-        var guard = 0;
-        while (cur is not null && guard++ < 100000)
-        {
-            if (Resolve(doc, cur) is not PdfDictionary dict) break;
-            var node = new OutlineNode { Dict = dict, Ref = cur, Children = BuildChildren(doc, dict.Get(new PdfName("First"))) };
-            list.Add(node);
-            cur = dict.Get(new PdfName("Next"));
-        }
-        return list;
     }
 
     private static List<OutlineNode> Prune(PdfDocument doc, List<OutlineNode> nodes, int pageObjNum)
@@ -147,27 +125,6 @@ internal static class DestinationRepairer
             }
         }
         return result;
-    }
-
-    private static (PdfObject? first, PdfObject? last, int count) Rewire(PdfObject parentRef, List<OutlineNode> children)
-    {
-        var total = 0;
-        for (var i = 0; i < children.Count; i++)
-        {
-            OutlineNode node = children[i];
-            node.Dict[new PdfName("Parent")] = parentRef;
-            SetOrRemove(node.Dict, "Prev", i > 0 ? children[i - 1].Ref : null);
-            SetOrRemove(node.Dict, "Next", i + 1 < children.Count ? children[i + 1].Ref : null);
-
-            (PdfObject? cFirst, PdfObject? cLast, int cCount) = Rewire(node.Ref, node.Children);
-            SetOrRemove(node.Dict, "First", cFirst);
-            SetOrRemove(node.Dict, "Last", cLast);
-            if (node.Children.Count > 0) node.Dict[new PdfName("Count")] = new PdfInteger(cCount);
-            else node.Dict.Remove(new PdfName("Count"));
-            total += 1 + cCount;
-        }
-        return (children.Count > 0 ? children[0].Ref : null,
-                children.Count > 0 ? children[^1].Ref : null, total);
     }
 
     private static void RepairNamedDestinations(PdfDocument doc, int pageObjNum)
