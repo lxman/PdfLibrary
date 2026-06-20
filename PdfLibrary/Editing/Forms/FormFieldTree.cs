@@ -322,14 +322,15 @@ internal static class FormFieldTree
             }
         }
 
-        return new PdfChoiceField
+        var choiceField = new PdfChoiceField
         {
-            Options         = options,
-            IsCombo         = isCombo,
-            IsMultiSelect   = FieldFlags.Has(ff, FieldFlags.MultiSelect),
-            SelectedValues  = selectedValues,
-            SelectedIndices = selectedIndices
+            Options       = options,
+            IsCombo       = isCombo,
+            IsMultiSelect = FieldFlags.Has(ff, FieldFlags.MultiSelect),
         };
+        choiceField.SetSelectedValuesInternal(selectedValues);
+        choiceField.SetSelectedIndicesInternal(selectedIndices);
+        return choiceField;
     }
 
     private static PdfSignatureField BuildSignatureField(PdfDocument doc, PdfDictionary dict)

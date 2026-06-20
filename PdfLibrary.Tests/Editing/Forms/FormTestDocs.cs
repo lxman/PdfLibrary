@@ -44,19 +44,112 @@ public static class FormTestDocs
         bool combo,
         string[]? selected = null)
     {
-        return PdfDocumentBuilder.Create()
-            .WithAcroForm(f => f.SetNeedAppearances(true))
-            .AddPage(p =>
-            {
-                // The builder's AddDropdown always writes /Ff with Combo flag;
-                // for this test that is fine — combo:true always.
-                var dd = p.AddDropdown(name, 72, 700, 200, 20);
-                foreach ((string export, string display) in opts)
-                    dd.AddOption(export, display);
-                if (selected is { Length: > 0 })
-                    dd.Select(selected[0]);
-            })
-            .ToByteArray();
+        if (combo)
+        {
+            return PdfDocumentBuilder.Create()
+                .WithAcroForm(f => f.SetNeedAppearances(true))
+                .AddPage(p =>
+                {
+                    // The builder's AddDropdown always writes /Ff with Combo flag.
+                    var dd = p.AddDropdown(name, 72, 700, 200, 20);
+                    foreach ((string export, string display) in opts)
+                        dd.AddOption(export, display);
+                    if (selected is { Length: > 0 })
+                        dd.Select(selected[0]);
+                })
+                .ToByteArray();
+        }
+        else
+        {
+            // Hand-build a list box (/FT /Ch with no Combo flag, taller rect for rows)
+            return WithListBox(name, opts, selected);
+        }
+    }
+
+    /// <summary>
+    /// Hand-builds a minimal PDF with a list-box choice field (/FT /Ch, no Combo flag).
+    /// Uses a tall rect (200x80) to accommodate multiple rows.
+    /// </summary>
+    private static byte[] WithListBox(
+        string name,
+        (string Export, string Display)[] opts,
+        string[]? selected = null)
+    {
+        // Object layout:
+        //   1: pages node
+        //   2: catalog
+        //   3: page
+        //   4: field/widget (merged — no separate widget)
+        //   5: AcroForm
+        var offsets = new Dictionary<int, long>();
+
+        using var ms = new System.IO.MemoryStream();
+        using var w = new System.IO.StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true);
+
+        w.WriteLine("%PDF-1.7");
+        w.Flush();
+
+        void WriteObj(int n, string content)
+        {
+            w.Flush();
+            offsets[n] = ms.Position;
+            w.WriteLine($"{n} 0 obj");
+            w.WriteLine(content);
+            w.WriteLine("endobj");
+            w.WriteLine();
+        }
+
+        WriteObj(1, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        WriteObj(2, "<< /Type /Catalog /Pages 1 0 R /AcroForm 5 0 R >>");
+        WriteObj(3, "<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>");
+
+        // Build /Opt array: [export display] pairs or single string if same
+        var optParts = new System.Text.StringBuilder();
+        foreach ((string export, string display) in opts)
+        {
+            if (export == display)
+                optParts.Append($" ({EscapePdfStr(export)})");
+            else
+                optParts.Append($" [({EscapePdfStr(export)}) ({EscapePdfStr(display)})]");
+        }
+
+        // /Ff: no Combo flag → list box. Ff=0 is fine.
+        string vEntry = selected is { Length: > 0 }
+            ? $"({EscapePdfStr(selected[0])})"
+            : "()";
+
+        WriteObj(4,
+            $"<< /Type /Annot /Subtype /Widget /FT /Ch /T ({EscapePdfStr(name)}) " +
+            $"/Ff 0 /V {vEntry} " +
+            $"/Opt [{optParts}] " +
+            $"/DA (/Helv 12 Tf 0 g) " +
+            $"/Rect [72 620 272 700] >>"); // 200x80 tall rect
+
+        WriteObj(5, "<< /Fields [4 0 R] /NeedAppearances true >>");
+
+        w.Flush();
+        long xrefOffset = ms.Position;
+        int totalObjs = 5;
+
+        w.WriteLine("xref");
+        w.WriteLine($"0 {totalObjs + 1}");
+        w.WriteLine("0000000000 65535 f ");
+        for (int i = 1; i <= totalObjs; i++)
+        {
+            if (offsets.TryGetValue(i, out long off))
+                w.WriteLine($"{off:D10} 00000 n ");
+            else
+                w.WriteLine("0000000000 65535 f ");
+        }
+
+        w.WriteLine("trailer");
+        w.WriteLine($"<< /Size {totalObjs + 1} /Root 2 0 R >>");
+        w.WriteLine("startxref");
+        w.WriteLine(xrefOffset.ToString());
+        w.WriteLine("%%EOF");
+        w.Flush();
+
+        return ms.ToArray();
     }
 
     /// <summary>

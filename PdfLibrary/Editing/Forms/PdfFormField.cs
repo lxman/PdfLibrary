@@ -1,6 +1,7 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
+using System.Linq;
 
 namespace PdfLibrary.Editing.Forms;
 
@@ -146,11 +147,123 @@ public sealed class PdfChoiceField : PdfFormField
     /// <summary>/Ff bit 22.</summary>
     public bool IsMultiSelect { get; internal set; }
 
-    /// <summary>Currently selected export values.</summary>
-    public IReadOnlyList<string> SelectedValues { get; internal set; } = Array.Empty<string>();
+    private IReadOnlyList<string> _selectedValues = Array.Empty<string>();
+    private IReadOnlyList<int> _selectedIndices = Array.Empty<int>();
 
-    /// <summary>Currently selected indices (/I).</summary>
-    public IReadOnlyList<int> SelectedIndices { get; internal set; } = Array.Empty<int>();
+    /// <summary>
+    /// Currently selected export values.
+    /// Setting regenerates the appearance stream and updates /V and /I in the field dict.
+    /// </summary>
+    public IReadOnlyList<string> SelectedValues
+    {
+        get => _selectedValues;
+        set
+        {
+            if (value.Count > 1 && !IsMultiSelect)
+                throw new InvalidOperationException("field is not multi-select");
+
+            _selectedValues = value;
+
+            // Write /V
+            if (value.Count == 0)
+            {
+                Dict[new PdfName("V")] = PdfString.FromText(string.Empty);
+            }
+            else if (value.Count == 1)
+            {
+                Dict[new PdfName("V")] = PdfString.FromText(value[0]);
+            }
+            else
+            {
+                var arr = new PdfArray();
+                foreach (string v in value)
+                    arr.Add(PdfString.FromText(v));
+                Dict[new PdfName("V")] = arr;
+            }
+
+            // Update /I to the ascending indices of the selected exports in Options
+            var indices = new List<int>();
+            for (int i = 0; i < Options.Count; i++)
+            {
+                if (value.Contains(Options[i].Export))
+                    indices.Add(i);
+            }
+
+            if (indices.Count == 0)
+            {
+                Dict.Remove(new PdfName("I"));
+            }
+            else
+            {
+                var iArr = new PdfArray();
+                foreach (int idx in indices)
+                    iArr.Add(new PdfInteger(idx));
+                Dict[new PdfName("I")] = iArr;
+            }
+
+            _selectedIndices = indices;
+
+            FieldAppearanceGenerator.Regenerate(Doc, this);
+        }
+    }
+
+    /// <summary>
+    /// Currently selected indices (/I).
+    /// Setting regenerates the appearance stream and updates /I and /V in the field dict.
+    /// </summary>
+    public IReadOnlyList<int> SelectedIndices
+    {
+        get => _selectedIndices;
+        set
+        {
+            foreach (int idx in value)
+            {
+                if (idx < 0 || idx >= Options.Count)
+                    throw new ArgumentOutOfRangeException(nameof(value),
+                        $"Index {idx} is out of range [0, {Options.Count}).");
+            }
+
+            if (value.Count > 1 && !IsMultiSelect)
+                throw new InvalidOperationException("field is not multi-select");
+
+            _selectedIndices = value;
+
+            // Write /I as ascending sorted array
+            var sorted = value.OrderBy(i => i).ToList();
+            var iArr = new PdfArray();
+            foreach (int idx in sorted)
+                iArr.Add(new PdfInteger(idx));
+            Dict[new PdfName("I")] = iArr;
+
+            // Write /V from the export values at the selected indices
+            var exports = sorted.Select(idx => Options[idx].Export).ToList();
+            if (exports.Count == 0)
+            {
+                Dict[new PdfName("V")] = PdfString.FromText(string.Empty);
+            }
+            else if (exports.Count == 1)
+            {
+                Dict[new PdfName("V")] = PdfString.FromText(exports[0]);
+            }
+            else
+            {
+                var arr = new PdfArray();
+                foreach (string e in exports)
+                    arr.Add(PdfString.FromText(e));
+                Dict[new PdfName("V")] = arr;
+            }
+
+            _selectedValues = exports;
+
+            FieldAppearanceGenerator.Regenerate(Doc, this);
+        }
+    }
+
+    /// <summary>Internal setter used by the field-tree builder (does not trigger AP regeneration).</summary>
+    internal void SetSelectedValuesInternal(IReadOnlyList<string> values) => _selectedValues = values;
+
+    /// <summary>Internal setter used by the field-tree builder (does not trigger AP regeneration).</summary>
+    internal void SetSelectedIndicesInternal(IReadOnlyList<int> indices) => _selectedIndices = indices;
 }
 
 /// <summary>A /Sig (signature) field.</summary>

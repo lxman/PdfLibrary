@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using PdfLibrary.Builder;
 using PdfLibrary.Core;
@@ -30,7 +31,13 @@ internal static class FieldAppearanceGenerator
             return;
         }
 
-        // TODO later tasks: choice fields
+        if (field is PdfChoiceField c)
+        {
+            if (c.IsCombo)
+                RegenerateComboField(doc, c);
+            else
+                RegenerateListField(doc, c);
+        }
     }
 
     // ─── Single-line text ──────────────────────────────────────────────────────
@@ -370,6 +377,259 @@ internal static class FieldAppearanceGenerator
                 [new PdfName("Type")] = new PdfName("XObject"),
                 [new PdfName("Subtype")] = new PdfName("Form"),
                 [new PdfName("BBox")] = new PdfArray
+                {
+                    new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
+                },
+                [new PdfName("Matrix")] = new PdfArray
+                {
+                    new PdfInteger(1), new PdfInteger(0),
+                    new PdfInteger(0), new PdfInteger(1),
+                    new PdfInteger(0), new PdfInteger(0)
+                }
+            };
+
+            var fontResources = new PdfDictionary
+            {
+                [new PdfName(resName)] = fontRef
+            };
+            var resources = new PdfDictionary
+            {
+                [new PdfName("Font")] = fontResources
+            };
+            xobjDict[new PdfName("Resources")] = resources;
+
+            var xobjStream = new PdfStream(xobjDict, contentBytes);
+            PdfIndirectReference apRef = doc.RegisterObject(xobjStream);
+
+            var apDict = new PdfDictionary
+            {
+                [new PdfName("N")] = apRef
+            };
+            widget[new PdfName("AP")] = apDict;
+
+            anyWidgetWritten = true;
+        }
+
+        if (anyWidgetWritten)
+            SetNeedAppearancesFalse(doc);
+    }
+
+    // ─── Combo choice ─────────────────────────────────────────────────────────
+
+    private static void RegenerateComboField(PdfDocument doc, PdfChoiceField field)
+    {
+        // Display text: look up the display for the first selected export value
+        string displayText = string.Empty;
+        if (field.SelectedValues.Count > 0)
+        {
+            string export = field.SelectedValues[0];
+            var found = field.Options.FirstOrDefault(o => o.Export == export);
+            displayText = found != default ? found.Display : export;
+        }
+
+        string? effectiveDa = GetEffectiveDa(doc, field);
+        FieldDa da = FieldDaParser.Parse(effectiveDa);
+
+        (string resName, PdfIndirectReference fontRef) =
+            AppearanceFontResolver.Resolve(doc, da.FontName);
+
+        bool anyWidgetWritten = false;
+
+        foreach (PdfDictionary widget in field.Widgets)
+        {
+            if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
+                continue;
+
+            double w = Math.Abs(x1 - x0);
+            double h = Math.Abs(y1 - y0);
+
+            if (w <= 0 || h <= 0)
+                continue;
+
+            double pad = 2.0;
+            double size = da.FontSize > 0
+                ? da.FontSize
+                : AutoSize(displayText, w, h, pad);
+
+            double tx = pad;
+            double ty = (h - size) / 2.0 + size * 0.2;
+
+            string sizeStr = FormatNumber(size);
+            string txStr   = FormatNumber(tx);
+            string tyStr   = FormatNumber(ty);
+            string wStr    = FormatNumber(w);
+            string hStr    = FormatNumber(h);
+
+            string showToken = PdfString.FromText(displayText).ToPdfString();
+
+            string content =
+                "/Tx BMC\n" +
+                "q\n" +
+                "BT\n" +
+                da.ColorOps + "\n" +
+                "/" + resName + " " + sizeStr + " Tf\n" +
+                "1 0 0 1 " + txStr + " " + tyStr + " Tm\n" +
+                showToken + " Tj\n" +
+                "ET\n" +
+                "Q\n" +
+                "EMC";
+
+            byte[] contentBytes = Encoding.ASCII.GetBytes(content);
+
+            var xobjDict = new PdfDictionary
+            {
+                [new PdfName("Type")]    = new PdfName("XObject"),
+                [new PdfName("Subtype")] = new PdfName("Form"),
+                [new PdfName("BBox")]    = new PdfArray
+                {
+                    new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
+                },
+                [new PdfName("Matrix")] = new PdfArray
+                {
+                    new PdfInteger(1), new PdfInteger(0),
+                    new PdfInteger(0), new PdfInteger(1),
+                    new PdfInteger(0), new PdfInteger(0)
+                }
+            };
+
+            var fontResources = new PdfDictionary
+            {
+                [new PdfName(resName)] = fontRef
+            };
+            var resources = new PdfDictionary
+            {
+                [new PdfName("Font")] = fontResources
+            };
+            xobjDict[new PdfName("Resources")] = resources;
+
+            var xobjStream = new PdfStream(xobjDict, contentBytes);
+            PdfIndirectReference apRef = doc.RegisterObject(xobjStream);
+
+            var apDict = new PdfDictionary
+            {
+                [new PdfName("N")] = apRef
+            };
+            widget[new PdfName("AP")] = apDict;
+
+            anyWidgetWritten = true;
+        }
+
+        if (anyWidgetWritten)
+            SetNeedAppearancesFalse(doc);
+    }
+
+    // ─── List choice ───────────────────────────────────────────────────────────
+
+    private static void RegenerateListField(PdfDocument doc, PdfChoiceField field)
+    {
+        string? effectiveDa = GetEffectiveDa(doc, field);
+        FieldDa da = FieldDaParser.Parse(effectiveDa);
+
+        (string resName, PdfIndirectReference fontRef) =
+            AppearanceFontResolver.Resolve(doc, da.FontName);
+
+        bool anyWidgetWritten = false;
+
+        foreach (PdfDictionary widget in field.Widgets)
+        {
+            if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
+                continue;
+
+            double w = Math.Abs(x1 - x0);
+            double h = Math.Abs(y1 - y0);
+
+            if (w <= 0 || h <= 0)
+                continue;
+
+            double pad     = 2.0;
+            double size    = da.FontSize > 0 ? da.FontSize : 12.0;
+            double leading = 1.15 * size;
+
+            // Collect rows that fit, top-down
+            // First row baseline: h - pad - size
+            var rows = new List<(string Display, bool Selected)>();
+            double y = h - pad - size;
+            foreach ((string export, string display) in field.Options)
+            {
+                if (y < pad) break;
+                bool selected = field.SelectedValues.Contains(export);
+                rows.Add((display, selected));
+                y -= leading;
+            }
+
+            if (rows.Count == 0)
+                continue;
+
+            string sizeStr    = FormatNumber(size);
+            string leadingStr = FormatNumber(-leading);
+            string padStr     = FormatNumber(pad);
+            string wStr       = FormatNumber(w);
+            string hStr       = FormatNumber(h);
+
+            // Build content stream:
+            // /Tx BMC  q
+            // For each row: optional highlight rect OUTSIDE BT..ET, then BT..ET text
+            // Q  EMC
+            var sb = new StringBuilder();
+            sb.AppendLine("/Tx BMC");
+            sb.AppendLine("q");
+
+            double rowY = h - pad - size;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                (string display, bool isSelected) = rows[i];
+                double rowBottomY = rowY - (leading - size); // bottom of the row box
+
+                if (isSelected)
+                {
+                    // Highlight rect: full width (minus padding), height = leading
+                    string rxStr = padStr;
+                    string ryStr = FormatNumber(rowBottomY);
+                    string rwStr = FormatNumber(w - 2 * pad);
+                    string rhStr = FormatNumber(leading);
+
+                    sb.AppendLine("0.6 0.6 0.6 rg");
+                    sb.AppendLine(rxStr + " " + ryStr + " " + rwStr + " " + rhStr + " re");
+                    sb.AppendLine("f");
+                    // Restore to black for text
+                    sb.AppendLine(da.ColorOps);
+                }
+
+                // Text row
+                string tyStr = FormatNumber(rowY);
+                string showToken = PdfString.FromText(display).ToPdfString();
+
+                if (i == 0)
+                {
+                    sb.AppendLine("BT");
+                    sb.AppendLine(da.ColorOps);
+                    sb.AppendLine("/" + resName + " " + sizeStr + " Tf");
+                    sb.AppendLine("1 0 0 1 " + padStr + " " + tyStr + " Tm");
+                    sb.AppendLine(showToken + " Tj");
+                    sb.AppendLine("ET");
+                }
+                else
+                {
+                    sb.AppendLine("BT");
+                    sb.AppendLine("/" + resName + " " + sizeStr + " Tf");
+                    sb.AppendLine("1 0 0 1 " + padStr + " " + tyStr + " Tm");
+                    sb.AppendLine(showToken + " Tj");
+                    sb.AppendLine("ET");
+                }
+
+                rowY -= leading;
+            }
+
+            sb.AppendLine("Q");
+            sb.Append("EMC");
+
+            byte[] contentBytes = Encoding.ASCII.GetBytes(sb.ToString());
+
+            var xobjDict = new PdfDictionary
+            {
+                [new PdfName("Type")]    = new PdfName("XObject"),
+                [new PdfName("Subtype")] = new PdfName("Form"),
+                [new PdfName("BBox")]    = new PdfArray
                 {
                     new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
                 },
