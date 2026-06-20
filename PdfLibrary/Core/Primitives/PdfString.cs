@@ -114,6 +114,28 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
         return hash.ToHashCode();
     }
 
+    /// <summary>
+    /// Creates a PDF TEXT string (ISO 32000 §7.9.2): single-byte PDFDocEncoding when representable,
+    /// otherwise UTF-16BE with a FE FF BOM. UTF-16BE serializes as hex; PDFDocEncoding as a literal.
+    /// Use this for Info values, outline titles, annotation /Contents, etc. — NOT for byte strings.
+    /// </summary>
+    public static PdfString FromText(string text)
+    {
+        byte[] bytes = PdfDocEncoding.Encode(text);
+        bool utf16 = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+        return new PdfString(bytes, utf16 ? PdfStringFormat.Hexadecimal : PdfStringFormat.Literal);
+    }
+
+    /// <summary>Decodes this string as a PDF text string (BOM-sniffed PDFDocEncoding/UTF-16BE/UTF-8).</summary>
+    public string GetText() => PdfDocEncoding.Decode(_bytes);
+
+    /// <summary>
+    /// Creates a string from raw byte-literal text via Latin-1 (byte == char). For BYTE strings and
+    /// ASCII tokens only (the /ID, PDF date strings, etc.) — never for human-facing text.
+    /// </summary>
+    public static PdfString FromByteLiteral(string value) =>
+        new(Encoding.Latin1.GetBytes(value), PdfStringFormat.Literal);
+
     public static implicit operator string(PdfString pdfString) => pdfString.Value;
     public static implicit operator PdfString(string value) => new(value);
 }
