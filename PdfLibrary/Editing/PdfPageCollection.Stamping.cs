@@ -49,20 +49,24 @@ public sealed partial class PdfPageCollection
         {
             sb.Append("q\n");
             if (gsName is not null) sb.Append($"/{gsName} gs\n");
-            sb.Append($"{m[0]:F4} {m[1]:F4} {m[2]:F4} {m[3]:F4} {m[4]:F2} {m[5]:F2} cm\n");
+            sb.Append(FormattableString.Invariant(
+                $"{m[0]:F4} {m[1]:F4} {m[2]:F4} {m[3]:F4} {m[4]:F2} {m[5]:F2} cm\n"));
             sb.Append($"/{xobjName} Do\n");
             sb.Append("Q\n");
         }
         return Encoding.ASCII.GetBytes(sb.ToString());
     }
 
-    private static (double w, double h) PageSizePoints(PdfDictionary page)
+    private (double w, double h) PageSizePoints(PdfDictionary page)
     {
         if (page.Get(new PdfName("MediaBox")) is PdfArray mb && mb.Count == 4)
         {
-            double x0 = mb[0].ToDouble(), y0 = mb[1].ToDouble(), x1 = mb[2].ToDouble(), y1 = mb[3].ToDouble();
+            double x0 = Num(mb[0]), y0 = Num(mb[1]), x1 = Num(mb[2]), y1 = Num(mb[3]);
             return (Math.Abs(x1 - x0), Math.Abs(y1 - y0));
         }
         return (612, 792);
+
+        double Num(PdfObject o) =>
+            (o is PdfIndirectReference r ? _document.GetObject(r.ObjectNumber) : o)?.ToDouble() ?? 0;
     }
 }

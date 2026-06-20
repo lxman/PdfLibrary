@@ -1,3 +1,4 @@
+using System.Globalization;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 using PdfLibrary.Core;
@@ -18,9 +19,19 @@ internal static class FormXObjectCompiler
     public static PdfIndirectReference CompileInto(PdfDocument target, double width, double height,
         Action<PdfPageBuilder> author)
     {
-        byte[] bytes = PdfDocumentBuilder.Create()
-            .AddPage(new PdfSize(width, height), author)
-            .ToByteArray();
+        byte[] bytes;
+        CultureInfo previous = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            bytes = PdfDocumentBuilder.Create()
+                .AddPage(new PdfSize(width, height), author)
+                .ToByteArray();
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previous;
+        }
 
         using PdfDocument stamp = PdfDocument.Load(new MemoryStream(bytes));
         PdfPage page = stamp.GetPage(0)

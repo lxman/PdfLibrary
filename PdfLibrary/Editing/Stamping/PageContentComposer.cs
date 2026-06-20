@@ -60,7 +60,9 @@ internal static class PageContentComposer
         }
     }
 
-    /// <summary>Bracket the existing content streams in q…Q so prior unbalanced state can't leak into stamps.</summary>
+    /// <summary>Brackets the existing content streams in q…Q so prior graphics state doesn't leak into a stamp.
+    /// Neutralizes balanced content (the norm) and content that leaves an unbalanced Q; it does NOT undo a
+    /// net-positive q imbalance from malformed content, where a stamp could inherit a stray transform.</summary>
     internal static void WrapExisting(PdfDocument doc, PdfArray contents)
     {
         PdfIndirectReference q = doc.RegisterObject(new PdfStream(new PdfDictionary(), "q\n"u8.ToArray()));
