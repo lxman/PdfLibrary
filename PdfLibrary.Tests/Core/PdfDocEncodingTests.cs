@@ -51,6 +51,15 @@ public class PdfDocEncodingTests
         Assert.Equal("", PdfDocEncoding.Decode(new byte[] { 0xFE, 0xFF }));
     }
 
+    [Theory]
+    [InlineData("þÿ hello")]   // starts with bytes FE FF — must NOT be mis-sniffed as UTF-16BE
+    [InlineData("ÿþ tail")]    // starts FF FE
+    [InlineData("ï»¿ data")]   // starts EF BB BF — must NOT be mis-sniffed as UTF-8
+    public void RoundTrip_TextStartingWithBomLikeBytes_IsPreserved(string text)
+    {
+        Assert.Equal(text, PdfDocEncoding.Decode(PdfDocEncoding.Encode(text)));
+    }
+
     [Fact]
     public void RoundTrip_IsCultureIndependent()
     {

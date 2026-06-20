@@ -65,7 +65,14 @@ internal static class PdfDocEncoding
         {
             var bytes = new byte[text.Length];
             for (var i = 0; i < text.Length; i++) bytes[i] = CharToByte[text[i]];
-            return bytes;
+
+            // If the single-byte representation starts with a BOM-like marker (FE FF or EF BB BF),
+            // Decode would mis-sniff it as UTF-16BE or UTF-8. Fall through to UTF-16BE instead so
+            // the leading FE FF in the output is unambiguously a real BOM.
+            bool startsWithUtf16Bom = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+            bool startsWithUtf8Bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+            if (!startsWithUtf16Bom && !startsWithUtf8Bom)
+                return bytes;
         }
 
         byte[] utf16 = Encoding.BigEndianUnicode.GetBytes(text);
