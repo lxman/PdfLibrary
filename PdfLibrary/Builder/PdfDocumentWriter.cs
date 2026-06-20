@@ -9,6 +9,7 @@ using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Builder.FormField;
 using PdfLibrary.Builder.Layer;
 using PdfLibrary.Builder.Page;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Security;
 
@@ -366,7 +367,7 @@ public class PdfDocumentWriter
         writer.WriteLine("<<");
         PdfMetadataBuilder meta = builder.Metadata;
         if (!string.IsNullOrEmpty(meta.Title))
-            writer.WriteLine($"   /Title {PdfEncryptedString(meta.Title, infoObj)}");
+            writer.WriteLine($"   /Title {PdfTextString(meta.Title, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Author))
             writer.WriteLine($"   /Author {PdfEncryptedString(meta.Author, infoObj)}");
         if (!string.IsNullOrEmpty(meta.Subject))
@@ -1849,6 +1850,35 @@ public class PdfDocumentWriter
     }
 
     /// <summary>
+    /// Creates a properly encoded PDF text string using PDFDocEncoding or UTF-16BE with BOM.
+    /// When an encryptor is active, the bytes are encrypted and returned as a hex string.
+    /// </summary>
+    private string PdfTextString(string text, int objectNumber)
+    {
+        byte[] bytes = PdfDocEncoding.Encode(text); // PDFDocEncoding or UTF-16BE+BOM
+        if (_encryptor != null)
+        {
+            byte[] encrypted = EncryptString(bytes, objectNumber);
+            return $"<{BytesToHexString(encrypted)}>";
+        }
+        bool utf16 = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+        bool asciiOnly = !utf16 && Array.TrueForAll(bytes, b => b is >= 0x20 and <= 0x7E);
+        return asciiOnly ? $"({EscapePdfString(text)})" : $"<{BytesToHexString(bytes)}>";
+    }
+
+    /// <summary>
+    /// Creates a properly encoded PDF text string without encryption (for contexts where
+    /// no object number is available, such as page-label prefixes in the catalog number tree).
+    /// </summary>
+    private static string PdfTextString(string text)
+    {
+        byte[] bytes = PdfDocEncoding.Encode(text); // PDFDocEncoding or UTF-16BE+BOM
+        bool utf16 = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+        bool asciiOnly = !utf16 && Array.TrueForAll(bytes, b => b is >= 0x20 and <= 0x7E);
+        return asciiOnly ? $"({EscapePdfString(text)})" : $"<{BytesToHexString(bytes)}>";
+    }
+
+    /// <summary>
     /// Writes the OCProperties dictionary inline in the catalog
     /// </summary>
     private void WriteOCPropertiesInline(StreamWriter writer, IReadOnlyList<PdfLayer> layers)
@@ -2036,7 +2066,7 @@ public class PdfDocumentWriter
             writer.WriteLine("<<");
 
             // Title (required)
-            writer.WriteLine($"   /Title {PdfEncryptedString(bookmark.Title, objNum)}");
+            writer.WriteLine($"   /Title {PdfTextString(bookmark.Title, objNum)}");
 
             // Parent (required)
             writer.WriteLine($"   /Parent {parentObj} 0 R");
@@ -2183,7 +2213,7 @@ public class PdfDocumentWriter
             // Prefix (P entry)
             if (!string.IsNullOrEmpty(range.Prefix))
             {
-                writer.Write($"/P ({EscapePdfString(range.Prefix)}) ");
+                writer.Write($"/P {PdfTextString(range.Prefix)} ");
             }
 
             // Starting number (St entry) - only if not 1
