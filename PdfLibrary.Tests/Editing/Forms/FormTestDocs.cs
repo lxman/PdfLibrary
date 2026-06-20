@@ -59,6 +59,84 @@ public static class FormTestDocs
             .ToByteArray();
     }
 
+    /// <summary>
+    /// Creates a minimal PDF with a text field that has explicit /Ff flags,
+    /// optional /MaxLen, and a custom /Rect size (origin at [50, 700]).
+    /// </summary>
+    public static byte[] WithTextFieldEx(
+        string name,
+        string? value,
+        int ff,
+        int? maxLen,
+        double rectW,
+        double rectH)
+    {
+        // Object layout:
+        //   1: pages node
+        //   2: catalog
+        //   3: page
+        //   4: field/widget (merged — no separate widget)
+        //   5: AcroForm
+        var offsets = new Dictionary<int, long>();
+
+        using var ms = new System.IO.MemoryStream();
+        using var w = new System.IO.StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true);
+
+        w.WriteLine("%PDF-1.7");
+        w.Flush();
+
+        void WriteObj(int n, string content)
+        {
+            w.Flush();
+            offsets[n] = ms.Position;
+            w.WriteLine($"{n} 0 obj");
+            w.WriteLine(content);
+            w.WriteLine("endobj");
+            w.WriteLine();
+        }
+
+        WriteObj(1, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        WriteObj(2, "<< /Type /Catalog /Pages 1 0 R /AcroForm 5 0 R >>");
+        WriteObj(3,
+            $"<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>");
+
+        double x0 = 50, y0 = 700, x1 = x0 + rectW, y1 = y0 + rectH;
+        string vEntry = value is not null ? $"({EscapePdfStr(value)})" : "()";
+        string maxLenEntry = maxLen.HasValue ? $" /MaxLen {maxLen.Value}" : "";
+
+        WriteObj(4,
+            $"<< /Type /Annot /Subtype /Widget /FT /Tx /T ({EscapePdfStr(name)}) " +
+            $"/Ff {ff} /V {vEntry}{maxLenEntry} " +
+            $"/DA (/Helv 12 Tf 0 g) " +
+            $"/Rect [{x0} {y0} {x1:F2} {y1:F2}] >>");
+
+        WriteObj(5, "<< /Fields [4 0 R] /NeedAppearances true >>");
+
+        w.Flush();
+        long xrefOffset = ms.Position;
+        int totalObjs = 5;
+
+        w.WriteLine("xref");
+        w.WriteLine($"0 {totalObjs + 1}");
+        w.WriteLine("0000000000 65535 f ");
+        for (int i = 1; i <= totalObjs; i++)
+        {
+            if (offsets.TryGetValue(i, out long off))
+                w.WriteLine($"{off:D10} 00000 n ");
+            else
+                w.WriteLine("0000000000 65535 f ");
+        }
+
+        w.WriteLine("trailer");
+        w.WriteLine($"<< /Size {totalObjs + 1} /Root 2 0 R >>");
+        w.WriteLine("startxref");
+        w.WriteLine(xrefOffset.ToString());
+        w.WriteLine("%%EOF");
+        w.Flush();
+
+        return ms.ToArray();
+    }
+
     // ── Hand-built fixture ─────────────────────────────────────────────────
 
     /// <summary>

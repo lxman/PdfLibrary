@@ -19,13 +19,18 @@ internal static class FieldAppearanceGenerator
     /// </summary>
     public static void Regenerate(PdfDocument doc, PdfFormField field)
     {
-        if (field is PdfTextField t && !t.IsMultiline && !t.IsComb)
+        if (field is PdfTextField t)
         {
-            RegenerateTextField(doc, t);
+            if (t.IsComb && t.MaxLength.HasValue)
+                RegenerateCombTextField(doc, t);
+            else if (t.IsMultiline)
+                RegenerateMultilineTextField(doc, t);
+            else
+                RegenerateTextField(doc, t);
             return;
         }
 
-        // TODO later tasks: multiline, comb, choice fields
+        // TODO later tasks: choice fields
     }
 
     // ─── Single-line text ──────────────────────────────────────────────────────
@@ -149,6 +154,257 @@ internal static class FieldAppearanceGenerator
             // Clear /NeedAppearances on the /AcroForm dict
             SetNeedAppearancesFalse(doc);
         }
+    }
+
+    // ─── Multiline text ────────────────────────────────────────────────────────
+
+    private static void RegenerateMultilineTextField(PdfDocument doc, PdfTextField field)
+    {
+        string value = field.Value ?? string.Empty;
+
+        string? effectiveDa = GetEffectiveDa(doc, field);
+        FieldDa da = FieldDaParser.Parse(effectiveDa);
+
+        (string resName, PdfIndirectReference fontRef) =
+            AppearanceFontResolver.Resolve(doc, da.FontName);
+
+        bool anyWidgetWritten = false;
+
+        foreach (PdfDictionary widget in field.Widgets)
+        {
+            if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
+                continue;
+
+            double w = Math.Abs(x1 - x0);
+            double h = Math.Abs(y1 - y0);
+
+            if (w <= 0 || h <= 0)
+                continue;
+
+            double pad = 2.0;
+            double size = da.FontSize > 0 ? da.FontSize : 12.0;
+            double leading = 1.15 * size;
+
+            // Greedy word-wrap
+            string[] words = value.Split(' ');
+            var lines = new List<string>();
+            string current = string.Empty;
+
+            foreach (string word in words)
+            {
+                if (current.Length == 0)
+                {
+                    current = word;
+                }
+                else
+                {
+                    string candidate = current + " " + word;
+                    if (PdfFontMetrics.MeasureText(candidate, "Helvetica", size) <= w - 2 * pad)
+                        current = candidate;
+                    else
+                    {
+                        lines.Add(current);
+                        current = word;
+                    }
+                }
+            }
+            if (current.Length > 0)
+                lines.Add(current);
+
+            // Clip to what fits vertically
+            double firstBaselineY = h - pad - size;
+            var visibleLines = new List<string>();
+            double y = firstBaselineY;
+            foreach (string line in lines)
+            {
+                if (y < pad) break;
+                visibleLines.Add(line);
+                y -= leading;
+            }
+
+            if (visibleLines.Count == 0)
+                continue;
+
+            // Build content stream
+            string sizeStr = FormatNumber(size);
+            string tyStr = FormatNumber(firstBaselineY);
+            string txStr = FormatNumber(pad);
+            string leadingStr = FormatNumber(-leading);
+            string wStr = FormatNumber(w);
+            string hStr = FormatNumber(h);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("/Tx BMC");
+            sb.AppendLine("q");
+            sb.AppendLine("BT");
+            sb.AppendLine(da.ColorOps);
+            sb.AppendLine("/" + resName + " " + sizeStr + " Tf");
+            sb.AppendLine("1 0 0 1 " + txStr + " " + tyStr + " Tm");
+            sb.Append(PdfString.FromText(visibleLines[0]).ToPdfString() + " Tj");
+            for (int i = 1; i < visibleLines.Count; i++)
+            {
+                sb.AppendLine();
+                sb.Append("0 " + leadingStr + " Td");
+                sb.AppendLine();
+                sb.Append(PdfString.FromText(visibleLines[i]).ToPdfString() + " Tj");
+            }
+            sb.AppendLine();
+            sb.AppendLine("ET");
+            sb.AppendLine("Q");
+            sb.Append("EMC");
+
+            byte[] contentBytes = Encoding.ASCII.GetBytes(sb.ToString());
+
+            var xobjDict = new PdfDictionary
+            {
+                [new PdfName("Type")] = new PdfName("XObject"),
+                [new PdfName("Subtype")] = new PdfName("Form"),
+                [new PdfName("BBox")] = new PdfArray
+                {
+                    new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
+                },
+                [new PdfName("Matrix")] = new PdfArray
+                {
+                    new PdfInteger(1), new PdfInteger(0),
+                    new PdfInteger(0), new PdfInteger(1),
+                    new PdfInteger(0), new PdfInteger(0)
+                }
+            };
+
+            var fontResources = new PdfDictionary
+            {
+                [new PdfName(resName)] = fontRef
+            };
+            var resources = new PdfDictionary
+            {
+                [new PdfName("Font")] = fontResources
+            };
+            xobjDict[new PdfName("Resources")] = resources;
+
+            var xobjStream = new PdfStream(xobjDict, contentBytes);
+            PdfIndirectReference apRef = doc.RegisterObject(xobjStream);
+
+            var apDict = new PdfDictionary
+            {
+                [new PdfName("N")] = apRef
+            };
+            widget[new PdfName("AP")] = apDict;
+
+            anyWidgetWritten = true;
+        }
+
+        if (anyWidgetWritten)
+            SetNeedAppearancesFalse(doc);
+    }
+
+    // ─── Comb text ─────────────────────────────────────────────────────────────
+
+    private static void RegenerateCombTextField(PdfDocument doc, PdfTextField field)
+    {
+        string value = field.Value ?? string.Empty;
+        int maxLen = field.MaxLength!.Value;
+
+        string? effectiveDa = GetEffectiveDa(doc, field);
+        FieldDa da = FieldDaParser.Parse(effectiveDa);
+
+        (string resName, PdfIndirectReference fontRef) =
+            AppearanceFontResolver.Resolve(doc, da.FontName);
+
+        bool anyWidgetWritten = false;
+
+        foreach (PdfDictionary widget in field.Widgets)
+        {
+            if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
+                continue;
+
+            double w = Math.Abs(x1 - x0);
+            double h = Math.Abs(y1 - y0);
+
+            if (w <= 0 || h <= 0)
+                continue;
+
+            double pad = 2.0;
+            double size = da.FontSize > 0
+                ? da.FontSize
+                : Math.Max(4.0, Math.Min(12.0, Math.Floor(h - 2.0 * pad)));
+            double cellW = (w - 2.0 * pad) / maxLen;
+            double baselineY = (h - size) / 2.0 + size * 0.2;
+
+            string sizeStr = FormatNumber(size);
+            string byStr = FormatNumber(baselineY);
+            string wStr = FormatNumber(w);
+            string hStr = FormatNumber(h);
+
+            var sb = new StringBuilder();
+            sb.AppendLine("/Tx BMC");
+            sb.AppendLine("q");
+            sb.AppendLine("BT");
+            sb.AppendLine(da.ColorOps);
+            sb.AppendLine("/" + resName + " " + sizeStr + " Tf");
+
+            int charsToDraw = Math.Min(value.Length, maxLen);
+            for (int i = 0; i < charsToDraw; i++)
+            {
+                string ch = value[i].ToString();
+                double charW = PdfFontMetrics.MeasureText(ch, "Helvetica", size);
+                double cx = pad + cellW * i + (cellW - charW) / 2.0;
+
+                string cxStr = FormatNumber(cx);
+                string showToken = PdfString.FromText(ch).ToPdfString();
+
+                sb.AppendLine("1 0 0 1 " + cxStr + " " + byStr + " Tm");
+                sb.Append(showToken + " Tj");
+                if (i < charsToDraw - 1)
+                    sb.AppendLine();
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("ET");
+            sb.AppendLine("Q");
+            sb.Append("EMC");
+
+            byte[] contentBytes = Encoding.ASCII.GetBytes(sb.ToString());
+
+            var xobjDict = new PdfDictionary
+            {
+                [new PdfName("Type")] = new PdfName("XObject"),
+                [new PdfName("Subtype")] = new PdfName("Form"),
+                [new PdfName("BBox")] = new PdfArray
+                {
+                    new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
+                },
+                [new PdfName("Matrix")] = new PdfArray
+                {
+                    new PdfInteger(1), new PdfInteger(0),
+                    new PdfInteger(0), new PdfInteger(1),
+                    new PdfInteger(0), new PdfInteger(0)
+                }
+            };
+
+            var fontResources = new PdfDictionary
+            {
+                [new PdfName(resName)] = fontRef
+            };
+            var resources = new PdfDictionary
+            {
+                [new PdfName("Font")] = fontResources
+            };
+            xobjDict[new PdfName("Resources")] = resources;
+
+            var xobjStream = new PdfStream(xobjDict, contentBytes);
+            PdfIndirectReference apRef = doc.RegisterObject(xobjStream);
+
+            var apDict = new PdfDictionary
+            {
+                [new PdfName("N")] = apRef
+            };
+            widget[new PdfName("AP")] = apDict;
+
+            anyWidgetWritten = true;
+        }
+
+        if (anyWidgetWritten)
+            SetNeedAppearancesFalse(doc);
     }
 
     // ─── Helpers ───────────────────────────────────────────────────────────────
