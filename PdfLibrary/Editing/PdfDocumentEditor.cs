@@ -6,7 +6,7 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Editing;
 
 /// <summary>Mutation facade over a loaded <see cref="PdfDocument"/>. Obtain via <see cref="PdfDocument.Edit"/>.</summary>
-public sealed class PdfDocumentEditor : IDisposable
+public sealed partial class PdfDocumentEditor : IDisposable
 {
     private readonly PdfDocument _document;
     private bool _ownsDocument;
