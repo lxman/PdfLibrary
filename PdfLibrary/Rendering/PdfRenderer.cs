@@ -218,6 +218,24 @@ public class PdfRenderer : PdfContentProcessor
             if (annotDict is null)
                 continue;
 
+            // Skip annotations flagged Hidden (bit 2 = value 2) or NoView (bit 6 = value 32).
+            // PDF spec §12.5.3: /F is an integer bit-field; these two flags suppress rendering.
+            if (annotDict.TryGetValue(new PdfName("F"), out PdfObject flagObj))
+            {
+                int flags = flagObj switch
+                {
+                    PdfInteger fi => fi.Value,
+                    _ => 0
+                };
+                const int Hidden = 2;
+                const int NoView = 32;
+                if ((flags & Hidden) != 0 || (flags & NoView) != 0)
+                {
+                    PdfLogger.Log(LogCategory.Graphics, $"Skipping annotation with /F flags {flags} (Hidden or NoView set)");
+                    continue;
+                }
+            }
+
             // Get annotation rectangle
             if (!annotDict.TryGetValue(new PdfName("Rect"), out PdfObject rectObj))
                 continue;
@@ -317,14 +335,9 @@ public class PdfRenderer : PdfContentProcessor
             if (annotDict.TryGetValue(new PdfName("Subtype"), out PdfObject subtypeObj))
             {
                 PdfLogger.Log(LogCategory.Graphics, $"Annotation Subtype: {subtypeObj}");
-
-                // Skip Widget annotations for now - they often have opaque backgrounds
-                // that cover page content. TODO: Handle these properly with transparency/blend modes.
-                if (subtypeObj is PdfName subtypeName && subtypeName.Value == "Widget")
-                {
-                    PdfLogger.Log(LogCategory.Graphics, "Skipping Widget annotation (form field background)");
-                    continue;
-                }
+                // Widget annotations are now rendered like any other annotation —
+                // their /AP /N appearance stream is drawn using the same path below.
+                // Visibility is governed solely by the /F flag check above.
             }
 
             // Get annotation appearance stream resources
