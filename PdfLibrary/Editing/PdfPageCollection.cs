@@ -7,7 +7,7 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Editing;
 
 /// <summary>The page sub-area of <see cref="PdfDocumentEditor"/>: a live view plus page operations.</summary>
-public sealed class PdfPageCollection : IReadOnlyList<PdfPage>
+public sealed partial class PdfPageCollection : IReadOnlyList<PdfPage>
 {
     private readonly PdfDocument _document;
 
