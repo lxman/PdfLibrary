@@ -365,9 +365,20 @@ public class PdfRenderer : PdfContentProcessor
             // Create a new graphics state for the annotation
             // Use q/Q to save/restore state
             _target.SaveState();
+            // The target's SaveState/RestoreState isolates the CANVAS state, but the renderer's own
+            // CurrentState.Ctm is NOT on that stack — so without snapshotting it here, each annotation's
+            // ConcatenateMatrix would COMPOUND onto the previous annotation's, leaving only the first
+            // annotation correctly placed and every later one drifting off-page. Snapshot + restore it.
+            System.Numerics.Matrix3x2 savedAnnotationCtm = CurrentState.Ctm;
 
             // Apply transformation: scale and translate
             CurrentState.ConcatenateMatrix((float)sx, 0, 0, (float)sy, (float)tx, (float)ty);
+            // Push the updated CTM to the target so TEXT inside the appearance is positioned too.
+            // PathRenderer recomputes device coords from the graphics state independently, but the
+            // text path relies on the canvas matrix set by ApplyCtm — without this, text-showing
+            // appearances (form fields, FreeText, text stamps) render at the page origin instead of
+            // the annotation /Rect. Mirrors the cm-operator handler.
+            _target.ApplyCtm(CurrentState.Ctm);
 
             // Parse and render the appearance stream
             byte[] decodedData = appearanceStream.GetDecodedData(_document?.Decryptor);
@@ -381,6 +392,8 @@ public class PdfRenderer : PdfContentProcessor
             ProcessOperators(operators);
 
             _target.RestoreState();
+            // Restore the renderer CTM so the next annotation starts from a clean base (no accumulation).
+            CurrentState.Ctm = savedAnnotationCtm;
 
             // Restore original resources
             _currentResources = savedResources;
@@ -1679,13 +1692,22 @@ public class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form Matrix = [{m11}, {m12}, {m21}, {m22}, {m31}, {m32}]");
         }
 
-        // Create a new renderer for the form to ensure it starts with a fresh graphics state
+        // Create a new renderer for the form. Per ISO 32000-1 §8.10 the form's content executes in
+        // the graphics state in effect at the Do operator (the form Matrix is concatenated onto the
+        // CTM and the BBox clips). The transparency parameters set by a preceding `gs` MUST be
+        // inherited — otherwise a watermark stamp drawn under e.g. /ca 0.35 paints at full opacity
+        // (black instead of grey). Inherit the ExtGState transparency group; colour/line state stays
+        // form-local (forms set their own).
         var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager)
             {
                 CurrentState =
                 {
                     // Set the form renderer's CTM to the concatenated matrix
-                    Ctm = formCtm
+                    Ctm = formCtm,
+                    FillAlpha = CurrentState.FillAlpha,
+                    StrokeAlpha = CurrentState.StrokeAlpha,
+                    BlendMode = CurrentState.BlendMode,
+                    AlphaIsShape = CurrentState.AlphaIsShape
                 }
             };
 
