@@ -192,31 +192,43 @@ internal static class FieldAppearanceGenerator
             double size = da.FontSize > 0 ? da.FontSize : 12.0;
             double leading = 1.15 * size;
 
-            // Greedy word-wrap
-            string[] words = value.Split(' ');
+            // Split on explicit hard line breaks first (\r\n, \r, \n), then word-wrap each hard line
+            string[] hardLines = value.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
             var lines = new List<string>();
-            string current = string.Empty;
 
-            foreach (string word in words)
+            foreach (string hardLine in hardLines)
             {
-                if (current.Length == 0)
+                if (hardLine.Length == 0)
                 {
-                    current = word;
+                    // Empty hard line — emit a blank line slot
+                    lines.Add(string.Empty);
+                    continue;
                 }
-                else
+
+                // Greedy word-wrap within this hard line
+                string[] words = hardLine.Split(' ');
+                string current = string.Empty;
+
+                foreach (string word in words)
                 {
-                    string candidate = current + " " + word;
-                    if (PdfFontMetrics.MeasureText(candidate, "Helvetica", size) <= w - 2 * pad)
-                        current = candidate;
-                    else
+                    if (current.Length == 0)
                     {
-                        lines.Add(current);
                         current = word;
                     }
+                    else
+                    {
+                        string candidate = current + " " + word;
+                        if (PdfFontMetrics.MeasureText(candidate, "Helvetica", size) <= w - 2 * pad)
+                            current = candidate;
+                        else
+                        {
+                            lines.Add(current);
+                            current = word;
+                        }
+                    }
                 }
-            }
-            if (current.Length > 0)
                 lines.Add(current);
+            }
 
             // Clip to what fits vertically
             double firstBaselineY = h - pad - size;
