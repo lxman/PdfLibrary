@@ -769,4 +769,135 @@ internal static class FieldAppearanceGenerator
         string s = value.ToString("0.####", CultureInfo.InvariantCulture);
         return s;
     }
+
+    // ─── Button appearance generation ─────────────────────────────────────────
+
+    /// <summary>
+    /// Generates and stores Form-XObject appearances for a checkbox or radio widget that
+    /// lacks an /AP /N entry.  A check-mark (ZapfDingbats char 4 = ✔) is used for
+    /// checkboxes; a filled-circle (ZapfDingbats char l = 0x6C, ●) for radio buttons.
+    /// The off-state appearance is always an empty content stream.
+    /// If the widget already has /AP /N states, this method is a no-op.
+    /// </summary>
+    public static void EnsureButtonAppearance(
+        PdfDocument doc,
+        PdfDictionary widget,
+        string onStateName,
+        bool isRadio)
+    {
+        // ── Guard: already has /AP /N with usable states ────────────────────
+        PdfObject? existingApRaw = widget.Get(new PdfName("AP"));
+        if (Resolve(doc, existingApRaw) is PdfDictionary existingAp)
+        {
+            PdfObject? existingNRaw = existingAp.Get(new PdfName("N"));
+            if (Resolve(doc, existingNRaw) is PdfDictionary existingN)
+            {
+                // Check for at least one non-Off state key
+                foreach (KeyValuePair<PdfName, PdfObject> kvp in existingN)
+                {
+                    if (kvp.Key.Value != "Off")
+                        return; // Already has an on-state — do not overwrite
+                }
+            }
+        }
+
+        // ── Read /Rect → widget dimensions ───────────────────────────────────
+        if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
+            return;
+
+        double w = Math.Abs(x1 - x0);
+        double h = Math.Abs(y1 - y0);
+
+        if (w <= 0 || h <= 0)
+            return;
+
+        // ── Resolve ZapfDingbats font ref ─────────────────────────────────────
+        (string zadbName, PdfIndirectReference zadbRef) =
+            AppearanceFontResolver.Resolve(doc, "ZaDb");
+
+        // ── Build on-state content stream ─────────────────────────────────────
+        // Glyph: checkbox → char 0x34 ('4', check mark); radio → char 0x6C ('l', filled circle)
+        // Using byte-literal escape to avoid non-ASCII in source
+        byte markByte = isRadio ? (byte)0x6C : (byte)0x34;
+        string markStr = "(" + ((char)markByte).ToString() + ")";
+
+        double fontSize = h * 0.8;
+        // Centre glyph: approx x = (w - fontSize*0.5) / 2, y = h * 0.18
+        double tx = (w - fontSize * 0.5) / 2.0;
+        double ty = h * 0.18;
+
+        string sizeStr   = FormatNumber(fontSize);
+        string txStr     = FormatNumber(tx);
+        string tyStr     = FormatNumber(ty);
+
+        string onContent =
+            "q\n" +
+            "BT\n" +
+            "0 g\n" +
+            "/" + zadbName + " " + sizeStr + " Tf\n" +
+            "1 0 0 1 " + txStr + " " + tyStr + " Tm\n" +
+            markStr + " Tj\n" +
+            "ET\n" +
+            "Q";
+
+        byte[] onBytes  = Encoding.ASCII.GetBytes(onContent);
+        byte[] offBytes = Array.Empty<byte>();
+
+        PdfArray bBox = new PdfArray
+        {
+            new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
+        };
+        PdfArray matrix = new PdfArray
+        {
+            new PdfInteger(1), new PdfInteger(0),
+            new PdfInteger(0), new PdfInteger(1),
+            new PdfInteger(0), new PdfInteger(0)
+        };
+
+        var fontResDict = new PdfDictionary
+        {
+            [new PdfName(zadbName)] = zadbRef
+        };
+        var resourcesDict = new PdfDictionary
+        {
+            [new PdfName("Font")] = fontResDict
+        };
+
+        // On-state XObject
+        var onDict = new PdfDictionary
+        {
+            [new PdfName("Type")]      = new PdfName("XObject"),
+            [new PdfName("Subtype")]   = new PdfName("Form"),
+            [new PdfName("BBox")]      = bBox,
+            [new PdfName("Matrix")]    = matrix,
+            [new PdfName("Resources")] = resourcesDict
+        };
+        var onStream = new PdfStream(onDict, onBytes);
+        PdfIndirectReference onRef = doc.RegisterObject(onStream);
+
+        // Off-state XObject (empty)
+        var offDict = new PdfDictionary
+        {
+            [new PdfName("Type")]    = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            [new PdfName("BBox")]    = bBox,
+            [new PdfName("Matrix")]  = matrix
+        };
+        var offStream = new PdfStream(offDict, offBytes);
+        PdfIndirectReference offRef = doc.RegisterObject(offStream);
+
+        // Build /AP /N << /<onStateName> <onRef> /Off <offRef> >>
+        var nDict = new PdfDictionary
+        {
+            [new PdfName(onStateName)] = onRef,
+            [new PdfName("Off")]       = offRef
+        };
+
+        var apDict = new PdfDictionary
+        {
+            [new PdfName("N")] = nDict
+        };
+
+        widget[new PdfName("AP")] = apDict;
+    }
 }

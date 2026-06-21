@@ -341,6 +341,150 @@ public static class FormTestDocs
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Builds a minimal PDF with a checkbox field that already has /AP /N entries
+    /// (on-state "Yes" and "Off"), stored as indirect objects so their object numbers
+    /// can be tracked by tests.
+    /// </summary>
+    public static byte[] WithCheckboxWithAp(string name)
+    {
+        // Object layout:
+        //   1: pages node
+        //   2: catalog
+        //   3: page
+        //   4: field/widget (merged)
+        //   5: on-state appearance stream (empty dict as placeholder)
+        //   6: off-state appearance stream (empty dict as placeholder)
+        //   7: AcroForm
+        var offsets = new Dictionary<int, long>();
+
+        using var ms = new System.IO.MemoryStream();
+        using var w = new System.IO.StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true);
+
+        w.WriteLine("%PDF-1.7");
+        w.Flush();
+
+        void WriteObj(int n, string content)
+        {
+            w.Flush();
+            offsets[n] = ms.Position;
+            w.WriteLine($"{n} 0 obj");
+            w.WriteLine(content);
+            w.WriteLine("endobj");
+            w.WriteLine();
+        }
+
+        WriteObj(1, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        WriteObj(2, "<< /Type /Catalog /Pages 1 0 R /AcroForm 7 0 R >>");
+        WriteObj(3, "<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>");
+
+        // Objects 5 and 6: indirect appearance dicts (empty) for /Yes and /Off
+        WriteObj(5, "<< >>");
+        WriteObj(6, "<< >>");
+
+        // Widget with /AP /N referencing indirect objects
+        WriteObj(4,
+            $"<< /Type /Annot /Subtype /Widget /FT /Btn /T ({EscapePdfStr(name)}) " +
+            $"/Ff 0 /V /Off /AS /Off " +
+            $"/AP << /N << /Yes 5 0 R /Off 6 0 R >> >> " +
+            $"/Rect [72 700 86 714] >>");
+
+        WriteObj(7, "<< /Fields [4 0 R] /NeedAppearances true >>");
+
+        w.Flush();
+        long xrefOffset = ms.Position;
+        int totalObjs = 7;
+
+        w.WriteLine("xref");
+        w.WriteLine($"0 {totalObjs + 1}");
+        w.WriteLine("0000000000 65535 f ");
+        for (int i = 1; i <= totalObjs; i++)
+        {
+            if (offsets.TryGetValue(i, out long off))
+                w.WriteLine($"{off:D10} 00000 n ");
+            else
+                w.WriteLine("0000000000 65535 f ");
+        }
+
+        w.WriteLine("trailer");
+        w.WriteLine($"<< /Size {totalObjs + 1} /Root 2 0 R >>");
+        w.WriteLine("startxref");
+        w.WriteLine(xrefOffset.ToString());
+        w.WriteLine("%%EOF");
+        w.Flush();
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a minimal PDF with a checkbox field that has NO /AP appearance dictionary.
+    /// The widget has /FT /Btn, /T, /V /Off, /AS /Off, and a /Rect, but no /AP entry.
+    /// This exercises the path where ButtonStateWriter must synthesise an appearance.
+    /// </summary>
+    public static byte[] WithCheckboxNoAp(string name)
+    {
+        // Object layout:
+        //   1: pages node
+        //   2: catalog
+        //   3: page
+        //   4: field/widget (merged — no separate widget, no /AP)
+        //   5: AcroForm
+        var offsets = new Dictionary<int, long>();
+
+        using var ms = new System.IO.MemoryStream();
+        using var w = new System.IO.StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true);
+
+        w.WriteLine("%PDF-1.7");
+        w.Flush();
+
+        void WriteObj(int n, string content)
+        {
+            w.Flush();
+            offsets[n] = ms.Position;
+            w.WriteLine($"{n} 0 obj");
+            w.WriteLine(content);
+            w.WriteLine("endobj");
+            w.WriteLine();
+        }
+
+        WriteObj(1, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        WriteObj(2, "<< /Type /Catalog /Pages 1 0 R /AcroForm 5 0 R >>");
+        WriteObj(3, "<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>");
+
+        // Checkbox widget with NO /AP — just FT, T, V, AS, Rect
+        // Ff=0 is a plain checkbox (no Radio bit)
+        WriteObj(4,
+            $"<< /Type /Annot /Subtype /Widget /FT /Btn /T ({EscapePdfStr(name)}) " +
+            $"/Ff 0 /V /Off /AS /Off " +
+            $"/Rect [72 700 86 714] >>");
+
+        WriteObj(5, "<< /Fields [4 0 R] /NeedAppearances true >>");
+
+        w.Flush();
+        long xrefOffset = ms.Position;
+        int totalObjs = 5;
+
+        w.WriteLine("xref");
+        w.WriteLine($"0 {totalObjs + 1}");
+        w.WriteLine("0000000000 65535 f ");
+        for (int i = 1; i <= totalObjs; i++)
+        {
+            if (offsets.TryGetValue(i, out long off))
+                w.WriteLine($"{off:D10} 00000 n ");
+            else
+                w.WriteLine("0000000000 65535 f ");
+        }
+
+        w.WriteLine("trailer");
+        w.WriteLine($"<< /Size {totalObjs + 1} /Root 2 0 R >>");
+        w.WriteLine("startxref");
+        w.WriteLine(xrefOffset.ToString());
+        w.WriteLine("%%EOF");
+        w.Flush();
+
+        return ms.ToArray();
+    }
+
     private static string EscapePdfStr(string s) =>
         s.Replace("\\", "\\\\").Replace("(", "\\(").Replace(")", "\\)");
 

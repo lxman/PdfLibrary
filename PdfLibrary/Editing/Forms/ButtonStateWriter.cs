@@ -12,10 +12,19 @@ internal static class ButtonStateWriter
     /// <summary>
     /// Sets a checkbox field to its on-state or to /Off.
     /// Sets /V on the field dict and /AS on every widget.
+    /// If a widget lacks an /AP /N on-state appearance, one is generated.
     /// </summary>
     public static void SetCheckbox(PdfDocument doc, PdfButtonField f, bool on)
     {
-        string state = on ? CheckboxOnState(doc, f) : "Off";
+        string onState = CheckboxOnState(doc, f);
+        string state = on ? onState : "Off";
+
+        if (on)
+        {
+            foreach (PdfDictionary widget in f.Widgets)
+                FieldAppearanceGenerator.EnsureButtonAppearance(doc, widget, onState, isRadio: false);
+        }
+
         f.Dict[new PdfName("V")] = new PdfName(state);
         foreach (PdfDictionary widget in f.Widgets)
             widget[new PdfName("AS")] = new PdfName(state);
@@ -50,6 +59,7 @@ internal static class ButtonStateWriter
     /// <summary>
     /// Sets a radio group field to the named option.
     /// Sets /V on the field dict and /AS on each widget (on-state for matching widget, /Off for others).
+    /// If a widget lacks an /AP /N on-state appearance, one is generated.
     /// </summary>
     public static void SetRadio(PdfDocument doc, PdfButtonField f, string option)
     {
@@ -59,7 +69,12 @@ internal static class ButtonStateWriter
         f.Dict[new PdfName("V")] = new PdfName(option);
         foreach (PdfDictionary widget in f.Widgets)
         {
-            string widgetOnState = OnState(doc, widget);
+            string widgetOnState;
+            try { widgetOnState = OnState(doc, widget); }
+            catch (InvalidOperationException) { widgetOnState = option; }
+
+            FieldAppearanceGenerator.EnsureButtonAppearance(doc, widget, widgetOnState, isRadio: true);
+
             string asState = widgetOnState == option ? option : "Off";
             widget[new PdfName("AS")] = new PdfName(asState);
         }
