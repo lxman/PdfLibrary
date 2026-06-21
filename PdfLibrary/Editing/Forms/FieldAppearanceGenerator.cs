@@ -20,6 +20,11 @@ internal static class FieldAppearanceGenerator
     /// </summary>
     public static void Regenerate(PdfDocument doc, PdfFormField field)
     {
+        // A filled widget must be printable. Widgets authored without /F (the common case) default to
+        // non-printing, so viewers display the value on screen but OMIT it from print/export.
+        foreach (PdfDictionary widget in field.Widgets)
+            EnsurePrintable(widget);
+
         if (field is PdfTextField t)
         {
             if (t.IsComb && t.MaxLength is int ml && ml > 0)
@@ -38,6 +43,18 @@ internal static class FieldAppearanceGenerator
             else
                 RegenerateListField(doc, c);
         }
+    }
+
+    /// <summary>
+    /// Sets the /F Print flag (bit 3, value 4) on a widget annotation so its appearance prints, not
+    /// just displays. No-op if already set. Form widgets default to non-printing when /F is absent.
+    /// </summary>
+    public static void EnsurePrintable(PdfDictionary widget)
+    {
+        const int print = 4;
+        int flags = widget.Get(new PdfName("F")) is PdfInteger fi ? fi.Value : 0;
+        if ((flags & print) == 0)
+            widget[new PdfName("F")] = new PdfInteger(flags | print);
     }
 
     // ─── Single-line text ──────────────────────────────────────────────────────
@@ -774,9 +791,9 @@ internal static class FieldAppearanceGenerator
 
     /// <summary>
     /// Generates and stores Form-XObject appearances for a checkbox or radio widget that
-    /// lacks an /AP /N entry.  A check-mark (ZapfDingbats char 4 = ✔) is used for
-    /// checkboxes; a filled-circle (ZapfDingbats char l = 0x6C, ●) for radio buttons.
-    /// The off-state appearance is always an empty content stream.
+    /// lacks an /AP /N entry. The on-state is drawn as a VECTOR PATH — a stroked check-mark for
+    /// checkboxes, a filled circle for radio buttons — so it renders in any viewer without depending
+    /// on dingbat-font support. The off-state appearance is always an empty content stream.
     /// If the widget already has /AP /N states, this method is a no-op.
     /// </summary>
     public static void EnsureButtonAppearance(
@@ -811,34 +828,37 @@ internal static class FieldAppearanceGenerator
         if (w <= 0 || h <= 0)
             return;
 
-        // ── Resolve ZapfDingbats font ref ─────────────────────────────────────
-        (string zadbName, PdfIndirectReference zadbRef) =
-            AppearanceFontResolver.Resolve(doc, "ZaDb");
-
-        // ── Build on-state content stream ─────────────────────────────────────
-        // Glyph: checkbox → char 0x34 ('4', check mark); radio → char 0x6C ('l', filled circle)
-        // Using byte-literal escape to avoid non-ASCII in source
-        byte markByte = isRadio ? (byte)0x6C : (byte)0x34;
-        string markStr = "(" + ((char)markByte).ToString() + ")";
-
-        double fontSize = h * 0.8;
-        // Centre glyph: approx x = (w - fontSize*0.5) / 2, y = h * 0.18
-        double tx = (w - fontSize * 0.5) / 2.0;
-        double ty = h * 0.18;
-
-        string sizeStr   = FormatNumber(fontSize);
-        string txStr     = FormatNumber(tx);
-        string tyStr     = FormatNumber(ty);
-
-        string onContent =
-            "q\n" +
-            "BT\n" +
-            "0 g\n" +
-            "/" + zadbName + " " + sizeStr + " Tf\n" +
-            "1 0 0 1 " + txStr + " " + tyStr + " Tm\n" +
-            markStr + " Tj\n" +
-            "ET\n" +
-            "Q";
+        // ── Build on-state content: draw the mark as a VECTOR PATH ────────────
+        // A path renders identically in every viewer; a ZapfDingbats glyph depends on the renderer
+        // supporting the dingbat font's special encoding (ours draws the literal byte otherwise).
+        string onContent;
+        if (isRadio)
+        {
+            // Filled circle, centred, radius 0.3·min(w,h), via 4 Bézier quadrants (k = 0.5523·r).
+            double cx = w / 2.0, cy = h / 2.0;
+            double r = Math.Min(w, h) * 0.3;
+            double k = r * 0.5523;
+            string N(double v) => FormatNumber(v);
+            onContent =
+                "q\n0 g\n" +
+                $"{N(cx + r)} {N(cy)} m\n" +
+                $"{N(cx + r)} {N(cy + k)} {N(cx + k)} {N(cy + r)} {N(cx)} {N(cy + r)} c\n" +
+                $"{N(cx - k)} {N(cy + r)} {N(cx - r)} {N(cy + k)} {N(cx - r)} {N(cy)} c\n" +
+                $"{N(cx - r)} {N(cy - k)} {N(cx - k)} {N(cy - r)} {N(cx)} {N(cy - r)} c\n" +
+                $"{N(cx + k)} {N(cy - r)} {N(cx + r)} {N(cy - k)} {N(cx + r)} {N(cy)} c\n" +
+                "f\nQ";
+        }
+        else
+        {
+            // Checkmark: lower-left → bottom-middle → upper-right, stroked with round caps/joins.
+            double lw = Math.Max(1.0, Math.Min(w, h) * 0.12);
+            string N(double v) => FormatNumber(v);
+            onContent =
+                $"q\n{N(lw)} w\n1 J\n1 j\n0 G\n" +
+                $"{N(w * 0.20)} {N(h * 0.52)} m\n" +
+                $"{N(w * 0.42)} {N(h * 0.28)} l\n" +
+                $"{N(w * 0.80)} {N(h * 0.78)} l\nS\nQ";
+        }
 
         byte[] onBytes  = Encoding.ASCII.GetBytes(onContent);
         byte[] offBytes = Array.Empty<byte>();
@@ -854,23 +874,13 @@ internal static class FieldAppearanceGenerator
             new PdfInteger(0), new PdfInteger(0)
         };
 
-        var fontResDict = new PdfDictionary
-        {
-            [new PdfName(zadbName)] = zadbRef
-        };
-        var resourcesDict = new PdfDictionary
-        {
-            [new PdfName("Font")] = fontResDict
-        };
-
-        // On-state XObject
+        // On-state XObject (vector path, no /Resources needed)
         var onDict = new PdfDictionary
         {
             [new PdfName("Type")]      = new PdfName("XObject"),
             [new PdfName("Subtype")]   = new PdfName("Form"),
             [new PdfName("BBox")]      = bBox,
-            [new PdfName("Matrix")]    = matrix,
-            [new PdfName("Resources")] = resourcesDict
+            [new PdfName("Matrix")]    = matrix
         };
         var onStream = new PdfStream(onDict, onBytes);
         PdfIndirectReference onRef = doc.RegisterObject(onStream);

@@ -27,7 +27,10 @@ internal static class ButtonStateWriter
 
         f.Dict[new PdfName("V")] = new PdfName(state);
         foreach (PdfDictionary widget in f.Widgets)
+        {
             widget[new PdfName("AS")] = new PdfName(state);
+            FieldAppearanceGenerator.EnsurePrintable(widget);
+        }
     }
 
     /// <summary>
@@ -77,6 +80,7 @@ internal static class ButtonStateWriter
 
             string asState = widgetOnState == option ? option : "Off";
             widget[new PdfName("AS")] = new PdfName(asState);
+            FieldAppearanceGenerator.EnsurePrintable(widget);
         }
     }
 
