@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-21
+
+First stable release. Completes the *load → edit → optimize* story: a loaded PDF can now be modified in place and shrunk, in addition to being parsed, rendered, and created from scratch.
+
+### Added
+- **Editing / mutation API** — `doc.Edit()` returns a `PdfDocumentEditor` over a loaded document (see `Docs/EditingApi.md`):
+  - **Page operations** — rotate, move, delete, insert blank, import/duplicate pages, append, plus document `Merge` and `Extract`. Deleting a page strips outline entries, named destinations, and link annotations that resolved to it.
+  - **Stamping & overlays** — `edit.Pages.Stamp/StampRange/StampAll` with a fluent `PdfStampBuilder`: watermarks, image stamps, placement presets (center/corners/diagonal/tiled/explicit), scale, rotation, opacity, overlay/underlay.
+  - **Annotations** — `AddNote`, `AddLink`, `AddExternalLink`, `AddHighlight`.
+  - **Document metadata** — `edit.Metadata` writes the Info dictionary and a synced XMP packet (`/Catalog /Metadata`).
+  - **Navigation** — `edit.Outlines` (mutable bookmark tree), `edit.PageLabels`, `edit.NamedDestinations`, `edit.ViewerSettings` (page mode/layout, open action, viewer preference flags).
+  - **Form filling** — `edit.Forms` exposes typed `PdfTextField` / `PdfButtonField` / `PdfChoiceField` / `PdfSignatureField`. Setting a value regenerates the field's appearance stream (single-line, multiline, comb, combo, list; checkbox/radio appearances are generated when absent), marks the widget printable, and `Flatten()` bakes fields into static page content.
+  - **Save** — full-rewrite save with reachability garbage collection; optional object-stream + xref-stream packing (`UseObjectStreams`).
+- **Optimization API** — `PdfOptimizer.Optimize`: Flate stream compression, unreachable-object GC, object-stream/xref-stream packing, opt-in lossy image recompression, and opt-in font subsetting (TrueType, CFF Type1C, and CIDFontType0C).
+- **Multi-targeting** — the shippable packages (`Lxman.PdfLibrary`, `Lxman.PdfLibrary.Rendering.SkiaSharp`) now target **.NET 8, 9, and 10** (previously .NET 10 only).
+- **Unicode text** — all text-valued API (metadata, outline titles, field values, annotation contents) round-trips arbitrary Unicode: single-byte PDFDocEncoding when representable, UTF-16BE otherwise.
+
+### Changed
+- **All NuGet dependencies pinned to stable releases** — no preview/dev builds: SkiaSharp `3.119.4`, Microsoft.Extensions.Caching.Memory `10.0.9`, Serilog `4.3.1`, Serilog.Sinks.File `7.0.0`. (SkiaSharp 4.x is deferred: it has no stable release and obsoletes the mutable `SKPath` API the renderer is built on.)
+
+### Fixed
+- **Culture invariance (library-wide).** The creation writer emitted decimals with the thread culture and the parser read numbers without `InvariantCulture`, so creating and parsing PDFs broke (or silently corrupted) under non-`.`-decimal cultures (de-DE, fr-FR, etc.). Both sites are now invariant.
+- **String round-trip corruption.** `PdfString` literal escapes were written in decimal but read back as octal, corrupting every byte ≥ 64 (UTF-16 titles, URLs, indexed palettes) on a save/optimize round-trip.
+- **Form-XObject text extraction.** The extractor dropped the `PdfDocument` when descending into Form XObjects, losing/garbling text whose body lives in a form (and the same bug in soft-mask rendering).
+- **Annotation-appearance rendering.** Text inside an annotation appearance rendered at the page origin (CTM not pushed to the target); per-annotation CTM accumulated so only the first widget landed; Form XObjects didn't inherit ExtGState transparency (watermarks painted at full opacity); widget appearances were skipped entirely.
+- **Form-fill output.** Filled values now set the `/F` Print flag so they print (not just display); multiline honors explicit newlines; checkbox/radio marks are drawn as vector paths so they render in any viewer.
+- **Parser robustness.** Fixed a content-stream parser infinite loop on a zero-width token, added an image-recompression memory guard, and made `Optimize` accept encrypted input (decrypts to an unencrypted equivalent).
+
 ## [1.0.0-rc.4] - 2026-06-10
 
 ### Added
@@ -157,7 +185,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 |---------|------|------------|
 | 0.9.0 | TBD | Core rendering engine, font support, image decompression |
 | 0.0.10-beta | 2025-01-13 | Fluent builder API, annotations, bookmarks, page labels, encryption |
-| 1.0.0-rc.1 | 2026-06-06 | Release candidate for 1.0: thread-safe concurrent rendering, pure-C# in-house image codecs (no third-party deps), performance + memory optimizations. Prerelease until SkiaSharp 3.x ships stable. |
+| 1.0.0-rc.1 | 2026-06-06 | Release candidate for 1.0: thread-safe concurrent rendering, pure-C# in-house image codecs (no third-party deps), performance + memory optimizations. |
+| 1.0.0 | 2026-06-21 | First stable release: editing/mutation API, optimization API, multi-targets .NET 8/9/10, all dependencies on stable releases (SkiaSharp 3.119.4). |
 
 ---
 
