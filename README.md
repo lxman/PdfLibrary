@@ -1,9 +1,9 @@
 # PdfLibrary
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![.NET](https://img.shields.io/badge/.NET-10.0-512BD4)](https://dotnet.microsoft.com/)
+[![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-512BD4)](https://dotnet.microsoft.com/)
 
-A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Built with C# and targeting .NET 10.
+A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Built with C# and multi-targeting .NET 8, 9, and 10.
 
 ## Features
 
@@ -292,7 +292,7 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
 
 ## Requirements
 
-- .NET 10.0 or later
+- .NET 8.0, 9.0, or 10.0
 - SkiaSharp (for rendering - separate PdfLibrary.Rendering.SkiaSharp package)
 
 ### Core Dependencies
