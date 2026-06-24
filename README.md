@@ -311,8 +311,8 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
 
 ```bash
 # Clone the repository
-git clone https://github.com/lxman/PDF.git
-cd PDF
+git clone https://github.com/lxman/PdfLibrary.git
+cd PdfLibrary
 
 # Build the solution
 dotnet build PdfLibrary.slnx

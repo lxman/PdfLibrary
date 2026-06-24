@@ -99,7 +99,7 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
         byte[] contentData = xobject.GetDecodedData(_document?.Decryptor);
 
         PdfResources? formResources = _resources;
-        if (xobject.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject resObj))
+        if (xobject.Dictionary.TryGetValue(new PdfName("Resources"), out PdfObject? resObj))
         {
             if (resObj is PdfIndirectReference r && _document is not null)
                 resObj = _document.ResolveReference(r);
@@ -205,7 +205,7 @@ internal sealed class GlyphUsageCollector : PdfContentProcessor
 
     private static bool IsIdentityHOrV(Type0Font font)
     {
-        string? enc = font.Encoding;
+        string? enc = font.EncodingName;
         return enc is "Identity-H" or "Identity-V";
     }
 

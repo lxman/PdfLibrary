@@ -8,15 +8,23 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
         <Title>PdfLibrary</Title>
-        <Version>1.0.0</Version>
-        <Authors>Jordan</Authors>
-        <Description>A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Pure C# implementation with support for PDF 1.x and 2.0.</Description>
-        <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;document</PackageTags>
+        <Version>1.0.1</Version>
+        <Authors>Michael Jordan</Authors>
+        <Description>A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Pure C# implementation with no native or third-party codec dependencies; cross-platform on .NET 8, 9, and 10. Supports PDF 1.x and 2.0.</Description>
+        <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;pdf-editor;document;csharp;cross-platform;pure-csharp;managed;pdf2.0</PackageTags>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
         <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageIcon>icon.png</PackageIcon>
+
+        <!-- SourceLink + symbol packages: let consumers step into library source while debugging. -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+        <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
 
         <!-- Generate documentation XML for IntelliSense -->
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -31,6 +39,11 @@
 
     <ItemGroup>
         <None Include="..\README.md" Pack="true" PackagePath="\" />
+        <None Include="..\icon.png" Pack="true" PackagePath="\" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>

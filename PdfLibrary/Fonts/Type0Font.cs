@@ -42,7 +42,7 @@ internal class Type0Font : PdfFont
     /// <summary>
     /// Returns the /Encoding value (e.g. "Identity-H") from the Type0 dictionary.
     /// </summary>
-    internal string? Encoding
+    internal string? EncodingName
     {
         get
         {

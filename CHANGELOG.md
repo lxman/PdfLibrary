@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-24
+
+Packaging and discoverability patch. No API or runtime behavior changes.
+
+### Added
+- **Package icon** on both `Lxman.PdfLibrary` and `Lxman.PdfLibrary.Rendering.SkiaSharp`.
+- **SourceLink + symbol packages** — both packages now publish `.snupkg` symbols with embedded SourceLink metadata, so consumers can step into library source while debugging. The publish workflow pushes the symbol packages alongside the main packages.
+
+### Changed
+- **NuGet metadata** — broadened `PackageTags` (now includes `pdf-editor`, `csharp`, `cross-platform`, `pure-csharp`, `managed`, `pdf2.0`, `pdf-to-image`) and clarified the descriptions to lead with the "pure C#, no native/third-party codec dependencies, cross-platform" differentiator. `Authors` set to `Michael Jordan`.
+
+### Fixed
+- **README** clone URL corrected (`github.com/lxman/PDF` → `github.com/lxman/PdfLibrary`).
+- **Build warnings** — resolved `CS0108` (`Type0Font.Encoding` renamed to `EncodingName` to stop hiding the base `PdfFont.Encoding`) and `CS8600` (nullable `out` in `GlyphUsageCollector`). Library now builds warning-free.
+
 ## [1.0.0] - 2026-06-21
 
 First stable release. Completes the *load → edit → optimize* story: a loaded PDF can now be modified in place and shrunk, in addition to being parsed, rendered, and created from scratch.
