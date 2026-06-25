@@ -8,4 +8,7 @@ public sealed class PdfSaveOptions
 
     /// <summary>Pack output using object streams + a cross-reference stream. Default false (classic xref).</summary>
     public bool UseObjectStreams { get; set; }
+
+    /// <summary>A new instance with the standard defaults (parity with <see cref="Optimization.PdfOptimizationOptions.Default"/>).</summary>
+    public static PdfSaveOptions Default => new();
 }
