@@ -137,7 +137,12 @@ public sealed class PdfViewerSettings
 
     private void SetViewerPref(string key, bool? value)
     {
-        if (value is null) return; // per spec: null means absent; no removal required
+        if (value is null)
+        {
+            // Clear the preference: remove the key (parallels the PageMode/PageLayout setters).
+            GetViewerPrefsDict(create: false)?.Remove(new PdfName(key));
+            return;
+        }
         PdfDictionary vp = GetViewerPrefsDict(create: true)!;
         vp[new PdfName(key)] = PdfBoolean.FromValue(value.Value);
     }

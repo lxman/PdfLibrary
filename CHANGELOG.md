@@ -14,6 +14,9 @@ API surface cleanup (additive, non-breaking) — targets 1.1.0.
 - **`PdfOptimizer.Optimize(document, string outputPath, options?)`** — optimize straight to a file path, matching `PdfDocument.Save(string)`. Previously only a `Stream` overload existed.
 - **Collection-facade read/remove parity.** `PdfOutlineCollection.RemoveAt(int)` removes a top-level outline item by index (previously required `outlines[i].Remove()`); `PdfFormFields` now implements `IReadOnlyCollection<PdfFormField>`, exposing a `Count` property (previously `.Count` was only the LINQ extension method); `PdfNamedDestinations` gains a `this[string]` indexer (sugar for `Get`, parallel to `PdfFormFields[name]`).
 
+### Fixed
+- **`PdfViewerSettings` boolean preferences can now be cleared.** Setting `HideToolbar` / `FitWindow` / `CenterWindow` / `DisplayDocTitle` to `null` now removes the preference (matching the `PageMode` / `PageLayout` setters). Previously a `null` assignment was silently ignored, so a preference could never be unset once written.
+
 ## [1.0.2] - 2026-06-25
 
 Correctness patch. No public API changes.
