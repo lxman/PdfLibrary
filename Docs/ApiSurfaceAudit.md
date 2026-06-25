@@ -182,7 +182,7 @@ XML docs are broadly good, but: **`PdfPageCollection` — the highest-traffic ed
 6. ✅ Return a stats object from `Optimize` (`PdfOptimizationResult`, §2.6); ✅ `PdfSaveOptions.Default`.
 7. Close read/remove gaps: ✅ `Outlines.RemoveAt`, ✅ `NamedDestinations.this[string]`, ✅ `Forms.Count` (now `IReadOnlyCollection`), ✅ `PdfViewerSettings bool?=null` now clears the pref, ✅ annotation read/remove (`GetAnnotations`/`RemoveAnnotationAt` + `PdfAnnotationInfo`), ✅ `Outlines.Insert`, ✅ `NamedDestinations.Entries` (name,dest) pair enumeration, ✅ remaining common viewer-pref keys (HideMenubar/HideWindowUI/NonFullScreenPageMode/Direction/PrintScaling/Duplex) (§2.4). **§2.4 read/remove asymmetries closed.** (`Contains` was a false gap — LINQ already supplies it.)
 8. Add `Done()`/implicit operator to `PdfImageBuilder` (§1.7).
-9. ✅ Backfill `PdfPageCollection` XML docs (all public members across the three partials, §4); still open — content-element classes (`PdfTextContent`, `PdfPathContent`, …) and several enum values.
+9. ✅ Backfill `PdfPageCollection` XML docs (all public members across the three partials), ✅ content-element classes (`PdfTextContent`/`PdfPathContent`/`PdfImageContent`/`PdfLineContent`/`PdfRectangleContent`/`PdfPathSegment`), ✅ Forms enums (`PdfFormFieldType`/`ButtonKind`) (§4). Only the self-evident `PageMode`/`PageLayout`/`Enums.cs` values remain undocumented at the member level (all are documented at the type level with ISO references).
 
 **Breaking — `[Obsolete]` bridge now, remove at 2.0 (coincides with the SkiaSharp 4.x renderer rewrite):**
 10. Unify entry verbs (`Load`/`CreateEmpty` vs `Open`/`CreateBlank`); make `Extract`/`Merge` both instance; drop duplicate `editor.Append` (§1.1).
