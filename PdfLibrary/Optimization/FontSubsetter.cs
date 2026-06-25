@@ -24,8 +24,10 @@ namespace PdfLibrary.Optimization;
 /// </summary>
 internal static class FontSubsetter
 {
-    public static void Run(PdfDocument document, PdfOptimizationOptions options)
+    public static int Run(PdfDocument document, PdfOptimizationOptions options)
     {
+        var subsetted = 0;
+
         // 1. Collect glyph usage across all pages.
         var merged = new Dictionary<PdfStream, FontUsage>(ReferenceEqualityComparer.Instance);
 
@@ -62,7 +64,8 @@ internal static class FontSubsetter
             // CFF (/FontFile3) programs go through the CFF subsetter (simple Type1C or CID-keyed).
             if (usage.Kind is FontUsageKind.SimpleType1C or FontUsageKind.IdentityCidType0)
             {
-                TrySubsetCff(fontFile2Stream, usage, document);
+                if (TrySubsetCff(fontFile2Stream, usage, document))
+                    subsetted++;
                 continue;
             }
 
@@ -109,6 +112,7 @@ internal static class FontSubsetter
             //     object graph stays consistent (no orphaned objects, no dangling refs).
             fontFile2Stream.SetEncodedData(subsetBytes, "FlateDecode");
             fontFile2Stream.Dictionary[new PdfName("Length1")] = new PdfInteger(subsetBytes.Length);
+            subsetted++;
 
             // 3b. For Identity-H CIDFontType2, write a /CIDToGIDMap stream.
             //     Register it as a proper document object so the serializer writes it correctly.
@@ -134,6 +138,8 @@ internal static class FontSubsetter
                     new PdfIndirectReference(nextObjNum, 0);
             }
         }
+
+        return subsetted;
     }
 
     // -------------------------------------------------------------------------
@@ -142,7 +148,7 @@ internal static class FontSubsetter
     // CFF maps CID->GID via its own charset; this path is non-CID Type1C anyway).
     // -------------------------------------------------------------------------
 
-    private static void TrySubsetCff(PdfStream fontFile3Stream, FontUsage usage, PdfDocument document)
+    private static bool TrySubsetCff(PdfStream fontFile3Stream, FontUsage usage, PdfDocument document)
     {
         byte[] subsetBytes;
         try
@@ -156,16 +162,17 @@ internal static class FontSubsetter
         }
         catch
         {
-            return; // unparseable or unsupported (e.g. CID) — leave the original
+            return false; // unparseable or unsupported (e.g. CID) — leave the original
         }
 
         // Size guard: only commit if the Flate-encoded subset is smaller than the existing stream.
         var tempStream = new PdfStream([]);
         tempStream.SetEncodedData(subsetBytes, "FlateDecode");
         if (tempStream.Length >= fontFile3Stream.Length)
-            return;
+            return false;
 
         fontFile3Stream.SetEncodedData(subsetBytes, "FlateDecode");
+        return true;
     }
 
     // -------------------------------------------------------------------------
