@@ -20,7 +20,7 @@ public sealed partial class PdfDocumentEditor : IDisposable
     /// <summary>The document's pages and page operations.</summary>
     public PdfPageCollection Pages { get; }
 
-    /// <summary>Disposes the underlying document only if this editor created it (via <see cref="Open"/>/<see cref="CreateBlank"/>).</summary>
+    /// <summary>Disposes the underlying document only if this editor created it (via <see cref="Open(string, string)"/>/<see cref="CreateBlank"/>).</summary>
     public void Dispose()
     {
         if (_ownsDocument) _document.Dispose();
