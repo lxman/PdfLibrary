@@ -51,6 +51,25 @@ public sealed class PdfOutlineCollection : IReadOnlyList<PdfOutlineItem>
         return item;
     }
 
+    /// <summary>Inserts a top-level item at <paramref name="index"/> pointing to <paramref name="page"/>.</summary>
+    public PdfOutlineItem Insert(int index, string title, int page) =>
+        Insert(index, title, PdfDestination.ToPage(page));
+
+    /// <summary>Inserts a top-level item at <paramref name="index"/> with an explicit destination and optional nested children.</summary>
+    public PdfOutlineItem Insert(int index, string title, PdfDestination destination, Action<PdfOutlineItem>? children = null)
+    {
+        if (index < 0 || index > _model.TopLevel.Count)
+            throw new ArgumentOutOfRangeException(nameof(index));
+
+        _model.EnsureRoot();
+        OutlineNode node = _model.CreateNode(title, destination);
+        _model.TopLevel.Insert(index, node);
+        var item = new PdfOutlineItem(_document, _model, node);
+        children?.Invoke(item);
+        _model.Rewire();
+        return item;
+    }
+
     /// <summary>Removes the top-level item at <paramref name="index"/> (and its subtree).</summary>
     public void RemoveAt(int index) => this[index].Remove();
 

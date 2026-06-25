@@ -64,6 +64,17 @@ public sealed class PdfNamedDestinations : IReadOnlyCollection<string>
     /// <summary>Returns the decoded destination for <paramref name="name"/>, or null if not found.</summary>
     public PdfDestination? this[string name] => Get(name);
 
+    /// <summary>Enumerates each named destination as a (name, destination) pair.</summary>
+    public IEnumerable<KeyValuePair<string, PdfDestination>> Entries()
+    {
+        foreach (string name in AllNames())
+        {
+            PdfDestination? dest = Get(name);
+            if (dest is not null)
+                yield return new KeyValuePair<string, PdfDestination>(name, dest);
+        }
+    }
+
     /// <summary>
     /// Renames a destination: Get + Remove(old) + Set(new).
     /// Returns false if <paramref name="oldName"/> does not exist.

@@ -17,6 +17,7 @@ API surface cleanup (additive, non-breaking) — targets 1.1.0.
 - **`PdfDocumentBuilder.LoadFont(byte[], alias)` and `LoadFont(Stream, alias)`** — embed a custom TrueType/OpenType font from in-memory bytes or a stream (an embedded resource, a network download, etc.), not just a file path. All three overloads share one validation/registration path.
 - **`PdfSaveOptions.Default`** — a new instance with the standard defaults, parallel to `PdfOptimizationOptions.Default`.
 - **Annotation read/remove on `PdfPageCollection`.** `GetAnnotations(int)` returns a read-only `PdfAnnotationInfo` snapshot (subtype, rect, contents) and `RemoveAnnotationAt(int, int)` removes one by index — the editing API was previously annotation-add-only.
+- **Navigation facade completeness.** `PdfNamedDestinations.Entries()` enumerates `(name, destination)` pairs (the facade previously enumerated names only); `PdfOutlineCollection.Insert(int, …)` inserts a top-level outline item at a specific position (it previously only appended).
 
 ### Fixed
 - **`PdfViewerSettings` boolean preferences can now be cleared.** Setting `HideToolbar` / `FitWindow` / `CenterWindow` / `DisplayDocTitle` to `null` now removes the preference (matching the `PageMode` / `PageLayout` setters). Previously a `null` assignment was silently ignored, so a preference could never be unset once written.
