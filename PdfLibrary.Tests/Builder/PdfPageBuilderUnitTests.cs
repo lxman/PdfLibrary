@@ -19,4 +19,33 @@ public class PdfPageBuilderUnitTests
         Assert.Equal(72.0, text.X, 3);
         Assert.Equal(72.0, text.Y, 3);
     }
+
+    // Regression: AddLine ignored the page unit (raw coordinates), unlike AddText/AddRectangle.
+    [Fact]
+    public void AddLine_DoubleOverload_AppliesUnitConversion()
+    {
+        var page = new PdfPageBuilder(PdfPageSize.Letter).WithInches();
+
+        page.AddLine(1, 1, 2, 2);
+
+        var line = Assert.IsType<PdfLineContent>(page.Content.Single());
+        Assert.Equal(72.0, line.X1, 3);
+        Assert.Equal(72.0, line.Y1, 3);
+        Assert.Equal(144.0, line.X2, 3);
+        Assert.Equal(144.0, line.Y2, 3);
+    }
+
+    [Fact]
+    public void AddLine_PdfLengthOverload_ConvertsExplicitUnits()
+    {
+        var page = new PdfPageBuilder(PdfPageSize.Letter); // default unit = points
+
+        page.AddLine(1.0.Inches(), 1.0.Inches(), 2.0.Inches(), 2.0.Inches());
+
+        var line = Assert.IsType<PdfLineContent>(page.Content.Single());
+        Assert.Equal(72.0, line.X1, 3);
+        Assert.Equal(72.0, line.Y1, 3);
+        Assert.Equal(144.0, line.X2, 3);
+        Assert.Equal(144.0, line.Y2, 3);
+    }
 }

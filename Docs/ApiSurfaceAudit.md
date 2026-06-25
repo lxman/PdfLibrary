@@ -178,7 +178,7 @@ XML docs are broadly good, but: **`PdfPageCollection` — the highest-traffic ed
 
 **Additive in 1.x (non-breaking):**
 4. ✅ Promote `PdfParseException`/`PdfSecurityException` to `public` under a new `public abstract PdfException` base (§2.2).
-5. Add overloads: ✅ `PdfDocumentEditor.Open(Stream)`, ✅ `PdfOptimizer.Optimize(…, string path)`, ✅ `LoadFont(byte[]/Stream)` (CC0 "Public Pixel" test fixture added); still open — doc-level render-to-bytes/stream + range, `PdfLength`/`PdfRect` for `AddLine` & form placement (§2.5).
+5. Add overloads: ✅ `PdfDocumentEditor.Open(Stream)`, ✅ `PdfOptimizer.Optimize(…, string path)`, ✅ `LoadFont(byte[]/Stream)` (CC0 "Public Pixel" test fixture added), ✅ `AddLine(PdfLength)` overload + unit-conversion fix on the `double` overload; form-field placement is already unit-aware via its default-unit `double` overload (`CreateFieldRect`), so a `PdfLength` overload there is low-value and skipped; still open — doc-level render-to-bytes/stream + range (SkiaSharp, deferred to v2) (§2.5).
 6. ✅ Return a stats object from `Optimize` (`PdfOptimizationResult`, §2.6); ✅ `PdfSaveOptions.Default`.
 7. Close read/remove gaps: ✅ `Outlines.RemoveAt`, ✅ `NamedDestinations.this[string]`, ✅ `Forms.Count` (now `IReadOnlyCollection`), ✅ `PdfViewerSettings bool?=null` now clears the pref, ✅ annotation read/remove (`GetAnnotations`/`RemoveAnnotationAt` + `PdfAnnotationInfo`), ✅ `Outlines.Insert`, ✅ `NamedDestinations.Entries` (name,dest) pair enumeration, ✅ remaining common viewer-pref keys (HideMenubar/HideWindowUI/NonFullScreenPageMode/Direction/PrintScaling/Duplex) (§2.4). **§2.4 read/remove asymmetries closed.** (`Contains` was a false gap — LINQ already supplies it.)
 8. Add `Done()`/implicit operator to `PdfImageBuilder` (§1.7).

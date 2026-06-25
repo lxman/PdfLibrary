@@ -373,16 +373,33 @@ public class PdfPageBuilder(PdfSize size)
     }
 
     /// <summary>
-    /// Add a line to the page
+    /// Add a line to the page using the default unit and origin
     /// </summary>
     public PdfPageBuilder AddLine(double x1, double y1, double x2, double y2, PdfColor? strokeColor = null, double lineWidth = 1)
     {
         _content.Add(new PdfLineContent
         {
-            X1 = x1,
-            Y1 = y1,
-            X2 = x2,
-            Y2 = y2,
+            X1 = ConvertToPoints(x1, isYCoordinate: false),
+            Y1 = ConvertToPoints(y1, isYCoordinate: true),
+            X2 = ConvertToPoints(x2, isYCoordinate: false),
+            Y2 = ConvertToPoints(y2, isYCoordinate: true),
+            StrokeColor = strokeColor ?? PdfColor.Black,
+            LineWidth = lineWidth
+        });
+        return this;
+    }
+
+    /// <summary>
+    /// Add a line to the page with explicit unit specification
+    /// </summary>
+    public PdfPageBuilder AddLine(PdfLength x1, PdfLength y1, PdfLength x2, PdfLength y2, PdfColor? strokeColor = null, double lineWidth = 1)
+    {
+        _content.Add(new PdfLineContent
+        {
+            X1 = x1.ToPoints(PageHeight, PdfOrigin.BottomLeft),
+            Y1 = y1.ToPoints(PageHeight, y1.Origin ?? _defaultOrigin),
+            X2 = x2.ToPoints(PageHeight, PdfOrigin.BottomLeft),
+            Y2 = y2.ToPoints(PageHeight, y2.Origin ?? _defaultOrigin),
             StrokeColor = strokeColor ?? PdfColor.Black,
             LineWidth = lineWidth
         });
