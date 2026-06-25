@@ -325,11 +325,42 @@ public class PdfDocumentBuilder
         if (!File.Exists(fontPath))
             throw new FileNotFoundException($"Font file not found: {fontPath}");
 
+        return LoadFontCore(File.ReadAllBytes(fontPath), fontAlias, $"font file '{fontPath}'", fontPath);
+    }
+
+    /// <summary>
+    /// Load a custom TrueType or OpenType font from in-memory bytes.
+    /// </summary>
+    /// <param name="fontData">Raw font file bytes (.ttf/.otf/.ttc/.woff/.woff2 contents)</param>
+    /// <param name="fontAlias">Alias name to use when referencing this font (e.g., "MyFont")</param>
+    /// <returns>The document builder for chaining</returns>
+    /// <exception cref="InvalidDataException">If the font data cannot be parsed</exception>
+    public PdfDocumentBuilder LoadFont(byte[] fontData, string fontAlias)
+    {
+        ArgumentNullException.ThrowIfNull(fontData);
+        return LoadFontCore(fontData, fontAlias, $"font data for alias '{fontAlias}'", filePath: null);
+    }
+
+    /// <summary>
+    /// Load a custom TrueType or OpenType font from a stream. The stream is read to its end
+    /// but is not disposed.
+    /// </summary>
+    /// <param name="fontStream">A readable stream positioned at the start of the font data</param>
+    /// <param name="fontAlias">Alias name to use when referencing this font (e.g., "MyFont")</param>
+    /// <returns>The document builder for chaining</returns>
+    /// <exception cref="InvalidDataException">If the font data cannot be parsed</exception>
+    public PdfDocumentBuilder LoadFont(Stream fontStream, string fontAlias)
+    {
+        ArgumentNullException.ThrowIfNull(fontStream);
+        using var ms = new MemoryStream();
+        fontStream.CopyTo(ms);
+        return LoadFontCore(ms.ToArray(), fontAlias, $"font data for alias '{fontAlias}'", filePath: null);
+    }
+
+    private PdfDocumentBuilder LoadFontCore(byte[] fontData, string fontAlias, string source, string? filePath)
+    {
         if (_customFonts.ContainsKey(fontAlias))
             throw new ArgumentException($"A font with alias '{fontAlias}' is already loaded");
-
-        // Read the font file
-        byte[] fontData = File.ReadAllBytes(fontPath);
 
         // Parse font metrics
         EmbeddedFontMetrics metrics;
@@ -339,17 +370,17 @@ public class PdfDocumentBuilder
         }
         catch (Exception ex)
         {
-            throw new InvalidDataException($"Failed to parse font file '{fontPath}': {ex.Message}", ex);
+            throw new InvalidDataException($"Failed to parse {source}: {ex.Message}", ex);
         }
 
         if (!metrics.IsValid)
-            throw new InvalidDataException($"Font file '{fontPath}' does not contain valid font data");
+            throw new InvalidDataException($"The {source} does not contain valid font data");
 
         // Store font info
         _customFonts[fontAlias] = new CustomFontInfo
         {
             Alias = fontAlias,
-            FilePath = fontPath,
+            FilePath = filePath ?? string.Empty,
             FontData = fontData,
             Metrics = metrics,
             PostScriptName = metrics.PostScriptName ?? fontAlias,

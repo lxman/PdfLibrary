@@ -37,4 +37,11 @@
         <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- CC0 public-domain test font (see Resources/PublicPixel.LICENSE.txt) used by the
+             PdfDocumentBuilder.LoadFont(byte[]/Stream) overload tests. -->
+        <None Update="Resources\PublicPixel.ttf" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Resources\PublicPixel.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>

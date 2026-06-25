@@ -1,0 +1,11 @@
+PublicPixel.ttf — the "Public Pixel" font by GGBotNet.
+
+License: Creative Commons Zero v1.0 Universal (CC0 1.0) — a public-domain
+dedication. No rights reserved, no attribution required, no usage restrictions.
+
+Source:  https://github.com/ggbotnet/fonts-cc0
+         https://ggbot.itch.io/ggbotnet-fonts-cc0
+
+Included here purely as a test fixture to exercise the
+PdfDocumentBuilder.LoadFont(byte[]/Stream) overloads with a real, encumbrance-free
+TrueType font. This note documents provenance; CC0 does not require it.
