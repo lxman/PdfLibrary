@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+API surface cleanup (additive, non-breaking) — targets 1.1.0.
+
+### Added
+- **Public exception hierarchy.** `PdfParseException` and `PdfSecurityException` are now `public` and derive from a new `public abstract PdfLibrary.PdfException` base. Consumers can `catch (PdfException)` to handle any PDF-specific failure, or catch the specific subtype to distinguish a malformed document from a decryption/password failure. Previously both were `internal`, so callers had to catch bare `Exception`.
+
 ## [1.0.2] - 2026-06-25
 
 Correctness patch. No public API changes.

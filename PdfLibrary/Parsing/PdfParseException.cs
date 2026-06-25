@@ -1,9 +1,9 @@
 ﻿namespace PdfLibrary.Parsing;
 
 /// <summary>
-/// Exception thrown when PDF parsing fails
+/// Exception thrown when PDF parsing fails.
 /// </summary>
-internal class PdfParseException : Exception
+public class PdfParseException : PdfException
 {
     public PdfParseException(string message) : base(message)
     {
