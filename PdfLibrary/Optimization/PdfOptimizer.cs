@@ -45,6 +45,17 @@ public static class PdfOptimizer
             PdfDocumentSerializer.Write(document, output, live);
     }
 
+    /// <summary>Optimizes a loaded PDF and writes the result to a file path.</summary>
+    public static void Optimize(PdfDocument document, string outputPath, PdfOptimizationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        if (string.IsNullOrEmpty(outputPath))
+            throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
+
+        using FileStream stream = File.Create(outputPath);
+        Optimize(document, stream, options);
+    }
+
     /// <summary>Flate-compresses every stream that currently has no filter (lossless). Already-encoded
     /// streams — images (DCTDecode), existing FlateDecode, filter arrays — are left untouched.</summary>
     internal static void CompressUncompressedStreams(PdfDocument document)

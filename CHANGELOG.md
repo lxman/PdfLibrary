@@ -10,6 +10,8 @@ API surface cleanup (additive, non-breaking) — targets 1.1.0.
 
 ### Added
 - **Public exception hierarchy.** `PdfParseException` and `PdfSecurityException` are now `public` and derive from a new `public abstract PdfLibrary.PdfException` base. Consumers can `catch (PdfException)` to handle any PDF-specific failure, or catch the specific subtype to distinguish a malformed document from a decryption/password failure. Previously both were `internal`, so callers had to catch bare `Exception`.
+- **`PdfDocumentEditor.Open(Stream, password?, leaveOpen?)`** — enter edit mode directly over an in-memory or network stream, matching `PdfDocument.Load(Stream)`. Previously only a file-path overload existed, forcing stream callers through `PdfDocument.Load(stream).Edit()`.
+- **`PdfOptimizer.Optimize(document, string outputPath, options?)`** — optimize straight to a file path, matching `PdfDocument.Save(string)`. Previously only a `Stream` overload existed.
 
 ## [1.0.2] - 2026-06-25
 

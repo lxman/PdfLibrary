@@ -35,6 +35,18 @@ public sealed partial class PdfDocumentEditor : IDisposable
         return editor;
     }
 
+    /// <summary>Loads a document from a stream and enters edit mode.</summary>
+    /// <param name="stream">Stream containing the PDF.</param>
+    /// <param name="password">Password for encrypted documents (null/empty for none).</param>
+    /// <param name="leaveOpen">If false, the stream is disposed when the editor (which owns the document) is disposed.</param>
+    public static PdfDocumentEditor Open(Stream stream, string? password = null, bool leaveOpen = false)
+    {
+        PdfDocument document = PdfDocument.Load(stream, password ?? "", leaveOpen);
+        PdfDocumentEditor editor = document.Edit();
+        editor._ownsDocument = true;
+        return editor;
+    }
+
     /// <summary>Creates a blank, editable document (zero pages).</summary>
     public static PdfDocumentEditor CreateBlank()
     {
