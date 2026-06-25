@@ -61,10 +61,12 @@ public class FormXObjectAlphaTests
 
         // Rect is page-space [100..300] x [400..600] → bitmap y = 792 - pdfY. Sample the centre.
         SKColor c = bmp.GetPixel(200, 792 - 500);
-        // The render target has a transparent background, so a black fill drawn under /ca 0.5 yields a
-        // black pixel at HALF alpha (≈128). Without alpha inheritance the form would paint at full
-        // opacity (alpha 255). Assert the fill is black AND the alpha is ~half — that IS the fix.
-        Assert.True(c.Red < 40 && c.Green < 40 && c.Blue < 40, $"expected black fill, got {c}");
-        Assert.InRange((int)c.Alpha, 90, 190);
+        // The page renders on an opaque white background, so a black fill drawn under /ca 0.5
+        // composites to mid-grey (~128). Without alpha inheritance the form would paint full-opacity
+        // black (~0); with no fill the pixel would stay white (~255). Assert mid-grey — that IS the fix.
+        Assert.InRange((int)c.Red, 96, 160);
+        Assert.InRange((int)c.Green, 96, 160);
+        Assert.InRange((int)c.Blue, 96, 160);
+        Assert.Equal(255, c.Alpha);
     }
 }

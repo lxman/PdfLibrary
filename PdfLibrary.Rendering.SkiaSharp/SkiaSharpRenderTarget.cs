@@ -54,8 +54,8 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     {
         _document = document;
         _transparentOutput = transparentBackground;
-        // ALWAYS use transparent during rendering for correct blend mode behavior
-        // We'll composite onto white in SaveToFile (unless transparentOutput is true)
+        // ALWAYS use transparent during rendering for correct blend mode behavior.
+        // We composite onto white at output time in GetImage()/SaveToFile (unless transparentOutput is true).
         _backgroundColor = SKColors.Transparent;
 
         // Create SkiaSharp surface
@@ -411,11 +411,26 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     // ==================== PUBLIC API ====================
 
     /// <summary>
-    /// Get the rendered image as an SKImage
+    /// Get the rendered image as an SKImage. Rendering is always done on a transparent canvas
+    /// (required for correct blend-mode compositing), so unless transparent output was requested
+    /// (e.g. soft masks), the result is composited onto white here — matching the documented
+    /// "pages render with a white background by default" and the <see cref="SaveToFile"/> path.
     /// </summary>
     public SKImage GetImage()
     {
-        return _surface.Snapshot();
+        SKImage rendered = _surface.Snapshot();
+        if (_transparentOutput)
+            return rendered;
+
+        // Composite the transparent render onto an opaque white background.
+        using (rendered)
+        {
+            var info = new SKImageInfo(rendered.Width, rendered.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using SKSurface finalSurface = SKSurface.Create(info);
+            finalSurface.Canvas.Clear(SKColors.White);
+            finalSurface.Canvas.DrawImage(rendered, 0, 0);
+            return finalSurface.Snapshot();
+        }
     }
 
     /// <summary>

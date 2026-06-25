@@ -163,6 +163,31 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         Assert.True(transparentCount > 0, "Transparent-background render produced no transparent pixels");
     }
 
+    [Fact]
+    public void Render_DefaultBackground_IsOpaqueWhite()
+    {
+        // The documented default is a white background. Regression: the builder output path
+        // (ToImage/ToFile/ToStream/ToBytes and doc.SavePageAs) returned the raw transparent
+        // render instead of compositing onto white, so PNGs came out transparent and JPEGs black.
+        byte[] pdfBytes = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("Hello", 100, 700, "Helvetica", 24))
+            .ToByteArray();
+
+        using var ms = new MemoryStream(pdfBytes);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        PdfPage page = doc.GetPage(0)!;
+
+        using SKImage image = page.RenderTo().ToImage();
+        using SKBitmap bitmap = SKBitmap.FromImage(image);
+
+        // The text sits near the top of the page (PDF y=700); sample the empty bottom-left corner.
+        SKColor corner = bitmap.GetPixel(2, bitmap.Height - 2);
+        Assert.Equal(255, corner.Alpha);
+        Assert.Equal(255, corner.Red);
+        Assert.Equal(255, corner.Green);
+        Assert.Equal(255, corner.Blue);
+    }
+
     // ----- Output format coverage -----
 
     [Fact]

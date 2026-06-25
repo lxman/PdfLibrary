@@ -175,11 +175,15 @@ public class PdfPageBuilder(PdfSize size)
     /// </summary>
     public PdfPageBuilder AddText(string text, double x, double y, string fontName, double fontSize)
     {
+        // Convert using the default unit and origin, matching the AddText(text, x, y) overload.
+        double xPt = ConvertToPoints(x, isYCoordinate: false);
+        double yPt = ConvertToPoints(y, isYCoordinate: true);
+
         _content.Add(new PdfTextContent
         {
             Text = text,
-            X = x,
-            Y = y,
+            X = xPt,
+            Y = yPt,
             FontName = fontName,
             FontSize = fontSize
         });

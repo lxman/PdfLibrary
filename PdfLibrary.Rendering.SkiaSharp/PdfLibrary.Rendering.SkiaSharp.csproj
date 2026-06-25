@@ -9,7 +9,7 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary.Rendering.SkiaSharp</PackageId>
         <Title>PdfLibrary.Rendering.SkiaSharp</Title>
-        <Version>1.0.1</Version>
+        <Version>1.0.2</Version>
         <Authors>Michael Jordan</Authors>
         <Description>SkiaSharp rendering backend for PdfLibrary. Provides high-quality PDF page rendering to images using SkiaSharp. Pairs with the Lxman.PdfLibrary core package; cross-platform on .NET 8, 9, and 10.</Description>
         <PackageTags>pdf;pdf-renderer;skiasharp;rendering;pdf-to-image;csharp;cross-platform</PackageTags>

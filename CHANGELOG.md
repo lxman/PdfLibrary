@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-06-25
+
+Correctness patch. No public API changes.
+
+### Fixed
+- **Rendered pages now have the documented white background.** The fluent render path (`page.RenderTo().ToImage()/ToBytes()/ToStream()/ToFile()` and the `doc.SavePageAs(...)` shortcut) returned the raw transparent render instead of compositing onto white, so PNGs came out transparent and JPEGs black — even though `RenderTo()` documents a white default and `WithTransparentBackground()` is the opt-in for transparency. `SkiaSharpRenderTarget.GetImage()` now composites onto opaque white unless transparent output was explicitly requested, matching what the `SaveToFile` path already did. Soft-mask rendering is unaffected (it renders to a transparent target by design).
+- **`PdfPageBuilder.AddText(text, x, y, fontName, fontSize)` now honors the page's unit and origin.** The five-argument (font-bearing) overload deposited raw coordinates, ignoring `WithInches()` / `WithUnit(...)` / `FromTopLeft()`, so text placed through it landed at the wrong position (e.g. at 1 point instead of 72 on an inches page). It now applies the same conversion as the `AddText(text, x, y)` overload.
+
 ## [1.0.1] - 2026-06-24
 
 Packaging and discoverability patch. No API or runtime behavior changes.
