@@ -18,6 +18,7 @@ This document covers the **editing / mutation** API — loading an existing PDF,
 - [Form filling](#form-filling)
 - [Saving](#saving)
 - [Encrypted input](#encrypted-input)
+- [Error handling](#error-handling)
 - [Text & Unicode](#text--unicode)
 - [API reference](#api-reference)
 - [Limitations](#limitations)
@@ -56,6 +57,7 @@ edit.Save("out.pdf");
 |------|-------------|
 | `doc.Edit()` | Enter edit mode on an already-loaded `PdfDocument`. You own `doc` — dispose it. |
 | `PdfDocumentEditor.Open(path, password?)` | Load a file and enter edit mode in one step. The editor owns the document — dispose the editor. |
+| `PdfDocumentEditor.Open(stream, password?, leaveOpen?)` | Same, from a stream (an in-memory or network PDF). The editor owns the document; `leaveOpen` (default `false`) controls whether disposing it also disposes the stream. |
 | `PdfDocumentEditor.CreateBlank()` | Start a new, empty (zero-page) editable document — a target you build up with `InsertBlank` / `Import`. |
 
 `PdfDocumentEditor` is `IDisposable`. It disposes the underlying document **only when it created it** (`Open` / `CreateBlank`); for `doc.Edit()` you remain the owner.
@@ -197,6 +199,25 @@ edit.Pages.AddHighlight(0, new PdfRect(72, 680, 400, 695), PdfColor.Cyan);
 
 `PdfRect` is constructed with bottom-left origin coordinates: `new PdfRect(left, bottom, right, top)`. Convenience factories `PdfRect.FromInches(...)`, `PdfRect.FromMillimeters(...)`, and `PdfRect.FromPoints(x, y, width, height)` are also available.
 
+### Reading and removing annotations
+
+`GetAnnotations` returns a read-only snapshot of a page's annotations; `RemoveAnnotationAt` deletes one by index.
+
+```csharp
+IReadOnlyList<PdfAnnotationInfo> annots = edit.Pages.GetAnnotations(0);
+foreach (PdfAnnotationInfo a in annots)
+    Console.WriteLine($"{a.Subtype} @ {a.Rect} — {a.Contents}");
+
+edit.Pages.RemoveAnnotationAt(0, 0);   // remove the first annotation on page 0
+```
+
+| Method | Description |
+|--------|-------------|
+| `IReadOnlyList<PdfAnnotationInfo> GetAnnotations(int index)` | Snapshot of the annotations on page `index` (empty if none). |
+| `void RemoveAnnotationAt(int index, int annotationIndex)` | Remove the annotation at `annotationIndex` (order matches `GetAnnotations`). Throws `ArgumentOutOfRangeException` if out of range. |
+
+`PdfAnnotationInfo` exposes `string Subtype` (e.g. `"Text"`, `"Link"`, `"Highlight"`), `PdfRect Rect`, and `string? Contents`.
+
 ## Document metadata
 
 `edit.Metadata` exposes the document's Info dictionary with automatic XMP sync. Setting any property writes to both the Info dict (`/Info` object) and the `/Catalog /Metadata` XMP packet.
@@ -251,6 +272,9 @@ ch1.Children[0].MoveTo(newParent: ch2, index: 0);
 | `PdfOutlineItem this[int index]` | Access a top-level item by index. |
 | `PdfOutlineItem Add(string title, int page)` | Add a top-level item pointing to `page` (whole-page destination). |
 | `PdfOutlineItem Add(string title, PdfDestination destination, Action<PdfOutlineItem>? children = null)` | Add a top-level item with an explicit destination and optional inline child setup. |
+| `PdfOutlineItem Insert(int index, string title, int page)` | Insert a top-level item at `index` (page destination). |
+| `PdfOutlineItem Insert(int index, string title, PdfDestination destination, Action<PdfOutlineItem>? children = null)` | Insert a top-level item at `index` with an explicit destination and optional children. |
+| `void RemoveAt(int index)` | Remove the top-level item at `index` (and its subtree). |
 | `void Clear()` | Remove the entire outline tree and the `/Outlines` catalog reference. |
 
 ### `PdfOutlineItem`
@@ -339,6 +363,8 @@ edit.NamedDestinations.Remove("cover");
 | `int Count` | Total number of named destinations. |
 | `void Set(string name, PdfDestination destination)` | Create or update a named destination. |
 | `PdfDestination? Get(string name)` | Return the destination for `name`, or `null` if not found. |
+| `PdfDestination? this[string name]` | Indexer sugar for `Get`. |
+| `IEnumerable<KeyValuePair<string, PdfDestination>> Entries()` | Enumerate `(name, destination)` pairs. |
 | `bool Rename(string oldName, string newName)` | Rename a destination. Returns `false` if `oldName` not found. |
 | `bool Remove(string name)` | Delete a named destination. Returns `false` if not found. |
 
@@ -351,8 +377,11 @@ edit.ViewerSettings.PageMode    = PdfPageMode.UseOutlines;   // show bookmarks p
 edit.ViewerSettings.PageLayout  = PdfPageLayout.TwoPageLeft;
 edit.ViewerSettings.OpenAction  = PdfDestination.FitPage(0); // go to page 1 on open
 edit.ViewerSettings.HideToolbar = true;
+edit.ViewerSettings.HideMenubar = true;
 edit.ViewerSettings.FitWindow   = true;
 edit.ViewerSettings.DisplayDocTitle = true;
+edit.ViewerSettings.Direction   = PdfReadingDirection.LeftToRight;
+edit.ViewerSettings.Duplex      = PdfDuplex.DuplexFlipLongEdge;   // print preference
 ```
 
 | Property | PDF key | Description |
@@ -364,6 +393,14 @@ edit.ViewerSettings.DisplayDocTitle = true;
 | `bool? FitWindow` | `/ViewerPreferences /FitWindow` | Resize the viewer window to fit the first page. |
 | `bool? CenterWindow` | `/ViewerPreferences /CenterWindow` | Centre the viewer window on screen. |
 | `bool? DisplayDocTitle` | `/ViewerPreferences /DisplayDocTitle` | Show the document title (from metadata) in the title bar instead of the filename. |
+| `bool? HideMenubar` | `/ViewerPreferences /HideMenubar` | Hide the viewer's menu bar. |
+| `bool? HideWindowUI` | `/ViewerPreferences /HideWindowUI` | Hide scrollbars and navigation controls, showing page content only. |
+| `PdfPageMode? NonFullScreenPageMode` | `/ViewerPreferences /NonFullScreenPageMode` | Panel shown when leaving full-screen (only `UseNone`/`UseOutlines`/`UseThumbs`/`UseOC` are valid). |
+| `PdfReadingDirection? Direction` | `/ViewerPreferences /Direction` | Predominant reading order for spreads. |
+| `PdfPrintScaling? PrintScaling` | `/ViewerPreferences /PrintScaling` | Default page-scaling option in the print dialog. |
+| `PdfDuplex? Duplex` | `/ViewerPreferences /Duplex` | Default duplex (two-sided) printing mode. |
+
+Setting any of these to `null` removes the corresponding key.
 
 ### `PdfPageMode`
 
@@ -372,6 +409,18 @@ edit.ViewerSettings.DisplayDocTitle = true;
 ### `PdfPageLayout`
 
 `SinglePage` · `OneColumn` · `TwoColumnLeft` · `TwoColumnRight` · `TwoPageLeft` · `TwoPageRight`
+
+### `PdfReadingDirection`
+
+`LeftToRight` (`/L2R`) · `RightToLeft` (`/R2L`)
+
+### `PdfPrintScaling`
+
+`AppDefault` · `None`
+
+### `PdfDuplex`
+
+`Simplex` · `DuplexFlipShortEdge` · `DuplexFlipLongEdge`
 
 ## Form filling
 
@@ -411,6 +460,7 @@ Setting a value on `PdfTextField`, `PdfButtonField`, or `PdfChoiceField` regener
 
 | Member | Description |
 |--------|-------------|
+| `int Count` | Number of fields (`PdfFormFields` is `IReadOnlyCollection<PdfFormField>`). |
 | `PdfFormField? this[string fullName]` | Return field by fully-qualified name, or `null`. |
 | `bool TryGet(string fullName, out PdfFormField? field)` | Try-get by name. |
 | `void Flatten()` | Bake all field appearances into page content and remove `/AcroForm`. |
@@ -481,6 +531,8 @@ edit.Save("out.pdf", new PdfSaveOptions
 | `RemoveOrphans` | `true` | Garbage-collect objects no longer reachable (e.g. deleted pages). |
 | `UseObjectStreams` | `false` | Pack the output using object streams + a cross-reference stream (PDF 1.5+) — smaller files. |
 
+`PdfSaveOptions.Default` returns a fresh instance with these defaults.
+
 ## Encrypted input
 
 You can edit an encrypted PDF — pass the password to `Load`. On `.Edit()` the document is decrypted in place, and **the saved output is unencrypted**:
@@ -493,6 +545,25 @@ edit.Save("plain.pdf");          // unencrypted
 ```
 
 Re-encrypting on save is not yet supported. (The creation builder *can* produce encrypted PDFs — see [FluentApi.md](FluentApi.md#encryption).)
+
+## Error handling
+
+Loading or parsing a malformed PDF throws `PdfParseException`; a wrong or missing password on an encrypted file throws `PdfSecurityException`. Both derive from the public base `PdfException` (in the `PdfLibrary` namespace), so you can catch all PDF-specific failures with one handler:
+
+```csharp
+using PdfLibrary;            // PdfException
+using PdfLibrary.Security;   // PdfSecurityException
+using PdfLibrary.Parsing;    // PdfParseException
+
+try
+{
+    using var doc = PdfDocument.Load("maybe-broken.pdf", password);
+    var edit = doc.Edit();
+    // ...
+}
+catch (PdfSecurityException) { /* wrong/missing password */ }
+catch (PdfException ex)      { /* malformed or otherwise invalid PDF */ }
+```
 
 ## Text & Unicode
 
@@ -513,6 +584,7 @@ All text-valued properties in the editing API (`Metadata.Title`, `Metadata.Autho
 | Member | Description |
 |--------|-------------|
 | `static PdfDocumentEditor Open(string path, string? password = null)` | Load + edit. Editor owns the document. |
+| `static PdfDocumentEditor Open(Stream stream, string? password = null, bool leaveOpen = false)` | Load + edit from a stream. Editor owns the document. |
 | `static PdfDocumentEditor CreateBlank()` | New empty editable document. |
 | `static PdfDocument Merge(IEnumerable<PdfDocument> sources)` | Combine documents into a new one. |
 | `PdfPageCollection Pages` | Page view + operations. |
@@ -548,6 +620,8 @@ All text-valued properties in the editing API (`Metadata.Title`, `Metadata.Autho
 | `void AddLink(int index, PdfRect rect, int targetPageIndex)` | Add an internal link annotation. |
 | `void AddExternalLink(int index, PdfRect rect, string url)` | Add a URI link annotation. |
 | `void AddHighlight(int index, PdfRect rect, PdfColor? color = null)` | Add a highlight annotation (default yellow). |
+| `IReadOnlyList<PdfAnnotationInfo> GetAnnotations(int index)` | Read-only snapshot of a page's annotations. |
+| `void RemoveAnnotationAt(int index, int annotationIndex)` | Remove an annotation by index. |
 
 ### `PdfMetadata`
 
@@ -570,6 +644,9 @@ All text-valued properties in the editing API (`Metadata.Title`, `Metadata.Autho
 | `int Count` / `this[int index]` | Top-level items. |
 | `PdfOutlineItem Add(string title, int page)` | Add top-level item (page dest). |
 | `PdfOutlineItem Add(string title, PdfDestination, Action<PdfOutlineItem>? children = null)` | Add top-level item with destination. |
+| `PdfOutlineItem Insert(int index, string title, int page)` | Insert top-level item at `index` (page dest). |
+| `PdfOutlineItem Insert(int index, string title, PdfDestination, Action<PdfOutlineItem>? children = null)` | Insert top-level item at `index` with destination. |
+| `void RemoveAt(int index)` | Remove the top-level item at `index`. |
 | `void Clear()` | Remove entire outline tree. |
 
 ### `PdfOutlineItem`
@@ -624,6 +701,8 @@ All text-valued properties in the editing API (`Metadata.Title`, `Metadata.Autho
 | `int Count` | Total named destinations. |
 | `void Set(string name, PdfDestination destination)` | Create or update. |
 | `PdfDestination? Get(string name)` | Resolve, or `null`. |
+| `PdfDestination? this[string name]` | Indexer sugar for `Get`. |
+| `IEnumerable<KeyValuePair<string, PdfDestination>> Entries()` | Enumerate name → destination pairs. |
 | `bool Rename(string oldName, string newName)` | Rename; returns `false` if `oldName` not found. |
 | `bool Remove(string name)` | Delete; returns `false` if not found. |
 
@@ -638,11 +717,18 @@ All text-valued properties in the editing API (`Metadata.Title`, `Metadata.Autho
 | `bool? FitWindow` | Resize window to first page. |
 | `bool? CenterWindow` | Centre window on screen. |
 | `bool? DisplayDocTitle` | Show document title in title bar. |
+| `bool? HideMenubar` | Hide the menu bar. |
+| `bool? HideWindowUI` | Hide scrollbars / navigation controls. |
+| `PdfPageMode? NonFullScreenPageMode` | Page mode when leaving full-screen. |
+| `PdfReadingDirection? Direction` | Predominant reading order. |
+| `PdfPrintScaling? PrintScaling` | Print-dialog page scaling. |
+| `PdfDuplex? Duplex` | Duplex printing mode. |
 
-### `PdfFormFields : IEnumerable<PdfFormField>`
+### `PdfFormFields : IReadOnlyCollection<PdfFormField>`
 
 | Member | Description |
 |--------|-------------|
+| `int Count` | Number of fields. |
 | `PdfFormField? this[string fullName]` | Field by name, or `null`. |
 | `bool TryGet(string fullName, out PdfFormField? field)` | Try-get by name. |
 | `void Flatten()` | Bake all fields into page content. |
@@ -654,6 +740,7 @@ All text-valued properties in the editing API (`Metadata.Title`, `Metadata.Autho
 |--------|---------|-------------|
 | `bool RemoveOrphans` | `true` | Reachability garbage collection. |
 | `bool UseObjectStreams` | `false` | Object-stream packing. |
+| `static PdfSaveOptions Default` | — | A fresh instance with the defaults above. |
 
 ## Limitations
 

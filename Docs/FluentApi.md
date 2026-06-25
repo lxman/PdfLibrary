@@ -237,14 +237,20 @@ byte[] imageData = File.ReadAllBytes("photo.png");
 
 ### Lines
 
-```csharp
-.AddLine(100, 700, 300, 700)  // x1, y1, x2, y2
-    .Stroke(PdfColor.Black, 1)
+`AddLine` takes the stroke colour and width as parameters and returns the page builder (there is no fluent `.Stroke()` on a line):
 
-.AddLine(100, 700, 300, 600)
-    .Stroke(PdfColor.Red, 2)
-    .WithDash(5, 3)  // 5pt dash, 3pt gap
+```csharp
+.AddLine(100, 700, 300, 700, PdfColor.Black, 1)   // x1, y1, x2, y2, colour, width
+.AddLine(100, 700, 300, 600, PdfColor.Red, 2)
 ```
+
+Line coordinates honour the page's unit and origin (like `AddText` / `AddRectangle`); a `PdfLength` overload accepts explicit per-call units:
+
+```csharp
+.AddLine(1.0.Inches(), 1.0.Inches(), 3.0.Inches(), 1.0.Inches(), PdfColor.Black, 1)
+```
+
+For dashed or otherwise styled lines, draw a two-point path with `AddPath(...)` and use its `.Dashed()` / `.DashPattern()` methods.
 
 ### Circles and Ellipses
 
@@ -648,18 +654,20 @@ PdfDocumentBuilder.Create()
 
 ## Custom Fonts
 
-Load TrueType or OpenType fonts:
+Load a TrueType or OpenType font from a file path, in-memory bytes, or a stream, then reference it by alias:
 
 ```csharp
+byte[] fontBytes = File.ReadAllBytes("MyFont.ttf");
+
 PdfDocumentBuilder.Create()
-    .LoadFont("C:\\Fonts\\MyFont.ttf", "MyFont")
-    .LoadFont("C:\\Fonts\\MyFont-Bold.ttf", "MyFontBold")
+    .LoadFont("MyFont.ttf", "MyFont")          // from a file path
+    .LoadFont(fontBytes, "MyFontFromBytes")    // from bytes (an embedded resource, a download, …)
     .AddPage(page => page
-        .AddText("Custom font text", 100, 700)
-            .WithFont("MyFont")
-            .WithSize(24))
+        .AddText("Custom font text", 100, 700, "MyFont", 24))   // fontName, fontSize
     .Save("custom-font.pdf");
 ```
+
+`LoadFont` has three overloads: `LoadFont(string path, alias)`, `LoadFont(byte[] data, alias)`, and `LoadFont(Stream stream, alias)`.
 
 **Supported formats:**
 - TrueType (.ttf)
