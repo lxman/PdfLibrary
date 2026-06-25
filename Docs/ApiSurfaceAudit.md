@@ -180,7 +180,7 @@ XML docs are broadly good, but: **`PdfPageCollection` — the highest-traffic ed
 4. ✅ Promote `PdfParseException`/`PdfSecurityException` to `public` under a new `public abstract PdfException` base (§2.2).
 5. Add overloads: ✅ `PdfDocumentEditor.Open(Stream)`, ✅ `PdfOptimizer.Optimize(…, string path)`; still open — `LoadFont(byte[]/Stream)` (pending a checked-in test font fixture), doc-level render-to-bytes/stream + range, `PdfLength`/`PdfRect` for `AddLine` & form placement (§2.5).
 6. Return a stats object from `Optimize` (§2.6); add `PdfSaveOptions.Default`.
-7. Close read/remove gaps: annotation enumerate/remove, `Outlines.RemoveAt/Insert`, `NamedDestinations.Contains/this[string]`/pair enumeration, `Forms.Count`, remaining viewer-pref keys, fix the `bool? = null` no-op (§2.4).
+7. Close read/remove gaps: ✅ `Outlines.RemoveAt`, ✅ `NamedDestinations.this[string]`, ✅ `Forms.Count` (now `IReadOnlyCollection`); still open — annotation enumerate/remove, `Outlines.Insert`, `NamedDestinations` (name,dest) pair enumeration, remaining viewer-pref keys, fix the `bool? = null` no-op (§2.4). (`Contains` was a false gap — LINQ already supplies it.)
 8. Add `Done()`/implicit operator to `PdfImageBuilder` (§1.7).
 9. Backfill `PdfPageCollection` and content-element XML docs (§4).
 

@@ -61,6 +61,9 @@ public sealed class PdfNamedDestinations : IReadOnlyCollection<string>
         return raw is null ? null : DestinationCodec.Decode(_document, raw);
     }
 
+    /// <summary>Returns the decoded destination for <paramref name="name"/>, or null if not found.</summary>
+    public PdfDestination? this[string name] => Get(name);
+
     /// <summary>
     /// Renames a destination: Get + Remove(old) + Set(new).
     /// Returns false if <paramref name="oldName"/> does not exist.

@@ -7,7 +7,7 @@ namespace PdfLibrary.Editing.Forms;
 /// Collection facade over the AcroForm fields in a document.
 /// Each access reads the live field tree so mutations are immediately visible.
 /// </summary>
-public sealed class PdfFormFields : IEnumerable<PdfFormField>
+public sealed class PdfFormFields : IReadOnlyCollection<PdfFormField>
 {
     private readonly PdfDocument _document;
 
@@ -15,6 +15,9 @@ public sealed class PdfFormFields : IEnumerable<PdfFormField>
     {
         _document = document;
     }
+
+    /// <summary>The number of form fields in the document. Reads the live field tree.</summary>
+    public int Count => FormFieldTree.Read(_document).Count();
 
     /// <summary>
     /// Returns the field with the given fully-qualified name, or null if not found.

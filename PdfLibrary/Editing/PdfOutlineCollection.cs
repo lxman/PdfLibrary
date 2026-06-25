@@ -51,6 +51,9 @@ public sealed class PdfOutlineCollection : IReadOnlyList<PdfOutlineItem>
         return item;
     }
 
+    /// <summary>Removes the top-level item at <paramref name="index"/> (and its subtree).</summary>
+    public void RemoveAt(int index) => this[index].Remove();
+
     /// <summary>Removes the entire outline tree and the catalog reference.</summary>
     public void Clear()
     {
