@@ -8,24 +8,28 @@ namespace PdfLibrary.Editing;
 
 public sealed partial class PdfPageCollection
 {
+    /// <summary>Adds a text (sticky-note) annotation at (<paramref name="x"/>, <paramref name="y"/>) on the page at <paramref name="index"/>.</summary>
     public void AddNote(int index, double x, double y, string contents)
     {
         PdfDictionary page = PageAt(index);
         PdfPageAnnotator.AddNote(_document, page, PageRef(index), x, y, contents);
     }
 
+    /// <summary>Adds an internal link over <paramref name="rect"/> that navigates to <paramref name="targetPageIndex"/>.</summary>
     public void AddLink(int index, PdfRect rect, int targetPageIndex)
     {
         PdfDictionary page = PageAt(index);
         PdfPageAnnotator.AddLink(_document, page, PageRef(index), rect, PageRef(targetPageIndex));
     }
 
+    /// <summary>Adds a link over <paramref name="rect"/> that opens an external <paramref name="url"/>.</summary>
     public void AddExternalLink(int index, PdfRect rect, string url)
     {
         PdfDictionary page = PageAt(index);
         PdfPageAnnotator.AddExternalLink(_document, page, PageRef(index), rect, url);
     }
 
+    /// <summary>Adds a highlight over <paramref name="rect"/> (default colour yellow).</summary>
     public void AddHighlight(int index, PdfRect rect, PdfColor? color = null)
     {
         PdfDictionary page = PageAt(index);

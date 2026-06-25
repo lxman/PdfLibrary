@@ -9,18 +9,21 @@ public sealed partial class PdfPageCollection
 {
     private readonly HashSet<int> _wrappedPages = [];
 
+    /// <summary>Applies a stamp (watermark / image overlay or underlay) to every page.</summary>
     public void StampAll(Action<PdfStampBuilder> configure)
     {
         for (var i = 0; i < Count; i++)
             Stamp(i, configure);
     }
 
+    /// <summary>Applies a stamp to <paramref name="count"/> pages starting at <paramref name="start"/>.</summary>
     public void StampRange(int start, int count, Action<PdfStampBuilder> configure)
     {
         for (var i = 0; i < count; i++)
             Stamp(start + i, configure);
     }
 
+    /// <summary>Applies a stamp to the page at <paramref name="index"/>, configured via <paramref name="configure"/>.</summary>
     public void Stamp(int index, Action<PdfStampBuilder> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);

@@ -182,7 +182,7 @@ XML docs are broadly good, but: **`PdfPageCollection` — the highest-traffic ed
 6. ✅ Return a stats object from `Optimize` (`PdfOptimizationResult`, §2.6); ✅ `PdfSaveOptions.Default`.
 7. Close read/remove gaps: ✅ `Outlines.RemoveAt`, ✅ `NamedDestinations.this[string]`, ✅ `Forms.Count` (now `IReadOnlyCollection`), ✅ `PdfViewerSettings bool?=null` now clears the pref, ✅ annotation read/remove (`GetAnnotations`/`RemoveAnnotationAt` + `PdfAnnotationInfo`); still open — `Outlines.Insert`, `NamedDestinations` (name,dest) pair enumeration, remaining viewer-pref keys (§2.4). (`Contains` was a false gap — LINQ already supplies it.)
 8. Add `Done()`/implicit operator to `PdfImageBuilder` (§1.7).
-9. Backfill `PdfPageCollection` and content-element XML docs (§4).
+9. ✅ Backfill `PdfPageCollection` XML docs (all public members across the three partials, §4); still open — content-element classes (`PdfTextContent`, `PdfPathContent`, …) and several enum values.
 
 **Breaking — `[Obsolete]` bridge now, remove at 2.0 (coincides with the SkiaSharp 4.x renderer rewrite):**
 10. Unify entry verbs (`Load`/`CreateEmpty` vs `Open`/`CreateBlank`); make `Extract`/`Merge` both instance; drop duplicate `editor.Append` (§1.1).
