@@ -120,6 +120,52 @@ public sealed class PdfViewerSettings
         set => SetViewerPref("DisplayDocTitle", value);
     }
 
+    /// <summary>Gets or sets <c>/ViewerPreferences /HideMenubar</c>.</summary>
+    public bool? HideMenubar
+    {
+        get => GetViewerPref("HideMenubar");
+        set => SetViewerPref("HideMenubar", value);
+    }
+
+    /// <summary>Gets or sets <c>/ViewerPreferences /HideWindowUI</c>.</summary>
+    public bool? HideWindowUI
+    {
+        get => GetViewerPref("HideWindowUI");
+        set => SetViewerPref("HideWindowUI", value);
+    }
+
+    /// <summary>
+    /// Gets or sets <c>/ViewerPreferences /NonFullScreenPageMode</c> — the page mode used when
+    /// exiting full-screen. Only <see cref="PdfPageMode.UseNone"/>, <see cref="PdfPageMode.UseOutlines"/>,
+    /// <see cref="PdfPageMode.UseThumbs"/> and <see cref="PdfPageMode.UseOC"/> are valid here.
+    /// </summary>
+    public PdfPageMode? NonFullScreenPageMode
+    {
+        get => GetViewerPrefName("NonFullScreenPageMode", NameToPageMode);
+        set => SetViewerPrefName("NonFullScreenPageMode", value.HasValue ? PageModeToName(value.Value) : null);
+    }
+
+    /// <summary>Gets or sets <c>/ViewerPreferences /Direction</c> — the predominant reading order.</summary>
+    public PdfReadingDirection? Direction
+    {
+        get => GetViewerPrefName("Direction", NameToDirection);
+        set => SetViewerPrefName("Direction", value.HasValue ? DirectionToName(value.Value) : null);
+    }
+
+    /// <summary>Gets or sets <c>/ViewerPreferences /PrintScaling</c> — the page-scaling option for printing.</summary>
+    public PdfPrintScaling? PrintScaling
+    {
+        get => GetViewerPrefName("PrintScaling", NameToPrintScaling);
+        set => SetViewerPrefName("PrintScaling", value.HasValue ? PrintScalingToName(value.Value) : null);
+    }
+
+    /// <summary>Gets or sets <c>/ViewerPreferences /Duplex</c> — the paper-handling (duplex) option for printing.</summary>
+    public PdfDuplex? Duplex
+    {
+        get => GetViewerPrefName("Duplex", NameToDuplex);
+        set => SetViewerPrefName("Duplex", value.HasValue ? DuplexToName(value.Value) : null);
+    }
+
     // ── Private helpers ────────────────────────────────────────────────────
 
     private PdfDictionary? Catalog => _document.CatalogDictionary;
@@ -145,6 +191,23 @@ public sealed class PdfViewerSettings
         }
         PdfDictionary vp = GetViewerPrefsDict(create: true)!;
         vp[new PdfName(key)] = PdfBoolean.FromValue(value.Value);
+    }
+
+    private TEnum? GetViewerPrefName<TEnum>(string key, Func<string, TEnum?> parse) where TEnum : struct
+    {
+        PdfDictionary? vp = GetViewerPrefsDict(create: false);
+        return vp?.Get(new PdfName(key)) is PdfName n ? parse(n.Value) : null;
+    }
+
+    private void SetViewerPrefName(string key, string? name)
+    {
+        if (name is null)
+        {
+            GetViewerPrefsDict(create: false)?.Remove(new PdfName(key));
+            return;
+        }
+        PdfDictionary vp = GetViewerPrefsDict(create: true)!;
+        vp[new PdfName(key)] = new PdfName(name);
     }
 
     /// <summary>
@@ -209,5 +272,49 @@ public sealed class PdfViewerSettings
         "TwoPageLeft"    => PdfPageLayout.TwoPageLeft,
         "TwoPageRight"   => PdfPageLayout.TwoPageRight,
         _                => null
+    };
+
+    private static string DirectionToName(PdfReadingDirection d) => d switch
+    {
+        PdfReadingDirection.LeftToRight => "L2R",
+        PdfReadingDirection.RightToLeft => "R2L",
+        _                               => "L2R"
+    };
+
+    private static PdfReadingDirection? NameToDirection(string name) => name switch
+    {
+        "L2R" => PdfReadingDirection.LeftToRight,
+        "R2L" => PdfReadingDirection.RightToLeft,
+        _     => null
+    };
+
+    private static string PrintScalingToName(PdfPrintScaling p) => p switch
+    {
+        PdfPrintScaling.AppDefault => "AppDefault",
+        PdfPrintScaling.None       => "None",
+        _                          => "AppDefault"
+    };
+
+    private static PdfPrintScaling? NameToPrintScaling(string name) => name switch
+    {
+        "AppDefault" => PdfPrintScaling.AppDefault,
+        "None"       => PdfPrintScaling.None,
+        _            => null
+    };
+
+    private static string DuplexToName(PdfDuplex d) => d switch
+    {
+        PdfDuplex.Simplex             => "Simplex",
+        PdfDuplex.DuplexFlipShortEdge => "DuplexFlipShortEdge",
+        PdfDuplex.DuplexFlipLongEdge  => "DuplexFlipLongEdge",
+        _                             => "Simplex"
+    };
+
+    private static PdfDuplex? NameToDuplex(string name) => name switch
+    {
+        "Simplex"             => PdfDuplex.Simplex,
+        "DuplexFlipShortEdge" => PdfDuplex.DuplexFlipShortEdge,
+        "DuplexFlipLongEdge"  => PdfDuplex.DuplexFlipLongEdge,
+        _                     => null
     };
 }

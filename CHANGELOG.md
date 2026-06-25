@@ -18,6 +18,7 @@ API surface cleanup (additive, non-breaking) — targets 1.1.0.
 - **`PdfSaveOptions.Default`** — a new instance with the standard defaults, parallel to `PdfOptimizationOptions.Default`.
 - **Annotation read/remove on `PdfPageCollection`.** `GetAnnotations(int)` returns a read-only `PdfAnnotationInfo` snapshot (subtype, rect, contents) and `RemoveAnnotationAt(int, int)` removes one by index — the editing API was previously annotation-add-only.
 - **Navigation facade completeness.** `PdfNamedDestinations.Entries()` enumerates `(name, destination)` pairs (the facade previously enumerated names only); `PdfOutlineCollection.Insert(int, …)` inserts a top-level outline item at a specific position (it previously only appended).
+- **More `PdfViewerSettings` keys.** Added the commonly-used remaining `/ViewerPreferences` entries: `HideMenubar`, `HideWindowUI`, `NonFullScreenPageMode`, `Direction` (`PdfReadingDirection`), `PrintScaling` (`PdfPrintScaling`), and `Duplex` (`PdfDuplex`). Previously only four boolean keys were exposed.
 
 ### Fixed
 - **`PdfViewerSettings` boolean preferences can now be cleared.** Setting `HideToolbar` / `FitWindow` / `CenterWindow` / `DisplayDocTitle` to `null` now removes the preference (matching the `PageMode` / `PageLayout` setters). Previously a `null` assignment was silently ignored, so a preference could never be unset once written.
