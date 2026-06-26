@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Core project `PdfLibrary` must remain **SkiaSharp-free**: no `using SkiaSharp`, no SkiaSharp package reference. (Verify with the SkiaSharp-free check in Task A6.)
+- Core project `PdfLibrary` must remain **SkiaSharp-free**: no `using SkiaSharp`, no SkiaSharp package reference. (Verify with the SkiaSharp-free check in Task 6.)
 - Multi-target: code must compile under `net8.0;net9.0;net10.0`. `Directory.CreateTempSubdirectory()` (net6+), default interface methods (C# 8+), and `OperatingSystem.IsWindows()/IsLinux()/IsMacOS()` (net5+) are all available on these TFMs.
 - New public types live in namespace `PdfLibrary.Fonts`. New tests live in `PdfLibrary.Tests/Fonts/`, namespace `PdfLibrary.Tests.Fonts`.
 - xUnit conventions: `[Fact]`, `Assert.*`. Read the vendored fixture with `File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"))`.
@@ -30,7 +30,7 @@
 
 ---
 
-## Task A1: Extend `ISystemFontProvider` with `GetFontData`
+## Task 1: Extend `ISystemFontProvider` with `GetFontData`
 
 **Files:**
 - Modify: `PdfLibrary/Fonts/ISystemFontProvider.cs`
@@ -100,7 +100,7 @@ git commit -m "feat(fonts): add ISystemFontProvider.GetFontData (default null)"
 
 ---
 
-## Task A2: Standard-14 → substitute file-name mapping
+## Task 2: Standard-14 → substitute file-name mapping
 
 **Files:**
 - Create: `PdfLibrary/Fonts/Standard14Fonts.cs`
@@ -277,7 +277,7 @@ git commit -m "feat(fonts): map standard-14 BaseFont names to substitute file na
 
 ---
 
-## Task A3: Font-directory index
+## Task 3: Font-directory index
 
 **Files:**
 - Create: `PdfLibrary/Fonts/FontDirectoryIndex.cs`
@@ -413,14 +413,14 @@ git commit -m "feat(fonts): index font files by base-name across directories"
 
 ---
 
-## Task A4: `SystemFontLocator` — bytes for a BaseFont
+## Task 4: `SystemFontLocator` — bytes for a BaseFont
 
 **Files:**
 - Create: `PdfLibrary/Fonts/SystemFontLocator.cs`
-- Test: `PdfLibrary.Tests/Fonts/SystemFontLocatorTests.cs` (extend from Task A1)
+- Test: `PdfLibrary.Tests/Fonts/SystemFontLocatorTests.cs` (extend from Task 1)
 
 **Interfaces:**
-- Consumes: `Standard14Fonts.SubstituteFileBaseNames` (A2), `FontDirectoryIndex` (A3), `ISystemFontProvider.GetFontData` (A1).
+- Consumes: `Standard14Fonts.SubstituteFileBaseNames` (Task 2), `FontDirectoryIndex` (Task 3), `ISystemFontProvider.GetFontData` (Task 1).
 - Produces:
   - `SystemFontLocator(IEnumerable<string> directories)` — testable constructor taking explicit scan directories.
   - `byte[]? SystemFontLocator.GetFontData(string baseFontName)` — overrides the interface method; maps the name to candidates, finds the first present file, returns its bytes, or `null`.
@@ -473,7 +473,7 @@ Expected: FAIL — `SystemFontLocator` does not exist.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `PdfLibrary/Fonts/SystemFontLocator.cs` (the OS-default constructor is added in Task A5; for now only the explicit-directories constructor):
+Create `PdfLibrary/Fonts/SystemFontLocator.cs` (the OS-default constructor is added in Task 5; for now only the explicit-directories constructor):
 
 ```csharp
 namespace PdfLibrary.Fonts;
@@ -562,7 +562,7 @@ git commit -m "feat(fonts): SystemFontLocator returns substitute font bytes for 
 
 ---
 
-## Task A5: OS default font directories
+## Task 5: OS default font directories
 
 **Files:**
 - Create: `PdfLibrary/Fonts/SystemFontLocator.Directories.cs` (the `partial` companion)
@@ -667,7 +667,7 @@ git commit -m "feat(fonts): default SystemFontLocator scans platform font direct
 
 ---
 
-## Task A6: Full-suite + SkiaSharp-free verification
+## Task 6: Full-suite + SkiaSharp-free verification
 
 **Files:** none (verification only)
 
@@ -696,6 +696,6 @@ git commit -am "test(fonts): verify font subsystem; core remains SkiaSharp-free"
 
 ## Self-Review Notes
 
-- **Spec coverage:** implements the spec's "Fonts: locate installed substitutes" section — managed OS-dir scan (A3/A5), base-14 → candidate mapping (A2), font bytes via the provider (A1/A4). Bundled Symbol/ZapfDingbats fallback is deferred to the spec's optional fallback and is **not** in Plan A. The resolution order's "embedded → located substitute" is realized here for the "located" half; the "embedded" half lives in Plan B (the text pipeline that calls `GetFontData`).
+- **Spec coverage:** implements the spec's "Fonts: locate installed substitutes" section — managed OS-dir scan (Tasks 3/5), base-14 → candidate mapping (Task 2), font bytes via the provider (Tasks 1/4). Bundled Symbol/ZapfDingbats fallback is deferred to the spec's optional fallback and is **not** in Plan A. The resolution order's "embedded → located substitute" is realized here for the "located" half; the "embedded" half lives in Plan B (the text pipeline that calls `GetFontData`).
 - **No behavior change:** nothing in Plan A is wired into the render or build pipeline yet, so existing behavior and the 1233 tests are untouched until Plan B consumes `GetFontData`.
 - **Out of scope (Plan B):** parsing located bytes with FontParser, glyph→path conversion, and using the locator in the text pipeline.
