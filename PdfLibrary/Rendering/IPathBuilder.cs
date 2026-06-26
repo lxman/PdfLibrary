@@ -51,4 +51,10 @@ public interface IPathBuilder
     /// and convert to its native path representation.
     /// </summary>
     IReadOnlyList<PathSegment> Segments { get; }
+
+    /// <summary>
+    /// Returns a new path with every segment point transformed by <paramref name="matrix"/>.
+    /// The receiver is unchanged (so a cached path can be positioned without being mutated).
+    /// </summary>
+    IPathBuilder Transform(System.Numerics.Matrix3x2 matrix);
 }

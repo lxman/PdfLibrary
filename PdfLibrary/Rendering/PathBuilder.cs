@@ -1,3 +1,5 @@
+using System.Numerics;
+
 namespace PdfLibrary.Rendering;
 
 /// <summary>
@@ -70,6 +72,41 @@ public class PathBuilder : IPathBuilder
         clone._currentPoint = _currentPoint;
         clone._subpathStart = _subpathStart;
         return clone;
+    }
+
+    public IPathBuilder Transform(Matrix3x2 matrix)
+    {
+        var result = new PathBuilder();
+        foreach (PathSegment seg in _segments)
+        {
+            switch (seg)
+            {
+                case MoveToSegment m:
+                {
+                    Vector2 p = Vector2.Transform(new Vector2((float)m.X, (float)m.Y), matrix);
+                    result.MoveTo(p.X, p.Y);
+                    break;
+                }
+                case LineToSegment l:
+                {
+                    Vector2 p = Vector2.Transform(new Vector2((float)l.X, (float)l.Y), matrix);
+                    result.LineTo(p.X, p.Y);
+                    break;
+                }
+                case CurveToSegment c:
+                {
+                    Vector2 p1 = Vector2.Transform(new Vector2((float)c.X1, (float)c.Y1), matrix);
+                    Vector2 p2 = Vector2.Transform(new Vector2((float)c.X2, (float)c.Y2), matrix);
+                    Vector2 p3 = Vector2.Transform(new Vector2((float)c.X3, (float)c.Y3), matrix);
+                    result.CurveTo(p1.X, p1.Y, p2.X, p2.Y, p3.X, p3.Y);
+                    break;
+                }
+                case ClosePathSegment:
+                    result.ClosePath();
+                    break;
+            }
+        }
+        return result;
     }
 
     /// <summary>
