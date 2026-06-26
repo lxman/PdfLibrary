@@ -89,7 +89,7 @@ public class CoreTextRendererTests
     {
         // A page drawing non-embedded "Helvetica" text. With a provider that returns a real font
         // (PublicPixel) as the substitute, the core must emit FillPath per glyph via the substitute's
-        // outlines — not return false (there is no DrawText fallback for the geometry SPI).
+        // outlines — not return false (the geometry SPI has no text fallback).
         byte[] subst = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
 
         byte[] pdf = PdfDocumentBuilder.Create()
@@ -143,9 +143,6 @@ public class CoreTextRendererTests
         public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
             PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent) { }
         public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
-        public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state,
-            PdfFont? font, List<int>? charCodes = null) { }
-        public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font) => 0;
         public void DrawImage(PdfImage image, PdfGraphicsState state) { }
         public void SaveState() { }
         public void RestoreState() { }

@@ -11,7 +11,7 @@ namespace PdfLibrary.Rendering;
 /// to the render target — the SkiaSharp-free core text path. For embedded fonts the glyph comes
 /// from the font program; for non-embedded fonts a substitute font resolved via ISystemFontProvider
 /// is used instead. Returns false only when no rendering path is available (no embedded metrics AND
-/// no usable substitute), so the caller can fall back to the target's DrawText for that run.
+/// no usable substitute); returns false to indicate the run was not rendered.
 /// </summary>
 internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService glyphPaths, ISystemFontProvider fontProvider)
 {
@@ -76,7 +76,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         catch
         {
             // Setup failure (font parsing, glyph resolution): report not-handled so the
-            // caller can fall back to DrawText. Per-glyph emit failures are caught inside the loop.
+            // Setup failure: returns false. Per-glyph emit failures are caught inside the loop.
             return false;
         }
     }

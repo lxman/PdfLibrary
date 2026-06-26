@@ -3,7 +3,6 @@ using System.Numerics;
 using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
-using PdfLibrary.Fonts;
 using PdfLibrary.Rendering.SkiaSharp.Conversion;
 using PdfLibrary.Rendering.SkiaSharp.Rendering;
 using PdfLibrary.Rendering.SkiaSharp.State;
@@ -23,7 +22,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     private readonly CanvasStateManager _stateManager;
     private readonly SoftMaskManager _softMaskManager;
     private readonly PathRenderer _pathRenderer;
-    private readonly TextRenderer _textRenderer;
     private readonly ImageRenderer _imageRenderer;
     private readonly PdfDocument? _document;
     private double _pageWidth;
@@ -67,7 +65,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         _stateManager = new CanvasStateManager(_canvas);
         _softMaskManager = new SoftMaskManager(_canvas, () => ((float)_pageWidth * (float)_scale, (float)_pageHeight * (float)_scale));
         _pathRenderer = new PathRenderer(_canvas, () => _initialTransform, _surface, _scale);
-        _textRenderer = new TextRenderer(_canvas);
         _imageRenderer = new ImageRenderer(_canvas, document);
 
         // Clear to the background color
@@ -340,15 +337,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         if (EnablePerfTrace) { _perfSw.Stop(); _perfSoftMaskMs += _perfSw.ElapsedMilliseconds; _perfSoftMaskCount++; }
     }
 
-    // ==================== TEXT RENDERING ====================
-
-    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
-    {
-        if (EnablePerfTrace) _perfSw.Restart();
-        _textRenderer.DrawText(text, glyphWidths, state, font, charCodes);
-        if (EnablePerfTrace) { _perfSw.Stop(); _perfTextMs += _perfSw.ElapsedMilliseconds; _perfTextCount++; }
-    }
-
     // ==================== PATH OPERATIONS ====================
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
@@ -395,11 +383,6 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         _pathRenderer.SetClippingPath(path, state, evenOdd);
     }
 
-
-    public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font)
-    {
-        return _textRenderer.MeasureTextWidth(text, state, font);
-    }
 
     public void DrawImage(PdfImage image, PdfGraphicsState state)
     {

@@ -1,7 +1,6 @@
 using System.Numerics;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
-using PdfLibrary.Fonts;
 using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Tests.Rendering;
@@ -46,11 +45,6 @@ public class MockRenderTarget : IRenderTarget
     {
         Operations.Add($"FillPathWithTilingPattern: {GetPathDescription(path)}, EvenOdd={evenOdd}, PaintType={pattern.PaintType}, TilingType={pattern.TilingType}");
         // For testing, we don't actually render the pattern - just record the operation
-    }
-
-    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
-    {
-        Operations.Add($"DrawText: \"{text}\", Font={state.FontName}, Size={state.FontSize}, Color={GetColorDescription(state.FillColor, state.FillColorSpace)}");
     }
 
     public void DrawImage(PdfImage image, PdfGraphicsState state)
@@ -99,23 +93,6 @@ public class MockRenderTarget : IRenderTarget
     public (int width, int height, double scale) GetPageDimensions()
     {
         return (612, 792, 1.0); // Default letter size
-    }
-
-    public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font)
-    {
-        // For mock testing, return a simple estimate
-        if (string.IsNullOrEmpty(text))
-            return 0f;
-
-        // Simple character-based width estimate
-        float estimatedWidth = text.Length * (float)state.FontSize * 0.5f;
-
-        // Apply horizontal scaling
-        float tHs = (float)state.HorizontalScaling / 100f;
-        estimatedWidth *= tHs;
-
-        Operations.Add($"MeasureTextWidth: \"{text}\", Result={estimatedWidth:F2}");
-        return estimatedWidth;
     }
 
     private static string GetPathDescription(IPathBuilder path)

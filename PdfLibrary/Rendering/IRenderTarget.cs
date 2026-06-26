@@ -1,7 +1,6 @@
 using System.Numerics;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
-using PdfLibrary.Fonts;
 
 namespace PdfLibrary.Rendering;
 
@@ -97,28 +96,6 @@ public interface IRenderTarget
     void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd);
 
     // ==================== CONTENT OPERATIONS ====================
-
-    /// <summary>
-    /// Render text string with specified glyph widths.
-    /// </summary>
-    /// <param name="text">Decoded text string</param>
-    /// <param name="glyphWidths">Width of each glyph in text space</param>
-    /// <param name="state">Current graphics state (font, transform, colors)</param>
-    /// <param name="font">PDF font object for rendering glyphs</param>
-    /// <param name="charCodes">Original character codes from PDF (for glyph lookup in embedded fonts)</param>
-    void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null);
-
-    /// <summary>
-    /// Measures the width of text as it would be rendered with the system font.
-    /// Used by fixups to detect width mismatches between PDF metrics and system fonts.
-    /// This is particularly important for Base14 fonts where PDFs reference standard fonts
-    /// by name without embedding, and system substitutes may have different metrics.
-    /// </summary>
-    /// <param name="text">The text to measure</param>
-    /// <param name="state">Current graphics state containing font size and transform info</param>
-    /// <param name="font">PDF font object</param>
-    /// <returns>Width in user space units</returns>
-    float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font);
 
     /// <summary>
     /// Render an image (XObject).

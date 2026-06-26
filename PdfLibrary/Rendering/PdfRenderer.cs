@@ -883,7 +883,7 @@ internal class PdfRenderer : PdfContentProcessor
         }
 
         // Render the text: embedded fonts go through the core glyph pipeline; non-embedded
-        // fonts fall back to the target's DrawText (moved core-side in a later plan).
+        // fonts use the substitute font path in CoreTextRenderer.
         _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
@@ -1018,7 +1018,7 @@ internal class PdfRenderer : PdfContentProcessor
     
     private protected override void OnShowTextWithPositioning(PdfArray array)
     {
-        // TJ operator: combine all strings and adjustments into a single DrawText call
+        // TJ operator: combine all strings and adjustments into a single text rendering call
         if (_currentResources is null || CurrentState.FontName is null)
             return;
 
@@ -1140,7 +1140,7 @@ internal class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Text, $"  Applied leading adjustment: {leadingAdjustment:F6}");
         }
 
-        // Render all text in a single DrawText call
+        // Render all text
         if (combinedText.Length <= 0) return;
         var fullText = combinedText.ToString();
         string textPreview = fullText[..Math.Min(20, fullText.Length)];

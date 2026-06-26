@@ -3,7 +3,6 @@ using System.Runtime.InteropServices;
 using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
-using PdfLibrary.Fonts;
 using PdfLibrary.Rendering.SkiaSharp.Conversion;
 using SkiaSharp;
 
@@ -139,44 +138,6 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
         _canvas.ClipPath(skPath);
     }
 
-    public void DrawText(string text, List<double> glyphWidths, PdfGraphicsState state, PdfFont? font, List<int>? charCodes = null)
-    {
-        // For pattern content, use simple text rendering
-        if (string.IsNullOrEmpty(text)) return;
-
-        _canvas.Save();
-        try
-        {
-            // Apply text transformation
-            Matrix3x2 textMatrix = state.TextMatrix;
-            Matrix3x2 ctm = state.Ctm;
-            Matrix3x2 combined = textMatrix * ctm;
-
-            var skMatrix = new SKMatrix(
-                combined.M11, combined.M21, combined.M31,
-                combined.M12, combined.M22, combined.M32,
-                0, 0, 1);
-            _canvas.Concat(in skMatrix);
-
-            // Calculate font size
-            var effectiveSize = (float)(state.FontSize * Math.Sqrt(textMatrix.M21 * textMatrix.M21 + textMatrix.M22 * textMatrix.M22));
-            if (effectiveSize < 0.1f) effectiveSize = 12f;
-
-            using var paint = new SKPaint
-            {
-                Color = ColorConverter.ConvertColor(state.ResolvedFillColor, state.ResolvedFillColorSpace),
-                IsAntialias = true,
-            };
-            using var skFont = new SKFont(SKTypeface.Default, effectiveSize);
-
-            _canvas.DrawText(text, 0, 0, SKTextAlign.Left, skFont, paint);
-        }
-        finally
-        {
-            _canvas.Restore();
-        }
-    }
-
     public void DrawImage(PdfImage image, PdfGraphicsState state)
     {
         // Pattern images - CTM has ALREADY been applied via ApplyCtm() when processing
@@ -232,27 +193,6 @@ internal class SkiaSharpRenderTargetForPattern : IRenderTarget, IDisposable
     public (int width, int height, double scale) GetPageDimensions()
     {
         return ((int)_patternWidth, (int)_patternHeight, 1.0);
-    }
-
-    public float MeasureTextWidth(string text, PdfGraphicsState state, PdfFont font)
-    {
-        // For pattern content, text measurement is rarely needed
-        // Return a simple estimate based on character count
-        if (string.IsNullOrEmpty(text))
-            return 0f;
-
-        // Calculate effective font size (same as DrawText)
-        var textMatrixScaleY = (float)Math.Sqrt(state.TextMatrix.M21 * state.TextMatrix.M21 + state.TextMatrix.M22 * state.TextMatrix.M22);
-        float effectiveFontSize = (float)state.FontSize * textMatrixScaleY;
-
-        // Use the rough character width estimate (average character is ~0.5em)
-        float estimatedWidth = text.Length * effectiveFontSize * 0.5f;
-
-        // Apply horizontal scaling
-        float tHs = (float)state.HorizontalScaling / 100f;
-        estimatedWidth *= tHs;
-
-        return estimatedWidth;
     }
 
     public void Dispose() { }
