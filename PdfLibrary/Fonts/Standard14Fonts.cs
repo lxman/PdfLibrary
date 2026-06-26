@@ -6,7 +6,7 @@ namespace PdfLibrary.Fonts;
 /// preference: the OS-native metric clone first (Arial/Times New Roman/Courier New), then the
 /// common libre families (Liberation, URW/Nimbus, Arimo/Tinos/Cousine, DejaVu).
 /// </summary>
-public static class Standard14Fonts
+internal static class Standard14Fonts
 {
     private enum Family { Sans, Serif, Mono, Symbol, Dingbats }
 

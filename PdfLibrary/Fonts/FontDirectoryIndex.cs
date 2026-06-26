@@ -4,7 +4,7 @@ namespace PdfLibrary.Fonts;
 /// Indexes font files found in a set of directories, keyed by case-insensitive file base-name
 /// (no extension). Scanning is best-effort: missing or unreadable directories are skipped.
 /// </summary>
-public sealed class FontDirectoryIndex
+internal sealed class FontDirectoryIndex
 {
     private static readonly string[] Extensions = [".ttf", ".otf", ".ttc"];
     private readonly Dictionary<string, string> _byBaseName = new(StringComparer.OrdinalIgnoreCase);
@@ -36,6 +36,9 @@ public sealed class FontDirectoryIndex
             }
         }
     }
+
+    /// <summary>The distinct, case-insensitive set of indexed font file base-names.</summary>
+    public IReadOnlyCollection<string> BaseNames => _byBaseName.Keys;
 
     /// <summary>Full path of the indexed font whose file base-name matches, or null.</summary>
     public string? FindPath(string fileBaseName) =>

@@ -8,14 +8,12 @@ namespace PdfLibrary.Fonts;
 public sealed partial class SystemFontLocator : ISystemFontProvider
 {
     private readonly FontDirectoryIndex _index;
-    private readonly List<string> _baseNames;
 
     /// <summary>Create a locator that scans the given directories (used for testing).</summary>
     public SystemFontLocator(IEnumerable<string> directories)
     {
         string[] dirs = directories as string[] ?? directories.ToArray();
         _index = new FontDirectoryIndex(dirs);
-        _baseNames = EnumerateBaseNames(dirs);
     }
 
     /// <inheritdoc/>
@@ -32,10 +30,17 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     }
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> GetAvailableFontFamilies() =>
-        _baseNames.Distinct(StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
+    /// <remarks>
+    /// Returns installed font file base-names (e.g. "LiberationSans-Regular"),
+    /// not family display-names.
+    /// </remarks>
+    public IReadOnlyCollection<string> GetAvailableFontFamilies() => _index.BaseNames;
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <paramref name="familyName"/> must be a font file base-name
+    /// (e.g. "LiberationSans-Regular"), not a family display-name.
+    /// </remarks>
     public bool IsFontAvailable(string familyName) => _index.FindPath(familyName) is not null;
 
     /// <inheritdoc/>
@@ -48,24 +53,4 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
 
     /// <inheritdoc/>
     public void RefreshCache() { /* Index is built at construction; create a new locator to refresh. */ }
-
-    private static List<string> EnumerateBaseNames(IEnumerable<string> directories)
-    {
-        var names = new List<string>();
-        foreach (string dir in directories)
-        {
-            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            try
-            {
-                foreach (string f in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories))
-                {
-                    string ext = Path.GetExtension(f).ToLowerInvariant();
-                    if (ext is ".ttf" or ".otf" or ".ttc")
-                        names.Add(Path.GetFileNameWithoutExtension(f));
-                }
-            }
-            catch { /* skip unreadable dir */ }
-        }
-        return names;
-    }
 }
