@@ -884,8 +884,7 @@ internal class PdfRenderer : PdfContentProcessor
 
         // Render the text: embedded fonts go through the core glyph pipeline; non-embedded
         // fonts fall back to the target's DrawText (moved core-side in a later plan).
-        if (!_coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes))
-            _target.DrawText(textToRender, glyphWidths, CurrentState, font, charCodes);
+        _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
@@ -1177,8 +1176,8 @@ internal class PdfRenderer : PdfContentProcessor
                 PdfLogger.Log(LogCategory.Text, $"  WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
         }
 
-        if (!_coreText.Render(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes))
-            _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
+        var combined = combinedText.ToString();
+        _coreText.Render(combined, combinedWidths, CurrentState, font, combinedCharCodes);
 
         // Advance text position by total width
         double totalAdvance = combinedWidths.Sum();
