@@ -29,6 +29,7 @@
     <ItemGroup>
         <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj"/>
         <ProjectReference Include="..\PdfLibrary.Rendering.SkiaSharp\PdfLibrary.Rendering.SkiaSharp.csproj"/>
+        <ProjectReference Include="..\PdfLibrary.Rendering.Svg\PdfLibrary.Rendering.Svg.csproj"/>
         <ProjectReference Include="..\PdfLibrary.Integration\PdfLibrary.Integration.csproj" />
         <!-- Direct references: these tests use FontParser.Reader (BigEndianReaderTests) and
              JpegCodec (DctDecodeCmykTests) types directly. PdfLibrary now bundles them
