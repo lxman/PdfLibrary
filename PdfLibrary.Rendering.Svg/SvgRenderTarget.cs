@@ -16,6 +16,7 @@ public sealed class SvgRenderTarget : IRenderTarget
 {
     private readonly StringBuilder _sb = new();
     private int _clipDepth;                 // open <g clip-path> groups
+    private int _clipId;                    // monotonic counter for clipPath id="cN"
     private readonly Stack<int> _saveStack = new();
     private Matrix3x2 _currentCtm = Matrix3x2.Identity;
     private (int w, int h, double scale) _dims;
@@ -26,7 +27,7 @@ public sealed class SvgRenderTarget : IRenderTarget
         double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0)
     {
         CurrentPageNumber = pageNumber;
-        _clipDepth = 0; _saveStack.Clear(); _currentCtm = Matrix3x2.Identity;
+        _clipDepth = 0; _clipId = 0; _saveStack.Clear(); _currentCtm = Matrix3x2.Identity;
 
         double pw = (rotation is 90 or 270 ? height : width) * scale;
         double ph = (rotation is 90 or 270 ? width : height) * scale;
@@ -76,12 +77,47 @@ public sealed class SvgRenderTarget : IRenderTarget
     public void OnGraphicsStateChanged(PdfGraphicsState state) { }
     public (int width, int height, double scale) GetPageDimensions() => _dims;
 
-    // ---- stubs completed in Task 4 ----
-    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
-    public void DrawImage(PdfImage image, PdfGraphicsState state) { }
+    // ---- implemented in Task 4 ----
+    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        if (path.IsEmpty) return;
+        int id = ++_clipId;
+        string rule = evenOdd ? " clip-rule=\"evenodd\"" : "";
+        _sb.Append(F($"<clipPath id=\"c{id}\"><path d=\"{D(path)}\"{rule}/></clipPath>"))
+           .Append(F($"<g clip-path=\"url(#c{id})\">"));
+        _clipDepth++;
+    }
+
+    public void DrawImage(PdfImage image, PdfGraphicsState state)
+    {
+        // The image is drawn in a 1×1 unit square; flip Y within it (PDF image rows are top-first),
+        // then place by state.Ctm. The root <g> applies the page initial transform on top.
+        Matrix3x2 m = state.Ctm;
+        string xform = F($"matrix({m.M11},{m.M12},{m.M21},{m.M22},{m.M31},{m.M32}) translate(0,1) scale(1,-1)");
+
+        byte[] encoded = image.GetEncodedData();
+        bool isJpeg = encoded.Length > 3 && encoded[0] == 0xFF && encoded[1] == 0xD8 && encoded[2] == 0xFF;
+        if (isJpeg)
+        {
+            string b64 = Convert.ToBase64String(encoded);
+            _sb.Append(F($"<image transform=\"{xform}\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" "))
+               .Append(F($"href=\"data:image/jpeg;base64,{b64}\"/>"));
+        }
+        else
+        {
+            // Non-JPEG images need the PdfImage→RGBA + PNG path (deferred). Placeholder for now.
+            _sb.Append("<!-- non-JPEG image omitted (RGBA path deferred) -->")
+               .Append(F($"<rect transform=\"{xform}\" width=\"1\" height=\"1\" fill=\"#cccccc\" fill-opacity=\"0.3\"/>"));
+        }
+    }
+
     public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
         PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)
-        => FillPath(path, state, evenOdd); // approximate as solid fill (Task 4 adds a comment marker)
+    {
+        FillPath(path, state, evenOdd);
+        _sb.Append("<!-- tiling pattern approximated as solid fill -->");
+    }
+
     public void SaveState() => _saveStack.Push(_clipDepth);
     public void RestoreState()
     {
@@ -91,7 +127,10 @@ public sealed class SvgRenderTarget : IRenderTarget
             while (_clipDepth > target) { _sb.Append("</g>"); _clipDepth--; }
         }
     }
-    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent) { }
+
+    public void RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)
+        => _sb.Append(F($"<!-- soft mask '{maskSubtype}' not applied (deferred) -->"));
+
     public void ClearSoftMask() { }
 
     // ---- helpers ----
