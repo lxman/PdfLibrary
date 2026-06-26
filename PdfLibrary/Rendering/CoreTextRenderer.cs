@@ -52,7 +52,13 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
 
                 IPathBuilder glyphSpace =
                     glyphPaths.GetGlyphPath(metrics, glyphId, (float)state.FontSize, outline, resolvedGlyphName);
-                Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs);
+                // GlyphToUser positions the glyph in text-user space; * Ctm bakes the current
+                // transform into the path, exactly as regular paths are built (PdfRenderer
+                // transforms every point by Ctm) and as Type3 glyphs end with "* Ctm". FillPath
+                // applies ONLY the page initial-transform, never the Ctm — so without this, text
+                // inside a cm-transformed context (a Form XObject figure) loses the transform and
+                // collapses toward the origin.
+                Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs) * state.Ctm;
                 IPathBuilder userPath = glyphSpace.Transform(toUser);
 
                 EmitGlyph(userPath, state, toUser, applyBold);
@@ -109,7 +115,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         // Original SKRect(0, -emDashY-emDashHeight, emDashWidth, -emDashY) => x,y,w,h:
         rect.Rectangle(0, -emDashY - emDashHeight, emDashWidth, emDashHeight);
 
-        Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs);
+        Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs) * state.Ctm;
         IPathBuilder userPath = rect.Transform(toUser);
         target.FillPath(userPath, state, evenOdd: true);
     }

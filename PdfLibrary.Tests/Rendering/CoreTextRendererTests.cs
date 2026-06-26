@@ -38,10 +38,68 @@ public class CoreTextRendererTests
         });
     }
 
-    // Minimal recording target — captures FillPath; everything else is a no-op/stub.
+    [Fact]
+    public void Render_TextUnderTranslatingCtm_BakesCtmIntoGlyphPath()
+    {
+        // Regression guard. FillPath applies ONLY the page initial-transform, never the CTM —
+        // it expects the CTM already baked into the path coordinates (as PdfRenderer does for
+        // every regular path point, and as Type3 glyph matrices end with "* Ctm"). CoreTextRenderer
+        // must do the same, or text inside a cm-transformed context (a Form XObject figure) loses
+        // the transform and collapses toward the origin (the main.pdf page-5/8 label bug).
+        //
+        // main.pdf page 5 draws figure labels under a translating CTM. We assert the invariant
+        // directly: any glyph whose CTM carries a large Y-translation must emit a path that sits in
+        // that translated region (not near the origin). This is layout-independent.
+        string pdf = FindRepoFile("PDFs", "PDF Standards", "Compression", "JPEG", "main.pdf");
+        using PdfDocument doc = PdfDocument.Load(pdf);
+
+        var target = new RecordingRenderTarget();
+        doc.GetPage(4)!.Render(target); // page 5 (0-based index)
+
+        List<(IPathBuilder Path, bool EvenOdd, Matrix3x2 Ctm)> translated =
+            target.FillPaths.Where(f => f.Ctm.M32 > 200).ToList();
+
+        Assert.True(translated.Count > 0,
+            "expected CTM-translated text on main.pdf page 5 (the figure labels); none captured");
+
+        foreach ((IPathBuilder Path, bool EvenOdd, Matrix3x2 Ctm) f in translated)
+        {
+            double pathMaxY = MaxPathY(f.Path);
+            Assert.True(pathMaxY > f.Ctm.M32 * 0.5,
+                $"glyph path ignores its CTM translation: pathMaxY={pathMaxY:F1}, CTM.transY={f.Ctm.M32:F1}");
+        }
+    }
+
+    private static double MaxPathY(IPathBuilder p)
+    {
+        var max = double.NegativeInfinity;
+        foreach (PathSegment s in p.Segments)
+            max = s switch
+            {
+                MoveToSegment m => Math.Max(max, m.Y),
+                LineToSegment l => Math.Max(max, l.Y),
+                CurveToSegment c => Math.Max(max, Math.Max(c.Y1, Math.Max(c.Y2, c.Y3))),
+                _ => max
+            };
+        return max;
+    }
+
+    private static string FindRepoFile(params string[] parts)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            string candidate = Path.Combine([dir.FullName, .. parts]);
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException($"Could not locate {string.Join('/', parts)} above {AppContext.BaseDirectory}");
+    }
+
+    // Minimal recording target — captures FillPath (path + CTM); everything else is a no-op/stub.
     private sealed class RecordingRenderTarget : IRenderTarget
     {
-        public List<(IPathBuilder Path, bool EvenOdd)> FillPaths { get; } = [];
+        public List<(IPathBuilder Path, bool EvenOdd, Matrix3x2 Ctm)> FillPaths { get; } = [];
         public int CurrentPageNumber { get; private set; }
 
         public void BeginPage(int pageNumber, double width, double height, double scale = 1.0,
@@ -49,7 +107,7 @@ public class CoreTextRendererTests
         public void EndPage() { }
         public void Clear() { }
         public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
-            => FillPaths.Add((path.Clone(), evenOdd));
+            => FillPaths.Add((path.Clone(), evenOdd, state.Ctm));
         public void StrokePath(IPathBuilder path, PdfGraphicsState state) { }
         public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
         public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
