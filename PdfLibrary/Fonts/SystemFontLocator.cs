@@ -26,16 +26,17 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
             string? path = _index.FindPath(candidate);
             if (path is null) continue;
             try { return File.ReadAllBytes(path); }
-            catch { return null; }
+            catch { /* path exists but is unreadable — try the next candidate */ }
         }
         return null;
     }
 
     /// <inheritdoc/>
-    public IReadOnlyCollection<string> GetAvailableFontFamilies() => _baseNames;
+    public IReadOnlyCollection<string> GetAvailableFontFamilies() =>
+        _baseNames.Distinct(StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly();
 
     /// <inheritdoc/>
-    public bool IsFontAvailable(string familyName) => GetFontData(familyName) is not null;
+    public bool IsFontAvailable(string familyName) => _index.FindPath(familyName) is not null;
 
     /// <inheritdoc/>
     public string? FindFirstAvailable(IEnumerable<string> candidates)

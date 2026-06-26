@@ -53,4 +53,21 @@ public class SystemFontLocatorTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void IsFontAvailable_TrueForIndexedFile_FalseOtherwise()
+    {
+        string dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"),
+                      Path.Combine(dir, "NimbusSans-Regular.ttf"));
+
+            var locator = new SystemFontLocator([dir]);
+
+            Assert.True(locator.IsFontAvailable("NimbusSans-Regular"));
+            Assert.False(locator.IsFontAvailable("NoSuchFontFile"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
