@@ -131,7 +131,7 @@ public partial class SkiaRenderer : UserControl
             }
 
             // Draw the pre-rendered image
-            canvas.DrawImage(_renderedImage, 0, 0);
+            canvas.DrawImage(_renderedImage, 0, 0, SKSamplingOptions.Default);
 
             // DEBUG: Also save the surface after drawing to see if DrawImage corrupts it
             if (_renderedImage.Width == 650 && _renderedImage.Height == 650)
