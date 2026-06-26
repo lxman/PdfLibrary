@@ -1,4 +1,6 @@
+using FontParser.Tables.Cff;
 using PdfLibrary.Fonts.Embedded;
+using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;
 
 namespace PdfLibrary.Rendering;
 
@@ -10,7 +12,7 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 internal static class GlyphOutlineToPath
 {
-    public static IPathBuilder FromTrueType(GlyphOutline outline, float fontSize, ushort unitsPerEm)
+    internal static IPathBuilder FromTrueType(PdfLibrary.Fonts.Embedded.GlyphOutline outline, float fontSize, ushort unitsPerEm)
     {
         if (outline is null) throw new ArgumentNullException(nameof(outline));
         if (unitsPerEm == 0) throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
@@ -22,6 +24,47 @@ internal static class GlyphOutlineToPath
         {
             if (contour.Points.Count == 0) continue;
             ProcessContour(pb, contour, scale);
+        }
+
+        return pb;
+    }
+
+    internal static IPathBuilder FromCff(CffGlyphOutline outline, float fontSize, ushort unitsPerEm)
+    {
+        if (outline is null) throw new ArgumentNullException(nameof(outline));
+        if (unitsPerEm == 0) throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
+
+        var pb = new PathBuilder();
+        float scale = fontSize / unitsPerEm;
+
+        foreach (PathCommand command in outline.Commands)
+        {
+            switch (command)
+            {
+                case MoveToCommand m:
+                {
+                    (double x, double y) = ScalePoint(m.Point.X, m.Point.Y, scale);
+                    pb.MoveTo(x, y);
+                    break;
+                }
+                case LineToCommand l:
+                {
+                    (double x, double y) = ScalePoint(l.Point.X, l.Point.Y, scale);
+                    pb.LineTo(x, y);
+                    break;
+                }
+                case CubicBezierCommand c:
+                {
+                    (double c1x, double c1y) = ScalePoint(c.Control1.X, c.Control1.Y, scale);
+                    (double c2x, double c2y) = ScalePoint(c.Control2.X, c.Control2.Y, scale);
+                    (double ex, double ey) = ScalePoint(c.EndPoint.X, c.EndPoint.Y, scale);
+                    pb.CurveTo(c1x, c1y, c2x, c2y, ex, ey);
+                    break;
+                }
+                case ClosePathCommand:
+                    pb.ClosePath();
+                    break;
+            }
         }
 
         return pb;

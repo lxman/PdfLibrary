@@ -1,3 +1,4 @@
+using FontParser.Tables.Cff;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Rendering;
 
@@ -17,7 +18,7 @@ public class GlyphOutlineToPathTests
             new ContourPoint(100, 0, onCurve: true),
             new ContourPoint(50, 100, onCurve: true),
         ]);
-        var outline = new GlyphOutline(0, [contour], Metrics());
+        var outline = new PdfLibrary.Fonts.Embedded.GlyphOutline(0, [contour], Metrics());
 
         IPathBuilder path = GlyphOutlineToPath.FromTrueType(outline, fontSize: 100, unitsPerEm: 100);
         IReadOnlyList<PathSegment> s = path.Segments;
@@ -41,7 +42,7 @@ public class GlyphOutlineToPathTests
             new ContourPoint(50, 100, onCurve: false),  // Q (control)
             new ContourPoint(100, 0, onCurve: true),    // P1
         ]);
-        var outline = new GlyphOutline(0, [contour], Metrics());
+        var outline = new PdfLibrary.Fonts.Embedded.GlyphOutline(0, [contour], Metrics());
 
         IPathBuilder path = GlyphOutlineToPath.FromTrueType(outline, fontSize: 100, unitsPerEm: 100);
         IReadOnlyList<PathSegment> s = path.Segments;
@@ -54,5 +55,28 @@ public class GlyphOutlineToPathTests
         Assert.Equal(-66.667, c.Y2, 2);
         Assert.Equal(100, c.X3, 3);
         Assert.Equal(0, c.Y3, 3);
+    }
+
+    [Fact]
+    public void Cff_CubicCommands_ScaleAndYFlip()
+    {
+        var outline = new FontParser.Tables.Cff.GlyphOutline();
+        outline.Commands.Add(new MoveToCommand(0f, 0f));
+        outline.Commands.Add(new CubicBezierCommand(
+            new System.Drawing.PointF(10f, 100f),
+            new System.Drawing.PointF(90f, 100f),
+            new System.Drawing.PointF(100f, 0f)));
+        outline.Commands.Add(new ClosePathCommand());
+
+        IPathBuilder path = GlyphOutlineToPath.FromCff(outline, fontSize: 100, unitsPerEm: 100);
+        IReadOnlyList<PathSegment> s = path.Segments;
+
+        Assert.IsType<MoveToSegment>(s[0]);
+        CurveToSegment c = Assert.IsType<CurveToSegment>(s[1]);
+        // scale 1, Y flipped
+        Assert.Equal(10, c.X1, 3);  Assert.Equal(-100, c.Y1, 3);
+        Assert.Equal(90, c.X2, 3);  Assert.Equal(-100, c.Y2, 3);
+        Assert.Equal(100, c.X3, 3); Assert.Equal(0, c.Y3, 3);
+        Assert.IsType<ClosePathSegment>(s[^1]);
     }
 }
