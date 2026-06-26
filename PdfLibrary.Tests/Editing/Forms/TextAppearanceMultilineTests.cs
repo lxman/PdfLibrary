@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Editing.Forms;
@@ -14,13 +15,13 @@ public class TextAppearanceMultilineTests
 
     private static string ApStreamText(PdfDocument doc, PdfTextField field)
     {
-        var widget = field.Widgets[0];
-        var apRaw = widget.Get(new PdfName("AP"));
+        PdfDictionary widget = field.Widgets[0];
+        PdfObject? apRaw = widget.Get(new PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfDictionary;
         Assert.NotNull(ap);
 
-        var nRaw = ap!.Get(new PdfName("N"));
-        var nObj = FormFieldTree.Resolve(doc, nRaw);
+        PdfObject? nRaw = ap!.Get(new PdfName("N"));
+        PdfObject? nObj = FormFieldTree.Resolve(doc, nRaw);
         Assert.NotNull(nObj);
 
         var stream = nObj as PdfStream;
@@ -53,7 +54,7 @@ public class TextAppearanceMultilineTests
         {
             using (PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf)))
             {
-                var edit = doc.Edit();
+                PdfDocumentEditor edit = doc.Edit();
                 var field = (PdfTextField)edit.Forms["ml"]!;
                 field.Value = longValue;
                 edit.Save(outPath);
@@ -107,7 +108,7 @@ public class TextAppearanceMultilineTests
         {
             using (PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf)))
             {
-                var edit = doc.Edit();
+                PdfDocumentEditor edit = doc.Edit();
                 var field = (PdfTextField)edit.Forms["comb"]!;
                 field.Value = combValue;
                 edit.Save(outPath);
@@ -125,7 +126,7 @@ public class TextAppearanceMultilineTests
             Assert.Equal(3, tjCount);
 
             // Extract Tm x positions from "1 0 0 1 <x> <y> Tm" lines
-            var tmMatches = Regex.Matches(ap, @"1 0 0 1 ([\d.]+) ([\d.]+) Tm");
+            MatchCollection tmMatches = Regex.Matches(ap, @"1 0 0 1 ([\d.]+) ([\d.]+) Tm");
             Assert.Equal(3, tmMatches.Count);
 
             double[] xPositions = tmMatches
@@ -175,7 +176,7 @@ public class TextAppearanceMultilineTests
             rectH: rectH);
 
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-        var edit = doc.Edit();
+        PdfDocumentEditor edit = doc.Edit();
         var field = (PdfTextField)edit.Forms["comb0"]!;
         field.Value = "AB";
 

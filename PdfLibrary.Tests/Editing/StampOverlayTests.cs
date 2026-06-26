@@ -16,14 +16,14 @@ public class StampOverlayTests
     public void Stamp_TextOverlay_RoundTrips_BothTextsExtract()
     {
         using var ms = new MemoryStream();
-        using (var doc = PdfDocument.Load(new MemoryStream(OnePage())))
+        using (PdfDocument doc = PdfDocument.Load(new MemoryStream(OnePage())))
         {
             PdfDocumentEditor edit = doc.Edit();
             edit.Pages.Stamp(0, s => s.Content(c => c.AddText("STAMPED", 50, 400, "Helvetica", 24)));
             edit.Save(ms);
         }
         ms.Position = 0;
-        using var reloaded = PdfDocument.Load(ms);
+        using PdfDocument reloaded = PdfDocument.Load(ms);
         Assert.Equal(1, reloaded.PageCount);
         string text = reloaded.GetPage(0)!.ExtractText();
         Assert.Contains("BODYTEXT", text);
@@ -33,7 +33,7 @@ public class StampOverlayTests
     [Fact]
     public void Stamp_Opacity_RegistersExtGState()
     {
-        using var doc = PdfDocument.Load(new MemoryStream(OnePage()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(OnePage()));
         PdfDocumentEditor edit = doc.Edit();
         edit.Pages.Stamp(0, s => s.Content(c => c.AddText("X", 10, 10, "Helvetica", 8)).Opacity(0.25));
 
@@ -45,7 +45,7 @@ public class StampOverlayTests
     [Fact]
     public void Stamp_OutOfRange_Throws()
     {
-        using var doc = PdfDocument.Load(new MemoryStream(OnePage()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(OnePage()));
         PdfDocumentEditor edit = doc.Edit();
         Assert.Throws<ArgumentOutOfRangeException>(() => edit.Pages.Stamp(5, s => s.Content(c => { })));
     }
@@ -55,7 +55,7 @@ public class StampOverlayTests
     {
         // Load and materialize the doc under invariant culture (parser uses double.Parse without culture guard).
         // We then switch culture for the stamp+save step to verify the cm/builder fix holds.
-        using var doc = PdfDocument.Load(new MemoryStream(OnePage()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(OnePage()));
         PdfDocumentEditor edit = doc.Edit();
 
         CultureInfo previous = CultureInfo.CurrentCulture;
@@ -72,14 +72,14 @@ public class StampOverlayTests
         }
 
         ms.Position = 0;
-        using var reloaded = PdfDocument.Load(ms);
+        using PdfDocument reloaded = PdfDocument.Load(ms);
         Assert.Contains("KULTUR", reloaded.GetPage(0)!.ExtractText());
     }
 
     [Fact]
     public void Stamp_DefaultSize_WithIndirectMediaBox_ProducesNonZeroBBox()
     {
-        using var doc = PdfDocument.Load(new MemoryStream(OnePage()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(OnePage()));
         PdfDocumentEditor edit = doc.Edit();
         PdfDictionary page = PageTreeOps.PageDicts(doc)[0];
         // Rewrite MediaBox to use indirect width/height entries.

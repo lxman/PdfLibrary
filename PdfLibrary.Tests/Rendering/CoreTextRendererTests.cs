@@ -72,7 +72,7 @@ public class CoreTextRendererTests
 
     private static double MaxPathY(IPathBuilder p)
     {
-        var max = double.NegativeInfinity;
+        double max = double.NegativeInfinity;
         foreach (PathSegment s in p.Segments)
             max = s switch
             {

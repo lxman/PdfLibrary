@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Editing.Stamping;
 using PdfLibrary.Structure;
 
@@ -107,8 +108,8 @@ internal static class FormFlattener
     private static List<PdfDictionary> GetAllPageDicts(PdfDocument doc)
     {
         var result = new List<PdfDictionary>();
-        var pages = doc.GetPages();
-        foreach (var page in pages)
+        List<PdfPage> pages = doc.GetPages();
+        foreach (PdfPage page in pages)
             result.Add(page.Dictionary);
         return result;
     }

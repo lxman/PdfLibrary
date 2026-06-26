@@ -35,14 +35,14 @@ public class PageAnnotationTests
     public void AddNote_AppearsInAnnotsWithContents()
     {
         using var ms = new MemoryStream();
-        using (var doc = PdfDocument.Load(new MemoryStream(TwoPages())))
+        using (PdfDocument doc = PdfDocument.Load(new MemoryStream(TwoPages())))
         {
             PdfDocumentEditor edit = doc.Edit();
             edit.Pages.AddNote(0, 300, 700, "hello note");
             edit.Save(ms);
         }
         ms.Position = 0;
-        using var reloaded = PdfDocument.Load(ms);
+        using PdfDocument reloaded = PdfDocument.Load(ms);
         PdfDictionary note = Assert.Single(Annots(reloaded, 0));
         Assert.Equal("Text", Subtype(note));
         Assert.Equal("hello note", ((PdfString)note[new PdfName("Contents")]).Value);
@@ -51,7 +51,7 @@ public class PageAnnotationTests
     [Fact]
     public void AddLink_InternalDest_ResolvesToTargetPage()
     {
-        using var doc = PdfDocument.Load(new MemoryStream(TwoPages()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(TwoPages()));
         PdfDocumentEditor edit = doc.Edit();
         edit.Pages.AddLink(0, new PdfRect(100, 680, 200, 700), targetPageIndex: 1);
 
@@ -66,7 +66,7 @@ public class PageAnnotationTests
     [Fact]
     public void AddExternalLink_HasUriAction()
     {
-        using var doc = PdfDocument.Load(new MemoryStream(TwoPages()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(TwoPages()));
         PdfDocumentEditor edit = doc.Edit();
         edit.Pages.AddExternalLink(0, new PdfRect(100, 680, 200, 700), "https://example.com");
 
@@ -79,7 +79,7 @@ public class PageAnnotationTests
     [Fact]
     public void AddHighlight_HasQuadPointsAndColor()
     {
-        using var doc = PdfDocument.Load(new MemoryStream(TwoPages()));
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(TwoPages()));
         PdfDocumentEditor edit = doc.Edit();
         edit.Pages.AddHighlight(0, new PdfRect(100, 690, 160, 702));
 

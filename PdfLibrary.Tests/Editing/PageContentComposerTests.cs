@@ -12,7 +12,7 @@ public class PageContentComposerTests
 {
     private static (PdfDocument doc, PdfDictionary page) LoadOnePage()
     {
-        var doc = PdfDocument.Load(new MemoryStream(
+        PdfDocument doc = PdfDocument.Load(new MemoryStream(
             PdfDocumentBuilder.Create().AddPage(p => p.AddText("body", 100, 700)).ToByteArray()));
         doc.Edit(); // materialize + flatten so /Resources and /Contents are normalized onto the page
         return (doc, PageTreeOps.PageDicts(doc)[0]);

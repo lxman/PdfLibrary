@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Editing.Forms;
@@ -14,13 +15,13 @@ public class MultilineNewlineTests
 
     private static string ApStreamText(PdfDocument doc, PdfTextField field)
     {
-        var widget = field.Widgets[0];
-        var apRaw = widget.Get(new PdfName("AP"));
+        PdfDictionary widget = field.Widgets[0];
+        PdfObject? apRaw = widget.Get(new PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfDictionary;
         Assert.NotNull(ap);
 
-        var nRaw = ap!.Get(new PdfName("N"));
-        var nObj = FormFieldTree.Resolve(doc, nRaw);
+        PdfObject? nRaw = ap!.Get(new PdfName("N"));
+        PdfObject? nObj = FormFieldTree.Resolve(doc, nRaw);
         Assert.NotNull(nObj);
 
         var stream = nObj as PdfStream;
@@ -60,7 +61,7 @@ public class MultilineNewlineTests
         {
             using (PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf)))
             {
-                var edit = doc.Edit();
+                PdfDocumentEditor edit = doc.Edit();
                 ((PdfTextField)edit.Forms["ml"]!).Value = value;
                 edit.Save(outPath);
             }
@@ -113,7 +114,7 @@ public class MultilineNewlineTests
         {
             using (PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf)))
             {
-                var edit = doc.Edit();
+                PdfDocumentEditor edit = doc.Edit();
                 ((PdfTextField)edit.Forms["ml2"]!).Value = value;
                 edit.Save(outPath);
             }

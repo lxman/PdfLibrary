@@ -1,5 +1,7 @@
 using System.Text;
+using PdfLibrary.Builder;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Editing;
 using PdfLibrary.Editing.Forms;
 using PdfLibrary.Structure;
@@ -17,7 +19,7 @@ public class FlattenTests
     private static string DecodePageContents(byte[] pdfBytes)
     {
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdfBytes));
-        var pages = doc.GetPages();
+        List<PdfPage> pages = doc.GetPages();
         Assert.NotEmpty(pages);
         PdfDictionary page = pages[0].Dictionary;
 
@@ -73,7 +75,7 @@ public class FlattenTests
     private static int CountWidgetsForField(byte[] pdfBytes, string fieldName)
     {
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdfBytes));
-        var pages = doc.GetPages();
+        List<PdfPage> pages = doc.GetPages();
         if (pages.Count == 0) return 0;
         PdfDictionary page = pages[0].Dictionary;
 
@@ -229,7 +231,7 @@ public class FlattenTests
     {
         byte[] originalPdf;
         {
-            var builder = PdfLibrary.Builder.PdfDocumentBuilder.Create()
+            PdfDocumentBuilder builder = PdfLibrary.Builder.PdfDocumentBuilder.Create()
                 .WithAcroForm(f => f.SetNeedAppearances(true))
                 .AddPage(p =>
                 {

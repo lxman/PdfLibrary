@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using PdfLibrary.Core;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Editing.Forms;
 using PdfLibrary.Structure;
@@ -19,15 +21,15 @@ public class TextAppearanceTests
     {
         // Widgets is always populated; for a single-widget field Widgets[0] is the widget dict.
         // The field dict may itself be the widget (no-Kids case) — in both cases field.Widgets[0] works.
-        var widget = field.Widgets[0];
+        PdfDictionary widget = field.Widgets[0];
 
         // /AP /N → stream
-        var apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
+        PdfObject? apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfLibrary.Core.Primitives.PdfDictionary;
         Assert.NotNull(ap);
 
-        var nRaw = ap!.Get(new PdfLibrary.Core.Primitives.PdfName("N"));
-        var nObj = FormFieldTree.Resolve(doc, nRaw);
+        PdfObject? nRaw = ap!.Get(new PdfLibrary.Core.Primitives.PdfName("N"));
+        PdfObject? nObj = FormFieldTree.Resolve(doc, nRaw);
         Assert.NotNull(nObj);
 
         // nObj should be a PdfIndirectReference resolved stream
@@ -45,14 +47,14 @@ public class TextAppearanceTests
     /// </summary>
     private static bool NeedAppearances(PdfDocument doc)
     {
-        var catalog = doc.CatalogDictionary;
+        PdfDictionary? catalog = doc.CatalogDictionary;
         if (catalog is null) return false;
 
-        var acroRaw = catalog.Get(new PdfLibrary.Core.Primitives.PdfName("AcroForm"));
+        PdfObject? acroRaw = catalog.Get(new PdfLibrary.Core.Primitives.PdfName("AcroForm"));
         var acro = FormFieldTree.Resolve(doc, acroRaw) as PdfLibrary.Core.Primitives.PdfDictionary;
         if (acro is null) return false;
 
-        var naRaw = acro.Get(new PdfLibrary.Core.Primitives.PdfName("NeedAppearances"));
+        PdfObject? naRaw = acro.Get(new PdfLibrary.Core.Primitives.PdfName("NeedAppearances"));
         if (naRaw is PdfLibrary.Core.Primitives.PdfBoolean b) return (bool)b;
         return false;
     }
@@ -68,7 +70,7 @@ public class TextAppearanceTests
         {
             using (PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf)))
             {
-                var edit = doc.Edit();
+                PdfDocumentEditor edit = doc.Edit();
                 ((PdfTextField)edit.Forms["name"]!).Value = "Hello";
                 edit.Save(outPath);
             }
@@ -113,7 +115,7 @@ public class TextAppearanceTests
         byte[] pdf = FormTestDocs.WithTextField("txt");
 
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-        var edit = doc.Edit();
+        PdfDocumentEditor edit = doc.Edit();
         var field = (PdfTextField)edit.Forms["txt"]!;
 
         // Force /DA size to 0 by overwriting it on the field dict
@@ -140,7 +142,7 @@ public class TextAppearanceTests
 
             byte[] pdf = FormTestDocs.WithTextField("inv");
             using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-            var edit = doc.Edit();
+            PdfDocumentEditor edit = doc.Edit();
             var field = (PdfTextField)edit.Forms["inv"]!;
             // Force a fractional font size to exercise number formatting
             field.Dict[new PdfLibrary.Core.Primitives.PdfName("DA")] =
@@ -166,7 +168,7 @@ public class TextAppearanceTests
     private static double GetTmX(byte[] pdf, string fieldName, int q)
     {
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-        var edit = doc.Edit();
+        PdfDocumentEditor edit = doc.Edit();
         var field = (PdfTextField)edit.Forms[fieldName]!;
 
         // Set the desired quadding directly
@@ -183,7 +185,7 @@ public class TextAppearanceTests
     private static double ExtractTmX(string apContent)
     {
         // Pattern: "1 0 0 1 <tx> <ty> Tm"
-        var m = Regex.Match(apContent, @"1 0 0 1 ([\d.]+) ([\d.]+) Tm");
+        Match m = Regex.Match(apContent, @"1 0 0 1 ([\d.]+) ([\d.]+) Tm");
         Assert.True(m.Success, $"Could not find Tm in AP stream:\n{apContent}");
         return double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
     }
@@ -191,7 +193,7 @@ public class TextAppearanceTests
     /// <summary>Parses the "/<name> <size> Tf" line and returns the size.</summary>
     private static double ExtractTfSize(string apContent)
     {
-        var m = Regex.Match(apContent, @"/\w+ ([\d.]+) Tf");
+        Match m = Regex.Match(apContent, @"/\w+ ([\d.]+) Tf");
         Assert.True(m.Success, $"Could not find Tf in AP stream:\n{apContent}");
         return double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
     }

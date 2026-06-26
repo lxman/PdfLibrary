@@ -252,7 +252,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_Constructor_FromString()
     {
-        var pdfString = PdfString.FromByteLiteral("Hello");
+        PdfString pdfString = PdfString.FromByteLiteral("Hello");
         Assert.Equal("Hello", pdfString.Value);
     }
 
@@ -273,21 +273,21 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Literal_SimpleText()
     {
-        var pdfString = PdfString.FromByteLiteral("Hello World");
+        PdfString pdfString = PdfString.FromByteLiteral("Hello World");
         Assert.Equal("(Hello World)", pdfString.ToPdfString());
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesParentheses()
     {
-        var pdfString = PdfString.FromByteLiteral("(Hello)");
+        PdfString pdfString = PdfString.FromByteLiteral("(Hello)");
         Assert.Equal(@"(\(Hello\))", pdfString.ToPdfString());
     }
 
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesBackslash()
     {
-        var pdfString = PdfString.FromByteLiteral(@"C:\path\file");
+        PdfString pdfString = PdfString.FromByteLiteral(@"C:\path\file");
         string result = pdfString.ToPdfString();
         Assert.StartsWith("(", result);
         Assert.EndsWith(")", result);
@@ -297,7 +297,7 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_ToPdfString_Literal_EscapesSpecialChars()
     {
-        var pdfString = PdfString.FromByteLiteral("Line1\nLine2\tTab\rReturn");
+        PdfString pdfString = PdfString.FromByteLiteral("Line1\nLine2\tTab\rReturn");
         string result = pdfString.ToPdfString();
         Assert.Contains(@"\n", result);
         Assert.Contains(@"\t", result);
@@ -335,9 +335,9 @@ public class CorePrimitivesTests
     [Fact]
     public void PdfString_Equals_ComparesBytes()
     {
-        var str1 = PdfString.FromByteLiteral("Hello");
-        var str2 = PdfString.FromByteLiteral("Hello");
-        var str3 = PdfString.FromByteLiteral("World");
+        PdfString str1 = PdfString.FromByteLiteral("Hello");
+        PdfString str2 = PdfString.FromByteLiteral("Hello");
+        PdfString str3 = PdfString.FromByteLiteral("World");
 
         Assert.True(str1.Equals(str2));
         Assert.False(str1.Equals(str3));

@@ -54,9 +54,9 @@ public class Standard14FontsTests
     public void TextFamilies_IncludeMacOsLiteral_BeforeDejaVuFallback()
     {
         // ToList() because SubstituteFileBaseNames returns IReadOnlyList<string>, which has no IndexOf.
-        var helv = Standard14Fonts.SubstituteFileBaseNames("Helvetica").ToList();
-        var times = Standard14Fonts.SubstituteFileBaseNames("Times-Bold").ToList();
-        var cour = Standard14Fonts.SubstituteFileBaseNames("Courier-Oblique").ToList();
+        List<string> helv = Standard14Fonts.SubstituteFileBaseNames("Helvetica").ToList();
+        List<string> times = Standard14Fonts.SubstituteFileBaseNames("Times-Bold").ToList();
+        List<string> cour = Standard14Fonts.SubstituteFileBaseNames("Courier-Oblique").ToList();
 
         Assert.True(helv.IndexOf("Helvetica") >= 0 && helv.IndexOf("Helvetica") < helv.IndexOf("DejaVuSans"));
         Assert.True(times.IndexOf("Times") >= 0 && times.IndexOf("Times") < times.IndexOf("DejaVuSerif-Bold"));

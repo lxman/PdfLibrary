@@ -1,3 +1,4 @@
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Editing.Forms;
@@ -22,12 +23,12 @@ public class CheckboxApGenTests
     private static PdfDictionary? GetApNDict(PdfDocument doc, PdfButtonField field)
     {
         if (field.Widgets.Count == 0) return null;
-        var widget = field.Widgets[0];
+        PdfDictionary widget = field.Widgets[0];
 
-        var apRaw = widget.Get(new PdfName("AP"));
+        PdfObject? apRaw = widget.Get(new PdfName("AP"));
         if (FormFieldTree.Resolve(doc, apRaw) is not PdfDictionary ap) return null;
 
-        var nRaw = ap.Get(new PdfName("N"));
+        PdfObject? nRaw = ap.Get(new PdfName("N"));
         return FormFieldTree.Resolve(doc, nRaw) as PdfDictionary;
     }
 
@@ -39,10 +40,10 @@ public class CheckboxApGenTests
     /// </summary>
     private static long ApNObjectNumber(PdfDocument doc, PdfButtonField field)
     {
-        var nDict = GetApNDict(doc, field);
+        PdfDictionary? nDict = GetApNDict(doc, field);
         if (nDict is null) return -1;
 
-        foreach (var kvp in nDict)
+        foreach (KeyValuePair<PdfName, PdfObject> kvp in nDict)
         {
             if (kvp.Key.Value != "Off" && kvp.Value is PdfIndirectReference ir)
                 return ir.ObjectNumber;
@@ -62,7 +63,7 @@ public class CheckboxApGenTests
         {
             using (PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf)))
             {
-                var edit = doc.Edit();
+                PdfDocumentEditor edit = doc.Edit();
                 var field = (PdfButtonField)edit.Forms["agree"]!;
 
                 // Before Check() — no AP should exist
@@ -74,13 +75,13 @@ public class CheckboxApGenTests
                 Assert.True(field.IsChecked);
 
                 // (b) /AP /N must now exist with an on-state key and /Off
-                var nDict = GetApNDict(doc, field);
+                PdfDictionary? nDict = GetApNDict(doc, field);
                 Assert.NotNull(nDict);
 
                 // Must have an "Off" key
                 bool hasOff = false;
                 bool hasOnState = false;
-                foreach (var kvp in nDict!)
+                foreach (KeyValuePair<PdfName, PdfObject> kvp in nDict!)
                 {
                     if (kvp.Key.Value == "Off") hasOff = true;
                     else hasOnState = true;
@@ -93,12 +94,12 @@ public class CheckboxApGenTests
 
             // Reload and verify persisted
             using PdfDocument re = PdfDocument.Load(outPath);
-            var reEdit = re.Edit();
+            PdfDocumentEditor reEdit = re.Edit();
             var reField = (PdfButtonField)reEdit.Forms["agree"]!;
 
             Assert.True(reField.IsChecked, "IsChecked must survive save/reload.");
 
-            var reNDict = GetApNDict(re, reField);
+            PdfDictionary? reNDict = GetApNDict(re, reField);
             Assert.NotNull(reNDict);
         }
         finally
@@ -114,11 +115,11 @@ public class CheckboxApGenTests
         byte[] pdf = FormTestDocs.WithCheckboxWithAp("box");
 
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-        var edit = doc.Edit();
+        PdfDocumentEditor edit = doc.Edit();
         var field = (PdfButtonField)edit.Forms["box"]!;
 
         // Confirm /AP /N exists before Check()
-        var nDictBefore = GetApNDict(doc, field);
+        PdfDictionary? nDictBefore = GetApNDict(doc, field);
         Assert.NotNull(nDictBefore);
 
         // Record the /AP /N object number
@@ -139,11 +140,11 @@ public class CheckboxApGenTests
         byte[] pdf = FormTestDocs.WithCheckboxNoAp("agree2");
 
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-        var edit = doc.Edit();
+        PdfDocumentEditor edit = doc.Edit();
         var field = (PdfButtonField)edit.Forms["agree2"]!;
 
         // Should not throw
-        var ex = Record.Exception(() => field.Uncheck());
+        Exception? ex = Record.Exception(() => field.Uncheck());
         Assert.Null(ex);
         Assert.False(field.IsChecked);
     }

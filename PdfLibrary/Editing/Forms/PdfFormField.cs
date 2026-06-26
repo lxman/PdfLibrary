@@ -229,14 +229,14 @@ public sealed class PdfChoiceField : PdfFormField
             _selectedIndices = value;
 
             // Write /I as ascending sorted array
-            var sorted = value.OrderBy(i => i).ToList();
+            List<int> sorted = value.OrderBy(i => i).ToList();
             var iArr = new PdfArray();
             foreach (int idx in sorted)
                 iArr.Add(new PdfInteger(idx));
             Dict[new PdfName("I")] = iArr;
 
             // Write /V from the export values at the selected indices
-            var exports = sorted.Select(idx => Options[idx].Export).ToList();
+            List<string> exports = sorted.Select(idx => Options[idx].Export).ToList();
             if (exports.Count == 0)
             {
                 Dict[new PdfName("V")] = PdfString.FromText(string.Empty);

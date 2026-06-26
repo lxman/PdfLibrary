@@ -452,7 +452,7 @@ internal static class FieldAppearanceGenerator
         if (field.SelectedValues.Count > 0)
         {
             string export = field.SelectedValues[0];
-            var found = field.Options.FirstOrDefault(o => o.Export == export);
+            (string Export, string Display) found = field.Options.FirstOrDefault(o => o.Export == export);
             displayText = found != default ? found.Display : export;
         }
 

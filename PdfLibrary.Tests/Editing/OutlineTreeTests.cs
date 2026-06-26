@@ -66,7 +66,7 @@ public class OutlineTreeTests
     [Fact]
     public void Build_ReadsTopLevelNodes()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
         Assert.Equal(2, nodes.Count);
         Assert.Equal("A", ((PdfString)nodes[0].Dict[new PdfName("Title")]).Value);
@@ -77,7 +77,7 @@ public class OutlineTreeTests
     [Fact]
     public void Build_ReadsChildren()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
         Assert.Equal(2, nodes[0].Children.Count); // A has A1 and A2
         Assert.Equal(1, nodes[1].Children.Count); // B has B1
@@ -87,7 +87,7 @@ public class OutlineTreeTests
     [Fact]
     public void Build_IsOpen_TrueForPositiveCount()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
         // Node A is open (positive /Count or missing /Count means open)
         Assert.True(nodes[0].IsOpen);
@@ -99,7 +99,7 @@ public class OutlineTreeTests
     {
         // Build a minimal doc, then manually set a negative /Count on a node
         // to simulate a closed outline item
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
         // node B was created with IsOpen=false. The writer should have written negative /Count.
         // Verify Build reads it as closed.
@@ -112,12 +112,12 @@ public class OutlineTreeTests
     [Fact]
     public void Rewire_SetsFirstAndLast()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
 
         // Create a fake parent ref for testing
         var parentRef = new PdfIndirectReference(99, 0);
-        var (first, last, count) = OutlineTree.Rewire(parentRef, nodes);
+        (PdfObject? first, PdfObject? last, int count) = OutlineTree.Rewire(parentRef, nodes);
 
         Assert.Equal(nodes[0].Ref, first);
         Assert.Equal(nodes[1].Ref, last);
@@ -127,7 +127,7 @@ public class OutlineTreeTests
     [Fact]
     public void Rewire_SetsPrevNext()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
 
         var parentRef = new PdfIndirectReference(99, 0);
@@ -148,7 +148,7 @@ public class OutlineTreeTests
     [Fact]
     public void Rewire_OpenNode_WritesPositiveCount()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
 
         var parentRef = new PdfIndirectReference(99, 0);
@@ -164,7 +164,7 @@ public class OutlineTreeTests
     [Fact]
     public void Rewire_ClosedNode_WritesNegativeCount()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
 
         var parentRef = new PdfIndirectReference(99, 0);
@@ -204,14 +204,14 @@ public class OutlineTreeTests
     [Fact]
     public void Rewire_VisibleCount_ExcludesClosedSubtree()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
 
         // The outline root /Count should only count OPEN descendants.
         // A is open with 2 children (A1, A2), B is closed with 1 child (B1).
         // Total visible = A + A1 + A2 + B = 4 (B1 is hidden by B's closed state)
         var parentRef = new PdfIndirectReference(99, 0);
-        var (_, _, totalCount) = OutlineTree.Rewire(parentRef, nodes);
+        (_, _, int totalCount) = OutlineTree.Rewire(parentRef, nodes);
         Assert.Equal(4, totalCount); // A, A1, A2, B (B1 excluded)
         doc.Dispose();
     }
@@ -219,7 +219,7 @@ public class OutlineTreeTests
     [Fact]
     public void BuildRewire_Idempotent()
     {
-        var (doc, firstRef) = DocWithOutline();
+        (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         var parentRef = new PdfIndirectReference(99, 0);
 
         // First pass
@@ -228,7 +228,7 @@ public class OutlineTreeTests
 
         // Second pass on the same in-memory tree
         List<OutlineNode> nodes2 = OutlineTree.Build(doc, firstRef);
-        var (_, _, count2) = OutlineTree.Rewire(parentRef, nodes2);
+        (_, _, int count2) = OutlineTree.Rewire(parentRef, nodes2);
 
         Assert.Equal(nodes1.Count, nodes2.Count);
         Assert.Equal(4, count2); // same visible count

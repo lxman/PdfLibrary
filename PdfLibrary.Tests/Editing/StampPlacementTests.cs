@@ -32,7 +32,7 @@ public class StampPlacementTests
     [Fact]
     public void Tiled_ReturnsGridCoveringThePage()
     {
-        var ms = StampPlacement.Tiled(100).ComputeMatrices(300, 200, 50, 50);
+        IReadOnlyList<double[]> ms = StampPlacement.Tiled(100).ComputeMatrices(300, 200, 50, 50);
         Assert.Equal(6, ms.Count);
     }
 

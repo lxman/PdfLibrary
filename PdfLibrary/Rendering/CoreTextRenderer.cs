@@ -28,7 +28,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
                 return RenderWithSubstitute(text, glyphWidths, state, font);
 
             bool applyBold = ShouldApplyFauxBold(font);
-            var tHs = (float)state.HorizontalScaling / 100f;
+            float tHs = (float)state.HorizontalScaling / 100f;
             double currentX = 0;
             int loopCount = charCodes?.Count ?? text.Length;
 
@@ -89,7 +89,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
 
         if (state.RenderingMode is 3 or 7) return true;  // invisible — no glyphs needed
 
-        var tHs = (float)state.HorizontalScaling / 100f;
+        float tHs = (float)state.HorizontalScaling / 100f;
         bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;
         double currentX = 0;
 
@@ -174,9 +174,9 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
     {
         // Em dash fallback (port of RenderEmDashFallback): a rectangle in glyph space, positioned
         // through the same glyph->user matrix (which applies the Y-flip).
-        var emDashY = (float)state.FontSize * 0.35f;
-        var emDashHeight = (float)state.FontSize * 0.06f;
-        var emDashWidth = (float)glyphWidth * (float)state.FontSize;
+        float emDashY = (float)state.FontSize * 0.35f;
+        float emDashHeight = (float)state.FontSize * 0.06f;
+        float emDashWidth = (float)glyphWidth * (float)state.FontSize;
 
         var rect = new PathBuilder();
         // Original SKRect(0, -emDashY-emDashHeight, emDashWidth, -emDashY) => x,y,w,h:

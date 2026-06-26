@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+using PdfLibrary.Core;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Editing.Forms;
 using PdfLibrary.Structure;
@@ -14,13 +16,13 @@ public class FormIntegrationTests
 
     private static string ApStreamText(PdfDocument doc, PdfTextField field)
     {
-        var widget = field.Widgets[0];
-        var apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
+        PdfDictionary widget = field.Widgets[0];
+        PdfObject? apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfLibrary.Core.Primitives.PdfDictionary;
         Assert.NotNull(ap);
 
-        var nRaw = ap!.Get(new PdfLibrary.Core.Primitives.PdfName("N"));
-        var nObj = FormFieldTree.Resolve(doc, nRaw);
+        PdfObject? nRaw = ap!.Get(new PdfLibrary.Core.Primitives.PdfName("N"));
+        PdfObject? nObj = FormFieldTree.Resolve(doc, nRaw);
         Assert.NotNull(nObj);
 
         var stream = nObj as PdfLibrary.Core.Primitives.PdfStream;
@@ -33,13 +35,13 @@ public class FormIntegrationTests
 
     private static string ApStreamText(PdfDocument doc, PdfChoiceField field)
     {
-        var widget = field.Widgets[0];
-        var apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
+        PdfDictionary widget = field.Widgets[0];
+        PdfObject? apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfLibrary.Core.Primitives.PdfDictionary;
         Assert.NotNull(ap);
 
-        var nRaw = ap!.Get(new PdfLibrary.Core.Primitives.PdfName("N"));
-        var nObj = FormFieldTree.Resolve(doc, nRaw);
+        PdfObject? nRaw = ap!.Get(new PdfLibrary.Core.Primitives.PdfName("N"));
+        PdfObject? nObj = FormFieldTree.Resolve(doc, nRaw);
         Assert.NotNull(nObj);
 
         var stream = nObj as PdfLibrary.Core.Primitives.PdfStream;

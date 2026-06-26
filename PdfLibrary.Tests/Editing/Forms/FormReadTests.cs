@@ -23,18 +23,18 @@ public class FormReadTests
     [Fact]
     public void Reads_Checkbox_Radio_Choice()
     {
-        using var cb = PdfDocument.Load(new MemoryStream(FormTestDocs.WithCheckbox("agree", true)));
+        using PdfDocument cb = PdfDocument.Load(new MemoryStream(FormTestDocs.WithCheckbox("agree", true)));
         var c = (PdfButtonField)cb.Edit().Forms["agree"]!;
         Assert.Equal(ButtonKind.Checkbox, c.Kind);
         Assert.True(c.IsChecked);
 
-        using var rb = PdfDocument.Load(new MemoryStream(FormTestDocs.WithRadioGroup("color", new[]{"red","blue"}, "red")));
+        using PdfDocument rb = PdfDocument.Load(new MemoryStream(FormTestDocs.WithRadioGroup("color", new[]{"red","blue"}, "red")));
         var radio = (PdfButtonField)rb.Edit().Forms["color"]!;
         Assert.Equal(ButtonKind.Radio, radio.Kind);
         Assert.Equal("red", radio.SelectedOption);
         Assert.Equal(new[]{"red","blue"}, radio.Options);
 
-        using var ch = PdfDocument.Load(new MemoryStream(FormTestDocs.WithChoice("city",
+        using PdfDocument ch = PdfDocument.Load(new MemoryStream(FormTestDocs.WithChoice("city",
             new[]{("NYC","New York"),("LA","Los Angeles")}, combo:true, selected:new[]{"NYC"})));
         var choice = (PdfChoiceField)ch.Edit().Forms["city"]!;
         Assert.True(choice.IsCombo);

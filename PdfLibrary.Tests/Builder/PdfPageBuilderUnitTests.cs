@@ -11,7 +11,7 @@ public class PdfPageBuilderUnitTests
     [Fact]
     public void AddText_FontOverload_AppliesUnitConversion()
     {
-        var page = new PdfPageBuilder(PdfPageSize.Letter).WithInches();
+        PdfPageBuilder page = new PdfPageBuilder(PdfPageSize.Letter).WithInches();
 
         page.AddText("hi", 1.0, 1.0, "Helvetica", 12);
 
@@ -24,7 +24,7 @@ public class PdfPageBuilderUnitTests
     [Fact]
     public void AddLine_DoubleOverload_AppliesUnitConversion()
     {
-        var page = new PdfPageBuilder(PdfPageSize.Letter).WithInches();
+        PdfPageBuilder page = new PdfPageBuilder(PdfPageSize.Letter).WithInches();
 
         page.AddLine(1, 1, 2, 2);
 

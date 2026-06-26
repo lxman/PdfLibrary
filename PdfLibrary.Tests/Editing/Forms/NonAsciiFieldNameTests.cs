@@ -97,7 +97,7 @@ public class NonAsciiFieldNameTests
         byte[] pdf = WithNonAsciiTextField(fieldName, "x");
 
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
-        var forms = doc.Edit().Forms;
+        PdfFormFields forms = doc.Edit().Forms;
 
         PdfFormField? f = forms[fieldName];
         Assert.NotNull(f);

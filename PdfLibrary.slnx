@@ -2,8 +2,6 @@
   <Folder Name="/Docs/">
     <File Path="CHANGELOG.md" />
     <File Path="Docs/Architecture.md" />
-    <File Path="Docs/FluentApi.md" />
-    <File Path="Docs/GettingStarted.md" />
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>

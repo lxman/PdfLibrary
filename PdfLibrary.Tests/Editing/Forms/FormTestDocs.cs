@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Builder.FormField;
 using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Tests.Editing.Forms;
@@ -15,11 +16,11 @@ public static class FormTestDocs
 
     public static byte[] WithTextField(string name, string? value = null)
     {
-        var builder = PdfDocumentBuilder.Create()
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
             .WithAcroForm(f => f.SetNeedAppearances(true))
             .AddPage(p =>
             {
-                var tf = p.AddTextField(name, 72, 700, 300, 20);
+                PdfTextFieldBuilder tf = p.AddTextField(name, 72, 700, 300, 20);
                 if (value is not null)
                     tf.Value(value);
             });
@@ -32,7 +33,7 @@ public static class FormTestDocs
             .WithAcroForm(f => f.SetNeedAppearances(true))
             .AddPage(p =>
             {
-                var cb = p.AddCheckbox(name, 72, 700, 14);
+                PdfCheckboxBuilder cb = p.AddCheckbox(name, 72, 700, 14);
                 if (checkedOn) cb.Checked(true);
             })
             .ToByteArray();
@@ -51,7 +52,7 @@ public static class FormTestDocs
                 .AddPage(p =>
                 {
                     // The builder's AddDropdown always writes /Ff with Combo flag.
-                    var dd = p.AddDropdown(name, 72, 700, 200, 20);
+                    PdfDropdownBuilder dd = p.AddDropdown(name, 72, 700, 200, 20);
                     foreach ((string export, string display) in opts)
                         dd.AddOption(export, display);
                     if (selected is { Length: > 0 })
@@ -282,7 +283,7 @@ public static class FormTestDocs
             $"<< /Type /Catalog /Pages 1 0 R /AcroForm {acroFormObj} 0 R >>");
 
         // 3: Page (minimal)
-        var widgetRefs = string.Join(" ", Enumerable.Range(widgetBase, widgetCount).Select(i => $"{i} 0 R"));
+        string widgetRefs = string.Join(" ", Enumerable.Range(widgetBase, widgetCount).Select(i => $"{i} 0 R"));
         WriteObj(3,
             $"<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Annots [{widgetRefs}] >>");
 

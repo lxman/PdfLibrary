@@ -28,7 +28,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_XYZ_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.At(0, 10.5, 700.0, 1.25);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
 
@@ -46,7 +46,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_XYZ_NullCoords_UsesNull()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.ToPage(0);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(5, arr.Count);
@@ -59,7 +59,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_Fit_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.FitPage(0);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(2, arr.Count);
@@ -70,7 +70,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitH_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.FitWidth(0, 700.0);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(3, arr.Count);
@@ -82,7 +82,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitH_NullTop_UsesNull()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.FitWidth(0, null);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(3, arr.Count);
@@ -93,7 +93,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitV_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.FitHeight(0, 50.0);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(3, arr.Count);
@@ -105,7 +105,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitB_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = new() { PageIndex = 0, Type = PdfDestinationType.FitB };
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(2, arr.Count);
@@ -116,7 +116,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitBH_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = new() { PageIndex = 0, Type = PdfDestinationType.FitBH, Top = 300.0 };
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(3, arr.Count);
@@ -128,7 +128,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitBV_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = new() { PageIndex = 0, Type = PdfDestinationType.FitBV, Left = 100.0 };
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(3, arr.Count);
@@ -140,7 +140,7 @@ public class DestinationCodecTests
     [Fact]
     public void Encode_FitR_ProducesCorrectArray()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.FitRect(0, 10.0, 20.0, 200.0, 400.0);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         Assert.Equal(6, arr.Count);
@@ -155,7 +155,7 @@ public class DestinationCodecTests
     [Fact]
     public void Decode_XYZ_ReturnsCorrectDestination()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination src = PdfDestination.At(0, 10.5, 700.0, 1.25);
         PdfArray arr = DestinationCodec.Encode(src, p0);
         PdfDestination? dec = DestinationCodec.Decode(doc, arr);
@@ -171,7 +171,7 @@ public class DestinationCodecTests
     [Fact]
     public void Decode_XYZ_NullCoords_ReturnsNullCoords()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination src = PdfDestination.ToPage(0);
         PdfArray arr = DestinationCodec.Encode(src, p0);
         PdfDestination? dec = DestinationCodec.Decode(doc, arr);
@@ -185,7 +185,7 @@ public class DestinationCodecTests
     [Fact]
     public void Decode_Page1_ResolvesCorrectPageIndex()
     {
-        var (doc, _, p1) = BuildDoc();
+        (PdfDocument doc, _, PdfIndirectReference p1) = BuildDoc();
         PdfDestination src = PdfDestination.FitPage(1);
         PdfArray arr = DestinationCodec.Encode(src, p1);
         PdfDestination? dec = DestinationCodec.Decode(doc, arr);
@@ -197,7 +197,7 @@ public class DestinationCodecTests
     [Fact]
     public void Decode_UnresolvablePage_ReturnsNull()
     {
-        var (doc, _, _) = BuildDoc();
+        (PdfDocument doc, _, _) = BuildDoc();
         // array with bogus page ref
         var bogusRef = new PdfIndirectReference(99999, 0);
         var arr = new PdfArray(bogusRef, new PdfName("Fit"));
@@ -209,7 +209,7 @@ public class DestinationCodecTests
     [Fact]
     public void Decode_Fit_ProducesCorrectDestination()
     {
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination src = PdfDestination.FitPage(0);
         PdfDestination? dec = DestinationCodec.Decode(doc, DestinationCodec.Encode(src, p0));
         Assert.NotNull(dec);
@@ -221,7 +221,7 @@ public class DestinationCodecTests
     public void Encode_CoordsUseInvariantCulture()
     {
         // Spot-check: encode with a coord that would differ in de-DE (comma vs. dot)
-        var (doc, p0, _) = BuildDoc();
+        (PdfDocument doc, PdfIndirectReference p0, _) = BuildDoc();
         PdfDestination dest = PdfDestination.FitWidth(0, 700.5);
         PdfArray arr = DestinationCodec.Encode(dest, p0);
         // The array contains PdfReal objects — their ToPdfString() must use '.' not ','
