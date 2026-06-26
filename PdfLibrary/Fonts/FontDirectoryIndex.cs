@@ -16,26 +16,23 @@ public sealed class FontDirectoryIndex
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
                 continue;
 
-            IEnumerable<string> files;
             try
             {
-                files = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories);
+                foreach (string file in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories))
+                {
+                    string ext = Path.GetExtension(file);
+                    if (Array.IndexOf(Extensions, ext.ToLowerInvariant()) < 0)
+                        continue;
+
+                    string baseName = Path.GetFileNameWithoutExtension(file);
+                    // First writer wins, so earlier directories take precedence.
+                    _byBaseName.TryAdd(baseName, file);
+                }
             }
             catch
             {
-                // Permission or IO error on a directory — skip it.
+                // Permission or IO error during recursive traversal — skip the rest of this directory.
                 continue;
-            }
-
-            foreach (string file in files)
-            {
-                string ext = Path.GetExtension(file);
-                if (Array.IndexOf(Extensions, ext.ToLowerInvariant()) < 0)
-                    continue;
-
-                string baseName = Path.GetFileNameWithoutExtension(file);
-                // First writer wins, so earlier directories take precedence.
-                _byBaseName.TryAdd(baseName, file);
             }
         }
     }

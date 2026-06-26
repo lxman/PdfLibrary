@@ -41,4 +41,22 @@ public class FontDirectoryIndexTests
         var index = new FontDirectoryIndex([Path.Combine(Path.GetTempPath(), "does-not-exist-" + Guid.NewGuid())]);
         Assert.Null(index.FindPath("anything"));
     }
+
+    [Fact]
+    public void FindPath_FindsFont_InSubdirectory()
+    {
+        string dir = Directory.CreateTempSubdirectory().FullName;
+        try
+        {
+            string sub = Path.Combine(dir, "sub");
+            Directory.CreateDirectory(sub);
+            string target = Path.Combine(sub, "NimbusSans-Regular.ttf");
+            File.Copy(FixtureBytesPath, target);
+
+            var index = new FontDirectoryIndex([dir]);
+
+            Assert.Equal(target, index.FindPath("NimbusSans-Regular"));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
