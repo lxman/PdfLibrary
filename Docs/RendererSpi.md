@@ -291,7 +291,7 @@ For non-JPEG images a `PdfImage → RGBA8888` helper is required (see §8 for cu
 - `SaveState`/`RestoreState` track clip depth via a stack so dangling groups are unwound on restore.
 - `DrawImage` embeds JPEG images as base64 data URIs with a `translate(0,1) scale(1,-1)` unit-square Y-flip.
 - `ApplyCtm` stores `ctm` in a field for potential use by `DrawImage`; the actual CTM is also readable from `state.Ctm`.
-- `FillPathWithTilingPattern`, `RenderSoftMask`, and `PaintShading`/`FillPathWithShadingPattern` are stubbed with comments (see §8).
+- `FillPathWithTilingPattern` and `RenderSoftMask` are stubbed with inline SVG comments; `PaintShading` and `FillPathWithShadingPattern` are not overridden and inherit the interface default no-op (see §8).
 
 ### Usage
 
