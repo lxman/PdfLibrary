@@ -72,6 +72,16 @@ Moves into the core (the internal `PdfRenderer` / a new internal core `TextPipel
 - **Extend `ISystemFontProvider`** to optionally supply **font-program bytes** for a family (today it returns only family *names*). The core parses provider-supplied bytes with FontParser for better matches when available. SkiaSharp becomes *one optional implementation* (SKTypeface → bytes); a consumer with no provider still renders correctly from the bundled substitutes.
 - **Resolution order** for non-embedded glyphs: embedded program (if any) → provider bytes (if wired) → bundled substitute (always available).
 
+### Interaction: forms & appearance generation
+
+Form filling is **unaffected** by this redesign. Verified: nothing under `Editing/` references `IRenderTarget`, and `FieldAppearanceGenerator` measures text via the core `PdfFontMetrics.MeasureText(…, "Helvetica", …)`, **not** the `IRenderTarget.MeasureTextWidth` being removed. Filling = write `/V` + generate `/AP` appearance streams + (optional) flatten — pure model editing, decoupled from the renderer.
+
+Rendering a *filled* form is just rendering its `/AP` Widget-appearance content streams through the normal content→target pipeline; under the new SPI their text flattens to glyph paths like any other content.
+
+**Net positive:** the default form-field font is Helvetica — a standard-14, non-embedded font, exactly the case the bundled substitutes cover. Filled-form text therefore renders from the bundled metric-compatible substitute (deterministic, offline) rather than a system font.
+
+**Constraint:** the bundled substitutes must be metric-compatible with the AFM widths `PdfFontMetrics` reports for the standard-14, so the positions baked into `/AP` at fill time match the glyph advances used at render time. (Already implied by "metric-compatible"; called out because forms depend on it.)
+
 ### 4. SkiaSharp package → thin adapter
 
 `SkiaSharpRenderTarget` shrinks to: `PathSegment` → `SKPath` (via `SKPathBuilder`), decoded pixels → `SKImage`, clip / state / blend / soft-mask. Its text + glyph code is **deleted** (now core-side). `GlyphToSKPathConverter`, the Skia `TextRenderer` glyph logic, `SystemFontResolver`/`SkiaFontProvider` (re-expressed as an `ISystemFontProvider` byte source) shrink or disappear. The package becomes a *reference adapter*, not a renderer.
