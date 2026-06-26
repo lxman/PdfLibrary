@@ -454,6 +454,10 @@ Build/run `PdfLibrary.Wpf.Viewer` and open a few **embedded-font** PDFs. Embedde
 - Remove `DrawText`/`MeasureTextWidth` from `IRenderTarget`; delete the SkiaSharp `TextRenderer` + `GlyphToSKPathConverter`; update `SkiaSharpRenderTargetForPattern`. (`MeasureTextWidth` has zero callers.)
 - Add CFF and Type1 font fixtures (B3a flagged: `GlyphPathService`'s CFF/Type1 branches are currently only reached transitively).
 
+### POST-MERGE FIX — CTM baking (commit 8429607)
+
+A user-reported viewer bug (main.pdf pages 5/8: figure labels rendered at the bottom) revealed that `CoreTextRenderer` baked the text matrix but not the CTM. **`FillPath` applies ONLY the page initial-transform, never the CTM — it expects the CTM already baked into the path coordinates** (regular paths bake it via `Vector2.Transform(point, Ctm)`; Type3 glyph matrices end `* Ctm`). Fix: `GlyphToUser(...) * state.Ctm` for the glyph + em-dash paths. **B3c's non-embedded fallback path MUST bake `* state.Ctm` the same way.** Regression test: `CoreTextRendererTests.Render_TextUnderTranslatingCtm_BakesCtmIntoGlyphPath`.
+
 ### Carryover from B3b's final review (none blocked the merge; address while consolidating the text path)
 
 - **Restore the faux-bold minimum-device-width floor (the one genuine fidelity gap).** The original `RenderGlyph` (TextRenderer.cs:881-892) floors the synthetic-bold stroke at 0.5 device px (`minGlyphWidth = 0.5 / combinedScale`) so it stays visible when rendered small. `CoreTextRenderer.EmitFauxBold` computes `FontSize * 0.04 * scaleU` (correct nominal width) but has NO floor — because the floor needs the full glyph→device scale, which includes the page render scale the core doesn't currently have. Corpus-invisible (no ForceBold-non-bold-embedded-small case). Fix when the device/page scale is threaded core-side (likely during the fallback consolidation).
