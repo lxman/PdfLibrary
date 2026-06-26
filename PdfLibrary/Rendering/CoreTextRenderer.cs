@@ -1,0 +1,204 @@
+using System.Numerics;
+using PdfLibrary.Content;
+using PdfLibrary.Fonts;
+using PdfLibrary.Fonts.Embedded;
+
+namespace PdfLibrary.Rendering;
+
+/// <summary>
+/// Renders embedded-font text by resolving each glyph to a path and emitting FillPath/StrokePath
+/// to the render target — the SkiaSharp-free core replacement for the Skia TextRenderer's embedded
+/// path. Returns false from Render when the font has no valid embedded metrics so the caller can
+/// fall back to the (still Skia-side) DrawText path for non-embedded fonts.
+/// </summary>
+internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService glyphPaths)
+{
+    public bool Render(string text, List<double> glyphWidths, PdfGraphicsState state,
+        PdfFont? font, List<int>? charCodes)
+    {
+        if (font is null) return false;
+        try
+        {
+            EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
+            if (metrics is not { IsValid: true }) return false;
+
+            bool applyBold = ShouldApplyFauxBold(font);
+            var tHs = (float)state.HorizontalScaling / 100f;
+            double currentX = 0;
+            int loopCount = charCodes?.Count ?? text.Length;
+
+            for (var i = 0; i < loopCount; i++)
+            {
+                ushort charCode = charCodes is not null && i < charCodes.Count
+                    ? (ushort)charCodes[i]
+                    : text[i];
+
+                ushort glyphId = ResolveGlyphId(metrics, font, charCode, out string? resolvedGlyphName);
+
+                if (glyphId == 0) { Advance(ref currentX, glyphWidths, i, state); continue; }
+
+                GlyphOutline? outline = metrics.IsType1Font && resolvedGlyphName is not null
+                    ? metrics.GetGlyphOutlineByName(resolvedGlyphName)
+                    : metrics.GetGlyphOutline(glyphId);
+
+                if (outline is null)
+                {
+                    if (charCode == 151 && i < glyphWidths.Count && glyphWidths[i] > 0.1)
+                        RenderEmDash(glyphWidths[i], state, currentX, tHs);
+                    Advance(ref currentX, glyphWidths, i, state);
+                    continue;
+                }
+                if (outline.IsEmpty) { Advance(ref currentX, glyphWidths, i, state); continue; }
+
+                IPathBuilder glyphSpace =
+                    glyphPaths.GetGlyphPath(metrics, glyphId, (float)state.FontSize, outline, resolvedGlyphName);
+                Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs);
+                IPathBuilder userPath = glyphSpace.Transform(toUser);
+
+                EmitGlyph(userPath, state, toUser, applyBold);
+                Advance(ref currentX, glyphWidths, i, state);
+            }
+
+            return true;
+        }
+        catch
+        {
+            // Any failure: report not-handled so the caller falls back to DrawText.
+            return false;
+        }
+    }
+
+    private void EmitGlyph(IPathBuilder userPath, PdfGraphicsState state, Matrix3x2 toUser, bool applyBold)
+    {
+        int rm = state.RenderingMode;
+        bool fill = rm is 0 or 2 or 4 or 6;
+        bool stroke = rm is 1 or 2 or 5 or 6;
+        bool invisible = rm is 3 or 7;
+        if (invisible) return;
+
+        if (fill) target.FillPath(userPath, state, evenOdd: true);
+
+        if (stroke)
+        {
+            target.StrokePath(userPath, state);
+        }
+        else if (applyBold && fill)
+        {
+            // Synthetic bold: stroke the fill outline with the FILL color, ~4% em in user space.
+            double scaleU = Math.Sqrt(Math.Abs(toUser.M11 * toUser.M22 - toUser.M12 * toUser.M21));
+            double boldWidthUser = state.FontSize * 0.04 * scaleU;
+
+            PdfGraphicsState bold = state.Clone();
+            bold.LineWidth = boldWidthUser;
+            bold.ResolvedStrokeColor = state.ResolvedFillColor;
+            bold.ResolvedStrokeColorSpace = state.ResolvedFillColorSpace;
+            bold.StrokeAlpha = state.FillAlpha;
+            target.StrokePath(userPath, bold);
+        }
+    }
+
+    private void RenderEmDash(double glyphWidth, PdfGraphicsState state, double currentX, float tHs)
+    {
+        // Em dash fallback (port of RenderEmDashFallback): a rectangle in glyph space, positioned
+        // through the same glyph->user matrix (which applies the Y-flip).
+        var emDashY = (float)state.FontSize * 0.35f;
+        var emDashHeight = (float)state.FontSize * 0.06f;
+        var emDashWidth = (float)glyphWidth * (float)state.FontSize;
+
+        var rect = new PathBuilder();
+        // Original SKRect(0, -emDashY-emDashHeight, emDashWidth, -emDashY) => x,y,w,h:
+        rect.Rectangle(0, -emDashY - emDashHeight, emDashWidth, emDashHeight);
+
+        Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs);
+        IPathBuilder userPath = rect.Transform(toUser);
+        target.FillPath(userPath, state, evenOdd: true);
+    }
+
+    private static bool ShouldApplyFauxBold(PdfFont font)
+    {
+        PdfFontDescriptor? descriptor = font.GetDescriptor();
+        if (descriptor is null) return false;
+        bool isForceBoldFlag = descriptor.IsBold;
+        bool isBoldName = font.BaseFont?.Contains("Bold", StringComparison.OrdinalIgnoreCase) == true;
+        bool isBoldStemV = descriptor.StemV >= 120;
+        bool embeddedOutlineAlreadyBold = isBoldName || isBoldStemV;
+        return isForceBoldFlag && !embeddedOutlineAlreadyBold;
+    }
+
+    private static void Advance(ref double currentX, List<double> glyphWidths, int i, PdfGraphicsState state)
+    {
+        if (i >= glyphWidths.Count) return;
+        // XOR: FontSize<0 and TextMatrix.M11<0 each flip; two flips cancel.
+        bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;
+        currentX += glyphWidths[i] * (flipX ? -1.0 : 1.0);
+    }
+
+    // === Verbatim port of TextRenderer.ResolveGlyphId (603-702) ===
+    private static ushort ResolveGlyphId(EmbeddedFontMetrics metrics, PdfFont font, ushort charCode,
+        out string? resolvedGlyphName)
+    {
+        ushort glyphId;
+        resolvedGlyphName = null;
+
+        if ((metrics.IsCffFont || metrics.IsType1Font) && font.Encoding is not null)
+        {
+            resolvedGlyphName = font.Encoding.GetGlyphName(charCode);
+            glyphId = resolvedGlyphName is not null ? metrics.GetGlyphIdByName(resolvedGlyphName) : (ushort)0;
+
+            if (glyphId == 0 && metrics.IsType1Font)
+            {
+                string? builtInName = metrics.GetType1GlyphNameByCharCode(charCode);
+                if (builtInName is not null)
+                {
+                    resolvedGlyphName = builtInName;
+                    glyphId = metrics.GetGlyphIdByName(builtInName);
+                }
+            }
+        }
+        else if (font is Type0Font type0Font && metrics.IsType1Font && type0Font.ToUnicode is not null)
+        {
+            string? unicode = type0Font.ToUnicode.Lookup(charCode);
+            if (unicode is not null)
+            {
+                resolvedGlyphName = GlyphList.GetGlyphName(unicode);
+                if (resolvedGlyphName is not null)
+                {
+                    glyphId = metrics.GetGlyphIdByName(resolvedGlyphName);
+                }
+                else if (unicode.Length == 1 && char.IsAscii(unicode[0]))
+                {
+                    resolvedGlyphName = unicode;
+                    glyphId = metrics.GetGlyphIdByName(resolvedGlyphName);
+                }
+                else
+                {
+                    glyphId = 0;
+                }
+            }
+            else if (type0Font.DescendantFont is CidFont cidFont)
+            {
+                glyphId = (ushort)cidFont.MapCidToGid(charCode);
+            }
+            else
+            {
+                glyphId = metrics.GetGlyphId(charCode);
+            }
+        }
+        else
+        {
+            if (font is Type0Font { DescendantFont: CidFont cidFont })
+            {
+                int cidAfterMap = cidFont.MapCidToGid(charCode);
+                glyphId = metrics.IsCffFont
+                    ? metrics.GetGlyphIdByCid((ushort)cidAfterMap)
+                    : (ushort)cidAfterMap;
+            }
+            else
+            {
+                glyphId = metrics.GetGlyphId(charCode);
+            }
+        }
+
+        return glyphId;
+    }
+}
