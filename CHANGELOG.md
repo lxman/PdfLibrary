@@ -53,7 +53,7 @@ Packaging and discoverability patch. No API or runtime behavior changes.
 First stable release. Completes the *load → edit → optimize* story: a loaded PDF can now be modified in place and shrunk, in addition to being parsed, rendered, and created from scratch.
 
 ### Added
-- **Editing / mutation API** — `doc.Edit()` returns a `PdfDocumentEditor` over a loaded document (see `Docs/EditingApi.md`):
+- **Editing / mutation API** — `doc.Edit()` returns a `PdfDocumentEditor` over a loaded document (see `Docs/Guide.md`):
   - **Page operations** — rotate, move, delete, insert blank, import/duplicate pages, append, plus document `Merge` and `Extract`. Deleting a page strips outline entries, named destinations, and link annotations that resolved to it.
   - **Stamping & overlays** — `edit.Pages.Stamp/StampRange/StampAll` with a fluent `PdfStampBuilder`: watermarks, image stamps, placement presets (center/corners/diagonal/tiled/explicit), scale, rotation, opacity, overlay/underlay.
   - **Annotations** — `AddNote`, `AddLink`, `AddExternalLink`, `AddHighlight`.

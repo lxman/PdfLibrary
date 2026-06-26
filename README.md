@@ -107,23 +107,21 @@ PDF/
 
 ```csharp
 using PdfLibrary.Structure;
+using PdfLibrary.Document;
 using PdfLibrary.Rendering.SkiaSharp;
 
 // Load a PDF document
-using var stream = File.OpenRead("document.pdf");
-var document = PdfDocument.Load(stream);
+using var doc = PdfDocument.Load("document.pdf");
+var page = doc.GetPage(0)!;   // 0-based index
 
-// Get the page to render
-var page = document.GetPage(0);  // 0-based index
-
-// Render to file using the fluent API
-page.Render(document)
+// Render to a file (format inferred from the extension)
+page.RenderTo()
     .WithScale(1.0)  // 1.0 = 72 DPI
     .ToFile("output.png");
 
-// Or render to SKImage for further processing
-using var image = page.Render(document)
-    .WithDpi(144)  // 2x resolution
+// Or render to an SKImage for further processing
+using var image = page.RenderTo()
+    .WithDpi(144)    // 2x resolution
     .ToImage();
 ```
 
@@ -134,18 +132,17 @@ using PdfLibrary.Builder;
 
 PdfDocumentBuilder.Create()
     .WithMetadata(meta => meta
-        .Title("My Document")
-        .Author("John Doe"))
-    .AddPage(page => page
-        .AddText("Hello, World!", 100, 700)
-            .WithFont("Helvetica-Bold")
-            .WithSize(24)
-            .WithColor(PdfColor.Blue)
-        .AddRectangle(100, 650, 200, 30)
-            .Fill(PdfColor.LightGray)
-            .Stroke(PdfColor.Black))
-    .AddPage(page => page
-        .AddText("Page 2", 100, 700))
+        .SetTitle("My Document")
+        .SetAuthor("John Doe"))
+    .AddPage(page =>
+    {
+        page.AddText("Hello, World!", 100, 750)
+            .Font("Helvetica-Bold", 24)
+            .Color(PdfColor.Blue);
+        page.AddRectangle(100, 650, 200, 30,
+            fillColor: PdfColor.LightGray, strokeColor: PdfColor.Black);
+    })
+    .AddPage(page => page.AddText("Page 2", 100, 700, "Helvetica", 12))
     .AddBookmark("Page 1", 0)
     .AddBookmark("Page 2", 1)
     .Save("output.pdf");
@@ -155,17 +152,16 @@ PdfDocumentBuilder.Create()
 
 ```csharp
 PdfDocumentBuilder.Create()
-    .AddPage(page => page
-        .AddText("Registration Form", 100, 750)
-            .WithSize(18)
-            .Bold()
-        .AddText("Name:", 100, 700)
-        .AddTextField("name", 170, 695, 200, 25)
-            .Required()
-        .AddText("Email:", 100, 660)
-        .AddTextField("email", 170, 655, 200, 25)
-        .AddText("I agree to terms:", 100, 620)
-        .AddCheckbox("agree", 220, 618, 18, 18))
+    .AddPage(page =>
+    {
+        page.AddText("Registration Form", 100, 750, "Helvetica-Bold", 18);
+        page.AddText("Name:", 100, 700, "Helvetica", 12);
+        page.AddTextField("name", 170, 695, 200, 25).Required();
+        page.AddText("Email:", 100, 660, "Helvetica", 12);
+        page.AddTextField("email", 170, 655, 200, 25);
+        page.AddText("I agree to terms:", 100, 620, "Helvetica", 12);
+        page.AddCheckbox("agree", 220, 618, 18);   // name, x, y, size
+    })
     .WithAcroForm(form => form.SetNeedAppearances(true))
     .Save("form.pdf");
 ```
@@ -173,33 +169,31 @@ PdfDocumentBuilder.Create()
 ### Advanced Rendering Options
 
 ```csharp
-// Render with custom background color
-using var image = page.Render(document)
-    .WithDpi(300)  // High resolution for printing
-    .WithBackgroundColor(new SKColor(255, 250, 240))  // Antique white
+// Transparent background (for PNG with alpha) instead of the default white
+using var image = page.RenderTo()
+    .WithTransparentBackground()
     .ToImage();
 
-// Render specific region of page
-using var cropImage = page.Render(document)
-    .WithScale(2.0)
-    .WithCropBox(100, 100, 400, 600)  // x, y, width, height
-    .ToImage();
+// Encode straight to PNG bytes at a chosen DPI
+byte[] png = page.RenderTo()
+    .WithDpi(300)   // high resolution for printing
+    .ToBytes();
 ```
 
 ### Text Extraction
 
 ```csharp
 // Extract all text from a page
-var page = document.GetPage(0);
-var textContent = page.ExtractText(document);
+var page = doc.GetPage(0)!;
+string textContent = page.ExtractText();
 
 // Extract text with positioning information
-var textBlocks = page.ExtractTextBlocks(document);
-foreach (var block in textBlocks)
+var (text, fragments) = page.ExtractTextWithFragments();
+foreach (var f in fragments)
 {
-    Console.WriteLine($"Text: {block.Text}");
-    Console.WriteLine($"Position: ({block.X}, {block.Y})");
-    Console.WriteLine($"Font: {block.FontName}, Size: {block.FontSize}");
+    Console.WriteLine($"Text: {f.Text}");
+    Console.WriteLine($"Position: ({f.X}, {f.Y})");
+    Console.WriteLine($"Font: {f.FontName}, Size: {f.FontSize}");
 }
 ```
 
@@ -225,7 +219,7 @@ using PdfDocument merged = PdfDocumentEditor.Merge([a, b]);
 merged.Save("combined.pdf");
 ```
 
-See the [Editing API Reference](Docs/EditingApi.md) for the full surface.
+See the [Complete Guide](Docs/Guide.md) for the full surface.
 
 ### Optimizing a PDF
 
@@ -237,7 +231,8 @@ using var doc = PdfDocument.Load("input.pdf");
 using var output = File.Create("optimized.pdf");
 
 // Lossless by default (Flate + object streams + unused-object GC)
-PdfOptimizer.Optimize(doc, output);
+PdfOptimizationResult result = PdfOptimizer.Optimize(doc, output);
+Console.WriteLine($"Removed {result.ObjectsRemoved} objects; wrote {result.OutputBytes} bytes");
 
 // Opt in to lossy size reductions
 PdfOptimizer.Optimize(doc, output, new PdfOptimizationOptions
@@ -325,9 +320,7 @@ All codec implementations are in-tree (no git submodules required).
 
 ## Documentation
 
-- [Fluent API Reference](Docs/FluentApi.md) - Complete guide to the PDF creation API
-- [Editing API Reference](Docs/EditingApi.md) - Editing, merging, and splitting existing PDFs
-- [Getting Started](Docs/GettingStarted.md) - Step-by-step introduction
+- [Complete Guide](Docs/Guide.md) - Loading, reading, rendering, creating, editing, and optimizing PDFs
 - [Architecture](Docs/Architecture.md) - Technical architecture overview
 
 ## Supported PDF Features
