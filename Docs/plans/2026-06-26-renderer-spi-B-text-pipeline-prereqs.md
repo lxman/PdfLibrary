@@ -128,20 +128,39 @@ public class SfntFontTtcTests
     private static byte[] BareFont() =>
         File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
 
-    // 16-byte classic TTC header (major=1, minor=0, numFonts=1, offset[0]=16), big-endian.
+    // Builds a VALID 1-font classic TTC: a 16-byte TTC header, then the font — with each table
+    // offset shifted by the header size, because real .ttc table offsets are absolute from the
+    // FILE start (so the parser must NOT add the font's base offset; it seeks them directly).
     private static byte[] WrapAsTtc(byte[] font)
     {
+        const int headerSize = 16;
         byte[] header =
         {
             0x74, 0x74, 0x63, 0x66, // 'ttcf'
             0x00, 0x01,             // majorVersion
             0x00, 0x00,             // minorVersion
             0x00, 0x00, 0x00, 0x01, // numFonts = 1
-            0x00, 0x00, 0x00, 0x10  // offset[0] = 16 (font 0 starts right after the header)
+            0x00, 0x00, 0x00, 0x10  // offset[0] = 16
         };
-        var ttc = new byte[header.Length + font.Length];
-        Array.Copy(header, 0, ttc, 0, header.Length);
-        Array.Copy(font, 0, ttc, header.Length, font.Length);
+        var ttc = new byte[headerSize + font.Length];
+        Array.Copy(header, 0, ttc, 0, headerSize);
+        Array.Copy(font, 0, ttc, headerSize, font.Length);
+
+        // sfnt directory at ttc[headerSize]: sfntVersion(4) numTables(2) searchRange(2)
+        // entrySelector(2) rangeShift(2) = 12, then 16-byte records (tag4, checksum4, offset4, length4).
+        int numTables = (ttc[headerSize + 4] << 8) | ttc[headerSize + 5];
+        int firstRecord = headerSize + 12;
+        for (int i = 0; i < numTables; i++)
+        {
+            int offPos = firstRecord + i * 16 + 8; // skip tag(4) + checksum(4)
+            uint off = ((uint)ttc[offPos] << 24) | ((uint)ttc[offPos + 1] << 16)
+                     | ((uint)ttc[offPos + 2] << 8) | ttc[offPos + 3];
+            off += headerSize;
+            ttc[offPos]     = (byte)(off >> 24);
+            ttc[offPos + 1] = (byte)(off >> 16);
+            ttc[offPos + 2] = (byte)(off >> 8);
+            ttc[offPos + 3] = (byte)off;
+        }
         return ttc;
     }
 
@@ -317,3 +336,7 @@ Expected: `0 Warning(s)`, `0 Error(s)`.
 - Moving glyph resolution (charCode→glyphId→outline) from the SkiaSharp `TextRenderer` into the core.
 - Flipping text to `FillPath`/`StrokePath`; removing `DrawText`/`MeasureTextWidth` from `IRenderTarget`.
 - DejaVu/non-metric width fixup so `/AP` form widths match render advances.
+- **Within-`.ttc` face selection (raised by Plan B's final review).** `SfntFont` uses font 0, which is **Regular**. macOS ships Helvetica/Times/Courier as multi-face `.ttc` collections, so a Bold/Italic request fed `.ttc` bytes would render Regular. B2 must add a face selector (e.g. `SfntFont(data, faceIndex)` or pick-the-face-matching-bold/italic by name/OS2 style). `Standard14Fonts` already seeds the bare literal (`"Helvetica"`/`"Times"`/`"Courier"`) in **all four** style slots, so face selection must be driven by the bold/italic flags at resolve time — this is already committed; land it WITH B2.
+- **`PdfGraphicsState` public-view leak audit** (design Migration step 1 prep — still outstanding; the pipeline exposes `PdfGraphicsState` to the target as a documented SPI type).
+- **Thread `evenOdd` through glyph fills** — `Segments` carries no fill rule by design; B2 passes `evenOdd: true` per the Tr table at every glyph `FillPath` (preserves the Y-flip winding).
+- **Real-`.ttc` integration test** once the locator feeds real font bytes (parse an actual multi-face `/System/Library/Fonts/Helvetica.ttc`, not just the synthetic single-font wrapper); note macOS `.dfont` (resource-fork) is neither bare-sfnt nor `ttcf` and won't parse (older-system edge case).
