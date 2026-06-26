@@ -699,3 +699,12 @@ git commit -am "test(fonts): verify font subsystem; core remains SkiaSharp-free"
 - **Spec coverage:** implements the spec's "Fonts: locate installed substitutes" section — managed OS-dir scan (Tasks 3/5), base-14 → candidate mapping (Task 2), font bytes via the provider (Tasks 1/4). Bundled Symbol/ZapfDingbats fallback is deferred to the spec's optional fallback and is **not** in Plan A. The resolution order's "embedded → located substitute" is realized here for the "located" half; the "embedded" half lives in Plan B (the text pipeline that calls `GetFontData`).
 - **No behavior change:** nothing in Plan A is wired into the render or build pipeline yet, so existing behavior and the 1233 tests are untouched until Plan B consumes `GetFontData`.
 - **Out of scope (Plan B):** parsing located bytes with FontParser, glyph→path conversion, and using the locator in the text pipeline.
+
+## As Shipped (post-review)
+
+Implemented via subagent-driven development, commits `0308f31..7b82ac3` on `skia-v4`. Tasks 3 and 4 shipped with review-driven corrections not reflected in the reference code above:
+- **Task 3** (`f3d9b95` → fix `d241d51`): the directory-scan `foreach` was moved INSIDE the `try`, because `Directory.EnumerateFiles(..., AllDirectories)` is lazy — traversal errors (e.g. `UnauthorizedAccessException` on a restricted subdir) throw during iteration and must be caught there, not at the call site.
+- **Task 4** (`b18d30a` → fix `2a1b6d1`): `GetFontData` now falls through to the next candidate on a read error (was `catch { return null; }`); the legacy `IsFontAvailable`/`FindFirstAvailable` query the index directly (were routed through the standard-14 mapping, making them wrong for non-standard-14 names).
+- **Final review** (`7b82ac3`): removed a duplicate directory scan (`FontDirectoryIndex` now exposes its base-name keys); `Standard14Fonts` and `FontDirectoryIndex` are now `internal` — only `ISystemFontProvider` and `SystemFontLocator` are public.
+
+Final state: 1244 tests green (CI filter), core SkiaSharp-free, Release 0W/0E. **Deferred to Plan B:** macOS literal text-face candidates (`Helvetica`/`Times`/`Courier`), DejaVu-is-coverage-not-metric width fixups, `.ttc` collection handling in FontParser, and TimesNewRoman/CourierNew alias test coverage.
