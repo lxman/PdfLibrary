@@ -39,7 +39,6 @@ namespace FontParser
     {
         private readonly byte[] _data;
         private readonly Dictionary<string, (uint Offset, uint Length)> _directory = new();
-        private uint _ttcFontOffset; // offset to font 0 within a TTC (0 for bare fonts)
 
         public SfntOutlineKind OutlineKind { get; }
 
@@ -61,7 +60,6 @@ namespace FontParser
                 if (numFonts == 0)
                     throw new InvalidDataException("TrueType collection (ttcf) declares zero fonts.");
                 uint firstFontOffset = reader.ReadUInt32(); // offset to font 0's table directory
-                _ttcFontOffset = firstFontOffset;
                 reader.Seek(firstFontOffset);
                 sfntVersion = reader.ReadUInt32();          // the real sfnt version of font 0
             }
@@ -101,12 +99,11 @@ namespace FontParser
         public byte[]? GetTableBytes(string tag)
         {
             if (!_directory.TryGetValue(tag, out (uint Offset, uint Length) entry)) return null;
-            uint adjustedOffset = entry.Offset + _ttcFontOffset;
             // Defend against a directory entry that points outside the buffer.
-            if (adjustedOffset > (uint)_data.Length || adjustedOffset + entry.Length > (uint)_data.Length)
+            if (entry.Offset > (uint)_data.Length || entry.Offset + entry.Length > (uint)_data.Length)
                 return null;
             var result = new byte[entry.Length];
-            Array.Copy(_data, (int)adjustedOffset, result, 0, (int)entry.Length);
+            Array.Copy(_data, entry.Offset, result, 0, entry.Length);
             return result;
         }
 
