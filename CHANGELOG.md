@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-API surface cleanup (additive, non-breaking) — targets 1.1.0.
+## [1.1.0] - 2026-06-25
+
+The final 1.x release — additive API-surface cleanup plus the accumulated correctness fixes. No breaking changes; those are reserved for the 2.0 line.
 
 ### Added
 - **Public exception hierarchy.** `PdfParseException` and `PdfSecurityException` are now `public` and derive from a new `public abstract PdfLibrary.PdfException` base. Consumers can `catch (PdfException)` to handle any PDF-specific failure, or catch the specific subtype to distinguish a malformed document from a decryption/password failure. Previously both were `internal`, so callers had to catch bare `Exception`.
@@ -21,17 +23,14 @@ API surface cleanup (additive, non-breaking) — targets 1.1.0.
 - **More `PdfViewerSettings` keys.** Added the commonly-used remaining `/ViewerPreferences` entries: `HideMenubar`, `HideWindowUI`, `NonFullScreenPageMode`, `Direction` (`PdfReadingDirection`), `PrintScaling` (`PdfPrintScaling`), and `Duplex` (`PdfDuplex`). Previously only four boolean keys were exposed.
 - **`PdfPageBuilder.AddLine(PdfLength, …)`** — an explicit-unit overload for lines, matching `AddText`/`AddRectangle`.
 
-### Fixed
-- **`PdfViewerSettings` boolean preferences can now be cleared.** Setting `HideToolbar` / `FitWindow` / `CenterWindow` / `DisplayDocTitle` to `null` now removes the preference (matching the `PageMode` / `PageLayout` setters). Previously a `null` assignment was silently ignored, so a preference could never be unset once written.
-- **`PdfPageBuilder.AddLine(double, …)` now honors the page unit and origin.** It deposited raw coordinates, ignoring `WithInches()` / `WithUnit(...)` / `FromTopLeft()` (unlike `AddText` and `AddRectangle`), so lines were mispositioned on non-point pages. It now applies the same `ConvertToPoints` conversion.
-
-## [1.0.2] - 2026-06-25
-
-Correctness patch. No public API changes.
+### Changed
+- **Documentation consolidated.** The separate creation, editing, and getting-started guides are merged into a single coherent `Docs/Guide.md`, with every example compile-checked against the library as an external consumer — fixing long-standing non-compiling snippets that the old guides and README carried.
 
 ### Fixed
 - **Rendered pages now have the documented white background.** The fluent render path (`page.RenderTo().ToImage()/ToBytes()/ToStream()/ToFile()` and the `doc.SavePageAs(...)` shortcut) returned the raw transparent render instead of compositing onto white, so PNGs came out transparent and JPEGs black — even though `RenderTo()` documents a white default and `WithTransparentBackground()` is the opt-in for transparency. `SkiaSharpRenderTarget.GetImage()` now composites onto opaque white unless transparent output was explicitly requested, matching what the `SaveToFile` path already did. Soft-mask rendering is unaffected (it renders to a transparent target by design).
 - **`PdfPageBuilder.AddText(text, x, y, fontName, fontSize)` now honors the page's unit and origin.** The five-argument (font-bearing) overload deposited raw coordinates, ignoring `WithInches()` / `WithUnit(...)` / `FromTopLeft()`, so text placed through it landed at the wrong position (e.g. at 1 point instead of 72 on an inches page). It now applies the same conversion as the `AddText(text, x, y)` overload.
+- **`PdfPageBuilder.AddLine(double, …)` now honors the page unit and origin.** It deposited raw coordinates, ignoring `WithInches()` / `WithUnit(...)` / `FromTopLeft()` (unlike `AddText` and `AddRectangle`), so lines were mispositioned on non-point pages. It now applies the same `ConvertToPoints` conversion.
+- **`PdfViewerSettings` boolean preferences can now be cleared.** Setting `HideToolbar` / `FitWindow` / `CenterWindow` / `DisplayDocTitle` to `null` now removes the preference (matching the `PageMode` / `PageLayout` setters). Previously a `null` assignment was silently ignored, so a preference could never be unset once written.
 
 ## [1.0.1] - 2026-06-24
 
@@ -229,6 +228,7 @@ First stable release. Completes the *load → edit → optimize* story: a loaded
 | 0.0.10-beta | 2025-01-13 | Fluent builder API, annotations, bookmarks, page labels, encryption |
 | 1.0.0-rc.1 | 2026-06-06 | Release candidate for 1.0: thread-safe concurrent rendering, pure-C# in-house image codecs (no third-party deps), performance + memory optimizations. |
 | 1.0.0 | 2026-06-21 | First stable release: editing/mutation API, optimization API, multi-targets .NET 8/9/10, all dependencies on stable releases (SkiaSharp 3.119.4). |
+| 1.1.0 | 2026-06-25 | Final 1.x: additive API cleanup (public exception hierarchy, stream/path overloads, optimizer result object, `LoadFont` byte[]/Stream, annotation read/remove, expanded viewer prefs) + correctness fixes (white-background rendering, `AddText`/`AddLine` unit handling); usage docs consolidated into a single verified guide. |
 
 ---
 
