@@ -42,16 +42,20 @@ namespace FontParser
 
         public SfntOutlineKind OutlineKind { get; }
 
-        public SfntFont(byte[] data)
+        /// <summary>Number of faces: 1 for a single font, or the font count for a TTC collection.</summary>
+        public int FaceCount { get; }
+
+        public SfntFont(byte[] data) : this(data, 0) { }
+
+        public SfntFont(byte[] data, int faceIndex)
         {
             _data = data ?? throw new ArgumentNullException(nameof(data));
+            if (faceIndex < 0)
+                throw new ArgumentOutOfRangeException(nameof(faceIndex), "Face index must be non-negative.");
 
             using var reader = new BigEndianReader(data);
             uint sfntVersion = reader.ReadUInt32();
 
-            // A TrueType/OpenType Collection ('ttcf'): parse font 0's table directory. PDFs never
-            // embed collections, but a system font located for a NON-embedded face may be a .ttc
-            // (notably macOS Helvetica/Times/Courier). Ported from FontManager.NET FontReader.ParseTtc.
             if (sfntVersion == 0x74746366) // 'ttcf'
             {
                 reader.ReadUShort();            // majorVersion
@@ -59,9 +63,23 @@ namespace FontParser
                 uint numFonts = reader.ReadUInt32();
                 if (numFonts == 0)
                     throw new InvalidDataException("TrueType collection (ttcf) declares zero fonts.");
-                uint firstFontOffset = reader.ReadUInt32(); // offset to font 0's table directory
-                reader.Seek(firstFontOffset);
-                sfntVersion = reader.ReadUInt32();          // the real sfnt version of font 0
+                if (faceIndex >= numFonts)
+                    throw new ArgumentOutOfRangeException(nameof(faceIndex),
+                        $"Face {faceIndex} requested but the collection has {numFonts} font(s).");
+                FaceCount = (int)numFonts;
+
+                long offsetTablePos = reader.Position;          // start of the uint32 offset array
+                reader.Seek(offsetTablePos + faceIndex * 4);
+                uint fontOffset = reader.ReadUInt32();           // offset to this face's table directory
+                reader.Seek(fontOffset);
+                sfntVersion = reader.ReadUInt32();               // the real sfnt version of this face
+            }
+            else
+            {
+                if (faceIndex != 0)
+                    throw new ArgumentOutOfRangeException(nameof(faceIndex),
+                        "This is a single font program; only face 0 exists.");
+                FaceCount = 1;
             }
 
             // 0x00010000 = TrueType outlines, 'true' = legacy TrueType, 'OTTO' = CFF outlines.
@@ -69,7 +87,7 @@ namespace FontParser
             {
                 throw new InvalidDataException(
                     $"Not a supported sfnt font program (sfnt version 0x{sfntVersion:X8}). " +
-                    "TrueType collections (ttcf) and webfont containers (WOFF/WOFF2) are not supported.");
+                    "WOFF/WOFF2 containers are not supported.");
             }
 
             ushort numTables = reader.ReadUShort();
