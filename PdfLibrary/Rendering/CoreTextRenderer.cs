@@ -89,7 +89,6 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
 
         if (state.RenderingMode is 3 or 7) return true;  // invisible — no glyphs needed
 
-        bool applyBold = ShouldApplyFauxBold(font);
         var tHs = (float)state.HorizontalScaling / 100f;
         bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;
         double currentX = 0;
@@ -117,7 +116,10 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
                             // bug fixed in commit 8429607.
                             Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs) * state.Ctm;
                             IPathBuilder userPath = glyphSpace.Transform(toUser);
-                            EmitGlyph(userPath, state, toUser, applyBold);
+                            // No faux-bold on the substitute path: the substitute face already encodes
+                            // weight via SyntheticStd14Name (a ForceBold font is requested as e.g.
+                            // Helvetica-Bold), so stroke-emboldening on top would double-apply it.
+                            EmitGlyph(userPath, state, toUser, applyBold: false);
                         }
                     }
                 }
