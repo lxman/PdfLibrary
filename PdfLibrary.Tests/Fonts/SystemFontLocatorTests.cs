@@ -70,4 +70,19 @@ public class SystemFontLocatorTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void DefaultFontDirectories_AreNonEmpty_OnThisPlatform()
+    {
+        Assert.NotEmpty(SystemFontLocator.DefaultFontDirectories());
+    }
+
+    // Integration: depends on system-installed fonts, so it is opt-in (not run in CI).
+    [Fact]
+    [Trait("Category", "LocalOnly")]
+    public void GetFontData_ResolvesHelvetica_OnRealSystem()
+    {
+        var locator = new SystemFontLocator();
+        Assert.NotNull(locator.GetFontData("Helvetica"));
+    }
 }
