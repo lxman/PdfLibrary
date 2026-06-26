@@ -291,7 +291,7 @@ Expected: FAIL — `FromCff` does not exist.
 Add to `PdfLibrary/Rendering/GlyphOutlineToPath.cs`: add `using FontParser.Tables.Cff;` and an alias `using CffGlyphOutline = FontParser.Tables.Cff.GlyphOutline;` at the top (keep the existing `using PdfLibrary.Fonts.Embedded;`), then add this method to the class:
 
 ```csharp
-    public static IPathBuilder FromCff(CffGlyphOutline outline, float fontSize, ushort unitsPerEm)
+    internal static IPathBuilder FromCff(CffGlyphOutline outline, float fontSize, ushort unitsPerEm)
     {
         if (outline is null) throw new ArgumentNullException(nameof(outline));
         if (unitsPerEm == 0) throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
@@ -575,3 +575,13 @@ Expected: `0 Warning(s)`, `0 Error(s)` for each.
 - The **style-driven** `.ttc` face picker (choose `faceIndex` by bold/italic from the resolved BaseFont) on top of this task's open-by-index mechanism.
 - DejaVu/non-metric width fixup; `PdfGraphicsState` public-view leak audit.
 - Gate the whole rewire on the 90 render tests staying pixel-identical.
+
+### B3 design notes (from B2's final review — these protect the rewire)
+
+- **Even-odd is the #1 trap.** The original set `FillType = EvenOdd` on EVERY glyph path (it compensates for the Y-flip winding reversal). The converter carries NO fill rule. If B3 fills a glyph path with default (nonzero) winding, every counter ('o','e','A','B'…) renders solid. Make it impossible to fill a glyph path without `evenOdd: true`.
+- **Cache key MUST include font size.** The converter BAKES `fontSize/unitsPerEm` into the path coordinates, so a cache "keyed by font + glyphId" (spec §2) collides across sizes and returns the first-seen size. Either key on `(font, glyphId, fontSize)`, or build at em-scale (scale=1) and apply font size in the per-glyph transform.
+- **Cache an immutable snapshot, not the mutable `PathBuilder`.** `PathBuilder` is mutable; a shared cached builder handed to multiple draws invites corruption (and there's a live thread-safety concern). Cache the `Segments` list or an immutable wrapper.
+- **Positioning is B3's job.** Converter output is GLYPH SPACE (size-scaled, Y-flipped, origin-centered) — not user space. B3 applies the text matrix (Tm), CTM, char/word spacing, horizontal scaling (Tz), text rise, and per-glyph advance ("CTM on canvas, glyph transform separate").
+- **Composite/compound TrueType glyphs** must be flattened into `GlyphOutline.Contours` with component transforms/offsets applied UPSTREAM of the converter (it only iterates `Contours`). Verify the moved resolution pipeline reproduces the Skia `TextRenderer`.
+- **Type1 outlines:** confirm they reduce to `FontParser.Tables.Cff.GlyphOutline` cubic commands and can reuse `FromCff` (likely — Type1 charstrings are cubic), or add a dedicated path. The converter has no Type1 entry today.
+- **QuadTo→CubicTo rasterization parity:** the elevation is geometrically exact, but Skia flattens a native `QuadTo` vs an elevated `CubicTo` with different tolerances, so sub-pixel AA-edge diffs are possible — this is the design's accepted, 90-render-test-gated risk, surfacing in the adapter.
