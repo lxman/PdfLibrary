@@ -32,4 +32,11 @@ public interface ISystemFontProvider
     /// Useful if fonts may have been installed/uninstalled during runtime.
     /// </summary>
     void RefreshCache();
+
+    /// <summary>
+    /// Returns the raw font-program bytes for a PDF <c>/BaseFont</c> name (e.g. a standard-14
+    /// face like "Helvetica-Bold"), located among the fonts installed on the system, or
+    /// <c>null</c> if no suitable substitute is available. The default returns <c>null</c>.
+    /// </summary>
+    byte[]? GetFontData(string baseFontName) => null;
 }
