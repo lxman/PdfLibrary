@@ -35,7 +35,7 @@ public sealed class SvgRenderTarget : IRenderTarget
 
         Matrix3x2 init = InitialTransform(width, height, scale, cropOffsetX, cropOffsetY, rotation);
 
-        _sb.Append(F($"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw}\" height=\"{ph}\" "))
+        _sb.Append(F($"<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" width=\"{pw}\" height=\"{ph}\" "))
            .Append(F($"viewBox=\"0 0 {pw} {ph}\">"))
            .Append(F($"<g transform=\"matrix({init.M11},{init.M12},{init.M21},{init.M22},{init.M31},{init.M32})\">"));
     }
@@ -101,7 +101,7 @@ public sealed class SvgRenderTarget : IRenderTarget
         {
             string b64 = Convert.ToBase64String(encoded);
             _sb.Append(F($"<image transform=\"{xform}\" width=\"1\" height=\"1\" preserveAspectRatio=\"none\" "))
-               .Append(F($"href=\"data:image/jpeg;base64,{b64}\"/>"));
+               .Append(F($"xlink:href=\"data:image/jpeg;base64,{b64}\"/>"));
         }
         else
         {

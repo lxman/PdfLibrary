@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 using PdfLibrary.Content;
@@ -85,5 +86,33 @@ public class SvgRenderTargetTests
         string svg = target.GetSvg();
         Assert.Contains("<image", svg);
         Assert.Contains("data:image/jpeg;base64,", svg);
+    }
+
+    [Fact]
+    public void ClipNesting_NestedSaveRestore_BalancedGGroups()
+    {
+        // Drives a nested SaveState/SetClippingPath/RestoreState sequence and verifies
+        // the emitted SVG has balanced <g> opening and </g> closing tags.
+        var target = new SvgRenderTarget();
+        target.BeginPage(1, 200, 200, 1.0);
+
+        var clip = new PathBuilder();
+        clip.Rectangle(10, 10, 100, 100);
+        var state = new PdfGraphicsState();
+
+        target.SaveState();
+        target.SetClippingPath(clip, state, evenOdd: false);
+        target.SaveState();
+        target.SetClippingPath(clip, state, evenOdd: false);
+        target.RestoreState();
+        target.RestoreState();
+        target.EndPage();
+
+        string svg = target.GetSvg();
+
+        int openCount  = Regex.Matches(svg, @"<g\b").Count;
+        int closeCount = Regex.Matches(svg, "</g>").Count;
+
+        Assert.Equal(openCount, closeCount);
     }
 }
