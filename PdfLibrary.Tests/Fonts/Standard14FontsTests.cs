@@ -49,4 +49,28 @@ public class Standard14FontsTests
     {
         Assert.Empty(Standard14Fonts.SubstituteFileBaseNames("Wingdings3"));
     }
+
+    [Fact]
+    public void TextFamilies_IncludeMacOsLiteral_BeforeDejaVuFallback()
+    {
+        // ToList() because SubstituteFileBaseNames returns IReadOnlyList<string>, which has no IndexOf.
+        var helv = Standard14Fonts.SubstituteFileBaseNames("Helvetica").ToList();
+        var times = Standard14Fonts.SubstituteFileBaseNames("Times-Bold").ToList();
+        var cour = Standard14Fonts.SubstituteFileBaseNames("Courier-Oblique").ToList();
+
+        Assert.True(helv.IndexOf("Helvetica") >= 0 && helv.IndexOf("Helvetica") < helv.IndexOf("DejaVuSans"));
+        Assert.True(times.IndexOf("Times") >= 0 && times.IndexOf("Times") < times.IndexOf("DejaVuSerif-Bold"));
+        Assert.True(cour.IndexOf("Courier") >= 0 && cour.IndexOf("Courier") < cour.IndexOf("DejaVuSansMono-Oblique"));
+    }
+
+    [Fact]
+    public void TimesNewRoman_And_CourierNew_Aliases_Resolve()
+    {
+        Assert.Equal(
+            Standard14Fonts.SubstituteFileBaseNames("Times-Roman"),
+            Standard14Fonts.SubstituteFileBaseNames("TimesNewRoman"));
+        Assert.Equal(
+            Standard14Fonts.SubstituteFileBaseNames("Courier"),
+            Standard14Fonts.SubstituteFileBaseNames("CourierNew"));
+    }
 }
