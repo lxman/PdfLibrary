@@ -45,4 +45,10 @@ public interface IPathBuilder
     /// Clone the current path
     /// </summary>
     IPathBuilder Clone();
+
+    /// <summary>
+    /// The ordered path segments (move/line/cubic-curve/close), for a render target to read
+    /// and convert to its native path representation.
+    /// </summary>
+    IReadOnlyList<PathSegment> Segments { get; }
 }
