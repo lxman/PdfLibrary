@@ -460,6 +460,15 @@ Expected: `0 Warning(s)`, `0 Error(s)`.
 - Wire `PdfRenderer.OnShowText` / `OnShowTextWithPositioning` to call `CoreTextRenderer` for embedded fonts; keep `_target.DrawText` for the non-embedded fallback (moved to core in Plan B3c).
 - Gate hard on the 90 render tests staying pixel-identical (a wrong matrix split shifts/flips ALL embedded text). Add a `MockRenderTarget`-based test asserting `FillPath` is emitted per visible glyph.
 
+### B3b critical constraints (from B3a's final review — these are the *only* paths to a regression; B3a itself is proven exact)
+
+1. **Pass `evenOdd: true` at EVERY glyph `FillPath` call site.** `PathBuilder` carries no fill rule; the original set `FillType=EvenOdd` on the cached `SKPath` (`TextRenderer.cs:780`). Glyph fill is a NEW call site distinct from the operator-driven fill (which forwards the operator's rule). Default NonZeroWinding mis-fills glyphs with overlapping/same-direction contours. (EvenOdd is also winding-insensitive, so it's robust to whatever flip `GlyphOutlineToPath` applies.)
+2. **The render target's CTM must carry the same global page Y-flip the SkiaSharp canvas applied in `BeginPage`, and nothing more.** `GlyphPlacement.YFlipCompensate` exists *only* to counter that page flip. A target that applies a different flip / none / its own winding override breaks every glyph.
+3. **`GlyphOutlineToPath` geometry must equal the old `GlyphToSKPathConverter` (scale + Y-flip).** The unit tests assert non-empty, not equivalence. The 90 render tests are the backstop at the flip; consider a focused glyph-render comparison earlier to fail fast.
+4. **CFF/Type1 are the COMMON case, not edge.** Most embedded PDF fonts are CFF/OpenType-CFF or Type1; `GlyphPathService`'s CFF/Type1 branches are untested (PublicPixel is TrueType). Add a CFF and a Type1 fixture before/with the flip.
+5. **Stroke (Tr 1/2) + faux-bold widths must be recomputed in user/device space.** The originals derive width from `combinedScale = sqrt(|ScaleX·ScaleY − SkewX·SkewY|)` of the glyph→device matrix (`TextRenderer.cs:820-823, 855-858, 881-891`). Once `Transform` bakes glyph→user into the geometry and the target applies CTM internally, there is no single `combined` matrix at draw time — derive from `target CTM scale × GlyphToUser scale`, or stroke in user space.
+6. **The cache hands out a shared mutable instance — treat as read-only.** `.Transform(m)` returns a fresh copy (safe); direct mutation corrupts the cache cross-thread. (`Transform` reintroduces the per-glyph allocation the original avoided — an accepted cost of the Skia-free design.)
+
 ## Out of scope → Plan B3c
 
 - Core fallback path (non-embedded fonts) via `SystemFontLocator.GetFontData` (Plan A) → `SfntFont`/`EmbeddedFontMetrics` (Plan B/B2) → outlines → paths, including the style-driven `.ttc` face picker and DejaVu width-fixup.
