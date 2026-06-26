@@ -116,7 +116,7 @@ internal class SoftMaskManager
         using SKImage? maskImage = SKImage.FromBitmap(_activeSoftMask);
         if (maskImage is not null)
         {
-            _canvas.DrawImage(maskImage, 0, 0, maskPaint);
+            _canvas.DrawImage(maskImage, 0, 0, SKSamplingOptions.Default, maskPaint);
         }
 
         _canvas.SetMatrix(currentMatrix);

@@ -428,7 +428,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
             var info = new SKImageInfo(rendered.Width, rendered.Height, SKColorType.Rgba8888, SKAlphaType.Premul);
             using SKSurface finalSurface = SKSurface.Create(info);
             finalSurface.Canvas.Clear(SKColors.White);
-            finalSurface.Canvas.DrawImage(rendered, 0, 0);
+            finalSurface.Canvas.DrawImage(rendered, 0, 0, SKSamplingOptions.Default);
             return finalSurface.Snapshot();
         }
     }
@@ -458,7 +458,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
             // Composite the transparent result onto white
             using SKImage? transparentSnapshot = _surface.Snapshot();
-            finalCanvas.DrawImage(transparentSnapshot, 0, 0);
+            finalCanvas.DrawImage(transparentSnapshot, 0, 0, SKSamplingOptions.Default);
 
             imageToSave = finalSurface.Snapshot();
         }

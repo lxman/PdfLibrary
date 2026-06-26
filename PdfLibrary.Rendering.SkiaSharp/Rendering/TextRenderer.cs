@@ -442,12 +442,12 @@ internal class TextRenderer
                 // Draw based on rendering mode
                 if (shouldFill)
                 {
-                    _canvas.DrawText(ch, 0, 0, fallbackFont, paint);
+                    _canvas.DrawText(ch, 0, 0, SKTextAlign.Left, fallbackFont, paint);
                 }
 
                 if (shouldStroke && strokePaint != null)
                 {
-                    _canvas.DrawText(ch, 0, 0, fallbackFont, strokePaint);
+                    _canvas.DrawText(ch, 0, 0, SKTextAlign.Left, fallbackFont, strokePaint);
                 }
 
                 _canvas.Restore();
@@ -710,9 +710,10 @@ internal class TextRenderer
         float emDashWidth = (float)glyphWidth * (float)state.FontSize;  // Full width scaled by font size
 
         // Create rectangle path for em dash
-        using var emDashPath = new SKPath();
+        var emDashBuilder = new SKPathBuilder();
         // Note: Y is negative because glyph coordinates are Y-up but we flip
-        emDashPath.AddRect(new SKRect(0, -emDashY - emDashHeight, emDashWidth, -emDashY));
+        emDashBuilder.AddRect(new SKRect(0, -emDashY - emDashHeight, emDashWidth, -emDashY));
+        using var emDashPath = emDashBuilder.Detach();
 
         // Apply glyph transformation
         var emDashTRise = (float)state.TextRise;

@@ -27,7 +27,7 @@ public class GlyphToSKPathConverter
         if (unitsPerEm == 0)
             throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
 
-        var path = new SKPath();
+        var path = new SKPathBuilder();
         // Use EvenOdd fill type because the Y-flip in ScalePoint reverses winding direction
         // of all contours. EvenOdd fill rule determines inside/outside by counting path
         // crossings, not winding direction, so it correctly handles holes regardless.
@@ -42,7 +42,7 @@ public class GlyphToSKPathConverter
             ProcessContour(path, contour, scale);
         }
 
-        return path;
+        return path.Detach();
     }
 
     /// <summary>
@@ -61,7 +61,7 @@ public class GlyphToSKPathConverter
         if (unitsPerEm == 0)
             throw new ArgumentException("Units per em cannot be zero", nameof(unitsPerEm));
 
-        var path = new SKPath();
+        var path = new SKPathBuilder();
         // Use EvenOdd fill type because the Y-flip in ScalePoint reverses winding direction
         // of all contours. EvenOdd fill rule determines inside/outside by counting path
         // crossings, not winding direction, so it correctly handles holes regardless.
@@ -93,13 +93,13 @@ public class GlyphToSKPathConverter
             }
         }
 
-        return path;
+        return path.Detach();
     }
 
     /// <summary>
     /// Process a single contour and add it to the path
     /// </summary>
-    private void ProcessContour(SKPath path, GlyphContour contour, float scale)
+    private void ProcessContour(SKPathBuilder path, GlyphContour contour, float scale)
     {
         List<ContourPoint> points = contour.Points;
         if (points.Count == 0)

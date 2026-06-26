@@ -174,7 +174,7 @@ internal class PathRenderer
                     // Draw backdrop (existing canvas content) into the isolated group
                     // Draw at negative offset so the pathBounds region appears at (0,0) in the group
                     using SKImage? canvasSnapshot = _surface.Snapshot();
-                    groupCanvas.DrawImage(canvasSnapshot, -pathBounds.Left, -pathBounds.Top);
+                    groupCanvas.DrawImage(canvasSnapshot, -pathBounds.Left, -pathBounds.Top, SKSamplingOptions.Default);
 
                     // Apply the same transformation matrix as main canvas, then offset for the group bounds
                     // This transforms the user-space path to device space, then positions it correctly in the group
@@ -273,7 +273,7 @@ internal class PathRenderer
                         BlendMode = SKBlendMode.SrcOver,
                         IsAntialias = true
                     };
-                    _canvas.DrawImage(_pendingComposite.GroupSnapshot, _pendingComposite.Position.X, _pendingComposite.Position.Y, compositePaint);
+                    _canvas.DrawImage(_pendingComposite.GroupSnapshot, _pendingComposite.Position.X, _pendingComposite.Position.Y, SKSamplingOptions.Default, compositePaint);
                     _canvas.Flush();
 
                     PdfLogger.Log(LogCategory.Graphics, $"ISOLATED GROUP: Composited at ({_pendingComposite.Position.X}, {_pendingComposite.Position.Y}) AFTER restore");

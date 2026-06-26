@@ -14,10 +14,10 @@ internal static class PathConverter
     /// <returns>SkiaSharp path ready for rendering</returns>
     public static SKPath ConvertToSkPath(IPathBuilder pathBuilder)
     {
-        var skPath = new SKPath();
+        var skPath = new SKPathBuilder();
 
         if (pathBuilder is not PathBuilder builder)
-            return skPath;
+            return skPath.Detach();
 
         foreach (PathSegment segment in builder.Segments)
         {
@@ -46,6 +46,6 @@ internal static class PathConverter
             }
         }
 
-        return skPath;
+        return skPath.Detach();
     }
 }
