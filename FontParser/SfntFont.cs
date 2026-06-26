@@ -31,14 +31,15 @@ namespace FontParser
     /// need glyph count + index format; hmtx needs the metric count) so callers get
     /// ready-to-use tables.
     ///
-    /// Scope is deliberately PDF-shaped: a PDF embeds exactly one font program, never a
-    /// TrueType Collection (ttcf) or a webfont container, so this handles the single-font
-    /// case only.
+    /// Scope is deliberately PDF-shaped: a PDF embeds exactly one font program. A TrueType
+    /// Collection ('ttcf') — which can appear when locating a system font for a non-embedded
+    /// face — is handled by parsing its first font; WOFF/WOFF2 containers are not supported.
     /// </summary>
     public sealed class SfntFont
     {
         private readonly byte[] _data;
         private readonly Dictionary<string, (uint Offset, uint Length)> _directory = new();
+        private uint _ttcFontOffset; // offset to font 0 within a TTC (0 for bare fonts)
 
         public SfntOutlineKind OutlineKind { get; }
 
@@ -48,6 +49,23 @@ namespace FontParser
 
             using var reader = new BigEndianReader(data);
             uint sfntVersion = reader.ReadUInt32();
+
+            // A TrueType/OpenType Collection ('ttcf'): parse font 0's table directory. PDFs never
+            // embed collections, but a system font located for a NON-embedded face may be a .ttc
+            // (notably macOS Helvetica/Times/Courier). Ported from FontManager.NET FontReader.ParseTtc.
+            if (sfntVersion == 0x74746366) // 'ttcf'
+            {
+                reader.ReadUShort();            // majorVersion
+                reader.ReadUShort();            // minorVersion
+                uint numFonts = reader.ReadUInt32();
+                if (numFonts == 0)
+                    throw new InvalidDataException("TrueType collection (ttcf) declares zero fonts.");
+                uint firstFontOffset = reader.ReadUInt32(); // offset to font 0's table directory
+                _ttcFontOffset = firstFontOffset;
+                reader.Seek(firstFontOffset);
+                sfntVersion = reader.ReadUInt32();          // the real sfnt version of font 0
+            }
+
             // 0x00010000 = TrueType outlines, 'true' = legacy TrueType, 'OTTO' = CFF outlines.
             if (sfntVersion != 0x00010000 && sfntVersion != 0x74727565 && sfntVersion != 0x4F54544F)
             {
@@ -83,11 +101,12 @@ namespace FontParser
         public byte[]? GetTableBytes(string tag)
         {
             if (!_directory.TryGetValue(tag, out (uint Offset, uint Length) entry)) return null;
+            uint adjustedOffset = entry.Offset + _ttcFontOffset;
             // Defend against a directory entry that points outside the buffer.
-            if (entry.Offset > (uint)_data.Length || entry.Offset + entry.Length > (uint)_data.Length)
+            if (adjustedOffset > (uint)_data.Length || adjustedOffset + entry.Length > (uint)_data.Length)
                 return null;
             var result = new byte[entry.Length];
-            Array.Copy(_data, entry.Offset, result, 0, entry.Length);
+            Array.Copy(_data, (int)adjustedOffset, result, 0, (int)entry.Length);
             return result;
         }
 
