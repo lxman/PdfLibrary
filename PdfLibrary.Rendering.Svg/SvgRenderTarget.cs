@@ -62,9 +62,24 @@ public sealed class SvgRenderTarget : IRenderTarget
     {
         if (path.IsEmpty) return;
         (byte r, byte g, byte b) = PdfColorToRgb.ToRgb(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
+
+        // LineWidth is in PDF user space, but path coordinates arrive CTM-baked — so the width must
+        // be scaled by the CTM's linear factor (sqrt of the |2x2 determinant|), exactly as the
+        // SkiaSharp PathRenderer does. Without this, strokes inside a cm-scaled coordinate space
+        // (figures, logos) come out the wrong thickness. Floor at 0.5 to keep hairlines visible.
+        double ctmScale = Math.Sqrt(Math.Abs(state.Ctm.M11 * state.Ctm.M22 - state.Ctm.M12 * state.Ctm.M21));
+        double width = Math.Max(state.LineWidth * ctmScale, 0.5);
+
         _sb.Append(F($"<path d=\"{D(path)}\" fill=\"none\" stroke=\"rgb({r},{g},{b})\" "))
-           .Append(F($"stroke-opacity=\"{state.StrokeAlpha}\" stroke-width=\"{Math.Max(state.LineWidth, 0.1)}\" "))
-           .Append(F($"stroke-linecap=\"{Cap(state.LineCap)}\" stroke-linejoin=\"{Join(state.LineJoin)}\"/>"));
+           .Append(F($"stroke-opacity=\"{state.StrokeAlpha}\" stroke-width=\"{width}\" "))
+           .Append(F($"stroke-linecap=\"{Cap(state.LineCap)}\" stroke-linejoin=\"{Join(state.LineJoin)}\" "))
+           .Append(F($"stroke-miterlimit=\"{state.MiterLimit}\""));
+        if (state.DashPattern is { Length: > 0 })
+        {
+            string dashes = string.Join(",", state.DashPattern.Select(d => F($"{d * ctmScale}")));
+            _sb.Append(F($" stroke-dasharray=\"{dashes}\" stroke-dashoffset=\"{state.DashPhase * ctmScale}\""));
+        }
+        _sb.Append("/>");
     }
 
     public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)

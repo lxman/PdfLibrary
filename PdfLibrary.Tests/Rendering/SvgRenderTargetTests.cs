@@ -13,6 +13,31 @@ namespace PdfLibrary.Tests.Rendering;
 public class SvgRenderTargetTests
 {
     [Fact]
+    public void StrokePath_ScalesLineWidthByCtm()
+    {
+        // LineWidth is in PDF user space; paths arrive CTM-baked. A stroke drawn under a cm that
+        // scales the space by 0.5 must emit stroke-width = LineWidth * 0.5 — not the raw LineWidth.
+        // Without this, figures drawn in scaled coordinate systems get far-too-thick lines.
+        var target = new SvgRenderTarget();
+        target.BeginPage(1, 200, 200, 1.0);
+        var path = new PathBuilder();
+        path.MoveTo(0, 0);
+        path.LineTo(100, 100);
+        var state = new PdfGraphicsState
+        {
+            LineWidth = 10,
+            Ctm = System.Numerics.Matrix3x2.CreateScale(0.5f) // sqrt(det) = 0.5
+        };
+
+        target.StrokePath(path, state);
+        target.EndPage();
+
+        string svg = target.GetSvg();
+        Assert.Contains("stroke-width=\"5\"", svg);          // 10 * 0.5
+        Assert.DoesNotContain("stroke-width=\"10\"", svg);   // not the raw, un-scaled width
+    }
+
+    [Fact]
     public void RenderToSvg_FilledRectangle_EmitsPathWithRootTransform()
     {
         // A page that fills a red rectangle. Expect an <svg>, a root <g transform="matrix(...)">,
