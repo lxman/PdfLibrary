@@ -20,6 +20,7 @@ namespace PdfLibrary.Rendering;
 internal class PdfRenderer : PdfContentProcessor
 {
     private readonly IRenderTarget _target;
+    private readonly CoreTextRenderer _coreText;
     private readonly PdfResources? _resources;
     private PdfResources? _currentResources; // Can be swapped for annotation resources
     private readonly IPathBuilder _currentPath;
@@ -42,6 +43,7 @@ internal class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager != null}");
 
         _target = target ?? throw new ArgumentNullException(nameof(target));
+        _coreText = new CoreTextRenderer(target, new GlyphPathService());
         _resources = resources;
         _currentResources = resources; // Initially use page resources
         _currentPath = new PathBuilder();
@@ -877,8 +879,10 @@ internal class PdfRenderer : PdfContentProcessor
             }
         }
 
-        // Render the text
-        _target.DrawText(textToRender, glyphWidths, CurrentState, font, charCodes);
+        // Render the text: embedded fonts go through the core glyph pipeline; non-embedded
+        // fonts fall back to the target's DrawText (moved core-side in a later plan).
+        if (!_coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes))
+            _target.DrawText(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
@@ -1170,7 +1174,8 @@ internal class PdfRenderer : PdfContentProcessor
                 PdfLogger.Log(LogCategory.Text, $"  WARNING: ZERO WIDTHS DETECTED for font {CurrentState.FontName}");
         }
 
-        _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
+        if (!_coreText.Render(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes))
+            _target.DrawText(combinedText.ToString(), combinedWidths, CurrentState, font, combinedCharCodes);
 
         // Advance text position by total width
         double totalAdvance = combinedWidths.Sum();
