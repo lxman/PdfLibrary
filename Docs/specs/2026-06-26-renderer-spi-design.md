@@ -116,7 +116,10 @@ So "how does the information get back to us?" → **through the editing API into
 
 **New public surface required (two gaps):**
 - **Field geometry.** Today `PdfFormField.Widgets` (the annotation dicts holding `/Rect`) is `internal`. Expose, per field, its widget rectangle(s) in PDF page coordinates **+ the page index** (a field may have multiple widgets across pages — radio groups). Likely shape: `IReadOnlyList<PdfFieldWidget>` where `PdfFieldWidget { int PageIndex; PdfRect Rect; string? OnStateName; }`.
-- **Coordinate mapping.** A public PDF-page ↔ device transform for a given render (scale, rotation, crop offset, Y-flip) so the client positions overlays and hit-tests clicks. The client already *receives* `BeginPage(scale, cropOffset, rotation)` (it implements the target), but the Y-flip/rotation math is error-prone — provide a `PageGeometry`/matrix helper plus its inverse (device → PDF) for hit-testing.
+- **Coordinate mapping.** Two transforms chained, with a clear owner each:
+  - **page → rendered-image** (PDF-intrinsic: scale, `/Rotate`, crop-box offset, bottom-left↔top-left Y-flip). **The library owns this** and exposes it as a `PageGeometry`/matrix helper (+ inverse for hit-testing). It encodes the error-prone PDF gotchas, is the library's own rasterization math, and is the *only* way a high-level `page.RenderTo().ToImage()` consumer (who never sees `BeginPage`/CTM) can align overlays. Re-deriving it client-side duplicates library logic and drifts the day `/Rotate` handling changes.
+  - **rendered-image → screen** (scroll, zoom, control placement, DPI). **The client owns this** — the library cannot and should not know it.
+  - The client composes the two for the final page→screen placement, and applies the composed inverse (screen → image → page) to turn a click into a field. Using the library's page→image guarantees overlays match the transform the renderer actually used.
 
 This layer is **additive public API** (expose geometry + a transform helper) and is independent of the thin-target text refactor — it can land in its own phase without touching the render pipeline.
 
