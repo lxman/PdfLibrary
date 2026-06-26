@@ -12,7 +12,7 @@ namespace PdfLibrary.Content;
 /// <summary>
 /// Extracts text content from PDF pages with position information
 /// </summary>
-public class PdfTextExtractor : PdfContentProcessor
+internal class PdfTextExtractor : PdfContentProcessor
 {
     private readonly StringBuilder _textBuilder = new();
     private readonly List<TextFragment> _fragments = [];

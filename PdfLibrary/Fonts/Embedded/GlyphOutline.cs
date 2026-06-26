@@ -4,7 +4,7 @@ namespace PdfLibrary.Fonts.Embedded
     /// Represents a complete glyph outline with contours and metrics.
     /// Used for vector rendering of embedded font glyphs.
     /// </summary>
-    public class GlyphOutline(
+    internal class GlyphOutline(
         int glyphId,
         List<GlyphContour> contours,
         GlyphMetrics metrics,

@@ -8,7 +8,7 @@ namespace PdfLibrary.Rendering.SkiaSharp;
 /// Implementation of <see cref="ISystemFontProvider"/> using SkiaSharp's SKFontManager.
 /// This provides cross-platform font discovery through Skia's abstraction layer.
 /// </summary>
-public class SkiaFontProvider : ISystemFontProvider
+internal class SkiaFontProvider : ISystemFontProvider
 {
     private HashSet<string> _availableFonts;
     private readonly object _lock = new();

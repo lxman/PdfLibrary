@@ -35,6 +35,7 @@
 
     <ItemGroup>
         <InternalsVisibleTo Include="PdfLibrary.Tests" />
+        <InternalsVisibleTo Include="PdfLibrary.Integration" />
     </ItemGroup>
 
     <ItemGroup>

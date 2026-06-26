@@ -5,7 +5,7 @@ namespace PdfLibrary.Security;
 /// RC4 is used in PDF encryption versions 1-3 (40-128 bit keys).
 /// Note: RC4 is considered insecure for new applications but is required for legacy PDF support.
 /// </summary>
-public sealed class RC4
+internal sealed class RC4
 {
     private readonly byte[] _s = new byte[256];
     private int _i;

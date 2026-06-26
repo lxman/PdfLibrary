@@ -4,7 +4,7 @@ namespace PdfLibrary.Fonts.Embedded
     /// Glyph metrics for positioning and layout.
     /// All values are in font design units (typically 0-2048).
     /// </summary>
-    public class GlyphMetrics(
+    internal class GlyphMetrics(
         int advanceWidth,
         int leftSideBearing,
         short xMin,

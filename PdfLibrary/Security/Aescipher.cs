@@ -6,7 +6,7 @@ namespace PdfLibrary.Security;
 /// AES cipher implementation for PDF decryption (V=4 and V=5).
 /// Uses .NET's built-in AES implementation in CBC mode.
 /// </summary>
-public static class AesCipher
+internal static class AesCipher
 {
     /// <summary>
     /// Decrypts data using AES-CBC.

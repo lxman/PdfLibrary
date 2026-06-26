@@ -6,7 +6,7 @@ namespace PdfLibrary.Rendering.SkiaSharp.Conversion;
 /// <summary>
 /// Utility for converting PDF blend mode names to SkiaSharp blend modes
 /// </summary>
-public static class BlendModeConverter
+internal static class BlendModeConverter
 {
     /// <summary>
     /// Converts a PDF blend mode string to the corresponding SkiaSharp blend mode.

@@ -9,7 +9,7 @@ namespace PdfLibrary.Rendering.SkiaSharp;
 /// Maps the 14 standard PDF fonts to system equivalents and provides
 /// fallback chains when preferred fonts are unavailable.
 /// </summary>
-public class SystemFontResolver
+internal class SystemFontResolver
 {
     private readonly ISystemFontProvider _fontProvider;
     private readonly Dictionary<string, SKTypeface> _typefaceCache = new(StringComparer.OrdinalIgnoreCase);
@@ -323,7 +323,7 @@ public class SystemFontResolver
 /// <summary>
 /// Categories of fonts for fallback resolution.
 /// </summary>
-public enum FontCategory
+internal enum FontCategory
 {
     SansSerif,
     Serif,

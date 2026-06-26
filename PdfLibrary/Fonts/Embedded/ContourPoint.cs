@@ -4,7 +4,7 @@ namespace PdfLibrary.Fonts.Embedded
     /// Represents a single point in a glyph contour.
     /// TrueType uses quadratic Bezier curves with on-curve and off-curve control points.
     /// </summary>
-    public readonly struct ContourPoint(double x, double y, bool onCurve)
+    internal readonly struct ContourPoint(double x, double y, bool onCurve)
     {
         /// <summary>
         /// X coordinate in font design units (typically 0-2048 for most fonts)

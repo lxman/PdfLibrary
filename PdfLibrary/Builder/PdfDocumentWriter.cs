@@ -29,7 +29,7 @@ internal record GraphicsStateKey(
 /// <summary>
 /// Writes PDF documents to files or streams
 /// </summary>
-public class PdfDocumentWriter
+internal class PdfDocumentWriter
 {
     // Static initializer to register code pages provider (for Windows-1252 encoding support)
     static PdfDocumentWriter()

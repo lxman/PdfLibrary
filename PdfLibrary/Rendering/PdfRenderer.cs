@@ -17,7 +17,7 @@ namespace PdfLibrary.Rendering;
 /// Renders PDF content streams to a platform-specific rendering target
 /// Extends PdfContentProcessor to handle all PDF operators and maintain graphics state
 /// </summary>
-public class PdfRenderer : PdfContentProcessor
+internal class PdfRenderer : PdfContentProcessor
 {
     private readonly IRenderTarget _target;
     private readonly PdfResources? _resources;

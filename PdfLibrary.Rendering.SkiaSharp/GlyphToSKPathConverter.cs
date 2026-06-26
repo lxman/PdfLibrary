@@ -10,7 +10,7 @@ namespace PdfLibrary.Rendering.SkiaSharp;
 /// Converts glyph outlines to SkiaSharp SKPath for rendering.
 /// Supports both TrueType (quadratic Bezier) and CFF (cubic Bezier) outlines.
 /// </summary>
-public class GlyphToSKPathConverter
+internal class GlyphToSKPathConverter
 {
     /// <summary>
     /// Convert a glyph outline to an SKPath suitable for rendering
