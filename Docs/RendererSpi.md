@@ -29,6 +29,8 @@ This is the section most likely to cause bugs. Read it carefully.
 
 When the core calls `FillPath`, `StrokePath`, `FillAndStrokePath`, `SetClippingPath`, or `FillPathWithTilingPattern`, the path segments **already have the current transformation matrix (CTM) applied**. The coordinates are in PDF user space with Y increasing upward. The render target must **not** re-apply the CTM to path coordinates.
 
+> **But scalar measures are *not* pre-baked.** `LineWidth`, `DashPattern`/`DashPhase`, and any other length carried on `PdfGraphicsState` are in PDF *user space* — the CTM is **not** applied to them. Since the path *coordinates* are CTM-baked, a stroke width must be multiplied by the CTM's linear scale factor, `sqrt(|Ctm.M11·Ctm.M22 − Ctm.M12·Ctm.M21|)`, before you emit it — otherwise strokes drawn inside a `cm`-scaled coordinate system (figures, logos) come out the wrong thickness. Both the SkiaSharp target and the SVG example do exactly this in `StrokePath` (scaling `LineWidth`, `DashPattern`, and `DashPhase` by that factor). This is an easy step to miss.
+
 The render target's only job for paths is to apply the **page initial transform** — the Y-flip, render scale, crop offset, and optional rotation — to convert from PDF user space to device space.
 
 ### `ApplyCtm` is for images, not paths
@@ -111,7 +113,7 @@ The SVG target places the initial transform in the root `<g>` element at `BeginP
 | 2 | `void EndPage()` | Flush the completed page to the backing store; close any open groups. |
 | 3 | `void Clear()` | Reset all state and discard accumulated output. Used when switching documents or resetting the renderer. |
 | 4 | `int CurrentPageNumber { get; }` | Return the current 1-based page number. Must be updated by `BeginPage`. |
-| 5 | `void StrokePath(IPathBuilder path, PdfGraphicsState state)` | Stroke the path outline using `state.ResolvedStrokeColor`, `StrokeAlpha`, `LineWidth`, `LineCap`, `LineJoin`, `MiterLimit`, and `DashPattern`/`DashPhase`. Coordinates are CTM-pre-baked; apply only the initial transform. |
+| 5 | `void StrokePath(IPathBuilder path, PdfGraphicsState state)` | Stroke the path outline using `state.ResolvedStrokeColor`, `StrokeAlpha`, `LineWidth`, `LineCap`, `LineJoin`, `MiterLimit`, and `DashPattern`/`DashPhase`. Coordinates are CTM-pre-baked; apply only the initial transform. **Scale `LineWidth` and the dash lengths by the CTM linear factor** (see the Coordinate Contract caveat) — they are in user space, the path is not. |
 | 6 | `void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)` | Fill the path interior using `state.ResolvedFillColor` and `FillAlpha`. `evenOdd = true` → even-odd fill rule; `false` → non-zero winding. |
 | 7 | `void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)` | Fill then stroke in one operation (equivalent to calling `FillPath` then `StrokePath` on the same path). |
 | 8 | `void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd, PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)` | Fill the path with a Type 1 tiling pattern. `renderPatternContent` is a callback that drives the pattern's content stream into a secondary target. Minimal implementations may substitute a solid fill from `state.ResolvedFillColor`. |
