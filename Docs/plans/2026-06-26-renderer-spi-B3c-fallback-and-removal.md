@@ -494,6 +494,13 @@ Open PDFs that use **non-embedded** (Base-14 / unembedded) fonts in the viewer. 
 
 ## Out of scope / still deferred
 
+### From the final whole-branch review (Sound — proceed, with one pre-production caveat)
+
+- **⚠️ Silent-skip on fontless hosts (the keystone caveat).** When no system substitute resolves, `SystemFontLocator.GetFontData` returns null and `RenderWithSubstitute` draws nothing — the old Skia `SKTypeface.FromFamilyName` always returned a face, so non-embedded text was always drawn. On a minimal/headless container lacking the std-14 substitutes (URW/Liberation/DejaVu/Arial/Times/Courier), non-embedded text silently vanishes. **Before shipping non-embedded rendering to headless deployments, bundle a libre last-resort face** (the "bundle std-14 substitutes" item in the SPI 2.0 design) so the locator never returns null — or document the system-font requirement. Dev/Windows + most CI are unaffected (fonts present; visually verified all 5 sans/serif/mono/bold/italic categories render correctly).
+- **Per-page provider construction (perf).** `new SystemFontLocator()` builds a `FontDirectoryIndex` per page render, and the substitute-metrics cache is per-render — a multi-page render re-enumerates the font dir + re-parses substitute bytes per page. Hoist the provider (and the substitute cache) to `PdfDocument`/session scope; dovetails with Plan C's injection seam.
+- **Minor polish (deferred):** substitute per-glyph catch logs "emit failed" for any exception (over-broad); unreachable `ch.Length>0` guard; no CFF/OTF-substitute test (only TrueType PublicPixel); `GetGlyphId(char)` assumes a cmap (fine for real system fonts); stale `TextRenderer` comments in `SkiaSharpRenderPipelineTests`; `SubstituteFontResolver` `string` not `string?` (NRT) + no null-result/StemV-classification test.
+- **Faux-bold double-application — FIXED** (commit bf5eea9): substitute path passes `applyBold:false` (the substitute face already encodes weight via `SyntheticStd14Name`).
+
 - **Faux-bold 0.5-device-px floor** — still requires the page render scale, which the core doesn't have at glyph time. The nominal `FontSize*0.04*scale` width is applied; the small-size floor stays deferred until the page scale is threaded core-side.
 - **`GlyphPathService` document-scope cache** — still per-`PdfRenderer`. Substitute metrics are cached per-`SubstituteFontResolver` (per renderer) by BaseFont, which is sufficient; cross-document reuse remains a later perf item.
 - **Plan C** — slim the SkiaSharp adapter, write a sample non-Skia `IRenderTarget`, document the now-geometry-only SPI.
