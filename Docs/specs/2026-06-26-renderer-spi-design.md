@@ -15,7 +15,7 @@ The core (`Lxman.PdfLibrary`) stays **pure managed with zero SkiaSharp**. SkiaSh
 1. **First-class public SPI** — the bring-your-own-renderer contract is a supported, documented product surface, not an incidental seam.
 2. **Thin target (geometry-only)** — the core does *all* PDF complexity (including glyph resolution and glyph→outline) and hands the target only geometry. A target implements ~10 pure-geometry methods.
 3. **Core stays SkiaSharp-free** — the core emits its own geometry type (`IPathBuilder`), never `SKPath`.
-4. **Non-embedded fonts** — bundle open, metric-compatible substitutes for the 14 standard fonts in the core *and* extend the font-provider SPI to supply font-program bytes. The bundled set guarantees correct, deterministic, offline rendering; the provider supplies better matches when available.
+4. **Non-embedded fonts — locate, don't bundle.** Confirmed (via the Everything index, on a real system) that standard OS font directories already carry metric-compatible base-14 substitutes. The core ships a managed, SkiaSharp-free **system-font locator** (the default `ISystemFontProvider`) that scans the standard dirs and returns font-program **bytes** for FontParser. Reading installed fonts is **not** redistribution → no bundling, no licensing, no Skia. A tiny optional fallback (only Symbol/ZapfDingbats) covers truly-bare headless systems.
 
 ## Current state (baseline)
 
@@ -64,13 +64,20 @@ Moves into the core (the internal `PdfRenderer` / a new internal core `TextPipel
 
 `GlyphOutline` / `GlyphContour` / `ContourPoint` / `GlyphMetrics` / `EmbeddedFontMetrics` **stay internal** — only the core touches them; the target sees paths. This is why approach A reconciles with the public-surface cleanup.
 
-### 3. Fonts: standard-14 substitutes + provider SPI
+### 3. Fonts: locate installed substitutes (SkiaSharp-free)
 
-- **Bundle metric-compatible open substitutes** for the 14 standard fonts as embedded resources in the core; parse them with FontParser (already referenced) → outlines → paths. Guarantees the core can always produce an outline → the thin-target boundary never breaks → deterministic rendering across machines.
-  - Coverage required: Helvetica ×4, Times ×4, Courier ×4, Symbol, ZapfDingbats.
-  - **Licensing sub-task:** pick a redistributable, metric-compatible set covering all 14 (candidates: URW++ base-35; GNU FreeFont; Liberation Sans/Serif/Mono covers Helvetica/Times/Courier under OFL but not Symbol/ZapfDingbats — a combination may be needed). Vendor with a license file, the way `PublicPixel.ttf` is vendored in tests.
-- **Extend `ISystemFontProvider`** to optionally supply **font-program bytes** for a family (today it returns only family *names*). The core parses provider-supplied bytes with FontParser for better matches when available. SkiaSharp becomes *one optional implementation* (SKTypeface → bytes); a consumer with no provider still renders correctly from the bundled substitutes.
-- **Resolution order** for non-embedded glyphs: embedded program (if any) → provider bytes (if wired) → bundled substitute (always available).
+Confirmed via the Everything index on a real system: standard OS font dirs already carry metric-compatible base-14 substitutes — `C:\Windows\Fonts` holds full **Liberation** + **DejaVu**; the per-user dir holds the full **URW base-35 / Nimbus** set (Sans/Roman/MonoPS + StandardSymbolsPS + D050000L = all 14). Generally: Windows always ships Arial/Times New Roman/Courier New/Symbol (metric-identical to the base-14); macOS ships the real Helvetica/Times/Courier + Symbol/ZapfDingbats; Linux ships Liberation/DejaVu/Nimbus via fontconfig.
+
+The core ships a managed, **SkiaSharp-free** system-font locator (the default `ISystemFontProvider`):
+- Scans standard OS font dirs with `System.IO` — Windows: `%WINDIR%\Fonts` + `%LOCALAPPDATA%\Microsoft\Windows\Fonts`; Linux: `/usr/share/fonts`, `/usr/local/share/fonts`, `~/.local/share/fonts`, `~/.fonts`; macOS: `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`.
+- Maps each base-14 face → ordered candidate families: Helvetica→{Arial, Liberation Sans, Nimbus Sans, Arimo, DejaVu Sans}; Times→{Times New Roman, Liberation Serif, Nimbus Roman, Tinos, DejaVu Serif}; Courier→{Courier New, Liberation Mono, Nimbus Mono PS, Cousine, DejaVu Sans Mono}; Symbol→{Symbol, StandardSymbolsPS}; ZapfDingbats→{ZapfDingbats, D050000L}.
+- Returns font-program **bytes** → FontParser → outlines → paths.
+
+**Reading installed fonts ≠ redistribution** → no licensing concern, no package bloat, no SkiaSharp. (The Everything HTTP server was a *developer* tool to confirm availability; the library uses plain `System.IO` enumeration, not Everything.)
+
+**Headless fallback** (bare container, no fonts): the consumer supplies fonts via the provider SPI; or an *optional* tiny bundle of just **Symbol/ZapfDingbats** (URW `StandardSymbolsPS` + `D050000L`, redistributable, ~tens of KB — the only faces a minimal Linux box reliably lacks); or accept degraded rendering. Text faces are effectively always present.
+
+**Resolution order** for non-embedded glyphs: embedded program → located system substitute → optional bundled Symbol/Dingbats fallback.
 
 ### Interaction: forms & appearance generation
 
@@ -93,6 +100,26 @@ Rendering a *filled* form is just rendering its `/AP` Widget-appearance content 
 - **SPI documentation** — a "Writing a render target" guide in `Docs/`, listing the exact public contract and a worked example.
 - **Sample managed target** — a headless, pure-managed raster target (renders to a `byte[]` RGBA buffer) that proves the contract end-to-end with no SkiaSharp, and doubles as the reference for third parties. Lives as an example project.
 
+## Interactive forms — the input layer
+
+The geometry SPI is **output-only**: it pushes pixels to a display surface and has no notion of "editable field." Interactivity is a **separate, orthogonal, renderer-agnostic layer** the client composes on top. The library provides the field *model*, *geometry*, and *value round-trip*; the client provides the native input controls (WPF/Avalonia/web/…). The library never owns a UI widget — that is what keeps it UI-agnostic. **No input/event methods are added to `IRenderTarget`.**
+
+**The interactive loop:**
+1. Render the page via the geometry SPI → static pixels (incl. each field's current `/AP`).
+2. Enumerate fields via the forms read API — name, type, value, options, flags. *(Exists: `FormFieldTree` / `PdfFormField`.)*
+3. For each field, get its **widget rectangle(s) + page index**, map PDF coords → device coords with the render's transform, and overlay a native control. *(Two new public pieces — see gaps.)*
+4. User edits the native control; the client captures the value.
+5. Client calls the forms write API — `field.Value = …` / `Check()` / `SelectedOption = …` / `SelectedValues = …` — which updates `/V` and regenerates `/AP`. **This is how the data returns: into the `PdfDocument` model.** *(Exists.)*
+6. Client re-renders the affected region (or leaves the live control on top); `doc.Save(...)` persists the filled form. *(Exists.)*
+
+So "how does the information get back to us?" → **through the editing API into the document model**, not through the render target. `field.Value` is both the commit point for user input and the getter to read it back; `Save` serializes it.
+
+**New public surface required (two gaps):**
+- **Field geometry.** Today `PdfFormField.Widgets` (the annotation dicts holding `/Rect`) is `internal`. Expose, per field, its widget rectangle(s) in PDF page coordinates **+ the page index** (a field may have multiple widgets across pages — radio groups). Likely shape: `IReadOnlyList<PdfFieldWidget>` where `PdfFieldWidget { int PageIndex; PdfRect Rect; string? OnStateName; }`.
+- **Coordinate mapping.** A public PDF-page ↔ device transform for a given render (scale, rotation, crop offset, Y-flip) so the client positions overlays and hit-tests clicks. The client already *receives* `BeginPage(scale, cropOffset, rotation)` (it implements the target), but the Y-flip/rotation math is error-prone — provide a `PageGeometry`/matrix helper plus its inverse (device → PDF) for hit-testing.
+
+This layer is **additive public API** (expose geometry + a transform helper) and is independent of the thin-target text refactor — it can land in its own phase without touching the render pipeline.
+
 ## Public SPI surface (documented + stabilized)
 
 The minimal contract a target author depends on:
@@ -103,6 +130,7 @@ The minimal contract a target author depends on:
 - `PdfImage` decoded-pixel accessors, `ShadingDescriptor`, `PdfTilingPattern`
 - `ISystemFontProvider` (extended with a font-bytes method)
 - `PdfPage.Render(IRenderTarget, …)` entry point
+- **Interactive forms:** per-field widget geometry (rect + page index) + a public PDF↔device `PageGeometry`/transform helper (overlay positioning + hit-testing) — see "Interactive forms" above
 
 Everything else under `Rendering/` stays internal.
 
