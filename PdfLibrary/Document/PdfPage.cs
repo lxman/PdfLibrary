@@ -4,6 +4,7 @@ using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fixups;
+using PdfLibrary.Fonts;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
@@ -392,6 +393,13 @@ public class PdfPage
     /// <param name="pageNumber">1-based page number for display purposes</param>
     /// <param name="scale">Scale factor (1.0 = 100%, 2.0 = 200%)</param>
     public void Render(IRenderTarget target, int pageNumber = 1, double scale = 1.0)
+        => Render(target, fontProvider: null, pageNumber, scale);
+
+    /// <summary>
+    /// Internal seam: renders the page with an explicit font provider (used by tests and
+    /// future client-supplied-fonts injection). The public overload delegates here with null.
+    /// </summary>
+    internal void Render(IRenderTarget target, ISystemFontProvider? fontProvider, int pageNumber = 1, double scale = 1.0)
     {
         PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] PdfPage.Render() called: pageNumber={pageNumber}, scale={scale}");
 
@@ -407,7 +415,7 @@ public class PdfPage
 
         var optionalContentManager = new OptionalContentManager(_document);
         PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Creating PdfRenderer with fixupManager!=null={fixupManager != null}");
-        var renderer = new PdfRenderer(target, GetResources(), optionalContentManager, _document, fixupManager);
+        var renderer = new PdfRenderer(target, GetResources(), optionalContentManager, _document, fixupManager, fontProvider);
         PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] Calling renderer.RenderPage()...");
         renderer.RenderPage(this, pageNumber, scale);
         PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] renderer.RenderPage() completed");

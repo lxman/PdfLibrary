@@ -38,12 +38,15 @@ internal class PdfRenderer : PdfContentProcessor
     /// <param name="optionalContentManager">Optional content manager for layer visibility</param>
     /// <param name="document">The PDF document (for resolving indirect references in images)</param>
     /// <param name="fixupManager">Optional fixup manager for handling edge cases</param>
-    internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null, FixupManager? fixupManager = null)
+    /// <param name="fontProvider">Optional font provider for system substitute fonts (null → SystemFontLocator)</param>
+    internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null, FixupManager? fixupManager = null, ISystemFontProvider? fontProvider = null)
     {
         PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager != null}");
 
         _target = target ?? throw new ArgumentNullException(nameof(target));
-        _coreText = new CoreTextRenderer(target, new GlyphPathService());
+        // SystemFontLocator is the default substitute source; construct once (builds a
+        // FontDirectoryIndex), never per glyph. fontProvider overrides it (test stubs, API injection).
+        _coreText = new CoreTextRenderer(target, new GlyphPathService(), fontProvider ?? new SystemFontLocator());
         _resources = resources;
         _currentResources = resources; // Initially use page resources
         _currentPath = new PathBuilder();

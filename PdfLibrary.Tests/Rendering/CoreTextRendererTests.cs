@@ -84,6 +84,36 @@ public class CoreTextRendererTests
         return max;
     }
 
+    [Fact]
+    public void Render_NonEmbeddedFont_RendersViaSubstituteOutlines()
+    {
+        // A page drawing non-embedded "Helvetica" text. With a provider that returns a real font
+        // (PublicPixel) as the substitute, the core must emit FillPath per glyph via the substitute's
+        // outlines — not return false (there is no DrawText fallback for the geometry SPI).
+        byte[] subst = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+
+        byte[] pdf = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("Hi", 100, 700, "Helvetica", 24))
+            .ToByteArray();
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+
+        var target = new RecordingRenderTarget();
+        doc.GetPage(0)!.Render(target, new StubProvider(subst)); // internal seam added in this task
+
+        Assert.True(target.FillPaths.Count >= 1, $"expected substitute glyph fills, got {target.FillPaths.Count}");
+    }
+
+    private sealed class StubProvider(byte[] bytes) : PdfLibrary.Fonts.ISystemFontProvider
+    {
+        public byte[]? GetFontData(string baseFontName) => bytes;
+        public IReadOnlyCollection<string> GetAvailableFontFamilies() => [];
+        public bool IsFontAvailable(string familyName) => true;
+        public string? FindFirstAvailable(IEnumerable<string> candidates) => null;
+        public void RefreshCache() { }
+    }
+
     private static string FindRepoFile(params string[] parts)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

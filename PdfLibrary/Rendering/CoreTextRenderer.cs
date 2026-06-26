@@ -1,4 +1,5 @@
 using System.Numerics;
+using Logging;
 using PdfLibrary.Content;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
@@ -6,13 +7,16 @@ using PdfLibrary.Fonts.Embedded;
 namespace PdfLibrary.Rendering;
 
 /// <summary>
-/// Renders embedded-font text by resolving each glyph to a path and emitting FillPath/StrokePath
-/// to the render target — the SkiaSharp-free core replacement for the Skia TextRenderer's embedded
-/// path. Returns false from Render when the font has no valid embedded metrics so the caller can
-/// fall back to the (still Skia-side) DrawText path for non-embedded fonts.
+/// Renders text glyphs by resolving each character to a path and emitting FillPath/StrokePath
+/// to the render target — the SkiaSharp-free core text path. For embedded fonts the glyph comes
+/// from the font program; for non-embedded fonts a substitute font resolved via ISystemFontProvider
+/// is used instead. Returns false only when no rendering path is available (no embedded metrics AND
+/// no usable substitute), so the caller can fall back to the target's DrawText for that run.
 /// </summary>
-internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService glyphPaths)
+internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService glyphPaths, ISystemFontProvider fontProvider)
 {
+    private readonly SubstituteFontResolver _substitutes = new(fontProvider);
+
     public bool Render(string text, List<double> glyphWidths, PdfGraphicsState state,
         PdfFont? font, List<int>? charCodes)
     {
@@ -20,7 +24,8 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         try
         {
             EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
-            if (metrics is not { IsValid: true }) return false;
+            if (metrics is not { IsValid: true })
+                return RenderWithSubstitute(text, glyphWidths, state, font);
 
             bool applyBold = ShouldApplyFauxBold(font);
             var tHs = (float)state.HorizontalScaling / 100f;
@@ -61,7 +66,8 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
                 Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs) * state.Ctm;
                 IPathBuilder userPath = glyphSpace.Transform(toUser);
 
-                EmitGlyph(userPath, state, toUser, applyBold);
+                try { EmitGlyph(userPath, state, toUser, applyBold); }
+                catch (Exception ex) { PdfLogger.Log(LogCategory.Text, () => $"glyph emit failed (embedded): {ex.Message}"); }
                 Advance(ref currentX, glyphWidths, i, state);
             }
 
@@ -69,10 +75,69 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         }
         catch
         {
-            // Any failure: report not-handled so the caller falls back to DrawText.
+            // Setup failure (font parsing, glyph resolution): report not-handled so the
+            // caller can fall back to DrawText. Per-glyph emit failures are caught inside the loop.
             return false;
         }
     }
+
+    private bool RenderWithSubstitute(string text, List<double> glyphWidths,
+        PdfGraphicsState state, PdfFont font)
+    {
+        EmbeddedFontMetrics? sub = _substitutes.Resolve(font.BaseFont, font.GetDescriptor());
+        if (sub is not { IsValid: true }) return false; // no substitute available → nothing to draw
+
+        if (state.RenderingMode is 3 or 7) return true;  // invisible — no glyphs needed
+
+        bool applyBold = ShouldApplyFauxBold(font);
+        var tHs = (float)state.HorizontalScaling / 100f;
+        bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;
+        double currentX = 0;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            string ch = DecomposeLigature(text[i]);
+            double w = i < glyphWidths.Count ? glyphWidths[i] : 0;
+            double subW = ch.Length > 0 ? w / ch.Length : 0;
+
+            foreach (char c in ch)
+            {
+                try
+                {
+                    ushort glyphId = sub.GetGlyphId(c);
+                    if (glyphId != 0)
+                    {
+                        GlyphOutline? outline = sub.GetGlyphOutline(glyphId);
+                        if (outline is { IsEmpty: false })
+                        {
+                            IPathBuilder glyphSpace = glyphPaths.GetGlyphPath(
+                                sub, glyphId, (float)state.FontSize, outline, resolvedGlyphName: null);
+                            // CTM must be baked into the path — FillPath applies only the page
+                            // initial-transform. Omitting * state.Ctm reproduces the figure-label
+                            // bug fixed in commit 8429607.
+                            Matrix3x2 toUser = GlyphPlacement.GlyphToUser(state, currentX, tHs) * state.Ctm;
+                            IPathBuilder userPath = glyphSpace.Transform(toUser);
+                            EmitGlyph(userPath, state, toUser, applyBold);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PdfLogger.Log(LogCategory.Text, () => $"glyph emit failed (substitute): {ex.Message}");
+                }
+                currentX += subW * (flipX ? -1.0 : 1.0);
+            }
+        }
+        return true;
+    }
+
+    // Port of TextRenderer.cs ligature decomposition (preserves glyph advance width split).
+    private static string DecomposeLigature(char c) => c switch
+    {
+        'ﬀ' => "ff", 'ﬁ' => "fi", 'ﬂ' => "fl",
+        'ﬃ' => "ffi", 'ﬄ' => "ffl",
+        _ => c.ToString()
+    };
 
     private void EmitGlyph(IPathBuilder userPath, PdfGraphicsState state, Matrix3x2 toUser, bool applyBold)
     {
