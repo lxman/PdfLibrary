@@ -33,7 +33,7 @@ namespace FontParser
     ///
     /// Scope is deliberately PDF-shaped: a PDF embeds exactly one font program. A TrueType
     /// Collection ('ttcf') — which can appear when locating a system font for a non-embedded
-    /// face — is handled by parsing its first font; WOFF/WOFF2 containers are not supported.
+    /// face — is handled by selecting the requested face by index (font 0 by default); WOFF/WOFF2 containers are not supported.
     /// </summary>
     public sealed class SfntFont
     {
@@ -69,7 +69,7 @@ namespace FontParser
                 FaceCount = (int)numFonts;
 
                 long offsetTablePos = reader.Position;          // start of the uint32 offset array
-                reader.Seek(offsetTablePos + faceIndex * 4);
+                reader.Seek(offsetTablePos + (long)faceIndex * 4);
                 uint fontOffset = reader.ReadUInt32();           // offset to this face's table directory
                 reader.Seek(fontOffset);
                 sfntVersion = reader.ReadUInt32();               // the real sfnt version of this face
