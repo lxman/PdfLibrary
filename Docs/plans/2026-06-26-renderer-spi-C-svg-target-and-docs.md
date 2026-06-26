@@ -574,6 +574,10 @@ git commit -m "docs: renderer SPI implementer guide (coordinate contract + per-m
 
 ## Out of scope / deferred
 
+### Final-review outcome (Sound — proceed; agnosticism proven structurally)
+
+The SVG package is a separate assembly with NO `InternalsVisibleTo` grant — its compiling + implementing `IRenderTarget` is itself proof the SPI surface is fully public. **Folded in before close** (commit 1c937a1): `xlink:href` + `xmlns:xlink` (SVG-1.1 consumer portability) and a clip-nesting q/Q `<g>`-balance test. **Deferred (none block):** have the SkiaSharp `ColorConverter` delegate to `PdfColorToRgb` (one color source-of-truth; they currently diverge ≤1/255); `RenderToSvg` hardcodes `pageNumber:1` (cosmetic — `CurrentPageNumber` always 1); `SvgRenderTarget` is one-page-per-instance (document "fresh target per page"); `maskSubtype` interpolated into an XML comment (whitelist if hardening); the C-T3 polish (unused using, `Clear()`/`EndPage` state resets, `_dims` ceil-vs-raw).
+
 - **`PdfImage → RGBA` core helper + PNG encoder** (full image support for non-JPEG images, and the basis for any raster non-Skia target incl. WPF). ~350–400 lines hoisted from `ImageRenderer.CreateBitmapFromPdfImage` + a Skia-free PNG encoder. The single biggest follow-up; shared across all non-Skia targets.
 - **Shadings** (`PaintShading`/`FillPathWithShadingPattern`) → SVG `<linearGradient>`/`<radialGradient>`; **tiling patterns** → SVG `<pattern>`; **soft masks** → SVG `<mask>`.
 - **WPF render target** (de-Skias the viewer) — builds on the RGBA helper above; see the SPI-2.0 design notes.
