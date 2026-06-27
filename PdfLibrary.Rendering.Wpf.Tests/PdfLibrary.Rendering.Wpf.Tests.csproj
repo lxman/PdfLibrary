@@ -26,6 +26,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\PdfLibrary\PdfLibrary.csproj" />
     <ProjectReference Include="..\PdfLibrary.Rendering.Wpf\PdfLibrary.Rendering.Wpf.csproj" />
   </ItemGroup>
 

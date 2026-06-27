@@ -3,6 +3,8 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using PdfLibrary.Content;
+using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Rendering.Wpf.Tests;
@@ -261,6 +263,59 @@ public class WpfRenderTargetTests
         int right = (50 * 100 + 75) * 4;
         Assert.True(px[right + 2] < 60,
             $"R={px[right+2]}: right-half pixel should be unpainted (first clip still active)");
+    }
+
+    // ---- DrawImage ----
+
+    [Fact]
+    public void DrawImage_RendersKnownColorAtExpectedPixel()
+    {
+        // Build a 1x1 DeviceRGB image with R=200, G=100, B=50 (fully opaque).
+        // CTM scales the unit-square to 50×50 PDF units placed at (25,25).
+        // After PageTransform the image occupies screen pixels (25,25)→(75,75);
+        // center pixel (50,50) must carry the image colour.
+        // RenderTargetBitmap uses Pbgra32 (B G R A); red channel is at index+2.
+        byte[] px = Sta.Run(() =>
+        {
+            var dict = new PdfDictionary
+            {
+                [new PdfName("Subtype")]         = new PdfName("Image"),
+                [new PdfName("Width")]           = new PdfInteger(1),
+                [new PdfName("Height")]          = new PdfInteger(1),
+                [new PdfName("ColorSpace")]      = new PdfName("DeviceRGB"),
+                [new PdfName("BitsPerComponent")] = new PdfInteger(8)
+            };
+            // Raw DeviceRGB bytes for a single pixel: R=200, G=100, B=50.
+            byte[] imgData = [200, 100, 50];
+            var stream = new PdfStream(dict, imgData);
+            var image  = new PdfImage(stream);   // internal ctor — requires InternalsVisibleTo
+
+            var t = new WpfRenderTarget();
+            t.BeginPage(1, 100, 100, 1.0, 0, 0, 0);
+
+            // CTM: scale(50) + translate(25,25) — image covers PDF rect (25,25)→(75,75).
+            var state = new PdfGraphicsState
+            {
+                Ctm = new Matrix3x2(50, 0, 0, 50, 25, 25)
+            };
+            t.DrawImage(image, state);
+            t.EndPage();
+
+            var rtb = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(t.Visual);
+            var buf = new byte[100 * 100 * 4];
+            rtb.CopyPixels(buf, 100 * 4, 0);
+            return buf;
+        });
+
+        // Center pixel (50,50) in Pbgra32 layout: [+0]=B, [+1]=G, [+2]=R, [+3]=A.
+        int center = (50 * 100 + 50) * 4;
+        Assert.True(px[center + 2] > 150,
+            $"R={px[center+2]}: center pixel should carry the image red channel (~200)");
+        Assert.True(px[center + 1] < 150,
+            $"G={px[center+1]}: green channel should be lower than red");
+        Assert.True(px[center + 0] < 100,
+            $"B={px[center+0]}: blue channel should be lowest");
     }
 
     // ---- StrokePath ----

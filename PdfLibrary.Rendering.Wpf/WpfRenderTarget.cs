@@ -1,9 +1,11 @@
 using System.Numerics;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering.Wpf;
 
@@ -23,6 +25,17 @@ public sealed class WpfRenderTarget : IRenderTarget
     private DrawingGroup _rootGroup = new();
     private DrawingVisual _visual = new();
     private DrawingContext? _dc;
+
+    private readonly PdfDocument? _document;
+
+    /// <summary>
+    /// Initialises the render target, optionally binding it to a <see cref="PdfDocument"/>
+    /// so that image decoding can resolve indirect references (ICC profiles, SMasks, etc.).
+    /// </summary>
+    public WpfRenderTarget(PdfDocument? document = null)
+    {
+        _document = document;
+    }
 
     // Tracks outstanding PushXxx() calls so EndPage can balance them.
     private int _pushDepth;
@@ -194,9 +207,55 @@ public sealed class WpfRenderTarget : IRenderTarget
     public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
         PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent) { }
 
-    // ==================== CONTENT OPERATIONS (stubs — Task D2b-3) ====================
+    // ==================== CONTENT OPERATIONS ====================
 
-    public void DrawImage(PdfImage image, PdfGraphicsState state) { }
+    public void DrawImage(PdfImage image, PdfGraphicsState state)
+    {
+        if (_dc is null) return;
+
+        // Decode to RGBA8888 (R,G,B,A order, top-row-first) — returns null for unsupported images.
+        PdfImageToRgba.RgbaImage? decoded = PdfImageToRgba.ToRgba(image, _document);
+        if (decoded is not { } img || img.Rgba.Length == 0) return;
+
+        // Swap R↔B to produce BGRA (WPF's native channel order).
+        // For Premultiplied alpha, pre-multiply RGB by A before the swap.
+        bool premul = img.Alpha == AlphaMode.Premultiplied;
+        byte[] bgra = new byte[img.Rgba.Length];
+        for (int i = 0; i < img.Rgba.Length; i += 4)
+        {
+            byte r = img.Rgba[i];
+            byte g = img.Rgba[i + 1];
+            byte b = img.Rgba[i + 2];
+            byte a = img.Rgba[i + 3];
+            if (premul)
+            {
+                r = (byte)(r * a / 255);
+                g = (byte)(g * a / 255);
+                b = (byte)(b * a / 255);
+            }
+            bgra[i]     = b;
+            bgra[i + 1] = g;
+            bgra[i + 2] = r;
+            bgra[i + 3] = a;
+        }
+
+        PixelFormat fmt = premul ? PixelFormats.Pbgra32 : PixelFormats.Bgra32;
+        BitmapSource bs = BitmapSource.Create(img.Width, img.Height, 96, 96, fmt, null, bgra, img.Width * 4);
+        bs.Freeze();
+
+        // Draw in the unit square with:
+        //   1. state.Ctm   — maps image unit square → PDF user space
+        //   2. Y-flip      — PDF image rows are top-first; WPF's Y axis goes down
+        // These two transforms are local to this draw call; Pop() them immediately
+        // so they do NOT affect _pushDepth (which tracks Save/Clip state).
+        Matrix3x2 c = state.Ctm;
+        var ctmMatrix = new Matrix(c.M11, c.M12, c.M21, c.M22, c.M31, c.M32);
+        _dc.PushTransform(new MatrixTransform(ctmMatrix));
+        _dc.PushTransform(new MatrixTransform(1, 0, 0, -1, 0, 1));   // translate(0,1) scale(1,-1)
+        _dc.DrawImage(bs, new Rect(0, 0, 1, 1));
+        _dc.Pop();
+        _dc.Pop();
+    }
 
     // ==================== MASK (stubs — Task D2b-4) ====================
 
