@@ -9,10 +9,8 @@ using Microsoft.Win32;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
 using PdfLibrary.Optimization;
-using PdfLibrary.Rendering.SkiaSharp;
 using PdfLibrary.Rendering.Wpf;
 using Serilog;
-using SkiaSharp;
 using PdfDocument = PdfLibrary.Structure.PdfDocument;
 using PdfPage = PdfLibrary.Document.PdfPage;
 
@@ -356,25 +354,22 @@ public partial class MainWindow : Window
 
     private void SaveImageToFile(string path)
     {
-        PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
-        if (page == null) return;
-
-        // Use page dimensions which account for rotation
-        var width = (int)(page.Width * _zoomLevel);
-        var height = (int)(page.Height * _zoomLevel);
-
-        var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfDoc);
-        try
+        // RenderToDrawing and RenderTargetBitmap both require STA — marshal to the UI dispatcher.
+        RenderTargetBitmap? rtb = null;
+        Dispatcher.Invoke(() =>
         {
-            // Use the simplified public API
-            page.Render(renderTarget, _currentPage, _zoomLevel);
-            renderTarget.SaveToFile(path);
-            Log.Information("Saved image to {Path}", path);
-        }
-        finally
-        {
-            renderTarget.Dispose();
-        }
+            if (_editor == null) return;
+            PdfPage page = _editor.Pages[_currentPage - 1];
+            // Preserve the same pixel scale as the old code: zoom without DPI correction.
+            rtb = RenderPageBitmap(page, _zoomLevel);
+        });
+        if (rtb == null) return;
+
+        var enc = new PngBitmapEncoder();
+        enc.Frames.Add(BitmapFrame.Create(rtb));
+        using FileStream fs = File.Create(path);
+        enc.Save(fs);
+        Log.Information("Saved image to {Path}", path);
     }
 
     // ==================== PRINTING ====================
@@ -427,38 +422,32 @@ public partial class MainWindow : Window
 
     private BitmapSource RenderPageToBitmap(double targetWidth, double targetHeight)
     {
-        PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
-        if (page == null)
-            throw new InvalidOperationException("Page not found");
+        if (_editor == null)
+            throw new InvalidOperationException("No document loaded");
 
-        // Calculate scale to fit the page in the printable area while maintaining aspect ratio
-        // Use page.Width/Height which account for rotation
+        PdfPage page = _editor.Pages[_currentPage - 1];
+
+        // Calculate scale to fit the page in the printable area while maintaining aspect ratio.
+        // DrawingGroup is resolution-independent so this renders correctly at print target size.
         double scaleX = targetWidth / page.Width;
         double scaleY = targetHeight / page.Height;
-        double scale = Math.Min(scaleX, scaleY);
+        double pixelScale = Math.Min(scaleX, scaleY);
 
-        var width = (int)(page.Width * scale);
-        var height = (int)(page.Height * scale);
+        // Already on the UI (STA) thread — RenderPageBitmap is safe to call directly here.
+        return RenderPageBitmap(page, pixelScale);
+    }
 
-        // Render at calculated size using the simplified public API
-        using var renderTarget = new SkiaSharpRenderTarget(width, height, _pdfDoc);
-        page.Render(renderTarget, _currentPage, scale);
-
-        // Get the SKImage and convert to WPF BitmapSource
-        using SKImage? skImage = renderTarget.GetImage();
-        using SKData? data = skImage.Encode(SKEncodedImageFormat.Png, 100);
-        using var stream = new MemoryStream();
-        data.SaveTo(stream);
-        stream.Position = 0;
-
-        var bitmapImage = new BitmapImage();
-        bitmapImage.BeginInit();
-        bitmapImage.CacheOption = BitmapCacheOption.OnLoad;
-        bitmapImage.StreamSource = stream;
-        bitmapImage.EndInit();
-        bitmapImage.Freeze();
-
-        return bitmapImage;
+    private static RenderTargetBitmap RenderPageBitmap(PdfPage page, double pixelScale)
+    {
+        DrawingGroup dg = page.RenderToDrawing(pixelScale);
+        PageGeometry geo = page.GetGeometry(pixelScale);
+        var visual = new DrawingVisual();
+        using (DrawingContext dc = visual.RenderOpen())
+            dc.DrawDrawing(dg);
+        var rtb = new RenderTargetBitmap(geo.PixelWidth, geo.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(visual);
+        rtb.Freeze();
+        return rtb;
     }
 
     // ==================== OPTIMIZE ====================
