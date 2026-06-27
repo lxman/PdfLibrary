@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using System.Printing;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,6 +9,7 @@ using System.Windows.Media.Imaging;
 using Microsoft.Win32;
 using PdfLibrary.Document;
 using PdfLibrary.Editing;
+using PdfLibrary.Editing.Forms;
 using PdfLibrary.Optimization;
 using PdfLibrary.Rendering.Wpf;
 using Serilog;
@@ -177,6 +179,7 @@ public partial class MainWindow : Window
 
             Dispatcher.Invoke(() =>
             {
+                if (_currentPage < 1 || _currentPage > _editor.Pages.Count) return;
                 PdfPage page = _editor.Pages[_currentPage - 1];
 
                 // Translate user-facing zoom (fraction of actual size) into the pixel
@@ -208,9 +211,128 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Populates <see cref="WpfPageView.Overlay"/> with WPF controls for each form field
-    /// widget on the current page.  Stub — implemented in Task 3.
+    /// widget on the current page.
     /// </summary>
-    private void BuildOverlay(PdfPage page, PageGeometry geo, double dpiScale) { }
+    private void BuildOverlay(PdfPage page, PageGeometry geo, double dpiScale)
+    {
+        Canvas overlay = PdfView.Overlay;
+        overlay.Children.Clear();
+        if (_editor is null) return;
+        int pageIndex = _currentPage - 1;
+
+        foreach (PdfFormField field in _editor.Forms)
+        foreach (PdfFieldWidget widget in field.Widgets)
+        {
+            if (widget.PageIndex != pageIndex) continue;   // includes -1 orphans → skipped
+            ImageRect ir = geo.MapRectToImage(widget.Rect);
+            FrameworkElement? control = CreateControl(field, widget);
+            if (control is null) continue;
+            Canvas.SetLeft(control, ir.X / dpiScale);
+            Canvas.SetTop(control, ir.Y / dpiScale);
+            control.Width = ir.Width / dpiScale;
+            control.Height = ir.Height / dpiScale;
+            overlay.Children.Add(control);
+        }
+    }
+
+    private static FrameworkElement? CreateControl(PdfFormField field, PdfFieldWidget widget)
+    {
+        switch (field)
+        {
+            case PdfTextField tf:
+            {
+                var tb = new TextBox
+                {
+                    Text = tf.Value ?? "",
+                    AcceptsReturn = tf.IsMultiline,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    BorderThickness = new Thickness(1)
+                };
+                if (tf.MaxLength is { } ml && ml > 0) tb.MaxLength = ml;
+                tb.LostFocus += (_, _) => tf.Value = tb.Text;
+                return tb;
+            }
+            case PdfButtonField bf when bf.Kind == ButtonKind.Checkbox:
+            {
+                var cb = new CheckBox
+                {
+                    IsChecked = bf.IsChecked,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                cb.Checked   += (_, _) => bf.Check();
+                cb.Unchecked += (_, _) => bf.Uncheck();
+                return cb;
+            }
+            case PdfButtonField bf when bf.Kind == ButtonKind.Radio:
+            {
+                var rb = new RadioButton
+                {
+                    GroupName = field.FullName,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsChecked = widget.OnStateName != null && widget.OnStateName == bf.SelectedOption
+                };
+                string? on = widget.OnStateName;
+                rb.Checked += (_, _) => { if (on != null) bf.SelectedOption = on; };
+                return rb;
+            }
+            case PdfChoiceField cf when cf.IsCombo:
+            {
+                var combo = new ComboBox();
+                foreach ((string export, string display) in cf.Options)
+                    combo.Items.Add(new ComboBoxItem { Content = display, Tag = export });
+                string? sel = cf.SelectedValues.Count > 0 ? cf.SelectedValues[0] : null;
+                if (sel != null) combo.SelectedIndex = IndexOfExport(cf, sel);
+                combo.SelectionChanged += (_, _) =>
+                {
+                    if (combo.SelectedItem is ComboBoxItem item && item.Tag is string ex)
+                        cf.SelectedValues = new[] { ex };
+                };
+                return combo;
+            }
+            case PdfChoiceField cf:   // list box
+            {
+                var lb = new ListBox
+                {
+                    SelectionMode = cf.IsMultiSelect ? SelectionMode.Multiple : SelectionMode.Single
+                };
+                foreach ((string export, string display) in cf.Options)
+                    lb.Items.Add(new ListBoxItem { Content = display, Tag = export });
+                // Preselect
+                foreach (string sv in cf.SelectedValues)
+                {
+                    int idx = IndexOfExport(cf, sv);
+                    if (idx >= 0) lb.SelectedItems.Add(lb.Items[idx]);
+                }
+                lb.SelectionChanged += (_, _) =>
+                    cf.SelectedValues = lb.SelectedItems.Cast<ListBoxItem>()
+                        .Select(i => (string)i.Tag).ToArray();
+                return lb;
+            }
+            case PdfSignatureField:
+                return new Border
+                {
+                    BorderBrush = Brushes.Gray,
+                    BorderThickness = new Thickness(1),
+                    Background = new SolidColorBrush(Color.FromArgb(20, 0, 0, 0)),
+                    Child = new TextBlock
+                    {
+                        Text = "Signature",
+                        Foreground = Brushes.Gray,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }
+                };
+            default:
+                return null;   // push buttons, unknown
+        }
+    }
+
+    private static int IndexOfExport(PdfChoiceField cf, string export)
+    {
+        for (int i = 0; i < cf.Options.Count; i++)
+            if (cf.Options[i].Export == export) return i;
+        return -1;
+    }
 
     // ==================== ZOOM CONTROLS ====================
 
