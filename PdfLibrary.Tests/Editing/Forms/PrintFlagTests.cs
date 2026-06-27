@@ -16,7 +16,7 @@ public class PrintFlagTests
 {
     private static int WidgetFlags(PdfDocument doc, PdfFormField f)
     {
-        PdfDictionary w = f.Widgets[0];
+        PdfDictionary w = f.WidgetDicts[0];
         PdfObject? flagObj = w.Get(new PdfName("F"));
         if (flagObj is PdfIndirectReference r) flagObj = doc.GetObject(r.ObjectNumber);
         return flagObj is PdfInteger i ? i.Value : 0;

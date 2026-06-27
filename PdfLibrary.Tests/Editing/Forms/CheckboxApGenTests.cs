@@ -22,8 +22,8 @@ public class CheckboxApGenTests
     /// </summary>
     private static PdfDictionary? GetApNDict(PdfDocument doc, PdfButtonField field)
     {
-        if (field.Widgets.Count == 0) return null;
-        PdfDictionary widget = field.Widgets[0];
+        if (field.WidgetDicts.Count == 0) return null;
+        PdfDictionary widget = field.WidgetDicts[0];
 
         PdfObject? apRaw = widget.Get(new PdfName("AP"));
         if (FormFieldTree.Resolve(doc, apRaw) is not PdfDictionary ap) return null;

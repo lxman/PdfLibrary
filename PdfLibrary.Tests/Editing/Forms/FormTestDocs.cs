@@ -1,6 +1,7 @@
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.FormField;
 using PdfLibrary.Builder.Page;
+using PdfLibrary.Editing;
 
 namespace PdfLibrary.Tests.Editing.Forms;
 
@@ -464,6 +465,94 @@ public static class FormTestDocs
         w.Flush();
         long xrefOffset = ms.Position;
         int totalObjs = 5;
+
+        w.WriteLine("xref");
+        w.WriteLine($"0 {totalObjs + 1}");
+        w.WriteLine("0000000000 65535 f ");
+        for (int i = 1; i <= totalObjs; i++)
+        {
+            if (offsets.TryGetValue(i, out long off))
+                w.WriteLine($"{off:D10} 00000 n ");
+            else
+                w.WriteLine("0000000000 65535 f ");
+        }
+
+        w.WriteLine("trailer");
+        w.WriteLine($"<< /Size {totalObjs + 1} /Root 2 0 R >>");
+        w.WriteLine("startxref");
+        w.WriteLine(xrefOffset.ToString());
+        w.WriteLine("%%EOF");
+        w.Flush();
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a minimal single-page PDF containing a text field named "text1" at
+    /// <paramref name="textRect"/> and a checkbox named "check1" at <paramref name="checkRect"/>
+    /// with the given on-state name, then opens it in an editor.
+    /// </summary>
+    public static PdfDocumentEditor SingleTextAndCheckbox(
+        PdfRect textRect,
+        PdfRect checkRect,
+        string checkOnState = "Yes")
+    {
+        byte[] pdf = BuildSingleTextAndCheckboxPdf(textRect, checkRect, checkOnState);
+        return PdfDocumentEditor.Open(new System.IO.MemoryStream(pdf));
+    }
+
+    private static byte[] BuildSingleTextAndCheckboxPdf(
+        PdfRect textRect,
+        PdfRect checkRect,
+        string checkOnState)
+    {
+        // Object layout:
+        //   1: pages node
+        //   2: catalog
+        //   3: page  (Annots: 4, 5)
+        //   4: text field widget  /FT /Tx /T (text1)
+        //   5: checkbox widget    /FT /Btn /T (check1) with /AP /N
+        //   6: AcroForm
+        var offsets = new Dictionary<int, long>();
+
+        using var ms = new System.IO.MemoryStream();
+        using var w = new System.IO.StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true);
+
+        w.WriteLine("%PDF-1.7");
+        w.Flush();
+
+        void WriteObj(int n, string content)
+        {
+            w.Flush();
+            offsets[n] = ms.Position;
+            w.WriteLine($"{n} 0 obj");
+            w.WriteLine(content);
+            w.WriteLine("endobj");
+            w.WriteLine();
+        }
+
+        WriteObj(1, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        WriteObj(2, "<< /Type /Catalog /Pages 1 0 R /AcroForm 6 0 R >>");
+        WriteObj(3, "<< /Type /Page /Parent 1 0 R /MediaBox [0 0 612 792] /Annots [4 0 R 5 0 R] >>");
+
+        // Text field widget (merged field+widget, no separate parent)
+        WriteObj(4,
+            $"<< /Type /Annot /Subtype /Widget /FT /Tx /T (text1) " +
+            $"/V () /DA (/Helv 12 Tf 0 g) " +
+            $"/Rect [{textRect.Left:G} {textRect.Bottom:G} {textRect.Right:G} {textRect.Top:G}] >>");
+
+        // Checkbox widget with /AP /N containing the on-state and /Off keys
+        WriteObj(5,
+            $"<< /Type /Annot /Subtype /Widget /FT /Btn /T (check1) " +
+            $"/Ff 0 /V /Off /AS /Off " +
+            $"/AP << /N << /{EscapeName(checkOnState)} << >> /Off << >> >> >> " +
+            $"/Rect [{checkRect.Left:G} {checkRect.Bottom:G} {checkRect.Right:G} {checkRect.Top:G}] >>");
+
+        WriteObj(6, "<< /Fields [4 0 R 5 0 R] /NeedAppearances true >>");
+
+        w.Flush();
+        long xrefOffset = ms.Position;
+        int totalObjs = 6;
 
         w.WriteLine("xref");
         w.WriteLine($"0 {totalObjs + 1}");

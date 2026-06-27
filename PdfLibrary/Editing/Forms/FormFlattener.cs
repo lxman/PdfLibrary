@@ -25,7 +25,7 @@ internal static class FormFlattener
         // which page owns each widget by scanning /Annots.
         List<PdfDictionary> pages = GetAllPageDicts(doc);
 
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
         {
             // Find the owning page: the page whose /Annots array contains this widget.
             // We match by object identity (object number if indirect, or reference equality

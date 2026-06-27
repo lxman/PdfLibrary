@@ -18,7 +18,7 @@ public class ChoiceFillTests
     /// </summary>
     private static string ApStreamText(PdfDocument doc, PdfChoiceField field)
     {
-        PdfDictionary widget = field.Widgets[0];
+        PdfDictionary widget = field.WidgetDicts[0];
 
         PdfObject? apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfLibrary.Core.Primitives.PdfDictionary;

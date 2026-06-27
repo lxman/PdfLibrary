@@ -21,12 +21,12 @@ internal static class ButtonStateWriter
 
         if (on)
         {
-            foreach (PdfDictionary widget in f.Widgets)
+            foreach (PdfDictionary widget in f.WidgetDicts)
                 FieldAppearanceGenerator.EnsureButtonAppearance(doc, widget, onState, isRadio: false);
         }
 
         f.Dict[new PdfName("V")] = new PdfName(state);
-        foreach (PdfDictionary widget in f.Widgets)
+        foreach (PdfDictionary widget in f.WidgetDicts)
         {
             widget[new PdfName("AS")] = new PdfName(state);
             FieldAppearanceGenerator.EnsurePrintable(widget);
@@ -40,9 +40,9 @@ internal static class ButtonStateWriter
     private static string CheckboxOnState(PdfDocument doc, PdfButtonField f)
     {
         // 1. Try /AP /N on the first widget
-        if (f.Widgets.Count > 0)
+        if (f.WidgetDicts.Count > 0)
         {
-            try { return OnState(doc, f.Widgets[0]); }
+            try { return OnState(doc, f.WidgetDicts[0]); }
             catch (InvalidOperationException) { /* no AP — fall through */ }
         }
 
@@ -70,7 +70,7 @@ internal static class ButtonStateWriter
             throw new ArgumentException($"Option '{option}' is not among the radio group's options.", nameof(option));
 
         f.Dict[new PdfName("V")] = new PdfName(option);
-        foreach (PdfDictionary widget in f.Widgets)
+        foreach (PdfDictionary widget in f.WidgetDicts)
         {
             string widgetOnState;
             try { widgetOnState = OnState(doc, widget); }

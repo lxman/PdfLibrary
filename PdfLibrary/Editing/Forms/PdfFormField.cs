@@ -31,8 +31,11 @@ public abstract class PdfFormField
     /// <summary>The document that owns this field.</summary>
     internal PdfDocument Doc { get; set; } = null!;
 
-    /// <summary>Widget annotation dictionaries (the visual representations).</summary>
-    internal IReadOnlyList<PdfDictionary> Widgets { get; set; } = Array.Empty<PdfDictionary>();
+    /// <summary>Raw widget annotation dictionaries (the visual representations).</summary>
+    internal IReadOnlyList<PdfDictionary> WidgetDicts { get; set; } = Array.Empty<PdfDictionary>();
+
+    /// <summary>The field's widget placements (rect + page + on-state), for positioning UI over fields.</summary>
+    public IReadOnlyList<PdfFieldWidget> Widgets { get; internal set; } = Array.Empty<PdfFieldWidget>();
 }
 
 /// <summary>A /Tx (text) field.</summary>

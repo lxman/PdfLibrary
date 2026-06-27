@@ -425,7 +425,7 @@ public class PdfPage
     /// <summary>
     /// Builds the PDF→rendered-image geometry for this page at the given scale — the transform
     /// the renderers use, plus its inverse and the rendered pixel size. Place UI over a rendered
-    /// page (e.g. form controls via <see cref="PdfFieldWidget"/>) using <see cref="PageGeometry"/>.
+    /// page (e.g. form controls via <see cref="PdfLibrary.Editing.Forms.PdfFieldWidget"/>) using <see cref="PageGeometry"/>.
     /// </summary>
     public PageGeometry GetGeometry(double scale = 1.0)
     {

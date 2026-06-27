@@ -22,7 +22,7 @@ internal static class FieldAppearanceGenerator
     {
         // A filled widget must be printable. Widgets authored without /F (the common case) default to
         // non-printing, so viewers display the value on screen but OMIT it from print/export.
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
             EnsurePrintable(widget);
 
         if (field is PdfTextField t)
@@ -72,7 +72,7 @@ internal static class FieldAppearanceGenerator
 
         bool anyWidgetWritten = false;
 
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
         {
             // Read /Rect
             if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
@@ -194,7 +194,7 @@ internal static class FieldAppearanceGenerator
 
         bool anyWidgetWritten = false;
 
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
         {
             if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
                 continue;
@@ -348,7 +348,7 @@ internal static class FieldAppearanceGenerator
 
         bool anyWidgetWritten = false;
 
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
         {
             if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
                 continue;
@@ -464,7 +464,7 @@ internal static class FieldAppearanceGenerator
 
         bool anyWidgetWritten = false;
 
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
         {
             if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
                 continue;
@@ -559,7 +559,7 @@ internal static class FieldAppearanceGenerator
 
         bool anyWidgetWritten = false;
 
-        foreach (PdfDictionary widget in field.Widgets)
+        foreach (PdfDictionary widget in field.WidgetDicts)
         {
             if (!TryGetRect(doc, widget, out double x0, out double y0, out double x1, out double y1))
                 continue;

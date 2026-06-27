@@ -15,7 +15,7 @@ public class MultilineNewlineTests
 
     private static string ApStreamText(PdfDocument doc, PdfTextField field)
     {
-        PdfDictionary widget = field.Widgets[0];
+        PdfDictionary widget = field.WidgetDicts[0];
         PdfObject? apRaw = widget.Get(new PdfName("AP"));
         var ap = FormFieldTree.Resolve(doc, apRaw) as PdfDictionary;
         Assert.NotNull(ap);

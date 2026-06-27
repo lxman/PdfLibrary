@@ -1,5 +1,7 @@
+using PdfLibrary.Builder;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Editing.Forms;
@@ -28,6 +30,7 @@ internal static class FormFieldTree
                 WalkField(doc, fieldDict, null, null, result);
         }
 
+        PopulateWidgets(doc, result);
         return result;
     }
 
@@ -147,14 +150,14 @@ internal static class FormFieldTree
             _                          => BuildUnknownField()
         };
 
-        field.FullName    = fullName;
-        field.PartialName = partialName;
-        field.Type        = type;
-        field.IsReadOnly  = isReadOnly;
-        field.IsRequired  = isRequired;
-        field.Dict        = dict;
-        field.Doc         = doc;
-        field.Widgets     = widgets;
+        field.FullName      = fullName;
+        field.PartialName   = partialName;
+        field.Type          = type;
+        field.IsReadOnly    = isReadOnly;
+        field.IsRequired    = isRequired;
+        field.Dict          = dict;
+        field.Doc           = doc;
+        field.WidgetDicts   = widgets;
 
         result.Add(field);
     }
@@ -341,6 +344,69 @@ internal static class FormFieldTree
     }
 
     private static PdfFormField BuildUnknownField() => new PdfUnknownField();
+
+    // ── Widget projection ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds <see cref="PdfFieldWidget"/> projections for every field. The page-index map is
+    /// built once by a single scan of all pages' /Annots, so this is O(annots + widgets).
+    /// </summary>
+    internal static void PopulateWidgets(PdfDocument doc, List<PdfFormField> fields)
+    {
+        // Map widget object-number → page index (indirect, the common case).
+        // Map widget dict reference → page index (direct dicts, uncommon but valid).
+        var pageByObjNum = new Dictionary<int, int>();
+        var pageByDirectRef = new Dictionary<PdfDictionary, int>(ReferenceEqualityComparer.Instance);
+
+        List<PdfPage> pages = doc.GetPages();
+        for (var pi = 0; pi < pages.Count; pi++)
+        {
+            PdfObject? annotsRaw = pages[pi].Dictionary.Get(new PdfName("Annots"));
+            if (Resolve(doc, annotsRaw) is not PdfArray annots) continue;
+            foreach (PdfObject entry in annots)
+            {
+                if (entry is PdfIndirectReference ir)
+                    pageByObjNum[ir.ObjectNumber] = pi;
+                else if (entry is PdfDictionary dd)
+                    pageByDirectRef[dd] = pi;
+            }
+        }
+
+        foreach (PdfFormField field in fields)
+        {
+            var widgets = new List<PdfFieldWidget>(field.WidgetDicts.Count);
+            foreach (PdfDictionary wd in field.WidgetDicts)
+            {
+                int pageIndex = -1;
+                if (wd.IsIndirect)
+                    pageByObjNum.TryGetValue(wd.ObjectNumber, out pageIndex);
+                else
+                    pageByDirectRef.TryGetValue(wd, out pageIndex);
+
+                PdfRect rect = ReadRect(doc, wd);
+                string? onState = GetWidgetOnStateNames(doc, wd).FirstOrDefault(s => s != "Off");
+                widgets.Add(new PdfFieldWidget(field, pageIndex, rect, onState));
+            }
+            field.Widgets = widgets;
+        }
+    }
+
+    private static PdfRect ReadRect(PdfDocument doc, PdfDictionary widget)
+    {
+        if (Resolve(doc, widget.Get(new PdfName("Rect"))) is PdfArray a && a.Count >= 4)
+        {
+            double v0 = ToDouble(a[0]), v1 = ToDouble(a[1]), v2 = ToDouble(a[2]), v3 = ToDouble(a[3]);
+            return new PdfRect(Math.Min(v0, v2), Math.Min(v1, v3), Math.Max(v0, v2), Math.Max(v1, v3));
+        }
+        return new PdfRect(0, 0, 0, 0);
+    }
+
+    private static double ToDouble(PdfObject obj) => obj switch
+    {
+        PdfReal r   => r.Value,
+        PdfInteger i => i.Value,
+        _            => 0.0
+    };
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 

@@ -20,8 +20,8 @@ public class TextAppearanceTests
     private static string ApStreamText(PdfDocument doc, PdfTextField field)
     {
         // Widgets is always populated; for a single-widget field Widgets[0] is the widget dict.
-        // The field dict may itself be the widget (no-Kids case) — in both cases field.Widgets[0] works.
-        PdfDictionary widget = field.Widgets[0];
+        // The field dict may itself be the widget (no-Kids case) — in both cases field.WidgetDicts[0] works.
+        PdfDictionary widget = field.WidgetDicts[0];
 
         // /AP /N → stream
         PdfObject? apRaw = widget.Get(new PdfLibrary.Core.Primitives.PdfName("AP"));
