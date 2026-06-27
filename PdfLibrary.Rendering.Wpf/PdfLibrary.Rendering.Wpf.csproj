@@ -1,7 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
+    <IsWindowsBuild>$([MSBuild]::IsOSPlatform('Windows'))</IsWindowsBuild>
+  </PropertyGroup>
+
+  <!-- Windows: the real WPF rendering backend. -->
+  <PropertyGroup Condition="'$(IsWindowsBuild)' == 'true'">
     <TargetFrameworks>net8.0-windows;net9.0-windows;net10.0-windows</TargetFrameworks>
     <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <!-- Non-Windows (Mac/Linux): inert net10.0 stub so the IDE loads this project
+       cleanly without the WPF SDK or -windows targeting packs. Compiles nothing. -->
+  <PropertyGroup Condition="'$(IsWindowsBuild)' != 'true'">
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
