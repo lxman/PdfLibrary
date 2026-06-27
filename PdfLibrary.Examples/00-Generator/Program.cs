@@ -1,4 +1,3 @@
-using Generator;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 
@@ -8,9 +7,10 @@ Directory.CreateDirectory(outputDir);
 
 Console.WriteLine("PDF Generator - Creating showcase PDFs...\n");
 
-// Generate company logo
-Console.WriteLine("Generating company logo...");
-LogoGenerator.GenerateCompanyLogo(Path.Combine(outputDir, "company-logo.jpg"));
+// Copy static company logo asset to output directory
+Console.WriteLine("Copying company logo...");
+string logoAsset = Path.Combine(AppContext.BaseDirectory, "assets", "logo.jpg");
+File.Copy(logoAsset, Path.Combine(outputDir, "company-logo.jpg"), overwrite: true);
 Console.WriteLine("  ✓ Created company-logo.jpg\n");
 
 // ==================== SHOWCASE.PDF ====================
@@ -73,7 +73,7 @@ static void GenerateShowcasePdf(string outputPath)
             p.AddText("Key Features:", 72, 250)
                 .Font("Helvetica-Bold", 14);
 
-            p.AddText("\u2022 High-quality PDF rendering with SkiaSharp", 90, 275)
+            p.AddText("\u2022 High-quality PDF rendering", 90, 275)
                 .Font("Helvetica", 11);
 
             p.AddText("\u2022 Support for all PDF 1.x and 2.0 features", 90, 295)
