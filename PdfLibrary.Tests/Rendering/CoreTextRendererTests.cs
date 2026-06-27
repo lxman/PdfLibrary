@@ -39,6 +39,7 @@ public class CoreTextRendererTests
     }
 
     [Fact]
+    [Trait("Category", "LocalOnly")]   // loads main.pdf, a local-only fixture not present on CI
     public void Render_TextUnderTranslatingCtm_BakesCtmIntoGlyphPath()
     {
         // Regression guard. FillPath applies ONLY the page initial-transform, never the CTM —
