@@ -34,11 +34,13 @@ Every code example in this document is compiled against the library, so it is co
 ## Install & packages
 
 ```bash
-dotnet add package Lxman.PdfLibrary                    # core: load, read, create, edit, optimize
-dotnet add package Lxman.PdfLibrary.Rendering.SkiaSharp # rendering PDF pages to images
+dotnet add package Lxman.PdfLibrary                  # core: load, read, create, edit, optimize
+dotnet add package Lxman.PdfLibrary.Rendering.Wpf    # WPF render target (Windows-only)
 ```
 
-The core package is pure managed C# with no native dependencies. The rendering package adds SkiaSharp for rasterization. Both target .NET 8, 9, and 10.
+`Lxman.PdfLibrary` is pure managed C# with no native dependencies and no SkiaSharp reference — it targets .NET 8, 9, and 10. `Lxman.PdfLibrary.Rendering.Wpf` adds a WPF `DrawingGroup`-based render target (Windows-only; requires an STA thread for rendering). Both target .NET 8, 9, and 10.
+
+> **Note:** `Lxman.PdfLibrary.Rendering.SkiaSharp` is **not published** in 2.0. It remains in-repo as a pixel-fidelity test gate. To render without WPF, implement `IRenderTarget` from `PdfLibrary.Rendering`; the in-repo `SvgRenderTarget` and `SkiaSharpRenderTarget` are reference implementations.
 
 ## The big picture
 
@@ -114,41 +116,89 @@ byte[] decoded = images[0].GetDecodedData();
 
 To read an existing document's metadata, outlines, form fields, etc., enter edit mode (`doc.Edit()`) — those facades are read/write. See [Editing](#editing-an-existing-pdf).
 
-## Rendering to images
+## Rendering to a WPF DrawingGroup
 
-Rendering lives in the `Lxman.PdfLibrary.Rendering.SkiaSharp` package. The entry point is the `RenderTo()` extension on a `PdfPage`, which returns a fluent `PageRenderBuilder`.
+Rendering lives in the `Lxman.PdfLibrary.Rendering.Wpf` package. The entry point is `page.RenderToDrawing(double scale)`, which returns a retained WPF `DrawingGroup` (vector geometry — scales without pixelation). Must be called on an STA thread.
 
 ```csharp
 using PdfLibrary.Structure;
-using PdfLibrary.Document;   // PdfPage
-using PdfLibrary.Rendering.SkiaSharp;
-using SkiaSharp;
+using PdfLibrary.Document;
+using PdfLibrary.Rendering.Wpf;
+using System.Windows.Media;
 
 using PdfDocument doc = PdfDocument.Load("input.pdf");
 PdfPage page = doc.GetPage(0)!;
 
-// To a PNG file (format inferred from the extension)
-page.RenderTo().WithDpi(150).ToFile("page.png");
+// Render to a DrawingGroup at 1.5× scale (= 108 DPI equivalent)
+DrawingGroup drawing = page.RenderToDrawing(scale: 1.5);
 
-// To encoded bytes
-byte[] png  = page.RenderTo().WithScale(1.0).ToBytes();                       // 1.0 = 72 DPI
-byte[] jpeg = page.RenderTo().WithDpi(200).ToBytes(SKEncodedImageFormat.Jpeg, quality: 85);
+// Wrap for hosting in <Image Stretch="Uniform"/> without distortion
+PageGeometry geo = page.GetGeometry(scale: 1.5);
+DrawingImage pageImage = drawing.ToPageImage(geo.PixelWidth, geo.PixelHeight);
+// myWpfImage.Source = pageImage;
 
-// To a stream
-using var fs = File.Create("page.webp");
-page.RenderTo().WithDpi(150).ToStream(fs, SKEncodedImageFormat.Webp);
-
-// To an SKImage for further processing (caller disposes)
-using SKImage image = page.RenderTo().WithScale(2.0).ToImage();
-
-// Transparent background instead of the default white
-using SKImage transparent = page.RenderTo().WithTransparentBackground().ToImage();
-
-// Whole-document shortcut: render a page straight to a file
-doc.SavePageAs(0, "first-page.png", scale: 2.0);
+// Render to a raster BitmapSource (for export/print)
+using var rtb = new System.Windows.Media.Imaging.RenderTargetBitmap(
+    geo.PixelWidth, geo.PixelHeight, 96, 96,
+    System.Windows.Media.PixelFormats.Pbgra32);
+var dv = new System.Windows.Media.DrawingVisual();
+using (var dc = dv.RenderOpen())
+    dc.DrawDrawing(drawing);
+rtb.Render(dv);
+// Encode rtb to PNG etc. with a BitmapEncoder
 ```
 
-`PageRenderBuilder`: `WithScale(double)`, `WithDpi(double)`, `WithTransparentBackground()`, then a terminal `ToImage()` / `ToFile(path, quality)` / `ToStream(stream, format, quality)` / `ToBytes(format, quality)`.
+`WpfPageExtensions`: `RenderToDrawing(this PdfPage, double scale = 1.0)` → `DrawingGroup`; `ToPageImage(this DrawingGroup, int pixelWidth, int pixelHeight)` → frozen `DrawingImage`.
+
+### Forms geometry overlay
+
+Use `PdfPage.GetGeometry` to map form fields into rendered-image coordinates for UI overlay:
+
+```csharp
+PageGeometry geo = page.GetGeometry(scale: 1.5);
+
+using PdfDocumentEditor editor = PdfDocumentEditor.Open("form.pdf");
+foreach (PdfFormField field in editor.Forms)
+{
+    foreach (PdfFieldWidget widget in field.Widgets)
+    {
+        if (widget.PageIndex != 0) continue;
+        ImageRect r = geo.MapRectToImage(widget.Rect);
+        // Place a WPF TextBox at Canvas.Left=r.X, Canvas.Top=r.Y,
+        // Width=r.Width, Height=r.Height, FontSize=field.FontSize (scaled to zoom)
+    }
+}
+```
+
+`PageGeometry`: `PdfToImage` / `ImageToPdf` (`Matrix3x2`); `PixelWidth` / `PixelHeight`; `MapRectToImage(PdfRect)` → `ImageRect`.
+`PdfFieldWidget`: `Rect` (PDF user space), `PageIndex`, `OnState`.
+`PdfFormField`: `FontName` (`string`), `FontSize` (`double`), `Widgets` (`IReadOnlyList<PdfFieldWidget>`).
+
+### Custom render target
+
+To render without WPF, implement `IRenderTarget` from `PdfLibrary.Rendering`:
+
+```csharp
+using PdfLibrary.Rendering;
+
+public sealed class MyRenderTarget : IRenderTarget
+{
+    // BeginPage, EndPage, Clear, CurrentPageNumber,
+    // StrokePath, FillPath, FillAndStrokePath, FillPathWithTilingPattern,
+    // SetClippingPath, DrawImage,
+    // SaveState, RestoreState, ApplyCtm, OnGraphicsStateChanged,
+    // RenderSoftMask, ClearSoftMask, GetPageDimensions
+    // PaintShading and FillPathWithShadingPattern have default no-op implementations.
+}
+
+// Then render:
+using var doc = PdfDocument.Load("input.pdf");
+PdfPage page = doc.GetPage(0)!;
+var target = new MyRenderTarget();
+page.Render(target, pageNumber: 1, scale: 1.0);
+```
+
+The in-repo `SvgRenderTarget` and `SkiaSharpRenderTarget` are worked examples. See [`Docs/RendererSpi.md`](RendererSpi.md) for the full coordinate contract.
 
 ---
 
@@ -547,7 +597,9 @@ catch (PdfException) { /* malformed or otherwise invalid PDF */ }
 
 ## Thread safety
 
-PdfLibrary supports **concurrent rendering using the one-document-per-thread model** — the standard pattern for ASP.NET Core and other multi-threaded servers. Each request loads its own `PdfDocument`, renders on its own render target, and disposes both. The process-wide caches shared across renders (glyph-path cache, font/typeface resolver, ICC profiles, codec registry) are synchronized. Do **not** share a single `PdfDocument` or editor across threads.
+PdfLibrary supports **concurrent rendering using the one-document-per-thread model** — the standard pattern for ASP.NET Core and other multi-threaded servers. Each request loads its own `PdfDocument`, renders on its own render target, and disposes both. The process-wide caches shared across renders (glyph-path cache, font/typeface resolver, ICC profiles, codec registry) are synchronized. Do **not** share a single `PdfDocument` or editor across threads. Do **not** share an `IRenderTarget` implementation across threads — render targets hold per-render mutable state.
+
+> **WPF note:** `WpfRenderTarget` and `page.RenderToDrawing` must be called on an STA thread. In ASP.NET Core, dispatch each render to a dedicated STA thread pool, or use the SVG/SkiaSharp (in-repo) targets for headless server scenarios.
 
 ---
 
@@ -579,18 +631,47 @@ PdfLibrary supports **concurrent rendering using the one-document-per-thread mod
 | `(string Text, List<TextFragment> Fragments) ExtractTextWithFragments()` | Text with positions. |
 | `List<PdfImage> GetImages()` / `int GetImageCount()` | Images on the page. |
 
-### Rendering — `PdfPage.RenderTo()` → `PageRenderBuilder`
+### Rendering — WPF (`PdfLibrary.Rendering.Wpf`)
 
 | Member | Description |
 |--------|-------------|
-| `PageRenderBuilder RenderTo(this PdfPage, int pageNumber = 1)` | Begin rendering a page. |
-| `WithScale(double)` / `WithDpi(double)` | Resolution (`1.0` scale = 72 DPI). |
-| `WithTransparentBackground()` | Transparent instead of the default white. |
-| `SKImage ToImage()` | Rendered image (caller disposes). |
-| `void ToFile(string path, int quality = 100)` | Encode to a file (format by extension). |
-| `void ToStream(Stream, SKEncodedImageFormat = Png, int quality = 100)` | Encode to a stream. |
-| `byte[] ToBytes(SKEncodedImageFormat = Png, int quality = 100)` | Encode to bytes. |
-| `void PdfDocument.SavePageAs(int pageIndex, string path, double scale = 1.0)` | Render a page straight to a file. |
+| `DrawingGroup RenderToDrawing(this PdfPage, double scale = 1.0)` | Render a page to a retained WPF `DrawingGroup` (STA thread required). |
+| `DrawingImage ToPageImage(this DrawingGroup, int pixelWidth, int pixelHeight)` | Wrap a `DrawingGroup` into a frozen `DrawingImage` with correct page-rect bounds. |
+
+### Forms geometry — `PdfPage.GetGeometry` / `PageGeometry`
+
+| Member | Description |
+|--------|-------------|
+| `PageGeometry GetGeometry(this PdfPage, double scale)` | Map PDF user space ↔ rendered-image pixels at the given scale. |
+| `PageGeometry.PdfToImage` / `.ImageToPdf` | Forward/inverse `Matrix3x2` transforms. |
+| `PageGeometry.PixelWidth` / `.PixelHeight` | Rendered image dimensions at the given scale. |
+| `PageGeometry.MapRectToImage(PdfRect)` → `ImageRect` | Convert a PDF-space rect to image-pixel space (top-left origin). |
+| `ImageRect.X` / `.Y` / `.Width` / `.Height` | Pixel-space rect for UI control placement. |
+| `PdfFormField.Widgets` | `IReadOnlyList<PdfFieldWidget>` — widget locations for a field. |
+| `PdfFieldWidget.Rect` / `.PageIndex` / `.OnState` | Widget geometry in PDF user space, page, and radio/checkbox on-state. |
+| `PdfFormField.FontName` / `.FontSize` | `/DA` appearance font name and size for host-side text styling. |
+
+### Custom render target — `IRenderTarget` (`PdfLibrary.Rendering`)
+
+| Member | Kind | Description |
+|--------|------|-------------|
+| `BeginPage(pageNumber, width, height, scale, cropOffsetX, cropOffsetY, rotation)` | required | Begin rendering a page; establish the initial transform. |
+| `EndPage()` | required | Finish the current page. |
+| `Clear()` | required | Reset all rendered state. |
+| `CurrentPageNumber` | required | Current 1-based page number. |
+| `StrokePath(path, state)` | required | Stroke a CTM-baked path. |
+| `FillPath(path, state, evenOdd)` | required | Fill a CTM-baked path. |
+| `FillAndStrokePath(path, state, evenOdd)` | required | Fill and stroke in one call. |
+| `FillPathWithTilingPattern(path, state, evenOdd, pattern, renderCb)` | required | Pattern fill. |
+| `SetClippingPath(path, state, evenOdd)` | required | Establish a clip region. |
+| `DrawImage(image, state)` | required | Draw an image XObject. |
+| `SaveState()` / `RestoreState()` | required | Push/pop graphics state (PDF `q`/`Q`). |
+| `ApplyCtm(Matrix3x2)` | required | Track CTM for `DrawImage` positioning. |
+| `OnGraphicsStateChanged(state)` | required | ExtGState update (alpha, blend mode, …). |
+| `RenderSoftMask(subtype, renderCb)` / `ClearSoftMask()` | required | Transparency mask management. |
+| `GetPageDimensions()` | required | Return `(width, height, scale)` for soft-mask allocation. |
+| `PaintShading(shading, state)` | default no-op | `sh` operator (axial/radial shading). |
+| `FillPathWithShadingPattern(path, state, evenOdd, shading)` | default no-op | PatternType 2 shading fill. |
 
 ### Creation — `PdfDocumentBuilder`
 

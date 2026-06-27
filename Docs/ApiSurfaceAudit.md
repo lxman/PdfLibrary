@@ -1,5 +1,7 @@
 # API Surface Audit — Consistency & Coverage
 
+> **Note (2026-06-27):** This audit covers the 1.0.1 surface. The 2.0.0 release introduced breaking changes (removed `IRenderBuilder`, `ImageFormat`, `DrawText`/`MeasureTextWidth` from `IRenderTarget`; renamed `ButtonKind.Push`; sunset `Lxman.PdfLibrary.Rendering.SkiaSharp`). Findings marked "2.0-with-Obsolete" or "reserved for 2.0" have been actioned. This document is retained as a historical record of the pre-2.0 audit.
+
 **Date:** 2026-06-25
 **Audited version:** 1.0.1 (both `Lxman.PdfLibrary` and `Lxman.PdfLibrary.Rendering.SkiaSharp`)
 **Method:** five parallel subsystem inventories (creation/Builder, Editing, reading model, supporting subsystems, SkiaSharp rendering), synthesized; the four highest-impact claims were verified by direct source read.

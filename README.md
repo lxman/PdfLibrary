@@ -5,11 +5,33 @@
 
 A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Built with C# and multi-targeting .NET 8, 9, and 10.
 
+---
+
+## Breaking Changes — 2.0.0
+
+> **If you are upgrading from 1.x, read this before installing.**
+
+| Category | What changed |
+|---|---|
+| **Rendering architecture** | Core `Lxman.PdfLibrary` is now SkiaSharp-free. Rendering goes through a geometry-only `IRenderTarget` SPI (`PdfLibrary.Rendering`): the core flattens everything — including text — to glyph-outline paths and emits geometry only. Bring your own render target. Bundled std-14 substitute fonts + font-bytes provider are included in the core. |
+| **Packages** | `Lxman.PdfLibrary.Rendering.Wpf` (Windows-only) is now the published rendering package. `Lxman.PdfLibrary.Rendering.SkiaSharp` is **sunset** — no longer published to NuGet; it remains in-repo as a pixel-fidelity test gate only. |
+| **WPF rendering API** | New: `page.RenderToDrawing(double scale)` → retained WPF `DrawingGroup` (vector, crisp at any zoom). `DrawingGroup.ToPageImage(pixelWidth, pixelHeight)` wraps it for `<Image Stretch="Uniform"/>`. |
+| **Forms geometry API** | New public surface: `PdfPage.GetGeometry(double scale)` → `PageGeometry`; `ImageRect`; `PdfFieldWidget`; `PdfFormField.Widgets`, `.FontName`, `.FontSize`. |
+| **Viewer app** | `PdfLibrary.Wpf.Viewer` is rewired to pure WPF — renders via `WpfRenderTarget` → `DrawingGroup` (vector); overlays native fillable form controls (text/checkbox/radio/combo/list) with write-back + Save/Flatten; honors field quadding and `/DA` font/size. |
+| **API cleanups** | Dead `IRenderBuilder<TImage>` interface and `ImageFormat` enum removed; `PdfImageBuilder.Done()` terminal added; `ButtonKind.Push` renamed to `ButtonKind.PushButton`; `PdfColor.Components` and `PdfColor.GrayValue` accessors are now public. |
+| **Dev/infra** | All test projects migrated to xUnit v3. |
+
+**Migration quick guide:** Replace `using PdfLibrary.Rendering.SkiaSharp;` and `page.RenderTo()…` with `using PdfLibrary.Rendering.Wpf;` + `page.RenderToDrawing(scale)` (Windows/WPF). To target a different platform, implement `IRenderTarget` from `PdfLibrary.Rendering` — the core emits only geometry calls. The SkiaSharp in-repo implementation in `PdfLibrary.Rendering.SkiaSharp/` can serve as a reference.
+
+---
+
 ## Features
 
 ### PDF Rendering
 - Full PDF 1.x and 2.0 parsing support
-- High-quality rendering using SkiaSharp with optimized glyph and path caching
+- Geometry-only `IRenderTarget` SPI — core emits glyph outlines as filled paths, images, and clip geometry; no SkiaSharp dependency in the core
+- Bundled WPF render target (`Lxman.PdfLibrary.Rendering.Wpf`): renders to a retained `DrawingGroup` (vector, crisp at any zoom) via `page.RenderToDrawing(scale)`
+- Bring-your-own render target: implement `IRenderTarget` (17 required members) to integrate any 2D drawing API (Avalonia, Direct2D, SVG, …)
 - Support for complex graphics operations (paths, clipping, transparency)
 - Memory-efficient image processing using `ArrayPool<byte>` and pre-allocated buffers
 - Comprehensive color space support (DeviceRGB, DeviceCMYK, DeviceGray, ICCBased, Separation, Lab)
@@ -55,22 +77,24 @@ A comprehensive .NET library for parsing, rendering, creating, editing, and opti
 
 ```
 PDF/
-├── PdfLibrary/                       # Core library
+├── PdfLibrary/                       # Core library (SkiaSharp-free)
 │   ├── Document/                     # PDF document model
 │   ├── Structure/                    # PDF structure (xref, trailer, objects)
 │   ├── Parsing/                      # PDF lexer/parser
 │   ├── Content/                      # Content stream processing
 │   ├── Filters/                      # Stream decode filters (Flate, JBIG2Decode, etc.)
-│   ├── Rendering/                    # Rendering pipeline
+│   ├── Rendering/                    # IRenderTarget SPI + geometry pipeline
 │   ├── Builder/                      # Fluent API for PDF creation
 │   ├── Editing/                      # Edit/mutate loaded documents (pages, merge, split)
 │   ├── Optimization/                 # Optimize/compress loaded documents
-│   ├── Fonts/                        # Font handling
+│   ├── Fonts/                        # Font handling + std-14 substitute locator
 │   ├── Functions/                    # PDF function objects
 │   ├── Fixups/                       # Per-document corrective passes
 │   ├── Core/                         # Primitive types
 │   └── Security/                     # Encryption/decryption
-├── PdfLibrary.Rendering.SkiaSharp/   # SkiaSharp render target
+├── PdfLibrary.Rendering.Wpf/         # WPF render target (published; Windows-only)
+├── PdfLibrary.Rendering.Svg/         # SVG render target (reference implementation)
+├── PdfLibrary.Rendering.SkiaSharp/   # SkiaSharp render target (test-only; not published)
 ├── PdfLibrary.Tests/                 # Unit tests
 ├── PdfLibrary.Integration/           # Integration tests
 ├── PdfLibrary.Wpf.Viewer/            # WPF PDF viewer application
@@ -103,27 +127,29 @@ PDF/
 
 ## Quick Start
 
-### Rendering a PDF
+### Rendering a PDF (WPF)
 
 ```csharp
 using PdfLibrary.Structure;
 using PdfLibrary.Document;
-using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Wpf;   // from Lxman.PdfLibrary.Rendering.Wpf (Windows-only)
+using System.Windows.Media;
 
 // Load a PDF document
 using var doc = PdfDocument.Load("document.pdf");
-var page = doc.GetPage(0)!;   // 0-based index
+PdfPage page = doc.GetPage(0)!;   // 0-based index
 
-// Render to a file (format inferred from the extension)
-page.RenderTo()
-    .WithScale(1.0)  // 1.0 = 72 DPI
-    .ToFile("output.png");
+// Render to a retained WPF DrawingGroup (vector — crisp at any zoom)
+// Must be called on an STA thread.
+DrawingGroup drawing = page.RenderToDrawing(scale: 1.0);   // 1.0 = 72 DPI
 
-// Or render to an SKImage for further processing
-using var image = page.RenderTo()
-    .WithDpi(144)    // 2x resolution
-    .ToImage();
+// Wrap for use in <Image Stretch="Uniform"/> — fixes bounds to the full page rect
+PageGeometry geo = page.GetGeometry(scale: 1.0);
+DrawingImage pageImage = drawing.ToPageImage(geo.PixelWidth, geo.PixelHeight);
+// myImage.Source = pageImage;
 ```
+
+**Custom render target:** To target a non-WPF backend (Avalonia, Direct2D, SVG, …) implement `IRenderTarget` from `PdfLibrary.Rendering`, then call `page.Render(myTarget, pageNumber: 1, scale: 1.0)`. The in-repo `SvgRenderTarget` and `SkiaSharpRenderTarget` are worked examples.
 
 ### Creating a PDF
 
@@ -166,18 +192,35 @@ PdfDocumentBuilder.Create()
     .Save("form.pdf");
 ```
 
-### Advanced Rendering Options
+### Forms Geometry — Overlaying UI Controls
+
+The `PageGeometry` API maps between PDF user space and rendered-image pixels so you can overlay native controls (WPF, Avalonia, …) precisely over form fields:
 
 ```csharp
-// Transparent background (for PNG with alpha) instead of the default white
-using var image = page.RenderTo()
-    .WithTransparentBackground()
-    .ToImage();
+using PdfLibrary.Structure;
+using PdfLibrary.Document;
+using PdfLibrary.Editing;
+using PdfLibrary.Rendering.Wpf;
 
-// Encode straight to PNG bytes at a chosen DPI
-byte[] png = page.RenderTo()
-    .WithDpi(300)   // high resolution for printing
-    .ToBytes();
+using var doc = PdfDocument.Load("form.pdf");
+PdfPage page = doc.GetPage(0)!;
+double scale = 1.5;
+
+DrawingGroup drawing = page.RenderToDrawing(scale);
+PageGeometry geo = page.GetGeometry(scale);
+
+// Each form field can have one or more widget annotations (visual locations on a page)
+var editor = doc.Edit();
+foreach (PdfFormField field in editor.Forms)
+{
+    foreach (PdfFieldWidget widget in field.Widgets)
+    {
+        if (widget.PageIndex != 0) continue;
+        ImageRect rect = geo.MapRectToImage(widget.Rect);
+        // Place a native TextBox at (rect.X, rect.Y) with rect.Width × rect.Height
+        // using field.FontName and field.FontSize for styling
+    }
+}
 ```
 
 ### Text Extraction
@@ -265,7 +308,7 @@ public async Task<byte[]> RenderFirstPageAsync(string pdfPath)
 ### Constraints (don't do this)
 
 - **Do not share one `PdfDocument` across threads.** It lazy-loads objects by mutating internal state and seeking a shared `Stream`; concurrent access to a single instance is unsafe. Load one per request instead.
-- **Do not share a `SkiaSharpRenderTarget` (or render into one) from multiple threads.** A render target wraps a single `SKCanvas`, which is not thread-safe by design. Use one render target per render.
+- **Do not share an `IRenderTarget` implementation across threads.** Render targets hold per-render mutable state. Use one render target per render.
 - `PdfDocumentBuilder` is not thread-safe during construction — build a document on a single thread.
 
 If the same PDFs are rendered repeatedly, caching the rendered output at the HTTP layer is still worthwhile — but as an optimization, not a correctness requirement.
@@ -288,7 +331,8 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
 ## Requirements
 
 - .NET 8.0, 9.0, or 10.0
-- SkiaSharp (for rendering - separate PdfLibrary.Rendering.SkiaSharp package)
+- `Lxman.PdfLibrary` — core: load, parse, create, edit, optimize (no native or SkiaSharp dependency)
+- `Lxman.PdfLibrary.Rendering.Wpf` — WPF render target; Windows-only; requires an STA thread for rendering
 
 ### Core Dependencies
 - **Serilog** - Structured logging
@@ -300,7 +344,7 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
   - `ImageLibrary/CcittCodec` - CCITT (CCITTFaxDecode) Group 3 1D/2D and Group 4
   - `ImageLibrary/Jbig2Decoder` - JBIG2 (JBIG2Decode, ITU-T T.88)
 
-**Note**: PdfLibrary has no third-party image-format dependencies. All image handling is backed by in-tree codecs.
+**Note**: `Lxman.PdfLibrary` has no SkiaSharp or native-image-format dependencies. All image decoding is backed by in-tree codecs. The SkiaSharp backend (`PdfLibrary.Rendering.SkiaSharp`) is retained in-repo as a pixel-fidelity test gate but is not published to NuGet.
 
 ## Building
 
@@ -390,9 +434,9 @@ Contributions are welcome! Please feel free to submit a Pull Request. For major 
 ## Acknowledgments
 
 ### Core Library
-- [SkiaSharp](https://github.com/mono/SkiaSharp) - 2D graphics library for PDF rendering
 - [Serilog](https://serilog.net/) - Structured logging framework
 - [Unicolour](https://github.com/waacton/Unicolour) - Advanced color space handling and transformations
 
 ### Test-time references
+- [SkiaSharp](https://github.com/mono/SkiaSharp) - Used only by the in-repo `PdfLibrary.Rendering.SkiaSharp` project as a pixel-fidelity test gate; not a runtime dependency of any published package.
 - [Melville.CSJ2K](https://www.nuget.org/packages/Melville.CSJ2K) - Used only by `ImageLibrary/Jp2Codec.Tests` as a differential reference for in-house JPEG 2000 conformance testing; not a runtime dependency of `PdfLibrary`.

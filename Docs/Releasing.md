@@ -28,10 +28,10 @@ This document describes how to release new versions of PdfLibrary to NuGet.
 
 The version numbers in the csproj files are automatically updated by the GitHub Action based on the git tag. However, you may want to keep them in sync for local development:
 
-- `PdfLibrary/PdfLibrary.csproj` - Update `<Version>` element
-- `PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj` - Update `<Version>` element
+- `PdfLibrary/PdfLibrary.csproj` — Update `<Version>` element
+- `PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj` — Update `<Version>` element
 
-**Important**: Both packages must have the same version number.
+**Important**: Both published packages must have the same version number. `PdfLibrary.Rendering.SkiaSharp` is **not published** — do not bump its version as part of a release.
 
 ### 2. Create a GitHub Release
 
@@ -59,8 +59,8 @@ After a few minutes:
 
 1. Check the GitHub Actions tab for the workflow status
 2. Verify packages appear on NuGet.org:
-   - https://www.nuget.org/packages/PdfLibrary
-   - https://www.nuget.org/packages/PdfLibrary.Rendering.SkiaSharp
+   - https://www.nuget.org/packages/Lxman.PdfLibrary
+   - https://www.nuget.org/packages/Lxman.PdfLibrary.Rendering.Wpf
 
 Note: NuGet packages may take 15-30 minutes to be indexed and searchable.
 
@@ -81,7 +81,9 @@ For pre-releases:
 
 ## Package Dependencies
 
-`PdfLibrary.Rendering.SkiaSharp` depends on `PdfLibrary` with an exact version constraint. Both packages must always be released together with the same version number.
+`Lxman.PdfLibrary.Rendering.Wpf` depends on `Lxman.PdfLibrary` with an exact version constraint. Both packages must always be released together with the same version number.
+
+`PdfLibrary.Rendering.SkiaSharp` is **not published**. It is an in-repo test project only; do not include it in the publish workflow.
 
 ## Troubleshooting
 

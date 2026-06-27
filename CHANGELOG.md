@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-06-27
+
+Major release: SkiaSharp-free core, geometry-only renderer SPI, WPF render target, fillable-forms viewer, and a set of breaking API cleanups that could not be done in a 1.x patch.
+
+### Added
+
+- **`Lxman.PdfLibrary.Rendering.Wpf` package** (Windows-only) — new published NuGet package. Renders PDF pages to a retained WPF `DrawingGroup` (vector geometry, crisp at any zoom) via `page.RenderToDrawing(double scale)`. `DrawingGroup.ToPageImage(pixelWidth, pixelHeight)` extension wraps the group into a frozen `DrawingImage` with correct page-rect bounds for `<Image Stretch="Uniform"/>`.
+- **Forms geometry API**: `PdfPage.GetGeometry(double scale)` → `PageGeometry` — maps between PDF user space and rendered-image pixels. Use it to place native UI controls (text boxes, checkboxes) exactly over form fields.
+  - `PageGeometry`: `PdfToImage` / `ImageToPdf` (`Matrix3x2`); `PixelWidth` / `PixelHeight`; `MapRectToImage(PdfRect)` → `ImageRect`.
+  - `ImageRect`: axis-aligned rect in image-pixel space (`X`, `Y`, `Width`, `Height`).
+  - `PdfFieldWidget`: per-widget record on a form field — `Rect` (PDF user space), `PageIndex`, `OnState` (for radio/checkbox).
+  - `PdfFormField.Widgets` (`IReadOnlyList<PdfFieldWidget>`) — the widget annotations for a field.
+  - `PdfFormField.FontName` / `FontSize` — the field's `/DA` appearance font name and size, exposed for host-side text rendering at the correct size.
+- **SVG render target** (`PdfLibrary.Rendering.Svg.SvgRenderTarget`) — `page.RenderToSvg()` reference implementation; demonstrates implementing `IRenderTarget` with a non-SkiaSharp backend.
+- **`PdfImageBuilder.Done()`** — terminal method that returns the parent `PdfPageBuilder`, consistent with `PdfTextBuilder.Done()` and `PdfPathBuilder.Done()`.
+- **`PdfColor.Components`** and **`PdfColor.GrayValue`** — public accessors for the raw component array and gray channel value respectively (previously accessible only through the typed channel properties).
+
+### Changed
+
+- **Rendering architecture — SkiaSharp removed from core.** `Lxman.PdfLibrary` is now SkiaSharp-free. The rendering pipeline (`PdfLibrary.Rendering`) defines a geometry-only `IRenderTarget` SPI: all page content — including text — is resolved to glyph-outline paths by the core before any render target method is called. Render targets receive only path geometry, image data, and state-management calls; they never touch font files, glyph tables, or filter decoding.
+- **Std-14 font substitute system.** `SystemFontLocator` maps standard-14 BaseFont names to system font files and caches them; `SubstituteFontResolver` classifies embedded fonts, locates system substitutes, and exposes `GetFontData`. `GlyphPathService` + `GlyphPlacement` handle cached glyph-space path building and Y-flip-corrected placement. The core text pipeline (`CoreTextRenderer`) uses these to resolve all embedded and non-embedded fonts without SkiaSharp.
+- **`PdfRenderer` text pipeline** flipped to core: embedded text is rendered via `CoreTextRenderer` (glyph outlines → `FillPath`); non-embedded text falls back to system-substitute outlines with the CTM baked in. `DrawText`/`MeasureTextWidth` removed from `IRenderTarget`; there is no text-draw SPI.
+- **`IRenderTarget`** now has 17 required members and 2 optional no-op members (`PaintShading`, `FillPathWithShadingPattern`); the old `DrawText` / `MeasureTextWidth` members are gone.
+- **SkiaSharp migrated to 4.x** (in the in-repo `PdfLibrary.Rendering.SkiaSharp` test gate): full API migration to the SkiaSharp 4 surface (`SKSamplingOptions`, `SKFont`, etc.).
+- **`WpfRenderTarget`** — page initial transform unified via shared `PageTransform.Build`; `PdfImageToRgba` hoist moves RGBA conversion to core so WPF and SkiaSharp targets share the same decoded pixels.
+- **Viewer app** (`PdfLibrary.Wpf.Viewer`) rewired to pure WPF: renders via `WpfRenderTarget` → `DrawingGroup` displayed in a `<DrawingImage>`; export/print via `RenderTargetBitmap`; no SkiaSharp dependency. Overlays native WPF controls (TextBox, CheckBox, RadioButton, ComboBox, ListBox) over form fields with write-back; honors field quadding (`TextAlignment`) and `/DA` font/size (scaled to zoom). Save and Flatten commands commit field values and bake them into page content.
+- **Test projects** — all projects migrated from xUnit v2 to xUnit v3 (`xunit.v3`, `xunit.v3.assert`).
+
+### Breaking
+
+- **`IRenderBuilder<TImage>` removed.** Dead interface with no in-tree implementation; callers referencing it must be updated.
+- **`ImageFormat` enum removed** (the one in `PdfLibrary.Rendering`, not `FontParser.BlocImageFormat`). No replacement — this type had no documented purpose and no callers outside internal code.
+- **`ButtonKind.Push` renamed to `ButtonKind.PushButton`** to match the PDF specification term. Update any `== ButtonKind.Push` comparisons.
+- **`IRenderTarget.DrawText` / `MeasureTextWidth` removed.** Text rendering is now handled entirely by the core. Implementations of `IRenderTarget` that forwarded these calls must remove them; they are no longer invoked.
+- **`SkiaSharpRenderTarget.SetSoftMask` / `EnablePerfTrace` internalized.** These were public only by accident; no stable consumer API existed.
+- **`Lxman.PdfLibrary.Rendering.SkiaSharp` not published.** Any project that consumed this NuGet package must switch to `Lxman.PdfLibrary.Rendering.Wpf` (Windows) or a custom `IRenderTarget` implementation.
+
+### Removed
+
+- **`IRenderBuilder<TImage>` interface** — removed from `PdfLibrary.Rendering`.
+- **`ImageFormat` enum** — removed from `PdfLibrary.Rendering`.
+- **`DrawText` / `MeasureTextWidth`** from `IRenderTarget`.
+- **`SkiaSharpRenderTarget` (published NuGet package)** — the `Lxman.PdfLibrary.Rendering.SkiaSharp` package is no longer published. The in-repo project remains as a test-only pixel-fidelity gate.
+- **SkiaSharp dependency from the core** (`PdfLibrary.csproj`) — the main package no longer transitively pulls in SkiaSharp native binaries.
+- **Generator logo SkiaSharp call** — `PdfLibrary.Examples` generator dropped SkiaSharp; logo loaded from a static asset.
+
+### Fixed
+
+- **`WpfRenderTarget` page-rect bounds** — `ToPageImage` now wraps the drawn content at the correct page bounds, preventing `Stretch` distortion on pages whose drawn content is smaller than the media box.
+- **`WpfRenderTarget.RenderToDrawing` resource resolution** — passes `page.Document` so `DrawImage` correctly resolves indirect-reference image streams.
+- **Viewer: in-progress text-field edit committed before Save/Flatten** — prevents losing the current edit if focus has not moved.
+- **Viewer: `SkiaSharpRenderTarget` v4 migration** — `DrawImage` `SKSamplingOptions` overload fix.
+- **`FontParser` `.ttc` table offsets** — table offsets in TrueType Collections are file-absolute; the earlier font-base adjustment was incorrect and has been removed.
+- **SVG target: stroke-width and dash arrays** scaled by the CTM linear factor — figure lines were rendering at the wrong thickness inside scaled coordinate systems.
+- **`SubstituteFontResolver`** — faux-bold is not applied to substitute faces (the weight is already encoded in the face selection).
+
 ## [1.1.0] - 2026-06-25
 
 The final 1.x release — additive API-surface cleanup plus the accumulated correctness fixes. No breaking changes; those are reserved for the 2.0 line.
@@ -229,6 +285,7 @@ First stable release. Completes the *load → edit → optimize* story: a loaded
 | 1.0.0-rc.1 | 2026-06-06 | Release candidate for 1.0: thread-safe concurrent rendering, pure-C# in-house image codecs (no third-party deps), performance + memory optimizations. |
 | 1.0.0 | 2026-06-21 | First stable release: editing/mutation API, optimization API, multi-targets .NET 8/9/10, all dependencies on stable releases (SkiaSharp 3.119.4). |
 | 1.1.0 | 2026-06-25 | Final 1.x: additive API cleanup (public exception hierarchy, stream/path overloads, optimizer result object, `LoadFont` byte[]/Stream, annotation read/remove, expanded viewer prefs) + correctness fixes (white-background rendering, `AddText`/`AddLine` unit handling); usage docs consolidated into a single verified guide. |
+| 2.0.0 | 2026-06-27 | BREAKING: SkiaSharp-free core; geometry-only `IRenderTarget` SPI; WPF render target published (`Lxman.PdfLibrary.Rendering.Wpf`); SkiaSharp backend sunset (test-only); forms geometry API (`PageGeometry`, `PdfFieldWidget`); fillable-forms viewer (pure WPF); API cleanups (`IRenderBuilder`/`ImageFormat` removed, `ButtonKind.PushButton`); xUnit v3 migration. |
 
 ---
 

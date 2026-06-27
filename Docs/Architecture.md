@@ -9,18 +9,26 @@ This document describes the internal architecture of PdfLibrary, providing an ov
 │                        Application Layer                         │
 ├─────────────────────────────────────────────────────────────────┤
 │  PdfDocument.Load()           │    PdfDocumentBuilder.Create()  │
-│  (Reading/Rendering)          │    (PDF Creation)                │
+│  page.RenderToDrawing(scale)  │    (PDF Creation)               │
+│  page.GetGeometry(scale)      │    (Editing / Optimization)     │
 ├───────────────────────────────┴──────────────────────────────────┤
-│                         Core Library                             │
+│                         Core Library  (SkiaSharp-free)           │
 ├──────────────┬──────────────┬──────────────┬────────────────────┤
-│   Parsing    │   Document   │   Content    │     Rendering      │
-│              │    Model     │  Processing  │                    │
+│   Parsing    │   Document   │   Content    │  Rendering SPI     │
+│              │    Model     │  Processing  │  (IRenderTarget)   │
 ├──────────────┼──────────────┼──────────────┼────────────────────┤
 │   Filters    │    Fonts     │   Security   │     Functions      │
+│              │  (std-14     │              │                    │
+│              │  substitute) │              │                    │
 ├──────────────┴──────────────┴──────────────┴────────────────────┤
-│                      External Dependencies                       │
-│  SkiaSharp  │  Unicolour  │  In-tree codecs (JpegCodec, LzwCodec,│
-│             │             │  CcittCodec, Jbig2Decoder, JP2)      │
+│                 External Dependencies (core)                     │
+│  Unicolour  │  In-tree codecs (JpegCodec, LzwCodec,            │
+│             │  CcittCodec, Jbig2Decoder, Jp2Codec)             │
+├─────────────────────────────────────────────────────────────────┤
+│              Render Targets (separate projects)                  │
+│  Lxman.PdfLibrary.Rendering.Wpf  ← published (Windows-only)   │
+│  PdfLibrary.Rendering.Svg        ← in-repo reference impl      │
+│  PdfLibrary.Rendering.SkiaSharp  ← in-repo test gate only      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -188,88 +196,53 @@ PDF operator implementations organized by category:
 
 ### 6. Rendering (`Rendering/`)
 
-Converts content to visual output.
+Converts content to visual output via a geometry-only SPI.
 
-#### IRenderTarget
+#### IRenderTarget (geometry-only SPI)
 
-Interface for render backends:
+`PdfLibrary.Rendering.IRenderTarget` is the interface all render backends implement. The core resolves all fonts, decodes all images, and bakes the CTM into path coordinates before any target method is called. A target receives only geometry calls — never font handles, glyph IDs, or compressed image data.
 
-```csharp
-public interface IRenderTarget
-{
-    // Path operations
-    void MoveTo(double x, double y);
-    void LineTo(double x, double y);
-    void CurveTo(double x1, double y1, double x2, double y2, double x3, double y3);
-    void ClosePath();
-    void Fill(PdfColor color);
-    void Stroke(PdfColor color, double width);
+Key design points:
+- **Paths are CTM-pre-baked.** `FillPath` / `StrokePath` / etc. receive coordinates already in PDF user space with the CTM applied. Targets apply only the page initial transform (Y-flip, scale, crop offset, rotation) to convert to device space.
+- **Scalar measures are NOT pre-baked.** `LineWidth`, dash pattern/phase are in user space; targets must multiply by the CTM's linear scale factor (`sqrt(|M11·M22 − M12·M21|)`) before stroking.
+- **Text is geometry.** `CoreTextRenderer` resolves glyph outlines from the font subsystem and emits them as `FillPath` calls. There is no `DrawText` method on `IRenderTarget`.
+- **Images** are drawn into a 1×1 unit square at the origin; `state.Ctm` determines position and size.
+- Two members (`PaintShading`, `FillPathWithShadingPattern`) have default no-op implementations so targets that don't support shadings need not implement them.
 
-    // Text operations
-    void DrawText(string text, PdfFont font, double size, PdfColor color);
-
-    // Image operations
-    void DrawImage(byte[] data, double x, double y, double width, double height);
-
-    // State operations
-    void SaveState();
-    void RestoreState();
-    void Transform(Matrix matrix);
-    void SetClip();
-}
-```
+See [`Docs/RendererSpi.md`](RendererSpi.md) for the full coordinate contract and a worked SVG implementation example.
 
 #### PdfRenderer
 
-Extends `PdfContentProcessor` to render pages. The renderer is internal to the library;
-applications use the public `PdfPage.Render()` API instead:
+Internal class that extends `PdfContentProcessor`. Applications drive it through the public extension:
 
 ```csharp
-// Public API for rendering
-var page = document.GetPage(0);
-page.Render(renderTarget, pageNumber: 1, scale: 1.0);
+// Call from any IRenderTarget consumer
+page.Render(myTarget, pageNumber: 1, scale: 1.5);
 
-// Or use the fluent builder (from PdfLibrary.Rendering.SkiaSharp)
-page.Render(document)
-    .WithScale(2.0)
-    .ToFile("output.png");
+// Or use the bundled WPF extension (from Lxman.PdfLibrary.Rendering.Wpf)
+DrawingGroup drawing = page.RenderToDrawing(scale: 1.5);
 ```
 
-Internally, `PdfRenderer` processes content streams and calls the render target:
+#### Render Target Implementations
 
-```csharp
-internal class PdfRenderer : PdfContentProcessor
-{
-    private readonly IRenderTarget _target;
-    private readonly PdfResources _resources;
+| Project | Status | Description |
+|---------|--------|-------------|
+| `PdfLibrary.Rendering.Wpf` | **published** | WPF `DrawingGroup` target; `page.RenderToDrawing(scale)`. Windows-only, STA thread required. |
+| `PdfLibrary.Rendering.Svg` | in-repo | SVG file target; `page.RenderToSvg()`. Reference implementation for custom targets. |
+| `PdfLibrary.Rendering.SkiaSharp` | in-repo (test-only) | SkiaSharp 4.x raster target; pixel-fidelity gate for regression tests. Not published. |
 
-    protected override void OnFill()
-    {
-        _target.Fill(ResolveColor(_state.FillColorSpace, _state.FillColor));
-    }
+#### Core text pipeline
 
-    protected override void OnShowText(string text)
-    {
-        var font = _resources.GetFont(_state.Font);
-        _target.DrawText(text, font, EffectiveFontSize, GetTextColor());
-    }
-}
-```
-
-#### SkiaSharp Rendering Implementation
-
-The SkiaSharp-based render target is organized into specialized renderer classes:
+`CoreTextRenderer` resolves embedded and system-substitute font outlines to `IPathBuilder` geometry without any SkiaSharp dependency:
 
 | Component | Responsibility |
 |-----------|----------------|
-| `SkiaSharpRenderTarget` | Main render target implementation; manages granular caching |
-| `PathRenderer` | Path filling/stroking with optimized path caching and blend mode support |
-| `TextRenderer` | Text rendering with optimized glyph path caching and metrics |
-| `ImageRenderer` | Image XObject rendering with `ArrayPool<byte>` for memory efficiency |
-| `ColorConverter` | PDF to SkiaSharp color conversion |
-| `PathConverter` | PDF to SkiaSharp path conversion |
-| `CanvasStateManager` | Canvas save/restore stack management |
-| `SoftMaskManager` | Soft mask (transparency) handling |
+| `SubstituteFontResolver` | Classifies fonts, locates system substitutes, caches font data |
+| `SystemFontLocator` | Scans platform font directories; maps std-14 base names to files |
+| `GlyphOutlineToPath` | Converts TrueType (quadratic) and CFF (cubic) glyph outlines to `IPathBuilder` |
+| `GlyphPlacement` | Applies glyph-space → user-space matrix with Y-flip compensation |
+| `GlyphPathService` | Caches positioned glyph paths per font instance + glyph ID |
+| `CoreTextRenderer` | Drives the pipeline; emits `FillPath` calls for each glyph |
 
 #### Blend Modes and Transparency Groups
 
