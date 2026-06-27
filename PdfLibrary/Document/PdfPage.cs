@@ -435,20 +435,7 @@ public class PdfPage
         double cropX = crop.X1, cropY = crop.Y1;
         int rotation = Rotate;
 
-        double finalHeight = rotation is 90 or 270 ? width : height;
-        (float tx, float ty) = rotation switch
-        {
-            90 => (0f, (float)width),
-            180 => ((float)width, (float)height),
-            270 => ((float)height, 0f),
-            _ => (0f, 0f)
-        };
-        var rad = (float)(-rotation * Math.PI / 180.0);
-        Matrix3x2 m = Matrix3x2.CreateTranslation((float)-cropX, (float)-cropY)
-                    * Matrix3x2.CreateRotation(rad)
-                    * Matrix3x2.CreateTranslation(tx, ty)
-                    * Matrix3x2.CreateScale((float)scale, (float)-scale)
-                    * Matrix3x2.CreateTranslation(0, (float)(finalHeight * scale));
+        Matrix3x2 m = PageTransform.Build(width, height, scale, cropX, cropY, rotation);
 
         int pw = (int)Math.Round((rotation is 90 or 270 ? height : width) * scale);
         int ph = (int)Math.Round((rotation is 90 or 270 ? width : height) * scale);

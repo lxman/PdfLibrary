@@ -112,64 +112,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
         // 2. Apply rotation if needed (around center of unrotated page)
         // 3. Scale by (scale, -scale) - scales content and flips Y
         // 4. Translate by (0, finalHeight * scale) - moves origin to top-left of scaled output
-
-        Matrix3x2 initialTransform;
-
-        if (rotation == 0)
-        {
-            // No rotation - standard transform
-            initialTransform = Matrix3x2.CreateTranslation((float)-cropOffsetX, (float)-cropOffsetY)
-                             * Matrix3x2.CreateScale((float)scale, (float)-scale)
-                             * Matrix3x2.CreateTranslation(0, (float)(height * scale));
-        }
-        else
-        {
-            // Rotation is specified in degrees clockwise (0, 90, 180, or 270)
-            // Matrix3x2.CreateRotation() expects radians counterclockwise, so negate for clockwise
-            float rotationRadians = -(float)(rotation * Math.PI / 180.0);
-
-            // Calculate dimensions after rotation (swap for 90°/270°)
-            float finalWidth = rotation == 90 || rotation == 270 ? (float)height : (float)width;
-            float finalHeight = rotation == 90 || rotation == 270 ? (float)width : (float)height;
-
-            // Rotate around origin (0,0) in PDF space, then translate to position correctly
-            // After rotation, the page bounding box may be in negative coordinate space,
-            // so we need to translate it back to positive space.
-            //
-            // For each rotation angle, after rotating around origin:
-            // - 90° clockwise: translate by (0, width)
-            // - 180°: translate by (width, height)
-            // - 270° clockwise: translate by (height, 0)
-
-            float translateX = 0, translateY = 0;
-            switch (rotation)
-            {
-                case 90:
-                    translateX = 0;
-                    translateY = (float)width;
-                    break;
-                case 180:
-                    translateX = (float)width;
-                    translateY = (float)height;
-                    break;
-                case 270:
-                    translateX = (float)height;
-                    translateY = 0;
-                    break;
-            }
-
-            // Transform order (right to left):
-            // 1. Remove crop offset in PDF space
-            // 2. Rotate around origin
-            // 3. Translate to move rotated content to positive coordinates
-            // 4. Scale and flip Y-axis
-            // 5. Position on canvas
-            initialTransform = Matrix3x2.CreateTranslation((float)-cropOffsetX, (float)-cropOffsetY)
-                             * Matrix3x2.CreateRotation(rotationRadians)
-                             * Matrix3x2.CreateTranslation(translateX, translateY)
-                             * Matrix3x2.CreateScale((float)scale, (float)-scale)
-                             * Matrix3x2.CreateTranslation(0, (float)(finalHeight * scale));
-        }
+        Matrix3x2 initialTransform = PageTransform.Build(width, height, scale, cropOffsetX, cropOffsetY, rotation);
 
         // Store this as our base transformation
         // All PDF CTM transformations will be applied on top of this

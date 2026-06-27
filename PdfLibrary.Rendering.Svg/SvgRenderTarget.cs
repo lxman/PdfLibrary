@@ -168,22 +168,7 @@ public sealed class SvgRenderTarget : IRenderTarget
 
     private static Matrix3x2 InitialTransform(double width, double height, double scale,
         double cropX, double cropY, int rotation)
-    {
-        double finalHeight = rotation is 90 or 270 ? width : height;
-        (float tx, float ty) = rotation switch
-        {
-            90  => (0f, (float)width),
-            180 => ((float)width, (float)height),
-            270 => ((float)height, 0f),
-            _   => (0f, 0f)
-        };
-        double rad = -rotation * Math.PI / 180.0;
-        return Matrix3x2.CreateTranslation((float)-cropX, (float)-cropY)
-             * Matrix3x2.CreateRotation((float)rad)
-             * Matrix3x2.CreateTranslation(tx, ty)
-             * Matrix3x2.CreateScale((float)scale, (float)-scale)
-             * Matrix3x2.CreateTranslation(0, (float)(finalHeight * scale));
-    }
+        => PageTransform.Build(width, height, scale, cropX, cropY, rotation);
 
     private static string Cap(int c) => c switch { 1 => "round", 2 => "square", _ => "butt" };
     private static string Join(int j) => j switch { 1 => "round", 2 => "bevel", _ => "miter" };
