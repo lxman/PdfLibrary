@@ -10,6 +10,19 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Rendering;
 
 /// <summary>
+/// Describes how the alpha channel relates to the RGB channels in a <see cref="PdfImageToRgba.RgbaImage"/>.
+/// </summary>
+public enum AlphaMode
+{
+    /// <summary>All pixels are fully opaque; the alpha channel should be ignored by the renderer.</summary>
+    Opaque,
+    /// <summary>Alpha is straight (un-premultiplied); RGB has not been scaled by alpha.</summary>
+    Unpremultiplied,
+    /// <summary>RGB channels have been premultiplied by alpha (image-mask stencils, indexed images with SMask).</summary>
+    Premultiplied
+}
+
+/// <summary>
 /// Converts a <see cref="PdfImage"/> to a raw RGBA8888 pixel buffer (R,G,B,A order,
 /// top-row-first) with no SkiaSharp dependency.
 ///
@@ -23,17 +36,17 @@ namespace PdfLibrary.Rendering;
 public static class PdfImageToRgba
 {
     /// <summary>
-    /// Carries the decoded RGBA pixel plane together with its dimensions and premultiplication status.
+    /// Carries the decoded RGBA pixel plane together with its dimensions and alpha mode.
     /// </summary>
     /// <param name="Rgba">RGBA8888 bytes: R, G, B, A order, top-row first.</param>
     /// <param name="Width">Image width in pixels.</param>
     /// <param name="Height">Image height in pixels.</param>
-    /// <param name="IsPremultiplied">
-    ///   <see langword="true"/> when RGB channels have been premultiplied by alpha
-    ///   (image masks and indexed images with SMask).
-    ///   <see langword="false"/> for straight-alpha or fully-opaque images.
+    /// <param name="Alpha">
+    ///   <see cref="AlphaMode.Premultiplied"/> for image-mask stencils and indexed images with SMask
+    ///   (RGB has been scaled by alpha); <see cref="AlphaMode.Unpremultiplied"/> for straight-alpha
+    ///   images (those with an applied SMask); <see cref="AlphaMode.Opaque"/> for fully-opaque images.
     /// </param>
-    public readonly record struct RgbaImage(byte[] Rgba, int Width, int Height, bool IsPremultiplied);
+    public readonly record struct RgbaImage(byte[] Rgba, int Width, int Height, AlphaMode Alpha);
 
     /// <summary>
     /// Decodes <paramref name="image"/> to an RGBA8888 byte array.
@@ -91,7 +104,7 @@ public static class PdfImageToRgba
                         TimeSpan convertElapsed = DateTime.Now - convertStart;
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] Raw bytes→RGBA conversion took {convertElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image");
 
-                        return new RgbaImage(rgba, jp2Width, jp2Height, IsPremultiplied: false);
+                        return new RgbaImage(rgba, jp2Width, jp2Height, AlphaMode.Opaque);
                     }
                     catch (Exception ex)
                     {
@@ -198,11 +211,11 @@ public static class PdfImageToRgba
                     byte[] rgba2 = new byte[pixelBufferSize];
                     Array.Copy(pixelBuffer, rgba2, pixelBufferSize);
                     ArrayPool<byte>.Shared.Return(pixelBuffer);
-                    return new RgbaImage(rgba2, width, height, IsPremultiplied: true);
+                    return new RgbaImage(rgba2, width, height, AlphaMode.Premultiplied);
                 }
 
                 byte[] result;
-                bool isPremul;
+                AlphaMode alphaMode;
 
                 switch (colorSpace)
                 {
@@ -219,7 +232,7 @@ public static class PdfImageToRgba
                             _ => 3
                         };
 
-                        isPremul = hasActualSMask;
+                        alphaMode = hasActualSMask ? AlphaMode.Premultiplied : AlphaMode.Opaque;
                         int pixelBufferSize = width * height * 4;
                         byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
 
@@ -345,11 +358,11 @@ public static class PdfImageToRgba
                         result = new byte[pixelBufferSize];
                         Array.Copy(pixelBuffer, result, pixelBufferSize);
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
-                        return new RgbaImage(result, width, height, isPremul);
+                        return new RgbaImage(result, width, height, alphaMode);
                     }
                     case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:
                     {
-                        isPremul = false; // original: Unpremul when SMask, Opaque otherwise
+                        alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                         int expectedSize = width * height * 3;
                         if (imageData.Length < expectedSize)
                             return null;
@@ -404,7 +417,7 @@ public static class PdfImageToRgba
                             Array.Copy(pixelBuffer, result, pixelBufferSize);
                         }
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
-                        return new RgbaImage(result, width, height, isPremul);
+                        return new RgbaImage(result, width, height, alphaMode);
                     }
                     case "DeviceGray" or "CalGray" when bitsPerComponent == 1:
                     {
@@ -439,11 +452,11 @@ public static class PdfImageToRgba
                         result = new byte[pixelBufferSize1Bit];
                         Array.Copy(pixelBuffer1Bit, result, pixelBufferSize1Bit);
                         ArrayPool<byte>.Shared.Return(pixelBuffer1Bit);
-                        return new RgbaImage(result, width, height, IsPremultiplied: false);
+                        return new RgbaImage(result, width, height, AlphaMode.Opaque);
                     }
                     case "DeviceGray" or "CalGray" when bitsPerComponent == 8:
                     {
-                        isPremul = false;
+                        alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                         int expectedSize = width * height;
                         int expectedRgbSizeGray = expectedSize * 3;
 
@@ -486,7 +499,7 @@ public static class PdfImageToRgba
                         result = new byte[pixelBufferSize];
                         Array.Copy(pixelBuffer, result, pixelBufferSize);
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
-                        return new RgbaImage(result, width, height, isPremul);
+                        return new RgbaImage(result, width, height, alphaMode);
                     }
                     case "ICCBased" when bitsPerComponent == 8:
                     {
@@ -513,7 +526,7 @@ public static class PdfImageToRgba
                         {
                             case 3:
                             {
-                                isPremul = false;
+                                alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                                 int pixelBufferSize = width * height * 4;
                                 byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
                                 int availablePixels = Math.Min(imageData.Length / 3, width * height);
@@ -540,11 +553,11 @@ public static class PdfImageToRgba
                                 result = new byte[pixelBufferSize];
                                 Array.Copy(pixelBuffer, result, pixelBufferSize);
                                 ArrayPool<byte>.Shared.Return(pixelBuffer);
-                                return new RgbaImage(result, width, height, isPremul);
+                                return new RgbaImage(result, width, height, alphaMode);
                             }
                             case 1:
                             {
-                                isPremul = false;
+                                alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                                 int expectedSize = width * height;
                                 if (imageData.Length < expectedSize)
                                     return null;
@@ -565,11 +578,11 @@ public static class PdfImageToRgba
                                 result = new byte[pixelBufferSize];
                                 Array.Copy(pixelBuffer, result, pixelBufferSize);
                                 ArrayPool<byte>.Shared.Return(pixelBuffer);
-                                return new RgbaImage(result, width, height, isPremul);
+                                return new RgbaImage(result, width, height, alphaMode);
                             }
                             case 4:
                             {
-                                isPremul = false;
+                                alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                                 int expectedSize = width * height * 4;
                                 if (imageData.Length < expectedSize)
                                     return null;
@@ -595,7 +608,7 @@ public static class PdfImageToRgba
                                 result = new byte[pixelBufferSize];
                                 Array.Copy(pixelBuffer, result, pixelBufferSize);
                                 ArrayPool<byte>.Shared.Return(pixelBuffer);
-                                return new RgbaImage(result, width, height, isPremul);
+                                return new RgbaImage(result, width, height, alphaMode);
                             }
                             default:
                                 return null;
@@ -603,7 +616,7 @@ public static class PdfImageToRgba
                     }
                     case "DeviceCMYK" when bitsPerComponent == 8:
                     {
-                        isPremul = false;
+                        alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                         int expectedCmykSize = width * height * 4;
                         int expectedRgbSizeCmyk = width * height * 3;
                         int pixelCount = width * height;
@@ -650,7 +663,7 @@ public static class PdfImageToRgba
                         result = new byte[pixelBufferSize];
                         Array.Copy(pixelBuffer, result, pixelBufferSize);
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
-                        return new RgbaImage(result, width, height, isPremul);
+                        return new RgbaImage(result, width, height, alphaMode);
                     }
                     default:
                         return null;

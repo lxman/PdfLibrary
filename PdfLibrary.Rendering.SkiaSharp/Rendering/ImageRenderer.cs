@@ -158,9 +158,15 @@ internal class ImageRenderer
         PdfImageToRgba.RgbaImage? r = PdfImageToRgba.ToRgba(image, _document, maskColor, blackPointCompensation, renderingIntent);
         if (r is not { } img) return null;
 
-        var info = new SKImageInfo(img.Width, img.Height, SKColorType.Rgba8888,
-            img.IsPremultiplied ? SKAlphaType.Premul : SKAlphaType.Unpremul);
+        SKAlphaType alphaType = img.Alpha switch
+        {
+            AlphaMode.Premultiplied   => SKAlphaType.Premul,
+            AlphaMode.Unpremultiplied => SKAlphaType.Unpremul,
+            _                         => SKAlphaType.Opaque
+        };
+        var info = new SKImageInfo(img.Width, img.Height, SKColorType.Rgba8888, alphaType);
         var bitmap = new SKBitmap(info);
+        if (bitmap.GetPixels() == IntPtr.Zero) return null;
         Marshal.Copy(img.Rgba, 0, bitmap.GetPixels(), img.Rgba.Length);
         bitmap.NotifyPixelsChanged();
         return bitmap;
