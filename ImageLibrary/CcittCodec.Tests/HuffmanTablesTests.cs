@@ -94,7 +94,7 @@ namespace CcittCodec.Tests
         {
             foreach (HuffmanTables.HuffmanCode code in HuffmanTables.WhiteTerminatingCodes)
             {
-                Assert.True(code.BitLength >= 2 && code.BitLength <= 13,
+                Assert.True(code.BitLength is >= 2 and <= 13,
                     $"Invalid bit length: {code.BitLength}");
             }
         }
@@ -104,7 +104,7 @@ namespace CcittCodec.Tests
         {
             foreach (HuffmanTables.HuffmanCode code in HuffmanTables.BlackTerminatingCodes)
             {
-                Assert.True(code.BitLength >= 2 && code.BitLength <= 13,
+                Assert.True(code.BitLength is >= 2 and <= 13,
                     $"Invalid bit length: {code.BitLength}");
             }
         }

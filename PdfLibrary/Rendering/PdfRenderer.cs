@@ -571,7 +571,7 @@ internal class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], Pattern={CurrentState.FillPatternName}, PathEmpty={_currentPath.IsEmpty}");
 
         // Check if we should use pattern fill
-        if (CurrentState.ResolvedFillColorSpace == "Pattern" && CurrentState.FillPatternName is not null)
+        if (CurrentState is { ResolvedFillColorSpace: "Pattern", FillPatternName: not null })
         {
             FillWithPattern(_currentPath, evenOdd, CurrentState.FillPatternName);
         }
@@ -695,7 +695,7 @@ internal class PdfRenderer : PdfContentProcessor
 
     private static Matrix3x2 ReadShadingMatrix(PdfDictionary dict)
     {
-        if (dict.TryGetValue(new PdfName("Matrix"), out PdfObject? m) && m is PdfArray a && a.Count >= 6)
+        if (dict.TryGetValue(new PdfName("Matrix"), out PdfObject? m) && m is PdfArray { Count: >= 6 } a)
             return new Matrix3x2(
                 (float)a[0].ToDouble(), (float)a[1].ToDouble(),
                 (float)a[2].ToDouble(), (float)a[3].ToDouble(),
@@ -973,7 +973,7 @@ internal class PdfRenderer : PdfContentProcessor
         // Check for Matrix entry in the form XObject
         Matrix3x2 formMatrix = Matrix3x2.Identity;
         if (softMask.Group.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) &&
-            matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+            matrixObj is PdfArray { Count: >= 6 } matrixArray)
         {
             double a = matrixArray[0].ToDoubleOrNull() ?? 1;
             double b = matrixArray[1].ToDoubleOrNull() ?? 0;
@@ -1682,7 +1682,10 @@ internal class PdfRenderer : PdfContentProcessor
         // Check for Form XObject Matrix and concatenate with saved CTM
         // The Matrix entry maps form space to user space
         Matrix3x2 formCtm = savedCtm;
-        if (formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) && matrixObj is PdfArray matrixArray && matrixArray.Count >= 6)
+        if (formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) && matrixObj is PdfArray
+            {
+                Count: >= 6
+            } matrixArray)
         {
             var m11 = (float)matrixArray[0].ToDouble();
             var m12 = (float)matrixArray[1].ToDouble();

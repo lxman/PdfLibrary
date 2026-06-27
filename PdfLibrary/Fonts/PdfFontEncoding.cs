@@ -72,7 +72,7 @@ internal class PdfFontEncoding
         _codeToUnicode[charCode] = unicode;
 
         // Also add to reverse mapping if single character
-        if (unicode.Length == 1 && charCode >= 0 && charCode <= 255)
+        if (unicode.Length == 1 && charCode is >= 0 and <= 255)
         {
             _unicodeToCode[unicode[0]] = (byte)charCode;
         }

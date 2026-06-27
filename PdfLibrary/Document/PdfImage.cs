@@ -410,7 +410,7 @@ public class PdfImage
         return filterObj switch
         {
             PdfName name => name.Value is "CCITTFaxDecode" or "CCF",
-            PdfArray array => array.Count > 0 && array[0] is PdfName name && name.Value is "CCITTFaxDecode" or "CCF",
+            PdfArray array => array.Count > 0 && array[0] is PdfName { Value: "CCITTFaxDecode" or "CCF" },
             _ => false
         };
     }
@@ -426,7 +426,7 @@ public class PdfImage
         return filterObj switch
         {
             PdfName name => name.Value is "JBIG2Decode",
-            PdfArray array => array.Count > 0 && array[0] is PdfName name && name.Value is "JBIG2Decode",
+            PdfArray array => array.Count > 0 && array[0] is PdfName { Value: "JBIG2Decode" },
             _ => false
         };
     }
@@ -763,8 +763,7 @@ public class PdfImage
         // Transform ICC palette colors to device RGB BEFORE setting baseColorSpace
         // Check if base is ICCBased and transform the palette
         if (baseObj is PdfArray { Count: > 0 } baseColorArray &&
-            baseColorArray[0] is PdfName baseColorTypeName &&
-            baseColorTypeName.Value == "ICCBased" &&
+            baseColorArray[0] is PdfName { Value: "ICCBased" } &&
             baseColorArray.Count >= 2 &&
             paletteData is not null)
         {

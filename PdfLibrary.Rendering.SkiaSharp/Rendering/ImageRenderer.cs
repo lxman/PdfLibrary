@@ -81,7 +81,7 @@ internal class ImageRenderer
 
                 // Debug: Log bitmap info and sample pixels to verify image data
                 PdfLogger.Log(LogCategory.Images, $"DrawImage: Bitmap created {bitmap.Width}x{bitmap.Height}, Info={bitmap.Info.ColorType}");
-                if (bitmap.Width > 0 && bitmap.Height > 0)
+                if (bitmap is { Width: > 0, Height: > 0 })
                 {
                     SKColor pixel00 = bitmap.GetPixel(0, 0);
                     int midX = bitmap.Width / 2;

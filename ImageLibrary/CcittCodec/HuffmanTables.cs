@@ -280,7 +280,7 @@ namespace CcittCodec
             }
 
             // Handle standard makeup codes (64-1728)
-            if (remaining >= 64 && remaining <= CcittConstants.MaxStandardMakeupRunLength)
+            if (remaining is >= 64 and <= CcittConstants.MaxStandardMakeupRunLength)
             {
                 int makeupIndex = remaining / 64 - 1;
                 HuffmanCode[] makeupCodes = isWhite ? WhiteMakeupCodes : BlackMakeupCodes;

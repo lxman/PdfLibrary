@@ -166,7 +166,7 @@ namespace CcittCodec
             // After the row loop, optionally consume an EOFB marker so callers
             // who concatenate multiple Group-4 streams (JBIG2 halftone gray
             // planes per Annex C.5) can keep advancing through the buffer.
-            if (_options.EndOfBlock && _options.Group == CcittGroup.Group4)
+            if (_options is { EndOfBlock: true, Group: CcittGroup.Group4 })
             {
                 // EOFB is two EOL codes back-to-back. Each EOL is 12 bits with
                 // value 0x001 (0b000000000001). Together: 0b000000000001000000000001

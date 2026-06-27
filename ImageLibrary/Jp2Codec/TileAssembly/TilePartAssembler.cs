@@ -31,7 +31,7 @@ namespace Jp2Codec.TileAssembly
             // resulting per-tile-part chunks are concatenated within each
             // tile to form that tile's packed-header stream.
             PpmStreamSlicer? ppmSlicer =
-                (mainHeaderPpmSegments != null && mainHeaderPpmSegments.Count > 0)
+                mainHeaderPpmSegments is { Count: > 0 }
                     ? new PpmStreamSlicer(mainHeaderPpmSegments)
                     : null;
 

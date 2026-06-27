@@ -23,7 +23,7 @@ namespace Jbig2Decoder.Region
     {
         public SymbolDictionary Decode(SymbolDictionaryParams p, byte[] arithData, int offset, int length)
         {
-            if (p.SdHuff && p.SdRefAgg) return DecodeHuffmanRefAgg(p, arithData, offset, length);
+            if (p is { SdHuff: true, SdRefAgg: true }) return DecodeHuffmanRefAgg(p, arithData, offset, length);
             if (p.SdHuff) return DecodeHuffmanNoRefAgg(p, arithData, offset, length);
 
             var mq = new MqDecoder(arithData, offset, length);
@@ -45,7 +45,7 @@ namespace Jbig2Decoder.Region
             {
                 int gbSize = GenericRegionDecoder.StatsSizeFor(p.SdTemplate);
                 gbStats = new byte[gbSize];
-                if (p.UseRetainedContext && p.SeedGbStats != null && p.SeedGbStats.Length == gbSize)
+                if (p is { UseRetainedContext: true, SeedGbStats: { } } && p.SeedGbStats.Length == gbSize)
                     Buffer.BlockCopy(p.SeedGbStats, 0, gbStats, 0, gbSize);
             }
             GenericRegionDecoder? genericDecoder = p.SdRefAgg ? null : new GenericRegionDecoder();
@@ -64,7 +64,7 @@ namespace Jbig2Decoder.Region
                 iardy = new IntegerDecoder(mq, "IARDY");
                 int grSize = RefinementRegionDecoder.StatsSizeFor(p.SdRTemplate);
                 grStats = new byte[grSize];
-                if (p.UseRetainedContext && p.SeedGrStats != null && p.SeedGrStats.Length == grSize)
+                if (p is { UseRetainedContext: true, SeedGrStats: { } } && p.SeedGrStats.Length == grSize)
                     Buffer.BlockCopy(p.SeedGrStats, 0, grStats, 0, grSize);
                 refDecoder = new RefinementRegionDecoder();
                 // SBSYMCODELEN may be 0 when only one symbol is referenceable;

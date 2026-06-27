@@ -27,7 +27,7 @@ internal static class FieldAppearanceGenerator
 
         if (field is PdfTextField t)
         {
-            if (t.IsComb && t.MaxLength is int ml && ml > 0)
+            if (t is { IsComb: true, MaxLength: int and > 0 })
                 RegenerateCombTextField(doc, t);
             else if (t.IsMultiline)
                 RegenerateMultilineTextField(doc, t);

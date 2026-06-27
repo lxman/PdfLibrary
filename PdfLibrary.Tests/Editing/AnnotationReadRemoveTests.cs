@@ -20,7 +20,7 @@ public class AnnotationReadRemoveTests
         IReadOnlyList<PdfAnnotationInfo> annots = editor.Pages.GetAnnotations(0);
 
         Assert.Equal(2, annots.Count);
-        Assert.Contains(annots, a => a.Subtype == "Text" && a.Contents == "a note");
+        Assert.Contains(annots, a => a is { Subtype: "Text", Contents: "a note" });
         Assert.Contains(annots, a => a.Subtype == "Link");
     }
 

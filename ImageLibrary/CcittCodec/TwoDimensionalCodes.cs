@@ -116,7 +116,7 @@ namespace CcittCodec
         /// <returns>True if |offset| &lt;= 3.</returns>
         public static bool CanUseVerticalMode(int offset)
         {
-            return offset >= -3 && offset <= 3;
+            return offset is >= -3 and <= 3;
         }
     }
 }

@@ -77,7 +77,7 @@ public sealed partial class PdfPageCollection
 
     private PdfRect ReadRect(PdfDictionary annot)
     {
-        if (Resolve(annot.Get(new PdfName("Rect"))) is PdfArray a && a.Count >= 4)
+        if (Resolve(annot.Get(new PdfName("Rect"))) is PdfArray { Count: >= 4 } a)
         {
             double Num(int i) => Resolve(a[i]) switch
             {

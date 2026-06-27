@@ -92,18 +92,18 @@ namespace FontParser.Tables.PostScriptType1
 
         private float DecodeNumber(byte[] data, ref int i, byte firstByte)
         {
-            if (firstByte >= 32 && firstByte <= 246)
+            if (firstByte is >= 32 and <= 246)
             {
                 return firstByte - 139;
             }
 
-            if (firstByte >= 247 && firstByte <= 250)
+            if (firstByte is >= 247 and <= 250)
             {
                 byte b1 = data[i++];
                 return (firstByte - 247) * 256 + b1 + 108;
             }
 
-            if (firstByte >= 251 && firstByte <= 254)
+            if (firstByte is >= 251 and <= 254)
             {
                 byte b1 = data[i++];
                 return -(firstByte - 251) * 256 - b1 - 108;

@@ -43,7 +43,7 @@ internal static class DestinationRepairer
         if (depth > 8) return false;
         switch (Resolve(doc, dest))
         {
-            case PdfArray arr when arr.Count > 0:
+            case PdfArray { Count: > 0 } arr:
                 return arr[0] is PdfIndirectReference r && r.ObjectNumber == pageObjNum;
             case PdfString s:
             {
@@ -81,13 +81,13 @@ internal static class DestinationRepairer
             for (var i = 0; i + 1 < names.Count; i += 2)
                 if (names[i] is PdfString key && key.Value == name)
                     return names[i + 1];
-        if (Resolve(doc, node.Get(new PdfName("Kids"))) is PdfArray kids)
-            foreach (PdfObject kid in kids)
-                if (Resolve(doc, kid) is PdfDictionary child)
-                {
-                    PdfObject? found = NameTreeLookup(doc, child, name);
-                    if (found is not null) return found;
-                }
+        if (Resolve(doc, node.Get(new PdfName("Kids"))) is not PdfArray kids) return null;
+        foreach (PdfObject kid in kids)
+            if (Resolve(doc, kid) is PdfDictionary child)
+            {
+                PdfObject? found = NameTreeLookup(doc, child, name);
+                if (found is not null) return found;
+            }
         return null;
     }
 
@@ -134,9 +134,7 @@ internal static class DestinationRepairer
 
         if (Resolve(doc, catalog.Get(new PdfName("Dests"))) is PdfDictionary legacy)
         {
-            var kill = new List<PdfName>();
-            foreach (KeyValuePair<PdfName, PdfObject> kv in legacy)
-                if (DestTargetsPage(doc, kv.Value, pageObjNum, 0)) kill.Add(kv.Key);
+            List<PdfName> kill = (from kv in legacy where DestTargetsPage(doc, kv.Value, pageObjNum, 0) select kv.Key).ToList();
             foreach (PdfName k in kill) legacy.Remove(k);
         }
 
@@ -154,10 +152,11 @@ internal static class DestinationRepairer
                     names.RemoveAt(i + 1);
                     names.RemoveAt(i);
                 }
-        if (Resolve(doc, node.Get(new PdfName("Kids"))) is PdfArray kids)
-            foreach (PdfObject kid in kids)
-                if (Resolve(doc, kid) is PdfDictionary child)
-                    PruneNameTree(doc, child, pageObjNum);
+
+        if (Resolve(doc, node.Get(new PdfName("Kids"))) is not PdfArray kids) return;
+        foreach (PdfObject kid in kids)
+            if (Resolve(doc, kid) is PdfDictionary child)
+                PruneNameTree(doc, child, pageObjNum);
     }
 
     private static void RepairLinkAnnotations(PdfDocument doc, int pageObjNum)

@@ -59,7 +59,7 @@ internal static class FormFlattener
             double rx0 = 0, ry0 = 0;
             PdfLibrary.Core.PdfObject? rectRaw = widget.Get(new PdfName("Rect"));
             PdfLibrary.Core.PdfObject? rectResolved = Resolve(doc, rectRaw);
-            if (rectResolved is PdfArray rectArr && rectArr.Count >= 4)
+            if (rectResolved is PdfArray { Count: >= 4 } rectArr)
             {
                 double v0 = ToDouble(rectArr[0]);
                 double v1 = ToDouble(rectArr[1]);

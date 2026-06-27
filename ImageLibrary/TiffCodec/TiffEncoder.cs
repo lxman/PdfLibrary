@@ -189,7 +189,7 @@ public static class TiffEncoder
                 {
                     WriteUInt16ToBytes(bytes, 0, single, littleEndian);
                 }
-                else if (value is ushort[] arr && arr.Length == 2)
+                else if (value is ushort[] { Length: 2 } arr)
                 {
                     WriteUInt16ToBytes(bytes, 0, arr[0], littleEndian);
                     WriteUInt16ToBytes(bytes, 2, arr[1], littleEndian);
@@ -220,7 +220,7 @@ public static class TiffEncoder
                 break;
 
             case 5: // RATIONAL (two LONGs: numerator/denominator)
-                if (value is uint[] rational && rational.Length == 2)
+                if (value is uint[] { Length: 2 } rational)
                 {
                     WriteUInt32(writer, rational[0], littleEndian);
                     WriteUInt32(writer, rational[1], littleEndian);

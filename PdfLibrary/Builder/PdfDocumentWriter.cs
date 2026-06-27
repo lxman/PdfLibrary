@@ -211,7 +211,7 @@ internal class PdfDocumentWriter
             {
                 if (content is PdfPathContent path)
                 {
-                    if (path.FillColor.HasValue && path.FillColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    if (path.FillColor is { ColorSpace: PdfColorSpace.Separation })
                     {
                         string colorantName = path.FillColor.Value.ColorantName ?? "Unknown";
                         if (!_separationColorSpaces.ContainsKey(colorantName))
@@ -219,7 +219,7 @@ internal class PdfDocumentWriter
                             _separationColorSpaces[colorantName] = _nextObjectNumber++;
                         }
                     }
-                    if (path.StrokeColor.HasValue && path.StrokeColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    if (path.StrokeColor is { ColorSpace: PdfColorSpace.Separation })
                     {
                         string colorantName = path.StrokeColor.Value.ColorantName ?? "Unknown";
                         if (!_separationColorSpaces.ContainsKey(colorantName))
@@ -230,7 +230,7 @@ internal class PdfDocumentWriter
                 }
                 else if (content is PdfRectangleContent rect)
                 {
-                    if (rect.FillColor.HasValue && rect.FillColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    if (rect.FillColor is { ColorSpace: PdfColorSpace.Separation })
                     {
                         string colorantName = rect.FillColor.Value.ColorantName ?? "Unknown";
                         if (!_separationColorSpaces.ContainsKey(colorantName))
@@ -238,7 +238,7 @@ internal class PdfDocumentWriter
                             _separationColorSpaces[colorantName] = _nextObjectNumber++;
                         }
                     }
-                    if (rect.StrokeColor.HasValue && rect.StrokeColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    if (rect.StrokeColor is { ColorSpace: PdfColorSpace.Separation })
                     {
                         string colorantName = rect.StrokeColor.Value.ColorantName ?? "Unknown";
                         if (!_separationColorSpaces.ContainsKey(colorantName))
@@ -268,7 +268,7 @@ internal class PdfDocumentWriter
                             _separationColorSpaces[colorantName] = _nextObjectNumber++;
                         }
                     }
-                    if (text.StrokeColor.HasValue && text.StrokeColor.Value.ColorSpace == PdfColorSpace.Separation)
+                    if (text.StrokeColor is { ColorSpace: PdfColorSpace.Separation })
                     {
                         string colorantName = text.StrokeColor.Value.ColorantName ?? "Unknown";
                         if (!_separationColorSpaces.ContainsKey(colorantName))
@@ -1112,7 +1112,7 @@ internal class PdfDocumentWriter
             else
                 sb.AppendLine("W n"); // Non-zero winding clip, no paint
         }
-        else if (path.FillColor.HasValue && path.StrokeColor.HasValue)
+        else if (path is { FillColor: not null, StrokeColor: not null })
         {
             // Fill and stroke
             if (path.FillRule == PdfFillRule.EvenOdd)
@@ -1758,7 +1758,7 @@ internal class PdfDocumentWriter
         writer.WriteLine($"   /U <{BytesToHexString(_encryptor.UValue)}>");
 
         // Key length for V=2,3,4
-        if (_encryptor.Version >= 2 && _encryptor.Version <= 4)
+        if (_encryptor.Version is >= 2 and <= 4)
         {
             writer.WriteLine($"   /Length {_encryptor.KeyLengthBits}");
         }
@@ -1861,7 +1861,7 @@ internal class PdfDocumentWriter
             byte[] encrypted = EncryptString(bytes, objectNumber);
             return $"<{BytesToHexString(encrypted)}>";
         }
-        bool utf16 = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+        bool utf16 = bytes is [0xFE, 0xFF, ..];
         bool asciiOnly = !utf16 && Array.TrueForAll(bytes, b => b is >= 0x20 and <= 0x7E);
         return asciiOnly ? $"({EscapePdfString(text)})" : $"<{BytesToHexString(bytes)}>";
     }
@@ -1873,7 +1873,7 @@ internal class PdfDocumentWriter
     private static string PdfTextString(string text)
     {
         byte[] bytes = PdfDocEncoding.Encode(text); // PDFDocEncoding or UTF-16BE+BOM
-        bool utf16 = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+        bool utf16 = bytes is [0xFE, 0xFF, ..];
         bool asciiOnly = !utf16 && Array.TrueForAll(bytes, b => b is >= 0x20 and <= 0x7E);
         return asciiOnly ? $"({EscapePdfString(text)})" : $"<{BytesToHexString(bytes)}>";
     }
@@ -2175,7 +2175,7 @@ internal class PdfDocumentWriter
         int count = bookmarks.Count;
         foreach (PdfBookmark bookmark in bookmarks)
         {
-            if (bookmark.IsOpen && bookmark.Children.Count > 0)
+            if (bookmark is { IsOpen: true, Children.Count: > 0 })
             {
                 count += CountOpenOutlineItems(bookmark.Children);
             }

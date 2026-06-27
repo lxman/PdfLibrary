@@ -116,8 +116,7 @@ internal static class FontSubsetter
 
             // 3b. For Identity-H CIDFontType2, write a /CIDToGIDMap stream.
             //     Register it as a proper document object so the serializer writes it correctly.
-            if (usage.Kind == FontUsageKind.IdentityCidType2 &&
-                usage.DescendantCidFontDict is { } cidDict)
+            if (usage is { Kind: FontUsageKind.IdentityCidType2, DescendantCidFontDict: { } cidDict })
             {
                 byte[] cidToGidMapBytes = BuildCidToGidMap(usage.Gids, oldToNew);
                 var cidToGidStream = new PdfStream(new byte[0]);

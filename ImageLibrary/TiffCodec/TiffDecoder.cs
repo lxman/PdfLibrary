@@ -639,8 +639,8 @@ public static class TiffDecoder
         {
             bitsPerSample = bpsValue switch
             {
-                int[] arr when arr.Length > 0 => arr[0],
-                ushort[] arr2 when arr2.Length > 0 => arr2[0],
+                int[] { Length: > 0 } arr => arr[0],
+                ushort[] { Length: > 0 } arr2 => arr2[0],
                 _ => Convert.ToInt32(bpsValue)
             };
         }

@@ -19,7 +19,7 @@ namespace FontParser.Subsetting.Cff
         public CffDictBuilder Add(int operatorCode, params double[] operands)
         {
             foreach (double o in operands)
-                _bytes.AddRange(o == Math.Floor(o) && o >= int.MinValue && o <= int.MaxValue
+                _bytes.AddRange(o == Math.Floor(o) && o is >= int.MinValue and <= int.MaxValue
                     ? CffWriter.EncodeInteger((int)o)
                     : CffWriter.EncodeReal(o));
             _bytes.AddRange(CffWriter.EncodeOperator(operatorCode));

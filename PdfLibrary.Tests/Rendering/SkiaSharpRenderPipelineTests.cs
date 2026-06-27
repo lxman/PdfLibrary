@@ -391,7 +391,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         SKColor px = bitmap.GetPixel(sampleX, sampleY);
 
         Assert.True(
-            px.Red > 200 && px.Green < 80 && px.Blue < 80,
+            px is { Red: > 200, Green: < 80, Blue: < 80 },
             $"Expected red pixel inside rectangle at ({sampleX},{sampleY}), got ({px.Red},{px.Green},{px.Blue})");
     }
 
@@ -419,7 +419,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
         for (var x = 100; x < 300; x++)
         {
             SKColor px = bitmap.GetPixel(x, sampleY);
-            if (px.Red < 100 && px.Green < 100 && px.Blue < 100)
+            if (px is { Red: < 100, Green: < 100, Blue: < 100 })
             {
                 darkFound = true;
                 break;
@@ -524,7 +524,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
             {
                 SKColor c = bitmap.GetPixel(cx + dx, cy + dy);
                 samples++;
-                bool isInk = c.Alpha > 128 && c.Red < 128 && c.Green < 128 && c.Blue < 128;
+                bool isInk = c is { Alpha: > 128, Red: < 128, Green: < 128, Blue: < 128 };
                 if (!isInk)
                     openAtCentre++;
             }
@@ -614,7 +614,7 @@ public class SkiaSharpRenderPipelineTests : IDisposable
 
         // Centre of the rect (user 20..80 → device 40..160 at 2x). Blue proves the page rendered.
         SKColor px = bitmap.GetPixel(100, 100);
-        Assert.True(px.Blue > 200 && px.Red < 80 && px.Green < 80,
+        Assert.True(px is { Blue: > 200, Red: < 80, Green: < 80 },
             $"rectangle did not render after a malformed numeric operand (got {px.Red},{px.Green},{px.Blue},{px.Alpha})");
     }
 

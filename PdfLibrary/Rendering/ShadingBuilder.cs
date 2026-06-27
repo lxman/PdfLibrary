@@ -49,10 +49,10 @@ internal static class ShadingBuilder
         double t1 = domain.Length > 1 ? domain[1] : 1.0;
 
         bool extendStart = false, extendEnd = false;
-        if (dict.TryGetValue(new PdfName("Extend"), out PdfObject extObj) && extObj is PdfArray extArr && extArr.Count >= 2)
+        if (dict.TryGetValue(new PdfName("Extend"), out PdfObject extObj) && extObj is PdfArray { Count: >= 2 } extArr)
         {
-            extendStart = extArr[0] is PdfBoolean b0 && b0.Value;
-            extendEnd = extArr[1] is PdfBoolean b1 && b1.Value;
+            extendStart = extArr[0] is PdfBoolean { Value: true };
+            extendEnd = extArr[1] is PdfBoolean { Value: true };
         }
 
         var stops = new float[StopCount];

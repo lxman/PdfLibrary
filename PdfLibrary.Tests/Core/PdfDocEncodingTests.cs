@@ -13,7 +13,7 @@ public class PdfDocEncodingTests
     public void Encode_RepresentableText_StaysSingleByte_AndRoundTrips(string text)
     {
         byte[] bytes = PdfDocEncoding.Encode(text);
-        Assert.False(bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF);
+        Assert.False(bytes is [0xFE, 0xFF, ..]);
         Assert.Equal(text, PdfDocEncoding.Decode(bytes));
     }
 
@@ -24,7 +24,7 @@ public class PdfDocEncodingTests
     public void Encode_NonRepresentableText_UsesUtf16BeWithBom_AndRoundTrips(string text)
     {
         byte[] bytes = PdfDocEncoding.Encode(text);
-        Assert.True(bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF);
+        Assert.True(bytes is [0xFE, 0xFF, ..]);
         Assert.Equal(text, PdfDocEncoding.Decode(bytes));
     }
 

@@ -79,7 +79,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
 
                 // Dash pattern (D)
                 case "D":
-                    if (value is PdfArray dashArray && dashArray.Count >= 2)
+                    if (value is PdfArray { Count: >= 2 } dashArray)
                     {
                         if (dashArray[0] is PdfArray pattern)
                         {
@@ -144,7 +144,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
 
                 // Font (Font) - array of [fontRef size]
                 case "Font":
-                    if (value is PdfArray fontArray && fontArray.Count >= 2)
+                    if (value is PdfArray { Count: >= 2 } fontArray)
                     {
                         // Get font reference and size
                         PdfObject? fontRef = fontArray[0];
@@ -215,7 +215,7 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
                     string blendMode = value switch
                     {
                         PdfName bmName => bmName.Value,
-                        PdfArray bmArray when bmArray.Count > 0 && bmArray[0] is PdfName firstName => firstName.Value,
+                        PdfArray { Count: > 0 } bmArray when bmArray[0] is PdfName firstName => firstName.Value,
                         _ => "Normal"
                     };
                     currentState.BlendMode = blendMode;

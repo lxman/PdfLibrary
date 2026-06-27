@@ -456,7 +456,7 @@ public static class PngDecoder
         int width, int bitDepth, byte[]? transparency)
     {
         int transparentValue = -1;
-        if (transparency != null && transparency.Length >= 2)
+        if (transparency is { Length: >= 2 })
         {
             transparentValue = (transparency[0] << 8) | transparency[1];
         }
@@ -512,7 +512,7 @@ public static class PngDecoder
         int width, int bitDepth, byte[]? transparency)
     {
         int transR = -1, transG = -1, transB = -1;
-        if (transparency != null && transparency.Length >= 6)
+        if (transparency is { Length: >= 6 })
         {
             transR = (transparency[0] << 8) | transparency[1];
             transG = (transparency[2] << 8) | transparency[3];

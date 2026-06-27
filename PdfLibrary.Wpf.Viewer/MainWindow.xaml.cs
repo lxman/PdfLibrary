@@ -280,12 +280,12 @@ public partial class MainWindow : Window
                     BorderThickness = new Thickness(1),
                     IsReadOnly = tf.IsReadOnly        // display value but block edits
                 };
-                if (tf.MaxLength is { } ml && ml > 0) tb.MaxLength = ml;
+                if (tf.MaxLength is { } ml and > 0) tb.MaxLength = ml;
                 if (!tf.IsReadOnly)
                     tb.LostFocus += (_, _) => tf.Value = tb.Text;
                 return tb;
             }
-            case PdfButtonField bf when bf.Kind == ButtonKind.Checkbox:
+            case PdfButtonField { Kind: ButtonKind.Checkbox } bf:
             {
                 var cb = new CheckBox
                 {
@@ -303,7 +303,7 @@ public partial class MainWindow : Window
                 // grows with zoom). Uniform keeps the mark square.
                 return new Viewbox { Child = cb, Stretch = Stretch.Uniform };
             }
-            case PdfButtonField bf when bf.Kind == ButtonKind.Radio:
+            case PdfButtonField { Kind: ButtonKind.Radio } bf:
             {
                 var rb = new RadioButton
                 {
@@ -318,7 +318,7 @@ public partial class MainWindow : Window
                 // Same fixed-glyph issue as CheckBox — scale via Viewbox so the dot grows with zoom.
                 return new Viewbox { Child = rb, Stretch = Stretch.Uniform };
             }
-            case PdfChoiceField cf when cf.IsCombo:
+            case PdfChoiceField { IsCombo: true } cf:
             {
                 var combo = new ComboBox { IsEnabled = !cf.IsReadOnly, FontFamily = MapDaFont(cf.FontName), FontSize = fontSizeDiu };
                 foreach ((string export, string display) in cf.Options)
@@ -329,7 +329,7 @@ public partial class MainWindow : Window
                 {
                     combo.SelectionChanged += (_, _) =>
                     {
-                        if (combo.SelectedItem is ComboBoxItem item && item.Tag is string ex)
+                        if (combo.SelectedItem is ComboBoxItem { Tag: string ex })
                             cf.SelectedValues = new[] { ex };
                     };
                 }
@@ -512,7 +512,7 @@ public partial class MainWindow : Window
         if (Keyboard.FocusedElement is TextBox)
         {
             // Move logical focus off the text box so its LostFocus write-back fires.
-            var scope = FocusManager.GetFocusScope(this);
+            DependencyObject? scope = FocusManager.GetFocusScope(this);
             FocusManager.SetFocusedElement(scope, this);
             Keyboard.ClearFocus();
         }

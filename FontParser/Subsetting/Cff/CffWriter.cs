@@ -76,19 +76,19 @@ namespace FontParser.Subsetting.Cff
         /// <summary>Encodes an integer as a CFF DICT operand in the shortest form (mirrors <c>Calc.Integer</c>).</summary>
         public static byte[] EncodeInteger(int value)
         {
-            if (value >= -107 && value <= 107)
+            if (value is >= -107 and <= 107)
                 return new[] { (byte)(value + 139) };
-            if (value >= 108 && value <= 1131)
+            if (value is >= 108 and <= 1131)
             {
                 int w = value - 108;
                 return new[] { (byte)(247 + (w >> 8)), (byte)(w & 0xFF) };
             }
-            if (value >= -1131 && value <= -108)
+            if (value is >= -1131 and <= -108)
             {
                 int w = -value - 108;
                 return new[] { (byte)(251 + (w >> 8)), (byte)(w & 0xFF) };
             }
-            if (value >= short.MinValue && value <= short.MaxValue)
+            if (value is >= short.MinValue and <= short.MaxValue)
                 return new[] { (byte)0x1C, (byte)(value >> 8), (byte)value };
             return new[] { (byte)0x1D, (byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value };
         }
@@ -107,7 +107,7 @@ namespace FontParser.Subsetting.Cff
             {
                 if (c == '-') nibbles.Add(0xE);
                 else if (c == '.') nibbles.Add(0xA);
-                else if (c >= '0' && c <= '9') nibbles.Add((byte)(c - '0'));
+                else if (c is >= '0' and <= '9') nibbles.Add((byte)(c - '0'));
             }
             nibbles.Add(0xF);                          // end marker
             if ((nibbles.Count & 1) == 1) nibbles.Add(0xF); // pad to a full byte

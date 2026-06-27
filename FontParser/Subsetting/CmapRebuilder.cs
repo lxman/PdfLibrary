@@ -183,7 +183,7 @@ namespace FontParser.Subsetting
             for (var si = 0; si < segCount; si++)
             {
                 Segment seg = segments[si];
-                if (seg.GlyphIds != null && seg.GlyphIds.Length > 0)
+                if (seg.GlyphIds is { Length: > 0 })
                 {
                     // idRangeOffset is relative to the idRangeOffset array entry.
                     // It points into the glyphIdArray which follows the four arrays.
@@ -269,7 +269,7 @@ namespace FontParser.Subsetting
             for (var si = 0; si < segCount; si++)
             {
                 Segment seg = segments[si];
-                short delta = (seg.GlyphIds != null && seg.GlyphIds.Length > 0) ? (short)0 : seg.IdDelta;
+                short delta = seg.GlyphIds is { Length: > 0 } ? (short)0 : seg.IdDelta;
                 WriteU16(buf, ref p, (ushort)delta);
             }
 

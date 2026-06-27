@@ -579,7 +579,7 @@ namespace CcittCodec.Tests
                 if (!match)
                 {
                     // Show all elements for rows around first mismatch
-                    if (rowNum >= 45 && rowNum <= 47)
+                    if (rowNum is >= 45 and <= 47)
                     {
                         _output.WriteLine($"  Decoded ({decodedChanges.Count}): {string.Join(", ", decodedChanges)}");
                         _output.WriteLine($"  Reference ({refChanges.Count}): {string.Join(", ", refChanges)}");

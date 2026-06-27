@@ -46,7 +46,7 @@ public static class TgaDecoder
             // Read color map if present
             byte[]? colorMap = null;
             var colorMapBytesPerEntry = 0;
-            if (header.HasColorMap && header.ColorMapLength > 0)
+            if (header is { HasColorMap: true, ColorMapLength: > 0 })
             {
                 colorMapBytesPerEntry = (header.ColorMapEntrySize + 7) / 8;
                 int colorMapSize = header.ColorMapLength * colorMapBytesPerEntry;

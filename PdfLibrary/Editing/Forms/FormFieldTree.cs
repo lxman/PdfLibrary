@@ -53,7 +53,7 @@ internal static class FormFieldTree
 
         // Determine whether this node has /Kids
         PdfObject? kidsRaw = dict.Get(new PdfName("Kids"));
-        if (Resolve(doc, kidsRaw) is PdfArray kids && kids.Count > 0)
+        if (Resolve(doc, kidsRaw) is PdfArray { Count: > 0 } kids)
         {
             // Inspect the first kid to decide: sub-fields (have /T) vs widget annotations
             bool kidsAreWidgets = KidsAreWidgets(doc, kids);
@@ -284,7 +284,7 @@ internal static class FormFieldTree
             foreach (PdfObject item in optArr)
             {
                 PdfObject resolved = Resolve(doc, item) ?? item;
-                if (resolved is PdfArray pair && pair.Count >= 2)
+                if (resolved is PdfArray { Count: >= 2 } pair)
                 {
                     string export  = StringFrom(Resolve(doc, pair[0]));
                     string display = StringFrom(Resolve(doc, pair[1]));
@@ -398,7 +398,7 @@ internal static class FormFieldTree
 
     private static PdfRect ReadRect(PdfDocument doc, PdfDictionary widget)
     {
-        if (Resolve(doc, widget.Get(new PdfName("Rect"))) is PdfArray a && a.Count >= 4)
+        if (Resolve(doc, widget.Get(new PdfName("Rect"))) is PdfArray { Count: >= 4 } a)
         {
             double v0 = ToDouble(a[0]), v1 = ToDouble(a[1]), v2 = ToDouble(a[2]), v3 = ToDouble(a[3]);
             return new PdfRect(Math.Min(v0, v2), Math.Min(v1, v3), Math.Max(v0, v2), Math.Max(v1, v3));

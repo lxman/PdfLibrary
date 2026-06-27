@@ -1002,7 +1002,7 @@ public partial class PdfDocument : IDisposable
         // Get document ID from trailer
         byte[] documentId = [];
         if (document.Trailer.Dictionary.TryGetValue(new PdfName("ID"), out PdfObject idObj) &&
-            idObj is PdfArray idArray && idArray.Count > 0 &&
+            idObj is PdfArray { Count: > 0 } idArray &&
             idArray[0] is PdfString idString)
         {
             documentId = idString.Bytes;

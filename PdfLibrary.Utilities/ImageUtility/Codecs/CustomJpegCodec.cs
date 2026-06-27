@@ -139,8 +139,8 @@ public class CustomJpegCodec : IImageCodec
     private static byte[] CmykOrYcck(JpegDecodeResult result)
     {
         byte[] src = result.ComponentData;
-        bool isAdobeYcck = result.HasAdobeMarker && result.AdobeColorTransform == 2;
-        bool isInvertedCmyk = result.HasAdobeMarker && result.AdobeColorTransform == 0;
+        bool isAdobeYcck = result is { HasAdobeMarker: true, AdobeColorTransform: 2 };
+        bool isInvertedCmyk = result is { HasAdobeMarker: true, AdobeColorTransform: 0 };
         var cmyk = new byte[src.Length];
         int pixelCount = src.Length / 4;
 

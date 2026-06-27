@@ -166,8 +166,7 @@ internal class EmbeddedFontMetrics
         // WindowsEncodingId.UnicodeCsm = 0 = Symbol encoding
         // (the enum naming is misleading - 0 is actually Symbol, not Unicode)
         return _cmapTable.EncodingRecords.Any(r =>
-            r.PlatformId == PlatformId.Windows &&
-            r.WindowsEncoding == WindowsEncodingId.UnicodeCsm);
+            r is { PlatformId: PlatformId.Windows, WindowsEncoding: WindowsEncodingId.UnicodeCsm });
     }
 
     /// <summary>
@@ -207,7 +206,7 @@ internal class EmbeddedFontMetrics
                 // Calculate UnitsPerEm from FontMatrix instead of hardcoding
                 // FontMatrix[0] represents the scale from glyph units to text space: 1/UnitsPerEm
                 List<double>? fontMatrix = _cffTable.FontMatrix;
-                if (fontMatrix is not null && fontMatrix.Count >= 4 && fontMatrix[0] > 0)
+                if (fontMatrix is not null && fontMatrix is [> 0, _, _, _, ..])
                 {
                     UnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);
                     string matrixStr = string.Join(", ", fontMatrix);
@@ -348,7 +347,7 @@ internal class EmbeddedFontMetrics
 
                 // Log FontMatrix for debugging
                 List<double>? fontMatrix = _cffTable.FontMatrix;
-                if (fontMatrix is not null && fontMatrix.Count >= 4 && fontMatrix[0] > 0)
+                if (fontMatrix is not null && fontMatrix is [> 0, _, _, _, ..])
                 {
                     string matrixStr = string.Join(", ", fontMatrix);
                     var calculatedUnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);

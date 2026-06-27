@@ -91,7 +91,7 @@ public class PdfTilingPattern
             tilingType = tilingInt.Value;
 
         // BBox (required)
-        if (dict.TryGetValue(new PdfName("BBox"), out PdfObject bboxObj) && bboxObj is PdfArray bboxArray && bboxArray.Count >= 4)
+        if (dict.TryGetValue(new PdfName("BBox"), out PdfObject bboxObj) && bboxObj is PdfArray { Count: >= 4 } bboxArray)
         {
             bbox = new PdfRectangle(
                 bboxArray[0].ToDouble(),
@@ -109,7 +109,7 @@ public class PdfTilingPattern
             yStep = ystepObj.ToDouble();
 
         // Matrix (optional, defaults to identity)
-        if (dict.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) && matrixObj is PdfArray m && m.Count >= 6)
+        if (dict.TryGetValue(new PdfName("Matrix"), out PdfObject matrixObj) && matrixObj is PdfArray { Count: >= 6 } m)
         {
             matrix = new Matrix3x2(
                 (float)m[0].ToDouble(),

@@ -130,7 +130,7 @@ public sealed class WpfRenderTarget : IRenderTarget
         var pg = new PathGeometry { FillRule = evenOdd ? FillRule.EvenOdd : FillRule.Nonzero };
         PathFigure? figure = null;
 
-        foreach (var seg in path.Segments)
+        foreach (PathSegment seg in path.Segments)
         {
             switch (seg)
             {

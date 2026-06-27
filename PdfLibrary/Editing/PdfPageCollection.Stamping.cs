@@ -74,7 +74,7 @@ public sealed partial class PdfPageCollection
 
     private (double w, double h) PageSizePoints(PdfDictionary page)
     {
-        if (page.Get(new PdfName("MediaBox")) is PdfArray mb && mb.Count == 4)
+        if (page.Get(new PdfName("MediaBox")) is PdfArray { Count: 4 } mb)
         {
             double x0 = Num(mb[0]), y0 = Num(mb[1]), x1 = Num(mb[2]), y1 = Num(mb[3]);
             return (Math.Abs(x1 - x0), Math.Abs(y1 - y0));

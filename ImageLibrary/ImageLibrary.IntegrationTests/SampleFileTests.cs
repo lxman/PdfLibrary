@@ -161,7 +161,7 @@ public class SampleFileSummaryTests
             {
                 byte[] data = File.ReadAllBytes(file);
                 PngImage image = PngDecoder.Decode(data);
-                if (image.Width > 0 && image.Height > 0)
+                if (image is { Width: > 0, Height: > 0 })
                     success++;
                 else
                     failed++;

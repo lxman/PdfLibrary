@@ -111,7 +111,7 @@ namespace Jp2Codec.Jp2File
 
         private static bool LooksLikeJ2kCodestream(byte[] data)
         {
-            return data.Length >= 2 && data[0] == 0xFF && data[1] == 0x4F;
+            return data is [0xFF, 0x4F, ..];
         }
 
         private static bool LooksLikeJp2File(byte[] data)

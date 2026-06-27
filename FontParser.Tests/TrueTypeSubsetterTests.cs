@@ -34,7 +34,7 @@ public class TrueTypeSubsetterTests
 
         foreach (GlyphData gd in glyf.Glyphs)
         {
-            if (gd.GlyphSpec is CompositeGlyph composite && composite.Components.Count > 0)
+            if (gd.GlyphSpec is CompositeGlyph { Components.Count: > 0 } composite)
                 return ((ushort)gd.Index, composite.Components.Select(c => c.GlyphIndex).ToArray());
         }
         return null;

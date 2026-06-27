@@ -117,7 +117,7 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
     public static PdfString FromText(string text)
     {
         byte[] bytes = PdfDocEncoding.Encode(text);
-        bool utf16 = bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+        bool utf16 = bytes is [0xFE, 0xFF, ..];
         return new PdfString(bytes, utf16 ? PdfStringFormat.Hexadecimal : PdfStringFormat.Literal);
     }
 

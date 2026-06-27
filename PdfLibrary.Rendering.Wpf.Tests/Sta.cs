@@ -27,5 +27,5 @@ internal static class Sta
         return result;
     }
 
-    public static void Run(Action action) => Run<bool>(() => { action(); return true; });
+    public static void Run(Action action) => Run(() => { action(); return true; });
 }

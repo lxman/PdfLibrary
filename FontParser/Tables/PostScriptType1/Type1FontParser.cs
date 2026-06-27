@@ -59,7 +59,7 @@ namespace FontParser.Tables.PostScriptType1
         {
             get
             {
-                if (_fontMatrix != null && _fontMatrix.Length >= 1 && _fontMatrix[0] > 0)
+                if (_fontMatrix is { Length: >= 1 } && _fontMatrix[0] > 0)
                 {
                     return (int)System.Math.Round(1.0 / _fontMatrix[0]);
                 }
