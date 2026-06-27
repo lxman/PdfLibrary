@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Text;
 using Logging;
 using PdfLibrary.Content;
@@ -419,6 +420,38 @@ public class PdfPage
         PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] Calling renderer.RenderPage()...");
         renderer.RenderPage(this, pageNumber, scale);
         PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] renderer.RenderPage() completed");
+    }
+
+    /// <summary>
+    /// Builds the PDF→rendered-image geometry for this page at the given scale — the transform
+    /// the renderers use, plus its inverse and the rendered pixel size. Place UI over a rendered
+    /// page (e.g. form controls via <see cref="PdfFieldWidget"/>) using <see cref="PageGeometry"/>.
+    /// </summary>
+    public PageGeometry GetGeometry(double scale = 1.0)
+    {
+        PdfRectangle crop = GetCropBox();
+        double width = crop.Width, height = crop.Height;
+        double cropX = crop.X1, cropY = crop.Y1;
+        int rotation = Rotate;
+
+        double finalHeight = rotation is 90 or 270 ? width : height;
+        (float tx, float ty) = rotation switch
+        {
+            90 => (0f, (float)width),
+            180 => ((float)width, (float)height),
+            270 => ((float)height, 0f),
+            _ => (0f, 0f)
+        };
+        var rad = (float)(-rotation * Math.PI / 180.0);
+        Matrix3x2 m = Matrix3x2.CreateTranslation((float)-cropX, (float)-cropY)
+                    * Matrix3x2.CreateRotation(rad)
+                    * Matrix3x2.CreateTranslation(tx, ty)
+                    * Matrix3x2.CreateScale((float)scale, (float)-scale)
+                    * Matrix3x2.CreateTranslation(0, (float)(finalHeight * scale));
+
+        int pw = (int)Math.Round((rotation is 90 or 270 ? height : width) * scale);
+        int ph = (int)Math.Round((rotation is 90 or 270 ? width : height) * scale);
+        return new PageGeometry(m, pw, ph);
     }
 }
 
