@@ -393,8 +393,8 @@ public class GlyfLocaRebuilderTests
             remap,
             font.Glyf);
 
-        Assert.Equal(0, result.GlyfBytes.Length);
-        Assert.Equal(1, result.LocaOffsets.Length);      // numGlyphs+1 = 0+1
+        Assert.Empty(result.GlyfBytes);
+        Assert.Single(result.LocaOffsets);      // numGlyphs+1 = 0+1
         Assert.Equal(0u, result.LocaOffsets[0]);
     }
 

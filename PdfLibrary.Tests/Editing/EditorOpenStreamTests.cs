@@ -19,6 +19,6 @@ public class EditorOpenStreamTests
         using var ms = new MemoryStream(pdf);
         using PdfDocumentEditor editor = PdfDocumentEditor.Open(ms);
 
-        Assert.Equal(1, editor.Pages.Count);
+        Assert.Single(editor.Pages);
     }
 }

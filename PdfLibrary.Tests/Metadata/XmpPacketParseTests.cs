@@ -37,8 +37,6 @@ public class XmpPacketParseTests
     [Fact]
     public void Parse_AttributeFormSimple_SurfacesProperty()
     {
-        // Attribute directly on rdf:Description
-        string inner = """xmp:CreatorTool="MyApp 1.0" pdf:Producer="PdfLib" """;
         // We need to put attributes on rdf:Description, not as child elements
         string full = $"""
             <?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>

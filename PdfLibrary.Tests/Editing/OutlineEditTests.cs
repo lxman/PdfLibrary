@@ -84,7 +84,7 @@ public class OutlineEditTests
 
         using PdfDocument reloaded = PdfDocument.Load(new MemoryStream(SaveReload(doc)));
         PdfOutlineCollection outlines = reloaded.Edit().Outlines;
-        Assert.Equal(1, outlines.Count);
+        Assert.Single(outlines);
         Assert.Equal("Keep", outlines[0].Title);
     }
 
@@ -120,7 +120,7 @@ public class OutlineEditTests
 
         using PdfDocument reloaded = PdfDocument.Load(new MemoryStream(SaveReload(doc)));
         Assert.Null(reloaded.CatalogDictionary!.Get(new PdfName("Outlines")));
-        Assert.Equal(0, reloaded.Edit().Outlines.Count);
+        Assert.Empty(reloaded.Edit().Outlines);
     }
 
     [Fact]

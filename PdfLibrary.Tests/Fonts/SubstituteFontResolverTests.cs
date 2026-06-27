@@ -6,11 +6,11 @@ namespace PdfLibrary.Tests.Fonts;
 public class SubstituteFontResolverTests
 {
     [Theory]
-    [InlineData("Times-Bold", false, false, true, false, true, false)]      // serif, bold
-    [InlineData("CourierNewPSMT", false, false, false, true, false, false)] // mono
-    [InlineData("Helvetica-Oblique", false, false, false, false, false, true)] // sans, italic
-    [InlineData("ABCDEF+Garamond", false, false, true, false, false, false)] // serif by name
-    public void Classify_FromName_NoDescriptor(string baseFont, bool _, bool __,
+    [InlineData("Times-Bold", false, true, false, true, false)]      // serif, bold
+    [InlineData("CourierNewPSMT", false, false, true, false, false)] // mono
+    [InlineData("Helvetica-Oblique", false, false, false, false, true)] // sans, italic
+    [InlineData("ABCDEF+Garamond", false, true, false, false, false)] // serif by name
+    public void Classify_FromName_NoDescriptor(string baseFont, bool _,
         bool expectSerif, bool expectMono, bool expectBold, bool expectItalic)
     {
         (bool serif, bool mono, bool bold, bool italic) = SubstituteFontResolver.Classify(baseFont, null);

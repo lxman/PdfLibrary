@@ -61,14 +61,14 @@ public class NamedDestEditTests
         using PdfDocument doc = PdfDocument.Load(new MemoryStream(ThreePageDoc()));
         PdfDocumentEditor edit = doc.Edit();
 
-        Assert.Equal(0, edit.NamedDestinations.Count);
+        Assert.Empty(edit.NamedDestinations);
 
         edit.NamedDestinations.Set("a", PdfDestination.FitPage(0));
         edit.NamedDestinations.Set("b", PdfDestination.FitPage(1));
         Assert.Equal(2, edit.NamedDestinations.Count);
 
         edit.NamedDestinations.Remove("a");
-        Assert.Equal(1, edit.NamedDestinations.Count);
+        Assert.Single(edit.NamedDestinations);
     }
 
     [Fact]

@@ -80,7 +80,7 @@ public class OutlineTreeTests
         (PdfDocument doc, PdfObject firstRef) = DocWithOutline();
         List<OutlineNode> nodes = OutlineTree.Build(doc, firstRef);
         Assert.Equal(2, nodes[0].Children.Count); // A has A1 and A2
-        Assert.Equal(1, nodes[1].Children.Count); // B has B1
+        Assert.Single(nodes[1].Children); // B has B1
         doc.Dispose();
     }
 

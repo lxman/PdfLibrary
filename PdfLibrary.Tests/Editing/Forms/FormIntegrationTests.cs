@@ -72,7 +72,7 @@ public class FormIntegrationTests
 
             using PdfDocument reloaded = PdfDocument.Load(outPath);
             using PdfDocumentEditor reEdit = reloaded.Edit();
-            string actual = ((PdfTextField)reEdit.Forms["name"]!).Value;
+            string? actual = ((PdfTextField)reEdit.Forms["name"]!).Value;
             Assert.Equal(nonAsciiValue, actual);
         }
         finally

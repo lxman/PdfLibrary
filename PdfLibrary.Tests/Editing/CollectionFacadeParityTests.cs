@@ -38,7 +38,7 @@ public class CollectionFacadeParityTests
 
         editor.Outlines.RemoveAt(0);
 
-        Assert.Equal(1, editor.Outlines.Count);
+        Assert.Single(editor.Outlines);
         Assert.Equal("B", editor.Outlines[0].Title);
     }
 
