@@ -356,6 +356,7 @@ public partial class MainWindow : Window
     private void SaveButton_Click(object sender, RoutedEventArgs e)
     {
         if (_editor is null) return;
+        CommitPendingEdits();
         var dlg = new SaveFileDialog
         {
             Filter = "PDF (*.pdf)|*.pdf",
@@ -465,6 +466,23 @@ public partial class MainWindow : Window
         ActualSizeButton.IsEnabled = enabled;
     }
 
+    // ==================== FORM FIELD UTILITIES ====================
+
+    /// <summary>
+    /// Force an in-progress text-field edit to commit (TextBox write-back is on LostFocus)
+    /// before reading the document model for save/export/print.
+    /// </summary>
+    private void CommitPendingEdits()
+    {
+        if (Keyboard.FocusedElement is TextBox)
+        {
+            // Move logical focus off the text box so its LostFocus write-back fires.
+            var scope = FocusManager.GetFocusScope(this);
+            FocusManager.SetFocusedElement(scope, this);
+            Keyboard.ClearFocus();
+        }
+    }
+
     // ==================== MOUSE WHEEL ZOOM ====================
 
     private void ScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
@@ -498,6 +516,8 @@ public partial class MainWindow : Window
         };
 
         if (dialog.ShowDialog() != true) return;
+
+        CommitPendingEdits();
 
         try
         {
@@ -551,6 +571,8 @@ public partial class MainWindow : Window
 
         var printDialog = new PrintDialog();
         if (printDialog.ShowDialog() != true) return;
+
+        CommitPendingEdits();
 
         try
         {
