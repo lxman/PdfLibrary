@@ -25,6 +25,18 @@ public abstract class PdfFormField
     /// <summary>/Ff bit 2 — required for submission.</summary>
     public bool IsRequired { get; internal set; }
 
+    /// <summary>
+    /// Font resource name from the field's effective /DA (own or inherited from the AcroForm
+    /// default), e.g. "Helv", "Cour", "TiRo". Maps to a standard-14 family for rendering.
+    /// </summary>
+    public string FontName { get; internal set; } = "Helv";
+
+    /// <summary>
+    /// Font size from the field's effective /DA, in PDF points. <c>0</c> means auto-size
+    /// (the viewer/appearance generator fits the text to the field height).
+    /// </summary>
+    public double FontSize { get; internal set; }
+
     /// <summary>The field's own dictionary (may also be a merged/effective dict).</summary>
     internal PdfDictionary Dict { get; set; } = null!;
 

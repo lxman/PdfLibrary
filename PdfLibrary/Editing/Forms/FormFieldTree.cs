@@ -159,6 +159,11 @@ internal static class FormFieldTree
         field.Doc           = doc;
         field.WidgetDicts   = widgets;
 
+        // Effective /DA (own or inherited from the AcroForm default) → font name + size.
+        FieldDa da = FieldDaParser.Parse(inherited.Da);
+        field.FontName = da.FontName;
+        field.FontSize = da.FontSize;
+
         result.Add(field);
     }
 

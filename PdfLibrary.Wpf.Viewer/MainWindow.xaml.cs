@@ -199,7 +199,7 @@ public partial class MainWindow : Window
                 PdfView.ShowPage(dg, geo.PixelWidth, geo.PixelHeight, dpiScale);
 
                 // Populate the overlay with form-field controls (Task 3).
-                BuildOverlay(page, geo, dpiScale);
+                BuildOverlay(page, geo, dpiScale, pixelScale);
 
                 Log.Information("PdfLibrary rendered page {Page} at {Zoom}% (pixel scale {PixelScale:F3})", _currentPage, _zoomLevel * 100, pixelScale);
             });
@@ -215,7 +215,7 @@ public partial class MainWindow : Window
     /// Populates <see cref="WpfPageView.Overlay"/> with WPF controls for each form field
     /// widget on the current page.
     /// </summary>
-    private void BuildOverlay(PdfPage page, PageGeometry geo, double dpiScale)
+    private void BuildOverlay(PdfPage page, PageGeometry geo, double dpiScale, double pixelScale)
     {
         Canvas overlay = PdfView.Overlay;
         overlay.Children.Clear();
@@ -227,7 +227,17 @@ public partial class MainWindow : Window
         {
             if (widget.PageIndex != pageIndex) continue;   // includes -1 orphans → skipped
             ImageRect ir = geo.MapRectToImage(widget.Rect);
-            FrameworkElement? control = CreateControl(field, widget);
+
+            // Font size in DIUs: the field's /DA size (PDF points) scaled to the render —
+            // pixelScale maps points→pixels, ÷dpiScale → DIUs — so text tracks zoom. A /DA size
+            // of 0 means auto-size → fit roughly the field height.
+            double heightDiu = ir.Height / dpiScale;
+            double fontDiu = field.FontSize > 0
+                ? field.FontSize * pixelScale / dpiScale
+                : heightDiu * 0.72;
+            fontDiu = Math.Max(1.0, fontDiu);
+
+            FrameworkElement? control = CreateControl(field, widget, fontDiu);
             if (control is null) continue;
             Canvas.SetLeft(control, ir.X / dpiScale);
             Canvas.SetTop(control, ir.Y / dpiScale);
@@ -237,7 +247,16 @@ public partial class MainWindow : Window
         }
     }
 
-    private static FrameworkElement? CreateControl(PdfFormField field, PdfFieldWidget widget)
+    // Maps a PDF /DA font resource name to the closest Windows family for the overlay.
+    private static FontFamily MapDaFont(string? daName) => new(daName switch
+    {
+        "Cour" or "Courier" => "Courier New",
+        "TiRo" or "Times"   => "Times New Roman",
+        "Symbol"            => "Symbol",
+        _                    => "Arial"   // Helv and unknown → Arial (Helvetica-compatible metrics)
+    });
+
+    private static FrameworkElement? CreateControl(PdfFormField field, PdfFieldWidget widget, double fontSizeDiu)
     {
         switch (field)
         {
@@ -247,6 +266,9 @@ public partial class MainWindow : Window
                 {
                     Text = tf.Value ?? "",
                     AcceptsReturn = tf.IsMultiline,
+                    FontFamily = MapDaFont(tf.FontName),
+                    FontSize = fontSizeDiu,
+                    Padding = new Thickness(1, 0, 1, 0),
                     VerticalContentAlignment = VerticalAlignment.Center,
                     // Honor the field's quadding (/Q): 0 = left, 1 = centered, 2 = right.
                     TextAlignment = tf.Quadding switch
@@ -298,7 +320,7 @@ public partial class MainWindow : Window
             }
             case PdfChoiceField cf when cf.IsCombo:
             {
-                var combo = new ComboBox { IsEnabled = !cf.IsReadOnly };
+                var combo = new ComboBox { IsEnabled = !cf.IsReadOnly, FontFamily = MapDaFont(cf.FontName), FontSize = fontSizeDiu };
                 foreach ((string export, string display) in cf.Options)
                     combo.Items.Add(new ComboBoxItem { Content = display, Tag = export });
                 string? sel = cf.SelectedValues.Count > 0 ? cf.SelectedValues[0] : null;
@@ -318,7 +340,9 @@ public partial class MainWindow : Window
                 var lb = new ListBox
                 {
                     SelectionMode = cf.IsMultiSelect ? SelectionMode.Multiple : SelectionMode.Single,
-                    IsEnabled = !cf.IsReadOnly        // display selection but block interaction
+                    IsEnabled = !cf.IsReadOnly,        // display selection but block interaction
+                    FontFamily = MapDaFont(cf.FontName),
+                    FontSize = fontSizeDiu
                 };
                 foreach ((string export, string display) in cf.Options)
                     lb.Items.Add(new ListBoxItem { Content = display, Tag = export });
