@@ -1,11 +1,16 @@
+using System.IO;
 using System.Numerics;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using PdfLibrary.Builder;
+using PdfLibrary.Builder.Page;
 using PdfLibrary.Content;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
+using PdfLibrary.Rendering.Wpf;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering.Wpf.Tests;
 
@@ -316,6 +321,90 @@ public class WpfRenderTargetTests
             $"G={px[center+1]}: green channel should be lower than red");
         Assert.True(px[center + 0] < 100,
             $"B={px[center+0]}: blue channel should be lowest");
+    }
+
+    // ---- RenderToDrawing (WpfPageExtensions) ----
+
+    [Fact]
+    public void RenderToDrawing_FilledRectangle_ReturnsNonNullDrawingGroupWithChildren()
+    {
+        // Build a simple PDF with a filled red rectangle and render it via the extension method.
+        // Expect a non-null DrawingGroup that contains at least one child drawing element.
+        DrawingGroup dg = Sta.Run(() =>
+        {
+            byte[] pdf = PdfDocumentBuilder.Create()
+                .AddPage(p => p.AddRectangle(100, 100, 200, 150, fillColor: PdfColor.FromHex("#FF0000")))
+                .ToByteArray();
+
+            using var ms = new MemoryStream(pdf);
+            using PdfDocument doc = PdfDocument.Load(ms);
+
+            DrawingGroup result = doc.GetPage(0)!.RenderToDrawing(1.0);
+            result.Freeze();
+            return result;
+        });
+
+        Assert.NotNull(dg);
+        Assert.True(dg.Children.Count > 0, "DrawingGroup should have children after rendering a filled page");
+    }
+
+    // ---- DrawImage orientation (Y-flip correctness) ----
+
+    [Fact]
+    public void DrawImage_OneByTwo_RowZeroColorAtTopOfOutput()
+    {
+        // A 1×2 DeviceRGB image: row 0 = RED (200,0,0), row 1 = BLUE (0,0,200).
+        // After DrawImage's Y-flip and the page transform the rendered output must have
+        // RED at the top and BLUE at the bottom.  A missing or double Y-flip would swap them.
+        // CTM fills the entire 100×100 page so each half is clearly one colour.
+        byte[] px = Sta.Run(() =>
+        {
+            var dict = new PdfDictionary
+            {
+                [new PdfName("Subtype")]          = new PdfName("Image"),
+                [new PdfName("Width")]            = new PdfInteger(1),
+                [new PdfName("Height")]           = new PdfInteger(2),
+                [new PdfName("ColorSpace")]       = new PdfName("DeviceRGB"),
+                [new PdfName("BitsPerComponent")] = new PdfInteger(8)
+            };
+            // Row 0 (top of image) = RED; row 1 (bottom of image) = BLUE.
+            byte[] imgData = [200, 0, 0,   // row 0: R=200, G=0, B=0
+                              0,   0, 200]; // row 1: R=0,   G=0, B=200
+            var stream = new PdfStream(dict, imgData);
+            var image  = new PdfImage(stream);
+
+            var t = new WpfRenderTarget();
+            t.BeginPage(1, 100, 100, 1.0, 0, 0, 0);
+
+            // CTM: scale(100) — image fills the full 100×100 page.
+            var state = new PdfGraphicsState
+            {
+                Ctm = new Matrix3x2(100, 0, 0, 100, 0, 0)
+            };
+            t.DrawImage(image, state);
+            t.EndPage();
+
+            var rtb = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(t.Visual);
+            var buf = new byte[100 * 100 * 4];
+            rtb.CopyPixels(buf, 100 * 4, 0);
+            return buf;
+        });
+
+        // Top of output (screen y=10, x=50): must be RED — from image row 0.
+        // Pbgra32 layout per pixel: [0]=B, [1]=G, [2]=R, [3]=A.
+        int top = (10 * 100 + 50) * 4;
+        Assert.True(px[top + 2] > 150,
+            $"R={px[top+2]}: top pixel should be RED (image row 0) — Y-flip must place row 0 at the top");
+        Assert.True(px[top + 0] < 60,
+            $"B={px[top+0]}: top pixel should NOT be blue — that would mean the Y-flip is inverted");
+
+        // Bottom of output (screen y=90, x=50): must be BLUE — from image row 1.
+        int bottom = (90 * 100 + 50) * 4;
+        Assert.True(px[bottom + 0] > 150,
+            $"B={px[bottom+0]}: bottom pixel should be BLUE (image row 1)");
+        Assert.True(px[bottom + 2] < 60,
+            $"R={px[bottom+2]}: bottom pixel should NOT be red");
     }
 
     // ---- StrokePath ----

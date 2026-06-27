@@ -49,7 +49,7 @@
     <ItemGroup>
         <!-- SkiaSharp is the platform-specific rendering implementation - needs internal access -->
         <InternalsVisibleTo Include="PdfLibrary.Rendering.SkiaSharp" />
-        <!-- WPF render target needs internal access to PdfImage/PdfStream for testing -->
+        <!-- WPF test project needs internal access to PdfImage/PdfStream for testing -->
         <InternalsVisibleTo Include="PdfLibrary.Rendering.Wpf.Tests" />
         <!-- Test projects need internal access for thorough testing -->
         <InternalsVisibleTo Include="PdfLibrary.Tests" />

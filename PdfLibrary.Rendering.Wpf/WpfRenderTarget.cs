@@ -205,7 +205,9 @@ public sealed class WpfRenderTarget : IRenderTarget
     }
 
     public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
-        PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent) { }
+        PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent)
+        // Approximate: render a solid fill using the current fill colour (same as the SVG target).
+        => FillPath(path, state, evenOdd);
 
     // ==================== CONTENT OPERATIONS ====================
 
