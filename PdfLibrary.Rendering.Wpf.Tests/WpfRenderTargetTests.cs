@@ -157,6 +157,112 @@ public class WpfRenderTargetTests
         Assert.True(px[i + 0] < 60,  $"B={px[i+0]}: center pixel should not be blue");
     }
 
+    // ---- SetClippingPath ----
+
+    [Fact]
+    public void SetClippingPath_ClipsDrawing()
+    {
+        // Clip to the left half (PDF x: 0-50), then fill the whole 100×100 page red.
+        // Left-half pixel (25,50) must be red; right-half pixel (75,50) must be background.
+        byte[] px = Sta.Run(() =>
+        {
+            var t = new WpfRenderTarget();
+            t.BeginPage(1, 100, 100, 1.0, 0, 0, 0);
+
+            // Clip: left half rectangle in PDF user space.
+            var clip = new PathBuilder();
+            clip.MoveTo(0, 0); clip.LineTo(50, 0); clip.LineTo(50, 100); clip.LineTo(0, 100); clip.ClosePath();
+            t.SetClippingPath(clip, new PdfGraphicsState(), evenOdd: false);
+
+            // Fill: entire page red.
+            var fill = new PathBuilder();
+            fill.MoveTo(0, 0); fill.LineTo(100, 0); fill.LineTo(100, 100); fill.LineTo(0, 100); fill.ClosePath();
+            var state = new PdfGraphicsState
+            {
+                ResolvedFillColor = new List<double> { 1.0, 0.0, 0.0 },
+                ResolvedFillColorSpace = "DeviceRGB"
+            };
+            t.FillPath(fill, state, evenOdd: false);
+            t.EndPage();
+
+            var rtb = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(t.Visual);
+            var buf = new byte[100 * 100 * 4];
+            rtb.CopyPixels(buf, 100 * 4, 0);
+            return buf;
+        });
+
+        // Left-half pixel at (25, 50) — Pbgra32: B G R A
+        int left = (50 * 100 + 25) * 4;
+        Assert.True(px[left + 2] > 200, $"R={px[left+2]}: left-half pixel should be red (inside clip)");
+
+        // Right-half pixel at (75, 50) — must be transparent/background, not red.
+        int right = (50 * 100 + 75) * 4;
+        Assert.True(px[right + 2] < 60, $"R={px[right+2]}: right-half pixel should be unpainted (outside clip)");
+    }
+
+    // ---- SaveState / RestoreState ----
+
+    [Fact]
+    public void SaveRestoreState_LiftsSaveStateClip()
+    {
+        // 1. SetClippingPath to left half (x 0-50).
+        // 2. SaveState.
+        // 3. SetClippingPath to top half (y 50-100 in PDF space = bitmap y 0-50 after Y-flip).
+        //    Combined: only top-left quadrant (x 0-50, PDF y 50-100 → bitmap y 0-50) is painted.
+        // 4. RestoreState — second clip is lifted; back to left-half-only clip.
+        // 5. FillPath entire page red.
+        // After restore we expect left half fully red, right half unpainted,
+        // and also bottom-left (PDF y < 50 → bitmap y > 50) to be red again (second clip gone).
+        byte[] px = Sta.Run(() =>
+        {
+            var t = new WpfRenderTarget();
+            t.BeginPage(1, 100, 100, 1.0, 0, 0, 0);
+
+            // First clip: left half.
+            var clip1 = new PathBuilder();
+            clip1.MoveTo(0, 0); clip1.LineTo(50, 0); clip1.LineTo(50, 100); clip1.LineTo(0, 100); clip1.ClosePath();
+            t.SetClippingPath(clip1, new PdfGraphicsState(), evenOdd: false);
+
+            t.SaveState();
+
+            // Second clip: top half in PDF space (y 50-100).
+            // Combined intersection with first clip → only top-left quadrant.
+            var clip2 = new PathBuilder();
+            clip2.MoveTo(0, 50); clip2.LineTo(100, 50); clip2.LineTo(100, 100); clip2.LineTo(0, 100); clip2.ClosePath();
+            t.SetClippingPath(clip2, new PdfGraphicsState(), evenOdd: false);
+
+            t.RestoreState();   // lifts second clip; left-half clip remains.
+
+            // Fill entire page red (only left half should paint).
+            var fill = new PathBuilder();
+            fill.MoveTo(0, 0); fill.LineTo(100, 0); fill.LineTo(100, 100); fill.LineTo(0, 100); fill.ClosePath();
+            var state = new PdfGraphicsState
+            {
+                ResolvedFillColor = new List<double> { 1.0, 0.0, 0.0 },
+                ResolvedFillColorSpace = "DeviceRGB"
+            };
+            t.FillPath(fill, state, evenOdd: false);
+            t.EndPage();
+
+            var rtb = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(t.Visual);
+            var buf = new byte[100 * 100 * 4];
+            rtb.CopyPixels(buf, 100 * 4, 0);
+            return buf;
+        });
+
+        // Bottom-left quadrant (x=25, bitmap y=75 → PDF y=25): should be red if second clip is gone.
+        int bottomLeft = (75 * 100 + 25) * 4;
+        Assert.True(px[bottomLeft + 2] > 200,
+            $"R={px[bottomLeft+2]}: bottom-left quadrant should be red (second clip was lifted)");
+
+        // Right half (x=75, y=50): still outside first clip → background.
+        int right = (50 * 100 + 75) * 4;
+        Assert.True(px[right + 2] < 60,
+            $"R={px[right+2]}: right-half pixel should be unpainted (first clip still active)");
+    }
+
     // ---- StrokePath ----
 
     [Fact]

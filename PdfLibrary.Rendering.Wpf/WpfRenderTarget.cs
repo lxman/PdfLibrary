@@ -184,7 +184,12 @@ public sealed class WpfRenderTarget : IRenderTarget
     private static PenLineCap  Cap(int c) => c switch { 1 => PenLineCap.Round, 2 => PenLineCap.Square, _ => PenLineCap.Flat };
     private static PenLineJoin Join(int j) => j switch { 1 => PenLineJoin.Round, 2 => PenLineJoin.Bevel, _ => PenLineJoin.Miter };
 
-    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
+    public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        if (path.IsEmpty || _dc is null) return;
+        _dc.PushClip(BuildGeometry(path, evenOdd));
+        _pushDepth++;
+    }
 
     public void FillPathWithTilingPattern(IPathBuilder path, PdfGraphicsState state, bool evenOdd,
         PdfTilingPattern pattern, Action<IRenderTarget> renderPatternContent) { }
