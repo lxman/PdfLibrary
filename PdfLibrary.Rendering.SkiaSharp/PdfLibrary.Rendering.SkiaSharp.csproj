@@ -6,6 +6,13 @@
         <Nullable>enable</Nullable>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
+        <!-- SUNSET (2.0): this SkiaSharp backend is no longer published to NuGet. The last
+             shipped release was 1.1.0. The project stays in the repo as a TEST-ONLY dependency
+             (the pixel-fidelity render tests rasterize through it). The supported 2.0 render
+             target is Lxman.PdfLibrary.Rendering.Wpf; cross-platform consumers implement the
+             IRenderTarget SPI directly. -->
+        <IsPackable>false</IsPackable>
+
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary.Rendering.SkiaSharp</PackageId>
         <Title>PdfLibrary.Rendering.SkiaSharp</Title>

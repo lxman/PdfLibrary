@@ -10,7 +10,9 @@ env:
   DOTNET_VERSION: '10.0.x'
 
 jobs:
-  build:
+  # Cross-platform core + the SkiaSharp-based pixel-fidelity render tests (SkiaSharp is
+  # cross-platform; the backend is no longer published but remains the test gate).
+  build-linux:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,4 +39,32 @@ jobs:
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --verbosity normal --filter 'Category!=LocalOnly'
+      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category!=LocalOnly'
+
+  # Windows-only: the WPF render target (shipped as Lxman.PdfLibrary.Rendering.Wpf) and its tests.
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore
+      run: |
+        dotnet restore PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj
+        dotnet restore PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj
+
+    - name: Build
+      run: |
+        dotnet build PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj --configuration Release --no-restore
+        dotnet build PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj --configuration Release --no-restore
+
+    - name: Run WPF tests
+      run: dotnet test PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj --configuration Release --no-build

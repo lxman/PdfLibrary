@@ -9,9 +9,15 @@ env:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    # Windows runner: the Lxman.PdfLibrary.Rendering.Wpf package targets net*-windows (WPF) and
+    # cannot build on Linux. The core package (net8/9/10) builds fine on Windows too.
+    runs-on: windows-latest
     permissions:
       id-token: write  # Required for NuGet trusted publishing
+
+    defaults:
+      run:
+        shell: bash   # use bash (available on the Windows runner) for the sed/version steps
 
     steps:
     - name: Checkout
@@ -27,36 +33,40 @@ jobs:
     - name: Extract version from tag
       id: version
       run: |
-        # Remove 'v' prefix if present (v0.0.1 -> 0.0.1)
+        # Remove 'v' prefix if present (v2.0.0 -> 2.0.0)
         VERSION=${GITHUB_REF_NAME#v}
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Update package versions
       run: |
-        # Update version in csproj files to match the tag
+        # Update version in the SHIPPED package csproj files to match the tag.
         sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary/PdfLibrary.csproj
-        sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
+        sed -i "s|<Version>.*</Version>|<Version>${{ steps.version.outputs.VERSION }}</Version>|g" PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj
 
     - name: Restore dependencies
       run: |
         dotnet restore PdfLibrary/PdfLibrary.csproj
+        dotnet restore PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj
         dotnet restore PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj
         dotnet restore PdfLibrary.Tests/PdfLibrary.Tests.csproj
 
     - name: Build
       run: |
         dotnet build PdfLibrary/PdfLibrary.csproj --configuration Release --no-restore
+        dotnet build PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj --configuration Release --no-restore
+        # SkiaSharp backend is not published (sunset) but is still built — the pixel-fidelity
+        # render tests rasterize through it.
         dotnet build PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-restore
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --verbosity normal --filter 'Category!=LocalOnly'
+      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category!=LocalOnly'
 
     - name: Pack PdfLibrary
       run: dotnet pack PdfLibrary/PdfLibrary.csproj --configuration Release --no-build --output ./nupkg
 
-    - name: Pack PdfLibrary.Rendering.SkiaSharp
-      run: dotnet pack PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj --configuration Release --no-build --output ./nupkg
+    - name: Pack PdfLibrary.Rendering.Wpf
+      run: dotnet pack PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj --configuration Release --no-build --output ./nupkg
 
     - name: Login to NuGet (Trusted Publishing)
       id: nuget-login
@@ -70,5 +80,5 @@ jobs:
         # the .snupkg to the symbol server automatically when pushed to the same source.
         dotnet nuget push "./nupkg/Lxman.PdfLibrary.${{ steps.version.outputs.VERSION }}.nupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
         dotnet nuget push "./nupkg/Lxman.PdfLibrary.${{ steps.version.outputs.VERSION }}.snupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-        dotnet nuget push "./nupkg/Lxman.PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.nupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
-        dotnet nuget push "./nupkg/Lxman.PdfLibrary.Rendering.SkiaSharp.${{ steps.version.outputs.VERSION }}.snupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push "./nupkg/Lxman.PdfLibrary.Rendering.Wpf.${{ steps.version.outputs.VERSION }}.nupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        dotnet nuget push "./nupkg/Lxman.PdfLibrary.Rendering.Wpf.${{ steps.version.outputs.VERSION }}.snupkg" --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
