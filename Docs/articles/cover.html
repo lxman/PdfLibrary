@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1000px; height: 420px; overflow: hidden; }
+  body {
+    font-family: "Segoe UI", Inter, system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #16202e 0%, #233246 55%, #2c3e50 100%);
+    color: #eaf0f6;
+    position: relative;
+  }
+  /* subtle page-stack motif on the right */
+  .pages { position: absolute; right: 70px; top: 84px; width: 300px; height: 252px; }
+  .page {
+    position: absolute; width: 188px; height: 244px; border-radius: 10px;
+    background: linear-gradient(180deg, #34465c, #2a3a4d);
+    border: 1px solid rgba(255,255,255,.10);
+    box-shadow: 0 18px 40px rgba(0,0,0,.35);
+  }
+  .page.p1 { right: 86px; top: 4px; transform: rotate(-9deg); opacity: .55; }
+  .page.p2 { right: 50px; top: 2px; transform: rotate(-3.5deg); opacity: .8; }
+  .page.p3 { right: 10px; top: 0; }
+  .page.p3::before {
+    content: "PDF"; position: absolute; top: 16px; left: 18px;
+    font-weight: 800; font-size: 20px; letter-spacing: 1px; color: #5ec8c8;
+  }
+  .page .ln { position: absolute; left: 18px; height: 7px; border-radius: 4px; background: rgba(234,240,246,.22); }
+  .page.p3 .ln:nth-child(2){ top:54px; width:150px;} .page.p3 .ln:nth-child(3){ top:72px; width:120px;}
+  .page.p3 .ln:nth-child(4){ top:104px; width:150px;} .page.p3 .ln:nth-child(5){ top:122px; width:96px;}
+  .page.p3 .ln:nth-child(6){ top:140px; width:140px;} .page.p3 .ln:nth-child(7){ top:170px; width:150px;}
+  .page.p3 .ln:nth-child(8){ top:188px; width:110px;}
+
+  .content { position: absolute; left: 64px; top: 0; height: 420px; display: flex; flex-direction: column; justify-content: center; width: 600px; }
+  .kicker { font-size: 16px; letter-spacing: 3px; text-transform: uppercase; color: #8aa0b6; font-weight: 600; margin-bottom: 14px; }
+  h1 { font-size: 62px; line-height: 1.02; font-weight: 800; letter-spacing: -1px; }
+  h1 .v { color: #5ec8c8; }
+  .tag { margin-top: 16px; font-size: 25px; font-weight: 500; color: #cdd9e6; }
+  .chips { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 9px; max-width: 560px; }
+  .chip { font-size: 14.5px; font-weight: 600; color: #b9c8d8; background: rgba(255,255,255,.06);
+          border: 1px solid rgba(255,255,255,.10); border-radius: 999px; padding: 6px 13px; }
+  .badge { margin-top: 26px; display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+           font-size: 15px; font-weight: 700; color: #16202e; background: #5ec8c8; border-radius: 8px; padding: 8px 14px; }
+  .foot { position: absolute; left: 64px; bottom: 26px; font-size: 14px; color: #7e93a8; font-weight: 600; letter-spacing: .3px; }
+</style>
+</head>
+<body>
+  <div class="pages">
+    <div class="page p1"></div>
+    <div class="page p2"></div>
+    <div class="page p3">
+      <span class="ln"></span><span class="ln"></span><span class="ln"></span><span class="ln"></span>
+      <span class="ln"></span><span class="ln"></span><span class="ln"></span>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="kicker">Pure-C# PDF Engine</div>
+    <h1>PdfLibrary <span class="v">2.0</span></h1>
+    <div class="tag">A pure-C# PDF toolkit for .NET</div>
+    <div class="chips">
+      <span class="chip">Read</span><span class="chip">Render</span><span class="chip">Create</span>
+      <span class="chip">Edit</span><span class="chip">Optimize</span><span class="chip">Fill&nbsp;Forms</span>
+    </div>
+    <div class="badge">✓ No native dependencies</div>
+  </div>
+  <div class="foot">.NET 8 · 9 · 10   —   MIT   —   github.com/lxman/PdfLibrary</div>
+</body>
+</html>
