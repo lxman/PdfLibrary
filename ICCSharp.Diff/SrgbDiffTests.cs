@@ -1,5 +1,4 @@
 using ICCSharp.Profile;
-using Xunit.Abstractions;
 
 namespace ICCSharp.Diff;
 
