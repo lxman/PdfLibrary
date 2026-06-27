@@ -248,6 +248,13 @@ public partial class MainWindow : Window
                     Text = tf.Value ?? "",
                     AcceptsReturn = tf.IsMultiline,
                     VerticalContentAlignment = VerticalAlignment.Center,
+                    // Honor the field's quadding (/Q): 0 = left, 1 = centered, 2 = right.
+                    TextAlignment = tf.Quadding switch
+                    {
+                        1 => TextAlignment.Center,
+                        2 => TextAlignment.Right,
+                        _ => TextAlignment.Left
+                    },
                     BorderThickness = new Thickness(1),
                     IsReadOnly = tf.IsReadOnly        // display value but block edits
                 };
@@ -269,7 +276,10 @@ public partial class MainWindow : Window
                     cb.Checked   += (_, _) => bf.Check();
                     cb.Unchecked += (_, _) => bf.Uncheck();
                 }
-                return cb;
+                // A native CheckBox glyph is a fixed ~13px; setting Width/Height only grows the
+                // hit-area, not the mark. A Viewbox scales the glyph to fill the field rect (so it
+                // grows with zoom). Uniform keeps the mark square.
+                return new Viewbox { Child = cb, Stretch = Stretch.Uniform };
             }
             case PdfButtonField bf when bf.Kind == ButtonKind.Radio:
             {
@@ -283,7 +293,8 @@ public partial class MainWindow : Window
                 string? on = widget.OnStateName;
                 if (!bf.IsReadOnly)
                     rb.Checked += (_, _) => { if (on != null) bf.SelectedOption = on; };
-                return rb;
+                // Same fixed-glyph issue as CheckBox — scale via Viewbox so the dot grows with zoom.
+                return new Viewbox { Child = rb, Stretch = Stretch.Uniform };
             }
             case PdfChoiceField cf when cf.IsCombo:
             {
