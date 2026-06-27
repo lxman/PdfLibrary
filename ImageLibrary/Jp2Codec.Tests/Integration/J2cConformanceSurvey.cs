@@ -25,6 +25,9 @@ public class J2cConformanceSurvey
     {
         if (!Run) return;
 
+        // Hardcoded local corpus path — skip (not fail) where it isn't present (Mac/Linux/CI).
+        Assert.SkipUnless(Directory.Exists(CorpusRoot), $"JP2 conformance corpus not present: {CorpusRoot}");
+
         List<string> files = Directory.EnumerateFiles(CorpusRoot, "*.j2c")
                              .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
                              .ToList();

@@ -22,6 +22,9 @@ public class CorpusSurvey
     {
         if (!Run) return;
 
+        // Hardcoded local corpus path — skip (not fail) where it isn't present (Mac/Linux/CI).
+        Assert.SkipUnless(Directory.Exists(CorpusRoot), $"JP2 corpus not present: {CorpusRoot}");
+
         var sb = new StringBuilder();
         sb.AppendLine("file | WxH | C | bd | NL | xform | MCT | L | style | sub | tiles | notes");
         sb.AppendLine("-----|-----|---|----|----|-------|-----|---|-------|-----|-------|------");

@@ -27,7 +27,12 @@ public class GlyfLocaRebuilderTests
 
     private static readonly string ArialPath = @"C:\Windows\Fonts\arial.ttf";
 
-    private static SfntFont LoadArial() => new(File.ReadAllBytes(ArialPath));
+    private static SfntFont LoadArial()
+    {
+        // arial.ttf is a Windows-only system font; skip (not fail) where it is absent (Mac/Linux/CI).
+        Assert.SkipUnless(File.Exists(ArialPath), $"arial.ttf not present at {ArialPath}");
+        return new SfntFont(File.ReadAllBytes(ArialPath));
+    }
 
     // -------------------------------------------------------------------------
     // Helpers

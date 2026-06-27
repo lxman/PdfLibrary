@@ -51,8 +51,9 @@ public class CoreTextRendererTests
         // main.pdf page 5 draws figure labels under a translating CTM. We assert the invariant
         // directly: any glyph whose CTM carries a large Y-translation must emit a path that sits in
         // that translated region (not near the origin). This is layout-independent.
-        string pdf = FindRepoFile("PDFs", "PDF Standards", "Compression", "JPEG", "main.pdf");
-        using PdfDocument doc = PdfDocument.Load(pdf);
+        string? pdf = TryFindRepoFile("PDFs", "PDF Standards", "Compression", "JPEG", "main.pdf");
+        Assert.SkipUnless(pdf is not null, "main.pdf corpus fixture not present on this system");
+        using PdfDocument doc = PdfDocument.Load(pdf!);
 
         var target = new RecordingRenderTarget();
         doc.GetPage(4)!.Render(target); // page 5 (0-based index)
@@ -115,7 +116,7 @@ public class CoreTextRendererTests
         public void RefreshCache() { }
     }
 
-    private static string FindRepoFile(params string[] parts)
+    private static string? TryFindRepoFile(params string[] parts)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null)
@@ -124,7 +125,7 @@ public class CoreTextRendererTests
             if (File.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }
-        throw new FileNotFoundException($"Could not locate {string.Join('/', parts)} above {AppContext.BaseDirectory}");
+        return null; // corpus fixture not checked out on this system
     }
 
     // Minimal recording target — captures FillPath (path + CTM); everything else is a no-op/stub.

@@ -16,6 +16,9 @@ public class PdfDocumentTests
 
         testFilePath = Path.GetFullPath(testFilePath);
 
+        // Local-only corpus (PDFs/pdf20examples) — skip cleanly where it isn't checked out.
+        Assert.SkipUnless(File.Exists(testFilePath), $"Local PDF fixture not present: {testFilePath}");
+
         // Act & Assert
         PdfDocument document = PdfDocument.Load(testFilePath);
 
@@ -35,6 +38,9 @@ public class PdfDocumentTests
 
         testFilePath = Path.GetFullPath(testFilePath);
 
+        // Local-only corpus (PDFs/pdf20examples) — skip cleanly where it isn't checked out.
+        Assert.SkipUnless(File.Exists(testFilePath), $"Local PDF fixture not present: {testFilePath}");
+
         // Act & Assert
         PdfDocument document = PdfDocument.Load(testFilePath);
 
@@ -53,6 +59,9 @@ public class PdfDocumentTests
             "..", "..", "..", "..", "PDFs", "pdf20examples", "pdf20-utf8-test.pdf");
 
         testFilePath = Path.GetFullPath(testFilePath);
+
+        // Local-only corpus (PDFs/pdf20examples) — skip cleanly where it isn't checked out.
+        Assert.SkipUnless(File.Exists(testFilePath), $"Local PDF fixture not present: {testFilePath}");
 
         // Act & Assert
         PdfDocument document = PdfDocument.Load(testFilePath);

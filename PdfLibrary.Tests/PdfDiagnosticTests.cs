@@ -23,6 +23,9 @@ public class PdfDiagnosticTests
 
         testFilePath = Path.GetFullPath(testFilePath);
 
+        // Local-only corpus (PDFs/pdf20examples) — skip cleanly where it isn't checked out.
+        Assert.SkipUnless(File.Exists(testFilePath), $"Local PDF fixture not present: {testFilePath}");
+
         using FileStream stream = File.OpenRead(testFilePath);
 
         // Find startxref position
