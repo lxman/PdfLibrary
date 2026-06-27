@@ -1,11 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <OutputType>WinExe</OutputType>
-        <TargetFramework>net10.0-windows</TargetFramework>
+        <IsWindowsBuild>$([MSBuild]::IsOSPlatform('Windows'))</IsWindowsBuild>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
+    </PropertyGroup>
+
+    <!-- Windows: the real WPF image utility app. -->
+    <PropertyGroup Condition="'$(IsWindowsBuild)' == 'true'">
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net10.0-windows</TargetFramework>
         <UseWPF>true</UseWPF>
+    </PropertyGroup>
+
+    <!-- Non-Windows (Mac/Linux): inert net10.0 stub so the IDE loads it without WPF; builds nothing. -->
+    <PropertyGroup Condition="'$(IsWindowsBuild)' != 'true'">
+        <OutputType>Library</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     </PropertyGroup>
 
     <ItemGroup>
