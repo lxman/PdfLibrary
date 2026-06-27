@@ -1,5 +1,6 @@
 using System.Windows.Controls;
 using System.Windows.Media;
+using PdfLibrary.Rendering.Wpf;
 
 namespace PdfLibrary.Wpf.Viewer;
 
@@ -23,9 +24,11 @@ public partial class WpfPageView : UserControl
     /// </summary>
     public void ShowPage(DrawingGroup pageDrawing, int pixelWidth, int pixelHeight, double dpiScale)
     {
-        var img = new DrawingImage(pageDrawing);
-        img.Freeze();
-        PageImage.Source = img;
+        // The page DrawingGroup's natural Bounds is the bounding box of the drawn CONTENT, which can
+        // be smaller than the page (e.g. a form whose lower half is blank). Under Stretch="Fill"
+        // that content box would stretch to the page size — wrong size, distortion, misaligned
+        // overlay. ToPageImage wraps it to exact page-rect bounds so the stretch is a clean 1:1.
+        PageImage.Source = pageDrawing.ToPageImage(pixelWidth, pixelHeight);
 
         double diuW = pixelWidth / dpiScale;
         double diuH = pixelHeight / dpiScale;
