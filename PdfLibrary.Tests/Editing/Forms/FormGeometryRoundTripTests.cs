@@ -23,7 +23,7 @@ public class FormGeometryRoundTripTests
         PdfFieldWidget tw = editor.Forms["text1"]!.Widgets[0];
         PdfPage page = editor.Pages[tw.PageIndex];
         PageGeometry geo = page.GetGeometry(1.0);
-        PdfRect pixelRect = geo.MapRectToImage(tw.Rect);
+        ImageRect pixelRect = geo.MapRectToImage(tw.Rect);
         Assert.True(pixelRect.Width > 0, $"Expected positive pixel width; got {pixelRect.Width}");
         Assert.True(pixelRect.Height > 0, $"Expected positive pixel height; got {pixelRect.Height}");
 

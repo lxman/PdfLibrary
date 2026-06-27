@@ -34,7 +34,10 @@ public abstract class PdfFormField
     /// <summary>Raw widget annotation dictionaries (the visual representations).</summary>
     internal IReadOnlyList<PdfDictionary> WidgetDicts { get; set; } = Array.Empty<PdfDictionary>();
 
-    /// <summary>The field's widget placements (rect + page + on-state), for positioning UI over fields.</summary>
+    /// <summary>The field's widget placements (rect + page + on-state), for positioning UI over fields.
+    /// Computed when the form is read; a read-time snapshot of geometry (Rect/PageIndex/OnStateName).
+    /// Mutating the form afterward does not refresh it (re-read the document to refresh).
+    /// <see cref="PdfFieldWidget.Field"/> is a live reference, so <c>widget.Field.Value</c> stays current.</summary>
     public IReadOnlyList<PdfFieldWidget> Widgets { get; internal set; } = Array.Empty<PdfFieldWidget>();
 }
 

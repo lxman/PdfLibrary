@@ -8,7 +8,9 @@ namespace PdfLibrary.Editing.Forms;
 /// </summary>
 public sealed class PdfFieldWidget
 {
-    /// <summary>0-based index of the page this widget annotation appears on.</summary>
+    /// <summary>0-based index of the page this widget appears on, or <b>-1</b> if the widget is not
+    /// referenced by any page's /Annots (an orphan). Callers indexing
+    /// <c>editor.Pages[PageIndex]</c> must guard against -1.</summary>
     public int PageIndex { get; }
 
     /// <summary>Widget rectangle in PDF user space (Y-up). Map to pixels via PageGeometry.</summary>

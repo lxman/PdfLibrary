@@ -29,6 +29,10 @@ public class FieldWidgetTests
         PdfFormField check = editor.Forms["check1"]!;
         PdfFieldWidget cw = Assert.Single(check.Widgets);
         Assert.Equal(0, cw.PageIndex);
+        Assert.Equal(100.0, cw.Rect.Left, 1);
+        Assert.Equal(660.0, cw.Rect.Bottom, 1);
+        Assert.Equal(116.0, cw.Rect.Right, 1);
+        Assert.Equal(676.0, cw.Rect.Top, 1);
         Assert.Equal("Yes", cw.OnStateName);  // checkbox on-state
         Assert.Same(check, cw.Field);
     }

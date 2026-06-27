@@ -429,6 +429,7 @@ public class PdfPage
     /// </summary>
     public PageGeometry GetGeometry(double scale = 1.0)
     {
+        if (scale <= 0) throw new ArgumentOutOfRangeException(nameof(scale), "Scale must be positive.");
         PdfRectangle crop = GetCropBox();
         double width = crop.Width, height = crop.Height;
         double cropX = crop.X1, cropY = crop.Y1;

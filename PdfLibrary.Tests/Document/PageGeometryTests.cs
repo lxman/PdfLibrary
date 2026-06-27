@@ -19,7 +19,7 @@ public class PageGeometryTests
     {
         using PdfDocument doc = OneLetterPage();
         PdfPage page = doc.GetPage(0)!;
-        double h = page.GetMediaBox().Height;
+        double h = page.GetCropBox().Height;
         PageGeometry g = page.GetGeometry(2.0);
 
         // PDF origin (0,0) is the page bottom-left → image bottom (y = h*scale), x = 0.
@@ -48,15 +48,15 @@ public class PageGeometryTests
     {
         using PdfDocument doc = OneLetterPage();
         PdfPage page = doc.GetPage(0)!;
-        double h = page.GetMediaBox().Height;
+        double h = page.GetCropBox().Height;
         PageGeometry g = page.GetGeometry(1.0);
 
-        // A 100x20 rect near the PDF bottom maps to a rect near the image bottom.
-        PdfRect img = g.MapRectToImage(new PdfRect(50, 10, 150, 30));
-        Assert.Equal(50, img.Left, 3);
-        Assert.Equal(150, img.Right, 3);
-        // PDF y in [10,30] → image y in [h-30, h-10] (Y-flip).
-        Assert.Equal(h - 30, Math.Min(img.Top, img.Bottom), 3);
-        Assert.Equal(h - 10, Math.Max(img.Top, img.Bottom), 3);
+        // A 100x20 rect near the PDF bottom maps to a rect near the image top-left area.
+        ImageRect img = g.MapRectToImage(new PdfRect(50, 10, 150, 30));
+        Assert.Equal(50, img.X, 3);
+        Assert.Equal(100, img.Width, 3);
+        // PDF y in [10,30] → image y (top-left) = h-30, height = 20.
+        Assert.Equal(h - 30, img.Y, 3);
+        Assert.Equal(20, img.Height, 3);
     }
 }
