@@ -14,7 +14,7 @@ public static class WpfPageExtensions
     /// </remarks>
     public static DrawingGroup RenderToDrawing(this PdfPage page, double scale = 1.0)
     {
-        var target = new WpfRenderTarget();
+        var target = new WpfRenderTarget(page.Document);
         page.Render(target, pageNumber: 1, scale: scale);
         return target.Drawing;
     }
