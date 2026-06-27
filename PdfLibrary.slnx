@@ -60,6 +60,8 @@
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
   <Project Path="PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj" />
   <Project Path="PdfLibrary.Rendering.Svg/PdfLibrary.Rendering.Svg.csproj" />
+  <Project Path="PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj" />
+  <Project Path="PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj" />
   <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />
   <Project Path="PdfLibrary.Wpf.Viewer/PdfLibrary.Wpf.Viewer.csproj" />
   <Project Path="PdfLibrary/PdfLibrary.csproj" />
