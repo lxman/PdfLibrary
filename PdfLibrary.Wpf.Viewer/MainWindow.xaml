@@ -51,6 +51,11 @@
             <Button x:Name="PrintButton" Content="🖨️ Print" Click="PrintButton_Click" Padding="10,5" IsEnabled="False"/>
             <Separator/>
             <Button x:Name="OptimizeButton" Content="🗜 Optimize…" Click="OptimizeButton_Click" Padding="10,5" IsEnabled="False" ToolTip="Optimize / compress this PDF and save a copy"/>
+            <Separator/>
+
+            <!-- Forms persistence -->
+            <Button x:Name="SaveButton" Content="Save" Click="SaveButton_Click" Padding="10,5" IsEnabled="False" ToolTip="Save edited PDF to a new file"/>
+            <Button x:Name="FlattenButton" Content="Flatten" Click="FlattenButton_Click" Padding="10,5" IsEnabled="False" ToolTip="Bake form fields into the page content and re-render"/>
         </ToolBar>
 
         <!-- Single-panel layout -->

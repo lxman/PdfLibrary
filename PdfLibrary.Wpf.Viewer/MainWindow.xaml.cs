@@ -103,6 +103,8 @@ public partial class MainWindow : Window
             ExportButton.IsEnabled = true;
             PrintButton.IsEnabled = true;
             OptimizeButton.IsEnabled = true;
+            SaveButton.IsEnabled = true;
+            FlattenButton.IsEnabled = true;
             EnableZoomControls(true);
 
             // Render first page
@@ -246,10 +248,12 @@ public partial class MainWindow : Window
                     Text = tf.Value ?? "",
                     AcceptsReturn = tf.IsMultiline,
                     VerticalContentAlignment = VerticalAlignment.Center,
-                    BorderThickness = new Thickness(1)
+                    BorderThickness = new Thickness(1),
+                    IsReadOnly = tf.IsReadOnly        // display value but block edits
                 };
                 if (tf.MaxLength is { } ml && ml > 0) tb.MaxLength = ml;
-                tb.LostFocus += (_, _) => tf.Value = tb.Text;
+                if (!tf.IsReadOnly)
+                    tb.LostFocus += (_, _) => tf.Value = tb.Text;
                 return tb;
             }
             case PdfButtonField bf when bf.Kind == ButtonKind.Checkbox:
@@ -257,10 +261,14 @@ public partial class MainWindow : Window
                 var cb = new CheckBox
                 {
                     IsChecked = bf.IsChecked,
-                    VerticalAlignment = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center,
+                    IsEnabled = !bf.IsReadOnly        // display state but block interaction
                 };
-                cb.Checked   += (_, _) => bf.Check();
-                cb.Unchecked += (_, _) => bf.Uncheck();
+                if (!bf.IsReadOnly)
+                {
+                    cb.Checked   += (_, _) => bf.Check();
+                    cb.Unchecked += (_, _) => bf.Uncheck();
+                }
                 return cb;
             }
             case PdfButtonField bf when bf.Kind == ButtonKind.Radio:
@@ -269,31 +277,37 @@ public partial class MainWindow : Window
                 {
                     GroupName = field.FullName,
                     VerticalAlignment = VerticalAlignment.Center,
-                    IsChecked = widget.OnStateName != null && widget.OnStateName == bf.SelectedOption
+                    IsChecked = widget.OnStateName != null && widget.OnStateName == bf.SelectedOption,
+                    IsEnabled = !bf.IsReadOnly        // display selection but block interaction
                 };
                 string? on = widget.OnStateName;
-                rb.Checked += (_, _) => { if (on != null) bf.SelectedOption = on; };
+                if (!bf.IsReadOnly)
+                    rb.Checked += (_, _) => { if (on != null) bf.SelectedOption = on; };
                 return rb;
             }
             case PdfChoiceField cf when cf.IsCombo:
             {
-                var combo = new ComboBox();
+                var combo = new ComboBox { IsEnabled = !cf.IsReadOnly };
                 foreach ((string export, string display) in cf.Options)
                     combo.Items.Add(new ComboBoxItem { Content = display, Tag = export });
                 string? sel = cf.SelectedValues.Count > 0 ? cf.SelectedValues[0] : null;
                 if (sel != null) combo.SelectedIndex = IndexOfExport(cf, sel);
-                combo.SelectionChanged += (_, _) =>
+                if (!cf.IsReadOnly)
                 {
-                    if (combo.SelectedItem is ComboBoxItem item && item.Tag is string ex)
-                        cf.SelectedValues = new[] { ex };
-                };
+                    combo.SelectionChanged += (_, _) =>
+                    {
+                        if (combo.SelectedItem is ComboBoxItem item && item.Tag is string ex)
+                            cf.SelectedValues = new[] { ex };
+                    };
+                }
                 return combo;
             }
             case PdfChoiceField cf:   // list box
             {
                 var lb = new ListBox
                 {
-                    SelectionMode = cf.IsMultiSelect ? SelectionMode.Multiple : SelectionMode.Single
+                    SelectionMode = cf.IsMultiSelect ? SelectionMode.Multiple : SelectionMode.Single,
+                    IsEnabled = !cf.IsReadOnly        // display selection but block interaction
                 };
                 foreach ((string export, string display) in cf.Options)
                     lb.Items.Add(new ListBoxItem { Content = display, Tag = export });
@@ -303,9 +317,12 @@ public partial class MainWindow : Window
                     int idx = IndexOfExport(cf, sv);
                     if (idx >= 0) lb.SelectedItems.Add(lb.Items[idx]);
                 }
-                lb.SelectionChanged += (_, _) =>
-                    cf.SelectedValues = lb.SelectedItems.Cast<ListBoxItem>()
-                        .Select(i => (string)i.Tag).ToArray();
+                if (!cf.IsReadOnly)
+                {
+                    lb.SelectionChanged += (_, _) =>
+                        cf.SelectedValues = lb.SelectedItems.Cast<ListBoxItem>()
+                            .Select(i => (string)i.Tag).ToArray();
+                }
                 return lb;
             }
             case PdfSignatureField:
@@ -332,6 +349,33 @@ public partial class MainWindow : Window
         for (int i = 0; i < cf.Options.Count; i++)
             if (cf.Options[i].Export == export) return i;
         return -1;
+    }
+
+    // ==================== SAVE / FLATTEN ====================
+
+    private void SaveButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_editor is null) return;
+        var dlg = new SaveFileDialog
+        {
+            Filter = "PDF (*.pdf)|*.pdf",
+            FileName = "filled.pdf",
+            Title = "Save Edited PDF"
+        };
+        if (dlg.ShowDialog() != true) return;
+        _editor.Save(dlg.FileName);
+        StatusText.Text = $"Saved to {dlg.FileName}";
+        Log.Information("Saved edited PDF to {Path}", dlg.FileName);
+    }
+
+    private void FlattenButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_editor is null) return;
+        _editor.Forms.Flatten();
+        // Re-render: fields are now baked into the page content; overlay rebuilds empty.
+        RenderPage();
+        StatusText.Text = "Fields flattened and re-rendered.";
+        Log.Information("Flattened form fields on page {Page}", _currentPage);
     }
 
     // ==================== ZOOM CONTROLS ====================
