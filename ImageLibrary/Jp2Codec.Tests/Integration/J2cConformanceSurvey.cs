@@ -1,6 +1,5 @@
 using Jp2Codec.Codestream;
 using Jp2Codec.Codestream.Segments;
-using Xunit.Abstractions;
 
 namespace Jp2Codec.Tests.Integration;
 

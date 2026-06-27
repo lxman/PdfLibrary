@@ -1,6 +1,5 @@
 using PngCodec;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace ImageLibrary.IntegrationTests;
 
@@ -67,15 +66,18 @@ public class SampleFileTests
             yield return [file];
     }
 
-    public static IEnumerable<object[]> GetPngFiles()
+    public static IEnumerable<TheoryDataRow<string>> GetPngFiles()
     {
         if (!Directory.Exists(TestImagesRoot))
+        {
+            yield return new TheoryDataRow<string>("") { Skip = $"TestImages directory not found: {TestImagesRoot}" };
             yield break;
+        }
 
         foreach (string file in Directory.EnumerateFiles(TestImagesRoot, "*.png", SearchOption.AllDirectories))
-            yield return [file];
+            yield return new TheoryDataRow<string>(file);
         foreach (string file in Directory.EnumerateFiles(TestImagesRoot, "*.PNG", SearchOption.AllDirectories))
-            yield return [file];
+            yield return new TheoryDataRow<string>(file);
     }
 
     [Theory]

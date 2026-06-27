@@ -1,7 +1,6 @@
 using System.Text;
 using Jp2Codec.Tier1;
 using Jp2Codec.Tiles;
-using Xunit.Abstractions;
 
 namespace Jp2Codec.Tests.Integration;
 

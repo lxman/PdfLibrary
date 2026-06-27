@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Jp2Codec.Color;
-using Xunit.Abstractions;
 
 namespace Jp2Codec.Tests.Integration;
 

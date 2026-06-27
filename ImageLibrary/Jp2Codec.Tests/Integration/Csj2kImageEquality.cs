@@ -1,7 +1,6 @@
 using CoreJ2K;
 using CoreJ2K.j2k.util;
 using CoreJ2K.Util;
-using Xunit.Abstractions;
 
 namespace Jp2Codec.Tests.Integration;
 

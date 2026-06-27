@@ -1,6 +1,5 @@
 using System.Text;
 using CcittCodec;
-using Xunit.Abstractions;
 
 namespace Jbig2Decoder.Tests.Mmr;
 

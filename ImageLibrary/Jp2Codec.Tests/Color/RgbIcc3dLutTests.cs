@@ -1,7 +1,6 @@
 using Jp2Codec.Color;
 using Wacton.Unicolour;
 using Wacton.Unicolour.Icc;
-using Xunit.Abstractions;
 
 namespace Jp2Codec.Tests.Color;
 

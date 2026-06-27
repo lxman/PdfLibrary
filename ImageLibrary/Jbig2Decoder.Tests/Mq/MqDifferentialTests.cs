@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Text;
 using Jbig2Decoder.Mq;
-using Xunit.Abstractions;
 
 namespace Jbig2Decoder.Tests.Mq;
 
