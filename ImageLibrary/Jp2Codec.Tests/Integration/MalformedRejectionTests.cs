@@ -28,7 +28,13 @@ public class MalformedRejectionTests
     [InlineData("issue362-2894.jp2")]            // ftyp box length overruns the buffer
     public void Malformed_corpus_file_rejects_cleanly(string fileName)
     {
-        byte[] bytes = File.ReadAllBytes(NonRegressionPath(fileName));
+        string path = NonRegressionPath(fileName);
+
+        // The OpenJPEG/GDAL non-regression corpus is local-only (untracked) — skip (not fail)
+        // where it isn't present, e.g. Mac/Linux/CI checkouts.
+        Assert.SkipUnless(File.Exists(path), $"Non-regression corpus not present: {path}");
+
+        byte[] bytes = File.ReadAllBytes(path);
 
         // Must throw, and the throw must be the clean domain exception. xUnit's
         // Assert.Throws<T> demands the *exact* type, so a future raw-exception
