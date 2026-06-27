@@ -73,7 +73,7 @@ public sealed class WpfRenderTarget : IRenderTarget
         if (_dc is null) return;
 
         // Balance any outstanding Push calls (from SaveState / SetClippingPath).
-        while (_pushDepth-- > 0) _dc.Pop();
+        while (_pushDepth > 0) { _dc.Pop(); _pushDepth--; }
 
         _dc.Close();
         _dc = null;
@@ -110,13 +110,79 @@ public sealed class WpfRenderTarget : IRenderTarget
 
     public void OnGraphicsStateChanged(PdfGraphicsState state) { }
 
-    // ==================== PATH OPERATIONS (stubs — Task D2b-2/3) ====================
+    // ==================== PATH OPERATIONS ====================
 
-    public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
+    private static Geometry BuildGeometry(IPathBuilder path, bool evenOdd)
+    {
+        var pg = new PathGeometry { FillRule = evenOdd ? FillRule.EvenOdd : FillRule.Nonzero };
+        PathFigure? figure = null;
 
-    public void StrokePath(IPathBuilder path, PdfGraphicsState state) { }
+        foreach (var seg in path.Segments)
+        {
+            switch (seg)
+            {
+                case MoveToSegment m:
+                    figure = new PathFigure { StartPoint = new Point(m.X, m.Y), IsFilled = true, IsClosed = false };
+                    pg.Figures.Add(figure);
+                    break;
+                case LineToSegment l:
+                    figure?.Segments.Add(new System.Windows.Media.LineSegment(new Point(l.X, l.Y), isStroked: true));
+                    break;
+                case CurveToSegment c:
+                    figure?.Segments.Add(new BezierSegment(
+                        new Point(c.X1, c.Y1), new Point(c.X2, c.Y2), new Point(c.X3, c.Y3), isStroked: true));
+                    break;
+                case ClosePathSegment:
+                    if (figure is not null) figure.IsClosed = true;
+                    figure = null;
+                    break;
+            }
+        }
 
-    public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
+        pg.Freeze();
+        return pg;
+    }
+
+    public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        if (path.IsEmpty || _dc is null) return;
+        (byte r, byte g, byte b) = PdfColorToRgb.ToRgb(state.ResolvedFillColor, state.ResolvedFillColorSpace);
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b)) { Opacity = state.FillAlpha };
+        brush.Freeze();
+        _dc.DrawGeometry(brush, null, BuildGeometry(path, evenOdd));
+    }
+
+    public void StrokePath(IPathBuilder path, PdfGraphicsState state)
+    {
+        if (path.IsEmpty || _dc is null) return;
+        (byte r, byte g, byte b) = PdfColorToRgb.ToRgb(state.ResolvedStrokeColor, state.ResolvedStrokeColorSpace);
+        double ctmScale = Math.Sqrt(Math.Abs(state.Ctm.M11 * state.Ctm.M22 - state.Ctm.M12 * state.Ctm.M21));
+        double width = Math.Max(state.LineWidth * ctmScale, 0.1);
+        var brush = new SolidColorBrush(Color.FromRgb(r, g, b)) { Opacity = state.StrokeAlpha };
+        brush.Freeze();
+        var pen = new Pen(brush, width)
+        {
+            StartLineCap = Cap(state.LineCap),
+            EndLineCap   = Cap(state.LineCap),
+            LineJoin      = Join(state.LineJoin),
+            MiterLimit    = state.MiterLimit
+        };
+        if (state.DashPattern is { Length: > 0 })
+            pen.DashStyle = new DashStyle(
+                state.DashPattern.Select(d => d * ctmScale / width),
+                state.DashPhase * ctmScale / width);
+        pen.Freeze();
+        _dc.DrawGeometry(null, pen, BuildGeometry(path, evenOdd: false));
+    }
+
+    public void FillAndStrokePath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
+    {
+        FillPath(path, state, evenOdd);
+        StrokePath(path, state);
+    }
+
+    private static PenLineCap  Cap(int c) => c switch { 1 => PenLineCap.Round, 2 => PenLineCap.Square, _ => PenLineCap.Flat };
+    private static PenLineJoin Join(int j) => j switch { 1 => PenLineJoin.Round, 2 => PenLineJoin.Bevel, _ => PenLineJoin.Miter };
 
     public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd) { }
 

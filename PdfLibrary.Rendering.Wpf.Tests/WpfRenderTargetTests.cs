@@ -1,5 +1,9 @@
+using System.Numerics;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using PdfLibrary.Content;
+using PdfLibrary.Rendering;
 
 namespace PdfLibrary.Rendering.Wpf.Tests;
 
@@ -114,5 +118,87 @@ public class WpfRenderTargetTests
         });
 
         Assert.NotNull(v);
+    }
+
+    // ---- FillPath ----
+
+    [Fact]
+    public void FillPath_RendersFilledRegion()
+    {
+        // Render a red filled rectangle on a 100×100 page and verify the center pixel is red.
+        // Pbgra32 layout is B, G, R, A so index+2 is the Red channel.
+        byte[] px = Sta.Run(() =>
+        {
+            var t = new WpfRenderTarget();
+            t.BeginPage(1, 100, 100, 1.0, 0, 0, 0);
+
+            var pb = new PathBuilder();
+            pb.MoveTo(10, 10); pb.LineTo(90, 10); pb.LineTo(90, 90); pb.LineTo(10, 90); pb.ClosePath();
+
+            var state = new PdfGraphicsState
+            {
+                ResolvedFillColor = new List<double> { 1.0, 0.0, 0.0 },
+                ResolvedFillColorSpace = "DeviceRGB"
+            };
+
+            t.FillPath(pb, state, evenOdd: false);
+            t.EndPage();
+
+            var rtb = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(t.Visual);
+            var buf = new byte[100 * 100 * 4];
+            rtb.CopyPixels(buf, 100 * 4, 0);
+            return buf;
+        });
+
+        int i = (50 * 100 + 50) * 4;   // center pixel, Pbgra32 = B G R A
+        Assert.True(px[i + 2] > 200, $"R={px[i+2]}: center pixel should be red");
+        Assert.True(px[i + 1] < 60,  $"G={px[i+1]}: center pixel should not be green");
+        Assert.True(px[i + 0] < 60,  $"B={px[i+0]}: center pixel should not be blue");
+    }
+
+    // ---- StrokePath ----
+
+    [Fact]
+    public void StrokePath_ScalesLineWidthByCtm()
+    {
+        // LineWidth=100, CTM scale=0.1 → effective pixel width ≈ 10.
+        // A bug (no CTM scaling) would paint all rows, making y=30 red.
+        // With correct scaling the stroke only covers roughly y=45–55, leaving y=30 white.
+        byte[] px = Sta.Run(() =>
+        {
+            var t = new WpfRenderTarget();
+            t.BeginPage(1, 100, 100, 1.0, 0, 0, 0);
+
+            var pb = new PathBuilder();
+            pb.MoveTo(0, 50); pb.LineTo(100, 50);   // horizontal line at PDF y=50 → WPF y=50
+
+            var state = new PdfGraphicsState
+            {
+                LineWidth = 100,
+                Ctm = Matrix3x2.CreateScale(0.1f),   // sqrt(det) = 0.1  →  width = 10
+                ResolvedStrokeColor = new List<double> { 1.0, 0.0, 0.0 },
+                ResolvedStrokeColorSpace = "DeviceRGB"
+            };
+
+            t.StrokePath(pb, state);
+            t.EndPage();
+
+            var rtb = new RenderTargetBitmap(100, 100, 96, 96, PixelFormats.Pbgra32);
+            rtb.Render(t.Visual);
+            var buf = new byte[100 * 100 * 4];
+            rtb.CopyPixels(buf, 100 * 4, 0);
+            return buf;
+        });
+
+        // Center row (WPF y=50) must be red — inside the stroke.
+        int center = (50 * 100 + 50) * 4;
+        Assert.True(px[center + 2] > 200, $"R={px[center+2]}: center pixel should be red (inside stroke)");
+
+        // Row at WPF y=30 (20px from line) must NOT be red — outside the CTM-scaled width of ~10.
+        // If the bug were present (width=100) this pixel would be fully red.
+        int outside = (30 * 100 + 50) * 4;
+        Assert.True(px[outside + 2] < 60,
+            $"R={px[outside+2]}: pixel at y=30 should not be red — CTM stroke-width scaling missing");
     }
 }
