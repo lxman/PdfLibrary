@@ -6,8 +6,11 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
+using PdfLibrary.Document;
+using PdfLibrary.Editing;
 using PdfLibrary.Optimization;
 using PdfLibrary.Rendering.SkiaSharp;
+using PdfLibrary.Rendering.Wpf;
 using Serilog;
 using SkiaSharp;
 using PdfDocument = PdfLibrary.Structure.PdfDocument;
@@ -26,6 +29,7 @@ public partial class MainWindow : Window
 
     // Document state
     private PdfDocument? _pdfDoc;
+    private PdfDocumentEditor? _editor;
     private int _currentPage;
     private int _totalPages;
     private string? _currentFilePath;
@@ -71,13 +75,15 @@ public partial class MainWindow : Window
             _zoomLevel = 1.0;
 
             // Clear existing document
+            _editor?.Dispose();
+            _editor = null;
             _pdfDoc?.Dispose();
 
             // Load the PDF
             await Task.Run(() => LoadPdfDocument(filePath));
 
             // Get page count
-            _totalPages = _pdfDoc?.GetPageCount() ?? 0;
+            _totalPages = _editor?.Pages.Count ?? 0;
 
             if (_totalPages == 0)
             {
@@ -120,7 +126,9 @@ public partial class MainWindow : Window
         {
             using FileStream stream = File.OpenRead(filePath);
             _pdfDoc = PdfDocument.Load(stream);
-            PdfRenderer.SetDocument(_pdfDoc);
+            // Editor wraps the already-loaded document (no second file read).
+            // _ownsDocument stays false so _pdfDoc.Dispose() drives lifetime.
+            _editor = _pdfDoc.Edit();
             Log.Information("PdfLibrary loaded successfully");
         }
         catch (Exception ex)
@@ -167,31 +175,28 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_pdfDoc == null) return;
+            if (_editor == null) return;
 
             Dispatcher.Invoke(() =>
             {
-                PdfPage? page = _pdfDoc.GetPage(_currentPage - 1);
-                if (page == null)
-                {
-                    StatusText.Text = $"Page {_currentPage} not found";
-                    return;
-                }
+                PdfPage page = _editor.Pages[_currentPage - 1];
 
                 // Translate user-facing zoom (fraction of actual size) into the pixel
-                // scale the renderer expects (Skia pixels per PDF point). The DPI scale
+                // scale the renderer expects (WPF pixels per PDF point). The DPI scale
                 // factor here is what makes physical-actual-size match what's on screen.
-                double pixelScale = _zoomLevel * DiusPerPdfPoint * VisualTreeHelper.GetDpi(this).DpiScaleX;
+                double dpiScale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+                double pixelScale = _zoomLevel * DiusPerPdfPoint * dpiScale;
 
-                // Get or create the render target with proper dimensions
-                // Use page.Width/Height which account for rotation (swap dimensions for 90°/270°)
-                SkiaSharpRenderTarget renderTarget = PdfRenderer.GetOrCreateRenderTarget(page.Width, page.Height, pixelScale);
+                // Render the page to a WPF DrawingGroup (vector, resolution-independent).
+                // RenderToDrawing must run on an STA thread — Dispatcher.Invoke satisfies that.
+                DrawingGroup dg = page.RenderToDrawing(pixelScale);
+                dg.Freeze();
 
-                // Use the simplified public API
-                page.Render(renderTarget, _currentPage, pixelScale);
+                PageGeometry geo = page.GetGeometry(pixelScale);
+                PdfView.ShowPage(dg, geo.PixelWidth, geo.PixelHeight, dpiScale);
 
-                // Finalize and display the rendered content
-                PdfRenderer.FinalizeRendering(_currentPage);
+                // Populate the overlay with form-field controls (Task 3).
+                BuildOverlay(page, geo, dpiScale);
 
                 Log.Information("PdfLibrary rendered page {Page} at {Zoom}% (pixel scale {PixelScale:F3})", _currentPage, _zoomLevel * 100, pixelScale);
             });
@@ -202,6 +207,12 @@ public partial class MainWindow : Window
             Dispatcher.Invoke(() => StatusText.Text = $"Render error: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Populates <see cref="WpfPageView.Overlay"/> with WPF controls for each form field
+    /// widget on the current page.  Stub — implemented in Task 3.
+    /// </summary>
+    private void BuildOverlay(PdfPage page, PageGeometry geo, double dpiScale) { }
 
     // ==================== ZOOM CONTROLS ====================
 
@@ -218,7 +229,7 @@ public partial class MainWindow : Window
     private async void FitToPage_Click(object sender, RoutedEventArgs e)
     {
         // Fit the entire page in the viewport (limiting dimension wins).
-        PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
+        PdfPage? page = _editor?.Pages[_currentPage - 1];
         if (page is null) return;
         double viewportWidth = PdfScroll.ActualWidth - 60;
         double viewportHeight = PdfScroll.ActualHeight - 50;
@@ -233,7 +244,7 @@ public partial class MainWindow : Window
         // Fit the page width to the viewport. _zoomLevel is now a fraction of
         // actual-screen-size, so we compare DIUs to DIUs and the render path
         // handles the DPI conversion.
-        PdfPage? page = _pdfDoc?.GetPage(_currentPage - 1);
+        PdfPage? page = _editor?.Pages[_currentPage - 1];
         if (page is null) return;
         double viewportWidth = PdfScroll.ActualWidth - 60;
         double pageWidthDiu = page.Width * DiusPerPdfPoint;

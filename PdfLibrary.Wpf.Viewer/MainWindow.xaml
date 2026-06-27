@@ -58,7 +58,7 @@
             <ScrollViewer x:Name="PdfScroll"
                           HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                           PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
-                <local:SkiaRenderer x:Name="PdfRenderer"/>
+                <local:WpfPageView x:Name="PdfView"/>
             </ScrollViewer>
         </Border>
 
