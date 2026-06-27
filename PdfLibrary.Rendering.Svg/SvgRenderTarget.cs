@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Numerics;
 using System.Text;
 using PdfLibrary.Content;
@@ -48,6 +48,7 @@ public sealed class SvgRenderTarget : IRenderTarget
 
     public void Clear() { _sb.Clear(); _clipDepth = 0; _saveStack.Clear(); CurrentPageNumber = 0; }
 
+    /// <summary>Returns the SVG markup produced by the most recent <see cref="BeginPage"/>/<see cref="EndPage"/> render cycle.</summary>
     public string GetSvg() => _sb.ToString();
 
     public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)

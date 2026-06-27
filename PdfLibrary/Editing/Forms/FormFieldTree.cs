@@ -1,4 +1,4 @@
-using PdfLibrary.Builder;
+﻿using PdfLibrary.Builder;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -143,7 +143,7 @@ internal static class FormFieldTree
             PdfFormFieldType.Text      => BuildTextField(doc, dict, inherited, ff),
             PdfFormFieldType.Checkbox  => BuildButtonField(doc, dict, inherited, widgets, ff, ButtonKind.Checkbox),
             PdfFormFieldType.Radio     => BuildButtonField(doc, dict, inherited, widgets, ff, ButtonKind.Radio),
-            PdfFormFieldType.PushButton => BuildButtonField(doc, dict, inherited, widgets, ff, ButtonKind.Push),
+            PdfFormFieldType.PushButton => BuildButtonField(doc, dict, inherited, widgets, ff, ButtonKind.PushButton),
             PdfFormFieldType.ComboBox  => BuildChoiceField(doc, dict, inherited, ff, isCombo: true),
             PdfFormFieldType.ListBox   => BuildChoiceField(doc, dict, inherited, ff, isCombo: false),
             PdfFormFieldType.Signature => BuildSignatureField(doc, dict),

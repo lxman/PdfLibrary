@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using PdfLibrary.Builder;
 
 namespace PdfLibrary.Document;
@@ -11,7 +11,9 @@ public readonly struct ImageRect(double x, double y, double width, double height
     public double X { get; } = x;
     /// <summary>Top edge, pixels from the image's top.</summary>
     public double Y { get; } = y;
+    /// <summary>Width of the rectangle in pixels.</summary>
     public double Width { get; } = width;
+    /// <summary>Height of the rectangle in pixels.</summary>
     public double Height { get; } = height;
 }
 

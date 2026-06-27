@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Numerics;
 using Logging;
 using PdfLibrary.Content;
@@ -36,7 +36,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
 
     // Lightweight per-page timing — set EnablePerfTrace to see breakdown on Console
     private static volatile bool _enablePerfTrace;
-    public static bool EnablePerfTrace
+    internal static bool EnablePerfTrace
     {
         get => _enablePerfTrace;
         set => _enablePerfTrace = value;
@@ -204,7 +204,7 @@ public class SkiaSharpRenderTarget : IRenderTarget, IDisposable
     /// </summary>
     /// <param name="maskBitmap">The rendered soft mask bitmap (grayscale or RGBA with alpha)</param>
     /// <param name="subtype">The mask subtype: "Alpha" or "Luminosity"</param>
-    public void SetSoftMask(SKBitmap maskBitmap, string subtype)
+    internal void SetSoftMask(SKBitmap maskBitmap, string subtype)
     {
         _softMaskManager.SetMask(maskBitmap, subtype, _stateManager.CurrentDepth);
     }

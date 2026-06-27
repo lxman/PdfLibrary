@@ -1,4 +1,4 @@
-namespace PdfLibrary.Editing.Forms;
+﻿namespace PdfLibrary.Editing.Forms;
 
 /// <summary>AcroForm field types (ISO 32000 §12.7.3.1 Table 220 /FT values).</summary>
 public enum PdfFormFieldType
@@ -29,5 +29,5 @@ public enum ButtonKind
     /// <summary>A radio button.</summary>
     Radio,
     /// <summary>A push button.</summary>
-    Push
+    PushButton
 }

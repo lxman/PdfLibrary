@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace PdfLibrary.Rendering;
 
@@ -125,7 +125,11 @@ public class PathBuilder : IPathBuilder
 /// </summary>
 public abstract record PathSegment;
 
+/// <summary>A move-to path segment; sets the current point without drawing.</summary>
 public record MoveToSegment(double X, double Y) : PathSegment;
+/// <summary>A line-to path segment; draws a straight line from the current point to (X, Y).</summary>
 public record LineToSegment(double X, double Y) : PathSegment;
+/// <summary>A cubic Bezier curve segment; (X1,Y1) and (X2,Y2) are control points, (X3,Y3) is the end point.</summary>
 public record CurveToSegment(double X1, double Y1, double X2, double Y2, double X3, double Y3) : PathSegment;
+/// <summary>A close-path segment; closes the current sub-path by drawing a straight line back to the start point.</summary>
 public record ClosePathSegment : PathSegment;

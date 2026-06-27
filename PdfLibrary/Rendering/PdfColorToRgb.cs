@@ -1,4 +1,4 @@
-using Wacton.Unicolour;
+﻿using Wacton.Unicolour;
 
 namespace PdfLibrary.Rendering;
 
@@ -9,6 +9,12 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 public static class PdfColorToRgb
 {
+    /// <summary>
+    /// Resolves a PDF device-colour component list to an 8-bit RGB triple.
+    /// Supports DeviceGray, DeviceRGB, DeviceCMYK, CalGray, CalRGB, Lab; falls back by component count.
+    /// </summary>
+    /// <param name="components">Normalised colour components in [0,1].</param>
+    /// <param name="colorSpace">PDF colour-space name, or <c>null</c> to infer from component count.</param>
     public static (byte R, byte G, byte B) ToRgb(IReadOnlyList<double> components, string? colorSpace)
     {
         if (components is null || components.Count == 0) return (0, 0, 0);
@@ -37,6 +43,7 @@ public static class PdfColorToRgb
         };
     }
 
+    /// <summary>Converts a normalised alpha value in [0, 1] to an 8-bit byte (255 = fully opaque).</summary>
     public static byte AlphaByte(double alpha) => (byte)Math.Round(Math.Clamp(alpha, 0, 1) * 255);
 
     private static byte Channel(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);

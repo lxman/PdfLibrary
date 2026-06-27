@@ -549,32 +549,6 @@ public enum PdfCheckStyle
     Star
 }
 
-/// <summary>
-/// Image format for encoded output.
-/// </summary>
-public enum ImageFormat
-{
-    /// <summary>
-    /// Portable Network Graphics (PNG)
-    /// </summary>
-    Png,
-    /// <summary>
-    /// Joint Photographic Experts Group (JPEG)
-    /// </summary>
-    Jpeg,
-    /// <summary>
-    /// Web Picture Format (WebP)
-    /// </summary>
-    Webp,
-    /// <summary>
-    /// Graphics Interchange Format (GIF)
-    /// </summary>
-    Gif,
-    /// <summary>
-    /// Windows Bitmap (BMP)
-    /// </summary>
-    Bmp
-}
 
 /// <summary>
 /// PDF font types

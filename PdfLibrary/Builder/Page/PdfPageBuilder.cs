@@ -223,7 +223,7 @@ public class PdfPageBuilder(PdfSize size)
             Rect = rect
         };
         _content.Add(content);
-        return new PdfImageBuilder(content);
+        return new PdfImageBuilder(this, content);
     }
 
     /// <summary>

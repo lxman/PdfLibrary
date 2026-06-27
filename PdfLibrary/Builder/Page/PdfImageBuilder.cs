@@ -3,7 +3,7 @@
 /// <summary>
 /// Fluent builder for image configuration
 /// </summary>
-public class PdfImageBuilder(PdfImageContent content)
+public class PdfImageBuilder(PdfPageBuilder pageBuilder, PdfImageContent content)
 {
     /// <summary>
     /// Set image opacity (0.0 = transparent, 1.0 = opaque)
@@ -68,4 +68,14 @@ public class PdfImageBuilder(PdfImageContent content)
         content.Interpolate = false;
         return this;
     }
+
+    /// <summary>
+    /// Return to the page builder to continue adding content.
+    /// </summary>
+    public PdfPageBuilder Done() => pageBuilder;
+
+    /// <summary>
+    /// Implicit conversion back to the page builder.
+    /// </summary>
+    public static implicit operator PdfPageBuilder(PdfImageBuilder builder) => builder.Done();
 }

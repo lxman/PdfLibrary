@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace PdfLibrary.Rendering;
 
@@ -18,6 +18,7 @@ public sealed class ShadingDescriptor
 
     /// <summary>Extend the shading beyond the start / end of its axis (/Extend).</summary>
     public bool ExtendStart { get; init; }
+    /// <summary>Extend the shading beyond the end of its axis (/Extend[1]).</summary>
     public bool ExtendEnd { get; init; }
 
     /// <summary>Ascending stop positions in [0, 1], paired with <see cref="Colors"/>.</summary>
