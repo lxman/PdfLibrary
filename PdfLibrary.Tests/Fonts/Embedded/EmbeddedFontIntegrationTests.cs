@@ -2,7 +2,6 @@ using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
-using Xunit.Abstractions;
 
 namespace PdfLibrary.Tests.Fonts.Embedded;
 
