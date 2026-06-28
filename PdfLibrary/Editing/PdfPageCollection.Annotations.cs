@@ -36,6 +36,19 @@ public sealed partial class PdfPageCollection
         PdfPageAnnotator.AddHighlight(_document, page, PageRef(index), rect, color ?? PdfColor.Yellow);
     }
 
+    /// <summary>
+    /// Adds a Square (rectangle) markup annotation over <paramref name="rect"/> with the given
+    /// <paramref name="stroke"/> border colour, optional <paramref name="fill"/> interior, and border
+    /// <paramref name="width"/>. A real <c>/AP</c> appearance stream is generated so it renders in this
+    /// library's renderer and in external viewers. Returns the annotation's stable id for later
+    /// <see cref="RemoveAnnotation(int, int)"/>.
+    /// </summary>
+    public int AddSquare(int index, PdfRect rect, PdfColor stroke, PdfColor? fill = null, double width = 1.0)
+    {
+        PdfDictionary page = PageAt(index);
+        return PdfPageAnnotator.AddSquare(_document, page, PageRef(index), rect, stroke, fill, width);
+    }
+
     /// <summary>Returns a read-only snapshot of the annotations on the page at <paramref name="index"/> (empty if none).</summary>
     public IReadOnlyList<PdfAnnotationInfo> GetAnnotations(int index)
     {
@@ -52,10 +65,60 @@ public sealed partial class PdfPageCollection
             {
                 Subtype = Resolve(annot.Get(new PdfName("Subtype"))) is PdfName n ? n.Value : string.Empty,
                 Rect = ReadRect(annot),
-                Contents = Resolve(annot.Get(new PdfName("Contents"))) is PdfString s ? s.GetText() : null
+                Contents = Resolve(annot.Get(new PdfName("Contents"))) is PdfString s ? s.GetText() : null,
+                AnnotationId = entry is PdfIndirectReference er ? er.ObjectNumber : 0,
+                StrokeColor = ReadColor(annot, "C"),
+                InteriorColor = ReadColor(annot, "IC"),
+                BorderWidth = ReadBorderWidth(annot)
             });
         }
         return result;
+    }
+
+    /// <summary>
+    /// Removes the annotation with the given <paramref name="annotationId"/> (its PDF object number,
+    /// from <see cref="PdfAnnotationInfo.AnnotationId"/>) from the page at <paramref name="index"/>.
+    /// No-op if no annotation on that page has the id.
+    /// </summary>
+    public void RemoveAnnotation(int index, int annotationId)
+    {
+        PdfDictionary page = PageAt(index);
+        if (Resolve(page.Get(new PdfName("Annots"))) is not PdfArray annots)
+            return;
+
+        for (int i = 0; i < annots.Count; i++)
+        {
+            if (annots[i] is not PdfIndirectReference r || r.ObjectNumber != annotationId)
+                continue;
+            annots.RemoveAt(i);
+            _document.RemoveObject(r.ObjectNumber);
+            return;
+        }
+    }
+
+    private PdfColor? ReadColor(PdfDictionary annot, string key)
+    {
+        if (Resolve(annot.Get(new PdfName(key))) is not PdfArray { Count: >= 3 } a)
+            return null;
+        double Num(int i) => Resolve(a[i]) switch
+        {
+            PdfReal r => r.Value,
+            PdfInteger n => n.Value,
+            _ => 0
+        };
+        return PdfColor.FromRgb(Num(0), Num(1), Num(2));
+    }
+
+    private double? ReadBorderWidth(PdfDictionary annot)
+    {
+        if (Resolve(annot.Get(new PdfName("BS"))) is not PdfDictionary bs)
+            return null;
+        return Resolve(bs.Get(new PdfName("W"))) switch
+        {
+            PdfReal r => r.Value,
+            PdfInteger n => n.Value,
+            _ => null
+        };
     }
 
     /// <summary>

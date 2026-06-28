@@ -12,7 +12,7 @@ internal static class PdfPageAnnotator
     internal static void AddNote(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
         double x, double y, string contents)
     {
-        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Text", new PdfRect(x, y - 24, x + 24, y));
+        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Text", new PdfRect(x, y - 24, x + 24, y), out _);
         annot[new PdfName("Contents")] = PdfString.FromText(contents);
         annot[new PdfName("Name")] = new PdfName("Note");
     }
@@ -20,7 +20,7 @@ internal static class PdfPageAnnotator
     internal static void AddLink(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
         PdfRect rect, PdfIndirectReference targetPageRef)
     {
-        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Link", rect);
+        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Link", rect, out _);
         annot[new PdfName("Dest")] = new PdfArray(targetPageRef, new PdfName("Fit"));
         annot[new PdfName("H")] = new PdfName("I");
     }
@@ -28,7 +28,7 @@ internal static class PdfPageAnnotator
     internal static void AddExternalLink(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
         PdfRect rect, string url)
     {
-        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Link", rect);
+        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Link", rect, out _);
         var action = new PdfDictionary();
         action[PdfName.TypeName] = new PdfName("Action");
         action[new PdfName("S")] = new PdfName("URI");
@@ -40,8 +40,8 @@ internal static class PdfPageAnnotator
     internal static void AddHighlight(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
         PdfRect rect, PdfColor color)
     {
-        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Highlight", rect);
-        annot[new PdfName("C")] = new PdfArray(new PdfReal(color.R), new PdfReal(color.G), new PdfReal(color.B));
+        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Highlight", rect, out _);
+        annot[new PdfName("C")] = ColorArray(color);
         annot[new PdfName("QuadPoints")] = new PdfArray(
             new PdfReal(rect.Left), new PdfReal(rect.Top),
             new PdfReal(rect.Right), new PdfReal(rect.Top),
@@ -49,8 +49,25 @@ internal static class PdfPageAnnotator
             new PdfReal(rect.Right), new PdfReal(rect.Bottom));
     }
 
+    /// <summary>Adds a Square markup annotation and generates its /AP. Returns the annotation's object number.</summary>
+    internal static int AddSquare(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
+        PdfRect rect, PdfColor stroke, PdfColor? fill, double width)
+    {
+        PdfDictionary annot = NewAnnot(doc, page, pageRef, "Square", rect, out PdfIndirectReference annotRef);
+        annot[new PdfName("C")] = ColorArray(stroke);
+        if (fill.HasValue)
+            annot[new PdfName("IC")] = ColorArray(fill.Value);
+        annot[new PdfName("BS")] = new PdfDictionary { [new PdfName("W")] = new PdfReal(width) };
+
+        AnnotationAppearanceGenerator.Generate(doc, annot);
+        return annotRef.ObjectNumber;
+    }
+
+    private static PdfArray ColorArray(PdfColor c) =>
+        new(new PdfReal(c.R), new PdfReal(c.G), new PdfReal(c.B));
+
     private static PdfDictionary NewAnnot(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
-        string subtype, PdfRect rect)
+        string subtype, PdfRect rect, out PdfIndirectReference annotRef)
     {
         var annot = new PdfDictionary();
         annot[PdfName.TypeName] = new PdfName("Annot");
@@ -58,7 +75,7 @@ internal static class PdfPageAnnotator
         annot[new PdfName("Rect")] = new PdfArray(
             new PdfReal(rect.Left), new PdfReal(rect.Bottom), new PdfReal(rect.Right), new PdfReal(rect.Top));
         annot[new PdfName("P")] = pageRef;
-        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        annotRef = doc.RegisterObject(annot);
         AppendToAnnots(doc, page, annotRef);
         return annot;
     }
