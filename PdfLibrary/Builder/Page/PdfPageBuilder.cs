@@ -729,6 +729,56 @@ public class PdfPageBuilder(PdfSize size)
         return AddHighlight(rect, configure);
     }
 
+    /// <summary>Adds a Square (rectangle) markup annotation over <paramref name="rect"/> (PDF user space).</summary>
+    public PdfPageBuilder AddSquare(PdfRect rect, PdfColor stroke, PdfColor? fill = null, double width = 1.0)
+    {
+        _annotations.Add(new PdfSquareAnnotation(rect) { Color = stroke, InteriorColor = fill, LineWidth = width });
+        return this;
+    }
+
+    /// <summary>Adds a Circle (ellipse) markup annotation inscribed in <paramref name="rect"/> (PDF user space).</summary>
+    public PdfPageBuilder AddCircle(PdfRect rect, PdfColor stroke, PdfColor? fill = null, double width = 1.0)
+    {
+        _annotations.Add(new PdfCircleAnnotation(rect) { Color = stroke, InteriorColor = fill, LineWidth = width });
+        return this;
+    }
+
+    /// <summary>Adds a Line markup annotation between two points (PDF user space). The rectangle is computed from the endpoints.</summary>
+    public PdfPageBuilder AddLine(double x1, double y1, double x2, double y2, PdfColor color, double width = 1.0)
+    {
+        double pad = Math.Max(1.0, width);
+        var rect = new PdfRect(Math.Min(x1, x2) - pad, Math.Min(y1, y2) - pad, Math.Max(x1, x2) + pad, Math.Max(y1, y2) + pad);
+        _annotations.Add(new PdfLineAnnotation(rect) { X1 = x1, Y1 = y1, X2 = x2, Y2 = y2, Color = color, LineWidth = width });
+        return this;
+    }
+
+    /// <summary>Adds an Ink (freehand) markup annotation from polyline <paramref name="paths"/> (PDF user space). The rectangle is computed from all points.</summary>
+    public PdfPageBuilder AddInk(IReadOnlyList<IReadOnlyList<(double X, double Y)>> paths, PdfColor color, double width = 1.0)
+    {
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        foreach (IReadOnlyList<(double X, double Y)> path in paths)
+            foreach ((double px, double py) in path)
+            {
+                minX = Math.Min(minX, px); minY = Math.Min(minY, py);
+                maxX = Math.Max(maxX, px); maxY = Math.Max(maxY, py);
+            }
+        if (minX > maxX) { minX = minY = 0; maxX = maxY = 0; }
+
+        double pad = Math.Max(1.0, width);
+        var rect = new PdfRect(minX - pad, minY - pad, maxX + pad, maxY + pad);
+        var annotation = new PdfInkAnnotation(rect) { Color = color, LineWidth = width };
+        annotation.Paths.AddRange(paths);
+        _annotations.Add(annotation);
+        return this;
+    }
+
+    /// <summary>Adds a FreeText markup annotation showing <paramref name="text"/> within <paramref name="rect"/> (PDF user space).</summary>
+    public PdfPageBuilder AddFreeText(PdfRect rect, string text, double fontSize, PdfColor color, int quadding = 0)
+    {
+        _annotations.Add(new PdfFreeTextAnnotation(rect) { Text = text, FontSize = fontSize, Color = color, Quadding = quadding });
+        return this;
+    }
+
     /// <summary>
     /// Get the content elements
     /// </summary>

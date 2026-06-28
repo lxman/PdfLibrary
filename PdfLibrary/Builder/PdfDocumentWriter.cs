@@ -47,6 +47,7 @@ internal class PdfDocumentWriter
     private readonly Dictionary<int, int> _layerObjects = new(); // Layer.Id -> object number
     private readonly Dictionary<int, int> _bookmarkObjects = new(); // Bookmark.Id -> object number
     private readonly Dictionary<int, int> _annotationObjects = new(); // Annotation.Id -> object number
+    private readonly Dictionary<int, int> _annotationApObjects = new(); // Annotation.Id -> /AP /N appearance-stream object number
     private int _outlinesRootObj; // Root Outlines dictionary object number
     private PdfEncryptor? _encryptor;
     private byte[]? _documentId;
@@ -91,6 +92,7 @@ internal class PdfDocumentWriter
         _layerObjects.Clear();
         _bookmarkObjects.Clear();
         _annotationObjects.Clear();
+        _annotationApObjects.Clear();
         _outlinesRootObj = 0;
         _encryptor = null;
         _documentId = null;
@@ -345,6 +347,8 @@ internal class PdfDocumentWriter
             foreach (PdfAnnotation annotation in page.Annotations)
             {
                 _annotationObjects[annotation.Id] = _nextObjectNumber++;
+                if (AnnotationNeedsAppearance(annotation))
+                    _annotationApObjects[annotation.Id] = _nextObjectNumber++;
             }
         }
 
@@ -2487,6 +2491,10 @@ internal class PdfDocumentWriter
             writer.WriteLine("]");
         }
 
+        // Reference to the generated /AP /N appearance stream (written after this dict).
+        if (_annotationApObjects.TryGetValue(annotation.Id, out int apRefNum))
+            writer.WriteLine($"   /AP << /N {apRefNum} 0 R >>");
+
         // Type-specific properties
         switch (annotation)
         {
@@ -2501,9 +2509,145 @@ internal class PdfDocumentWriter
             case PdfHighlightAnnotation highlight:
                 WriteHighlightAnnotation(writer, highlight, objNum);
                 break;
+
+            case PdfSquareAnnotation square:
+                WriteShapeAnnotation(writer, square.Color, square.InteriorColor, square.LineWidth);
+                break;
+
+            case PdfCircleAnnotation circle:
+                WriteShapeAnnotation(writer, circle.Color, circle.InteriorColor, circle.LineWidth);
+                break;
+
+            case PdfLineAnnotation line:
+                writer.WriteLine($"   /L [{line.X1:F2} {line.Y1:F2} {line.X2:F2} {line.Y2:F2}]");
+                WriteShapeAnnotation(writer, line.Color, null, line.LineWidth);
+                break;
+
+            case PdfInkAnnotation ink:
+                WriteInkAnnotation(writer, ink);
+                break;
+
+            case PdfFreeTextAnnotation freeText:
+                WriteFreeTextAnnotation(writer, freeText, objNum);
+                break;
         }
 
         writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+
+        // Appearance stream object (Form XObject) referenced by /AP /N above.
+        if (_annotationApObjects.TryGetValue(annotation.Id, out int apObjNum))
+            WriteAnnotationAppearanceStream(writer, annotation, apObjNum);
+    }
+
+    private static bool AnnotationNeedsAppearance(PdfAnnotation annotation) => annotation switch
+    {
+        PdfSquareAnnotation or PdfCircleAnnotation or PdfLineAnnotation or PdfInkAnnotation
+            or PdfFreeTextAnnotation or PdfHighlightAnnotation or PdfTextAnnotation => true,
+        _ => false
+    };
+
+    private static void WriteShapeAnnotation(StreamWriter writer, PdfColor stroke, PdfColor? fill, double width)
+    {
+        writer.WriteLine($"   /C [{stroke.R:F3} {stroke.G:F3} {stroke.B:F3}]");
+        if (fill.HasValue)
+            writer.WriteLine($"   /IC [{fill.Value.R:F3} {fill.Value.G:F3} {fill.Value.B:F3}]");
+        writer.WriteLine($"   /BS << /W {width:F2} >>");
+    }
+
+    private static void WriteInkAnnotation(StreamWriter writer, PdfInkAnnotation ink)
+    {
+        writer.Write("   /InkList [");
+        foreach (IReadOnlyList<(double X, double Y)> path in ink.Paths)
+        {
+            writer.Write(" [");
+            foreach ((double x, double y) in path)
+                writer.Write($" {x:F2} {y:F2}");
+            writer.Write(" ]");
+        }
+        writer.WriteLine(" ]");
+        writer.WriteLine($"   /C [{ink.Color.R:F3} {ink.Color.G:F3} {ink.Color.B:F3}]");
+        writer.WriteLine($"   /BS << /W {ink.LineWidth:F2} >>");
+    }
+
+    private void WriteFreeTextAnnotation(StreamWriter writer, PdfFreeTextAnnotation freeText, int objNum)
+    {
+        writer.WriteLine($"   /Contents {PdfEncryptedString(freeText.Text, objNum)}");
+        PdfColor c = freeText.Color;
+        string da = string.Format(CultureInfo.InvariantCulture,
+            "/Helv {0:0.####} Tf {1:0.###} {2:0.###} {3:0.###} rg", freeText.FontSize, c.R, c.G, c.B);
+        writer.WriteLine($"   /DA {PdfEncryptedString(da, objNum)}");
+        writer.WriteLine($"   /Q {freeText.Quadding}");
+    }
+
+    /// <summary>
+    /// Writes the Form-XObject <c>/AP /N</c> appearance stream for a markup annotation, using the
+    /// shared <see cref="Editing.Annotations.AnnotationContentBuilder"/> so the drawn appearance
+    /// matches the editing-add path exactly.
+    /// </summary>
+    private void WriteAnnotationAppearanceStream(StreamWriter writer, PdfAnnotation annotation, int objNum)
+    {
+        PdfRect r = annotation.Rect;
+        double w = Math.Abs(r.Right - r.Left), h = Math.Abs(r.Top - r.Bottom);
+        double ox = Math.Min(r.Left, r.Right), oy = Math.Min(r.Bottom, r.Top);
+
+        string content;
+        string? resources = null;
+
+        static double[] Rgb(PdfColor c) => [c.R, c.G, c.B];
+
+        switch (annotation)
+        {
+            case PdfSquareAnnotation s:
+                content = Editing.Annotations.AnnotationContentBuilder.Square(
+                    w, h, s.LineWidth, Rgb(s.Color), s.InteriorColor is { } sf ? Rgb(sf) : null);
+                break;
+            case PdfCircleAnnotation cc:
+                content = Editing.Annotations.AnnotationContentBuilder.Circle(
+                    w, h, cc.LineWidth, Rgb(cc.Color), cc.InteriorColor is { } cf ? Rgb(cf) : null);
+                break;
+            case PdfLineAnnotation l:
+                content = Editing.Annotations.AnnotationContentBuilder.Line(
+                    l.LineWidth, Rgb(l.Color), l.X1 - ox, l.Y1 - oy, l.X2 - ox, l.Y2 - oy);
+                break;
+            case PdfInkAnnotation ink:
+                var local = ink.Paths
+                    .Select(p => (IReadOnlyList<(double X, double Y)>)p.Select(pt => (pt.X - ox, pt.Y - oy)).ToList())
+                    .ToList();
+                content = Editing.Annotations.AnnotationContentBuilder.Ink(ink.LineWidth, Rgb(ink.Color), local);
+                break;
+            case PdfFreeTextAnnotation ft:
+                string colorOps = string.Format(CultureInfo.InvariantCulture,
+                    "{0:0.###} {1:0.###} {2:0.###} rg", ft.Color.R, ft.Color.G, ft.Color.B);
+                content = Editing.Annotations.AnnotationContentBuilder.FreeText(h, "Helv", ft.FontSize, colorOps, ft.Text);
+                resources = $"<< /Font << /Helv {_fontObjects["Helvetica"]} 0 R >> >>";
+                break;
+            case PdfHighlightAnnotation hl:
+                content = Editing.Annotations.AnnotationContentBuilder.Highlight(w, h, Rgb(hl.Color));
+                resources = "<< /ExtGState << /GShl << /Type /ExtGState /BM /Multiply >> >> >>";
+                break;
+            case PdfTextAnnotation:
+                content = Editing.Annotations.AnnotationContentBuilder.NoteIcon(w, h);
+                break;
+            default:
+                return;
+        }
+
+        byte[] data = Encoding.ASCII.GetBytes(content);
+        byte[] streamData = _encryptor != null ? EncryptStream(data, objNum) : data;
+
+        WriteObjectStart(writer, objNum);
+        writer.WriteLine("<< /Type /XObject /Subtype /Form");
+        writer.WriteLine($"   /BBox [0 0 {w:F2} {h:F2}]");
+        writer.WriteLine("   /Matrix [1 0 0 1 0 0]");
+        if (resources is not null)
+            writer.WriteLine($"   /Resources {resources}");
+        writer.WriteLine($"   /Length {streamData.Length} >>");
+        writer.WriteLine("stream");
+        writer.Flush();
+        writer.BaseStream.Write(streamData);
+        writer.WriteLine();
+        writer.WriteLine("endstream");
         WriteObjectEnd(writer);
     }
 
