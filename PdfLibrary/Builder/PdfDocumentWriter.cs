@@ -282,14 +282,38 @@ internal class PdfDocumentWriter
 
         // AcroForm object (if needed)
         int? acroFormObj = null;
-        var fieldObjects = new List<int>();
+        var fieldPlans = new List<FieldObjectPlan>();
         if (HasFormFields(builder))
         {
             acroFormObj = _nextObjectNumber++;
-            // Reserve objects for each field
+            // Reserve objects for each field. Most field types need a single object that
+            // doubles as both the AcroForm field and its page widget annotation. A radio
+            // group needs a separate parent field object plus one widget object per option.
             foreach (PdfPageBuilder page in builder.Pages)
             {
-                fieldObjects.AddRange(page.FormFields.Select(_ => _nextObjectNumber++));
+                foreach (PdfFormFieldBuilder field in page.FormFields)
+                {
+                    int fieldObj = _nextObjectNumber++;
+                    var plan = new FieldObjectPlan(field, fieldObj);
+                    if (field is PdfRadioGroupBuilder radioGroup)
+                    {
+                        // Parent goes only in /Fields; one widget per option goes in /Annots.
+                        // Each widget also gets two Form-XObject appearance streams (on + off).
+                        for (var k = 0; k < radioGroup.Options.Count; k++)
+                        {
+                            plan.AnnotObjects.Add(_nextObjectNumber++); // widget
+                            int onAp = _nextObjectNumber++;
+                            int offAp = _nextObjectNumber++;
+                            plan.WidgetApObjects.Add((onAp, offAp));
+                        }
+                    }
+                    else
+                    {
+                        // Field and widget are the same object.
+                        plan.AnnotObjects.Add(fieldObj);
+                    }
+                    fieldPlans.Add(plan);
+                }
             }
         }
 
@@ -544,12 +568,16 @@ internal class PdfDocumentWriter
             {
                 writer.Write("   /Annots [");
                 var annotCount = 0;
-                // Form fields first
+                // Form fields first — emit each field's widget annotation object(s).
+                // A radio group contributes one widget per option; other fields one each.
                 for (var j = 0; j < page.FormFields.Count; j++)
                 {
-                    if (annotCount > 0) writer.Write(" ");
-                    writer.Write($"{fieldObjects[fieldIndex + j]} 0 R");
-                    annotCount++;
+                    foreach (int annotObj in fieldPlans[fieldIndex + j].AnnotObjects)
+                    {
+                        if (annotCount > 0) writer.Write(" ");
+                        writer.Write($"{annotObj} 0 R");
+                        annotCount++;
+                    }
                 }
                 // Then annotations (links, notes, highlights)
                 foreach (PdfAnnotation annotation in page.Annotations)
@@ -577,10 +605,10 @@ internal class PdfDocumentWriter
             WriteObjectStart(writer, acroFormObj.Value);
             writer.WriteLine("<<");
             writer.Write("   /Fields [");
-            for (var i = 0; i < fieldObjects.Count; i++)
+            for (var i = 0; i < fieldPlans.Count; i++)
             {
                 if (i > 0) writer.Write(" ");
-                writer.Write($"{fieldObjects[i]} 0 R");
+                writer.Write($"{fieldPlans[i].FieldObject} 0 R");
             }
             writer.WriteLine("]");
 
@@ -612,7 +640,11 @@ internal class PdfDocumentWriter
             {
                 foreach (PdfFormFieldBuilder field in page.FormFields)
                 {
-                    WriteFormField(writer, fieldObjects[fieldIndex], field, pageObjectNumbers[pageIndex].pageObj, fonts);
+                    FieldObjectPlan plan = fieldPlans[fieldIndex];
+                    if (field is PdfRadioGroupBuilder radioGroup)
+                        WriteRadioGroupField(writer, plan, radioGroup, pageObjectNumbers[pageIndex].pageObj);
+                    else
+                        WriteFormField(writer, plan.FieldObject, field, pageObjectNumbers[pageIndex].pageObj, fonts);
                     fieldIndex++;
                 }
                 pageIndex++;
@@ -1212,6 +1244,198 @@ internal class PdfDocumentWriter
             index++;
         }
         return -1;
+    }
+
+    /// <summary>
+    /// Object-number plan for a single form field. <see cref="FieldObject"/> is the object placed
+    /// in the AcroForm <c>/Fields</c> array; <see cref="AnnotObjects"/> are the object(s) placed in
+    /// the page <c>/Annots</c> array. For most field types these are the same single object; for a
+    /// radio group the field object is the parent and the annot objects are the per-option widgets.
+    /// </summary>
+    private sealed class FieldObjectPlan(PdfFormFieldBuilder field, int fieldObject)
+    {
+        public PdfFormFieldBuilder Field { get; } = field;
+        public int FieldObject { get; } = fieldObject;
+        public List<int> AnnotObjects { get; } = [];
+
+        /// <summary>
+        /// Per-widget appearance-stream object numbers (on-state, off-state), parallel to
+        /// <see cref="AnnotObjects"/>. Populated only for radio groups.
+        /// </summary>
+        public List<(int On, int Off)> WidgetApObjects { get; } = [];
+    }
+
+    /// <summary>
+    /// Writes a radio-button group as a parent <c>/Btn</c> field dict plus one
+    /// <c>/Subtype /Widget</c> annotation per option (ISO 32000-1 §12.7.4.2).
+    /// The parent goes only in AcroForm <c>/Fields</c>; the widgets go only in page <c>/Annots</c>.
+    /// </summary>
+    private void WriteRadioGroupField(StreamWriter writer, FieldObjectPlan plan, PdfRadioGroupBuilder radioGroup, int pageObj)
+    {
+        int parentObj = plan.FieldObject;
+
+        // ── Parent field dict (NOT a widget annotation) ───────────────────────
+        WriteObjectStart(writer, parentObj);
+        writer.WriteLine("<<");
+        writer.WriteLine("   /FT /Btn");
+
+        int ff = 1 << 15; // Radio (bit 16, 1-based)
+        if (radioGroup.NoToggleToOff) ff |= 1 << 14; // NoToggleToOff (bit 15, 1-based)
+        if (radioGroup.IsReadOnly) ff |= 1;
+        if (radioGroup.IsRequired) ff |= 1 << 1;
+        writer.WriteLine($"   /Ff {ff}");
+
+        writer.WriteLine($"   /T {PdfEncryptedString(radioGroup.Name, parentObj)}");
+        if (!string.IsNullOrEmpty(radioGroup.Tooltip))
+            writer.WriteLine($"   /TU {PdfEncryptedString(radioGroup.Tooltip, parentObj)}");
+
+        string selected = radioGroup.SelectedValue is not null
+            ? $"/{EscapePdfName(radioGroup.SelectedValue)}"
+            : "/Off";
+        writer.WriteLine($"   /V {selected}");
+        writer.WriteLine("   /DV /Off");
+
+        writer.Write("   /Kids [");
+        for (var i = 0; i < plan.AnnotObjects.Count; i++)
+        {
+            if (i > 0) writer.Write(" ");
+            writer.Write($"{plan.AnnotObjects[i]} 0 R");
+        }
+        writer.WriteLine("]");
+        writer.WriteLine(">>");
+        WriteObjectEnd(writer);
+
+        // ── One widget annotation per option ──────────────────────────────────
+        for (var i = 0; i < radioGroup.Options.Count; i++)
+        {
+            PdfRadioOption option = radioGroup.Options[i];
+            int widgetObj = plan.AnnotObjects[i];
+            (int onApObj, int offApObj) = plan.WidgetApObjects[i];
+            string onState = EscapePdfName(option.Value);
+            bool isSelected = radioGroup.SelectedValue == option.Value;
+
+            double w = Math.Abs(option.Rect.Right - option.Rect.Left);
+            double h = Math.Abs(option.Rect.Top - option.Rect.Bottom);
+
+            WriteObjectStart(writer, widgetObj);
+            writer.WriteLine("<<");
+            writer.WriteLine("   /Type /Annot");
+            writer.WriteLine("   /Subtype /Widget");
+            writer.WriteLine($"   /Parent {parentObj} 0 R");
+            writer.WriteLine($"   /Rect [{option.Rect.Left:F2} {option.Rect.Bottom:F2} {option.Rect.Right:F2} {option.Rect.Top:F2}]");
+            writer.WriteLine($"   /P {pageObj} 0 R");
+            writer.WriteLine($"   /F 4"); // Print flag — so the filled radio prints, not just displays.
+            writer.WriteLine($"   /AS /{(isSelected ? onState : "Off")}");
+            // Appearance-state dictionary referencing real Form-XObject streams (drawn below).
+            // The on-state key must equal the option's export value (used by /V and Select(...)).
+            writer.WriteLine($"   /AP << /N << /{onState} {onApObj} 0 R /Off {offApObj} 0 R >> >>");
+
+            // No rectangular /BS border: a radio's visible border is the CIRCLE drawn by the
+            // appearance stream. Emitting /BS << /S /S >> would make viewers draw a square box
+            // around the widget rect (and Acrobat tints it with its field highlight), which is
+            // exactly the "purplish square" artifact we want to avoid.
+
+            // Border / background colours (MK dictionary) — emitted only when explicitly set.
+            if (radioGroup.BorderColor.HasValue || radioGroup.BackgroundColor.HasValue)
+            {
+                writer.WriteLine("   /MK <<");
+                if (radioGroup.BorderColor.HasValue)
+                {
+                    PdfColor bc = radioGroup.BorderColor.Value;
+                    writer.WriteLine($"      /BC [{bc.R:F3} {bc.G:F3} {bc.B:F3}]");
+                }
+                if (radioGroup.BackgroundColor.HasValue)
+                {
+                    PdfColor bg = radioGroup.BackgroundColor.Value;
+                    writer.WriteLine($"      /BG [{bg.R:F3} {bg.G:F3} {bg.B:F3}]");
+                }
+                writer.WriteLine("   >>");
+            }
+
+            writer.WriteLine(">>");
+            WriteObjectEnd(writer);
+
+            // Appearance streams: a stroked ring for /Off, ring + filled centre dot for the on-state.
+            // Drawn as vector paths so they render in any viewer without depending on dingbat fonts.
+            WriteRadioAppearanceStream(writer, offApObj, w, h, filled: false);
+            WriteRadioAppearanceStream(writer, onApObj, w, h, filled: true);
+        }
+    }
+
+    /// <summary>
+    /// Writes one radio-button Form-XObject appearance stream: a stroked circle outline, plus a
+    /// filled centre dot when <paramref name="filled"/> is true (the selected/on state).
+    /// </summary>
+    private void WriteRadioAppearanceStream(StreamWriter writer, int objectNumber, double w, double h, bool filled)
+    {
+        string N(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+
+        double cx = w / 2.0, cy = h / 2.0;
+        double lineWidth = Math.Max(0.5, Math.Min(w, h) * 0.06);
+        double rRing = Math.Min(w, h) / 2.0 - lineWidth; // inset so the stroke stays inside the BBox
+        double rDot = Math.Min(w, h) * 0.22;
+
+        // 4-Bézier circle approximation (k = 0.5523·r) centred at (cx, cy) with radius r.
+        string Circle(double r)
+        {
+            double k = r * 0.5523;
+            return
+                $"{N(cx + r)} {N(cy)} m\n" +
+                $"{N(cx + r)} {N(cy + k)} {N(cx + k)} {N(cy + r)} {N(cx)} {N(cy + r)} c\n" +
+                $"{N(cx - k)} {N(cy + r)} {N(cx - r)} {N(cy + k)} {N(cx - r)} {N(cy)} c\n" +
+                $"{N(cx - r)} {N(cy - k)} {N(cx - k)} {N(cy - r)} {N(cx)} {N(cy - r)} c\n" +
+                $"{N(cx + k)} {N(cy - r)} {N(cx + r)} {N(cy - k)} {N(cx + r)} {N(cy)} c";
+        }
+
+        var sb = new StringBuilder();
+        sb.Append("q\n");
+        sb.Append($"{N(lineWidth)} w\n0 G\n");
+        sb.Append(Circle(rRing) + "\nS\n");
+        if (filled)
+        {
+            sb.Append("0 g\n");
+            sb.Append(Circle(rDot) + "\nf\n");
+        }
+        sb.Append("Q");
+
+        byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
+        byte[] streamData = _encryptor != null ? EncryptStream(data, objectNumber) : data;
+
+        WriteObjectStart(writer, objectNumber);
+        writer.WriteLine("<< /Type /XObject /Subtype /Form");
+        writer.WriteLine($"   /BBox [0 0 {N(w)} {N(h)}]");
+        writer.WriteLine("   /Matrix [1 0 0 1 0 0]");
+        writer.WriteLine($"   /Length {streamData.Length} >>");
+        writer.WriteLine("stream");
+        writer.Flush();
+        writer.BaseStream.Write(streamData);
+        writer.WriteLine();
+        writer.WriteLine("endstream");
+        WriteObjectEnd(writer);
+    }
+
+    /// <summary>
+    /// Escapes a string for use as a PDF name token (ISO 32000-1 §7.3.5): characters outside the
+    /// regular-character range are written as <c>#xx</c> two-digit hex.
+    /// </summary>
+    private static string EscapePdfName(string value)
+    {
+        var sb = new StringBuilder(value.Length);
+        foreach (char c in value)
+        {
+            // Regular name characters: 0x21–0x7E excluding the delimiter/whitespace set and '#'.
+            if (c is > (char)0x20 and < (char)0x7F && c != '#'
+                && c is not ('/' or '%' or '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}'))
+            {
+                sb.Append(c);
+            }
+            else
+            {
+                foreach (byte b in Encoding.UTF8.GetBytes(c.ToString()))
+                    sb.Append('#').Append(b.ToString("X2"));
+            }
+        }
+        return sb.ToString();
     }
 
     private void WriteFormField(StreamWriter writer, int objectNumber, PdfFormFieldBuilder field, int pageObj, List<string> fonts)

@@ -202,6 +202,56 @@ public class FlattenTests
     }
 
     [Fact]
+    public void FlattenAll_RadioGroup_BakesAppearance_AndRemovesWidgets()
+    {
+        // Radios use a STATE-KEYED /AP /N (<< /A <stream> /Off <stream> >>), not a single stream.
+        // The flattener must select the stream named by each widget's /AS, bake it into page
+        // content, and remove the widget — otherwise orphaned widgets linger (Adobe prunes them
+        // on resave, making the radios vanish).
+        byte[] originalPdf = PdfDocumentBuilder.Create()
+            .WithAcroForm(_ => { })
+            .AddPage(p =>
+            {
+                p.AddRadioGroup("choice")
+                    .AddOptionInches("A", 1.0, 9.0)
+                    .AddOptionInches("B", 1.0, 8.5)
+                    .Select("A");
+            })
+            .ToByteArray();
+
+        string outPath = Path.GetTempFileName();
+        try
+        {
+            using (PdfDocument doc = PdfDocument.Load(new MemoryStream(originalPdf)))
+            {
+                PdfDocumentEditor edit = doc.Edit();
+                edit.Forms.Flatten();
+                edit.Save(outPath);
+            }
+
+            byte[] flatBytes = File.ReadAllBytes(outPath);
+
+            // No orphaned radio widgets remain in /Annots.
+            Assert.Equal(0, CountWidgetsForField(flatBytes, "choice"));
+
+            // The appearance is baked into page content (one Do per option = two).
+            string contents = DecodePageContents(flatBytes);
+            int doCount = 0;
+            for (int i = contents.IndexOf("Do", StringComparison.Ordinal); i >= 0;
+                 i = contents.IndexOf("Do", i + 2, StringComparison.Ordinal))
+                doCount++;
+            Assert.Equal(2, doCount);
+
+            // No interactive form remains.
+            Assert.False(HasAcroFormWithFields(flatBytes));
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+    [Fact]
     public void FlattenAll_BakesDoIntoPageContent()
     {
         byte[] originalPdf = FormTestDocs.WithTextField("name");

@@ -41,16 +41,42 @@ internal static class FormFlattener
             PdfLibrary.Core.PdfObject? nRaw = apDict.Get(new PdfName("N"));
             if (nRaw is null) continue;
 
-            // Resolve to ensure it is a Form-XObject stream.
             PdfLibrary.Core.PdfObject? nResolved = Resolve(doc, nRaw);
-            if (nResolved is not PdfStream nStream) continue;
-            // Verify /Subtype /Form
-            PdfLibrary.Core.PdfObject? subtypeRaw = nStream.Dictionary.Get(new PdfName("Subtype"));
-            if (subtypeRaw is not PdfName { Value: "Form" }) continue;
 
-            // Ensure we have an indirect reference to the XObject (needed for RegisterXObject).
-            PdfIndirectReference apRef = nRaw as PdfIndirectReference
-                ?? doc.RegisterObject(nStream);
+            // /AP /N is either a single Form-XObject stream (text fields, push-buttons) or a
+            // state-keyed sub-dictionary (check boxes, radio buttons):
+            //   << /<onState> <stream> /Off <stream> >>
+            // For the state-keyed case, bake the stream named by the widget's /AS — the appearance
+            // that is currently visible. Falling through without handling this (the old behaviour)
+            // left the widget un-painted AND un-removed: an orphaned /Widget whose /Parent points at
+            // a now-deleted field, which Adobe prunes on resave (the radios "disappear").
+            PdfStream? nStream = null;
+            PdfIndirectReference? apRef = null;
+
+            if (nResolved is PdfStream singleStream)
+            {
+                nStream = singleStream;
+                apRef = nRaw as PdfIndirectReference ?? doc.RegisterObject(singleStream);
+            }
+            else if (nResolved is PdfDictionary stateDict)
+            {
+                string asState = widget.Get(new PdfName("AS")) is PdfName asName ? asName.Value : "Off";
+                PdfLibrary.Core.PdfObject? stateRaw = stateDict.Get(new PdfName(asState));
+                if (stateRaw is not null && Resolve(doc, stateRaw) is PdfStream stateStream)
+                {
+                    nStream = stateStream;
+                    apRef = stateRaw as PdfIndirectReference ?? doc.RegisterObject(stateStream);
+                }
+            }
+
+            // Verify we resolved a Form-XObject to paint. If not (e.g. the /Off state has no stream),
+            // still remove the widget so it does not linger as an orphan.
+            if (nStream is null || apRef is null ||
+                nStream.Dictionary.Get(new PdfName("Subtype")) is not PdfName { Value: "Form" })
+            {
+                RemoveWidgetFromAnnots(doc, owningPage, widget);
+                continue;
+            }
 
             // Register the XObject as a resource on the page.
             string xobjName = PageContentComposer.RegisterXObject(doc, owningPage, apRef);
