@@ -24,7 +24,7 @@
     <!-- NuGet Package Metadata -->
     <PackageId>Lxman.PdfLibrary.Rendering.Wpf</PackageId>
     <Title>PdfLibrary.Rendering.Wpf</Title>
-    <Version>2.0.0</Version>
+    <Version>2.1.0</Version>
     <Authors>Michael Jordan</Authors>
     <Description>WPF rendering backend for PdfLibrary. Renders PDF pages to retained WPF DrawingGroup vector visuals for crisp, zoomable display, and provides the geometry to overlay native controls on form fields. Windows-only (WPF). Pairs with the Lxman.PdfLibrary core package on .NET 8, 9, and 10.</Description>
     <PackageTags>pdf;pdf-renderer;wpf;rendering;vector;forms;windows;csharp</PackageTags>

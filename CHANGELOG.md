@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-28
+
+Minor release: markup-annotation authoring/editing with real appearance generation, a richer annotation reader, and two annotation/forms correctness fixes. Additive and back-compatible.
+
+### Added
+
+- **Markup annotations on existing documents** via `PdfDocumentEditor.Pages` (the editing-add path): `AddSquare`, `AddCircle`, `AddLine`, `AddInk`, `AddFreeText`. Each returns a stable annotation id and generates a real `/AP /N` appearance stream, so the annotation renders in this library's `PdfRenderer` and in external viewers.
+- **Markup annotations when authoring new documents** via `PdfPageBuilder`: `AddSquare`, `AddCircle`, `AddLine`, `AddInk`, `AddFreeText` — mirrored through `PdfDocumentWriter`, which now emits an `/AP` appearance stream per annotation (both paths share one content generator so the drawn appearance is identical).
+- **`/AP` for Highlight and Note (Text) annotations** — the existing `AddHighlight` / `AddNote` add paths now generate appearance streams too, so they render in this library's renderer (previously they only showed in viewers that synthesize their own appearances).
+- **Richer annotation reader.** `PdfAnnotationInfo` gains `AnnotationId` (stable PDF object number), `StrokeColor` (`/C`), `InteriorColor` (`/IC`), `BorderWidth` (`/BS /W`), `LineEndpoints` (`/L`), `InkPaths` (`/InkList`), `Quadding` (`/Q`), and `DefaultAppearance` (`/DA`).
+- **`PdfPageCollection.RemoveAnnotation(int page, int annotationId)`** — identity-based deletion (the positional `RemoveAnnotationAt` remains for back-compat).
+
+### Fixed
+
+- **`PdfRadioGroupBuilder` emitted unusable radio fields.** The builder wrote a single zero-rect object with no `/FT`, `/Ff`, `/Kids`, `/V`, or `/AP`, so radio groups read back as `Unknown`. The writer now emits a parent `/Btn` field plus one widget per option, each with a real vector-circle `/AP` appearance (ring for off, ring + dot for on), and no rectangular `/BS` border.
+- **Flattening lost radios/checkboxes in Acrobat.** `FormFlattener` only baked single-stream `/AP /N`; for state-keyed button appearances it skipped painting AND removing the widget, leaving orphaned widgets that Adobe pruned on resave. It now bakes the stream named by each widget's `/AS` and removes the widget.
+
 ## [2.0.0] - 2026-06-27
 
 Major release: SkiaSharp-free core, geometry-only renderer SPI, WPF render target, fillable-forms viewer, and a set of breaking API cleanups that could not be done in a 1.x patch.
