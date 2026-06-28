@@ -33,4 +33,16 @@ public sealed class PdfAnnotationInfo
 
     /// <summary>The annotation's border width (<c>/BS /W</c>), or null if absent.</summary>
     public double? BorderWidth { get; init; }
+
+    /// <summary>The line endpoints (<c>/L</c>) for a Line annotation, in PDF user space, or null.</summary>
+    public (double X1, double Y1, double X2, double Y2)? LineEndpoints { get; init; }
+
+    /// <summary>The freehand paths (<c>/InkList</c>) for an Ink annotation, in PDF user space, or null.</summary>
+    public IReadOnlyList<IReadOnlyList<(double X, double Y)>>? InkPaths { get; init; }
+
+    /// <summary>The text-justification (<c>/Q</c>) for a FreeText annotation (0=left,1=center,2=right), or null.</summary>
+    public int? Quadding { get; init; }
+
+    /// <summary>The default-appearance string (<c>/DA</c>) for a FreeText annotation, or null.</summary>
+    public string? DefaultAppearance { get; init; }
 }

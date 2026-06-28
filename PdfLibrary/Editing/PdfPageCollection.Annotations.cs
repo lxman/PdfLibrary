@@ -49,6 +49,50 @@ public sealed partial class PdfPageCollection
         return PdfPageAnnotator.AddSquare(_document, page, PageRef(index), rect, stroke, fill, width);
     }
 
+    /// <summary>
+    /// Adds a Circle (ellipse) markup annotation inscribed in <paramref name="rect"/>. See
+    /// <see cref="AddSquare(int, PdfRect, PdfColor, PdfColor?, double)"/> for parameter semantics.
+    /// Returns the annotation's stable id.
+    /// </summary>
+    public int AddCircle(int index, PdfRect rect, PdfColor stroke, PdfColor? fill = null, double width = 1.0)
+    {
+        PdfDictionary page = PageAt(index);
+        return PdfPageAnnotator.AddCircle(_document, page, PageRef(index), rect, stroke, fill, width);
+    }
+
+    /// <summary>
+    /// Adds a Line markup annotation between (<paramref name="x1"/>, <paramref name="y1"/>) and
+    /// (<paramref name="x2"/>, <paramref name="y2"/>) in PDF user space. The annotation rectangle is
+    /// the endpoints' bounding box padded by the border width. Returns the annotation's stable id.
+    /// </summary>
+    public int AddLine(int index, double x1, double y1, double x2, double y2, PdfColor color, double width = 1.0)
+    {
+        PdfDictionary page = PageAt(index);
+        return PdfPageAnnotator.AddLine(_document, page, PageRef(index), x1, y1, x2, y2, color, width);
+    }
+
+    /// <summary>
+    /// Adds an Ink (freehand) markup annotation made of one or more polyline <paramref name="paths"/>
+    /// in PDF user space. The annotation rectangle is the bounding box of all points padded by the
+    /// border width. Returns the annotation's stable id.
+    /// </summary>
+    public int AddInk(int index, IReadOnlyList<IReadOnlyList<(double X, double Y)>> paths, PdfColor color, double width = 1.0)
+    {
+        PdfDictionary page = PageAt(index);
+        return PdfPageAnnotator.AddInk(_document, page, PageRef(index), paths, color, width);
+    }
+
+    /// <summary>
+    /// Adds a FreeText annotation showing <paramref name="text"/> within <paramref name="rect"/> at the
+    /// given <paramref name="fontSize"/> and <paramref name="color"/> (Helvetica). <paramref name="quadding"/>
+    /// is 0=left, 1=center, 2=right. Returns the annotation's stable id.
+    /// </summary>
+    public int AddFreeText(int index, PdfRect rect, string text, double fontSize, PdfColor color, int quadding = 0)
+    {
+        PdfDictionary page = PageAt(index);
+        return PdfPageAnnotator.AddFreeText(_document, page, PageRef(index), rect, text, fontSize, color, quadding);
+    }
+
     /// <summary>Returns a read-only snapshot of the annotations on the page at <paramref name="index"/> (empty if none).</summary>
     public IReadOnlyList<PdfAnnotationInfo> GetAnnotations(int index)
     {
@@ -69,7 +113,11 @@ public sealed partial class PdfPageCollection
                 AnnotationId = entry is PdfIndirectReference er ? er.ObjectNumber : 0,
                 StrokeColor = ReadColor(annot, "C"),
                 InteriorColor = ReadColor(annot, "IC"),
-                BorderWidth = ReadBorderWidth(annot)
+                BorderWidth = ReadBorderWidth(annot),
+                LineEndpoints = ReadLineEndpoints(annot),
+                InkPaths = ReadInkPaths(annot),
+                Quadding = Resolve(annot.Get(new PdfName("Q"))) is PdfInteger q ? (int)q.Value : null,
+                DefaultAppearance = Resolve(annot.Get(new PdfName("DA"))) is PdfString da ? da.GetText() : null
             });
         }
         return result;
@@ -119,6 +167,37 @@ public sealed partial class PdfPageCollection
             PdfInteger n => n.Value,
             _ => null
         };
+    }
+
+    private static double AnnotNum(PdfObject? obj) => obj switch
+    {
+        PdfReal r => r.Value,
+        PdfInteger n => n.Value,
+        _ => 0
+    };
+
+    private (double X1, double Y1, double X2, double Y2)? ReadLineEndpoints(PdfDictionary annot)
+    {
+        if (Resolve(annot.Get(new PdfName("L"))) is not PdfArray { Count: >= 4 } a)
+            return null;
+        return (AnnotNum(Resolve(a[0])), AnnotNum(Resolve(a[1])), AnnotNum(Resolve(a[2])), AnnotNum(Resolve(a[3])));
+    }
+
+    private IReadOnlyList<IReadOnlyList<(double X, double Y)>>? ReadInkPaths(PdfDictionary annot)
+    {
+        if (Resolve(annot.Get(new PdfName("InkList"))) is not PdfArray inkList)
+            return null;
+
+        var paths = new List<IReadOnlyList<(double X, double Y)>>();
+        foreach (PdfObject pathObj in inkList)
+        {
+            if (Resolve(pathObj) is not PdfArray pts) continue;
+            var points = new List<(double X, double Y)>();
+            for (int i = 0; i + 1 < pts.Count; i += 2)
+                points.Add((AnnotNum(Resolve(pts[i])), AnnotNum(Resolve(pts[i + 1]))));
+            paths.Add(points);
+        }
+        return paths;
     }
 
     /// <summary>
