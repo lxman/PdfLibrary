@@ -84,13 +84,15 @@ public sealed partial class PdfPageCollection
 
     /// <summary>
     /// Adds a FreeText annotation showing <paramref name="text"/> within <paramref name="rect"/> at the
-    /// given <paramref name="fontSize"/> and <paramref name="color"/> (Helvetica). <paramref name="quadding"/>
-    /// is 0=left, 1=center, 2=right. Returns the annotation's stable id.
+    /// given <paramref name="fontSize"/> and <paramref name="color"/>. <paramref name="quadding"/>
+    /// is 0=left, 1=center, 2=right. <paramref name="fontName"/> is a standard-14 /DA resource name
+    /// (Helv, HeBo, TiRo, Cour, …; default Helv). Returns the annotation's stable id.
     /// </summary>
-    public int AddFreeText(int index, PdfRect rect, string text, double fontSize, PdfColor color, int quadding = 0)
+    public int AddFreeText(int index, PdfRect rect, string text, double fontSize, PdfColor color,
+        int quadding = 0, string fontName = "Helv")
     {
         PdfDictionary page = PageAt(index);
-        return PdfPageAnnotator.AddFreeText(_document, page, PageRef(index), rect, text, fontSize, color, quadding);
+        return PdfPageAnnotator.AddFreeText(_document, page, PageRef(index), rect, text, fontSize, color, quadding, fontName);
     }
 
     /// <summary>Returns a read-only snapshot of the annotations on the page at <paramref name="index"/> (empty if none).</summary>

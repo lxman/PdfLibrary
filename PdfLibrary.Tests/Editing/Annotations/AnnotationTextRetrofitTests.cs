@@ -92,6 +92,23 @@ public class AnnotationTextRetrofitTests
     }
 
     [Fact]
+    public void AddFreeText_WithFont_RoundTripsFontInDa()
+    {
+        var rect = new PdfRect(100, 600, 400, 660);
+        byte[] saved;
+        using (var ms = new MemoryStream(BlankPage()))
+        using (PdfDocumentEditor editor = PdfDocumentEditor.Open(ms))
+        {
+            editor.Pages.AddFreeText(0, rect, "Times text", 18.0, PdfColor.Black, quadding: 0, fontName: "TiRo");
+            saved = SaveToBytes(editor);
+        }
+        using var ms2 = new MemoryStream(saved);
+        using PdfDocumentEditor reopened = PdfDocumentEditor.Open(ms2);
+        PdfAnnotationInfo a = Assert.Single(reopened.Pages.GetAnnotations(0));
+        Assert.Contains("/TiRo", a.DefaultAppearance);
+    }
+
+    [Fact]
     public void AddHighlight_NowGeneratesAp_AndRenders()
     {
         var rect = new PdfRect(100, 600, 300, 620);

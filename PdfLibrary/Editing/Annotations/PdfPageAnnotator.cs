@@ -54,12 +54,13 @@ internal static class PdfPageAnnotator
 
     /// <summary>Adds a FreeText annotation and generates its /AP. Returns the annotation's object number.</summary>
     internal static int AddFreeText(PdfDocument doc, PdfDictionary page, PdfIndirectReference pageRef,
-        PdfRect rect, string text, double fontSize, PdfColor color, int quadding)
+        PdfRect rect, string text, double fontSize, PdfColor color, int quadding, string fontName = "Helv")
     {
         PdfDictionary annot = NewAnnot(doc, page, pageRef, "FreeText", rect, out PdfIndirectReference annotRef);
         annot[new PdfName("Contents")] = PdfString.FromText(text);
         string da = string.Format(CultureInfo.InvariantCulture,
-            "/Helv {0:0.####} Tf {1:0.###} {2:0.###} {3:0.###} rg", fontSize, color.R, color.G, color.B);
+            "/{0} {1:0.####} Tf {2:0.###} {3:0.###} {4:0.###} rg",
+            string.IsNullOrEmpty(fontName) ? "Helv" : fontName, fontSize, color.R, color.G, color.B);
         annot[new PdfName("DA")] = PdfString.FromText(da);
         annot[new PdfName("Q")] = new PdfInteger(quadding);
 
