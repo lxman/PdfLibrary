@@ -382,11 +382,13 @@ internal static class FormFieldTree
             var widgets = new List<PdfFieldWidget>(field.WidgetDicts.Count);
             foreach (PdfDictionary wd in field.WidgetDicts)
             {
-                int pageIndex = -1;
-                if (wd.IsIndirect)
-                    pageByObjNum.TryGetValue(wd.ObjectNumber, out pageIndex);
-                else
-                    pageByDirectRef.TryGetValue(wd, out pageIndex);
+                // -1 means "not referenced by any page's /Annots" (an orphan widget). Capture the
+                // TryGetValue result explicitly: on a miss it writes default(int) == 0 to the
+                // out-param, which would otherwise masquerade as "lives on page 0".
+                bool found = wd.IsIndirect
+                    ? pageByObjNum.TryGetValue(wd.ObjectNumber, out int pageIndex)
+                    : pageByDirectRef.TryGetValue(wd, out pageIndex);
+                if (!found) pageIndex = -1;
 
                 PdfRect rect = ReadRect(doc, wd);
                 string? onState = GetWidgetOnStateNames(doc, wd).FirstOrDefault(s => s != "Off");

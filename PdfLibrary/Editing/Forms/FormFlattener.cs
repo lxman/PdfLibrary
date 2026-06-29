@@ -25,6 +25,12 @@ internal static class FormFlattener
         // which page owns each widget by scanning /Annots.
         List<PdfDictionary> pages = GetAllPageDicts(doc);
 
+        // RC2: a valued text/choice field may carry no /AP yet — XFA/LiveCycle forms ship widgets
+        // with no appearance streams and rely on the viewer to draw the value. Generate one now so
+        // there is a Form-XObject to bake below; otherwise the value would vanish when the widget
+        // is removed (silent data loss).
+        EnsureBakeableAppearance(doc, field);
+
         foreach (PdfDictionary widget in field.WidgetDicts)
         {
             // Find the owning page: the page whose /Annots array contains this widget.
@@ -36,10 +42,21 @@ internal static class FormFlattener
             // Resolve /AP /N to a Form-XObject stream.
             PdfLibrary.Core.PdfObject? apRaw = widget.Get(new PdfName("AP"));
             PdfLibrary.Core.PdfObject? apResolved = Resolve(doc, apRaw);
-            if (apResolved is not PdfDictionary apDict) continue;
+            if (apResolved is not PdfDictionary apDict)
+            {
+                // No appearance at all. A full flatten must not leave the widget behind, but we must
+                // also not drop a value we failed to render — remove only when there is nothing to
+                // bake (RC2 clean-up / RC3 no-data-loss).
+                if (!FieldHasValue(field)) RemoveWidgetFromAnnots(doc, owningPage, widget);
+                continue;
+            }
 
             PdfLibrary.Core.PdfObject? nRaw = apDict.Get(new PdfName("N"));
-            if (nRaw is null) continue;
+            if (nRaw is null)
+            {
+                if (!FieldHasValue(field)) RemoveWidgetFromAnnots(doc, owningPage, widget);
+                continue;
+            }
 
             PdfLibrary.Core.PdfObject? nResolved = Resolve(doc, nRaw);
 
@@ -74,7 +91,9 @@ internal static class FormFlattener
             if (nStream is null || apRef is null ||
                 nStream.Dictionary.Get(new PdfName("Subtype")) is not PdfName { Value: "Form" })
             {
-                RemoveWidgetFromAnnots(doc, owningPage, widget);
+                // Could not resolve a Form to paint (e.g. an /Off state with no stream). Remove only
+                // when there is no value to lose, mirroring the no-/AP case above (RC3).
+                if (!FieldHasValue(field)) RemoveWidgetFromAnnots(doc, owningPage, widget);
                 continue;
             }
 
@@ -114,6 +133,27 @@ internal static class FormFlattener
     }
 
     /// <summary>
+    /// True when the document is a <i>dynamic</i> XFA form: an <c>/AcroForm /XFA</c> is present but
+    /// there are no positioned AcroForm widgets to bake (the form's layout/data live only in the XFA
+    /// template, which PdfLibrary does not render). Such a form cannot be flattened — and must not be,
+    /// since dropping /XFA would leave only the placeholder shell. Hybrid forms (XFA + a full AcroForm,
+    /// e.g. the IRS W-2) return false: their AcroForm representation is bakeable.
+    /// </summary>
+    public static bool IsDynamicXfa(PdfDocument doc)
+    {
+        if (!HasXfa(doc)) return false;
+        // Hybrid forms have at least one widget placed on a page; dynamic forms have none.
+        return !FormFieldTree.Read(doc).Any(f => f.Widgets.Any(w => w.PageIndex >= 0));
+    }
+
+    private static bool HasXfa(PdfDocument doc)
+    {
+        if (doc.CatalogDictionary is not { } catalog) return false;
+        if (Resolve(doc, catalog.Get(new PdfName("AcroForm"))) is not PdfDictionary acro) return false;
+        return acro.Get(new PdfName("XFA")) is not null;
+    }
+
+    /// <summary>
     /// Flattens all terminal fields. After flattening, if /Fields is empty, removes /AcroForm
     /// from the catalog.
     /// </summary>
@@ -130,6 +170,25 @@ internal static class FormFlattener
     }
 
     // ─── Private helpers ────────────────────────────────────────────────────────
+
+    /// <summary>True if the field carries a value worth baking (so its widget must not be removed
+    /// without painting). Empty fields have nothing to lose and can be removed during flatten.</summary>
+    private static bool FieldHasValue(PdfFormField field) => field switch
+    {
+        PdfTextField t    => !string.IsNullOrEmpty(t.Value),
+        PdfChoiceField c  => c.SelectedValues.Count > 0,
+        PdfButtonField b  => b.IsChecked || b.SelectedOption is not null,
+        _                 => false
+    };
+
+    /// <summary>Generates a normal appearance for a valued text/choice field that may lack one, so
+    /// flatten has a Form-XObject to bake. Buttons are state-keyed and already carry their /AP.</summary>
+    private static void EnsureBakeableAppearance(PdfDocument doc, PdfFormField field)
+    {
+        if (!FieldHasValue(field)) return;
+        if (field is PdfTextField or PdfChoiceField)
+            FieldAppearanceGenerator.Regenerate(doc, field);
+    }
 
     private static List<PdfDictionary> GetAllPageDicts(PdfDocument doc)
     {
@@ -215,42 +274,63 @@ internal static class FormFlattener
     }
 
     /// <summary>
-    /// Removes the field dict from /AcroForm /Fields (top-level entries only, by identity/object number).
+    /// Removes the field dict from the AcroForm field tree. The W-2 (and any LiveCycle/XFA form)
+    /// nests terminal fields under subforms — e.g. <c>topmostSubform[0].CopyA[0].Col_Left[0].f2_04[0]</c>
+    /// — so the target dict is a kid-of-a-kid, never a direct entry of <c>/AcroForm /Fields</c>.
+    /// Scanning only the top level (the old behaviour) silently no-ops on those forms, leaving every
+    /// field live after flatten. This walks the tree, removes the target wherever it sits, and prunes
+    /// any parent subform left with an empty <c>/Kids</c>.
     /// </summary>
     private static void RemoveFieldFromAcroForm(PdfDocument doc, PdfDictionary fieldDict)
     {
         PdfDictionary? catalog = doc.CatalogDictionary;
         if (catalog is null) return;
 
-        PdfLibrary.Core.PdfObject? acroRaw = catalog.Get(new PdfName("AcroForm"));
-        PdfLibrary.Core.PdfObject? acroResolved = Resolve(doc, acroRaw);
-        if (acroResolved is not PdfDictionary acro) return;
+        if (Resolve(doc, catalog.Get(new PdfName("AcroForm"))) is not PdfDictionary acro) return;
+        if (Resolve(doc, acro.Get(new PdfName("Fields"))) is not PdfArray fields) return;
 
-        PdfLibrary.Core.PdfObject? fieldsRaw = acro.Get(new PdfName("Fields"));
-        PdfLibrary.Core.PdfObject? fieldsResolved = Resolve(doc, fieldsRaw);
-        if (fieldsResolved is not PdfArray fields) return;
+        RemoveFromFieldArray(doc, fields, fieldDict);
+    }
 
-        var toRemove = new List<int>();
-        for (int i = 0; i < fields.Count; i++)
+    /// <summary>
+    /// Recursively removes <paramref name="target"/> from <paramref name="container"/> (a /Fields or
+    /// /Kids array). Returns true once found. After descending into a subform's /Kids, the now-empty
+    /// subform is pruned from its own container.
+    /// </summary>
+    private static bool RemoveFromFieldArray(PdfDocument doc, PdfArray container, PdfDictionary target)
+    {
+        for (int i = 0; i < container.Count; i++)
         {
-            PdfLibrary.Core.PdfObject entry = fields[i];
-            bool match = false;
-            if (entry is PdfIndirectReference ir)
+            PdfLibrary.Core.PdfObject entry = container[i];
+            if (EntryMatches(doc, entry, target))
             {
-                if (fieldDict.IsIndirect && fieldDict.ObjectNumber == ir.ObjectNumber)
-                    match = true;
-                else if (ReferenceEquals(doc.GetObject(ir.ObjectNumber), fieldDict))
-                    match = true;
+                container.RemoveAt(i);
+                return true;
             }
-            else if (ReferenceEquals(entry, fieldDict))
-            {
-                match = true;
-            }
-            if (match) toRemove.Add(i);
-        }
 
-        for (int i = toRemove.Count - 1; i >= 0; i--)
-            fields.RemoveAt(toRemove[i]);
+            if (Resolve(doc, entry) is not PdfDictionary entryDict) continue;
+            if (Resolve(doc, entryDict.Get(new PdfName("Kids"))) is not PdfArray kids) continue;
+
+            if (RemoveFromFieldArray(doc, kids, target))
+            {
+                // Prune the parent subform if flattening emptied its /Kids.
+                if (Resolve(doc, entryDict.Get(new PdfName("Kids"))) is PdfArray { Count: 0 })
+                    container.RemoveAt(i);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>Matches an array entry against a field dict by object number (indirect) or reference.</summary>
+    private static bool EntryMatches(PdfDocument doc, PdfLibrary.Core.PdfObject entry, PdfDictionary target)
+    {
+        if (entry is PdfIndirectReference ir)
+        {
+            if (target.IsIndirect && target.ObjectNumber == ir.ObjectNumber) return true;
+            return ReferenceEquals(doc.GetObject(ir.ObjectNumber), target);
+        }
+        return ReferenceEquals(entry, target);
     }
 
     /// <summary>
