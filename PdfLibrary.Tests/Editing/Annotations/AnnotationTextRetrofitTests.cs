@@ -44,6 +44,31 @@ public class AnnotationTextRetrofitTests
         return false;
     }
 
+    private static PdfObject? Res(PdfDocument d, PdfObject? x) =>
+        x is PdfIndirectReference r ? d.GetObject(r.ObjectNumber) : x;
+
+    /// <summary>Reads the /BaseFont of the first font in the annotation's /AP /N /Resources /Font.</summary>
+    private static string? SavedAnnotApBaseFont(byte[] pdf, string subtype)
+    {
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        PdfArray? annots = doc.GetPage(0)!.GetAnnotations();
+        if (annots is null) return null;
+        foreach (PdfObject entry in annots)
+        {
+            if (Res(doc, entry) is not PdfDictionary annot) continue;
+            if (annot.Get(new PdfName("Subtype")) is not PdfName sn || sn.Value != subtype) continue;
+            if (Res(doc, annot.Get(new PdfName("AP"))) is not PdfDictionary ap) continue;
+            if (Res(doc, ap.Get(new PdfName("N"))) is not PdfStream n) continue;
+            if (Res(doc, n.Dictionary.Get(new PdfName("Resources"))) is not PdfDictionary res) continue;
+            if (Res(doc, res.Get(new PdfName("Font"))) is not PdfDictionary fontDict) continue;
+            foreach (KeyValuePair<PdfName, PdfObject> kv in fontDict)
+                if (Res(doc, kv.Value) is PdfDictionary fd && fd.Get(new PdfName("BaseFont")) is PdfName bf)
+                    return bf.Value;
+        }
+        return null;
+    }
+
     private static int RenderNonWhiteInRect(byte[] pdf, PdfRect rect)
     {
         using var ms = new MemoryStream(pdf);
@@ -106,6 +131,25 @@ public class AnnotationTextRetrofitTests
         using PdfDocumentEditor reopened = PdfDocumentEditor.Open(ms2);
         PdfAnnotationInfo a = Assert.Single(reopened.Pages.GetAnnotations(0));
         Assert.Contains("/TiRo", a.DefaultAppearance);
+    }
+
+    [Theory]
+    [InlineData("TiRo", "Times-Roman")]
+    [InlineData("Cour", "Courier")]
+    [InlineData("HeBo", "Helvetica-Bold")]
+    public void AddFreeText_WithFont_BakesAppearanceWithThatBaseFont(string fontName, string expectedBaseFont)
+    {
+        var rect = new PdfRect(100, 600, 400, 660);
+        byte[] saved;
+        using (var ms = new MemoryStream(BlankPage()))
+        using (PdfDocumentEditor editor = PdfDocumentEditor.Open(ms))
+        {
+            editor.Pages.AddFreeText(0, rect, "Glyphs", 18.0, PdfColor.Black, quadding: 0, fontName: fontName);
+            saved = SaveToBytes(editor);
+        }
+        Assert.True(SavedAnnotHasApN(saved, "FreeText"));
+        Assert.True(RenderNonWhiteInRect(saved, rect) > 0, $"{fontName} FreeText did not render");
+        Assert.Equal(expectedBaseFont, SavedAnnotApBaseFont(saved, "FreeText"));
     }
 
     [Fact]

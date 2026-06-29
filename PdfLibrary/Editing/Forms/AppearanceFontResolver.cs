@@ -52,12 +52,7 @@ internal static class AppearanceFontResolver
 
         // Synthesise a standard-14 Type1 font and register it
         string resName = string.IsNullOrEmpty(daFontName) ? "Helv" : daFontName;
-        string baseFont = resName switch
-        {
-            "ZaDb" => "ZapfDingbats",
-            "Symbol" => "Symbol",
-            _ => "Helvetica"
-        };
+        string baseFont = Standard14FontMap.BaseFont(resName);
 
         var synthesized = new PdfDictionary
         {
