@@ -772,10 +772,17 @@ public class PdfPageBuilder(PdfSize size)
         return this;
     }
 
-    /// <summary>Adds a FreeText markup annotation showing <paramref name="text"/> within <paramref name="rect"/> (PDF user space).</summary>
-    public PdfPageBuilder AddFreeText(PdfRect rect, string text, double fontSize, PdfColor color, int quadding = 0)
+    /// <summary>Adds a FreeText markup annotation showing <paramref name="text"/> within <paramref name="rect"/>
+    /// (PDF user space). <paramref name="fontName"/> is a standard-14 /DA resource name (Helv, HeBo, TiRo,
+    /// Cour, …; default Helv).</summary>
+    public PdfPageBuilder AddFreeText(PdfRect rect, string text, double fontSize, PdfColor color,
+        int quadding = 0, string fontName = "Helv")
     {
-        _annotations.Add(new PdfFreeTextAnnotation(rect) { Text = text, FontSize = fontSize, Color = color, Quadding = quadding });
+        _annotations.Add(new PdfFreeTextAnnotation(rect)
+        {
+            Text = text, FontSize = fontSize, Color = color, Quadding = quadding,
+            FontName = string.IsNullOrEmpty(fontName) ? "Helv" : fontName
+        });
         return this;
     }
 

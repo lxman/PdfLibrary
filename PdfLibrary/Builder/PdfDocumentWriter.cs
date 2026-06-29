@@ -780,6 +780,14 @@ internal class PdfDocumentWriter
                         break;
                 }
             }
+
+            // FreeText annotations carry a standard-14 /DA font that must be embedded so its /AP
+            // appearance can reference it.
+            foreach (PdfAnnotation annotation in page.Annotations)
+            {
+                if (annotation is PdfFreeTextAnnotation ft)
+                    fonts.Add(Editing.Forms.Standard14FontMap.BaseFont(ft.FontName));
+            }
         }
 
         // Font from AcroForm defaults
@@ -2574,8 +2582,9 @@ internal class PdfDocumentWriter
     {
         writer.WriteLine($"   /Contents {PdfEncryptedString(freeText.Text, objNum)}");
         PdfColor c = freeText.Color;
+        string fontName = string.IsNullOrEmpty(freeText.FontName) ? "Helv" : freeText.FontName;
         string da = string.Format(CultureInfo.InvariantCulture,
-            "/Helv {0:0.####} Tf {1:0.###} {2:0.###} {3:0.###} rg", freeText.FontSize, c.R, c.G, c.B);
+            "/{0} {1:0.####} Tf {2:0.###} {3:0.###} {4:0.###} rg", fontName, freeText.FontSize, c.R, c.G, c.B);
         writer.WriteLine($"   /DA {PdfEncryptedString(da, objNum)}");
         writer.WriteLine($"   /Q {freeText.Quadding}");
     }
@@ -2619,8 +2628,10 @@ internal class PdfDocumentWriter
             case PdfFreeTextAnnotation ft:
                 string colorOps = string.Format(CultureInfo.InvariantCulture,
                     "{0:0.###} {1:0.###} {2:0.###} rg", ft.Color.R, ft.Color.G, ft.Color.B);
-                content = Editing.Annotations.AnnotationContentBuilder.FreeText(h, "Helv", ft.FontSize, colorOps, ft.Text);
-                resources = $"<< /Font << /Helv {_fontObjects["Helvetica"]} 0 R >> >>";
+                string ftName = string.IsNullOrEmpty(ft.FontName) ? "Helv" : ft.FontName;
+                string ftBase = Editing.Forms.Standard14FontMap.BaseFont(ftName);
+                content = Editing.Annotations.AnnotationContentBuilder.FreeText(h, ftName, ft.FontSize, colorOps, ft.Text);
+                resources = $"<< /Font << /{ftName} {_fontObjects[ftBase]} 0 R >> >>";
                 break;
             case PdfHighlightAnnotation hl:
                 content = Editing.Annotations.AnnotationContentBuilder.Highlight(w, h, Rgb(hl.Color));

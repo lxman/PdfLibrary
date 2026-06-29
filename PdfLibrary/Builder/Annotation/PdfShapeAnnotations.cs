@@ -53,5 +53,7 @@ public class PdfFreeTextAnnotation : PdfAnnotation
     public double FontSize { get; internal set; } = 12.0;
     public PdfColor Color { get; internal set; } = PdfColor.Black;
     public int Quadding { get; internal set; }
+    /// <summary>Standard-14 /DA resource name (Helv, HeBo, TiRo, Cour, …; default Helv).</summary>
+    public string FontName { get; internal set; } = "Helv";
     internal PdfFreeTextAnnotation(PdfRect rect) : base(rect) { }
 }

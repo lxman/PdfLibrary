@@ -84,6 +84,26 @@ public class AnnotationBuilderPathTests
     }
 
     [Fact]
+    public void BuilderFreeText_WithFont_RoundTripsFontInDa_AndBakesAp()
+    {
+        var rect = new PdfRect(100, 600, 420, 660);
+        byte[] pdf = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddFreeText(rect, "Courier text", 18.0, PdfColor.Black, quadding: 0, fontName: "Cour"))
+            .ToByteArray();
+
+        // The chosen font round-trips in /DA …
+        using var ms = new MemoryStream(pdf);
+        using PdfDocumentEditor reopened = PdfDocumentEditor.Open(ms);
+        PdfAnnotationInfo a = Assert.Single(reopened.Pages.GetAnnotations(0));
+        Assert.Contains("/Cour", a.DefaultAppearance);
+
+        // … and the appearance is baked (the builder writer generates an /AP /N).
+        int total = CountAnnotsWithApBySubtype(pdf, out HashSet<string> withAp);
+        Assert.Equal(1, total);
+        Assert.Contains("FreeText", withAp);
+    }
+
+    [Fact]
     public void BuilderSquare_Renders()
     {
         byte[] pdf = PdfDocumentBuilder.Create()
