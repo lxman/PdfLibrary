@@ -6,7 +6,7 @@ namespace PdfLibrary.Tests.Rendering;
 public class DeviceCmykConverterTests
 {
     private static DeviceCmykConverter Swop()
-        => new(IccProfile.Parse(IccResources.ReadSwop()));
+        => new(IccProfile.Parse(IccResources.ReadDefaultCmykProfile()));
 
     [Fact]
     public void Built_from_real_profile_is_not_degraded()

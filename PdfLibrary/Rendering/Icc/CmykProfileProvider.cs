@@ -6,7 +6,7 @@ namespace PdfLibrary.Rendering.Icc;
 /// <summary>
 /// Resolves the active default CMYK ICC profile used for bare DeviceCMYK (and resolved Separation)
 /// color that carries no embedded profile. Precedence: an explicit <see cref="OverridePath"/> on
-/// disk, else the bundled "U.S. Web Coated (SWOP) v2". The resolved profile is cached; changing the
+/// disk, else the bundled CC0 SWOP TR003 Coated profile. The resolved profile is cached; changing the
 /// override invalidates it. Thread-safe.
 /// </summary>
 public sealed class CmykProfileProvider
@@ -61,10 +61,10 @@ public sealed class CmykProfileProvider
             catch (Exception ex)
             {
                 PdfLogger.Log(LogCategory.Graphics,
-                    $"CMYK profile override '{overridePath}' failed to load ({ex.GetType().Name}: {ex.Message}); using bundled SWOP v2.");
+                    $"CMYK profile override '{overridePath}' failed to load ({ex.GetType().Name}: {ex.Message}); using bundled SWOP TR003 Coated.");
             }
         }
 
-        return IccProfile.Parse(IccResources.ReadSwop());
+        return IccProfile.Parse(IccResources.ReadDefaultCmykProfile());
     }
 }

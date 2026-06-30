@@ -1,0 +1,14 @@
+This product bundles the default CMYK ICC color profile:
+
+  SWOP TR003 Coated   (file: SWOP_TR003_coated_3.icc)
+
+The profile is in the public domain (Creative Commons CC0-1.0); its internal
+copyright tag states "This profile is free of known copyright restrictions."
+It is distributed verbatim and unmodified.
+
+Per the NPES/CGATS terms accompanying the characterization data: profiles or
+other derivative work based on these data may be distributed with no further
+permissions from CGATS; this Technical Report (CGATS TR 003) must be identified
+as the source of the characterization data.
+
+Source: freedesktop colord-data set (/usr/share/color/icc/colord).

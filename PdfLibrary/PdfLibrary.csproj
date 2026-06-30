@@ -43,15 +43,13 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- Bundled default CMYK ICC profile (SWOP v2). LogicalName fixes the manifest resource
-             name regardless of folder layout. The .icc is shipped verbatim per the Adobe Color
-             Profile Bundling Agreement (see Profiles/Color Profile Bundling License.pdf). -->
-        <EmbeddedResource Include="Rendering\Icc\Profiles\USWebCoatedSWOP.icc">
-            <LogicalName>PdfLibrary.Rendering.Icc.Profiles.USWebCoatedSWOP.icc</LogicalName>
+        <!-- Bundled default CMYK ICC profile: SWOP TR003 Coated, CC0-1.0 (+NPES attribution),
+             shipped verbatim. The library carries no Adobe IP; consumers needing Adobe SWOP
+             supply it via CmykProfileProvider.OverrideProfileBytes. -->
+        <EmbeddedResource Include="Rendering\Icc\Profiles\SWOP_TR003_coated_3.icc">
+            <LogicalName>PdfLibrary.Rendering.Icc.Profiles.SWOP_TR003_coated_3.icc</LogicalName>
         </EmbeddedResource>
-        <!-- Ship the Adobe bundling license + notice inside the NuGet package. -->
-        <None Include="Rendering\Icc\Profiles\Color Profile Bundling License.pdf" Pack="true" PackagePath="licenses\" />
-        <None Include="Rendering\Icc\Profiles\NOTICE-Adobe.txt" Pack="true" PackagePath="licenses\" />
+        <None Include="Rendering\Icc\Profiles\NOTICE-cmyk-profile.txt" Pack="true" PackagePath="licenses\" />
     </ItemGroup>
 
     <ItemGroup>

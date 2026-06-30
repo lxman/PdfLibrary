@@ -32,7 +32,7 @@ public class CmykProfileProviderTests
 
         // Point the override at a temp copy of the bundled bytes (a valid CMYK profile on disk).
         string tmp = Path.Combine(Path.GetTempPath(), $"sp1-cmyk-{Guid.NewGuid():N}.icc");
-        File.WriteAllBytes(tmp, IccResources.ReadSwop());
+        File.WriteAllBytes(tmp, IccResources.ReadDefaultCmykProfile());
         try
         {
             provider.OverridePath = tmp;
