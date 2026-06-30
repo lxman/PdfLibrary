@@ -53,4 +53,28 @@ public class CmykProfileProviderTests
         IccProfile profile = provider.GetProfile();           // must not throw
         Assert.Equal(4, IccTransform.Create(profile, BuiltInProfiles.Srgb).InputChannels);
     }
+
+    [Fact]
+    public void OverrideProfileBytes_take_precedence_and_invalidate_cache()
+    {
+        var provider = new CmykProfileProvider();
+        IccProfile bundled = provider.GetProfile();
+
+        provider.OverrideProfileBytes = IccResources.ReadDefaultCmykProfile(); // valid CMYK bytes
+        IccProfile fromBytes = provider.GetProfile();
+        Assert.NotSame(bundled, fromBytes);
+        Assert.Equal(4, IccTransform.Create(fromBytes, BuiltInProfiles.Srgb).InputChannels);
+
+        provider.OverrideProfileBytes = null;     // revert
+        IccProfile revert = provider.GetProfile();
+        Assert.Equal(4, IccTransform.Create(revert, BuiltInProfiles.Srgb).InputChannels);
+    }
+
+    [Fact]
+    public void Invalid_override_bytes_fall_back()
+    {
+        var provider = new CmykProfileProvider { OverrideProfileBytes = new byte[] { 1, 2, 3 } };
+        IccProfile profile = provider.GetProfile();   // must not throw
+        Assert.Equal(4, IccTransform.Create(profile, BuiltInProfiles.Srgb).InputChannels);
+    }
 }

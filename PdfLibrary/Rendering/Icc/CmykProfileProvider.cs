@@ -4,10 +4,10 @@ using Logging;
 namespace PdfLibrary.Rendering.Icc;
 
 /// <summary>
-/// Resolves the active default CMYK ICC profile used for bare DeviceCMYK (and resolved Separation)
-/// color that carries no embedded profile. Precedence: an explicit <see cref="OverridePath"/> on
-/// disk, else the bundled CC0 SWOP TR003 Coated profile. The resolved profile is cached; changing the
-/// override invalidates it. Thread-safe.
+/// Resolves the active default CMYK ICC profile for bare DeviceCMYK (and resolved Separation) color
+/// that carries no embedded profile. Precedence: <see cref="OverrideProfileBytes"/> (in-memory) →
+/// <see cref="OverridePath"/> (disk) → the bundled CC0 default. Cached; setting either override
+/// invalidates the cache. Thread-safe.
 /// </summary>
 public sealed class CmykProfileProvider
 {
@@ -15,9 +15,26 @@ public sealed class CmykProfileProvider
     public static CmykProfileProvider Default { get; } = new();
 
     private readonly object _lock = new();
+    private byte[]? _overrideBytes;
     private string? _overridePath;
     private IccProfile? _cached;
     private string? _cachedKey;
+
+    /// <summary>In-memory CMYK profile bytes that override both the path and the bundled default.</summary>
+    public byte[]? OverrideProfileBytes
+    {
+        get { lock (_lock) { return _overrideBytes; } }
+        set
+        {
+            lock (_lock)
+            {
+                if (ReferenceEquals(_overrideBytes, value)) return;
+                _overrideBytes = value;
+                _cached = null;
+                _cachedKey = null;
+            }
+        }
+    }
 
     /// <summary>Optional path to a CMYK <c>.icc</c> profile that overrides the bundled default.</summary>
     public string? OverridePath
@@ -40,28 +57,35 @@ public sealed class CmykProfileProvider
     {
         lock (_lock)
         {
-            string key = _overridePath ?? "<bundled>";
+            string key = _overrideBytes is not null ? "<bytes>" : _overridePath ?? "<bundled>";
             if (_cached is not null && _cachedKey == key) return _cached;
 
-            IccProfile profile = Load(_overridePath);
+            IccProfile profile = Load(_overrideBytes, _overridePath);
             _cached = profile;
             _cachedKey = key;
             return profile;
         }
     }
 
-    private static IccProfile Load(string? overridePath)
+    private static IccProfile Load(byte[]? overrideBytes, string? overridePath)
     {
-        if (!string.IsNullOrEmpty(overridePath))
+        if (overrideBytes is not null)
         {
-            try
-            {
-                return IccProfile.Parse(File.ReadAllBytes(overridePath));
-            }
+            try { return IccProfile.Parse(overrideBytes); }
             catch (Exception ex)
             {
                 PdfLogger.Log(LogCategory.Graphics,
-                    $"CMYK profile override '{overridePath}' failed to load ({ex.GetType().Name}: {ex.Message}); using bundled SWOP TR003 Coated.");
+                    $"CMYK profile override bytes failed to parse ({ex.GetType().Name}: {ex.Message}); falling back.");
+            }
+        }
+
+        if (!string.IsNullOrEmpty(overridePath))
+        {
+            try { return IccProfile.Parse(File.ReadAllBytes(overridePath)); }
+            catch (Exception ex)
+            {
+                PdfLogger.Log(LogCategory.Graphics,
+                    $"CMYK profile override '{overridePath}' failed to load ({ex.GetType().Name}: {ex.Message}); using bundled default.");
             }
         }
 
