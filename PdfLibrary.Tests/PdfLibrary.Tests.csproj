@@ -37,6 +37,7 @@
              privately (PrivateAssets=all), so they no longer flow transitively. -->
         <ProjectReference Include="..\FontParser\FontParser.csproj" />
         <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
+        <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" />
     </ItemGroup>
 
     <ItemGroup>
