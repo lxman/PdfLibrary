@@ -2630,7 +2630,7 @@ internal class PdfDocumentWriter
                     "{0:0.###} {1:0.###} {2:0.###} rg", ft.Color.R, ft.Color.G, ft.Color.B);
                 string ftName = string.IsNullOrEmpty(ft.FontName) ? "Helv" : ft.FontName;
                 string ftBase = Editing.Forms.Standard14FontMap.BaseFont(ftName);
-                content = Editing.Annotations.AnnotationContentBuilder.FreeText(h, ftName, ft.FontSize, colorOps, ft.Text);
+                content = Editing.Annotations.AnnotationContentBuilder.FreeText(w, h, ftName, ft.FontSize, colorOps, ft.Text, ft.Quadding);
                 resources = $"<< /Font << /{ftName} {_fontObjects[ftBase]} 0 R >> >>";
                 break;
             case PdfHighlightAnnotation hl:

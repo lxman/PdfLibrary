@@ -111,7 +111,8 @@ internal static class AnnotationAppearanceGenerator
         double size = da.FontSize > 0 ? da.FontSize : 12.0;
         (string resName, PdfIndirectReference fontRef) = AppearanceFontResolver.Resolve(doc, da.FontName);
 
-        string content = AnnotationContentBuilder.FreeText(h, resName, size, da.ColorOps, text);
+        int quadding = annot.Get(new PdfName("Q")) is PdfInteger q ? (int)q.Value : 0;
+        string content = AnnotationContentBuilder.FreeText(w, h, resName, size, da.ColorOps, text, quadding);
 
         var resources = new PdfDictionary
         {

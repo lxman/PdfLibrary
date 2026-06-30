@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
+using PdfLibrary.Builder;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Editing.Forms;
 
 namespace PdfLibrary.Editing.Annotations;
 
@@ -71,20 +73,71 @@ internal static class AnnotationContentBuilder
     }
 
     /// <summary>
-    /// FreeText single line at top-left, using font resource <paramref name="resName"/>.
-    /// <paramref name="colorOps"/> is a colour-setting fragment like "0 0 0 rg".
+    /// FreeText layout using font resource <paramref name="resName"/>. Honors the FreeText line
+    /// separators in <paramref name="text"/> (CR, LF, or CRLF — ISO 32000-1 §12.7.3.3): each line is
+    /// shown by its own operator with a leading-based advance, since <c>Tj</c> does not break lines.
+    /// <paramref name="quadding"/> is 0=left, 1=center, 2=right; <paramref name="w"/> is the BBox width
+    /// used for center/right justification. <paramref name="colorOps"/> is a fragment like "0 0 0 rg".
     /// </summary>
-    public static string FreeText(double h, string resName, double size, string colorOps, string text)
+    public static string FreeText(double w, double h, string resName, double size, string colorOps,
+        string text, int quadding)
     {
         const double pad = 2.0;
         double baseline = h - pad - size;
-        string showToken = PdfString.FromText(text).ToPdfString();
-        return
-            "/Tx BMC\nq\nBT\n" +
-            colorOps + "\n" +
-            "/" + resName + " " + Num(size) + " Tf\n" +
-            "1 0 0 1 " + Num(pad) + " " + Num(baseline) + " Tm\n" +
-            showToken + " Tj\nET\nQ\nEMC";
+        string baseFont = Standard14FontMap.BaseFont(resName);
+        string[] lines = SplitLines(text);
+
+        var sb = new StringBuilder();
+        sb.Append("/Tx BMC\nq\nBT\n");
+        sb.Append(colorOps).Append('\n');
+        sb.Append('/').Append(resName).Append(' ').Append(Num(size)).Append(" Tf\n");
+
+        if (lines.Length <= 1)
+        {
+            // Single line: keep the original Tm + one-Tj shape.
+            string only = lines.Length == 0 ? string.Empty : lines[0];
+            double x = LineStartX(only, quadding, w, baseFont, size, pad);
+            sb.Append("1 0 0 1 ").Append(Num(x)).Append(' ').Append(Num(baseline)).Append(" Tm\n");
+            sb.Append(Show(only)).Append(" Tj\n");
+        }
+        else
+        {
+            double leading = size * 1.2;
+            sb.Append(Num(leading)).Append(" TL\n");
+            double prevX = 0;
+            for (var i = 0; i < lines.Length; i++)
+            {
+                double x = LineStartX(lines[i], quadding, w, baseFont, size, pad);
+                if (i == 0)
+                    sb.Append(Num(x)).Append(' ').Append(Num(baseline)).Append(" Td\n");
+                else if (Math.Abs(x - prevX) < 1e-6)
+                    sb.Append("T*\n");                                   // same X: pure line advance
+                else
+                    sb.Append(Num(x - prevX)).Append(' ').Append(Num(-leading)).Append(" Td\n");
+                prevX = x;
+                // A blank line consumes its advance (above) but shows nothing.
+                if (lines[i].Length > 0)
+                    sb.Append(Show(lines[i])).Append(" Tj\n");
+            }
+        }
+
+        sb.Append("ET\nQ\nEMC");
+        return sb.ToString();
+    }
+
+    /// <summary>Splits on CRLF/CR/LF, preserving empty lines so blank-line spacing is kept.</summary>
+    private static string[] SplitLines(string text) =>
+        text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+
+    private static string Show(string line) => PdfString.FromText(line).ToPdfString();
+
+    private static double LineStartX(string line, int quadding, double w, string baseFont, double size, double pad)
+    {
+        if (quadding != 1 && quadding != 2) return pad; // left
+        double tw = PdfFontMetrics.MeasureText(line, baseFont, size);
+        return quadding == 1
+            ? Math.Max(pad, (w - tw) / 2.0)     // center
+            : Math.Max(pad, w - pad - tw);       // right
     }
 
     /// <summary>Highlight: Multiply-blend fill of the BBox; requires an /GShl ExtGState resource.</summary>
