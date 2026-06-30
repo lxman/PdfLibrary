@@ -1,5 +1,3 @@
-using System.Reflection;
-
 namespace PdfLibrary.Rendering.Icc;
 
 /// <summary>
