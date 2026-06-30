@@ -10,6 +10,14 @@ namespace PdfLibrary.Rendering;
 public static class PdfColorToRgb
 {
     /// <summary>
+    /// Opt-in: when <c>true</c>, DeviceCMYK is resolved through the active CMYK ICC profile
+    /// (SWOP v2 by default) instead of the naive formula. Defaults to <c>false</c> so behavior is
+    /// unchanged (SP1 ships this dormant; SP5 turns it on). Only the explicit "DeviceCMYK" path is
+    /// gated — the unknown-4-component fallback stays naive.
+    /// </summary>
+    public static bool UseIccForDeviceCmyk { get; set; }
+
+    /// <summary>
     /// Resolves a PDF device-colour component list to an 8-bit RGB triple.
     /// Supports DeviceGray, DeviceRGB, DeviceCMYK, CalGray, CalRGB, Lab; falls back by component count.
     /// </summary>
@@ -29,7 +37,9 @@ public static class PdfColorToRgb
             case "DeviceRGB" or "CalRGB" when components.Count >= 3:
                 return (Channel(components[0]), Channel(components[1]), Channel(components[2]));
             case "DeviceCMYK" when components.Count >= 4:
-                return Cmyk(components[0], components[1], components[2], components[3]);
+                return UseIccForDeviceCmyk
+                    ? Icc.DeviceCmykConverter.Default.ToRgb(components[0], components[1], components[2], components[3])
+                    : Cmyk(components[0], components[1], components[2], components[3]);
             case "Lab" when components.Count >= 3:
                 return Lab(components[0], components[1], components[2]);
         }
