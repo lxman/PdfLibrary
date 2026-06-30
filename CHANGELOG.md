@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- CMYK ICC color primitives (SP1): bundled "U.S. Web Coated (SWOP) v2" profile and a
+  bidirectional `DeviceCmykConverter` (CMYK↔sRGB) with a pluggable `CmykProfileProvider`.
+  Shipped **dormant** — `PdfColorToRgb.UseIccForDeviceCmyk` defaults `false`, so rendered
+  output is unchanged until a later phase enables it.
+
 ## [2.1.0] - 2026-06-28
 
 Minor release: markup-annotation authoring/editing with real appearance generation, a richer annotation reader, and two annotation/forms correctness fixes. Additive and back-compatible.
