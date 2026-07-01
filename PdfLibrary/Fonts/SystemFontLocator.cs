@@ -9,6 +9,17 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
 {
     private readonly FontDirectoryIndex _index;
 
+    // Building the index recursively scans every OS font directory, so the default locator is a
+    // process-wide shared singleton: the scan happens once per process, not once per PdfRenderer.
+    // (Type3 fonts construct a sub-renderer per glyph, so a fresh scan per construction was ~86% of
+    // page-record time.) The index is read-only after construction, so sharing it is thread-safe.
+    private static readonly Lazy<SystemFontLocator> LazyDefault =
+        new(static () => new SystemFontLocator(), LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>The shared, lazily-built default locator over the system font directories. Reused
+    /// everywhere a caller does not inject its own <see cref="ISystemFontProvider"/>.</summary>
+    public static SystemFontLocator Default => LazyDefault.Value;
+
     /// <summary>Create a locator that scans the given directories (used for testing).</summary>
     public SystemFontLocator(IEnumerable<string> directories)
     {

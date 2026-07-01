@@ -77,6 +77,19 @@ public class SystemFontLocatorTests
         Assert.NotEmpty(SystemFontLocator.DefaultFontDirectories());
     }
 
+    [Fact]
+    public void Default_ReturnsSharedSingleton_NotRebuiltPerAccess()
+    {
+        // The default locator builds a FontDirectoryIndex by recursively scanning every OS font
+        // directory — expensive. It must be a process-wide shared instance so the scan happens once,
+        // not once per PdfRenderer (and, for Type3 fonts, once per glyph). Sharing is the whole fix.
+        SystemFontLocator a = SystemFontLocator.Default;
+        SystemFontLocator b = SystemFontLocator.Default;
+
+        Assert.NotNull(a);
+        Assert.Same(a, b);
+    }
+
     // Integration: depends on system-installed fonts, so it is opt-in (not run in CI).
     [Fact]
     [Trait("Category", "LocalOnly")]

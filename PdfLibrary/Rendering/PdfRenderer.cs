@@ -29,6 +29,10 @@ internal class PdfRenderer : PdfContentProcessor
     private readonly ColorSpaceResolver _colorSpaceResolver;
     private readonly ExtGStateApplier _extGStateApplier;
     private readonly FixupManager? _fixupManager;
+    private readonly ISystemFontProvider _fontProvider;
+    // Per-render cache of decoded+parsed Type3 char-proc operators, keyed by char-proc stream. A glyph
+    // that recurs on the page is decoded and parsed once, not once per occurrence.
+    private readonly Dictionary<PdfStream, List<PdfOperator>> _charProcOperatorCache = new();
 
     /// <summary>
     /// Creates a new PDF renderer
@@ -41,12 +45,15 @@ internal class PdfRenderer : PdfContentProcessor
     /// <param name="fontProvider">Optional font provider for system substitute fonts (null → SystemFontLocator)</param>
     internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null, FixupManager? fixupManager = null, ISystemFontProvider? fontProvider = null)
     {
-        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager is not null}");
+        PdfLogger.Log(LogCategory.Text, () => $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager is not null}");
 
         _target = target ?? throw new ArgumentNullException(nameof(target));
-        // SystemFontLocator is the default substitute source; construct once (builds a
-        // FontDirectoryIndex), never per glyph. fontProvider overrides it (test stubs, API injection).
-        _coreText = new CoreTextRenderer(target, new GlyphPathService(), fontProvider ?? new SystemFontLocator());
+        // Resolve the substitute-font source ONCE. The shared SystemFontLocator.Default reuses a single
+        // system-font-directory scan across every renderer (a fresh scan per construction was ~86% of
+        // Type3 page-record time, since Type3 builds a sub-renderer per glyph). fontProvider overrides it
+        // (test stubs, API injection). Stored so nested sub-renderers inherit it instead of re-resolving.
+        _fontProvider = fontProvider ?? SystemFontLocator.Default;
+        _coreText = new CoreTextRenderer(target, new GlyphPathService(), _fontProvider);
         _resources = resources;
         _currentResources = resources; // Initially use page resources
         _currentPath = new PathBuilder();
@@ -59,7 +66,7 @@ internal class PdfRenderer : PdfContentProcessor
         };
         _fixupManager = fixupManager;
 
-        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] _fixupManager assigned: _fixupManager!=null={_fixupManager is not null}");
+        PdfLogger.Log(LogCategory.Text, () => $"[RENDERER-CTOR] _fixupManager assigned: _fixupManager!=null={_fixupManager is not null}");
     }
 
     /// <summary>
@@ -635,7 +642,7 @@ internal class PdfRenderer : PdfContentProcessor
             byte[] contentData = pattern.ContentStream.GetDecodedData(_document?.Decryptor);
 
             // Create a sub-renderer for the pattern content
-            var patternRenderer = new PdfRenderer(target, patternResources, _optionalContentManager, _document, _fixupManager);
+            var patternRenderer = new PdfRenderer(target, patternResources, _optionalContentManager, _document, _fixupManager, _fontProvider);
 
             // Process the pattern's content stream
             List<PdfOperator> operators = PdfContentParser.Parse(contentData);
@@ -992,7 +999,7 @@ internal class PdfRenderer : PdfContentProcessor
         _target.RenderSoftMask(softMask.Subtype, maskTarget =>
         {
             // Create a renderer for the mask content
-            var maskRenderer = new PdfRenderer(maskTarget, formResources ?? _resources, _optionalContentManager, _document, _fixupManager)
+            var maskRenderer = new PdfRenderer(maskTarget, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
             {
                 CurrentState =
                 {
@@ -1291,9 +1298,9 @@ internal class PdfRenderer : PdfContentProcessor
             (float)fontMatrix[2], (float)fontMatrix[3],
             (float)fontMatrix[4], (float)fontMatrix[5]);
 
-        PdfLogger.Log(LogCategory.Text, $"RenderType3Text: FontMatrix=[{fontMatrix[0]}, {fontMatrix[1]}, {fontMatrix[2]}, {fontMatrix[3]}, {fontMatrix[4]}, {fontMatrix[5]}]");
-        PdfLogger.Log(LogCategory.Text, $"RenderType3Text: TextMatrix=[{CurrentState.TextMatrix.M11:F4}, {CurrentState.TextMatrix.M12:F4}, {CurrentState.TextMatrix.M21:F4}, {CurrentState.TextMatrix.M22:F4}, {CurrentState.TextMatrix.M31:F4}, {CurrentState.TextMatrix.M32:F4}]");
-        PdfLogger.Log(LogCategory.Text, $"RenderType3Text: CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
+        PdfLogger.Log(LogCategory.Text, () => $"RenderType3Text: FontMatrix=[{fontMatrix[0]}, {fontMatrix[1]}, {fontMatrix[2]}, {fontMatrix[3]}, {fontMatrix[4]}, {fontMatrix[5]}]");
+        PdfLogger.Log(LogCategory.Text, () => $"RenderType3Text: TextMatrix=[{CurrentState.TextMatrix.M11:F4}, {CurrentState.TextMatrix.M12:F4}, {CurrentState.TextMatrix.M21:F4}, {CurrentState.TextMatrix.M22:F4}, {CurrentState.TextMatrix.M31:F4}, {CurrentState.TextMatrix.M32:F4}]");
+        PdfLogger.Log(LogCategory.Text, () => $"RenderType3Text: CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
 
         for (var i = 0; i < bytes.Length; i++)
         {
@@ -1450,13 +1457,21 @@ internal class PdfRenderer : PdfContentProcessor
     {
         try
         {
-            // Get the decoded content stream data
-            byte[] contentData = charProc.GetDecodedData(_document?.Decryptor);
+            // Decode + parse the char-proc ONCE per distinct glyph, then reuse. The same Type3 glyph
+            // (e.g. 'e') recurs many times on a page; decoding and re-parsing its content stream every
+            // occurrence was pure repeat work (~7% of record time). Operators are immutable descriptors
+            // (read-only Name/Operands), so re-executing a cached list is safe.
+            if (!_charProcOperatorCache.TryGetValue(charProc, out List<PdfOperator>? operators))
+            {
+                byte[] contentData = charProc.GetDecodedData(_document?.Decryptor);
+                operators = PdfContentParser.Parse(contentData);
+                _charProcOperatorCache[charProc] = operators;
+            }
 
-            PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: {contentData.Length} bytes, glyphMatrix=[{glyphMatrix.M11:F6}, {glyphMatrix.M12:F6}, {glyphMatrix.M21:F6}, {glyphMatrix.M22:F6}, {glyphMatrix.M31:F2}, {glyphMatrix.M32:F2}]");
+            PdfLogger.Log(LogCategory.Text, () => $"    ExecuteType3CharProc: {operators.Count} operators, glyphMatrix=[{glyphMatrix.M11:F6}, {glyphMatrix.M12:F6}, {glyphMatrix.M21:F6}, {glyphMatrix.M22:F6}, {glyphMatrix.M31:F2}, {glyphMatrix.M32:F2}]");
 
             // Create a sub-renderer for the CharProc with the glyph transformation
-            var charProcRenderer = new PdfRenderer(_target, resources ?? _currentResources, _optionalContentManager, _document, _fixupManager)
+            var charProcRenderer = new PdfRenderer(_target, resources ?? _currentResources, _optionalContentManager, _document, _fixupManager, _fontProvider)
             {
                 CurrentState =
                 {
@@ -1471,18 +1486,16 @@ internal class PdfRenderer : PdfContentProcessor
             // Apply the glyph matrix to the render target
             _target.ApplyCtm(glyphMatrix);
 
-            // Parse and process the CharProc operators
-            List<PdfOperator> operators = PdfContentParser.Parse(contentData);
             charProcRenderer.ProcessOperators(operators);
 
             // Restore render target state
             _target.RestoreState();
 
-            PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: Completed ({operators.Count} operators)");
+            PdfLogger.Log(LogCategory.Text, () => $"    ExecuteType3CharProc: Completed ({operators.Count} operators)");
         }
         catch (Exception ex)
         {
-            PdfLogger.Log(LogCategory.Text, $"    ExecuteType3CharProc: ERROR - {ex.Message}");
+            PdfLogger.Log(LogCategory.Text, () => $"    ExecuteType3CharProc: ERROR - {ex.Message}");
         }
     }
 
@@ -1708,7 +1721,7 @@ internal class PdfRenderer : PdfContentProcessor
         // inherited — otherwise a watermark stamp drawn under e.g. /ca 0.35 paints at full opacity
         // (black instead of grey). Inherit the ExtGState transparency group; colour/line state stays
         // form-local (forms set their own).
-        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager)
+        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
             {
                 CurrentState =
                 {
