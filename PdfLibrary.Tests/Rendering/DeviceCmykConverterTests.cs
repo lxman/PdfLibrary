@@ -86,4 +86,21 @@ public class DeviceCmykConverterTests
         sw.Stop();
         Assert.True(sw.ElapsedMilliseconds < 5000, $"100k-pixel CMYK->RGB took {sw.ElapsedMilliseconds} ms");
     }
+
+    [Fact]
+    public void Perceptual_black_matches_adobe_dark_point()
+    {
+        // Perceptual intent renders SWOP K=1 to Adobe's dark point ~(35,31,32).
+        // RelativeColorimetric (the old default) gave ~(55,53,53) — too light.
+        (byte r, byte g, byte b) = Swop().ToRgb(0, 0, 0, 1);
+        Assert.True(r <= 42 && g <= 40 && b <= 40, $"K=1 not dark enough for Perceptual: ({r},{g},{b})");
+    }
+
+    [Fact]
+    public void Perceptual_heavy_ink_is_darker_than_media_black_floor()
+    {
+        // 300% ink (C+M+Y, no K) must be darker than RelativeColorimetric's washed-out floor (~55).
+        (byte r, byte g, byte b) = Swop().ToRgb(1, 1, 1, 0);
+        Assert.True(r < 60 && g < 60 && b < 60, $"300% ink not dark: ({r},{g},{b})");
+    }
 }

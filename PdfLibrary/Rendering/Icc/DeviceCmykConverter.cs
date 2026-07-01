@@ -24,8 +24,16 @@ public sealed class DeviceCmykConverter
         if (cmykProfile is null) throw new ArgumentNullException(nameof(cmykProfile));
         try
         {
-            _toRgb = IccTransform.Create(cmykProfile, BuiltInProfiles.Srgb);
-            _toCmyk = IccTransform.Create(BuiltInProfiles.Srgb, cmykProfile);
+            // Perceptual intent for display of a press CMYK profile: maps the full dynamic range
+            // (incl. a realistic black point) rather than clipping darks to media-white as
+            // RelativeColorimetric does. Matches Adobe's SWOP display (ICC.1:2022 §6). Falls back
+            // to A2B0/B2A0 inside ICCSharp if the intent table is absent.
+            var opts = new ICCSharp.TransformOptions
+            {
+                Intent = ICCSharp.Profile.RenderingIntent.Perceptual,
+            };
+            _toRgb = IccTransform.Create(cmykProfile, BuiltInProfiles.Srgb, opts);
+            _toCmyk = IccTransform.Create(BuiltInProfiles.Srgb, cmykProfile, opts);
         }
         catch (Exception ex)
         {
