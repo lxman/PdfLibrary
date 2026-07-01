@@ -97,7 +97,7 @@ public static class GifDecoder
         var gifFile = new GifFile(screenDesc.Width, screenDesc.Height);
 
         // Set background color
-        if (globalColorTable != null && screenDesc.BackgroundColorIndex < globalColorTable.Length)
+        if (globalColorTable is not null && screenDesc.BackgroundColorIndex < globalColorTable.Length)
         {
             GifColor bg = globalColorTable[screenDesc.BackgroundColorIndex];
             gifFile.BackgroundColor = (bg.B, bg.G, bg.R, 255);
@@ -277,7 +277,7 @@ public static class GifDecoder
         {
             colorTable = ReadColorTable(data, ref offset, imageDesc.LocalColorTableSize);
         }
-        else if (globalColorTable != null)
+        else if (globalColorTable is not null)
         {
             colorTable = globalColorTable;
         }

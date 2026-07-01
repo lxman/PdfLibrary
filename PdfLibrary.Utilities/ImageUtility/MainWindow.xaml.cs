@@ -81,7 +81,7 @@ public partial class MainWindow : Window
 
     private void SaveAs_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentImage == null)
+        if (_currentImage is null)
         {
             return;
         }
@@ -97,7 +97,7 @@ public partial class MainWindow : Window
             DefaultExt = ".png"
         };
 
-        if (_currentFilePath != null)
+        if (_currentFilePath is not null)
         {
             dialog.FileName = Path.GetFileNameWithoutExtension(_currentFilePath);
         }
@@ -110,7 +110,7 @@ public partial class MainWindow : Window
 
     private void SaveImage(string filePath)
     {
-        if (_currentImage == null)
+        if (_currentImage is null)
         {
             return;
         }
@@ -151,7 +151,7 @@ public partial class MainWindow : Window
 
     private void ZoomIn_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentImage == null) return;
+        if (_currentImage is null) return;
 
         _zoomFactor = Math.Min(_zoomFactor + ZoomIncrement, MaxZoom);
         ApplyZoom();
@@ -159,7 +159,7 @@ public partial class MainWindow : Window
 
     private void ZoomOut_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentImage == null) return;
+        if (_currentImage is null) return;
 
         _zoomFactor = Math.Max(_zoomFactor - ZoomIncrement, MinZoom);
         ApplyZoom();
@@ -167,7 +167,7 @@ public partial class MainWindow : Window
 
     private void ActualSize_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentImage == null) return;
+        if (_currentImage is null) return;
 
         _zoomFactor = 1.0;
         ApplyZoom();
@@ -175,7 +175,7 @@ public partial class MainWindow : Window
 
     private void FitToWindow_Click(object sender, RoutedEventArgs e)
     {
-        if (_currentImage == null) return;
+        if (_currentImage is null) return;
 
         double viewportWidth = ImageScrollViewer.ViewportWidth;
         double viewportHeight = ImageScrollViewer.ViewportHeight;
@@ -191,7 +191,7 @@ public partial class MainWindow : Window
 
     private void ApplyZoom()
     {
-        if (_currentImage == null) return;
+        if (_currentImage is null) return;
 
         var transform = new ScaleTransform(_zoomFactor, _zoomFactor);
         ImageDisplay.LayoutTransform = transform;
@@ -201,7 +201,7 @@ public partial class MainWindow : Window
 
     private void UpdateUI()
     {
-        bool hasImage = _currentImage != null;
+        bool hasImage = _currentImage is not null;
         SaveAsMenuItem.IsEnabled = hasImage;
 
         if (!hasImage)

@@ -46,10 +46,10 @@ public class Csj2kImageEquality
 
         for (var i = 0; i < files.Length; i++)
         {
-            if (arrays[i] == null) continue;
+            if (arrays[i] is null) continue;
             for (int j = i + 1; j < files.Length; j++)
             {
-                if (arrays[j] == null) continue;
+                if (arrays[j] is null) continue;
                 int n = Math.Min(arrays[i].Length, arrays[j].Length);
                 var diff = 0;
                 var maxD = 0;

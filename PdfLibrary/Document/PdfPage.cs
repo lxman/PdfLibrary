@@ -412,10 +412,10 @@ public class PdfPage
         FixupConfiguration fixupConfig = FixupDefaults.CreateDefaultConfiguration();
         var fixupManager = new FixupManager(fixupConfig);
         FixupDefaults.RegisterAllFixups(fixupManager);
-        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Fixup manager created: fixupManager!=null={fixupManager != null}");
+        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Fixup manager created: fixupManager!=null={fixupManager is not null}");
 
         var optionalContentManager = new OptionalContentManager(_document);
-        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Creating PdfRenderer with fixupManager!=null={fixupManager != null}");
+        PdfLogger.Log(LogCategory.Text, $"[PAGE-RENDER] Creating PdfRenderer with fixupManager!=null={fixupManager is not null}");
         var renderer = new PdfRenderer(target, GetResources(), optionalContentManager, _document, fixupManager, fontProvider);
         PdfLogger.Log(LogCategory.Text, "[PAGE-RENDER] Calling renderer.RenderPage()...");
         renderer.RenderPage(this, pageNumber, scale);

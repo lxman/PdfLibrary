@@ -68,7 +68,7 @@ namespace LzwCodec
         /// <param name="output">The stream to write decompressed data to.</param>
         public void Decode(Stream output)
         {
-            if (output == null)
+            if (output is null)
                 throw new ArgumentNullException(nameof(output));
 
             byte[]? previousString = null;
@@ -99,12 +99,12 @@ namespace LzwCodec
 
                 byte[] currentString;
 
-                if (code < _dictionary.Count && _dictionary[code] != null)
+                if (code < _dictionary.Count && _dictionary[code] is not null)
                 {
                     // Code exists in dictionary
                     currentString = _dictionary[code]!;
                 }
-                else if (code == _nextCode && previousString != null)
+                else if (code == _nextCode && previousString is not null)
                 {
                     // Special case: code not yet in table
                     // This happens when encoding cScSc pattern
@@ -122,7 +122,7 @@ namespace LzwCodec
                 output.Write(currentString, 0, currentString.Length);
 
                 // Add new entry to dictionary (previousString + first byte of currentString)
-                if (previousString != null && _nextCode < LzwConstants.MaxDictionarySize)
+                if (previousString is not null && _nextCode < LzwConstants.MaxDictionarySize)
                 {
                     var newEntry = new byte[previousString.Length + 1];
                     Array.Copy(previousString, newEntry, previousString.Length);

@@ -177,7 +177,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (_editor == null) return;
+            if (_editor is null) return;
 
             Dispatcher.Invoke(() =>
             {
@@ -309,12 +309,12 @@ public partial class MainWindow : Window
                 {
                     GroupName = field.FullName,
                     VerticalAlignment = VerticalAlignment.Center,
-                    IsChecked = widget.OnStateName != null && widget.OnStateName == bf.SelectedOption,
+                    IsChecked = widget.OnStateName is not null && widget.OnStateName == bf.SelectedOption,
                     IsEnabled = !bf.IsReadOnly        // display selection but block interaction
                 };
                 string? on = widget.OnStateName;
                 if (!bf.IsReadOnly)
-                    rb.Checked += (_, _) => { if (on != null) bf.SelectedOption = on; };
+                    rb.Checked += (_, _) => { if (on is not null) bf.SelectedOption = on; };
                 // Same fixed-glyph issue as CheckBox — scale via Viewbox so the dot grows with zoom.
                 return new Viewbox { Child = rb, Stretch = Stretch.Uniform };
             }
@@ -324,7 +324,7 @@ public partial class MainWindow : Window
                 foreach ((string export, string display) in cf.Options)
                     combo.Items.Add(new ComboBoxItem { Content = display, Tag = export });
                 string? sel = cf.SelectedValues.Count > 0 ? cf.SelectedValues[0] : null;
-                if (sel != null) combo.SelectedIndex = IndexOfExport(cf, sel);
+                if (sel is not null) combo.SelectedIndex = IndexOfExport(cf, sel);
                 if (!cf.IsReadOnly)
                 {
                     combo.SelectionChanged += (_, _) =>
@@ -462,7 +462,7 @@ public partial class MainWindow : Window
         if (_isUpdatingZoom) return; // Prevent feedback loop
         _zoomLevel = e.NewValue;
         UpdateZoomDisplay();
-        if (_pdfDoc != null) // Only render if document is loaded
+        if (_pdfDoc is not null) // Only render if document is loaded
         {
             await RenderPageAsync();
         }
@@ -487,7 +487,7 @@ public partial class MainWindow : Window
 
     private void UpdateZoomDisplay()
     {
-        if (ZoomText != null)
+        if (ZoomText is not null)
             ZoomText.Text = $"{_zoomLevel * 100:F0}";
     }
 
@@ -536,7 +536,7 @@ public partial class MainWindow : Window
 
     private async void ExportButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_pdfDoc == null || _currentFilePath == null)
+        if (_pdfDoc is null || _currentFilePath is null)
         {
             MessageBox.Show("Please load a PDF first.", "No Document",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -579,12 +579,12 @@ public partial class MainWindow : Window
         RenderTargetBitmap? rtb = null;
         Dispatcher.Invoke(() =>
         {
-            if (_editor == null) return;
+            if (_editor is null) return;
             PdfPage page = _editor.Pages[_currentPage - 1];
             // Preserve the same pixel scale as the old code: zoom without DPI correction.
             rtb = RenderPageBitmap(page, _zoomLevel);
         });
-        if (rtb == null) return;
+        if (rtb is null) return;
 
         var enc = new PngBitmapEncoder();
         enc.Frames.Add(BitmapFrame.Create(rtb));
@@ -597,7 +597,7 @@ public partial class MainWindow : Window
 
     private void PrintButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_pdfDoc == null)
+        if (_pdfDoc is null)
         {
             MessageBox.Show("Please load a PDF first.", "No Document",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
@@ -645,7 +645,7 @@ public partial class MainWindow : Window
 
     private BitmapSource RenderPageToBitmap(double targetWidth, double targetHeight)
     {
-        if (_editor == null)
+        if (_editor is null)
             throw new InvalidOperationException("No document loaded");
 
         PdfPage page = _editor.Pages[_currentPage - 1];
@@ -677,7 +677,7 @@ public partial class MainWindow : Window
 
     private async void OptimizeButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_pdfDoc == null || _currentFilePath == null)
+        if (_pdfDoc is null || _currentFilePath is null)
         {
             MessageBox.Show("Please load a PDF first.", "No Document",
                 MessageBoxButton.OK, MessageBoxImage.Warning);

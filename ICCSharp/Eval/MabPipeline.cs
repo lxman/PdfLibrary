@@ -37,20 +37,20 @@ public sealed class MabPipeline : IColorTransform
 
     private void ValidateShape()
     {
-        if (_aCurves != null && _aCurves.ChannelCount != InputChannels)
+        if (_aCurves is not null && _aCurves.ChannelCount != InputChannels)
             throw new ArgumentException(
                 $"A curves count {_aCurves.ChannelCount} != input channels {InputChannels}.");
-        if (_clut != null && _clut.InputChannels != InputChannels)
+        if (_clut is not null && _clut.InputChannels != InputChannels)
             throw new ArgumentException(
                 $"CLUT input channels {_clut.InputChannels} != tag input channels {InputChannels}.");
-        if (_clut != null && _clut.OutputChannels != OutputChannels)
+        if (_clut is not null && _clut.OutputChannels != OutputChannels)
             throw new ArgumentException(
                 $"CLUT output channels {_clut.OutputChannels} != tag output channels {OutputChannels}.");
-        if (_mCurves != null && _matrix == null)
+        if (_mCurves is not null && _matrix is null)
             throw new ArgumentException("mAB tag has M curves but no matrix; spec allows both together only.");
-        if (_matrix != null && _mCurves == null)
+        if (_matrix is not null && _mCurves is null)
             throw new ArgumentException("mAB tag has matrix but no M curves; spec allows both together only.");
-        if (_matrix != null && _mCurves != null && _mCurves.ChannelCount != 3)
+        if (_matrix is not null && _mCurves is not null && _mCurves.ChannelCount != 3)
             throw new ArgumentException(
                 $"mAB M curves count {_mCurves.ChannelCount} != 3 (matrix dimension).");
         if (_bCurves.ChannelCount != OutputChannels)
@@ -72,20 +72,20 @@ public sealed class MabPipeline : IColorTransform
         input.CopyTo(buf.Slice(0, InputChannels));
 
         // A curves operate on i channels.
-        if (_aCurves != null) _aCurves.Apply(buf.Slice(0, InputChannels));
+        if (_aCurves is not null) _aCurves.Apply(buf.Slice(0, InputChannels));
 
         // CLUT maps i → o.
-        if (_clut != null)
+        if (_clut is not null)
         {
             Span<double> outSlice = stackalloc double[OutputChannels];
             _clut.Apply(buf.Slice(0, InputChannels), outSlice);
             outSlice.CopyTo(buf.Slice(0, OutputChannels));
         }
 
-        int width = _clut != null ? OutputChannels : InputChannels;
+        int width = _clut is not null ? OutputChannels : InputChannels;
 
-        if (_mCurves != null) _mCurves.Apply(buf.Slice(0, 3));
-        if (_matrix != null)
+        if (_mCurves is not null) _mCurves.Apply(buf.Slice(0, 3));
+        if (_matrix is not null)
         {
             (double x, double y, double z) = _matrix.Transform(buf[0], buf[1], buf[2]);
             buf[0] = x; buf[1] = y; buf[2] = z;

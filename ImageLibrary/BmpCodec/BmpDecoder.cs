@@ -211,13 +211,13 @@ namespace BmpCodec
                     break;
 
                 case BmpCompression.Rle8:
-                    if (header.BitsPerPixel != 8 || palette == null)
+                    if (header.BitsPerPixel != 8 || palette is null)
                         throw new BmpException("RLE8 compression requires 8-bit palette image");
                     DecodeRle8(header, palette, pixelData, output, bottomUp);
                     break;
 
                 case BmpCompression.Rle4:
-                    if (header.BitsPerPixel != 4 || palette == null)
+                    if (header.BitsPerPixel != 4 || palette is null)
                         throw new BmpException("RLE4 compression requires 4-bit palette image");
                     DecodeRle4(header, palette, pixelData, output, bottomUp);
                     break;

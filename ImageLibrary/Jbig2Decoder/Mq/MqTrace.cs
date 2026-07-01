@@ -48,7 +48,7 @@ namespace Jbig2Decoder.Mq
         // what we diff against.
         public static void Log(byte preCx, int bit, uint a, int ct)
         {
-            if (_writer == null) return;
+            if (_writer is null) return;
             _writer.WriteLine($"{_counter:D6} pre={preCx:X2} bit={bit} A={a:X4} CT={ct}");
             _counter++;
         }
@@ -61,7 +61,7 @@ namespace Jbig2Decoder.Mq
         /// </summary>
         public static void LogEnter(string tag)
         {
-            if (_writer == null) return;
+            if (_writer is null) return;
             _writer.WriteLine($"{_counter:D6} ENTER {tag}");
         }
     }

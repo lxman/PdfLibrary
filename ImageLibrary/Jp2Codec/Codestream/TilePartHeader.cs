@@ -93,7 +93,7 @@ namespace Jp2Codec.Codestream
                 switch (marker)
                 {
                     case MarkerCode.Cod:
-                        if (codOverride != null)
+                        if (codOverride is not null)
                             throw new InvalidDataException("Tile-part has more than one COD override.");
                         codOverride = CodSegment.Parse(r.ReadSegment());
                         break;
@@ -101,7 +101,7 @@ namespace Jp2Codec.Codestream
                         cocs.Add(CocSegment.Parse(r.ReadSegment(), numberOfComponents));
                         break;
                     case MarkerCode.Qcd:
-                        if (qcdOverride != null)
+                        if (qcdOverride is not null)
                             throw new InvalidDataException("Tile-part has more than one QCD override.");
                         qcdOverride = QcdSegment.Parse(r.ReadSegment());
                         break;

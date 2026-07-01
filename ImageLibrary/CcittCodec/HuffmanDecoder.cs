@@ -34,7 +34,7 @@ namespace CcittCodec
             public DecodeNode? Zero;
             public DecodeNode? One;
             public int Value = InvalidCode;
-            public bool IsLeaf => Zero == null && One == null;
+            public bool IsLeaf => Zero is null && One is null;
         }
 
         private readonly DecodeNode _whiteRoot;
@@ -63,13 +63,13 @@ namespace CcittCodec
                 int bit = (code >> i) & 1;
                 if (bit == 0)
                 {
-                    if (node.Zero == null)
+                    if (node.Zero is null)
                         node.Zero = new DecodeNode();
                     node = node.Zero;
                 }
                 else
                 {
-                    if (node.One == null)
+                    if (node.One is null)
                         node.One = new DecodeNode();
                     node = node.One;
                 }
@@ -221,7 +221,7 @@ namespace CcittCodec
 
                 node = bit == 0 ? node.Zero : node.One;
 
-                if (node == null)
+                if (node is null)
                     return InvalidCode;
             }
 

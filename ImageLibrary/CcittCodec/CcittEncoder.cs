@@ -26,7 +26,7 @@ namespace CcittCodec
         /// <returns>CCITT compressed data.</returns>
         public byte[] Encode(byte[] data, int height)
         {
-            if (data == null || data.Length == 0)
+            if (data is null || data.Length == 0)
                 return [];
 
             var writer = new CcittBitWriter();
@@ -82,7 +82,7 @@ namespace CcittCodec
                             bool is1D = row % _options.K == 0;
                             writer.WriteBit(is1D ? 1 : 0);
 
-                            if (is1D || referenceLine == null)
+                            if (is1D || referenceLine is null)
                             {
                                 EncodeGroup3_1DRow(writer, currentRow);
                             }
@@ -95,7 +95,7 @@ namespace CcittCodec
                         {
                             // Without EOL markers
                             bool is1D = row % _options.K == 0;
-                            if (is1D || referenceLine == null)
+                            if (is1D || referenceLine is null)
                             {
                                 EncodeGroup3_1DRow(writer, currentRow);
                             }

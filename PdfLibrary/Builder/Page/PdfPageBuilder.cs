@@ -572,7 +572,7 @@ public class PdfPageBuilder(PdfSize size)
         var action = new PdfGoToAction(dest);
         var annotation = new PdfLinkAnnotation(rect, action);
 
-        if (configure != null)
+        if (configure is not null)
         {
             var builder = new PdfLinkAnnotationBuilder(annotation);
             configure(builder);
@@ -598,7 +598,7 @@ public class PdfPageBuilder(PdfSize size)
         var action = new PdfGoToAction(bookmark.Destination);
         var annotation = new PdfLinkAnnotation(rect, action);
 
-        if (configureLink != null)
+        if (configureLink is not null)
         {
             var builder = new PdfLinkAnnotationBuilder(annotation);
             configureLink(builder);
@@ -620,7 +620,7 @@ public class PdfPageBuilder(PdfSize size)
         var action = new PdfUriAction(url);
         var annotation = new PdfLinkAnnotation(rect, action);
 
-        if (configure != null)
+        if (configure is not null)
         {
             var builder = new PdfLinkAnnotationBuilder(annotation);
             configure(builder);
@@ -681,7 +681,7 @@ public class PdfPageBuilder(PdfSize size)
         var rect = new PdfRect(xPt, yPt - 24, xPt + 24, yPt);
         var annotation = new PdfTextAnnotation(rect, contents);
 
-        if (configure != null)
+        if (configure is not null)
         {
             var builder = new PdfTextAnnotationBuilder(annotation);
             configure(builder);
@@ -702,7 +702,7 @@ public class PdfPageBuilder(PdfSize size)
         var annotation = new PdfHighlightAnnotation(rect);
         annotation.QuadPoints.Add(PdfQuadPoints.FromRect(rect));
 
-        if (configure != null)
+        if (configure is not null)
         {
             var builder = new PdfHighlightAnnotationBuilder(annotation);
             configure(builder);

@@ -22,7 +22,7 @@ public static class TiffDecoder
     /// <exception cref="TiffException">Thrown when the TIFF data is invalid or unsupported.</exception>
     public static TiffImage Decode(byte[] data)
     {
-        if (data == null)
+        if (data is null)
             throw new ArgumentNullException(nameof(data));
 
         using var stream = new MemoryStream(data);
@@ -37,7 +37,7 @@ public static class TiffDecoder
     /// <exception cref="TiffException">Thrown when the TIFF data is invalid or unsupported.</exception>
     public static TiffImage Decode(Stream stream)
     {
-        if (stream == null)
+        if (stream is null)
             throw new ArgumentNullException(nameof(stream));
 
         using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
@@ -52,7 +52,7 @@ public static class TiffDecoder
     /// <exception cref="TiffException">Thrown when the TIFF data is invalid or unsupported.</exception>
     public static TiffImage Decode(string path)
     {
-        if (path == null)
+        if (path is null)
             throw new ArgumentNullException(nameof(path));
 
         using FileStream stream = File.OpenRead(path);

@@ -52,7 +52,7 @@ namespace LzwCodec
         /// <param name="input">The data to compress.</param>
         public void Encode(byte[] input)
         {
-            if (input == null)
+            if (input is null)
                 throw new ArgumentNullException(nameof(input));
 
             Encode(input, 0, input.Length);
@@ -66,7 +66,7 @@ namespace LzwCodec
         /// <param name="count">The number of bytes to compress.</param>
         public void Encode(byte[] input, int offset, int count)
         {
-            if (input == null)
+            if (input is null)
                 throw new ArgumentNullException(nameof(input));
             if (offset < 0 || offset > input.Length)
                 throw new ArgumentOutOfRangeException(nameof(offset));

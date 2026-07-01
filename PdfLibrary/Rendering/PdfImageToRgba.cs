@@ -152,7 +152,7 @@ public static class PdfImageToRgba
             try
             {
                 double[]? imgDecodeArray = image.DecodeArray;
-                string decodeStr = imgDecodeArray != null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
+                string decodeStr = imgDecodeArray is not null ? $"[{string.Join(", ", imgDecodeArray)}]" : "null";
                 int debugExpectedRgb = width * height * 3;
                 PdfLogger.Log(LogCategory.Images, $"PdfImageToRgba: ColorSpace='{colorSpace}', BitsPerComponent={bitsPerComponent}, Width={width}, Height={height}, DataLength={imageData.Length}, ExpectedRGB={debugExpectedRgb}, Decode={decodeStr}");
 
@@ -362,7 +362,7 @@ public static class PdfImageToRgba
                     }
                     case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:
                     {
-                        alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                        alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                         int expectedSize = width * height * 3;
                         if (imageData.Length < expectedSize)
                             return null;
@@ -456,7 +456,7 @@ public static class PdfImageToRgba
                     }
                     case "DeviceGray" or "CalGray" when bitsPerComponent == 8:
                     {
-                        alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                        alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                         int expectedSize = width * height;
                         int expectedRgbSizeGray = expectedSize * 3;
 
@@ -526,7 +526,7 @@ public static class PdfImageToRgba
                         {
                             case 3:
                             {
-                                alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                                alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                                 int pixelBufferSize = width * height * 4;
                                 byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
                                 int availablePixels = Math.Min(imageData.Length / 3, width * height);
@@ -557,7 +557,7 @@ public static class PdfImageToRgba
                             }
                             case 1:
                             {
-                                alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                                alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                                 int expectedSize = width * height;
                                 if (imageData.Length < expectedSize)
                                     return null;
@@ -582,7 +582,7 @@ public static class PdfImageToRgba
                             }
                             case 4:
                             {
-                                alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                                alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                                 int expectedSize = width * height * 4;
                                 if (imageData.Length < expectedSize)
                                     return null;
@@ -616,7 +616,7 @@ public static class PdfImageToRgba
                     }
                     case "DeviceCMYK" when bitsPerComponent == 8:
                     {
-                        alphaMode = smaskData != null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                        alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
                         int expectedCmykSize = width * height * 4;
                         int expectedRgbSizeCmyk = width * height * 3;
                         int pixelCount = width * height;
@@ -671,7 +671,7 @@ public static class PdfImageToRgba
             }
             finally
             {
-                if (rentedSmask != null)
+                if (rentedSmask is not null)
                     ArrayPool<byte>.Shared.Return(rentedSmask);
             }
         }

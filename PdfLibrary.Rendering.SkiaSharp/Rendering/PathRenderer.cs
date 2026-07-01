@@ -163,7 +163,7 @@ internal class PathRenderer
                     SKAlphaType.Premul);
 
                 using var groupSurface = SKSurface.Create(groupInfo);
-                if (groupSurface != null)
+                if (groupSurface is not null)
                 {
                     SKCanvas? groupCanvas = groupSurface.Canvas;
                     // CRITICAL: Isolated transparency groups must have TRANSPARENT backdrop per PDF spec
@@ -261,7 +261,7 @@ internal class PathRenderer
             _canvas.Restore();
 
             // Apply any pending composite AFTER restore to avoid clipping/transform interference
-            if (_pendingComposite != null)
+            if (_pendingComposite is not null)
             {
                 try
                 {

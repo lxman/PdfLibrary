@@ -397,7 +397,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             _ => null
         };
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed PALETTE DATA: paletteData={(paletteData != null ? $"len={paletteData.Length}" : "NULL")}");
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed PALETTE DATA: paletteData={(paletteData is not null ? $"len={paletteData.Length}" : "NULL")}");
 
         if (paletteData is null)
         {

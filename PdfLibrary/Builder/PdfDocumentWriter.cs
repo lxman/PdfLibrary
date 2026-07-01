@@ -103,7 +103,7 @@ internal class PdfDocumentWriter
         // Set up encryption if configured
         PdfEncryptionSettings? encryptionSettings = builder.EncryptionSettings;
         int? encryptObj = null;
-        if (encryptionSettings != null)
+        if (encryptionSettings is not null)
         {
             // Convert builder encryption method to Security encryption method
             PdfEncryptionMethod securityMethod = encryptionSettings.Method switch
@@ -192,7 +192,7 @@ internal class PdfDocumentWriter
 
                 bool needsExtGState = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0 ||
                                      path.FillOverprint || path.StrokeOverprint ||
-                                     path.OverprintMode != 0 || path.BlendMode != null;
+                                     path.OverprintMode != 0 || path.BlendMode is not null;
                 if (!needsExtGState) continue;
 
                 var key = new GraphicsStateKey(
@@ -320,7 +320,7 @@ internal class PdfDocumentWriter
         }
 
         // Encryption object (if needed)
-        if (_encryptor != null)
+        if (_encryptor is not null)
         {
             encryptObj = _nextObjectNumber++;
         }
@@ -452,7 +452,7 @@ internal class PdfDocumentWriter
                 writer.WriteLine("   /OP true");
             if (key.OverprintMode != 0)
                 writer.WriteLine($"   /OPM {key.OverprintMode}");
-            if (key.BlendMode != null)
+            if (key.BlendMode is not null)
                 writer.WriteLine($"   /BM /{key.BlendMode}");
             writer.WriteLine(">>");
             WriteObjectEnd(writer);
@@ -656,7 +656,7 @@ internal class PdfDocumentWriter
         }
 
         // Write Encryption dictionary (if needed)
-        if (encryptObj.HasValue && _encryptor != null)
+        if (encryptObj.HasValue && _encryptor is not null)
         {
             WriteEncryptionDictionary(writer, encryptObj.Value);
         }
@@ -704,7 +704,7 @@ internal class PdfDocumentWriter
         writer.WriteLine($"   /Info {infoObj} 0 R");
 
         // Add /ID array (required for encryption, recommended otherwise)
-        if (_documentId != null)
+        if (_documentId is not null)
         {
             string idHex = BytesToHexString(_documentId);
             writer.WriteLine($"   /ID [<{idHex}> <{idHex}>]");
@@ -738,7 +738,7 @@ internal class PdfDocumentWriter
     private void WriteStreamObject(StreamWriter writer, int objectNumber, byte[] data)
     {
         // Encrypt the stream data if encryption is enabled
-        byte[] streamData = _encryptor != null ? EncryptStream(data, objectNumber) : data;
+        byte[] streamData = _encryptor is not null ? EncryptStream(data, objectNumber) : data;
 
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine($"<< /Length {streamData.Length} >>");
@@ -1054,7 +1054,7 @@ internal class PdfDocumentWriter
         // Apply graphics state if needed
         bool needsExtGState = path.FillOpacity < 1.0 || path.StrokeOpacity < 1.0 ||
                              path.FillOverprint || path.StrokeOverprint ||
-                             path.OverprintMode != 0 || path.BlendMode != null;
+                             path.OverprintMode != 0 || path.BlendMode is not null;
         if (needsExtGState)
         {
             var gsKey = new GraphicsStateKey(
@@ -1411,7 +1411,7 @@ internal class PdfDocumentWriter
         sb.Append("Q");
 
         byte[] data = Encoding.ASCII.GetBytes(sb.ToString());
-        byte[] streamData = _encryptor != null ? EncryptStream(data, objectNumber) : data;
+        byte[] streamData = _encryptor is not null ? EncryptStream(data, objectNumber) : data;
 
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine("<< /Type /XObject /Subtype /Form");
@@ -1621,7 +1621,7 @@ internal class PdfDocumentWriter
         (byte[] imageData, int width, int height, string colorSpace, int bitsPerComponent, string filter) = ProcessImage(image);
 
         // Encrypt the image data if encryption is enabled
-        byte[] streamData = _encryptor != null ? EncryptStream(imageData, objectNumber) : imageData;
+        byte[] streamData = _encryptor is not null ? EncryptStream(imageData, objectNumber) : imageData;
 
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine("<<");
@@ -1901,7 +1901,7 @@ internal class PdfDocumentWriter
         byte[] compressedData = CompressFlate(fontData);
 
         // Encrypt the compressed data if encryption is enabled
-        byte[] streamData = _encryptor != null ? EncryptStream(compressedData, fontFileObj) : compressedData;
+        byte[] streamData = _encryptor is not null ? EncryptStream(compressedData, fontFileObj) : compressedData;
 
         WriteObjectStart(writer, fontFileObj);
         writer.WriteLine($"<< /Length {streamData.Length}");
@@ -1980,7 +1980,7 @@ internal class PdfDocumentWriter
     /// </summary>
     private void WriteEncryptionDictionary(StreamWriter writer, int objectNumber)
     {
-        if (_encryptor == null) return;
+        if (_encryptor is null) return;
 
         WriteObjectStart(writer, objectNumber);
         writer.WriteLine("<<");
@@ -2027,11 +2027,11 @@ internal class PdfDocumentWriter
             writer.WriteLine("   /StrF /StdCF");
 
             // OE, UE, Perms are required for V=5
-            if (_encryptor.OEValue != null)
+            if (_encryptor.OEValue is not null)
                 writer.WriteLine($"   /OE <{BytesToHexString(_encryptor.OEValue)}>");
-            if (_encryptor.UEValue != null)
+            if (_encryptor.UEValue is not null)
                 writer.WriteLine($"   /UE <{BytesToHexString(_encryptor.UEValue)}>");
-            if (_encryptor.PermsValue != null)
+            if (_encryptor.PermsValue is not null)
                 writer.WriteLine($"   /Perms <{BytesToHexString(_encryptor.PermsValue)}>");
         }
 
@@ -2060,7 +2060,7 @@ internal class PdfDocumentWriter
     /// </summary>
     private string PdfEncryptedString(string text, int objectNumber)
     {
-        if (_encryptor == null)
+        if (_encryptor is null)
             return PdfString(text);
 
         // Convert to bytes and encrypt
@@ -2077,7 +2077,7 @@ internal class PdfDocumentWriter
     private string PdfEncryptedDate(DateTime date, int objectNumber)
     {
         var dateStr = $"D:{date:yyyyMMddHHmmss}";
-        if (_encryptor == null)
+        if (_encryptor is null)
             return $"({dateStr})";
 
         byte[] textBytes = Encoding.Latin1.GetBytes(dateStr);
@@ -2092,7 +2092,7 @@ internal class PdfDocumentWriter
     private string PdfTextString(string text, int objectNumber)
     {
         byte[] bytes = PdfDocEncoding.Encode(text); // PDFDocEncoding or UTF-16BE+BOM
-        if (_encryptor != null)
+        if (_encryptor is not null)
         {
             byte[] encrypted = EncryptString(bytes, objectNumber);
             return $"<{BytesToHexString(encrypted)}>";
@@ -2486,7 +2486,7 @@ internal class PdfDocumentWriter
         }
 
         // Border
-        if (annotation.Border != null)
+        if (annotation.Border is not null)
         {
             writer.Write($"   /Border [{annotation.Border.HorizontalRadius:F1} {annotation.Border.VerticalRadius:F1} {annotation.Border.Width:F1}");
             if (annotation.Border.DashPattern is { Length: > 0 })
@@ -2645,7 +2645,7 @@ internal class PdfDocumentWriter
         }
 
         byte[] data = Encoding.ASCII.GetBytes(content);
-        byte[] streamData = _encryptor != null ? EncryptStream(data, objNum) : data;
+        byte[] streamData = _encryptor is not null ? EncryptStream(data, objNum) : data;
 
         WriteObjectStart(writer, objNum);
         writer.WriteLine("<< /Type /XObject /Subtype /Form");

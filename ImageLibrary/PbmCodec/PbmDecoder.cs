@@ -78,7 +78,7 @@ public static class PbmDecoder
 
     public static PbmImage Decode(Stream stream)
     {
-        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (stream is null) throw new ArgumentNullException(nameof(stream));
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
         return Decode(ms.ToArray());
@@ -86,7 +86,7 @@ public static class PbmDecoder
 
     public static PbmImage Decode(string path)
     {
-        if (path == null) throw new ArgumentNullException(nameof(path));
+        if (path is null) throw new ArgumentNullException(nameof(path));
         return Decode(File.ReadAllBytes(path));
     }
 

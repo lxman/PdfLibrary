@@ -87,7 +87,7 @@ namespace Jp2Codec.TileAssembly
                 // carries PPT. If only PPT is present (no main-header PPM),
                 // concatenate the PPT segments of this tile-part.
                 byte[] packedHeaderChunk;
-                if (ppmSlicer != null)
+                if (ppmSlicer is not null)
                 {
                     packedHeaderChunk = ppmSlicer.NextTilePartChunk();
                 }
@@ -178,16 +178,16 @@ namespace Jp2Codec.TileAssembly
                 // tile-part of the tile only (per A.6.1 etc.). We accept them
                 // greedily — if a later tile-part also carries one, the spec
                 // says it shouldn't and we surface the violation.
-                if (header.CodOverride != null)
+                if (header.CodOverride is not null)
                 {
-                    if (_codOverride != null)
+                    if (_codOverride is not null)
                         throw new InvalidDataException(
                             $"Tile {TileIndex} has COD overrides in more than one tile-part.");
                     _codOverride = header.CodOverride;
                 }
-                if (header.QcdOverride != null)
+                if (header.QcdOverride is not null)
                 {
-                    if (_qcdOverride != null)
+                    if (_qcdOverride is not null)
                         throw new InvalidDataException(
                             $"Tile {TileIndex} has QCD overrides in more than one tile-part.");
                     _qcdOverride = header.QcdOverride;

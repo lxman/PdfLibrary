@@ -24,7 +24,7 @@ internal static class AesV5Hash
         using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         sha256.AppendData(password);
         sha256.AppendData(salt);
-        if (userKey != null)
+        if (userKey is not null)
             sha256.AppendData(userKey);
 
         byte[] k = sha256.GetHashAndReset();
@@ -43,7 +43,7 @@ internal static class AesV5Hash
                 int offset = i * k1Size;
                 Array.Copy(password, 0, k1, offset, password.Length);
                 Array.Copy(k, 0, k1, offset + password.Length, k.Length);
-                if (userKey != null)
+                if (userKey is not null)
                     Array.Copy(userKey, 0, k1, offset + password.Length + k.Length, userKey.Length);
             }
 

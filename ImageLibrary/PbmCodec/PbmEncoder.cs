@@ -16,7 +16,7 @@ public static class PbmEncoder
     /// </summary>
     public static byte[] Encode(PbmImage image, PbmFormat format = PbmFormat.BinaryPixmap)
     {
-        if (image == null) throw new ArgumentNullException(nameof(image));
+        if (image is null) throw new ArgumentNullException(nameof(image));
 
         return format switch
         {
@@ -31,14 +31,14 @@ public static class PbmEncoder
 
     public static void Encode(PbmImage image, Stream stream, PbmFormat format = PbmFormat.BinaryPixmap)
     {
-        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (stream is null) throw new ArgumentNullException(nameof(stream));
         byte[] data = Encode(image, format);
         stream.Write(data, 0, data.Length);
     }
 
     public static void Encode(PbmImage image, string path, PbmFormat format = PbmFormat.BinaryPixmap)
     {
-        if (path == null) throw new ArgumentNullException(nameof(path));
+        if (path is null) throw new ArgumentNullException(nameof(path));
         File.WriteAllBytes(path, Encode(image, format));
     }
 

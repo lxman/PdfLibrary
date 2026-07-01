@@ -136,7 +136,7 @@ public class CodecRegistry
         // Fallback to extension-based lookup with decode requirement
         codec ??= FindByExtension(Path.GetExtension(filePath), requireDecode: true);
 
-        if (codec == null)
+        if (codec is null)
         {
             throw new NotSupportedException($"No decoder found for file: {filePath}");
         }
@@ -158,7 +158,7 @@ public class CodecRegistry
         // Find codec with encode capability
         IImageCodec? codec = FindByExtension(Path.GetExtension(filePath), requireEncode: true);
 
-        if (codec == null)
+        if (codec is null)
         {
             throw new NotSupportedException($"No encoder found for format: {Path.GetExtension(filePath)}");
         }

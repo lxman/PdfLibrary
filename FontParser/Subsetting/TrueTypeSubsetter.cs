@@ -142,16 +142,16 @@ namespace FontParser.Subsetting
 
             // OS/2 — pass through unchanged if present (required by Windows)
             byte[]? os2 = font.GetTableBytes("OS/2");
-            if (os2 != null) AddTable(tables, "OS/2", (byte[])os2.Clone());
+            if (os2 is not null) AddTable(tables, "OS/2", (byte[])os2.Clone());
 
             AddTable(tables, "hmtx", hmtxBytes);
             AddTable(tables, "cmap", cmapBytes);
 
             // name, post — pass through unchanged
             byte[]? nameBytes = font.GetTableBytes("name");
-            if (nameBytes != null) AddTable(tables, "name", (byte[])nameBytes.Clone());
+            if (nameBytes is not null) AddTable(tables, "name", (byte[])nameBytes.Clone());
             byte[]? postBytes = font.GetTableBytes("post");
-            if (postBytes != null) AddTable(tables, "post", (byte[])postBytes.Clone());
+            if (postBytes is not null) AddTable(tables, "post", (byte[])postBytes.Clone());
 
             AddTable(tables, "loca", glyfLoca.LocaBytes);
             AddTable(tables, "glyf", glyfLoca.GlyfBytes);
@@ -160,7 +160,7 @@ namespace FontParser.Subsetting
             foreach (string tag in new[] { "cvt ", "fpgm", "prep", "gasp" })
             {
                 byte[]? t = font.GetTableBytes(tag);
-                if (t != null) AddTable(tables, tag, (byte[])t.Clone());
+                if (t is not null) AddTable(tables, tag, (byte[])t.Clone());
             }
 
             // 8. Serialise sfnt.

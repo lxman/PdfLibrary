@@ -24,7 +24,7 @@ public class CmapDiagnosticTest(ITestOutputHelper output)
         {
             PdfPage? page = doc.GetPage(pageNum);
             PdfResources? resources = page?.GetResources();
-            if (resources == null) continue;
+            if (resources is null) continue;
 
             foreach (string fontName in resources.GetFontNames())
             {
@@ -38,9 +38,9 @@ public class CmapDiagnosticTest(ITestOutputHelper output)
                 output.WriteLine($"Font Type: {font.FontType}");
                 output.WriteLine($"FirstChar: {font.FirstChar}");
                 output.WriteLine($"LastChar: {font.LastChar}");
-                output.WriteLine($"Has ToUnicode: {font.ToUnicode != null}");
-                output.WriteLine($"Has Encoding: {font.Encoding != null}");
-                if (font.Encoding != null)
+                output.WriteLine($"Has ToUnicode: {font.ToUnicode is not null}");
+                output.WriteLine($"Has Encoding: {font.Encoding is not null}");
+                if (font.Encoding is not null)
                 {
                     output.WriteLine($"Encoding Type: {font.Encoding.GetType().Name}");
                 }

@@ -175,12 +175,12 @@ namespace Jbig2Decoder.Region
                         if (!iardx!.Decode(out int rdx)) throw new InvalidOperationException("OOB decoding RDX");
                         if (!iardy!.Decode(out int rdy)) throw new InvalidOperationException("OOB decoding RDY");
 
-                        if (ib == null) throw new InvalidOperationException("Refinement requires a base glyph");
+                        if (ib is null) throw new InvalidOperationException("Refinement requires a base glyph");
                         if (ib.Width + rdw < 0 || ib.Height + rdh < 0)
                             throw new InvalidOperationException("Refinement produces negative dimensions");
 
                         var refImage = new Bitmap(ib.Width + rdw, ib.Height + rdh);
-                        if (refDecoder == null)
+                        if (refDecoder is null)
                         {
                             refDecoder = new RefinementRegionDecoder();
                             grStats = new byte[RefinementRegionDecoder.StatsSizeFor(p.SbRTemplate ? 1 : 0)];
@@ -304,7 +304,7 @@ namespace Jbig2Decoder.Region
 
         private static HuffmanParams UserTable(HuffmanParams?[]? userTables, int slot, string what)
         {
-            if (userTables == null || slot >= userTables.Length || userTables[slot] == null)
+            if (userTables is null || slot >= userTables.Length || userTables[slot] is null)
                 throw new InvalidOperationException(
                     $"{what} marked user-defined but no user Huffman table supplied at slot {slot}");
             return userTables[slot]!;
@@ -500,12 +500,12 @@ namespace Jbig2Decoder.Region
                         if (!hRsize!.Decode(r, out int bmsize)) throw new InvalidOperationException("OOB RSIZE");
                         r.AlignToByte();
 
-                        if (ib == null) throw new InvalidOperationException("Refinement requires a base glyph");
+                        if (ib is null) throw new InvalidOperationException("Refinement requires a base glyph");
                         if (ib.Width + rdw < 0 || ib.Height + rdh < 0)
                             throw new InvalidOperationException("Refinement produces negative dimensions");
 
                         var refImage = new Bitmap(ib.Width + rdw, ib.Height + rdh);
-                        if (refDecoder == null)
+                        if (refDecoder is null)
                         {
                             refDecoder = new RefinementRegionDecoder();
                             // SD-internal multi-instance refagg passes a shared

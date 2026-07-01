@@ -40,10 +40,10 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
                 for (var pageNum = 0; pageNum < pageCount; pageNum++)
                 {
                     PdfPage? page = doc.GetPage(pageNum);
-                    if (page == null) continue;
+                    if (page is null) continue;
 
                     PdfResources? resources = page.GetResources();
-                    if (resources == null)
+                    if (resources is null)
                     {
                         output.WriteLine($"  Page {pageNum + 1}: No resources");
                         continue;
@@ -55,13 +55,13 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
                     foreach (string fontName in fontNames)
                     {
                         PdfFont? font = resources.GetFontObject(fontName);
-                        if (font == null) continue;
+                        if (font is null) continue;
 
                         output.WriteLine($"    - {fontName}: {font.BaseFont} ({font.FontType})");
 
                         // Try to get embedded metrics for TrueType and Type0 fonts
                         EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
-                        if (metrics != null)
+                        if (metrics is not null)
                         {
                             output.WriteLine($"      Embedded: UnitsPerEm={metrics.UnitsPerEm}, Valid={metrics.IsValid}");
                         }
@@ -98,21 +98,21 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
             PdfPage? page = doc.GetPage(pageNum);
 
             PdfResources? resources = page?.GetResources();
-            if (resources == null) continue;
+            if (resources is null) continue;
 
             List<string> fontNames = resources.GetFontNames();
 
             foreach (string fontName in fontNames)
             {
                 PdfFont? font = resources.GetFontObject(fontName);
-                if (font == null) continue;
+                if (font is null) continue;
 
                 // Look for TrueType or Type0 fonts with embedded data
                 if (font.FontType != PdfFontType.TrueType && font.FontType != PdfFontType.Type0)
                     continue;
 
                 EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
-                if (metrics == null) continue;
+                if (metrics is null) continue;
 
                 foundTrueTypeFont = true;
                 output.WriteLine($"\n=== Analyzing {fontName}: {font.BaseFont} ===");
@@ -174,7 +174,7 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
             PdfPage? page = doc.GetPage(pageNum);
 
             PdfResources? resources = page?.GetResources();
-            if (resources == null) continue;
+            if (resources is null) continue;
 
             foreach (string fontName in resources.GetFontNames())
             {
@@ -241,7 +241,7 @@ public class EmbeddedFontIntegrationTests(ITestOutputHelper output)
             PdfPage? page = doc.GetPage(pageNum);
 
             PdfResources? resources = page?.GetResources();
-            if (resources == null) continue;
+            if (resources is null) continue;
 
             foreach (string fontName in resources.GetFontNames())
             {

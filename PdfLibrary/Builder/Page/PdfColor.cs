@@ -125,7 +125,7 @@ public readonly struct PdfColor
     /// </summary>
     public static PdfColor FromSeparation(string colorantName, double tint)
     {
-        if (colorantName == null)
+        if (colorantName is null)
             throw new ArgumentNullException(nameof(colorantName));
 
         return new(PdfColorSpace.Separation, [Math.Clamp(tint, 0, 1)], colorantName);

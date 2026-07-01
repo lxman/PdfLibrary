@@ -238,7 +238,7 @@ public class PdfDocumentBuilder
     public PdfDocumentBuilder AddBookmark(string title, out PdfBookmark bookmark, Action<PdfBookmarkBuilder>? configure = null)
     {
         bookmark = new PdfBookmark(title);
-        if (configure != null)
+        if (configure is not null)
         {
             var builder = new PdfBookmarkBuilder(bookmark);
             configure(builder);
@@ -303,7 +303,7 @@ public class PdfDocumentBuilder
     public PdfDocumentBuilder SetPageLabels(int startPageIndex, out PdfPageLabelRange range, Action<PdfPageLabelBuilder>? configure = null)
     {
         range = new PdfPageLabelRange(startPageIndex);
-        if (configure != null)
+        if (configure is not null)
         {
             var builder = new PdfPageLabelBuilder(range);
             configure(builder);

@@ -45,7 +45,7 @@ namespace CcittCodec
         public byte[] DecodeWithConsumed(byte[] data, out int consumedBytes)
         {
             consumedBytes = 0;
-            if (data == null || data.Length == 0)
+            if (data is null || data.Length == 0)
                 return [];
 
             // Reject absurd dimensions before allocating per-row buffers. Width is the PDF
@@ -125,7 +125,7 @@ namespace CcittCodec
                             is1D = rowCount % _options.K == 0;
                         }
 
-                        if (is1D || referenceLine == null)
+                        if (is1D || referenceLine is null)
                         {
                             row = DecodeGroup3_1DRow(reader);
                         }
@@ -140,7 +140,7 @@ namespace CcittCodec
                         break;
                 }
 
-                if (row == null)
+                if (row is null)
                 {
                     // Check for end of block
                     if (CheckEndOfBlock(reader))

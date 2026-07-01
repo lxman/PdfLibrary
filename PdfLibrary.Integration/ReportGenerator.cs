@@ -54,7 +54,7 @@ public static class ReportGenerator
             html.AppendLine($"<h3>{result.Name} - <span class='{statusClass}'>{statusText}</span></h3>");
             html.AppendLine($"<p class='description'>{result.Description}</p>");
 
-            if (result.ErrorMessage != null)
+            if (result.ErrorMessage is not null)
             {
                 html.AppendLine($"<p class='fail'><em>{result.ErrorMessage}</em></p>");
             }

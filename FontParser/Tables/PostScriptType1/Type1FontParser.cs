@@ -151,7 +151,7 @@ namespace FontParser.Tables.PostScriptType1
             if (!_charStrings.TryGetValue(glyphName, out encryptedData))
                 return null;
 
-            if (_interpreter == null)
+            if (_interpreter is null)
                 _interpreter = new Type1CharstringInterpreter(_subrs);
 
             byte[] decrypted = Type1Decryptor.DecryptCharstring(encryptedData, _lenIV);
@@ -164,7 +164,7 @@ namespace FontParser.Tables.PostScriptType1
         public GlyphOutline? GetGlyphOutlineByCode(int charCode)
         {
             string? glyphName = GetGlyphName(charCode);
-            if (glyphName == null)
+            if (glyphName is null)
                 return null;
 
             return GetGlyphOutline(glyphName);

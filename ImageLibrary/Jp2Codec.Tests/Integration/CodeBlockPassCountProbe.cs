@@ -53,7 +53,7 @@ public class CodeBlockPassCountProbe
         {
             bool has1 = c1.TryGetValue(key, out BlockInfo? i1);
             bool has2 = a1.TryGetValue(key, out BlockInfo? i2);
-            if (!has1 || !has2 || i1 == null || i2 == null) continue;
+            if (!has1 || !has2 || i1 is null || i2 is null) continue;
 
             // Always dump pass counts + segment signatures, even when they
             // match — gives the trace context for byte-level diff.

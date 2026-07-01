@@ -26,7 +26,7 @@ namespace LzwCodec
         /// <returns>The compressed data.</returns>
         public static byte[] Compress(byte[] input, LzwOptions options)
         {
-            if (input == null)
+            if (input is null)
                 throw new ArgumentNullException(nameof(input));
 
             using (var output = new MemoryStream())
@@ -57,7 +57,7 @@ namespace LzwCodec
         /// <returns>The decompressed data.</returns>
         public static byte[] Decompress(byte[] input, LzwOptions options)
         {
-            if (input == null)
+            if (input is null)
                 throw new ArgumentNullException(nameof(input));
 
             using (var inputStream = new MemoryStream(input))
@@ -75,9 +75,9 @@ namespace LzwCodec
         /// <param name="options">The compression options. If null, uses PDF defaults.</param>
         public static void Compress(Stream input, Stream output, LzwOptions? options = null)
         {
-            if (input == null)
+            if (input is null)
                 throw new ArgumentNullException(nameof(input));
-            if (output == null)
+            if (output is null)
                 throw new ArgumentNullException(nameof(output));
 
             using (var encoder = new LzwEncoder(output, options, leaveOpen: true))
@@ -94,9 +94,9 @@ namespace LzwCodec
         /// <param name="options">The decompression options. If null, uses PDF defaults.</param>
         public static void Decompress(Stream input, Stream output, LzwOptions? options = null)
         {
-            if (input == null)
+            if (input is null)
                 throw new ArgumentNullException(nameof(input));
-            if (output == null)
+            if (output is null)
                 throw new ArgumentNullException(nameof(output));
 
             using (var decoder = new LzwDecoder(input, options, leaveOpen: true))

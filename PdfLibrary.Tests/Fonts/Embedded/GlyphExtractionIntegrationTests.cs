@@ -33,7 +33,7 @@ public class GlyphExtractionIntegrationTests
         // Find the first embedded font with metrics
         EmbeddedFontMetrics? metrics = FindFirstEmbeddedFontMetrics(page);
 
-        if (metrics == null)
+        if (metrics is null)
         {
             // Skip if no embedded fonts found
             return;
@@ -185,7 +185,7 @@ public class GlyphExtractionIntegrationTests
         PdfResources? resources = page.GetResources();
 
         PdfDictionary? fonts = resources?.GetFonts();
-        if (fonts == null)
+        if (fonts is null)
             return null;
 
         // Look through all fonts to find an embedded TrueType font
@@ -194,7 +194,7 @@ public class GlyphExtractionIntegrationTests
             try
             {
                 var fontDict = fontEntry.Value as PdfDictionary;
-                if (fontDict == null)
+                if (fontDict is null)
                     continue;
 
                 // Try to create font and get embedded metrics

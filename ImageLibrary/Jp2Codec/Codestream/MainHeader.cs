@@ -102,7 +102,7 @@ namespace Jp2Codec.Codestream
                 switch (marker)
                 {
                     case MarkerCode.Cod:
-                        if (cod != null)
+                        if (cod is not null)
                             throw new InvalidDataException("Main header has more than one COD segment.");
                         cod = CodSegment.Parse(r.ReadSegment());
                         break;
@@ -112,7 +112,7 @@ namespace Jp2Codec.Codestream
                         break;
 
                     case MarkerCode.Qcd:
-                        if (qcd != null)
+                        if (qcd is not null)
                             throw new InvalidDataException("Main header has more than one QCD segment.");
                         qcd = QcdSegment.Parse(r.ReadSegment());
                         break;

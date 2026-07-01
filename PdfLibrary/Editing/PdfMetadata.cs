@@ -29,7 +29,7 @@ public sealed class PdfMetadata
         set
         {
             SetInfoString("Title", value);
-            SyncXmp(value != null
+            SyncXmp(value is not null
                 ? () => Xmp.SetLangAlt(XmpSchemas.Dc, XmpSchemas.DcPrefix, "title", value)
                 : () => Xmp.Remove(XmpSchemas.Dc, "title"));
         }
@@ -42,7 +42,7 @@ public sealed class PdfMetadata
         set
         {
             SetInfoString("Author", value);
-            SyncXmp(value != null
+            SyncXmp(value is not null
                 ? () => Xmp.SetArray(XmpSchemas.Dc, XmpSchemas.DcPrefix, "creator", new[] { value }, ordered: true)
                 : () => Xmp.Remove(XmpSchemas.Dc, "creator"));
         }
@@ -55,7 +55,7 @@ public sealed class PdfMetadata
         set
         {
             SetInfoString("Subject", value);
-            SyncXmp(value != null
+            SyncXmp(value is not null
                 ? () => Xmp.SetLangAlt(XmpSchemas.Dc, XmpSchemas.DcPrefix, "description", value)
                 : () => Xmp.Remove(XmpSchemas.Dc, "description"));
         }
@@ -68,7 +68,7 @@ public sealed class PdfMetadata
         set
         {
             SetInfoString("Keywords", value);
-            SyncXmp(value != null
+            SyncXmp(value is not null
                 ? () => SyncKeywordsXmp(value)
                 : () => { Xmp.Remove(XmpSchemas.Pdf, "Keywords"); Xmp.Remove(XmpSchemas.Dc, "subject"); });
         }
@@ -81,7 +81,7 @@ public sealed class PdfMetadata
         set
         {
             SetInfoString("Creator", value);
-            SyncXmp(value != null
+            SyncXmp(value is not null
                 ? () => Xmp.SetSimple(XmpSchemas.Xmp, XmpSchemas.XmpPrefix, "CreatorTool", value)
                 : () => Xmp.Remove(XmpSchemas.Xmp, "CreatorTool"));
         }
@@ -94,7 +94,7 @@ public sealed class PdfMetadata
         set
         {
             SetInfoString("Producer", value);
-            SyncXmp(value != null
+            SyncXmp(value is not null
                 ? () => Xmp.SetSimple(XmpSchemas.Pdf, XmpSchemas.PdfPrefix, "Producer", value)
                 : () => Xmp.Remove(XmpSchemas.Pdf, "Producer"));
         }

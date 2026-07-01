@@ -23,7 +23,7 @@ public class FixupManager
     /// <param name="fixup">The fixup to register.</param>
     public void RegisterFixup(IPdfFixup fixup)
     {
-        if (fixup == null)
+        if (fixup is null)
             throw new ArgumentNullException(nameof(fixup));
 
         if (_fixups.Any(f => f.Name == fixup.Name))

@@ -195,7 +195,7 @@ namespace FontParser.Tables.PostScriptType1
                     break;
 
                 case 10: // callsubr
-                    if (_stack.Count >= 1 && _subrs != null)
+                    if (_stack.Count >= 1 && _subrs is not null)
                     {
                         var subrIndex = (int)Pop();
                         if (subrIndex >= 0 && subrIndex < _subrs.Count)
@@ -485,7 +485,7 @@ namespace FontParser.Tables.PostScriptType1
 
         private void UpdateBoundingBox()
         {
-            if (_outline == null || _outline.Commands.Count == 0)
+            if (_outline is null || _outline.Commands.Count == 0)
                 return;
 
             float minX = float.MaxValue, minY = float.MaxValue;

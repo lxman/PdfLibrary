@@ -20,7 +20,7 @@ public class SampleFileTests
     {
         // Look for TestImages directory relative to the test assembly
         string? dir = AppContext.BaseDirectory;
-        while (dir != null)
+        while (dir is not null)
         {
             string testImagesPath = Path.Combine(dir, "TestImages");
             if (Directory.Exists(testImagesPath))

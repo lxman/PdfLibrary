@@ -32,7 +32,7 @@ internal partial class Type1Font : PdfFont
         // This matches TrueTypeFont behavior and fixes garbled text issues
         // when the PDF /Widths array has incorrect values
         EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
-        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: embeddedMetrics={(embeddedMetrics != null ? "exists" : "NULL")}, IsValid={embeddedMetrics?.IsValid}, Encoding={(Encoding != null ? "exists" : "NULL")}");
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: embeddedMetrics={(embeddedMetrics is not null ? "exists" : "NULL")}, IsValid={embeddedMetrics?.IsValid}, Encoding={(Encoding is not null ? "exists" : "NULL")}");
 
         if (embeddedMetrics is { IsValid: true })
         {
@@ -103,7 +103,7 @@ internal partial class Type1Font : PdfFont
         }
 
         // Fallback to widths array from PDF
-        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Checking PDF widths array: _widths={(_widths != null ? "exists" : "NULL")}, FirstChar={FirstChar}, LastChar={LastChar}, charCode={charCode}");
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Checking PDF widths array: _widths={(_widths is not null ? "exists" : "NULL")}, FirstChar={FirstChar}, LastChar={LastChar}, charCode={charCode}");
         if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
         {
             int index = charCode - FirstChar;
@@ -144,7 +144,7 @@ internal partial class Type1Font : PdfFont
 
         // Try to get from the font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
-        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Font descriptor: {(descriptor != null ? $"MissingWidth={descriptor.MissingWidth}, AvgWidth={descriptor.AvgWidth}" : "NULL")}");
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Font descriptor: {(descriptor is not null ? $"MissingWidth={descriptor.MissingWidth}, AvgWidth={descriptor.AvgWidth}" : "NULL")}");
         if (descriptor is null)
         {
             double fallback = _defaultWidth > 0 ? _defaultWidth : 250;

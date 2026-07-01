@@ -27,7 +27,7 @@ internal class PdfContentParser
     /// </summary>
     public static List<PdfOperator> Parse(byte[]? contentData)
     {
-        if (contentData == null || contentData.Length == 0)
+        if (contentData is null || contentData.Length == 0)
             return [];
 
         using var stream = new MemoryStream(contentData);

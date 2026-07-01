@@ -133,7 +133,7 @@ public class PdfBookmarkBuilder
     public PdfBookmarkBuilder AddChild(string title, Action<PdfBookmarkBuilder>? configure = null)
     {
         var child = new PdfBookmark(title);
-        if (configure != null)
+        if (configure is not null)
         {
             var childBuilder = new PdfBookmarkBuilder(child);
             configure(childBuilder);
@@ -148,7 +148,7 @@ public class PdfBookmarkBuilder
     public PdfBookmarkBuilder AddChild(string title, out PdfBookmark child, Action<PdfBookmarkBuilder>? configure = null)
     {
         child = new PdfBookmark(title);
-        if (configure != null)
+        if (configure is not null)
         {
             var childBuilder = new PdfBookmarkBuilder(child);
             configure(childBuilder);

@@ -42,7 +42,7 @@ try
         int pageNum = pageIndex + 1; // For display purposes
         PdfPage? page = document.GetPage(pageIndex);
 
-        if (page == null)
+        if (page is null)
         {
             Console.WriteLine($"Page {pageNum}: ERROR - Could not load page");
             continue;

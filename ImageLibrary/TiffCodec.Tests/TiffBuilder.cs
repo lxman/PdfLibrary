@@ -82,9 +82,9 @@ internal sealed class TiffBuilder
 
         foreach (Entry e in _entries)
         {
-            if (e.OffsetRefs != null)
+            if (e.OffsetRefs is not null)
                 e.Payload = LongsToBytes(e.OffsetRefs.Select(idx => (uint)blockOffset[idx]).ToArray());
-            else if (e.LengthRefs != null)
+            else if (e.LengthRefs is not null)
                 e.Payload = LongsToBytes(e.LengthRefs.Select(idx => (uint)_blocks[idx].Length).ToArray());
         }
 

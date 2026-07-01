@@ -97,7 +97,7 @@ internal static class AesCipher
         aes.Padding = PaddingMode.PKCS7;
 
         // Use provided IV or generate random one
-        if (iv != null)
+        if (iv is not null)
         {
             if (iv.Length != 16)
                 throw new ArgumentException("IV must be 16 bytes", nameof(iv));

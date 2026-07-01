@@ -97,7 +97,7 @@ internal class ImageRenderer
 
                 // Wrap the bitmap pixels without copying — bitmap stays alive for the duration of Draw.
                 using SKImage? skImage = SKImage.FromPixels(bitmap.Info, bitmap.GetPixels(), bitmap.RowBytes);
-                if (skImage == null)
+                if (skImage is null)
                 {
                     PdfLogger.Log(LogCategory.Images, "DrawImage: SKImage.FromPixels returned null!");
                     _canvas.SetMatrix(oldMatrix);

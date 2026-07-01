@@ -581,7 +581,7 @@ public static class PngDecoder
             if (index < palette.Length)
             {
                 PngColor color = palette[index];
-                byte alpha = transparency != null && index < transparency.Length
+                byte alpha = transparency is not null && index < transparency.Length
                     ? transparency[index]
                     : (byte)255;
 

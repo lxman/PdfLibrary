@@ -41,7 +41,7 @@ public sealed class TiffImage
         Height = height;
 
         int expectedSize = width * height * 4;
-        if (pixelData == null)
+        if (pixelData is null)
         {
             PixelData = new byte[expectedSize];
         }

@@ -41,7 +41,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// <param name="fontProvider">Optional font provider for system substitute fonts (null → SystemFontLocator)</param>
     internal PdfRenderer(IRenderTarget target, PdfResources? resources = null, OptionalContentManager? optionalContentManager = null, PdfDocument? document = null, FixupManager? fixupManager = null, ISystemFontProvider? fontProvider = null)
     {
-        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager != null}");
+        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] PdfRenderer constructor called: fixupManager!=null={fixupManager is not null}");
 
         _target = target ?? throw new ArgumentNullException(nameof(target));
         // SystemFontLocator is the default substitute source; construct once (builds a
@@ -59,7 +59,7 @@ internal class PdfRenderer : PdfContentProcessor
         };
         _fixupManager = fixupManager;
 
-        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] _fixupManager assigned: _fixupManager!=null={_fixupManager != null}");
+        PdfLogger.Log(LogCategory.Text, $"[RENDERER-CTOR] _fixupManager assigned: _fixupManager!=null={_fixupManager is not null}");
     }
 
     /// <summary>
@@ -849,7 +849,7 @@ internal class PdfRenderer : PdfContentProcessor
                 HasEmbeddedFontData = HasEmbeddedFontData(font)
             };
 
-            PdfLogger.Log(LogCategory.Text, $"[RENDERER-DEBUG] Before fixup call: text='{textToRender}' font='{font.BaseFont}' IsBase14={context.IsBase14Font} HasEmbedded={context.HasEmbeddedFontData} fixupManager!=null={_fixupManager != null}");
+            PdfLogger.Log(LogCategory.Text, $"[RENDERER-DEBUG] Before fixup call: text='{textToRender}' font='{font.BaseFont}' IsBase14={context.IsBase14Font} HasEmbedded={context.HasEmbeddedFontData} fixupManager!=null={_fixupManager is not null}");
 
             // Apply fixups
             _fixupManager?.ApplyTextRunFixups(context);

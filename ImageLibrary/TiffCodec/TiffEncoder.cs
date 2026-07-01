@@ -19,7 +19,7 @@ public static class TiffEncoder
     /// <returns>The encoded TIFF data.</returns>
     public static byte[] Encode(TiffImage image, TiffCompression compression = TiffCompression.None)
     {
-        if (image == null)
+        if (image is null)
             throw new ArgumentNullException(nameof(image));
 
         using (var stream = new MemoryStream())
@@ -37,9 +37,9 @@ public static class TiffEncoder
     /// <param name="compression">The compression type to use (default: None).</param>
     public static void Encode(TiffImage image, Stream stream, TiffCompression compression = TiffCompression.None)
     {
-        if (image == null)
+        if (image is null)
             throw new ArgumentNullException(nameof(image));
-        if (stream == null)
+        if (stream is null)
             throw new ArgumentNullException(nameof(stream));
 
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
@@ -56,9 +56,9 @@ public static class TiffEncoder
     /// <param name="compression">The compression type to use (default: None).</param>
     public static void Encode(TiffImage image, string path, TiffCompression compression = TiffCompression.None)
     {
-        if (image == null)
+        if (image is null)
             throw new ArgumentNullException(nameof(image));
-        if (path == null)
+        if (path is null)
             throw new ArgumentNullException(nameof(path));
 
         using (FileStream stream = File.Create(path))

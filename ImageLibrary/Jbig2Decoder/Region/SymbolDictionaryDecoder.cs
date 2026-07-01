@@ -311,7 +311,7 @@ namespace Jbig2Decoder.Region
         };
         private static HuffmanParams UserTable(HuffmanParams?[]? ut, int slot, string what)
         {
-            if (ut == null || slot >= ut.Length || ut[slot] == null)
+            if (ut is null || slot >= ut.Length || ut[slot] is null)
                 throw new InvalidOperationException(
                     $"{what} marked user-defined but no user Huffman table supplied at slot {slot}");
             return ut[slot]!;
