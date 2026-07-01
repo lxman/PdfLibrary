@@ -6,11 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-30
+
+Minor release: an ICC-based CMYK color pipeline. Additive and back-compatible — the ICC CMYK path
+is **opt-in** (`PdfColorToRgb.UseIccForDeviceCmyk` defaults `false`), so default-configured consumers
+render byte-identically to 2.1.0.
+
 ### Added
-- CMYK ICC color primitives (SP1): bundled "U.S. Web Coated (SWOP) v2" profile and a
-  bidirectional `DeviceCmykConverter` (CMYK↔sRGB) with a pluggable `CmykProfileProvider`.
-  Shipped **dormant** — `PdfColorToRgb.UseIccForDeviceCmyk` defaults `false`, so rendered
-  output is unchanged until a later phase enables it.
+
+- **CMYK ICC color primitives.** A bidirectional `DeviceCmykConverter` (CMYK↔sRGB) with a pluggable
+  `CmykProfileProvider`, bundling an unencumbered CC0 default profile (`SWOP_TR003_coated_3`). Consumers
+  can override the profile via `CmykProfileProvider.OverrideProfileBytes` (bytes > path > bundled).
+- **ICC-accurate DeviceCMYK / Separation rendering** behind `PdfColorToRgb.UseIccForDeviceCmyk`. When
+  enabled, DeviceCMYK and Separation colors convert through the ICC profile using the **Perceptual**
+  rendering intent (matching how design apps display press CMYK: a realistic black point and tone
+  mapping, rather than RelativeColorimetric's media-white clipping that renders darks too light).
+
+### Changed
+
+- `DeviceCmykConverter` builds its ICC transforms with **Perceptual** intent (was the ICCSharp default
+  RelativeColorimetric). Only affects consumers that opt into `UseIccForDeviceCmyk`; the naive-formula
+  default path is unchanged. Falls back to naive CMYK math if the ICC transform cannot be built.
 
 ## [2.1.0] - 2026-06-28
 
