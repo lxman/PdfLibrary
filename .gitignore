@@ -5,6 +5,8 @@ riderModule.iml
 /_ReSharper.Caches/
 logs/
 *.pdf
+# Local NuGet feed for Focal co-development dev packs (never committed)
+local-feed/
 .claude/
 .worktrees/
 .superpowers/
