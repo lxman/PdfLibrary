@@ -1,5 +1,7 @@
 using System.Text;
 using PdfLibrary.Content;
+using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Tests;
 
@@ -369,6 +371,63 @@ ET";
         Assert.Equal(2, fragments.Count);
         Assert.Equal(100.0, fragments[1].X, precision: 4);   // Td restarted the line
         Assert.Equal(680.0, fragments[1].Y, precision: 4);
+    }
+
+    [Fact]
+    public void TextOffset_XObjectHostedFragments_RebaseOntoOuterAssembledText()
+    {
+        // Outer content shows text, invokes a Form XObject that itself shows text, then shows
+        // more outer text. Every fragment's TextOffset (outer AND XObject-hosted) must point at
+        // its own text within the final assembled string.
+        var outerContent = @"
+BT
+/F1 12 Tf
+100 700 Td
+(Outer start) Tj
+ET
+/Fm1 Do
+BT
+/F1 12 Tf
+100 650 Td
+(Outer end) Tj
+ET";
+        byte[] outerBytes = Encoding.ASCII.GetBytes(outerContent);
+
+        var formContent = @"
+BT
+/F1 12 Tf
+50 50 Td
+(Inside XObject) Tj
+ET";
+        byte[] formBytes = Encoding.ASCII.GetBytes(formContent);
+
+        var formDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Form")
+        };
+        var formStream = new PdfStream(formDict, formBytes);
+
+        var xobjectDict = new PdfDictionary
+        {
+            [new PdfName("Fm1")] = formStream
+        };
+        var resourcesDict = new PdfDictionary
+        {
+            [new PdfName("XObject")] = xobjectDict
+        };
+        var resources = new PdfResources(resourcesDict);
+
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(outerBytes, resources);
+
+        Assert.Contains("Outer start", text);
+        Assert.Contains("Inside XObject", text);
+        Assert.Contains("Outer end", text);
+
+        foreach (TextFragment f in fragments)
+        {
+            Assert.Equal(f.Text, text.Substring(f.TextOffset, f.Text.Length));
+        }
     }
 
     #endregion

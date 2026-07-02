@@ -278,9 +278,26 @@ internal class PdfTextExtractor : PdfContentProcessor
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         formExtractor.ProcessOperators(operators);
 
-        // Append the extracted text and fragments to our results
+        // Append the extracted text and fragments to our results. The nested extractor's
+        // TextOffsets are local to its own (empty-started) _textBuilder, so rebase each one
+        // onto this builder's length at the point the nested text is appended. No separator
+        // is inserted between the outer text and the nested text below, so the base offset is
+        // exactly the outer builder's length before the append.
+        int baseOffset = _textBuilder.Length;
         _textBuilder.Append(formExtractor.GetText());
-        _fragments.AddRange(formExtractor.GetTextFragments());
+        foreach (TextFragment fragment in formExtractor.GetTextFragments())
+        {
+            _fragments.Add(new TextFragment
+            {
+                Text = fragment.Text,
+                X = fragment.X,
+                Y = fragment.Y,
+                FontName = fragment.FontName,
+                FontSize = fragment.FontSize,
+                Width = fragment.Width,
+                TextOffset = baseOffset + fragment.TextOffset
+            });
+        }
     }
 
     /// <summary>
