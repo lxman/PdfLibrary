@@ -272,6 +272,107 @@ ET";
 
     #endregion
 
+    #region Pen Cursor / TextOffset Tests
+
+    [Fact]
+    public void TJElements_GetAdvancingX_NotTheStaleMatrixPosition()
+    {
+        // "Hello"(5 bytes) then "World": fragment 2 must start where fragment 1 ended.
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(Hello) (World)] TJ
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(100.0, fragments[0].X, precision: 4);
+        Assert.Equal(100.0 + 5 * 12 * 0.5, fragments[1].X, precision: 4);   // 130.0
+    }
+
+    [Fact]
+    public void TJKerningAdjustment_ShiftsTheCursor()
+    {
+        // -250/1000 * 12 = -(-3) => +3.0 to the right after "Hello".
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(Hello) -250 (World)] TJ
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(100.0 + 30.0 + 3.0, fragments[1].X, precision: 4);
+    }
+
+    [Fact]
+    public void ConsecutiveTj_WithoutRepositioning_AdvancesToo()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+(AB) Tj
+(CD) Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(100.0 + 2 * 12 * 0.5, fragments[1].X, precision: 4);   // 112.0
+    }
+
+    [Fact]
+    public void TextOffset_MapsFragmentsIntoAssembledText()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(Hel) (lo)] TJ
+0 -20 Td
+(World) Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        foreach (TextFragment f in fragments)
+            Assert.Equal(f.Text, text.Substring(f.TextOffset, f.Text.Length));
+
+        // Kern-split halves are adjacent in the assembled text (no separator injected between them)
+        Assert.Contains("Hello", text);
+    }
+
+    [Fact]
+    public void Positioning_ResetsCursorToMatrixPosition()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+(Hello) Tj
+0 -20 Td
+(World) Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(100.0, fragments[1].X, precision: 4);   // Td restarted the line
+        Assert.Equal(680.0, fragments[1].Y, precision: 4);
+    }
+
+    #endregion
+
     #region Font Information Tests
 
     [Fact]

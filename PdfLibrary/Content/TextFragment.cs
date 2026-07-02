@@ -17,5 +17,11 @@ public class TextFragment
     /// build highlight/selection rectangles without re-walking font metrics.</summary>
     public double Width { get; init; }
 
+    /// <summary>Offset of <see cref="Text"/> within the assembled page text returned alongside
+    /// the fragments by <c>ExtractTextWithFragments()</c> (the assembled text interleaves
+    /// heuristic ' '/'\n' separators that belong to no fragment). Lets consumers search the
+    /// correctly word-joined assembled text and map match ranges back to fragments.</summary>
+    public int TextOffset { get; init; }
+
     public override string ToString() => $"{Text} at ({X:F2}, {Y:F2}) {FontName} {FontSize}pt";
 }

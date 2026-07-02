@@ -20,6 +20,13 @@ internal class PdfTextExtractor : PdfContentProcessor
     private readonly PdfDocument? _document;
     private bool _inTextObject;
     private Vector2 _lastPosition;
+
+    // True pen position: starts at the text-matrix position when a positioning operator fires,
+    // then advances with each shown run's width and each TJ kerning adjustment. The text matrix
+    // itself does NOT advance on show-text in this processor, so GetTextPosition() alone is stale
+    // for every run after the first — the cursor is the fragment-start source of truth.
+    private Vector2 _cursor;
+    private bool _cursorValid;
     private const double SpaceThreshold = 0.2; // Threshold for detecting word spacing (as fraction of font size)
 
     /// <summary>
@@ -86,6 +93,8 @@ internal class PdfTextExtractor : PdfContentProcessor
     {
         if (!_inTextObject) return;
 
+        _cursorValid = false;   // matrix moved: next show-text restarts the cursor from the matrix
+
         Vector2 currentPosition = CurrentState.GetTextPosition();
         float distance = Vector2.Distance(_lastPosition, currentPosition);
         var threshold = (float)(SpaceThreshold * CurrentState.FontSize);
@@ -113,6 +122,11 @@ internal class PdfTextExtractor : PdfContentProcessor
         if (!_inTextObject) return;
 
         Vector2 position = CurrentState.GetTextPosition();
+        if (!_cursorValid)
+        {
+            _cursor = position;
+            _cursorValid = true;
+        }
 
         // Get current font object
         PdfFont? font = null;
@@ -137,18 +151,21 @@ internal class PdfTextExtractor : PdfContentProcessor
         // consumers can build highlight rectangles without re-resolving font metrics).
         double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize);
 
+        int textOffset = _textBuilder.Length;
         _textBuilder.Append(decodedText);
         _fragments.Add(new TextFragment
         {
             Text = decodedText,
-            X = position.X,
-            Y = position.Y,
+            X = _cursor.X,
+            Y = _cursor.Y,
             FontName = CurrentState.FontName,
             FontSize = effectiveFontSize,  // Use effective (scaled) font size
-            Width = advance
+            Width = advance,
+            TextOffset = textOffset
         });
 
-        _lastPosition = position with { X = position.X + (float)advance };
+        _cursor = _cursor with { X = _cursor.X + (float)advance };
+        _lastPosition = _cursor;
     }
 
     private protected override void OnShowTextWithPositioning(PdfArray array)
@@ -167,15 +184,17 @@ internal class PdfTextExtractor : PdfContentProcessor
                     // Negative values increase spacing (move text position)
                     // Values are in thousandths of a unit of text space
                     double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
-                    Vector2 position = CurrentState.GetTextPosition();
-                    _lastPosition = position with { X = position.X + (float)adjustment };
+                    if (_cursorValid)
+                        _cursor = _cursor with { X = _cursor.X + (float)adjustment };
+                    _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
                     break;
                 }
                 case PdfReal realVal:
                 {
                     double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
-                    Vector2 position = CurrentState.GetTextPosition();
-                    _lastPosition = position with { X = position.X + (float)adjustment };
+                    if (_cursorValid)
+                        _cursor = _cursor with { X = _cursor.X + (float)adjustment };
+                    _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
                     break;
                 }
             }
