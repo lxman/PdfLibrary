@@ -133,6 +133,10 @@ internal class PdfTextExtractor : PdfContentProcessor
         );
         double effectiveFontSize = CurrentState.FontSize * scaleY;
 
+        // Calculate actual text advance using font metrics (also stored on the fragment so
+        // consumers can build highlight rectangles without re-resolving font metrics).
+        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize);
+
         _textBuilder.Append(decodedText);
         _fragments.Add(new TextFragment
         {
@@ -140,11 +144,10 @@ internal class PdfTextExtractor : PdfContentProcessor
             X = position.X,
             Y = position.Y,
             FontName = CurrentState.FontName,
-            FontSize = effectiveFontSize  // Use effective (scaled) font size
+            FontSize = effectiveFontSize,  // Use effective (scaled) font size
+            Width = advance
         });
 
-        // Calculate actual text advance using font metrics
-        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize);
         _lastPosition = position with { X = position.X + (float)advance };
     }
 

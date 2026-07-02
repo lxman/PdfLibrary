@@ -231,6 +231,47 @@ ET";
 
     #endregion
 
+    #region Text Fragment Width Tests
+
+    [Fact]
+    public void Fragment_Width_PopulatedFromFallback_WhenNoFontResources()
+    {
+        // No resources → CalculateTextWidth falls back to bytes.Length * fontSize * 0.5.
+        // "Test" = 4 bytes at 12pt → 4 * 12 * 0.5 = 24.0 exactly.
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+(Test) Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Single(fragments);
+        Assert.Equal(24.0, fragments[0].Width, precision: 6);
+    }
+
+    [Fact]
+    public void Fragment_Width_PopulatedPerString_InTJArrays()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+[(Hello) -250 (World)] TJ
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(5 * 12 * 0.5, fragments[0].Width, precision: 6);   // "Hello" fallback width
+        Assert.Equal(5 * 12 * 0.5, fragments[1].Width, precision: 6);   // "World" fallback width
+    }
+
+    #endregion
+
     #region Font Information Tests
 
     [Fact]
