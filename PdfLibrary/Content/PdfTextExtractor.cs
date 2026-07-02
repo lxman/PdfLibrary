@@ -1,4 +1,4 @@
-using System.Numerics;
+﻿using System.Numerics;
 using System.Text;
 using Logging;
 using PdfLibrary.Core;
@@ -283,6 +283,10 @@ internal class PdfTextExtractor : PdfContentProcessor
         // onto this builder's length at the point the nested text is appended. No separator
         // is inserted between the outer text and the nested text below, so the base offset is
         // exactly the outer builder's length before the append.
+        // DEFERRED (tracked in Focal's search backlog): because no separator is inserted here,
+        // outer text can glue directly onto XObject-hosted text (a query straddling the seam can
+        // spuriously match), and nested fragment X/Y are copied through in the form's local space
+        // (not transformed by the form's placement matrix) — both pre-existing merge behaviors.
         int baseOffset = _textBuilder.Length;
         _textBuilder.Append(formExtractor.GetText());
         foreach (TextFragment fragment in formExtractor.GetTextFragments())
