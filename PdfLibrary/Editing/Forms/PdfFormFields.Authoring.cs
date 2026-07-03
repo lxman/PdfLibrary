@@ -159,6 +159,51 @@ public sealed partial class PdfFormFields
         return (PdfButtonField)this[name]!;
     }
 
+    /// <summary>
+    /// Creates a combo-box (dropdown) with the given (export, display) options and nothing
+    /// selected. Set <see cref="PdfChoiceField.SelectedValues"/> to choose.
+    /// </summary>
+    /// <exception cref="ArgumentException">Bad name; empty options.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Bad page index.</exception>
+    /// <exception cref="InvalidOperationException">The document is a dynamic XFA form.</exception>
+    public PdfChoiceField AddDropdown(int pageIndex, string name, PdfRect rect,
+        IReadOnlyList<(string Export, string Display)> options)
+    {
+        GuardAuthoring();
+        FieldAuthor.ValidateNewName(_document, name);
+        if (options is null || options.Count == 0)
+            throw new ArgumentException("A dropdown needs at least one option.", nameof(options));
+        PdfDictionary page = FieldAuthor.GetPageDict(_document, pageIndex);
+
+        var opt = new PdfArray();
+        foreach ((string export, string display) in options)
+        {
+            if (export == display)
+                opt.Add(PdfString.FromText(export));
+            else
+                opt.Add(new PdfArray { PdfString.FromText(export), PdfString.FromText(display) });
+        }
+
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Annot"),
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("FT")] = new PdfName("Ch"),
+            [new PdfName("Ff")] = new PdfInteger(1 << (FieldFlags.Combo - 1)),
+            [new PdfName("T")] = PdfString.FromText(name),
+            [new PdfName("V")] = PdfString.FromText(string.Empty),
+            [new PdfName("Opt")] = opt,
+            [new PdfName("Rect")] = FieldAuthor.RectArray(rect)
+        };
+        PdfIndirectReference fieldRef = _document.RegisterObject(dict);
+        FieldAuthor.AddToAnnots(_document, page, fieldRef);
+        FieldAuthor.EnsureFieldsArray(_document).Add(fieldRef);
+
+        var field = (PdfChoiceField)this[name]!;
+        FieldAuthor.RegenerateAuthored(_document, field);
+        return field;
+    }
+
     private void GuardAuthoring()
     {
         if (FormFlattener.IsDynamicXfa(_document))
