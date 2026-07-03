@@ -240,7 +240,7 @@ internal static class FormFlattener
     /// Removes the widget from the /Annots array of the given page.
     /// Matches by object number (indirect) or reference equality (direct).
     /// </summary>
-    private static void RemoveWidgetFromAnnots(
+    internal static void RemoveWidgetFromAnnots(
         PdfDocument doc,
         PdfDictionary page,
         PdfDictionary widget)
@@ -281,7 +281,7 @@ internal static class FormFlattener
     /// field live after flatten. This walks the tree, removes the target wherever it sits, and prunes
     /// any parent subform left with an empty <c>/Kids</c>.
     /// </summary>
-    private static void RemoveFieldFromAcroForm(PdfDocument doc, PdfDictionary fieldDict)
+    internal static void RemoveFieldFromAcroForm(PdfDocument doc, PdfDictionary fieldDict)
     {
         PdfDictionary? catalog = doc.CatalogDictionary;
         if (catalog is null) return;

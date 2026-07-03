@@ -1,6 +1,7 @@
 using PdfLibrary.Builder;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Editing.Forms;
 
@@ -202,6 +203,33 @@ public sealed partial class PdfFormFields
         var field = (PdfChoiceField)this[name]!;
         FieldAuthor.RegenerateAuthored(_document, field);
         return field;
+    }
+
+    /// <summary>
+    /// Removes the field and its widget annotations from the document. Prunes /AcroForm when
+    /// no fields remain. Returns false when no field has that full name.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The field is a SIGNED signature — removing it
+    /// would silently invalidate the signature; flatten it or leave it. Also thrown for dynamic
+    /// XFA documents.</exception>
+    public bool Remove(string fullName)
+    {
+        GuardAuthoring();
+        PdfFormField? field = this[fullName];
+        if (field is null) return false;
+        if (field is PdfSignatureField { IsSigned: true })
+            throw new InvalidOperationException(
+                $"Field '{fullName}' is a signed signature; removing it would invalidate the " +
+                "signature. Flatten it instead, or leave it in place.");
+
+        foreach (PdfDictionary widget in field.WidgetDicts)
+            foreach (PdfPage pg in _document.GetPages())
+                FormFlattener.RemoveWidgetFromAnnots(_document, pg.Dictionary, widget);
+
+        // For radio groups Dict is the parent field; for merged fields Dict IS the widget.
+        FormFlattener.RemoveFieldFromAcroForm(_document, field.Dict);
+        FormFlattener.PruneAcroFormIfEmpty(_document);
+        return true;
     }
 
     private void GuardAuthoring()
