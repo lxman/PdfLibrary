@@ -2,6 +2,7 @@ using PdfLibrary.Builder;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
+using System.Globalization;
 using System.Linq;
 
 namespace PdfLibrary.Editing.Forms;
@@ -20,23 +21,70 @@ public abstract class PdfFormField
     /// <summary>Field type derived from /FT.</summary>
     public PdfFormFieldType Type { get; internal set; }
 
-    /// <summary>/Ff bit 1 — read-only in interactive viewers.</summary>
-    public bool IsReadOnly { get; internal set; }
+    private bool _isReadOnly;
 
-    /// <summary>/Ff bit 2 — required for submission.</summary>
-    public bool IsRequired { get; internal set; }
+    /// <summary>/Ff bit 1 — read-only in interactive viewers. Setting writes the flag bit.</summary>
+    public bool IsReadOnly
+    {
+        get => _isReadOnly;
+        set { _isReadOnly = value; SetFlagBit(FieldFlags.ReadOnly, value); }
+    }
+
+    internal void SetIsReadOnlyInternal(bool value) => _isReadOnly = value;
+
+    private bool _isRequired;
+
+    /// <summary>/Ff bit 2 — required for submission. Setting writes the flag bit.</summary>
+    public bool IsRequired
+    {
+        get => _isRequired;
+        set { _isRequired = value; SetFlagBit(FieldFlags.Required, value); }
+    }
+
+    internal void SetIsRequiredInternal(bool value) => _isRequired = value;
+
+    private string _fontName = "Helv";
 
     /// <summary>
     /// Font resource name from the field's effective /DA (own or inherited from the AcroForm
-    /// default), e.g. "Helv", "Cour", "TiRo". Maps to a standard-14 family for rendering.
+    /// default), e.g. "Helv", "Cour", "TiRo". Setting validates against the standard-14 names,
+    /// rewrites the field's own /DA, and regenerates the appearance.
     /// </summary>
-    public string FontName { get; internal set; } = "Helv";
+    public string FontName
+    {
+        get => _fontName;
+        set
+        {
+            if (!Standard14FontMap.IsKnown(value))
+                throw new ArgumentException(
+                    $"'{value}' is not a standard-14 /DA resource name (e.g. Helv, TiRo, Cour, ZaDb).",
+                    nameof(value));
+            _fontName = value;
+            WriteDaAndRegenerate();
+        }
+    }
+
+    internal void SetFontNameInternal(string value) => _fontName = value;
+
+    private double _fontSize;
 
     /// <summary>
-    /// Font size from the field's effective /DA, in PDF points. <c>0</c> means auto-size
-    /// (the viewer/appearance generator fits the text to the field height).
+    /// Font size from the field's effective /DA, in PDF points. <c>0</c> means auto-size.
+    /// Setting rewrites the field's own /DA and regenerates the appearance.
     /// </summary>
-    public double FontSize { get; internal set; }
+    public double FontSize
+    {
+        get => _fontSize;
+        set
+        {
+            if (value < 0)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "Font size must be >= 0 (0 = auto).");
+            _fontSize = value;
+            WriteDaAndRegenerate();
+        }
+    }
+
+    internal void SetFontSizeInternal(double value) => _fontSize = value;
 
     /// <summary>The field's own dictionary (may also be a merged/effective dict).</summary>
     internal PdfDictionary Dict { get; set; } = null!;
@@ -113,6 +161,22 @@ public abstract class PdfFormField
                 Doc, widget, onState, isRadio: ((PdfButtonField)this).Kind == ButtonKind.Radio);
         else
             FieldAppearanceGenerator.Regenerate(Doc, this);
+    }
+
+    /// <summary>Sets or clears a 1-based /Ff bit on the field's own dictionary.</summary>
+    private protected void SetFlagBit(int bit, bool on)
+    {
+        int ff = Dict.Get(new PdfName("Ff")) is PdfInteger fi ? (int)fi.Value : 0;
+        int mask = 1 << (bit - 1);
+        ff = on ? ff | mask : ff & ~mask;
+        Dict[new PdfName("Ff")] = new PdfInteger(ff);
+    }
+
+    private void WriteDaAndRegenerate()
+    {
+        string size = _fontSize > 0 ? _fontSize.ToString("0.##", CultureInfo.InvariantCulture) : "0";
+        Dict[new PdfName("DA")] = PdfString.FromText($"/{_fontName} {size} Tf 0 g");
+        FieldAppearanceGenerator.Regenerate(Doc, this);
     }
 }
 

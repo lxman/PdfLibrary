@@ -26,4 +26,14 @@ internal static class Standard14FontMap
         "ZaDb" => "ZapfDingbats",
         _ => "Helvetica",
     };
+
+    /// <summary>True when <paramref name="daName"/> is a recognised standard-14 /DA resource name.</summary>
+    public static bool IsKnown(string? daName) => daName switch
+    {
+        "Helv" or "HeBo" or "HeOb" or "HeBO"
+        or "TiRo" or "TiBo" or "TiIt" or "TiBI"
+        or "Cour" or "CoBo" or "CoOb" or "CoBO"
+        or "Symb" or "Symbol" or "ZaDb" => true,
+        _ => false,
+    };
 }
