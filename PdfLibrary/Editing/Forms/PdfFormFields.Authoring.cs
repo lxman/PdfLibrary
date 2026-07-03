@@ -43,6 +43,64 @@ public sealed partial class PdfFormFields
         return field;
     }
 
+    /// <summary>
+    /// Creates an unchecked checkbox with on-state "Yes" and generated check-mark /AP states.
+    /// </summary>
+    /// <exception cref="ArgumentException">Empty/dotted/duplicate name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Bad page index.</exception>
+    /// <exception cref="InvalidOperationException">The document is a dynamic XFA form.</exception>
+    public PdfButtonField AddCheckbox(int pageIndex, string name, PdfRect rect)
+    {
+        GuardAuthoring();
+        FieldAuthor.ValidateNewName(_document, name);
+        PdfDictionary page = FieldAuthor.GetPageDict(_document, pageIndex);
+
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Annot"),
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("FT")] = new PdfName("Btn"),
+            [new PdfName("T")] = PdfString.FromText(name),
+            [new PdfName("V")] = new PdfName("Off"),
+            [new PdfName("AS")] = new PdfName("Off"),
+            [new PdfName("Rect")] = FieldAuthor.RectArray(rect)
+        };
+        PdfIndirectReference fieldRef = _document.RegisterObject(dict);
+        FieldAuthor.AddToAnnots(_document, page, fieldRef);
+        FieldAuthor.EnsureFieldsArray(_document).Add(fieldRef);
+
+        FieldAppearanceGenerator.EnsureButtonAppearance(_document, dict, "Yes", isRadio: false);
+        FieldAppearanceGenerator.EnsurePrintable(dict);
+        return (PdfButtonField)this[name]!;
+    }
+
+    /// <summary>
+    /// Creates an unsigned signature-field placeholder (no /V; signing is out of scope).
+    /// </summary>
+    /// <exception cref="ArgumentException">Empty/dotted/duplicate name.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Bad page index.</exception>
+    /// <exception cref="InvalidOperationException">The document is a dynamic XFA form.</exception>
+    public PdfSignatureField AddSignatureField(int pageIndex, string name, PdfRect rect)
+    {
+        GuardAuthoring();
+        FieldAuthor.ValidateNewName(_document, name);
+        PdfDictionary page = FieldAuthor.GetPageDict(_document, pageIndex);
+
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Annot"),
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("FT")] = new PdfName("Sig"),
+            [new PdfName("T")] = PdfString.FromText(name),
+            [new PdfName("Rect")] = FieldAuthor.RectArray(rect)
+        };
+        PdfIndirectReference fieldRef = _document.RegisterObject(dict);
+        FieldAuthor.AddToAnnots(_document, page, fieldRef);
+        FieldAuthor.EnsureFieldsArray(_document).Add(fieldRef);
+        FieldAppearanceGenerator.EnsurePrintable(dict);
+        return (PdfSignatureField)this[name]!;
+    }
+
     private void GuardAuthoring()
     {
         if (FormFlattener.IsDynamicXfa(_document))
