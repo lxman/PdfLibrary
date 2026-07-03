@@ -9,9 +9,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$Feed = Join-Path $FocalRoot ".nuget\local-feed"
+# Focal's nuget.config points "pdflibrary-local" at ..\PDF\local-feed — pack into THAT feed
+# (a Focal-side .nuget\local-feed exists from an older iteration but is not a configured source).
+$Feed = Join-Path $PSScriptRoot "local-feed"
 $ts   = Get-Date -Format "yyyyMMddHHmmss"
-$ver  = "2.2.0-dev$ts"
+$ver  = "2.3.0-dev$ts"
 
 New-Item -ItemType Directory -Force -Path $Feed | Out-Null
 
