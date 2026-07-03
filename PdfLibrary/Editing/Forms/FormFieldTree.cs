@@ -188,12 +188,12 @@ internal static class FormFieldTree
 
         var tf = new PdfTextField
         {
-            MaxLength   = maxLen,
-            IsMultiline = FieldFlags.Has(ff, FieldFlags.Multiline),
             IsComb      = FieldFlags.Has(ff, FieldFlags.Comb),
             IsPassword  = FieldFlags.Has(ff, FieldFlags.Password),
-            Quadding    = q
         };
+        tf.SetMaxLengthInternal(maxLen);
+        tf.SetIsMultilineInternal(FieldFlags.Has(ff, FieldFlags.Multiline));
+        tf.SetQuaddingInternal(q);
         tf.SetValueInternal(valueStr);
         return tf;
     }
@@ -332,10 +332,10 @@ internal static class FormFieldTree
 
         var choiceField = new PdfChoiceField
         {
-            Options       = options,
             IsCombo       = isCombo,
             IsMultiSelect = FieldFlags.Has(ff, FieldFlags.MultiSelect),
         };
+        choiceField.SetOptionsInternal(options);
         choiceField.SetSelectedValuesInternal(selectedValues);
         choiceField.SetSelectedIndicesInternal(selectedIndices);
         return choiceField;

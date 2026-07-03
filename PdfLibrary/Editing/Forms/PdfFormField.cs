@@ -204,11 +204,41 @@ public sealed class PdfTextField : PdfFormField
     /// <summary>Internal setter used by the field-tree builder (does not trigger AP regeneration).</summary>
     internal void SetValueInternal(string? value) => _value = value;
 
-    /// <summary>/MaxLen, or null if not set.</summary>
-    public int? MaxLength { get; internal set; }
+    private int? _maxLength;
 
-    /// <summary>/Ff bit 13.</summary>
-    public bool IsMultiline { get; internal set; }
+    /// <summary>/MaxLen, or null if not set. Setting writes or removes /MaxLen.</summary>
+    public int? MaxLength
+    {
+        get => _maxLength;
+        set
+        {
+            if (value is < 0)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "MaxLength must be >= 0 or null.");
+            _maxLength = value;
+            if (value is int len)
+                Dict[new PdfName("MaxLen")] = new PdfInteger(len);
+            else
+                Dict.Remove(new PdfName("MaxLen"));
+        }
+    }
+
+    internal void SetMaxLengthInternal(int? value) => _maxLength = value;
+
+    private bool _isMultiline;
+
+    /// <summary>/Ff bit 13. Setting writes the flag and regenerates the appearance.</summary>
+    public bool IsMultiline
+    {
+        get => _isMultiline;
+        set
+        {
+            _isMultiline = value;
+            SetFlagBit(FieldFlags.Multiline, value);
+            FieldAppearanceGenerator.Regenerate(Doc, this);
+        }
+    }
+
+    internal void SetIsMultilineInternal(bool value) => _isMultiline = value;
 
     /// <summary>/Ff bit 25 (requires /MaxLen).</summary>
     public bool IsComb { get; internal set; }
@@ -216,8 +246,23 @@ public sealed class PdfTextField : PdfFormField
     /// <summary>/Ff bit 14 — value is settable; AP shows bullets.</summary>
     public bool IsPassword { get; internal set; }
 
-    /// <summary>/Q: 0=left, 1=centre, 2=right.</summary>
-    public int Quadding { get; internal set; }
+    private int _quadding;
+
+    /// <summary>/Q: 0=left, 1=centre, 2=right. Setting writes /Q and regenerates the appearance.</summary>
+    public int Quadding
+    {
+        get => _quadding;
+        set
+        {
+            if (value is < 0 or > 2)
+                throw new ArgumentOutOfRangeException(nameof(value), value, "Quadding: 0=left, 1=centre, 2=right.");
+            _quadding = value;
+            Dict[new PdfName("Q")] = new PdfInteger(value);
+            FieldAppearanceGenerator.Regenerate(Doc, this);
+        }
+    }
+
+    internal void SetQuaddingInternal(int value) => _quadding = value;
 }
 
 /// <summary>A /Btn (button) field — checkbox, radio, or push button.</summary>
@@ -282,9 +327,37 @@ public sealed class PdfButtonField : PdfFormField
 /// <summary>A /Ch (choice) field — combo box or list box.</summary>
 public sealed class PdfChoiceField : PdfFormField
 {
-    /// <summary>Options from /Opt (export value, display text pairs).</summary>
-    public IReadOnlyList<(string Export, string Display)> Options { get; internal set; }
-        = Array.Empty<(string, string)>();
+    private IReadOnlyList<(string Export, string Display)> _options = Array.Empty<(string, string)>();
+
+    /// <summary>
+    /// Options from /Opt (export value, display text pairs). Setting rewrites /Opt, drops any
+    /// selection whose export no longer exists (re-writing /V and /I), and regenerates the
+    /// appearance.
+    /// </summary>
+    public IReadOnlyList<(string Export, string Display)> Options
+    {
+        get => _options;
+        set
+        {
+            if (value is null || value.Count == 0)
+                throw new ArgumentException("A choice field needs at least one option.", nameof(value));
+            _options = value;
+            var opt = new PdfArray();
+            foreach ((string export, string display) in value)
+            {
+                if (export == display)
+                    opt.Add(PdfString.FromText(export));
+                else
+                    opt.Add(new PdfArray { PdfString.FromText(export), PdfString.FromText(display) });
+            }
+            Dict[new PdfName("Opt")] = opt;
+            // Re-set the surviving selection: SelectedValues rewrites /V + /I against the new
+            // Options and regenerates the appearance.
+            SelectedValues = SelectedValues.Where(v => value.Any(o => o.Export == v)).ToList();
+        }
+    }
+
+    internal void SetOptionsInternal(IReadOnlyList<(string Export, string Display)> value) => _options = value;
 
     /// <summary>/Ff bit 18 — combo box vs list box.</summary>
     public bool IsCombo { get; internal set; }
