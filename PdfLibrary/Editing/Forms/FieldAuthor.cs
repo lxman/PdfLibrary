@@ -86,6 +86,19 @@ internal static class FieldAuthor
         page[new PdfName("Annots")] = new PdfArray { widgetRef };
     }
 
+    /// <summary>Runs appearance regeneration for a freshly AUTHORED field without leaving a
+    /// /NeedAppearances key behind: Regenerate normalizes the key to false on documents that
+    /// carry it, but a bootstrapped AcroForm never had it and authoring must not introduce it.
+    /// Existing fill/flatten callers keep Regenerate's unconditional normalization.</summary>
+    internal static void RegenerateAuthored(PdfDocument doc, PdfFormField field)
+    {
+        PdfDictionary acro = EnsureAcroForm(doc);
+        bool hadKey = acro.ContainsKey(new PdfName("NeedAppearances"));
+        FieldAppearanceGenerator.Regenerate(doc, field);
+        if (!hadKey)
+            acro.Remove(new PdfName("NeedAppearances"));
+    }
+
     private static PdfObject? Resolve(PdfDocument doc, PdfObject? obj) =>
         obj is PdfIndirectReference r ? doc.GetObject(r.ObjectNumber) : obj;
 }

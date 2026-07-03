@@ -39,7 +39,7 @@ public sealed partial class PdfFormFields
         FieldAuthor.EnsureFieldsArray(_document).Add(fieldRef);
 
         var field = (PdfTextField)this[name]!;
-        FieldAppearanceGenerator.Regenerate(_document, field);
+        FieldAuthor.RegenerateAuthored(_document, field);
         return field;
     }
 
