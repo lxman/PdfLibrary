@@ -7,7 +7,7 @@ namespace PdfLibrary.Editing.Forms;
 /// Collection facade over the AcroForm fields in a document.
 /// Each access reads the live field tree so mutations are immediately visible.
 /// </summary>
-public sealed class PdfFormFields : IReadOnlyCollection<PdfFormField>
+public sealed partial class PdfFormFields : IReadOnlyCollection<PdfFormField>
 {
     private readonly PdfDocument _document;
 

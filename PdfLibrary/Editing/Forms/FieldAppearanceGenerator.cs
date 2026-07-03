@@ -765,7 +765,11 @@ internal static class FieldAppearanceGenerator
         PdfObject? acroRaw = catalog.Get(new PdfName("AcroForm"));
         if (Resolve(doc, acroRaw) is not PdfDictionary acro) return;
 
-        acro[new PdfName("NeedAppearances")] = PdfBoolean.False;
+        // Only set /NeedAppearances if it was already present (e.g., set by FlattenTests).
+        // Bootstrap-generated AcroForms should remain clean of /NeedAppearances since we
+        // generate appearance streams immediately.
+        if (acro.ContainsKey(new PdfName("NeedAppearances")))
+            acro[new PdfName("NeedAppearances")] = PdfBoolean.False;
     }
 
     /// <summary>Reads /Q from the field dict directly (so dict mutations are live).</summary>
