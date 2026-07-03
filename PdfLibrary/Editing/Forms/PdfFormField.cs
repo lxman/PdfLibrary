@@ -1,3 +1,4 @@
+using PdfLibrary.Builder;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -51,6 +52,68 @@ public abstract class PdfFormField
     /// Mutating the form afterward does not refresh it (re-read the document to refresh).
     /// <see cref="PdfFieldWidget.Field"/> is a live reference, so <c>widget.Field.Value</c> stays current.</summary>
     public IReadOnlyList<PdfFieldWidget> Widgets { get; internal set; } = Array.Empty<PdfFieldWidget>();
+
+    /// <summary>
+    /// Renames the field's partial name (/T). The full name keeps any parent prefix. Throws
+    /// when the resulting full name collides with another field, or the name is empty/dotted.
+    /// </summary>
+    public void Rename(string newPartialName)
+    {
+        if (string.IsNullOrWhiteSpace(newPartialName))
+            throw new ArgumentException("Field name must be non-empty.", nameof(newPartialName));
+        if (newPartialName.Contains('.'))
+            throw new ArgumentException(
+                "Field name must not contain '.' — the period separates hierarchy levels in full names.",
+                nameof(newPartialName));
+
+        int cut = FullName.LastIndexOf('.');
+        string newFullName = cut < 0 ? newPartialName : FullName[..(cut + 1)] + newPartialName;
+        if (!string.Equals(newFullName, FullName, StringComparison.Ordinal) &&
+            FormFieldTree.Read(Doc).Any(f => string.Equals(f.FullName, newFullName, StringComparison.Ordinal)))
+            throw new ArgumentException($"A field named '{newFullName}' already exists.", nameof(newPartialName));
+
+        Dict[new PdfName("T")] = PdfString.FromText(newPartialName);
+        PartialName = newPartialName;
+        FullName = newFullName;
+    }
+
+    /// <summary>
+    /// Rewrites widget <paramref name="widgetIndex"/>'s /Rect and regenerates its appearance at
+    /// the new size (buttons redraw their vector mark; text/choice re-run the layout).
+    /// <see cref="Widgets"/> stays a read-time snapshot — re-read the field for fresh geometry.
+    /// </summary>
+    public void SetWidgetRect(int widgetIndex, PdfRect rect)
+    {
+        if (widgetIndex < 0 || widgetIndex >= WidgetDicts.Count)
+            throw new ArgumentOutOfRangeException(nameof(widgetIndex), widgetIndex,
+                $"Widget index must be in [0, {WidgetDicts.Count}).");
+        PdfDictionary widget = WidgetDicts[widgetIndex];
+
+        // Buttons: capture the on-state and current /AS BEFORE dropping /AP, because
+        // EnsureButtonAppearance is a no-op while an on-state appearance exists.
+        string? onState = null;
+        bool isButton = this is PdfButtonField { Kind: not ButtonKind.PushButton };
+        if (isButton)
+        {
+            if (FormFieldTree.Resolve(Doc, widget.Get(new PdfName("AP"))) is PdfDictionary ap &&
+                FormFieldTree.Resolve(Doc, ap.Get(new PdfName("N"))) is PdfDictionary n)
+            {
+                foreach (KeyValuePair<PdfName, PdfObject> kvp in n)
+                {
+                    if (kvp.Key.Value != "Off") { onState = kvp.Key.Value; break; }
+                }
+            }
+            widget.Remove(new PdfName("AP"));
+        }
+
+        widget[new PdfName("Rect")] = FieldAuthor.RectArray(rect);
+
+        if (isButton && onState is not null)
+            FieldAppearanceGenerator.EnsureButtonAppearance(
+                Doc, widget, onState, isRadio: ((PdfButtonField)this).Kind == ButtonKind.Radio);
+        else
+            FieldAppearanceGenerator.Regenerate(Doc, this);
+    }
 }
 
 /// <summary>A /Tx (text) field.</summary>
