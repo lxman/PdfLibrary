@@ -540,6 +540,52 @@ edit.Forms.Flatten();   // bake fields into static content
 
 > The full editing surface — every member of `PdfPageCollection`, `PdfOutlineCollection`, `PdfNamedDestinations`, `PdfViewerSettings`, `PdfFormFields`, and the form-field types — is tabulated in the [API reference](#api-reference) below.
 
+### Authoring form fields
+
+`editor.Forms` can create, remove, rename, move, and restyle AcroForm fields on any
+existing document — including one with no form at all (the /AcroForm dictionary is
+bootstrapped on first use, with appearance streams generated up front; /NeedAppearances
+is never relied on). Geometry is PDF user space (Y-up), the same convention as
+`PdfFieldWidget.Rect`.
+
+```csharp
+using PdfDocumentEditor editor = PdfDocumentEditor.Open("plain.pdf");
+
+PdfTextField name = editor.Forms.AddTextField(0, "name", new PdfRect(72, 700, 372, 720));
+name.Value = "Jane Doe";                       // fillable immediately
+name.FontName = "Cour"; name.FontSize = 12;    // standard-14 restyling
+
+PdfButtonField subscribe = editor.Forms.AddCheckbox(0, "subscribe", new PdfRect(72, 670, 86, 684));
+subscribe.Check();
+
+PdfButtonField size = editor.Forms.AddRadioGroup("size", new[]
+{
+    new PdfRadioOptionPlacement(0, new PdfRect(72, 640, 86, 654), "S"),
+    new PdfRadioOptionPlacement(0, new PdfRect(100, 640, 114, 654), "M"),
+});
+size.SelectedOption = "M";
+
+PdfChoiceField color = editor.Forms.AddDropdown(0, "color",
+    new PdfRect(72, 610, 272, 630), new[] { ("r", "Red"), ("g", "Green") });
+
+editor.Forms.AddSignatureField(0, "sig", new PdfRect(72, 540, 272, 590)); // unsigned placeholder
+
+name.Rename("fullName");
+name.SetWidgetRect(0, new PdfRect(72, 700, 500, 724));  // move/resize + appearance regen
+editor.Forms.Remove("color");                            // widgets + field tree entry + prune
+
+editor.Save("form.pdf");
+```
+
+Notes:
+
+- Names are root-level partial names: non-empty, no `.`, unique — violations throw
+  `ArgumentException` before anything is modified.
+- All authoring entry points throw `InvalidOperationException` on dynamic XFA documents
+  (check `Forms.IsDynamicXfa` first), and `Remove` refuses a **signed** signature field.
+- `PdfFormField.Widgets` remains a read-time snapshot: after `SetWidgetRect`, re-read the
+  field from `editor.Forms` for fresh geometry.
+
 **Save** (with options):
 
 ```csharp
