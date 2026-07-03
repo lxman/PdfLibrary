@@ -17,6 +17,7 @@ internal static class FieldFlags
     public const int Comb       = 25;
 
     // Button flags (Table 226)
+    public const int NoToggleToOff = 15;
     public const int Radio      = 16;
     public const int Pushbutton = 17;
 
