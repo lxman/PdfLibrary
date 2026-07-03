@@ -85,4 +85,27 @@ public class AuthoringBasePropertyTests
         // The builder-produced field dict has no /Ff; enumeration must not add one.
         Assert.False(field.Dict.ContainsKey(new PdfName("Ff")));
     }
+
+    [Fact]
+    public void SetFlagBit_OnHierarchicalField_PreservesInheritedFfBits()
+    {
+        // Final-review F1 regression: the terminal field "grp.r1" has NO own /Ff — it inherits
+        // Radio+NoToggleToOff from its grandparent. Setting IsRequired must seed the read-modify-
+        // write from the EFFECTIVE (inherited) /Ff, not from an absent own /Ff defaulting to 0 —
+        // otherwise the materialized own /Ff shadows the inherited Radio bit and the field reads
+        // back as a Checkbox.
+        byte[] formed = FormTestDocs.WithHierarchicalRadioField("grp", "r1", "Yes");
+        using PdfDocumentEditor editor = PdfDocumentEditor.Open(new MemoryStream(formed));
+
+        // Establish the inherited /Ff is read correctly BEFORE any mutation.
+        var before = Assert.IsType<PdfButtonField>(editor.Forms["grp.r1"]);
+        Assert.Equal(ButtonKind.Radio, before.Kind);
+
+        before.IsRequired = true;
+
+        using PdfDocumentEditor reopened = AuthoringTestHelper.SaveAndReopen(editor);
+        var after = Assert.IsType<PdfButtonField>(reopened.Forms["grp.r1"]);
+        Assert.Equal(ButtonKind.Radio, after.Kind); // must NOT have degraded to Checkbox
+        Assert.True(after.IsRequired);
+    }
 }

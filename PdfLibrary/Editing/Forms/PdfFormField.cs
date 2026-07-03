@@ -27,7 +27,7 @@ public abstract class PdfFormField
     public bool IsReadOnly
     {
         get => _isReadOnly;
-        set { _isReadOnly = value; SetFlagBit(FieldFlags.ReadOnly, value); }
+        set { GuardAuthoringMutation(); _isReadOnly = value; SetFlagBit(FieldFlags.ReadOnly, value); }
     }
 
     internal void SetIsReadOnlyInternal(bool value) => _isReadOnly = value;
@@ -38,7 +38,7 @@ public abstract class PdfFormField
     public bool IsRequired
     {
         get => _isRequired;
-        set { _isRequired = value; SetFlagBit(FieldFlags.Required, value); }
+        set { GuardAuthoringMutation(); _isRequired = value; SetFlagBit(FieldFlags.Required, value); }
     }
 
     internal void SetIsRequiredInternal(bool value) => _isRequired = value;
@@ -55,6 +55,7 @@ public abstract class PdfFormField
         get => _fontName;
         set
         {
+            GuardAuthoringMutation();
             if (!Standard14FontMap.IsKnown(value))
                 throw new ArgumentException(
                     $"'{value}' is not a standard-14 /DA resource name (e.g. Helv, TiRo, Cour, ZaDb).",
@@ -77,6 +78,7 @@ public abstract class PdfFormField
         get => _fontSize;
         set
         {
+            GuardAuthoringMutation();
             if (value < 0)
                 throw new ArgumentOutOfRangeException(nameof(value), value, "Font size must be >= 0 (0 = auto).");
             _fontSize = value;
@@ -107,6 +109,7 @@ public abstract class PdfFormField
     /// </summary>
     public void Rename(string newPartialName)
     {
+        GuardAuthoringMutation();
         if (string.IsNullOrWhiteSpace(newPartialName))
             throw new ArgumentException("Field name must be non-empty.", nameof(newPartialName));
         if (newPartialName.Contains('.'))
@@ -132,6 +135,7 @@ public abstract class PdfFormField
     /// </summary>
     public void SetWidgetRect(int widgetIndex, PdfRect rect)
     {
+        GuardAuthoringMutation();
         if (widgetIndex < 0 || widgetIndex >= WidgetDicts.Count)
             throw new ArgumentOutOfRangeException(nameof(widgetIndex), widgetIndex,
                 $"Widget index must be in [0, {WidgetDicts.Count}).");
@@ -163,13 +167,37 @@ public abstract class PdfFormField
             FieldAppearanceGenerator.Regenerate(Doc, this);
     }
 
-    /// <summary>Sets or clears a 1-based /Ff bit on the field's own dictionary.</summary>
+    /// <summary>Sets or clears a 1-based /Ff bit, seeding the read-modify-write from the field's
+    /// EFFECTIVE /Ff (own dict, or the nearest ancestor's /Ff via the /Parent chain if the field
+    /// has none of its own) and writing the full effective value to the OWN dictionary. Seeding
+    /// from just the own dict would, on a field that inherits /Ff from a /Parent, materialize an
+    /// own /Ff containing only the bit being changed — silently shadowing inherited bits like
+    /// Radio or Combo per PDF inheritance rules.</summary>
     private protected void SetFlagBit(int bit, bool on)
     {
-        int ff = Dict.Get(new PdfName("Ff")) is PdfInteger fi ? (int)fi.Value : 0;
+        int ff = EffectiveFf();
         int mask = 1 << (bit - 1);
         ff = on ? ff | mask : ff & ~mask;
         Dict[new PdfName("Ff")] = new PdfInteger(ff);
+    }
+
+    /// <summary>Own /Ff if present; otherwise walks the /Parent chain (resolving indirect
+    /// references) for the nearest ancestor's /Ff, capped at 64 hops to match
+    /// AcroFormMerger.TopFieldRef's cycle guard. Defaults to 0 only if no /Ff is found anywhere
+    /// in the chain.</summary>
+    private int EffectiveFf()
+    {
+        if (Dict.Get(new PdfName("Ff")) is PdfInteger own) return (int)own.Value;
+
+        PdfDictionary current = Dict;
+        var guard = 0;
+        while (current.TryGetValue(new PdfName("Parent"), out PdfObject parentRef) && guard++ < 64)
+        {
+            if (FormFieldTree.Resolve(Doc, parentRef) is not PdfDictionary parentDict) break;
+            if (parentDict.Get(new PdfName("Ff")) is PdfInteger parentFf) return (int)parentFf.Value;
+            current = parentDict;
+        }
+        return 0;
     }
 
     private void WriteDaAndRegenerate()
@@ -177,6 +205,22 @@ public abstract class PdfFormField
         string size = _fontSize > 0 ? _fontSize.ToString("0.##", CultureInfo.InvariantCulture) : "0";
         Dict[new PdfName("DA")] = PdfString.FromText($"/{_fontName} {size} Tf 0 g");
         FieldAppearanceGenerator.Regenerate(Doc, this);
+    }
+
+    /// <summary>
+    /// Refuses to mutate a dynamic XFA form: its real fields exist only in the XFA template, and
+    /// editing the AcroForm skeleton would desynchronize the two. Every authoring mutation entry
+    /// point on this class and its subclasses must call this FIRST — before any validation or
+    /// backing-field writes — so a throw leaves both memory and the document untouched. Mirrors
+    /// the guard already applied to PdfFormFields.Add*/Remove and Forms.Flatten.
+    /// </summary>
+    private protected void GuardAuthoringMutation()
+    {
+        if (FormFlattener.IsDynamicXfa(Doc))
+            throw new InvalidOperationException(
+                "Cannot modify fields of a dynamic XFA form: its real fields exist only in the XFA " +
+                "template, and editing the AcroForm skeleton would desynchronize the two. " +
+                "Check Forms.IsDynamicXfa before offering form design.");
     }
 }
 
@@ -212,6 +256,7 @@ public sealed class PdfTextField : PdfFormField
         get => _maxLength;
         set
         {
+            GuardAuthoringMutation();
             if (value is < 0)
                 throw new ArgumentOutOfRangeException(nameof(value), value, "MaxLength must be >= 0 or null.");
             _maxLength = value;
@@ -232,6 +277,7 @@ public sealed class PdfTextField : PdfFormField
         get => _isMultiline;
         set
         {
+            GuardAuthoringMutation();
             _isMultiline = value;
             SetFlagBit(FieldFlags.Multiline, value);
             FieldAppearanceGenerator.Regenerate(Doc, this);
@@ -254,6 +300,7 @@ public sealed class PdfTextField : PdfFormField
         get => _quadding;
         set
         {
+            GuardAuthoringMutation();
             if (value is < 0 or > 2)
                 throw new ArgumentOutOfRangeException(nameof(value), value, "Quadding: 0=left, 1=centre, 2=right.");
             _quadding = value;
@@ -339,6 +386,7 @@ public sealed class PdfChoiceField : PdfFormField
         get => _options;
         set
         {
+            GuardAuthoringMutation();
             if (value is null || value.Count == 0)
                 throw new ArgumentException("A choice field needs at least one option.", nameof(value));
             _options = value;
