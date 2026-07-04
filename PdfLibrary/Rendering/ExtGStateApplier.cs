@@ -108,7 +108,9 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
                 case "UseBlackPtComp":
                     if (value is PdfName bpc)
                     {
-                        // /ON enables, /OFF disables; /Default leaves the current (off-by-default) behaviour.
+                        // /ON enables, /OFF disables; /Default leaves the current behaviour — this
+                        // processor's default is ON (PdfGraphicsState init), matching Adobe. The
+                        // choice is legal per PDF Association App Note 001 (Default = processor's choice).
                         if (bpc.Value == "ON") currentState.UseBlackPointCompensation = true;
                         else if (bpc.Value == "OFF") currentState.UseBlackPointCompensation = false;
                         PdfLogger.Log(LogCategory.Graphics, $"  UseBlackPtComp = {bpc.Value}");

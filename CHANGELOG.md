@@ -6,6 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-07-04
+
+Minor release: AcroForm field **authoring** on existing documents, text-extraction fixes that make
+search viable on real-world PDFs, and a field-tree-aware page import. Additive and back-compatible.
+
+### Added
+
+- **Forms authoring API** — create, remove, and reshape AcroForm fields on any loaded document via
+  `PdfDocumentEditor.Forms`: `AddTextField`, `AddCheckbox`, `AddRadioGroup` (per-option widget
+  placement via `PdfRadioOptionPlacement`), `AddDropdown`, `AddSignatureField`, and `Remove(fullName)`
+  (field + widget removal with AcroForm pruning). The AcroForm dictionary is bootstrapped on documents
+  that have no form, without setting `/NeedAppearances` — created fields carry real appearance streams.
+- **Field mutations** — `PdfFormField.Rename` (collision-validated) and `SetWidgetRect` (with
+  appearance regeneration), plus settable `IsReadOnly`, `IsRequired`, `FontName`, `FontSize`
+  (`/Ff` and `/DA` writes), text `MaxLength` / `IsMultiline` / `Quadding`, and choice `Options`
+  (dropping stale selections).
+- **`TextFragment.Width`** — total advance width, so consumers can build highlight rects.
+
+### Fixed
+
+- **Text extraction positions** — fragments now track an advancing pen cursor (positions were
+  previously reported at the line start for every fragment on kern-split lines) and carry a
+  `TextOffset` into the assembled page text; XObject-hosted fragments rebase their offsets onto the
+  outer text. Also corrected Y-flip compensation and `Tz` double-scaling in glyph placement.
+- **Page import brings only the page's own fields.** Importing a page from an XFA-style form (all
+  fields under one root, e.g. the IRS W-2) used to drag the source's entire field forest — and orphan
+  clones of its pages — into the target via widget `/Parent` → root → `/Kids`. The cloner now defers
+  widget `/Parent` edges and rebuilds only the ancestor spine with `/Kids` filtered to the imported
+  children; names, flags, values, and inheritance are preserved.
+- **`/Ff` writes seed from effective inherited flags** (a naive seed could silently drop inherited
+  bits, degrading radio groups to checkboxes); the field-mutation surface is guarded against
+  dynamic-XFA documents.
+
+### Performance
+
+- Type3 fonts: shared system font index, cached char-proc operations, lazy hot-path logging.
+
 ## [2.2.0] - 2026-06-30
 
 Minor release: an ICC-based CMYK color pipeline. Additive and back-compatible — the ICC CMYK path
