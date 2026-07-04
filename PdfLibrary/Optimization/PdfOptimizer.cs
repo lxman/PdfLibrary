@@ -110,8 +110,7 @@ public static class PdfOptimizer
     /// <summary>Downsamples and re-compresses embedded image XObjects (Phase 3, image track):
     /// scans /Subtype /Image XObjects, downsamples via ImageLibrary's resampler and re-encodes,
     /// then writes the JPEG back via PdfStream.Data (DCTDecode has no SetEncodedData encoder) and
-    /// patches the image dictionary. No-op stub — the real transform is built on the
-    /// phase3-image branch.</summary>
+    /// patches the image dictionary.</summary>
     internal static int RecompressImages(PdfDocument document, PdfOptimizationOptions options)
     {
         var count = 0;
