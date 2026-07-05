@@ -8,6 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **Text extraction honors `Tc`/`Tw`/`Tz`.** Fragment advances and `TJ` kern adjustments now use the
+  full ISO 32000-1 §9.4.4 displacement — `tx = (w0×Tfs + Tc + Tw) × Th`, with word spacing applied
+  only to single-byte code 32 — so extraction geometry stays on the rendered glyphs on documents
+  using character/word spacing (e.g. justified text) or horizontal scaling. The renderer's advance
+  loops (`Tj`, `TJ`, and the four Type3 paths) were aligned to the same spec ordering; previously
+  they scaled by `Th` before adding `Tc`/`Tw` and triggered word spacing on the decoded glyph
+  instead of code 32.
+- **Form-XObject-hosted fragments are reported in page space.** Nested fragments are transformed by
+  the form's `/Matrix` composed with the CTM at `Do` time (widths/font sizes scaled accordingly)
+  instead of leaking the form's local coordinates, and a separator now prevents outer text gluing
+  directly onto form-hosted text in the assembled string.
+
+### Removed
+
+- `PdfGraphicsState.GetCharacterAdvance` — dead public helper with no callers (its formula had
+  drifted from the renderer); removed rather than left as a trap.
+
 - **Text extraction pen advances now honor the text-matrix horizontal scale.** Documents that select
   a font at size 1 and scale via `Tm` (e.g. `/F1 1 Tf` + `28 0 0 28 x y Tm`) produced fragment maps
   compressed by the scale factor — fragment widths, run-to-run pen positions, and `TJ` kern
