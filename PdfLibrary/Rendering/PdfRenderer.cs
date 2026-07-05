@@ -1082,15 +1082,15 @@ internal class PdfRenderer : PdfContentProcessor
                         // Get character width and convert to USER SPACE
                         double glyphWidth = font.GetCharacterWidth(charCode);
                         double advance = glyphWidth * CurrentState.FontSize / 1000.0;
-                        advance *= CurrentState.HorizontalScaling / 100.0;
 
-                        // Add character spacing
+                        // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — character and word spacing
+                        // are added BEFORE horizontal scaling. Tw applies only to single-byte code 32,
+                        // never to 2-byte Type0 codes.
                         if (CurrentState.CharacterSpacing != 0)
                             advance += CurrentState.CharacterSpacing;
-
-                        // Add word spacing for spaces
-                        if (decoded == " " && CurrentState.WordSpacing != 0)
+                        if (!isType0 && charCode == 32 && CurrentState.WordSpacing != 0)
                             advance += CurrentState.WordSpacing;
+                        advance *= CurrentState.HorizontalScaling / 100.0;
 
                         combinedWidths.Add(advance);
                     }
@@ -1203,14 +1203,14 @@ internal class PdfRenderer : PdfContentProcessor
             int charCode = bytes[i];
             double glyphWidth = font.GetCharacterWidth(charCode);
             double advance = glyphWidth * CurrentState.FontSize / 1000.0;
-            advance *= CurrentState.HorizontalScaling / 100.0;
 
+            // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple (single-byte)
+            // fonts, so Tw applies whenever the shown code is 32.
             if (CurrentState.CharacterSpacing != 0)
                 advance += CurrentState.CharacterSpacing;
-
-            string decoded = font.DecodeCharacter(charCode);
-            if (decoded == " " && CurrentState.WordSpacing != 0)
+            if (charCode == 32 && CurrentState.WordSpacing != 0)
                 advance += CurrentState.WordSpacing;
+            advance *= CurrentState.HorizontalScaling / 100.0;
 
             totalAdvance += advance;
         }
@@ -1239,14 +1239,14 @@ internal class PdfRenderer : PdfContentProcessor
                         int charCode = bytes[i];
                         double glyphWidth = font.GetCharacterWidth(charCode);
                         double advance = glyphWidth * CurrentState.FontSize / 1000.0;
-                        advance *= CurrentState.HorizontalScaling / 100.0;
 
+                        // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple
+                        // (single-byte) fonts, so Tw applies whenever the shown code is 32.
                         if (CurrentState.CharacterSpacing != 0)
                             advance += CurrentState.CharacterSpacing;
-
-                        string decoded = font.DecodeCharacter(charCode);
-                        if (decoded == " " && CurrentState.WordSpacing != 0)
+                        if (charCode == 32 && CurrentState.WordSpacing != 0)
                             advance += CurrentState.WordSpacing;
+                        advance *= CurrentState.HorizontalScaling / 100.0;
 
                         totalAdvance += advance;
                     }
@@ -1339,16 +1339,16 @@ internal class PdfRenderer : PdfContentProcessor
             ExecuteType3CharProc(charProc, type3Resources, glyphMatrix);
 
             // Advance text position
+            // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple (single-byte)
+            // fonts, so Tw applies whenever the shown code is 32.
             double glyphWidth = type3Font.GetCharacterWidth(charCode);
             double advance = glyphWidth * CurrentState.FontSize / 1000.0;
-            advance *= CurrentState.HorizontalScaling / 100.0;
 
             if (CurrentState.CharacterSpacing != 0)
                 advance += CurrentState.CharacterSpacing;
-
-            string decoded = type3Font.DecodeCharacter(charCode);
-            if (decoded == " " && CurrentState.WordSpacing != 0)
+            if (charCode == 32 && CurrentState.WordSpacing != 0)
                 advance += CurrentState.WordSpacing;
+            advance *= CurrentState.HorizontalScaling / 100.0;
 
             totalAdvance += advance;
 
@@ -1415,16 +1415,16 @@ internal class PdfRenderer : PdfContentProcessor
                         ExecuteType3CharProc(charProc, type3Resources, glyphMatrix);
 
                         // Advance text position
+                        // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple
+                        // (single-byte) fonts, so Tw applies whenever the shown code is 32.
                         double glyphWidth = type3Font.GetCharacterWidth(charCode);
                         double advance = glyphWidth * CurrentState.FontSize / 1000.0;
-                        advance *= CurrentState.HorizontalScaling / 100.0;
 
                         if (CurrentState.CharacterSpacing != 0)
                             advance += CurrentState.CharacterSpacing;
-
-                        string decoded = type3Font.DecodeCharacter(charCode);
-                        if (decoded == " " && CurrentState.WordSpacing != 0)
+                        if (charCode == 32 && CurrentState.WordSpacing != 0)
                             advance += CurrentState.WordSpacing;
+                        advance *= CurrentState.HorizontalScaling / 100.0;
 
                         CurrentState.AdvanceTextMatrix(advance, 0);
                     }

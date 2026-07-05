@@ -350,17 +350,6 @@ public class PdfGraphicsState
     }
 
     /// <summary>
-    /// Calculates the advance width for a character, accounting for spacing
-    /// </summary>
-    public double GetCharacterAdvance(double characterWidth, bool isSpace)
-    {
-        double advance = characterWidth * FontSize + CharacterSpacing;
-        if (isSpace)
-            advance += WordSpacing;
-        return advance * HorizontalScaling / 100.0;
-    }
-
-    /// <summary>
     /// Gets the rectangle for an image XObject
     /// In PDF, images are mapped to a 1x1 unit square, and the CTM provides the final dimensions
     /// ISO 32000-1:2008 section 8.9.5
