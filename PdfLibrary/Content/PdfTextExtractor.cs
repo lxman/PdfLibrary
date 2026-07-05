@@ -287,27 +287,34 @@ internal class PdfTextExtractor : PdfContentProcessor
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
         formExtractor.ProcessOperators(operators);
 
-        // Append the extracted text and fragments to our results. The nested extractor's
-        // TextOffsets are local to its own (empty-started) _textBuilder, so rebase each one
-        // onto this builder's length at the point the nested text is appended. No separator
-        // is inserted between the outer text and the nested text below, so the base offset is
-        // exactly the outer builder's length before the append.
-        // DEFERRED (tracked in Focal's search backlog): because no separator is inserted here,
-        // outer text can glue directly onto XObject-hosted text (a query straddling the seam can
-        // spuriously match), and nested fragment X/Y are copied through in the form's local space
-        // (not transformed by the form's placement matrix) — both pre-existing merge behaviors.
+        // Placement transform: a fragment in the form's local space maps to the invoker's space via
+        // the form's /Matrix then the CTM at Do time (row-vector convention, matching the `matrix *
+        // Ctm` concat above). Page-level extraction starts at CTM == identity, so ctmAtDo IS the
+        // page-relative placement — consistent with outer fragments, which never apply the CTM.
+        Matrix3x2 placement = ReadFormMatrix(formStream) * CurrentState.Ctm;
+        double hScale = Math.Sqrt(placement.M11 * placement.M11 + placement.M21 * placement.M21);
+        double vScale = Math.Sqrt(placement.M12 * placement.M12 + placement.M22 * placement.M22);
+
+        // Seam separator: without it, outer text glues directly onto form-hosted text ("OuterInside")
+        // and a query straddling the seam can spuriously match (deferral from the search slice, now
+        // closed). The separator belongs to no fragment, like every other heuristic separator here.
+        string formText = formExtractor.GetText();
+        if (_textBuilder.Length > 0 && formText.Length > 0 && !char.IsWhiteSpace(_textBuilder[^1]))
+            _textBuilder.Append(' ');
+
         int baseOffset = _textBuilder.Length;
-        _textBuilder.Append(formExtractor.GetText());
+        _textBuilder.Append(formText);
         foreach (TextFragment fragment in formExtractor.GetTextFragments())
         {
+            var mapped = Vector2.Transform(new Vector2((float)fragment.X, (float)fragment.Y), placement);
             _fragments.Add(new TextFragment
             {
                 Text = fragment.Text,
-                X = fragment.X,
-                Y = fragment.Y,
+                X = mapped.X,
+                Y = mapped.Y,
                 FontName = fragment.FontName,
-                FontSize = fragment.FontSize,
-                Width = fragment.Width,
+                FontSize = fragment.FontSize * vScale,
+                Width = fragment.Width * hScale,
                 TextOffset = baseOffset + fragment.TextOffset
             });
         }
@@ -405,5 +412,20 @@ internal class PdfTextExtractor : PdfContentProcessor
             total += advance;
         }
         return total * horizontalScaling / 100.0;
+    }
+
+    /// <summary>The form's /Matrix (default identity): six numbers [a b c d e f].</summary>
+    private static Matrix3x2 ReadFormMatrix(PdfStream formStream)
+    {
+        if (!formStream.Dictionary.TryGetValue(new PdfName("Matrix"), out PdfObject? obj) ||
+            obj is not PdfArray { Count: 6 } m)
+            return Matrix3x2.Identity;
+        float N(PdfObject o) => o switch
+        {
+            PdfInteger i => i.Value,
+            PdfReal r => (float)r.Value,
+            _ => 0f,
+        };
+        return new Matrix3x2(N(m[0]), N(m[1]), N(m[2]), N(m[3]), N(m[4]), N(m[5]));
     }
 }

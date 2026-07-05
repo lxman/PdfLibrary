@@ -621,6 +621,94 @@ ET";
         }
     }
 
+    /// <summary>Deferred from the search slice: nested Form-XObject fragments were copied through
+    /// in the FORM'S local coordinates — a form placed with /Matrix (letterhead, stamp, page
+    /// wrapper) reported wrong positions and consumers' highlight boxes landed elsewhere on the
+    /// page. Fragments must be transformed by formMatrix × Do-time CTM at copy-out: X/Y mapped,
+    /// Width scaled by the horizontal scale, FontSize by the vertical scale.</summary>
+    [Fact]
+    public void XObjectFragments_TransformedByFormMatrixAndCtm()
+    {
+        var formContent = @"
+BT
+/F1 10 Tf
+10 20 Td
+(Inside) Tj
+ET";
+        var formDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            // /Matrix [2 0 0 2 5 7]: scale ×2, translate (5,7)
+            [new PdfName("Matrix")] = new PdfArray
+            {
+                new PdfInteger(2), new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(2), new PdfInteger(5), new PdfInteger(7),
+            },
+        };
+        var formStream = new PdfStream(formDict, Encoding.ASCII.GetBytes(formContent));
+        var resources = new PdfResources(new PdfDictionary
+        {
+            [new PdfName("XObject")] = new PdfDictionary { [new PdfName("Fm1")] = formStream },
+        });
+
+        // Outer content places the form with an additional cm translate (100, 50).
+        var outer = @"
+q
+1 0 0 1 100 50 cm
+/Fm1 Do
+Q";
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(outer), resources);
+
+        TextFragment f = Assert.Single(fragments);
+        // Form-local (10,20) → ×2 + (5,7) → (25,47) → cm translate → (125, 97)
+        Assert.Equal(125.0, f.X, precision: 4);
+        Assert.Equal(97.0, f.Y, precision: 4);
+        Assert.Equal(20.0, f.FontSize, precision: 4);   // 10pt × vertical scale 2
+        // "Inside" fallback width = 6×10×0.5 = 30 local → ×2 horizontal = 60
+        Assert.Equal(60.0, f.Width, precision: 4);
+    }
+
+    /// <summary>Deferred from the search slice: no separator was inserted between outer text and
+    /// form-hosted text, so words glued across the seam ("OuterInside") and a query straddling it
+    /// could spuriously match. One ' ' separates non-empty outer text from non-empty form text;
+    /// rebased TextOffsets must still index the assembled string exactly.</summary>
+    [Fact]
+    public void XObjectSeam_SeparatorInserted_OffsetsStayExact()
+    {
+        var formContent = @"
+BT
+/F1 12 Tf
+50 50 Td
+(Inside) Tj
+ET";
+        var formDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Form"),
+        };
+        var formStream = new PdfStream(formDict, Encoding.ASCII.GetBytes(formContent));
+        var resources = new PdfResources(new PdfDictionary
+        {
+            [new PdfName("XObject")] = new PdfDictionary { [new PdfName("Fm1")] = formStream },
+        });
+
+        var outer = @"
+BT
+/F1 12 Tf
+100 700 Td
+(Outer) Tj
+ET
+/Fm1 Do";
+        (string text, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(outer), resources);
+
+        Assert.DoesNotContain("OuterInside", text);
+        Assert.Contains("Outer", text);
+        Assert.Contains("Inside", text);
+        foreach (TextFragment f in fragments)
+            Assert.Equal(f.Text, text.Substring(f.TextOffset, f.Text.Length));
+    }
+
     #endregion
 
     #region Font Information Tests
