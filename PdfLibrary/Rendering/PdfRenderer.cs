@@ -810,16 +810,15 @@ internal class PdfRenderer : PdfContentProcessor
             double glyphWidth = font.GetCharacterWidth(charCode);
             double advance = glyphWidth * CurrentState.FontSize / 1000.0;
 
-            // Apply horizontal scaling
-            advance *= CurrentState.HorizontalScaling / 100.0;
-
-            // Add character spacing (already in user space)
+            // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — character and word spacing are added
+            // BEFORE horizontal scaling (this loop previously scaled first, disagreeing with the spec,
+            // with PdfGraphicsState's advance helper, and now with the extractor). Tw applies only to
+            // single-byte code 32, never to 2-byte Type0 codes.
             if (CurrentState.CharacterSpacing != 0)
                 advance += CurrentState.CharacterSpacing;
-
-            // Add word spacing for spaces (already in user space)
-            if (decoded == " " && CurrentState.WordSpacing != 0)
+            if (!isType0 && charCode == 32 && CurrentState.WordSpacing != 0)
                 advance += CurrentState.WordSpacing;
+            advance *= CurrentState.HorizontalScaling / 100.0;
 
             glyphWidths.Add(advance);
         }

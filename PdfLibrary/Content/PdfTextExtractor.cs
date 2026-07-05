@@ -154,7 +154,8 @@ internal class PdfTextExtractor : PdfContentProcessor
         // "/F1 1 Tf" with the real size in Tm (e.g. "28 0 0 28 x y Tm") otherwise get advances
         // 28× too small: every fragment of a line stacks near the line start, and highlight
         // boxes / hit-testing built from X/Width compress into the first glyph (2026-07-04).
-        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize) * TextMatrixScaleX();
+        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize,
+            CurrentState.CharacterSpacing, CurrentState.WordSpacing, CurrentState.HorizontalScaling) * TextMatrixScaleX();
 
         int textOffset = _textBuilder.Length;
         _textBuilder.Append(decodedText);
@@ -189,7 +190,8 @@ internal class PdfTextExtractor : PdfContentProcessor
                     // Negative values increase spacing (move text position)
                     // Values are in thousandths of a unit of text space — scaled to user space
                     // by font size AND the text matrix's horizontal scale (like OnShowText).
-                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize * TextMatrixScaleX();
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize
+                        * (CurrentState.HorizontalScaling / 100.0) * TextMatrixScaleX();
                     if (_cursorValid)
                         _cursor = _cursor with { X = _cursor.X + (float)adjustment };
                     _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
@@ -197,7 +199,8 @@ internal class PdfTextExtractor : PdfContentProcessor
                 }
                 case PdfReal realVal:
                 {
-                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize * TextMatrixScaleX();
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize
+                        * (CurrentState.HorizontalScaling / 100.0) * TextMatrixScaleX();
                     if (_cursorValid)
                         _cursor = _cursor with { X = _cursor.X + (float)adjustment };
                     _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
@@ -367,23 +370,20 @@ internal class PdfTextExtractor : PdfContentProcessor
         CurrentState.TextMatrix.M11 * CurrentState.TextMatrix.M11 +
         CurrentState.TextMatrix.M21 * CurrentState.TextMatrix.M21);
 
-    /// <summary>
-    /// Calculates the width of text in user space units
-    /// </summary>
-    private static double CalculateTextWidth(byte[] bytes, PdfFont? font, double fontSize)
+    /// <summary>Per-code displacement per ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw)×Th, where
+    /// Tw applies only to single-byte code 32 (never to 2-byte Type0 codes). Without a font the
+    /// per-code base width falls back to fontSize×0.5 per byte (unchanged), but spacing and
+    /// scaling still apply — Tc/Tw/Th displacement is font-independent.
+    ///
+    /// Consume CODES, not bytes: Type0 fonts use 2-byte big-endian codes (same loop as the
+    /// renderer's show-text path). Summing per-byte widths looked up garbage codes — mostly
+    /// the 1000-unit CID default — inflating every Type0 run's advance, which dragged the
+    /// fragment map right of the rendered glyphs (2026-07-05 bullet-line highlight gap).</summary>
+    private static double CalculateTextWidth(byte[] bytes, PdfFont? font, double fontSize,
+        double charSpacing, double wordSpacing, double horizontalScaling)
     {
-        if (font is null)
-        {
-            // Fall back to rough estimate
-            return bytes.Length * fontSize * 0.5;
-        }
-
-        // Consume CODES, not bytes: Type0 fonts use 2-byte big-endian codes (same loop as the
-        // renderer's show-text path). Summing per-byte widths looked up garbage codes — mostly
-        // the 1000-unit CID default — inflating every Type0 run's advance, which dragged the
-        // fragment map right of the rendered glyphs (2026-07-05 bullet-line highlight gap).
-        bool isType0 = font.FontType == PdfFontType.Type0;
-        double units = 0;
+        bool isType0 = font is { FontType: PdfFontType.Type0 };
+        double total = 0;
         var i = 0;
         while (i < bytes.Length)
         {
@@ -398,8 +398,12 @@ internal class PdfTextExtractor : PdfContentProcessor
                 code = bytes[i];
                 i++;
             }
-            units += font.GetCharacterWidth(code);
+            double baseWidth = font is not null ? font.GetCharacterWidth(code) * fontSize / 1000.0
+                                                : fontSize * 0.5;
+            double advance = baseWidth + charSpacing;
+            if (!isType0 && code == 32) advance += wordSpacing;
+            total += advance;
         }
-        return units * fontSize / 1000.0;
+        return total * horizontalScaling / 100.0;
     }
 }

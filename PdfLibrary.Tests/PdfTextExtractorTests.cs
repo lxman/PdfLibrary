@@ -388,6 +388,81 @@ ET";
         Assert.Equal(54.0 + 28.0 + 14.0, fragments[1].X, 0.01);
     }
 
+    /// <summary>ISO 32000 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th. Tc adds per SHOWN GLYPH.
+    /// Fallback width (no resources) is fontSize×0.5 per byte, so "Test" at 12pt = 24.0 base;
+    /// with Tc=2 → 24 + 4×2 = 32.0.</summary>
+    [Fact]
+    public void Fragment_Width_IncludesCharacterSpacing()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+2 Tc
+100 700 Td
+(Test) Tj
+ET";
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(content));
+        Assert.Single(fragments);
+        Assert.Equal(32.0, fragments[0].Width, precision: 6);
+    }
+
+    /// <summary>Tw applies to single-byte code 32 only. "a b" at 12pt fallback = 18.0 base;
+    /// with Tw=5 → 23.0 (one space).</summary>
+    [Fact]
+    public void Fragment_Width_IncludesWordSpacing_OnSpaces()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+5 Tw
+100 700 Td
+(a b) Tj
+ET";
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(content));
+        Assert.Single(fragments);
+        Assert.Equal(23.0, fragments[0].Width, precision: 6);
+    }
+
+    /// <summary>Tz scales the whole displacement. "Test" at 12pt fallback = 24.0; Tz=50 → 12.0.
+    /// Th multiplies AFTER Tc per the spec: with 2 Tc as well, (24 + 8) × 0.5 = 16.0.</summary>
+    [Fact]
+    public void Fragment_Width_ScaledByHorizontalScaling_AfterCharSpacing()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+50 Tz
+2 Tc
+100 700 Td
+(Test) Tj
+ET";
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(content));
+        Assert.Single(fragments);
+        Assert.Equal(16.0, fragments[0].Width, precision: 6);
+    }
+
+    /// <summary>The pen advance between runs carries Tc/Tz too: second fragment's X = first X +
+    /// first Width (the width already includes spacing/scaling). And TJ kern adjustments scale by
+    /// Th: [(A) -1000 (B)] TJ at 12pt, Tz=50 → kern = 1000/1000×12×0.5 = 6.0 between the runs.</summary>
+    [Fact]
+    public void Fragment_PenAdvance_And_TJKern_CarryTcTz()
+    {
+        var content = @"
+BT
+/F1 12 Tf
+50 Tz
+2 Tc
+100 700 Td
+[(A) -1000 (B)] TJ
+ET";
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(Encoding.ASCII.GetBytes(content));
+        Assert.Equal(2, fragments.Count);
+        // "A": (12×0.5 + 2) × 0.5 = 4.0 wide; kern: 1000/1000 × 12 × 0.5 = 6.0
+        Assert.Equal(100.0, fragments[0].X, precision: 6);
+        Assert.Equal(4.0, fragments[0].Width, precision: 6);
+        Assert.Equal(110.0, fragments[1].X, precision: 6);   // 100 + 4 + 6
+    }
+
     #endregion
 
     #region Pen Cursor / TextOffset Tests
