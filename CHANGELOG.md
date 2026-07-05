@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Text extraction pen advances now honor the text-matrix horizontal scale.** Documents that select
+  a font at size 1 and scale via `Tm` (e.g. `/F1 1 Tf` + `28 0 0 28 x y Tm`) produced fragment maps
+  compressed by the scale factor — fragment widths, run-to-run pen positions, and `TJ` kern
+  adjustments were all unscaled while `FontSize` itself was reported scaled. This broke
+  consumer-built highlight rects and hit-testing (selection/search highlights covering only the
+  first character of a heading). Advances and `TJ` adjustments now multiply by the text matrix's
+  horizontal scale, matching the existing `effectiveFontSize` treatment.
+
 ## [2.3.0] - 2026-07-04
 
 Minor release: AcroForm field **authoring** on existing documents, text-extraction fixes that make
