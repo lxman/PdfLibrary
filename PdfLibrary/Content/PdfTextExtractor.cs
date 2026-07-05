@@ -378,8 +378,28 @@ internal class PdfTextExtractor : PdfContentProcessor
             return bytes.Length * fontSize * 0.5;
         }
 
-        return bytes
-            .Select(b => font.GetCharacterWidth(b)).Select(glyphWidth => glyphWidth * fontSize / 1000.0)
-            .Sum();
+        // Consume CODES, not bytes: Type0 fonts use 2-byte big-endian codes (same loop as the
+        // renderer's show-text path). Summing per-byte widths looked up garbage codes — mostly
+        // the 1000-unit CID default — inflating every Type0 run's advance, which dragged the
+        // fragment map right of the rendered glyphs (2026-07-05 bullet-line highlight gap).
+        bool isType0 = font.FontType == PdfFontType.Type0;
+        double units = 0;
+        var i = 0;
+        while (i < bytes.Length)
+        {
+            int code;
+            if (isType0 && i + 1 < bytes.Length)
+            {
+                code = (bytes[i] << 8) | bytes[i + 1];
+                i += 2;
+            }
+            else
+            {
+                code = bytes[i];
+                i++;
+            }
+            units += font.GetCharacterWidth(code);
+        }
+        return units * fontSize / 1000.0;
     }
 }

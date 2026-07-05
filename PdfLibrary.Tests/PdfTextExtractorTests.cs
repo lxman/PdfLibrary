@@ -254,6 +254,57 @@ ET";
         Assert.Equal(24.0, fragments[0].Width, precision: 6);
     }
 
+    /// <summary>Regression (2026-07-05, BPC bullet-line highlight gap): CalculateTextWidth summed
+    /// widths PER BYTE, but Type0 fonts use 2-byte codes — each code was looked up as two garbage
+    /// byte-codes (mostly hitting the 1000-unit CID default), so every Type0 run's advance was
+    /// wildly inflated and the extractor's pen drifted right of the rendered glyphs (the real
+    /// document's bullet advanced 17.5pt for a ~8.5pt glyph, shifting the whole line's fragment
+    /// map +11.5pt). Width decoding must consume 2-byte codes exactly like the renderer's
+    /// show-text loop (PdfRenderer: charCode = (b0 &lt;&lt; 8) | b1).</summary>
+    [Fact]
+    public void Fragment_Width_Type0Font_UsesTwoByteCodes()
+    {
+        var cidDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("CIDFontType2"),
+            [new PdfName("BaseFont")] = new PdfName("TestCID"),
+            // CID 0x48 (72) → 500 units; CID 0x65 (101) → 600 units.
+            [new PdfName("W")] = new PdfArray
+            {
+                new PdfInteger(72), new PdfArray { new PdfInteger(500) },
+                new PdfInteger(101), new PdfArray { new PdfInteger(600) },
+            },
+        };
+        var type0Dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("Type0"),
+            [new PdfName("BaseFont")] = new PdfName("TestCID"),
+            [new PdfName("Encoding")] = new PdfName("Identity-H"),
+            [new PdfName("DescendantFonts")] = new PdfArray { cidDict },
+        };
+        var resources = new PdfResources(new PdfDictionary
+        {
+            [new PdfName("Font")] = new PdfDictionary { [new PdfName("F1")] = type0Dict },
+        });
+
+        // <00480065> = codes 0x0048, 0x0065 → (500 + 600)/1000 × 12pt = 13.2.
+        // The per-byte bug instead sums widths for bytes 00,48,00,65 → 3100 units → 37.2.
+        var content = @"
+BT
+/F1 12 Tf
+100 700 Td
+<00480065> Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes, resources);
+
+        Assert.Single(fragments);
+        Assert.Equal(13.2, fragments[0].Width, precision: 4);
+    }
+
     [Fact]
     public void Fragment_Width_PopulatedPerString_InTJArrays()
     {
