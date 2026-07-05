@@ -272,6 +272,71 @@ ET";
         Assert.Equal(5 * 12 * 0.5, fragments[1].Width, precision: 6);   // "World" fallback width
     }
 
+    [Fact]
+    public void Fragment_Width_ScaledByTextMatrix()
+    {
+        // Documents that set Tf size 1 and put the real size in the text matrix (e.g.
+        // PDF20_AN001-BPC.pdf headings: "/F1 1 Tf" + "28 0 0 28 54 527 Tm") must get advances
+        // scaled by the matrix — FontSize already was (effectiveFontSize), Width was not
+        // (2026-07-04 smoke: a whole 28pt heading's fragments spanned ~15 units, so selection/
+        // search highlight boxes for the line compressed into the width of the first glyph).
+        // Fallback width for "Test" = 4 bytes * 1pt * 0.5 = 2.0 in text space → * 28 = 56.
+        var content = @"
+BT
+/F1 1 Tf
+28 0 0 28 54 527 Tm
+(Test) Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Single(fragments);
+        Assert.Equal(28.0, fragments[0].FontSize, 0.01);   // effective size (already worked)
+        Assert.Equal(56.0, fragments[0].Width, 0.01);      // advance must carry the Tm X-scale
+    }
+
+    [Fact]
+    public void Fragment_PenAdvance_ScaledByTextMatrix_AcrossRuns()
+    {
+        // The second run's X must sit one full SCALED advance right of the first.
+        var content = @"
+BT
+/F1 1 Tf
+28 0 0 28 54 527 Tm
+(Te) Tj
+(st) Tj
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        Assert.Equal(54.0, fragments[0].X, 0.01);
+        // "Te" fallback = 2 * 1 * 0.5 = 1.0 text-space → * 28 = 28.0 user-space
+        Assert.Equal(54.0 + 28.0, fragments[1].X, 0.01);
+    }
+
+    [Fact]
+    public void TJKerning_Adjustment_ScaledByTextMatrix()
+    {
+        // TJ numeric adjustments are thousandths of TEXT space — they must be scaled by
+        // font size AND the text-matrix X-scale, like every other advance.
+        var content = @"
+BT
+/F1 1 Tf
+28 0 0 28 54 527 Tm
+[(Te) -500 (st)] TJ
+ET";
+        byte[] bytes = Encoding.ASCII.GetBytes(content);
+
+        (_, List<TextFragment> fragments) = PdfTextExtractor.ExtractTextWithFragments(bytes);
+
+        Assert.Equal(2, fragments.Count);
+        // "Te" advance = 28.0 (see above) plus kern: -(-500)/1000 * 1pt * 28 = +14.0
+        Assert.Equal(54.0 + 28.0 + 14.0, fragments[1].X, 0.01);
+    }
+
     #endregion
 
     #region Pen Cursor / TextOffset Tests

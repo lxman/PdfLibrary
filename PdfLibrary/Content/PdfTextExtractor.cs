@@ -149,7 +149,12 @@ internal class PdfTextExtractor : PdfContentProcessor
 
         // Calculate actual text advance using font metrics (also stored on the fragment so
         // consumers can build highlight rectangles without re-resolving font metrics).
-        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize);
+        // The advance is in TEXT space — it must carry the text matrix's horizontal scale into
+        // user space, exactly as effectiveFontSize carries the vertical one. Documents that set
+        // "/F1 1 Tf" with the real size in Tm (e.g. "28 0 0 28 x y Tm") otherwise get advances
+        // 28× too small: every fragment of a line stacks near the line start, and highlight
+        // boxes / hit-testing built from X/Width compress into the first glyph (2026-07-04).
+        double advance = CalculateTextWidth(text.Bytes, font, CurrentState.FontSize) * TextMatrixScaleX();
 
         int textOffset = _textBuilder.Length;
         _textBuilder.Append(decodedText);
@@ -182,8 +187,9 @@ internal class PdfTextExtractor : PdfContentProcessor
                 case PdfInteger intVal:
                 {
                     // Negative values increase spacing (move text position)
-                    // Values are in thousandths of a unit of text space
-                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize;
+                    // Values are in thousandths of a unit of text space — scaled to user space
+                    // by font size AND the text matrix's horizontal scale (like OnShowText).
+                    double adjustment = -intVal.Value / 1000.0 * CurrentState.FontSize * TextMatrixScaleX();
                     if (_cursorValid)
                         _cursor = _cursor with { X = _cursor.X + (float)adjustment };
                     _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
@@ -191,7 +197,7 @@ internal class PdfTextExtractor : PdfContentProcessor
                 }
                 case PdfReal realVal:
                 {
-                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize;
+                    double adjustment = -realVal.Value / 1000.0 * CurrentState.FontSize * TextMatrixScaleX();
                     if (_cursorValid)
                         _cursor = _cursor with { X = _cursor.X + (float)adjustment };
                     _lastPosition = _cursorValid ? _cursor : CurrentState.GetTextPosition();
@@ -353,6 +359,13 @@ internal class PdfTextExtractor : PdfContentProcessor
 
         // Fall back to Latin-1/PDFDocEncoding (similar to Windows-1252)
     }
+
+    /// <summary>Horizontal scale of the current text matrix — length of its first column vector
+    /// (sqrt(M11² + M21²)), the X-axis analogue of the scaleY used for effectiveFontSize.
+    /// 1.0 for the common identity/translation-only Tm.</summary>
+    private double TextMatrixScaleX() => Math.Sqrt(
+        CurrentState.TextMatrix.M11 * CurrentState.TextMatrix.M11 +
+        CurrentState.TextMatrix.M21 * CurrentState.TextMatrix.M21);
 
     /// <summary>
     /// Calculates the width of text in user space units
