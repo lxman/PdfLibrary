@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **High character codes render in embedded Type1/CFF fonts with standard encodings.** The
+  WinAnsi/MacRoman/Latin-1 encoding factories populated only the code→Unicode table, so
+  `PdfFontEncoding.GetGlyphName` returned null for every code ≥ 127 and the renderer's name-based
+  charstring lookup drew `.notdef` (nothing) — e.g. the ISO 32000-1 footer's `©` (0xA9) and en dash
+  (0x96) extracted correctly but rendered blank. Setting a Unicode mapping now also derives the
+  Adobe Glyph List name; explicit names (base tables, `/Differences`) still win.
 - **Text extraction honors `Tc`/`Tw`/`Tz`.** Fragment advances and `TJ` kern adjustments now use the
   full ISO 32000-1 §9.4.4 displacement — `tx = (w0×Tfs + Tc + Tw) × Th`, with word spacing applied
   only to single-byte code 32 — so extraction geometry stays on the rendered glyphs on documents

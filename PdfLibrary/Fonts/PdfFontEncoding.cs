@@ -71,6 +71,18 @@ internal class PdfFontEncoding
     {
         _codeToUnicode[charCode] = unicode;
 
+        // The renderer resolves embedded Type1/CFF charstrings BY NAME (ResolveGlyphId →
+        // GetGlyphIdByName), so an encoding that knows a code's Unicode but not its glyph name
+        // silently drops every code ≥ 127 at render time while extraction (Unicode path) still
+        // works — e.g. WinAnsi 0xA9 © and 0x96 en dash rendered as nothing. Derive the Adobe
+        // Glyph List name here; an explicit SetCharacterName (base tables, /Differences) wins.
+        if (!_codeToName.ContainsKey(charCode))
+        {
+            string? glyphName = GlyphList.GetGlyphName(unicode);
+            if (glyphName is not null)
+                _codeToName[charCode] = glyphName;
+        }
+
         // Also add to reverse mapping if single character
         if (unicode.Length == 1 && charCode is >= 0 and <= 255)
         {
