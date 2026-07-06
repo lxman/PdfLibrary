@@ -34,7 +34,7 @@ public sealed class PdfOutlineItem
     {
         get
         {
-            PdfObject? dest = Node.Dict.Get(new PdfName("Dest"));
+            PdfObject? dest = ResolveDestinationObject();
             return dest is null ? null : DestinationCodec.Decode(_document, dest);
         }
         set
@@ -47,6 +47,45 @@ public sealed class PdfOutlineItem
             Node.Dict[new PdfName("Dest")] = EncodeDestination(_document, value);
         }
     }
+
+    /// <summary>
+    /// The raw destination object this item points to, resolved from either an explicit
+    /// <c>/Dest</c> entry or — per ISO 32000-2 §12.3.3 — a GoTo action referenced by <c>/A</c>
+    /// (whose <c>/D</c> holds the destination). A named destination (a string/name value) is
+    /// looked up and unwrapped to its underlying destination. Returns null if none is present.
+    /// </summary>
+    private PdfObject? ResolveDestinationObject()
+    {
+        PdfObject? dest = Node.Dict.Get(new PdfName("Dest"));
+        if (dest is null
+            && Resolve(Node.Dict.Get(new PdfName("A"))) is PdfDictionary action
+            && action.Get(new PdfName("S")) is PdfName { Value: "GoTo" })
+        {
+            dest = action.Get(new PdfName("D"));
+        }
+        return ResolveNamedDestination(dest);
+    }
+
+    /// <summary>Resolves a named destination (string/name) to its underlying destination object,
+    /// unwrapping a <c>&lt;&lt; /D [...] &gt;&gt;</c> wrapper. Explicit arrays and null pass through.</summary>
+    private PdfObject? ResolveNamedDestination(PdfObject? dest)
+    {
+        string? name = dest switch
+        {
+            PdfString s => s.Value,
+            PdfName n   => n.Value,
+            _           => null
+        };
+        if (name is null) return dest;   // already an explicit array (or null)
+
+        PdfObject? resolved = DestinationRepairer.LookupNamedDest(_document, name);
+        if (Resolve(resolved) is PdfDictionary d && d.Get(new PdfName("D")) is { } inner)
+            return inner;
+        return resolved;
+    }
+
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference r ? _document.GetObject(r.ObjectNumber) : obj;
 
     /// <summary>Whether the item is expanded (default true). Controls the sign of /Count.</summary>
     public bool IsOpen

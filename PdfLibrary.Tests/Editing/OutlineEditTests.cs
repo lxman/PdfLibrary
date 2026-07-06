@@ -134,4 +134,33 @@ public class OutlineEditTests
         using PdfDocument reloaded = PdfDocument.Load(new MemoryStream(SaveReload(doc)));
         Assert.Equal(title, reloaded.Edit().Outlines[0].Title);
     }
+
+    [Fact]
+    public void Destination_ResolvesFromGoToActionWhenNoDest()
+    {
+        // Many real-world PDFs express an outline target with an /A GoTo action rather than a
+        // direct /Dest (ISO 32000-2 §12.3.3). Build a bookmark to page 2 (which writes /Dest),
+        // rewrite it into an /A << /S /GoTo /D [...] >> action, and confirm it still resolves.
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(ThreePageDoc()));
+        PdfDocumentEditor edit = doc.Edit();
+        edit.Outlines.Add("Chapter", 2);
+
+        using PdfDocument reloaded = PdfDocument.Load(new MemoryStream(SaveReload(doc)));
+        PdfOutlineItem item = reloaded.Edit().Outlines[0];
+        Assert.Equal(2, item.Destination!.PageIndex);   // resolves via /Dest today
+
+        // Move the destination array from /Dest into a GoTo action under /A.
+        PdfDictionary dict = item.Node.Dict;
+        PdfObject destArray = dict.Get(new PdfName("Dest"))!;
+        dict.Remove(new PdfName("Dest"));
+        var action = new PdfDictionary
+        {
+            [new PdfName("S")] = new PdfName("GoTo"),
+            [new PdfName("D")] = destArray,
+        };
+        dict[new PdfName("A")] = action;
+
+        Assert.Null(dict.Get(new PdfName("Dest")));
+        Assert.Equal(2, item.Destination!.PageIndex);   // now resolves via the /A GoTo action
+    }
 }
