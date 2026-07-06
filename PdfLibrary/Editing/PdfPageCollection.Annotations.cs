@@ -107,9 +107,11 @@ public sealed partial class PdfPageCollection
         {
             if (Resolve(entry) is not PdfDictionary annot)
                 continue;
+            string subtype = Resolve(annot.Get(new PdfName("Subtype"))) is PdfName n ? n.Value : string.Empty;
+            bool isLink = subtype == "Link";
             result.Add(new PdfAnnotationInfo
             {
-                Subtype = Resolve(annot.Get(new PdfName("Subtype"))) is PdfName n ? n.Value : string.Empty,
+                Subtype = subtype,
                 Rect = ReadRect(annot),
                 Contents = Resolve(annot.Get(new PdfName("Contents"))) is PdfString s ? s.GetText() : null,
                 AnnotationId = entry is PdfIndirectReference er ? er.ObjectNumber : 0,
@@ -119,7 +121,10 @@ public sealed partial class PdfPageCollection
                 LineEndpoints = ReadLineEndpoints(annot),
                 InkPaths = ReadInkPaths(annot),
                 Quadding = Resolve(annot.Get(new PdfName("Q"))) is PdfInteger q ? (int)q.Value : null,
-                DefaultAppearance = Resolve(annot.Get(new PdfName("DA"))) is PdfString da ? da.GetText() : null
+                DefaultAppearance = Resolve(annot.Get(new PdfName("DA"))) is PdfString da ? da.GetText() : null,
+                // Link target (internal destination or web URI) — only meaningful for Link annotations.
+                LinkDestination = isLink ? DestinationResolution.Destination(_document, annot) : null,
+                LinkUri = isLink ? DestinationResolution.Uri(_document, annot) : null
             });
         }
         return result;

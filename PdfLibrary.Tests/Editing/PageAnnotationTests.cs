@@ -1,3 +1,4 @@
+using System.Linq;
 using PdfLibrary.Builder;
 using PdfLibrary.Builder.Page;
 using PdfLibrary.Core;
@@ -74,6 +75,34 @@ public class PageAnnotationTests
         var action = (PdfDictionary)link[new PdfName("A")];
         Assert.Equal("URI", ((PdfName)action[new PdfName("S")]).Value);
         Assert.Equal("https://example.com", ((PdfString)action[new PdfName("URI")]).Value);
+    }
+
+    [Fact]
+    public void GetAnnotations_ExposesLinkTargets_InternalAndUri()
+    {
+        // The read path must surface where a Link points: an internal GoTo destination (page +
+        // position) and a web URI. Consumers (e.g. a viewer) navigate on these without re-parsing.
+        using var ms = new MemoryStream();
+        using (PdfDocument doc = PdfDocument.Load(new MemoryStream(TwoPages())))
+        {
+            PdfDocumentEditor edit = doc.Edit();
+            edit.Pages.AddLink(0, new PdfRect(100, 680, 200, 700), targetPageIndex: 1);
+            edit.Pages.AddExternalLink(0, new PdfRect(100, 640, 200, 660), "https://example.com/spec");
+            edit.Save(ms);
+        }
+        ms.Position = 0;
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+        List<PdfAnnotationInfo> links = reloaded.Edit().Pages.GetAnnotations(0)
+            .Where(a => a.Subtype == "Link").ToList();
+        Assert.Equal(2, links.Count);
+
+        PdfAnnotationInfo internalLink = links.Single(a => a.LinkDestination is not null);
+        Assert.Equal(1, internalLink.LinkDestination!.PageIndex);
+        Assert.Null(internalLink.LinkUri);
+
+        PdfAnnotationInfo webLink = links.Single(a => a.LinkUri is not null);
+        Assert.Equal("https://example.com/spec", webLink.LinkUri);
+        Assert.Null(webLink.LinkDestination);
     }
 
     [Fact]

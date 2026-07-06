@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Builder.Page;
 
 namespace PdfLibrary.Editing;
@@ -45,4 +46,13 @@ public sealed class PdfAnnotationInfo
 
     /// <summary>The default-appearance string (<c>/DA</c>) for a FreeText annotation, or null.</summary>
     public string? DefaultAppearance { get; init; }
+
+    /// <summary>For a Link annotation, the in-document destination it navigates to (resolved from
+    /// <c>/Dest</c> or a GoTo <c>/A</c> action, page + position), or null if it has no internal
+    /// destination (e.g. a web link, or a non-Link annotation).</summary>
+    public PdfDestination? LinkDestination { get; init; }
+
+    /// <summary>For a Link annotation with a URI action, the target URL, or null if it has none
+    /// (e.g. an internal-destination link, or a non-Link annotation).</summary>
+    public string? LinkUri { get; init; }
 }
