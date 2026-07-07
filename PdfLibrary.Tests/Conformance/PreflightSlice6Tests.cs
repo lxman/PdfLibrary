@@ -335,4 +335,50 @@ public class PreflightSlice6Tests
         Finding finding = Assert.Single(new DeviceColourRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
         Assert.Equal("device-colour", finding.RuleId);
     }
+
+    [Fact]
+    public void InlineImageMask_isNotDeviceColour()
+    {
+        // A stencil mask (/IM true) omits /CS and is painted in the current colour; it must not be
+        // read as DeviceGray (the inline-image operator defaults an absent CS to DeviceGray).
+        byte[] content = Ascii("BI /IM true /W 8 /H 1 /BPC 1 ID ")
+            .Concat(new byte[] { 0xFF })
+            .Concat(Ascii(" EI"))
+            .ToArray();
+        PdfDocument doc = BuildDoc(content); // no output intent
+
+        Assert.Empty(new DeviceColourRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
+    }
+
+    [Fact]
+    public void FormWithOwnDefaultRGB_remapsItsOwnScope()
+    {
+        // The Form XObject carries its OWN /Resources defining /DefaultRGB, so the 'rg' inside it is
+        // remapped independently of the page scope — no output intent required.
+        PdfDocument doc = BuildDoc(
+            Ascii("/Fm0 Do"),
+            configureResources: (d, res) =>
+            {
+                var formDict = new PdfDictionary
+                {
+                    [new PdfName("Type")] = new PdfName("XObject"),
+                    [new PdfName("Subtype")] = new PdfName("Form"),
+                    [new PdfName("Resources")] = new PdfDictionary
+                    {
+                        [new PdfName("ColorSpace")] = new PdfDictionary
+                        {
+                            [new PdfName("DefaultRGB")] =
+                                new PdfArray(new PdfName("ICCBased"), new PdfIndirectReference(11, 0)),
+                        },
+                    },
+                };
+                d.AddObject(10, 0, new PdfStream(formDict, Ascii("1 0 0 rg 0 0 10 10 re f")));
+                res[new PdfName("XObject")] = new PdfDictionary
+                {
+                    [new PdfName("Fm0")] = new PdfIndirectReference(10, 0),
+                };
+            });
+
+        Assert.Empty(new DeviceColourRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
+    }
 }

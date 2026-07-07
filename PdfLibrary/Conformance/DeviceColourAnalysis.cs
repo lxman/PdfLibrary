@@ -61,7 +61,9 @@ internal static class DeviceColourAnalysis
                         if (op.Operands.Count > 0 && op.Operands[0] is PdfName csName)
                             Note(csName.Value, remapGray, remapRgb, remapCmyk);
                         break;
-                    case "BI" when op is InlineImageOperator inlineImage:
+                    case "BI" when op is InlineImageOperator { ImageMask: false } inlineImage:
+                        // A stencil mask (/IM true) omits /CS and is painted in the current colour, so
+                        // only a real image colour space counts (the operator defaults CS to DeviceGray).
                         Note(inlineImage.ColorSpace, remapGray, remapRgb, remapCmyk);
                         break;
                     case "Do" when resources is not null
@@ -86,12 +88,15 @@ internal static class DeviceColourAnalysis
             }
             else if (subtype == "Form")
             {
+                // Guard the active recursion path only (add on enter, remove on exit) so a cycle is
+                // caught while a form legitimately reused across scopes is still walked each time.
                 if (xobject.IsIndirect && !visitedForms.Add(xobject.ObjectNumber)) return;
                 PdfResources? formResources =
                     context.Resolve(xobject.Dictionary.Get("Resources")) is PdfDictionary rd
                         ? new PdfResources(rd, context.Document)
                         : resources; // inherit parent resources when the form has none
                 Walk(xobject, formResources, depth + 1);
+                if (xobject.IsIndirect) visitedForms.Remove(xobject.ObjectNumber);
             }
         }
 
