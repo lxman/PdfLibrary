@@ -19,6 +19,8 @@ public static class Preflighter
         new Rules.PostEofDataRule(),
         new Rules.StreamFiltersRule(),
         new Rules.StreamExternalFileRule(),
+        new Rules.MetadataPresentRule(),
+        new Rules.PdfaIdentificationRule(),
     ];
 
     /// <summary>

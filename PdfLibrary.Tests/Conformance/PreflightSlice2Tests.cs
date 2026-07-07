@@ -19,10 +19,21 @@ public class PreflightSlice2Tests
     private static PdfString Str(params byte[] bytes) => new(bytes);
     private static PdfName N(string v) => new(v);
 
-    private static byte[] CleanBuilderBytes() =>
-        PdfDocumentBuilder.Create()
+    /// <summary>
+    /// Clean builder bytes, re-saved with a valid PDF/A XMP /Metadata stream attached so the document
+    /// satisfies the metadata rules (slice 3+) while keeping its clean file structure.
+    /// </summary>
+    private static byte[] CleanBuilderBytes()
+    {
+        byte[] bytes = PdfDocumentBuilder.Create()
             .AddPage(new PdfSize(612, 792), p => p.AddText("hi", 100, 700))
             .ToByteArray();
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(bytes));
+        ConformanceXmp.AttachValidPdfaMetadata(doc);
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
 
     /// <summary>An in-memory document holding one indirect stream whose dictionary the caller configures.</summary>
     private static PdfDocument DocWithStream(Action<PdfDictionary> configure)

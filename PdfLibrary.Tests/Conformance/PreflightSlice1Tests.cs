@@ -20,13 +20,18 @@ public class PreflightSlice1Tests
 
     private static PdfArray ValidFileId() => new(Str(0x01, 0x02, 0x03, 0x04), Str(0x01, 0x02, 0x03, 0x04));
 
-    /// <summary>A minimal, well-formed document from the builder: has a /ID, no /Encrypt.</summary>
+    /// <summary>
+    /// A minimal, well-formed document from the builder: has a /ID, no /Encrypt, and a valid PDF/A
+    /// XMP /Metadata stream so it satisfies the metadata rules added in later slices.
+    /// </summary>
     private static PdfDocument CleanBuilderDoc()
     {
         byte[] bytes = PdfDocumentBuilder.Create()
             .AddPage(new PdfSize(612, 792), p => p.AddText("hello", 100, 700))
             .ToByteArray();
-        return PdfDocument.Load(new MemoryStream(bytes));
+        var doc = PdfDocument.Load(new MemoryStream(bytes));
+        ConformanceXmp.AttachValidPdfaMetadata(doc);
+        return doc;
     }
 
     // ── NoEncryptionRule ────────────────────────────────────────────────────
