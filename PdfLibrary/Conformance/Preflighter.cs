@@ -24,6 +24,7 @@ public static class Preflighter
         new Rules.OutputIntentProfileRule(),
         new Rules.OutputIntentSingleProfileRule(),
         new Rules.FontEmbeddingRule(),
+        new Rules.DeviceColourRule(),
     ];
 
     /// <summary>

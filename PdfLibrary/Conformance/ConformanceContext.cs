@@ -1,4 +1,5 @@
 using System.Linq;
+using ICCSharp.Profile;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -11,6 +12,9 @@ internal readonly record struct OutputIntentInfo(
     PdfIndirectReference? ProfileRef,   // the indirect ref of /DestOutputProfile, if indirect
     PdfStream? Profile);                // the resolved /DestOutputProfile stream, if any
 
+/// <summary>The colour family of an ICC profile's data colour space, as relevant to device-colour matching.</summary>
+internal enum OutputIntentColour { None, Gray, Rgb, Cmyk, Other }
+
 /// <summary>
 /// Per-run state handed to each <see cref="IConformanceRule"/>: the document under inspection, the
 /// profile being targeted, the raw source bytes when available, and shared helpers (indirect-reference
@@ -22,6 +26,7 @@ internal sealed class ConformanceContext
     private IReadOnlyList<PdfStream>? _streams;
     private IReadOnlyList<OutputIntentInfo>? _outputIntents;
     private IReadOnlyList<PdfDictionary>? _fontDictionaries;
+    private OutputIntentColour? _outputIntentColour;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -53,6 +58,10 @@ internal sealed class ConformanceContext
 
     /// <summary>Every font dictionary (/Type /Font) in the document, materialized once and cached.</summary>
     public IReadOnlyList<PdfDictionary> FontDictionaries => _fontDictionaries ??= CollectFonts();
+
+    /// <summary>The colour family of the file's PDF/A output-intent ICC profile (None if there is no
+    /// output intent with a parseable destination profile). Cached.</summary>
+    public OutputIntentColour OutputIntentColourFamily => _outputIntentColour ??= ComputeOutputIntentColour();
 
     /// <summary>
     /// Resolves an indirect reference to its referenced object; returns <paramref name="obj"/>
@@ -93,5 +102,23 @@ internal sealed class ConformanceContext
             result.Add(new OutputIntentInfo(subtype, destRef, destStream));
         }
         return result;
+    }
+
+    private OutputIntentColour ComputeOutputIntentColour()
+    {
+        foreach (OutputIntentInfo intent in OutputIntents)
+        {
+            if (intent.Profile is null) continue;
+            try
+            {
+                ProfileHeader h = IccProfile.Parse(intent.Profile.GetDecodedData(Document.Decryptor)).Header;
+                if (h.DataColorSpace == ColorSpaceSignatures.RGB) return OutputIntentColour.Rgb;
+                if (h.DataColorSpace == ColorSpaceSignatures.CMYK) return OutputIntentColour.Cmyk;
+                if (h.DataColorSpace == ColorSpaceSignatures.Gray) return OutputIntentColour.Gray;
+                return OutputIntentColour.Other;
+            }
+            catch (Exception) { /* try next intent */ }
+        }
+        return OutputIntentColour.None;
     }
 }
