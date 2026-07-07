@@ -45,6 +45,10 @@
              PdfDocumentBuilder.LoadFont(byte[]/Stream) overload tests. -->
         <None Update="Resources\PublicPixel.ttf" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Resources\PublicPixel.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Known-conformant PDF/A-2b reference doc from the veraPDF corpus (CC BY 4.0;
+             see Resources/conformant-pdfa2b.LICENSE.txt) — the "clean document" fixture. -->
+        <None Update="Resources\conformant-pdfa2b.pdf" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Resources\conformant-pdfa2b.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

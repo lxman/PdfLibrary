@@ -1,0 +1,12 @@
+conformant-pdfa2b.pdf
+
+Source:   veraPDF corpus — https://github.com/veraPDF/veraPDF-corpus
+Original: PDF_A-2b/6.6 Metadata/6.6.4 Version and conformance level identification/
+          veraPDF test suite 6-6-4-t01-pass-a.pdf
+
+License:  Creative Commons Attribution 4.0 International (CC BY 4.0)
+          https://creativecommons.org/licenses/by/4.0/
+Credit:   veraPDF Consortium
+
+Used unmodified as a known-conformant PDF/A-2b reference document in the
+conformance preflight tests (a document that must pass every rule).

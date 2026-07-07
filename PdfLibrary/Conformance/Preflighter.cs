@@ -23,6 +23,7 @@ public static class Preflighter
         new Rules.PdfaIdentificationRule(),
         new Rules.OutputIntentProfileRule(),
         new Rules.OutputIntentSingleProfileRule(),
+        new Rules.FontEmbeddingRule(),
     ];
 
     /// <summary>

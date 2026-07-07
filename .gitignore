@@ -5,6 +5,8 @@ riderModule.iml
 /_ReSharper.Caches/
 logs/
 *.pdf
+# Known-conformant PDF/A test fixture (CC BY 4.0) — must be tracked despite *.pdf
+!PdfLibrary.Tests/Resources/conformant-pdfa2b.pdf
 # Local NuGet feed for Focal co-development dev packs (never committed)
 local-feed/
 .claude/

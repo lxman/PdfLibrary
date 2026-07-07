@@ -21,6 +21,7 @@ internal sealed class ConformanceContext
 {
     private IReadOnlyList<PdfStream>? _streams;
     private IReadOnlyList<OutputIntentInfo>? _outputIntents;
+    private IReadOnlyList<PdfDictionary>? _fontDictionaries;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -50,6 +51,9 @@ internal sealed class ConformanceContext
     /// <summary>The catalog's /OutputIntents, parsed once and cached (empty when absent).</summary>
     public IReadOnlyList<OutputIntentInfo> OutputIntents => _outputIntents ??= ReadOutputIntents();
 
+    /// <summary>Every font dictionary (/Type /Font) in the document, materialized once and cached.</summary>
+    public IReadOnlyList<PdfDictionary> FontDictionaries => _fontDictionaries ??= CollectFonts();
+
     /// <summary>
     /// Resolves an indirect reference to its referenced object; returns <paramref name="obj"/>
     /// unchanged when it is already a direct object (or null).
@@ -61,6 +65,15 @@ internal sealed class ConformanceContext
     {
         Document.MaterializeAllObjects();
         return Document.Objects.Values.OfType<PdfStream>().ToList();
+    }
+
+    private IReadOnlyList<PdfDictionary> CollectFonts()
+    {
+        Document.MaterializeAllObjects();
+        return Document.Objects.Values
+            .OfType<PdfDictionary>()
+            .Where(d => d.Get("Type") is PdfName { Value: "Font" })
+            .ToList();
     }
 
     private IReadOnlyList<OutputIntentInfo> ReadOutputIntents()

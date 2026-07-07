@@ -1,7 +1,6 @@
 using System.IO;
 using System.Linq;
 using System.Text;
-using PdfLibrary.Builder;
 using PdfLibrary.Conformance;
 using PdfLibrary.Conformance.Rules;
 using PdfLibrary.Core.Primitives;
@@ -20,20 +19,10 @@ public class PreflightSlice2Tests
     private static PdfName N(string v) => new(v);
 
     /// <summary>
-    /// Clean builder bytes, re-saved with a valid PDF/A XMP /Metadata stream attached so the document
-    /// satisfies the metadata rules (slice 3+) while keeping its clean file structure.
+    /// A genuinely conformant fixture (embedded font + valid PDF/A XMP) serialized to bytes, so it
+    /// satisfies every rule added through the current slice while keeping a clean file structure.
     /// </summary>
-    private static byte[] CleanBuilderBytes()
-    {
-        byte[] bytes = PdfDocumentBuilder.Create()
-            .AddPage(new PdfSize(612, 792), p => p.AddText("hi", 100, 700))
-            .ToByteArray();
-        using PdfDocument doc = PdfDocument.Load(new MemoryStream(bytes));
-        ConformanceXmp.AttachValidPdfaMetadata(doc);
-        using var ms = new MemoryStream();
-        doc.Save(ms);
-        return ms.ToArray();
-    }
+    private static byte[] CleanBuilderBytes() => ConformanceFixtures.CleanConformantBytes();
 
     /// <summary>An in-memory document holding one indirect stream whose dictionary the caller configures.</summary>
     private static PdfDocument DocWithStream(Action<PdfDictionary> configure)
