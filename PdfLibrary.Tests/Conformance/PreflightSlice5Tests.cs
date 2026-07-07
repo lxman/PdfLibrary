@@ -11,9 +11,8 @@ namespace PdfLibrary.Tests.Conformance;
 /// composite wrapper, whose embedding is verified on its descendant CIDFont as a separate font
 /// object). "Embedded" requires the /FontDescriptor's FontFile/FontFile2/FontFile3 key to resolve
 /// to an actual stream object — a dangling indirect reference (key present, target missing or not
-/// a stream) does not count, mirroring a real veraPDF corpus fixture (see
-/// <c>_TempSlice5.cs</c> smoke-test history) where a /FontFile3 reference pointed at a bare
-/// <c>null</c> object.
+/// a stream) does not count, mirroring the real veraPDF corpus fixture
+/// <c>6-2-11-4-1-t01-fail-a.pdf</c> whose /FontFile3 reference points at a bare <c>null</c> object.
 /// </summary>
 public class PreflightSlice5Tests
 {
@@ -101,6 +100,38 @@ public class PreflightSlice5Tests
         Assert.Empty(new FontEmbeddingRule().Check(Ctx(doc)));
     }
 
+    [Fact]
+    public void CidFontType0WithFontFile3_passes()
+    {
+        PdfDocument doc = DocWithFont((f, d) =>
+        {
+            f[new PdfName("Subtype")] = new PdfName("CIDFontType0");
+            f[new PdfName("FontDescriptor")] = EmbeddedDescriptor(d, "FontFile3");
+        });
+        Assert.Empty(new FontEmbeddingRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Type1WithIndirectFontDescriptor_passes()
+    {
+        // The /FontDescriptor is itself an indirect object — exercises the resolve branch.
+        var doc = new PdfDocument();
+        doc.AddObject(2, 0, new PdfStream(new PdfDictionary(), [1, 2, 3])); // font program
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("FontDescriptor"),
+            [new PdfName("FontFile")] = new PdfIndirectReference(2, 0),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("Type1"),
+            [new PdfName("FontDescriptor")] = new PdfIndirectReference(3, 0),
+        });
+
+        Assert.Empty(new FontEmbeddingRule().Check(Ctx(doc)));
+    }
+
     // ── exempt subtypes: no finding ──────────────────────────────────────────
 
     [Fact]
@@ -137,6 +168,16 @@ public class PreflightSlice5Tests
     public void Type1WithNoFontDescriptor_isError()
     {
         PdfDocument doc = DocWithFont((f, _) => f[new PdfName("Subtype")] = new PdfName("Type1"));
+        Finding finding = Assert.Single(new FontEmbeddingRule().Check(Ctx(doc)));
+
+        Assert.Equal("font-embedded", finding.RuleId);
+        Assert.Equal(FindingSeverity.Error, finding.Severity);
+    }
+
+    [Fact]
+    public void MMType1WithoutFontFile_isError()
+    {
+        PdfDocument doc = DocWithFont((f, _) => f[new PdfName("Subtype")] = new PdfName("MMType1"));
         Finding finding = Assert.Single(new FontEmbeddingRule().Check(Ctx(doc)));
 
         Assert.Equal("font-embedded", finding.RuleId);

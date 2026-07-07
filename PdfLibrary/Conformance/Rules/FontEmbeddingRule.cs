@@ -7,8 +7,14 @@ namespace PdfLibrary.Conformance.Rules;
 /// Every font used for rendering must have its font program embedded (ISO 19005-2, 6.2.11.4.1,
 /// test 1). Type3 fonts (glyphs are content streams) and the Type0 composite wrapper are exempt —
 /// a Type0's embedding is verified on its descendant CIDFont, which is checked as its own font
-/// object. Note: fonts used only for invisible text (text rendering mode 3) are exempt in the
-/// standard, but detecting that needs a content-stream walk, so such fonts may be over-reported here.
+/// object.
+/// <para>
+/// Scope caveat: this enumerates every /Type /Font object (see <see cref="ConformanceContext.FontDictionaries"/>)
+/// rather than walking the rendering resource tree, so it (a) may over-report a non-embedded font that
+/// is present but unreferenced, and (b) does not see a font written as a direct (inline) dictionary.
+/// It also cannot honour the standard's rendering-mode-3 (invisible text) exemption. All three are
+/// resolved once the shared resource/content walk lands (see the colour/content slice).
+/// </para>
 /// </summary>
 internal sealed class FontEmbeddingRule : IConformanceRule
 {
@@ -37,7 +43,7 @@ internal sealed class FontEmbeddingRule : IConformanceRule
                 RuleId = RuleId,
                 Severity = FindingSeverity.Error,
                 Clause = ConformanceClauses.For(context.Target, "6.2.11.4.1"),
-                Message = $"The {subtype ?? "font"} '{baseFont}' used for rendering is not embedded.",
+                Message = $"The {subtype ?? "font"} font '{baseFont}' is not embedded.",
                 ObjectNumber = font.IsIndirect ? font.ObjectNumber : null,
             };
         }
