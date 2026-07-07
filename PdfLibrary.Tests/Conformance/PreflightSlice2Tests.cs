@@ -57,6 +57,17 @@ public class PreflightSlice2Tests
         Assert.Equal(FindingSeverity.Error, finding.Severity);
     }
 
+    [Fact]
+    public void FileId_indirect_id_is_error()
+    {
+        var doc = new PdfDocument();
+        // /ID present but an indirect reference (not a direct array) — Trailer.Id yields null.
+        doc.Trailer.Dictionary[N("ID")] = new PdfIndirectReference(9, 0);
+        Finding finding = Assert.Single(new FileIdentifierRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
+
+        Assert.Equal(FindingSeverity.Error, finding.Severity);
+    }
+
     // ── post-eof ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -78,6 +89,15 @@ public class PreflightSlice2Tests
     {
         byte[] bytes = Encoding.ASCII.GetBytes(content);
         Assert.Empty(new PostEofDataRule().Check(
+            new ConformanceContext(new PdfDocument(), ConformanceProfile.PdfA2b, bytes)));
+    }
+
+    [Fact]
+    public void PostEof_flags_two_end_of_line_markers()
+    {
+        // Only a *single* optional EOL is permitted, so a second one is extra data.
+        byte[] bytes = Encoding.ASCII.GetBytes("dummy\n%%EOF\n\n");
+        Assert.Single(new PostEofDataRule().Check(
             new ConformanceContext(new PdfDocument(), ConformanceProfile.PdfA2b, bytes)));
     }
 
@@ -131,23 +151,41 @@ public class PreflightSlice2Tests
         Assert.Empty(new StreamFiltersRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
     }
 
+    [Fact]
+    public void StreamFilters_flags_non_identity_crypt()
+    {
+        PdfDocument doc = DocWithStream(d =>
+        {
+            d[N("Filter")] = N("Crypt");
+            var parms = new PdfDictionary();
+            parms[N("Name")] = N("StdCF"); // a named crypt filter, not Identity
+            d[N("DecodeParms")] = parms;
+        });
+        Finding finding = Assert.Single(new StreamFiltersRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
+
+        Assert.Contains("Crypt", finding.Message);
+    }
+
     // ── external-file keys ──────────────────────────────────────────────────
 
-    [Fact]
-    public void StreamExternalFile_flags_f_key()
+    [Theory]
+    [InlineData("F")]
+    [InlineData("FFilter")]
+    [InlineData("FDecodeParms")]
+    public void StreamExternalFile_flags_each_external_key(string key)
     {
-        PdfDocument doc = DocWithStream(d => d[N("F")] = Str(0x2F, 0x78)); // /F external file spec
-        Finding finding = Assert.Single(new StreamFDecodeParmsRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
+        PdfDocument doc = DocWithStream(d => d[N(key)] = Str(0x78));
+        Finding finding = Assert.Single(new StreamExternalFileRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
 
         Assert.Equal("stream-external-file", finding.RuleId);
-        Assert.Equal(FindingSeverity.Error, finding.Severity);
+        Assert.Contains("/" + key, finding.Message);
     }
 
     [Fact]
     public void StreamExternalFile_passes_for_plain_stream()
     {
         PdfDocument doc = DocWithStream(d => d[N("Filter")] = N("FlateDecode"));
-        Assert.Empty(new StreamFDecodeParmsRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
+        Assert.Empty(new StreamExternalFileRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b)));
     }
 
     // ── Preflighter integration (source bytes) ──────────────────────────────

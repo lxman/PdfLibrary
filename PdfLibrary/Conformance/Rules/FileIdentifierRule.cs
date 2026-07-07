@@ -1,4 +1,3 @@
-using System.Linq;
 using PdfLibrary.Core.Primitives;
 
 namespace PdfLibrary.Conformance.Rules;
@@ -36,11 +35,12 @@ internal sealed class FileIdentifierRule : IConformanceRule
             yield break;
         }
 
-        // Hard requirement: at least one non-empty byte string (matches veraPDF's present-and-non-empty).
-        if (!id.Any(e => e is PdfString { Bytes.Length: > 0 }))
+        // Hard requirement (matches veraPDF's non-empty lastID): the last element — the changing file
+        // identifier — must be a non-empty byte string.
+        if (id.Count == 0 || id[id.Count - 1] is not PdfString { Bytes.Length: > 0 })
         {
             yield return Error(context.Target,
-                "The trailer /ID is empty; it must contain a non-empty file identifier.");
+                "The trailer /ID must contain a non-empty byte string file identifier.");
             yield break;
         }
 

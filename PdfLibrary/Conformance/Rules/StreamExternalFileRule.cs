@@ -7,7 +7,7 @@ namespace PdfLibrary.Conformance.Rules;
 /// A stream dictionary shall not contain the <c>F</c>, <c>FFilter</c>, or <c>FDecodeParms</c> keys —
 /// these reference external file data, which PDF/A prohibits (ISO 19005-2, 6.1.7.1, test 3).
 /// </summary>
-internal sealed class StreamFDecodeParmsRule : IConformanceRule
+internal sealed class StreamExternalFileRule : IConformanceRule
 {
     private static readonly string[] ForbiddenKeys = ["F", "FFilter", "FDecodeParms"];
 
