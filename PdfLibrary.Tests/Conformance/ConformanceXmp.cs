@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Text;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -22,8 +21,7 @@ internal static class ConformanceXmp
     public static void AttachValidPdfaMetadata(PdfDocument doc)
     {
         doc.MaterializeAllObjects();
-        int objectNumber = doc.Objects.Keys.Max() + 1;
-        doc.AddObject(objectNumber, 0, new PdfStream(new PdfDictionary(), ValidPdfaPacket()));
-        doc.GetCatalog()!.Dictionary[new PdfName("Metadata")] = new PdfIndirectReference(objectNumber, 0);
+        PdfIndirectReference reference = doc.RegisterObject(new PdfStream(new PdfDictionary(), ValidPdfaPacket()));
+        doc.GetCatalog()!.Dictionary[new PdfName("Metadata")] = reference;
     }
 }

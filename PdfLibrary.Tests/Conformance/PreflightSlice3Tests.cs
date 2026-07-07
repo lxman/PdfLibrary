@@ -90,10 +90,26 @@ public class PreflightSlice3Tests
     [InlineData(ConformanceProfile.PdfA2b, "2", "B")]
     [InlineData(ConformanceProfile.PdfA2u, "2", "U")]
     [InlineData(ConformanceProfile.PdfA3b, "3", "B")]
+    // A level-B target also accepts the stricter U and A levels (they satisfy B); 2u accepts A.
+    [InlineData(ConformanceProfile.PdfA2b, "2", "U")]
+    [InlineData(ConformanceProfile.PdfA2b, "2", "A")]
+    [InlineData(ConformanceProfile.PdfA3b, "3", "U")]
+    [InlineData(ConformanceProfile.PdfA2u, "2", "A")]
     public void PdfaId_passes_for_matching_identification(ConformanceProfile profile, string part, string conf)
     {
         PdfDocument doc = DocWithXmp(Xmp(part, conf));
         Assert.Empty(new PdfaIdentificationRule().Check(Ctx(doc, profile)));
+    }
+
+    [Fact]
+    public void PdfaId_wrong_part_for_3b_is_error()
+    {
+        // Targeting 3b but the packet declares part 2.
+        PdfDocument doc = DocWithXmp(Xmp("2", "B"));
+        Finding finding = Assert.Single(new PdfaIdentificationRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+
+        Assert.Equal("pdfa-id", finding.RuleId);
+        Assert.Contains("part", finding.Message);
     }
 
     // ── pdfa-id: failing cases ───────────────────────────────────────────────
