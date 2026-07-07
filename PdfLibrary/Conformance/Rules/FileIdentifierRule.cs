@@ -1,10 +1,13 @@
+using System.Linq;
 using PdfLibrary.Core.Primitives;
 
 namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
-/// PDF/A and PDF/X require a file identifier: the trailer must contain an <c>/ID</c> entry whose
-/// value is a direct array of exactly two byte strings (ISO 32000-1, 7.5.5).
+/// PDF/A and PDF/X require a file identifier: the trailer must contain a non-empty <c>/ID</c>
+/// (ISO 19005-2, 6.1.3, test 1 — <c>lastID != null &amp;&amp; length &gt; 0</c>). A well-formed <c>/ID</c>
+/// is an array of exactly two byte strings (ISO 32000-1, 7.5.5); anything else is flagged as a warning
+/// rather than a hard failure, since the archival requirement is only that an identifier is present.
 /// </summary>
 internal sealed class FileIdentifierRule : IConformanceRule
 {
@@ -29,14 +32,29 @@ internal sealed class FileIdentifierRule : IConformanceRule
         if (id is null)
         {
             yield return Error(context.Target,
-                "The trailer /ID must be a direct array of two byte strings.");
+                "The trailer /ID must be a direct array of byte strings.");
             yield break;
         }
 
-        if (id.Count != 2 || id[0] is not PdfString || id[1] is not PdfString)
+        // Hard requirement: at least one non-empty byte string (matches veraPDF's present-and-non-empty).
+        if (!id.Any(e => e is PdfString { Bytes.Length: > 0 }))
         {
             yield return Error(context.Target,
-                $"The trailer /ID must be an array of exactly two byte strings; found {id.Count} element(s).");
+                "The trailer /ID is empty; it must contain a non-empty file identifier.");
+            yield break;
+        }
+
+        // Advisory: ISO 32000-1 defines /ID as exactly two byte strings.
+        if (id.Count != 2 || id[0] is not PdfString || id[1] is not PdfString)
+        {
+            yield return new Finding
+            {
+                RuleId = RuleId,
+                Severity = FindingSeverity.Warning,
+                Clause = ConformanceClauses.FileStructure(context.Target),
+                Message = $"The trailer /ID should be an array of exactly two byte strings; found "
+                          + $"{id.Count} element(s).",
+            };
         }
     }
 

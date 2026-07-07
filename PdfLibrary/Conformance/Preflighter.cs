@@ -16,6 +16,9 @@ public static class Preflighter
     [
         new Rules.NoEncryptionRule(),
         new Rules.FileIdentifierRule(),
+        new Rules.PostEofDataRule(),
+        new Rules.StreamFiltersRule(),
+        new Rules.StreamFDecodeParmsRule(),
     ];
 
     /// <summary>
@@ -25,7 +28,38 @@ public static class Preflighter
     /// <param name="profile">A single profile to target (one flag value).</param>
     /// <exception cref="ArgumentNullException"><paramref name="document"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="profile"/> is not a single supported profile.</exception>
-    public static PreflightResult Check(PdfDocument document, ConformanceProfile profile)
+    public static PreflightResult Check(PdfDocument document, ConformanceProfile profile) =>
+        Run(document, profile, sourceBytes: null);
+
+    /// <summary>
+    /// Loads a document from raw PDF bytes and checks it. Byte-level rules (e.g. post-EOF data) can run
+    /// because the source bytes are retained.
+    /// </summary>
+    public static PreflightResult Check(byte[] pdfBytes, ConformanceProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(pdfBytes);
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(pdfBytes, writable: false));
+        return Run(document, profile, pdfBytes);
+    }
+
+    /// <summary>
+    /// Loads a document from a file and checks it against a single conformance profile. The file bytes
+    /// are retained so byte-level rules can run.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="PdfDocument.Load(System.IO.Stream, string, bool)"/> throws for a file it cannot read —
+    /// including a PDF protected by a user password other than <paramref name="password"/> (itself an
+    /// encryption violation). Callers that need to report such files instead of getting an exception
+    /// should load the document themselves and call <see cref="Check(PdfDocument, ConformanceProfile)"/>.
+    /// </remarks>
+    public static PreflightResult Check(string filePath, ConformanceProfile profile, string? password = null)
+    {
+        byte[] bytes = File.ReadAllBytes(filePath);
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(bytes, writable: false), password ?? string.Empty);
+        return Run(document, profile, bytes);
+    }
+
+    private static PreflightResult Run(PdfDocument document, ConformanceProfile profile, byte[]? sourceBytes)
     {
         ArgumentNullException.ThrowIfNull(document);
         if (!IsSingleProfile(profile))
@@ -34,7 +68,7 @@ public static class Preflighter
                 $"A preflight run targets exactly one profile; got '{profile}'.", nameof(profile));
         }
 
-        var context = new ConformanceContext(document, profile);
+        var context = new ConformanceContext(document, profile, sourceBytes);
         var findings = new List<Finding>();
 
         foreach (IConformanceRule rule in Rules)
@@ -62,21 +96,6 @@ public static class Preflighter
         }
 
         return new PreflightResult { Profile = profile, Findings = findings };
-    }
-
-    /// <summary>
-    /// Loads a document from a file and checks it against a single conformance profile.
-    /// </summary>
-    /// <remarks>
-    /// <see cref="PdfDocument.Load(string, string)"/> throws for a file it cannot read — including a
-    /// PDF protected by a user password other than <paramref name="password"/> (itself an encryption
-    /// violation). Callers that need to report such files instead of getting an exception should load
-    /// the document themselves and call <see cref="Check(PdfDocument, ConformanceProfile)"/>.
-    /// </remarks>
-    public static PreflightResult Check(string filePath, ConformanceProfile profile, string? password = null)
-    {
-        using PdfDocument document = PdfDocument.Load(filePath, password ?? string.Empty);
-        return Check(document, profile);
     }
 
     /// <summary>True when exactly one defined profile bit is set (composite values are rejected).</summary>
