@@ -5,6 +5,12 @@ using PdfLibrary.Structure;
 
 namespace PdfLibrary.Conformance;
 
+/// <summary>A parsed /OutputIntents entry: its subtype and destination ICC profile.</summary>
+internal readonly record struct OutputIntentInfo(
+    string? Subtype,                    // /S value, e.g. "GTS_PDFA1"
+    PdfIndirectReference? ProfileRef,   // the indirect ref of /DestOutputProfile, if indirect
+    PdfStream? Profile);                // the resolved /DestOutputProfile stream, if any
+
 /// <summary>
 /// Per-run state handed to each <see cref="IConformanceRule"/>: the document under inspection, the
 /// profile being targeted, the raw source bytes when available, and shared helpers (indirect-reference
@@ -14,6 +20,7 @@ namespace PdfLibrary.Conformance;
 internal sealed class ConformanceContext
 {
     private IReadOnlyList<PdfStream>? _streams;
+    private IReadOnlyList<OutputIntentInfo>? _outputIntents;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -40,6 +47,9 @@ internal sealed class ConformanceContext
     /// </summary>
     public IReadOnlyList<PdfStream> Streams => _streams ??= CollectStreams();
 
+    /// <summary>The catalog's /OutputIntents, parsed once and cached (empty when absent).</summary>
+    public IReadOnlyList<OutputIntentInfo> OutputIntents => _outputIntents ??= ReadOutputIntents();
+
     /// <summary>
     /// Resolves an indirect reference to its referenced object; returns <paramref name="obj"/>
     /// unchanged when it is already a direct object (or null).
@@ -51,5 +61,24 @@ internal sealed class ConformanceContext
     {
         Document.MaterializeAllObjects();
         return Document.Objects.Values.OfType<PdfStream>().ToList();
+    }
+
+    private IReadOnlyList<OutputIntentInfo> ReadOutputIntents()
+    {
+        var result = new List<OutputIntentInfo>();
+        if (Resolve(Document.GetCatalog()?.Dictionary.Get("OutputIntents")) is not PdfArray array)
+            return result;
+
+        foreach (PdfObject entry in array)
+        {
+            if (Resolve(entry) is not PdfDictionary dict)
+                continue;
+            string? subtype = (Resolve(dict.Get("S")) as PdfName)?.Value;
+            PdfObject? destRaw = dict.Get("DestOutputProfile");
+            var destRef = destRaw as PdfIndirectReference;
+            var destStream = Resolve(destRaw) as PdfStream;
+            result.Add(new OutputIntentInfo(subtype, destRef, destStream));
+        }
+        return result;
     }
 }

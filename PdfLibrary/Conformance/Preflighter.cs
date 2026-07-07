@@ -21,6 +21,8 @@ public static class Preflighter
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),
         new Rules.PdfaIdentificationRule(),
+        new Rules.OutputIntentProfileRule(),
+        new Rules.OutputIntentSingleProfileRule(),
     ];
 
     /// <summary>
