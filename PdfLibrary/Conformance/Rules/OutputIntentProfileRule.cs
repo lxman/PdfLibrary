@@ -3,14 +3,15 @@ using ICCSharp.Profile;
 namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
-/// The DestOutputProfile of a PDF/A output intent must be a valid ICC profile whose device class is
-/// output ('prtr') or display ('mntr'), whose data colour space is RGB, CMYK or Gray, and whose
-/// version predates ICC v5 (ISO 19005-2, 6.2.3, test 1).
+/// The DestOutputProfile of an output intent must be a valid ICC profile whose device class is output
+/// ('prtr') or display ('mntr'), whose data colour space is RGB, CMYK or Gray, and whose version predates
+/// ICC v5. Required by PDF/A (ISO 19005-2, 6.2.3, test 1) and equally by PDF/X-4 (ISO 15930-7), whose
+/// output intent must carry a valid embedded profile — hence this validates the profile for all profiles.
 /// </summary>
 internal sealed class OutputIntentProfileRule : IConformanceRule
 {
     public string RuleId => "output-intent-profile";
-    public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA;
+    public ConformanceProfile AppliesToProfiles => ConformanceProfile.All;
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {

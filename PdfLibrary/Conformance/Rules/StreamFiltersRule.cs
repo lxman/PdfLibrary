@@ -18,7 +18,8 @@ internal sealed class StreamFiltersRule : IConformanceRule
 
     public string RuleId => "stream-filters";
 
-    public ConformanceProfile AppliesToProfiles => ConformanceProfile.All;
+    // PDF/A only — the LZWDecode ban is a PDF/A rule; ISO 15930-7 (PDF/X-4) permits LZWDecode.
+    public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA;
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {

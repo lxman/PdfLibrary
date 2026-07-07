@@ -6,14 +6,13 @@ namespace PdfLibrary.Conformance.Rules;
 /// <summary>
 /// Every font used for rendering must have its font program embedded (ISO 19005-2, 6.2.11.4.1,
 /// test 1). Type3 fonts (glyphs are content streams) and the Type0 composite wrapper are exempt —
-/// a Type0's embedding is verified on its descendant CIDFont, which is checked as its own font
-/// object.
+/// a Type0's embedding is verified on its descendant CIDFont, which the rendering-tree walk reaches
+/// and which is checked as its own font object.
 /// <para>
-/// Scope caveat: this enumerates every /Type /Font object (see <see cref="ConformanceContext.FontDictionaries"/>)
-/// rather than walking the rendering resource tree, so it (a) may over-report a non-embedded font that
-/// is present but unreferenced, and (b) does not see a font written as a direct (inline) dictionary.
-/// It also cannot honour the standard's rendering-mode-3 (invisible text) exemption. All three are
-/// resolved once the shared resource/content walk lands (see the colour/content slice).
+/// Fonts are taken from <see cref="ConformanceContext.ReferencedFonts"/> — those reachable from the
+/// rendering resource tree — so a font that is present but unreferenced (e.g. an unused AcroForm /DR
+/// font) is not reported. The one remaining approximation is that a referenced-but-never-drawn font, or
+/// text drawn only in rendering mode 3 (invisible), is still treated as used.
 /// </para>
 /// </summary>
 internal sealed class FontEmbeddingRule : IConformanceRule
@@ -27,9 +26,9 @@ internal sealed class FontEmbeddingRule : IConformanceRule
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
-        foreach (PdfDictionary font in context.FontDictionaries)
+        foreach (PdfDictionary font in context.ReferencedFonts)
         {
-            string? subtype = (font.Get("Subtype") as PdfName)?.Value;
+            string? subtype = context.ResolveName(font.Get("Subtype"));
             if (subtype is "Type3" or "Type0")
                 continue; // exempt / checked via descendant CIDFont
 

@@ -2,6 +2,7 @@ using System.Linq;
 using ICCSharp.Profile;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Conformance;
@@ -25,7 +26,12 @@ internal sealed class ConformanceContext
 {
     private IReadOnlyList<PdfStream>? _streams;
     private IReadOnlyList<OutputIntentInfo>? _outputIntents;
-    private IReadOnlyList<PdfDictionary>? _fontDictionaries;
+    private IReadOnlyList<PdfDictionary>? _referencedFonts;
+    private IReadOnlyList<PdfDictionary>? _annotations;
+    private IReadOnlyList<PdfDictionary>? _formFields;
+    private IReadOnlyList<PdfPage>? _pages;
+    private PdfCatalog? _catalog;
+    private bool _catalogResolved;
     private OutputIntentColour? _outputIntentColour;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
@@ -56,12 +62,47 @@ internal sealed class ConformanceContext
     /// <summary>The catalog's /OutputIntents, parsed once and cached (empty when absent).</summary>
     public IReadOnlyList<OutputIntentInfo> OutputIntents => _outputIntents ??= ReadOutputIntents();
 
-    /// <summary>Every font dictionary (/Type /Font) in the document, materialized once and cached.</summary>
-    public IReadOnlyList<PdfDictionary> FontDictionaries => _fontDictionaries ??= CollectFonts();
+    /// <summary>
+    /// Font dictionaries actually reachable for rendering — walking page resources, Form XObjects, tiling
+    /// patterns, annotation appearance streams and Type3 glyph resources (recursively, cycle-guarded), and
+    /// following each Type0 font to its descendant CIDFont. Excludes fonts that are present but unreferenced
+    /// (e.g. an unused AcroForm /DR font), which PDF/A/X do not require to be embedded. Cached.
+    /// </summary>
+    public IReadOnlyList<PdfDictionary> ReferencedFonts => _referencedFonts ??= CollectReferencedFonts();
+
+    /// <summary>
+    /// Every annotation dictionary reachable from a page's /Annots array, in page order. Cached.
+    /// (Widget annotations that are merged with a form field appear here as well as in
+    /// <see cref="FormFields"/>.)
+    /// </summary>
+    public IReadOnlyList<PdfDictionary> Annotations => _annotations ??= CollectAnnotations();
+
+    /// <summary>
+    /// Every interactive-form field dictionary, walking the AcroForm /Fields tree through /Kids.
+    /// Cycle-guarded on indirect object number. Empty when the document has no AcroForm. Cached.
+    /// </summary>
+    public IReadOnlyList<PdfDictionary> FormFields => _formFields ??= CollectFormFields();
 
     /// <summary>The colour family of the file's PDF/A output-intent ICC profile (None if there is no
     /// output intent with a parseable destination profile). Cached.</summary>
     public OutputIntentColour OutputIntentColourFamily => _outputIntentColour ??= ComputeOutputIntentColour();
+
+    /// <summary>The document catalog, resolved once and cached (null when the document has none).</summary>
+    public PdfCatalog? Catalog
+    {
+        get
+        {
+            if (!_catalogResolved)
+            {
+                _catalog = Document.GetCatalog();
+                _catalogResolved = true;
+            }
+            return _catalog;
+        }
+    }
+
+    /// <summary>The document's pages, walked once and cached (rules must not each re-walk the page tree).</summary>
+    public IReadOnlyList<PdfPage> Pages => _pages ??= Document.GetPages();
 
     /// <summary>
     /// Resolves an indirect reference to its referenced object; returns <paramref name="obj"/>
@@ -70,19 +111,210 @@ internal sealed class ConformanceContext
     public PdfObject? Resolve(PdfObject? obj) =>
         obj is PdfIndirectReference reference ? Document.ResolveReference(reference) : obj;
 
+    /// <summary>Resolves <paramref name="obj"/> and returns its name value, or null if it is not a name.</summary>
+    public string? ResolveName(PdfObject? obj) => (Resolve(obj) as PdfName)?.Value;
+
+    /// <summary>
+    /// Enumerates the value objects of a PDF name tree given its root node, walking the /Names + /Kids
+    /// structure ITERATIVELY with a node budget. The iterative form and the budget guard against a hostile
+    /// tree — a recursive walk over a deep chain of direct /Kids nodes would throw an uncatchable
+    /// StackOverflowException, and an unbounded one could spin on a wide/cyclic tree. Values are yielded
+    /// unresolved (callers resolve as needed). Shared by the JavaScript-action and embedded-file rules.
+    /// </summary>
+    public IEnumerable<PdfObject> EnumerateNameTree(PdfObject? rootNode)
+    {
+        var visited = new HashSet<int>();
+        var stack = new Stack<PdfObject?>();
+        stack.Push(rootNode);
+
+        for (int budget = 100_000; stack.Count > 0 && budget > 0; budget--)
+        {
+            if (Resolve(stack.Pop()) is not PdfDictionary node)
+                continue;
+            if (node.IsIndirect && !visited.Add(node.ObjectNumber))
+                continue; // guards indirect-node cycles
+
+            // Leaf: /Names is a flat [key1 value1 key2 value2 …] array — values sit at the odd indices.
+            if (Resolve(node.Get("Names")) is PdfArray entries)
+                for (int i = 1; i < entries.Count; i += 2)
+                    yield return entries[i];
+
+            // Intermediate: descend into /Kids.
+            if (Resolve(node.Get("Kids")) is PdfArray kids)
+                foreach (PdfObject kid in kids)
+                    stack.Push(kid);
+        }
+    }
+
     private IReadOnlyList<PdfStream> CollectStreams()
     {
         Document.MaterializeAllObjects();
         return Document.Objects.Values.OfType<PdfStream>().ToList();
     }
 
-    private IReadOnlyList<PdfDictionary> CollectFonts()
+    private IReadOnlyList<PdfDictionary> CollectReferencedFonts()
     {
-        Document.MaterializeAllObjects();
-        return Document.Objects.Values
-            .OfType<PdfDictionary>()
-            .Where(d => d.Get("Type") is PdfName { Value: "Font" })
-            .ToList();
+        var fonts = new List<PdfDictionary>();
+        var fontSeen = new HashSet<int>();      // font object numbers already collected
+        var resourceSeen = new HashSet<int>();  // resource dictionaries already walked (cycle guard)
+        var streamSeen = new HashSet<int>();    // XObject / pattern streams already walked
+
+        void AddFont(PdfObject? fontObj)
+        {
+            if (Resolve(fontObj) is not PdfDictionary font)
+                return;
+            if (font.IsIndirect && !fontSeen.Add(font.ObjectNumber))
+                return;
+
+            fonts.Add(font);
+
+            switch (ResolveName(font.Get("Subtype")))
+            {
+                // A composite font's program lives on its descendant CIDFont — reach it so embedding is checked.
+                case "Type0" when Resolve(font.Get("DescendantFonts")) is PdfArray descendants && descendants.Count > 0:
+                    AddFont(descendants[0]);
+                    break;
+                // A Type3 glyph is a content stream drawn through the font's own resources.
+                case "Type3" when Resolve(font.Get("Resources")) is PdfDictionary type3Resources:
+                    WalkResources(new PdfResources(type3Resources, Document));
+                    break;
+            }
+        }
+
+        void WalkResources(PdfResources? resources)
+        {
+            if (resources is null)
+                return;
+            if (resources.Dictionary.IsIndirect && !resourceSeen.Add(resources.Dictionary.ObjectNumber))
+                return;
+
+            if (resources.GetFonts() is { } fontDict)
+                foreach (PdfObject font in fontDict.Values)
+                    AddFont(font);
+
+            if (resources.GetXObjects() is { } xobjects)
+                foreach (PdfObject xobject in xobjects.Values)
+                    WalkStreamResources(xobject);
+
+            if (resources.GetPatterns() is { } patterns)
+                foreach (PdfObject pattern in patterns.Values)
+                    WalkStreamResources(pattern); // tiling patterns are streams that carry /Resources
+
+            // An ExtGState /Font entry ([font size]) can be the only reference to a rendered font.
+            if (resources.GetExtGStates() is { } extGStates)
+                foreach (PdfObject graphicsState in extGStates.Values)
+                    if (Resolve(graphicsState) is PdfDictionary gsDict
+                        && Resolve(gsDict.Get("Font")) is PdfArray gsFont && gsFont.Count > 0)
+                        AddFont(gsFont[0]);
+        }
+
+        void WalkStreamResources(PdfObject? streamObj)
+        {
+            if (Resolve(streamObj) is not PdfStream stream)
+                return;
+            if (stream.IsIndirect && !streamSeen.Add(stream.ObjectNumber))
+                return;
+            if (Resolve(stream.Dictionary.Get("Resources")) is PdfDictionary resourceDict)
+                WalkResources(new PdfResources(resourceDict, Document));
+        }
+
+        void WalkAppearance(PdfObject? apObj)
+        {
+            if (Resolve(apObj) is not PdfDictionary appearance)
+                return;
+            foreach (PdfObject state in appearance.Values) // /N, /D, /R
+            {
+                switch (Resolve(state))
+                {
+                    case PdfStream:
+                        WalkStreamResources(state);
+                        break;
+                    case PdfDictionary subStates: // per-state appearances (e.g. button on/off)
+                        foreach (PdfObject sub in subStates.Values)
+                            WalkStreamResources(sub);
+                        break;
+                }
+            }
+        }
+
+        // The nearest /Resources up a page's full /Parent chain (page.GetResources() only inherits one
+        // level, unlike page.GetMediaBox()), so a font in a grandparent /Pages node is still reached.
+        PdfResources? EffectiveResources(PdfDictionary? node)
+        {
+            var chainSeen = new HashSet<int>();
+            while (node is not null)
+            {
+                if (node.IsIndirect && !chainSeen.Add(node.ObjectNumber))
+                    break; // guard a cyclic /Parent chain
+                if (Resolve(node.Get("Resources")) is PdfDictionary resourceDict)
+                    return new PdfResources(resourceDict, Document);
+                node = Resolve(node.Get("Parent")) as PdfDictionary;
+            }
+            return null;
+        }
+
+        foreach (PdfPage page in Pages)
+            WalkResources(EffectiveResources(page.Dictionary));
+        foreach (PdfDictionary annot in Annotations)
+            WalkAppearance(annot.Get("AP"));
+
+        // AcroForm /DR fonts are rendered only when the viewer generates field appearances
+        // (/NeedAppearances true); otherwise appearances come from /AP (already walked) and the /DR pool
+        // is not necessarily drawn. Including /DR unconditionally would re-introduce the orphan over-report.
+        if (Catalog?.GetAcroForm() is { } acroForm
+            && Resolve(acroForm.Get("NeedAppearances")) is PdfBoolean { Value: true }
+            && Resolve(acroForm.Get("DR")) is PdfDictionary defaultResources)
+        {
+            WalkResources(new PdfResources(defaultResources, Document));
+        }
+
+        return fonts;
+    }
+
+    private IReadOnlyList<PdfDictionary> CollectAnnotations()
+    {
+        var result = new List<PdfDictionary>();
+        var seen = new HashSet<int>();
+        foreach (PdfPage page in Pages)
+        {
+            if (page.GetAnnotations() is not { } annots)
+                continue;
+            foreach (PdfObject entry in annots)
+            {
+                if (Resolve(entry) is not PdfDictionary annot)
+                    continue;
+                if (annot.IsIndirect && !seen.Add(annot.ObjectNumber))
+                    continue; // an annotation shared across pages is inspected once
+                result.Add(annot);
+            }
+        }
+        return result;
+    }
+
+    private IReadOnlyList<PdfDictionary> CollectFormFields()
+    {
+        var result = new List<PdfDictionary>();
+        if (Catalog?.GetAcroForm() is not { } acroForm
+            || Resolve(acroForm.Get("Fields")) is not PdfArray fields)
+        {
+            return result;
+        }
+
+        var seen = new HashSet<int>();
+        var stack = new Stack<PdfObject>(fields);
+        while (stack.Count > 0)
+        {
+            if (Resolve(stack.Pop()) is not PdfDictionary field)
+                continue;
+            if (field.IsIndirect && !seen.Add(field.ObjectNumber))
+                continue; // already visited — guards against a cyclic /Kids graph
+
+            result.Add(field);
+            if (Resolve(field.Get("Kids")) is PdfArray kids)
+                foreach (PdfObject kid in kids)
+                    stack.Push(kid);
+        }
+        return result;
     }
 
     private IReadOnlyList<OutputIntentInfo> ReadOutputIntents()

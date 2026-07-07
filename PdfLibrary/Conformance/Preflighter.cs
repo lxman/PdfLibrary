@@ -25,6 +25,23 @@ public static class Preflighter
         new Rules.OutputIntentSingleProfileRule(),
         new Rules.FontEmbeddingRule(),
         new Rules.DeviceColourRule(),
+        // Slice 7 — annotations, interactive forms, actions.
+        new Rules.AnnotationTypeRule(),
+        new Rules.AnnotationFlagsRule(),
+        new Rules.AnnotationAppearanceRule(),
+        new Rules.FormFieldActionsRule(),
+        new Rules.FormConfigRule(),
+        new Rules.ActionTypeRule(),
+        new Rules.AdditionalActionsRule(),
+        // Slice 8 — embedded files, optional content, alternate presentations, document requirements.
+        new Rules.EmbeddedFileSpecRule(),
+        new Rules.OptionalContentRule(),
+        new Rules.AlternatePresentationsRule(),
+        new Rules.DocumentRequirementsRule(),
+        // Slice 9 — PDF/X-4 structural core (ISO 15930-7).
+        new Rules.PdfxOutputIntentRule(),
+        new Rules.PageBoxesRule(),
+        new Rules.TrappedRule(),
     ];
 
     /// <summary>
@@ -44,25 +61,52 @@ public static class Preflighter
     public static PreflightResult Check(byte[] pdfBytes, ConformanceProfile profile)
     {
         ArgumentNullException.ThrowIfNull(pdfBytes);
-        using PdfDocument document = PdfDocument.Load(new MemoryStream(pdfBytes, writable: false));
-        return Run(document, profile, pdfBytes);
+        return LoadAndRun(pdfBytes, profile, password: null);
     }
 
     /// <summary>
     /// Loads a document from a file and checks it against a single conformance profile. The file bytes
-    /// are retained so byte-level rules can run.
+    /// are retained so byte-level rules can run. A file the loader cannot read — including one protected by
+    /// a user password other than <paramref name="password"/> — is reported as a non-conformant document
+    /// (a <c>document-load</c> Error finding) rather than throwing out of the preflight.
     /// </summary>
-    /// <remarks>
-    /// <see cref="PdfDocument.Load(System.IO.Stream, string, bool)"/> throws for a file it cannot read —
-    /// including a PDF protected by a user password other than <paramref name="password"/> (itself an
-    /// encryption violation). Callers that need to report such files instead of getting an exception
-    /// should load the document themselves and call <see cref="Check(PdfDocument, ConformanceProfile)"/>.
-    /// </remarks>
     public static PreflightResult Check(string filePath, ConformanceProfile profile, string? password = null)
     {
         byte[] bytes = File.ReadAllBytes(filePath);
-        using PdfDocument document = PdfDocument.Load(new MemoryStream(bytes, writable: false), password ?? string.Empty);
-        return Run(document, profile, bytes);
+        return LoadAndRun(bytes, profile, password);
+    }
+
+    private static PreflightResult LoadAndRun(byte[] bytes, ConformanceProfile profile, string? password)
+    {
+        PdfDocument document;
+        try
+        {
+            document = PdfDocument.Load(new MemoryStream(bytes, writable: false), password ?? string.Empty);
+        }
+        catch (Exception ex)
+        {
+            // An unreadable file (encrypted with a user password, or structurally broken) does not conform;
+            // surface it as a finding instead of letting the load exception escape the preflight.
+            return new PreflightResult
+            {
+                Profile = profile,
+                Findings =
+                [
+                    new Finding
+                    {
+                        RuleId = "document-load",
+                        Severity = FindingSeverity.Error,
+                        Clause = ConformanceClauses.For(profile, "6.1"),
+                        Message = $"The document could not be loaded for preflight "
+                                  + $"({ex.GetType().Name}: {ex.Message}); an encrypted or structurally invalid "
+                                  + "file does not conform.",
+                    },
+                ],
+            };
+        }
+
+        using (document)
+            return Run(document, profile, bytes);
     }
 
     private static PreflightResult Run(PdfDocument document, ConformanceProfile profile, byte[]? sourceBytes)
