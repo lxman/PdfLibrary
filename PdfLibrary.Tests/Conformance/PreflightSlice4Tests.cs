@@ -71,6 +71,14 @@ public class PreflightSlice4Tests
 
     private static ConformanceContext Ctx(PdfDocument doc) => new(doc, ConformanceProfile.PdfA2b);
 
+    // ICC header field offsets (ISO 15076-1): version @8, device class @12, data colour space @16.
+    private static byte[] WithHeaderSignature(byte[] valid, int offset, string fourChars)
+    {
+        var copy = (byte[])valid.Clone();
+        System.Text.Encoding.ASCII.GetBytes(fourChars).CopyTo(copy, offset);
+        return copy;
+    }
+
     // ── output-intent-profile: passing cases ────────────────────────────────
 
     [Fact]
@@ -104,6 +112,45 @@ public class PreflightSlice4Tests
 
         Assert.Equal("output-intent-profile", finding.RuleId);
         Assert.Equal(FindingSeverity.Error, finding.Severity);
+    }
+
+    [Fact]
+    public void ValidProfileWithWrongDeviceClass_is_header_error()
+    {
+        // Parses fine, but device class 'scnr' (Input) is neither Output nor Display.
+        byte[] patched = WithHeaderSignature(BuiltInProfiles.Srgb.Bytes.ToArray(), 12, "scnr");
+        Finding finding = Assert.Single(new OutputIntentProfileRule().Check(Ctx(DocWithOutputIntents(patched))));
+
+        Assert.Equal("output-intent-profile", finding.RuleId);
+        Assert.Contains("header", finding.Message);
+    }
+
+    [Fact]
+    public void ValidProfileWithDisallowedColourSpace_is_header_error()
+    {
+        byte[] patched = WithHeaderSignature(BuiltInProfiles.Srgb.Bytes.ToArray(), 16, "Lab ");
+        Finding finding = Assert.Single(new OutputIntentProfileRule().Check(Ctx(DocWithOutputIntents(patched))));
+
+        Assert.Contains("header", finding.Message);
+    }
+
+    [Fact]
+    public void IccVersion5Profile_is_header_error()
+    {
+        // Patch the version major byte (offset 8) to 5 (ICC v5 / iccMAX is not permitted).
+        byte[] patched = (byte[])BuiltInProfiles.Srgb.Bytes.ToArray().Clone();
+        patched[8] = 0x05;
+        Finding finding = Assert.Single(new OutputIntentProfileRule().Check(Ctx(DocWithOutputIntents(patched))));
+
+        Assert.Contains("header", finding.Message);
+    }
+
+    [Fact]
+    public void ValidGrayProfile_passes()
+    {
+        // A Gray data colour space is permitted; the header rule only inspects the space signature.
+        byte[] gray = WithHeaderSignature(BuiltInProfiles.Srgb.Bytes.ToArray(), 16, "GRAY");
+        Assert.Empty(new OutputIntentProfileRule().Check(Ctx(DocWithOutputIntents(gray))));
     }
 
     // ── output-intent-single: passing cases ─────────────────────────────────
@@ -142,5 +189,39 @@ public class PreflightSlice4Tests
 
         Assert.Equal("output-intent-single", finding.RuleId);
         Assert.Equal(FindingSeverity.Error, finding.Severity);
+    }
+
+    [Fact]
+    public void TwoIntentsWithDirectProfiles_is_error()
+    {
+        // Two intents whose DestOutputProfile is a direct (non-indirect) stream cannot share an
+        // indirect key — exercises the sentinel path (defensive; direct streams don't occur in
+        // parsed PDFs, where streams are always indirect).
+        var doc = new PdfDocument();
+        var intents = new PdfArray();
+        foreach (byte[] bytes in new[] { BuiltInProfiles.Srgb.Bytes.ToArray(), IccResources.ReadDefaultCmykProfile() })
+        {
+            intents.Add(new PdfDictionary
+            {
+                [new PdfName("S")] = new PdfName("GTS_PDFA1"),
+                [new PdfName("DestOutputProfile")] = new PdfStream(new PdfDictionary(), bytes),
+            });
+        }
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Catalog"),
+            [new PdfName("OutputIntents")] = intents,
+        });
+        doc.Trailer.Dictionary[new PdfName("Root")] = new PdfIndirectReference(1, 0);
+
+        Assert.Single(new OutputIntentSingleProfileRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void IntentWithoutProfileMixedWithOne_single_rule_silent()
+    {
+        // Only one intent actually carries a profile, so there is nothing to disagree with.
+        PdfDocument doc = DocWithOutputIntents(null, BuiltInProfiles.Srgb.Bytes.ToArray());
+        Assert.Empty(new OutputIntentSingleProfileRule().Check(Ctx(doc)));
     }
 }

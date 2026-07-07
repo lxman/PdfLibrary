@@ -19,13 +19,16 @@ internal sealed class OutputIntentProfileRule : IConformanceRule
             if (intent.Profile is null)
                 continue;
 
+            int? objectNumber = intent.ProfileRef?.ObjectNumber;
+
             IccProfile? profile = null;
+            // Malformed or undecodable profile data is treated as "not a valid ICC profile".
             try { profile = IccProfile.Parse(intent.Profile.GetDecodedData(context.Document.Decryptor)); }
-            catch { /* handled below */ }
+            catch (Exception) { /* handled below */ }
 
             if (profile is null)
             {
-                yield return Error(context.Target,
+                yield return Error(context.Target, objectNumber,
                     "The output intent /DestOutputProfile is not a valid ICC profile.");
                 continue;
             }
@@ -38,18 +41,19 @@ internal sealed class OutputIntentProfileRule : IConformanceRule
             bool versionOk = h.Version.Major < 5;
             if (!(classOk && spaceOk && versionOk))
             {
-                yield return Error(context.Target,
+                yield return Error(context.Target, objectNumber,
                     $"The output intent ICC profile has an invalid header (device class {h.RawClass}, "
                     + $"colour space {h.DataColorSpace}, version {h.Version.Major}).");
             }
         }
     }
 
-    private Finding Error(ConformanceProfile profile, string message) => new()
+    private Finding Error(ConformanceProfile profile, int? objectNumber, string message) => new()
     {
         RuleId = RuleId,
         Severity = FindingSeverity.Error,
         Clause = ConformanceClauses.For(profile, "6.2.3"),
         Message = message,
+        ObjectNumber = objectNumber,
     };
 }
