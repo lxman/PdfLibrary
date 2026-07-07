@@ -54,6 +54,36 @@ sweep (object streams / on-demand objects load lazily otherwise).
 ## Clause references
 
 The ISO 19005 (PDF/A) and ISO 15930 (PDF/X) texts are **not** on this machine (only ISO 32000
-base spec). Clause numbers in rule `Clause` fields are set from known values and must be
-cross-checked against the veraPDF (PDF/A) and Ghent Workgroup (PDF/X) test corpora in the
-corpus-harness slice. Human-facing `Message` text stays accurate regardless of clause precision.
+base spec). Clause numbers in rule `Clause` fields are set from known values and cross-checked
+against the veraPDF corpus (below). Human-facing `Message` text stays accurate regardless of
+clause precision.
+
+## Test corpus (veraPDF)
+
+Cloned (shallow, `staging`) to the sibling directory **`../veraPDF-corpus`** — NOT vendored into
+this repo (~74 MB). License **CC BY 4.0** (attribution required if a subset is later checked in).
+
+- **Coverage: PDF/A + PDF/UA only — no PDF/X.** PDF/X-4 fixtures must come from the Ghent
+  Workgroup separately.
+- **Structure = the ISO clause catalog.** Folders are `PDF_A-2b/`, `PDF_A-2u/`, `PDF_A-3b/`, …
+  each split into clause subfolders that name the exact ISO 19005 section, e.g.
+  `PDF_A-2b/6.1 File structure/6.1.3 File trailer/`, `…/6.2 Graphics/6.2.3 Output intent/`,
+  `…/6.2.11 Fonts/`, `…/6.6 Metadata/6.6.4 Version and conformance level identification/`.
+  This tree refines the rule catalog with authoritative clause numbers.
+- **Naming is machine-parseable:** `veraPDF test suite {clause-dashed}-t{NN}-{pass|fail}-{letter}.pdf`
+  (e.g. `6-1-3-t01-fail-a.pdf`). Expected outcome is in the filename; each file is atomic and
+  self-documents its intent in the document **outline** (not page text — `pdftotext` returns
+  empty; read `/Title` in the outline). The harness walks the tree, parses clause + expected
+  result from the filename, runs the preflighter for that profile, and asserts.
+
+### Slice 1 mapping (verified against corpus files)
+
+Both slice-1 rules live under clause **6.1.3 (File trailer)** — confirmed correct:
+
+| Rule | Corpus test | Evidence |
+|---|---|---|
+| `file-id` (FileIdentifierRule) | `PDF_A-2b/6.1 File structure/6.1.3 File trailer/…6-1-3-t01-*` | `t01-fail-a` has a trailer with no `/ID`; outline says *"The file trailer dictionary not contain the ID keyword"*. |
+| `encrypt` (NoEncryptionRule) | `…/6.1.3 File trailer/…6-1-3-t02-*` | `t02-fail-a` contains `/Encrypt`. |
+
+Fixtures otherwise-valid (carry `pdfaid:part=2/conformance=B` + OutputIntent), so each isolates a
+single violation — ideal oracles for the corpus-harness slice.
