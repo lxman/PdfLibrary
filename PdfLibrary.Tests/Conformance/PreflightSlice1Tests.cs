@@ -86,6 +86,18 @@ public class PreflightSlice1Tests
         Assert.Equal("file-id", finding.RuleId);
     }
 
+    [Fact]
+    public void FileId_rule_flags_wrong_element_types()
+    {
+        var doc = new PdfDocument();
+        doc.Trailer.Id = new PdfArray(new PdfInteger(1), new PdfInteger(2)); // right count, wrong types
+        var ctx = new ConformanceContext(doc, ConformanceProfile.PdfA2b);
+
+        Finding finding = Assert.Single(new FileIdentifierRule().Check(ctx));
+        Assert.Equal("file-id", finding.RuleId);
+        Assert.Equal(FindingSeverity.Error, finding.Severity);
+    }
+
     // ── Preflighter (end-to-end) ────────────────────────────────────────────
 
     [Fact]

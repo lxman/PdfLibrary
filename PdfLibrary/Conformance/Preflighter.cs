@@ -42,7 +42,23 @@ public static class Preflighter
             if ((rule.AppliesToProfiles & profile) == 0)
                 continue;
 
-            findings.AddRange(rule.Check(context));
+            // Isolate each rule: a rule that throws on a malformed document degrades to a single
+            // warning rather than aborting the whole run and discarding every other rule's findings.
+            try
+            {
+                findings.AddRange(rule.Check(context));
+            }
+            catch (Exception ex)
+            {
+                findings.Add(new Finding
+                {
+                    RuleId = rule.RuleId,
+                    Severity = FindingSeverity.Warning,
+                    Clause = "—",
+                    Message = $"Rule '{rule.RuleId}' could not be evaluated and was skipped "
+                              + $"({ex.GetType().Name}: {ex.Message}).",
+                });
+            }
         }
 
         return new PreflightResult { Profile = profile, Findings = findings };
@@ -51,16 +67,24 @@ public static class Preflighter
     /// <summary>
     /// Loads a document from a file and checks it against a single conformance profile.
     /// </summary>
-    public static PreflightResult Check(string filePath, ConformanceProfile profile)
+    /// <remarks>
+    /// <see cref="PdfDocument.Load(string, string)"/> throws for a file it cannot read — including a
+    /// PDF protected by a user password other than <paramref name="password"/> (itself an encryption
+    /// violation). Callers that need to report such files instead of getting an exception should load
+    /// the document themselves and call <see cref="Check(PdfDocument, ConformanceProfile)"/>.
+    /// </remarks>
+    public static PreflightResult Check(string filePath, ConformanceProfile profile, string? password = null)
     {
-        using PdfDocument document = PdfDocument.Load(filePath);
+        using PdfDocument document = PdfDocument.Load(filePath, password ?? string.Empty);
         return Check(document, profile);
     }
 
-    /// <summary>True when exactly one supported profile bit is set.</summary>
-    private static bool IsSingleProfile(ConformanceProfile profile) =>
-        profile is ConformanceProfile.PdfA2b
-            or ConformanceProfile.PdfA2u
-            or ConformanceProfile.PdfA3b
-            or ConformanceProfile.PdfX4;
+    /// <summary>True when exactly one defined profile bit is set (composite values are rejected).</summary>
+    private static bool IsSingleProfile(ConformanceProfile profile)
+    {
+        var bits = (int)profile;
+        return bits != 0
+               && (bits & (bits - 1)) == 0                       // exactly one bit set
+               && (ConformanceProfile.All & profile) == profile; // and it is a defined profile
+    }
 }
