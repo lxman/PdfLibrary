@@ -315,6 +315,58 @@ internal class ColorSpaceResolver(PdfDocument? document)
     }
 
     /// <summary>
+    /// Builds a colorant-tuple → sRGB mapping for a <c>[/Separation …]</c> or <c>[/DeviceN …]</c>
+    /// color space by evaluating its tint transform into the alternate space and converting that to
+    /// RGB (Lab honours the alternate's white point). Returns null (and <paramref name="inputComponents"/>
+    /// = 0) when the space can't be modelled. Shared by the indexed-image palette path so
+    /// DeviceN/Separation images resolve the same way fills do.
+    /// </summary>
+    internal static Func<double[], (byte R, byte G, byte B)>? BuildTintToRgb(
+        PdfArray baseArray, PdfDocument? document, out int inputComponents)
+    {
+        inputComponents = 0;
+        if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
+            return null;
+
+        if (head.Value == "Separation")
+            inputComponents = 1;
+        else if (Deref(baseArray[1], document) is PdfArray names)
+            inputComponents = names.Count;   // DeviceN: one input per colorant name
+        else
+            return null;
+        if (inputComponents < 1) return null;
+
+        PdfObject altObj = Deref(baseArray[2], document);
+        string altSpace = altObj switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty
+        };
+        if (altSpace.Length == 0) return null;
+        PdfArray? labArray = altSpace == "Lab" ? altObj as PdfArray : null;
+
+        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
+        if (tint is null) return null;
+
+        return colorants =>
+        {
+            double[] result = tint.Evaluate(colorants);
+            if (altSpace == "Lab" && result.Length >= 3)
+            {
+                double[] rgb = LabToRgb(result[0], result[1], result[2], labArray);
+                return (Clamp255(rgb[0]), Clamp255(rgb[1]), Clamp255(rgb[2]));
+            }
+            return PdfColorToRgb.ToRgb(result, altSpace);
+        };
+    }
+
+    private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
+        obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
+
+    private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
+
+    /// <summary>
     /// Resolves an Indexed color space: [/Indexed base hival lookup]
     /// </summary>
     private void ResolveIndexed(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)

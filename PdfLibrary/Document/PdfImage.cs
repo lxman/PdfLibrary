@@ -793,6 +793,38 @@ public class PdfImage
             var palette3t = $"RGB({paletteData[9]}, {paletteData[10]}, {paletteData[11]})";
             PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (transformed): palette[0]={palette0t}, [1]={palette1t}, [2]={palette2t}, [3]={palette3t}");
         }
+        // Transform Separation/DeviceN palettes: each entry is N colorant bytes that must run through
+        // the tint transform → alternate → RGB. Without this the raw colorant bytes are painted as RGB
+        // (wrong stride + wrong colour = noise). Mirrors the ICC branch; reports the base as DeviceRGB
+        // so the decoder reads 3 bytes/entry.
+        else if (baseObj is PdfArray { Count: >= 4 } sepArray &&
+                 sepArray[0] is PdfName { Value: "Separation" or "DeviceN" } &&
+                 paletteData is not null)
+        {
+            Func<double[], (byte R, byte G, byte B)>? tintToRgb =
+                Rendering.ColorSpaceResolver.BuildTintToRgb(sepArray, _document, out int inputComponents);
+            int entries = hival + 1;
+            if (tintToRgb is not null && inputComponents >= 1 &&
+                paletteData.Length >= inputComponents * entries)
+            {
+                var rgb = new byte[entries * 3];
+                var colorants = new double[inputComponents];
+                for (var e = 0; e < entries; e++)
+                {
+                    int srcOff = e * inputComponents;
+                    for (var c = 0; c < inputComponents; c++)
+                        colorants[c] = paletteData[srcOff + c] / 255.0;
+                    (byte r, byte g, byte b) = tintToRgb(colorants);
+                    rgb[e * 3] = r;
+                    rgb[e * 3 + 1] = g;
+                    rgb[e * 3 + 2] = b;
+                }
+                paletteData = rgb;
+                baseColorSpace = "DeviceRGB";
+                PdfLogger.Log(LogCategory.Images,
+                    $"INDEXED PALETTE (Separation/DeviceN): {entries} entries, {inputComponents} colorant(s) -> sRGB.");
+            }
+        }
         else if (paletteData is not null && paletteData.Length >= 12)
         {
             // Debug: Log for non-ICC palettes
