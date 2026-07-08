@@ -46,6 +46,23 @@ internal class CurveToOperator(double x1, double y1, double x2, double y2, doubl
 }
 
 /// <summary>
+/// v - Append cubic Bézier curve whose first control point is the current point
+/// </summary>
+internal class CurveToVOperator(double x2, double y2, double x3, double y3)
+    : PdfOperator("v", [
+        new PdfReal(x2), new PdfReal(y2),
+        new PdfReal(x3), new PdfReal(y3)
+    ])
+{
+    public double X2 { get; } = x2;
+    public double Y2 { get; } = y2;
+    public double X3 { get; } = x3;
+    public double Y3 { get; } = y3;
+
+    public override OperatorCategory Category => OperatorCategory.PathConstruction;
+}
+
+/// <summary>
 /// re - Append rectangle
 /// </summary>
 internal class RectangleOperator(double x, double y, double width, double height)

@@ -213,6 +213,15 @@ internal class PdfContentParser
                 "c" when operands.Count >= 6 => new CurveToOperator(
                     operands[0].ToDouble(), operands[1].ToDouble(), operands[2].ToDouble(),
                     operands[3].ToDouble(), operands[4].ToDouble(), operands[5].ToDouble()),
+                // v: first control point = current point (resolved at execution).
+                "v" when operands.Count >= 4 => new CurveToVOperator(
+                    operands[0].ToDouble(), operands[1].ToDouble(),
+                    operands[2].ToDouble(), operands[3].ToDouble()),
+                // y: second control point = endpoint; fold into a full cubic curve now.
+                "y" when operands.Count >= 4 => new CurveToOperator(
+                    operands[0].ToDouble(), operands[1].ToDouble(),
+                    operands[2].ToDouble(), operands[3].ToDouble(),
+                    operands[2].ToDouble(), operands[3].ToDouble()),
                 "re" when operands.Count >= 4 => new RectangleOperator(
                     operands[0].ToDouble(), operands[1].ToDouble(),
                     operands[2].ToDouble(), operands[3].ToDouble()),

@@ -497,6 +497,14 @@ internal class PdfRenderer : PdfContentProcessor
         _currentPath.CurveTo(p1.X, p1.Y, p2.X, p2.Y, p3.X, p3.Y);
     }
 
+    protected override void OnCurveToV(double x2, double y2, double x3, double y3)
+    {
+        // First control point is the current point; PathBuilder.CurveToV supplies it (in device space).
+        Vector2 p2 = Vector2.Transform(new Vector2((float)x2, (float)y2), CurrentState.Ctm);
+        Vector2 p3 = Vector2.Transform(new Vector2((float)x3, (float)y3), CurrentState.Ctm);
+        _currentPath.CurveToV(p2.X, p2.Y, p3.X, p3.Y);
+    }
+
     protected override void OnRectangle(double x, double y, double width, double height)
     {
         PdfLogger.Log(LogCategory.Graphics, $"OnRectangle: ({x}, {y}) size ({width}, {height})");

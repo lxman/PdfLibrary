@@ -22,6 +22,11 @@ public interface IPathBuilder
     void CurveTo(double x1, double y1, double x2, double y2, double x3, double y3);
 
     /// <summary>
+    /// Append a cubic Bézier curve whose first control point is the current point (v operator)
+    /// </summary>
+    void CurveToV(double x2, double y2, double x3, double y3);
+
+    /// <summary>
     /// Append a rectangle (re operator)
     /// </summary>
     void Rectangle(double x, double y, double width, double height);

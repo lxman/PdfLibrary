@@ -58,6 +58,34 @@ public class PdfContentParserTests
         Assert.Equal("Q", operators[1].Name);
     }
 
+    [Fact]
+    public void Parse_CurveToV_And_CurveToY_Operators()
+    {
+        // v: "x2 y2 x3 y3 v" — first control point is the current point.
+        // y: "x1 y1 x3 y3 y" — second control point is the endpoint.
+        byte[] bytes = Encoding.ASCII.GetBytes("10 10 m 20 20 30 30 v 40 40 50 50 y");
+
+        List<PdfOperator> ops = PdfContentParser.Parse(bytes);
+
+        Assert.Equal(3, ops.Count);
+        Assert.IsType<MoveToOperator>(ops[0]);
+
+        CurveToVOperator v = Assert.IsType<CurveToVOperator>(ops[1]);
+        Assert.Equal(20, v.X2);
+        Assert.Equal(20, v.Y2);
+        Assert.Equal(30, v.X3);
+        Assert.Equal(30, v.Y3);
+
+        // y is folded into a full cubic curve with the second control point == endpoint.
+        CurveToOperator y = Assert.IsType<CurveToOperator>(ops[2]);
+        Assert.Equal(40, y.X1);
+        Assert.Equal(40, y.Y1);
+        Assert.Equal(50, y.X2);
+        Assert.Equal(50, y.Y2);
+        Assert.Equal(50, y.X3);
+        Assert.Equal(50, y.Y3);
+    }
+
     [Theory]
     [InlineData("q ) Q")]
     [InlineData("q } Q")]

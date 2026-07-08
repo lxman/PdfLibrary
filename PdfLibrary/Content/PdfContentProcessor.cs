@@ -198,6 +198,10 @@ public abstract class PdfContentProcessor
                 OnCurveTo(c.X1, c.Y1, c.X2, c.Y2, c.X3, c.Y3);
                 break;
 
+            case CurveToVOperator cv:
+                OnCurveToV(cv.X2, cv.Y2, cv.X3, cv.Y3);
+                break;
+
             case RectangleOperator re:
                 OnRectangle(re.X, re.Y, re.Width, re.Height);
                 break;
@@ -376,6 +380,9 @@ public abstract class PdfContentProcessor
     protected virtual void OnMoveTo(double x, double y) { }
     protected virtual void OnLineTo(double x, double y) { }
     protected virtual void OnCurveTo(double x1, double y1, double x2, double y2, double x3, double y3) { }
+
+    /// <summary>v operator — cubic Bézier whose first control point is the current point.</summary>
+    protected virtual void OnCurveToV(double x2, double y2, double x3, double y3) { }
     protected virtual void OnRectangle(double x, double y, double width, double height) { }
     protected virtual void OnClosePath() { }
     protected virtual void OnStroke() { }

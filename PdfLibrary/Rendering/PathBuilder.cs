@@ -39,6 +39,17 @@ public class PathBuilder : IPathBuilder
         _currentPoint = (x3, y3);
     }
 
+    public void CurveToV(double x2, double y2, double x3, double y3)
+    {
+        if (_currentPoint is null)
+            throw new InvalidOperationException("Cannot add curve without current point. Use MoveTo first.");
+
+        // v operator: the first control point coincides with the current point.
+        (double x1, double y1) = _currentPoint.Value;
+        _segments.Add(new CurveToSegment(x1, y1, x2, y2, x3, y3));
+        _currentPoint = (x3, y3);
+    }
+
     public void Rectangle(double x, double y, double width, double height)
     {
         // Rectangle is drawn as: moveto, lineto, lineto, lineto, closepath
