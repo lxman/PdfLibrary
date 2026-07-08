@@ -144,6 +144,19 @@ public class PdfGraphicsState
     public int OverprintMode { get; set; }
 
     /// <summary>
+    /// Per-plate CMYK overprint mask for non-stroking (fill), derived from a Separation/DeviceN source
+    /// colour space's colorant names (Cyan→C, Magenta→M, Yellow→Y, Black→K, All→all four). Per
+    /// ISO 32000 §8.6.6.3, an overprinting Separation/DeviceN colour affects ONLY the device plates its
+    /// colorants map to and preserves the others REGARDLESS of the overprint mode (OPM). When set,
+    /// renderers paint only these plates and ignore OPM; null for DeviceCMYK/RGB/Gray or spot-named
+    /// colorants (the existing OPM zero-component logic applies instead).
+    /// </summary>
+    public (bool C, bool M, bool Y, bool K)? FillOverprintPlates { get; set; }
+
+    /// <summary>Per-plate CMYK overprint mask for stroking; see <see cref="FillOverprintPlates"/>.</summary>
+    public (bool C, bool M, bool Y, bool K)? StrokeOverprintPlates { get; set; }
+
+    /// <summary>
     /// Black-point compensation flag (PDF 2.0 /UseBlackPtComp, ISO 32000-2 Table 57). When true,
     /// ICC colour conversions map the source profile's darkest reproducible black to the
     /// destination's, so dark CMYK shadows render full rather than washed-out grey. Defaults to
@@ -265,6 +278,8 @@ public class PdfGraphicsState
             StrokeOverprint = StrokeOverprint,
             FillOverprint = FillOverprint,
             OverprintMode = OverprintMode,
+            FillOverprintPlates = FillOverprintPlates,
+            StrokeOverprintPlates = StrokeOverprintPlates,
             UseBlackPointCompensation = UseBlackPointCompensation,
             RenderingIntent = RenderingIntent,
             Smoothness = Smoothness

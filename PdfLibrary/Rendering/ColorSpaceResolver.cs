@@ -364,6 +364,81 @@ internal class ColorSpaceResolver(PdfDocument? document)
     private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
+    /// <summary>
+    /// Computes the per-plate CMYK overprint mask for a colour-space resource name. For a
+    /// <c>[/Separation name …]</c> or <c>[/DeviceN [names] …]</c> space, each colorant name maps to a
+    /// device plate (Cyan→C, Magenta→M, Yellow→Y, Black→K, All→all four); the mask is the union of the
+    /// mapped plates. Returns null when the space is a device space, when the resource can't be resolved,
+    /// or when ANY colorant is a spot colour (an unmapped name) — in those cases the caller keeps the
+    /// existing OPM-based overprint behaviour. Per ISO 32000 §8.6.6.3, an overprinting Separation/DeviceN
+    /// colour preserves the plates it does not paint REGARDLESS of the overprint mode.
+    /// </summary>
+    /// <param name="csName">The colour-space resource name recorded on the graphics state (e.g. "CS0").</param>
+    /// <param name="colorSpaces">The page/resource /ColorSpace dictionary mapping names to definitions.</param>
+    /// <param name="doc">Document used to resolve indirect references (may be null).</param>
+    public static (bool C, bool M, bool Y, bool K)? OverprintPlatesFor(
+        string? csName, PdfDictionary? colorSpaces, PdfDocument? doc)
+    {
+        if (string.IsNullOrEmpty(csName))
+            return null;
+
+        // Device spaces (and Pattern) never carry a colorant-derived plate mask — OPM logic applies.
+        if (csName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK" or "Pattern")
+            return null;
+
+        if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
+            return null;
+
+        csObj = Deref(csObj, doc);
+        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
+            return null;
+
+        // Gather colorant names from Separation (single name) or DeviceN (names array).
+        List<string> colorants;
+        switch (csType.Value)
+        {
+            case "Separation":
+                if (Deref(csArray[1], doc) is not PdfName sepName)
+                    return null;
+                colorants = [sepName.Value];
+                break;
+            case "DeviceN":
+                if (Deref(csArray[1], doc) is not PdfArray namesArr)
+                    return null;
+                colorants = new List<string>(namesArr.Count);
+                foreach (PdfObject nameObj in namesArr)
+                {
+                    if (Deref(nameObj, doc) is not PdfName n)
+                        return null;
+                    colorants.Add(n.Value);
+                }
+                break;
+            default:
+                return null;
+        }
+
+        if (colorants.Count == 0)
+            return null;
+
+        bool c = false, m = false, y = false, k = false;
+        foreach (string name in colorants)
+        {
+            switch (name)
+            {
+                case "Cyan": c = true; break;
+                case "Magenta": m = true; break;
+                case "Yellow": y = true; break;
+                case "Black": k = true; break;
+                case "All": c = m = y = k = true; break;
+                default:
+                    // Any spot colorant (or "None") isn't a CMYK plate → fall back to OPM behaviour.
+                    return null;
+            }
+        }
+
+        return (c, m, y, k);
+    }
+
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
 
     /// <summary>

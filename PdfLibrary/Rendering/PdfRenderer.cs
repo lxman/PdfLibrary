@@ -937,6 +937,15 @@ internal class PdfRenderer : PdfContentProcessor
         _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces, CurrentState.UseBlackPointCompensation, CurrentState.RenderingIntent);
         CurrentState.ResolvedStrokeColorSpace = strokeCs ?? string.Empty;
         CurrentState.ResolvedStrokeColor = strokeColor ?? [];
+
+        // Derive the per-plate overprint mask from the SOURCE colour space (before flattening to a
+        // device space): a Separation/DeviceN colour that overprints preserves the plates it doesn't
+        // map to, regardless of OPM (ISO 32000 §8.6.6.3). Renderers use this in place of OPM logic when
+        // it is non-null. Uses the original (unflattened) FillColorSpace/StrokeColorSpace names.
+        CurrentState.FillOverprintPlates =
+            ColorSpaceResolver.OverprintPlatesFor(CurrentState.FillColorSpace, colorSpaces, _document);
+        CurrentState.StrokeOverprintPlates =
+            ColorSpaceResolver.OverprintPlatesFor(CurrentState.StrokeColorSpace, colorSpaces, _document);
     }
 
     // ==================== Graphics State Parameter Dictionary ====================
