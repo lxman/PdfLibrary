@@ -469,6 +469,10 @@ internal class ColorSpaceResolver(PdfDocument? document)
                     colorants.Add(n.Value);
                 }
                 break;
+            case "Indexed":
+                // An Indexed image's samples are palette indices into its base space; the plates it marks
+                // are the base space's plates (e.g. an Indexed[/DeviceN[Black Cyan]] duotone marks K + C).
+                return PlatesForColorSpaceObject(csArray[1], doc);
             default:
                 return null;
         }

@@ -19,6 +19,21 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 public static class PdfImageToCmyk
 {
+    /// <summary>
+    /// The set of CMYK plates an image's colour space MARKS, for basic overprint (ISO 32000 §8.6.7):
+    /// when the image overprints, the plates it does NOT mark are preserved. Returns null for device
+    /// spaces (DeviceCMYK/Gray/RGB — marks all/implied process plates → knockout) and for any space
+    /// carrying a spot colorant we can't map to a process plate (also knockout). A Separation/DeviceN
+    /// resolving to process colorants — directly or through an Indexed base (e.g. a Black+Cyan duotone) —
+    /// returns exactly the subset {C,M,Y,K} it marks. The overprint MODE (OPM) is never consulted for
+    /// images, so the caller applies this mask only via the basic overprint (op) flag.
+    /// </summary>
+    public static (bool C, bool M, bool Y, bool K)? PlateMaskFor(PdfImage image, PdfDocument? document)
+    {
+        if (image.IsImageMask) return null;                 // stencil: colour (and overprint) comes from the fill
+        return ColorSpaceResolver.PlatesForColorSpaceObject(image.ColorSpaceArray, document);
+    }
+
     public static byte[]? TryToCmyk(PdfImage image, PdfDocument? document, out int width, out int height)
     {
         width = image.Width;
