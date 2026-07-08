@@ -27,6 +27,10 @@ internal sealed class ShadingRenderer
     /// </summary>
     public void PaintShading(ShadingDescriptor shading, PdfGraphicsState state)
     {
+        // Mesh shadings (type 6/7): the coords are in the current user space, which the canvas matrix
+        // already maps to device (as for the gradient path), so Gouraud-fill with the raw coords.
+        if (shading.MeshTriangles.Length > 0) { DrawMesh(shading, state); return; }
+
         using SKShader? shader = BuildShader(shading);
         if (shader is null) return;
 
@@ -41,8 +45,9 @@ internal sealed class ShadingRenderer
     /// </summary>
     public void FillPathWithShadingPattern(SKPath skPath, ShadingDescriptor shading, PdfGraphicsState state)
     {
-        using SKShader? shader = BuildShader(shading);
-        if (shader is null) return;
+        bool isMesh = shading.MeshTriangles.Length > 0;
+        using SKShader? shader = isMesh ? null : BuildShader(shading);
+        if (!isMesh && shader is null) return;
 
         int save = _canvas.Save();
         _canvas.ClipPath(skPath, SKClipOperation.Intersect, antialias: true);
@@ -50,10 +55,31 @@ internal sealed class ShadingRenderer
         Matrix3x2 m = (shading.PatternMatrix ?? Matrix3x2.Identity) * _getInitialTransform();
         _canvas.SetMatrix(new SKMatrix(m.M11, m.M21, m.M31, m.M12, m.M22, m.M32, 0, 0, 1));
 
+        if (isMesh) { DrawMesh(shading, state); _canvas.RestoreToCount(save); return; }
+
         using var paint = new SKPaint { Shader = shader, IsAntialias = true, Color = AlphaColor(state.FillAlpha) };
         _canvas.DrawPaint(paint);
 
         _canvas.RestoreToCount(save);
+    }
+
+    // Gouraud-fills a mesh shading's triangle soup with per-vertex sRGB (fill alpha baked in). A white
+    // paint under SKBlendMode.Modulate passes the vertex colours through unchanged.
+    private void DrawMesh(ShadingDescriptor shading, PdfGraphicsState state)
+    {
+        MeshVertex[] tris = shading.MeshTriangles;
+        var pts = new SKPoint[tris.Length];
+        var cols = new SKColor[tris.Length];
+        var alpha = (byte)(Math.Clamp(state.FillAlpha, 0.0, 1.0) * 255);
+        for (var i = 0; i < tris.Length; i++)
+        {
+            pts[i] = new SKPoint(tris[i].X, tris[i].Y);
+            uint rgb = tris[i].Rgb;
+            cols[i] = new SKColor((byte)((rgb >> 16) & 0xFF), (byte)((rgb >> 8) & 0xFF), (byte)(rgb & 0xFF), alpha);
+        }
+        using SKVertices vertices = SKVertices.CreateCopy(SKVertexMode.Triangles, pts, cols);
+        using var paint = new SKPaint { IsAntialias = true, Color = SKColors.White };
+        _canvas.DrawVertices(vertices, SKBlendMode.Modulate, paint);
     }
 
     // Paint colour is ignored for RGB when a shader is set, but its alpha modulates the shader output.

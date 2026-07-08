@@ -8,10 +8,11 @@ namespace PdfLibrary.Rendering;
 
 /// <summary>
 /// Builds a <see cref="ShadingDescriptor"/> from a PDF shading dictionary — the /Shading resource
-/// painted by the <c>sh</c> operator, or the /Shading inside a PatternType 2 pattern. Only axial
-/// (type 2) and radial (type 3) shadings are produced; the colour ramp is pre-sampled by evaluating
-/// the shading's /Function across its /Domain. Returns null for shading types/functions we don't
-/// model yet, so the caller can skip the paint cleanly.
+/// painted by the <c>sh</c> operator, or the /Shading inside a PatternType 2 pattern. Axial (type 2)
+/// and radial (type 3) shadings pre-sample the colour ramp by evaluating the shading's /Function
+/// across its /Domain; mesh shadings (Coons type 6, tensor-product type 7) are delegated to
+/// <see cref="MeshShadingReader"/>, which tessellates them into a triangle soup. Returns null for
+/// shading types/functions we don't model yet (types 1, 4, 5), so the caller can skip the paint cleanly.
 /// </summary>
 internal static class ShadingBuilder
 {
@@ -33,6 +34,13 @@ internal static class ShadingBuilder
         if (!dict.TryGetValue(new PdfName("ShadingType"), out PdfObject typeObj) || typeObj is not PdfInteger typeInt)
             return null;
         int shadingType = typeInt.Value;
+
+        // Mesh shadings (Coons type 6, tensor-product type 7) are streams; decode + tessellate separately.
+        if (shadingType is 6 or 7)
+            return shadingObj is PdfStream meshStream
+                ? MeshShadingReader.Build(meshStream, dict, shadingType, document, patternMatrix)
+                : null;
+
         if (shadingType is not (2 or 3)) return null; // axial / radial only
 
         double[]? coords = GetNumbers(dict, "Coords", document);
@@ -97,7 +105,7 @@ internal static class ShadingBuilder
     // resolve to DeviceCMYK: DeviceCMYK / ICCBased-4 pass their 4 components through; Separation/DeviceN
     // with a DeviceCMYK alternate run their tint transform to CMYK. Returns null otherwise (the compositor
     // then falls back to the sRGB stops).
-    private static Func<double[], uint>? BuildCmykMapper(PdfObject? csObj, PdfDocument? document)
+    internal static Func<double[], uint>? BuildCmykMapper(PdfObject? csObj, PdfDocument? document)
     {
         if (csObj is PdfIndirectReference r && document is not null)
             csObj = document.ResolveReference(r);
@@ -129,7 +137,7 @@ internal static class ShadingBuilder
 
     // A shading's /Function is either a single n-output function, or an array of n single-output
     // functions (one per colour component).
-    private static List<PdfFunction> ResolveFunctions(PdfObject? funcObj, PdfDocument? document)
+    internal static List<PdfFunction> ResolveFunctions(PdfObject? funcObj, PdfDocument? document)
     {
         if (funcObj is PdfIndirectReference r && document is not null)
             funcObj = document.ResolveReference(r);
@@ -151,7 +159,7 @@ internal static class ShadingBuilder
         return list;
     }
 
-    private static double[] EvaluateColor(List<PdfFunction> functions, double t)
+    internal static double[] EvaluateColor(List<PdfFunction> functions, double t)
     {
         if (functions.Count == 1)
             return functions[0].Evaluate([t]);
@@ -169,7 +177,7 @@ internal static class ShadingBuilder
     // resolve by name through PdfColorToRgb (matching fills); ICCBased maps by its /N; Separation and
     // DeviceN run their tint transform via ColorSpaceResolver.BuildTintToRgb. Anything unrecognised
     // falls back to the by-component-count guess.
-    private static Func<double[], uint> BuildColorMapper(PdfObject? csObj, PdfDocument? document)
+    internal static Func<double[], uint> BuildColorMapper(PdfObject? csObj, PdfDocument? document)
     {
         if (csObj is PdfIndirectReference r && document is not null)
             csObj = document.ResolveReference(r);
