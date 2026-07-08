@@ -48,6 +48,12 @@ internal static class ShadingBuilder
         double t0 = domain.Length > 0 ? domain[0] : 0.0;
         double t1 = domain.Length > 1 ? domain[1] : 1.0;
 
+        // The /Function outputs colour components in the shading's /ColorSpace; map those to sRGB the
+        // same way fills do (Separation/DeviceN through their tint transform), so spot-colour ramps
+        // don't collapse to the naive by-component-count guess.
+        Func<double[], uint> toColor = BuildColorMapper(
+            dict.TryGetValue(new PdfName("ColorSpace"), out PdfObject csObj) ? csObj : null, document);
+
         bool extendStart = false, extendEnd = false;
         if (dict.TryGetValue(new PdfName("Extend"), out PdfObject extObj) && extObj is PdfArray { Count: >= 2 } extArr)
         {
@@ -61,7 +67,7 @@ internal static class ShadingBuilder
         {
             double s = i / (double)(StopCount - 1);
             double t = t0 + (t1 - t0) * s;
-            colors[i] = ToArgb(EvaluateColor(functions, t));
+            colors[i] = toColor(EvaluateColor(functions, t));
             stops[i] = (float)s;
         }
 
@@ -115,10 +121,59 @@ internal static class ShadingBuilder
         return outv;
     }
 
-    // Map the shading colour-space components to RGB by component count: 1 = gray, 3 = RGB,
-    // 4 = CMYK. ICCBased N=3 yields 3 components → RGB. (Lab / Separation shadings are rare and
-    // approximated as RGB here.)
-    private static uint ToArgb(double[] c)
+    // Builds a "function output → 0xFFRRGGBB" mapper for the shading's /ColorSpace. Device/Cal/Lab
+    // resolve by name through PdfColorToRgb (matching fills); ICCBased maps by its /N; Separation and
+    // DeviceN run their tint transform via ColorSpaceResolver.BuildTintToRgb. Anything unrecognised
+    // falls back to the by-component-count guess.
+    private static Func<double[], uint> BuildColorMapper(PdfObject? csObj, PdfDocument? document)
+    {
+        if (csObj is PdfIndirectReference r && document is not null)
+            csObj = document.ResolveReference(r);
+
+        switch (csObj)
+        {
+            case PdfName name:
+                return c => Pack(PdfColorToRgb.ToRgb(c, name.Value));
+
+            case PdfArray { Count: >= 1 } arr when arr[0] is PdfName head:
+                switch (head.Value)
+                {
+                    case "ICCBased":
+                        string icc = IccComponents(arr, document) switch
+                        {
+                            1 => "DeviceGray",
+                            4 => "DeviceCMYK",
+                            _ => "DeviceRGB"
+                        };
+                        return c => Pack(PdfColorToRgb.ToRgb(c, icc));
+                    case "CalGray" or "CalRGB" or "Lab":
+                        return c => Pack(PdfColorToRgb.ToRgb(c, head.Value));
+                    case "Separation" or "DeviceN":
+                        Func<double[], (byte R, byte G, byte B)>? tint =
+                            ColorSpaceResolver.BuildTintToRgb(arr, document, out _);
+                        if (tint is not null) return c => Pack(tint(c));
+                        break;
+                }
+                break;
+        }
+
+        return ToArgbByCount;
+    }
+
+    // Component count of an [/ICCBased stream] alternate, read from the stream's /N (defaults to 3).
+    private static int IccComponents(PdfArray arr, PdfDocument? document)
+    {
+        if (arr.Count < 2) return 3;
+        PdfObject obj = arr[1];
+        if (obj is PdfIndirectReference r && document is not null) obj = document.ResolveReference(r) ?? obj;
+        if (obj is PdfStream s && s.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger n)
+            return n.Value;
+        return 3;
+    }
+
+    // Fallback for an unknown/absent colour space: infer the model from the component count —
+    // 1 = gray, 4 = CMYK, otherwise the first three components as RGB.
+    private static uint ToArgbByCount(double[] c)
     {
         double r, g, b;
         switch (c.Length)
@@ -140,6 +195,9 @@ internal static class ShadingBuilder
         }
         return 0xFF000000u | ((uint)Clamp255(r) << 16) | ((uint)Clamp255(g) << 8) | (uint)Clamp255(b);
     }
+
+    private static uint Pack((byte R, byte G, byte B) c) =>
+        0xFF000000u | ((uint)c.R << 16) | ((uint)c.G << 8) | c.B;
 
     private static int Clamp255(double v) => v <= 0.0 ? 0 : v >= 1.0 ? 255 : (int)Math.Round(v * 255.0);
 
