@@ -703,6 +703,12 @@ public static class PdfImageToRgba
                         bool packable = nComps <= 4;
                         var colorants = new double[nComps];
 
+                        // Honour a non-identity /Decode array (e.g. [1 0] to invert a spot ramp): map
+                        // each colorant sample through its interval before the tint transform, exactly
+                        // as the DeviceCMYK branch does. The default [0 1 …] per component is a no-op.
+                        double[]? decode = image.DecodeArray;
+                        bool applyDecode = decode is not null && decode.Length >= nComps * 2;
+
                         for (var p = 0; p < pixelCount; p++)
                         {
                             int src = p * nComps;
@@ -713,14 +719,16 @@ public static class PdfImageToRgba
                                 for (var c = 0; c < nComps; c++) key = (key << 8) | imageData[src + c];
                                 if (!cache.TryGetValue(key, out rgb))
                                 {
-                                    for (var c = 0; c < nComps; c++) colorants[c] = imageData[src + c] / 255.0;
+                                    for (var c = 0; c < nComps; c++)
+                                        colorants[c] = (applyDecode ? DecodeSample(imageData[src + c], decode![2 * c], decode[2 * c + 1]) : imageData[src + c]) / 255.0;
                                     rgb = tintToRgb(colorants);
                                     cache[key] = rgb;
                                 }
                             }
                             else
                             {
-                                for (var c = 0; c < nComps; c++) colorants[c] = imageData[src + c] / 255.0;
+                                for (var c = 0; c < nComps; c++)
+                                    colorants[c] = (applyDecode ? DecodeSample(imageData[src + c], decode![2 * c], decode[2 * c + 1]) : imageData[src + c]) / 255.0;
                                 rgb = tintToRgb(colorants);
                             }
 
