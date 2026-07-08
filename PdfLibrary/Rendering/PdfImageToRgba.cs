@@ -633,6 +633,10 @@ public static class PdfImageToRgba
 
                         if (imageData.Length >= expectedCmykSize)
                         {
+                            // Memoize CMYK→RGB by packed colorant tuple — the ICC path (UseIccForDeviceCmyk)
+                            // runs a per-call profile transform, so flat regions and gradients (few unique
+                            // colours) would otherwise pay it per pixel.
+                            var cmykCache = new Dictionary<uint, (byte R, byte G, byte B)>();
                             for (var i = 0; i < pixelCount; i++)
                             {
                                 int srcOffset = i * 4;
@@ -648,10 +652,15 @@ public static class PdfImageToRgba
                                     y = DecodeSample(y, dec[4], dec[5]);
                                     k = DecodeSample(k, dec[6], dec[7]);
                                 }
-                                (byte rr, byte gg, byte bb) = CmykToRgb((byte)c, (byte)m, (byte)y, (byte)k);
-                                pixelBuffer[dstOffset] = rr;
-                                pixelBuffer[dstOffset + 1] = gg;
-                                pixelBuffer[dstOffset + 2] = bb;
+                                uint ckey = ((uint)c << 24) | ((uint)m << 16) | ((uint)y << 8) | (uint)k;
+                                if (!cmykCache.TryGetValue(ckey, out (byte R, byte G, byte B) rgb))
+                                {
+                                    rgb = CmykToRgb((byte)c, (byte)m, (byte)y, (byte)k);
+                                    cmykCache[ckey] = rgb;
+                                }
+                                pixelBuffer[dstOffset] = rgb.R;
+                                pixelBuffer[dstOffset + 1] = rgb.G;
+                                pixelBuffer[dstOffset + 2] = rgb.B;
                                 pixelBuffer[dstOffset + 3] = smaskData is not null && i < smaskData.Length ? smaskData[i] : (byte)255;
                             }
                         }
@@ -766,10 +775,15 @@ public static class PdfImageToRgba
     private static int DecodeSample(int sample, double dMin, double dMax) =>
         (int)Math.Clamp(Math.Round((dMin + sample / 255.0 * (dMax - dMin)) * 255.0), 0, 255);
 
+    // When UseIccForDeviceCmyk is on (the app's on-screen path), route DeviceCMYK samples through the
+    // SWOP ICC profile — the SAME converter fills/shadings use — so a CMYK image and a CMYK shading of
+    // the same colour render identically (and match Adobe). Off: the naive multiplicative fallback.
     private static (byte R, byte G, byte B) CmykToRgb(byte c, byte m, byte y, byte k) =>
-        ((byte)((255 - c) * (255 - k) / 255),
-         (byte)((255 - m) * (255 - k) / 255),
-         (byte)((255 - y) * (255 - k) / 255));
+        PdfColorToRgb.UseIccForDeviceCmyk
+            ? DeviceCmykConverter.Default.ToRgb(c / 255.0, m / 255.0, y / 255.0, k / 255.0)
+            : ((byte)((255 - c) * (255 - k) / 255),
+               (byte)((255 - m) * (255 - k) / 255),
+               (byte)((255 - y) * (255 - k) / 255));
 
     /// <summary>
     /// Converts raw interleaved pixel bytes from JPEG 2000 decode to RGBA8888.
