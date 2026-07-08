@@ -180,10 +180,13 @@ internal class SampledFunction : PdfFunction
             indices[i] = (int)Clamp(Math.Round(encoded), 0, _size[i] - 1);
         }
 
-        // Calculate linear index from multi-dimensional indices
+        // Calculate linear index from multi-dimensional indices. Per PDF §7.10.2 the sample table stores
+        // the FIRST input dimension varying fastest, so multipliers accumulate 1, size[0], size[0]*size[1]…
+        // (iterate forward). The previous backward loop made the LAST dimension fastest, so a 2-in tint
+        // transform read the wrong samples — a DeviceN[Cyan,Black] duotone resolved to zero ink (white).
         var linearIndex = 0;
         var multiplier = 1;
-        for (int i = inputCount - 1; i >= 0; i--)
+        for (var i = 0; i < inputCount; i++)
         {
             linearIndex += indices[i] * multiplier;
             multiplier *= _size[i];

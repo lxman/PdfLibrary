@@ -116,6 +116,10 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 ResolveSeparation(csArray, ref colorSpaceName, ref color);
                 break;
 
+            case "DeviceN" when csArray.Count >= 4:
+                ResolveDeviceN(csArray, ref colorSpaceName, ref color);
+                break;
+
             case "Indexed" when csArray.Count >= 4:
                 ResolveIndexed(csArray, ref colorSpaceName, ref color);
                 break;
@@ -265,43 +269,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             {
                 double[] result = tintTransform.Evaluate([tint]);
                 PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
-
-                switch (result.Length)
-                {
-                    case 4:
-                    {
-                        // CMYK output
-                        color = [result[0], result[1], result[2], result[3]];
-                        colorSpaceName = "DeviceCMYK";
-                        break;
-                    }
-                    case >= 3:
-                    {
-                        // Check if this is Lab color space
-                        if (altSpace == "Lab" && result.Length == 3)
-                        {
-                            // Convert Lab to RGB
-                            double[] rgb = LabToRgb(result[0], result[1], result[2], alternateObj as PdfArray);
-                            color = [rgb[0], rgb[1], rgb[2]];
-                            colorSpaceName = "DeviceRGB";
-                            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Lab -> RGB conversion: L={result[0]:F2}, a={result[1]:F2}, b={result[2]:F2} -> R={rgb[0]:F3}, G={rgb[1]:F3}, B={rgb[2]:F3}");
-                        }
-                        else
-                        {
-                            // RGB output from tint transform
-                            color = [result[0], result[1], result[2]];
-                            colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
-                            if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
-                                colorSpaceName = "DeviceRGB";
-                        }
-                        break;
-                    }
-                    case 1:
-                        // Grayscale output
-                        color = [result[0]];
-                        colorSpaceName = "DeviceGray";
-                        break;
-                }
+                ApplyTintTransformResult(result, altSpace, alternateObj, ref colorSpaceName, ref color);
             }
             else
             {
@@ -312,6 +280,74 @@ internal class ColorSpaceResolver(PdfDocument? document)
         }
 
         PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color?.Select(c => c.ToString("F3")) ?? [])}]");
+    }
+
+    /// <summary>
+    /// Resolves a DeviceN color space: <c>[/DeviceN [names] alternateSpace tintTransform]</c> — the
+    /// N-colorant generalisation of Separation. Evaluates the tint transform over all N tint components
+    /// into the alternate space, then flattens to a device colour (same result handling as Separation).
+    /// Without this, a DeviceN fill reached the renderer unresolved (its resource name + raw tints), and
+    /// the CMYK compositor mis-mapped it (e.g. a 2-tint value read as no ink → white). GWG190/191/192.
+    /// </summary>
+    private void ResolveDeviceN(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
+    {
+        color ??= [];
+        if (color.Count == 0) return;
+
+        PdfObject? alternateObj = csArray[2];
+        if (alternateObj is PdfIndirectReference altRef && document is not null)
+            alternateObj = document.ResolveReference(altRef);
+
+        string altSpace = alternateObj switch
+        {
+            PdfName altName => altName.Value,
+            PdfArray { Count: >= 1 } altArray when altArray[0] is PdfName altType => altType.Value,
+            _ => string.Empty,
+        };
+        if (altSpace.Length == 0) return;
+
+        PdfFunction? tintTransform = document is not null ? PdfFunction.Create(csArray[3], document) : null;
+        if (tintTransform is null) return;   // DeviceN requires a tint transform to flatten to the alternate
+
+        double[] result = tintTransform.Evaluate(color.ToArray());
+        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE DeviceN: altSpace='{altSpace}', tints={color.Count} -> result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
+        ApplyTintTransformResult(result, altSpace, alternateObj, ref colorSpaceName, ref color);
+    }
+
+    /// <summary>
+    /// Flattens a Separation/DeviceN tint-transform result (in the alternate space) to a device colour +
+    /// name: 4 comps → DeviceCMYK, Lab-alternate 3 comps → DeviceRGB (via the alternate white point),
+    /// other 3 comps → DeviceRGB, 1 comp → DeviceGray. Shared by ResolveSeparation and ResolveDeviceN.
+    /// </summary>
+    private void ApplyTintTransformResult(double[] result, string altSpace, PdfObject? alternateObj,
+        ref string? colorSpaceName, ref List<double>? color)
+    {
+        switch (result.Length)
+        {
+            case 4:
+                color = [result[0], result[1], result[2], result[3]];
+                colorSpaceName = "DeviceCMYK";
+                break;
+            case >= 3:
+                if (altSpace == "Lab" && result.Length == 3)
+                {
+                    double[] rgb = LabToRgb(result[0], result[1], result[2], alternateObj as PdfArray);
+                    color = [rgb[0], rgb[1], rgb[2]];
+                    colorSpaceName = "DeviceRGB";
+                }
+                else
+                {
+                    color = [result[0], result[1], result[2]];
+                    colorSpaceName = altSpace is "CalRGB" ? "DeviceRGB" : altSpace;
+                    if (colorSpaceName != "DeviceRGB" && colorSpaceName != "DeviceCMYK" && colorSpaceName != "DeviceGray")
+                        colorSpaceName = "DeviceRGB";
+                }
+                break;
+            case 1:
+                color = [result[0]];
+                colorSpaceName = "DeviceGray";
+                break;
+        }
     }
 
     /// <summary>
@@ -490,8 +526,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 case "Yellow": y = true; break;
                 case "Black": k = true; break;
                 case "All": c = m = y = k = true; break;
+                case "None": break;   // marks no colorant (ISO 32000 §8.6.6.4) — skip; used as DeviceN padding
                 default:
-                    // Any spot colorant (or "None") isn't a CMYK plate → fall back to OPM behaviour.
+                    // A real spot colorant isn't a CMYK plate → fall back to OPM behaviour.
                     return null;
             }
         }
