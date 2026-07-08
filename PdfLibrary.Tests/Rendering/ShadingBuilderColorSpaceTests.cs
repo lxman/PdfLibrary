@@ -46,6 +46,53 @@ public class ShadingBuilderColorSpaceTests
     private static (byte R, byte G, byte B) Rgb(uint argb) =>
         ((byte)((argb >> 16) & 0xFF), (byte)((argb >> 8) & 0xFF), (byte)(argb & 0xFF));
 
+    private static (byte C, byte M, byte Y, byte K) Cmyk(uint packed) =>
+        ((byte)(packed >> 24), (byte)(packed >> 16), (byte)(packed >> 8), (byte)packed);
+
+    [Fact]
+    public void Build_SeparationCyan_yields_native_cmyk_stops_and_C_plate()
+    {
+        // [/Separation /Cyan /DeviceCMYK {t -> [t 0 0 0]}]; shading /Function t -> [t].
+        var sep = new PdfArray(
+            new PdfName("Separation"), new PdfName("Cyan"), new PdfName("DeviceCMYK"),
+            Type2([0, 0, 0, 0], [1, 0, 0, 0]));
+        PdfDictionary shading = AxialShading(sep, Type2([0], [1]));
+
+        ShadingDescriptor? d = ShadingBuilder.Build(shading, null);
+
+        Assert.NotNull(d);
+        Assert.Equal((true, false, false, false), d!.OverprintPlates);   // Cyan → C plate only
+        Assert.NotEmpty(d.CmykColors);
+        (byte c0, byte m0, byte y0, byte k0) = Cmyk(d.CmykColors[0]);
+        (byte c1, byte m1, byte y1, byte k1) = Cmyk(d.CmykColors[^1]);
+        Assert.True(c0 < 5 && m0 < 5 && y0 < 5 && k0 < 5, $"stop0 CMYK ({c0},{m0},{y0},{k0})");
+        Assert.True(c1 > 250 && m1 < 5 && y1 < 5 && k1 < 5, $"last CMYK ({c1},{m1},{y1},{k1})");
+    }
+
+    [Fact]
+    public void Build_DeviceCmyk_has_cmyk_stops_but_no_colorant_plate_mask()
+    {
+        PdfDictionary shading = AxialShading(new PdfName("DeviceCMYK"), Type2([0, 0, 0, 0], [0, 0, 0, 1]));
+
+        ShadingDescriptor? d = ShadingBuilder.Build(shading, null);
+
+        Assert.NotNull(d);
+        Assert.Null(d!.OverprintPlates);      // device space → OPM logic, no colorant mask
+        Assert.NotEmpty(d.CmykColors);        // native CMYK stops still available (K ramp)
+    }
+
+    [Fact]
+    public void Build_DeviceRgb_has_no_cmyk_stops_or_plate_mask()
+    {
+        PdfDictionary shading = AxialShading(new PdfName("DeviceRGB"), Type2([1, 0, 0], [0, 0, 1]));
+
+        ShadingDescriptor? d = ShadingBuilder.Build(shading, null);
+
+        Assert.NotNull(d);
+        Assert.Empty(d!.CmykColors);          // RGB doesn't resolve to CMYK → compositor uses sRGB stops
+        Assert.Null(d.OverprintPlates);
+    }
+
     [Fact]
     public void Build_SeparationBlack_RunsRampThroughTintTransform()
     {

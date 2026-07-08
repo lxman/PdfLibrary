@@ -361,6 +361,49 @@ internal class ColorSpaceResolver(PdfDocument? document)
         };
     }
 
+    /// <summary>
+    /// Builds a colorant→native-CMYK evaluator for a <c>[/Separation …]</c> or <c>[/DeviceN …]</c>
+    /// space whose alternate is <c>DeviceCMYK</c>. Unlike <see cref="BuildTintToRgb"/> it stops at the
+    /// tint transform's CMYK output (no CMYK→sRGB step), so a CMYK compositor can paint the spot colour
+    /// in native ink. Returns null when the alternate is not DeviceCMYK (the caller then falls back to
+    /// the RGB path). <paramref name="inputComponents"/> is the colorant count (1 for Separation).
+    /// </summary>
+    internal static Func<double[], (double C, double M, double Y, double K)>? BuildTintToCmyk(
+        PdfArray baseArray, PdfDocument? document, out int inputComponents)
+    {
+        inputComponents = 0;
+        if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
+            return null;
+
+        if (head.Value == "Separation")
+            inputComponents = 1;
+        else if (Deref(baseArray[1], document) is PdfArray names)
+            inputComponents = names.Count;
+        else
+            return null;
+        if (inputComponents < 1) return null;
+
+        PdfObject altObj = Deref(baseArray[2], document);
+        string altSpace = altObj switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty
+        };
+        if (altSpace != "DeviceCMYK") return null;   // only a CMYK alternate yields native CMYK
+
+        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
+        if (tint is null) return null;
+
+        return colorants =>
+        {
+            double[] r = tint.Evaluate(colorants);
+            static double C01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
+            return (C01(r.Length > 0 ? r[0] : 0), C01(r.Length > 1 ? r[1] : 0),
+                    C01(r.Length > 2 ? r[2] : 0), C01(r.Length > 3 ? r[3] : 0));
+        };
+    }
+
     private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
@@ -389,6 +432,19 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
             return null;
 
+        return PlatesForColorSpaceObject(csObj, doc);
+    }
+
+    /// <summary>
+    /// Per-plate CMYK overprint mask for a colour-space DEFINITION object (not a resource name) — a
+    /// <c>[/Separation name …]</c> or <c>[/DeviceN [names] …]</c> array. Each colorant maps to a device
+    /// plate (Cyan→C, Magenta→M, Yellow→Y, Black→K, All→all four); the mask is the union. Returns null for
+    /// device spaces, unresolvable objects, or any spot colorant. Used by <see cref="OverprintPlatesFor"/>
+    /// (resource-name path) and by shadings, whose /ColorSpace is a direct object, not a resource name.
+    /// </summary>
+    public static (bool C, bool M, bool Y, bool K)? PlatesForColorSpaceObject(PdfObject? csObj, PdfDocument? doc)
+    {
+        if (csObj is null) return null;
         csObj = Deref(csObj, doc);
         if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
             return null;

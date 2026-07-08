@@ -51,8 +51,13 @@ internal static class ShadingBuilder
         // The /Function outputs colour components in the shading's /ColorSpace; map those to sRGB the
         // same way fills do (Separation/DeviceN through their tint transform), so spot-colour ramps
         // don't collapse to the naive by-component-count guess.
-        Func<double[], uint> toColor = BuildColorMapper(
-            dict.TryGetValue(new PdfName("ColorSpace"), out PdfObject csObj) ? csObj : null, document);
+        PdfObject? shadingCs = dict.TryGetValue(new PdfName("ColorSpace"), out PdfObject csObj) ? csObj : null;
+        Func<double[], uint> toColor = BuildColorMapper(shadingCs, document);
+        // Native CMYK mapper (for CMYK-resolving spaces) + the colorant→plate overprint mask, so a CMYK
+        // compositor can paint the gradient in native ink and preserve non-painted plates on overprint.
+        Func<double[], uint>? toCmyk = BuildCmykMapper(shadingCs, document);
+        (bool C, bool M, bool Y, bool K)? overprintPlates =
+            ColorSpaceResolver.PlatesForColorSpaceObject(shadingCs, document);
 
         bool extendStart = false, extendEnd = false;
         if (dict.TryGetValue(new PdfName("Extend"), out PdfObject extObj) && extObj is PdfArray { Count: >= 2 } extArr)
@@ -63,11 +68,14 @@ internal static class ShadingBuilder
 
         var stops = new float[StopCount];
         var colors = new uint[StopCount];
+        uint[] cmykColors = toCmyk is null ? [] : new uint[StopCount];
         for (var i = 0; i < StopCount; i++)
         {
             double s = i / (double)(StopCount - 1);
             double t = t0 + (t1 - t0) * s;
-            colors[i] = toColor(EvaluateColor(functions, t));
+            double[] components = EvaluateColor(functions, t);
+            colors[i] = toColor(components);
+            if (toCmyk is not null) cmykColors[i] = toCmyk(components);
             stops[i] = (float)s;
         }
 
@@ -79,9 +87,45 @@ internal static class ShadingBuilder
             ExtendEnd = extendEnd,
             Stops = stops,
             Colors = colors,
+            CmykColors = cmykColors,
+            OverprintPlates = overprintPlates,
             PatternMatrix = patternMatrix
         };
     }
+
+    // Builds a "function output → 0xCCMMYYKK (native CMYK bytes)" mapper for shading colour spaces that
+    // resolve to DeviceCMYK: DeviceCMYK / ICCBased-4 pass their 4 components through; Separation/DeviceN
+    // with a DeviceCMYK alternate run their tint transform to CMYK. Returns null otherwise (the compositor
+    // then falls back to the sRGB stops).
+    private static Func<double[], uint>? BuildCmykMapper(PdfObject? csObj, PdfDocument? document)
+    {
+        if (csObj is PdfIndirectReference r && document is not null)
+            csObj = document.ResolveReference(r);
+
+        switch (csObj)
+        {
+            case PdfName { Value: "DeviceCMYK" }:
+                return PackCmyk;
+            case PdfArray { Count: >= 1 } arr when arr[0] is PdfName head:
+                switch (head.Value)
+                {
+                    case "ICCBased" when IccComponents(arr, document) == 4:
+                        return PackCmyk;
+                    case "Separation" or "DeviceN":
+                        Func<double[], (double C, double M, double Y, double K)>? tint =
+                            ColorSpaceResolver.BuildTintToCmyk(arr, document, out _);
+                        if (tint is not null)
+                            return c => { (double cc, double mm, double yy, double kk) = tint(c); return PackCmyk([cc, mm, yy, kk]); };
+                        break;
+                }
+                break;
+        }
+        return null;
+    }
+
+    private static uint PackCmyk(double[] c) =>
+        ((uint)Clamp255(c.Length > 0 ? c[0] : 0) << 24) | ((uint)Clamp255(c.Length > 1 ? c[1] : 0) << 16) |
+        ((uint)Clamp255(c.Length > 2 ? c[2] : 0) << 8) | (uint)Clamp255(c.Length > 3 ? c[3] : 0);
 
     // A shading's /Function is either a single n-output function, or an array of n single-output
     // functions (one per colour component).
