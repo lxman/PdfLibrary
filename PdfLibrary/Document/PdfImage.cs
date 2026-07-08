@@ -825,6 +825,30 @@ public class PdfImage
                     $"INDEXED PALETTE (Separation/DeviceN): {entries} entries, {inputComponents} colorant(s) -> sRGB.");
             }
         }
+        // Indexed DeviceCMYK: 4-byte CMYK entries — convert to sRGB so the decoder reads 3 bytes/entry
+        // (the componentsPerEntry default is 3, which would misread 4-byte CMYK as RGB).
+        else if (baseObj is PdfName { Value: "DeviceCMYK" } && paletteData is not null)
+        {
+            int entries = hival + 1;
+            if (paletteData.Length >= entries * 4)
+            {
+                var rgb = new byte[entries * 3];
+                for (var e = 0; e < entries; e++)
+                {
+                    int src = e * 4;
+                    (byte r, byte g, byte b) = Rendering.PdfColorToRgb.ToRgb(
+                        [paletteData[src] / 255.0, paletteData[src + 1] / 255.0,
+                         paletteData[src + 2] / 255.0, paletteData[src + 3] / 255.0],
+                        "DeviceCMYK");
+                    rgb[e * 3] = r;
+                    rgb[e * 3 + 1] = g;
+                    rgb[e * 3 + 2] = b;
+                }
+                paletteData = rgb;
+                baseColorSpace = "DeviceRGB";
+                PdfLogger.Log(LogCategory.Images, $"INDEXED PALETTE (DeviceCMYK): {entries} entries -> sRGB.");
+            }
+        }
         else if (paletteData is not null && paletteData.Length >= 12)
         {
             // Debug: Log for non-ICC palettes

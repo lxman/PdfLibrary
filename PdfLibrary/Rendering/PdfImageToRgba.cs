@@ -665,6 +665,62 @@ public static class PdfImageToRgba
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
                         return new RgbaImage(result, width, height, alphaMode);
                     }
+                    case "Separation" or "DeviceN" when bitsPerComponent == 8:
+                    {
+                        // Each pixel is N colorant samples; resolve them through the tint transform →
+                        // alternate → RGB (the same mapping fills and indexed palettes use).
+                        PdfArray? csArray = image.ColorSpaceArray;
+                        if (csArray is null) return null;
+                        Func<double[], (byte R, byte G, byte B)>? tintToRgb =
+                            ColorSpaceResolver.BuildTintToRgb(csArray, doc, out int nComps);
+                        if (tintToRgb is null || nComps < 1) return null;
+
+                        int pixelCount = width * height;
+                        if (imageData.Length < pixelCount * nComps) return null;
+
+                        alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                        int pixelBufferSize = pixelCount * 4;
+                        byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        // Memoize repeated colorant tuples — duotones reuse a handful of colours, so a
+                        // per-pixel tint evaluation would be wasteful.
+                        var cache = new Dictionary<uint, (byte R, byte G, byte B)>();
+                        bool packable = nComps <= 4;
+                        var colorants = new double[nComps];
+
+                        for (var p = 0; p < pixelCount; p++)
+                        {
+                            int src = p * nComps;
+                            (byte R, byte G, byte B) rgb;
+                            if (packable)
+                            {
+                                uint key = 0;
+                                for (var c = 0; c < nComps; c++) key = (key << 8) | imageData[src + c];
+                                if (!cache.TryGetValue(key, out rgb))
+                                {
+                                    for (var c = 0; c < nComps; c++) colorants[c] = imageData[src + c] / 255.0;
+                                    rgb = tintToRgb(colorants);
+                                    cache[key] = rgb;
+                                }
+                            }
+                            else
+                            {
+                                for (var c = 0; c < nComps; c++) colorants[c] = imageData[src + c] / 255.0;
+                                rgb = tintToRgb(colorants);
+                            }
+
+                            int off = p * 4;
+                            pixelBuffer[off] = rgb.R;
+                            pixelBuffer[off + 1] = rgb.G;
+                            pixelBuffer[off + 2] = rgb.B;
+                            pixelBuffer[off + 3] = smaskData is not null && p < smaskData.Length ? smaskData[p] : (byte)255;
+                        }
+
+                        result = new byte[pixelBufferSize];
+                        Array.Copy(pixelBuffer, result, pixelBufferSize);
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+                        return new RgbaImage(result, width, height, alphaMode);
+                    }
                     default:
                         return null;
                 }

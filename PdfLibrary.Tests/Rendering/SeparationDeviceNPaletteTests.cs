@@ -79,4 +79,57 @@ public class SeparationDeviceNPaletteTests
         Assert.True(palette[0] > 250 && palette[1] > 250 && palette[2] > 250, "entry 0 should be white");
         Assert.True(palette[3] < 5 && palette[4] < 5 && palette[5] < 5, "entry 1 should be black");
     }
+
+    [Fact]
+    public void ToRgba_BareSeparationImage_DecodesViaTintTransform()
+    {
+        // 2x1 bare Separation image; samples [0x00, 0xFF] -> tint 0 (white), tint 1 (black).
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(2),
+            [new PdfName("Height")] = new PdfInteger(1),
+            [new PdfName("ColorSpace")] = SeparationBlackToCmyk(),
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+        };
+        var image = new PdfImage(new PdfStream(dict, [0x00, 0xFF]));
+
+        PdfImageToRgba.RgbaImage? decoded = PdfImageToRgba.ToRgba(image, null);
+
+        Assert.NotNull(decoded);                     // was null -> blank
+        byte[] px = decoded!.Value.Rgba;
+        Assert.Equal(8, px.Length);                  // 2 px x RGBA
+        Assert.True(px[0] > 250 && px[1] > 250 && px[2] > 250, "pixel 0 (tint 0) should be white");
+        Assert.True(px[4] < 5 && px[5] < 5 && px[6] < 5, "pixel 1 (tint 1) should be black");
+    }
+
+    [Fact]
+    public void GetIndexedPalette_DeviceCmykBase_TransformsToDeviceRgb()
+    {
+        // [/Indexed /DeviceCMYK 1 <00000000 000000FF>] — entry 0 = white, entry 1 = black (K=1).
+        var indexed = new PdfArray(
+            new PdfName("Indexed"), new PdfName("DeviceCMYK"), new PdfInteger(1),
+            new PdfString([0, 0, 0, 0, 0, 0, 0, 0xFF]));
+
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(1),
+            [new PdfName("Height")] = new PdfInteger(1),
+            [new PdfName("ColorSpace")] = indexed,
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+        };
+        var image = new PdfImage(new PdfStream(dict, [0]));
+
+        byte[]? palette = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
+
+        Assert.Equal(1, hival);
+        Assert.Equal("DeviceRGB", baseColorSpace);   // was "DeviceCMYK": 4-byte entries misread as 3
+        Assert.NotNull(palette);
+        Assert.Equal(6, palette!.Length);
+        Assert.True(palette[0] > 250 && palette[1] > 250 && palette[2] > 250, "entry 0 white");
+        Assert.True(palette[3] < 5 && palette[4] < 5 && palette[5] < 5, "entry 1 black");
+    }
 }
