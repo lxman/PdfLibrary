@@ -623,6 +623,14 @@ public static class PdfImageToRgba
                         int pixelBufferSize = width * height * 4;
                         byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
 
+                        // Honour a non-identity /Decode array — how genuinely-inverted Adobe CMYK
+                        // JPEGs request inversion (DCTDecode no longer guesses from the Adobe marker).
+                        // The default [0 1 0 1 0 1 0 1] is a no-op.
+                        double[]? dec = image.DecodeArray;
+                        bool applyDecode = dec is { Length: >= 8 } &&
+                            (dec[0] != 0 || dec[1] != 1 || dec[2] != 0 || dec[3] != 1 ||
+                             dec[4] != 0 || dec[5] != 1 || dec[6] != 0 || dec[7] != 1);
+
                         if (imageData.Length >= expectedCmykSize)
                         {
                             for (var i = 0; i < pixelCount; i++)
@@ -633,6 +641,13 @@ public static class PdfImageToRgba
                                 int m = imageData[srcOffset + 1];
                                 int y = imageData[srcOffset + 2];
                                 int k = imageData[srcOffset + 3];
+                                if (applyDecode)
+                                {
+                                    c = DecodeSample(c, dec![0], dec[1]);
+                                    m = DecodeSample(m, dec[2], dec[3]);
+                                    y = DecodeSample(y, dec[4], dec[5]);
+                                    k = DecodeSample(k, dec[6], dec[7]);
+                                }
                                 (byte rr, byte gg, byte bb) = CmykToRgb((byte)c, (byte)m, (byte)y, (byte)k);
                                 pixelBuffer[dstOffset] = rr;
                                 pixelBuffer[dstOffset + 1] = gg;
@@ -739,6 +754,10 @@ public static class PdfImageToRgba
     }
 
     /// <summary>Consolidated CMYK→RGB conversion: r=(255-c)*(255-k)/255, same formula used in all CMYK branches.</summary>
+    /// <summary>Maps an 8-bit sample through a /Decode interval [dMin, dMax] back to an 8-bit value.</summary>
+    private static int DecodeSample(int sample, double dMin, double dMax) =>
+        (int)Math.Clamp(Math.Round((dMin + sample / 255.0 * (dMax - dMin)) * 255.0), 0, 255);
+
     private static (byte R, byte G, byte B) CmykToRgb(byte c, byte m, byte y, byte k) =>
         ((byte)((255 - c) * (255 - k) / 255),
          (byte)((255 - m) * (255 - k) / 255),

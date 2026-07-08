@@ -39,4 +39,28 @@ public class DctDecodeCmykTests
         Assert.InRange(decoded[2], 35, 65);
         Assert.InRange(decoded[3], 15, 45);
     }
+
+    [Fact]
+    public void Cmyk_jpeg_with_adobe_transform0_marker_is_not_auto_inverted()
+    {
+        const int w = 16, h = 8;
+        var cmyk = new byte[w * h * 4];
+        for (var i = 0; i < w * h; i++)
+        {
+            cmyk[i * 4 + 0] = 200; cmyk[i * 4 + 1] = 100; cmyk[i * 4 + 2] = 50; cmyk[i * 4 + 3] = 30;
+        }
+
+        // Adobe APP14 with ColorTransform=0 present. The encoder stores raw CMYK (no inversion).
+        byte[] jpeg = new JpegStreamEncoder().Encode(cmyk,
+            new JpegEncodeOptions { Width = w, Height = h, NumberOfComponents = 4, Quality = 95, EmitAdobeMarker = true, AdobeColorTransform = 0 });
+
+        byte[] decoded = new DctDecodeFilter().Decode(jpeg);
+
+        // The marker must NOT trigger a blanket inversion — raw CMYK round-trips (matches gs/PDFKit;
+        // /Decode governs inversion). The old behaviour decoded to ~(55,155,205,225).
+        Assert.InRange(decoded[0], 185, 215);
+        Assert.InRange(decoded[1], 85, 115);
+        Assert.InRange(decoded[2], 35, 65);
+        Assert.InRange(decoded[3], 15, 45);
+    }
 }

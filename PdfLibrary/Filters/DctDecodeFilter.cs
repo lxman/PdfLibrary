@@ -67,7 +67,6 @@ internal class DctDecodeFilter : IStreamFilter
         int pixelCount = width * height;
 
         bool isAdobeYcck = hasAdobeMarker && adobeColorTransform == 2;
-        bool isInvertedCmyk = hasAdobeMarker && adobeColorTransform == 0;
 
         if (isAdobeYcck)
         {
@@ -106,24 +105,12 @@ internal class DctDecodeFilter : IStreamFilter
                 cmykPixels[dstIdx + 3] = kStored;                    // K = K_stored (as-is)
             }
         }
-        else if (isInvertedCmyk)
-        {
-            // Inverted CMYK (Adobe colorTransform = 0)
-            for (var i = 0; i < pixelCount; i++)
-            {
-                int srcIdx = i * 4;
-                int dstIdx = i * 4;
-
-                // Uninvert CMYK components
-                cmykPixels[dstIdx] = (byte)(255 - componentData[srcIdx]);
-                cmykPixels[dstIdx + 1] = (byte)(255 - componentData[srcIdx + 1]);
-                cmykPixels[dstIdx + 2] = (byte)(255 - componentData[srcIdx + 2]);
-                cmykPixels[dstIdx + 3] = (byte)(255 - componentData[srcIdx + 3]);
-            }
-        }
         else
         {
-            // Standard CMYK - copy as-is
+            // Standard CMYK — copied as-is. An Adobe APP14 transform=0 marker is NOT treated as a
+            // blanket inversion: that broke correctly-stored files (e.g. the GWG suite) and even this
+            // library's own encoder round-trip. Inversion is driven by the PDF /Decode array in
+            // PdfImageToRgba, matching Ghostscript/pdf.js for PDF-embedded JPEGs.
             Array.Copy(componentData, cmykPixels, cmykPixels.Length);
         }
 
