@@ -63,6 +63,9 @@ public static class Preflighter
         new Rules.UaTextUnicodeRule(),
         // Phase 3: structure-tree rules.
         new Rules.UaFigureAltRule(),
+        // Phase 4: marked-content completeness (7.1) — real content tagged/artifact + artifact nesting.
+        new Rules.UaContentTaggedRule(),
+        new Rules.UaArtifactNestingRule(),
     ];
 
     /// <summary>

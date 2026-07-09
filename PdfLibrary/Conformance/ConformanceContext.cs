@@ -39,6 +39,7 @@ internal sealed class ConformanceContext
     private bool _catalogResolved;
     private OutputIntentColour? _outputIntentColour;
     private IReadOnlyList<UsedFontCodes>? _usedTextGlyphs;
+    private MarkedContentAnalysis? _markedContent;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -99,6 +100,13 @@ internal sealed class ConformanceContext
     /// codes a font declares). Cached.
     /// </summary>
     public IReadOnlyList<UsedFontCodes> UsedTextGlyphs => _usedTextGlyphs ??= CollectUsedTextGlyphs();
+
+    /// <summary>
+    /// The page-content marked-content facts for the PDF/UA-1 rules — whether any real content is untagged,
+    /// whether any artifact and tagged sequences nest, and which MCIDs carry a content-stream
+    /// <c>/ActualText</c>. Walked once over all pages (and their Form XObjects) and cached.
+    /// </summary>
+    public MarkedContentAnalysis MarkedContent => _markedContent ??= AnalyzeMarkedContent();
 
     /// <summary>The document catalog, resolved once and cached (null when the document has none).</summary>
     public PdfCatalog? Catalog
@@ -356,6 +364,41 @@ internal sealed class ConformanceContext
             }
         }
         return merged.Select(kv => new UsedFontCodes(kv.Key, kv.Value)).ToList();
+    }
+
+    private MarkedContentAnalysis AnalyzeMarkedContent()
+    {
+        IReadOnlyList<PdfPage> pages;
+        try { pages = Pages; }
+        catch (Exception) { return MarkedContentAnalysis.Empty; } // no navigable page tree
+
+        int untaggedPage = -1, nestingPage = -1;
+        var actualTextMcids = new HashSet<int>();
+
+        for (int i = 0; i < pages.Count; i++)
+        {
+            // Concatenate the page's content streams before parsing so an operator (or a BDC/EMC pair) split
+            // across a stream boundary still parses (ISO 32000-1 7.8.2), matching the renderer.
+            var combined = new List<byte>();
+            foreach (PdfStream content in pages[i].GetContents())
+            {
+                combined.AddRange(content.GetDecodedData(Document.Decryptor));
+                combined.Add((byte)'\n');
+            }
+
+            var collector = new MarkedContentCollector(pages[i].GetResources(), Document);
+            try { collector.ProcessOperators(PdfContentParser.Parse(combined.ToArray())); }
+            catch (Exception) { continue; } // unparseable content: skip this page
+
+            if (collector.HasUntaggedContent && untaggedPage < 0)
+                untaggedPage = i;
+            if (collector.HasArtifactNesting && nestingPage < 0)
+                nestingPage = i;
+            actualTextMcids.UnionWith(collector.ActualTextMcids);
+        }
+
+        return new MarkedContentAnalysis(
+            untaggedPage >= 0, untaggedPage, nestingPage >= 0, nestingPage, actualTextMcids);
     }
 
     private IReadOnlyList<OutputIntentInfo> ReadOutputIntents()
