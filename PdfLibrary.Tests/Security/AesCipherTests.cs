@@ -139,6 +139,31 @@ public class AesCipherTests
     }
 
     [Fact]
+    public void Decrypt_FileKey_endingInPaddingLikeByte_isNotTruncated()
+    {
+        // Regression: the V=5 file key (/UE, /OE) is a raw 32-byte key with NO PKCS#7 padding. A random
+        // key byte can coincidentally look like valid padding (here the last byte 0x01 = "1 byte of
+        // padding"), and unconditional padding removal would strip it — truncating the key to 31 bytes,
+        // an invalid AES size. Decrypting with removePadding:false must return all 32 bytes intact.
+        var keyHash = new byte[32];                       // the key-encryption key (zeros for the test)
+        var iv = new byte[16];                            // zero IV, as Algorithm 2.A uses for /UE, /OE
+        var fileKey = new byte[32];
+        for (var i = 0; i < 32; i++) fileKey[i] = (byte)(i + 1);
+        fileKey[31] = 0x01;                               // last byte mimics PKCS#7 padding length 1
+
+        byte[] ct = AesCipher.EncryptNoPrependIV(keyHash, fileKey, iv);
+        var ivPlusCt = new byte[16 + ct.Length];          // decrypt path prepends a zero IV
+        Array.Copy(ct, 0, ivPlusCt, 16, ct.Length);
+
+        byte[] recovered = AesCipher.Decrypt(keyHash, ivPlusCt, removePadding: false);
+        Assert.Equal(fileKey, recovered);                 // full 32 bytes, key usable as an AES-256 key
+
+        // And the default (object-data) path would have stripped it — documents why the flag exists.
+        byte[] stripped = AesCipher.Decrypt(keyHash, ivPlusCt, removePadding: true);
+        Assert.Equal(31, stripped.Length);
+    }
+
+    [Fact]
     public void Sha256_ShouldComputeCorrectHash()
     {
         // Arrange

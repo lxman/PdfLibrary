@@ -247,7 +247,8 @@ internal class PdfDecryptor
             // User password is correct - decrypt the file encryption key
             IsUserPassword = true;
             byte[] keyHash = ComputeHashV5(passwordBytes, userKeySalt, null);
-            return AesCipher.Decrypt(keyHash, PrependIV(ueValue));
+            // The file key is exactly 32 bytes with NO padding — never strip PKCS#7 here.
+            return AesCipher.Decrypt(keyHash, PrependIV(ueValue), removePadding: false);
         }
 
         // Try owner password
@@ -263,7 +264,8 @@ internal class PdfDecryptor
             // Owner password is correct
             IsUserPassword = false;
             byte[] keyHash = ComputeHashV5(passwordBytes, ownerKeySalt, uValue);
-            return AesCipher.Decrypt(keyHash, PrependIV(oeValue));
+            // The file key is exactly 32 bytes with NO padding — never strip PKCS#7 here.
+            return AesCipher.Decrypt(keyHash, PrependIV(oeValue), removePadding: false);
         }
 
         return [];

@@ -14,8 +14,12 @@ internal static class AesCipher
     /// </summary>
     /// <param name="key">AES key (16 bytes for AES-128, 32 bytes for AES-256)</param>
     /// <param name="data">Encrypted data (IV + ciphertext)</param>
+    /// <param name="removePadding">Strip PKCS#7 padding from the plaintext. True for object strings/streams
+    /// (padded per ISO 32000). MUST be false when decrypting the raw 32-byte V=5 file key from /UE or /OE
+    /// (Algorithm 2.A: "AES-256, CBC, no padding") — otherwise a random key byte that coincidentally looks
+    /// like valid padding gets stripped, truncating the key to an invalid size.</param>
     /// <returns>Decrypted data</returns>
-    public static byte[] Decrypt(byte[] key, byte[] data)
+    public static byte[] Decrypt(byte[] key, byte[] data, bool removePadding = true)
     {
         if (data.Length < 16)
             return data; // Too short to contain IV, return as-is
@@ -51,8 +55,8 @@ internal static class AesCipher
 
         byte[] decrypted = decryptor.TransformFinalBlock(ciphertext, 0, ciphertext.Length);
 
-        // Remove PKCS#7 padding if present
-        return RemovePkcs7Padding(decrypted);
+        // Remove PKCS#7 padding if present (object data); never for the raw file key (see removePadding).
+        return removePadding ? RemovePkcs7Padding(decrypted) : decrypted;
     }
 
     /// <summary>
