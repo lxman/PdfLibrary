@@ -10,12 +10,13 @@ namespace PdfLibrary.Rendering;
 /// lossy CMYK→sRGB conversion <see cref="PdfImageToRgba"/> applies. A CMYK compositor uses these so an
 /// image whose colour resolves to DeviceCMYK paints in native ink and matches adjacent DeviceCMYK vector
 /// content pixel-for-pixel (a plain RGB round-trip re-injects gamut-mapped cyan and mismatches — GWG010
-/// mask swatches). Returns null when the image's colour does not resolve to DeviceCMYK (DeviceRGB/Gray,
-/// Lab, spot colours with a non-CMYK alternate) — the caller then keeps using the RGBA path.
-/// Scope: 8 bits/component, non-image-mask. Covers direct DeviceCMYK (honouring /Decode), Indexed with a
-/// DeviceCMYK / ICCBased-4 / Separation-or-DeviceN(CMYK-alternate) base, and direct Separation/DeviceN
-/// with a DeviceCMYK alternate. Alpha (transparency / SMask) is NOT produced here — the caller pairs
-/// these colour samples with the alpha channel from the RGBA decode.
+/// mask swatches). Returns null when the image's colour does not resolve to native ink (DeviceRGB,
+/// ICCBased, Lab, spot colours with a non-CMYK alternate) — the caller then keeps using the RGBA path.
+/// Scope: 8 bits/component (plus 1-bpc DeviceGray), non-image-mask. Covers direct DeviceCMYK (honouring
+/// /Decode), DeviceGray/CalGray as K-only ink (honouring /Decode), Indexed with a DeviceCMYK / ICCBased-4
+/// / Separation-or-DeviceN(CMYK-alternate) base, and direct Separation/DeviceN with a DeviceCMYK alternate.
+/// Alpha (transparency / SMask) is NOT produced here — the caller pairs these colour samples with the
+/// alpha channel from the RGBA decode.
 /// </summary>
 public static class PdfImageToCmyk
 {
@@ -40,13 +41,30 @@ public static class PdfImageToCmyk
         height = image.Height;
         if (width <= 0 || height <= 0) return null;
         if (image.IsImageMask) return null;                 // stencil: colour comes from the fill, not the image
-        if (image.BitsPerComponent != 8) return null;       // scope: 8bpc samples/indices
+
+        // DeviceGray/CalGray separate to the black plate only (1/8/16 bpc all handled); every other space
+        // is 8bpc-only below. ICCBased-gray is deliberately excluded (image.ColorSpace == "ICCBased"): its
+        // samples carry a source profile and must go through the managed RGBA path, not raw ink. Grey is
+        // handled at every depth so an 8-bit reference tile and a 16-bit test tile of the same image
+        // separate to the SAME K path — the only residual is sample precision, not a colour-path split
+        // (GWG183 overlays an 8-bit cross on a 16-bit photo).
+        bool isGray = image.ColorSpace is "DeviceGray" or "CalGray";
+        if (image.BitsPerComponent != 8 && !(isGray && image.BitsPerComponent is 1 or 16)) return null;
 
         byte[] data;
         try { data = image.GetDecodedData(); }
         catch { return null; }
 
         int px = width * height;
+
+        // --- DeviceGray / CalGray: 1 gray sample/pixel → K-only native ink (C=M=Y=0, K = 1 − gray) ---
+        // A grey image on a CMYK proof prints on the black plate alone, so image-grey then matches an
+        // adjacent DeviceCMYK(0,0,0,k) box pixel-for-pixel instead of drifting through an RGB→CMYK gamut
+        // round-trip (GWG173: the JBIG2 "X" vanishes when its solid-black tile lands on the same K as the
+        // 0 0 0 1 k box behind it). Honours /Decode; unsupported grey depths fell through the guard above.
+        if (isGray)
+            return GrayToKPlane(data, width, height, image.BitsPerComponent, image.DecodeArray);
+
         PdfArray? cs = image.ColorSpaceArray;
 
         // --- Indexed: 1 index byte/pixel → per-entry CMYK from the raw lookup ---
@@ -115,6 +133,43 @@ public static class PdfImageToCmyk
         }
 
         return null;
+    }
+
+    // DeviceGray/CalGray → K-only CMYK plane (W×H×4). Unpacks 1-, 8-, or 16-bpc samples to an 8-bit grey
+    // (16-bpc keeps the big-endian high byte, matching PdfImageToRgba's down-convert; the low byte is
+    // sub-perceptual), maps each through the /Decode interval, and separates grey g to (0,0,0,1−g).
+    // Returns null when the decoded data is short (caller then keeps the RGBA path).
+    private static byte[]? GrayToKPlane(byte[] data, int width, int height, int bpc, double[]? decode)
+    {
+        int px = width * height;
+        // After the 16→8 high-byte reduction the sample range is 0..255, so /Decode is applied on that
+        // 8-bit scale for every depth (1-bpc uses its own 0..1 range).
+        int maxVal = bpc == 1 ? 1 : 255;
+        double dMin = decode is { Length: >= 2 } ? decode[0] : 0.0;
+        double dMax = decode is { Length: >= 2 } ? decode[1] : 1.0;
+
+        var outGray = new byte[px * 4];
+        int stride = (width * bpc + 7) / 8;
+        if (data.Length < stride * height) return null;
+
+        for (var y = 0; y < height; y++)
+        {
+            int rowBase = y * stride;
+            for (var x = 0; x < width; x++)
+            {
+                int sample = bpc switch
+                {
+                    8 => data[rowBase + x],
+                    16 => data[rowBase + x * 2],                      // big-endian high byte
+                    _ => (data[rowBase + (x >> 3)] >> (7 - (x & 7))) & 1,
+                };
+                double g = dMin + (double)sample / maxVal * (dMax - dMin);
+                int o = (y * width + x) * 4;
+                // C=M=Y=0 already (fresh array); set K = 1 − grey.
+                outGray[o + 3] = B(1.0 - g);
+            }
+        }
+        return outGray;
     }
 
     // Per-palette-entry CMYK for an Indexed base. Handles DeviceCMYK (4 raw bytes) and Separation/DeviceN
