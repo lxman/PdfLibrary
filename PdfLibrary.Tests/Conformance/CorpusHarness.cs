@@ -54,6 +54,7 @@ internal static class CorpusHarness
             [ConformanceProfile.PdfA2b] = "PDF_A-2b",
             [ConformanceProfile.PdfA2u] = "PDF_A-2u",
             [ConformanceProfile.PdfA3b] = "PDF_A-3b",
+            [ConformanceProfile.PdfUA1] = "PDF_UA-1",
         };
 
     private static readonly Lazy<string?> RootLazy = new(Locate);

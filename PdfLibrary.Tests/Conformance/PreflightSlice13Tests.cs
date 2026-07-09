@@ -1,0 +1,167 @@
+using System;
+using System.Linq;
+using PdfLibrary.Conformance;
+using PdfLibrary.Conformance.Rules;
+using PdfLibrary.Core.Primitives;
+using PdfLibrary.Metadata;
+using PdfLibrary.Structure;
+
+namespace PdfLibrary.Tests.Conformance;
+
+/// <summary>
+/// Slice 13 (PDF/UA-1, ISO 14289-1) phase 1: identification (<see cref="UaIdentificationRule"/>) and the
+/// catalog/metadata rules — tagging (<see cref="UaTaggedRule"/>), title display
+/// (<see cref="UaDisplayDocTitleRule"/>), document title (<see cref="UaTitleRule"/>), and no-XFA
+/// (<see cref="UaXfaRule"/>). Rule-level tests over hand-built documents; the veraPDF PDF_UA-1 corpus backs
+/// the red/green surface (<see cref="CorpusOracleTests"/>).
+/// </summary>
+public class PreflightSlice13Tests
+{
+    private const string PdfUaIdNs = "http://www.aiim.org/pdfua/ns/id/";
+    private const string DublinCoreNs = "http://purl.org/dc/elements/1.1/";
+
+    private static PdfName N(string s) => new(s);
+    private static PdfIndirectReference Ref(int n) => new(n, 0);
+
+    /// <summary>A document whose catalog <paramref name="configure"/> tweaks. The catalog starts fully
+    /// PDF/UA-conformant (structure tree, MarkInfo, DisplayDocTitle, pdfuaid + dc:title metadata); each test
+    /// removes or changes one thing.</summary>
+    private static PdfDocument Doc(Action<PdfDocument, PdfDictionary> configure, string? pdfUaPart = "1", string? title = "A Title")
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(30, 0, new PdfStream(
+            new PdfDictionary { [N("Type")] = N("Metadata"), [N("Subtype")] = N("XML") }, Xmp(pdfUaPart, title)));
+        doc.AddObject(31, 0, new PdfDictionary { [N("Type")] = N("StructTreeRoot") });
+        var catalog = new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"),
+            [N("Pages")] = Ref(2),
+            [N("Metadata")] = Ref(30),
+            [N("StructTreeRoot")] = Ref(31),
+            [N("MarkInfo")] = new PdfDictionary { [N("Marked")] = PdfBoolean.True },
+            [N("ViewerPreferences")] = new PdfDictionary { [N("DisplayDocTitle")] = PdfBoolean.True },
+        };
+        configure(doc, catalog);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(Ref(3)),
+            [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(3, 0, new PdfDictionary { [N("Type")] = N("Page"), [N("Parent")] = Ref(2) });
+        doc.AddObject(1, 0, catalog);
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    private static byte[] Xmp(string? pdfUaPart, string? title)
+    {
+        XmpPacket packet = XmpPacket.CreateEmpty();
+        if (pdfUaPart is not null)
+            packet.SetSimple(PdfUaIdNs, "pdfuaid", "part", pdfUaPart);
+        if (title is not null)
+            packet.SetLangAlt(DublinCoreNs, "dc", "title", title);
+        return packet.Serialize();
+    }
+
+    private static ConformanceContext Ctx(PdfDocument doc) => new(doc, ConformanceProfile.PdfUA1);
+
+    // ── ua-identification (clause 5) ──────────────────────────────────────────
+
+    [Fact]
+    public void Conformant_identification_passes()
+    {
+        Assert.Empty(new UaIdentificationRule().Check(Ctx(Doc((_, _) => { }))));
+    }
+
+    [Fact]
+    public void Missing_pdfuaid_part_is_flagged()
+    {
+        Finding f = Assert.Single(new UaIdentificationRule().Check(Ctx(Doc((_, _) => { }, pdfUaPart: null))));
+        Assert.Equal("ua-identification", f.RuleId);
+    }
+
+    [Fact]
+    public void Wrong_pdfuaid_part_is_flagged()
+    {
+        Assert.Single(new UaIdentificationRule().Check(Ctx(Doc((_, _) => { }, pdfUaPart: "2"))));
+    }
+
+    // ── ua-tagged (7.1) ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Fully_tagged_document_passes()
+    {
+        Assert.Empty(new UaTaggedRule().Check(Ctx(Doc((_, _) => { }))));
+    }
+
+    [Fact]
+    public void Missing_struct_tree_root_is_flagged()
+    {
+        Finding f = Assert.Single(new UaTaggedRule().Check(Ctx(Doc((_, c) => c.Remove(N("StructTreeRoot"))))));
+        Assert.Contains("structure tree", f.Message);
+    }
+
+    [Fact]
+    public void MarkInfo_not_marked_is_flagged()
+    {
+        Finding f = Assert.Single(new UaTaggedRule().Check(Ctx(Doc((_, c) =>
+            c[N("MarkInfo")] = new PdfDictionary { [N("Marked")] = PdfBoolean.False }))));
+        Assert.Contains("tagged", f.Message);
+    }
+
+    // ── ua-display-doc-title / ua-title (7.1) ─────────────────────────────────
+
+    [Fact]
+    public void Missing_display_doc_title_is_flagged()
+    {
+        Assert.Single(new UaDisplayDocTitleRule().Check(Ctx(Doc((_, c) => c.Remove(N("ViewerPreferences"))))));
+    }
+
+    [Fact]
+    public void Display_doc_title_true_passes()
+    {
+        Assert.Empty(new UaDisplayDocTitleRule().Check(Ctx(Doc((_, _) => { }))));
+    }
+
+    [Fact]
+    public void Missing_dc_title_is_flagged()
+    {
+        Assert.Single(new UaTitleRule().Check(Ctx(Doc((_, _) => { }, title: null))));
+    }
+
+    [Fact]
+    public void Present_dc_title_passes()
+    {
+        Assert.Empty(new UaTitleRule().Check(Ctx(Doc((_, _) => { }))));
+    }
+
+    // ── ua-xfa (7.15) ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Xfa_form_is_flagged()
+    {
+        var doc = Doc((d, c) =>
+        {
+            d.AddObject(40, 0, new PdfDictionary { [N("XFA")] = new PdfArray() });
+            c[N("AcroForm")] = Ref(40);
+        });
+        Assert.Single(new UaXfaRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void No_xfa_passes()
+    {
+        Assert.Empty(new UaXfaRule().Check(Ctx(Doc((_, _) => { }))));
+    }
+
+    // ── end-to-end ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Conformant_ua_document_has_no_phase1_findings()
+    {
+        PreflightResult result = Preflighter.Check(Doc((_, _) => { }), ConformanceProfile.PdfUA1);
+        Assert.DoesNotContain(result.Findings, f =>
+            f.RuleId.StartsWith("ua-", StringComparison.Ordinal) && f.Severity == FindingSeverity.Error);
+    }
+}

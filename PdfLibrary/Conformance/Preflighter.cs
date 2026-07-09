@@ -53,6 +53,14 @@ public static class Preflighter
         new Rules.PdfxBlendModeRule(),
         new Rules.PdfxNChannelColorantsRule(),
         new Rules.PdfxSeparationConsistencyRule(),
+        // Slice 13 — PDF/UA-1 accessibility (ISO 14289-1). Phase 1: identification + catalog/metadata.
+        new Rules.UaIdentificationRule(),
+        new Rules.UaTaggedRule(),
+        new Rules.UaDisplayDocTitleRule(),
+        new Rules.UaTitleRule(),
+        new Rules.UaXfaRule(),
+        // Phase 2: reuse — text-to-Unicode (7.2); font embedding (7.21) is FontEmbeddingRule widened to UA.
+        new Rules.UaTextUnicodeRule(),
     ];
 
     /// <summary>
@@ -164,7 +172,7 @@ public static class Preflighter
     {
         var bits = (int)profile;
         return bits != 0
-               && (bits & (bits - 1)) == 0                       // exactly one bit set
-               && (ConformanceProfile.All & profile) == profile; // and it is a defined profile
+               && (bits & (bits - 1)) == 0                             // exactly one bit set
+               && (ConformanceProfile.AnyProfile & profile) == profile; // and it is a defined profile
     }
 }
