@@ -40,7 +40,7 @@ internal class OptionalContentManager
             return;
         }
 
-        if (ocPropsObj is not PdfDictionary ocProperties)
+        if (Resolve(ocPropsObj) is not PdfDictionary ocProperties)
         {
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: /OCProperties is not a dictionary");
             return;
@@ -50,7 +50,7 @@ internal class OptionalContentManager
 
         // Get the default configuration dictionary /OCProperties/D
         // Per PDF spec ISO 32000-1:2008 section 8.11.4.3
-        if (!ocProperties.TryGetValue(new PdfName("D"), out PdfObject dObj) || dObj is not PdfDictionary defaultConfig)
+        if (!ocProperties.TryGetValue(new PdfName("D"), out PdfObject dObj) || Resolve(dObj) is not PdfDictionary defaultConfig)
         {
             PdfLogger.Log(LogCategory.Graphics, "OptionalContentManager: No /D (default configuration) found");
             return;
@@ -133,6 +133,10 @@ internal class OptionalContentManager
         PdfLogger.Log(LogCategory.Graphics, $"OptionalContentManager: Total disabled OCGs: {_disabledOCGs.Count}");
     }
 
+    /// <summary>Resolves an indirect reference to its target object (no-op for direct objects).</summary>
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference r && _document is not null ? _document.ResolveReference(r) : obj;
+
     /// <summary>
     /// Checks if an XObject's Optional Content is visible
     /// Returns true if the content should be rendered, false if it should be hidden
@@ -202,6 +206,113 @@ internal class OptionalContentManager
 
         // If we can't determine, default to visible
         return true;
+    }
+
+    /// <summary>
+    /// Visibility of a marked-content <c>/OC</c> property — the value looked up in the resource
+    /// <c>/Properties</c> dictionary for a <c>/OC /MCx BDC … EMC</c> sequence (or an inline dictionary).
+    /// The property is either an OCG (visible unless its reference is in the default <c>/OFF</c> set) or an
+    /// OCMD, whose visibility derives from its <c>/OCGs</c> members and <c>/P</c> policy (ISO 32000-1
+    /// §8.11.2.2). Returns true if the marked content should be drawn.
+    /// </summary>
+    public bool IsMarkedContentVisible(PdfObject? ocProperty)
+    {
+        if (ocProperty is null) return true;
+
+        // An OCG is keyed by its own indirect reference; an OCMD must be resolved and evaluated by policy.
+        string? ocgKey = null;
+        PdfObject? resolved = ocProperty;
+        if (ocProperty is PdfIndirectReference reference)
+        {
+            ocgKey = $"{reference.ObjectNumber} {reference.GenerationNumber} R";
+            resolved = _document?.ResolveReference(reference);
+        }
+
+        if (resolved is PdfDictionary dict
+            && dict.TryGetValue(new PdfName("Type"), out PdfObject? typeObj)
+            && typeObj is PdfName { Value: "OCMD" })
+        {
+            return IsOcmdVisible(dict);
+        }
+
+        // Plain OCG: visible unless its reference is in the disabled set. An inline OCG dictionary with no
+        // reference cannot appear in /OFF, so it is visible.
+        return ocgKey is null || !_disabledOCGs.Contains(ocgKey);
+    }
+
+    /// <summary>
+    /// Evaluates an OCMD's visibility from its member OCGs and <c>/P</c> visibility policy
+    /// (ISO 32000-1 §8.11.2.2, Table 99). Default policy is <c>AnyOn</c>.
+    /// </summary>
+    private bool IsOcmdVisible(PdfDictionary ocmd)
+    {
+        // A /VE visibility expression takes precedence over /OCGs + /P (ISO 32000-1 §8.11.2.2).
+        if (ocmd.TryGetValue(new PdfName("VE"), out PdfObject? veObj) && Resolve(veObj) is PdfArray ve)
+            return EvaluateVisibilityExpression(ve);
+
+        var members = new List<string>();
+        if (ocmd.TryGetValue(new PdfName("OCGs"), out PdfObject? ocgsObj))
+        {
+            switch (ocgsObj)
+            {
+                case PdfIndirectReference single:
+                    members.Add($"{single.ObjectNumber} {single.GenerationNumber} R");
+                    break;
+                case PdfArray array:
+                    foreach (PdfObject item in array)
+                        if (item is PdfIndirectReference r) members.Add($"{r.ObjectNumber} {r.GenerationNumber} R");
+                    break;
+            }
+        }
+
+        // An OCMD with no member OCGs imposes no visibility constraint → visible (§8.11.2.2).
+        if (members.Count == 0) return true;
+
+        bool IsOn(string key) => !_disabledOCGs.Contains(key);
+        bool AnyOn() { foreach (string m in members) if (IsOn(m)) return true; return false; }
+        bool AllOn() { foreach (string m in members) if (!IsOn(m)) return false; return true; }
+        bool AnyOff() { foreach (string m in members) if (!IsOn(m)) return true; return false; }
+        bool AllOff() { foreach (string m in members) if (IsOn(m)) return false; return true; }
+
+        string policy = ocmd.TryGetValue(new PdfName("P"), out PdfObject? pObj) && pObj is PdfName p ? p.Value : "AnyOn";
+        return policy switch
+        {
+            "AllOn" => AllOn(),
+            "AnyOff" => AnyOff(),
+            "AllOff" => AllOff(),
+            _ => AnyOn(),   // "AnyOn" is the default
+        };
+    }
+
+    /// <summary>
+    /// Evaluates an OCMD visibility expression (<c>/VE</c>, ISO 32000-1 §8.11.2.2): a nested array whose
+    /// first element is <c>/And</c>, <c>/Or</c>, or <c>/Not</c> and whose other elements are OCG references
+    /// or sub-expressions. A referenced OCG is "true" when it is ON (not in the default /OFF set).
+    /// </summary>
+    private bool EvaluateVisibilityExpression(PdfObject? node)
+    {
+        // A leaf is a reference to an OCG (kept unresolved so it can be matched by reference key).
+        if (node is PdfIndirectReference r)
+            return !_disabledOCGs.Contains($"{r.ObjectNumber} {r.GenerationNumber} R");
+
+        if (node is not PdfArray arr || arr.Count < 1 || arr[0] is not PdfName op)
+            return true;   // malformed expression → conservatively visible
+
+        switch (op.Value)
+        {
+            case "Not":
+                return arr.Count >= 2 && !EvaluateVisibilityExpression(arr[1]);
+            case "And":
+                for (var i = 1; i < arr.Count; i++)
+                    if (!EvaluateVisibilityExpression(arr[i])) return false;
+                return true;
+            case "Or":
+                for (var i = 1; i < arr.Count; i++)
+                    if (EvaluateVisibilityExpression(arr[i])) return true;
+                return false;
+            default:
+                return true;
+        }
     }
 
     /// <summary>

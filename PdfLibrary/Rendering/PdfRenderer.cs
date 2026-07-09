@@ -25,6 +25,12 @@ internal class PdfRenderer : PdfContentProcessor
     private PdfResources? _currentResources; // Can be swapped for annotation resources
     private readonly IPathBuilder _currentPath;
     private readonly OptionalContentManager? _optionalContentManager;
+    // Marked-content nesting (BDC/BMC … EMC): each entry records whether that region is an invisible
+    // /OC (optional content) group. Painting is suppressed while any enclosing region is hidden
+    // (ISO 32000-1 §8.11). Non-/OC marked content (e.g. /Artifact, /Span) never hides.
+    private readonly Stack<bool> _markedContentStack = new();
+    private int _ocHiddenDepth;
+    private bool OcHidden => _ocHiddenDepth > 0;
     private readonly PdfDocument? _document;
     private readonly ColorSpaceResolver _colorSpaceResolver;
     private readonly ExtGStateApplier _extGStateApplier;
@@ -565,7 +571,7 @@ internal class PdfRenderer : PdfContentProcessor
         List<double> color = CurrentState.StrokeColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH STROKE: ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
-        _target.StrokePath(_currentPath, CurrentState);
+        if (!OcHidden) _target.StrokePath(_currentPath, CurrentState);   // suppressed inside invisible /OC
         _currentPath.Clear();
     }
 
@@ -585,14 +591,18 @@ internal class PdfRenderer : PdfContentProcessor
         string resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], Pattern={CurrentState.FillPatternName}, PathEmpty={_currentPath.IsEmpty}");
 
-        // Check if we should use pattern fill
-        if (CurrentState is { ResolvedFillColorSpace: "Pattern", FillPatternName: not null })
+        // Check if we should use pattern fill. Suppressed inside an invisible optional-content region
+        // (the path is still cleared below so later visible content is unaffected).
+        if (!OcHidden)
         {
-            FillWithPattern(_currentPath, evenOdd, CurrentState.FillPatternName);
-        }
-        else
-        {
-            _target.FillPath(_currentPath, CurrentState, evenOdd);
+            if (CurrentState is { ResolvedFillColorSpace: "Pattern", FillPatternName: not null })
+            {
+                FillWithPattern(_currentPath, evenOdd, CurrentState.FillPatternName);
+            }
+            else
+            {
+                _target.FillPath(_currentPath, CurrentState, evenOdd);
+            }
         }
         _currentPath.Clear();
     }
@@ -689,6 +699,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// </summary>
     protected override void OnPaintShading(string name)
     {
+        if (OcHidden) return;   // sh suppressed inside invisible /OC
         if (_currentResources is null) return;
 
         PdfDictionary? shadings = _currentResources.GetShadings();
@@ -729,7 +740,7 @@ internal class PdfRenderer : PdfContentProcessor
             ClearPendingClip();
         }
 
-        _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);
+        if (!OcHidden) _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);   // suppressed inside invisible /OC
         _currentPath.Clear();
     }
 
@@ -768,7 +779,7 @@ internal class PdfRenderer : PdfContentProcessor
         if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
             PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution");
-            RenderType3Text(text, type3Font);
+            if (!OcHidden) RenderType3Text(text, type3Font);   // suppressed inside invisible /OC
             return;
         }
 
@@ -898,7 +909,8 @@ internal class PdfRenderer : PdfContentProcessor
 
         // Render the text: embedded fonts go through the core glyph pipeline; non-embedded
         // fonts use the substitute font path in CoreTextRenderer.
-        _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
+        if (!OcHidden)   // glyphs suppressed inside invisible /OC; text position still advances
+            _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
@@ -1058,7 +1070,7 @@ internal class PdfRenderer : PdfContentProcessor
         if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
             PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution (TJ)");
-            RenderType3TextWithPositioning(array, type3Font);
+            if (!OcHidden) RenderType3TextWithPositioning(array, type3Font);   // suppressed inside invisible /OC
             return;
         }
 
@@ -1200,7 +1212,8 @@ internal class PdfRenderer : PdfContentProcessor
         }
 
         var combined = combinedText.ToString();
-        _coreText.Render(combined, combinedWidths, CurrentState, font, combinedCharCodes);
+        if (!OcHidden)   // glyphs suppressed inside invisible /OC; text position still advances
+            _coreText.Render(combined, combinedWidths, CurrentState, font, combinedCharCodes);
 
         // Advance text position by total width
         double totalAdvance = combinedWidths.Sum();
@@ -1521,6 +1534,8 @@ internal class PdfRenderer : PdfContentProcessor
     {
         PdfLogger.Log(LogCategory.Images, $"OnInvokeXObject: {name}");
 
+        if (OcHidden) return;   // whole XObject (image or form) suppressed inside invisible /OC
+
         if (_currentResources is null)
         {
             PdfLogger.Log(LogCategory.Images, "  No resources");
@@ -1593,6 +1608,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// </summary>
     private protected override void OnInlineImage(InlineImageOperator inlineImage)
     {
+        if (OcHidden) return;   // inline image suppressed inside invisible /OC
         PdfLogger.Log(LogCategory.Images, $"INLINE-IMAGE: {inlineImage.Width}x{inlineImage.Height}, ColorSpace={inlineImage.ColorSpace}, BPC={inlineImage.BitsPerComponent}, Filter={inlineImage.Filter ?? "none"}");
 
         try
@@ -1814,6 +1830,49 @@ internal class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Transforms, $"Q (RestoreState) After restore: CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
         // After restoring state, we need to update the canvas matrix to match
         _target.ApplyCtm(CurrentState.Ctm);
+    }
+
+    // Marked-content operators (BDC/BMC … EMC). A `/OC` region whose OCG/OCMD is off in the default
+    // configuration hides all painting between BDC and EMC (ISO 32000-1 §8.11.2/§8.11.4). Nesting is
+    // tracked on a stack; painting operators consult OcHidden. State-changing operators still execute so
+    // the graphics state stays balanced across the region.
+    private protected override void OnGenericOperator(GenericOperator op)
+    {
+        switch (op.Name)
+        {
+            case "BDC" or "BMC":
+            {
+                bool hidden = op.Name == "BDC" && IsHiddenOptionalContent(op.Operands);
+                _markedContentStack.Push(hidden);
+                if (hidden) _ocHiddenDepth++;
+                break;
+            }
+            case "EMC":
+                if (_markedContentStack.Count > 0 && _markedContentStack.Pop() && _ocHiddenDepth > 0)
+                    _ocHiddenDepth--;
+                break;
+        }
+
+        base.OnGenericOperator(op);
+    }
+
+    // A `/OC /MCx BDC` (or inline `/OC <<…>> BDC`) opens an optional-content region; it is hidden when the
+    // referenced OCG/OCMD is off in the default configuration. Any other tag (e.g. /Artifact) is not OC.
+    private bool IsHiddenOptionalContent(List<PdfObject> operands)
+    {
+        if (_optionalContentManager is null) return false;
+        if (operands.Count < 2 || operands[0] is not PdfName { Value: "OC" }) return false;
+
+        // The property is a name into the page's /Properties resource, or an inline dictionary.
+        PdfObject property = operands[1];
+        if (property is PdfName propName
+            && _currentResources?.GetProperties() is { } props
+            && props.TryGetValue(new PdfName(propName.Value), out PdfObject? mapped))
+        {
+            property = mapped;
+        }
+
+        return !_optionalContentManager.IsMarkedContentVisible(property);
     }
 
     // ==================== Fixup Helper Methods ====================
