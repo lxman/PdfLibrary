@@ -65,6 +65,16 @@ public static class PdfImageToCmyk
         if (isGray)
             return GrayToKPlane(data, width, height, image.BitsPerComponent, image.DecodeArray);
 
+        // JPXDecode images reach us already colour-resolved by the JP2 filter — the palette (pclr) is
+        // expanded and the colr box applied, so a CMYK JP2 is 4 interleaved ink bytes/pixel. A 4-channel
+        // JPX decode is DeviceCMYK ink (JpxDecodeFilter), so take those bytes as the native plane directly.
+        // The file may still declare a degenerate [/Indexed /DeviceCMYK 0 lookup] wrapper around the JP2's
+        // own single-entry palette; running the Indexed branch below would treat the already-expanded CMYK
+        // samples as palette indices and paint the GWG170 striped "X". Grey/RGB JPX carries no native CMYK
+        // and stays on the RGBA path (ToRgba applies the source ICC for RGB).
+        if (image.Filters.Contains("JPXDecode"))
+            return data.Length >= px * 4 ? (data.Length == px * 4 ? data : data[..(px * 4)]) : null;
+
         PdfArray? cs = image.ColorSpaceArray;
 
         // --- Indexed: 1 index byte/pixel → per-entry CMYK from the raw lookup ---

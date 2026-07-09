@@ -62,6 +62,48 @@ public class PdfImageToCmykTests
         Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
     }
 
+    // GWG170: a 236×236 CMYK JPEG 2000 patch (single-entry pclr, colr=CMYK) wrapped in the degenerate
+    // [/Indexed /DeviceCMYK 0 <00ffff00>] colour space many writers emit. The JP2 filter already expands
+    // the palette to 4 interleaved CMYK bytes/pixel; treating those as palette indices paints a striped
+    // "X". TryToCmyk must instead hand the CMYK bytes back as native ink (uniform 0,255,255,0 = red).
+    private const string Gwg170CmykJp2Base64 =
+        "AAAADGpQICANCocKAAAAHGZ0eXBqcDIgAAAAAGpwMiBqcHhianB4IAAAAB5ycmVxAfj4AAUAAYAABUAADCAAEhAANwgAAAAAAFhqcDJoAAAAFm" +
+        "loZHIAAADsAAAA7AABBwcBAAAAAA9jb2xyAQIBAAAADAAAABNwY2xyAAEEBwcHBwD//wAAAAAYY21hcAAAAQAAAAEBAAABAgAAAQMAAAC7anAy" +
+        "Y/9P/1EAKQAAAAAA7AAAAOwAAAAAAAAAAAAAAOwAAADsAAAAAAAAAAAAAQcBAf9SAAwAAQABAAUDAwAB/1wAE0BASEhQSEhQSEhQSEhQSEhQ/5" +
+        "AACgAAAAAAFgAG/5PfgCgRUFSjb/+QAAoAAAAAAA8BBv+TgP+QAAoAAAAAAA8CBv+TgP+QAAoAAAAAAA8DBv+TgP+QAAoAAAAAAA8EBv+TgP+Q" +
+        "AAoAAAAAAA8FBv+TgP/Z";
+
+    [Fact]
+    public void Jpx_CMYK_indexed_wrapper_yields_native_cmyk_not_striped_indices()
+    {
+        byte[] jp2 = System.Convert.FromBase64String(Gwg170CmykJp2Base64);
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(236),
+            [new PdfName("Height")] = new PdfInteger(236),
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+            [new PdfName("Filter")] = new PdfName("JPXDecode"),
+            [new PdfName("ColorSpace")] = new PdfArray(new PdfName("Indexed"), new PdfName("DeviceCMYK"),
+                new PdfInteger(0), new PdfString(new byte[] { 0, 255, 255, 0 })),
+        };
+        var img = new PdfImage(new PdfStream(dict, jp2));
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out int w, out int h);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(236, w); Assert.Equal(236, h);
+        Assert.Equal(236 * 236 * 4, cmyk!.Length);
+        // Every pixel is the single palette entry CMYK(0,255,255,0); no (0,0,0,0) index-miss stripes.
+        for (var i = 0; i < w * h; i++)
+        {
+            Assert.Equal(0, cmyk[i * 4]);
+            Assert.Equal(255, cmyk[i * 4 + 1]);
+            Assert.Equal(255, cmyk[i * 4 + 2]);
+            Assert.Equal(0, cmyk[i * 4 + 3]);
+        }
+    }
+
     [Fact]
     public void Direct_DeviceCMYK_honours_inverting_decode()
     {
