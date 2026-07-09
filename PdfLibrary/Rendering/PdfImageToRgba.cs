@@ -26,9 +26,9 @@ public enum AlphaMode
 /// Converts a <see cref="PdfImage"/> to a raw RGBA8888 pixel buffer (R,G,B,A order,
 /// top-row-first) with no SkiaSharp dependency.
 ///
+/// <para>16 bpc images are supported by down-converting each sample to its high byte (see ToRgba).</para>
 /// <para>Unsupported cases that return <see langword="null"/>:</para>
 /// <list type="bullet">
-///   <item>16 bpc images — not yet implemented.</item>
 ///   <item>Lab colour space — not yet implemented.</item>
 ///   <item>Unknown colour-space / bpc combination — falls to default.</item>
 /// </list>
@@ -50,7 +50,7 @@ public static class PdfImageToRgba
 
     /// <summary>
     /// Decodes <paramref name="image"/> to an RGBA8888 byte array.
-    /// Returns <see langword="null"/> for unsupported images (16 bpc, Lab, unknown colour space).
+    /// Returns <see langword="null"/> for unsupported images (Lab, unknown colour space).
     /// </summary>
     public static RgbaImage? ToRgba(
         PdfImage image,
@@ -147,6 +147,19 @@ public static class PdfImageToRgba
                         }
                     }
                 }
+            }
+
+            // 16-bit samples are unpacked, big-endian byte pairs (no bit-packing). Down-convert each sample
+            // to its high byte so the 8-bit colour-space pipeline below handles every space uniformly
+            // (DeviceRGB/Gray/CMYK + ICCBased). The low byte is sub-perceptual, and /Decode is linear so it
+            // still applies to the high byte. (JPXDecode carries its own bit depth and returns above.)
+            if (bitsPerComponent == 16 && imageData.Length >= 2)
+            {
+                var packed = new byte[imageData.Length / 2];
+                for (int i = 0, j = 0; j < packed.Length; i += 2, j++)
+                    packed[j] = imageData[i];
+                imageData = packed;
+                bitsPerComponent = 8;
             }
 
             try
