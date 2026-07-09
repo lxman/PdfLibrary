@@ -71,8 +71,8 @@ public static class PdfImageToCmyk
             return outIdx;
         }
 
-        // --- Direct DeviceCMYK / ICCBased-4: 4 sample bytes/pixel ---
-        if (ResolvesToDirectCmyk(image, cs, document))
+        // --- Direct DeviceCMYK: 4 sample bytes/pixel ---
+        if (ResolvesToDirectCmyk(image))
         {
             if (data.Length < px * 4) return null;
             double[]? dec = image.DecodeArray;
@@ -117,17 +117,16 @@ public static class PdfImageToCmyk
         return null;
     }
 
-    // Per-palette-entry CMYK for an Indexed base. Handles DeviceCMYK (4 raw bytes), ICCBased with N=4
-    // (raw bytes treated as CMYK), and Separation/DeviceN with a CMYK alternate (tint transform).
+    // Per-palette-entry CMYK for an Indexed base. Handles DeviceCMYK (4 raw bytes) and Separation/DeviceN
+    // with a CMYK alternate (tint transform). An ICCBased base is deliberately NOT handled: its palette
+    // samples are in the source profile's space, not raw output CMYK, so it must go through the
+    // source-profile-managed RGBA path (returning null here routes the whole image there — GWG130).
     private static Func<int, (double C, double M, double Y, double K)>? BuildIndexedEntryToCmyk(
         PdfObject baseObj, byte[] lookup, PdfDocument? document)
     {
         switch (baseObj)
         {
             case PdfName { Value: "DeviceCMYK" }:
-                return e => Read4(lookup, e * 4);
-
-            case PdfArray { Count: >= 2 } icc when icc[0] is PdfName { Value: "ICCBased" } && IccComponents(icc, document) == 4:
                 return e => Read4(lookup, e * 4);
 
             case PdfArray { Count: >= 4 } sep when sep[0] is PdfName { Value: "Separation" or "DeviceN" }:
@@ -149,18 +148,11 @@ public static class PdfImageToCmyk
         }
     }
 
-    private static bool ResolvesToDirectCmyk(PdfImage image, PdfArray? cs, PdfDocument? document)
-    {
-        if (image.ColorSpace == "DeviceCMYK") return true;
-        return cs is { Count: >= 2 } && cs[0] is PdfName { Value: "ICCBased" } && IccComponents(cs, document) == 4;
-    }
-
-    private static int IccComponents(PdfArray iccArray, PdfDocument? document)
-    {
-        if (Deref(iccArray[1], document) is not PdfStream iccStream) return 0;
-        return iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger n
-            ? n.Value : 0;
-    }
+    // Only DEVICE CMYK samples are native output ink. An ICCBased-4 image carries a source ICC profile
+    // that must be transformed to the output space — its samples are NOT raw output CMYK (treating them so
+    // ignores the source profile, e.g. GWG130's red X). Such images fall through to the source-profile-managed
+    // RGBA path (PdfImageToRgba). DeviceCMYK has no source profile, so its samples ARE output ink.
+    private static bool ResolvesToDirectCmyk(PdfImage image) => image.ColorSpace == "DeviceCMYK";
 
     private static (double, double, double, double) Read4(byte[] lut, int o) =>
         o + 3 < lut.Length ? (lut[o] / 255.0, lut[o + 1] / 255.0, lut[o + 2] / 255.0, lut[o + 3] / 255.0)
