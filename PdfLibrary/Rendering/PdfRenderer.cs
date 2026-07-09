@@ -141,56 +141,37 @@ internal class PdfRenderer : PdfContentProcessor
 
             contentStopwatch = Stopwatch.StartNew();
 
-            // Parse and process all content streams
-            var streamIndex = 0;
-            PdfLogger.Log(LogCategory.PdfTool, $"About to iterate {contents.Count} streams, contents type={contents.GetType().Name}");
-            foreach (var stream in contents)
+            // Parse and process ALL of a page's content streams as ONE stream. ISO 32000-1 §7.8.2: the
+            // streams "shall be concatenated ... with at least one white-space character between the data
+            // from each stream" and then treated as a single stream, because a token/operator boundary may
+            // fall between streams. Parsing each stream on its own drops any operator whose operands sit in
+            // the previous stream — e.g. a `[ … ]` array closing one stream and its `TJ` opening the next
+            // (GWG2015 spec TOC: "White objects" was split exactly this way and vanished entirely).
+            PdfLogger.Log(LogCategory.PdfTool, $"Concatenating {contents.Count} content stream(s)");
+            using var concatenated = new MemoryStream();
+            foreach (PdfStream? stream in contents)
             {
-                PdfLogger.Log(LogCategory.PdfTool, $"Processing stream {streamIndex}, stream type={stream?.GetType().Name ?? "null"}");
                 if (stream is null)
-                {
-                    streamIndex++;
                     continue;
-                }
                 byte[] decodedData;
                 try
                 {
                     decodedData = stream.GetDecodedData(_document?.Decryptor);
-                    PdfLogger.Log(LogCategory.PdfTool, $"Decoded data length: {decodedData.Length}");
                 }
                 catch (Exception ex)
                 {
                     PdfLogger.Log(LogCategory.PdfTool, $"EXCEPTION in GetDecodedData: {ex.GetType().Name}: {ex.Message}");
-                    PdfLogger.Log(LogCategory.PdfTool, $"Stack trace: {ex.StackTrace}");
-                    throw; // Re-throw to see full behavior
+                    throw;
                 }
 
-                // Diagnostic: Dump the first stream's raw content to see scn operands
-                if (streamIndex == 0 && decodedData.Length > 0)
-                {
-                    string text = Encoding.ASCII.GetString(decodedData);
-                    // Find and show context around scn/SCN operators
-                    string[] lines = text.Split('\n');
-                    foreach (string line in lines.Take(50))  // First 50 lines
-                    {
-                        if (line.Contains("scn") || line.Contains("SCN") || line.Contains(" cs") || line.Contains(" CS"))
-                        {
-                            PdfLogger.Log(LogCategory.Graphics, $"RAW: {line.Trim()}");
-                        }
-                    }
-                }
-
-                List<PdfOperator> operators = PdfContentParser.Parse(decodedData);
-
-                // Diagnostic: Count operator types
-                int doOps = operators.Count(o => o.Name == "Do");
-                int csOps = operators.Count(o => o.Name is "cs" or "CS");
-                int scnOps = operators.Count(o => o.Name is "scn" or "SCN" or "sc" or "SC");
-                PdfLogger.Log(LogCategory.PdfTool, $"Stream {streamIndex}: Total: {operators.Count}, Do: {doOps}, cs/CS: {csOps}, scn/SCN/sc/SC: {scnOps}");
-
-                ProcessOperators(operators);
-                streamIndex++;
+                if (concatenated.Length > 0)
+                    concatenated.WriteByte((byte)'\n');   // §7.8.2 separator so boundary tokens don't merge
+                concatenated.Write(decodedData, 0, decodedData.Length);
             }
+
+            List<PdfOperator> operators = PdfContentParser.Parse(concatenated.ToArray());
+            PdfLogger.Log(LogCategory.PdfTool, $"Parsed {operators.Count} operators from {contents.Count} concatenated stream(s)");
+            ProcessOperators(operators);
 
             contentStopwatch.Stop();
             annotationStopwatch = Stopwatch.StartNew();
