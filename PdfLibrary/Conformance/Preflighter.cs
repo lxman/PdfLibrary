@@ -61,6 +61,8 @@ public static class Preflighter
         new Rules.UaXfaRule(),
         // Phase 2: reuse — text-to-Unicode (7.2); font embedding (7.21) is FontEmbeddingRule widened to UA.
         new Rules.UaTextUnicodeRule(),
+        // Phase 3: structure-tree rules.
+        new Rules.UaFigureAltRule(),
     ];
 
     /// <summary>

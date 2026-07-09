@@ -155,6 +155,75 @@ public class PreflightSlice13Tests
         Assert.Empty(new UaXfaRule().Check(Ctx(Doc((_, _) => { }))));
     }
 
+    // ── ua-figure-alt (7.3) — structure-tree walk ─────────────────────────────
+
+    private static PdfString Str(string s) => new(System.Text.Encoding.ASCII.GetBytes(s));
+
+    /// <summary>A minimal document whose structure tree <paramref name="build"/> populates (setting /K,
+    /// /RoleMap and adding element objects). Enough for the structure-tree rules, which read only the catalog
+    /// /StructTreeRoot.</summary>
+    private static PdfDocument DocWithStructTree(Action<PdfDocument, PdfDictionary> build)
+    {
+        var doc = new PdfDocument();
+        var structTreeRoot = new PdfDictionary { [N("Type")] = N("StructTreeRoot") };
+        build(doc, structTreeRoot);
+        doc.AddObject(31, 0, structTreeRoot);
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("StructTreeRoot")] = Ref(31) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void Figure_with_empty_alt_and_no_actualtext_is_flagged()
+    {
+        var doc = DocWithStructTree((d, root) =>
+        {
+            d.AddObject(50, 0, new PdfDictionary { [N("S")] = N("Figure"), [N("Alt")] = Str("") });
+            root[N("K")] = Ref(50);
+        });
+        Finding f = Assert.Single(new UaFigureAltRule().Check(Ctx(doc)));
+        Assert.Equal("ua-figure-alt", f.RuleId);
+    }
+
+    [Fact]
+    public void Figure_with_nonempty_alt_passes()
+    {
+        var doc = DocWithStructTree((d, root) =>
+        {
+            d.AddObject(50, 0, new PdfDictionary { [N("S")] = N("Figure"), [N("Alt")] = Str("A bar chart") });
+            root[N("K")] = Ref(50);
+        });
+        Assert.Empty(new UaFigureAltRule().Check(Ctx(doc)));
+    }
+
+    [Fact] // an /ActualText key present (even empty) defers to the marked-content phase — not flagged here
+    public void Figure_with_actualtext_key_is_deferred()
+    {
+        var doc = DocWithStructTree((d, root) =>
+        {
+            d.AddObject(50, 0, new PdfDictionary
+            {
+                [N("S")] = N("Figure"),
+                [N("Alt")] = Str(""),
+                [N("ActualText")] = Str(""),
+            });
+            root[N("K")] = Ref(50);
+        });
+        Assert.Empty(new UaFigureAltRule().Check(Ctx(doc)));
+    }
+
+    [Fact] // a custom structure type role-mapped to Figure is still checked
+    public void Rolemapped_figure_with_empty_alt_is_flagged()
+    {
+        var doc = DocWithStructTree((d, root) =>
+        {
+            root[N("RoleMap")] = new PdfDictionary { [N("MyPicture")] = N("Figure") };
+            d.AddObject(50, 0, new PdfDictionary { [N("S")] = N("MyPicture"), [N("Alt")] = Str("") });
+            root[N("K")] = Ref(50);
+        });
+        Assert.Single(new UaFigureAltRule().Check(Ctx(doc)));
+    }
+
     // ── end-to-end ─────────────────────────────────────────────────────────────
 
     [Fact]
