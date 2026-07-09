@@ -66,6 +66,9 @@ public static class Preflighter
         // Phase 4: marked-content completeness (7.1) — real content tagged/artifact + artifact nesting.
         new Rules.UaContentTaggedRule(),
         new Rules.UaArtifactNestingRule(),
+        // Phase 3b: structure-tree relationship semantics (ISO 32000-1 14.8.4).
+        new Rules.UaStandardTypeRule(),
+        new Rules.UaStructureNestingRule(),
     ];
 
     /// <summary>
