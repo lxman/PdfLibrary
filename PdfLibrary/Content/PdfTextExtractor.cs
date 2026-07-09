@@ -18,6 +18,13 @@ internal class PdfTextExtractor : PdfContentProcessor
     private readonly List<TextFragment> _fragments = [];
     private readonly PdfResources? _resources;
     private readonly PdfDocument? _document;
+    // Form XObjects currently on the extraction stack (by reference identity), shared across the nested
+    // per-form extractors. A Form XObject that transitively invokes itself (a cyclic /Do, malformed but
+    // real — GWG161) would otherwise recurse until the stack overflows; the guard skips a form already
+    // being extracted. MaxFormDepth is a belt-and-suspenders cap in case cyclic forms resolve to distinct
+    // stream instances (no legitimate PDF nests forms this deep).
+    private readonly HashSet<PdfStream> _activeForms;
+    private const int MaxFormDepth = 64;
     private bool _inTextObject;
     private Vector2 _lastPosition;
 
@@ -32,10 +39,12 @@ internal class PdfTextExtractor : PdfContentProcessor
     /// <summary>
     /// Creates a text extractor with optional resources for font resolution
     /// </summary>
-    internal PdfTextExtractor(PdfResources? resources = null, PdfDocument? document = null)
+    internal PdfTextExtractor(PdfResources? resources = null, PdfDocument? document = null,
+        HashSet<PdfStream>? activeForms = null)
     {
         _resources = resources;
         _document = document;
+        _activeForms = activeForms ?? new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
     }
 
     /// <summary>
@@ -266,6 +275,23 @@ internal class PdfTextExtractor : PdfContentProcessor
     /// </summary>
     private void ExtractTextFromFormXObject(PdfStream formStream)
     {
+        // Cycle / runaway guard: skip a Form XObject already being extracted on this stack (a self- or
+        // mutually-recursive /Do), or one nested past a sane depth. Without this a cyclic form recurses
+        // until the stack overflows (GWG161 crashed the app on open — text extraction, not rendering).
+        if (_activeForms.Count >= MaxFormDepth || !_activeForms.Add(formStream))
+            return;
+        try
+        {
+            ExtractTextFromFormXObjectCore(formStream);
+        }
+        finally
+        {
+            _activeForms.Remove(formStream);
+        }
+    }
+
+    private void ExtractTextFromFormXObjectCore(PdfStream formStream)
+    {
         // Get the Form XObject's content data
         byte[] contentData = formStream.GetDecodedData(_document?.Decryptor);
 
@@ -280,8 +306,9 @@ internal class PdfTextExtractor : PdfContentProcessor
             }
         }
 
-        // Create a new extractor for the form content
-        var formExtractor = new PdfTextExtractor(formResources ?? _resources, _document);
+        // Create a new extractor for the form content, sharing the active-form set so the cycle guard
+        // spans the whole nested-form chain.
+        var formExtractor = new PdfTextExtractor(formResources ?? _resources, _document, _activeForms);
 
         // Parse and process the Form XObject's content stream
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
