@@ -264,14 +264,16 @@ and the **Ghent Workgroup** test suite. PDF/X-4 shares much of PDF/A's structura
 encryption, embedded fonts, valid output intent) but adds print-production rules with **no PDF/A
 equivalent**. Initial X-4 rule list (to validate against GWG files):
 
-| Rule | Requirement |
-|---|---|
-| X4 output intent | Exactly one `GTS_PDFX` OutputIntent; `OutputConditionIdentifier` registered or `DestOutputProfile` embedded. |
-| X4 trim/art box | Every page has a `TrimBox` **or** `ArtBox` (not both), within `MediaBox`. |
-| X4 trapped | Document info / XMP `Trapped` is `True` or `False` (explicitly set, not `Unknown`). |
-| X4 no transparency restriction | X-4 permits transparency (unlike X-1a/X-3) — but blend spaces must resolve via the output intent. |
-| X4 fonts embedded | All fonts embedded (shared with PDF/A 6.2.11.4). |
-| X4 no encryption / valid ID | Shared with PDF/A 6.1.3. |
+| Rule | Requirement | Status |
+|---|---|---|
+| X4 output intent | Exactly one `GTS_PDFX` OutputIntent; `DestOutputProfile` embedded (X-4 always requires the profile, unlike X-1a/X-3). | ✅ slice 9 (`pdfx-output-intent`) |
+| X4 trim/art box | Every page has a `TrimBox` **or** `ArtBox` (not both), within `MediaBox`. | ✅ slice 9 (`pdfx-page-boxes`) |
+| X4 trapped | Document info / XMP `Trapped` is `True` or `False` (explicitly set, not `Unknown`). | ✅ slice 9 (`pdfx-trapped`) |
+| X4 version identification | XMP carries `pdfxid:GTS_PDFXVersion` (NPES ns `http://www.npes.org/pdfx/ns/id/`) beginning with "PDF/X-4" (covers "PDF/X-4"/"PDF/X-4p"). `GTS_PDFXConformance` is not used in X-4. The Adobe legacy `pdfx` schema alone does not satisfy it. | ✅ slice 10 (`pdfx-version`) |
+| X4 colour governance | Device colour must resolve via the output intent: DeviceCMYK→CMYK intent, DeviceRGB→RGB intent, DeviceGray→any intent. ICCBased/CalRGB/CalGray/Lab is device-independent and never flagged. Reuses `DeviceColourAnalysis` (under-reports only). | ✅ slice 10 (`pdfx-device-colour`) |
+| X4 no transparency restriction | X-4 permits transparency (unlike X-1a/X-3) — but blend spaces must resolve via the output intent. | deferred (blend-space check unimplemented) |
+| X4 fonts embedded | All fonts embedded (shared with PDF/A 6.2.11.4). | ✅ shared (`font-embedded`, profile `All`) |
+| X4 no encryption / valid ID | Shared with PDF/A 6.1.3. | ✅ shared (`encrypt`, `file-id`, profile `All`) |
 
 ## 4. Slice plan (structural rules)
 
@@ -288,8 +290,9 @@ group, verified against the matching corpus clause folder (`../veraPDF-corpus/PD
 | **6 Graphics rest** | 6.2.2 (content-stream operators), 6.2.5 (ExtGState), 6.2.9 (XObjects), 6.2.10 (transparency) | Content-stream walk. |
 | **7 Annotations + forms + actions** | 6.3, 6.4, 6.5 | Annotation appearances, form field constraints, permitted actions (no JS). |
 | **8 Embedded files + OC + misc** | 6.8 (2b/2u restriction vs **3b allowances**), 6.9, 6.10, 6.11 | 3b is where embedded-file rules diverge. |
-| **9 X-4** | §3 above | Separate source (GWG). |
-| **10 Corpus harness** | — | Walk corpus tree, parse expected outcome from filenames, assert per rule; wire veraPDF CLI as external oracle. |
+| **9 X-4 structural core** | §3: output intent, trim/art box, trapped | Separate source (GWG). |
+| **10 X-4 identification + colour** | §3: version identification (`pdfx-version`), colour governance (`pdfx-device-colour`) | The two X-4 gaps the structural core left open. Backed by the 34-file GOS pass-oracle (no false positives). |
+| **Corpus harness** | — | Walk corpus tree, parse expected outcome from filenames, assert per rule; wire veraPDF CLI as external oracle. |
 
 ---
 
