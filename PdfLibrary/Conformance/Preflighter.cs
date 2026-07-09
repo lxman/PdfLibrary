@@ -45,6 +45,11 @@ public static class Preflighter
         // Slice 10 — PDF/X-4 version identification + colour governance (ISO 15930-7).
         new Rules.PdfxVersionRule(),
         new Rules.PdfxColourRule(),
+        // Slice 11 — PDF/X-4 transparency + spot/DeviceN colour depth (ISO 15930-7).
+        new Rules.PdfxTransparencyColourRule(),
+        new Rules.PdfxBlendModeRule(),
+        new Rules.PdfxNChannelColorantsRule(),
+        new Rules.PdfxSeparationConsistencyRule(),
     ];
 
     /// <summary>
