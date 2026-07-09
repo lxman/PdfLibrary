@@ -21,6 +21,9 @@ public static class Preflighter
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),
         new Rules.PdfaIdentificationRule(),
+        // PDF/A-2u Unicode delta (ISO 19005-2 6.2.11.7.2).
+        new Rules.Pdfa2uToUnicodeRule(),
+        new Rules.Pdfa2uToUnicodeValuesRule(),
         new Rules.OutputIntentProfileRule(),
         new Rules.OutputIntentSingleProfileRule(),
         new Rules.FontEmbeddingRule(),

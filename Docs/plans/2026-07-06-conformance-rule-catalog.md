@@ -297,7 +297,8 @@ group, verified against the matching corpus clause folder (`../veraPDF-corpus/PD
 | **9 X-4 structural core** | §3: output intent, trim/art box, trapped | Separate source (GWG). |
 | **10 X-4 identification + colour** | §3: version identification (`pdfx-version`), colour governance (`pdfx-device-colour`) | The two X-4 gaps the structural core left open. Backed by the 34-file GOS pass-oracle (no false positives). |
 | **11 X-4 transparency + spot depth** | §3: spot/DeviceN alternate governance, `pdfx-transparency-colour`, `pdfx-blend-mode`, `pdfx-nchannel-colorants`, `pdfx-separation-consistency` | Closes the deferred transparency/blend-space item and adds the spot/DeviceN/colourant analysis. The `DeviceColourAnalysis` extension also lifts PDF/A device-colour detection (134→146). |
-| **Corpus harness** | — | Walk corpus tree, parse expected outcome from filenames, assert per rule; wire veraPDF CLI as external oracle. |
+| **12 PDF/A-2u Unicode delta** | **6.2.11.7.2** — `pdfa2u-tounicode` (used codes map to Unicode), `pdfa2u-tounicode-values` (no U+0000/FEFF/FFFE/FFFF) | The sole delta of level U over B. NEW used-code collector (`ToUnicodeUsageCollector`, cached on the context) + conservative `FontUnicodeMapping` predicate: flags only positive evidence of no mapping (Type0 Identity-ordered without ToUnicode; a simple font's real glyph name with no AGL/uniXXXX resolution). Deliberately under-reports the cases needing embedded-program encodings or Adobe cid2unicode tables. 2u detection 1→6/10, zero false positives. |
+| **Corpus harness** | — | veraPDF corpus (`CorpusOracleTests`) + the independent BFO suite (`BfoOracleTests`, `../pdfa-testsuite`, 0 pass-FP / 10 fail detected) as a second oracle. Still to do: wire the veraPDF CLI as an external cross-check. |
 
 ---
 
