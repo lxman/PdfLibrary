@@ -5,6 +5,15 @@ using PdfLibrary.Document;
 namespace PdfLibrary.Rendering;
 
 /// <summary>
+/// Attributes of a Form XObject transparency group (ISO 32000-1 §11.4), surfaced to the render target so
+/// the group can be composited as a unit. <paramref name="BlendMode"/>/<paramref name="ConstantAlpha"/> are
+/// the group-level values active at the invoking <c>Do</c> (they are applied to the composited group result,
+/// NOT to the inner objects, which paint with their own reset state).
+/// </summary>
+public readonly record struct TransparencyGroupInfo(
+    bool Isolated, bool Knockout, string? BlendMode, double ConstantAlpha);
+
+/// <summary>
 /// Platform-agnostic rendering target for PDF content.
 /// Implementations provide platform-specific rendering (WPF, SkiaSharp, Avalonia).
 /// Enhanced with page lifecycle management for multipage rendering support.
@@ -143,6 +152,19 @@ public interface IRenderTarget
     /// Clears the current soft mask, reverting to normal rendering.
     /// </summary>
     void ClearSoftMask();
+
+    /// <summary>
+    /// Render a Form XObject transparency group (ISO 32000-1 §11.4). The implementation composites the
+    /// group content — produced by <paramref name="renderContent"/> — to an isolated/backdrop layer per
+    /// <paramref name="info"/>, then composites that result onto the current backdrop using the group's
+    /// blend mode, constant alpha, and any active soft mask. The default implementation renders the content
+    /// inline on the same target (i.e. flattens the group — the legacy behaviour), so a target opts in to
+    /// true group compositing by overriding this.
+    /// </summary>
+    /// <param name="info">Group attributes (isolated/knockout/blend/alpha) active at the invoking Do.</param>
+    /// <param name="renderContent">Callback that renders the group's content stream to the given target.</param>
+    void RenderTransparencyGroup(TransparencyGroupInfo info, Action<IRenderTarget> renderContent)
+        => renderContent(this);
 
     /// <summary>
     /// Gets the page dimensions for soft mask rendering.

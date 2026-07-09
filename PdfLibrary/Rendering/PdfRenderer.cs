@@ -1731,40 +1731,63 @@ internal class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form Matrix = [{m11}, {m12}, {m21}, {m22}, {m31}, {m32}]");
         }
 
-        // Create a new renderer for the form. Per ISO 32000-1 §8.10 the form's content executes in
-        // the graphics state in effect at the Do operator (the form Matrix is concatenated onto the
-        // CTM and the BBox clips). The transparency parameters set by a preceding `gs` MUST be
-        // inherited — otherwise a watermark stamp drawn under e.g. /ca 0.35 paints at full opacity
-        // (black instead of grey). Inherit the ExtGState transparency group; colour/line state stays
-        // form-local (forms set their own).
-        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
+        // Parse the content once; both the group and inline paths replay it.
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
+
+        // Transparency group? (ISO 32000-1 §11.4) A Form XObject with /Group << /S /Transparency >> is
+        // composited as a UNIT: the group-level blend/alpha/soft-mask active at this Do apply to the group
+        // RESULT, not to its inner objects (which reset their own state, e.g. /BM /Normal or /SMask /None).
+        // Route it through the render target's group SPI so a compositing target can render it to an
+        // isolated/backdrop layer and composite the result. Non-group forms keep the legacy inline path,
+        // inheriting /ca, /BM, etc. — the watermark-opacity fix.
+        PdfObject? ResolveObj(PdfObject? o)
+            => o is PdfIndirectReference r && _document is not null ? _document.ResolveReference(r) : o;
+
+        var isGroup = false;
+        var isolated = false;
+        var knockout = false;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Group"), out PdfObject? groupObj)
+            && ResolveObj(groupObj) is PdfDictionary groupDict
+            && groupDict.TryGetValue(new PdfName("S"), out PdfObject? sObj)
+            && ResolveObj(sObj) is PdfName { Value: "Transparency" })
+        {
+            isGroup = true;
+            isolated = groupDict.TryGetValue(new PdfName("I"), out PdfObject? iObj) && ResolveObj(iObj) is PdfBoolean { Value: true };
+            knockout = groupDict.TryGetValue(new PdfName("K"), out PdfObject? kObj) && ResolveObj(kObj) is PdfBoolean { Value: true };
+        }
+
+        // Per ISO 32000-1 §8.10 the form executes with the CTM in effect at Do (form Matrix concatenated).
+        // For a plain form the transparency parameters set by a preceding `gs` are inherited (watermark
+        // opacity). For a GROUP they are RESET to defaults on the inner content (Normal blend, full alpha,
+        // no mask) — those group-level values are consumed by the group composite, not the inner objects.
+        void RunFormContent(IRenderTarget target)
+        {
+            var formRenderer = new PdfRenderer(target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
             {
                 CurrentState =
                 {
-                    // Set the form renderer's CTM to the concatenated matrix
                     Ctm = formCtm,
-                    FillAlpha = CurrentState.FillAlpha,
-                    StrokeAlpha = CurrentState.StrokeAlpha,
-                    BlendMode = CurrentState.BlendMode,
+                    FillAlpha = isGroup ? 1.0 : CurrentState.FillAlpha,
+                    StrokeAlpha = isGroup ? 1.0 : CurrentState.StrokeAlpha,
+                    BlendMode = isGroup ? "Normal" : CurrentState.BlendMode,
                     AlphaIsShape = CurrentState.AlphaIsShape
                 }
             };
+            target.SaveState();
+            target.ApplyCtm(formCtm);      // CurrentState.Ctm is set directly, which doesn't trigger OnMatrixChanged
+            formRenderer.ProcessOperators(operators);
+            target.RestoreState();
+        }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form renderer CTM = [{formRenderer.CurrentState.Ctm.M11}, {formRenderer.CurrentState.Ctm.M12}, {formRenderer.CurrentState.Ctm.M21}, {formRenderer.CurrentState.Ctm.M22}, {formRenderer.CurrentState.Ctm.M31}, {formRenderer.CurrentState.Ctm.M32}]");
-
-        // Save render target state before processing form
-        _target.SaveState();
-
-        // Apply the form's CTM to the render target
-        // This is needed because we set CurrentState.Ctm directly, which doesn't trigger OnMatrixChanged
-        _target.ApplyCtm(formCtm);
-
-        // Parse and process the Form XObject's content stream
-        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
-        formRenderer.ProcessOperators(operators);
-
-        // Restore render target state after form processing
-        _target.RestoreState();
+        if (isGroup)
+        {
+            var info = new TransparencyGroupInfo(isolated, knockout, CurrentState.BlendMode, CurrentState.FillAlpha);
+            _target.RenderTransparencyGroup(info, RunFormContent);
+        }
+        else
+        {
+            RunFormContent(_target);
+        }
     }
 
     // ==================== State Management ====================
