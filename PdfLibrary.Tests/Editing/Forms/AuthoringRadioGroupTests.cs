@@ -52,7 +52,7 @@ public class AuthoringRadioGroupTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentException>(() =>
             editor.Forms.AddRadioGroup("r", Array.Empty<PdfRadioOptionPlacement>()));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 
     [Theory]
@@ -63,7 +63,7 @@ public class AuthoringRadioGroupTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentException>(() =>
             editor.Forms.AddRadioGroup("r", new[] { Opt(onState, 700) }));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 
     [Fact]
@@ -72,7 +72,7 @@ public class AuthoringRadioGroupTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentException>(() =>
             editor.Forms.AddRadioGroup("r", new[] { Opt("A", 700), Opt("A", 680) }));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 
     [Fact]
@@ -81,6 +81,6 @@ public class AuthoringRadioGroupTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             editor.Forms.AddRadioGroup("r", new[] { Opt("A", 700), Opt("B", 680, page: 7) }));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 }

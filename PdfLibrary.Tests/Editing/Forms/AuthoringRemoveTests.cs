@@ -20,7 +20,7 @@ public class AuthoringRemoveTests
         Assert.True(editor.Forms.Remove("a"));
 
         using PdfDocumentEditor reopened = AuthoringTestHelper.SaveAndReopen(editor);
-        Assert.Equal(1, reopened.Forms.Count);
+        Assert.Single(reopened.Forms);
         Assert.Null(reopened.Forms["a"]);
         Assert.NotNull(reopened.Forms["b"]);
     }
@@ -31,7 +31,7 @@ public class AuthoringRemoveTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         editor.Forms.AddTextField(0, "a", Rect);
         Assert.False(editor.Forms.Remove("nope"));
-        Assert.Equal(1, editor.Forms.Count);
+        Assert.Single(editor.Forms);
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class AuthoringRemoveTests
 
         Assert.True(editor.Forms.Remove("only"));
 
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
         Assert.False(doc.CatalogDictionary!.ContainsKey(new PdfName("AcroForm")));
     }
 
@@ -60,7 +60,7 @@ public class AuthoringRemoveTests
         Assert.True(editor.Forms.Remove("span"));
 
         using PdfDocumentEditor reopened = AuthoringTestHelper.SaveAndReopen(editor);
-        Assert.Equal(0, reopened.Forms.Count);
+        Assert.Empty(reopened.Forms);
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public class AuthoringRemoveTests
         PdfDictionary page = doc.GetPages()[0].Dictionary;
         // /Annots either absent or empty of the removed widget.
         if (page.Get(new PdfName("Annots")) is PdfArray annots)
-            Assert.Equal(0, annots.Count);
+            Assert.Empty(annots);
     }
 
     [Fact]
@@ -87,7 +87,7 @@ public class AuthoringRemoveTests
         sig.Dict[new PdfName("V")] = new PdfDictionary();
 
         Assert.Throws<InvalidOperationException>(() => editor.Forms.Remove("sig1"));
-        Assert.Equal(1, editor.Forms.Count); // still there
+        Assert.Single(editor.Forms); // still there
     }
 
     [Fact]
@@ -96,6 +96,6 @@ public class AuthoringRemoveTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         editor.Forms.AddSignatureField(0, "sig1", Rect);
         Assert.True(editor.Forms.Remove("sig1"));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 }

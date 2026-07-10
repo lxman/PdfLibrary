@@ -55,7 +55,7 @@ public class AuthoringDropdownTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentException>(() =>
             editor.Forms.AddDropdown(0, "dd", Rect, Array.Empty<(string, string)>()));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 
     [Fact]

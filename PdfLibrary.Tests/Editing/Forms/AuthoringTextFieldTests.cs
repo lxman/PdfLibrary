@@ -21,7 +21,7 @@ public class AuthoringTextFieldTests
         PdfFormField? field = reopened.Forms["name1"];
         Assert.NotNull(field);
         Assert.IsType<PdfTextField>(field);
-        Assert.Equal(1, reopened.Forms.Count);
+        Assert.Single(reopened.Forms);
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public class AuthoringTextFieldTests
     {
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentException>(() => editor.Forms.AddTextField(0, bad, Rect));
-        Assert.Equal(0, editor.Forms.Count); // document unmodified
+        Assert.Empty(editor.Forms); // document unmodified
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class AuthoringTextFieldTests
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         editor.Forms.AddTextField(0, "dup", Rect);
         Assert.Throws<ArgumentException>(() => editor.Forms.AddTextField(0, "dup", Rect));
-        Assert.Equal(1, editor.Forms.Count);
+        Assert.Single(editor.Forms);
     }
 
     [Theory]
@@ -108,7 +108,7 @@ public class AuthoringTextFieldTests
     {
         using PdfDocumentEditor editor = AuthoringTestHelper.OpenPlainSinglePage();
         Assert.Throws<ArgumentOutOfRangeException>(() => editor.Forms.AddTextField(pageIndex, "n", Rect));
-        Assert.Equal(0, editor.Forms.Count);
+        Assert.Empty(editor.Forms);
     }
 
     [Fact]

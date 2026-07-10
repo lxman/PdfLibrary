@@ -26,6 +26,6 @@ public class ContentParserArrayOperatorTests
         Assert.NotNull(tj);
         Assert.Single(tj!.Operands);
         Assert.IsType<PdfArray>(tj.Operands[0]);
-        Assert.Equal(1, ((PdfArray)tj.Operands[0]).Count);
+        Assert.Single((PdfArray)tj.Operands[0]);
     }
 }
