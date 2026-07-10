@@ -21,7 +21,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 523,
+            [ConformanceProfile.PdfA2b] = 765,   // slice 14: XMP predefined-schema validation (6.6.2.3.1)
             [ConformanceProfile.PdfA2u] = 18,
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 223,
