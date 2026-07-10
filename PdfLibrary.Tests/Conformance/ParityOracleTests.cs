@@ -35,7 +35,7 @@ public class ParityOracleTests(ITestOutputHelper output)
         new Dictionary<ConformanceProfile, string[]>
         {
             [ConformanceProfile.PdfA2b] =
-                ["6.1.3", "6.2.3", "6.3.1", "6.3.2", "6.4.1", "6.4.2", "6.5.1", "6.5.2"],
+                ["6.1.3", "6.2.3", "6.3.1", "6.3.2", "6.4.1", "6.4.2", "6.5.1", "6.5.2", "6.6.2.3.1"],
             [ConformanceProfile.PdfA2u] = ["6.6.4"],
             [ConformanceProfile.PdfA3b] = ["6.8"],
             [ConformanceProfile.PdfUA1] = ["7.3", "7.15"],

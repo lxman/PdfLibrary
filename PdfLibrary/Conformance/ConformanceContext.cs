@@ -7,6 +7,7 @@ using PdfLibrary.Document;
 using PdfLibrary.Fonts;
 using PdfLibrary.Metadata;
 using PdfLibrary.Structure;
+using ConfXmp = PdfLibrary.Conformance.Xmp;
 
 namespace PdfLibrary.Conformance;
 
@@ -44,6 +45,8 @@ internal sealed class ConformanceContext
     private bool _xmpResolved;
     private XmpPacket? _xmp;
     private byte[]? _xmpBytes;
+    private IReadOnlyList<ConfXmp.XmpNode>? _xmpTree;
+    private ConfXmp.XmpExtensionSchemas? _xmpExtensions;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -125,6 +128,24 @@ internal sealed class ConformanceContext
     /// </summary>
     public byte[]? XmpMetadataBytes { get { EnsureXmp(); return _xmpBytes; } }
 
+    /// <summary>
+    /// The faithful XMP RDF value tree — the top-level XMP properties parsed straight from
+    /// <see cref="XmpMetadataBytes"/> with their full struct/array/lang-alt shape preserved (unlike the
+    /// lossy <see cref="Xmp"/> packet). Empty when there is no /Metadata or it will not parse. Cached.
+    /// Backs the clause 6.6.2.3.1 value-type rules.
+    /// </summary>
+    public IReadOnlyList<ConfXmp.XmpNode> XmpTree { get { EnsureXmp(); return _xmpTree ?? []; } }
+
+    /// <summary>
+    /// The PDF/A extension-schema declarations parsed from <see cref="XmpTree"/> — the custom
+    /// (namespace, property) → value-type definitions a conformant packet may use. Empty when none are
+    /// declared. Cached.
+    /// </summary>
+    public ConfXmp.XmpExtensionSchemas XmpExtensions
+    {
+        get { EnsureXmp(); return _xmpExtensions ?? ConfXmp.XmpExtensionSchemas.Empty; }
+    }
+
     private void EnsureXmp()
     {
         if (_xmpResolved) return;
@@ -133,6 +154,8 @@ internal sealed class ConformanceContext
         if (metadata is null) return;
         _xmpBytes = metadata.GetDecodedData(Document.Decryptor);
         _xmp = XmpPacket.Parse(_xmpBytes);
+        _xmpTree = ConfXmp.XmpTreeParser.Parse(_xmpBytes);
+        _xmpExtensions = ConfXmp.XmpExtensionSchemas.Parse(_xmpTree);
     }
 
     /// <summary>The document catalog, resolved once and cached (null when the document has none).</summary>

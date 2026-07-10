@@ -1,5 +1,3 @@
-using System.Text.RegularExpressions;
-
 namespace PdfLibrary.Conformance.Xmp;
 
 /// <summary>
@@ -172,48 +170,8 @@ internal static class XmpPredefinedSchemas
         Definitions.ContainsKey((namespaceUri, localName));
 
     /// <summary>The predefined value type string (e.g. <c>"integer"</c>, <c>"seq integer"</c>, <c>"lang alt"</c>),
-    /// or null when the property is not predefined.</summary>
+    /// or null when the property is not predefined. The value is validated against this type by the
+    /// <see cref="XmpTypeContainer"/> (see <c>XmpPropertyTypeRule</c>).</summary>
     public static string? TypeOf(string namespaceUri, string localName) =>
         Definitions.TryGetValue((namespaceUri, localName), out string? type) ? type : null;
-
-    // ── Simple-type value validation ────────────────────────────────────────────────────────────
-    // Regexes reproduced from ISO 19005-2/-3 Annex B (the same set veraPDF uses). Wrapped as
-    // \A(?:…)\z so that IsMatch demands a whole-string match — the semantics of Java's Matcher.matches(),
-    // which the reference uses. Only the four unambiguously-restrictive simple types are checked; the
-    // "matches anything" types (text/propername/agentname/rational/renditionclass/locale), date (an
-    // ISO-8601 parse in the reference, not a regex), uri/url (no value constraint in the reference) and
-    // gpscoordinate (a part-dependent regex) are deliberately left unchecked.
-
-    private static Regex Anchored(string javaRegex) =>
-        new(@"\A(?:" + javaRegex + @")\z", RegexOptions.Compiled | RegexOptions.CultureInvariant);
-
-    private static readonly Regex Boolean = Anchored("^True$|^False$");
-    private static readonly Regex Integer = Anchored(@"^[+-]?\d+$");
-    private static readonly Regex Real = Anchored(@"^[+-]?\d+\.?\d*|[+-]?\d*\.?\d+$");
-    private static readonly Regex MimeType = Anchored(@"^[-\w+\.]+/[-\w+\.]+$");
-
-    /// <summary>
-    /// Returns the whole-string matcher for a restrictive simple type name, or null for a type whose
-    /// value is unconstrained (or not safely checkable). Only <c>boolean/integer/real/mimetype</c> are
-    /// restrictive.
-    /// </summary>
-    public static Regex? RestrictiveMatcher(string type) => type switch
-    {
-        "boolean" => Boolean,
-        "integer" => Integer,
-        "real" => Real,
-        "mimetype" => MimeType,
-        _ => null,
-    };
-
-    /// <summary>
-    /// True when <paramref name="value"/> is an acceptable spelling of the restrictive simple type
-    /// <paramref name="matcher"/>. A trimmed retry keeps whitespace-padded (pretty-printed) values from
-    /// being reported — the check only ever accepts a superset of the reference, never less.
-    /// </summary>
-    public static bool ValueMatches(Regex matcher, string? value)
-    {
-        if (value is null) return true;
-        return matcher.IsMatch(value) || matcher.IsMatch(value.Trim());
-    }
 }
