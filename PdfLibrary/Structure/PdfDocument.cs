@@ -181,7 +181,7 @@ public partial class PdfDocument : IDisposable
 
         // Extract all objects from this stream (not just the one we need)
         // This is more efficient as we'll likely need other objects from the same stream
-        ExtractObjectsFromStream(objStream);
+        ExtractObjectsFromStream(objStream, objectStreamNumber);
     }
 
     /// <summary>
@@ -189,8 +189,13 @@ public partial class PdfDocument : IDisposable
     /// Object stream format (ISO 32000-1 section 7.5.7):
     /// - First section: N pairs of (objectNumber byteOffset)
     /// - Second section: The actual object data starting at /First offset
+    /// <paramref name="streamNumber"/> is this object stream's own object number: an object is only cached
+    /// from here when the (merged, newest-wins) cross-reference table actually assigns it to this stream.
+    /// In an incrementally-updated file the same object number can appear in several revisions' object
+    /// streams; loading a superseded copy from an older stream would clobber the current one, so entries the
+    /// xref maps elsewhere (a newer stream, an uncompressed object, or nothing) are skipped.
     /// </summary>
-    private void ExtractObjectsFromStream(PdfStream objStream)
+    private void ExtractObjectsFromStream(PdfStream objStream, int streamNumber)
     {
         // Get /N (number of compressed objects)
         if (!objStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) ||
@@ -258,11 +263,15 @@ public partial class PdfDocument : IDisposable
             objectParser.SetReferenceResolver(reference => GetObject(reference.ObjectNumber));
 
             PdfObject? obj = objectParser.ReadObject();
-            if (obj is not null)
-            {
-                // Add to cache (generation number is 0 for compressed objects)
-                AddObject(objectNumber, 0, obj);
-            }
+            if (obj is null)
+                continue;
+
+            // Only cache this object if the merged xref actually assigns it to THIS stream. An older
+            // revision's stream may still physically contain a superseded copy; caching it would overwrite
+            // the current object (whose xref entry points at a newer stream or an uncompressed offset).
+            PdfXrefEntry? owner = XrefTable.GetEntry(objectNumber);
+            if (owner is { EntryType: PdfXrefEntryType.Compressed } && owner.ByteOffset == streamNumber)
+                AddObject(objectNumber, 0, obj); // generation number is 0 for compressed objects
         }
     }
 

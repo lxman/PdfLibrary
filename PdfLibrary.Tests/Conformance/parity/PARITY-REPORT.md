@@ -11,7 +11,7 @@ Across all **1316** files Focal produced **0 false positives** — it never reje
 | PDF/A-2b | 986 | 377 | 522 | 87 | 0 | 899/986 (91%) |
 | PDF/A-2u | 22 | 12 | 7 | 3 | 0 | 19/22 (86%) |
 | PDF/A-3b | 12 | 7 | 5 | 0 | 0 | 12/12 (100%) |
-| PDF/UA-1 | 296 | 141 | 107 | 48 | 0 | 248/296 (84%) |
+| PDF/UA-1 | 296 | 141 | 112 | 43 | 0 | 253/296 (85%) |
 
 ## Clause coverage
 
@@ -76,16 +76,16 @@ Of the files where veraPDF flags a clause, how many does Focal also flag on that
 |---|--:|--:|--:|---|
 | 6.8 | 5 | 5 | 100% | ✅ full |
 
-### PDF/UA-1 — 10/30 clauses at full parity
+### PDF/UA-1 — 12/30 clauses at full parity
 
 | Clause | veraPDF flags | Focal matches | Coverage | |
 |---|--:|--:|--:|---|
 | 7.2 | 60 | 31 | 52% | ◐ partial |
 | 7.1 | 16 | 13 | 81% | ◐ partial |
-| 7.18.1 | 10 | 6 | 60% | ◐ partial |
+| 7.18.1 | 10 | 10 | 100% | ✅ full |
 | 7.11 | 6 | 0 | 0% | — none |
 | 5 | 5 | 2 | 40% | ◐ partial |
-| 7.21.6 | 5 | 4 | 80% | ◐ partial |
+| 7.21.6 | 5 | 5 | 100% | ✅ full |
 | 7.4.4 | 5 | 0 | 0% | — none |
 | 7.21.3.1 | 4 | 3 | 75% | ◐ partial |
 | 7.21.3.3 | 4 | 1 | 25% | ◐ partial |
