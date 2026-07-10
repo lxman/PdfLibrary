@@ -21,10 +21,10 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 863,   // + 6.2.10 tail: image soft mask + non-standard blend mode (6.2.10 35/35)
-            [ConformanceProfile.PdfA2u] = 18,
+            [ConformanceProfile.PdfA2b] = 875,   // + slice 18 font-dict rules (6.2.11.6 full, .3.2 full, .3.1/.3.3 partial)
+            [ConformanceProfile.PdfA2u] = 19,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
-            [ConformanceProfile.PdfUA1] = 223,
+            [ConformanceProfile.PdfUA1] = 234,   // + slice 18 font-dict rules (7.21.3.2 full; 7.21.6/.3.1/.3.3 partial)
         };
 
     [Fact]
