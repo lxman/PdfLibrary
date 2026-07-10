@@ -18,6 +18,7 @@ public class PreflightSlice13Phase3bTests
 {
     private static PdfName N(string s) => new(s);
     private static PdfIndirectReference Ref(int n) => new(n, 0);
+    private static PdfString Str(string s) => new(System.Text.Encoding.ASCII.GetBytes(s));
     private static ConformanceContext Ctx(PdfDocument doc) => new(doc, ConformanceProfile.PdfUA1);
 
     /// <summary>A structure element with type <paramref name="s"/> and the given /K children.</summary>
@@ -387,5 +388,87 @@ public class PreflightSlice13Phase3bTests
             root[N("K")] = Ref(50);
         });
         Assert.Empty(new UaStructureNestingRule().Check(Ctx(doc)));
+    }
+
+    // ── ua-attribute-lang: natural language for Alt/ActualText/E (7.2) ─────────
+
+    private static PdfDictionary FigureWithAlt() => new()
+    {
+        [N("Type")] = N("StructElem"), [N("S")] = N("Figure"),
+        [N("Alt")] = Str("a bar chart"), [N("K")] = new PdfArray(new PdfInteger(0)),
+    };
+
+    private static void SetCatalogLang(PdfDocument doc, string lang) =>
+        ((PdfDictionary)doc.Objects[1]!)[N("Lang")] = Str(lang);
+
+    [Fact]
+    public void Alt_with_no_language_anywhere_is_flagged()
+    {
+        var doc = StructDoc((d, root) => { d.AddObject(50, 0, FigureWithAlt()); root[N("K")] = Ref(50); });
+        Finding f = Assert.Single(new UaTextAttributeLangRule().Check(Ctx(doc)));
+        Assert.Equal("ua-attribute-lang", f.RuleId);
+    }
+
+    [Fact]
+    public void Alt_with_catalog_language_passes()
+    {
+        var doc = StructDoc((d, root) => { d.AddObject(50, 0, FigureWithAlt()); root[N("K")] = Ref(50); });
+        SetCatalogLang(doc, "en-US");
+        Assert.Empty(new UaTextAttributeLangRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Alt_with_element_language_passes()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            var fig = FigureWithAlt();
+            fig[N("Lang")] = Str("en-US");
+            d.AddObject(50, 0, fig);
+            root[N("K")] = Ref(50);
+        });
+        Assert.Empty(new UaTextAttributeLangRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Alt_with_ancestor_language_passes()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(50, 0, FigureWithAlt());
+            d.AddObject(40, 0, new PdfDictionary
+            {
+                [N("Type")] = N("StructElem"), [N("S")] = N("Document"),
+                [N("Lang")] = Str("en-US"), [N("K")] = new PdfArray(Ref(50)),
+            });
+            root[N("K")] = Ref(40);
+        });
+        Assert.Empty(new UaTextAttributeLangRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void ActualText_with_no_language_is_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(50, 0, new PdfDictionary
+            {
+                [N("Type")] = N("StructElem"), [N("S")] = N("H1"),
+                [N("ActualText")] = Str("Chapter 1"), [N("K")] = new PdfArray(new PdfInteger(0)),
+            });
+            root[N("K")] = Ref(50);
+        });
+        Assert.Single(new UaTextAttributeLangRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Element_without_text_attribute_is_not_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(50, 0, Elem("P", new PdfInteger(0))); // no Alt/ActualText/E
+            root[N("K")] = Ref(50);
+        });
+        Assert.Empty(new UaTextAttributeLangRule().Check(Ctx(doc)));
     }
 }

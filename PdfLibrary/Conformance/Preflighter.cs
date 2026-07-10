@@ -70,6 +70,7 @@ public static class Preflighter
         new Rules.UaStandardTypeRule(),
         new Rules.UaStructureNestingRule(),
         new Rules.UaTableGridRule(),
+        new Rules.UaTextAttributeLangRule(),
     ];
 
     /// <summary>
