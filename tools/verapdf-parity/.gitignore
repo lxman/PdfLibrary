@@ -1,0 +1,7 @@
+# Capture-host-local artifacts — never committed. Only the scripts, the parser source,
+# the README, and the generated snapshot (which lives under PdfLibrary.Tests) are tracked.
+jdk17/
+verapdf/
+out/
+MrrToVerdicts/bin/
+MrrToVerdicts/obj/

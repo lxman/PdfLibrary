@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Standalone capture-side parser: veraPDF MRR XML -> verapdf-verdicts.json.
+    Deliberately NOT part of PdfLibrary.sln — it runs only on the designated capture
+    machine (see ../README.md) and must never enter the CI build graph.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>mrr-to-verdicts</AssemblyName>
+  </PropertyGroup>
+
+</Project>
