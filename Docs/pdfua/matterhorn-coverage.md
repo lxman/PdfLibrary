@@ -5,7 +5,7 @@
 
 Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## Focal coverage — 40 of 87 machine-checkable conditions
+## Focal coverage — 41 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
@@ -22,7 +22,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 15 | Tables | 1/1 | `ua-table-regular` |
 | 17 | Math | 1/2 | `ua-figure-alt` (Formula Alt) |
 | 25 | XFA | 1/1 | `ua-xfa` |
-| 28 | Annotations | 8/15 | `ua-annotation` (7.18.1/.2/.3/.4/.5/.8; media 7.18.6 + file-attach 7.18.7 deferred) |
+| 28 | Annotations | 9/15 | `ua-annotation` (7.18.1 Contents-or-Alt/.2/.3/.4/.5/.8; form-field TU 28-005, media 7.18.6, file-attach 7.18.7 deferred) |
 | 31 | Fonts | 13/29 | `font-dictionary`, `font-embedded`, `font-program` |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
@@ -260,7 +260,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 28-002 | M | 7.18.1-2 | An annotation, other than of subtype Widget, Link | ua-annotation |
 | 28-018 | ? |  |  | — |
 | 28-003 | H | 7.18.1-3 | An annotation is used for visual formatting but is | n/a |
-| 28-004 | M | 7.18.1-4 | An annotation, other than of subtype Widget, does | — |
+| 28-004 | M | 7.18.1-4 | An annotation, other than of subtype Widget, does | ua-annotation |
 | 28-005 | M | 7.18.1-4 | A form field does not have a TU entry and does not | — |
 | 28-006 | M | 7.18.2-1 | An annotation with subtype undefined in ISO 32000 | — |
 | 28-004 | ? |  |  | — |

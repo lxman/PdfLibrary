@@ -41,21 +41,22 @@ internal sealed class UaAnnotationRule : IConformanceRule
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
         bool tagged = context.Resolve(context.Catalog?.Dictionary.Get("StructTreeRoot")) is PdfDictionary;
-        IReadOnlyDictionary<int, string?> parents = tagged
-            ? StructureTree.AnnotationParentTypes(context)
-            : new Dictionary<int, string?>();
+        IReadOnlyDictionary<int, PdfDictionary> parents = tagged
+            ? StructureTree.AnnotationParentElements(context)
+            : new Dictionary<int, PdfDictionary>();
 
         IReadOnlyList<PdfPage> pages = context.Pages;
         for (int i = 0; i < pages.Count; i++)
         {
             PdfPage page = pages[i];
 
+            PdfRectangle cropBox = SafeCropBox(page);
             var inScope = new List<PdfDictionary>();
             if (page.GetAnnotations() is { } annots)
             {
                 foreach (PdfObject entry in annots)
                 {
-                    if (context.Resolve(entry) is PdfDictionary annot && IsInScope(context, annot))
+                    if (context.Resolve(entry) is PdfDictionary annot && IsInScope(context, annot, cropBox))
                         inScope.Add(annot);
                 }
             }
@@ -88,10 +89,22 @@ internal sealed class UaAnnotationRule : IConformanceRule
                     yield return Error(context, "7.18.5", i,
                         "A Link annotation has no alternate description (a non-empty /Contents entry).");
 
+                // 7.18.1 — an annotation (other than a Widget, or a PrinterMark, which is an artifact) must
+                // convey its meaning: either its own non-empty /Contents, or an /Alt on its enclosing
+                // structure element.
+                if (subtype is not ("Widget" or "PrinterMark")
+                    && !HasText(context, annot.Get("Contents"))
+                    && !EnclosingHasAlt(context, parents, annot))
+                {
+                    yield return Error(context, "7.18.1", i,
+                        $"An annotation of subtype /{subtype ?? "(none)"} has neither a /Contents entry nor an "
+                        + "/Alt on its enclosing structure element (no alternate description).");
+                }
+
                 if (!tagged)
                     continue; // structure-nesting checks need the logical structure tree
 
-                string parentTag = ParentTag(parents, annot);
+                string parentTag = ParentTag(context, parents, annot);
                 switch (subtype)
                 {
                     case "Widget" when parentTag != "Form":
@@ -121,20 +134,61 @@ internal sealed class UaAnnotationRule : IConformanceRule
 
     /// <summary>The standard type of the structure element that references the annotation via an /OBJR, or
     /// <see cref="Untagged"/> when no structure element does.</summary>
-    private static string ParentTag(IReadOnlyDictionary<int, string?> parents, PdfDictionary annot) =>
-        annot.IsIndirect && parents.TryGetValue(annot.ObjectNumber, out string? type) ? type ?? "" : Untagged;
+    private static string ParentTag(ConformanceContext context,
+        IReadOnlyDictionary<int, PdfDictionary> parents, PdfDictionary annot) =>
+        annot.IsIndirect && parents.TryGetValue(annot.ObjectNumber, out PdfDictionary? elem)
+            ? StructureTree.StandardType(context, elem) ?? "" : Untagged;
 
     private static string Describe(string parentTag) =>
         parentTag == Untagged ? "no structure element" : $"a <{parentTag}> element";
 
-    /// <summary>An annotation the clause 7.18 rules apply to: not a Popup and not Hidden (flag bit 2).</summary>
-    private static bool IsInScope(ConformanceContext context, PdfDictionary annot)
+    /// <summary>An annotation the clause 7.18 rules apply to. The 7.18 preamble excludes a Popup, a Hidden
+    /// annotation (flag bit 2), and one whose rectangle lies entirely outside the page CropBox.</summary>
+    private static bool IsInScope(ConformanceContext context, PdfDictionary annot, PdfRectangle cropBox)
     {
         if (context.ResolveName(annot.Get("Subtype")) == "Popup")
             return false;
         long flags = (context.Resolve(annot.Get("F")) as PdfInteger)?.LongValue ?? 0;
-        return (flags & 2) == 0; // Hidden
+        if ((flags & 2) != 0) // Hidden
+            return false;
+        return !IsOutsideCropBox(context, annot, cropBox);
     }
+
+    /// <summary>True when the annotation's /Rect is a valid rectangle that lies wholly outside the CropBox.
+    /// A missing or malformed /Rect is treated as in-scope (never excluded on uncertainty).</summary>
+    private static bool IsOutsideCropBox(ConformanceContext context, PdfDictionary annot, PdfRectangle crop)
+    {
+        if (context.Resolve(annot.Get("Rect")) is not PdfArray r || r.Count != 4)
+            return false;
+        if (Num(context, r[0]) is not { } x0 || Num(context, r[1]) is not { } y0
+            || Num(context, r[2]) is not { } x1 || Num(context, r[3]) is not { } y1)
+            return false;
+
+        (double rl, double rr) = (System.Math.Min(x0, x1), System.Math.Max(x0, x1));
+        (double rb, double rt) = (System.Math.Min(y0, y1), System.Math.Max(y0, y1));
+        (double cl, double cr) = (System.Math.Min(crop.X1, crop.X2), System.Math.Max(crop.X1, crop.X2));
+        (double cb, double ct) = (System.Math.Min(crop.Y1, crop.Y2), System.Math.Max(crop.Y1, crop.Y2));
+        return rr < cl || rl > cr || rt < cb || rb > ct;
+    }
+
+    private static double? Num(ConformanceContext context, PdfObject? obj) => context.Resolve(obj) switch
+    {
+        PdfInteger i => i.LongValue,
+        PdfReal d => d.Value,
+        _ => null,
+    };
+
+    private static PdfRectangle SafeCropBox(PdfPage page)
+    {
+        try { return page.GetCropBox(); }
+        catch { return new PdfRectangle(double.MinValue, double.MinValue, double.MaxValue, double.MaxValue); }
+    }
+
+    /// <summary>True when the annotation's enclosing structure element carries a non-empty /Alt.</summary>
+    private static bool EnclosingHasAlt(ConformanceContext context,
+        IReadOnlyDictionary<int, PdfDictionary> parents, PdfDictionary annot) =>
+        annot.IsIndirect && parents.TryGetValue(annot.ObjectNumber, out PdfDictionary? elem)
+        && HasText(context, elem.Get("Alt"));
 
     /// <summary>True when the object resolves to a non-empty text string (a non-whitespace byte).</summary>
     private static bool HasText(ConformanceContext context, PdfObject? obj)

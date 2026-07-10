@@ -56,13 +56,17 @@ public class PreflightSlice21Tests
         return doc;
     }
 
-    private static PdfDictionary Annot(string subtype, int flags = 0, string? contents = null)
+    private static PdfDictionary Annot(string subtype, int flags = 0, string? contents = null, PdfArray? rect = null)
     {
         var a = new PdfDictionary { [N("Type")] = N("Annot"), [N("Subtype")] = N(subtype) };
         if (flags != 0) a[N("F")] = new PdfInteger(flags);
         if (contents is not null) a[N("Contents")] = Str(contents);
+        if (rect is not null) a[N("Rect")] = rect;
         return a;
     }
+
+    private static PdfArray Rect(int x0, int y0, int x1, int y1) =>
+        new(new PdfInteger(x0), new PdfInteger(y0), new PdfInteger(x1), new PdfInteger(y1));
 
     private static Finding[] Run(PdfDocument doc) =>
         new UaAnnotationRule().Check(new ConformanceContext(doc, ConformanceProfile.PdfUA1)).ToArray();
@@ -119,8 +123,9 @@ public class PreflightSlice21Tests
     // ── structure nesting (7.18.1/.4/.5/.8) ─────────────────────────────────────────────────────────
 
     /// <summary>A one-page tagged document: object 30 is a structure element of type <paramref name="tag"/>
-    /// (null → the annotation is left untagged) whose /K is an /OBJR pointing at the annotation (object 20).</summary>
-    private static PdfDocument TaggedDoc(string subtype, string? tag, string? contents = null)
+    /// (null → the annotation is left untagged) whose /K is an /OBJR pointing at the annotation (object 20).
+    /// When <paramref name="elemAlt"/> is set, the element carries that /Alt.</summary>
+    private static PdfDocument TaggedDoc(string subtype, string? tag, string? contents = null, string? elemAlt = null)
     {
         var doc = new PdfDocument();
         PdfDictionary annot = Annot(subtype, contents: contents);
@@ -145,6 +150,7 @@ public class PreflightSlice21Tests
         {
             var objr = new PdfDictionary { [N("Type")] = N("OBJR"), [N("Obj")] = Ref(20), [N("Pg")] = Ref(10) };
             var elem = new PdfDictionary { [N("Type")] = N("StructElem"), [N("S")] = N(tag), [N("K")] = objr };
+            if (elemAlt is not null) elem[N("Alt")] = Str(elemAlt);
             doc.AddObject(30, 0, elem);
             structRoot[N("K")] = new PdfArray(Ref(30));
         }
@@ -183,4 +189,29 @@ public class PreflightSlice21Tests
     [Fact]
     public void PrinterMark_not_tagged_passes() =>
         Assert.Empty(Run(TaggedDoc("PrinterMark", tag: null, contents: "x")));
+
+    // ── 7.18.1 alternate description (28-004) ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Annotation_without_contents_or_alt_is_flagged() =>
+        Assert.Contains(Run(TaggedDoc("Highlight", "Annot")), f => Clause(f) == "7.18.1");
+
+    [Fact]
+    public void Annotation_with_contents_satisfies_alt_requirement() =>
+        Assert.DoesNotContain(Run(TaggedDoc("Highlight", "Annot", contents: "a mark")), f => Clause(f) == "7.18.1");
+
+    [Fact]
+    public void Annotation_with_enclosing_element_alt_passes() =>
+        Assert.DoesNotContain(Run(TaggedDoc("Highlight", "Annot", elemAlt: "a mark")), f => Clause(f) == "7.18.1");
+
+    [Fact]
+    public void PrinterMark_without_contents_is_not_subject_to_alt_requirement() =>
+        Assert.Empty(Run(TaggedDoc("PrinterMark", tag: null))); // artifact PrinterMark, no Contents → clean
+
+    // ── off-CropBox exclusion ───────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Off_cropbox_annotation_is_out_of_scope() =>
+        // Rect entirely outside the MediaBox/CropBox (0..612 × 0..792): no Tabs, Contents, or nesting finding.
+        Assert.Empty(Run(Doc(tabs: null, Annot("Link", rect: Rect(800, 800, 810, 810)))));
 }
