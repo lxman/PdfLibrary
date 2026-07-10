@@ -67,7 +67,7 @@ public class CorpusOracleTests(ITestOutputHelper output)
             [ConformanceProfile.PdfA2b] = 134,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
-            [ConformanceProfile.PdfUA1] = 50,  // slice 13 phase 3b: + standard-type/role-map + table/list/TOC nesting + table cardinality/caption
+            [ConformanceProfile.PdfUA1] = 55,  // slice 13 phase 3b: + standard-type/role-map + table/list/TOC nesting + table cardinality + table grid/spans
         };
 
     [Fact]

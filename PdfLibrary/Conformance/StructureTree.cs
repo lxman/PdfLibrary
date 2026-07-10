@@ -156,6 +156,16 @@ internal static class StructureTree
         }
     }
 
+    /// <summary>The resolved structure-element children of <paramref name="element"/> (its <c>/K</c> entries
+    /// that are themselves structure elements — integer MCIDs and <c>/MCR</c>/<c>/OBJR</c> references are
+    /// excluded), in order. Used by the table-grid rule to walk Table → rows → cells.</summary>
+    public static IEnumerable<PdfDictionary> ChildElements(ConformanceContext context, PdfDictionary element)
+    {
+        foreach (PdfObject kidObj in KidObjects(context, element))
+            if (context.Resolve(kidObj) is PdfDictionary kid && IsStructureElement(context, kid))
+                yield return kid;
+    }
+
     // A structure element carries an /S type and is not a marked-content (/MCR) or object (/OBJR) reference.
     private static bool IsStructureElement(ConformanceContext context, PdfDictionary node)
     {

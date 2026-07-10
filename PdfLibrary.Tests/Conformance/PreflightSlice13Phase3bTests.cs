@@ -251,6 +251,78 @@ public class PreflightSlice13Phase3bTests
             f => f.Message.Contains("Caption that is neither its first nor its last"));
     }
 
+    // ── ua-table-regular: grid / spans (7.5) ──────────────────────────────────
+
+    private static PdfObject I(int n) => new PdfInteger(n);
+    private static PdfDictionary Row(params PdfObject[] cells) => Elem("TR", cells);
+
+    private static PdfDictionary Cell(string s, int rowSpan = 1, int colSpan = 1)
+    {
+        var cell = Elem(s, I(0));
+        if (rowSpan != 1 || colSpan != 1)
+        {
+            var attr = new PdfDictionary { [N("O")] = N("Table") };
+            if (rowSpan != 1) attr[N("RowSpan")] = I(rowSpan);
+            if (colSpan != 1) attr[N("ColSpan")] = I(colSpan);
+            cell[N("A")] = attr;
+        }
+        return cell;
+    }
+
+    private static PdfDocument TableDoc(params PdfObject[] rows)
+    {
+        return StructDoc((d, root) =>
+        {
+            d.AddObject(50, 0, Elem("Table", rows));
+            root[N("K")] = Ref(50);
+        });
+    }
+
+    [Fact]
+    public void Regular_grid_passes()
+    {
+        var doc = TableDoc(
+            Row(Cell("TH"), Cell("TH")),
+            Row(Cell("TD"), Cell("TD")));
+        Assert.Empty(new UaTableGridRule().Check(Ctx(doc)));
+    }
+
+    [Fact] // the 7.2-t15-pass-a shape: a ColSpan and RowSpans that still tile a clean rectangle
+    public void Valid_spanned_grid_passes()
+    {
+        var doc = TableDoc(
+            Row(Cell("TH", colSpan: 2), Cell("TD", rowSpan: 2)), // covers (0,0)(0,1) and (0,2)(1,2)
+            Row(Cell("TD"), Cell("TD")));                         // covers (1,0)(1,1); (1,2) from the rowspan
+        Assert.Empty(new UaTableGridRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Rowspan_past_the_last_row_is_flagged()
+    {
+        var doc = TableDoc(
+            Row(Cell("TH", rowSpan: 3), Cell("TD")), // rowspan 3 in a 2-row table
+            Row(Cell("TD")));
+        Assert.Contains(new UaTableGridRule().Check(Ctx(doc)), f => f.RuleId == "ua-table-regular");
+    }
+
+    [Fact]
+    public void Ragged_rows_are_flagged()
+    {
+        var doc = TableDoc(
+            Row(Cell("TH"), Cell("TH")), // 2 columns
+            Row(Cell("TD")));            // 1 column — ragged
+        Assert.Single(new UaTableGridRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Overlapping_colspan_is_flagged()
+    {
+        var doc = TableDoc(
+            Row(Cell("TH", colSpan: 2)),          // covers (0,0)(0,1) → 2 columns
+            Row(Cell("TD"), Cell("TD"), Cell("TD"))); // 3 columns → column count mismatch
+        Assert.Single(new UaTableGridRule().Check(Ctx(doc)));
+    }
+
     // ── ua-structure-nesting: lists (7.6) ─────────────────────────────────────
 
     [Fact]
