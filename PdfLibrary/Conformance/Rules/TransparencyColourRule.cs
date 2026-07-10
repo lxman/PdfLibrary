@@ -29,23 +29,33 @@ internal sealed class TransparencyColourRule : IConformanceRule
         for (int page = 0; page < pages.Count; page++)
         {
             TransparencyAnalysis.PageTransparency facts = pages[page];
-            if (!facts.HasTransparentObject)
+            if (!facts.HasTransparentObject && !facts.HasImageSoftMask && !facts.HasNonStandardBlendMode)
                 continue;
 
             // The page relies on the implicit (device) blending space when it defines no group colour
             // space and the file carries no output intent to supply one.
-            bool implicitDeviceBlend = !facts.PageGroupCsDefined && intent == OutputIntentColour.None;
+            bool undefinedBlendingSpace = !facts.PageGroupCsDefined && intent == OutputIntentColour.None;
 
-            if (implicitDeviceBlend)
+            // 6.2.10 — a transparent object (including a soft-masked image) with no blending colour space,
+            // or any non-standard blend mode.
+            if ((facts.HasTransparentObject || facts.HasImageSoftMask) && undefinedBlendingSpace)
                 yield return Error(context.Target, "6.2.10", page,
                     "A transparent object is used on a page that defines no group blending colour space, "
                     + "and the file has no PDF/A output intent to supply one.");
+            if (facts.HasNonStandardBlendMode)
+                yield return Error(context.Target, "6.2.10", page,
+                    "A blend mode outside the set defined by ISO 32000-1 is used.");
 
-            bool deviceBlendUncovered = facts.DeviceBlendingFamilies.Any(family => !Covered(family, intent));
-            if (deviceBlendUncovered || implicitDeviceBlend)
-                yield return Error(context.Target, "6.2.4.3", page,
-                    "A transparency group blends in a device colour space that the file's output intent "
-                    + "does not cover.");
+            // 6.2.4.3 — only a blending transparent object (ExtGState/group), not a soft-masked image,
+            // introduces a device blending colour space the output intent must cover.
+            if (facts.HasTransparentObject)
+            {
+                bool deviceBlendUncovered = facts.DeviceBlendingFamilies.Any(family => !Covered(family, intent));
+                if (deviceBlendUncovered || undefinedBlendingSpace)
+                    yield return Error(context.Target, "6.2.4.3", page,
+                        "A transparency group blends in a device colour space that the file's output intent "
+                        + "does not cover.");
+            }
         }
     }
 
