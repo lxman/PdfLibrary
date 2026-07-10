@@ -16,10 +16,10 @@ namespace PdfLibrary.Conformance.Rules;
 ///   <item><b>7.18.5</b> (Contents) — a Link annotation must supply an alternate description in a non-empty
 ///     <c>/Contents</c> entry.</item>
 /// </list>
-/// The remaining checks are structure-nesting: they use the annotation's enclosing structure tag
-/// (<see cref="StructureTree.AnnotationParentTypes"/>, the standard type of the element that references the
-/// annotation via an <c>/OBJR</c>) and only run when the file is a Tagged PDF — an untagged file is already
-/// reported by <see cref="UaTaggedRule"/>, so re-flagging every annotation here would be noise.
+/// The remaining checks are structure-nesting: they use the annotation's enclosing structure element
+/// (<see cref="StructureTree.AnnotationParentElements"/>, the element that references the annotation via an
+/// <c>/OBJR</c>) and only run when the file is a Tagged PDF — an untagged file is already reported by
+/// <see cref="UaTaggedRule"/>, so re-flagging every annotation here would be noise.
 /// <list type="number">
 ///   <item><b>7.18.1</b> — an annotation other than Widget/Link/PrinterMark must be a direct child of an
 ///     <c>Annot</c> structure element.</item>
