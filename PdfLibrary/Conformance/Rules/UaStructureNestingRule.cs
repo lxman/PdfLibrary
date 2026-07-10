@@ -44,6 +44,20 @@ internal sealed class UaStructureNestingRule : IConformanceRule
         switch (node.StandardType)
         {
             // ── Tables (ISO 14289-1 7.5) ──────────────────────────────────────
+            case "Table" when kids.Any(k => k is not ("TR" or "THead" or "TBody" or "TFoot" or "Caption")):
+                return ("7.5", "A Table contains an element other than TR, THead, TBody, TFoot or Caption.");
+            case "Table" when Count(kids, "THead") > 1:
+                return ("7.5", "A Table contains more than one THead (table header row group).");
+            case "Table" when Count(kids, "TFoot") > 1:
+                return ("7.5", "A Table contains more than one TFoot (table footer row group).");
+            case "Table" when Count(kids, "Caption") > 1:
+                return ("7.5", "A Table contains more than one Caption.");
+            case "Table" when Count(kids, "THead") > 0 && Count(kids, "TBody") == 0:
+                return ("7.5", "A Table has a THead but no TBody (table body row group).");
+            case "Table" when Count(kids, "TFoot") > 0 && Count(kids, "TBody") == 0:
+                return ("7.5", "A Table has a TFoot but no TBody (table body row group).");
+            case "Table" when CaptionNotFirstOrLast(kids):
+                return ("7.5", "A Table has a Caption that is neither its first nor its last child.");
             case "TR" when parent is not ("Table" or "THead" or "TBody" or "TFoot"):
                 return ("7.5", "A TR (table row) is not contained in a Table, THead, TBody or TFoot element.");
             case "TR" when kids.Any(k => k is not ("TH" or "TD")):
@@ -89,12 +103,30 @@ internal sealed class UaStructureNestingRule : IConformanceRule
         return null;
     }
 
-    // A Caption is permitted only as the first child; flag one appearing anywhere after the first position.
+    // In a list / TOC a Caption is permitted only as the first child; flag one appearing after the first.
     private static bool CaptionNotFirst(IReadOnlyList<string?> kids)
     {
         for (int i = 1; i < kids.Count; i++)
             if (kids[i] == "Caption")
                 return true;
         return false;
+    }
+
+    // In a table a Caption is permitted as either the first OR the last child; flag one in the interior.
+    private static bool CaptionNotFirstOrLast(IReadOnlyList<string?> kids)
+    {
+        for (int i = 1; i < kids.Count - 1; i++)
+            if (kids[i] == "Caption")
+                return true;
+        return false;
+    }
+
+    private static int Count(IReadOnlyList<string?> kids, string type)
+    {
+        int n = 0;
+        foreach (string? k in kids)
+            if (k == type)
+                n++;
+        return n;
     }
 }

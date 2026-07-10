@@ -153,6 +153,104 @@ public class PreflightSlice13Phase3bTests
             f => f.Message.Contains("TR") && f.Message.Contains("other than"));
     }
 
+    // ── ua-structure-nesting: table cardinality / caption (7.5) ───────────────
+
+    [Fact]
+    public void Table_with_all_sections_and_leading_caption_passes()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(80, 0, Elem("TD", new PdfInteger(0)));
+            d.AddObject(70, 0, Elem("TR", Ref(80)));
+            d.AddObject(60, 0, Elem("TBody", Ref(70)));
+            d.AddObject(61, 0, Elem("Caption", new PdfInteger(1)));
+            d.AddObject(50, 0, Elem("Table", Ref(61), Ref(60))); // Caption first, then TBody
+            root[N("K")] = Ref(50);
+        });
+        Assert.Empty(new UaStructureNestingRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Table_with_trailing_caption_passes()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(60, 0, Elem("TBody"));
+            d.AddObject(61, 0, Elem("Caption", new PdfInteger(0)));
+            d.AddObject(50, 0, Elem("Table", Ref(60), Ref(61))); // Caption last
+            root[N("K")] = Ref(50);
+        });
+        Assert.Empty(new UaStructureNestingRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Table_containing_a_paragraph_is_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(60, 0, Elem("P", new PdfInteger(0)));
+            d.AddObject(50, 0, Elem("Table", Ref(60)));
+            root[N("K")] = Ref(50);
+        });
+        Assert.Contains(new UaStructureNestingRule().Check(Ctx(doc)),
+            f => f.Message.Contains("Table contains an element other than"));
+    }
+
+    [Fact]
+    public void Table_with_two_theads_is_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(60, 0, Elem("THead"));
+            d.AddObject(61, 0, Elem("THead"));
+            d.AddObject(62, 0, Elem("TBody"));
+            d.AddObject(50, 0, Elem("Table", Ref(60), Ref(61), Ref(62)));
+            root[N("K")] = Ref(50);
+        });
+        Assert.Contains(new UaStructureNestingRule().Check(Ctx(doc)), f => f.Message.Contains("more than one THead"));
+    }
+
+    [Fact]
+    public void Table_with_two_captions_is_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(60, 0, Elem("Caption", new PdfInteger(0)));
+            d.AddObject(61, 0, Elem("TBody"));
+            d.AddObject(62, 0, Elem("Caption", new PdfInteger(1)));
+            d.AddObject(50, 0, Elem("Table", Ref(60), Ref(61), Ref(62)));
+            root[N("K")] = Ref(50);
+        });
+        Assert.Contains(new UaStructureNestingRule().Check(Ctx(doc)), f => f.Message.Contains("more than one Caption"));
+    }
+
+    [Fact]
+    public void Table_with_thead_but_no_tbody_is_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(60, 0, Elem("THead"));
+            d.AddObject(50, 0, Elem("Table", Ref(60)));
+            root[N("K")] = Ref(50);
+        });
+        Assert.Contains(new UaStructureNestingRule().Check(Ctx(doc)), f => f.Message.Contains("no TBody"));
+    }
+
+    [Fact]
+    public void Table_with_caption_in_the_middle_is_flagged()
+    {
+        var doc = StructDoc((d, root) =>
+        {
+            d.AddObject(60, 0, Elem("THead"));
+            d.AddObject(61, 0, Elem("Caption", new PdfInteger(0)));
+            d.AddObject(62, 0, Elem("TBody"));
+            d.AddObject(50, 0, Elem("Table", Ref(60), Ref(61), Ref(62))); // Caption between THead and TBody
+            root[N("K")] = Ref(50);
+        });
+        Assert.Contains(new UaStructureNestingRule().Check(Ctx(doc)),
+            f => f.Message.Contains("Caption that is neither its first nor its last"));
+    }
+
     // ── ua-structure-nesting: lists (7.6) ─────────────────────────────────────
 
     [Fact]
