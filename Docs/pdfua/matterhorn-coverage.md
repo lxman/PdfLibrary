@@ -5,7 +5,7 @@
 
 Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## Focal coverage — 32 of 87 machine-checkable conditions
+## Focal coverage — 40 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
@@ -22,6 +22,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 15 | Tables | 1/1 | `ua-table-regular` |
 | 17 | Math | 1/2 | `ua-figure-alt` (Formula Alt) |
 | 25 | XFA | 1/1 | `ua-xfa` |
+| 28 | Annotations | 8/15 | `ua-annotation` (7.18.1/.2/.3/.4/.5/.8; media 7.18.6 + file-attach 7.18.7 deferred) |
 | 31 | Fonts | 13/29 | `font-dictionary`, `font-embedded`, `font-program` |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
@@ -256,24 +257,24 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
 | 28-001 | H | 7.18.1-2 | An annotation is not in correct reading order. | n/a |
-| 28-002 | M | 7.18.1-2 | An annotation, other than of subtype Widget, Link | — |
+| 28-002 | M | 7.18.1-2 | An annotation, other than of subtype Widget, Link | ua-annotation |
 | 28-018 | ? |  |  | — |
 | 28-003 | H | 7.18.1-3 | An annotation is used for visual formatting but is | n/a |
 | 28-004 | M | 7.18.1-4 | An annotation, other than of subtype Widget, does | — |
 | 28-005 | M | 7.18.1-4 | A form field does not have a TU entry and does not | — |
 | 28-006 | M | 7.18.2-1 | An annotation with subtype undefined in ISO 32000 | — |
 | 28-004 | ? |  |  | — |
-| 28-007 | M | 7.18.2-2 | An annotation of subtype TrapNet exists. | — |
-| 28-008 | M | 7.18.3-1 | A page containing an annotation does not contain a | — |
-| 28-009 | M | 7.18.3-1 | A page containing an annotation has a Tabs entry | — |
-| 28-010 | M | 7.18.4-1 | A widget annotation is not nested within a <Form> tag. | — |
-| 28-011 | M | 7.18.5-1 | A link annotation is not nested within a <Link> tag. | — |
-| 28-012 | M | 7.18.5-2 | A link annotation does not include an alternate | — |
+| 28-007 | M | 7.18.2-2 | An annotation of subtype TrapNet exists. | ua-annotation |
+| 28-008 | M | 7.18.3-1 | A page containing an annotation does not contain a | ua-annotation |
+| 28-009 | M | 7.18.3-1 | A page containing an annotation has a Tabs entry | ua-annotation |
+| 28-010 | M | 7.18.4-1 | A widget annotation is not nested within a <Form> tag. | ua-annotation |
+| 28-011 | M | 7.18.5-1 | A link annotation is not nested within a <Link> tag. | ua-annotation |
+| 28-012 | M | 7.18.5-2 | A link annotation does not include an alternate | ua-annotation |
 | 28-013 | H | 7.18.5-3 | An IsMap entry is present with a value of true but | n/a |
 | 28-014 | M | 7.18.6.2-1 | CT entry is missing from the media clip data | — |
 | 28-015 | M | 7.18.6.2-1 | Alt entry is missing from the media clip data | — |
 | 28-016 | M | 7.18.7-1 | File attachment annotations do not conform | — |
-| 28-017 | M | 7.18.8-1 | A PrinterMark annotation is included in the logical | — |
+| 28-017 | M | 7.18.8-1 | A PrinterMark annotation is included in the logical | ua-annotation |
 | 28-018 | M | 7.18.8-2 | The appearance stream of a PrinterMark | — |
 
 ## Checkpoint 29 — Actions  (0 machine)

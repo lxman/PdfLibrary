@@ -11,7 +11,7 @@ Across all **1316** files Focal produced **0 false positives** — it never reje
 | PDF/A-2b | 986 | 377 | 522 | 87 | 0 | 899/986 (91%) |
 | PDF/A-2u | 22 | 12 | 7 | 3 | 0 | 19/22 (86%) |
 | PDF/A-3b | 12 | 7 | 5 | 0 | 0 | 12/12 (100%) |
-| PDF/UA-1 | 296 | 141 | 95 | 60 | 0 | 236/296 (80%) |
+| PDF/UA-1 | 296 | 141 | 104 | 51 | 0 | 245/296 (83%) |
 
 ## Clause coverage
 
@@ -76,13 +76,13 @@ Of the files where veraPDF flags a clause, how many does Focal also flag on that
 |---|--:|--:|--:|---|
 | 6.8 | 5 | 5 | 100% | ✅ full |
 
-### PDF/UA-1 — 5/30 clauses at full parity
+### PDF/UA-1 — 10/30 clauses at full parity
 
 | Clause | veraPDF flags | Focal matches | Coverage | |
 |---|--:|--:|--:|---|
 | 7.2 | 60 | 31 | 52% | ◐ partial |
 | 7.1 | 16 | 13 | 81% | ◐ partial |
-| 7.18.1 | 10 | 0 | 0% | — none |
+| 7.18.1 | 10 | 1 | 10% | ◐ partial |
 | 7.11 | 6 | 0 | 0% | — none |
 | 5 | 5 | 2 | 40% | ◐ partial |
 | 7.21.6 | 5 | 4 | 80% | ◐ partial |
@@ -91,22 +91,22 @@ Of the files where veraPDF flags a clause, how many does Focal also flag on that
 | 7.21.3.3 | 4 | 1 | 25% | ◐ partial |
 | 7.21.7 | 4 | 0 | 0% | — none |
 | 7.10 | 3 | 0 | 0% | — none |
-| 7.18.5 | 3 | 0 | 0% | — none |
+| 7.18.5 | 3 | 3 | 100% | ✅ full |
 | 7.18.6.2 | 3 | 0 | 0% | — none |
 | 7.21.3.2 | 3 | 3 | 100% | ✅ full |
 | 7.21.4.2 | 3 | 0 | 0% | — none |
 | 7.5 | 3 | 0 | 0% | — none |
 | 7.9 | 3 | 0 | 0% | — none |
-| 7.18.3 | 2 | 0 | 0% | — none |
+| 7.18.3 | 2 | 2 | 100% | ✅ full |
 | 7.20 | 2 | 0 | 0% | — none |
 | 7.3 | 2 | 2 | 100% | ✅ full |
 | 7.4.2 | 2 | 0 | 0% | — none |
 | 7.7 | 2 | 0 | 0% | — none |
 | 7.15 | 1 | 1 | 100% | ✅ full |
 | 7.16 | 1 | 0 | 0% | — none |
-| 7.18.2 | 1 | 0 | 0% | — none |
-| 7.18.4 | 1 | 0 | 0% | — none |
-| 7.18.8 | 1 | 0 | 0% | — none |
+| 7.18.2 | 1 | 1 | 100% | ✅ full |
+| 7.18.4 | 1 | 1 | 100% | ✅ full |
+| 7.18.8 | 1 | 1 | 100% | ✅ full |
 | 7.21.4.1 | 1 | 0 | 0% | — none |
 | 7.21.5 | 1 | 1 | 100% | ✅ full |
 | 7.21.8 | 1 | 1 | 100% | ✅ full |
@@ -117,7 +117,7 @@ Ranked by number of files Focal misses on a clause it does not fully cover.
 
 1. **PDF/UA-1 clause 7.2** — 29 of 60 files missed (Focal matches 31).
 2. **PDF/A-2b clause 6.2.11.5** — 10 of 13 files missed (Focal matches 3).
-3. **PDF/UA-1 clause 7.18.1** — 10 of 10 files missed (Focal matches 0).
+3. **PDF/UA-1 clause 7.18.1** — 9 of 10 files missed (Focal matches 1).
 4. **PDF/A-2b clause 6.1.9** — 7 of 7 files missed (Focal matches 0).
 5. **PDF/A-2b clause 6.2.4.4** — 7 of 7 files missed (Focal matches 0).
 6. **PDF/A-2b clause 6.1.13** — 6 of 15 files missed (Focal matches 9).
