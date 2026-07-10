@@ -5,15 +5,40 @@
 
 Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
+## Focal coverage — 32 of 87 machine-checkable conditions
+
+Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
+
+| CP | Area | Covered | Rules |
+|---|---|--:|---|
+| 01 | Real content tagged | 3/4 | `ua-content-tagged`, `ua-artifact-nesting` |
+| 02 | Role mapping | 1/3 | `ua-standard-type` |
+| 06 | Metadata | 3/3 | `ua-title`, `ua-identification` |
+| 07 | Dictionary | 2/2 | `ua-display-doc-title` |
+| 09 | Appropriate tags | 3/5 | `ua-structure-nesting` (table/list/TOC; not Ruby/Warichu) |
+| 10 | Character mappings | 1/1 | `ua-text-unicode` |
+| 11 | Natural language | 2/6 | `ua-attribute-lang` (Alt/ActualText/E), `ua-object-lang` (outline) |
+| 13 | Graphics | 1/1 | `ua-figure-alt` |
+| 15 | Tables | 1/1 | `ua-table-regular` |
+| 17 | Math | 1/2 | `ua-figure-alt` (Formula Alt) |
+| 25 | XFA | 1/1 | `ua-xfa` |
+| 31 | Fonts | 13/29 | `font-dictionary`, `font-embedded`, `font-program` |
+
+**Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
+
+**Known gaps left `—` on purpose:**
+- **31-003** (7.21.3.1-1, CIDSystemInfo `/Supplement`): `font-dictionary` has a Supplement check, but its comparison is **inverted** — it flags CIDFont Supplement *greater than* the CMap's, whereas the failure (per ISO 32000-1 / the Adobe CMap-CIDFont spec) is CIDFont Supplement *less than* the CMap's. It therefore does not detect the condition and is a latent false positive; left uncovered until fixed. Registry (31-001) and Ordering (31-002) equality checks are correct.
+- **7.21.4.2** (31-012…015, CharSet/CIDSet), **7.21.7** (31-027…029, ToUnicode), and the program-cmap parts of 7.21.6 (31-017/018/023/025/026) need engine-side font-program inspection Focal does not yet do.
+
 ## Checkpoint 01 — Real content tagged  (4 machine)
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
 | 01-001 | H | 7.1-1 | Artifact is tagged as real content. | n/a |
 | 01-002 | H | 7.1-1 | Real content is marked as artifact. | n/a |
-| 01-003 | M | 7.1-1 | Content marked as Artifact is present inside tagged content. | — |
-| 01-004 | M | 7.1-1 | Tagged content is present inside content marked as Artifact. | — |
-| 01-005 | M | 7.1-2 | Content is neither marked as Artifact nor tagged as real content. | — |
+| 01-003 | M | 7.1-1 | Content marked as Artifact is present inside tagged content. | ua-artifact-nesting |
+| 01-004 | M | 7.1-1 | Tagged content is present inside content marked as Artifact. | ua-artifact-nesting |
+| 01-005 | M | 7.1-2 | Content is neither marked as Artifact nor tagged as real content. | ua-content-tagged |
 | 01-006 | H | 7.1-2 | The structure type and attributes of a structure element are not | n/a |
 | 01-007 | M | 7.1-11 | Suspects entry has a value of true. | — |
 
@@ -21,7 +46,7 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 02-001 | M | 7.1-3 | One or more non-standard tag’s mapping does not | — |
+| 02-001 | M | 7.1-3 | One or more non-standard tag’s mapping does not | ua-standard-type |
 | 02-002 | H | 7.1-3 | The mapping of one or more non-standard types is | n/a |
 | 02-003 | M | 7.1-3 | A circular mapping exists | — |
 | 02-004 | M | 7.1-4 | One or more standard types are remapped. | — |
@@ -52,17 +77,17 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 06-001 | M | 7.1-8 | Document does not contain an XMP metadata | — |
-| 06-002 | M | 5 | The XMP metadata stream in the Catalog | — |
-| 06-003 | M | 7.1-8 | XMP metadata stream does not contain dc:title | — |
+| 06-001 | M | 7.1-8 | Document does not contain an XMP metadata | ua-title |
+| 06-002 | M | 5 | The XMP metadata stream in the Catalog | ua-identification |
+| 06-003 | M | 7.1-8 | XMP metadata stream does not contain dc:title | ua-title |
 | 06-004 | H | 7.1-8 | dc:title does not clearly identify the document | n/a |
 
 ## Checkpoint 07 — Dictionary  (2 machine)
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 07-001 | M | 7.1-9 | ViewerPreferences dictionary of the Catalog | — |
-| 07-002 | M | 7.1-9 | ViewerPreferences dictionary of the Catalog | — |
+| 07-001 | M | 7.1-9 | ViewerPreferences dictionary of the Catalog | ua-display-doc-title |
+| 07-002 | M | 7.1-9 | ViewerPreferences dictionary of the Catalog | ua-display-doc-title |
 
 ## Checkpoint 08 — OCR Validation  (0 machine)
 
@@ -78,9 +103,9 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 | 09-001 | H | 7.2-1 | Tags are not in logical reading order. | n/a |
 | 09-002 | H | 7.2-1 | Structure elements are nested in a semantically | n/a |
 | 09-003 | H | 7.2-1 | The structure type (after applying any role- | n/a |
-| 09-004 | M | 7.2-1 | A table-related structure element is used in a way | — |
-| 09-005 | M | 7.2-1 | A list-related structure element is used in a way | — |
-| 09-006 | M | 7.2-1 | A TOC-related structure element is used in a way | — |
+| 09-004 | M | 7.2-1 | A table-related structure element is used in a way | ua-structure-nesting |
+| 09-005 | M | 7.2-1 | A list-related structure element is used in a way | ua-structure-nesting |
+| 09-006 | M | 7.2-1 | A TOC-related structure element is used in a way | ua-structure-nesting |
 | 09-007 | M | 7.2-1 | A Ruby-related structure element is used in a way | — |
 | 09-008 | M | 7.2-1 | A Warichu-related structure element is used in | — |
 
@@ -88,15 +113,15 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 10-001 | M | 7.2-2 | Character code cannot be mapped to Unicode. | — |
+| 10-001 | M | 7.2-2 | Character code cannot be mapped to Unicode. | ua-text-unicode |
 
 ## Checkpoint 11 — Declared Natural Language  (6 machine)
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
 | 11-001 | M | 7.2-3 | Natural language for text in page content cannot be | — |
-| 11-002 | M | 7.2-3 | Natural language for text in Alt, ActualText and | — |
-| 11-003 | M | 7.2-3 | Natural language in the Outline entries cannot be | — |
+| 11-002 | M | 7.2-3 | Natural language for text in Alt, ActualText and | ua-attribute-lang |
+| 11-003 | M | 7.2-3 | Natural language in the Outline entries cannot be | ua-object-lang |
 | 11-004 | M | 7.2-3 | Natural language in the Contents entry for annotations | — |
 | 11-005 | M | 7.2-3 | Natural language in the TU entry for form fields cannot | — |
 | 11-006 | M | 7.2-3 | Natural language for document metadata cannot be | — |
@@ -115,7 +140,7 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 | 13-001 | H | 7.3-1 | Graphics objects other than text objects and artifacts | n/a |
 | 13-002 | H | 7.3-1 | A link with a meaningful background does not include | n/a |
 | 13-003 | H | 7.3-2 | A caption is not tagged with a <Caption> tag. | n/a |
-| 13-004 | M | 7.3-3 | <Figure> tag alternative or replacement text missing. | — |
+| 13-004 | M | 7.3-3 | <Figure> tag alternative or replacement text missing. | ua-figure-alt |
 | 13-005 | H | 7.3-4 | ActualText used for a <Figure> for which alternative | n/a |
 | 13-006 | H | 7.3-5 | Graphics objects that possess semantic value only | n/a |
 | 13-007 | H | 7.3-6 | A more accessible representation is not used. | n/a |
@@ -139,7 +164,7 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 |---|---|---|---|---|
 | 15-001 | H | 7.5-1 | A row has a header cell, but that header cell is not | n/a |
 | 15-002 | H | 7.5-1 | A column has a header cell, but that header cell is | n/a |
-| 15-003 | M | 7.5-2 | In a table not organized with Headers attributes | — |
+| 15-003 | M | 7.5-2 | In a table not organized with Headers attributes | ua-table-regular |
 | 15-004 | H | 7.5-3 | Content is tagged as a table for information that is | n/a |
 | 15-005 | H | 7.5-2 | A given cell’s header cannot be unambiguously | n/a |
 
@@ -156,7 +181,7 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
 | 17-001 | H | 7.7-1 | Content is a mathematical expression but is not | n/a |
-| 17-002 | M | 7.7-1 | <Formula> tag is missing an Alt attribute. | — |
+| 17-002 | M | 7.7-1 | <Formula> tag is missing an Alt attribute. | ua-figure-alt |
 | 17-003 | M | 7.7-2 | Unicode mapping requirements are not met. | — |
 
 ## Checkpoint 18 — Page Headers and Footers  (0 machine)
@@ -211,7 +236,7 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 25-001 | M | 7.15-1 | File contains the dynamicRender element with | — |
+| 25-001 | M | 7.15-1 | File contains the dynamicRender element with | ua-xfa |
 
 ## Checkpoint 26 — Security  (2 machine)
 
@@ -268,33 +293,33 @@ Status legend — Focal rule that implements the condition, or `—` (not yet), 
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 31-001 | M | 7.21.3-1 | A Type 0 font dictionary with encoding other than | — |
-| 31-002 | M | 7.21.3.1-1 | A Type 0 font dictionary with encoding other than | — |
+| 31-001 | M | 7.21.3-1 | A Type 0 font dictionary with encoding other than | font-dictionary |
+| 31-002 | M | 7.21.3.1-1 | A Type 0 font dictionary with encoding other than | font-dictionary |
 | 31-003 | M | 7.21.3.1-1 | A Type 0 font dictionary with encoding other | — |
-| 31-004 | M | 7.21.3.2-1 | A Type 2 CID font contains neither a stream nor the | — |
-| 31-005 | M | 7.21.3.2-1 | A Type 2 CID font does not contain a CIDToGIDMap | — |
-| 31-006 | M | 7.21.3.3-1 | A CMap is neither listed as described in ISO 32000- | — |
+| 31-004 | M | 7.21.3.2-1 | A Type 2 CID font contains neither a stream nor the | font-dictionary |
+| 31-005 | M | 7.21.3.2-1 | A Type 2 CID font does not contain a CIDToGIDMap | font-dictionary |
+| 31-006 | M | 7.21.3.3-1 | A CMap is neither listed as described in ISO 32000- | font-dictionary |
 | 31-007 | M | 7.21.3.3-1 | The WMode entry in a CMap dictionary is not | — |
 | 31-008 | M | 7.21.3.3-2 | A CMap references another CMap which is not | — |
-| 31-009 | M | 7.21.4.1-1 | For a font used by text intended to be rendered the | — |
+| 31-009 | M | 7.21.4.1-1 | For a font used by text intended to be rendered the | font-embedded |
 | 31-010 | H | 7.21.4.1-2 | A font program is embedded that is not legally | n/a |
 | 31-011 | M | 7.21.4.1-3 | For a font used by text the font program is | — |
 | 31-012 | M | 7.21.4.2-1 | The FontDescriptor dictionary of an embedded | — |
 | 31-013 | M | 7.21.4.2-2 | The FontDescriptor dictionary of an embedded | — |
 | 31-014 | M | 7.21.4.2-3 | The FontDescriptor dictionary of an embedded | — |
 | 31-015 | M | 7.21.4.2-4 | The FontDescriptor dictionary of an embedded | — |
-| 31-016 | M | 7.21.5-1 | For one or more glyphs, the glyph width | — |
+| 31-016 | M | 7.21.5-1 | For one or more glyphs, the glyph width | font-program |
 | 31-017 | M | 7.21.6-1 | A non-symbolic TrueType font is used for | — |
 | 31-018 | M | 7.21.6-2 | A non-symbolic TrueType font is used for rendering, but | — |
-| 31-019 | M | 7.21.6-3 | The font dictionary for a non-symbolic TrueType | — |
-| 31-020 | M | 7.21.6-4 | The font dictionary for a non-symbolic TrueType | — |
-| 31-021 | M | 7.21.6-5 | The value for either the Encoding entry or the | — |
-| 31-022 | M | 7.21.6-6 | The Differences array in the Encoding entry in a | — |
+| 31-019 | M | 7.21.6-3 | The font dictionary for a non-symbolic TrueType | font-dictionary |
+| 31-020 | M | 7.21.6-4 | The font dictionary for a non-symbolic TrueType | font-dictionary |
+| 31-021 | M | 7.21.6-5 | The value for either the Encoding entry or the | font-dictionary |
+| 31-022 | M | 7.21.6-6 | The Differences array in the Encoding entry in a | font-dictionary |
 | 31-023 | M | 7.21.6-7 | The Differences array is present in the Encoding | — |
-| 31-024 | M | 7.21.6-8 | The Encoding entry is present in the font | — |
+| 31-024 | M | 7.21.6-8 | The Encoding entry is present in the font | font-dictionary |
 | 31-025 | M | 7.21.6-9 | The embedded font program for a symbolic | — |
 | 31-026 | M | 7.21.6-10 | The embedded font program for a symbolic | — |
 | 31-027 | M | 7.21.7-1 | A font dictionary does not contain the ToUnicode | — |
 | 31-028 | M | 7.21.7-2 | One or more Unicode values specified in the | — |
 | 31-029 | M | 7.21.7-3 | One or more Unicode values specified in the | — |
-| 31-030 | M | 7.21.8-1 | One or more characters used in text showing | — |
+| 31-030 | M | 7.21.8-1 | One or more characters used in text showing | font-program |
