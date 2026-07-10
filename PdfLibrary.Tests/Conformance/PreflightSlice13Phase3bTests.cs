@@ -471,4 +471,44 @@ public class PreflightSlice13Phase3bTests
         });
         Assert.Empty(new UaTextAttributeLangRule().Check(Ctx(doc)));
     }
+
+    // ── ua-object-lang: outline (bookmark) natural language (7.2) ──────────────
+
+    private static PdfDocument OutlineDoc(bool outlines, bool catalogLang)
+    {
+        var doc = new PdfDocument();
+        var catalog = new PdfDictionary { [N("Type")] = N("Catalog") };
+        if (catalogLang) catalog[N("Lang")] = Str("en-US");
+        if (outlines)
+        {
+            doc.AddObject(20, 0, new PdfDictionary { [N("Title")] = Str("Chapter 1") });
+            doc.AddObject(10, 0, new PdfDictionary
+            {
+                [N("Type")] = N("Outlines"), [N("First")] = Ref(20), [N("Last")] = Ref(20),
+            });
+            catalog[N("Outlines")] = Ref(10);
+        }
+        doc.AddObject(1, 0, catalog);
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void Outlines_without_catalog_language_are_flagged()
+    {
+        Finding f = Assert.Single(new UaObjectLangRule().Check(Ctx(OutlineDoc(outlines: true, catalogLang: false))));
+        Assert.Equal("ua-object-lang", f.RuleId);
+    }
+
+    [Fact]
+    public void Outlines_with_catalog_language_pass()
+    {
+        Assert.Empty(new UaObjectLangRule().Check(Ctx(OutlineDoc(outlines: true, catalogLang: true))));
+    }
+
+    [Fact]
+    public void No_outlines_is_not_flagged_even_without_catalog_language()
+    {
+        Assert.Empty(new UaObjectLangRule().Check(Ctx(OutlineDoc(outlines: false, catalogLang: false))));
+    }
 }
