@@ -24,6 +24,8 @@ public static class Preflighter
         // Slice 14 — XMP predefined-schema property validation (ISO 19005-2 6.6.2.3.1).
         new Rules.XmpPropertyPredefinedRule(),
         new Rules.XmpPropertyTypeRule(),
+        // Slice 17 — XMP extension-schema container structure (ISO 19005-2 6.6.2.3.3).
+        new Rules.XmpExtensionSchemaStructureRule(),
         // PDF/A-2u Unicode delta (ISO 19005-2 6.2.11.7.2).
         new Rules.Pdfa2uToUnicodeRule(),
         new Rules.Pdfa2uToUnicodeValuesRule(),
