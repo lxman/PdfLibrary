@@ -8,7 +8,7 @@ Across all **1316** files Focal produced **0 false positives** — it never reje
 
 | Profile | Files | Both pass | Both fail | Focal misses (gap) | Focal FP | Agreement |
 |---|--:|--:|--:|--:|--:|--:|
-| PDF/A-2b | 986 | 377 | 506 | 103 | 0 | 883/986 (90%) |
+| PDF/A-2b | 986 | 377 | 523 | 86 | 0 | 900/986 (91%) |
 | PDF/A-2u | 22 | 12 | 7 | 3 | 0 | 19/22 (86%) |
 | PDF/A-3b | 12 | 7 | 5 | 0 | 0 | 12/12 (100%) |
 | PDF/UA-1 | 296 | 141 | 95 | 60 | 0 | 236/296 (80%) |
@@ -27,12 +27,12 @@ Of the files where veraPDF flags a clause, how many does Focal also flag on that
 | 6.3.3 | 26 | 25 | 96% | ◐ partial |
 | 6.3.2 | 25 | 25 | 100% | ✅ full |
 | 6.6.2.3.3 | 18 | 18 | 100% | ✅ full |
-| 6.1.13 | 15 | 0 | 0% | — none |
+| 6.1.13 | 15 | 9 | 60% | ◐ partial |
 | 6.5.1 | 15 | 15 | 100% | ✅ full |
 | 6.3.1 | 14 | 14 | 100% | ✅ full |
 | 6.2.11.5 | 13 | 4 | 31% | ◐ partial |
 | 6.2.11.4.1 | 11 | 6 | 55% | ◐ partial |
-| 6.1.2 | 9 | 0 | 0% | — none |
+| 6.1.2 | 9 | 8 | 89% | ◐ partial |
 | 6.2.11.8 | 8 | 3 | 38% | ◐ partial |
 | 6.1.7.1 | 7 | 3 | 43% | ◐ partial |
 | 6.1.9 | 7 | 0 | 0% | — none |
@@ -116,13 +116,13 @@ Of the files where veraPDF flags a clause, how many does Focal also flag on that
 Ranked by number of files Focal misses on a clause it does not fully cover.
 
 1. **PDF/UA-1 clause 7.2** — 29 of 60 files missed (Focal matches 31).
-2. **PDF/A-2b clause 6.1.13** — 15 of 15 files missed (Focal matches 0).
-3. **PDF/UA-1 clause 7.18.1** — 10 of 10 files missed (Focal matches 0).
-4. **PDF/A-2b clause 6.2.11.5** — 9 of 13 files missed (Focal matches 4).
-5. **PDF/A-2b clause 6.1.2** — 9 of 9 files missed (Focal matches 0).
-6. **PDF/A-2b clause 6.1.9** — 7 of 7 files missed (Focal matches 0).
-7. **PDF/A-2b clause 6.2.4.4** — 7 of 7 files missed (Focal matches 0).
-8. **PDF/A-2b clause 6.2.2** — 6 of 6 files missed (Focal matches 0).
-9. **PDF/A-2b clause 6.2.5** — 6 of 6 files missed (Focal matches 0).
-10. **PDF/UA-1 clause 7.11** — 6 of 6 files missed (Focal matches 0).
+2. **PDF/UA-1 clause 7.18.1** — 10 of 10 files missed (Focal matches 0).
+3. **PDF/A-2b clause 6.2.11.5** — 9 of 13 files missed (Focal matches 4).
+4. **PDF/A-2b clause 6.1.9** — 7 of 7 files missed (Focal matches 0).
+5. **PDF/A-2b clause 6.2.4.4** — 7 of 7 files missed (Focal matches 0).
+6. **PDF/A-2b clause 6.1.13** — 6 of 15 files missed (Focal matches 9).
+7. **PDF/A-2b clause 6.2.2** — 6 of 6 files missed (Focal matches 0).
+8. **PDF/A-2b clause 6.2.5** — 6 of 6 files missed (Focal matches 0).
+9. **PDF/UA-1 clause 7.11** — 6 of 6 files missed (Focal matches 0).
+10. **PDF/A-2b clause 6.2.11.4.1** — 5 of 11 files missed (Focal matches 6).
 

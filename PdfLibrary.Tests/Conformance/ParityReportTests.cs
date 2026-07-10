@@ -21,7 +21,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 883,   // + slice 19 font-program rules (6.2.11.5 metrics 4/13, .8 .notdef 3/8)
+            [ConformanceProfile.PdfA2b] = 900,   // + slice 20 file-structure rules (6.1.2 header 8/9; 6.1.13 impl-limits: page-box 6/6, string 1/2, name 2/2)
             [ConformanceProfile.PdfA2u] = 19,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 236,   // + slice 19 font-program rules (7.21.5 full, 7.21.8 full)
