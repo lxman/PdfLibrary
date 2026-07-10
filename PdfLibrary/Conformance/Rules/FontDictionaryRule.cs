@@ -199,6 +199,13 @@ internal sealed class FontDictionaryRule : IConformanceRule
                     $"The CIDFont {BaseFont(cidFont)} declares /Ordering ({cidOrdering}) incompatible with the "
                     + $"CMap's ({cmapOrdering}).");
             }
+            // Direction matters and is easy to get wrong: this flags CIDFont /Supplement GREATER than the
+            // CMap's, matching veraPDF's 6.2.11.3.1 / 7.21.3.1 rule (its own pass-d fixture embeds a CMap
+            // whose Supplement EXCEEDS a subset CIDFont's and is CONFORMANT, so the reverse direction is a
+            // false positive — the reference corpus is the oracle here). Note this is the OPPOSITE of the
+            // Matterhorn Protocol 1.1 condition 31-003 text ("CIDFont Supplement less than the CMap's"), a
+            // known veraPDF-vs-Matterhorn discrepancy — do NOT "correct" this to `<`. See the regression
+            // guard Type0_embedded_cmap_supplement_less_passes.
             else if (context.Resolve(cidCsi.Get("Supplement")) is PdfInteger cidSupplement
                      && context.Resolve(cmapCsi.Get("Supplement")) is PdfInteger cmapSupplement
                      && cidSupplement.LongValue > cmapSupplement.LongValue)

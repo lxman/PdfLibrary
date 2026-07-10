@@ -258,6 +258,18 @@ public class PreflightSlice18Tests
     }
 
     [Fact]
+    public void Type0_embedded_cmap_supplement_less_passes()
+    {
+        // Regression guard: a CIDFont /Supplement BELOW the CMap's is conformant (this is the shape of
+        // veraPDF's own 6-2-11-3-1-t01-pass-d fixture). Only the greater-than direction fires; flipping the
+        // comparison would false-positive on that fixture. See the direction note in FontDictionaryRule.
+        PdfDictionary font = Type0Font(
+            EmbeddedCMap(Csi("Adobe", "Korea1", 3)),
+            CidFont("CIDFontType0", cidSystemInfo: Csi("Adobe", "Korea1", 2)));
+        Assert.Empty(Run(DocWithFont(font)));
+    }
+
+    [Fact]
     public void Type0_embedded_cmap_matching_cidsysteminfo_passes()
     {
         PdfDictionary font = Type0Font(
