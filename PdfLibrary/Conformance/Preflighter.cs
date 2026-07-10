@@ -17,6 +17,9 @@ public static class Preflighter
         new Rules.NoEncryptionRule(),
         new Rules.FileIdentifierRule(),
         new Rules.PostEofDataRule(),
+        // Slice 20 — file-structure rules: file header (6.1.2) + implementation limits (6.1.13).
+        new Rules.FileHeaderRule(),
+        new Rules.ImplementationLimitsRule(),
         new Rules.StreamFiltersRule(),
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),

@@ -636,6 +636,11 @@ public partial class PdfDocument : IDisposable
             var xrefParser = new PdfXrefParser(stream, document);
             PdfXrefParseResult xrefResult = xrefParser.Parse();
 
+            // Object numbers already fixed by a newer cross-reference section — captured before this
+            // section's own entries are merged so that this section's /XRefStm (below) may still override
+            // this section's classic table, while nothing overrides a newer section.
+            var fixedByNewerSection = new HashSet<int>(document.XrefTable.Entries.Select(e => e.ObjectNumber));
+
             foreach (PdfXrefEntry entry in xrefResult.Table.Entries)
             {
                 if (!document.XrefTable.Contains(entry.ObjectNumber))
@@ -672,6 +677,37 @@ public partial class PdfDocument : IDisposable
                     var trailerParser = new PdfTrailerParser(stream);
                     (PdfTrailer trailer, _) = trailerParser.Parse();
                     currentTrailer = trailer.Dictionary;
+                }
+            }
+
+            // Hybrid-reference files (ISO 32000-1:2008, 7.5.8.4): a classic trailer may carry an /XRefStm
+            // entry pointing to a cross-reference stream whose compressed-object (type 2) entries index
+            // objects the classic table marks free so that pre-1.5 readers skip them. Merge that stream so
+            // those objects resolve. Its entries supersede this section's classic table but never a newer
+            // section (guarded by fixedByNewerSection). A malformed stream is ignored — the classic /Prev
+            // chain that old readers depend on must still complete.
+            if (!xrefResult.IsXRefStream && currentTrailer is not null &&
+                currentTrailer.TryGetValue(new PdfName("XRefStm"), out PdfObject xrefStmObj) &&
+                xrefStmObj is PdfInteger xrefStmInt)
+            {
+                long xrefStmPosition = xrefStmInt.Value + headerOffset;
+                if (xrefStmPosition >= 0 && xrefStmPosition < stream.Length)
+                {
+                    try
+                    {
+                        stream.Position = xrefStmPosition;
+                        var xrefStmParser = new PdfXrefParser(stream, document);
+                        PdfXrefParseResult xrefStmResult = xrefStmParser.Parse();
+                        foreach (PdfXrefEntry entry in xrefStmResult.Table.Entries)
+                        {
+                            if (!fixedByNewerSection.Contains(entry.ObjectNumber))
+                                document.XrefTable.Add(entry); // overwrites this section's classic free marker
+                        }
+                    }
+                    catch (PdfParseException)
+                    {
+                        // Ignore a broken hybrid stream; the classic entries and /Prev chain still stand.
+                    }
                 }
             }
 
