@@ -21,7 +21,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 805,   // XMP full value-type validation (6.6.2.3.1 now 283/283)
+            [ConformanceProfile.PdfA2b] = 841,   // + transparency blending colour (6.2.10 33/35, 6.2.4.3 78/87)
             [ConformanceProfile.PdfA2u] = 18,
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 223,

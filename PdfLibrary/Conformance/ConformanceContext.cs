@@ -40,6 +40,7 @@ internal sealed class ConformanceContext
     private PdfCatalog? _catalog;
     private bool _catalogResolved;
     private OutputIntentColour? _outputIntentColour;
+    private IReadOnlyList<TransparencyAnalysis.PageTransparency>? _pageTransparency;
     private IReadOnlyList<UsedFontCodes>? _usedTextGlyphs;
     private MarkedContentAnalysis? _markedContent;
     private bool _xmpResolved;
@@ -100,6 +101,14 @@ internal sealed class ConformanceContext
     /// <summary>The colour family of the file's PDF/A output-intent ICC profile (None if there is no
     /// output intent with a parseable destination profile). Cached.</summary>
     public OutputIntentColour OutputIntentColourFamily => _outputIntentColour ??= ComputeOutputIntentColour();
+
+    /// <summary>
+    /// Per-page transparency facts — whether each page hosts a transparent object, whether it defines its
+    /// own group blending colour space, and the device families of every reachable transparency group's
+    /// blending space. Backs the clause 6.2.10 / 6.2.4.3 blending-colour rules. Walked once and cached.
+    /// </summary>
+    public IReadOnlyList<TransparencyAnalysis.PageTransparency> PageTransparency =>
+        _pageTransparency ??= TransparencyAnalysis.Analyze(this);
 
     /// <summary>
     /// Every font used for text showing and the character codes drawn with it, walking page content and
