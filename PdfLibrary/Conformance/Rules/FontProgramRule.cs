@@ -22,9 +22,10 @@ namespace PdfLibrary.Conformance.Rules;
 ///     enough to distinguish a genuine .notdef from a resolution gap without risking a false positive.</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
-///     width. Implemented for TrueType simple fonts and Type0 CIDFontType0/2. Simple Type1/CFF fonts and
-///     Type3 fonts are excluded (their program-advance extraction is not reliable enough here to avoid a
-///     false positive — see the tolerance remark).</item>
+///     width. Implemented for TrueType simple fonts and Type0 CIDFontType2. Simple Type1/CFF fonts, Type0
+///     CIDFontType0 (CFF-keyed) fonts, and Type3 fonts are excluded from the width check (their CFF/Type1
+///     program-advance extraction is not reliable enough here to avoid a false positive — see the tolerance
+///     remark). The .notdef check above still covers CIDFontType0 through its CFF charset.</item>
 /// </list>
 /// <para>
 /// PDF/X-4 is excluded (ISO 15930-7 carries no such font-program constraints — same reasoning as
@@ -95,6 +96,14 @@ internal sealed class FontProgramRule : IConformanceRule
                 notdefHit = true; // a shown code with no glyph in the subset renders as .notdef
                 continue;         // .notdef has no meaningful width to compare
             }
+
+            // Width comparison is reliable only for CIDFontType2, whose advance comes straight from the
+            // glyf/hmtx tables. CIDFontType0's advance is recovered from the CFF CharString, which does not
+            // round-trip a subset font's declared /W closely enough to compare without a false positive
+            // (a real conformant CFF-keyed font diverges by hundreds of units) — so the width check is
+            // CIDFontType2-only; the CFF charset still drives the .notdef check above.
+            if (cidKeyedCff)
+                continue;
 
             double declared = cid.GetCharacterWidth(code);
             double program = Scale(metrics, metrics.GetAdvanceWidth((ushort)gid));

@@ -21,7 +21,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 900,   // + slice 20 file-structure rules (6.1.2 header 8/9; 6.1.13 impl-limits: page-box 6/6, string 1/2, name 2/2)
+            [ConformanceProfile.PdfA2b] = 899,   // slice 20 file-structure rules (6.1.2 header 8/9; 6.1.13 impl-limits: page-box 6/6, string 1/2, name 2/2); −1 vs 900 from dropping the 6.2.11.5 width check on CIDFontType0/CFF fonts — its CFF advance extraction false-positives on conformant CFF reference files (PDFUA-Ref-2-08), so FP-safety on real files outweighs one corpus detection
             [ConformanceProfile.PdfA2u] = 19,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 236,   // + slice 19 font-program rules (7.21.5 full, 7.21.8 full)
