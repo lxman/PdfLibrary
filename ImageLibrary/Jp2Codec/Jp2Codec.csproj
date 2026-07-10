@@ -17,7 +17,7 @@
     <!-- Optional color-management dependency. Used by Jp2Codec.Color.SrgbRenderer
          to apply embedded ICC profiles and sYCC → sRGB conversion. The core
          codestream decoder (Jp2StreamDecoder) does not reference Unicolour. -->
-    <PackageReference Include="Wacton.Unicolour" Version="7.0.0" />
+    <PackageReference Include="Wacton.Unicolour" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

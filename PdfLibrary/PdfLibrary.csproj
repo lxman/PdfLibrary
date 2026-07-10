@@ -70,7 +70,7 @@
     <ItemGroup>
       <PackageReference Include="Serilog" Version="4.3.1" />
       <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
-      <PackageReference Include="Wacton.Unicolour" Version="7.0.0" />
+      <PackageReference Include="Wacton.Unicolour" Version="8.0.0" />
       <!-- Transitive runtime dependencies of the bundled internal DLLs (FontParser needs
            System.Text.Json; Logging needs Serilog.Sinks.Console). These must be declared
            here because the project references below use PrivateAssets=all, which otherwise
