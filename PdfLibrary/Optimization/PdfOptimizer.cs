@@ -67,8 +67,9 @@ public static class PdfOptimizer
         if (string.IsNullOrEmpty(outputPath))
             throw new ArgumentException("Output path cannot be null or empty", nameof(outputPath));
 
-        using FileStream stream = File.Create(outputPath);
-        return Optimize(document, stream, options);
+        // Atomic: write to a temp file and rename into place, so a failed or interrupted
+        // optimize (or an in-place optimize) never leaves a truncated file behind.
+        return AtomicFileWriter.Write(outputPath, stream => Optimize(document, stream, options));
     }
 
     /// <summary>Flate-compresses every stream that currently has no filter (lossless). Already-encoded

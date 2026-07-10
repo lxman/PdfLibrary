@@ -9,6 +9,7 @@ using PdfLibrary.Builder.Bookmark;
 using PdfLibrary.Builder.FormField;
 using PdfLibrary.Builder.Layer;
 using PdfLibrary.Builder.Page;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Security;
@@ -57,8 +58,9 @@ internal class PdfDocumentWriter
     /// </summary>
     public void Write(PdfDocumentBuilder builder, string filePath)
     {
-        using FileStream stream = File.Create(filePath);
-        Write(builder, stream);
+        // Atomic: write to a temp file and rename into place, so a failed or interrupted
+        // save never leaves a truncated file where the previous one was.
+        AtomicFileWriter.Write(filePath, stream => Write(builder, stream));
     }
 
     /// <summary>

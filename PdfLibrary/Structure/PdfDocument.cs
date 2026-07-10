@@ -897,8 +897,9 @@ public partial class PdfDocument : IDisposable
         if (string.IsNullOrEmpty(filePath))
             throw new ArgumentException("File path cannot be null or empty", nameof(filePath));
 
-        using FileStream stream = File.Create(filePath);
-        Save(stream);
+        // Atomic: write to a temp file and rename into place, so a failed or interrupted
+        // save never leaves a truncated file where the previous one was.
+        AtomicFileWriter.Write(filePath, Save);
     }
 
     /// <summary>

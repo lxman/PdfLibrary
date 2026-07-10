@@ -1,3 +1,4 @@
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Optimization;
@@ -58,8 +59,9 @@ public sealed partial class PdfDocumentEditor : IDisposable
 
     public void Save(string path, PdfSaveOptions? options = null)
     {
-        using FileStream stream = File.Create(path);
-        Save(stream, options);
+        // Atomic: write to a temp file and rename into place, so a failed or interrupted
+        // save never leaves a truncated file where the previous one was.
+        AtomicFileWriter.Write(path, stream => Save(stream, options));
     }
 
     public void Save(Stream stream, PdfSaveOptions? options = null)
