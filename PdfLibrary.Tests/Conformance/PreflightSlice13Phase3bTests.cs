@@ -511,4 +511,55 @@ public class PreflightSlice13Phase3bTests
     {
         Assert.Empty(new UaObjectLangRule().Check(Ctx(OutlineDoc(outlines: false, catalogLang: false))));
     }
+
+    // ── ua-language-tag: /Lang value syntax (ISO 32000-1 14.9) ────────────────
+
+    private static PdfDocument LangDoc(PdfObject lang)
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Lang")] = lang });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Theory]
+    [InlineData("en")]
+    [InlineData("en-US")]
+    [InlineData("zh-Hans-CN")]
+    [InlineData("x-klingon")]
+    public void Valid_language_identifiers_pass(string tag)
+    {
+        Assert.Empty(new UaLanguageTagRule().Check(Ctx(LangDoc(Str(tag)))));
+    }
+
+    [Theory]
+    [InlineData("portugues-pt")] // primary subtag longer than 8 letters
+    [InlineData("1-pt")]         // primary subtag starts with a digit
+    [InlineData("-pt")]          // leading hyphen (empty primary subtag)
+    [InlineData("nl-1234abcde")] // second subtag longer than 8
+    [InlineData("")]             // empty value
+    public void Malformed_language_identifiers_are_flagged(string tag)
+    {
+        Finding f = Assert.Single(new UaLanguageTagRule().Check(Ctx(LangDoc(Str(tag)))));
+        Assert.Equal("ua-language-tag", f.RuleId);
+    }
+
+    [Fact] // the corpus 7.2-t29-fail-k case: a UTF-16BE /Lang whose letters are Cyrillic, not ASCII
+    public void Utf16_language_with_non_ascii_letters_is_flagged()
+    {
+        // FE FF (BOM) + U+043F U+0442 (Cyrillic "пт") + "-PT" → "пт-PT"
+        var utf16 = new PdfString(new byte[] { 0xFE, 0xFF, 0x04, 0x3F, 0x04, 0x42, 0x00, 0x2D, 0x00, 0x50, 0x00, 0x54 });
+        Assert.Single(new UaLanguageTagRule().Check(Ctx(LangDoc(utf16))));
+    }
+
+    [Fact] // a malformed /Lang on a structure element (not just the catalog) is caught by the object scan
+    public void Malformed_structure_element_language_is_flagged()
+    {
+        var doc = LangDoc(Str("en-US")); // valid catalog language
+        doc.AddObject(50, 0, new PdfDictionary
+        {
+            [N("Type")] = N("StructElem"), [N("S")] = N("P"), [N("Lang")] = Str("portugues-pt"),
+        });
+        Assert.Single(new UaLanguageTagRule().Check(Ctx(doc)));
+    }
 }

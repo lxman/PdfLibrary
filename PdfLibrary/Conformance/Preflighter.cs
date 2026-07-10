@@ -72,6 +72,7 @@ public static class Preflighter
         new Rules.UaTableGridRule(),
         new Rules.UaTextAttributeLangRule(),
         new Rules.UaObjectLangRule(),
+        new Rules.UaLanguageTagRule(),
     ];
 
     /// <summary>
