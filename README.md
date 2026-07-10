@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![.NET](https://img.shields.io/badge/.NET-8.0%20%7C%209.0%20%7C%2010.0-512BD4)](https://dotnet.microsoft.com/)
 
-A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Built with C# and multi-targeting .NET 8, 9, and 10.
+A comprehensive .NET library for parsing, rendering, creating, editing, optimizing, and validating PDF documents. Built with C# and multi-targeting .NET 8, 9, and 10.
 
 ---
 
@@ -73,6 +73,12 @@ A comprehensive .NET library for parsing, rendering, creating, editing, and opti
 - Opt-in lossy passes: re-encode images as JPEG (with optional downsampling), subset embedded fonts (TrueType and CFF) to the glyphs actually used
 - Encrypted input is decrypted and written out unencrypted
 
+### PDF Conformance Preflight
+- Validate a loaded document against ISO PDF standards via `Preflighter.Check(document, profile)` — read-only, never mutates the document
+- Profiles: **PDF/A-2b, PDF/A-2u, PDF/A-3b** (ISO 19005 archival), **PDF/X-4** (ISO 15930-7 print), **PDF/UA-1** (ISO 14289-1 accessibility)
+- Structured findings: severity (Error/Warning/Info), the governing ISO clause, a message, and the offending page/object where applicable
+- A **structural** validator — a deliberately partial, machine-decidable subset of each standard, not a certification. A "conforms" result means "no violations among the checked rules". Rules are cross-checked against the veraPDF conformance corpus and tuned for zero false positives on conformant files
+
 ## Project Structure
 
 ```
@@ -87,6 +93,7 @@ PDF/
 │   ├── Builder/                      # Fluent API for PDF creation
 │   ├── Editing/                      # Edit/mutate loaded documents (pages, merge, split)
 │   ├── Optimization/                 # Optimize/compress loaded documents
+│   ├── Conformance/                  # Read-only preflight (PDF/A, PDF/X-4, PDF/UA-1) + rule engine
 │   ├── Fonts/                        # Font handling + std-14 substitute locator
 │   ├── Functions/                    # PDF function objects
 │   ├── Fixups/                       # Per-document corrective passes
@@ -285,6 +292,27 @@ PdfOptimizer.Optimize(doc, output, new PdfOptimizationOptions
 });
 ```
 
+### Preflighting a PDF (Conformance)
+
+```csharp
+using PdfLibrary.Structure;
+using PdfLibrary.Conformance;
+
+using var doc = PdfDocument.Load("document.pdf");
+
+// Read-only: never mutates the document
+PreflightResult result = Preflighter.Check(doc, ConformanceProfile.PdfA2b);
+
+Console.WriteLine(result.Conforms
+    ? "Conforms (no violations among the checked rules)"
+    : "Not conformant");
+
+foreach (Finding f in result.Errors)
+    Console.WriteLine($"[{f.Severity}] {f.Clause}: {f.Message}");
+```
+
+Profiles: `PdfA2b`, `PdfA2u`, `PdfA3b`, `PdfX4`, `PdfUA1`. A "conforms" result means no violations among the checked rules — a deliberately partial, machine-decidable subset of each standard, not a certification. `Preflighter.Check` also accepts a file path or a `byte[]`.
+
 ## Thread Safety
 
 PdfLibrary supports **concurrent rendering using the one-document-per-thread model** — the standard pattern for ASP.NET Core and other multi-threaded servers. Each request loads its own `PdfDocument`, renders it on its own render target, and disposes both. Under this model the library is thread-safe: the process-wide caches and lookup tables shared across renders (glyph-path cache, system-font/typeface resolver, built-in ICC profiles, codec registry, font lookup tables) are synchronized, and CFF/Type1 glyph decoding uses per-parse state.
@@ -295,13 +323,15 @@ This is verified by a stress harness that renders a corpus concurrently at 2× c
 
 ```csharp
 // Per request/thread: load → render → dispose. No shared state, no global lock.
-public async Task<byte[]> RenderFirstPageAsync(string pdfPath)
+public byte[] RenderFirstPage(string pdfPath)
 {
     using var document = PdfDocument.Load(pdfPath);
-    return document.GetPage(0)!     // 0-based
-        .RenderTo()
-        .WithDpi(150)
-        .ToBytes();                 // PNG bytes
+    PdfPage page = document.GetPage(0)!;              // 0-based
+
+    // One render target per render — never shared across threads (see constraints below).
+    using var target = new MyRenderTarget(page);      // your IRenderTarget (WPF, Avalonia, …)
+    page.Render(target, pageNumber: 1, scale: 2.0);
+    return target.GetImageBytes();
 }
 ```
 

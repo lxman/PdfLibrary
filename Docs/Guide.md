@@ -1,6 +1,6 @@
 # PdfLibrary — Complete Guide
 
-A single, end-to-end guide to using PdfLibrary: **loading**, **reading & extracting**, **rendering**, **creating**, **editing**, and **optimizing** PDF documents.
+A single, end-to-end guide to using PdfLibrary: **loading**, **reading & extracting**, **rendering**, **creating**, **editing**, **optimizing**, and **preflighting** (conformance validation) PDF documents.
 
 Every code example in this document is compiled against the library, so it is copy-paste accurate.
 
@@ -10,7 +10,7 @@ Every code example in this document is compiled against the library, so it is co
 - [The big picture](#the-big-picture)
 - [Loading a document](#loading-a-document)
 - [Reading & extracting](#reading--extracting)
-- [Rendering to images](#rendering-to-images)
+- [Rendering to a WPF DrawingGroup](#rendering-to-a-wpf-drawinggroup)
 - [Creating a PDF](#creating-a-pdf)
   - [Document, pages, units](#document-pages-units)
   - [Text](#text)
@@ -25,6 +25,7 @@ Every code example in this document is compiled against the library, so it is co
   - [Saving](#saving)
 - [Editing an existing PDF](#editing-an-existing-pdf)
 - [Optimizing](#optimizing)
+- [Preflighting (conformance)](#preflighting-conformance)
 - [Error handling](#error-handling)
 - [Thread safety](#thread-safety)
 - [API reference](#api-reference)
@@ -57,7 +58,8 @@ dotnet add package Lxman.PdfLibrary.Rendering.Wpf    # WPF render target (Window
 - **`PdfDocumentBuilder`** — create a PDF from scratch with a fluent API (`PdfLibrary.Builder`).
 - **`PdfDocumentEditor`** — mutate a loaded PDF (`PdfLibrary.Editing`), obtained via `doc.Edit()`.
 - **`PdfOptimizer`** — shrink a loaded PDF (`PdfLibrary.Optimization`).
-- **`page.RenderTo()`** — rasterize a page (`PdfLibrary.Rendering.SkiaSharp`).
+- **`Preflighter`** — validate a loaded PDF against PDF/A, PDF/X-4, or PDF/UA-1 (`PdfLibrary.Conformance`); read-only.
+- **`page.RenderToDrawing(scale)`** — render a page to WPF vector geometry (`PdfLibrary.Rendering.Wpf`), or implement `IRenderTarget` for any other backend.
 
 ---
 
@@ -622,6 +624,38 @@ PdfOptimizer.Optimize(doc, output, new PdfOptimizationOptions
 ```
 
 `Optimize` accepts a `Stream` or a file path and returns a `PdfOptimizationResult`: `ObjectsBefore`, `ObjectsAfter`, `ObjectsRemoved`, `OutputBytes`, `StreamsCompressed`, `ImagesRecompressed`, `FontsSubsetted`. `PdfOptimizationOptions`: `CompressStreams`, `RemoveUnusedObjects`, `UseObjectStreams`, `RecompressImages`, `SubsetFonts`, `ImageJpegQuality`, `MaxImagePixelDimension` (plus `PdfOptimizationOptions.Default`).
+
+## Preflighting (conformance)
+
+Validate a loaded document against an ISO PDF standard without modifying it. This is a **read-only** check — it never mutates the document.
+
+```csharp
+using PdfLibrary.Structure;
+using PdfLibrary.Conformance;
+
+using PdfDocument doc = PdfDocument.Load("input.pdf");
+
+PreflightResult result = Preflighter.Check(doc, ConformanceProfile.PdfA2b);
+
+if (result.Conforms)
+    Console.WriteLine("Conforms (no violations among the checked rules)");
+else
+    foreach (Finding f in result.Errors)
+        Console.WriteLine($"[{f.Severity}] {f.Clause}: {f.Message}"
+            + (f.PageIndex is { } p ? $" (page {p + 1})" : ""));
+```
+
+`Preflighter.Check` has three overloads — a loaded `PdfDocument`, a `byte[]`, or a file path (the byte/path overloads also let byte-level rules run over the original source). It returns a `PreflightResult`: `Conforms` (true when no finding has `Error` severity), `Findings` (all), `Errors`, and `Warnings`. Each `Finding` carries `Severity` (`Error`/`Warning`/`Info`), `Clause` (the governing ISO clause, e.g. `"ISO 14289-1:2014, 7.1"`), `Message`, and — where applicable — `PageIndex` and `ObjectNumber`.
+
+`ConformanceProfile` is a `[Flags]` enum, but each `Check` call targets exactly one profile:
+
+| Profile | Standard | Coverage |
+|---|---|---|
+| `PdfA2b` / `PdfA2u` / `PdfA3b` | ISO 19005-2/3 (archival) | level B/U structural conformance |
+| `PdfX4` | ISO 15930-7 (print) | structural core + colour / version governance |
+| `PdfUA1` | ISO 14289-1 (accessibility) | tagging, structure nesting, tables, language identifiers |
+
+**What this is and isn't.** The preflight is a *structural* validator — a deliberately partial, machine-decidable subset of each standard, tuned for **zero false positives** on conformant files (cross-checked against the veraPDF conformance corpus). A `Conforms == true` result means "no violations among the checked rules", **not** a certification: PDF/X-4 does not run the full Ghent print profile, and PDF/UA-1 cannot judge reading order or whether alternative text is *meaningful* — those remain human review. Treat it as a fast, dependency-free first pass that catches structural defects, not a substitute for a certifying validator.
 
 ## Error handling
 

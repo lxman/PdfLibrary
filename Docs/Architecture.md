@@ -49,6 +49,8 @@ PdfLibrary/
 ├── Builder/               # Fluent API for PDF creation
 ├── Editing/               # Mutate loaded documents (pages, merge, split)
 ├── Optimization/          # Optimize/compress loaded documents
+├── Conformance/           # Read-only preflight (PDF/A, PDF/X-4, PDF/UA-1)
+│   └── Rules/             # One rule per conformance requirement
 ├── Fonts/                 # Font handling
 │   └── Embedded/          # Embedded font extraction
 ├── Filters/               # Stream decompression
@@ -423,6 +425,21 @@ Shrinks a **loaded** document and writes it back. `PdfOptimizer.Optimize(documen
 | `FontSubsetter` | Opt-in subsetting of embedded TrueType (`/FontFile2`) and CFF (`/FontFile3`) programs to used glyphs. |
 
 Lossless by default (`CompressStreams`/`RemoveUnusedObjects`/`UseObjectStreams`); `RecompressImages` and `SubsetFonts` are opt-in. Encrypted input is decrypted and written unencrypted. The WPF viewer surfaces this through an **Optimize…** dialog.
+
+### 14. Conformance (`Conformance/`)
+
+A **read-only** preflight: it validates a loaded document against an ISO PDF standard and returns structured findings, never mutating the document. `Preflighter.Check(document | bytes | path, ConformanceProfile)` runs the registered rules whose `AppliesToProfiles` includes the target profile and collects their findings.
+
+| Component | Responsibility |
+|-----------|----------------|
+| `Preflighter` | Public entry point. Builds a `ConformanceContext`, runs each applicable `IConformanceRule` (isolated in a try/catch so one rule cannot abort the run), and returns a `PreflightResult`. |
+| `ConformanceProfile` | `[Flags]` enum of targets — `PdfA2b`/`PdfA2u`/`PdfA3b` (ISO 19005), `PdfX4` (ISO 15930-7), `PdfUA1` (ISO 14289-1). |
+| `ConformanceContext` | Per-run shared state and cached navigation (streams, output intents, referenced fonts, annotations, form fields, used-glyph and marked-content analyses) so rules don't each re-walk the document. |
+| `IConformanceRule` + `Rules/` | One class per requirement; each declares the profiles it applies to and yields `Finding`s. |
+| `StructureTree` | Navigator over the tagged-PDF logical structure tree (`/StructTreeRoot`), with role-map resolution and parent/child standard types — backs the PDF/UA structure rules. |
+| `PreflightResult` / `Finding` | The outcome: `Conforms` (no `Error` finding), `Findings`/`Errors`/`Warnings`; each finding carries severity, ISO clause, message, and page/object. |
+
+The internal navigation layer (`ConformanceContext`, `IConformanceRule`, the rule classes) is `internal`; the public surface is `Preflighter`, `ConformanceProfile`, `PreflightResult`, `Finding`, and `FindingSeverity`. It is a *structural* validator — a partial, machine-decidable subset of each standard, cross-checked against the veraPDF corpus for zero false positives — not a certifying tool. Rules read the document and never write to it.
 
 ---
 

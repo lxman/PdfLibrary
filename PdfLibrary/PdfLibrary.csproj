@@ -8,10 +8,11 @@
         <!-- NuGet Package Metadata -->
         <PackageId>Lxman.PdfLibrary</PackageId>
         <Title>PdfLibrary</Title>
-        <Version>2.3.0</Version>
+        <Version>2.4.0</Version>
         <Authors>Michael Jordan</Authors>
-        <Description>A comprehensive .NET library for parsing, rendering, creating, editing, and optimizing PDF documents. Pure C# implementation with no native or third-party codec dependencies; cross-platform on .NET 8, 9, and 10. Supports PDF 1.x and 2.0.</Description>
-        <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;pdf-editor;document;csharp;cross-platform;pure-csharp;managed;pdf2.0</PackageTags>
+        <Description>A comprehensive .NET library for parsing, rendering, creating, editing, optimizing, and validating PDF documents. Pure C# implementation with no native or third-party codec dependencies; cross-platform on .NET 8, 9, and 10. Supports PDF 1.x and 2.0, and includes a read-only conformance preflight for PDF/A (2b/2u/3b), PDF/X-4, and PDF/UA-1.</Description>
+        <PackageTags>pdf;pdf-reader;pdf-writer;pdf-renderer;pdf-editor;document;csharp;cross-platform;pure-csharp;managed;pdf2.0;pdfa;pdfx;pdf-ua;conformance;preflight;validation;accessibility</PackageTags>
+        <PackageReleaseNotes>2.4.0 adds a read-only conformance preflight (PDF/A-2b/2u/3b, PDF/X-4, PDF/UA-1) via PdfLibrary.Conformance.Preflighter, plus a CMYK / colour-managed rendering fidelity batch (Ghent Workgroup fixtures), 16-bit images, optional-content visibility, mesh shadings, a transparency-group render SPI, and text-extraction fixes. Additive and back-compatible. See CHANGELOG.md.</PackageReleaseNotes>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageProjectUrl>https://github.com/lxman/PdfLibrary</PackageProjectUrl>
         <RepositoryUrl>https://github.com/lxman/PdfLibrary</RepositoryUrl>

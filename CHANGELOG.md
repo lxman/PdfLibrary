@@ -6,8 +6,71 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-07-09
+
+Minor release: a **read-only conformance preflight** for archival, print, and accessibility PDF
+standards, plus a large batch of CMYK / colour-managed rendering fidelity work (validated against
+Ghent Workgroup fixtures) and text-extraction correctness fixes. Additive and back-compatible —
+the preflight is new public API and no existing behaviour changed.
+
+### Added
+
+- **Conformance preflight (read-only validation)** — a new public `PdfLibrary.Conformance` surface
+  validates a loaded document against five ISO PDF standards and reports structured findings,
+  without ever modifying the document:
+  - `Preflighter.Check(PdfDocument | byte[] | string path, ConformanceProfile)` → `PreflightResult`
+    (`Conforms`, `Findings`, `Errors`).
+  - `ConformanceProfile` (`[Flags]`): `PdfA2b` / `PdfA2u` / `PdfA3b` (ISO 19005-2/3 archival),
+    `PdfX4` (ISO 15930-7 print), and `PdfUA1` (ISO 14289-1 accessibility).
+  - Each `Finding` carries a `FindingSeverity` (`Error` / `Warning` / `Info`), the governing ISO
+    clause, a human-readable message, and the offending page index / object number where applicable.
+  - **Honest boundaries:** this is a *structural* validator — a deliberately partial, machine-
+    decidable subset of each standard, not a certification. A "conforms" result means "no violations
+    among the checked rules." PDF/X-4 covers the structural core plus colour/version governance (not
+    the full Ghent print profile); PDF/UA-1 covers the machine-decidable subset (tagging, structure
+    nesting, tables, language identifiers) — reading order and meaningful alternative text remain
+    human judgment. Rules are cross-checked against the veraPDF conformance corpus and tuned for zero
+    false positives on conformant files.
+- **16-bit-per-component images** render at full depth (GWG180–184).
+- **Optional Content (layer) visibility** is honoured for marked content — content in a hidden OCG
+  is not painted (GWG150–152).
+- **Transparency-group rendering SPI** (`IRenderTarget.RenderTransparencyGroup`) so render targets
+  can composite isolated / knockout transparency groups.
+- **Type 6 and 7 mesh shadings** (Coons and tensor-product patch meshes) are decoded and tessellated.
+- **Native DeviceCMYK samples** are surfaced for images and shadings, so colour-managed render
+  targets receive real ink values instead of an RGB round-trip.
+- **Read path:** `Link` annotation targets, and bookmark destinations resolved from GoTo actions and
+  named destinations, are now exposed.
+
+### Changed
+
+- **Saving to a file path is now atomic.** `PdfDocument.Save(path)`, `PdfDocumentEditor.Save(path, …)`,
+  `PdfDocumentBuilder.Save(path)`, and `PdfOptimizer.Optimize(document, path, …)` write to a temporary
+  file in the destination's directory and rename it into place, instead of truncating the destination
+  before writing. An interrupted or failed save no longer destroys the existing file, so overwriting a
+  source — e.g. saving a merge back over one of its inputs — is safe. The stream overloads are unchanged
+  (the library cannot make a caller-owned stream atomic).
+
 ### Fixed
 
+- **Colour-managed CMYK image pipeline (Ghent Workgroup fidelity):**
+  - DeviceCMYK images route through the SWOP ICC profile; ICCBased-CMYK images through their own
+    source profile rather than raw ink (GWG130); DeviceGray images separate to the K plate instead
+    of an RGB round-trip (GWG173).
+  - JPXDecode (JPEG 2000) images take CMYK samples as native ink (GWG170) and honour the PDF
+    ICCBased colour space (GWG172).
+  - CMYK JPEG inversion is driven by `/Decode` rather than sniffing the Adobe marker; `/Decode` is
+    honoured on Separation/DeviceN images; Separation/DeviceN and Indexed-DeviceCMYK palettes decode
+    via the tint transform. Basic overprint applies to images by colorant set, and non-colorant
+    plates are preserved for Separation/DeviceN overprint.
+- **DeviceN fills** resolve correctly, and the sampled (`Type 0`) function's multi-input index order
+  was corrected (it was reversed vs ISO 32000-1 §7.10.2, zeroing some tint transforms). Shading
+  `/ColorSpace` is now resolved so spot-colour ramps render.
+- **`v` / `y` cubic Bézier** path operators are implemented (were previously dropped).
+- **Page content streams are concatenated before parsing**, so an operator split across a stream
+  boundary still parses (ISO 32000-1 §7.8.2).
+- **AES-256 decryption:** the file key no longer has PKCS#7 padding stripped, which had broken
+  decryption of some AES-256 documents.
 - **High character codes render in embedded Type1/CFF fonts with standard encodings.** The
   WinAnsi/MacRoman/Latin-1 encoding factories populated only the code→Unicode table, so
   `PdfFontEncoding.GetGlyphName` returned null for every code ≥ 127 and the renderer's name-based
@@ -21,23 +84,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   loops (`Tj`, `TJ`, and the four Type3 paths) were aligned to the same spec ordering; previously
   they scaled by `Th` before adding `Tc`/`Tw` and triggered word spacing on the decoded glyph
   instead of code 32.
+- **Text extraction pen advances honor the text-matrix horizontal scale.** Documents that select a
+  font at size 1 and scale via `Tm` (e.g. `/F1 1 Tf` + `28 0 0 28 x y Tm`) produced fragment maps
+  compressed by the scale factor — fragment widths, run-to-run pen positions, and `TJ` kern
+  adjustments were all unscaled while `FontSize` itself was reported scaled. This broke
+  consumer-built highlight rects and hit-testing. Advances and `TJ` adjustments now multiply by the
+  text matrix's horizontal scale.
 - **Form-XObject-hosted fragments are reported in page space.** Nested fragments are transformed by
   the form's `/Matrix` composed with the CTM at `Do` time (widths/font sizes scaled accordingly)
   instead of leaking the form's local coordinates, and a separator now prevents outer text gluing
-  directly onto form-hosted text in the assembled string.
+  directly onto form-hosted text in the assembled string. Cyclic Form XObject recursion during text
+  extraction is guarded against.
+- **Type0 code width** — the extractor read Type0 (CID) codes as single bytes when computing widths;
+  it now reads full multi-byte codes.
 
 ### Removed
 
 - `PdfGraphicsState.GetCharacterAdvance` — dead public helper with no callers (its formula had
   drifted from the renderer); removed rather than left as a trap.
-
-- **Text extraction pen advances now honor the text-matrix horizontal scale.** Documents that select
-  a font at size 1 and scale via `Tm` (e.g. `/F1 1 Tf` + `28 0 0 28 x y Tm`) produced fragment maps
-  compressed by the scale factor — fragment widths, run-to-run pen positions, and `TJ` kern
-  adjustments were all unscaled while `FontSize` itself was reported scaled. This broke
-  consumer-built highlight rects and hit-testing (selection/search highlights covering only the
-  first character of a heading). Advances and `TJ` adjustments now multiply by the text matrix's
-  horizontal scale, matching the existing `effectiveFontSize` treatment.
 
 ## [2.3.0] - 2026-07-04
 
@@ -395,6 +459,10 @@ First stable release. Completes the *load → edit → optimize* story: a loaded
 | 1.0.0 | 2026-06-21 | First stable release: editing/mutation API, optimization API, multi-targets .NET 8/9/10, all dependencies on stable releases (SkiaSharp 3.119.4). |
 | 1.1.0 | 2026-06-25 | Final 1.x: additive API cleanup (public exception hierarchy, stream/path overloads, optimizer result object, `LoadFont` byte[]/Stream, annotation read/remove, expanded viewer prefs) + correctness fixes (white-background rendering, `AddText`/`AddLine` unit handling); usage docs consolidated into a single verified guide. |
 | 2.0.0 | 2026-06-27 | BREAKING: SkiaSharp-free core; geometry-only `IRenderTarget` SPI; WPF render target published (`Lxman.PdfLibrary.Rendering.Wpf`); SkiaSharp backend sunset (test-only); forms geometry API (`PageGeometry`, `PdfFieldWidget`); fillable-forms viewer (pure WPF); API cleanups (`IRenderBuilder`/`ImageFormat` removed, `ButtonKind.PushButton`); xUnit v3 migration. |
+| 2.1.0 | 2026-06-28 | Markup-annotation authoring/editing with real appearance generation; richer annotation reader; radio-group + flatten fixes. |
+| 2.2.0 | 2026-06-30 | Opt-in ICC-based CMYK colour pipeline (`UseIccForDeviceCmyk`); default render path unchanged. |
+| 2.3.0 | 2026-07-04 | AcroForm field authoring on existing documents; text-extraction fixes; field-tree-aware page import. |
+| 2.4.0 | 2026-07-09 | Read-only conformance preflight (PDF/A-2b/2u/3b, PDF/X-4, PDF/UA-1); CMYK / colour-managed render fidelity batch (Ghent Workgroup); 16-bit images; optional content; mesh shadings; transparency-group SPI; text-extraction fixes. |
 
 ---
 
