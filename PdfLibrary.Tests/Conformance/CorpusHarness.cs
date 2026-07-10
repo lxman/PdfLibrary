@@ -72,6 +72,25 @@ internal static class CorpusHarness
             : ProfileFolders.Where(kv => Directory.Exists(System.IO.Path.Combine(Root, kv.Value)))
                             .Select(kv => kv.Key);
 
+    /// <summary>
+    /// Every PDF path under the given profile's corpus folder, in stable order — including files whose
+    /// names do not carry the veraPDF verdict pattern (which <see cref="Enumerate"/> skips). The parity
+    /// harness joins on the full file set, so it needs the unfiltered list.
+    /// </summary>
+    public static IEnumerable<string> AllPdfPaths(ConformanceProfile profile)
+    {
+        if (Root is null || !ProfileFolders.TryGetValue(profile, out string? folder))
+            yield break;
+
+        string dir = System.IO.Path.Combine(Root, folder);
+        if (!Directory.Exists(dir))
+            yield break;
+
+        foreach (string path in Directory.EnumerateFiles(dir, "*.pdf", SearchOption.AllDirectories)
+                                         .OrderBy(p => p, StringComparer.Ordinal))
+            yield return path;
+    }
+
     /// <summary>Every parseable fixture under the given profile's corpus folder, in stable path order.</summary>
     public static IEnumerable<CorpusCase> Enumerate(ConformanceProfile profile)
     {
