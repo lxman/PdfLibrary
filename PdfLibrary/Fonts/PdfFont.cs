@@ -22,6 +22,12 @@ public abstract class PdfFont
     }
 
     /// <summary>
+    /// The font's own PDF dictionary, exposed so conformance rules can read declared attributes
+    /// (/Widths, /W, /DW, /CIDToGIDMap, the descriptor /CharSet/CIDSet) directly from the used font.
+    /// </summary>
+    internal PdfDictionary FontDictionary => _dictionary;
+
+    /// <summary>
     /// Gets the font type (Type1, TrueType, Type3, Type0, etc.)
     /// </summary>
     internal abstract PdfFontType FontType { get; }
