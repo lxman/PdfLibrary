@@ -39,7 +39,8 @@ jobs:
         dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
 
     - name: Run tests
-      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category!=LocalOnly'
+      # Parity tests run in the dedicated 'parity' job below (they need the corpus); exclude them here.
+      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category!=LocalOnly&Category!=Parity'
 
   # Windows-only: the WPF render target (shipped as Lxman.PdfLibrary.Rendering.Wpf) and its tests.
   build-windows:
@@ -68,3 +69,67 @@ jobs:
 
     - name: Run WPF tests
       run: dotnet test PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj --configuration Release --no-build
+
+  # Parity: diff the conformance preflighter against veraPDF's committed verdict snapshot.
+  # NO Java/veraPDF here — the snapshot is committed (regenerated offline via
+  # tools/verapdf-parity/capture.sh). Runs in parallel with the builds above, so it does not
+  # extend the critical path. The corpus is pinned to the commit the snapshot was captured against
+  # (CORPUS_COMMIT must match verapdf-verdicts.json's corpusCommit — the completeness gate enforces it).
+  parity:
+    runs-on: ubuntu-latest
+
+    env:
+      CORPUS_COMMIT: 49de56c
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6
+      with:
+        fetch-depth: 0  # Full history for Nerdbank.GitVersioning
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Cache veraPDF corpus
+      id: corpus-cache
+      uses: actions/cache@v4
+      with:
+        path: veraPDF-corpus
+        key: verapdf-corpus-${{ env.CORPUS_COMMIT }}
+
+    - name: Fetch veraPDF corpus (pinned)
+      if: steps.corpus-cache.outputs.cache-hit != 'true'
+      # The corpus lives on the 'staging' branch (GitHub won't serve a bare SHA). Fetch it shallow;
+      # if the pinned commit isn't the current tip (staging advanced), deepen, then check out the
+      # exact SHA so the pin stays deterministic. If the commit ever leaves staging's history the
+      # checkout fails loudly — re-pin CORPUS_COMMIT and regenerate the snapshot.
+      run: |
+        git init -q veraPDF-corpus
+        git -C veraPDF-corpus remote add origin https://github.com/veraPDF/veraPDF-corpus.git
+        git -C veraPDF-corpus fetch -q --depth 1 origin staging
+        if ! git -C veraPDF-corpus cat-file -e "${CORPUS_COMMIT}^{commit}" 2>/dev/null; then
+          echo "pinned commit $CORPUS_COMMIT is not at the staging tip — deepening history"
+          git -C veraPDF-corpus fetch -q origin staging
+        fi
+        git -C veraPDF-corpus checkout -q "$CORPUS_COMMIT"
+
+    - name: Build tests
+      run: |
+        dotnet restore PdfLibrary.Tests/PdfLibrary.Tests.csproj
+        dotnet build PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-restore
+
+    - name: Run parity gates + report
+      env:
+        VERAPDF_CORPUS: ${{ github.workspace }}/veraPDF-corpus
+        PARITY_REPORT: ${{ github.workspace }}/parity-report.md
+      run: dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --configuration Release --no-build --filter 'Category=Parity'
+
+    - name: Upload parity report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: parity-report
+        path: parity-report.md
+        if-no-files-found: warn
