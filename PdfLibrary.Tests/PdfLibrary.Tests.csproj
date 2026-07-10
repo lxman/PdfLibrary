@@ -49,6 +49,10 @@
              see Resources/conformant-pdfa2b.LICENSE.txt) — the "clean document" fixture. -->
         <None Update="Resources\conformant-pdfa2b.pdf" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Resources\conformant-pdfa2b.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+        <!-- veraPDF verdict snapshot (the parity "answer key"; regenerate via
+             tools/verapdf-parity/capture.sh). Copied next to the test binary so the parity
+             loader and gates read it without the corpus or any JVM present. -->
+        <None Update="Conformance\parity\verapdf-verdicts.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>
