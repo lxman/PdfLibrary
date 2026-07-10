@@ -17,6 +17,8 @@
     <Project Path="PdfLibrary.Examples/08-EncryptPdf/EncryptPdf.csproj" />
     <Project Path="PdfLibrary.Examples/09-ExtractImages/ExtractImages.csproj" />
     <Project Path="PdfLibrary.Examples/10-CreateFromScratch/CreateFromScratch.csproj" />
+    <Project Path="PdfLibrary.Examples/11-TestEncoding/TestEncoding.csproj" />
+    <Project Path="PdfLibrary.Examples/12-PreflightPdf/PreflightPdf.csproj" />
   </Folder>
   <Folder Name="/ICCSharp/">
     <Project Path="ICCSharp.Diff/ICCSharp.Diff.csproj" />
