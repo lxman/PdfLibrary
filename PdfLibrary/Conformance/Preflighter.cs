@@ -87,6 +87,7 @@ public static class Preflighter
         new Rules.UaTextAttributeLangRule(),
         new Rules.UaObjectLangRule(),
         new Rules.UaLanguageTagRule(),
+        new Rules.UaAnnotationRule(),
     ];
 
     /// <summary>
