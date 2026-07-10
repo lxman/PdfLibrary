@@ -31,6 +31,8 @@ public static class Preflighter
         new Rules.OutputIntentSingleProfileRule(),
         new Rules.FontEmbeddingRule(),
         new Rules.DeviceColourRule(),
+        // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
+        new Rules.TransparencyColourRule(),
         // Slice 7 — annotations, interactive forms, actions.
         new Rules.AnnotationTypeRule(),
         new Rules.AnnotationFlagsRule(),

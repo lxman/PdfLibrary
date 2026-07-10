@@ -202,14 +202,16 @@ public class PreflightSlice6Tests
     [Fact]
     public void NoDeviceColourUsed_noOutputIntent_passes()
     {
-        PdfDocument doc = BuildDoc(Ascii("0 0 100 100 re f"));
+        // Content that paints nothing uses no colour at all. (A bare "re f" would fill in the implicit
+        // initial DeviceGray — detected as device colour since slice 16b, see PreflightSlice16bTests.)
+        PdfDocument doc = BuildDoc(Ascii("q Q"));
         Assert.Empty(new DeviceColourRule().Check(Ctx(doc)));
     }
 
     [Fact]
     public void NoDeviceColourUsed_withOutputIntent_passes()
     {
-        PdfDocument doc = BuildDoc(Ascii("0 0 100 100 re f"), outputIntentProfile: RgbProfile);
+        PdfDocument doc = BuildDoc(Ascii("q Q"), outputIntentProfile: RgbProfile);
         Assert.Empty(new DeviceColourRule().Check(Ctx(doc)));
     }
 
