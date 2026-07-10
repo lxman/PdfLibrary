@@ -181,26 +181,53 @@ public class PreflightSlice16Tests
         Assert.Empty(Findings(doc));
     }
 
-    [Fact]
-    public void Image_soft_mask_is_not_a_transparent_object()
+    // A soft-masked image XObject (obj 10, /SMask → obj 11) wired into the page resources.
+    private static Action<PdfDocument, PdfDictionary> SoftMaskedImage() => (d, res) =>
     {
-        // An image XObject /SMask is intentionally excluded from the trigger set (parity slice 16a).
-        PdfDocument doc = BuildDoc(configure: (d, res) =>
+        var image = new PdfDictionary
         {
-            var image = new PdfDictionary
-            {
-                [new PdfName("Type")] = new PdfName("XObject"),
-                [new PdfName("Subtype")] = new PdfName("Image"),
-                [new PdfName("Width")] = new PdfInteger(1),
-                [new PdfName("Height")] = new PdfInteger(1),
-                [new PdfName("BitsPerComponent")] = new PdfInteger(8),
-                [new PdfName("ColorSpace")] = new PdfName("DeviceGray"),
-                [new PdfName("SMask")] = new PdfIndirectReference(11, 0),
-            };
-            d.AddObject(10, 0, new PdfStream(image, [0]));
-            d.AddObject(11, 0, new PdfStream(new PdfDictionary { [new PdfName("Subtype")] = new PdfName("Image") }, [0]));
-            res[new PdfName("XObject")] = new PdfDictionary { [new PdfName("Im0")] = new PdfIndirectReference(10, 0) };
-        });
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(1),
+            [new PdfName("Height")] = new PdfInteger(1),
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+            [new PdfName("ColorSpace")] = new PdfName("DeviceGray"),
+            [new PdfName("SMask")] = new PdfIndirectReference(11, 0),
+        };
+        d.AddObject(10, 0, new PdfStream(image, [0]));
+        d.AddObject(11, 0, new PdfStream(new PdfDictionary { [new PdfName("Subtype")] = new PdfName("Image") }, [0]));
+        res[new PdfName("XObject")] = new PdfDictionary { [new PdfName("Im0")] = new PdfIndirectReference(10, 0) };
+    };
+
+    [Fact]
+    public void Image_soft_mask_fires_6210_only_not_6243()
+    {
+        // A soft-masked image is a transparent object for 6.2.10, but (unlike a group) introduces no
+        // device blending colour space, so it never fires 6.2.4.3.
+        PdfDocument doc = BuildDoc(configure: SoftMaskedImage());
+        Assert.Equal(["6.2.10"], Clauses(doc));
+    }
+
+    [Fact]
+    public void Image_soft_mask_with_valid_output_intent_passes()
+    {
+        PdfDocument doc = BuildDoc(Oi.Rgb, SoftMaskedImage());
+        Assert.Empty(Findings(doc));
+    }
+
+    [Fact]
+    public void Non_standard_blend_mode_fires_6210_even_with_a_valid_output_intent()
+    {
+        // A /BM outside ISO 32000-1 is invalid regardless of the output intent (ISO 19005-2, 6.2.10).
+        PdfDocument doc = BuildDoc(Oi.Rgb, (_, res) => AddExtGState(res, ("BM", new PdfName("Custom"))));
+        Assert.Equal(["6.2.10"], Clauses(doc));
+    }
+
+    [Fact]
+    public void Standard_non_normal_blend_mode_is_not_flagged_as_invalid()
+    {
+        // Multiply is a standard blend mode: with a valid output intent it is fully conforming.
+        PdfDocument doc = BuildDoc(Oi.Rgb, (_, res) => AddExtGState(res, ("BM", new PdfName("Multiply"))));
         Assert.Empty(Findings(doc));
     }
 

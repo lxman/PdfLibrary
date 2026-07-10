@@ -21,7 +21,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 850,   // + device colour content paths (6.2.4.3 87/87, 6.2.10 33/35)
+            [ConformanceProfile.PdfA2b] = 863,   // + 6.2.10 tail: image soft mask + non-standard blend mode (6.2.10 35/35)
             [ConformanceProfile.PdfA2u] = 18,
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 223,

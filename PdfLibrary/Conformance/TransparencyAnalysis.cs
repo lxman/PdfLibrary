@@ -22,10 +22,19 @@ namespace PdfLibrary.Conformance;
 internal static class TransparencyAnalysis
 {
     /// <summary>One page's transparency facts.</summary>
+    /// <param name="HasTransparentObject">A blending transparent object (ExtGState soft mask / sub-1 alpha /
+    /// non-normal blend mode, or a Form transparency group) — governs both 6.2.10 and 6.2.4.3.</param>
+    /// <param name="PageGroupCsDefined">The page's own /Group defines a /CS (a page blending colour space).</param>
+    /// <param name="DeviceBlendingFamilies">Device families of every reachable transparency group's /CS.</param>
+    /// <param name="HasImageSoftMask">A soft-masked image XObject — a transparent object for 6.2.10 only
+    /// (it introduces no device blending colour space, so it is out of the 6.2.4.3 analysis).</param>
+    /// <param name="HasNonStandardBlendMode">A reachable ExtGState names a /BM outside ISO 32000-1.</param>
     internal readonly record struct PageTransparency(
         bool HasTransparentObject,
         bool PageGroupCsDefined,
-        IReadOnlySet<OutputIntentColour> DeviceBlendingFamilies);
+        IReadOnlySet<OutputIntentColour> DeviceBlendingFamilies,
+        bool HasImageSoftMask,
+        bool HasNonStandardBlendMode);
 
     public static IReadOnlyList<PageTransparency> Analyze(ConformanceContext context)
     {
@@ -37,7 +46,7 @@ internal static class TransparencyAnalysis
 
     private static PageTransparency AnalyzePage(ConformanceContext context, PdfPage page)
     {
-        bool hasTransparent = false;
+        bool hasTransparent = false, hasImageSoftMask = false, hasNonStandardBlendMode = false;
         var blend = new HashSet<OutputIntentColour>();
         var resourceSeen = new HashSet<int>(); // resource dictionaries already walked (cycle guard)
         var streamSeen = new HashSet<int>();    // XObject / pattern streams already walked
@@ -73,11 +82,16 @@ internal static class TransparencyAnalysis
             // here means the scope can paint a transparent object.
             if (resources.GetExtGStates() is { } extGStates)
                 foreach (PdfObject graphicsState in extGStates.Values)
-                    if (context.Resolve(graphicsState) is PdfDictionary gsDict && IsTransparent(context, gsDict))
-                        hasTransparent = true;
+                    if (context.Resolve(graphicsState) is PdfDictionary gsDict)
+                    {
+                        if (IsTransparent(context, gsDict))
+                            hasTransparent = true;
+                        if (HasNonStandardBlendMode(context, context.Resolve(gsDict.Get("BM"))))
+                            hasNonStandardBlendMode = true;
+                    }
 
-            // Form XObjects carry a transparency group and their own resources; image XObjects do not
-            // contribute a transparent object under the trigger set used here.
+            // Form XObjects carry a transparency group; a soft-masked image XObject is a transparent object
+            // for the 6.2.10 blending-space requirement (handled in WalkXObject).
             if (resources.GetXObjects() is { } xobjects)
                 foreach (PdfObject xobject in xobjects.Values)
                     WalkXObject(xobject);
@@ -100,7 +114,17 @@ internal static class TransparencyAnalysis
         {
             if (context.Resolve(xobjectObj) is not PdfStream stream)
                 return;
-            if (context.ResolveName(stream.Dictionary.Get("Subtype")) != "Form")
+            string? subtype = context.ResolveName(stream.Dictionary.Get("Subtype"));
+            if (subtype == "Image")
+            {
+                // A soft-masked image is a transparent object for 6.2.10 but introduces no device blending
+                // colour space, so it is kept out of the 6.2.4.3 device-blend analysis (HasTransparentObject).
+                PdfObject? imageSmask = context.Resolve(stream.Dictionary.Get("SMask"));
+                if (imageSmask is not null && imageSmask is not PdfName { Value: "None" })
+                    hasImageSoftMask = true;
+                return;
+            }
+            if (subtype != "Form")
                 return;
 
             // A Form XObject with a transparency group is itself a transparent object, and its group's
@@ -162,7 +186,39 @@ internal static class TransparencyAnalysis
                 if (context.Resolve(entry) is PdfDictionary annot)
                     WalkAppearance(annot.Get("AP"));
 
-        return new PageTransparency(hasTransparent, pageGroupCsDefined, blend);
+        return new PageTransparency(hasTransparent, pageGroupCsDefined, blend, hasImageSoftMask, hasNonStandardBlendMode);
+    }
+
+    // ISO 32000-1 standard blend modes (Tables 136 and 137) plus Compatible (a deprecated alias for
+    // Normal). A /BM naming anything else is not a valid PDF/A blend mode (ISO 19005-2, 6.2.10).
+    private static readonly HashSet<string> StandardBlendModes = new(StringComparer.Ordinal)
+    {
+        "Normal", "Compatible", "Multiply", "Screen", "Overlay", "Darken", "Lighten",
+        "ColorDodge", "ColorBurn", "HardLight", "SoftLight", "Difference", "Exclusion",
+        "Hue", "Saturation", "Color", "Luminosity",
+    };
+
+    // True when /BM names a blend mode outside the standard set. An array /BM is valid when any entry is a
+    // standard mode (the viewer uses the first it supports, falling back to Normal), so it is reported only
+    // when every named entry is non-standard.
+    private static bool HasNonStandardBlendMode(ConformanceContext context, PdfObject? bm)
+    {
+        switch (bm)
+        {
+            case PdfName name:
+                return !StandardBlendModes.Contains(name.Value);
+            case PdfArray array:
+                bool anyName = false;
+                foreach (PdfObject entry in array)
+                    if (context.Resolve(entry) is PdfName n)
+                    {
+                        anyName = true;
+                        if (StandardBlendModes.Contains(n.Value)) return false;
+                    }
+                return anyName;
+            default:
+                return false;
+        }
     }
 
     /// <summary>An ExtGState paints a transparent object when it softens, fades, or blends non-normally.</summary>
