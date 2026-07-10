@@ -481,8 +481,13 @@ internal sealed class ConformanceContext
 
     private OutputIntentColour ComputeOutputIntentColour()
     {
+        // For a PDF/A target, only a GTS_PDFA1 output intent governs device colour: a GTS_PDFX (PDF/X)
+        // intent does not satisfy PDF/A (ISO 19005-2, 6.2.2), so it is skipped here and the device-colour
+        // rule fires on any device colour. PDF/X targets are unaffected (they require their own GTS_PDFX).
+        bool pdfaTarget = (ConformanceProfile.AllPdfA & Target) != 0;
         foreach (OutputIntentInfo intent in OutputIntents)
         {
+            if (pdfaTarget && intent.Subtype != "GTS_PDFA1") continue;
             if (intent.Profile is null) continue;
             try
             {
