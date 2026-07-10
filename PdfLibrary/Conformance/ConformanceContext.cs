@@ -5,6 +5,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
+using PdfLibrary.Metadata;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Conformance;
@@ -40,6 +41,9 @@ internal sealed class ConformanceContext
     private OutputIntentColour? _outputIntentColour;
     private IReadOnlyList<UsedFontCodes>? _usedTextGlyphs;
     private MarkedContentAnalysis? _markedContent;
+    private bool _xmpResolved;
+    private XmpPacket? _xmp;
+    private byte[]? _xmpBytes;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -107,6 +111,29 @@ internal sealed class ConformanceContext
     /// <c>/ActualText</c>. Walked once over all pages (and their Form XObjects) and cached.
     /// </summary>
     public MarkedContentAnalysis MarkedContent => _markedContent ??= AnalyzeMarkedContent();
+
+    /// <summary>
+    /// The document's XMP metadata packet, parsed once from the catalog's /Metadata stream and cached
+    /// (null when there is no /Metadata). Backs the XMP conformance rules.
+    /// </summary>
+    public XmpPacket? Xmp { get { EnsureXmp(); return _xmp; } }
+
+    /// <summary>
+    /// The raw decoded bytes of the /Metadata stream, cached alongside <see cref="Xmp"/> (null when
+    /// there is no /Metadata). Used for signals the lossy packet parser cannot represent — e.g.
+    /// detecting a PDF/A extension-schema declaration by scanning for its namespace URI.
+    /// </summary>
+    public byte[]? XmpMetadataBytes { get { EnsureXmp(); return _xmpBytes; } }
+
+    private void EnsureXmp()
+    {
+        if (_xmpResolved) return;
+        _xmpResolved = true;
+        PdfStream? metadata = Catalog?.GetMetadata();
+        if (metadata is null) return;
+        _xmpBytes = metadata.GetDecodedData(Document.Decryptor);
+        _xmp = XmpPacket.Parse(_xmpBytes);
+    }
 
     /// <summary>The document catalog, resolved once and cached (null when the document has none).</summary>
     public PdfCatalog? Catalog
