@@ -158,14 +158,14 @@ internal static class StructureTree
 
     /// <summary>
     /// Maps each annotation object (by object number) referenced by an <c>/OBJR</c> in the structure tree to
-    /// the standard type of the structure element that <em>directly</em> contains that <c>/OBJR</c> — the
-    /// annotation's enclosing tag. An annotation that no <c>/OBJR</c> references is simply absent from the
-    /// map (so a caller can distinguish "untagged" from "tagged under type X"). Backs the PDF/UA annotation
-    /// nesting rules (7.18.4 widget-in-Form, 7.18.5 link-in-Link, 7.18.8 printer-mark-not-tagged).
+    /// the structure element that <em>directly</em> contains that <c>/OBJR</c> — the annotation's enclosing
+    /// structure element. An annotation that no <c>/OBJR</c> references is simply absent from the map (so a
+    /// caller can distinguish "untagged" from "tagged under element E"). Backs the PDF/UA annotation nesting
+    /// and alternate-description rules (7.18.1/.4/.5/.8).
     /// </summary>
-    public static IReadOnlyDictionary<int, string?> AnnotationParentTypes(ConformanceContext context)
+    public static IReadOnlyDictionary<int, PdfDictionary> AnnotationParentElements(ConformanceContext context)
     {
-        var map = new Dictionary<int, string?>();
+        var map = new Dictionary<int, PdfDictionary>();
         foreach (StructureNode node in Nodes(context))
         {
             foreach (PdfObject kidObj in KidObjects(context, node.Element))
@@ -173,7 +173,7 @@ internal static class StructureTree
                 if (context.Resolve(kidObj) is not PdfDictionary kid) continue;
                 if (context.ResolveName(kid.Get("Type")) != "OBJR") continue;
                 if (context.Resolve(kid.Get("Obj")) is { IsIndirect: true } annot)
-                    map[annot.ObjectNumber] = node.StandardType; // last container wins if referenced twice
+                    map[annot.ObjectNumber] = node.Element; // last container wins if referenced twice
             }
         }
         return map;
