@@ -32,6 +32,8 @@ public static class Preflighter
         new Rules.OutputIntentProfileRule(),
         new Rules.OutputIntentSingleProfileRule(),
         new Rules.FontEmbeddingRule(),
+        // Slice 18 — dictionary-level font rules (ISO 19005-2 6.2.11 + ISO 14289-1 7.21).
+        new Rules.FontDictionaryRule(),
         new Rules.DeviceColourRule(),
         // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
         new Rules.TransparencyColourRule(),
