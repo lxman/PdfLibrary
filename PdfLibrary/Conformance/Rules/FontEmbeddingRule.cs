@@ -22,7 +22,8 @@ internal sealed class FontEmbeddingRule : IConformanceRule
 
     public string RuleId => "font-embedded";
 
-    public ConformanceProfile AppliesToProfiles => ConformanceProfile.All;
+    // Shared with PDF/UA-1 (7.21.3.1), whose font-embedding requirement is the same as PDF/A's.
+    public ConformanceProfile AppliesToProfiles => ConformanceProfile.All | ConformanceProfile.PdfUA1;
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
@@ -41,7 +42,8 @@ internal sealed class FontEmbeddingRule : IConformanceRule
             {
                 RuleId = RuleId,
                 Severity = FindingSeverity.Error,
-                Clause = ConformanceClauses.For(context.Target, "6.2.11.4.1"),
+                Clause = ConformanceClauses.For(context.Target,
+                    context.Target == ConformanceProfile.PdfUA1 ? "7.21.3.1" : "6.2.11.4.1"),
                 Message = $"The {subtype ?? "font"} font '{baseFont}' is not embedded.",
                 ObjectNumber = font.IsIndirect ? font.ObjectNumber : null,
             };

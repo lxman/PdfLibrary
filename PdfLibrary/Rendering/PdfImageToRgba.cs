@@ -26,9 +26,9 @@ public enum AlphaMode
 /// Converts a <see cref="PdfImage"/> to a raw RGBA8888 pixel buffer (R,G,B,A order,
 /// top-row-first) with no SkiaSharp dependency.
 ///
+/// <para>16 bpc images are supported by down-converting each sample to its high byte (see ToRgba).</para>
 /// <para>Unsupported cases that return <see langword="null"/>:</para>
 /// <list type="bullet">
-///   <item>16 bpc images — not yet implemented.</item>
 ///   <item>Lab colour space — not yet implemented.</item>
 ///   <item>Unknown colour-space / bpc combination — falls to default.</item>
 /// </list>
@@ -50,7 +50,7 @@ public static class PdfImageToRgba
 
     /// <summary>
     /// Decodes <paramref name="image"/> to an RGBA8888 byte array.
-    /// Returns <see langword="null"/> for unsupported images (16 bpc, Lab, unknown colour space).
+    /// Returns <see langword="null"/> for unsupported images (Lab, unknown colour space).
     /// </summary>
     public static RgbaImage? ToRgba(
         PdfImage image,
@@ -99,10 +99,24 @@ public static class PdfImageToRgba
                         TimeSpan decodeElapsed = DateTime.Now - decodeStart;
                         PdfLogger.Log(LogCategory.Images, $"[TIMING] JPEG2000 decode took {decodeElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image with {components} components");
 
-                        DateTime convertStart = DateTime.Now;
+                        // A JPXDecode image may carry an explicit PDF /ColorSpace whose base is ICCBased;
+                        // ISO 32000 §7.4.9 gives that dictionary colour space precedence over the JP2's own
+                        // enumerated colr box, so re-interpret the (palette-expanded) 3-channel output
+                        // through that source profile. Otherwise the JP2's sRGB assertion stands and an
+                        // ICC-tagged patch mismatches the DeviceCMYK box it's proofed against (GWG172 green X).
+                        if (components == 3)
+                        {
+                            PdfStream? srcIcc = GetJpxSourceIccProfile(image, doc);
+                            if (srcIcc is not null)
+                            {
+                                byte[]? managed = new IccColorConverter(doc)
+                                    .TryConvertInterleavedToSrgb(srcIcc, pixelData, 3, blackPointCompensation, renderingIntent);
+                                if (managed is not null)
+                                    pixelData = managed;
+                            }
+                        }
+
                         byte[] rgba = ConvertRawBytesToRgba(pixelData, jp2Width, jp2Height, components);
-                        TimeSpan convertElapsed = DateTime.Now - convertStart;
-                        PdfLogger.Log(LogCategory.Images, $"[TIMING] Raw bytes→RGBA conversion took {convertElapsed.TotalMilliseconds:F0}ms for {jp2Width}x{jp2Height} image");
 
                         return new RgbaImage(rgba, jp2Width, jp2Height, AlphaMode.Opaque);
                     }
@@ -147,6 +161,19 @@ public static class PdfImageToRgba
                         }
                     }
                 }
+            }
+
+            // 16-bit samples are unpacked, big-endian byte pairs (no bit-packing). Down-convert each sample
+            // to its high byte so the 8-bit colour-space pipeline below handles every space uniformly
+            // (DeviceRGB/Gray/CMYK + ICCBased). The low byte is sub-perceptual, and /Decode is linear so it
+            // still applies to the high byte. (JPXDecode carries its own bit depth and returns above.)
+            if (bitsPerComponent == 16 && imageData.Length >= 2)
+            {
+                var packed = new byte[imageData.Length / 2];
+                for (int i = 0, j = 0; j < packed.Length; i += 2, j++)
+                    packed[j] = imageData[i];
+                imageData = packed;
+                bitsPerComponent = 8;
             }
 
             try
@@ -858,6 +885,39 @@ public static class PdfImageToRgba
             streamObj = doc.ResolveReference(r);
         return streamObj as PdfStream;
     }
+
+    // The ICC profile a JPXDecode image's PDF /ColorSpace nominates as its source space, if any: either a
+    // direct [/ICCBased s] or the base of an [/Indexed [/ICCBased s] hival lookup] (the degenerate Indexed
+    // wrapper GWG172 uses around a single palette entry). Null for device spaces, non-ICC bases, or a
+    // profile whose component count isn't 3 — those keep the JP2's own colr-box rendering.
+    internal static PdfStream? GetJpxSourceIccProfile(PdfImage image, PdfDocument? doc)
+    {
+        PdfArray? cs = image.ColorSpaceArray;
+        if (cs is not { Count: >= 2 }) return null;
+
+        PdfArray? iccArr = cs[0] switch
+        {
+            PdfName { Value: "ICCBased" } => cs,
+            PdfName { Value: "Indexed" } => Resolve(cs[1], doc) as PdfArray,
+            _ => null
+        };
+        if (iccArr is not { Count: >= 2 } || iccArr[0] is not PdfName { Value: "ICCBased" })
+            return null;
+
+        if (Resolve(iccArr[1], doc) is not PdfStream iccStream)
+            return null;
+
+        // Only re-interpret 3-channel (RGB) profiles here; the JPXDecode caller only reaches this for a
+        // 3-component decode, and a mismatched N would make TryConvertInterleavedToSrgb reject anyway.
+        if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject? nObj) &&
+            nObj is PdfInteger { Value: not 3 })
+            return null;
+
+        return iccStream;
+    }
+
+    private static PdfObject? Resolve(PdfObject? obj, PdfDocument? doc) =>
+        obj is PdfIndirectReference r && doc is not null ? doc.ResolveReference(r) : obj;
 
     private static int GetIccBasedComponentCount(PdfImage image, PdfDocument? doc)
     {

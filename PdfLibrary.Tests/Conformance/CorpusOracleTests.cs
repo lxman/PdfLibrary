@@ -65,8 +65,9 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // (fixtures whose real violation is an unimplemented rule). The real embedding clause 6.2.11.4.1
             // still detects 5/10 — no true detection was lost.
             [ConformanceProfile.PdfA2b] = 134,
-            [ConformanceProfile.PdfA2u] = 1,
+            [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
+            [ConformanceProfile.PdfUA1] = 82,  // slice 13 phase 3b: + standard-type/role-map + table nesting/cardinality/grid + Alt/ActualText/E + outline lang + /Lang syntax
         };
 
     [Fact]

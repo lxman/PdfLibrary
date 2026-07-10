@@ -21,6 +21,9 @@ public static class Preflighter
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),
         new Rules.PdfaIdentificationRule(),
+        // PDF/A-2u Unicode delta (ISO 19005-2 6.2.11.7.2).
+        new Rules.Pdfa2uToUnicodeRule(),
+        new Rules.Pdfa2uToUnicodeValuesRule(),
         new Rules.OutputIntentProfileRule(),
         new Rules.OutputIntentSingleProfileRule(),
         new Rules.FontEmbeddingRule(),
@@ -42,6 +45,34 @@ public static class Preflighter
         new Rules.PdfxOutputIntentRule(),
         new Rules.PageBoxesRule(),
         new Rules.TrappedRule(),
+        // Slice 10 — PDF/X-4 version identification + colour governance (ISO 15930-7).
+        new Rules.PdfxVersionRule(),
+        new Rules.PdfxColourRule(),
+        // Slice 11 — PDF/X-4 transparency + spot/DeviceN colour depth (ISO 15930-7).
+        new Rules.PdfxTransparencyColourRule(),
+        new Rules.PdfxBlendModeRule(),
+        new Rules.PdfxNChannelColorantsRule(),
+        new Rules.PdfxSeparationConsistencyRule(),
+        // Slice 13 — PDF/UA-1 accessibility (ISO 14289-1). Phase 1: identification + catalog/metadata.
+        new Rules.UaIdentificationRule(),
+        new Rules.UaTaggedRule(),
+        new Rules.UaDisplayDocTitleRule(),
+        new Rules.UaTitleRule(),
+        new Rules.UaXfaRule(),
+        // Phase 2: reuse — text-to-Unicode (7.2); font embedding (7.21) is FontEmbeddingRule widened to UA.
+        new Rules.UaTextUnicodeRule(),
+        // Phase 3: structure-tree rules.
+        new Rules.UaFigureAltRule(),
+        // Phase 4: marked-content completeness (7.1) — real content tagged/artifact + artifact nesting.
+        new Rules.UaContentTaggedRule(),
+        new Rules.UaArtifactNestingRule(),
+        // Phase 3b: structure-tree relationship semantics (ISO 32000-1 14.8.4).
+        new Rules.UaStandardTypeRule(),
+        new Rules.UaStructureNestingRule(),
+        new Rules.UaTableGridRule(),
+        new Rules.UaTextAttributeLangRule(),
+        new Rules.UaObjectLangRule(),
+        new Rules.UaLanguageTagRule(),
     ];
 
     /// <summary>
@@ -153,7 +184,7 @@ public static class Preflighter
     {
         var bits = (int)profile;
         return bits != 0
-               && (bits & (bits - 1)) == 0                       // exactly one bit set
-               && (ConformanceProfile.All & profile) == profile; // and it is a defined profile
+               && (bits & (bits - 1)) == 0                             // exactly one bit set
+               && (ConformanceProfile.AnyProfile & profile) == profile; // and it is a defined profile
     }
 }

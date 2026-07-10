@@ -25,6 +25,12 @@ internal class PdfRenderer : PdfContentProcessor
     private PdfResources? _currentResources; // Can be swapped for annotation resources
     private readonly IPathBuilder _currentPath;
     private readonly OptionalContentManager? _optionalContentManager;
+    // Marked-content nesting (BDC/BMC … EMC): each entry records whether that region is an invisible
+    // /OC (optional content) group. Painting is suppressed while any enclosing region is hidden
+    // (ISO 32000-1 §8.11). Non-/OC marked content (e.g. /Artifact, /Span) never hides.
+    private readonly Stack<bool> _markedContentStack = new();
+    private int _ocHiddenDepth;
+    private bool OcHidden => _ocHiddenDepth > 0;
     private readonly PdfDocument? _document;
     private readonly ColorSpaceResolver _colorSpaceResolver;
     private readonly ExtGStateApplier _extGStateApplier;
@@ -135,56 +141,37 @@ internal class PdfRenderer : PdfContentProcessor
 
             contentStopwatch = Stopwatch.StartNew();
 
-            // Parse and process all content streams
-            var streamIndex = 0;
-            PdfLogger.Log(LogCategory.PdfTool, $"About to iterate {contents.Count} streams, contents type={contents.GetType().Name}");
-            foreach (var stream in contents)
+            // Parse and process ALL of a page's content streams as ONE stream. ISO 32000-1 §7.8.2: the
+            // streams "shall be concatenated ... with at least one white-space character between the data
+            // from each stream" and then treated as a single stream, because a token/operator boundary may
+            // fall between streams. Parsing each stream on its own drops any operator whose operands sit in
+            // the previous stream — e.g. a `[ … ]` array closing one stream and its `TJ` opening the next
+            // (GWG2015 spec TOC: "White objects" was split exactly this way and vanished entirely).
+            PdfLogger.Log(LogCategory.PdfTool, $"Concatenating {contents.Count} content stream(s)");
+            using var concatenated = new MemoryStream();
+            foreach (PdfStream? stream in contents)
             {
-                PdfLogger.Log(LogCategory.PdfTool, $"Processing stream {streamIndex}, stream type={stream?.GetType().Name ?? "null"}");
                 if (stream is null)
-                {
-                    streamIndex++;
                     continue;
-                }
                 byte[] decodedData;
                 try
                 {
                     decodedData = stream.GetDecodedData(_document?.Decryptor);
-                    PdfLogger.Log(LogCategory.PdfTool, $"Decoded data length: {decodedData.Length}");
                 }
                 catch (Exception ex)
                 {
                     PdfLogger.Log(LogCategory.PdfTool, $"EXCEPTION in GetDecodedData: {ex.GetType().Name}: {ex.Message}");
-                    PdfLogger.Log(LogCategory.PdfTool, $"Stack trace: {ex.StackTrace}");
-                    throw; // Re-throw to see full behavior
+                    throw;
                 }
 
-                // Diagnostic: Dump the first stream's raw content to see scn operands
-                if (streamIndex == 0 && decodedData.Length > 0)
-                {
-                    string text = Encoding.ASCII.GetString(decodedData);
-                    // Find and show context around scn/SCN operators
-                    string[] lines = text.Split('\n');
-                    foreach (string line in lines.Take(50))  // First 50 lines
-                    {
-                        if (line.Contains("scn") || line.Contains("SCN") || line.Contains(" cs") || line.Contains(" CS"))
-                        {
-                            PdfLogger.Log(LogCategory.Graphics, $"RAW: {line.Trim()}");
-                        }
-                    }
-                }
-
-                List<PdfOperator> operators = PdfContentParser.Parse(decodedData);
-
-                // Diagnostic: Count operator types
-                int doOps = operators.Count(o => o.Name == "Do");
-                int csOps = operators.Count(o => o.Name is "cs" or "CS");
-                int scnOps = operators.Count(o => o.Name is "scn" or "SCN" or "sc" or "SC");
-                PdfLogger.Log(LogCategory.PdfTool, $"Stream {streamIndex}: Total: {operators.Count}, Do: {doOps}, cs/CS: {csOps}, scn/SCN/sc/SC: {scnOps}");
-
-                ProcessOperators(operators);
-                streamIndex++;
+                if (concatenated.Length > 0)
+                    concatenated.WriteByte((byte)'\n');   // §7.8.2 separator so boundary tokens don't merge
+                concatenated.Write(decodedData, 0, decodedData.Length);
             }
+
+            List<PdfOperator> operators = PdfContentParser.Parse(concatenated.ToArray());
+            PdfLogger.Log(LogCategory.PdfTool, $"Parsed {operators.Count} operators from {contents.Count} concatenated stream(s)");
+            ProcessOperators(operators);
 
             contentStopwatch.Stop();
             annotationStopwatch = Stopwatch.StartNew();
@@ -565,7 +552,7 @@ internal class PdfRenderer : PdfContentProcessor
         List<double> color = CurrentState.StrokeColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH STROKE: ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
-        _target.StrokePath(_currentPath, CurrentState);
+        if (!OcHidden) _target.StrokePath(_currentPath, CurrentState);   // suppressed inside invisible /OC
         _currentPath.Clear();
     }
 
@@ -585,14 +572,18 @@ internal class PdfRenderer : PdfContentProcessor
         string resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], Pattern={CurrentState.FillPatternName}, PathEmpty={_currentPath.IsEmpty}");
 
-        // Check if we should use pattern fill
-        if (CurrentState is { ResolvedFillColorSpace: "Pattern", FillPatternName: not null })
+        // Check if we should use pattern fill. Suppressed inside an invisible optional-content region
+        // (the path is still cleared below so later visible content is unaffected).
+        if (!OcHidden)
         {
-            FillWithPattern(_currentPath, evenOdd, CurrentState.FillPatternName);
-        }
-        else
-        {
-            _target.FillPath(_currentPath, CurrentState, evenOdd);
+            if (CurrentState is { ResolvedFillColorSpace: "Pattern", FillPatternName: not null })
+            {
+                FillWithPattern(_currentPath, evenOdd, CurrentState.FillPatternName);
+            }
+            else
+            {
+                _target.FillPath(_currentPath, CurrentState, evenOdd);
+            }
         }
         _currentPath.Clear();
     }
@@ -689,6 +680,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// </summary>
     protected override void OnPaintShading(string name)
     {
+        if (OcHidden) return;   // sh suppressed inside invisible /OC
         if (_currentResources is null) return;
 
         PdfDictionary? shadings = _currentResources.GetShadings();
@@ -729,7 +721,7 @@ internal class PdfRenderer : PdfContentProcessor
             ClearPendingClip();
         }
 
-        _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);
+        if (!OcHidden) _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);   // suppressed inside invisible /OC
         _currentPath.Clear();
     }
 
@@ -768,7 +760,7 @@ internal class PdfRenderer : PdfContentProcessor
         if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
             PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution");
-            RenderType3Text(text, type3Font);
+            if (!OcHidden) RenderType3Text(text, type3Font);   // suppressed inside invisible /OC
             return;
         }
 
@@ -898,7 +890,8 @@ internal class PdfRenderer : PdfContentProcessor
 
         // Render the text: embedded fonts go through the core glyph pipeline; non-embedded
         // fonts use the substitute font path in CoreTextRenderer.
-        _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
+        if (!OcHidden)   // glyphs suppressed inside invisible /OC; text position still advances
+            _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
@@ -1058,7 +1051,7 @@ internal class PdfRenderer : PdfContentProcessor
         if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
             PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution (TJ)");
-            RenderType3TextWithPositioning(array, type3Font);
+            if (!OcHidden) RenderType3TextWithPositioning(array, type3Font);   // suppressed inside invisible /OC
             return;
         }
 
@@ -1200,7 +1193,8 @@ internal class PdfRenderer : PdfContentProcessor
         }
 
         var combined = combinedText.ToString();
-        _coreText.Render(combined, combinedWidths, CurrentState, font, combinedCharCodes);
+        if (!OcHidden)   // glyphs suppressed inside invisible /OC; text position still advances
+            _coreText.Render(combined, combinedWidths, CurrentState, font, combinedCharCodes);
 
         // Advance text position by total width
         double totalAdvance = combinedWidths.Sum();
@@ -1521,6 +1515,8 @@ internal class PdfRenderer : PdfContentProcessor
     {
         PdfLogger.Log(LogCategory.Images, $"OnInvokeXObject: {name}");
 
+        if (OcHidden) return;   // whole XObject (image or form) suppressed inside invisible /OC
+
         if (_currentResources is null)
         {
             PdfLogger.Log(LogCategory.Images, "  No resources");
@@ -1593,6 +1589,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// </summary>
     private protected override void OnInlineImage(InlineImageOperator inlineImage)
     {
+        if (OcHidden) return;   // inline image suppressed inside invisible /OC
         PdfLogger.Log(LogCategory.Images, $"INLINE-IMAGE: {inlineImage.Width}x{inlineImage.Height}, ColorSpace={inlineImage.ColorSpace}, BPC={inlineImage.BitsPerComponent}, Filter={inlineImage.Filter ?? "none"}");
 
         try
@@ -1731,40 +1728,63 @@ internal class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form Matrix = [{m11}, {m12}, {m21}, {m22}, {m31}, {m32}]");
         }
 
-        // Create a new renderer for the form. Per ISO 32000-1 §8.10 the form's content executes in
-        // the graphics state in effect at the Do operator (the form Matrix is concatenated onto the
-        // CTM and the BBox clips). The transparency parameters set by a preceding `gs` MUST be
-        // inherited — otherwise a watermark stamp drawn under e.g. /ca 0.35 paints at full opacity
-        // (black instead of grey). Inherit the ExtGState transparency group; colour/line state stays
-        // form-local (forms set their own).
-        var formRenderer = new PdfRenderer(_target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
+        // Parse the content once; both the group and inline paths replay it.
+        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
+
+        // Transparency group? (ISO 32000-1 §11.4) A Form XObject with /Group << /S /Transparency >> is
+        // composited as a UNIT: the group-level blend/alpha/soft-mask active at this Do apply to the group
+        // RESULT, not to its inner objects (which reset their own state, e.g. /BM /Normal or /SMask /None).
+        // Route it through the render target's group SPI so a compositing target can render it to an
+        // isolated/backdrop layer and composite the result. Non-group forms keep the legacy inline path,
+        // inheriting /ca, /BM, etc. — the watermark-opacity fix.
+        PdfObject? ResolveObj(PdfObject? o)
+            => o is PdfIndirectReference r && _document is not null ? _document.ResolveReference(r) : o;
+
+        var isGroup = false;
+        var isolated = false;
+        var knockout = false;
+        if (formStream.Dictionary.TryGetValue(new PdfName("Group"), out PdfObject? groupObj)
+            && ResolveObj(groupObj) is PdfDictionary groupDict
+            && groupDict.TryGetValue(new PdfName("S"), out PdfObject? sObj)
+            && ResolveObj(sObj) is PdfName { Value: "Transparency" })
+        {
+            isGroup = true;
+            isolated = groupDict.TryGetValue(new PdfName("I"), out PdfObject? iObj) && ResolveObj(iObj) is PdfBoolean { Value: true };
+            knockout = groupDict.TryGetValue(new PdfName("K"), out PdfObject? kObj) && ResolveObj(kObj) is PdfBoolean { Value: true };
+        }
+
+        // Per ISO 32000-1 §8.10 the form executes with the CTM in effect at Do (form Matrix concatenated).
+        // For a plain form the transparency parameters set by a preceding `gs` are inherited (watermark
+        // opacity). For a GROUP they are RESET to defaults on the inner content (Normal blend, full alpha,
+        // no mask) — those group-level values are consumed by the group composite, not the inner objects.
+        void RunFormContent(IRenderTarget target)
+        {
+            var formRenderer = new PdfRenderer(target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
             {
                 CurrentState =
                 {
-                    // Set the form renderer's CTM to the concatenated matrix
                     Ctm = formCtm,
-                    FillAlpha = CurrentState.FillAlpha,
-                    StrokeAlpha = CurrentState.StrokeAlpha,
-                    BlendMode = CurrentState.BlendMode,
+                    FillAlpha = isGroup ? 1.0 : CurrentState.FillAlpha,
+                    StrokeAlpha = isGroup ? 1.0 : CurrentState.StrokeAlpha,
+                    BlendMode = isGroup ? "Normal" : CurrentState.BlendMode,
                     AlphaIsShape = CurrentState.AlphaIsShape
                 }
             };
+            target.SaveState();
+            target.ApplyCtm(formCtm);      // CurrentState.Ctm is set directly, which doesn't trigger OnMatrixChanged
+            formRenderer.ProcessOperators(operators);
+            target.RestoreState();
+        }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RenderFormXObject: Form renderer CTM = [{formRenderer.CurrentState.Ctm.M11}, {formRenderer.CurrentState.Ctm.M12}, {formRenderer.CurrentState.Ctm.M21}, {formRenderer.CurrentState.Ctm.M22}, {formRenderer.CurrentState.Ctm.M31}, {formRenderer.CurrentState.Ctm.M32}]");
-
-        // Save render target state before processing form
-        _target.SaveState();
-
-        // Apply the form's CTM to the render target
-        // This is needed because we set CurrentState.Ctm directly, which doesn't trigger OnMatrixChanged
-        _target.ApplyCtm(formCtm);
-
-        // Parse and process the Form XObject's content stream
-        List<PdfOperator> operators = PdfContentParser.Parse(contentData);
-        formRenderer.ProcessOperators(operators);
-
-        // Restore render target state after form processing
-        _target.RestoreState();
+        if (isGroup)
+        {
+            var info = new TransparencyGroupInfo(isolated, knockout, CurrentState.BlendMode, CurrentState.FillAlpha);
+            _target.RenderTransparencyGroup(info, RunFormContent);
+        }
+        else
+        {
+            RunFormContent(_target);
+        }
     }
 
     // ==================== State Management ====================
@@ -1791,6 +1811,49 @@ internal class PdfRenderer : PdfContentProcessor
         PdfLogger.Log(LogCategory.Transforms, $"Q (RestoreState) After restore: CTM=[{CurrentState.Ctm.M11:F4}, {CurrentState.Ctm.M12:F4}, {CurrentState.Ctm.M21:F4}, {CurrentState.Ctm.M22:F4}, {CurrentState.Ctm.M31:F4}, {CurrentState.Ctm.M32:F4}]");
         // After restoring state, we need to update the canvas matrix to match
         _target.ApplyCtm(CurrentState.Ctm);
+    }
+
+    // Marked-content operators (BDC/BMC … EMC). A `/OC` region whose OCG/OCMD is off in the default
+    // configuration hides all painting between BDC and EMC (ISO 32000-1 §8.11.2/§8.11.4). Nesting is
+    // tracked on a stack; painting operators consult OcHidden. State-changing operators still execute so
+    // the graphics state stays balanced across the region.
+    private protected override void OnGenericOperator(GenericOperator op)
+    {
+        switch (op.Name)
+        {
+            case "BDC" or "BMC":
+            {
+                bool hidden = op.Name == "BDC" && IsHiddenOptionalContent(op.Operands);
+                _markedContentStack.Push(hidden);
+                if (hidden) _ocHiddenDepth++;
+                break;
+            }
+            case "EMC":
+                if (_markedContentStack.Count > 0 && _markedContentStack.Pop() && _ocHiddenDepth > 0)
+                    _ocHiddenDepth--;
+                break;
+        }
+
+        base.OnGenericOperator(op);
+    }
+
+    // A `/OC /MCx BDC` (or inline `/OC <<…>> BDC`) opens an optional-content region; it is hidden when the
+    // referenced OCG/OCMD is off in the default configuration. Any other tag (e.g. /Artifact) is not OC.
+    private bool IsHiddenOptionalContent(List<PdfObject> operands)
+    {
+        if (_optionalContentManager is null) return false;
+        if (operands.Count < 2 || operands[0] is not PdfName { Value: "OC" }) return false;
+
+        // The property is a name into the page's /Properties resource, or an inline dictionary.
+        PdfObject property = operands[1];
+        if (property is PdfName propName
+            && _currentResources?.GetProperties() is { } props
+            && props.TryGetValue(new PdfName(propName.Value), out PdfObject? mapped))
+        {
+            property = mapped;
+        }
+
+        return !_optionalContentManager.IsMarkedContentVisible(property);
     }
 
     // ==================== Fixup Helper Methods ====================

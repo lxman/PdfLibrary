@@ -264,14 +264,20 @@ and the **Ghent Workgroup** test suite. PDF/X-4 shares much of PDF/A's structura
 encryption, embedded fonts, valid output intent) but adds print-production rules with **no PDF/A
 equivalent**. Initial X-4 rule list (to validate against GWG files):
 
-| Rule | Requirement |
-|---|---|
-| X4 output intent | Exactly one `GTS_PDFX` OutputIntent; `OutputConditionIdentifier` registered or `DestOutputProfile` embedded. |
-| X4 trim/art box | Every page has a `TrimBox` **or** `ArtBox` (not both), within `MediaBox`. |
-| X4 trapped | Document info / XMP `Trapped` is `True` or `False` (explicitly set, not `Unknown`). |
-| X4 no transparency restriction | X-4 permits transparency (unlike X-1a/X-3) — but blend spaces must resolve via the output intent. |
-| X4 fonts embedded | All fonts embedded (shared with PDF/A 6.2.11.4). |
-| X4 no encryption / valid ID | Shared with PDF/A 6.1.3. |
+| Rule | Requirement | Status |
+|---|---|---|
+| X4 output intent | Exactly one `GTS_PDFX` OutputIntent; `DestOutputProfile` embedded (X-4 always requires the profile, unlike X-1a/X-3). | ✅ slice 9 (`pdfx-output-intent`) |
+| X4 trim/art box | Every page has a `TrimBox` **or** `ArtBox` (not both), within `MediaBox`. | ✅ slice 9 (`pdfx-page-boxes`) |
+| X4 trapped | Document info / XMP `Trapped` is `True` or `False` (explicitly set, not `Unknown`). | ✅ slice 9 (`pdfx-trapped`) |
+| X4 version identification | XMP carries `pdfxid:GTS_PDFXVersion` (NPES ns `http://www.npes.org/pdfx/ns/id/`) beginning with "PDF/X-4" (covers "PDF/X-4"/"PDF/X-4p"). `GTS_PDFXConformance` is not used in X-4. The Adobe legacy `pdfx` schema alone does not satisfy it. | ✅ slice 10 (`pdfx-version`) |
+| X4 colour governance | Device colour must resolve via the output intent: DeviceCMYK→CMYK intent, DeviceRGB→RGB intent, DeviceGray→any intent. ICCBased/CalRGB/CalGray/Lab is device-independent and never flagged. Reuses `DeviceColourAnalysis` (under-reports only). | ✅ slice 10 (`pdfx-device-colour`) |
+| X4 spot/DeviceN colour governance | A Separation/DeviceN/Indexed/Pattern colour space resolves to the device family of its alternate/base space (`ColourSpaceClassifier`), so a spot whose fallback is an uncalibrated device space is governed like a direct fill — honouring Default* remaps. Folded into `device-colour`/`pdfx-device-colour`; also lifts PDF/A detection. | ✅ slice 11 (`DeviceColourAnalysis`) |
+| X4 transparency-group colour | A transparency group's device blend space (`/Group /CS` on a page or Form XObject) must be consistent with the output intent; device-independent or absent `/CS` is fine. X-4 permits transparency (unlike X-1a/X-3). | ✅ slice 11 (`pdfx-transparency-colour`) |
+| X4 blend modes | `/BM` in an ExtGState may name only the standard ISO 32000-1 blend modes (or an array of them). Object-scan of indirect ExtGStates; inline ExtGStates deferred (under-report only). | ✅ slice 11 (`pdfx-blend-mode`) |
+| X4 NChannel colorants | Each spot (non-process) colorant of an NChannel space must have a `/Colorants` entry. | ✅ slice 11 (`pdfx-nchannel-colorants`) |
+| X4 separation consistency | Separations sharing a colorant name must agree on alternate space + tint transform (content-derived signature, numerically canonicalised; `/None`/`/All` exempt). | ✅ slice 11 (`pdfx-separation-consistency`) |
+| X4 fonts embedded | All fonts embedded (shared with PDF/A 6.2.11.4). | ✅ shared (`font-embedded`, profile `All`) |
+| X4 no encryption / valid ID | Shared with PDF/A 6.1.3. | ✅ shared (`encrypt`, `file-id`, profile `All`) |
 
 ## 4. Slice plan (structural rules)
 
@@ -288,8 +294,12 @@ group, verified against the matching corpus clause folder (`../veraPDF-corpus/PD
 | **6 Graphics rest** | 6.2.2 (content-stream operators), 6.2.5 (ExtGState), 6.2.9 (XObjects), 6.2.10 (transparency) | Content-stream walk. |
 | **7 Annotations + forms + actions** | 6.3, 6.4, 6.5 | Annotation appearances, form field constraints, permitted actions (no JS). |
 | **8 Embedded files + OC + misc** | 6.8 (2b/2u restriction vs **3b allowances**), 6.9, 6.10, 6.11 | 3b is where embedded-file rules diverge. |
-| **9 X-4** | §3 above | Separate source (GWG). |
-| **10 Corpus harness** | — | Walk corpus tree, parse expected outcome from filenames, assert per rule; wire veraPDF CLI as external oracle. |
+| **9 X-4 structural core** | §3: output intent, trim/art box, trapped | Separate source (GWG). |
+| **10 X-4 identification + colour** | §3: version identification (`pdfx-version`), colour governance (`pdfx-device-colour`) | The two X-4 gaps the structural core left open. Backed by the 34-file GOS pass-oracle (no false positives). |
+| **11 X-4 transparency + spot depth** | §3: spot/DeviceN alternate governance, `pdfx-transparency-colour`, `pdfx-blend-mode`, `pdfx-nchannel-colorants`, `pdfx-separation-consistency` | Closes the deferred transparency/blend-space item and adds the spot/DeviceN/colourant analysis. The `DeviceColourAnalysis` extension also lifts PDF/A device-colour detection (134→146). |
+| **12 PDF/A-2u Unicode delta** | **6.2.11.7.2** — `pdfa2u-tounicode` (used codes map to Unicode), `pdfa2u-tounicode-values` (no U+0000/FEFF/FFFE/FFFF) | The sole delta of level U over B. NEW used-code collector (`ToUnicodeUsageCollector`, cached on the context) + conservative `FontUnicodeMapping` predicate: flags only positive evidence of no mapping (Type0 Identity-ordered without ToUnicode; a simple font's real glyph name with no AGL/uniXXXX resolution). Deliberately under-reports the cases needing embedded-program encodings or Adobe cid2unicode tables. 2u detection 1→6/10, zero false positives. |
+| **13 PDF/UA-1 (accessibility)** | ISO 14289-1 — new `PdfUA1` profile. Phase 1: `ua-identification` (pdfuaid:part=1), `ua-tagged` (StructTreeRoot + MarkInfo/Marked), `ua-display-doc-title`, `ua-title` (dc:title), `ua-xfa`. Phase 2 reuse: `font-embedded` widened + `ua-text-unicode`. | A new axis (Tagged PDF) orthogonal to the b/u profiles. Only the machine-checkable Matterhorn subset is in scope — reading order / meaningful alt text / correct heading semantics are human-judgment and out of scope. Backed by the local veraPDF `PDF_UA-1` corpus (155 fail / ~145 pass). Phases 3–4 (structure-tree walk, marked-content completeness) pending. Detection 10/155, 0 false positives. |
+| **Corpus harness** | — | veraPDF corpus (`CorpusOracleTests`, now incl. `PDF_UA-1`) + the independent BFO suite (`BfoOracleTests`, `../pdfa-testsuite`, 0 pass-FP / 10 fail detected). Still to do: wire the veraPDF CLI as an external cross-check. |
 
 ---
 

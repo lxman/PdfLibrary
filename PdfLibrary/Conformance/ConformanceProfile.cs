@@ -23,9 +23,16 @@ public enum ConformanceProfile
     /// <summary>PDF/X-4 — ISO 15930-7:2010 (print production).</summary>
     PdfX4 = 1 << 3,
 
+    /// <summary>PDF/UA-1 — ISO 14289-1:2014 (universal accessibility / Tagged PDF).</summary>
+    PdfUA1 = 1 << 4,
+
     /// <summary>All supported PDF/A profiles.</summary>
     AllPdfA = PdfA2b | PdfA2u | PdfA3b,
 
-    /// <summary>Every supported profile.</summary>
+    /// <summary>All PDF/A + PDF/X profiles — the scope shared archival/print rules apply to (NOT PDF/UA,
+    /// whose accessibility requirements differ: it neither forbids encryption nor requires an output intent).</summary>
     All = AllPdfA | PdfX4,
+
+    /// <summary>Every defined profile; used only to validate that a preflight targets a single known profile.</summary>
+    AnyProfile = All | PdfUA1,
 }

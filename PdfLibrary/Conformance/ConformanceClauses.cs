@@ -14,6 +14,7 @@ internal static class ConformanceClauses
         ConformanceProfile.PdfA2b or ConformanceProfile.PdfA2u => $"ISO 19005-2:2011, {pdfaClause}",
         ConformanceProfile.PdfA3b => $"ISO 19005-3:2012, {pdfaClause}",
         ConformanceProfile.PdfX4 => "ISO 15930-7:2010",
+        ConformanceProfile.PdfUA1 => $"ISO 14289-1:2014, {pdfaClause}",
         _ => pdfaClause,
     };
 

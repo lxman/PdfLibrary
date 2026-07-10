@@ -1,8 +1,10 @@
 using System.Linq;
 using ICCSharp.Profile;
+using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
+using PdfLibrary.Fonts;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Conformance;
@@ -15,6 +17,9 @@ internal readonly record struct OutputIntentInfo(
 
 /// <summary>The colour family of an ICC profile's data colour space, as relevant to device-colour matching.</summary>
 internal enum OutputIntentColour { None, Gray, Rgb, Cmyk, Other }
+
+/// <summary>A font used for text showing and the set of character codes actually drawn with it.</summary>
+internal readonly record struct UsedFontCodes(PdfFont Font, IReadOnlyCollection<int> Codes);
 
 /// <summary>
 /// Per-run state handed to each <see cref="IConformanceRule"/>: the document under inspection, the
@@ -33,6 +38,8 @@ internal sealed class ConformanceContext
     private PdfCatalog? _catalog;
     private bool _catalogResolved;
     private OutputIntentColour? _outputIntentColour;
+    private IReadOnlyList<UsedFontCodes>? _usedTextGlyphs;
+    private MarkedContentAnalysis? _markedContent;
 
     public ConformanceContext(PdfDocument document, ConformanceProfile target, byte[]? sourceBytes = null)
     {
@@ -86,6 +93,20 @@ internal sealed class ConformanceContext
     /// <summary>The colour family of the file's PDF/A output-intent ICC profile (None if there is no
     /// output intent with a parseable destination profile). Cached.</summary>
     public OutputIntentColour OutputIntentColourFamily => _outputIntentColour ??= ComputeOutputIntentColour();
+
+    /// <summary>
+    /// Every font used for text showing and the character codes drawn with it, walking page content and
+    /// Form XObjects. Backs the PDF/A-2u Unicode-mapping rules (which need the codes actually used, not the
+    /// codes a font declares). Cached.
+    /// </summary>
+    public IReadOnlyList<UsedFontCodes> UsedTextGlyphs => _usedTextGlyphs ??= CollectUsedTextGlyphs();
+
+    /// <summary>
+    /// The page-content marked-content facts for the PDF/UA-1 rules — whether any real content is untagged,
+    /// whether any artifact and tagged sequences nest, and which MCIDs carry a content-stream
+    /// <c>/ActualText</c>. Walked once over all pages (and their Form XObjects) and cached.
+    /// </summary>
+    public MarkedContentAnalysis MarkedContent => _markedContent ??= AnalyzeMarkedContent();
 
     /// <summary>The document catalog, resolved once and cached (null when the document has none).</summary>
     public PdfCatalog? Catalog
@@ -315,6 +336,69 @@ internal sealed class ConformanceContext
                     stack.Push(kid);
         }
         return result;
+    }
+
+    private IReadOnlyList<UsedFontCodes> CollectUsedTextGlyphs()
+    {
+        var merged = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
+        foreach (PdfPage page in Pages)
+        {
+            // Concatenate the page's content streams before parsing so an operator split across a stream
+            // boundary still parses (ISO 32000-1 7.8.2), matching the renderer's page-content handling.
+            var combined = new List<byte>();
+            foreach (PdfStream content in page.GetContents())
+            {
+                combined.AddRange(content.GetDecodedData(Document.Decryptor));
+                combined.Add((byte)'\n');
+            }
+
+            var collector = new ToUnicodeUsageCollector(page.GetResources(), Document);
+            try { collector.ProcessOperators(PdfContentParser.Parse(combined.ToArray())); }
+            catch (Exception) { continue; } // unparseable content: skip this page's usage
+
+            foreach ((PdfFont font, HashSet<int> codes) in collector.Result)
+            {
+                if (!merged.TryGetValue(font, out HashSet<int>? set))
+                    merged[font] = set = [];
+                set.UnionWith(codes);
+            }
+        }
+        return merged.Select(kv => new UsedFontCodes(kv.Key, kv.Value)).ToList();
+    }
+
+    private MarkedContentAnalysis AnalyzeMarkedContent()
+    {
+        IReadOnlyList<PdfPage> pages;
+        try { pages = Pages; }
+        catch (Exception) { return MarkedContentAnalysis.Empty; } // no navigable page tree
+
+        int untaggedPage = -1, nestingPage = -1;
+        var actualTextMcids = new HashSet<int>();
+
+        for (int i = 0; i < pages.Count; i++)
+        {
+            // Concatenate the page's content streams before parsing so an operator (or a BDC/EMC pair) split
+            // across a stream boundary still parses (ISO 32000-1 7.8.2), matching the renderer.
+            var combined = new List<byte>();
+            foreach (PdfStream content in pages[i].GetContents())
+            {
+                combined.AddRange(content.GetDecodedData(Document.Decryptor));
+                combined.Add((byte)'\n');
+            }
+
+            var collector = new MarkedContentCollector(pages[i].GetResources(), Document);
+            try { collector.ProcessOperators(PdfContentParser.Parse(combined.ToArray())); }
+            catch (Exception) { continue; } // unparseable content: skip this page
+
+            if (collector.HasUntaggedContent && untaggedPage < 0)
+                untaggedPage = i;
+            if (collector.HasArtifactNesting && nestingPage < 0)
+                nestingPage = i;
+            actualTextMcids.UnionWith(collector.ActualTextMcids);
+        }
+
+        return new MarkedContentAnalysis(
+            untaggedPage >= 0, untaggedPage, nestingPage >= 0, nestingPage, actualTextMcids);
     }
 
     private IReadOnlyList<OutputIntentInfo> ReadOutputIntents()
