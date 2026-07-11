@@ -407,6 +407,14 @@ public partial class PdfDocument : IDisposable
     public Document.TagTree GetTagTree() => Document.TagTreeBuilder.Build(this);
 
     /// <summary>
+    /// Reads the document's <c>/OutputIntents</c> array (ISO 32000-1, 14.11.5) as read-only
+    /// <see cref="Document.OutputIntentDescriptor"/>s: each intent's subtype, output-condition metadata,
+    /// and — when present — the embedded destination ICC profile (bytes and colour-space family). Returns
+    /// an empty list when the document has no <c>/OutputIntents</c>.
+    /// </summary>
+    public IReadOnlyList<Document.OutputIntentDescriptor> GetOutputIntents() => Document.OutputIntentReader.Read(this);
+
+    /// <summary>
     /// Gets the total number of pages
     /// </summary>
     public int PageCount => GetPageCount();
