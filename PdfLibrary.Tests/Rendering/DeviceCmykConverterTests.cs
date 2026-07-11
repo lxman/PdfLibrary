@@ -150,4 +150,23 @@ public class DeviceCmykConverterTests
         }
         finally { DeviceCmykConverter.DisplayIntent = RenderingIntent.Perceptual; }   // restore process default
     }
+
+    [Fact]
+    public void Roundtrip_relative_is_near_identity_for_in_gamut_grey()
+    {
+        var conv = new DeviceCmykConverter(IccProfile.Parse(IccResources.ReadDefaultCmykProfile()));
+        (byte r, byte g, byte b) = conv.RoundTripRgbRelative(128, 128, 128);   // neutral grey is well inside gamut
+        Assert.True(Math.Abs(r - 128) <= 12 && Math.Abs(g - 128) <= 12 && Math.Abs(b - 128) <= 12,
+            $"in-gamut grey drifted too far: ({r},{g},{b})");
+    }
+
+    [Fact]
+    public void Roundtrip_relative_clips_out_of_gamut_saturated_green()
+    {
+        // Pure sRGB green is far outside a press CMYK gamut; the round-trip must clip it substantially.
+        var conv = new DeviceCmykConverter(IccProfile.Parse(IccResources.ReadDefaultCmykProfile()));
+        (byte r, byte g, byte b) = conv.RoundTripRgbRelative(0, 255, 0);
+        int drift = Math.Abs(r - 0) + Math.Abs(g - 255) + Math.Abs(b - 0);
+        Assert.True(drift > 60, $"out-of-gamut green did not clip (drift {drift}): ({r},{g},{b})");
+    }
 }

@@ -15,6 +15,8 @@ public sealed class DeviceCmykConverter
     private readonly IccTransform? _toRgb;   // CMYK(4) -> sRGB(3)
     private readonly IccTransform? _toCmyk;  // sRGB(3) -> CMYK(4)
     private readonly IccProfile? _cmykProfile;   // retained so E3 can lazily build a relative forward transform
+    private IccTransform? _toRgbRel;   // CMYK→sRGB at RelativeColorimetric, built on first gamut round-trip
+    private readonly object _relLock = new();
 
     /// <summary>True when ICC transforms could not be built and naive fallback math is in use.</summary>
     public bool IsDegraded => _toRgb is null || _toCmyk is null;
@@ -107,6 +109,32 @@ public sealed class DeviceCmykConverter
         Span<double> output = stackalloc double[4];
         _toCmyk.Apply(input, output);
         return (Clamp01(output[0]), Clamp01(output[1]), Clamp01(output[2]), Clamp01(output[3]));
+    }
+
+    /// <summary>sRGB→CMYK→sRGB, both legs RelativeColorimetric. In-gamut colours return ~themselves;
+    /// out-of-gamut colours clip on the way in and shift on the way back — the caller measures that shift
+    /// (ΔE) to flag out-of-gamut source. Identity when the ICC transforms are unavailable.</summary>
+    public (byte R, byte G, byte B) RoundTripRgbRelative(byte r, byte g, byte b)
+    {
+        if (_toCmyk is null || _cmykProfile is null) return (r, g, b);
+        IccTransform rel = EnsureRelativeForward();
+        Span<double> rgbIn = stackalloc double[3] { r / 255.0, g / 255.0, b / 255.0 };
+        Span<double> cmyk  = stackalloc double[4];
+        _toCmyk.Apply(rgbIn, cmyk);
+        Span<double> rgbOut = stackalloc double[3];
+        rel.Apply(cmyk, rgbOut);
+        return (ToByte(rgbOut[0]), ToByte(rgbOut[1]), ToByte(rgbOut[2]));
+    }
+
+    private IccTransform EnsureRelativeForward()
+    {
+        if (_toRgbRel is not null) return _toRgbRel;
+        lock (_relLock)
+        {
+            _toRgbRel ??= IccTransform.Create(_cmykProfile!, BuiltInProfiles.Srgb,
+                new ICCSharp.TransformOptions { Intent = ICCSharp.Profile.RenderingIntent.RelativeColorimetric });
+            return _toRgbRel;
+        }
     }
 
     /// <summary>Bulk forward: <paramref name="cmyk"/> is N×4 (0..1); <paramref name="rgb"/> receives N×3 bytes.</summary>
