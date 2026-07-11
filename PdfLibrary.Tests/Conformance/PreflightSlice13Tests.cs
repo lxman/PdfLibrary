@@ -38,6 +38,10 @@ public class PreflightSlice13Tests
             [N("Pages")] = Ref(2),
             [N("Metadata")] = Ref(30),
             [N("StructTreeRoot")] = Ref(31),
+            // A default language so the document is genuinely 7.2-conformant: without it the x-default-only
+            // dc:title (SetLangAlt defaults to xml:lang="x-default") has an undetermined natural language
+            // (ua-content-lang / veraPDF 7.2-t33).
+            [N("Lang")] = new PdfString(System.Text.Encoding.ASCII.GetBytes("en-US")),
             [N("MarkInfo")] = new PdfDictionary { [N("Marked")] = PdfBoolean.True },
             [N("ViewerPreferences")] = new PdfDictionary { [N("DisplayDocTitle")] = PdfBoolean.True },
         };

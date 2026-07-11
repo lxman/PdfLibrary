@@ -5,24 +5,28 @@
 
 Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## Focal coverage — 42 of 87 machine-checkable conditions
+## Focal coverage — 56 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
 | CP | Area | Covered | Rules |
 |---|---|--:|---|
-| 01 | Real content tagged | 3/4 | `ua-content-tagged`, `ua-artifact-nesting` |
+| 01 | Real content tagged | 4/4 | `ua-content-tagged`, `ua-artifact-nesting`, `ua-suspects` |
 | 02 | Role mapping | 1/3 | `ua-standard-type` |
 | 06 | Metadata | 3/3 | `ua-title`, `ua-identification` |
 | 07 | Dictionary | 2/2 | `ua-display-doc-title` |
 | 09 | Appropriate tags | 3/5 | `ua-structure-nesting` (table/list/TOC; not Ruby/Warichu) |
 | 10 | Character mappings | 1/1 | `ua-text-unicode` |
-| 11 | Natural language | 2/6 | `ua-attribute-lang` (Alt/ActualText/E), `ua-object-lang` (outline) |
+| 11 | Natural language | 5/6 | `ua-attribute-lang` (Alt/ActualText/E), `ua-object-lang` (outline), `ua-content-lang` (annot Contents/form TU/XMP lang-alt); 11-001 page-content deferred |
 | 13 | Graphics | 1/1 | `ua-figure-alt` |
+| 14 | Headings | 4/4 | `ua-headings` (first-is-H1 + no level skip; ≤1 `<H>`/node; no H/H# mix) |
 | 15 | Tables | 1/1 | `ua-table-regular` |
 | 17 | Math | 1/2 | `ua-figure-alt` (Formula Alt) |
+| 19 | Notes and References | 2/2 | `ua-note-id` |
+| 20 | Optional Content | 3/3 | `optional-content` (widened to UA 7.10) |
 | 25 | XFA | 1/1 | `ua-xfa` |
 | 28 | Annotations | 10/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8; media 7.18.6, file-attach 7.18.7 deferred) |
+| 30 | XObjects | 1/2 | `ua-reference-xobject` (30-001; 30-002 Form-XObject MCID reuse deferred to Slice B) |
 | 31 | Fonts | 13/29 | `font-dictionary`, `font-embedded`, `font-program` |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
@@ -41,7 +45,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 01-004 | M | 7.1-1 | Tagged content is present inside content marked as Artifact. | ua-artifact-nesting |
 | 01-005 | M | 7.1-2 | Content is neither marked as Artifact nor tagged as real content. | ua-content-tagged |
 | 01-006 | H | 7.1-2 | The structure type and attributes of a structure element are not | n/a |
-| 01-007 | M | 7.1-11 | Suspects entry has a value of true. | — |
+| 01-007 | M | 7.1-11 | Suspects entry has a value of true. | ua-suspects |
 
 ## Checkpoint 02 — Role Mapping  (3 machine)
 
@@ -123,9 +127,9 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 11-001 | M | 7.2-3 | Natural language for text in page content cannot be | — |
 | 11-002 | M | 7.2-3 | Natural language for text in Alt, ActualText and | ua-attribute-lang |
 | 11-003 | M | 7.2-3 | Natural language in the Outline entries cannot be | ua-object-lang |
-| 11-004 | M | 7.2-3 | Natural language in the Contents entry for annotations | — |
-| 11-005 | M | 7.2-3 | Natural language in the TU entry for form fields cannot | — |
-| 11-006 | M | 7.2-3 | Natural language for document metadata cannot be | — |
+| 11-004 | M | 7.2-3 | Natural language in the Contents entry for annotations | ua-content-lang |
+| 11-005 | M | 7.2-3 | Natural language in the TU entry for form fields cannot | ua-content-lang |
+| 11-006 | M | 7.2-3 | Natural language for document metadata cannot be | ua-content-lang |
 | 11-007 | H | 7.2-3 | Natural language is not appropriate. | n/a |
 
 ## Checkpoint 12 — Stretchable Characters  (0 machine)
@@ -152,12 +156,12 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
 | 14-001 | H | 7.4-1 | Headings are not tagged. | n/a |
-| 14-002 | M | 7.4.2-1 | Does use numbered headings, but the first | — |
-| 14-003 | M | 7.4-1 | Numbered heading levels in descending | — |
+| 14-002 | M | 7.4.2-1 | Does use numbered headings, but the first | ua-headings |
+| 14-003 | M | 7.4-1 | Numbered heading levels in descending | ua-headings |
 | 14-004 | H | 7.4.3-1 | Numbered heading tags do not use Arabic | n/a |
 | 14-005 | H | 7.4.3-1 | Content representing a 7th level (or higher) | n/a |
-| 14-006 | M | 7.4.4-1 | A node contains more than one <H> tag. | — |
-| 14-007 | M | 7.4.4-3 | Document uses both <H> and <H#> tags. | — |
+| 14-006 | M | 7.4.4-1 | A node contains more than one <H> tag. | ua-headings |
+| 14-007 | M | 7.4.4-3 | Document uses both <H> and <H#> tags. | ua-headings |
 
 ## Checkpoint 15 — Tables  (1 machine)
 
@@ -198,16 +202,16 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 |---|---|---|---|---|
 | 19-001 | H | 7.9-1 | Footnotes or endnotes are not tagged as <Note>. | n/a |
 | 19-002 | H | 7.9-1 | References are not tagged as <Reference>. | n/a |
-| 19-003 | M | 7.9-2 | ID entry of the <Note> tag is not present. | — |
-| 19-004 | M | 7.9-2 | ID entry of the <Note> tag is non-unique. | — |
+| 19-003 | M | 7.9-2 | ID entry of the <Note> tag is not present. | ua-note-id |
+| 19-004 | M | 7.9-2 | ID entry of the <Note> tag is non-unique. | ua-note-id |
 
 ## Checkpoint 20 — Optional Content  (3 machine)
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 20-001 | M | 7.10-1 | Name entry is missing or has an empty string as | — |
-| 20-002 | M | 7.10-1 | Name entry is missing or has an empty string as | — |
-| 20-003 | M | 7.10-2 | An AS entry appears in an Optional Content | — |
+| 20-001 | M | 7.10-1 | Name entry is missing or has an empty string as | optional-content |
+| 20-002 | M | 7.10-1 | Name entry is missing or has an empty string as | optional-content |
+| 20-003 | M | 7.10-2 | An AS entry appears in an Optional Content | optional-content |
 
 ## Checkpoint 21 — Embedded Files  (1 machine)
 
@@ -287,7 +291,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
-| 30-001 | M | 7.20-1 | A reference XObject is present. | — |
+| 30-001 | M | 7.20-1 | A reference XObject is present. | ua-reference-xobject |
 | 30-002 | M | 7.20-2 | Form XObject contains MCIDs and is referenced | — |
 
 ## Checkpoint 31 — Fonts  (29 machine)

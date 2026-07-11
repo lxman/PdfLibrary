@@ -49,6 +49,11 @@ internal sealed class XmpNode
 
     /// <summary>True when this array item carried an <c>xml:lang</c> qualifier.</summary>
     public bool HasXmlLang { get; set; }
+
+    /// <summary>The <c>xml:lang</c> qualifier value on this array item (e.g. <c>"x-default"</c> or
+    /// <c>"en-US"</c>), or null when the item carried none. Backs the PDF/UA-1 clause 7.2 lang-alt
+    /// natural-language check (veraPDF <c>XMPLangAlt.xDefault</c>).</summary>
+    public string? XmlLang { get; set; }
 }
 
 /// <summary>
@@ -200,9 +205,11 @@ internal static class XmpTreeParser
 
         foreach (XElement li in container.Elements(Rdf + "li"))
         {
+            XAttribute? lang = li.Attribute(Xml + "lang");
             var item = new XmpNode(string.Empty, string.Empty, string.Empty)
             {
-                HasXmlLang = li.Attribute(Xml + "lang") is not null,
+                HasXmlLang = lang is not null,
+                XmlLang = lang?.Value,
             };
             DetermineValue(li, item);
             node.Children.Add(item);

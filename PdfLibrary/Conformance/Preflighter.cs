@@ -87,6 +87,9 @@ public static class Preflighter
         new Rules.UaTableGridRule(),
         new Rules.UaTextAttributeLangRule(),
         new Rules.UaObjectLangRule(),
+        // Slice B1 — natural language for non-structure-element text (7.2 t24/t25/t33): annotation
+        // /Contents, form-field /TU, and XMP language-alternative metadata.
+        new Rules.UaContentLangRule(),
         new Rules.UaLanguageTagRule(),
         new Rules.UaAnnotationRule(),
         // Slice 23 — structural bucket: suspects (7.1), Note IDs (7.9), reference XObjects (7.20).
