@@ -14,7 +14,6 @@ namespace PdfLibrary.Conformance.Rules;
 ///   <item>a <c>/TR</c> (transfer function) key — forbidden outright;</item>
 ///   <item>a <c>/HTP</c> key (a halftone-phase key from PDF ≤1.3) — forbidden;</item>
 ///   <item>a <c>/TR2</c> key whose value is not the name <c>Default</c>;</item>
-///   <item>a <c>/RI</c> key whose value is not one of the four standard rendering intents;</item>
 ///   <item>a halftone reached through <c>/HT</c> — and, for a Type 5 composite, each component halftone —
 ///     whose <c>HalftoneType</c> is not 1 or 5, or that carries a <c>HalftoneName</c>;</item>
 ///   <item>a Type 5 halftone component whose <c>TransferFunction</c> is used against ISO 32000-1 Table 130:
@@ -34,14 +33,9 @@ internal sealed class ExtGStateRule : IConformanceRule
 {
     public string RuleId => "graphics-state";
 
-    // PDF/A-2 and PDF/A-3 only; the clause has no PDF/UA-1 or PDF/X-4 equivalent.
+    // PDF/A-2 and PDF/A-3 only; the clause has no PDF/UA-1 or PDF/X-4 equivalent. The ExtGState /RI value is
+    // checked by RenderingIntentRule (6.2.6), which veraPDF scopes to all rendering intents, not just /RI.
     public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA;
-
-    // ISO 32000-1 8.6.5.8 — the four standard rendering intents.
-    private static readonly HashSet<string> StandardIntents = new(StringComparer.Ordinal)
-    {
-        "RelativeColorimetric", "AbsoluteColorimetric", "Perceptual", "Saturation",
-    };
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
@@ -70,9 +64,6 @@ internal sealed class ExtGStateRule : IConformanceRule
 
         if (gs.Get("TR2") is not null && context.ResolveName(gs.Get("TR2")) != "Default")
             yield return "The ExtGState dictionary contains a TR2 key with a value other than Default.";
-
-        if (context.ResolveName(gs.Get("RI")) is { } ri && !StandardIntents.Contains(ri))
-            yield return $"The ExtGState dictionary specifies the non-standard rendering intent '{ri}'.";
 
         foreach (string m in HalftoneViolations(context, gs.Get("HT"), colorantName: null, new HashSet<PdfObject>()))
             yield return m;

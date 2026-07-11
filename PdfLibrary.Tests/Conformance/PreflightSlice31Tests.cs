@@ -42,7 +42,6 @@ public class PreflightSlice31Tests(ITestOutputHelper output)
     [InlineData("6-2-5-t03-fail-a")] // HalftoneType other than 1 or 5
     [InlineData("6-2-5-t03-fail-b")] // Type 5 halftone: non-primary (RGB) component lacks a TransferFunction
     [InlineData("6-2-5-t04-fail-a")] // halftone carries a HalftoneName
-    [InlineData("6-2-5-t05-fail-a")] // /RI with a non-standard value ("Custom")
     public void ExtGState_violation_is_detected(string needle)
     {
         string? path = CorpusFixture(ConformanceProfile.PdfA2b, needle);
@@ -58,7 +57,6 @@ public class PreflightSlice31Tests(ITestOutputHelper output)
     [Theory]
     [InlineData("6-2-5-t02-pass-a")] // /TR2 /Default
     [InlineData("6-2-5-t03-pass-a")] // HalftoneType 1
-    [InlineData("6-2-5-t05-pass-a")] // all four standard /RI values
     public void Conformant_extgstate_is_not_flagged(string needle)
     {
         string? path = CorpusFixture(ConformanceProfile.PdfA2b, needle);
