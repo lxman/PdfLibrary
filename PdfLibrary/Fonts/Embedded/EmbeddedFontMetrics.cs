@@ -554,6 +554,97 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Number of long horizontal metrics (hhea <c>numberOfHMetrics</c>). For a CIDFontType2 with an
+    /// Identity CIDToGIDMap this is the count the subset-coverage rule treats as the number of glyphs
+    /// present in the program (matching veraPDF's <c>getLongHorMetrics().length</c>). 0 when there is no
+    /// hhea table (e.g. a CFF or Type1 program).
+    /// </summary>
+    public int NumberOfHMetrics => _hheaTable?.NumberOfHMetrics ?? 0;
+
+    /// <summary>
+    /// Enumerates the glyph names present in the embedded program, for the subset-coverage check
+    /// (ISO 19005-2 6.2.11.4.2 / ISO 14289-1 7.21.4.2 test 1, a simple Type1 font's /CharSet). Covers a
+    /// classic Type1 program (via the Type1 parser) and a non-CID CFF/Type1C program (via the CFF charset,
+    /// resolving each glyph's SID to its name); <c>.notdef</c> is included. Returns null for anything else
+    /// (a CID-keyed CFF, a TrueType program, or no embedded program) so the caller skips it — never guesses.
+    /// </summary>
+    public IReadOnlySet<string>? EnumerateProgramGlyphNames()
+    {
+        if (_isType1Font && _type1Parser is not null)
+            return new HashSet<string>(_type1Parser.GlyphNames, StringComparer.Ordinal);
+
+        if (_isCffFont && _cffTable is not null && !_cffTable.IsCid)
+        {
+            var names = new HashSet<string>(StringComparer.Ordinal) { ".notdef" }; // GID 0 is always .notdef
+            foreach (int sid in EnumerateCharsetValues())
+            {
+                string? name = sid <= StandardStrings.StandardStringsLimit
+                    ? StandardStrings.GetString(sid)
+                    : (sid - 391 is var i && i >= 0 && i < _cffTable.Strings.Count ? _cffTable.Strings[i] : null);
+                if (name is not null)
+                    names.Add(name);
+            }
+            return names;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Enumerates the CIDs present in an embedded CID-keyed CFF program (CIDFontType0C), for the
+    /// subset-coverage check (test 2, a CID font's /CIDSet). In a CID-keyed CFF the charset entries are
+    /// CIDs; CID 0 (.notdef) is included. Returns null for anything else (a plain CFF, a TrueType program,
+    /// or no embedded program) so the caller uses the appropriate path or skips.
+    /// </summary>
+    public IReadOnlySet<int>? EnumerateProgramCids()
+    {
+        if (!_isCffFont || _cffTable is null || !_cffTable.IsCid)
+            return null;
+        var cids = new HashSet<int> { 0 }; // CID 0 is always .notdef
+        foreach (int cid in EnumerateCharsetValues())
+            cids.Add(cid);
+        return cids;
+    }
+
+    /// <summary>
+    /// Walks the CFF charset (Format 0/1/2) and yields the SID (non-CID CFF) or CID (CID-keyed CFF) for
+    /// each GID ≥ 1, bounded to <see cref="NumGlyphs"/>-1 entries. Format 1/2 ranges can over-cover the
+    /// final range, so the cap guards against yielding phantom trailing glyphs.
+    /// </summary>
+    private IEnumerable<int> EnumerateCharsetValues()
+    {
+        ICharset? charset = _cffTable?.CharSet;
+        int limit = NumGlyphs > 0 ? NumGlyphs - 1 : 0;
+        int emitted = 0;
+        switch (charset)
+        {
+            case CharsetsFormat0 format0:
+                foreach (ushort value in format0.Glyphs)
+                {
+                    if (emitted++ >= limit) yield break;
+                    yield return value;
+                }
+                break;
+            case CharsetsFormat1 format1:
+                foreach (Range1 range in format1.Ranges)
+                    for (int k = 0; k <= range.NumberLeft; k++)
+                    {
+                        if (emitted++ >= limit) yield break;
+                        yield return range.First + k;
+                    }
+                break;
+            case CharsetsFormat2 format2:
+                foreach (Range2 range in format2.Ranges)
+                    for (int k = 0; k <= range.NumberLeft; k++)
+                    {
+                        if (emitted++ >= limit) yield break;
+                        yield return range.First + k;
+                    }
+                break;
+        }
+    }
+
+    /// <summary>
     /// Looks up the GID for a CID in a CID-keyed CFF font via the charset table. In CID-keyed
     /// CFF the charset entries are CIDs (not SIDs), so the same Format 0/1/2 traversal works —
     /// just compare against the CID instead of an SID.

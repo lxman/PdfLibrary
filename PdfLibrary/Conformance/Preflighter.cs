@@ -39,6 +39,8 @@ public static class Preflighter
         new Rules.FontDictionaryRule(),
         // Slice 19 — font-program rules: .notdef + metrics (ISO 19005-2 6.2.11 + ISO 14289-1 7.21).
         new Rules.FontProgramRule(),
+        // Slice 27 — subset CharSet/CIDSet completeness (ISO 19005-2 6.2.11.4.2 + ISO 14289-1 7.21.4.2).
+        new Rules.FontSubsetCoverageRule(),
         new Rules.DeviceColourRule(),
         // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
         new Rules.TransparencyColourRule(),

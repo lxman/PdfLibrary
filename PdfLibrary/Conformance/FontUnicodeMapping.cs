@@ -62,6 +62,28 @@ internal static class FontUnicodeMapping
         || value.Contains(NonCharacterFffe)
         || value.Contains(NotACharacter);
 
+    /// <summary>The code points a PDF/UA-1 <c>/ToUnicode</c> value must not contain (ISO 14289-1, 7.21.7,
+    /// test 2): U+0000, U+FFFE, U+FEFF. This set is deliberately distinct from PDF/A-2u's
+    /// (<see cref="IsForbiddenUnicodeValue"/>) — it excludes U+FFFF and does not fault an empty value
+    /// (an unmapped glyph is the text-to-Unicode rule's concern, matching veraPDF's <c>toUnicode == null</c>
+    /// short-circuit).</summary>
+    public static readonly char[] PdfUa1ForbiddenCodePoints = [NullChar, NonCharacterFffe, ByteOrderMark];
+
+    /// <summary>
+    /// True when <paramref name="value"/> contains any of the <paramref name="forbidden"/> code points
+    /// anywhere in the string. This is veraPDF's substring/<c>indexOf</c> semantics: a multi-code-point
+    /// value (e.g. a ligature) is forbidden if <b>any</b> of its code points is forbidden. The caller
+    /// supplies the profile-specific set (e.g. <see cref="PdfUa1ForbiddenCodePoints"/>), so this does not
+    /// touch the PDF/A-2u behaviour of <see cref="IsForbiddenUnicodeValue"/>.
+    /// </summary>
+    public static bool ContainsForbiddenCodePoint(string value, ReadOnlySpan<char> forbidden)
+    {
+        foreach (char c in forbidden)
+            if (value.Contains(c))
+                return true;
+        return false;
+    }
+
     /// <summary>True when the composite font's descendant CIDFont uses the Adobe-Identity ordering, whose
     /// CIDs carry no inherent Unicode mapping. A missing/unreadable CIDSystemInfo is treated as non-Identity
     /// (not flagged) so an ambiguous font is never a false positive.</summary>
