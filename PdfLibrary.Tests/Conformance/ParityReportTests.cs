@@ -24,7 +24,7 @@ public class ParityReportTests(ITestOutputHelper output)
             [ConformanceProfile.PdfA2b] = 899,   // slice 20 file-structure rules (6.1.2 header 8/9; 6.1.13 impl-limits: page-box 6/6, string 1/2, name 2/2); −1 vs 900 from dropping the 6.2.11.5 width check on CIDFontType0/CFF fonts — its CFF advance extraction false-positives on conformant CFF reference files (PDFUA-Ref-2-08), so FP-safety on real files outweighs one corpus detection
             [ConformanceProfile.PdfA2u] = 19,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
-            [ConformanceProfile.PdfUA1] = 248,   // + slice 21 annotation rules (7.18.2 TrapNet, 7.18.3 Tabs, 7.18.5 Link /Contents + nesting, 7.18.1 Contents-or-Alt + off-CropBox, 7.18.1/.4/.8 structure nesting) — +12 vs 236
+            [ConformanceProfile.PdfUA1] = 253,   // + slice 21 annotation rules (7.18 TrapNet/Tabs/Link + 7.18.1 annotation & form-field alt-desc + nesting) and the incremental-update obj-stream resolution fix — +17 vs 236
         };
 
     [Fact]

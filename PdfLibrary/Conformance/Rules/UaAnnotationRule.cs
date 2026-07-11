@@ -45,6 +45,7 @@ internal sealed class UaAnnotationRule : IConformanceRule
             ? StructureTree.AnnotationParentElements(context)
             : new Dictionary<int, PdfDictionary>();
 
+        var inScopeWidgets = new HashSet<int>(); // object numbers of in-scope annotations, for the field pass
         IReadOnlyList<PdfPage> pages = context.Pages;
         for (int i = 0; i < pages.Count; i++)
         {
@@ -57,7 +58,10 @@ internal sealed class UaAnnotationRule : IConformanceRule
                 foreach (PdfObject entry in annots)
                 {
                     if (context.Resolve(entry) is PdfDictionary annot && IsInScope(context, annot, cropBox))
+                    {
                         inScope.Add(annot);
+                        if (annot.IsIndirect) inScopeWidgets.Add(annot.ObjectNumber);
+                    }
                 }
             }
 
@@ -130,6 +134,90 @@ internal sealed class UaAnnotationRule : IConformanceRule
                 }
             }
         }
+
+        // 7.18.1 — a form field must convey its meaning: an in-scope terminal field needs an effective /TU
+        // (own or inherited — a /TU on a bare widget kid does not count) or an /Alt on the structure element
+        // enclosing its widget. Iterated over the AcroForm field tree, not the page annotations, because the
+        // description belongs to the field, not to each widget.
+        foreach ((PdfDictionary field, List<PdfDictionary> widgets) in TerminalFields(context))
+        {
+            // Scope is decided by the widget as it appears on the page — reuse the page pass's verdict so a
+            // Hidden/off-CropBox widget excludes its field exactly as it excludes the annotation.
+            if (!widgets.Exists(w => w.IsIndirect && inScopeWidgets.Contains(w.ObjectNumber)))
+                continue;
+            if (HasEffectiveEntry(context, field, "TU"))
+                continue;
+            if (tagged && widgets.Exists(w => EnclosingHasAlt(context, parents, w)))
+                continue;
+            yield return Error(context, "7.18.1", null,
+                "A form field has neither a /TU (tooltip) entry nor an /Alt on its enclosing structure "
+                + "element (no accessible description).");
+        }
+    }
+
+    /// <summary>Every terminal form field (a node with an effective /FT whose /Kids, if any, are all bare
+    /// widget annotations rather than child fields), paired with its widget annotations. A merged
+    /// widget-field is its own widget.</summary>
+    private static IEnumerable<(PdfDictionary Field, List<PdfDictionary> Widgets)> TerminalFields(
+        ConformanceContext context)
+    {
+        if (context.Catalog?.GetAcroForm() is not { } acro
+            || context.Resolve(acro.Get("Fields")) is not PdfArray roots)
+            yield break;
+
+        var seen = new HashSet<int>();
+        var stack = new Stack<PdfObject>();
+        foreach (PdfObject r in roots) stack.Push(r);
+
+        while (stack.Count > 0)
+        {
+            if (context.Resolve(stack.Pop()) is not PdfDictionary node)
+                continue;
+            if (node.IsIndirect && !seen.Add(node.ObjectNumber))
+                continue;
+
+            var widgets = new List<PdfDictionary>();
+            bool hasChildField = false;
+            if (context.Resolve(node.Get("Kids")) is PdfArray kids)
+            {
+                foreach (PdfObject ko in kids)
+                {
+                    if (context.Resolve(ko) is not PdfDictionary kd)
+                        continue;
+                    if (kd.Get("FT") is not null) { hasChildField = true; stack.Push(ko); }      // a child field
+                    else if (context.ResolveName(kd.Get("Subtype")) == "Widget") widgets.Add(kd); // a bare widget
+                    else { hasChildField = true; stack.Push(ko); }                                // recurse, be safe
+                }
+            }
+
+            if (hasChildField)
+                continue; // an intermediate node — its terminal descendants are visited via the stack
+
+            if (!HasEffectiveEntry(context, node, "FT"))
+                continue; // not a field (e.g. a stray dictionary)
+
+            if (widgets.Count == 0 && context.ResolveName(node.Get("Subtype")) == "Widget")
+                widgets.Add(node); // merged widget-field
+
+            yield return (node, widgets);
+        }
+    }
+
+    /// <summary>True when the field or one of its /Parent ancestors carries a value for <paramref name="key"/>
+    /// (a text value for /TU, or any value for /FT). Cycle-guarded on the /Parent chain.</summary>
+    private static bool HasEffectiveEntry(ConformanceContext context, PdfDictionary field, string key)
+    {
+        var seen = new HashSet<int>();
+        for (PdfDictionary? f = field; f is not null;)
+        {
+            PdfObject? v = f.Get(key);
+            if (key == "TU" ? HasText(context, v) : v is not null)
+                return true;
+            if (f.IsIndirect && !seen.Add(f.ObjectNumber))
+                break;
+            f = context.Resolve(f.Get("Parent")) as PdfDictionary;
+        }
+        return false;
     }
 
     /// <summary>The standard type of the structure element that references the annotation via an /OBJR, or
@@ -201,7 +289,7 @@ internal sealed class UaAnnotationRule : IConformanceRule
         return false;
     }
 
-    private Finding Error(ConformanceContext context, string clause, int pageIndex, string message) => new()
+    private Finding Error(ConformanceContext context, string clause, int? pageIndex, string message) => new()
     {
         RuleId = RuleId,
         Severity = FindingSeverity.Error,

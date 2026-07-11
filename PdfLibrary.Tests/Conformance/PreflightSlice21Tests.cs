@@ -214,4 +214,95 @@ public class PreflightSlice21Tests
     public void Off_cropbox_annotation_is_out_of_scope() =>
         // Rect entirely outside the MediaBox/CropBox (0..612 × 0..792): no Tabs, Contents, or nesting finding.
         Assert.Empty(Run(Doc(tabs: null, Annot("Link", rect: Rect(800, 800, 810, 810)))));
+
+    // ── 7.18.1 form-field description (28-005) ───────────────────────────────────────────────────────
+
+    /// <summary>A one-page document with a single AcroForm field. When <paramref name="kids"/> is null the
+    /// field (object 20) is a merged widget-field placed directly on the page; otherwise it is a parent
+    /// field whose widget kids (objects 21+) are the page annotations. /Tabs is /S so only field checks fire;
+    /// no structure tree, so the /Alt fallback is absent.</summary>
+    private static PdfDocument FieldDoc(Action<PdfDictionary> configureField, params Action<PdfDictionary>[] kids)
+    {
+        var doc = new PdfDocument();
+        var field = new PdfDictionary { [N("FT")] = N("Tx"), [N("T")] = Str("f") };
+        var annotRefs = new PdfArray();
+
+        if (kids.Length == 0)
+        {
+            field[N("Type")] = N("Annot");
+            field[N("Subtype")] = N("Widget");
+            field[N("Rect")] = Rect(100, 100, 200, 120);
+            annotRefs.Add(Ref(20));
+        }
+        else
+        {
+            var kidRefs = new PdfArray();
+            int kn = 21;
+            foreach (Action<PdfDictionary> k in kids)
+            {
+                var w = new PdfDictionary
+                {
+                    [N("Type")] = N("Annot"), [N("Subtype")] = N("Widget"),
+                    [N("Parent")] = Ref(20), [N("Rect")] = Rect(100, 100, 200, 120),
+                };
+                k(w);
+                doc.AddObject(kn, 0, w);
+                kidRefs.Add(Ref(kn));
+                annotRefs.Add(Ref(kn));
+                kn++;
+            }
+            field[N("Kids")] = kidRefs;
+        }
+        configureField(field);
+        doc.AddObject(20, 0, field);
+
+        var page = new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2), [N("Tabs")] = N("S"),
+            [N("MediaBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfInteger(612), new PdfInteger(792)),
+            [N("Annots")] = annotRefs,
+        };
+        doc.AddObject(10, 0, page);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(10)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2),
+            [N("AcroForm")] = new PdfDictionary { [N("Fields")] = new PdfArray(Ref(20)) },
+        });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void Merged_field_without_tu_is_flagged() =>
+        Assert.Contains(Run(FieldDoc(_ => { })), f => Clause(f) == "7.18.1");
+
+    [Fact]
+    public void Merged_field_with_tu_passes() =>
+        Assert.Empty(Run(FieldDoc(f => f[N("TU")] = Str("Your name"))));
+
+    [Fact]
+    public void Hidden_field_is_out_of_scope() =>
+        Assert.Empty(Run(FieldDoc(f => f[N("F")] = new PdfInteger(2)))); // Hidden merged field, no TU → clean
+
+    [Fact]
+    public void Parent_field_tu_covers_bare_widget_kids()
+    {
+        // The Btn field carries /TU; its two bare widget kids do not. The field-level /TU satisfies 7.18.1
+        // (mirrors veraPDF's 7.18.1-t03-pass-e, which the widget-level read wrongly failed).
+        PdfDocument doc = FieldDoc(f => { f[N("FT")] = N("Btn"); f[N("TU")] = Str("Choose"); }, _ => { }, _ => { });
+        Assert.Empty(Run(doc));
+    }
+
+    [Fact]
+    public void Parent_field_without_tu_is_flagged_despite_widget_tu()
+    {
+        // The Btn field has no /TU; putting /TU on the bare widget kids does not count (mirrors 7.18.1-t03-fail-d).
+        PdfDocument doc = FieldDoc(f => f[N("FT")] = N("Btn"),
+            w => w[N("TU")] = Str("x"), w => w[N("TU")] = Str("y"));
+        Assert.Contains(Run(doc), f => Clause(f) == "7.18.1");
+    }
 }
