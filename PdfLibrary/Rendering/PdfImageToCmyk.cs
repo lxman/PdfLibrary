@@ -129,12 +129,24 @@ public static class PdfImageToCmyk
             if (tint is null || inC < 1) return null;
             if (data.Length < px * inC) return null;
 
+            // Honour a non-identity /Decode (e.g. [1 0] to invert a spot ramp) per colorant before the
+            // tint transform — exactly as the DeviceCMYK branch above and the RGBA path do. bd5823c fixed
+            // this in PdfImageToRgba only; the CMYK-proof path landed here unfixed, so GWG 6.0/6.1 (and
+            // GWG061) reference image b — a grayscale Separation JPEG with /Decode [1 0] — rendered as a
+            // colour negative. Default [0 1 …] is a no-op.
+            double[]? dec = image.DecodeArray;
+            bool applyDecode = dec is not null && dec.Length >= inC * 2;
+
             var outSep = new byte[px * 4];
             var colorants = new double[inC];
             for (var i = 0; i < px; i++)
             {
                 int src = i * inC;
-                for (var c = 0; c < inC; c++) colorants[c] = data[src + c] / 255.0;
+                for (var c = 0; c < inC; c++)
+                {
+                    double s = data[src + c] / 255.0;
+                    colorants[c] = applyDecode ? dec![2 * c] + s * (dec[2 * c + 1] - dec[2 * c]) : s;
+                }
                 (double cc, double mm, double yy, double kk) = tint(colorants);
                 int o = i * 4;
                 outSep[o] = B(cc); outSep[o + 1] = B(mm); outSep[o + 2] = B(yy); outSep[o + 3] = B(kk);

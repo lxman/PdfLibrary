@@ -74,4 +74,34 @@ public class SeparationDecodeArrayTests
             SepPixel(0xFF, new PdfArray(new PdfInteger(1), new PdfInteger(0))), null)!.Value.Rgba;
         Assert.True(px[0] > 250 && px[1] > 250 && px[2] > 250, $"decode[1 0] max sample: white expected, got ({px[0]},{px[1]},{px[2]})");
     }
+
+    // The CMYK native-ink path (PdfImageToCmyk) must honour /Decode on Separation/DeviceN images too —
+    // bd5823c fixed only the RGBA path, so the CMYK-proof render of GWG061/6.0/6.1 reference image b (the
+    // grayscale Separation JPEG) still came out a colour negative (light↔dark flipped). The Separation
+    // "Black" tint maps t -> [0 0 0 t], so the K byte (index 3) tracks the tint directly.
+
+    [Fact]
+    public void Cmyk_Separation_DecodeArray_InvertsTint()
+    {
+        // Sample 0x00, no /Decode -> tint 0 -> white -> CMYK (0,0,0,0): K low.
+        byte[]? plain = PdfImageToCmyk.TryToCmyk(SepPixel(0x00, null), null, out _, out _);
+        Assert.NotNull(plain);
+        Assert.True(plain![3] < 5, $"plain K expected ~0 (white), got {plain[3]}");
+
+        // Same sample with /Decode [1 0] -> tint 1 -> black -> CMYK (0,0,0,1): K high.
+        byte[]? inv = PdfImageToCmyk.TryToCmyk(
+            SepPixel(0x00, new PdfArray(new PdfInteger(1), new PdfInteger(0))), null, out _, out _);
+        Assert.NotNull(inv);
+        Assert.True(inv![3] > 250, $"decode[1 0] K expected ~255 (black), got {inv[3]}");
+    }
+
+    [Fact]
+    public void Cmyk_Separation_MaxSample_DecodeArray_InvertsToWhite()
+    {
+        // Sample 0xFF with /Decode [1 0] -> tint 0 -> white -> CMYK (0,0,0,0): K low (opposite ramp end).
+        byte[]? px = PdfImageToCmyk.TryToCmyk(
+            SepPixel(0xFF, new PdfArray(new PdfInteger(1), new PdfInteger(0))), null, out _, out _);
+        Assert.NotNull(px);
+        Assert.True(px![3] < 5, $"decode[1 0] max sample: K expected ~0 (white), got {px[3]}");
+    }
 }
