@@ -42,8 +42,10 @@ public static class Preflighter
         // Slice 27 — subset CharSet/CIDSet completeness (ISO 19005-2 6.2.11.4.2 + ISO 14289-1 7.21.4.2).
         new Rules.FontSubsetCoverageRule(),
         new Rules.DeviceColourRule(),
-        // Slice 31 — extended graphics state (ISO 19005-2 6.2.5): TR/HTP/TR2/RI + halftone type/name.
+        // Slice 31 — extended graphics state (ISO 19005-2 6.2.5): TR/HTP/TR2 + halftone type/name/transfer.
         new Rules.ExtGStateRule(),
+        // Slice 32 — rendering intents (ISO 19005-2 6.2.6): ExtGState /RI, image /Intent, ri operator.
+        new Rules.RenderingIntentRule(),
         // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
         new Rules.TransparencyColourRule(),
         // Slice 7 — annotations, interactive forms, actions.

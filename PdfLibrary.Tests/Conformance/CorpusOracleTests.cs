@@ -80,7 +80,12 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // (t01-b), TR2≠Default (t02-a), HalftoneType∉{1,5} (t03-a), Type-5 TransferFunction for a
             // non-primary colourant (t03-b), HalftoneName (t04-a), non-standard RI (t05-a). The TransferFunction
             // check uses veraPDF's CMYK-only "primary" set (rule 6.2.5-6): RGB/Gray components require one.
-            [ConformanceProfile.PdfA2b] = 534,
+            // Slice 32 — rendering intents (rendering-intent, 6.2.6) adds +3 (534 → 537). The RI value check
+            // moved here from graphics-state (veraPDF scopes it to CosRenderingIntent, clause 6.2.6, not 6.2.5)
+            // and widened to every intent site — so beyond 6-2-5-t05-fail-a (ExtGState /RI, was already caught,
+            // now at 6.2.6) it newly catches 6-2-6-t01-fail-a (inline image /Intent), 6-2-2-t02-fail-a (the ri
+            // operator) and 6-2-8-1-t03-fail-a (image XObject /Intent) — all "Custom" values.
+            [ConformanceProfile.PdfA2b] = 537,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
