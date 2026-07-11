@@ -67,7 +67,24 @@ public class CorpusOracleTests(ITestOutputHelper output)
             [ConformanceProfile.PdfA2b] = 134,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
-            [ConformanceProfile.PdfUA1] = 82,  // slice 13 phase 3b: + standard-type/role-map + table nesting/cardinality/grid + Alt/ActualText/E + outline lang + /Lang syntax
+            // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
+            // it adds +7 (112 → 119) by catching every 7.4 heading fail fixture — the numbered-sequence
+            // (7.4.2-t01-fail-a/-b), one-<H>-per-node (7.4.4-t01-fail-a) and no-mixing (7.4.4-t02/-t03-fail)
+            // cases. (The prior floor of 82 had gone stale; earlier UA slices already reached 112 without
+            // ratcheting it.)
+            //
+            // Slice 23 — structural bucket adds +8 (119 → 127), measured by toggling the slice's rules off/on:
+            //   7.1  Suspects            (ua-suspects)          +1
+            //   7.9  Note IDs            (ua-note-id)           +3
+            //   7.10 optional-content    (optional-content→UA)  +3
+            //   7.20 reference XObjects  (ua-reference-xobject) +1
+            //
+            // Slice 24 (B1) — natural language for non-structure-element text (ua-content-lang, clause 7.2
+            // t24 annotation /Contents, t25 form-field /TU, t33 XMP lang-alt x-default): +0 at the fixture
+            // level. The rule correctly flags all three fail fixtures (7.2-t24/t25/t33-fail-a), but each was
+            // already counted as detected — the veraPDF test-builder fixtures also carry an outline with no
+            // catalog /Lang, which ua-object-lang already catches — so the per-fixture floor is unchanged.
+            [ConformanceProfile.PdfUA1] = 127,
         };
 
     [Fact]
