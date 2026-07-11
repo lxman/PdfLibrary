@@ -5,7 +5,7 @@
 
 Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## Focal coverage — 59 of 87 machine-checkable conditions
+## Focal coverage — 61 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
@@ -27,7 +27,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 25 | XFA | 1/1 | `ua-xfa` |
 | 28 | Annotations | 10/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8; media 7.18.6, file-attach 7.18.7 deferred) |
 | 30 | XObjects | 2/2 | `ua-reference-xobject` (30-001), `ua-xobject-mcid` (30-002 tagged-form reuse) |
-| 31 | Fonts | 15/29 | `font-dictionary`, `font-embedded`, `font-program`, `font-subset-coverage` (CharSet/CIDSet, 7.21.4.2) |
+| 31 | Fonts | 17/29 | `font-dictionary`, `font-embedded`, `font-program`, `font-subset-coverage` (CharSet/CIDSet, 7.21.4.2), `pdfa2u-tounicode-values` (ToUnicode value validity, 7.21.7-2/3) |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
 
@@ -325,6 +325,6 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 31-025 | M | 7.21.6-9 | The embedded font program for a symbolic | — |
 | 31-026 | M | 7.21.6-10 | The embedded font program for a symbolic | — |
 | 31-027 | M | 7.21.7-1 | A font dictionary does not contain the ToUnicode | — |
-| 31-028 | M | 7.21.7-2 | One or more Unicode values specified in the | — |
-| 31-029 | M | 7.21.7-3 | One or more Unicode values specified in the | — |
+| 31-028 | M | 7.21.7-2 | One or more Unicode values specified in the | pdfa2u-tounicode-values |
+| 31-029 | M | 7.21.7-3 | One or more Unicode values specified in the | pdfa2u-tounicode-values |
 | 31-030 | M | 7.21.8-1 | One or more characters used in text showing | font-program |

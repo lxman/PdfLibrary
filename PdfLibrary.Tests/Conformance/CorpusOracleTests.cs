@@ -96,7 +96,14 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // (128 → 131), measured by toggling the rule off/on. It is the sole rule that catches
             // 7.21.4.2-t01-fail-a, 7.21.4.2-t01-fail-b (subset Type1 /CharSet) and 7.21.4.2-t02-fail-a
             // (subset CIDFontType2 /CIDSet).
-            [ConformanceProfile.PdfUA1] = 131,
+            //
+            // Slice 28 (font F2-t2) — invalid /ToUnicode values for PDF/UA-1 (pdfa2u-tounicode-values
+            // widened to PdfUA1, clause 7.21.7 test 2): +3 (131 → 134), measured by stashing the rule
+            // change off/on. It is the sole rule that catches 7.21.7-t02-fail-a (U+0000), -t02-fail-b
+            // (U+FFFE) and -t02-fail-c (U+FEFF); t01-fail-a stays ua-text-unicode's (7.21.7 test 1).
+            // The UA forbidden set {U+0000, U+FFFE, U+FEFF} is a strict subset of the A-2u set, so PdfA2u
+            // detection is unchanged (7, floor 6).
+            [ConformanceProfile.PdfUA1] = 134,
         };
 
     [Fact]
