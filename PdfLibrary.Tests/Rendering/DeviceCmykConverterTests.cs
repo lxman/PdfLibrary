@@ -108,4 +108,46 @@ public class DeviceCmykConverterTests
         (byte r, byte g, byte b) = Swop().ToRgb(1, 1, 1, 0);
         Assert.True(r < 68 && g < 68 && b < 68, $"300% ink not dark: ({r},{g},{b})");
     }
+
+    [Fact]
+    public void Absolute_forward_white_differs_from_perceptual_white()
+    {
+        // Paper-white simulation: AbsoluteColorimetric reproduces the profile's media white literally
+        // (a slightly-off, dimmer sheet) instead of mapping it to display white as Perceptual does.
+        IccProfile p = IccProfile.Parse(IccResources.ReadDefaultCmykProfile());
+        var perceptual = new DeviceCmykConverter(p, RenderingIntent.Perceptual);
+        var absolute   = new DeviceCmykConverter(p, RenderingIntent.AbsoluteColorimetric);
+        (byte pr, byte pg, byte pb) = perceptual.ToRgb(0, 0, 0, 0);
+        (byte ar, byte ag, byte ab) = absolute.ToRgb(0, 0, 0, 0);
+        Assert.NotEqual((pr, pg, pb), (ar, ag, ab));                 // paper sim visibly changes the sheet
+        Assert.True(ar <= pr && ag <= pg && ab <= pb, $"absolute white {(ar,ag,ab)} not dimmer than perceptual {(pr,pg,pb)}");
+    }
+
+    [Fact]
+    public void Inverse_transform_is_relative_colorimetric_roundtrip_stable()
+    {
+        // The inverse (sRGB->CMYK) is now RelativeColorimetric: an in-gamut colour round-trips near-identically.
+        var conv = new DeviceCmykConverter(IccProfile.Parse(IccResources.ReadDefaultCmykProfile()));
+        const double r = 0.50, g = 0.40, b = 0.30;                  // safely inside SWOP
+        (double c, double m, double y, double k) = conv.ToCmyk(r, g, b);
+        (byte rr, byte gg, byte bb) = conv.ToRgb(c, m, y, k);
+        Assert.True(Math.Abs(rr / 255.0 - r) < 0.06, $"R {rr/255.0:F3} vs {r}");
+        Assert.True(Math.Abs(gg / 255.0 - g) < 0.06, $"G {gg/255.0:F3} vs {g}");
+        Assert.True(Math.Abs(bb / 255.0 - b) < 0.06, $"B {bb/255.0:F3} vs {b}");
+    }
+
+    [Fact]
+    public void Default_display_intent_rebuilds_converter()
+    {
+        DeviceCmykConverter.DisplayIntent = RenderingIntent.Perceptual;
+        DeviceCmykConverter.DisplayBlackPointCompensation = false;
+        (byte pr, byte pg, byte pb) = DeviceCmykConverter.Default.ToRgb(0, 0, 0, 0);
+        try
+        {
+            DeviceCmykConverter.DisplayIntent = RenderingIntent.AbsoluteColorimetric;
+            (byte ar, byte ag, byte ab) = DeviceCmykConverter.Default.ToRgb(0, 0, 0, 0);
+            Assert.NotEqual((pr, pg, pb), (ar, ag, ab));            // Default rebuilt with the new intent
+        }
+        finally { DeviceCmykConverter.DisplayIntent = RenderingIntent.Perceptual; }   // restore process default
+    }
 }

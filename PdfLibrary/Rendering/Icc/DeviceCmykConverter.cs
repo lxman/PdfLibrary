@@ -14,43 +14,63 @@ public sealed class DeviceCmykConverter
 {
     private readonly IccTransform? _toRgb;   // CMYK(4) -> sRGB(3)
     private readonly IccTransform? _toCmyk;  // sRGB(3) -> CMYK(4)
+    private readonly IccProfile? _cmykProfile;   // retained so E3 can lazily build a relative forward transform
 
     /// <summary>True when ICC transforms could not be built and naive fallback math is in use.</summary>
     public bool IsDegraded => _toRgb is null || _toCmyk is null;
 
-    /// <summary>Builds a converter bound to <paramref name="cmykProfile"/>.</summary>
-    public DeviceCmykConverter(IccProfile cmykProfile)
+    /// <summary>Builds a converter. The FORWARD (CMYK→sRGB display) transform uses
+    /// <paramref name="forwardIntent"/> + <paramref name="forwardBpc"/>; the INVERSE (sRGB→CMYK
+    /// compositing) transform is always RelativeColorimetric (accurate in-gamut, clip out-of-gamut).</summary>
+    public DeviceCmykConverter(IccProfile cmykProfile, RenderingIntent forwardIntent, bool forwardBpc = false)
     {
         if (cmykProfile is null) throw new ArgumentNullException(nameof(cmykProfile));
         try
         {
-            // Perceptual intent for display of a press CMYK profile: maps the full dynamic range
-            // (incl. a realistic black point) rather than clipping darks to media-white as
-            // RelativeColorimetric does. Matches Adobe's SWOP display (ICC.1:2022 §6). Falls back
-            // to A2B0/B2A0 inside ICCSharp if the intent table is absent.
-            var opts = new ICCSharp.TransformOptions
-            {
-                Intent = ICCSharp.Profile.RenderingIntent.Perceptual,
-            };
-            _toRgb = IccTransform.Create(cmykProfile, BuiltInProfiles.Srgb, opts);
-            _toCmyk = IccTransform.Create(BuiltInProfiles.Srgb, cmykProfile, opts);
+            var fwd = new ICCSharp.TransformOptions { Intent = forwardIntent, BlackPointCompensation = forwardBpc };
+            var inv = new ICCSharp.TransformOptions { Intent = ICCSharp.Profile.RenderingIntent.RelativeColorimetric };
+            _toRgb  = IccTransform.Create(cmykProfile, BuiltInProfiles.Srgb, fwd);   // display
+            _toCmyk = IccTransform.Create(BuiltInProfiles.Srgb, cmykProfile, inv);   // compositing
+            _cmykProfile = cmykProfile;                                              // retained for E3's lazy rel forward
         }
         catch (Exception ex)
         {
             PdfLogger.Log(LogCategory.Graphics,
                 $"DeviceCmykConverter: ICC transform build failed ({ex.GetType().Name}: {ex.Message}); using naive fallback.");
-            _toRgb = null;
-            _toCmyk = null;
+            _toRgb = null; _toCmyk = null;
         }
     }
+
+    /// <summary>Builds a display converter with the default forward intent (Perceptual, no BPC) —
+    /// preserves the historical single-argument behaviour.</summary>
+    public DeviceCmykConverter(IccProfile cmykProfile)
+        : this(cmykProfile, ICCSharp.Profile.RenderingIntent.Perceptual, false) { }
 
     private static readonly object DefaultLock = new();
     private static DeviceCmykConverter? _default;
     private static IccProfile? _defaultProfile;
+    private static RenderingIntent _displayIntent = RenderingIntent.Perceptual;
+    private static bool _displayBpc;
+
+    /// <summary>Forward (display) rendering intent that <see cref="Default"/> builds with. Setting a new
+    /// value invalidates the cached converter so the next <see cref="Default"/> read rebuilds.</summary>
+    public static RenderingIntent DisplayIntent
+    {
+        get { lock (DefaultLock) return _displayIntent; }
+        set { lock (DefaultLock) { if (_displayIntent == value) return; _displayIntent = value; _default = null; } }
+    }
+
+    /// <summary>Forward black-point-compensation flag that <see cref="Default"/> builds with.</summary>
+    public static bool DisplayBlackPointCompensation
+    {
+        get { lock (DefaultLock) return _displayBpc; }
+        set { lock (DefaultLock) { if (_displayBpc == value) return; _displayBpc = value; _default = null; } }
+    }
 
     /// <summary>
     /// Converter bound to <see cref="CmykProfileProvider.Default"/>'s active profile. Rebuilt
-    /// automatically when that profile changes (e.g. the override path is set).
+    /// automatically when that profile changes (e.g. the override path is set) or when
+    /// <see cref="DisplayIntent"/>/<see cref="DisplayBlackPointCompensation"/> are changed.
     /// </summary>
     public static DeviceCmykConverter Default
     {
@@ -61,7 +81,7 @@ public sealed class DeviceCmykConverter
                 IccProfile current = CmykProfileProvider.Default.GetProfile();
                 if (_default is null || !ReferenceEquals(current, _defaultProfile))
                 {
-                    _default = new DeviceCmykConverter(current);
+                    _default = new DeviceCmykConverter(current, _displayIntent, _displayBpc);
                     _defaultProfile = current;
                 }
                 return _default;
