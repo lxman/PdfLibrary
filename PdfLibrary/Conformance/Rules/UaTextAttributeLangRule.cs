@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Conformance.Rules;
 
@@ -28,7 +29,7 @@ internal sealed class UaTextAttributeLangRule : IConformanceRule
 
         var visited = new HashSet<int>();
         var stack = new Stack<(PdfDictionary Element, bool LangInScope)>();
-        foreach (PdfDictionary child in StructureTree.ChildElements(context, root))
+        foreach (PdfDictionary child in LogicalStructure.ChildElements(context.Document, root))
             stack.Push((child, false));
 
         for (int budget = 500_000; stack.Count > 0 && budget > 0; budget--)
@@ -53,7 +54,7 @@ internal sealed class UaTextAttributeLangRule : IConformanceRule
                 };
             }
 
-            foreach (PdfDictionary child in StructureTree.ChildElements(context, element))
+            foreach (PdfDictionary child in LogicalStructure.ChildElements(context.Document, element))
                 stack.Push((child, langInScope));
         }
     }

@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Structure;
 
-namespace PdfLibrary.Conformance;
+namespace PdfLibrary.Document;
 
 /// <summary>A structure element paired with the standard types of its parent and its structure-element
 /// children — the shape the parent/child nesting rules (ISO 32000-1, 14.8.4) need.</summary>
@@ -14,40 +15,50 @@ internal readonly record struct StructureNode(
     IReadOnlyList<string?> KidStandardTypes); // standard types of its structure-element children, in order
 
 /// <summary>
-/// Navigates a Tagged PDF logical structure tree (ISO 32000-1, 14.7) for the PDF/UA rules: it enumerates the
-/// structure element dictionaries reachable from the catalog's <c>/StructTreeRoot</c> via <c>/K</c>, skipping
-/// the marked-content and object references (<c>/MCR</c>, <c>/OBJR</c>) and integer MCIDs that are leaves, and
-/// resolves an element's <c>/S</c> structure type through the tree's <c>/RoleMap</c> to a standard type. The
-/// walk is iterative with a node budget and cycle-guards on indirect object number, so a hostile or cyclic
-/// tree cannot spin or overflow the stack.
+/// Reads a Tagged PDF logical structure tree (ISO 32000-1, 14.7) directly from a <see cref="PdfDocument"/>:
+/// it enumerates the structure element dictionaries reachable from the catalog's <c>/StructTreeRoot</c> via
+/// <c>/K</c>, skipping the marked-content and object references (<c>/MCR</c>, <c>/OBJR</c>) and integer MCIDs
+/// that are leaves, and resolves an element's <c>/S</c> structure type through the tree's <c>/RoleMap</c> to a
+/// standard type. The walk is iterative with a node budget and cycle-guards on indirect object number, so a
+/// hostile or cyclic tree cannot spin or overflow the stack.
+/// <para>
+/// This is the engine's shared tag reader — the PDF/UA conformance rules and any UI/editing feature that needs
+/// the logical structure use it, rather than each re-implementing the <c>/K</c> / <c>/RoleMap</c> walk. It is
+/// deliberately decoupled from conformance: it takes only a document.
+/// </para>
+/// <para>
+/// It is <c>internal</c> because the object model it exposes (<see cref="PdfDictionary"/> etc.) is internal;
+/// exposing the logical structure to an external consumer (e.g. the Focal app) would need a public wrapper
+/// type over these nodes, which is a separate API decision.
+/// </para>
 /// </summary>
-internal static class StructureTree
+internal static class LogicalStructure
 {
     /// <summary>Every structure element (a node carrying an <c>/S</c> type) in the tree, in pre-order.</summary>
-    public static IEnumerable<PdfDictionary> Elements(ConformanceContext context)
+    public static IEnumerable<PdfDictionary> Elements(PdfDocument document)
     {
-        if (context.Resolve(context.Catalog?.Dictionary.Get("StructTreeRoot")) is not PdfDictionary root)
+        if (Resolve(document, StructTreeRoot(document)) is not PdfDictionary root)
             yield break;
 
         var visited = new HashSet<int>();
         var stack = new Stack<PdfObject?>();
-        PushKids(context, root, stack);
+        PushKids(document, root, stack);
 
         for (int budget = 500_000; stack.Count > 0 && budget > 0; budget--)
         {
-            if (context.Resolve(stack.Pop()) is not PdfDictionary node)
+            if (Resolve(document, stack.Pop()) is not PdfDictionary node)
                 continue; // an integer MCID leaf or a non-dictionary
             if (node.IsIndirect && !visited.Add(node.ObjectNumber))
                 continue;
 
-            string? nodeType = context.ResolveName(node.Get("Type"));
+            string? nodeType = ResolveName(document, node.Get("Type"));
             if (nodeType is "MCR" or "OBJR")
                 continue; // a marked-content or object reference, not a structure element
 
             if (node.Get("S") is not null)
                 yield return node;
 
-            PushKids(context, node, stack);
+            PushKids(document, node, stack);
         }
     }
 
@@ -55,17 +66,17 @@ internal static class StructureTree
     /// <c>/S</c> when it maps to nothing. A standard type is used as-is (standard types are never remapped); a
     /// non-standard type follows the <c>/RoleMap</c> chain until it reaches a standard type or dead-ends,
     /// cycle-guarded.</summary>
-    public static string? StandardType(ConformanceContext context, PdfDictionary element)
+    public static string? StandardType(PdfDocument document, PdfDictionary element)
     {
-        string? type = context.ResolveName(element.Get("S"));
+        string? type = ResolveName(document, element.Get("S"));
         if (type is null || IsStandardType(type))
             return type;
 
-        if (context.Resolve(RoleMapOf(context)) is not PdfDictionary roleMap)
+        if (Resolve(document, RoleMapOf(document)) is not PdfDictionary roleMap)
             return type;
 
         var seen = new HashSet<string>();
-        while (!IsStandardType(type) && seen.Add(type) && context.ResolveName(roleMap.Get(type)) is { } mapped)
+        while (!IsStandardType(type) && seen.Add(type) && ResolveName(document, roleMap.Get(type)) is { } mapped)
             type = mapped;
         return type;
     }
@@ -96,25 +107,6 @@ internal static class StructureTree
     /// <summary>True when <paramref name="type"/> is one of the ISO 32000-1 standard structure types.</summary>
     public static bool IsStandardType(string? type) => type is not null && StandardTypes.Contains(type);
 
-    private static PdfObject? RoleMapOf(ConformanceContext context) =>
-        context.Resolve(context.Catalog?.Dictionary.Get("StructTreeRoot")) is PdfDictionary root
-            ? root.Get("RoleMap")
-            : null;
-
-    private static void PushKids(ConformanceContext context, PdfDictionary node, Stack<PdfObject?> stack)
-    {
-        switch (context.Resolve(node.Get("K")))
-        {
-            case PdfArray kids:
-                foreach (PdfObject kid in kids)
-                    stack.Push(kid);
-                break;
-            case PdfDictionary single:
-                stack.Push(single);
-                break;
-        }
-    }
-
     /// <summary>
     /// Every structure element paired with its parent's and children's standard types, in pre-order. The
     /// parent type is the <em>immediate</em> structure parent (grouping elements such as NonStruct/Div are not
@@ -122,34 +114,34 @@ internal static class StructureTree
     /// types are the standard types of the element's structure-element children only (integer MCIDs and
     /// <c>/MCR</c>/<c>/OBJR</c> content references are not structure elements and are excluded).
     /// </summary>
-    public static IEnumerable<StructureNode> Nodes(ConformanceContext context)
+    public static IEnumerable<StructureNode> Nodes(PdfDocument document)
     {
-        if (context.Resolve(context.Catalog?.Dictionary.Get("StructTreeRoot")) is not PdfDictionary root)
+        if (Resolve(document, StructTreeRoot(document)) is not PdfDictionary root)
             yield break;
 
         var visited = new HashSet<int>();
         var stack = new Stack<(PdfObject? Node, string? ParentType)>();
-        foreach (PdfObject kid in KidObjects(context, root))
+        foreach (PdfObject kid in KidObjects(document, root))
             stack.Push((kid, null)); // the tree's top elements have no structure parent
 
         for (int budget = 500_000; stack.Count > 0 && budget > 0; budget--)
         {
             (PdfObject? nodeObj, string? parentType) = stack.Pop();
-            if (context.Resolve(nodeObj) is not PdfDictionary node)
+            if (Resolve(document, nodeObj) is not PdfDictionary node)
                 continue; // an integer MCID leaf or a non-dictionary
             if (node.IsIndirect && !visited.Add(node.ObjectNumber))
                 continue;
-            if (!IsStructureElement(context, node))
+            if (!IsStructureElement(document, node))
                 continue; // an /MCR or /OBJR reference, or a node without /S
 
-            string? myType = StandardType(context, node);
+            string? myType = StandardType(document, node);
 
             var kidTypes = new List<string?>();
-            foreach (PdfObject kidObj in KidObjects(context, node))
+            foreach (PdfObject kidObj in KidObjects(document, node))
             {
                 stack.Push((kidObj, myType));
-                if (context.Resolve(kidObj) is PdfDictionary kid && IsStructureElement(context, kid))
-                    kidTypes.Add(StandardType(context, kid));
+                if (Resolve(document, kidObj) is PdfDictionary kid && IsStructureElement(document, kid))
+                    kidTypes.Add(StandardType(document, kid));
             }
 
             yield return new StructureNode(node, myType, parentType, kidTypes);
@@ -163,16 +155,16 @@ internal static class StructureTree
     /// caller can distinguish "untagged" from "tagged under element E"). Backs the PDF/UA annotation nesting
     /// and alternate-description rules (7.18.1/.4/.5/.8).
     /// </summary>
-    public static IReadOnlyDictionary<int, PdfDictionary> AnnotationParentElements(ConformanceContext context)
+    public static IReadOnlyDictionary<int, PdfDictionary> AnnotationParentElements(PdfDocument document)
     {
         var map = new Dictionary<int, PdfDictionary>();
-        foreach (StructureNode node in Nodes(context))
+        foreach (StructureNode node in Nodes(document))
         {
-            foreach (PdfObject kidObj in KidObjects(context, node.Element))
+            foreach (PdfObject kidObj in KidObjects(document, node.Element))
             {
-                if (context.Resolve(kidObj) is not PdfDictionary kid) continue;
-                if (context.ResolveName(kid.Get("Type")) != "OBJR") continue;
-                if (context.Resolve(kid.Get("Obj")) is { IsIndirect: true } annot)
+                if (Resolve(document, kidObj) is not PdfDictionary kid) continue;
+                if (ResolveName(document, kid.Get("Type")) != "OBJR") continue;
+                if (Resolve(document, kid.Get("Obj")) is { IsIndirect: true } annot)
                     map[annot.ObjectNumber] = node.Element; // last container wins if referenced twice
             }
         }
@@ -182,25 +174,47 @@ internal static class StructureTree
     /// <summary>The resolved structure-element children of <paramref name="element"/> (its <c>/K</c> entries
     /// that are themselves structure elements — integer MCIDs and <c>/MCR</c>/<c>/OBJR</c> references are
     /// excluded), in order. Used by the table-grid rule to walk Table → rows → cells.</summary>
-    public static IEnumerable<PdfDictionary> ChildElements(ConformanceContext context, PdfDictionary element)
+    public static IEnumerable<PdfDictionary> ChildElements(PdfDocument document, PdfDictionary element)
     {
-        foreach (PdfObject kidObj in KidObjects(context, element))
-            if (context.Resolve(kidObj) is PdfDictionary kid && IsStructureElement(context, kid))
+        foreach (PdfObject kidObj in KidObjects(document, element))
+            if (Resolve(document, kidObj) is PdfDictionary kid && IsStructureElement(document, kid))
                 yield return kid;
     }
 
+    // ── internals ─────────────────────────────────────────────────────────────────────────────────────
+
+    private static PdfObject? StructTreeRoot(PdfDocument document) =>
+        document.GetCatalog()?.Dictionary.Get("StructTreeRoot");
+
+    private static PdfObject? RoleMapOf(PdfDocument document) =>
+        Resolve(document, StructTreeRoot(document)) is PdfDictionary root ? root.Get("RoleMap") : null;
+
     // A structure element carries an /S type and is not a marked-content (/MCR) or object (/OBJR) reference.
-    private static bool IsStructureElement(ConformanceContext context, PdfDictionary node)
+    private static bool IsStructureElement(PdfDocument document, PdfDictionary node)
     {
-        if (context.ResolveName(node.Get("Type")) is "MCR" or "OBJR")
+        if (ResolveName(document, node.Get("Type")) is "MCR" or "OBJR")
             return false;
         return node.Get("S") is not null;
     }
 
-    // The child objects listed in a node's /K, unresolved (a single object, an array, or an integer MCID).
-    private static IEnumerable<PdfObject> KidObjects(ConformanceContext context, PdfDictionary node)
+    private static void PushKids(PdfDocument document, PdfDictionary node, Stack<PdfObject?> stack)
     {
-        switch (context.Resolve(node.Get("K")))
+        switch (Resolve(document, node.Get("K")))
+        {
+            case PdfArray kids:
+                foreach (PdfObject kid in kids)
+                    stack.Push(kid);
+                break;
+            case PdfDictionary single:
+                stack.Push(single);
+                break;
+        }
+    }
+
+    // The child objects listed in a node's /K, unresolved (a single object, an array, or an integer MCID).
+    private static IEnumerable<PdfObject> KidObjects(PdfDocument document, PdfDictionary node)
+    {
+        switch (Resolve(document, node.Get("K")))
         {
             case PdfArray kids:
                 foreach (PdfObject kid in kids)
@@ -211,4 +225,11 @@ internal static class StructureTree
                 break;
         }
     }
+
+    /// <summary>Resolves an indirect reference to its object; returns a direct object (or null) unchanged.</summary>
+    private static PdfObject? Resolve(PdfDocument document, PdfObject? obj) =>
+        obj is PdfIndirectReference reference ? document.ResolveReference(reference) : obj;
+
+    private static string? ResolveName(PdfDocument document, PdfObject? obj) =>
+        (Resolve(document, obj) as PdfName)?.Value;
 }

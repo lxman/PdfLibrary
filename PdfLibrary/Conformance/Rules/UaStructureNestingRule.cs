@@ -1,4 +1,5 @@
 using System.Linq;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Conformance.Rules;
 
@@ -7,7 +8,7 @@ namespace PdfLibrary.Conformance.Rules;
 /// structure types have fixed parent/child relationships. A cell must sit in a row, a row in a table section,
 /// a list item in a list, a TOC item in a TOC, and each of these containers may hold only its permitted child
 /// types (with a Caption, where allowed, only as the first child). This rule walks the structure tree via
-/// <see cref="StructureTree.Nodes"/> — which exposes each element's immediate parent and child standard types —
+/// <see cref="LogicalStructure.Nodes"/> — which exposes each element's immediate parent and child standard types —
 /// and reports the first nesting violation on each element. Parent/child types are resolved through
 /// <c>/RoleMap</c>, and the parent is the immediate structure parent (grouping elements are not skipped),
 /// matching the ISO containment model.
@@ -20,7 +21,7 @@ internal sealed class UaStructureNestingRule : IConformanceRule
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
-        foreach (StructureNode node in StructureTree.Nodes(context))
+        foreach (StructureNode node in LogicalStructure.Nodes(context.Document))
         {
             if (Violation(node) is not { } hit)
                 continue;
