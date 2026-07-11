@@ -35,15 +35,12 @@ public class PreflightSlice31Tests(ITestOutputHelper output)
             output.WriteLine($"  [{ParitySnapshot.ClauseKey(f.Clause)}] {f.Message}");
     }
 
-    // t03-fail-b (Type 5 halftone: TransferFunction absent for a "non-primary" colourant) is intentionally
-    // NOT covered yet: its fixture treats Red/Green/Blue as non-primary, contradicting ISO 32000-1's list of
-    // DeviceRGB primaries, so pinning it needs the veraPDF profile's exact primary-colourant set. Deferred to
-    // avoid encoding a guess that could false-positive on a conformant Type 5 halftone.
     [Theory]
     [InlineData("6-2-5-t01-fail-a")] // /TR transfer function
     [InlineData("6-2-5-t01-fail-b")] // /HTP legacy halftone-phase key
     [InlineData("6-2-5-t02-fail-a")] // /TR2 with a value other than /Default
     [InlineData("6-2-5-t03-fail-a")] // HalftoneType other than 1 or 5
+    [InlineData("6-2-5-t03-fail-b")] // Type 5 halftone: non-primary (RGB) component lacks a TransferFunction
     [InlineData("6-2-5-t04-fail-a")] // halftone carries a HalftoneName
     [InlineData("6-2-5-t05-fail-a")] // /RI with a non-standard value ("Custom")
     public void ExtGState_violation_is_detected(string needle)

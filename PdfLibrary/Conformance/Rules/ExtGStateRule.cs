@@ -16,15 +16,13 @@ namespace PdfLibrary.Conformance.Rules;
 ///   <item>a <c>/TR2</c> key whose value is not the name <c>Default</c>;</item>
 ///   <item>a <c>/RI</c> key whose value is not one of the four standard rendering intents;</item>
 ///   <item>a halftone reached through <c>/HT</c> — and, for a Type 5 composite, each component halftone —
-///     whose <c>HalftoneType</c> is not 1 or 5, or that carries a <c>HalftoneName</c>.</item>
+///     whose <c>HalftoneType</c> is not 1 or 5, or that carries a <c>HalftoneName</c>;</item>
+///   <item>a Type 5 halftone component whose <c>TransferFunction</c> is used against ISO 32000-1 Table 130:
+///     it must be present for a <b>non-primary</b> colourant and absent for a <b>primary</b> one — where the
+///     veraPDF profile (rule 6.2.5-6) treats only the process colourants Cyan/Magenta/Yellow/Black (and a
+///     standalone, non-component halftone) as primary, so Gray and Red/Green/Blue require it. The
+///     <c>Default</c> component is exempt.</item>
 /// </list>
-/// <para>
-/// The Type 5 "a non-primary colourant component shall carry a TransferFunction" constraint (also 6.2.5) is
-/// deliberately not implemented: its corpus fixture (6-2-5-t03-fail-b) treats Red/Green/Blue as non-primary,
-/// which contradicts ISO 32000-1's list of DeviceRGB primaries, so pinning it needs the veraPDF profile's exact
-/// primary-colourant set. It is left unreported to avoid a rule that could false-positive on a conformant Type 5
-/// halftone — the clause's only remaining gap here.
-/// </para>
 /// <para>
 /// PDF/UA-1 and PDF/X-4 are excluded (no equivalent constraint / a separate colour regime). Detection matches
 /// <see cref="PdfxBlendModeRule"/> — it scans materialised indirect objects, so a direct (inline) ExtGState
@@ -76,18 +74,27 @@ internal sealed class ExtGStateRule : IConformanceRule
         if (context.ResolveName(gs.Get("RI")) is { } ri && !StandardIntents.Contains(ri))
             yield return $"The ExtGState dictionary specifies the non-standard rendering intent '{ri}'.";
 
-        foreach (string m in HalftoneViolations(context, gs.Get("HT"), new HashSet<PdfObject>()))
+        foreach (string m in HalftoneViolations(context, gs.Get("HT"), colorantName: null, new HashSet<PdfObject>()))
             yield return m;
     }
 
+    // The process colourants a Type 5 halftone component may name without carrying a TransferFunction. Per the
+    // veraPDF profile (6.2.5-6) this is CMYK only — Gray and RGB are treated as non-primary and require one.
+    private static readonly HashSet<string> PrimaryColourants = new(StringComparer.Ordinal)
+    {
+        "Cyan", "Magenta", "Yellow", "Black",
+    };
+
     /// <summary>
-    /// Reports HalftoneType / HalftoneName violations for the halftone at <paramref name="htObj"/>, recursing
-    /// into the per-colourant component halftones of a Type 5 composite. A <c>/HT</c> that resolves to a name
-    /// (e.g. <c>/Default</c>) has no dictionary to inspect. <paramref name="visited"/> guards against a cyclic
-    /// Type 5 reference.
+    /// Reports HalftoneType / HalftoneName / TransferFunction violations for the halftone at
+    /// <paramref name="htObj"/>, recursing into the per-colourant component halftones of a Type 5 composite.
+    /// <paramref name="colorantName"/> is the key under which this halftone appears in its parent Type 5 dict
+    /// (<c>null</c> for the standalone halftone referenced straight from <c>/HT</c>); it decides the
+    /// TransferFunction requirement. A <c>/HT</c> that resolves to a name (e.g. <c>/Default</c>) has no
+    /// dictionary to inspect. <paramref name="visited"/> guards against a cyclic Type 5 reference.
     /// </summary>
     private static IEnumerable<string> HalftoneViolations(
-        ConformanceContext context, PdfObject? htObj, HashSet<PdfObject> visited)
+        ConformanceContext context, PdfObject? htObj, string? colorantName, HashSet<PdfObject> visited)
     {
         PdfObject? resolved = context.Resolve(htObj);
         PdfDictionary? ht = resolved switch
@@ -106,13 +113,29 @@ internal sealed class ExtGStateRule : IConformanceRule
         if (ht.Get("HalftoneName") is not null)
             yield return "A halftone in the ExtGState contains a HalftoneName key, which is not permitted.";
 
+        // TransferFunction (ISO 32000-1 Table 130): required for a non-primary colourant, forbidden for a
+        // primary CMYK colourant or a standalone (non-component) halftone; the Default component is exempt.
+        if (colorantName != "Default")
+        {
+            bool primaryOrStandalone = colorantName is null || PrimaryColourants.Contains(colorantName);
+            bool hasTransfer = ht.Get("TransferFunction") is not null;
+            if (primaryOrStandalone && hasTransfer)
+                yield return colorantName is null
+                    ? "A halftone in the ExtGState carries a TransferFunction, which is not permitted."
+                    : $"The '{colorantName}' component of a Type 5 halftone carries a TransferFunction, which is "
+                      + "not permitted for a primary (CMYK) colourant.";
+            else if (!primaryOrStandalone && !hasTransfer)
+                yield return $"The '{colorantName}' component of a Type 5 halftone is missing the "
+                    + "TransferFunction required for a non-primary colourant.";
+        }
+
         if (type == 5)
             foreach (PdfName key in ht.Keys.ToList())
             {
                 // Structural keys aside, every entry of a Type 5 halftone is a colourant component (or Default).
                 if (key.Value is "Type" or "HalftoneType" or "HalftoneName")
                     continue;
-                foreach (string m in HalftoneViolations(context, ht.Get(key), visited))
+                foreach (string m in HalftoneViolations(context, ht.Get(key), key.Value, visited))
                     yield return m;
             }
     }

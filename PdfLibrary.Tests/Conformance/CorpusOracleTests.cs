@@ -76,11 +76,11 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // rule that catches 6-2-11-5-t01-fail-a (WinAnsi) and -fail-b (custom /Differences), the corpus's
             // two simple-CFF width-fail fixtures. fail-c is Type3 (out of scope); the only UA fail fixture
             // (7.21.5-t01-fail-a) is TrueType, so PdfUA1 is unchanged.
-            // Slice 31 — extended graphics state (graphics-state, 6.2.5) adds +6 (527 → 533): TR (t01-a), HTP
-            // (t01-b), TR2≠Default (t02-a), HalftoneType∉{1,5} (t03-a), HalftoneName (t04-a), non-standard RI
-            // (t05-a). t03-fail-b (TransferFunction for a "non-primary" colourant) is deferred — its fixture
-            // treats RGB as non-primary, contradicting ISO 32000-1, so it needs the veraPDF colourant set.
-            [ConformanceProfile.PdfA2b] = 533,
+            // Slice 31 — extended graphics state (graphics-state, 6.2.5) adds +7 (527 → 534): TR (t01-a), HTP
+            // (t01-b), TR2≠Default (t02-a), HalftoneType∉{1,5} (t03-a), Type-5 TransferFunction for a
+            // non-primary colourant (t03-b), HalftoneName (t04-a), non-standard RI (t05-a). The TransferFunction
+            // check uses veraPDF's CMYK-only "primary" set (rule 6.2.5-6): RGB/Gray components require one.
+            [ConformanceProfile.PdfA2b] = 534,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
