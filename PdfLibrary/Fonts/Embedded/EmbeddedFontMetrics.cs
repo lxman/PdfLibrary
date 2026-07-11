@@ -84,6 +84,16 @@ internal class EmbeddedFontMetrics
     public bool IsCffFont => _isCffFont;
 
     /// <summary>
+    /// True when this CFF font carries an embedded (custom) charset — Top DICT charset offset &gt; 2, so the
+    /// charset table is present in the font and <see cref="GetGlyphIdByName"/> resolves glyph names via it
+    /// reliably. Subsetted CFF fonts always emit a custom charset, so this holds for them. It is <c>false</c>
+    /// for a font using a predefined charset (ISOAdobe / Expert / ExpertSubset, offset 0/1/2): the parser does
+    /// not yet materialise those, so name→GID resolution is not trustworthy on such fonts. Consumers that need
+    /// a dependable glyph-name→GID mapping (e.g. the font-metrics conformance check) should gate on this.
+    /// </summary>
+    public bool CffHasEmbeddedCharset => _isCffFont && _cffTable is not null && _cffTable.RawCharset.Length > 0;
+
+    /// <summary>
     /// Indicates if this is a PostScript Type1 font
     /// </summary>
     public bool IsType1Font => _isType1Font;
