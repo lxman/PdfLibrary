@@ -71,7 +71,12 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // both Type0 descendant kinds, on the back of the CFF defaultWidthX parser fix) adds +1
             // (524 → 525): it is the sole rule that catches 6-2-11-5-t01-fail-e (Type0/CIDFontType0/CFF),
             // the corpus's only CIDFontType0 width-fail fixture. fail-f (CIDFontType2) was already caught.
-            [ConformanceProfile.PdfA2b] = 525,
+            // Slice 30 — simple-CFF advance-width (font-program 6.2.11.5 extended from TrueType-only to simple
+            // CFF/Type1C, resolving name→charset-GID→CharString advance) adds +2 (525 → 527): it is the sole
+            // rule that catches 6-2-11-5-t01-fail-a (WinAnsi) and -fail-b (custom /Differences), the corpus's
+            // two simple-CFF width-fail fixtures. fail-c is Type3 (out of scope); the only UA fail fixture
+            // (7.21.5-t01-fail-a) is TrueType, so PdfUA1 is unchanged.
+            [ConformanceProfile.PdfA2b] = 527,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:

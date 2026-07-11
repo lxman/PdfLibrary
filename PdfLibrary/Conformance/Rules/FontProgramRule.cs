@@ -22,11 +22,13 @@ namespace PdfLibrary.Conformance.Rules;
 ///     enough to distinguish a genuine .notdef from a resolution gap without risking a false positive.</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
-///     width. Implemented for TrueType simple fonts and both Type0 descendant kinds — CIDFontType2 (advance
-///     from glyf/hmtx) and CIDFontType0 (advance from the CFF CharString: encoded width nominalWidthX+delta,
-///     else the FD's defaultWidthX). Simple Type1/CFF fonts and Type3 fonts remain excluded from the width
-///     check (their program-advance extraction is not reproduced reliably enough here to avoid a false
-///     positive — see the tolerance remark).</item>
+///     width. Implemented for simple TrueType fonts (advance from glyf/hmtx via the cmap), simple CFF / Type1C
+///     fonts with an embedded charset (advance from the CFF CharString via a glyph-name→charset-GID lookup —
+///     see <see cref="SimpleCffAdvance"/>; predefined-charset CFF is excluded, see the note in
+///     <see cref="CheckSimple"/>) and both Type0 descendant kinds — CIDFontType2 (glyf/hmtx) and
+///     CIDFontType0 (CFF CharString: encoded width nominalWidthX+delta, else the FD's defaultWidthX). Classic
+///     Type1 (FontFile) and Type3 fonts remain excluded from the width check (their program-advance extraction
+///     is not reproduced reliably enough here to avoid a false positive — see the tolerance remark).</item>
 /// </list>
 /// <para>
 /// PDF/X-4 is excluded (ISO 15930-7 carries no such font-program constraints — same reasoning as
@@ -119,14 +121,25 @@ internal sealed class FontProgramRule : IConformanceRule
                 + $"program's advance width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
     }
 
-    // ── Simple fonts — metrics only, TrueType only ────────────────────────────────────────────────────
+    // ── Simple fonts — metrics only (TrueType + simple CFF) ───────────────────────────────────────────
     private IEnumerable<Finding> CheckSimple(
         ConformanceContext context, PdfFont font, EmbeddedFontMetrics metrics,
         IReadOnlyCollection<int> codes, HashSet<string> metricsReported)
     {
-        // Only TrueType simple fonts are covered. Type1/CFF advance-width extraction and Type3 glyph
-        // metrics are not reproduced reliably enough here to compare without risking a false positive.
-        if (font.FontType != PdfFontType.TrueType)
+        // Two simple embeddings are covered, each with a reliable program-advance path: TrueType (glyf/hmtx via
+        // the cmap) and simple CFF / Type1C (CharString advance via the CFF charset). Classic Type1 (FontFile)
+        // and Type3 stay excluded — their advance extraction is not reproduced precisely enough here to compare
+        // without risking a false positive. Type0 fonts never reach this method (routed to CheckType0).
+        //
+        // Simple CFF is gated on an embedded (custom) charset. A CFF using a predefined charset (ISOAdobe /
+        // Expert / ExpertSubset) is skipped: the engine does not yet materialise predefined charsets, so
+        // glyph-name→GID resolution misfires on such fonts (e.g. a full 'Helvetica' resolves "space" to the
+        // wrong glyph), which would be a false positive. Subsetted fonts — the conformant-producer norm, and
+        // the form of every corpus fail fixture this rule targets — always carry a custom charset, so they are
+        // covered. Widening to predefined-charset CFF is deferred to the CFF charset (Tier-2) engine work.
+        bool isTrueType = font.FontType == PdfFontType.TrueType;
+        bool isSimpleCff = metrics.IsCffFont && metrics.CffHasEmbeddedCharset;
+        if (!isTrueType && !isSimpleCff)
             yield break;
         if (context.Resolve(font.FontDictionary.Get("Widths")) is not PdfArray widths)
             yield break;
@@ -138,7 +151,9 @@ internal sealed class FontProgramRule : IConformanceRule
             if (index < 0 || index >= widths.Count)
                 continue; // no declared width for this code — cannot compare
 
-            double? program = TrueTypeAdvance(font, metrics, code);
+            double? program = isTrueType
+                ? TrueTypeAdvance(font, metrics, code)
+                : SimpleCffAdvance(font, metrics, code);
             if (program is null)
                 continue; // glyph could not be resolved — skip rather than guess (FP-safe)
 
@@ -148,8 +163,9 @@ internal sealed class FontProgramRule : IConformanceRule
 
         if (worstDiff > WidthTolerance && metricsReported.Add(font.BaseFont))
             yield return Make(context, font, "5",
-                $"The TrueType font {Name(font)} declares a glyph width that differs from the embedded font "
-                + $"program's advance width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
+                $"The {(isTrueType ? "TrueType" : "CFF")} font {Name(font)} declares a glyph width that differs "
+                + $"from the embedded font program's advance width by {worstDiff:F0} units "
+                + $"(tolerance {WidthTolerance:F0}).");
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────────────
@@ -174,6 +190,25 @@ internal sealed class FontProgramRule : IConformanceRule
         }
 
         ushort gid = metrics.GetGlyphId((ushort)code);
+        return gid == 0 ? null : Scale(metrics, metrics.GetAdvanceWidth(gid));
+    }
+
+    /// <summary>
+    /// Resolves a simple CFF (Type1C) code to its program advance width, the CFF way: code → glyph name (via the
+    /// PDF <c>/Encoding</c>, so a custom <c>/Differences</c> name is honoured) → GID (via the CFF charset, using
+    /// <see cref="EmbeddedFontMetrics.GetGlyphIdByName"/>) → CharString advance. Returns null when the code has no
+    /// glyph name, or the name is not in the charset (GID 0 / .notdef) — skipped rather than guessed, keeping the
+    /// check false-positive-safe. Deliberately avoids <see cref="EmbeddedFontMetrics.GetAdvanceWidthByName"/>,
+    /// which resolves only real Type1 programs and returns a hard-coded 500 for CFF — feeding that into the width
+    /// comparison would itself be the false positive.
+    /// </summary>
+    private static double? SimpleCffAdvance(PdfFont font, EmbeddedFontMetrics metrics, int code)
+    {
+        string? glyphName = font.Encoding?.GetGlyphName(code);
+        if (string.IsNullOrEmpty(glyphName))
+            return null;
+
+        ushort gid = metrics.GetGlyphIdByName(glyphName);
         return gid == 0 ? null : Scale(metrics, metrics.GetAdvanceWidth(gid));
     }
 
