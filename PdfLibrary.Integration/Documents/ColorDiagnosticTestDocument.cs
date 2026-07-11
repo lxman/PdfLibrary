@@ -4,8 +4,8 @@ using PdfLibrary.Builder.Page;
 namespace PdfLibrary.Integration.Documents;
 
 /// <summary>
-/// Large-target colour diagnostic for the Focal CMYK raster path vs Adobe. Every page carries a small
-/// "raster trigger" overprint swatch so the whole page routes to Focal's CmykPageRenderer (overprint is
+/// Large-target colour diagnostic for the PdfLibrary CMYK raster path vs Adobe. Every page carries a small
+/// "raster trigger" overprint swatch so the whole page routes to PdfLibrary's CmykPageRenderer (overprint is
 /// the only thing that flips a page onto the raster path). The big swatches then isolate the suspected
 /// trouble paths:
 ///   1. RGB round-trip   — large solid DeviceRGB squares (no blend, no alpha): SWOP RGB->CMYK->sRGB loss.
@@ -44,7 +44,7 @@ public class ColorDiagnosticTestDocument : ITestDocument
             Solid(page, LeftMargin + 165,  480, PdfColor.Green, "RGB Green (0,1,0)");
             Solid(page, LeftMargin + 330,  480, PdfColor.Blue,  "RGB Blue (0,0,1)");
 
-            page.AddText("Compare each square Adobe vs Focal. CMYK row should match; RGB row is the round-trip test.",
+            page.AddText("Compare each square Adobe vs PdfLibrary. CMYK row should match; RGB row is the round-trip test.",
                 LeftMargin, 250, "Helvetica", 9);
         });
 
@@ -95,7 +95,7 @@ public class ColorDiagnosticTestDocument : ITestDocument
                 "Multiply",
                 PdfColor.FromSeparation("PMS485", 0.85),
                 PdfColor.FromSeparation("PMS300", 0.85),
-                "Multiply: PMS300 blue over PMS485 red (Separation, suspect: Focal lighter than Adobe)");
+                "Multiply: PMS300 blue over PMS485 red (Separation, suspect: PdfLibrary lighter than Adobe)");
             BlendTriple(page, 270,
                 "Screen",
                 PdfColor.FromSeparation("PMS485", 0.85),

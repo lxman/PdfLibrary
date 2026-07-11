@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-29
 **Target repo:** PDF (Lxman.PdfLibrary)
-**Requested by:** Focal project (Phase 3 annotations)
+**Requested by:** PdfLibrary project (Phase 3 annotations)
 **Severity:** Functional bug — multi-line FreeText renders as a single overlapping line.
 
 ---
@@ -20,7 +20,7 @@ The annotation dictionary itself is correct — only the appearance-stream text 
 
 ## Reproduction
 
-Focal added a FreeText with content `Hello my friend.\nHow are you getting along today?`,
+PdfLibrary added a FreeText with content `Hello my friend.\nHow are you getting along today?`,
 Times-BoldItalic 12pt, blue, left-justified, then saved. The library produced:
 
 ### Annotation object (correct)
@@ -120,6 +120,6 @@ EMC
 
 ## Out of scope
 
-- Word-wrapping long single lines to fit the BBox width (Focal currently inserts explicit
+- Word-wrapping long single lines to fit the BBox width (PdfLibrary currently inserts explicit
   breaks). Only honor existing line separators in `/Contents` for this fix.
 - Vertical centering of the text block within the BBox.

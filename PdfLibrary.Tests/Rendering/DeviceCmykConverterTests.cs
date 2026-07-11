@@ -94,8 +94,8 @@ public class DeviceCmykConverterTests
         // darks to media-white as RelativeColorimetric does. For this library's bundled CC0 profile
         // (SWOP_TR003_coated_3), Perceptual K=1 = (49,49,49) vs the old RelCol ~(55,53,53). Assert the
         // property (darker than the RelCol floor) pinned to this profile's value with a small margin.
-        // (Focal overrides with Adobe SWOP v2, which renders K=1 = Adobe's (35,31,32) — verified in a
-        // Focal-side test, not here, since the library ships the CC0 profile.)
+        // (PdfLibrary overrides with Adobe SWOP v2, which renders K=1 = Adobe's (35,31,32) — verified in a
+        // PdfLibrary-side test, not here, since the library ships the CC0 profile.)
         (byte r, byte g, byte b) = Swop().ToRgb(0, 0, 0, 1);
         Assert.True(r <= 52 && g <= 52 && b <= 52, $"K=1 not dark enough for Perceptual: ({r},{g},{b})");
     }

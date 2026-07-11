@@ -3,7 +3,7 @@
 **Status:** FIXED 2026-06-28 — `PdfDocumentWriter` now emits a parent `/Btn` field + one widget per option (see Resolution below). Regression tests in `PdfLibrary.Tests/RadioGroupBuilderBugRepro.cs` now assert the correct behavior and pass.
 **Severity:** High for form authoring — builder-created radio groups are unreadable as radios by any consumer (including this library's own reader).
 **Scope:** Builder *write* path only. Reading/filling **existing** radio fields (`PdfDocumentEditor.Forms` → `PdfButtonField` Kind=Radio, `SelectedOption`, widget on-states) works correctly. A hand-built/correct radio PDF round-trips fine. Only `PdfRadioGroupBuilder` → `PdfDocumentWriter` emission is broken.
-**Found by:** Focal (the consumer app) Phase 2 form-filling work — radio test fixtures had to be hand-crafted `/Btn` PDFs because the builder's output was unusable.
+**Found by:** PdfLibrary (the consumer app) Phase 2 form-filling work — radio test fixtures had to be hand-crafted `/Btn` PDFs because the builder's output was unusable.
 
 ---
 

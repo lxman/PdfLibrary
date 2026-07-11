@@ -4,7 +4,7 @@ using Xunit;
 namespace PdfLibrary.Tests.Fonts;
 
 /// <summary>
-/// Regression (2026-07-06 Focal smoke): the ISO 32000-1 footer's copyright sign (WinAnsi 0xA9 in
+/// Regression (2026-07-06 PdfLibrary smoke): the ISO 32000-1 footer's copyright sign (WinAnsi 0xA9 in
 /// an embedded Type1C subset) and en dash (0x96) extracted correctly but did not RENDER. The
 /// standard-encoding factories populated only the code→Unicode table, so
 /// <see cref="PdfFontEncoding.GetGlyphName"/> returned null for every code ≥ 127 and the

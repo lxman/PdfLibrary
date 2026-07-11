@@ -20,14 +20,14 @@ public class ParityOracleTests(ITestOutputHelper output)
     private const string Skip = "veraPDF corpus not present at ../veraPDF-corpus (Category=Parity)";
 
     /// <summary>
-    /// Conformant-per-veraPDF files that Focal still wrongly rejects. EMPTY — the preflighter is a
+    /// Conformant-per-veraPDF files that PdfLibrary still wrongly rejects. EMPTY — the preflighter is a
     /// subset validator, so it can only under-report; a genuine false positive is a bug, not a baseline
     /// entry. Any addition here must be justified in review, never used to paper over a real FP.
     /// </summary>
     private static readonly IReadOnlySet<string> KnownParityFalsePositives = new HashSet<string>();
 
     /// <summary>
-    /// Clauses where Focal currently matches veraPDF on EVERY file the reference flags — a ratchet.
+    /// Clauses where PdfLibrary currently matches veraPDF on EVERY file the reference flags — a ratchet.
     /// Seeded from the phase-2 measurement; raise it (never lower without justification) as rules land.
     /// A miss here means a regression against the reference on a clause we claim full parity for.
     /// </summary>
@@ -56,11 +56,11 @@ public class ParityOracleTests(ITestOutputHelper output)
 
         output.WriteLine($"checked {ParityComparison.AllFiles.Count()} files across "
             + $"{ParityComparison.All.Count} profiles — {fps.Count} false positive(s)");
-        foreach (string f in unexpected) output.WriteLine($"NEW false positive (veraPDF passes, Focal rejects): {f}");
+        foreach (string f in unexpected) output.WriteLine($"NEW false positive (veraPDF passes, PdfLibrary rejects): {f}");
         foreach (string f in stale) output.WriteLine($"baseline entry no longer a FP — remove it: {f}");
 
         Assert.True(unexpected.Length == 0,
-            $"{unexpected.Length} file(s) Focal rejects that veraPDF passes: {string.Join(", ", unexpected)}");
+            $"{unexpected.Length} file(s) PdfLibrary rejects that veraPDF passes: {string.Join(", ", unexpected)}");
         Assert.True(stale.Length == 0,
             $"{stale.Length} stale KnownParityFalsePositives entr(y/ies): {string.Join(", ", stale)}");
     }
@@ -81,13 +81,13 @@ public class ParityOracleTests(ITestOutputHelper output)
             {
                 locked++;
                 foreach (ParityComparison.FileComparison f in pc.Files)
-                    if (f.VeraClauses.Contains(clause) && !f.FocalClauses.Contains(clause))
+                    if (f.VeraClauses.Contains(clause) && !f.PdfLibraryClauses.Contains(clause))
                         misses.Add($"{pc.Profile}/{clause}/{f.FileName}");
             }
         }
 
         output.WriteLine($"verified {locked} locked clause(s) across {ParityComparison.All.Count} profiles");
-        foreach (string m in misses.OrderBy(x => x)) output.WriteLine($"MISS (veraPDF flags, Focal does not): {m}");
+        foreach (string m in misses.OrderBy(x => x)) output.WriteLine($"MISS (veraPDF flags, PdfLibrary does not): {m}");
 
         Assert.True(misses.Count == 0,
             $"{misses.Count} regression(s) on a fully-covered clause: {string.Join(", ", misses.Take(20))}"

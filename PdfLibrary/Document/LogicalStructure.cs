@@ -28,7 +28,7 @@ internal readonly record struct StructureNode(
 /// </para>
 /// <para>
 /// It is <c>internal</c> because the object model it exposes (<see cref="PdfDictionary"/> etc.) is internal;
-/// exposing the logical structure to an external consumer (e.g. the Focal app) would need a public wrapper
+/// exposing the logical structure to an external consumer (e.g. the PdfLibrary app) would need a public wrapper
 /// type over these nodes, which is a separate API decision.
 /// </para>
 /// </summary>

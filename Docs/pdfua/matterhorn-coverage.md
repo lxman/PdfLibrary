@@ -1,11 +1,11 @@
-# PDF/UA (Matterhorn Protocol 1.1) — machine-checkability map & Focal coverage
-> Derived 2026-07-10 from the **Matterhorn Protocol 1.1** (© 2021 PDF Association, PDF/UA TWG), licensed **CC-BY-4.0** (<http://creativecommons.org/licenses/by/4.0/>). This is Focal's own coverage matrix; the source PDF is not vendored. See <https://pdfa.org/resource/the-matterhorn-protocol/>.
+# PDF/UA (Matterhorn Protocol 1.1) — machine-checkability map & PdfLibrary coverage
+> Derived 2026-07-10 from the **Matterhorn Protocol 1.1** (© 2021 PDF Association, PDF/UA TWG), licensed **CC-BY-4.0** (<http://creativecommons.org/licenses/by/4.0/>). This is PdfLibrary's own coverage matrix; the source PDF is not vendored. See <https://pdfa.org/resource/the-matterhorn-protocol/>.
 
-**139 failure conditions** across 31 checkpoints — **87 machine-checkable (M)**, 48 human-judgment (H), 4 unclassified. M is the automatable ceiling for Focal (and veraPDF). `Focal` column: rule id if covered, else `—`.
+**139 failure conditions** across 31 checkpoints — **87 machine-checkable (M)**, 48 human-judgment (H), 4 unclassified. M is the automatable ceiling for PdfLibrary (and veraPDF). `PdfLibrary` column: rule id if covered, else `—`.
 
-Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
+Status legend — PdfLibrary rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## Focal coverage — 61 of 87 machine-checkable conditions
+## PdfLibrary coverage — 61 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
@@ -32,12 +32,12 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
 
 **Known gaps left `—` on purpose:**
-- **31-003** (7.21.3.1-1, CIDSystemInfo `/Supplement`): `font-dictionary` *does* compare Supplement, but in the **opposite direction** from this Matterhorn condition — it flags CIDFont Supplement *greater than* the CMap's, matching **veraPDF's** 6.2.11.3.1 / 7.21.3.1 rule (veraPDF's own pass fixture embeds a CMap whose Supplement exceeds a subset CIDFont's and is conformant; flagging Matterhorn's stated direction, CIDFont *less than* the CMap's, false-positives on that fixture — verified). Focal follows the reference validator, so 31-003 as literally worded is not what Focal detects; left `—`. This is a documented veraPDF-vs-Matterhorn discrepancy, not a Focal bug. Registry (31-001) and Ordering (31-002) equality checks are correct.
-- **7.21.4.2** (31-012…015, CharSet/CIDSet), **7.21.7** (31-027…029, ToUnicode), and the program-cmap parts of 7.21.6 (31-017/018/023/025/026) need engine-side font-program inspection Focal does not yet do.
+- **31-003** (7.21.3.1-1, CIDSystemInfo `/Supplement`): `font-dictionary` *does* compare Supplement, but in the **opposite direction** from this Matterhorn condition — it flags CIDFont Supplement *greater than* the CMap's, matching **veraPDF's** 6.2.11.3.1 / 7.21.3.1 rule (veraPDF's own pass fixture embeds a CMap whose Supplement exceeds a subset CIDFont's and is conformant; flagging Matterhorn's stated direction, CIDFont *less than* the CMap's, false-positives on that fixture — verified). PdfLibrary follows the reference validator, so 31-003 as literally worded is not what PdfLibrary detects; left `—`. This is a documented veraPDF-vs-Matterhorn discrepancy, not a PdfLibrary bug. Registry (31-001) and Ordering (31-002) equality checks are correct.
+- **7.21.4.2** (31-012…015, CharSet/CIDSet), **7.21.7** (31-027…029, ToUnicode), and the program-cmap parts of 7.21.6 (31-017/018/023/025/026) need engine-side font-program inspection PdfLibrary does not yet do.
 
 ## Checkpoint 01 — Real content tagged  (4 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 01-001 | H | 7.1-1 | Artifact is tagged as real content. | n/a |
 | 01-002 | H | 7.1-1 | Real content is marked as artifact. | n/a |
@@ -49,7 +49,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 02 — Role Mapping  (3 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 02-001 | M | 7.1-3 | One or more non-standard tag’s mapping does not | ua-standard-type |
 | 02-002 | H | 7.1-3 | The mapping of one or more non-standard types is | n/a |
@@ -58,7 +58,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 03 — Flickering  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 03-001 | H | 7.1-5 | One or more Actions lead to flickering. | n/a |
 | 03-002 | H | 7.1-5 | One or more multimedia objects contain flickering content. | n/a |
@@ -66,13 +66,13 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 04 — Color and Contrast  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 04-001 | H | 7.1-6 | Information is conveyed by contrast, color, format or | n/a |
 
 ## Checkpoint 05 — Sound  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 05-001 | H | 7.1-7 | Media annotation present, but audio content not | n/a |
 | 05-002 | H | 7.1-7 | Audio annotation present, but content not | n/a |
@@ -80,7 +80,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 06 — Metadata  (3 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 06-001 | M | 7.1-8 | Document does not contain an XMP metadata | ua-title |
 | 06-002 | M | 5 | The XMP metadata stream in the Catalog | ua-identification |
@@ -89,21 +89,21 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 07 — Dictionary  (2 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 07-001 | M | 7.1-9 | ViewerPreferences dictionary of the Catalog | ua-display-doc-title |
 | 07-002 | M | 7.1-9 | ViewerPreferences dictionary of the Catalog | ua-display-doc-title |
 
 ## Checkpoint 08 — OCR Validation  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 08-001 | H | 7.1-10 | OCR-generated text contains significant errors. | n/a |
 | 08-002 | H | 7.1-10 | OCR-generated text is not tagged | n/a |
 
 ## Checkpoint 09 — Appropriate Tags  (5 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 09-001 | H | 7.2-1 | Tags are not in logical reading order. | n/a |
 | 09-002 | H | 7.2-1 | Structure elements are nested in a semantically | n/a |
@@ -116,13 +116,13 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 10 — Character Mappings  (1 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 10-001 | M | 7.2-2 | Character code cannot be mapped to Unicode. | ua-text-unicode |
 
 ## Checkpoint 11 — Declared Natural Language  (6 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 11-001 | M | 7.2-3 | Natural language for text in page content cannot be | — |
 | 11-002 | M | 7.2-3 | Natural language for text in Alt, ActualText and | ua-attribute-lang |
@@ -134,13 +134,13 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 12 — Stretchable Characters  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 12-001 | H | 7.2-4 | Stretched characters are not represented appropriately. | n/a |
 
 ## Checkpoint 13 — Graphics  (1 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 13-001 | H | 7.3-1 | Graphics objects other than text objects and artifacts | n/a |
 | 13-002 | H | 7.3-1 | A link with a meaningful background does not include | n/a |
@@ -153,7 +153,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 14 — Headings  (4 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 14-001 | H | 7.4-1 | Headings are not tagged. | n/a |
 | 14-002 | M | 7.4.2-1 | Does use numbered headings, but the first | ua-headings |
@@ -165,7 +165,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 15 — Tables  (1 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 15-001 | H | 7.5-1 | A row has a header cell, but that header cell is not | n/a |
 | 15-002 | H | 7.5-1 | A column has a header cell, but that header cell is | n/a |
@@ -175,7 +175,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 16 — Lists  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 16-001 | H | 7.6-1 | List is an ordered list, but no value for the | n/a |
 | 16-002 | H | 7.6-1 | List is an ordered list, but the ListNumbering | n/a |
@@ -183,7 +183,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 17 — Mathematical Expressions  (2 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 17-001 | H | 7.7-1 | Content is a mathematical expression but is not | n/a |
 | 17-002 | M | 7.7-1 | <Formula> tag is missing an Alt attribute. | ua-figure-alt |
@@ -191,14 +191,14 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 18 — Page Headers and Footers  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 18-001 | H | 7.8-1 | Headers and footers are not marked as pagination | n/a |
 | 18-002 | H | 7.8-1 | Header or footer artifacts are not classified as | n/a |
 
 ## Checkpoint 19 — Notes and References  (2 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 19-001 | H | 7.9-1 | Footnotes or endnotes are not tagged as <Note>. | n/a |
 | 19-002 | H | 7.9-1 | References are not tagged as <Reference>. | n/a |
@@ -207,7 +207,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 20 — Optional Content  (3 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 20-001 | M | 7.10-1 | Name entry is missing or has an empty string as | optional-content |
 | 20-002 | M | 7.10-1 | Name entry is missing or has an empty string as | optional-content |
@@ -215,50 +215,50 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 21 — Embedded Files  (1 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 21-001 | M | 7.11-1 | The file specification dictionary for an embedded | — |
 
 ## Checkpoint 22 — Article Threads  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 22-001 | H | 7.12-1 | Article threads do not reflect logical reading order. | n/a |
 
 ## Checkpoint 23 — Digital Signatures  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 23-001 | ? | 7.13-1 | No test specific to digital signatures is required, | — |
 
 ## Checkpoint 24 — Non-Interactive Forms  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 24-001 | H | 7.14-1 | Non-interactive forms are not tagged with the | n/a |
 
 ## Checkpoint 25 — XFA  (1 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 25-001 | M | 7.15-1 | File contains the dynamicRender element with | ua-xfa |
 
 ## Checkpoint 26 — Security  (2 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 26-001 | M | 7.16-1 | The file is encrypted but does not contain a P | — |
 | 26-002 | M | 7.16-1 | The file is encrypted and does contain a P entry | — |
 
 ## Checkpoint 27 — Navigation  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 27-001 | ? | 7.17-1 | No tests specific to navigation are required; use | — |
 
 ## Checkpoint 28 — Annotations  (15 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 28-001 | H | 7.18.1-2 | An annotation is not in correct reading order. | n/a |
 | 28-002 | M | 7.18.1-2 | An annotation, other than of subtype Widget, Link | ua-annotation |
@@ -283,20 +283,20 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 ## Checkpoint 29 — Actions  (0 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 29-001 | H | 7.19-1 | A script requires specific timing for individual | n/a |
 
 ## Checkpoint 30 — XObjects  (2 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 30-001 | M | 7.20-1 | A reference XObject is present. | ua-reference-xobject |
 | 30-002 | M | 7.20-2 | Form XObject contains MCIDs and is referenced | ua-xobject-mcid |
 
 ## Checkpoint 31 — Fonts  (29 machine)
 
-| ID | M/H | ISO 14289-1 | Failure condition | Focal |
+| ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
 | 31-001 | M | 7.21.3-1 | A Type 0 font dictionary with encoding other than | font-dictionary |
 | 31-002 | M | 7.21.3.1-1 | A Type 0 font dictionary with encoding other than | font-dictionary |

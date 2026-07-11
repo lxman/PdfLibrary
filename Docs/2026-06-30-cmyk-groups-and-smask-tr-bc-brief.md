@@ -4,14 +4,14 @@
 this is the *what* and the cross-repo contract so it can be picked up and turned into a brainstorm →
 spec → plan when scheduled.
 
-**Why this exists:** Focal's dormant CMYK overprint/soft-mask compositor (SP1–SP4, on `phase4`, local,
+**Why this exists:** PdfLibrary's dormant CMYK overprint/soft-mask compositor (SP1–SP4, on `phase4`, local,
 unpushed) deferred two fidelity items because they are **library-blocked** — the library's render-target
-SPI does not surface the data Focal needs. Both are accepted ceilings today (logged in
-`Focal/docs/superpowers/cmyk-pipeline-deferrals-backlog.md` §A). They should be done as **one dedicated
+SPI does not surface the data PdfLibrary needs. Both are accepted ceilings today (logged in
+`PdfLibrary/docs/superpowers/cmyk-pipeline-deferrals-backlog.md` §A). They should be done as **one dedicated
 cross-repo sub-project staged before the SP5 `Lxman.PdfLibrary` 2.2.0 publish** — OR explicitly slipped
 to a later 2.3.0 (user has accepted that SP5 can ship without them; see "Sequencing" below).
 
-**Repos / branches (convention):** library work on a `feat/…` branch off `master`; Focal work on a
+**Repos / branches (convention):** library work on a `feat/…` branch off `master`; PdfLibrary work on a
 `feat/…` branch off `phase4`. Nothing is pushed until the user's gate lifts at SP5.
 
 ---
@@ -28,7 +28,7 @@ to a later 2.3.0 (user has accepted that SP5 can ship without them; see "Sequenc
   a callback target and calls `_target.RenderSoftMask(softMask.Subtype, cb)`.
 - **The gap:** `IRenderTarget.RenderSoftMask(string maskSubtype, Action<IRenderTarget> renderMaskContent)`
   (`IRenderTarget.cs:140`) forwards **only `Subtype`**. `BC` and `TR` are dropped at the boundary, so
-  every target hardcodes `TR=Identity` and `BC=black`. Focal's CMYK luminosity path literally seeds a
+  every target hardcodes `TR=Identity` and `BC=black`. PdfLibrary's CMYK luminosity path literally seeds a
   hardcoded opaque-black backdrop (`FillBackdrop(0,0,0,1)`) and applies no TR.
 
 ### Required library change
@@ -49,7 +49,7 @@ Widen the soft-mask SPI to carry BC and an **evaluated** TR. Two constraints:
   `softMask.TransferFunction`. (`BackdropColor` is already public; `TransferFunction`/`Group` are
   `internal` — evaluation stays inside the library, so visibility is fine.)
 
-### Focal consumer-side delta (the other half of the contract)
+### PdfLibrary consumer-side delta (the other half of the contract)
 - `RecordingRenderTarget.RenderSoftMask` records a **widened** `SoftMaskPushCommand(string Subtype,
   PageDrawList Mask, float[]? TransferLut, double[]? BackdropColor)` (today it is `(Subtype, Mask)`).
 - `CmykSoftMaskRenderer.RenderLuminosityMask` replaces its hardcoded `FillBackdrop(0,0,0,1)` with the
@@ -86,7 +86,7 @@ blend mode come from `state` at the `Do`. The renderer must emit `BeginTranspare
 rendering the form's content and `EndTransparencyGroup` after — distinct from `SaveState`/`RestoreState`
 (groups nest independently of q/Q, like soft masks already do).
 
-### Focal consumer-side delta
+### PdfLibrary consumer-side delta
 - New `GroupPushCommand(bool Isolated, bool Knockout, string? GroupColorSpace, double Alpha,
   CmykBlendMode Blend)` / `GroupPopCommand` in `PageDrawList.cs`; recorded by `RecordingRenderTarget`.
 - `CmykPageRenderer.RenderToBuffer` handles the bracket: push composites the group's content into a
@@ -119,8 +119,8 @@ ISO 32000-1 §11.4.7 (transparency group XObjects), §11.6.6 (knockout & isolate
 - Library SMask parse: `PdfLibrary/Content/PdfSoftMask.cs` (BC/TR already present).
 - Library caller: `PdfLibrary/Rendering/PdfRenderer.cs::RenderSoftMaskGroup` (≈ 958); group `Do` path is
   where `BeginTransparencyGroup`/`EndTransparencyGroup` must be raised.
-- Focal recorder: `Focal.Rendering.Avalonia/RecordingRenderTarget.cs` (`RenderSoftMask` ≈ 92).
-- Focal commands: `Focal.Rendering.Avalonia/PageDrawList.cs` (`SoftMaskPushCommand`, add group cmds).
-- Focal CMYK consumers: `Focal.Rendering.Avalonia/Cmyk/CmykSoftMaskRenderer.cs` (TR/BC),
+- PdfLibrary recorder: `PdfLibrary.Rendering.Avalonia/RecordingRenderTarget.cs` (`RenderSoftMask` ≈ 92).
+- PdfLibrary commands: `PdfLibrary.Rendering.Avalonia/PageDrawList.cs` (`SoftMaskPushCommand`, add group cmds).
+- PdfLibrary CMYK consumers: `PdfLibrary.Rendering.Avalonia/Cmyk/CmykSoftMaskRenderer.cs` (TR/BC),
   `…/Cmyk/CmykPageRenderer.cs::RenderToBuffer` (group bracket).
-- Backlog (the canonical deferral record): `Focal/docs/superpowers/cmyk-pipeline-deferrals-backlog.md` §A.
+- Backlog (the canonical deferral record): `PdfLibrary/docs/superpowers/cmyk-pipeline-deferrals-backlog.md` §A.

@@ -10,7 +10,7 @@ namespace PdfLibrary.Tests.Conformance;
 /// and joins each result with veraPDF's verdict from the <see cref="ParitySnapshot"/>, at clause
 /// granularity. Computed once (needs the corpus present) and shared by the gates and the reports.
 ///
-/// For each file it records four things: veraPDF's verdict (compliant? which clauses), Focal's verdict
+/// For each file it records four things: veraPDF's verdict (compliant? which clauses), PdfLibrary's verdict
 /// (conforms? which clauses), and whether the file exists in both the corpus and the snapshot (the
 /// completeness signal). Clause sets on both sides are the bare dotted ISO clause
 /// (<see cref="ParitySnapshot.ClauseKey"/>) so they compare directly.
@@ -23,11 +23,11 @@ internal static class ParityComparison
         string FileName,
         bool VeraCompliant,
         IReadOnlySet<string> VeraClauses,
-        bool FocalConforms,
-        IReadOnlySet<string> FocalClauses)
+        bool PdfLibraryConforms,
+        IReadOnlySet<string> PdfLibraryClauses)
     {
-        /// <summary>veraPDF passed but Focal rejected — a false positive (the invariant we forbid).</summary>
-        public bool IsFalsePositive => VeraCompliant && !FocalConforms;
+        /// <summary>veraPDF passed but PdfLibrary rejected — a false positive (the invariant we forbid).</summary>
+        public bool IsFalsePositive => VeraCompliant && !PdfLibraryConforms;
     }
 
     /// <summary>All comparisons for one profile plus the corpus/snapshot set mismatches.</summary>
@@ -75,7 +75,7 @@ internal static class ParityComparison
                     continue;
                 }
 
-                (bool conforms, IReadOnlySet<string> clauses) = RunFocal(path, profile);
+                (bool conforms, IReadOnlySet<string> clauses) = RunPdfLibrary(path, profile);
                 files.Add(new FileComparison(
                     profile, name, verdict.Compliant, verdict.FailedClauses, conforms, clauses));
             }
@@ -95,7 +95,7 @@ internal static class ParityComparison
         return profiles;
     }
 
-    private static (bool Conforms, IReadOnlySet<string> Clauses) RunFocal(string path, ConformanceProfile profile)
+    private static (bool Conforms, IReadOnlySet<string> Clauses) RunPdfLibrary(string path, ConformanceProfile profile)
     {
         try
         {

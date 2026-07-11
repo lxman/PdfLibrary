@@ -55,7 +55,7 @@ public class ParityReportTests(ITestOutputHelper output)
         var regressions = new List<string>();
         foreach (ParityComparison.ProfileComparison pc in ParityComparison.All)
         {
-            int agree = pc.Files.Count(f => f.VeraCompliant == f.FocalConforms);
+            int agree = pc.Files.Count(f => f.VeraCompliant == f.PdfLibraryConforms);
             int floor = AgreementFloor.GetValueOrDefault(pc.Profile);
             output.WriteLine($"{pc.Profile}: agreement {agree}/{pc.Files.Count} (floor {floor})");
             if (agree < floor)

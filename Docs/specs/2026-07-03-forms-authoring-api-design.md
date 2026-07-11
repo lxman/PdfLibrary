@@ -3,12 +3,12 @@
 Adds field **authoring** to `PdfDocumentEditor.Forms`: create, delete, rename, move/resize,
 and restyle AcroForm fields on an *existing* document. Today the editor's forms surface is
 read/fill/flatten only; field creation exists solely in the from-scratch builder
-(`PdfPageBuilder.AddTextField` et al.). This spec closes that gap so a consumer (Focal's
+(`PdfPageBuilder.AddTextField` et al.). This spec closes that gap so a consumer (PdfLibrary's
 Forms Design face is the driving one) can turn any plain PDF into a fillable form and edit
 the form of a PDF that already has one.
 
-This is sub-project 1 of the Focal forms-design feature; the Focal UI that consumes it is
-a separate later spec in the Focal repo.
+This is sub-project 1 of the PdfLibrary forms-design feature; the PdfLibrary UI that consumes it is
+a separate later spec in the PdfLibrary repo.
 
 ## 1. Scope
 
@@ -102,7 +102,7 @@ Everything else on the field surface keeps its current read/fill contract unchan
 - **Appearances:** every creation and geometry/style mutation ends in
   `FieldAppearanceGenerator.Regenerate` (or `ButtonStateWriter` for button states), so a
   created empty text field, a checked new checkbox, and a resized dropdown all render
-  correctly in Focal and external viewers without `/NeedAppearances`.
+  correctly in PdfLibrary and external viewers without `/NeedAppearances`.
 - **`Widgets` snapshot contract unchanged:** `PdfFormField.Widgets` stays a read-time
   snapshot; after `SetWidgetRect` (or any authoring mutation) callers re-read the field
   from `editor.Forms` for fresh geometry — same documented contract as today.
@@ -147,5 +147,5 @@ Round-trip (create → save → reopen → assert) in PdfLibrary.Tests for every
 
 Ships as **Lxman.PdfLibrary 2.3.0** (new public API ⇒ minor bump). This publish also
 carries the still-unpublished 2.2.1 search changes (`Width`, `TextOffset` — currently
-local-feed-only), so one nuget.org publish gets Focal's main building from the public
+local-feed-only), so one nuget.org publish gets PdfLibrary's main building from the public
 feed again. Publish and any push of the PDF repo remain ask-first.

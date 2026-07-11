@@ -9,7 +9,7 @@ namespace PdfLibrary.Tests.Content;
 /// <summary>
 /// GWG161 contains a cyclic Form XObject /Do (a form that transitively invokes itself). Before the
 /// cycle guard in <see cref="PdfLibrary.Content.PdfTextExtractor"/>, extracting its text recursed until
-/// the stack overflowed — which crashed Focal.App on opening the file (text extraction runs on open for
+/// the stack overflowed — which crashed PdfLibrary.App on opening the file (text extraction runs on open for
 /// the search/text layer). The guard must make extraction terminate.
 /// </summary>
 public class CyclicFormTextExtractionTests
