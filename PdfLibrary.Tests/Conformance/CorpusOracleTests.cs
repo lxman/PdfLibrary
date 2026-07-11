@@ -61,10 +61,13 @@ public class CorpusOracleTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> DetectionFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            // Re-baselined after the FontEmbeddingRule rendering-tree fix dropped orphan-coincidence catches
-            // (fixtures whose real violation is an unimplemented rule). The real embedding clause 6.2.11.4.1
-            // still detects 5/10 — no true detection was lost.
-            [ConformanceProfile.PdfA2b] = 134,
+            // Re-measured at slice 27: the PDF/A-2b floor had gone stale (it sat at 134 while shared PDF/A
+            // rule slices — fonts, XMP, colour, annotations — raised A2b detection to 522 without ratcheting
+            // it; those slices only bumped the PdfUA1 floor). Ratcheted to the true measured detection.
+            // Slice 27 — subset CharSet/CIDSet (font-subset-coverage, 6.2.11.4.2) adds +2 (522 → 524),
+            // measured by toggling the rule off/on: it is the sole rule that catches 6-2-11-4-2-t01-fail-a
+            // (Type1 /CharSet) and 6-2-11-4-2-t02-fail-a (CIDFontType2 /CIDSet).
+            [ConformanceProfile.PdfA2b] = 524,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
@@ -88,7 +91,12 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Slice B2 — Form XObject MCID reuse (ua-xobject-mcid, clause 7.20 t2 / Matterhorn 30-002): +1
             // (127 → 128), measured by toggling the rule off/on. It is the sole rule that catches
             // 7.20-t02-fail-a (a tagged Form XObject drawn three times); no other rule fires on that fixture.
-            [ConformanceProfile.PdfUA1] = 128,
+            //
+            // Slice 27 — subset CharSet/CIDSet completeness (font-subset-coverage, clause 7.21.4.2): +3
+            // (128 → 131), measured by toggling the rule off/on. It is the sole rule that catches
+            // 7.21.4.2-t01-fail-a, 7.21.4.2-t01-fail-b (subset Type1 /CharSet) and 7.21.4.2-t02-fail-a
+            // (subset CIDFontType2 /CIDSet).
+            [ConformanceProfile.PdfUA1] = 131,
         };
 
     [Fact]
