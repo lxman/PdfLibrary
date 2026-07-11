@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Conformance.Rules;
 
@@ -14,7 +15,7 @@ namespace PdfLibrary.Conformance.Rules;
 ///   <item>a figure carrying <b>neither</b> <c>/Alt</c> nor <c>/ActualText</c> whose marked-content sequence
 ///     also supplies no <c>/ActualText</c> (checked against <see cref="ConformanceContext.MarkedContent"/>).</item>
 /// </list>
-/// Structure types are resolved through <c>/RoleMap</c> by <see cref="StructureTree"/>.
+/// Structure types are resolved through <c>/RoleMap</c> by <see cref="LogicalStructure"/>.
 /// </summary>
 internal sealed class UaFigureAltRule : IConformanceRule
 {
@@ -24,9 +25,9 @@ internal sealed class UaFigureAltRule : IConformanceRule
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
-        foreach (PdfDictionary element in StructureTree.Elements(context))
+        foreach (PdfDictionary element in LogicalStructure.Elements(context.Document))
         {
-            if (StructureTree.StandardType(context, element) is not ("Figure" or "Formula"))
+            if (LogicalStructure.StandardType(context.Document, element) is not ("Figure" or "Formula"))
                 continue;
 
             bool hasActualTextKey = element.Get("ActualText") is not null;

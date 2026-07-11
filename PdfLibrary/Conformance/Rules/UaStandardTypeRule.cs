@@ -1,4 +1,5 @@
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Conformance.Rules;
 
@@ -7,7 +8,7 @@ namespace PdfLibrary.Conformance.Rules;
 /// type must be one of the standard structure types, or be mapped to a standard type through the structure
 /// tree root's <c>/RoleMap</c>. A custom type that role-maps to nothing standard (e.g. <c>/RoleMap</c> mapping
 /// <c>Standard → p</c>, where <c>p</c> is not the standard <c>P</c>) leaves the content's role opaque to
-/// assistive technology. <see cref="StructureTree.StandardType"/> resolves the mapping.
+/// assistive technology. <see cref="LogicalStructure.StandardType"/> resolves the mapping.
 /// </summary>
 internal sealed class UaStandardTypeRule : IConformanceRule
 {
@@ -17,9 +18,9 @@ internal sealed class UaStandardTypeRule : IConformanceRule
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
-        foreach (StructureNode node in StructureTree.Nodes(context))
+        foreach (StructureNode node in LogicalStructure.Nodes(context.Document))
         {
-            if (StructureTree.IsStandardType(node.StandardType))
+            if (LogicalStructure.IsStandardType(node.StandardType))
                 continue;
 
             string raw = context.ResolveName(node.Element.Get("S")) ?? "(none)";

@@ -1,6 +1,7 @@
 using System.Linq;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Conformance.Rules;
 
@@ -11,7 +12,7 @@ namespace PdfLibrary.Conformance.Rules;
 /// rule lays each Table's cells (TH/TD) onto a grid, honouring the span attributes read from each cell's
 /// <c>/A</c> (attribute) entry, and flags a table whose cells intersect, whose spans run past the last row,
 /// or that is otherwise not rectangular (the veraPDF <c>SETable</c>/<c>SETableCell</c> span-consistency
-/// checks). Row/cell/span reading uses <see cref="StructureTree"/>; grouping sections (THead/TBody/TFoot) are
+/// checks). Row/cell/span reading uses <see cref="LogicalStructure"/>; grouping sections (THead/TBody/TFoot) are
 /// flattened into the table's row sequence in document order.
 /// </summary>
 internal sealed class UaTableGridRule : IConformanceRule
@@ -22,7 +23,7 @@ internal sealed class UaTableGridRule : IConformanceRule
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
-        foreach (StructureNode node in StructureTree.Nodes(context))
+        foreach (StructureNode node in LogicalStructure.Nodes(context.Document))
         {
             if (node.StandardType != "Table")
                 continue;
@@ -100,16 +101,16 @@ internal sealed class UaTableGridRule : IConformanceRule
     // children as rows.
     private static IEnumerable<PdfDictionary> Rows(ConformanceContext context, PdfDictionary table)
     {
-        foreach (PdfDictionary child in StructureTree.ChildElements(context, table))
+        foreach (PdfDictionary child in LogicalStructure.ChildElements(context.Document, table))
         {
-            switch (StructureTree.StandardType(context, child))
+            switch (LogicalStructure.StandardType(context.Document, child))
             {
                 case "TR":
                     yield return child;
                     break;
                 case "THead" or "TBody" or "TFoot":
-                    foreach (PdfDictionary tr in StructureTree.ChildElements(context, child))
-                        if (StructureTree.StandardType(context, tr) is "TR")
+                    foreach (PdfDictionary tr in LogicalStructure.ChildElements(context.Document, child))
+                        if (LogicalStructure.StandardType(context.Document, tr) is "TR")
                             yield return tr;
                     break;
             }
@@ -117,8 +118,8 @@ internal sealed class UaTableGridRule : IConformanceRule
     }
 
     private static IEnumerable<PdfDictionary> Cells(ConformanceContext context, PdfDictionary row) =>
-        StructureTree.ChildElements(context, row)
-            .Where(c => StructureTree.StandardType(context, c) is "TH" or "TD");
+        LogicalStructure.ChildElements(context.Document, row)
+            .Where(c => LogicalStructure.StandardType(context.Document, c) is "TH" or "TD");
 
     // RowSpan/ColSpan default to 1. They live in a Table-owned attribute dictionary reached through the cell's
     // /A entry, which may be a single dictionary or an array of them (one per attribute owner).

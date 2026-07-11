@@ -17,7 +17,7 @@ namespace PdfLibrary.Conformance.Rules;
 ///     <c>/Contents</c> entry.</item>
 /// </list>
 /// The remaining checks are structure-nesting: they use the annotation's enclosing structure element
-/// (<see cref="StructureTree.AnnotationParentElements"/>, the element that references the annotation via an
+/// (<see cref="LogicalStructure.AnnotationParentElements"/>, the element that references the annotation via an
 /// <c>/OBJR</c>) and only run when the file is a Tagged PDF — an untagged file is already reported by
 /// <see cref="UaTaggedRule"/>, so re-flagging every annotation here would be noise.
 /// <list type="number">
@@ -42,7 +42,7 @@ internal sealed class UaAnnotationRule : IConformanceRule
     {
         bool tagged = context.Resolve(context.Catalog?.Dictionary.Get("StructTreeRoot")) is PdfDictionary;
         IReadOnlyDictionary<int, PdfDictionary> parents = tagged
-            ? StructureTree.AnnotationParentElements(context)
+            ? LogicalStructure.AnnotationParentElements(context.Document)
             : new Dictionary<int, PdfDictionary>();
 
         var inScopeWidgets = new HashSet<int>(); // object numbers of in-scope annotations, for the field pass
@@ -225,7 +225,7 @@ internal sealed class UaAnnotationRule : IConformanceRule
     private static string ParentTag(ConformanceContext context,
         IReadOnlyDictionary<int, PdfDictionary> parents, PdfDictionary annot) =>
         annot.IsIndirect && parents.TryGetValue(annot.ObjectNumber, out PdfDictionary? elem)
-            ? StructureTree.StandardType(context, elem) ?? "" : Untagged;
+            ? LogicalStructure.StandardType(context.Document, elem) ?? "" : Untagged;
 
     private static string Describe(string parentTag) =>
         parentTag == Untagged ? "no structure element" : $"a <{parentTag}> element";
