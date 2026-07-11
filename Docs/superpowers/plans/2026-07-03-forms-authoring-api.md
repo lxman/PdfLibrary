@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Repo: `C:\Users\jorda\RiderProjects\PDF` (NOT the Focal repo). Work on branch `feature/forms-authoring` off `master`.
+- Repo: `C:\Users\jorda\RiderProjects\PDF` (NOT the PdfLibrary repo). Work on branch `feature/forms-authoring` off `master`.
 - All new public API lives in namespace `PdfLibrary.Editing.Forms`; geometry uses the existing `PdfRect` (PDF user space, Y-up) — no new rect type.
 - Never set `/NeedAppearances`; every creation/mutation ends with a generated appearance stream (via `FieldAppearanceGenerator.Regenerate` or `EnsureButtonAppearance`).
 - Every authoring entry point is guarded against dynamic XFA (same posture as `Flatten`).

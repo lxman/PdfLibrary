@@ -8,7 +8,7 @@ namespace PdfLibrary.Tests.Conformance;
 /// <summary>
 /// Renders the veraPDF-parity report — the non-gating, human-readable face of the harness. It turns
 /// <see cref="ParityComparison"/> into markdown: a per-profile verdict-agreement scoreboard (the
-/// confusion matrix) and a per-clause coverage matrix that shows exactly where Focal and veraPDF
+/// confusion matrix) and a per-clause coverage matrix that shows exactly where PdfLibrary and veraPDF
 /// diverge. This is the artifact the "verdict parity with veraPDF" claim is quoted from.
 /// </summary>
 internal static class ParityReport
@@ -35,25 +35,25 @@ internal static class ParityReport
         sb.AppendLine("# veraPDF parity report");
         sb.AppendLine();
         string versions = string.Join(", ", ParitySnapshot.VerapdfVersions.Select(kv => $"{kv.Key} {kv.Value}"));
-        sb.AppendLine($"_Focal preflighter vs veraPDF ({versions}); corpus @ {ParitySnapshot.CorpusCommit}. "
+        sb.AppendLine($"_PdfLibrary preflighter vs veraPDF ({versions}); corpus @ {ParitySnapshot.CorpusCommit}. "
             + "Generated — regenerate with the `Category=Parity` test `ParityReportTests.Generate_parity_report` "
             + "(set `PARITY_REPORT`), and re-run `tools/verapdf-parity/capture.sh` first if veraPDF or the corpus moved._");
         sb.AppendLine();
-        sb.AppendLine($"Across all **{totalFiles}** files Focal produced **{totalFp} false positives** — it never "
-            + "rejects a file veraPDF accepts. Focal is a strict subset of veraPDF, so every disagreement below is "
-            + "a coverage gap (veraPDF flags a clause Focal does not yet implement), **not a Focal error**.");
+        sb.AppendLine($"Across all **{totalFiles}** files PdfLibrary produced **{totalFp} false positives** — it never "
+            + "rejects a file veraPDF accepts. PdfLibrary is a strict subset of veraPDF, so every disagreement below is "
+            + "a coverage gap (veraPDF flags a clause PdfLibrary does not yet implement), **not a PdfLibrary error**.");
         sb.AppendLine();
 
         // ---- Report B: verdict-agreement scoreboard (confusion matrix) ------------------------------
         sb.AppendLine("## Verdict agreement");
         sb.AppendLine();
-        sb.AppendLine("| Profile | Files | Both pass | Both fail | Focal misses (gap) | Focal FP | Agreement |");
+        sb.AppendLine("| Profile | Files | Both pass | Both fail | PdfLibrary misses (gap) | PdfLibrary FP | Agreement |");
         sb.AppendLine("|---|--:|--:|--:|--:|--:|--:|");
         foreach (ParityComparison.ProfileComparison pc in all)
         {
-            int bothPass = pc.Files.Count(f => f.VeraCompliant && f.FocalConforms);
-            int bothFail = pc.Files.Count(f => !f.VeraCompliant && !f.FocalConforms);
-            int gap = pc.Files.Count(f => !f.VeraCompliant && f.FocalConforms);
+            int bothPass = pc.Files.Count(f => f.VeraCompliant && f.PdfLibraryConforms);
+            int bothFail = pc.Files.Count(f => !f.VeraCompliant && !f.PdfLibraryConforms);
+            int gap = pc.Files.Count(f => !f.VeraCompliant && f.PdfLibraryConforms);
             int fp = pc.Files.Count(f => f.IsFalsePositive);
             int agree = bothPass + bothFail;
             sb.AppendLine($"| {ProfileLabel(pc.Profile)} | {pc.Files.Count} | {bothPass} | {bothFail} | "
@@ -64,7 +64,7 @@ internal static class ParityReport
         // ---- Report A: per-clause coverage matrix ---------------------------------------------------
         sb.AppendLine("## Clause coverage");
         sb.AppendLine();
-        sb.AppendLine("Of the files where veraPDF flags a clause, how many does Focal also flag on that clause.");
+        sb.AppendLine("Of the files where veraPDF flags a clause, how many does PdfLibrary also flag on that clause.");
         sb.AppendLine();
 
         var gaps = new List<(ConformanceProfile Profile, string Clause, int Vera, int Matched)>();
@@ -77,7 +77,7 @@ internal static class ParityReport
             int fullCount = vera.Count(kv => matched.GetValueOrDefault(kv.Key) == kv.Value);
             sb.AppendLine($"### {ProfileLabel(pc.Profile)} — {fullCount}/{vera.Count} clauses at full parity");
             sb.AppendLine();
-            sb.AppendLine("| Clause | veraPDF flags | Focal matches | Coverage | |");
+            sb.AppendLine("| Clause | veraPDF flags | PdfLibrary matches | Coverage | |");
             sb.AppendLine("|---|--:|--:|--:|---|");
             foreach ((string clause, int total) in vera.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key))
             {
@@ -92,14 +92,14 @@ internal static class ParityReport
         // ---- highest-leverage gaps ------------------------------------------------------------------
         sb.AppendLine("## Biggest parity gaps (highest-leverage work)");
         sb.AppendLine();
-        sb.AppendLine("Ranked by number of files Focal misses on a clause it does not fully cover.");
+        sb.AppendLine("Ranked by number of files PdfLibrary misses on a clause it does not fully cover.");
         sb.AppendLine();
         int rank = 1;
         foreach ((ConformanceProfile profile, string clause, int vera, int matched) in
                  gaps.OrderByDescending(g => g.Vera - g.Matched).Take(10))
         {
             sb.AppendLine($"{rank++}. **{ProfileLabel(profile)} clause {clause}** — {vera - matched} of {vera} "
-                + $"files missed (Focal matches {matched}).");
+                + $"files missed (PdfLibrary matches {matched}).");
         }
         sb.AppendLine();
 
@@ -115,7 +115,7 @@ internal static class ParityReport
             foreach (string c in f.VeraClauses)
             {
                 vera[c] = vera.GetValueOrDefault(c) + 1;
-                if (f.FocalClauses.Contains(c))
+                if (f.PdfLibraryClauses.Contains(c))
                     matched[c] = matched.GetValueOrDefault(c) + 1;
             }
         return (vera, matched);

@@ -1,7 +1,7 @@
 # Feature Brief: Annotation subsystem extension (ink, shapes, free-text) + `/AP` generation + richer reader
 
 **Status:** Open — feature brief (2026-06-28; not yet implemented)
-**Requested by:** Focal (consumer app) for its Phase 3 annotation toolset. Focal will be built against the published `Lxman.PdfLibrary` once this lands — please **version-bump + publish** when done.
+**Requested by:** PdfLibrary (consumer app) for its Phase 3 annotation toolset. PdfLibrary will be built against the published `Lxman.PdfLibrary` once this lands — please **version-bump + publish** when done.
 **Goal:** Let consumers add, render, read, and delete a fuller set of markup annotations on existing PDFs: **Ink (freehand), Square, Circle, Line, Free-Text** — plus make all library-added annotations actually **render** (generate `/AP` appearance streams), and enrich the read model with per-type data + a stable identity for edit/delete.
 
 ---
@@ -79,12 +79,12 @@ For each new type: **round-trip** — add via the editing-add API to a built pag
 - All added annotations carry an `/AP /N` stream and **render in this library's `PdfRenderer`** (verified by rasterization) and in external viewers.
 - Existing highlight/text annotations also gain `/AP` so they render here too.
 - Richer `PdfAnnotationInfo` + identity-based delete shipped; existing API back-compatible.
-- **Version bump + publish** the package so Focal can consume it (note the new minimum version in the changelog).
+- **Version bump + publish** the package so PdfLibrary can consume it (note the new minimum version in the changelog).
 
 ---
 
 ## Notes / coordination
 - Renderer needs **no changes** — do not modify `PdfRenderer`; rely on add-time `/AP /N`.
-- This corrects an earlier assumption in Focal that "the renderer draws existing annotation appearances" — it only draws from `/AP`, which the library wasn't generating.
-- Out of scope (Focal will not need these yet): text-selection multi-quad highlight (Focal lacks text selection), polygon/polyline, stamp/redaction annotations, JS actions. (Multi-quad highlight is a natural later add if `AddHighlight` grows a quads overload.)
+- This corrects an earlier assumption in PdfLibrary that "the renderer draws existing annotation appearances" — it only draws from `/AP`, which the library wasn't generating.
+- Out of scope (PdfLibrary will not need these yet): text-selection multi-quad highlight (PdfLibrary lacks text selection), polygon/polyline, stamp/redaction annotations, JS actions. (Multi-quad highlight is a natural later add if `AddHighlight` grows a quads overload.)
 - Separate from the radio-builder fix (already FIXED) — different files, no overlap.

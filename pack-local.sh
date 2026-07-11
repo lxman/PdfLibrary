@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Packs Lxman.PdfLibrary from local source into Focal's local NuGet feed for co-development,
-# then pins Focal to that exact dev build. Edit library source -> run this -> 'dotnet build' Focal.
+# Packs Lxman.PdfLibrary from local source into Pellucid's local NuGet feed for co-development,
+# then pins Pellucid to that exact dev build. Edit library source -> run this -> 'dotnet build' Pellucid.
 # No nuget.org publish, no GitHub Release, no manual version bumps, no 'dotnet restore --force':
-# writing the exact version into Focal's Directory.Build.props.local forces a clean re-restore on
-# Focal's next build (a floating "2.3.0-dev*" alone leaves restore on a stale prior dev build).
+# writing the exact version into Pellucid's Directory.Build.props.local forces a clean re-restore on
+# Pellucid's next build (a floating "2.3.0-dev*" alone leaves restore on a stale prior dev build).
 #
 # Cross-platform partner of pack-local.ps1 — identical behavior. Paths are derived from the
-# script's own location, so nothing is hardcoded. Override Focal's location or the build config
+# script's own location, so nothing is hardcoded. Override Pellucid's location or the build config
 # with the two optional args below.
 #
-#   Usage: ./pack-local.sh [FOCAL_ROOT] [CONFIGURATION]
-#     FOCAL_ROOT     default: sibling ../Focal relative to this repo
+#   Usage: ./pack-local.sh [PELLUCID_ROOT] [CONFIGURATION]
+#     PELLUCID_ROOT     default: sibling ../Pellucid relative to this repo
 #     CONFIGURATION  default: Release
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FOCAL_ROOT="${1:-$(cd "$SCRIPT_DIR/../Focal" && pwd)}"
+PELLUCID_ROOT="${1:-$(cd "$SCRIPT_DIR/../Pellucid" && pwd)}"
 CONFIGURATION="${2:-Release}"
 
 CSPROJ="$SCRIPT_DIR/PdfLibrary/PdfLibrary.csproj"
@@ -34,11 +34,11 @@ mkdir -p "$FEED"
 echo "Packing Lxman.PdfLibrary $VER -> $FEED"
 dotnet pack "$CSPROJ" -c "$CONFIGURATION" -p:PackageVersion="$VER" -o "$FEED"
 
-# Pin Focal to this exact dev build (gitignored override). A changed build prop forces Focal's
+# Pin Pellucid to this exact dev build (gitignored override). A changed build prop forces Pellucid's
 # next 'dotnet build' to re-restore deterministically — no --force needed.
-cat > "$FOCAL_ROOT/Directory.Build.props.local" <<EOF
+cat > "$PELLUCID_ROOT/Directory.Build.props.local" <<EOF
 <Project>
-  <!-- Written by pack-local.sh — pins Focal to the latest local dev build of the engine.
+  <!-- Written by pack-local.sh — pins Pellucid to the latest local dev build of the engine.
        Gitignored. Delete this file + nuget.config to return to the published package. -->
   <PropertyGroup>
     <LxmanPdfLibraryVersion>$VER</LxmanPdfLibraryVersion>
@@ -46,9 +46,9 @@ cat > "$FOCAL_ROOT/Directory.Build.props.local" <<EOF
 </Project>
 EOF
 
-# Ensure Focal has a nuget.config wiring the local feed alongside nuget.org. Only created if
+# Ensure Pellucid has a nuget.config wiring the local feed alongside nuget.org. Only created if
 # missing, so an existing (hand-tuned) config is never clobbered.
-NUGET_CONFIG="$FOCAL_ROOT/nuget.config"
+NUGET_CONFIG="$PELLUCID_ROOT/nuget.config"
 if [[ ! -f "$NUGET_CONFIG" ]]; then
   cat > "$NUGET_CONFIG" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
@@ -67,4 +67,4 @@ EOF
 fi
 
 echo ""
-echo "Pinned Focal to $VER. Just 'dotnet build' Focal — it re-restores the new build."
+echo "Pinned Pellucid to $VER. Just 'dotnet build' Pellucid — it re-restores the new build."

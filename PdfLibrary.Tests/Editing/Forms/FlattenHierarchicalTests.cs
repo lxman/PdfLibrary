@@ -75,7 +75,7 @@ public class FlattenHierarchicalTests
 
     /// <summary>
     /// RC-A + RC1 together: after fill → flatten → save → reopen, no widget may report PageIndex 0
-    /// for a page that originally had no widgets. This is the corruption Focal saw — flatten-orphaned
+    /// for a page that originally had no widgets. This is the corruption PdfLibrary saw — flatten-orphaned
     /// widgets collapsing to page 0 and being painted on the instructions page by geometry-driven
     /// renderers (WPF/Avalonia). After the fix there are no orphans (RC1) and any stray reports -1 (RC-A).
     /// </summary>

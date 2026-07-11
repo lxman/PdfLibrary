@@ -7,7 +7,7 @@ namespace PdfLibrary.Conformance.Xmp;
 /// <para>This is the "predefined schemas" definition every conformant PDF/A packet is measured
 /// against: the set of (namespace URI, property name) pairs the standard blesses, plus the value
 /// type each is required to carry. The (namespace, property, type) data is functional schema data
-/// taken from ISO 19005-2/-3 Annex B — the same tables veraPDF uses — reproduced here so Focal's
+/// taken from ISO 19005-2/-3 Annex B — the same tables veraPDF uses — reproduced here so PdfLibrary's
 /// verdict tracks the reference validator.</para>
 ///
 /// <para>The map is built exactly the way the reference builds its PDF/A-2/3 predefined definition

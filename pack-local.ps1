@@ -1,13 +1,13 @@
-# Packs Lxman.PdfLibrary from local source into Focal's local NuGet feed for co-development,
-# then pins Focal to that exact dev build. Edit library source -> run this -> 'dotnet build' Focal.
+# Packs Lxman.PdfLibrary from local source into Pellucid's local NuGet feed for co-development,
+# then pins Pellucid to that exact dev build. Edit library source -> run this -> 'dotnet build' Pellucid.
 # No nuget.org publish, no GitHub Release, no manual version bumps, no 'dotnet restore --force':
-# writing the exact version into Focal's Directory.Build.props.local forces a clean re-restore on
-# Focal's next build (a floating "2.3.0-dev*" alone leaves restore on a stale prior dev build).
+# writing the exact version into Pellucid's Directory.Build.props.local forces a clean re-restore on
+# Pellucid's next build (a floating "2.3.0-dev*" alone leaves restore on a stale prior dev build).
 #
 # Cross-platform partner of pack-local.sh — identical behavior. Paths are derived from the
-# script's own location, so nothing is hardcoded. FocalRoot defaults to the sibling ../Focal.
+# script's own location, so nothing is hardcoded. PellucidRoot defaults to the sibling ../Pellucid.
 param(
-    [string]$FocalRoot = (Join-Path $PSScriptRoot ".." "Focal"),
+    [string]$PellucidRoot = (Join-Path $PSScriptRoot ".." "Pellucid"),
     [string]$Configuration = "Release"
 )
 
@@ -28,15 +28,15 @@ Write-Host "Packing Lxman.PdfLibrary $ver -> $Feed" -ForegroundColor Cyan
 dotnet pack $csproj -c $Configuration -p:PackageVersion=$ver -o $Feed
 if ($LASTEXITCODE -ne 0) { throw "pack failed" }
 
-# Normalize FocalRoot to an absolute path for clean file writes.
-$FocalRoot = (Resolve-Path $FocalRoot).Path
+# Normalize PellucidRoot to an absolute path for clean file writes.
+$PellucidRoot = (Resolve-Path $PellucidRoot).Path
 
-# Pin Focal to this exact dev build (gitignored override). A changed build prop forces Focal's
+# Pin Pellucid to this exact dev build (gitignored override). A changed build prop forces Pellucid's
 # next 'dotnet build' to re-restore deterministically — no --force needed.
-$propsLocal = Join-Path $FocalRoot "Directory.Build.props.local"
+$propsLocal = Join-Path $PellucidRoot "Directory.Build.props.local"
 @"
 <Project>
-  <!-- Written by pack-local.ps1 — pins Focal to the latest local dev build of the engine.
+  <!-- Written by pack-local.ps1 — pins Pellucid to the latest local dev build of the engine.
        Gitignored. Delete this file + nuget.config to return to the published package. -->
   <PropertyGroup>
     <LxmanPdfLibraryVersion>$ver</LxmanPdfLibraryVersion>
@@ -44,9 +44,9 @@ $propsLocal = Join-Path $FocalRoot "Directory.Build.props.local"
 </Project>
 "@ | Set-Content -Path $propsLocal -Encoding UTF8
 
-# Ensure Focal has a nuget.config wiring the local feed alongside nuget.org. Only created if
+# Ensure Pellucid has a nuget.config wiring the local feed alongside nuget.org. Only created if
 # missing, so an existing (hand-tuned) config is never clobbered.
-$nugetConfig = Join-Path $FocalRoot "nuget.config"
+$nugetConfig = Join-Path $PellucidRoot "nuget.config"
 if (-not (Test-Path $nugetConfig)) {
 @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -65,4 +65,4 @@ if (-not (Test-Path $nugetConfig)) {
 }
 
 Write-Host ""
-Write-Host "Pinned Focal to $ver. Just 'dotnet build' Focal — it re-restores the new build." -ForegroundColor Green
+Write-Host "Pinned Pellucid to $ver. Just 'dotnet build' Pellucid — it re-restores the new build." -ForegroundColor Green

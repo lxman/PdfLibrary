@@ -1,7 +1,7 @@
 # Brief: standard-14 font name on FreeText annotations (`/DA`)
 
 **For:** the PdfLibrary agent. **Repo:** `C:\Users\jorda\RiderProjects\PDF` (branch off `master`).
-**Requested by:** Focal (annotation text-editing + inspector feature). **Folds into:** the pending **2.2.0** publish.
+**Requested by:** PdfLibrary (annotation text-editing + inspector feature). **Folds into:** the pending **2.2.0** publish.
 **Status:** uncommitted handoff brief — implement, test, commit in this repo.
 
 ---
@@ -22,7 +22,7 @@ Already font-aware (no change needed):
 
 ## The cross-repo contract — standard-14 `/DA` resource names
 
-Focal sends, and expects back, these `/DA` font names. Map each to its `/BaseFont`:
+PdfLibrary sends, and expects back, these `/DA` font names. Map each to its `/BaseFont`:
 
 | `/DA` name | `/BaseFont` |
 |---|---|
@@ -200,7 +200,7 @@ Run `dotnet test` (full suite) → PASS. **This resolver is shared with AcroForm
 
 ## After the three tasks — 2.2.0 publish
 
-Bump `PdfLibrary\PdfLibrary.csproj` version to **2.2.0** and cut the owner-approved GitHub Release. This is the gate Focal waits on (it also carries the already-pending AddHighlight/AddNote + Multiply-highlight `/AP` + flatten fix). Once published to nuget.org, Focal flips `LxmanPdfLibraryVersion` default to `2.2.0` and consumes it.
+Bump `PdfLibrary\PdfLibrary.csproj` version to **2.2.0** and cut the owner-approved GitHub Release. This is the gate PdfLibrary waits on (it also carries the already-pending AddHighlight/AddNote + Multiply-highlight `/AP` + flatten fix). Once published to nuget.org, PdfLibrary flips `LxmanPdfLibraryVersion` default to `2.2.0` and consumes it.
 
 ## Acceptance
 

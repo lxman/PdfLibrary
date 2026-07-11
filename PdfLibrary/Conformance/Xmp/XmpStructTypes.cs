@@ -5,9 +5,9 @@ namespace PdfLibrary.Conformance.Xmp;
 /// validator uses). Each <c>*_STRUCTURE</c> array is <c>{childNamespaceURI, fieldName, fieldType, …}</c>
 /// (stride 2 after the namespace at index 0). A <c>*_RESTRICTED_FIELD_*</c> array is
 /// <c>{fieldName, baseType, closedRegex, …}</c> (stride 3, no namespace) — in the "no closed-choice"
-/// mode Focal builds, only <c>fieldName</c> + <c>baseType</c> are used and the regex is ignored, so a
+/// mode PdfLibrary builds, only <c>fieldName</c> + <c>baseType</c> are used and the regex is ignored, so a
 /// restricted field degrades to its permissive base type. This is factual schema data, reproduced (not
-/// copied from any implementation) so Focal's verdict tracks the reference.
+/// copied from any implementation) so PdfLibrary's verdict tracks the reference.
 /// </summary>
 internal static class XmpStructTypes
 {

@@ -4,11 +4,11 @@
 > serializer/page-0 re-parenting theory below (the serializer round-trips faithfully; nothing lands
 > on page 0). The real defects were a geometry-API bug (`PageIndex` collapsing to 0 for orphaned
 > widgets) plus three flatten bugs (nested-field removal no-op, un-appeared widgets left live, and
-> remove-without-bake data loss). Fixes are in the **working tree + Focal's local feed**
+> remove-without-bake data loss). Fixes are in the **working tree + PdfLibrary's local feed**
 > (`2.2.0-dev*`); commit + public release pending owner approval. Original report kept verbatim.
 
 **Status:** ~~Open~~ **FIXED in working tree (2026-06-28)** — was confirmed in **published `Lxman.PdfLibrary` 2.1.0** AND source (`PdfLibrary/Editing/Forms/FormFlattener.cs`).
-**Reported by:** Focal (consumer app) — its "Export Flattened" produced a file that silently lost all entered data.
+**Reported by:** PdfLibrary (consumer app) — its "Export Flattened" produced a file that silently lost all entered data.
 **Severity:** High — flattening a real-world complex form **silently loses user data** and corrupts document structure. Plain save (no flatten) is unaffected and works correctly.
 
 ---
@@ -100,15 +100,15 @@ The current single-page builder fixture (`AddTextField`+`AddCheckbox`, one page)
 
 ## Coordination
 
-- **Consumer impact:** Focal's "Export Flattened" is unusable until this lands; Focal's plain "Save" is unaffected and correct. Focal will guard/disable the flatten action meanwhile.
+- **Consumer impact:** PdfLibrary's "Export Flattened" is unusable until this lands; PdfLibrary's plain "Save" is unaffected and correct. PdfLibrary will guard/disable the flatten action meanwhile.
 - This is **not** caused by the consumer — reproduced with the exact published 2.1.0 library calls.
 
 ### Handoff: publish into the LOCAL feed, NOT nuget.org
 
-We are co-developing the library and Focal locally and do **not** want public releases for every iteration. When this fix is ready:
+We are co-developing the library and PdfLibrary locally and do **not** want public releases for every iteration. When this fix is ready:
 
 1. Commit the change in this repo.
-2. From the repo root, run **`.\pack-local.ps1`** — it builds the current source, packs `Lxman.PdfLibrary` as a fresh `2.2.0-dev<timestamp>` into Focal's local NuGet feed (`C:\Users\jorda\RiderProjects\Focal\.nuget\local-feed`), **and pins Focal to that exact version** (writes its gitignored `Directory.Build.props.local`). Focal then picks it up on a plain `dotnet build` — no `dotnet restore --force` needed (a floating ref alone leaves restore on a stale prior dev build).
+2. From the repo root, run **`.\pack-local.ps1`** — it builds the current source, packs `Lxman.PdfLibrary` as a fresh `2.2.0-dev<timestamp>` into PdfLibrary's local NuGet feed (`C:\Users\jorda\RiderProjects\PdfLibrary\.nuget\local-feed`), **and pins PdfLibrary to that exact version** (writes its gitignored `Directory.Build.props.local`). PdfLibrary then picks it up on a plain `dotnet build` — no `dotnet restore --force` needed (a floating ref alone leaves restore on a stale prior dev build).
 
 **Do NOT create a GitHub Release** and **do NOT run the `publish-nuget.yml` workflow** for this — that publishes to nuget.org (the public, effectively irreversible path) and requires the owner's explicit approval. The local pack is the whole handoff: no tag, no Release, no nuget.org push, no version bump in the csproj (the script overrides the package version per-pack). A real public release happens only later, once a batch of fixes is ready and the owner approves.
 
@@ -116,7 +116,7 @@ We are co-developing the library and Focal locally and do **not** want public re
 
 ## Resolution (2026-06-28)
 
-Investigation (instrumented repros against `TestPDFs/fw2.pdf` + inspection of Focal's actual
+Investigation (instrumented repros against `TestPDFs/fw2.pdf` + inspection of PdfLibrary's actual
 `fw23.pdf`) found the brief's lead hypotheses were wrong, and uncovered the true causes.
 
 ### What was DISPROVEN
@@ -154,6 +154,6 @@ Investigation (instrumented repros against `TestPDFs/fw2.pdf` + inspection of Fo
 hybrid-strip). Existing simple-form `FlattenTests` stay green. Full suite: 1314 passing.
 
 ### Delivery
-Packed to Focal's local feed via `pack-local.ps1` as `2.2.0-dev<timestamp>`. No commit, no nuget.org
+Packed to PdfLibrary's local feed via `pack-local.ps1` as `2.2.0-dev<timestamp>`. No commit, no nuget.org
 publish yet — both await owner approval. When publishing publicly, this is a **minor** bump (additive
 `IsDynamicXfa` API + bug fixes): target **2.2.0**.

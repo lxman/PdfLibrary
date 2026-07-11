@@ -16,7 +16,7 @@
 - Matrix convention: this engine composes with row-vector semantics — `Ctm = matrix * Ctm` on concat, `Vector2.Transform(point, m)` applies `m` to a row vector. A point in form space maps to page space via `formMatrix * ctmAtDoTime`.
 - The extractor and renderer MUST agree on advance math — that agreement is the entire point (highlights sit on glyphs). Where the spec and existing renderer behavior conflict, the spec governs, and BOTH sides change.
 - Commit messages end with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
-- Ledger: append per-task lines to `C:\Users\jorda\RiderProjects\Focal\.superpowers\sdd\progress.md` (the session ledger lives in the Focal repo).
+- Ledger: append per-task lines to `C:\Users\jorda\RiderProjects\PdfLibrary\.superpowers\sdd\progress.md` (the session ledger lives in the PdfLibrary repo).
 
 ---
 
@@ -220,7 +220,7 @@ git commit -m "fix(text): extractor advances honor Tc/Tw/Tz; renderer aligned to
 
 ### Task 2: Form-XObject fragments transformed to page space + seam separator
 
-`ExtractTextFromFormXObject` (PdfTextExtractor.cs:~264-311) runs a nested extractor over the form's content and copies its fragments through with X/Y/Width/FontSize in the FORM'S LOCAL space — a form placed with a matrix (letterheads, stamps, whole-page wrappers) reports wrong positions, so Focal's search/selection highlights land elsewhere on the page. It also appends the form's text directly onto the outer builder with no separator (documented deferral at ~292-295), gluing words across the seam.
+`ExtractTextFromFormXObject` (PdfTextExtractor.cs:~264-311) runs a nested extractor over the form's content and copies its fragments through with X/Y/Width/FontSize in the FORM'S LOCAL space — a form placed with a matrix (letterheads, stamps, whole-page wrappers) reports wrong positions, so PdfLibrary's search/selection highlights land elsewhere on the page. It also appends the form's text directly onto the outer builder with no separator (documented deferral at ~292-295), gluing words across the seam.
 
 Fix at copy-out: transform each nested fragment by `placement = formMatrix * ctmAtDoTime` (row-vector convention; page-level extraction starts at CTM = identity, so the Do-time CTM is exactly the page-relative transform — consistent with outer fragments, which never apply the CTM). Scale `Width` by the placement's horizontal scale and `FontSize` by its vertical scale. Insert one `' '` separator between non-empty outer text and non-empty form text when the outer builder doesn't already end in whitespace; compute `baseOffset` AFTER the separator so rebased `TextOffset`s stay exact.
 
@@ -402,8 +402,8 @@ git commit -m "fix(text): map Form-XObject fragments to page space; separate the
 
 1. Final whole-branch review (superpowers:requesting-code-review conventions, full branch diff off master).
 2. Merge `feature/extractor-text-metrics` to PDF `master` (fast-forward), delete branch. Do NOT push (user-gated).
-3. Re-pack the local feed: `& C:\Users\jorda\RiderProjects\PDF\pack-local.ps1` (pins Focal to the new dev build).
-4. Verify Focal against the new engine: `dotnet test C:\Users\jorda\RiderProjects\Focal\Focal.slnx --nologo` — expect Core 166 / App 433 / Rendering 167 (Focal's reading-order assembly consumes fragment X/Width; improved values must not break its builder-PDF fixtures, which use no Tc/Tw/Tz and no placed XObjects).
+3. Re-pack the local feed: `& C:\Users\jorda\RiderProjects\PDF\pack-local.ps1` (pins PdfLibrary to the new dev build).
+4. Verify PdfLibrary against the new engine: `dotnet test C:\Users\jorda\RiderProjects\PdfLibrary\PdfLibrary.slnx --nologo` — expect Core 166 / App 433 / Rendering 167 (PdfLibrary's reading-order assembly consumes fragment X/Width; improved values must not break its builder-PDF fixtures, which use no Tc/Tw/Tz and no placed XObjects).
 5. Update the CHANGELOG's `[Unreleased]` section with both fixes (they ride into 2.3.1).
 6. Ledger + report to user for smoke (justified-text document + a letterhead/stamped document are the interesting cases).
 
