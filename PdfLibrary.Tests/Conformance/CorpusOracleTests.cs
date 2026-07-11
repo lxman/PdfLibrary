@@ -84,7 +84,11 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // level. The rule correctly flags all three fail fixtures (7.2-t24/t25/t33-fail-a), but each was
             // already counted as detected — the veraPDF test-builder fixtures also carry an outline with no
             // catalog /Lang, which ua-object-lang already catches — so the per-fixture floor is unchanged.
-            [ConformanceProfile.PdfUA1] = 127,
+            //
+            // Slice B2 — Form XObject MCID reuse (ua-xobject-mcid, clause 7.20 t2 / Matterhorn 30-002): +1
+            // (127 → 128), measured by toggling the rule off/on. It is the sole rule that catches
+            // 7.20-t02-fail-a (a tagged Form XObject drawn three times); no other rule fires on that fixture.
+            [ConformanceProfile.PdfUA1] = 128,
         };
 
     [Fact]

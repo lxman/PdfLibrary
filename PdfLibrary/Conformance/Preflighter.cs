@@ -97,6 +97,8 @@ public static class Preflighter
         new Rules.UaSuspectsRule(),
         new Rules.UaNoteIdRule(),
         new Rules.UaReferenceXObjectRule(),
+        // Slice B2 — Form XObject MCID reuse (7.20 t2 / Matterhorn 30-002): a tagged form drawn more than once.
+        new Rules.UaXObjectMcidRule(),
     ];
 
     /// <summary>

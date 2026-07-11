@@ -5,7 +5,7 @@
 
 Status legend — Focal rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## Focal coverage — 56 of 87 machine-checkable conditions
+## Focal coverage — 57 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
@@ -26,7 +26,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 20 | Optional Content | 3/3 | `optional-content` (widened to UA 7.10) |
 | 25 | XFA | 1/1 | `ua-xfa` |
 | 28 | Annotations | 10/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8; media 7.18.6, file-attach 7.18.7 deferred) |
-| 30 | XObjects | 1/2 | `ua-reference-xobject` (30-001; 30-002 Form-XObject MCID reuse deferred to Slice B) |
+| 30 | XObjects | 2/2 | `ua-reference-xobject` (30-001), `ua-xobject-mcid` (30-002 tagged-form reuse) |
 | 31 | Fonts | 13/29 | `font-dictionary`, `font-embedded`, `font-program` |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
@@ -292,7 +292,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | ID | M/H | ISO 14289-1 | Failure condition | Focal |
 |---|---|---|---|---|
 | 30-001 | M | 7.20-1 | A reference XObject is present. | ua-reference-xobject |
-| 30-002 | M | 7.20-2 | Form XObject contains MCIDs and is referenced | — |
+| 30-002 | M | 7.20-2 | Form XObject contains MCIDs and is referenced | ua-xobject-mcid |
 
 ## Checkpoint 31 — Fonts  (29 machine)
 
