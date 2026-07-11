@@ -36,6 +36,10 @@ internal class PdfTextExtractor : PdfContentProcessor
     private bool _cursorValid;
     private const double SpaceThreshold = 0.2; // Threshold for detecting word spacing (as fraction of font size)
 
+    // Marked-content frames (innermost last). Each records the /MCID of a tagged BDC (null otherwise) and
+    // whether the sequence is an /Artifact, so shown text can be tagged with its structure MCID.
+    private readonly List<(int? Mcid, bool IsArtifact)> _markedContent = [];
+
     /// <summary>
     /// Creates a text extractor with optional resources for font resolution
     /// </summary>
@@ -126,6 +130,53 @@ internal class PdfTextExtractor : PdfContentProcessor
         // the END of one text and the START of the next.
     }
 
+    // BDC/BMC open a marked-content sequence; EMC closes it. (MP/DP are points, not sequences — ignored.)
+    private protected override void OnGenericOperator(Operators.GenericOperator op)
+    {
+        switch (op.Name)
+        {
+            case "BDC":
+            case "BMC":
+                _markedContent.Add(MarkedContentFrame(op));
+                break;
+            case "EMC":
+                if (_markedContent.Count > 0)
+                    _markedContent.RemoveAt(_markedContent.Count - 1);
+                break;
+        }
+    }
+
+    private (int? Mcid, bool IsArtifact) MarkedContentFrame(Operators.GenericOperator op)
+    {
+        bool isArtifact = op.Operands.Count > 0 && op.Operands[0] is PdfName { Value: "Artifact" };
+        PdfObject? props = op.Operands.Count > 1 ? op.Operands[1] : null;
+        PdfDictionary? dict = props switch
+        {
+            PdfDictionary inline => inline,
+            PdfName name when _resources?.GetProperties() is { } table
+                              && table.TryGetValue(new PdfName(name.Value), out PdfObject? value)
+                => Resolve(value) as PdfDictionary,
+            _ => null,
+        };
+        int? mcid = Resolve(dict?.Get("MCID")) is PdfInteger i ? i.Value : null;
+        return (mcid, isArtifact);
+    }
+
+    // The MCID tagging text shown right now: the innermost frame's /MCID, or null when an artifact is nearer.
+    private int? CurrentMcid()
+    {
+        for (int i = _markedContent.Count - 1; i >= 0; i--)
+        {
+            if (_markedContent[i].IsArtifact) return null;
+            if (_markedContent[i].Mcid is int m) return m;
+        }
+        return null;
+    }
+
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference reference && _document is not null
+            ? _document.ResolveReference(reference) : obj;
+
     private protected override void OnShowText(PdfString text)
     {
         if (!_inTextObject) return;
@@ -173,6 +224,7 @@ internal class PdfTextExtractor : PdfContentProcessor
             Text = decodedText,
             X = _cursor.X,
             Y = _cursor.Y,
+            Mcid = CurrentMcid(),
             FontName = CurrentState.FontName,
             FontSize = effectiveFontSize,  // Use effective (scaled) font size
             Width = advance,
@@ -339,6 +391,7 @@ internal class PdfTextExtractor : PdfContentProcessor
                 Text = fragment.Text,
                 X = mapped.X,
                 Y = mapped.Y,
+                Mcid = fragment.Mcid ?? CurrentMcid(),
                 FontName = fragment.FontName,
                 FontSize = fragment.FontSize * vScale,
                 Width = fragment.Width * hScale,

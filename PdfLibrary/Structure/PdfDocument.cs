@@ -399,6 +399,14 @@ public partial class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// Reads the document's Tagged-PDF logical structure — the accessibility tag tree (ISO 32000-1, 14.7) —
+    /// as a read-only <see cref="Document.TagTree"/>: structure elements with their role-mapped types,
+    /// accessibility attributes (Alt/ActualText/Lang/…), page, and own text. Returns an empty tree when the
+    /// document has no <c>/StructTreeRoot</c>.
+    /// </summary>
+    public Document.TagTree GetTagTree() => Document.TagTreeBuilder.Build(this);
+
+    /// <summary>
     /// Gets the total number of pages
     /// </summary>
     public int PageCount => GetPageCount();

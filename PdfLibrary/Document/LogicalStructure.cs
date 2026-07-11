@@ -181,6 +181,35 @@ internal static class LogicalStructure
                 yield return kid;
     }
 
+    /// <summary>The document's <c>/StructTreeRoot</c> dictionary, or null when it is not a Tagged PDF.</summary>
+    internal static PdfDictionary? StructTreeRootDictionary(PdfDocument document) =>
+        Resolve(document, StructTreeRoot(document)) as PdfDictionary;
+
+    /// <summary>
+    /// The marked-content identifiers of <paramref name="element"/>'s <em>own</em> content (its <c>/K</c>
+    /// integer MCIDs and <c>/MCR</c> references — child structure elements and <c>/OBJR</c> annotations are
+    /// excluded), each paired with the page it is on. An MCID's page is the reference's <c>/Pg</c>, else the
+    /// element's <c>/Pg</c>, else <paramref name="inheritedPage"/> (the nearest ancestor's page).
+    /// </summary>
+    internal static IEnumerable<(int Mcid, PdfDictionary? Page)> ContentMcids(
+        PdfDocument document, PdfDictionary element, PdfDictionary? inheritedPage)
+    {
+        PdfDictionary? elementPage = Resolve(document, element.Get("Pg")) as PdfDictionary ?? inheritedPage;
+        foreach (PdfObject kidObj in KidObjects(document, element))
+        {
+            switch (Resolve(document, kidObj))
+            {
+                case PdfInteger mcid:
+                    yield return (mcid.Value, elementPage);
+                    break;
+                case PdfDictionary mcr when ResolveName(document, mcr.Get("Type")) == "MCR"
+                                            && Resolve(document, mcr.Get("MCID")) is PdfInteger m:
+                    yield return (m.Value, Resolve(document, mcr.Get("Pg")) as PdfDictionary ?? elementPage);
+                    break;
+            }
+        }
+    }
+
     // ── internals ─────────────────────────────────────────────────────────────────────────────────────
 
     private static PdfObject? StructTreeRoot(PdfDocument document) =>

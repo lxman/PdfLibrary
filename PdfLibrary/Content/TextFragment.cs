@@ -23,5 +23,11 @@ public class TextFragment
     /// correctly word-joined assembled text and map match ranges back to fragments.</summary>
     public int TextOffset { get; init; }
 
+    /// <summary>The marked-content identifier (<c>/MCID</c>) of the enclosing tagged marked-content
+    /// sequence, or null when the text is untagged or inside an <c>/Artifact</c>. Links the fragment to a
+    /// logical-structure element (the tag tree references content by MCID). Populated for content shown
+    /// directly on the page; text inside a Form XObject is attributed to the MCID active at its <c>/Do</c>.</summary>
+    public int? Mcid { get; init; }
+
     public override string ToString() => $"{Text} at ({X:F2}, {Y:F2}) {FontName} {FontSize}pt";
 }
