@@ -85,7 +85,11 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // and widened to every intent site — so beyond 6-2-5-t05-fail-a (ExtGState /RI, was already caught,
             // now at 6.2.6) it newly catches 6-2-6-t01-fail-a (inline image /Intent), 6-2-2-t02-fail-a (the ri
             // operator) and 6-2-8-1-t03-fail-a (image XObject /Intent) — all "Custom" values.
-            [ConformanceProfile.PdfA2b] = 537,
+            // Slice 33 — Separation/DeviceN for PDF/A (6.2.4.4) adds +7 (537 → 544): the PDF/X-4 spot-colour
+            // rules (pdfx-separation-consistency, pdfx-nchannel-colorants) were widened to PDF/A, catching the
+            // 4 t03 same-name-Separation-inconsistency fixtures and the 3 t02 DeviceN-/Colorants fixtures. t01
+            // (device alternate space without an output intent) was already caught by device-colour.
+            [ConformanceProfile.PdfA2b] = 544,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
