@@ -83,11 +83,22 @@ public static class Preflighter
         // Phase 3b: structure-tree relationship semantics (ISO 32000-1 14.8.4).
         new Rules.UaStandardTypeRule(),
         new Rules.UaStructureNestingRule(),
+        new Rules.UaHeadingsRule(),
         new Rules.UaTableGridRule(),
         new Rules.UaTextAttributeLangRule(),
         new Rules.UaObjectLangRule(),
+        // Slice B1 — natural language for non-structure-element text (7.2 t24/t25/t33): annotation
+        // /Contents, form-field /TU, and XMP language-alternative metadata.
+        new Rules.UaContentLangRule(),
         new Rules.UaLanguageTagRule(),
         new Rules.UaAnnotationRule(),
+        // Slice 23 — structural bucket: suspects (7.1), Note IDs (7.9), reference XObjects (7.20).
+        // (OptionalContentRule, above, is widened to PDF/UA-1 clause 7.10 in the same slice.)
+        new Rules.UaSuspectsRule(),
+        new Rules.UaNoteIdRule(),
+        new Rules.UaReferenceXObjectRule(),
+        // Slice B2 — Form XObject MCID reuse (7.20 t2 / Matterhorn 30-002): a tagged form drawn more than once.
+        new Rules.UaXObjectMcidRule(),
     ];
 
     /// <summary>
