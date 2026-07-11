@@ -86,6 +86,14 @@ namespace FontParser.Tables.Cff.Type1
         public int NominalWidthX { get; private set; }
 
         /// <summary>
+        /// Default advance width for glyphs whose CharString omits the optional leading width operand.
+        /// Per the CFF spec (Technical Note #5176, §16) an omitted width means advance = defaultWidthX;
+        /// nominalWidthX only forms the base of an *encoded* width delta. For a CID-keyed CFF this is the
+        /// top DICT value; the authoritative per-FD value is resolved in <see cref="GetGlyphOutline(int)"/>.
+        /// </summary>
+        public int DefaultWidthX { get; private set; }
+
+        /// <summary>
         /// Font matrix from CFF Top DICT
         /// </summary>
         public List<double>? FontMatrix
@@ -205,15 +213,18 @@ namespace FontParser.Tables.Cff.Type1
                 return null;
 
             // For CID-keyed CFF, each glyph is assigned to one of multiple font dicts via the
-            // FDSelect table; subroutines and nominalWidthX are per-FD, not table-wide.
+            // FDSelect table; subroutines, nominalWidthX and defaultWidthX are per-FD, not table-wide.
             List<List<byte>> localSubrs = _localSubroutines;
             int nominalWidth = NominalWidthX;
+            int defaultWidth = DefaultWidthX;
             if (_cidFdSelect is not null &&
                 _cidFdSelect.TryGetValue((ushort)glyphIndex, out NameDictEntry? fd))
             {
                 localSubrs = fd.LocalSubroutines;
                 object? nwxOp = fd.Private.Find(e => e.Name == "nominalWidthX")?.Operand;
                 nominalWidth = nwxOp is null ? 0 : Convert.ToInt32(nwxOp);
+                object? dwxOp = fd.Private.Find(e => e.Name == "defaultWidthX")?.Operand;
+                defaultWidth = dwxOp is null ? 0 : Convert.ToInt32(dwxOp);
             }
 
             var parser = new CharStringParser(
@@ -221,7 +232,8 @@ namespace FontParser.Tables.Cff.Type1
                 RawCharStrings[glyphIndex],
                 GlobalSubroutines,
                 localSubrs,
-                nominalWidth
+                nominalWidth,
+                defaultWidth
             );
 
             GlyphOutline outline = parser.ParseToOutline();
@@ -367,6 +379,7 @@ namespace FontParser.Tables.Cff.Type1
             RawCharStrings = charStrings.Data;
             GlobalSubroutines = globalSubroutines;
             NominalWidthX = Convert.ToInt32(_type1PrivateDictOperatorEntries.FirstOrDefault(e => e.Name == "nominalWidthX")?.Operand ?? 0);
+            DefaultWidthX = Convert.ToInt32(_type1PrivateDictOperatorEntries.FirstOrDefault(e => e.Name == "defaultWidthX")?.Operand ?? 0);
 
             foreach (
                 CharStringParser parser in
@@ -378,7 +391,8 @@ namespace FontParser.Tables.Cff.Type1
                             bytes,
                             globalSubroutines,
                             _localSubroutines,
-                            NominalWidthX
+                            NominalWidthX,
+                            DefaultWidthX
                         )
                     )
             )
@@ -399,7 +413,8 @@ namespace FontParser.Tables.Cff.Type1
                 charString,
                 globalSubroutines,
                 entry.LocalSubroutines,
-                Convert.ToInt32(entry.Private.FirstOrDefault(e => e.Name == "nominalWidthX")?.Operand ?? 0)
+                Convert.ToInt32(entry.Private.FirstOrDefault(e => e.Name == "nominalWidthX")?.Operand ?? 0),
+                Convert.ToInt32(entry.Private.FirstOrDefault(e => e.Name == "defaultWidthX")?.Operand ?? 0)
             );
             CharStringList.Add(parser.Parse());
         }

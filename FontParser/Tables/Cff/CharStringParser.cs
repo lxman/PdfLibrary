@@ -19,6 +19,7 @@ namespace FontParser.Tables.Cff
         private readonly List<List<byte>> _localSubroutines;
         private readonly SubroutineNester _nester = new();
         private readonly int _nominalWidthX;
+        private readonly int _defaultWidthX;
         private readonly int _globalOffset;
         private readonly int _localOffset;
         private readonly List<byte> _originalBytes;
@@ -44,7 +45,8 @@ namespace FontParser.Tables.Cff
             List<byte> bytes,
             List<List<byte>> globalSubroutines,
             List<List<byte>> localSubroutines,
-            int nominalWidthX)
+            int nominalWidthX,
+            int defaultWidthX)
         {
             _stack.Capacity = capacity;
             _bytes = bytes;
@@ -52,6 +54,7 @@ namespace FontParser.Tables.Cff
             _globalSubroutines = globalSubroutines;
             _localSubroutines = localSubroutines;
             _nominalWidthX = nominalWidthX;
+            _defaultWidthX = defaultWidthX;
             _globalOffset = ComputeOffset(_globalSubroutines.Count);
             _localOffset = ComputeOffset(_localSubroutines.Count);
         }
@@ -520,7 +523,10 @@ namespace FontParser.Tables.Cff
                 _outline.MaxY = _maxY;
             }
 
-            _outline.Width = _width;
+            // Per the CFF spec, a CharString that omits the optional leading width operand takes the
+            // font/FD's defaultWidthX as its advance; only an *encoded* width is nominalWidthX + delta
+            // (handled in WidthCalculation). So the true advance is always resolvable here.
+            _outline.Width = _width ?? _defaultWidthX;
             return _outline;
         }
 

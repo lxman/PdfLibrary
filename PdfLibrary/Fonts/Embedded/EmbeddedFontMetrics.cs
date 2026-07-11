@@ -850,9 +850,11 @@ internal class EmbeddedFontMetrics
         if (!_isCffFont || _cffTable is null) return 0;
         CffGlyphOutline? glyphOutline = _cffTable.GetGlyphOutline(glyphId);
         if (glyphOutline is null) return 0;
-        // If Width is specified in the CharString, use it
-        // Otherwise use nominalWidthX (the default width for the font)
-        float width = glyphOutline.Width ?? _cffTable.NominalWidthX;
+        // The parser now always resolves an advance: an encoded width (nominalWidthX + delta) or, when the
+        // CharString omits it, the font/FD's defaultWidthX. The coalesce is a belt-and-braces fallback to
+        // defaultWidthX (NOT nominalWidthX — that is only the base of an encoded delta, never a standalone
+        // advance; using it here was the source of the hundreds-of-units CFF advance divergence).
+        float width = glyphOutline.Width ?? _cffTable.DefaultWidthX;
         // Width is already in font units (CFF uses 1000 units per em)
         return (ushort)Math.Round(width);
 
