@@ -67,7 +67,11 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Slice 27 — subset CharSet/CIDSet (font-subset-coverage, 6.2.11.4.2) adds +2 (522 → 524),
             // measured by toggling the rule off/on: it is the sole rule that catches 6-2-11-4-2-t01-fail-a
             // (Type1 /CharSet) and 6-2-11-4-2-t02-fail-a (CIDFontType2 /CIDSet).
-            [ConformanceProfile.PdfA2b] = 524,
+            // Slice 29 — CIDFontType0 advance-width (font-program 6.2.11.5 extended from CIDFontType2-only to
+            // both Type0 descendant kinds, on the back of the CFF defaultWidthX parser fix) adds +1
+            // (524 → 525): it is the sole rule that catches 6-2-11-5-t01-fail-e (Type0/CIDFontType0/CFF),
+            // the corpus's only CIDFontType0 width-fail fixture. fail-f (CIDFontType2) was already caught.
+            [ConformanceProfile.PdfA2b] = 525,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
@@ -103,6 +107,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // (U+FFFE) and -t02-fail-c (U+FEFF); t01-fail-a stays ua-text-unicode's (7.21.7 test 1).
             // The UA forbidden set {U+0000, U+FFFE, U+FEFF} is a strict subset of the A-2u set, so PdfA2u
             // detection is unchanged (7, floor 6).
+            //
+            // Slice 29 — CIDFontType0 advance-width (font-program 7.21.5 ≡ 6.2.11.5): +0 for PdfUA1. The
+            // clause's only UA fail fixture (7.21.5-t01-fail-a) is TrueType/Type1, not CIDFontType0, so the
+            // widened check adds no UA detection even though it adds +1 to PdfA2b (6-2-11-5-t01-fail-e).
             [ConformanceProfile.PdfUA1] = 134,
         };
 
