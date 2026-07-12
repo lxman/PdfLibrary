@@ -1761,16 +1761,26 @@ internal class PdfRenderer : PdfContentProcessor
         // no mask) — those group-level values are consumed by the group composite, not the inner objects.
         void RunFormContent(IRenderTarget target)
         {
+            // A Form XObject inherits the FULL graphics state in effect at the Do operator — fill/stroke
+            // colour, line width, dash, etc. — not just the CTM (ISO 32000-1 §8.10.1). Clone the current
+            // state (only the CTM is replaced by the form's concatenated matrix) rather than starting
+            // from defaults, which painted inherited-colour fills black (matplotlib contourf regions set
+            // the colour on the page, then fill inside a form that relies on it). For a transparency
+            // GROUP the group-level alpha / blend / soft-mask active at the Do are consumed by the group
+            // composite, so they are reset to defaults on the inner content; a non-group form inherits
+            // them (the /ca watermark-opacity behaviour).
+            PdfGraphicsState formState = CurrentState.Clone();
+            formState.Ctm = formCtm;
+            if (isGroup)
+            {
+                formState.FillAlpha = 1.0;
+                formState.StrokeAlpha = 1.0;
+                formState.BlendMode = "Normal";
+                formState.SoftMask = null;
+            }
             var formRenderer = new PdfRenderer(target, formResources ?? _resources, _optionalContentManager, _document, _fixupManager, _fontProvider)
             {
-                CurrentState =
-                {
-                    Ctm = formCtm,
-                    FillAlpha = isGroup ? 1.0 : CurrentState.FillAlpha,
-                    StrokeAlpha = isGroup ? 1.0 : CurrentState.StrokeAlpha,
-                    BlendMode = isGroup ? "Normal" : CurrentState.BlendMode,
-                    AlphaIsShape = CurrentState.AlphaIsShape
-                }
+                CurrentState = formState
             };
             target.SaveState();
             target.ApplyCtm(formCtm);      // CurrentState.Ctm is set directly, which doesn't trigger OnMatrixChanged

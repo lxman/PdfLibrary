@@ -11,7 +11,7 @@ namespace PdfLibrary.Content;
 public abstract class PdfContentProcessor
 {
     private readonly Stack<PdfGraphicsState> _stateStack = new();
-    protected PdfGraphicsState CurrentState { get; private set; } = new();
+    protected PdfGraphicsState CurrentState { get; set; } = new();
 
     /// <summary>
     /// Tracks whether a clipping operator (W or W*) is pending.
