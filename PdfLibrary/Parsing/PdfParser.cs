@@ -164,6 +164,12 @@ internal class PdfParser(PdfLexer lexer)
             // Check for indirect reference (N G R)
             case PdfTokenType.R:
                 NextToken(); // Consume R
+                // Object number 0 is the head of the cross-reference free list and is never a real
+                // object, so "0 0 R" (emitted by some producers, e.g. Nlview) is a reference to the
+                // null object (ISO 32000-1 §7.3.10). PdfIndirectReference requires a positive object
+                // number, so resolve it here rather than constructing an invalid reference.
+                if (objectNumber <= 0)
+                    return PdfNull.Instance;
                 return new PdfIndirectReference(objectNumber, generationNumber);
             // Check for indirect object definition (N G obj)
             case PdfTokenType.Obj:
