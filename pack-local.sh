@@ -19,6 +19,7 @@ PELLUCID_ROOT="${1:-$(cd "$SCRIPT_DIR/../Pellucid" && pwd)}"
 CONFIGURATION="${2:-Release}"
 
 CSPROJ="$SCRIPT_DIR/PdfLibrary/PdfLibrary.csproj"
+RENDERING_SKIA_CSPROJ="$SCRIPT_DIR/PdfLibrary.Rendering.Skia/PdfLibrary.Rendering.Skia.csproj"
 FEED="$SCRIPT_DIR/local-feed"
 
 # Base version comes from the library csproj so it never drifts from what the package will publish as.
@@ -33,6 +34,15 @@ mkdir -p "$FEED"
 
 echo "Packing Lxman.PdfLibrary $VER -> $FEED"
 dotnet pack "$CSPROJ" -c "$CONFIGURATION" -p:PackageVersion="$VER" -o "$FEED"
+
+# PdfLibrary.Rendering.Skia packs at its own <Version> (no override here): -p:PackageVersion is an
+# MSBuild global property, so passing it on this command line would also override the PackageVersion
+# evaluation of the ProjectReference to PdfLibrary.csproj built as part of this same invocation,
+# corrupting the emitted "Lxman.PdfLibrary" dependency version in this package's own nuspec (it would
+# read the Rendering.Skia override instead of core's real version). Letting each project use its own
+# <Version> keeps that dependency edge correct.
+echo "Packing Lxman.PdfLibrary.Rendering.Skia -> $FEED"
+dotnet pack "$RENDERING_SKIA_CSPROJ" -c "$CONFIGURATION" -o "$FEED"
 
 # Pin Pellucid to this exact dev build (gitignored override). A changed build prop forces Pellucid's
 # next 'dotnet build' to re-restore deterministically — no --force needed.
