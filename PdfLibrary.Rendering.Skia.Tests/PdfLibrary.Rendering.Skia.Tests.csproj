@@ -29,4 +29,8 @@
     <ProjectReference Include="..\PdfLibrary.Rendering.Skia\PdfLibrary.Rendering.Skia.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Assets\back__4.pdf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

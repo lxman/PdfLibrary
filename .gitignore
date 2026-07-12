@@ -7,6 +7,8 @@ logs/
 *.pdf
 # Known-conformant PDF/A test fixture (CC BY 4.0) — must be tracked despite *.pdf
 !PdfLibrary.Tests/Resources/conformant-pdfa2b.pdf
+# cairo-generated tiling-pattern regression fixture (back__4.pdf, cairo 1.10.2) — must be tracked despite *.pdf
+!PdfLibrary.Rendering.Skia.Tests/Assets/back__4.pdf
 # Local NuGet feed for Pellucid co-development dev packs (never committed)
 local-feed/
 .claude/
