@@ -106,6 +106,16 @@ internal class Type3Font : PdfFont
         return _defaultWidth > 0 ? _defaultWidth : 500;
     }
 
+    /// <summary>
+    /// Text-space advance width (in em fractions) for <paramref name="charCode"/>: the glyph-space
+    /// width mapped through the horizontal component of the /FontMatrix. Multiply by the font size to
+    /// get the text-space advance. Unlike standard fonts (implicit 1/1000 glyph space), a Type 3 font
+    /// declares its own FontMatrix — Chrome/Skia uses 1/2048 — so the width must NOT be divided by a
+    /// hardcoded 1000. For the default 1/1000 matrix this reduces to width/1000 (ISO 32000-1 §9.2.4).
+    /// </summary>
+    public double GetGlyphAdvanceWidth(int charCode)
+        => GetCharacterWidth(charCode) * FontMatrix[0];
+
     private void LoadEncoding()
     {
         if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))

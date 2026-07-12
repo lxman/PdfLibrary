@@ -1204,7 +1204,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// <summary>
     /// Advances the text position for Type3 fonts without rendering (for Tj operator).
     /// </summary>
-    private void AdvanceTextPositionForType3Simple(PdfString text, PdfFont font)
+    private void AdvanceTextPositionForType3Simple(PdfString text, Type3Font font)
     {
         double totalAdvance = 0;
         byte[] bytes = text.Bytes;
@@ -1212,8 +1212,8 @@ internal class PdfRenderer : PdfContentProcessor
         for (var i = 0; i < bytes.Length; i++)
         {
             int charCode = bytes[i];
-            double glyphWidth = font.GetCharacterWidth(charCode);
-            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            // Type3 width -> text space via /FontMatrix (not a hardcoded 1/1000).
+            double advance = font.GetGlyphAdvanceWidth(charCode) * CurrentState.FontSize;
 
             // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple (single-byte)
             // fonts, so Tw applies whenever the shown code is 32.
@@ -1234,7 +1234,7 @@ internal class PdfRenderer : PdfContentProcessor
     /// Type3 fonts have their glyphs rendered as vector paths, but we still need
     /// to advance the text position properly for subsequent text operations.
     /// </summary>
-    private void AdvanceTextPositionForType3(PdfArray array, PdfFont font)
+    private void AdvanceTextPositionForType3(PdfArray array, Type3Font font)
     {
         double totalAdvance = 0;
 
@@ -1248,8 +1248,8 @@ internal class PdfRenderer : PdfContentProcessor
                     for (var i = 0; i < bytes.Length; i++)
                     {
                         int charCode = bytes[i];
-                        double glyphWidth = font.GetCharacterWidth(charCode);
-                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        // Type3 width -> text space via /FontMatrix (not a hardcoded 1/1000).
+                        double advance = font.GetGlyphAdvanceWidth(charCode) * CurrentState.FontSize;
 
                         // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple
                         // (single-byte) fonts, so Tw applies whenever the shown code is 32.
@@ -1352,8 +1352,9 @@ internal class PdfRenderer : PdfContentProcessor
             // Advance text position
             // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple (single-byte)
             // fonts, so Tw applies whenever the shown code is 32.
-            double glyphWidth = type3Font.GetCharacterWidth(charCode);
-            double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+            // Type3 widths are in the font's own glyph space; scale to text space via /FontMatrix
+            // (Chrome/Skia uses 1/2048), NOT a hardcoded 1/1000.
+            double advance = type3Font.GetGlyphAdvanceWidth(charCode) * CurrentState.FontSize;
 
             if (CurrentState.CharacterSpacing != 0)
                 advance += CurrentState.CharacterSpacing;
@@ -1428,8 +1429,9 @@ internal class PdfRenderer : PdfContentProcessor
                         // Advance text position
                         // ISO 32000-1 §9.4.4: tx = (w0×Tfs + Tc + Tw) × Th — Type3 fonts are simple
                         // (single-byte) fonts, so Tw applies whenever the shown code is 32.
-                        double glyphWidth = type3Font.GetCharacterWidth(charCode);
-                        double advance = glyphWidth * CurrentState.FontSize / 1000.0;
+                        // Type3 widths are in the font's own glyph space; scale to text space via
+                        // /FontMatrix (Chrome/Skia uses 1/2048), NOT a hardcoded 1/1000.
+                        double advance = type3Font.GetGlyphAdvanceWidth(charCode) * CurrentState.FontSize;
 
                         if (CurrentState.CharacterSpacing != 0)
                             advance += CurrentState.CharacterSpacing;
