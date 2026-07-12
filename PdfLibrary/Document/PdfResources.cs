@@ -218,6 +218,24 @@ internal class PdfResources
     }
 
     /// <summary>
+    /// Gets a pattern resource as its raw resolved object: a <see cref="PdfStream"/> for a tiling
+    /// pattern (PatternType 1, which carries a content stream) or a <see cref="PdfDictionary"/> for a
+    /// shading pattern (PatternType 2, which has no stream). <see cref="GetPattern"/> only returns the
+    /// stream form, so shading patterns — dictionaries — must be fetched through this.
+    /// </summary>
+    public PdfObject? GetPatternObject(string name)
+    {
+        PdfDictionary? patterns = GetPatterns();
+        if (patterns is null || !patterns.TryGetValue(new PdfName(name), out PdfObject? obj))
+            return null;
+
+        if (obj is PdfIndirectReference reference && _document is not null)
+            obj = _document.ResolveReference(reference);
+
+        return obj;
+    }
+
+    /// <summary>
     /// Gets the Shading resources dictionary
     /// Maps shading names to shading dictionaries
     /// </summary>

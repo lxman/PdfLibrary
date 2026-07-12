@@ -599,19 +599,35 @@ internal class PdfRenderer : PdfContentProcessor
             return;
         }
 
-        // Get the pattern stream from resources
-        PdfStream? patternStream = _currentResources.GetPattern(patternName);
-        if (patternStream is null)
+        // A shading pattern (PatternType 2) is a dictionary; a tiling pattern (type 1) is a stream that
+        // carries its content. Fetch the raw object and take its dictionary from whichever shape it is —
+        // GetPattern returns only the stream form, so shading patterns (dictionaries) came back null and
+        // every gradient fill was silently skipped.
+        PdfObject? patternObj = _currentResources.GetPatternObject(patternName);
+        PdfDictionary? patternDict = patternObj switch
+        {
+            PdfStream s => s.Dictionary,
+            PdfDictionary d => d,
+            _ => null
+        };
+        if (patternDict is null)
         {
             PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: Pattern '{patternName}' not found in resources");
             return;
         }
 
         // PatternType 2 = shading pattern (axial/radial gradient); handled separately from tiling (type 1).
-        if (patternStream.Dictionary.TryGetValue(new PdfName("PatternType"), out PdfObject? ptObj)
+        if (patternDict.TryGetValue(new PdfName("PatternType"), out PdfObject? ptObj)
             && ptObj is PdfInteger { Value: 2 })
         {
-            FillWithShadingPattern(path, evenOdd, patternName, patternStream.Dictionary);
+            FillWithShadingPattern(path, evenOdd, patternName, patternDict);
+            return;
+        }
+
+        // Tiling pattern (type 1) — needs the content stream.
+        if (patternObj is not PdfStream patternStream)
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"PATTERN FILL: Pattern '{patternName}' is not a tiling-pattern stream");
             return;
         }
 
