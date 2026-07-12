@@ -9,7 +9,7 @@
     <IsPackable>true</IsPackable>
     <PackageId>Lxman.PdfLibrary.Rendering.Skia</PackageId>
     <Title>PdfLibrary.Rendering.Skia</Title>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Michael Jordan</Authors>
     <Description>SkiaSharp display-list renderer for Lxman.PdfLibrary: walks a PageDrawList onto an SKCanvas. Cross-platform on .NET 8, 9, and 10.</Description>
     <PackageTags>pdf;pdf-renderer;skiasharp;rendering;pdf-to-image;csharp;cross-platform</PackageTags>
@@ -22,7 +22,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="SkiaSharp" Version="4.150.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup>
