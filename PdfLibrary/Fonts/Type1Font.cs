@@ -171,47 +171,18 @@ internal partial class Type1Font : PdfFont
     /// <summary>
     /// Gets the width for a character in a standard 14 font by glyph name.
     /// This is the preferred method for custom encodings where charCode != standard ASCII.
+    /// Delegates to <see cref="Standard14Metrics"/>, which normalises Windows/base-font aliases
+    /// (Arial→Helvetica, TimesNewRoman→Times-Roman, CourierNew→Courier) to the canonical names.
     /// </summary>
     private double? GetStandardFontWidthByName(string glyphName)
-    {
-        if (string.IsNullOrEmpty(BaseFont) || string.IsNullOrEmpty(glyphName))
-            return null;
-
-        return BaseFont switch
-        {
-            // Each font variant has different widths - must use correct AFM data
-            "Helvetica" or "Helvetica-Oblique" => GetHelveticaWidthByName(glyphName),
-            "Helvetica-Bold" or "Helvetica-BoldOblique" => GetHelveticaBoldWidthByName(glyphName),
-            "Times-Roman" => GetTimesRomanWidthByName(glyphName),
-            "Times-Bold" => GetTimesBoldWidthByName(glyphName),
-            "Times-Italic" => GetTimesItalicWidthByName(glyphName),
-            "Times-BoldItalic" => GetTimesBoldItalicWidthByName(glyphName),
-            "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
-            _ => null
-        };
-    }
+        => Standard14Metrics.WidthByName(BaseFont, glyphName);
 
     /// <summary>
     /// Gets the width for a character in a standard 14 font by charCode (fallback).
     /// Only used when no encoding is available or glyph name lookup fails.
     /// </summary>
     private double? GetStandardFontWidth(int charCode)
-    {
-        if (string.IsNullOrEmpty(BaseFont))
-            return null;
-
-        return BaseFont switch
-        {
-            // Standard 14 fonts have built-in metrics from Adobe AFM files
-            // Helvetica and Helvetica-Oblique share the same widths (oblique is just slanted)
-            "Helvetica" or "Helvetica-Oblique" => GetHelveticaWidth(charCode),
-            // Helvetica-Bold and Helvetica-BoldOblique share the same widths
-            "Helvetica-Bold" or "Helvetica-BoldOblique" => GetHelveticaBoldWidth(charCode),
-            "Times-Roman" or "Times-Bold" or "Times-Italic" or "Times-BoldItalic" => GetTimesRomanWidth(charCode),
-            "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
-            _ => null
-        };
-    }
+        => Standard14Metrics.WidthByCode(BaseFont, charCode);
 
     internal override EmbeddedFontMetrics? GetEmbeddedMetrics()
     {

@@ -1,12 +1,123 @@
 namespace PdfLibrary.Fonts;
 
 /// <summary>
-/// Adobe AFM character widths for the standard-14 fonts (Helvetica/Times families).
-/// Partial-class continuation of Type1Font, extracted from Type1Font.cs so the
-/// width-lookup dispatchers there stay readable. Pure data; no behavior change.
+/// Adobe AFM advance-width metrics for the Standard-14 fonts (Helvetica/Times/Courier families),
+/// plus /BaseFont-name normalisation (ISO 32000-1 §9.6.2.1 / §9.10.1).
+///
+/// A non-embedded simple font (Type1 or TrueType) may legally omit its /Widths array; the viewer
+/// must then lay the text out with the AFM metrics of the Standard-14 font the /BaseFont maps to.
+/// The mapping covers the Windows aliases producers emit — TimesNewRoman→Times-Roman,
+/// Arial,Bold→Helvetica-Bold, CourierNew→Courier — as well as the canonical PostScript names.
+/// Shared by <see cref="TrueTypeFont"/> and <see cref="Type1Font"/>.
 /// </summary>
-internal partial class Type1Font
+internal static class Standard14Metrics
 {
+    /// <summary>
+    /// Canonical Standard-14 PostScript name for <paramref name="baseFont"/> (e.g. "Times-Bold"), or
+    /// null when the name is not a recognised Standard-14 family. Strips a subset tag ("ABCDEF+"),
+    /// splits "Family-Style"/"Family,Style", and folds bold/italic(oblique) style flags.
+    /// </summary>
+    public static string? CanonicalName(string? baseFont)
+    {
+        if (string.IsNullOrWhiteSpace(baseFont))
+            return null;
+
+        string name = baseFont;
+        int plus = name.IndexOf('+');
+        if (plus == 6) name = name[(plus + 1)..];          // strip "ABCDEF+" subset tag
+
+        string core = name, style = string.Empty;
+        int sep = name.IndexOfAny(['-', ',']);
+        if (sep >= 0)
+        {
+            core = name[..sep];
+            style = name[(sep + 1)..];
+        }
+
+        string c = core.Replace(" ", string.Empty).ToLowerInvariant();
+        string s = style.Replace(" ", string.Empty).ToLowerInvariant();
+        bool bold = s.Contains("bold");
+        bool italic = s.Contains("italic") || s.Contains("oblique");
+
+        return c switch
+        {
+            "times" or "timesroman" or "timesnewroman" or "timesnewromanps" or "timesnewromanpsmt" =>
+                (bold, italic) switch
+                {
+                    (true, true) => "Times-BoldItalic",
+                    (true, false) => "Times-Bold",
+                    (false, true) => "Times-Italic",
+                    _ => "Times-Roman"
+                },
+            "helvetica" or "arial" or "arialmt" or "helv" =>
+                (bold, italic) switch
+                {
+                    (true, true) => "Helvetica-BoldOblique",
+                    (true, false) => "Helvetica-Bold",
+                    (false, true) => "Helvetica-Oblique",
+                    _ => "Helvetica"
+                },
+            "courier" or "couriernew" or "couriernewps" or "couriernewpsmt" =>
+                (bold, italic) switch
+                {
+                    (true, true) => "Courier-BoldOblique",
+                    (true, false) => "Courier-Bold",
+                    (false, true) => "Courier-Oblique",
+                    _ => "Courier"
+                },
+            "symbol" => "Symbol",
+            "zapfdingbats" or "dingbats" => "ZapfDingbats",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// AFM advance width (1000-unit em) for the glyph named <paramref name="glyphName"/> in the
+    /// Standard-14 font <paramref name="baseFont"/> maps to, or null when the name is not a
+    /// recognised Standard-14 family or no glyph name is supplied. This is the preferred lookup:
+    /// it is encoding-correct because the caller resolves charCode→glyphName through the font's
+    /// /Encoding first.
+    /// </summary>
+    public static double? WidthByName(string? baseFont, string? glyphName)
+    {
+        if (string.IsNullOrEmpty(glyphName))
+            return null;
+        string? canonical = CanonicalName(baseFont);
+        if (canonical is null)
+            return null;
+
+        return canonical switch
+        {
+            "Helvetica" or "Helvetica-Oblique" => GetHelveticaWidthByName(glyphName),
+            "Helvetica-Bold" or "Helvetica-BoldOblique" => GetHelveticaBoldWidthByName(glyphName),
+            "Times-Roman" => GetTimesRomanWidthByName(glyphName),
+            "Times-Bold" => GetTimesBoldWidthByName(glyphName),
+            "Times-Italic" => GetTimesItalicWidthByName(glyphName),
+            "Times-BoldItalic" => GetTimesBoldItalicWidthByName(glyphName),
+            "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// AFM advance width by raw character code, used only when no glyph name is available (no
+    /// /Encoding). Returns null when the base font is not a recognised Standard-14 family.
+    /// </summary>
+    public static double? WidthByCode(string? baseFont, int charCode)
+    {
+        string? canonical = CanonicalName(baseFont);
+        if (canonical is null)
+            return null;
+
+        return canonical switch
+        {
+            "Helvetica" or "Helvetica-Oblique" => GetHelveticaWidth(charCode),
+            "Helvetica-Bold" or "Helvetica-BoldOblique" => GetHelveticaBoldWidth(charCode),
+            "Times-Roman" or "Times-Bold" or "Times-Italic" or "Times-BoldItalic" => GetTimesRomanWidth(charCode),
+            "Courier" or "Courier-Bold" or "Courier-Oblique" or "Courier-BoldOblique" => 600,
+            _ => null
+        };
+    }
 
     /// <summary>
     /// Helvetica character widths (WinAnsi encoding)

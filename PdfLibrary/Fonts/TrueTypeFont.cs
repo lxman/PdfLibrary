@@ -59,6 +59,17 @@ internal class TrueTypeFont : PdfFont
             }
         }
 
+        // Non-embedded simple font that omits /Widths: lay the text out with the Standard-14 AFM
+        // metrics of the base font this dict names (ISO 32000-1 §9.6.2.1). Acrobat PDFWriter emits
+        // bare /TimesNewRoman, /Arial, /CourierNew dicts (no /Widths, no /FontDescriptor) that rely
+        // on this. Without it every glyph falls through to the 500-unit default below, collapsing all
+        // advances to one width — gaps after narrow glyphs (i/l/f/.), overlap on wide ones (m/W).
+        // Returns null for any non-Standard-14 base font, so other fonts are unaffected.
+        double? afmWidth = Standard14Metrics.WidthByName(BaseFont, Encoding?.GetGlyphName(charCode))
+                           ?? Standard14Metrics.WidthByCode(BaseFont, charCode);
+        if (afmWidth.HasValue)
+            return afmWidth.Value;
+
         // Try to get from font descriptor
         PdfFontDescriptor? descriptor = GetDescriptor();
         if (descriptor is null) return _defaultWidth > 0
