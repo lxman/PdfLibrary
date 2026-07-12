@@ -60,6 +60,8 @@
   <Project Path="FontParser.Tests/FontParser.Tests.csproj" />
   <Project Path="Logging/Logging.csproj" />
   <Project Path="PdfLibrary.Integration/PdfLibrary.Integration.csproj" />
+  <Project Path="PdfLibrary.Rendering.Skia/PdfLibrary.Rendering.Skia.csproj" />
+  <Project Path="PdfLibrary.Rendering.Skia.Tests/PdfLibrary.Rendering.Skia.Tests.csproj" />
   <Project Path="PdfLibrary.Rendering.SkiaSharp/PdfLibrary.Rendering.SkiaSharp.csproj" />
   <Project Path="PdfLibrary.Rendering.Svg/PdfLibrary.Rendering.Svg.csproj" />
   <Project Path="PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj" />
