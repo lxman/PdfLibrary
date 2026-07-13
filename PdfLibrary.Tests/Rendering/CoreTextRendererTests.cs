@@ -39,6 +39,65 @@ public class CoreTextRendererTests
     }
 
     [Fact]
+    public void Render_RotatedEmbeddedText_AdvancesGlyphsInTextMatrixDirection()
+    {
+        // A 180°-rotated run (Tm.M11 < 0, positive font size) must place successive glyphs in the
+        // SAME direction as the between-run pen motion — AdvanceTextMatrix(totalAdvance, 0) with a
+        // POSITIVE advance (PdfRenderer.cs:913), which the M11<0 matrix maps to DECREASING user X.
+        // CoreTextRenderer.Advance negated the per-glyph advance (flipX), marching glyphs the
+        // opposite way (increasing X) — fighting the between-run motion and jumbling upside-down
+        // lines (PDFUA-Ref-2-08 page 2 answer key). Embedded-font path.
+        byte[] fontBytes = File.ReadAllBytes(
+            Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+
+        byte[] pdf = PdfDocumentBuilder.Create()
+            .LoadFont(fontBytes, "Pixel")
+            .AddPage(p => p.AddText("ABCDEF", 300, 400).Font("Pixel", 24).Rotate(180))
+            .ToByteArray();
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+
+        var target = new RecordingRenderTarget();
+        doc.GetPage(0)!.Render(target);
+
+        List<double> xs = target.FillPaths.Select(f => MeanPathX(f.Path)).ToList();
+        Assert.True(xs.Count >= 4, $"expected >=4 glyph fills, got {xs.Count}");
+
+        for (var i = 1; i < xs.Count; i++)
+            Assert.True(xs[i] < xs[i - 1],
+                $"glyph {i} X={xs[i]:F1} must advance leftward (decreasing) from glyph {i - 1} " +
+                $"X={xs[i - 1]:F1} under a 180° text matrix; rotated-text advance direction is reversed");
+    }
+
+    [Fact]
+    public void Render_RotatedSubstituteText_AdvancesGlyphsInTextMatrixDirection()
+    {
+        // Same invariant as the embedded case, for the substitute-font path (non-embedded font
+        // resolved via ISystemFontProvider). The substitute loop applied the identical flipX
+        // negation to currentX.
+        byte[] subst = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+
+        byte[] pdf = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("ABCDEF", 300, 400).Font("Helvetica", 24).Rotate(180))
+            .ToByteArray();
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+
+        var target = new RecordingRenderTarget();
+        doc.GetPage(0)!.Render(target, new StubProvider(subst));
+
+        List<double> xs = target.FillPaths.Select(f => MeanPathX(f.Path)).ToList();
+        Assert.True(xs.Count >= 4, $"expected >=4 substitute glyph fills, got {xs.Count}");
+
+        for (var i = 1; i < xs.Count; i++)
+            Assert.True(xs[i] < xs[i - 1],
+                $"substitute glyph {i} X={xs[i]:F1} must advance leftward (decreasing) from glyph {i - 1} " +
+                $"X={xs[i - 1]:F1} under a 180° text matrix; rotated-text advance direction is reversed");
+    }
+
+    [Fact]
     [Trait("Category", "LocalOnly")]   // loads main.pdf, a local-only fixture not present on CI
     public void Render_TextUnderTranslatingCtm_BakesCtmIntoGlyphPath()
     {
@@ -84,6 +143,22 @@ public class CoreTextRendererTests
                 _ => max
             };
         return max;
+    }
+
+    // Mean X of a glyph path's control points — a stable proxy for the glyph's placed origin,
+    // used to compare successive glyphs' horizontal advance direction.
+    private static double MeanPathX(IPathBuilder p)
+    {
+        double sum = 0;
+        var n = 0;
+        foreach (PathSegment s in p.Segments)
+            switch (s)
+            {
+                case MoveToSegment m: sum += m.X; n++; break;
+                case LineToSegment l: sum += l.X; n++; break;
+                case CurveToSegment c: sum += c.X1 + c.X2 + c.X3; n += 3; break;
+            }
+        return n == 0 ? 0 : sum / n;
     }
 
     [Fact]

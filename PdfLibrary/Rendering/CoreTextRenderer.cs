@@ -40,7 +40,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
 
                 ushort glyphId = ResolveGlyphId(metrics, font, charCode, out string? resolvedGlyphName);
 
-                if (glyphId == 0) { Advance(ref currentX, glyphWidths, i, state); continue; }
+                if (glyphId == 0) { Advance(ref currentX, glyphWidths, i); continue; }
 
                 GlyphOutline? outline = metrics.IsType1Font && resolvedGlyphName is not null
                     ? metrics.GetGlyphOutlineByName(resolvedGlyphName)
@@ -50,10 +50,10 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
                 {
                     if (charCode == 151 && i < glyphWidths.Count && glyphWidths[i] > 0.1)
                         RenderEmDash(glyphWidths[i], state, currentX, tHs);
-                    Advance(ref currentX, glyphWidths, i, state);
+                    Advance(ref currentX, glyphWidths, i);
                     continue;
                 }
-                if (outline.IsEmpty) { Advance(ref currentX, glyphWidths, i, state); continue; }
+                if (outline.IsEmpty) { Advance(ref currentX, glyphWidths, i); continue; }
 
                 IPathBuilder glyphSpace =
                     glyphPaths.GetGlyphPath(metrics, glyphId, (float)state.FontSize, outline, resolvedGlyphName);
@@ -68,7 +68,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
 
                 try { EmitGlyph(userPath, state, toUser, applyBold); }
                 catch (Exception ex) { PdfLogger.Log(LogCategory.Text, () => $"glyph emit failed (embedded): {ex.Message}"); }
-                Advance(ref currentX, glyphWidths, i, state);
+                Advance(ref currentX, glyphWidths, i);
             }
 
             return true;
@@ -90,7 +90,6 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         if (state.RenderingMode is 3 or 7) return true;  // invisible — no glyphs needed
 
         float tHs = (float)state.HorizontalScaling / 100f;
-        bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;
         double currentX = 0;
 
         for (var i = 0; i < text.Length; i++)
@@ -127,7 +126,10 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
                 {
                     PdfLogger.Log(LogCategory.Text, () => $"glyph emit failed (substitute): {ex.Message}");
                 }
-                currentX += subW * (flipX ? -1.0 : 1.0);
+                // subW is the signed per-component advance in text space; GlyphToUser maps currentX
+                // through the TextMatrix (which carries the M11 direction), so no flip here — matches
+                // the embedded Advance helper and the between-run AdvanceTextMatrix motion.
+                currentX += subW;
             }
         }
         return true;
@@ -198,12 +200,16 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         return isForceBoldFlag && !embeddedOutlineAlreadyBold;
     }
 
-    private static void Advance(ref double currentX, List<double> glyphWidths, int i, PdfGraphicsState state)
+    private static void Advance(ref double currentX, List<double> glyphWidths, int i)
     {
         if (i >= glyphWidths.Count) return;
-        // XOR: FontSize<0 and TextMatrix.M11<0 each flip; two flips cancel.
-        bool flipX = state.FontSize < 0 != state.TextMatrix.M11 < 0;
-        currentX += glyphWidths[i] * (flipX ? -1.0 : 1.0);
+        // glyphWidths[i] is the spec-correct SIGNED advance in text space (PdfRenderer bakes
+        // glyphWidth*FontSize/1000 + Tc/Tw, *Th). currentX is mapped to user space through the
+        // TextMatrix by GlyphPlacement.GlyphToUser, which already carries the M11 direction — so
+        // the advance must NOT be flipped here. This mirrors the between-run pen motion,
+        // AdvanceTextMatrix(totalAdvance, 0) (PdfGraphicsState), which sums these same widths
+        // with no flip; within-run placement has to agree, or rotated/mirrored lines reverse.
+        currentX += glyphWidths[i];
     }
 
     // === Verbatim port of TextRenderer.ResolveGlyphId (603-702) ===
