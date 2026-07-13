@@ -49,6 +49,14 @@ public class ShadingBuilderColorSpaceTests
     private static (byte C, byte M, byte Y, byte K) Cmyk(uint packed) =>
         ((byte)(packed >> 24), (byte)(packed >> 16), (byte)(packed >> 8), (byte)packed);
 
+    // Builds + resolves an axial shading in one shot: /ColorSpace by name, /Function a type-2
+    // exponential C0 -> C1 (mirrors AxialShading + Type2 above).
+    private static ShadingDescriptor? BuildAxial(string colorSpace, double[] c0, double[] c1)
+    {
+        PdfDictionary shading = AxialShading(new PdfName(colorSpace), Type2(c0, c1));
+        return ShadingBuilder.Build(shading, null);
+    }
+
     [Fact]
     public void Build_SeparationCyan_yields_native_cmyk_stops_and_C_plate()
     {
@@ -126,5 +134,30 @@ public class ShadingBuilderColorSpaceTests
         Assert.True(r0 > 250 && g0 > 250 && b0 > 250, $"stop 0 -> ({r0},{g0},{b0}), expected white");
         (byte r1, byte g1, byte b1) = Rgb(d.Colors[^1]);
         Assert.True(r1 < 5 && g1 < 5 && b1 < 5, $"last stop -> ({r1},{g1},{b1}), expected black");
+    }
+
+    [Fact]
+    public void Build_NonCmykAxial_ExposesRawRgbSampler()
+    {
+        // DeviceRGB axial red -> blue: a CMYK compositor should be able to sample the raw ramp
+        // per-pixel instead of consuming the pre-sampled Colors[] average.
+        ShadingDescriptor? sh = BuildAxial("DeviceRGB", c0: [1, 0, 0], c1: [0, 0, 1]);
+
+        Assert.NotNull(sh);
+        Assert.NotNull(sh!.SampleRgbAt);                       // raw sampler present for non-CMYK
+        uint start = sh.SampleRgbAt!(0f), end = sh.SampleRgbAt!(1f);
+        Assert.True(((start >> 16) & 0xFF) > 200 && (start & 0xFF) < 60, "s=0 ~ red");
+        Assert.True(((end & 0xFF)) > 200 && ((end >> 16) & 0xFF) < 60, "s=1 ~ blue");
+    }
+
+    [Fact]
+    public void Build_CmykAxial_HasNoRawRgbSampler()
+    {
+        // DeviceCMYK axial -> uses the native CmykColors ramp; the raw sRGB sampler stays null.
+        ShadingDescriptor? sh = BuildAxial("DeviceCMYK", c0: [0, 0, 0, 0], c1: [0, 0, 0, 1]);
+
+        Assert.NotNull(sh);
+        Assert.Null(sh!.SampleRgbAt);
+        Assert.NotEmpty(sh.CmykColors);
     }
 }
