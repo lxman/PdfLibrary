@@ -536,6 +536,64 @@ internal class ColorSpaceResolver(PdfDocument? document)
         return (c, m, y, k);
     }
 
+    /// <summary>
+    /// The named-colorant identity for a colour-space RESOURCE NAME, or null for device/Pattern spaces or
+    /// spaces that aren't Separation/DeviceN. Mirrors <see cref="OverprintPlatesFor"/>: called at the same
+    /// PdfRenderer site that sets FillOverprintPlates, using the graphics state's raw (pre-resolution)
+    /// colour-space name and colour components. Soft-Proof SP-1.
+    /// </summary>
+    public static ColorantOrigin? OriginFor(
+        string? csName, IReadOnlyList<double>? rawColor, PdfDictionary? colorSpaces, PdfDocument? doc)
+    {
+        if (string.IsNullOrEmpty(csName)) return null;
+        if (csName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK" or "Pattern") return null;
+        if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
+            return null;
+        return OriginForColorSpaceObject(csObj, rawColor, doc);
+    }
+
+    /// <summary>Named-colorant identity for a colour-space DEFINITION object (not a resource name) — used by
+    /// shadings, whose /ColorSpace is a direct object. Null unless the object is Separation/DeviceN.</summary>
+    public static ColorantOrigin? OriginForColorSpaceObject(
+        PdfObject? csObj, IReadOnlyList<double>? rawColor, PdfDocument? doc)
+    {
+        if (csObj is null) return null;
+        csObj = Deref(csObj, doc);
+        if (csObj is not PdfArray { Count: >= 4 } csArray || csArray[0] is not PdfName csType) return null;
+
+        List<string> names;
+        switch (csType.Value)
+        {
+            case "Separation":
+                if (Deref(csArray[1], doc) is not PdfName sepName) return null;
+                names = [sepName.Value];
+                break;
+            case "DeviceN":
+                if (Deref(csArray[1], doc) is not PdfArray namesArr) return null;
+                names = new List<string>(namesArr.Count);
+                foreach (PdfObject nameObj in namesArr)
+                {
+                    if (Deref(nameObj, doc) is not PdfName n) return null;
+                    names.Add(n.Value);
+                }
+                break;
+            default:
+                return null;
+        }
+        if (names.Count == 0) return null;
+
+        PdfObject altObj = Deref(csArray[2], doc);
+        string altSpace = altObj switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty
+        };
+
+        double[] tints = rawColor is null ? [] : [.. rawColor];
+        return new ColorantOrigin(names, tints, altSpace);
+    }
+
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
 
     /// <summary>
