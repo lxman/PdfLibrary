@@ -377,18 +377,29 @@ internal class PdfParser(PdfLexer lexer)
         const int probeExtra = 512;
         byte[] raw = _lexer.ReadBytesAvailable(length + probeExtra);
 
-        var marker = "endstream"u8;
-        int endstreamPos = -1;
-        int searchFrom = Math.Max(0, length - 2);
-        for (int i = searchFrom; i <= raw.Length - marker.Length; i++)
+        byte[] marker = "endstream"u8.ToArray();   // byte[] (not a ReadOnlySpan) so the local fn can use it
+
+        int FindEndstream(int from)
         {
-            if (raw.AsSpan(i, marker.Length).SequenceEqual(marker)
-                && (i == 0 || raw[i - 1] == 0x0A || raw[i - 1] == 0x0D))
+            for (int i = Math.Max(0, from); i <= raw.Length - marker.Length; i++)
             {
-                endstreamPos = i;
-                break;
+                if (raw.AsSpan(i, marker.Length).SequenceEqual(marker)
+                    && (i == 0 || raw[i - 1] == 0x0A || raw[i - 1] == 0x0D))
+                    return i;
             }
+            return -1;
         }
+
+        // Primary: look for endstream near the declared length. Searching from there (rather than 0)
+        // avoids matching an "endstream" byte sequence that can occur inside binary stream data.
+        int endstreamPos = FindEndstream(length - 2);
+
+        // Recovery: a /Length that OVERSHOOTS the real data leaves the actual endstream BEFORE the
+        // search start, so the forward scan misses it (e.g. veraPDF 6-1-6-1-t01-fail-a: /Length 80,
+        // real content ~19 bytes). Fall back to the first endstream from the stream start rather than
+        // overshooting into the following object and throwing.
+        if (endstreamPos < 0)
+            endstreamPos = FindEndstream(0);
 
         byte[] data;
         if (endstreamPos >= 0)
