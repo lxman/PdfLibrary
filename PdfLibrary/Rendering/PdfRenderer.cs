@@ -86,10 +86,11 @@ internal class PdfRenderer : PdfContentProcessor
     {
         var totalStopwatch = Stopwatch.StartNew();
 
-        // Get page dimensions - CropBox defines the visible area, MediaBox is the full canvas
-        // The output image should match CropBox dimensions
+        // Get page dimensions - CropBox defines the visible area, MediaBox is the full canvas.
+        // The output image matches the CropBox, reduced to its intersection with the MediaBox
+        // (ISO 32000-1 §14.11.2: an out-of-bounds CropBox is clamped to the MediaBox).
         PdfRectangle mediaBox = page.GetMediaBox();
-        PdfRectangle cropBox = page.GetCropBox();
+        PdfRectangle cropBox = page.GetEffectiveCropBox();
 
         // Use CropBox dimensions for the output image
         double width = cropBox.Width;
