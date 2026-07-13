@@ -440,6 +440,44 @@ internal class ColorSpaceResolver(PdfDocument? document)
         };
     }
 
+    /// <summary>
+    /// Builds a 256-entry tint ramp (tint 0..1 → alternate-space colour) for colorant
+    /// <paramref name="colorantIndex"/> of a <c>[/Separation …]</c> or <c>[/DeviceN …]</c> array, sweeping
+    /// that colorant's input and holding the others at 0 (the per-plate separations approximation). Also
+    /// returns a representative sRGB solid at tint = 1 for UI. <c>Ramp</c> is null when there is no usable
+    /// tint transform. Soft-Proof SP-1.
+    /// </summary>
+    internal static (double[][]? Ramp, (byte R, byte G, byte B) Solid) BuildTintRamp(
+        PdfArray baseArray, PdfDocument? doc, int colorantIndex, int inputCount, int samples = 256)
+    {
+        if (baseArray.Count < 4 || colorantIndex < 0 || colorantIndex >= inputCount)
+            return (null, (0, 0, 0));
+
+        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], doc), doc);
+        if (tint is null) return (null, (0, 0, 0));
+
+        var ramp = new double[samples][];
+        var input = new double[inputCount];
+        for (var s = 0; s < samples; s++)
+        {
+            double t = samples == 1 ? 0.0 : (double)s / (samples - 1);
+            Array.Clear(input);
+            input[colorantIndex] = t;
+            ramp[s] = tint.Evaluate((double[])input.Clone());
+        }
+
+        // Representative solid via the existing sRGB evaluator (Lab-aware), at tint = 1.
+        (byte R, byte G, byte B) solid = (0, 0, 0);
+        Func<double[], (byte R, byte G, byte B)>? toRgb = BuildTintToRgb(baseArray, doc, out int _);
+        if (toRgb is not null)
+        {
+            Array.Clear(input);
+            input[colorantIndex] = 1.0;
+            solid = toRgb((double[])input.Clone());
+        }
+        return (ramp, solid);
+    }
+
     private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
