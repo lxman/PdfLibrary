@@ -233,6 +233,12 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
                     glyphId = metrics.GetGlyphIdByName(builtInName);
                 }
             }
+
+            // Symbolic CFF simple font whose PDF /Encoding did not name this code (e.g. the txsys
+            // symbol subset: code 15 → bullet). Fall back to the CFF program's own built-in Encoding.
+            // The CFF outline path keys off glyphId (not the name), so no resolvedGlyphName is needed.
+            if (glyphId == 0 && metrics.IsCffFont)
+                glyphId = metrics.GetGlyphIdByCffEncoding(charCode);
         }
         else if (font is Type0Font type0Font && metrics.IsType1Font && type0Font.ToUnicode is not null)
         {

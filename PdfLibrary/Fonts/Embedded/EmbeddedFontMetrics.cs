@@ -1033,6 +1033,20 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// Resolves a character code to a glyph id through the CFF font program's built-in Encoding.
+    /// The fallback for a symbolic CFF simple font whose PDF /Encoding does not name the code — e.g.
+    /// the URWIFX+txsys symbol subset in PDFUA-Ref-2-03, whose format-1 encoding maps code 15 → the
+    /// "bullet" glyph. Returns 0 for a non-CFF font, a code outside 0–255, or an unmapped/predefined
+    /// encoding.
+    /// </summary>
+    public ushort GetGlyphIdByCffEncoding(ushort charCode)
+    {
+        if (!_isCffFont || _cffTable is null || charCode > 0xFF)
+            return 0;
+        return CffEncodingLookup.GetGlyphId(_cffTable.Encoding, (byte)charCode);
+    }
+
+    /// <summary>
     /// Resolves a character code to a glyph name using the Type1 font program's
     /// built-in encoding. Returns null for non-Type1 fonts or unmapped codes.
     /// </summary>
