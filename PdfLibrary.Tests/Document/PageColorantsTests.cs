@@ -118,4 +118,37 @@ public class PageColorantsTests
         PdfDocument doc = DocWithPageColorSpaces(("CS0", none));
         Assert.DoesNotContain(doc.GetPageColorants(0), c => c.Name == "None");
     }
+
+    // A Type 0 (Sampled) function whose /Domain declares 2 inputs, used as the tint transform of a
+    // Separation (always single-input per ISO 32000-1 §8.6.6.4). PdfFunction.Create succeeds, but
+    // SampledFunction.Evaluate reads a second input slot from the 1-element array BuildTintRamp supplies
+    // and throws IndexOutOfRangeException. Mirrors TintRampTests.MismatchedDomainSampledFunction — see
+    // that test for the direct BuildTintRamp-level repro; this one asserts the guarantee holds all the
+    // way up through the public GetPageColorants API.
+    private static PdfStream MismatchedDomainSampledFunction()
+    {
+        var d = new PdfDictionary();
+        d.Add(new PdfName("FunctionType"), new PdfInteger(0));
+        d.Add(new PdfName("Domain"), Reals(0, 1, 0, 1)); // declares 2 inputs
+        d.Add(new PdfName("Range"), Reals(0, 1));
+        d.Add(new PdfName("Size"), new PdfArray(new PdfInteger(2), new PdfInteger(2)));
+        d.Add(new PdfName("BitsPerSample"), new PdfInteger(8));
+        return new PdfStream(d, new byte[4]); // 2*2 samples * 1 output * 1 byte/sample
+    }
+
+    [Fact]
+    public void ThrowingTintTransform_ColorantStillListedWithNullRamp()
+    {
+        var spot = new PdfArray(
+            new PdfName("Separation"), new PdfName("PANTONE BROKEN"), new PdfName("DeviceCMYK"),
+            MismatchedDomainSampledFunction());
+
+        PdfDocument doc = DocWithPageColorSpaces(("CS0", spot));
+
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0); // must not throw
+
+        PageColorant broken = Assert.Single(colorants, c => c.Name == "PANTONE BROKEN");
+        Assert.Equal(ColorantKind.Spot, broken.Kind);
+        Assert.Null(broken.TintRamp);
+    }
 }

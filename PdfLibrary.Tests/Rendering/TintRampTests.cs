@@ -88,4 +88,38 @@ public class TintRampTests
 
         Assert.Null(ramp);
     }
+
+    // A Type 0 (Sampled) function whose /Domain declares 2 inputs, wired up as the tint transform of a
+    // Separation (which by ISO 32000-1 §8.6.6.4 is always single-input). PdfFunction.Create succeeds —
+    // nothing at creation time cross-checks Domain against the colour space's actual input count — but
+    // SampledFunction.Evaluate reads Domain.Length/2 = 2 input slots from the caller-supplied array, which
+    // BuildTintRamp sizes to the Separation's real input count (1). Reading the second slot throws
+    // IndexOutOfRangeException. This models a malformed/authoring-mismatched tint-transform body: the
+    // "createable but throws on Evaluate" case Fix 1 guards against.
+    private static PdfStream MismatchedDomainSampledFunction()
+    {
+        var d = new PdfDictionary();
+        d.Add(new PdfName("FunctionType"), new PdfInteger(0));
+        d.Add(new PdfName("Domain"), Reals(0, 1, 0, 1)); // declares 2 inputs
+        d.Add(new PdfName("Range"), Reals(0, 1));
+        d.Add(new PdfName("Size"), new PdfArray(new PdfInteger(2), new PdfInteger(2)));
+        d.Add(new PdfName("BitsPerSample"), new PdfInteger(8));
+        return new PdfStream(d, new byte[4]); // 2*2 samples * 1 output * 1 byte/sample
+    }
+
+    [Fact]
+    public void ThrowingTintTransform_ProducesNullRampInsteadOfThrowing()
+    {
+        // [/Separation /X /DeviceCMYK <2-input sampled fn>] — single-tint Separation, but the tint
+        // transform's own Domain mismatches (declares 2 inputs). Evaluate throws when BuildTintRamp
+        // (correctly, per the 1-input Separation) calls it with a 1-element array.
+        var sep = new PdfArray(
+            new PdfName("Separation"), new PdfName("X"), new PdfName("DeviceCMYK"),
+            MismatchedDomainSampledFunction());
+
+        (double[][]? ramp, (byte R, byte G, byte B) solid) = ColorSpaceResolver.BuildTintRamp(sep, null, 0, 1);
+
+        Assert.Null(ramp);
+        Assert.Equal((0, 0, 0), solid);
+    }
 }

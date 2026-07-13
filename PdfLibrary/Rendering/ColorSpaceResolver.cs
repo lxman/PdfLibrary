@@ -458,22 +458,36 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         var ramp = new double[samples][];
         var input = new double[inputCount];
-        for (var s = 0; s < samples; s++)
-        {
-            double t = samples == 1 ? 0.0 : (double)s / (samples - 1);
-            Array.Clear(input);
-            input[colorantIndex] = t;
-            ramp[s] = tint.Evaluate((double[])input.Clone());
-        }
-
-        // Representative solid via the existing sRGB evaluator (Lab-aware), at tint = 1.
         (byte R, byte G, byte B) solid = (0, 0, 0);
-        Func<double[], (byte R, byte G, byte B)>? toRgb = BuildTintToRgb(baseArray, doc, out int _);
-        if (toRgb is not null)
+        try
         {
-            Array.Clear(input);
-            input[colorantIndex] = 1.0;
-            solid = toRgb((double[])input.Clone());
+            for (var s = 0; s < samples; s++)
+            {
+                double t = samples == 1 ? 0.0 : (double)s / (samples - 1);
+                Array.Clear(input);
+                input[colorantIndex] = t;
+                ramp[s] = tint.Evaluate((double[])input.Clone());
+            }
+
+            // Representative solid via the existing sRGB evaluator (Lab-aware), at tint = 1.
+            Func<double[], (byte R, byte G, byte B)>? toRgb = BuildTintToRgb(baseArray, doc, out int _);
+            if (toRgb is not null)
+            {
+                Array.Clear(input);
+                input[colorantIndex] = 1.0;
+                solid = toRgb((double[])input.Clone());
+            }
+        }
+        catch (Exception ex)
+        {
+            // Spec: a missing/invalid tint transform still lists the colorant (Name + Kind) with a null
+            // ramp — must never throw into the render path. PdfFunction.Create can succeed yet Evaluate
+            // still throw at runtime on a malformed Type-0/Type-4 function body (e.g. a Domain that
+            // doesn't match the colour space's actual input count); treat that identically to "no usable
+            // tint transform" rather than letting the page-inventory call (GetPageColorants) fail.
+            PdfLogger.Log(LogCategory.Graphics,
+                $"BuildTintRamp: tint transform threw during ramp/solid evaluation for colorant index {colorantIndex}, falling back to null ramp: {ex}");
+            return (null, (0, 0, 0));
         }
         return (ramp, solid);
     }
