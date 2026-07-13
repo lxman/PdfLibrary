@@ -956,6 +956,11 @@ internal class PdfRenderer : PdfContentProcessor
             ColorSpaceResolver.OverprintPlatesFor(CurrentState.FillColorSpace, colorSpaces, _document);
         CurrentState.StrokeOverprintPlates =
             ColorSpaceResolver.OverprintPlatesFor(CurrentState.StrokeColorSpace, colorSpaces, _document);
+
+        CurrentState.ResolvedFillColorantOrigin =
+            ColorSpaceResolver.OriginFor(CurrentState.FillColorSpace, CurrentState.FillColor, colorSpaces, _document);
+        CurrentState.ResolvedStrokeColorantOrigin =
+            ColorSpaceResolver.OriginFor(CurrentState.StrokeColorSpace, CurrentState.StrokeColor, colorSpaces, _document);
     }
 
     // ==================== Graphics State Parameter Dictionary ====================

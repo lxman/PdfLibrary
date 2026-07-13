@@ -13,6 +13,10 @@ public class MockRenderTarget : IRenderTarget
     public List<string> Operations { get; } = [];
     private int _stateDepth;
 
+    /// <summary>Graphics state passed to the most recent <see cref="FillPath"/> call (SP-1 colorant-origin
+    /// render-integration checks need to inspect it after ProcessOperators returns).</summary>
+    public PdfGraphicsState? LastFillState { get; private set; }
+
     public int CurrentPageNumber { get; private set; }
 
     public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0)
@@ -33,6 +37,7 @@ public class MockRenderTarget : IRenderTarget
 
     public void FillPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
     {
+        LastFillState = state;
         Operations.Add($"FillPath: {GetPathDescription(path)}, EvenOdd={evenOdd}, Color={GetColorDescription(state.FillColor, state.FillColorSpace)}");
     }
 
