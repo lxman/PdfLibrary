@@ -39,6 +39,26 @@ public class PdfImageToCmykTests
     }
 
     [Fact]
+    public void Direct_DeviceCMYK_16bit_returns_downconverted_native_samples()
+    {
+        // 16-bit big-endian DeviceCMYK (8 bytes/pixel). A 16-bit CMYK image must still yield a native ink
+        // plane (down-converted to each sample's high byte) instead of being rejected and forced through the
+        // lossy CMYK→RGB→CMYK round-trip (GWG181: colour offset vs a native-CMYK RIP).
+        byte[] data =
+        [
+            0x00, 0x00, 0x80, 0x80, 0x00, 0x00, 0x00, 0x00,   // pixel 0 → high bytes (0, 0x80, 0, 0)
+            0xFF, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00    // pixel 1 → high bytes (0xFF, 0, 0, 0)
+        ];
+        PdfImage img = Image(new PdfName("DeviceCMYK"), data, 2, 1, bpc: 16);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out int w, out int h);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(2, w); Assert.Equal(1, h);
+        Assert.Equal(new byte[] { 0x00, 0x80, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00 }, cmyk);
+    }
+
+    [Fact]
     public void Indexed_DeviceCMYK_looks_up_native_palette()
     {
         // Palette: entry0 = 50% magenta, entry1 = pure cyan. Pixels index [1,0,1].

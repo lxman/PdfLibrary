@@ -49,7 +49,11 @@ public static class PdfImageToCmyk
         // separate to the SAME K path — the only residual is sample precision, not a colour-path split
         // (GWG183 overlays an 8-bit cross on a 16-bit photo).
         bool isGray = image.ColorSpace is "DeviceGray" or "CalGray";
-        if (image.BitsPerComponent != 8 && !(isGray && image.BitsPerComponent is 1 or 16)) return null;
+        // 8-bit: every space. 16-bit: every space too — grey unpacks its own depth below; other spaces
+        // down-convert to high bytes after decode (see below) so a 16-bit DeviceCMYK image builds a native
+        // ink plane instead of the lossy CMYK→RGB→CMYK round-trip (GWG181). 1-bit: grey only. Anything else
+        // (sub-byte non-grey) stays unsupported and falls to the managed RGBA path.
+        if (image.BitsPerComponent is not (8 or 16) && !(isGray && image.BitsPerComponent == 1)) return null;
 
         byte[] data;
         try { data = image.GetDecodedData(); }
@@ -74,6 +78,16 @@ public static class PdfImageToCmyk
         // and stays on the RGBA path (ToRgba applies the source ICC for RGB).
         if (image.Filters.Contains("JPXDecode"))
             return data.Length >= px * 4 ? (data.Length == px * 4 ? data : data[..(px * 4)]) : null;
+
+        // 16-bit non-grey samples: down-convert each big-endian sample to its high byte so the 8-bit ink
+        // paths below build a native CMYK plane. Grey unpacked its own depth above; JPX carries its own and
+        // returned above. The low byte is sub-perceptual and /Decode is linear, matching PdfImageToRgba.
+        if (image.BitsPerComponent == 16)
+        {
+            var packed = new byte[data.Length / 2];
+            for (int i = 0, j = 0; j < packed.Length; i += 2, j++) packed[j] = data[i];
+            data = packed;
+        }
 
         PdfArray? cs = image.ColorSpaceArray;
 
