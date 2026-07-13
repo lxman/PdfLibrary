@@ -22,6 +22,15 @@ CSPROJ="$SCRIPT_DIR/PdfLibrary/PdfLibrary.csproj"
 RENDERING_SKIA_CSPROJ="$SCRIPT_DIR/PdfLibrary.Rendering.Skia/PdfLibrary.Rendering.Skia.csproj"
 FEED="$SCRIPT_DIR/local-feed"
 
+# The nuget.config value must be a native path. Under Git Bash on Windows $FEED is an MSYS path
+# (/c/Users/...) which NuGet reads as RELATIVE (-> C:\c\Users\...) and fails to restore, so convert
+# to a Windows path with cygpath. On Linux/macOS (no cygpath) the MSYS form IS native — use it as-is.
+if command -v cygpath >/dev/null 2>&1; then
+  FEED_FOR_CONFIG="$(cygpath -w "$FEED")"
+else
+  FEED_FOR_CONFIG="$FEED"
+fi
+
 # Base version comes from the library csproj so it never drifts from what the package will publish as.
 BASE_VERSION="$(grep -oE '<Version>[^<]+</Version>' "$CSPROJ" | head -1 | sed -E 's|</?Version>||g')"
 if [[ -z "$BASE_VERSION" ]]; then
@@ -69,11 +78,11 @@ if [[ ! -f "$NUGET_CONFIG" ]]; then
   <packageSources>
     <clear />
     <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-    <add key="pdflibrary-local" value="$FEED" />
+    <add key="pdflibrary-local" value="$FEED_FOR_CONFIG" />
   </packageSources>
 </configuration>
 EOF
-  echo "Created $NUGET_CONFIG (pdflibrary-local -> $FEED)"
+  echo "Created $NUGET_CONFIG (pdflibrary-local -> $FEED_FOR_CONFIG)"
 fi
 
 echo ""
