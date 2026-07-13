@@ -10,13 +10,28 @@ namespace PdfLibrary.Content;
 /// </summary>
 public class PdfGraphicsState
 {
+    // The CTM is accumulated in DOUBLE precision. PDF/A allows real numbers up to ±3.4×10^38, which
+    // exceeds float.MaxValue (3.40282e38); accumulating in float overflowed to ∞/NaN on legal
+    // max-magnitude transforms (e.g. a +MAX/−MAX cm pair), corrupting the CTM and blanking the whole
+    // page. Consumers still read a narrowed Matrix3x2 — page-content coordinates are normal-range.
+    private double _ctm11 = 1, _ctm12, _ctm21, _ctm22 = 1, _ctm31, _ctm32;
+
     /// <summary>
     /// Current Transformation Matrix - transforms from user space to device space
     /// Represented as [a b c d e f] where:
     /// x' = a*x + c*y + e
     /// y' = b*x + d*y + f
+    /// Accumulated in double precision (see field note) and exposed narrowed to float.
     /// </summary>
-    public Matrix3x2 Ctm { get; set; } = Matrix3x2.Identity;
+    public Matrix3x2 Ctm
+    {
+        get => new((float)_ctm11, (float)_ctm12, (float)_ctm21, (float)_ctm22, (float)_ctm31, (float)_ctm32);
+        set
+        {
+            _ctm11 = value.M11; _ctm12 = value.M12; _ctm21 = value.M21;
+            _ctm22 = value.M22; _ctm31 = value.M31; _ctm32 = value.M32;
+        }
+    }
 
     /// <summary>
     /// Initial transformation matrix set at BeginPage.
@@ -236,9 +251,8 @@ public class PdfGraphicsState
     /// </summary>
     public PdfGraphicsState Clone()
     {
-        return new PdfGraphicsState
+        var clone = new PdfGraphicsState
         {
-            Ctm = Ctm,
             InitialTransformMatrix = InitialTransformMatrix,
             TextMatrix = TextMatrix,
             TextLineMatrix = TextLineMatrix,
@@ -284,6 +298,11 @@ public class PdfGraphicsState
             RenderingIntent = RenderingIntent,
             Smoothness = Smoothness
         };
+        // Copy the double-precision CTM accumulator directly (not via the narrowed Ctm property) so
+        // precision survives q/Q save/restore.
+        clone._ctm11 = _ctm11; clone._ctm12 = _ctm12; clone._ctm21 = _ctm21;
+        clone._ctm22 = _ctm22; clone._ctm31 = _ctm31; clone._ctm32 = _ctm32;
+        return clone;
     }
 
     /// <summary>
@@ -300,13 +319,20 @@ public class PdfGraphicsState
     /// </summary>
     public void ConcatenateMatrix(double a, double b, double c, double d, double e, double f)
     {
-        var matrix = new Matrix3x2((float)a, (float)b, (float)c, (float)d, (float)e, (float)f);
+        // new CTM = [a b c d e f] * current, computed entirely in double so max-magnitude reals
+        // (PDF allows up to ±3.4e38, beyond float range) don't overflow to ∞/NaN and blank the page.
+        double na = a * _ctm11 + b * _ctm21;
+        double nb = a * _ctm12 + b * _ctm22;
+        double nc = c * _ctm11 + d * _ctm21;
+        double nd = c * _ctm12 + d * _ctm22;
+        double ne = e * _ctm11 + f * _ctm21 + _ctm31;
+        double nf = e * _ctm12 + f * _ctm22 + _ctm32;
         // Lazy log form: `cm` is a hot operator (thousands per page, and per Type3 char-proc). Building
         // these interpolated strings eagerly formatted ~18 floats per cm even with logging disabled.
-        PdfLogger.Log(LogCategory.Transforms, () => $"CONCAT Before: CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
-        PdfLogger.Log(LogCategory.Transforms, () => $"CONCAT Matrix: [{matrix.M11:F4}, {matrix.M12:F4}, {matrix.M21:F4}, {matrix.M22:F4}, {matrix.M31:F4}, {matrix.M32:F4}]");
-        Ctm = matrix * Ctm;
-        PdfLogger.Log(LogCategory.Transforms, () => $"CONCAT After:  CTM=[{Ctm.M11:F4}, {Ctm.M12:F4}, {Ctm.M21:F4}, {Ctm.M22:F4}, {Ctm.M31:F4}, {Ctm.M32:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, () => $"CONCAT Before: CTM=[{_ctm11:F4}, {_ctm12:F4}, {_ctm21:F4}, {_ctm22:F4}, {_ctm31:F4}, {_ctm32:F4}]");
+        PdfLogger.Log(LogCategory.Transforms, () => $"CONCAT Matrix: [{a:F4}, {b:F4}, {c:F4}, {d:F4}, {e:F4}, {f:F4}]");
+        _ctm11 = na; _ctm12 = nb; _ctm21 = nc; _ctm22 = nd; _ctm31 = ne; _ctm32 = nf;
+        PdfLogger.Log(LogCategory.Transforms, () => $"CONCAT After:  CTM=[{_ctm11:F4}, {_ctm12:F4}, {_ctm21:F4}, {_ctm22:F4}, {_ctm31:F4}, {_ctm32:F4}]");
     }
 
     /// <summary>
