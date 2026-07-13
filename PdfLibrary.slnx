@@ -68,5 +68,7 @@
   <Project Path="PdfLibrary.Rendering.Wpf.Tests/PdfLibrary.Rendering.Wpf.Tests.csproj" />
   <Project Path="PdfLibrary.Tests/PdfLibrary.Tests.csproj" />
   <Project Path="PdfLibrary.Wpf.Viewer/PdfLibrary.Wpf.Viewer.csproj" />
+  <Project Path="PdfLibrary.Wpf.Viewer.Logic/PdfLibrary.Wpf.Viewer.Logic.csproj" />
+  <Project Path="PdfLibrary.Wpf.Viewer.Logic.Tests/PdfLibrary.Wpf.Viewer.Logic.Tests.csproj" />
   <Project Path="PdfLibrary/PdfLibrary.csproj" />
 </Solution>
