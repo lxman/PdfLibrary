@@ -320,6 +320,58 @@ public class StreamFilterTests
     }
 
     [Fact]
+    public void FlateDecode_WithTiffPredictor_16Bit_CarriesAcrossBytePair()
+    {
+        // TIFF Predictor 2 differences SAMPLES of the declared BitsPerComponent, not bytes. For 16-bit,
+        // the running sum must be 16-bit (big-endian) with carry from the low byte into the high byte — a
+        // byte-wise addition drops that carry and corrupts the image (GWG180-184: 16-bit DeviceCMYK/ICC).
+        var filter = new FlateDecodeFilter();
+
+        // One colour, three columns. Samples 0x0080, 0x0100, 0x0180 → deltas 0x0080, 0x0080, 0x0080.
+        // The low-byte sums (0x80+0x80) carry into the high byte, which byte-wise decoding loses.
+        byte[] encodedData = [0x00, 0x80, 0x00, 0x80, 0x00, 0x80];
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 2 },
+            { "Columns", 3 },
+            { "Colors", 1 },
+            { "BitsPerComponent", 16 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        // Correct 16-bit reconstruction: 0x0080, 0x0100, 0x0180.
+        Assert.Equal(new byte[] { 0x00, 0x80, 0x01, 0x00, 0x01, 0x80 }, decoded);
+    }
+
+    [Fact]
+    public void FlateDecode_WithTiffPredictor_16Bit_MultiColour()
+    {
+        // 16-bit, two colours, two columns: each component differences against the same component of the
+        // previous pixel (colors samples back), as a 16-bit value.
+        var filter = new FlateDecodeFilter();
+
+        // Pixel0 = (0x1234, 0x00FF); Pixel1 = (0x1300, 0x0201).
+        // Deltas: P0 as-is; P1c0 = 0x1300-0x1234 = 0x00CC; P1c1 = 0x0201-0x00FF = 0x0102.
+        byte[] encodedData = [0x12, 0x34, 0x00, 0xFF, 0x00, 0xCC, 0x01, 0x02];
+        byte[] compressed = filter.Encode(encodedData);
+
+        var parameters = new Dictionary<string, object>
+        {
+            { "Predictor", 2 },
+            { "Columns", 2 },
+            { "Colors", 2 },
+            { "BitsPerComponent", 16 }
+        };
+
+        byte[] decoded = filter.Decode(compressed, parameters);
+
+        Assert.Equal(new byte[] { 0x12, 0x34, 0x00, 0xFF, 0x13, 0x00, 0x02, 0x01 }, decoded);
+    }
+
+    [Fact]
     public void FlateDecode_WithPredictor_DefaultParameters()
     {
         // Test that default parameters are used when not specified

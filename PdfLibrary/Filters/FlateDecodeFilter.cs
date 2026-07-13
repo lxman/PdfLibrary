@@ -130,7 +130,7 @@ internal class FlateDecodeFilter : IStreamFilter
         return predictor switch
         {
             >= 10 and <= 15 => ApplyPngPredictor(data, rowLength, bytesPerPixel),
-            2 => ApplyTiffPredictor(data, rowLength, bytesPerPixel),
+            2 => ApplyTiffPredictor(data, rowLength, bytesPerPixel, colors, bitsPerComponent),
             _ => data
         };
     }
@@ -177,8 +177,14 @@ internal class FlateDecodeFilter : IStreamFilter
         return output.ToArray();
     }
 
-    private static byte[] ApplyTiffPredictor(byte[] data, int rowLength, int bytesPerPixel)
+    private static byte[] ApplyTiffPredictor(byte[] data, int rowLength, int bytesPerPixel, int colors, int bitsPerComponent)
     {
+        // TIFF Predictor 2 differences SAMPLES of the declared bit depth. For 16-bit the running sum must be
+        // 16-bit (big-endian) with carry across the byte pair — a byte-wise sum drops the carry and corrupts
+        // the image. 8-bit (and sub-byte) stays byte-wise, which is correct for one-byte samples.
+        if (bitsPerComponent == 16)
+            return ApplyTiffPredictor16(data, rowLength, colors);
+
         using var output = new MemoryStream(data.Length);
         var pos = 0;
         var row = new byte[rowLength];
@@ -196,6 +202,31 @@ internal class FlateDecodeFilter : IStreamFilter
             }
 
             output.Write(row, 0, rowLength);
+        }
+
+        return output.ToArray();
+    }
+
+    // 16-bit TIFF Predictor 2: horizontal differencing on big-endian 16-bit samples. Each sample adds the
+    // same-component sample of the previous pixel (colors samples back) as an unsigned 16-bit value.
+    private static byte[] ApplyTiffPredictor16(byte[] data, int rowLength, int colors)
+    {
+        using var output = new MemoryStream(data.Length);
+        int samplesPerRow = rowLength / 2;
+        var row = new ushort[samplesPerRow];
+        var pos = 0;
+
+        while (pos + rowLength <= data.Length)
+        {
+            for (var s = 0; s < samplesPerRow; s++)
+            {
+                var encoded = (ushort)((data[pos] << 8) | data[pos + 1]);
+                pos += 2;
+                ushort value = s >= colors ? (ushort)(encoded + row[s - colors]) : encoded;
+                row[s] = value;
+                output.WriteByte((byte)(value >> 8));
+                output.WriteByte((byte)(value & 0xFF));
+            }
         }
 
         return output.ToArray();
