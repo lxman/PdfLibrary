@@ -1,3 +1,5 @@
+using PdfLibrary.Structure;
+
 namespace PdfLibrary.Document;
 
 /// <summary>How a named Separation/DeviceN colorant relates to the process plates. Soft-Proof SP-1.</summary>
