@@ -92,7 +92,8 @@ public sealed class RecordingRenderTarget : IRenderTarget
         PageDrawList? content = sub._commands.Count > 0 ? new PageDrawList(sub._begin, sub._commands.ToList()) : null;
 
         _commands.Add(new TilingFillCommand(Snap(path), evenOdd, state.Clone(),
-            content, pattern.Matrix, (float)pattern.XStep, (float)pattern.YStep));
+            content, pattern.Matrix, (float)pattern.XStep, (float)pattern.YStep,
+            (float)pattern.BBox.X1, (float)pattern.BBox.Y1, (float)pattern.BBox.X2, (float)pattern.BBox.Y2));
     }
 
     public void SetClippingPath(IPathBuilder path, PdfGraphicsState state, bool evenOdd)
