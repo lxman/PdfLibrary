@@ -15,7 +15,8 @@ public sealed record FillStrokeCommand(IReadOnlyList<PathSegment> Segments, bool
 // user space); a null Content means the recorder captured no tile and the renderer falls back to a flat
 // fill in the pattern-space colour.
 public sealed record TilingFillCommand(IReadOnlyList<PathSegment> Segments, bool EvenOdd, PdfGraphicsState State,
-    PageDrawList? Content = null, Matrix3x2 PatternMatrix = default, float XStep = 0, float YStep = 0) : DrawCommand;
+    PageDrawList? Content = null, Matrix3x2 PatternMatrix = default, float XStep = 0, float YStep = 0,
+    float BBoxMinX = 0, float BBoxMinY = 0, float BBoxMaxX = 0, float BBoxMaxY = 0) : DrawCommand;
 public sealed record ClipCommand(IReadOnlyList<PathSegment> Segments, bool EvenOdd) : DrawCommand;
 public sealed record SaveCommand : DrawCommand;
 public sealed record RestoreCommand : DrawCommand;

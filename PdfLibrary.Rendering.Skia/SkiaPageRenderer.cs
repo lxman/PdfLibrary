@@ -189,8 +189,15 @@ public static class SkiaPageRenderer
             return;
         }
 
-        int i0 = (int)Math.Floor(pb.Left / xs), i1 = (int)Math.Ceiling(pb.Right / xs);
-        int j0 = (int)Math.Floor(pb.Top / ys),  j1 = (int)Math.Ceiling(pb.Bottom / ys);
+        // A tile paints its content over [origin + bboxMin, origin + bboxMax] in pattern space. When the
+        // BBox is larger than the step (overlapping tiles) or the visible mark sits away from the origin,
+        // tiles whose ORIGIN is outside the region still reach into it, so iterate every tile whose BBox
+        // overlaps the region — not just origins within it. Otherwise a ~BBox-tall band is dropped at an
+        // edge (veraPDF 6-2-4-3-t02-pass-f). Zero BBox (unset) reduces to the plain origins-in-region range.
+        float bMinX = Math.Min(t.BBoxMinX, t.BBoxMaxX), bMaxX = Math.Max(t.BBoxMinX, t.BBoxMaxX);
+        float bMinY = Math.Min(t.BBoxMinY, t.BBoxMaxY), bMaxY = Math.Max(t.BBoxMinY, t.BBoxMaxY);
+        int i0 = (int)Math.Floor((pb.Left - bMaxX) / xs), i1 = (int)Math.Ceiling((pb.Right - bMinX) / xs);
+        int j0 = (int)Math.Floor((pb.Top - bMaxY) / ys),  j1 = (int)Math.Ceiling((pb.Bottom - bMinY) / ys);
         if ((long)(i1 - i0 + 1) * (j1 - j0 + 1) > 4096)          // runaway guard -> one tile
         {
             DrawTileOnce();
