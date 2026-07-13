@@ -437,6 +437,22 @@ public class PdfParserTests
     }
 
     [Fact]
+    public void Parser_RecoversWhenLengthOvershootsActualEndstream()
+    {
+        // A /Length far larger than the real content puts the actual endstream BEFORE the declared
+        // length. The forward scan (which starts near /Length) misses it; the parser must fall back
+        // to the real endstream instead of overshooting into the next object. A too-long /Length is a
+        // common producer bug (veraPDF 6-1-6-1-t01-fail-a) — poppler recovers and so must we.
+        var content = "<</Length 80>>\nstream\nHello\nendstream\n99 0 obj\n<<>>\nendobj\n";
+        PdfParser parser = CreateParser(content);
+
+        PdfObject? obj = parser.ReadObject();
+
+        var stream = Assert.IsType<PdfStream>(obj);
+        Assert.Equal("Hello", Encoding.ASCII.GetString(stream.Data));
+    }
+
+    [Fact]
     public void Parser_ParsesStreamWithFilter()
     {
         var content = "<</Length 10 /Filter /FlateDecode>>\nstream\n0123456789\nendstream";
