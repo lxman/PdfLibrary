@@ -33,5 +33,15 @@ public class RecentFilesStoreTests
     {
         Assert.Empty(RecentFilesStore.Deserialize("").Items);
         Assert.Empty(RecentFilesStore.Deserialize("   \n  ").Items);
+        Assert.Empty(RecentFilesStore.Deserialize(null).Items);
+    }
+
+    [Fact]
+    public void Add_DedupesCaseInsensitively()
+    {
+        var s = new RecentFilesStore(max: 5);
+        s.Add("a.pdf");
+        s.Add("A.PDF");
+        Assert.Equal(new[] { "A.PDF" }, s.Items);
     }
 }

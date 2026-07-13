@@ -7,12 +7,10 @@ public sealed class PageLayout
 {
     private readonly double[] _offsets;   // top of each page
     private readonly IReadOnlyList<double> _heights;
-    private readonly double _gap;
 
     public PageLayout(IReadOnlyList<double> pageHeights, double gap)
     {
         _heights = pageHeights;
-        _gap = gap;
         _offsets = new double[pageHeights.Count];
         double y = 0;
         for (int i = 0; i < pageHeights.Count; i++) { _offsets[i] = y; y += pageHeights[i] + gap; }
