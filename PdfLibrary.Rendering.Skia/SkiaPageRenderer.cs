@@ -242,7 +242,14 @@ public static class SkiaPageRenderer
         if (state.DashPattern is { Length: > 0 })
         {
             float[] intervals = state.DashPattern.Select(d => (float)(d * ctmScale)).ToArray();
-            paint.PathEffect = SKPathEffect.CreateDash(intervals, (float)(state.DashPhase * ctmScale));
+            // A PDF dash array may legally be odd-length — it is applied cyclically (e.g. [3] =
+            // 3 on, 3 off, 3 on, ...). SkiaSharp.CreateDash requires an even count, so repeat the
+            // array to form a full even cycle. Skia also rejects all-zero/negative arrays; per the
+            // PDF spec such a dash array yields a solid line, so fall through without a dash effect.
+            if (intervals.Length % 2 != 0)
+                intervals = [.. intervals, .. intervals];
+            if (intervals.All(v => v >= 0) && intervals.Any(v => v > 0))
+                paint.PathEffect = SKPathEffect.CreateDash(intervals, (float)(state.DashPhase * ctmScale));
         }
         canvas.DrawPath(path, paint);
     }
