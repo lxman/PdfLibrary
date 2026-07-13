@@ -31,36 +31,48 @@ else
   FEED_FOR_CONFIG="$FEED"
 fi
 
-# Base version comes from the library csproj so it never drifts from what the package will publish as.
+# One timestamp shared by both packages so a single pack-local run is easy to correlate.
+STAMP="$(date +%Y%m%d%H%M%S)"
+
+# Base versions come from each csproj so they never drift from what the packages publish as.
 BASE_VERSION="$(grep -oE '<Version>[^<]+</Version>' "$CSPROJ" | head -1 | sed -E 's|</?Version>||g')"
 if [[ -z "$BASE_VERSION" ]]; then
   echo "ERROR: could not read <Version> from $CSPROJ" >&2
   exit 1
 fi
-VER="${BASE_VERSION}-dev$(date +%Y%m%d%H%M%S)"
+# Skia's csproj has two conditional <Version> lines. Match the one whose *value* is a plain version
+# ([^<$]+ excludes the "$(SkiaPackVersion)" branch), regardless of the Condition attribute text.
+SKIA_BASE_VERSION="$(grep -oE '<Version[^>]*>[^<$]+</Version>' "$RENDERING_SKIA_CSPROJ" | head -1 | sed -E 's|<[^>]+>||g')"
+if [[ -z "$SKIA_BASE_VERSION" ]]; then
+  echo "ERROR: could not read base <Version> from $RENDERING_SKIA_CSPROJ" >&2
+  exit 1
+fi
+VER="${BASE_VERSION}-dev${STAMP}"
+SKIA_VER="${SKIA_BASE_VERSION}-dev${STAMP}"
 
 mkdir -p "$FEED"
 
 echo "Packing Lxman.PdfLibrary $VER -> $FEED"
 dotnet pack "$CSPROJ" -c "$CONFIGURATION" -p:PackageVersion="$VER" -o "$FEED"
 
-# PdfLibrary.Rendering.Skia packs at its own <Version> (no override here): -p:PackageVersion is an
-# MSBuild global property, so passing it on this command line would also override the PackageVersion
-# evaluation of the ProjectReference to PdfLibrary.csproj built as part of this same invocation,
-# corrupting the emitted "Lxman.PdfLibrary" dependency version in this package's own nuspec (it would
-# read the Rendering.Skia override instead of core's real version). Letting each project use its own
-# <Version> keeps that dependency edge correct.
-echo "Packing Lxman.PdfLibrary.Rendering.Skia -> $FEED"
-dotnet pack "$RENDERING_SKIA_CSPROJ" -c "$CONFIGURATION" -o "$FEED"
+# PdfLibrary.Rendering.Skia is dev-versioned via SkiaPackVersion — a property ONLY its csproj reads.
+# We must NOT use -p:PackageVersion here: that global property would also override the PackageVersion
+# of the ProjectReference to PdfLibrary.csproj built in this same invocation, corrupting the emitted
+# "Lxman.PdfLibrary" dependency version in Skia's own nuspec. SkiaPackVersion sidesteps that — core's
+# dependency edge stays at core's real <Version> while Skia gets its own -dev version so its content
+# propagates to consumers instead of hiding behind a cached static 0.1.1.
+echo "Packing Lxman.PdfLibrary.Rendering.Skia $SKIA_VER -> $FEED"
+dotnet pack "$RENDERING_SKIA_CSPROJ" -c "$CONFIGURATION" -p:SkiaPackVersion="$SKIA_VER" -o "$FEED"
 
-# Pin Pellucid to this exact dev build (gitignored override). A changed build prop forces Pellucid's
-# next 'dotnet build' to re-restore deterministically — no --force needed.
+# Pin Pellucid to these exact dev builds (gitignored override). Changed build props force Pellucid's
+# next 'dotnet build' to re-restore deterministically — no --force, no cache clear.
 cat > "$PELLUCID_ROOT/Directory.Build.props.local" <<EOF
 <Project>
-  <!-- Written by pack-local.sh — pins Pellucid to the latest local dev build of the engine.
-       Gitignored. Delete this file + nuget.config to return to the published package. -->
+  <!-- Written by pack-local.sh — pins Pellucid to the latest local dev builds of the engine.
+       Gitignored. Delete this file + nuget.config to return to the published packages. -->
   <PropertyGroup>
     <LxmanPdfLibraryVersion>$VER</LxmanPdfLibraryVersion>
+    <LxmanPdfLibraryRenderingSkiaVersion>$SKIA_VER</LxmanPdfLibraryRenderingSkiaVersion>
   </PropertyGroup>
 </Project>
 EOF
@@ -86,4 +98,4 @@ EOF
 fi
 
 echo ""
-echo "Pinned Pellucid to $VER. Just 'dotnet build' Pellucid — it re-restores the new build."
+echo "Pinned Pellucid to core $VER + Rendering.Skia $SKIA_VER. Just 'dotnet build' Pellucid — it re-restores the new builds."

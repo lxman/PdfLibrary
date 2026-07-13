@@ -9,7 +9,11 @@
     <IsPackable>true</IsPackable>
     <PackageId>Lxman.PdfLibrary.Rendering.Skia</PackageId>
     <Title>PdfLibrary.Rendering.Skia</Title>
-    <Version>0.1.1</Version>
+    <!-- Base package version. pack-local overrides this with SkiaPackVersion (a Skia-only property,
+         NOT the global PackageVersion) so a local dev build gets a fresh -dev<timestamp> version and
+         propagates to consumers like core does — without disturbing the core dependency edge below. -->
+    <Version Condition="'$(SkiaPackVersion)' == ''">0.1.1</Version>
+    <Version Condition="'$(SkiaPackVersion)' != ''">$(SkiaPackVersion)</Version>
     <Authors>Michael Jordan</Authors>
     <Description>SkiaSharp display-list renderer for Lxman.PdfLibrary: walks a PageDrawList onto an SKCanvas. Cross-platform on .NET 8, 9, and 10.</Description>
     <PackageTags>pdf;pdf-renderer;skiasharp;rendering;pdf-to-image;csharp;cross-platform</PackageTags>
