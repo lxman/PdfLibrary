@@ -97,7 +97,13 @@ internal static class ShadingBuilder
             Colors = colors,
             CmykColors = cmykColors,
             OverprintPlates = overprintPlates,
-            PatternMatrix = patternMatrix
+            PatternMatrix = patternMatrix,
+            // Raw source→sRGB sampler for non-CMYK spaces (toCmyk is null): closes over the resolved
+            // functions + domain + colour mapper so a CMYK compositor can sample the gradient per-pixel
+            // instead of consuming the pre-sampled ramp. Null for CMYK spaces (they use CmykColors).
+            SampleRgbAt = toCmyk is null
+                ? s => toColor(EvaluateColor(functions, t0 + (t1 - t0) * s))
+                : null,
         };
     }
 

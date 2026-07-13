@@ -68,4 +68,12 @@ public sealed class ShadingDescriptor
     /// Null for the <c>sh</c> operator, whose coordinates are already in the current user space.
     /// </summary>
     public Matrix3x2? PatternMatrix { get; init; }
+
+    /// <summary>Continuous source→sRGB sampler over the raw /Function: s∈[0,1] → 0xAARRGGBB, evaluated
+    /// at any position (not a pre-sampled ramp). Non-null for axial/radial (types 2/3) whose colour
+    /// space does NOT resolve to CMYK — a CMYK compositor samples this per-pixel and colour-manages the
+    /// result, instead of flattening the gradient to an average. Null for mesh, for CMYK-resolving
+    /// spaces (which use <see cref="CmykColors"/>), or when the function can't be evaluated. Pure /
+    /// thread-safe: it captures only immutable post-build state.</summary>
+    public Func<float, uint>? SampleRgbAt { get; init; }
 }
