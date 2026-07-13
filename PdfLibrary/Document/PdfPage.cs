@@ -113,6 +113,14 @@ public class PdfPage
     }
 
     /// <summary>
+    /// The effective crop region used for rendering: the declared CropBox reduced to its
+    /// intersection with the MediaBox (ISO 32000-1 §14.11.2 — a CropBox extending beyond the
+    /// MediaBox is clamped to it). <see cref="GetCropBox"/> intentionally returns the raw declared
+    /// value so conformance checks can validate it; renderers must use this instead.
+    /// </summary>
+    internal PdfRectangle GetEffectiveCropBox() => GetCropBox().IntersectWith(GetMediaBox());
+
+    /// <summary>
     /// Gets the page rotation in degrees (0, 90, 180, or 270) - inheritable
     /// </summary>
     public int Rotate
@@ -430,7 +438,7 @@ public class PdfPage
     public PageGeometry GetGeometry(double scale = 1.0)
     {
         if (scale <= 0) throw new ArgumentOutOfRangeException(nameof(scale), "Scale must be positive.");
-        PdfRectangle crop = GetCropBox();
+        PdfRectangle crop = GetEffectiveCropBox();
         double width = crop.Width, height = crop.Height;
         double cropX = crop.X1, cropY = crop.Y1;
         int rotation = Rotate;
@@ -469,6 +477,26 @@ public readonly struct PdfRectangle(double x1, double y1, double x2, double y2)
         return new PdfRectangle(x1, y1, x2, y2);
     }
 
+    /// <summary>
+    /// The intersection of this rectangle with <paramref name="other"/> (both normalised to
+    /// lower-left/upper-right first). Per ISO 32000-1 §14.11.2, a page box that extends beyond the
+    /// MediaBox is effectively reduced to its intersection with the MediaBox. If the two do not
+    /// overlap this returns <paramref name="other"/> (the clamping box) rather than a degenerate rect.
+    /// </summary>
+    internal PdfRectangle IntersectWith(PdfRectangle other)
+    {
+        double ax1 = Math.Min(X1, X2), ay1 = Math.Min(Y1, Y2), ax2 = Math.Max(X1, X2), ay2 = Math.Max(Y1, Y2);
+        double bx1 = Math.Min(other.X1, other.X2), by1 = Math.Min(other.Y1, other.Y2);
+        double bx2 = Math.Max(other.X1, other.X2), by2 = Math.Max(other.Y1, other.Y2);
+
+        double ix1 = Math.Max(ax1, bx1), iy1 = Math.Max(ay1, by1);
+        double ix2 = Math.Min(ax2, bx2), iy2 = Math.Min(ay2, by2);
+
+        if (ix2 <= ix1 || iy2 <= iy1)
+            return new PdfRectangle(bx1, by1, bx2, by2);   // no overlap → fall back to the clamping box
+
+        return new PdfRectangle(ix1, iy1, ix2, iy2);
+    }
 
     public override string ToString() => $"[{X1}, {Y1}, {X2}, {Y2}] ({Width}x{Height})";
 }
