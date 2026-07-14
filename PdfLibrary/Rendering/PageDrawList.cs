@@ -20,6 +20,16 @@ public sealed record TilingFillCommand(IReadOnlyList<PathSegment> Segments, bool
 public sealed record ClipCommand(IReadOnlyList<PathSegment> Segments, bool EvenOdd) : DrawCommand;
 public sealed record SaveCommand : DrawCommand;
 public sealed record RestoreCommand : DrawCommand;
+// Per-spot image ink (Soft-Proof SP-6a). Parallel to the flattened Cmyk plane: an image whose colour space
+// carries a spot colorant emits, per SPOT colorant, a W×H tint plane (0..255), plus a process-only CMYK
+// plane (Cyan/Magenta/Yellow/Black at their per-pixel tint; zero for a pure-spot image). SP-6b paints
+// ProcessCmyk to the process buffer and routes TintPlanes to the spot planes when the registry knows Names;
+// otherwise it falls back to ImageCommand.Cmyk (today's flatten). Names order == plane order.
+public sealed record SpotImageInk(
+    IReadOnlyList<string> Names,   // spot colorant names, plane order
+    byte[] TintPlanes,             // W*H*Names.Count, plane-interleaved (idx = (y*W+x)*N + s)
+    byte[] ProcessCmyk);           // W*H*4
+
 // State carries the constant alpha (ca), blend mode, clip, and soft-mask context the CMYK compositor
 // needs to knock an image into the plate buffer. The vector consumers use only Ctm/Rgba; State is
 // additive. Images NEVER overprint (ISO 32000 §8.6.6.3; GWG010 c/d/h/i) — the compositor ignores the
@@ -29,7 +39,8 @@ public sealed record RestoreCommand : DrawCommand;
 // image matches adjacent DeviceCMYK vector content; alpha still comes from Rgba. Null → RGB fallback.
 public sealed record ImageCommand(
     byte[] Rgba, int Width, int Height, AlphaMode Alpha, Matrix3x2 Ctm, PdfGraphicsState State,
-    byte[]? Cmyk = null, (bool C, bool M, bool Y, bool K)? OverprintPlates = null) : DrawCommand;
+    byte[]? Cmyk = null, (bool C, bool M, bool Y, bool K)? OverprintPlates = null,
+    SpotImageInk? Spots = null) : DrawCommand;
 public sealed record SoftMaskPushCommand(string Subtype, PageDrawList Mask) : DrawCommand;
 public sealed record SoftMaskPopCommand : DrawCommand;
 

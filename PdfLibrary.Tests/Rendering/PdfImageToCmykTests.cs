@@ -1,3 +1,4 @@
+using System.Linq;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -217,5 +218,123 @@ public class PdfImageToCmykTests
 
         Assert.NotNull(cmyk);
         Assert.Equal(new byte[] { 0, 0, 0, 0 }, cmyk);
+    }
+
+    // A minimal Separation/DeviceN colour space. The tint-function slot is never evaluated by TryToSpotInk
+    // (it splits by colorant NAME), so a bare name placeholder suffices.
+    private static PdfArray Separation(string name) =>
+        new(new PdfName("Separation"), new PdfName(name), new PdfName("DeviceCMYK"), new PdfName("Identity"));
+    private static PdfArray DeviceN(params string[] names) =>
+        new(new PdfName("DeviceN"), new PdfArray(names.Select(n => (PdfObject)new PdfName(n)).ToArray()),
+            new PdfName("DeviceCMYK"), new PdfName("Identity"));
+
+    [Fact]
+    public void Separation_spot_image_splits_to_spot_plane_only()
+    {
+        byte[] data = [255, 128];                               // 2 px: tint 1.0, tint ~0.5
+        PdfImage img = Image(Separation("GWG Green"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out int w, out int h);
+
+        Assert.NotNull(ink);
+        Assert.Equal(2, w); Assert.Equal(1, h);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);  // one plane = the raw per-pixel tints
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b)); // pure spot → no process ink
+    }
+
+    [Fact]
+    public void DeviceN_black_plus_spot_splits_process_to_K_and_spot_to_plane()
+    {
+        // DeviceN [Black, GWG Green], 2 bytes/pixel. Pixel 0 = (Black 1.0, Green 0.5); pixel 1 = (Black 0, Green 1.0).
+        byte[] data = [255, 128, 0, 255];
+        PdfImage img = Image(DeviceN("Black", "GWG Green"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);          // only the spot colorant gets a plane
+        Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);   // green tints per pixel
+        // ProcessCmyk: C M Y K per pixel — Black → K plate, rest 0.
+        Assert.Equal(new byte[] { 0, 0, 0, 255,  0, 0, 0, 0 }, ink.ProcessCmyk);
+    }
+
+    [Fact]
+    public void Indexed_over_Separation_splits_from_palette()
+    {
+        // Indexed base = Separation "GWG Green"; palette entries 0..1 = tints (0.5, 1.0). Pixels [1,0].
+        byte[] palette = [128, 255];
+        var cs = new PdfArray(new PdfName("Indexed"), Separation("GWG Green"),
+            new PdfInteger(1), new PdfString(palette));
+        PdfImage img = Image(cs, [1, 0], 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);   // entry1 then entry0
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));
+    }
+
+    // SP-6a final-review Finding 1: TryToSpotInk's scope must match TryToCmyk's — a Separation/DeviceN
+    // image with a non-DeviceCMYK alternate (Lab/ICCBased/RGB/…) stays on the flattened RGBA path in
+    // BOTH, per the SP-6a spec's explicit non-goal. Neither method should emit data for it.
+    [Fact]
+    public void NonCmyk_alternate_spot_image_returns_null_from_both_paths()
+    {
+        byte[] data = [255, 128]; // 2 px
+        var cs = new PdfArray(new PdfName("Separation"), new PdfName("GWG Green"),
+            new PdfName("DeviceRGB"), new PdfName("Identity"));
+        PdfImage img = Image(cs, data, 2, 1);
+
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(img, null, out _, out _));
+        Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
+    }
+
+    // GWG081 Duotone shape: an Indexed image over a DeviceN[Black, GWG Green] base (2 colorants/entry).
+    // Locks in the motivating fixture's split in-suite (previously only checked by a deleted probe).
+    [Fact]
+    public void Indexed_over_DeviceN_black_plus_spot_splits_from_palette()
+    {
+        // Palette entries are 2 bytes each: entry0 = (Black 1.0, Green 0.5), entry1 = (Black 0, Green 1.0).
+        byte[] palette = [255, 128, 0, 255];
+        var cs = new PdfArray(new PdfName("Indexed"), DeviceN("Black", "GWG Green"),
+            new PdfInteger(1), new PdfString(palette));
+        PdfImage img = Image(cs, [1, 0], 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);              // green tints, pixel order [1,0]
+        Assert.Equal(new byte[] { 0, 0, 0, 0,  0, 0, 0, 255 }, ink.ProcessCmyk); // K: pixel0=idx1→K0, pixel1=idx0→K255
+    }
+
+    [Fact]
+    public void No_spot_images_return_null()
+    {
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(Image(new PdfName("DeviceCMYK"), new byte[8], 2, 1), null, out _, out _));
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(Image(new PdfName("DeviceRGB"), new byte[6], 2, 1), null, out _, out _));
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(Image(DeviceN("Cyan", "Black"), new byte[4], 2, 1), null, out _, out _));
+    }
+
+    // "All"/"None" are spec-legal DeviceN colorant names (PageColorant.Classify maps them to
+    // ColorantKind.All/None — neither Spot nor Process), and per the SP-6a design they contribute
+    // NOTHING to the split when they sit alongside a genuine spot colorant. Before the fix, the
+    // per-pixel write loop treated any non-process colorant as spot and indexed planes[-1] for
+    // "All"/"None", throwing IndexOutOfRangeException at pixel 0.
+    [Fact]
+    public void DeviceN_all_or_none_alongside_spot_contributes_nothing_no_crash()
+    {
+        // DeviceN [All, GWG Green], 2 bytes/pixel. Pixel 0 = (All 1.0, Green 0.5); pixel 1 = (All 0, Green 1.0).
+        byte[] data = [255, 128, 0, 255];
+        PdfImage img = Image(DeviceN("All", "GWG Green"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);          // only the spot colorant gets a plane
+        Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);    // green tints per pixel
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b)); // "All" contributes nothing to the split
     }
 }

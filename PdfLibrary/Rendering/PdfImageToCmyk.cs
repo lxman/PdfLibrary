@@ -1,3 +1,4 @@
+using System.Linq;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -264,4 +265,112 @@ public static class PdfImageToCmyk
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
     private static byte B(double v) => (byte)Math.Round((v < 0 ? 0 : v > 1 ? 1 : v) * 255.0);
+
+    // SP-6a: per-spot image ink. Splits a Separation/DeviceN (or Indexed-over-those) image's per-pixel
+    // colorant tints BY NAME — process colorants (Cyan/Magenta/Yellow/Black) → the ProcessCmyk plane, spot
+    // colorants → their own tint plane — so SP-2's combiner routes the spot to its plane and applies the
+    // spot's alternate ONCE (registry ramp), never double-counting. Returns null when the image has no spot
+    // colorant (the existing flattened Cmyk / RGBA path is used unchanged). Scope mirrors TryToCmyk: 8/16-bpc,
+    // non-image-mask, DeviceCMYK-alternate spaces. Honours /Decode per colorant, matching TryToCmyk.
+    public static SpotImageInk? TryToSpotInk(PdfImage image, PdfDocument? document, out int width, out int height)
+    {
+        width = image.Width; height = image.Height;
+        if (width <= 0 || height <= 0 || image.IsImageMask) return null;
+        if (image.BitsPerComponent is not (8 or 16)) return null;
+
+        PdfArray? cs = image.ColorSpaceArray;
+        if (cs is not { Count: >= 2 }) return null;
+
+        // Resolve the colorant space (direct, or an Indexed base) → the Separation/DeviceN array + palette lookup.
+        bool indexed = cs[0] is PdfName { Value: "Indexed" };
+        if (indexed && cs.Count < 4) return null;
+        byte[]? lookup = indexed ? ResolveLookup(cs[3], document) : null;
+        if (indexed && lookup is null) return null;
+        PdfObject sepObj = indexed ? Deref(cs[1], document) : cs;
+        if (sepObj is not PdfArray sep || sep.Count < 4 ||
+            sep[0] is not PdfName { Value: "Separation" or "DeviceN" }) return null;
+
+        // Scope match with TryToCmyk (SP-6a spec non-goal): only a DeviceCMYK alternate yields native ink;
+        // an ICCBased/Lab/other-alternate spot image stays on the flattened RGBA path (Spots == null). Mirrors
+        // BuildTintToCmyk's alternate check but without requiring a tint (the split is by colorant name).
+        PdfObject altObj = Deref(sep[2], document);
+        string altSpace = altObj switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty,
+        };
+        if (altSpace != "DeviceCMYK") return null;
+
+        string[] names = SeparationNames(sep, document);
+        int inC = names.Length;
+        if (inC == 0) return null;
+
+        // Map each colorant → a process plate (0..3) or a spot-plane index. Bail if no spot colorant.
+        var plate = new int[inC];        // process → 0..3 ; spot → -1
+        var spotOf = new int[inC];       // spot-plane index ; process → -1
+        var spotNames = new List<string>();
+        for (var c = 0; c < inC; c++)
+            if (PageColorant.Classify(names[c]) == ColorantKind.Spot)
+            { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(names[c]); }
+            else { plate[c] = ProcessPlate(names[c]); spotOf[c] = -1; }
+        if (spotNames.Count == 0) return null;
+
+        byte[] data;
+        try { data = image.GetDecodedData(); } catch { return null; }
+        if (image.BitsPerComponent == 16) data = HighBytes(data);   // match TryToCmyk's 16→8 high-byte reduction
+
+        int px = width * height, spotN = spotNames.Count;
+        if (indexed ? data.Length < px : data.Length < px * inC) return null;
+
+        double[]? dec = image.DecodeArray;
+        bool applyDecode = !indexed && dec is not null && dec.Length >= inC * 2;
+
+        var process = new byte[px * 4];
+        var planes = new byte[px * spotN];
+        var colorants = new double[inC];
+        for (var i = 0; i < px; i++)
+        {
+            if (indexed)
+            {
+                int e = data[i];
+                for (var c = 0; c < inC; c++)
+                { int s = e * inC + c; colorants[c] = s < lookup!.Length ? lookup[s] / 255.0 : 0; }
+            }
+            else
+            {
+                int src = i * inC;
+                for (var c = 0; c < inC; c++)
+                {
+                    double s = data[src + c] / 255.0;
+                    colorants[c] = applyDecode ? dec![2 * c] + s * (dec[2 * c + 1] - dec[2 * c]) : s;
+                }
+            }
+            int po = i * 4;
+            for (var c = 0; c < inC; c++)
+            {
+                byte v = B(colorants[c]);
+                if (plate[c] >= 0) process[po + plate[c]] = v;
+                else if (spotOf[c] >= 0) planes[i * spotN + spotOf[c]] = v;
+                // else: All/None colorant — contributes nothing to the split (SP-6a spec).
+            }
+        }
+        return new SpotImageInk(spotNames, planes, process);
+    }
+
+    // Separation → the single colorant name; DeviceN → the /Names array.
+    private static string[] SeparationNames(PdfArray sep, PdfDocument? document) =>
+        Deref(sep[1], document) switch
+        {
+            PdfName one => [one.Value],
+            PdfArray arr => arr.Select(x => Deref(x, document)).OfType<PdfName>().Select(p => p.Value).ToArray(),
+            _ => [],
+        };
+
+    private static int ProcessPlate(string name) =>
+        name switch { "Cyan" => 0, "Magenta" => 1, "Yellow" => 2, "Black" => 3, _ => -1 };
+
+    // 16-bit big-endian samples → their high byte (sub-perceptual low byte dropped), matching TryToCmyk.
+    private static byte[] HighBytes(byte[] data)
+    { var p = new byte[data.Length / 2]; for (int i = 0, j = 0; j < p.Length; i += 2, j++) p[j] = data[i]; return p; }
 }

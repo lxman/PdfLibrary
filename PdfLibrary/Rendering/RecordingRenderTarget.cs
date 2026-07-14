@@ -144,7 +144,12 @@ public sealed class RecordingRenderTarget : IRenderTarget
         // doesn't mark. DeviceCMYK/device/spot spaces → null → knockout (ISO 32000 §8.6.7; GWG010 vs GWG082).
         (bool C, bool M, bool Y, bool K)? plates = PdfImageToCmyk.PlateMaskFor(image, _document);
 
-        _commands.Add(new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates));
+        // SP-6a: per-spot image ink (Separation/DeviceN image content routed to spot planes by the CMYK
+        // compositor). Null for no-spot images → ImageCommand.Spots stays null (unchanged behaviour).
+        SpotImageInk? spots = PdfImageToCmyk.TryToSpotInk(image, _document, out int sw, out int sh);
+        if (spots is not null && (sw != img.Width || sh != img.Height)) spots = null;
+
+        _commands.Add(new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates, spots));
     }
 
     public void ApplyCtm(Matrix3x2 ctm) { }
