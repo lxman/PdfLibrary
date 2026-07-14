@@ -29,13 +29,22 @@ internal static class PageColorantReader
         return result;
     }
 
-    private static void AddColorants(PdfObject? defObj, PdfDocument document, HashSet<string> seen, List<PageColorant> result)
+    private static void AddColorants(PdfObject? defObj, PdfDocument document, HashSet<string> seen,
+        List<PageColorant> result, int depth = 0)
     {
-        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(defObj, null, document);
-        if (origin is null) return;
+        if (depth > 8) return;                                   // bounded Indexed/base unwrap
+        PdfObject? resolved = Deref(defObj, document);
+        if (resolved is not PdfArray arr || arr.Count == 0) return;
 
-        PdfObject? resolved = defObj is PdfIndirectReference r ? document.ResolveReference(r) ?? defObj : defObj;
-        if (resolved is not PdfArray baseArray) return;
+        // Indexed carries its colorants in the base space: [/Indexed base hival lookup] → recurse `base`.
+        if (arr[0] is PdfName { Value: "Indexed" } && arr.Count >= 2)
+        {
+            AddColorants(arr[1], document, seen, result, depth + 1);
+            return;
+        }
+
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(resolved, null, document);
+        if (origin is null) return;
 
         for (var i = 0; i < origin.Names.Count; i++)
         {
@@ -45,8 +54,11 @@ internal static class PageColorantReader
             if (!seen.Add(name)) continue;
 
             (double[][]? ramp, (byte R, byte G, byte B) solid) =
-                ColorSpaceResolver.BuildTintRamp(baseArray, document, i, origin.Names.Count);
+                ColorSpaceResolver.BuildTintRamp(arr, document, i, origin.Names.Count);
             result.Add(new PageColorant(name, kind, origin.AlternateSpace, ramp, solid));
         }
     }
+
+    private static PdfObject? Deref(PdfObject? obj, PdfDocument document) =>
+        obj is PdfIndirectReference r ? document.ResolveReference(r) ?? obj : obj;
 }

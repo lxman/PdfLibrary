@@ -151,4 +151,20 @@ public class PageColorantsTests
         Assert.Equal(ColorantKind.Spot, broken.Kind);
         Assert.Null(broken.TintRamp);
     }
+
+    [Fact]
+    public void IndexedOverSeparation_DiscoversBaseSpot()
+    {
+        var sep = new PdfArray(
+            new PdfName("Separation"), new PdfName("PANTONE 032 C"), new PdfName("DeviceCMYK"),
+            Type2([0, 0, 0, 0], [0, 1, 0, 0]));
+        var indexed = new PdfArray(
+            new PdfName("Indexed"), sep, new PdfInteger(1),
+            new PdfString(new byte[] { 0, 0, 0, 0, 255, 255, 255, 255 })); // lookup ignored by discovery
+        PdfDocument doc = DocWithPageColorSpaces(("CS0", indexed));
+
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+
+        Assert.Contains(colorants, c => c.Name == "PANTONE 032 C" && c.Kind == ColorantKind.Spot);
+    }
 }
