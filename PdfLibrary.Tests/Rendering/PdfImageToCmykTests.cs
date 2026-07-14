@@ -276,6 +276,40 @@ public class PdfImageToCmykTests
         Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));
     }
 
+    // SP-6a final-review Finding 1: TryToSpotInk's scope must match TryToCmyk's — a Separation/DeviceN
+    // image with a non-DeviceCMYK alternate (Lab/ICCBased/RGB/…) stays on the flattened RGBA path in
+    // BOTH, per the SP-6a spec's explicit non-goal. Neither method should emit data for it.
+    [Fact]
+    public void NonCmyk_alternate_spot_image_returns_null_from_both_paths()
+    {
+        byte[] data = [255, 128]; // 2 px
+        var cs = new PdfArray(new PdfName("Separation"), new PdfName("GWG Green"),
+            new PdfName("DeviceRGB"), new PdfName("Identity"));
+        PdfImage img = Image(cs, data, 2, 1);
+
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(img, null, out _, out _));
+        Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
+    }
+
+    // GWG081 Duotone shape: an Indexed image over a DeviceN[Black, GWG Green] base (2 colorants/entry).
+    // Locks in the motivating fixture's split in-suite (previously only checked by a deleted probe).
+    [Fact]
+    public void Indexed_over_DeviceN_black_plus_spot_splits_from_palette()
+    {
+        // Palette entries are 2 bytes each: entry0 = (Black 1.0, Green 0.5), entry1 = (Black 0, Green 1.0).
+        byte[] palette = [255, 128, 0, 255];
+        var cs = new PdfArray(new PdfName("Indexed"), DeviceN("Black", "GWG Green"),
+            new PdfInteger(1), new PdfString(palette));
+        PdfImage img = Image(cs, [1, 0], 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);              // green tints, pixel order [1,0]
+        Assert.Equal(new byte[] { 0, 0, 0, 0,  0, 0, 0, 255 }, ink.ProcessCmyk); // K: pixel0=idx1→K0, pixel1=idx0→K255
+    }
+
     [Fact]
     public void No_spot_images_return_null()
     {

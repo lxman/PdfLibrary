@@ -287,8 +287,20 @@ public static class PdfImageToCmyk
         byte[]? lookup = indexed ? ResolveLookup(cs[3], document) : null;
         if (indexed && lookup is null) return null;
         PdfObject sepObj = indexed ? Deref(cs[1], document) : cs;
-        if (sepObj is not PdfArray sep || sep.Count < 2 ||
+        if (sepObj is not PdfArray sep || sep.Count < 4 ||
             sep[0] is not PdfName { Value: "Separation" or "DeviceN" }) return null;
+
+        // Scope match with TryToCmyk (SP-6a spec non-goal): only a DeviceCMYK alternate yields native ink;
+        // an ICCBased/Lab/other-alternate spot image stays on the flattened RGBA path (Spots == null). Mirrors
+        // BuildTintToCmyk's alternate check but without requiring a tint (the split is by colorant name).
+        PdfObject altObj = Deref(sep[2], document);
+        string altSpace = altObj switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty,
+        };
+        if (altSpace != "DeviceCMYK") return null;
 
         string[] names = SeparationNames(sep, document);
         int inC = names.Length;
@@ -340,7 +352,7 @@ public static class PdfImageToCmyk
                 byte v = B(colorants[c]);
                 if (plate[c] >= 0) process[po + plate[c]] = v;
                 else if (spotOf[c] >= 0) planes[i * spotN + spotOf[c]] = v;
-                // else: All/None/unrecognized colorant — contributes nothing to the split (SP-6a spec).
+                // else: All/None colorant — contributes nothing to the split (SP-6a spec).
             }
         }
         return new SpotImageInk(spotNames, planes, process);
