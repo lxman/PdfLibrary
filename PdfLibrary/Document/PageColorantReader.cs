@@ -14,6 +14,8 @@ namespace PdfLibrary.Document;
 /// agnostic (resource dictionaries only — content streams are never parsed) and cycle-guarded, mirroring
 /// <see cref="Conformance.DeviceColourAnalysis"/>'s resource-graph walk. Page-level colorants are
 /// collected first so plane indices stay stable for pages without nested spots.
+/// Type3-font CharProcs and annotation appearance streams are not descended (a spot used only there
+/// falls back to the flattened path, like the plane-cap deferral).
 /// </summary>
 internal static class PageColorantReader
 {
@@ -25,7 +27,15 @@ internal static class PageColorantReader
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var graphSeen = new HashSet<int>();
         PdfPage? page = document.GetPage(pageIndex);
-        WalkResources(page?.GetResources(), document, seen, result, graphSeen, 0);
+        try
+        {
+            WalkResources(page?.GetResources(), document, seen, result, graphSeen, 0);
+        }
+        catch
+        {
+            // Defensive: a malformed resource graph must never throw out of the public GetPageColorants
+            // (spec "Guards and stability" contract). Return whatever was collected before the fault.
+        }
         return result;
     }
 
