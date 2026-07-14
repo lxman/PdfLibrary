@@ -95,4 +95,31 @@ public class ColorantOriginRenderTests
         Assert.NotNull(mock.LastFillState);
         Assert.Null(mock.LastFillState!.ResolvedFillColorantOrigin);
     }
+
+    // Stroke-side counterpart of SeparationFill_PopulatesResolvedFillColorantOrigin: PdfRenderer.OnColorChanged
+    // sets ResolvedStrokeColorantOrigin right after ResolvedFillColorantOrigin, but only the fill half had
+    // render-integration coverage. Drives a /Separation STROKE (CS/SCN on the stroke operators + "S") and
+    // asserts the stroke-side origin resolves the same way the fill-side one does.
+    [Fact]
+    public void SeparationStroke_PopulatesResolvedStrokeColorantOrigin()
+    {
+        var mock = new MockRenderTarget();
+        var renderer = new PdfRenderer(mock, SeparationResources());
+
+        var operators = new List<PdfOperator>
+        {
+            new SetStrokeColorSpaceOperator(new PdfName("CS0")),
+            new SetStrokeColorExtendedOperator([new PdfReal(0.5)]),
+            new RectangleOperator(0, 0, 10, 10),
+            new StrokeOperator(),
+        };
+
+        renderer.ProcessOperators(operators);
+
+        Assert.NotNull(mock.LastStrokeState);
+        ColorantOrigin? origin = mock.LastStrokeState!.ResolvedStrokeColorantOrigin;
+        Assert.NotNull(origin);
+        Assert.Equal(["PANTONE 185 C"], origin!.Names);
+        Assert.Equal("DeviceCMYK", origin.AlternateSpace);
+    }
 }

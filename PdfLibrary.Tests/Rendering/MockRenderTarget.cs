@@ -17,6 +17,10 @@ public class MockRenderTarget : IRenderTarget
     /// render-integration checks need to inspect it after ProcessOperators returns).</summary>
     public PdfGraphicsState? LastFillState { get; private set; }
 
+    /// <summary>Graphics state passed to the most recent <see cref="StrokePath"/> call — mirrors
+    /// <see cref="LastFillState"/> for stroke-side SP-1 colorant-origin render-integration checks.</summary>
+    public PdfGraphicsState? LastStrokeState { get; private set; }
+
     public int CurrentPageNumber { get; private set; }
 
     public void BeginPage(int pageNumber, double width, double height, double scale = 1.0, double cropOffsetX = 0, double cropOffsetY = 0, int rotation = 0)
@@ -32,6 +36,7 @@ public class MockRenderTarget : IRenderTarget
 
     public void StrokePath(IPathBuilder path, PdfGraphicsState state)
     {
+        LastStrokeState = state;
         Operations.Add($"StrokePath: {GetPathDescription(path)}, LineWidth={state.LineWidth}, Color={GetColorDescription(state.StrokeColor, state.StrokeColorSpace)}");
     }
 
