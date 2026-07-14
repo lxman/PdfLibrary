@@ -283,4 +283,24 @@ public class PdfImageToCmykTests
         Assert.Null(PdfImageToCmyk.TryToSpotInk(Image(new PdfName("DeviceRGB"), new byte[6], 2, 1), null, out _, out _));
         Assert.Null(PdfImageToCmyk.TryToSpotInk(Image(DeviceN("Cyan", "Black"), new byte[4], 2, 1), null, out _, out _));
     }
+
+    // "All"/"None" are spec-legal DeviceN colorant names (PageColorant.Classify maps them to
+    // ColorantKind.All/None — neither Spot nor Process), and per the SP-6a design they contribute
+    // NOTHING to the split when they sit alongside a genuine spot colorant. Before the fix, the
+    // per-pixel write loop treated any non-process colorant as spot and indexed planes[-1] for
+    // "All"/"None", throwing IndexOutOfRangeException at pixel 0.
+    [Fact]
+    public void DeviceN_all_or_none_alongside_spot_contributes_nothing_no_crash()
+    {
+        // DeviceN [All, GWG Green], 2 bytes/pixel. Pixel 0 = (All 1.0, Green 0.5); pixel 1 = (All 0, Green 1.0).
+        byte[] data = [255, 128, 0, 255];
+        PdfImage img = Image(DeviceN("All", "GWG Green"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);          // only the spot colorant gets a plane
+        Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);    // green tints per pixel
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b)); // "All" contributes nothing to the split
+    }
 }

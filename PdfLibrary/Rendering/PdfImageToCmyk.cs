@@ -339,7 +339,8 @@ public static class PdfImageToCmyk
             {
                 byte v = B(colorants[c]);
                 if (plate[c] >= 0) process[po + plate[c]] = v;
-                else planes[i * spotN + spotOf[c]] = v;
+                else if (spotOf[c] >= 0) planes[i * spotN + spotOf[c]] = v;
+                // else: All/None/unrecognized colorant — contributes nothing to the split (SP-6a spec).
             }
         }
         return new SpotImageInk(spotNames, planes, process);
@@ -350,7 +351,7 @@ public static class PdfImageToCmyk
         Deref(sep[1], document) switch
         {
             PdfName one => [one.Value],
-            PdfArray arr => arr.OfType<PdfName>().Select(p => p.Value).ToArray(),
+            PdfArray arr => arr.Select(x => Deref(x, document)).OfType<PdfName>().Select(p => p.Value).ToArray(),
             _ => [],
         };
 
