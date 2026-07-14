@@ -268,4 +268,63 @@ public class PageColorantsTests
         Assert.Single(colorants);
         Assert.Equal("ONLY SPOT", colorants[0].Name);
     }
+
+    [Fact]
+    public void TilingPatternOnlySpot_DiscoveredViaRecursion()
+    {
+        var tiling = new PdfStream(new PdfDictionary
+        {
+            [new PdfName("PatternType")] = new PdfInteger(1),
+            [new PdfName("Resources")] = Dict("ColorSpace", Dict("CS0", Sep("PATTERN SPOT"))),
+        }, System.Array.Empty<byte>());
+        PdfDocument doc = DocWithResources(Dict("Pattern", Dict("P0", tiling)));
+
+        Assert.Contains(doc.GetPageColorants(0), c => c.Name == "PATTERN SPOT" && c.Kind == ColorantKind.Spot);
+    }
+
+    [Fact]
+    public void SelfReferencingForm_Terminates_AndFindsSpotOnce()
+    {
+        // Form obj 10 whose /Resources references (a) a Separation and (b) itself → the walk must
+        // terminate (graphSeen guard on parsed docs; the depth cap is the backstop) and list the spot
+        // exactly once (the `seen` set dedupes across recursion levels).
+        var doc = new PdfDocument();
+        var formResources = new PdfDictionary
+        {
+            [new PdfName("ColorSpace")] = Dict("CS0", Sep("CYCLIC SPOT")),
+            [new PdfName("XObject")] = Dict("Self", new PdfIndirectReference(10, 0)),
+        };
+        var form = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            [new PdfName("BBox")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)),
+            [new PdfName("Resources")] = formResources,
+        };
+        doc.AddObject(10, 0, new PdfStream(form, System.Array.Empty<byte>()));
+        var pageDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Page"),
+            [new PdfName("Parent")] = new PdfIndirectReference(2, 0),
+            [new PdfName("Resources")] = Dict("XObject", Dict("Fm0", new PdfIndirectReference(10, 0))),
+            [new PdfName("MediaBox")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(612), new PdfInteger(792)),
+        };
+        doc.AddObject(3, 0, pageDict);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(3, 0)),
+            [new PdfName("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Catalog"),
+            [new PdfName("Pages")] = new PdfIndirectReference(2, 0),
+        });
+        doc.Trailer.Dictionary[new PdfName("Root")] = new PdfIndirectReference(1, 0);
+
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0); // must return, not hang
+        Assert.Single(colorants, c => c.Name == "CYCLIC SPOT");
+    }
 }
