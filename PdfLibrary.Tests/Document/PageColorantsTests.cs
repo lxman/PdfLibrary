@@ -151,4 +151,180 @@ public class PageColorantsTests
         Assert.Equal(ColorantKind.Spot, broken.Kind);
         Assert.Null(broken.TintRamp);
     }
+
+    [Fact]
+    public void IndexedOverSeparation_DiscoversBaseSpot()
+    {
+        var sep = new PdfArray(
+            new PdfName("Separation"), new PdfName("PANTONE 032 C"), new PdfName("DeviceCMYK"),
+            Type2([0, 0, 0, 0], [0, 1, 0, 0]));
+        var indexed = new PdfArray(
+            new PdfName("Indexed"), sep, new PdfInteger(1),
+            new PdfString(new byte[] { 0, 0, 0, 0, 255, 255, 255, 255 })); // lookup ignored by discovery
+        PdfDocument doc = DocWithPageColorSpaces(("CS0", indexed));
+
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+
+        Assert.Contains(colorants, c => c.Name == "PANTONE 032 C" && c.Kind == ColorantKind.Spot);
+    }
+
+    // A single-page doc whose page /Resources is exactly the supplied dictionary (extends the page-tree
+    // builder used by DocWithPageColorSpaces to arbitrary resources: XObject, Pattern, …).
+    private static PdfDocument DocWithResources(PdfDictionary resources)
+    {
+        var doc = new PdfDocument();
+        var pageDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Page"),
+            [new PdfName("Parent")] = new PdfIndirectReference(2, 0),
+            [new PdfName("Resources")] = resources,
+            [new PdfName("MediaBox")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(612), new PdfInteger(792)),
+        };
+        doc.AddObject(3, 0, pageDict);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(3, 0)),
+            [new PdfName("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Catalog"),
+            [new PdfName("Pages")] = new PdfIndirectReference(2, 0),
+        });
+        doc.Trailer.Dictionary[new PdfName("Root")] = new PdfIndirectReference(1, 0);
+        return doc;
+    }
+
+    private static PdfArray Sep(string name) => new(
+        new PdfName("Separation"), new PdfName(name), new PdfName("DeviceCMYK"),
+        Type2([0, 0, 0, 0], [0, 1, 0, 0]));
+
+    private static PdfStream ImageXObject(PdfObject colorSpace)
+    {
+        var d = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(1),
+            [new PdfName("Height")] = new PdfInteger(1),
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+            [new PdfName("ColorSpace")] = colorSpace,
+        };
+        return new PdfStream(d, new byte[] { 0 });
+    }
+
+    private static PdfStream FormXObject(PdfDictionary resources)
+    {
+        var d = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            [new PdfName("BBox")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)),
+            [new PdfName("Resources")] = resources,
+        };
+        return new PdfStream(d, System.Array.Empty<byte>());
+    }
+
+    private static PdfDictionary Dict(string key, PdfObject value) => new() { [new PdfName(key)] = value };
+
+    [Fact]
+    public void ImageOnlySpot_DiscoveredFromImageColorSpace()
+    {
+        var resources = Dict("XObject", Dict("Im0", ImageXObject(Sep("IMAGE ONLY SPOT"))));
+        PdfDocument doc = DocWithResources(resources);
+
+        Assert.Contains(doc.GetPageColorants(0), c => c.Name == "IMAGE ONLY SPOT" && c.Kind == ColorantKind.Spot);
+    }
+
+    [Fact]
+    public void FormWrappedImageSpot_DiscoveredViaRecursion()
+    {
+        PdfStream inner = ImageXObject(Sep("PLACED LOGO SPOT"));
+        PdfStream form = FormXObject(Dict("XObject", Dict("Im0", inner)));
+        PdfDocument doc = DocWithResources(Dict("XObject", Dict("Fm0", form)));
+
+        Assert.Contains(doc.GetPageColorants(0), c => c.Name == "PLACED LOGO SPOT" && c.Kind == ColorantKind.Spot);
+    }
+
+    [Fact]
+    public void IndexedOverSeparationImage_DiscoveredViaRecursion()
+    {
+        var indexed = new PdfArray(new PdfName("Indexed"), Sep("DUOTONE SPOT"),
+            new PdfInteger(1), new PdfString(new byte[] { 0, 0, 0, 0, 255, 255, 255, 255 }));
+        PdfDocument doc = DocWithResources(Dict("XObject", Dict("Im0", ImageXObject(indexed))));
+
+        Assert.Contains(doc.GetPageColorants(0), c => c.Name == "DUOTONE SPOT" && c.Kind == ColorantKind.Spot);
+    }
+
+    [Fact]
+    public void PageLevelOnly_NoNestedResources_ColorantListStable()
+    {
+        // A page with a single page-level Separation and no XObjects/Patterns → exactly one colorant,
+        // no phantom additions from the new walk (byte-identity floor).
+        PdfDocument doc = DocWithResources(Dict("ColorSpace", Dict("CS0", Sep("ONLY SPOT"))));
+
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+        Assert.Single(colorants);
+        Assert.Equal("ONLY SPOT", colorants[0].Name);
+    }
+
+    [Fact]
+    public void TilingPatternOnlySpot_DiscoveredViaRecursion()
+    {
+        var tiling = new PdfStream(new PdfDictionary
+        {
+            [new PdfName("PatternType")] = new PdfInteger(1),
+            [new PdfName("Resources")] = Dict("ColorSpace", Dict("CS0", Sep("PATTERN SPOT"))),
+        }, System.Array.Empty<byte>());
+        PdfDocument doc = DocWithResources(Dict("Pattern", Dict("P0", tiling)));
+
+        Assert.Contains(doc.GetPageColorants(0), c => c.Name == "PATTERN SPOT" && c.Kind == ColorantKind.Spot);
+    }
+
+    [Fact]
+    public void SelfReferencingForm_Terminates_AndFindsSpotOnce()
+    {
+        // Form obj 10 whose /Resources references (a) a Separation and (b) itself → the walk must
+        // terminate (graphSeen guard on parsed docs; the depth cap is the backstop) and list the spot
+        // exactly once (the `seen` set dedupes across recursion levels).
+        var doc = new PdfDocument();
+        var formResources = new PdfDictionary
+        {
+            [new PdfName("ColorSpace")] = Dict("CS0", Sep("CYCLIC SPOT")),
+            [new PdfName("XObject")] = Dict("Self", new PdfIndirectReference(10, 0)),
+        };
+        var form = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            [new PdfName("BBox")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)),
+            [new PdfName("Resources")] = formResources,
+        };
+        doc.AddObject(10, 0, new PdfStream(form, System.Array.Empty<byte>()));
+        var pageDict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Page"),
+            [new PdfName("Parent")] = new PdfIndirectReference(2, 0),
+            [new PdfName("Resources")] = Dict("XObject", Dict("Fm0", new PdfIndirectReference(10, 0))),
+            [new PdfName("MediaBox")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(612), new PdfInteger(792)),
+        };
+        doc.AddObject(3, 0, pageDict);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(new PdfIndirectReference(3, 0)),
+            [new PdfName("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Catalog"),
+            [new PdfName("Pages")] = new PdfIndirectReference(2, 0),
+        });
+        doc.Trailer.Dictionary[new PdfName("Root")] = new PdfIndirectReference(1, 0);
+
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0); // must return, not hang
+        Assert.Single(colorants, c => c.Name == "CYCLIC SPOT");
+    }
 }
