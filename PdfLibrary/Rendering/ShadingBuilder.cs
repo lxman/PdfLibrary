@@ -97,6 +97,7 @@ internal static class ShadingBuilder
             Colors = colors,
             CmykColors = cmykColors,
             OverprintPlates = overprintPlates,
+            ColorantOrigin = ColorSpaceResolver.OriginForColorSpaceObject(shadingCs, null, document),
             PatternMatrix = patternMatrix,
             // Raw source→sRGB sampler for non-CMYK spaces (toCmyk is null): closes over the resolved
             // functions + domain + colour mapper so a CMYK compositor can sample the gradient per-pixel

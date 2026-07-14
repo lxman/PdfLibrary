@@ -172,6 +172,16 @@ public class PdfGraphicsState
     public (bool C, bool M, bool Y, bool K)? StrokeOverprintPlates { get; set; }
 
     /// <summary>
+    /// Named Separation/DeviceN colorant identity for the resolved non-stroking (fill) colour, or null
+    /// for device/Pattern colours. Additive to the flattened <see cref="ResolvedFillColor"/> (which is
+    /// unchanged) — the data Soft-Proof SP-2's N-channel compositor uses to route paint to spot plates.
+    /// </summary>
+    public Rendering.ColorantOrigin? ResolvedFillColorantOrigin { get; set; }
+
+    /// <summary>Named colorant identity for the resolved stroke colour; see <see cref="ResolvedFillColorantOrigin"/>.</summary>
+    public Rendering.ColorantOrigin? ResolvedStrokeColorantOrigin { get; set; }
+
+    /// <summary>
     /// Black-point compensation flag (PDF 2.0 /UseBlackPtComp, ISO 32000-2 Table 57). When true,
     /// ICC colour conversions map the source profile's darkest reproducible black to the
     /// destination's, so dark CMYK shadows render full rather than washed-out grey. Defaults to
@@ -294,6 +304,8 @@ public class PdfGraphicsState
             OverprintMode = OverprintMode,
             FillOverprintPlates = FillOverprintPlates,
             StrokeOverprintPlates = StrokeOverprintPlates,
+            ResolvedFillColorantOrigin = ResolvedFillColorantOrigin,
+            ResolvedStrokeColorantOrigin = ResolvedStrokeColorantOrigin,
             UseBlackPointCompensation = UseBlackPointCompensation,
             RenderingIntent = RenderingIntent,
             Smoothness = Smoothness

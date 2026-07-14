@@ -440,6 +440,58 @@ internal class ColorSpaceResolver(PdfDocument? document)
         };
     }
 
+    /// <summary>
+    /// Builds a 256-entry tint ramp (tint 0..1 → alternate-space colour) for colorant
+    /// <paramref name="colorantIndex"/> of a <c>[/Separation …]</c> or <c>[/DeviceN …]</c> array, sweeping
+    /// that colorant's input and holding the others at 0 (the per-plate separations approximation). Also
+    /// returns a representative sRGB solid at tint = 1 for UI. <c>Ramp</c> is null when there is no usable
+    /// tint transform. Soft-Proof SP-1.
+    /// </summary>
+    internal static (double[][]? Ramp, (byte R, byte G, byte B) Solid) BuildTintRamp(
+        PdfArray baseArray, PdfDocument? doc, int colorantIndex, int inputCount, int samples = 256)
+    {
+        if (baseArray.Count < 4 || colorantIndex < 0 || colorantIndex >= inputCount)
+            return (null, (0, 0, 0));
+
+        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], doc), doc);
+        if (tint is null) return (null, (0, 0, 0));
+
+        var ramp = new double[samples][];
+        var input = new double[inputCount];
+        (byte R, byte G, byte B) solid = (0, 0, 0);
+        try
+        {
+            for (var s = 0; s < samples; s++)
+            {
+                double t = samples == 1 ? 0.0 : (double)s / (samples - 1);
+                Array.Clear(input);
+                input[colorantIndex] = t;
+                ramp[s] = tint.Evaluate((double[])input.Clone());
+            }
+
+            // Representative solid via the existing sRGB evaluator (Lab-aware), at tint = 1.
+            Func<double[], (byte R, byte G, byte B)>? toRgb = BuildTintToRgb(baseArray, doc, out int _);
+            if (toRgb is not null)
+            {
+                Array.Clear(input);
+                input[colorantIndex] = 1.0;
+                solid = toRgb((double[])input.Clone());
+            }
+        }
+        catch (Exception ex)
+        {
+            // Spec: a missing/invalid tint transform still lists the colorant (Name + Kind) with a null
+            // ramp — must never throw into the render path. PdfFunction.Create can succeed yet Evaluate
+            // still throw at runtime on a malformed Type-0/Type-4 function body (e.g. a Domain that
+            // doesn't match the colour space's actual input count); treat that identically to "no usable
+            // tint transform" rather than letting the page-inventory call (GetPageColorants) fail.
+            PdfLogger.Log(LogCategory.Graphics,
+                $"BuildTintRamp: tint transform threw during ramp/solid evaluation for colorant index {colorantIndex}, falling back to null ramp: {ex}");
+            return (null, (0, 0, 0));
+        }
+        return (ramp, solid);
+    }
+
     private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
@@ -534,6 +586,64 @@ internal class ColorSpaceResolver(PdfDocument? document)
         }
 
         return (c, m, y, k);
+    }
+
+    /// <summary>
+    /// The named-colorant identity for a colour-space RESOURCE NAME, or null for device/Pattern spaces or
+    /// spaces that aren't Separation/DeviceN. Mirrors <see cref="OverprintPlatesFor"/>: called at the same
+    /// PdfRenderer site that sets FillOverprintPlates, using the graphics state's raw (pre-resolution)
+    /// colour-space name and colour components. Soft-Proof SP-1.
+    /// </summary>
+    public static ColorantOrigin? OriginFor(
+        string? csName, IReadOnlyList<double>? rawColor, PdfDictionary? colorSpaces, PdfDocument? doc)
+    {
+        if (string.IsNullOrEmpty(csName)) return null;
+        if (csName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK" or "Pattern") return null;
+        if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
+            return null;
+        return OriginForColorSpaceObject(csObj, rawColor, doc);
+    }
+
+    /// <summary>Named-colorant identity for a colour-space DEFINITION object (not a resource name) — used by
+    /// shadings, whose /ColorSpace is a direct object. Null unless the object is Separation/DeviceN.</summary>
+    public static ColorantOrigin? OriginForColorSpaceObject(
+        PdfObject? csObj, IReadOnlyList<double>? rawColor, PdfDocument? doc)
+    {
+        if (csObj is null) return null;
+        csObj = Deref(csObj, doc);
+        if (csObj is not PdfArray { Count: >= 4 } csArray || csArray[0] is not PdfName csType) return null;
+
+        List<string> names;
+        switch (csType.Value)
+        {
+            case "Separation":
+                if (Deref(csArray[1], doc) is not PdfName sepName) return null;
+                names = [sepName.Value];
+                break;
+            case "DeviceN":
+                if (Deref(csArray[1], doc) is not PdfArray namesArr) return null;
+                names = new List<string>(namesArr.Count);
+                foreach (PdfObject nameObj in namesArr)
+                {
+                    if (Deref(nameObj, doc) is not PdfName n) return null;
+                    names.Add(n.Value);
+                }
+                break;
+            default:
+                return null;
+        }
+        if (names.Count == 0) return null;
+
+        PdfObject altObj = Deref(csArray[2], doc);
+        string altSpace = altObj switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty
+        };
+
+        double[] tints = rawColor is null ? [] : [.. rawColor];
+        return new ColorantOrigin(names, tints, altSpace);
     }
 
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);

@@ -50,6 +50,10 @@ public sealed class ShadingDescriptor
     /// so a DeviceN[C,M] gradient over a yellow object keeps the backdrop's Y plate (GWG010 e/j).</summary>
     public (bool C, bool M, bool Y, bool K)? OverprintPlates { get; init; }
 
+    /// <summary>Named Separation/DeviceN colorant identity of the shading's colour space (Soft-Proof
+    /// SP-1), or null for device colour spaces. Additive; does not affect existing shading rendering.</summary>
+    public ColorantOrigin? ColorantOrigin { get; init; }
+
     /// <summary>
     /// Tessellated triangle list for a mesh shading (type 6/7): a triangle soup where each consecutive
     /// triple of vertices forms one Gouraud-shaded triangle, positions in the shading's target coordinate

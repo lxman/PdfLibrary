@@ -414,6 +414,12 @@ public partial class PdfDocument : IDisposable
     /// </summary>
     public IReadOnlyList<Document.OutputIntentDescriptor> GetOutputIntents() => Document.OutputIntentReader.Read(this);
 
+    /// <summary>The distinct named Separation/DeviceN colorants used on a page (Soft-Proof SP-1) — the
+    /// plate list + per-colorant tint ramps for the ink-separations preview. Colorants declared only in
+    /// XObject/Pattern sub-resources are captured via the per-op ColorantOrigin during rendering, not here.</summary>
+    public IReadOnlyList<Document.PageColorant> GetPageColorants(int pageIndex) =>
+        Document.PageColorantReader.Read(this, pageIndex);
+
     /// <summary>
     /// Gets the total number of pages
     /// </summary>
