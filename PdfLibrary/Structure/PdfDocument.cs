@@ -423,6 +423,19 @@ public partial class PdfDocument : IDisposable
         Document.PageColorantReader.Read(this, pageIndex);
 
     /// <summary>
+    /// Reads the document's interactive form (ISO 32000-1, 12.7) — the <c>/AcroForm</c> entry of the
+    /// catalog — as a read-only <see cref="Document.AcroFormInfo"/>. Returns null when the document has no
+    /// <c>/AcroForm</c>.
+    /// </summary>
+    public Document.AcroFormInfo? GetAcroForm() => Document.AcroFormReader.Read(this);
+
+    /// <summary>
+    /// True iff the document catalog references an <c>/AcroForm</c> dictionary with at least one declared
+    /// field. A cheap existence check that walks only the catalog (not a full terminal-field recursion).
+    /// </summary>
+    public bool HasForm => GetAcroForm() is { HasFields: true };
+
+    /// <summary>
     /// Gets the total number of pages
     /// </summary>
     public int PageCount => GetPageCount();
