@@ -10,6 +10,15 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 public readonly record struct MeshVertex(float X, float Y, uint Rgb, uint Cmyk);
 
+/// <summary>Per-spot shading ink (Soft-Proof SP-7, axial/radial). Parallel to the flattened
+/// <see cref="ShadingDescriptor.CmykColors"/>: per SPOT colorant a per-stop tint, plus a per-stop
+/// process-only CMYK (process colorants at their tint; zero for a pure-spot shading). Null when the
+/// shading carries no spot colorant. (Mesh per-vertex spot data is a separate follow-on.)</summary>
+public sealed record ShadingSpotInk(
+    IReadOnlyList<string> Names,   // spot colorant names, tint index order
+    byte[] StopTints,              // StopCount * Names.Count, idx = stop*Names.Count + s, 0..255
+    uint[] StopProcessCmyk);       // StopCount, 0xCCMMYYKK process-only
+
 /// <summary>
 /// Backend-agnostic description of a PDF shading. Axial (type 2) and radial (type 3) carry a
 /// pre-sampled colour ramp (<see cref="Coords"/> + <see cref="Stops"/> + <see cref="Colors"/>);
@@ -53,6 +62,10 @@ public sealed class ShadingDescriptor
     /// <summary>Named Separation/DeviceN colorant identity of the shading's colour space (Soft-Proof
     /// SP-1), or null for device colour spaces. Additive; does not affect existing shading rendering.</summary>
     public ColorantOrigin? ColorantOrigin { get; init; }
+
+    /// <summary>Per-spot ink for a spot axial/radial shading (Soft-Proof SP-7); null ⇒ no spot colorant
+    /// (renders exactly as before via <see cref="CmykColors"/>).</summary>
+    public ShadingSpotInk? SpotInk { get; init; }
 
     /// <summary>
     /// Tessellated triangle list for a mesh shading (type 6/7): a triangle soup where each consecutive
