@@ -71,6 +71,36 @@ public class MeshSpotInkTests
         return ShadingBuilder.Build(stream, null);
     }
 
+    // Build a single-patch type-7 tensor-product mesh: flag(1B)=0, then 16 control points (32 coord bytes —
+    // the full FullOrder; type 7 READS all 16 rather than deriving the 4 internal ones), then 4 corner
+    // colours. This drives the type-7 branch (`lastPoint == 16`, `DeriveInternalPoints` skipped); the corner
+    // split + parallel-Bilerp tessellation are the SAME code as type 6, so this confirms the split fires on
+    // the tensor path too.
+    private static ShadingDescriptor? BuildTensor(PdfObject colorSpace, int componentsPerCorner, byte[][] cornerTints)
+    {
+        var bytes = new System.Collections.Generic.List<byte> { 0 };   // flag 0 (new patch)
+        byte[] coords =
+        [
+            0,0,  0,85,  0,170,  0,255,  85,255,  170,255,
+            255,255,  255,170,  255,85,  255,0,  170,0,  85,0,   // 12 boundary points
+            85,85,  85,170,  170,170,  170,85                    // 4 internal control points (type-7 only)
+        ];
+        bytes.AddRange(coords);
+        foreach (byte[] corner in cornerTints)
+            for (var c = 0; c < componentsPerCorner; c++) bytes.Add(corner[c]);
+
+        var stream = new PdfStream(new PdfDictionary(), bytes.ToArray());
+        stream.Dictionary[new PdfName("ShadingType")] = new PdfInteger(7);
+        stream.Dictionary[new PdfName("BitsPerCoordinate")] = new PdfInteger(8);
+        stream.Dictionary[new PdfName("BitsPerComponent")] = new PdfInteger(8);
+        stream.Dictionary[new PdfName("BitsPerFlag")] = new PdfInteger(8);
+        var decode = new System.Collections.Generic.List<PdfObject> { new PdfReal(0), new PdfReal(1), new PdfReal(0), new PdfReal(1) };
+        for (var c = 0; c < componentsPerCorner; c++) { decode.Add(new PdfReal(0)); decode.Add(new PdfReal(1)); }
+        stream.Dictionary[new PdfName("Decode")] = new PdfArray(decode.ToArray());
+        stream.Dictionary[new PdfName("ColorSpace")] = colorSpace;
+        return ShadingBuilder.Build(stream, null);
+    }
+
     [Fact]
     public void PureSeparationMesh_PopulatesMeshSpotInk_ProcessNull()
     {
@@ -96,6 +126,8 @@ public class MeshSpotInkTests
         // Separation alternate maps tint t → (0, t, 0, 0): the flattened MeshVertex.Cmyk's MAGENTA byte
         // equals the routed spot tint at every vertex. This pins that VertexTints is interpolated by the
         // SAME Bilerp weights as MeshVertex.Cmyk (the load-bearing parity property).
+        // Corners are 0 and 255 (no rounding midpoint), and BilerpByte mirrors Bilerp's arithmetic exactly,
+        // so the flatten M byte and the routed tint are BIT-IDENTICAL at every vertex — assert exact equality.
         ShadingDescriptor? sh = BuildCoons(SeparationCmyk("GWG Green"), 1, [[0], [255], [255], [0]]);
         Assert.NotNull(sh!.MeshSpotInk);
         int n = sh.MeshSpotInk!.Names.Count;   // 1
@@ -103,8 +135,7 @@ public class MeshSpotInkTests
         {
             byte magenta = (byte)((sh.MeshTriangles[v].Cmyk >> 16) & 0xFF);   // M channel of the flatten
             byte tint = sh.MeshSpotInk.VertexTints[v * n];
-            Assert.True(System.Math.Abs(magenta - tint) <= 1,                  // ≤1 for independent round
-                $"vertex {v}: flatten M={magenta} vs routed tint={tint}");
+            Assert.Equal(magenta, tint);                                       // same Bilerp weights ⇒ exact
         }
     }
 
@@ -119,6 +150,24 @@ public class MeshSpotInkTests
         Assert.NotNull(sh.MeshSpotInk.VertexProcessCmyk);                     // has a process colorant
         // Some vertex has C≈full in the process plane and M/Y/K zero (Cyan → C plate; spot NOT folded).
         Assert.Contains(sh.MeshSpotInk.VertexProcessCmyk!, p => ((p >> 24) & 0xFF) > 200 && (p & 0x00FFFFFFu) == 0);
+    }
+
+    [Fact]
+    public void PureSeparationTensorMesh_Type7_PopulatesMeshSpotInk()
+    {
+        // Type-7 tensor patch over /Separation — the corner split + tessellation path is shared with type 6,
+        // so this confirms MeshSpotInk is emitted on the 16-control-point branch (DeriveInternalPoints skipped).
+        ShadingDescriptor? sh = BuildTensor(SeparationCmyk("GWG Green"), 1, [[0], [255], [255], [0]]);
+
+        Assert.NotNull(sh);
+        Assert.Equal(7, sh!.ShadingType);                                    // drove the tensor branch
+        Assert.NotNull(sh.MeshSpotInk);
+        Assert.Equal(new[] { "GWG Green" }, sh.MeshSpotInk!.Names);
+        Assert.Null(sh.MeshSpotInk.VertexProcessCmyk);                       // pure spot ⇒ process null
+        Assert.Equal(sh.MeshTriangles.Length, sh.MeshSpotInk.VertexTints.Length);
+        // Interpolation ran across the tensor patch: the tint plane spans the corner range.
+        Assert.Contains(sh.MeshSpotInk.VertexTints, b => b > 200);
+        Assert.Contains(sh.MeshSpotInk.VertexTints, b => b < 40);
     }
 
     [Fact]
