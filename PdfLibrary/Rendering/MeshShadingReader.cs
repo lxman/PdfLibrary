@@ -90,7 +90,7 @@ internal static class MeshShadingReader
             long flagRaw = reader.Read(bpf);
             if (reader.Eof) break;
             int flag = (int)(flagRaw & 0x3);
-            if (flag != 0 && prev is null) return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, vertProc, vertTints, hasProcess) : null;
+            if (flag != 0 && prev is null) return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, spotNames, vertProc, vertTints, hasProcess) : null;
 
             var patch = new Patch();
 
@@ -144,11 +144,11 @@ internal static class MeshShadingReader
             prev = patch;
         }
 
-        return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, vertProc, vertTints, hasProcess) : null;
+        return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, spotNames, vertProc, vertTints, hasProcess) : null;
     }
 
     private static ShadingDescriptor Finish(List<MeshVertex> triangles, Func<double[], uint>? toCmyk,
-        Matrix3x2? patternMatrix, int shadingType, ColorantOrigin? origin,
+        Matrix3x2? patternMatrix, int shadingType, ColorantOrigin? origin, List<string> spotNames,
         List<uint>? vertProc, List<byte>? vertTints, bool hasProcess) => new()
     {
         ShadingType = shadingType,
@@ -156,11 +156,9 @@ internal static class MeshShadingReader
         MeshHasCmyk = toCmyk is not null,
         PatternMatrix = patternMatrix,
         ColorantOrigin = origin,
+        // vertTints is non-empty only when splitSpots was true ⇒ spotNames is the shading's spot list.
         MeshSpotInk = vertTints is { Count: > 0 }
-            ? new MeshSpotInk(
-                (origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : []),
-                vertTints.ToArray(),
-                hasProcess ? vertProc!.ToArray() : null)
+            ? new MeshSpotInk(spotNames, vertTints.ToArray(), hasProcess ? vertProc!.ToArray() : null)
             : null,
     };
 
