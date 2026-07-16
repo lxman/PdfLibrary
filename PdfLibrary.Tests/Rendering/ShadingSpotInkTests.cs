@@ -80,6 +80,34 @@ public class ShadingSpotInkTests
     }
 
     [Fact]
+    public void DeviceNTwoSpots_PreservesOrderAndStride()
+    {
+        // DeviceN [GWG Green, PANTONE 032 C]: two spots, no process colorant. Distinct, non-symmetric
+        // tint ramps per colorant, so swapping the spot indices — or collapsing the stop*Names.Count
+        // stride down to just stop — lands the wrong value at the wrong slot.
+        PdfDictionary dict = AxialShading(DeviceNCmyk(["GWG Green", "PANTONE 032 C"]),
+            new PdfArray(Type2Fn([0.10], [0.90]), Type2Fn([0.05], [0.50])));
+        ShadingDescriptor? sh = ShadingBuilder.Build(dict, null);
+
+        Assert.NotNull(sh);
+        Assert.NotNull(sh!.SpotInk);
+        Assert.Equal(new[] { "GWG Green", "PANTONE 032 C" }, sh.SpotInk!.Names);
+        Assert.Equal(sh.Stops.Length * 2, sh.SpotInk.StopTints.Length);
+
+        // Mid-ramp stop (i=32 of 64, t≈0.508): GWG Green ≈ 0.10 + t*0.80 ≈ 0.506 → byte ≈129;
+        // PANTONE 032 C ≈ 0.05 + t*0.45 ≈ 0.279 → byte ≈71. Distinct on purpose.
+        int mid = sh.Stops.Length / 2;
+        byte green = sh.SpotInk.StopTints[mid * 2 + 0];
+        byte pantone = sh.SpotInk.StopTints[mid * 2 + 1];
+        Assert.InRange(green, 118, 138);
+        Assert.InRange(pantone, 60, 80);
+        Assert.NotEqual(green, pantone);
+
+        // Pure-spot (no process colorant in the DeviceN list) ⇒ process CMYK all zero.
+        Assert.All(sh.SpotInk.StopProcessCmyk, v => Assert.Equal(0u, v));
+    }
+
+    [Fact]
     public void DeviceCmykShading_NoSpotInk()
     {
         PdfDictionary dict = AxialShading(new PdfName("DeviceCMYK"),

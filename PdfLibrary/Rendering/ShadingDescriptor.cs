@@ -14,10 +14,17 @@ public readonly record struct MeshVertex(float X, float Y, uint Rgb, uint Cmyk);
 /// <see cref="ShadingDescriptor.CmykColors"/>: per SPOT colorant a per-stop tint, plus a per-stop
 /// process-only CMYK (process colorants at their tint; zero for a pure-spot shading). Null when the
 /// shading carries no spot colorant. (Mesh per-vertex spot data is a separate follow-on.)</summary>
+/// <param name="Names">Spot colorant names, in tint index order.</param>
+/// <param name="StopTints">Per-stop, per-spot tint bytes (0..255). Stop-major, spot-minor: length is
+/// <c>Stops.Length * Names.Count</c>, and index <c>stop * Names.Count + s</c> holds spot <c>s</c>'s
+/// (0-based, <see cref="Names"/> order) tint at that stop — NOT spot-major.</param>
+/// <param name="StopProcessCmyk">Per-stop process-only packed CMYK, length <c>Stops.Length</c>; each
+/// entry is <c>0xCCMMYYKK</c> (process colorants — Cyan/Magenta/Yellow/Black — at their tint; zero
+/// when the shading has no process colorant).</param>
 public sealed record ShadingSpotInk(
-    IReadOnlyList<string> Names,   // spot colorant names, tint index order
-    byte[] StopTints,              // StopCount * Names.Count, idx = stop*Names.Count + s, 0..255
-    uint[] StopProcessCmyk);       // StopCount, 0xCCMMYYKK process-only
+    IReadOnlyList<string> Names,
+    byte[] StopTints,
+    uint[] StopProcessCmyk);
 
 /// <summary>
 /// Backend-agnostic description of a PDF shading. Axial (type 2) and radial (type 3) carry a

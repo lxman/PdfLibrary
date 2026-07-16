@@ -1,3 +1,5 @@
+using PdfLibrary.Document;
+
 namespace PdfLibrary.Rendering;
 
 /// <summary>
@@ -8,12 +10,12 @@ namespace PdfLibrary.Rendering;
 /// </summary>
 internal static class ShadingSpotSplit
 {
-    /// <summary>The spot-kind colorant names (anything not Cyan/Magenta/Yellow/Black/All/None), in order.</summary>
+    /// <summary>The spot-kind colorant names (per <see cref="PageColorant.Classify"/>), in order.</summary>
     public static List<string> SpotNames(IReadOnlyList<string> names)
     {
         var spots = new List<string>();
         foreach (string n in names)
-            if (n is not ("Cyan" or "Magenta" or "Yellow" or "Black" or "All" or "None")) spots.Add(n);
+            if (PageColorant.Classify(n) == ColorantKind.Spot) spots.Add(n);
         return spots;
     }
 
@@ -27,13 +29,18 @@ internal static class ShadingSpotSplit
         for (var j = 0; j < names.Count; j++)
         {
             double v = j < comps.Length ? comps[j] : 0.0;
-            switch (names[j])
+            switch (PageColorant.Classify(names[j]))
             {
-                case "Cyan": c = v; break;
-                case "Magenta": m = v; break;
-                case "Yellow": y = v; break;
-                case "Black": k = v; break;
-                case "All" or "None": break;               // recognised, not a plate
+                case ColorantKind.Process:
+                    switch (names[j])
+                    {
+                        case "Cyan": c = v; break;
+                        case "Magenta": m = v; break;
+                        case "Yellow": y = v; break;
+                        case "Black": k = v; break;
+                    }
+                    break;
+                case ColorantKind.All or ColorantKind.None: break;   // recognised, not a plate
                 default: spotDest[destOffset + s] = B(v); s++; break;   // spot
             }
         }
