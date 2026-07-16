@@ -1,6 +1,8 @@
+using System.Linq;
 using System.Numerics;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Functions;
 using PdfLibrary.Structure;
 
@@ -32,7 +34,9 @@ internal static class MeshShadingReader
     private sealed class Patch
     {
         public readonly Vector2[] Cp = new Vector2[16];        // indexed by Idx(col,row)
-        public readonly (uint Rgb, uint Cmyk)[] Corner = new (uint, uint)[4]; // c00, c03, c33, c30
+        // c00, c03, c33, c30. Proc = process-only packed CMYK; Tints = per-spot tint bytes (empty when no
+        // spot). Inherited corners (flag 1/2/3) copy the whole tuple, so the split rides inheritance for free.
+        public readonly (uint Rgb, uint Cmyk, uint Proc, byte[] Tints)[] Corner = new (uint, uint, uint, byte[])[4];
     }
 
     private static int Idx(int col, int row) => col * 4 + row;
@@ -51,6 +55,17 @@ internal static class MeshShadingReader
         PdfObject? csObj = dict.TryGetValue(new PdfName("ColorSpace"), out PdfObject cs) ? cs : null;
         Func<double[], uint> toRgb = ShadingBuilder.BuildColorMapper(csObj, document);
         Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(csObj, document);
+
+        // SP-7-mesh: preserve a spot mesh's per-vertex spot tints + process-only CMYK (only for a
+        // DeviceCMYK-alternate Separation/DeviceN, i.e. toCmyk non-null and a spot colorant present).
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(csObj, null, document);
+        List<string> spotNames = origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : [];
+        bool splitSpots = toCmyk is not null && origin is not null && spotNames.Count > 0;
+        int spotN = spotNames.Count;
+        bool hasProcess = origin is not null &&
+            origin.Names.Any(n => PageColorant.Classify(n) == ColorantKind.Process);
+        var vertProc = splitSpots ? new List<uint>() : null;
+        var vertTints = splitSpots ? new List<byte>() : null;
 
         // With a /Function each corner stores a single parametric value t; otherwise it stores the
         // colour space's n components directly. The Decode array sizes the latter.
@@ -75,7 +90,7 @@ internal static class MeshShadingReader
             long flagRaw = reader.Read(bpf);
             if (reader.Eof) break;
             int flag = (int)(flagRaw & 0x3);
-            if (flag != 0 && prev is null) return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType) : null;
+            if (flag != 0 && prev is null) return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, vertProc, vertTints, hasProcess) : null;
 
             var patch = new Patch();
 
@@ -113,25 +128,40 @@ internal static class MeshShadingReader
                     comps[c] = lo + reader.Read(bpComp) * (hi - lo) / compMax;
                 }
                 double[] colorSpaceComps = hasFunction ? ShadingBuilder.EvaluateColor(functions, comps[0]) : comps;
-                patch.Corner[corner] = (toRgb(colorSpaceComps), toCmyk?.Invoke(colorSpaceComps) ?? 0u);
+                uint proc = 0;
+                byte[] tints = [];
+                if (splitSpots)
+                {
+                    tints = new byte[spotN];
+                    proc = ShadingSpotSplit.Split(colorSpaceComps, origin!.Names, tints, 0);
+                }
+                patch.Corner[corner] = (toRgb(colorSpaceComps), toCmyk?.Invoke(colorSpaceComps) ?? 0u, proc, tints);
             }
             if (reader.Eof) break;
 
             reader.Align();          // each patch record occupies a whole number of bytes
-            Tessellate(patch, triangles);
+            Tessellate(patch, triangles, vertProc, vertTints, spotN);
             prev = patch;
         }
 
-        return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType) : null;
+        return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, vertProc, vertTints, hasProcess) : null;
     }
 
     private static ShadingDescriptor Finish(List<MeshVertex> triangles, Func<double[], uint>? toCmyk,
-        Matrix3x2? patternMatrix, int shadingType) => new()
+        Matrix3x2? patternMatrix, int shadingType, ColorantOrigin? origin,
+        List<uint>? vertProc, List<byte>? vertTints, bool hasProcess) => new()
     {
         ShadingType = shadingType,
         MeshTriangles = triangles.ToArray(),
         MeshHasCmyk = toCmyk is not null,
-        PatternMatrix = patternMatrix
+        PatternMatrix = patternMatrix,
+        ColorantOrigin = origin,
+        MeshSpotInk = vertTints is { Count: > 0 }
+            ? new MeshSpotInk(
+                (origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : []),
+                vertTints.ToArray(),
+                hasProcess ? vertProc!.ToArray() : null)
+            : null,
     };
 
     // Copies the new patch's shared edge (p00,p01,p02,p03 = column 0) and the two shared corner colours
@@ -174,10 +204,14 @@ internal static class MeshShadingReader
     }
 
     // Samples the patch surface on an (N+1)×(N+1) grid and emits two triangles per cell.
-    private static void Tessellate(Patch p, List<MeshVertex> outTris)
+    private static void Tessellate(Patch p, List<MeshVertex> outTris,
+        List<uint>? outProc, List<byte>? outTints, int spotN)
     {
         const int n = Subdivisions;
         var grid = new MeshVertex[(n + 1) * (n + 1)];
+        bool split = outProc is not null;
+        uint[]? gridProc = split ? new uint[(n + 1) * (n + 1)] : null;
+        byte[]? gridTints = split ? new byte[(n + 1) * (n + 1) * spotN] : null;
         for (int gu = 0; gu <= n; gu++)
         for (int gv = 0; gv <= n; gv++)
         {
@@ -185,19 +219,44 @@ internal static class MeshShadingReader
             Vector2 pos = Surface(p, u, v);
             uint rgb = Bilerp(p.Corner[0].Rgb, p.Corner[3].Rgb, p.Corner[2].Rgb, p.Corner[1].Rgb, u, v);
             uint cmyk = Bilerp(p.Corner[0].Cmyk, p.Corner[3].Cmyk, p.Corner[2].Cmyk, p.Corner[1].Cmyk, u, v);
-            grid[gu * (n + 1) + gv] = new MeshVertex(pos.X, pos.Y, rgb, cmyk);
+            int gi = gu * (n + 1) + gv;
+            grid[gi] = new MeshVertex(pos.X, pos.Y, rgb, cmyk);
+            if (split)
+            {
+                // Same Bilerp corner order + u/v as Cmyk above → structural parity.
+                gridProc![gi] = Bilerp(p.Corner[0].Proc, p.Corner[3].Proc, p.Corner[2].Proc, p.Corner[1].Proc, u, v);
+                for (var s = 0; s < spotN; s++)
+                    gridTints![gi * spotN + s] = BilerpByte(
+                        p.Corner[0].Tints[s], p.Corner[3].Tints[s], p.Corner[2].Tints[s], p.Corner[1].Tints[s], u, v);
+            }
         }
 
         for (int gu = 0; gu < n; gu++)
         for (int gv = 0; gv < n; gv++)
         {
-            MeshVertex a = grid[gu * (n + 1) + gv];
-            MeshVertex b = grid[(gu + 1) * (n + 1) + gv];
-            MeshVertex c = grid[(gu + 1) * (n + 1) + gv + 1];
-            MeshVertex d = grid[gu * (n + 1) + gv + 1];
-            outTris.Add(a); outTris.Add(b); outTris.Add(c);
-            outTris.Add(a); outTris.Add(c); outTris.Add(d);
+            int ia = gu * (n + 1) + gv, ib = (gu + 1) * (n + 1) + gv;
+            int ic = (gu + 1) * (n + 1) + gv + 1, id = gu * (n + 1) + gv + 1;
+            Emit(ia); Emit(ib); Emit(ic);
+            Emit(ia); Emit(ic); Emit(id);
         }
+
+        void Emit(int gi)
+        {
+            outTris.Add(grid[gi]);
+            if (!split) return;
+            outProc!.Add(gridProc![gi]);
+            for (var s = 0; s < spotN; s++) outTints!.Add(gridTints![gi * spotN + s]);
+        }
+    }
+
+    // Bilinear interpolation of a single byte across the unit square — identical clamp/round/order to Bilerp,
+    // so a spot tint interpolates exactly as its packed-CMYK sibling (interpolation parity).
+    private static byte BilerpByte(byte v0u0, byte v0u1, byte v1u1, byte v1u0, float u, float v)
+    {
+        float bottom = v0u0 * (1 - u) + v0u1 * u;
+        float top = v1u0 * (1 - u) + v1u1 * u;
+        float f = bottom * (1 - v) + top * v;
+        return (byte)Math.Clamp((int)MathF.Round(f), 0, 255);
     }
 
     // S(u,v) = Σ_col Σ_row p[col,row] · B_col(u) · B_row(v) — bicubic Bernstein tensor product.

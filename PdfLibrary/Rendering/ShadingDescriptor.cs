@@ -26,6 +26,21 @@ public sealed record ShadingSpotInk(
     byte[] StopTints,
     uint[] StopProcessCmyk);
 
+/// <summary>Per-spot ink for a spot MESH shading (Soft-Proof SP-7-mesh, types 6/7). Sibling to the
+/// axial/radial <see cref="ShadingSpotInk"/>: per-VERTEX (aligned 1:1 to <see cref="ShadingDescriptor.MeshTriangles"/>)
+/// a per-spot tint, plus an optional per-vertex process-only CMYK. Null when the mesh carries no spot colorant.</summary>
+/// <param name="Names">Spot colorant names, in tint index order.</param>
+/// <param name="VertexTints">Per-vertex, per-spot tint bytes (0..255). Length is
+/// <c>MeshTriangles.Length * Names.Count</c>; index <c>vtx * Names.Count + s</c> holds spot <c>s</c>'s
+/// (0-based, <see cref="Names"/> order) tint at vertex <c>vtx</c>.</param>
+/// <param name="VertexProcessCmyk">Per-vertex process-only packed CMYK (<c>0xCCMMYYKK</c>, process colorants
+/// at their tint), length <c>MeshTriangles.Length</c>; <c>null</c> when the mesh has no process colorant
+/// (pure Separation / spot-only DeviceN) — treat null as all-zero.</param>
+public sealed record MeshSpotInk(
+    IReadOnlyList<string> Names,
+    byte[] VertexTints,
+    uint[]? VertexProcessCmyk);
+
 /// <summary>
 /// Backend-agnostic description of a PDF shading. Axial (type 2) and radial (type 3) carry a
 /// pre-sampled colour ramp (<see cref="Coords"/> + <see cref="Stops"/> + <see cref="Colors"/>);
@@ -73,6 +88,10 @@ public sealed class ShadingDescriptor
     /// <summary>Per-spot ink for a spot axial/radial shading (Soft-Proof SP-7); null ⇒ no spot colorant
     /// (renders exactly as before via <see cref="CmykColors"/>).</summary>
     public ShadingSpotInk? SpotInk { get; init; }
+
+    /// <summary>Per-spot ink for a spot mesh (type 6/7) shading (Soft-Proof SP-7-mesh); null ⇒ no spot
+    /// colorant (renders exactly as before via <see cref="MeshVertex.Cmyk"/>).</summary>
+    public MeshSpotInk? MeshSpotInk { get; init; }
 
     /// <summary>
     /// Tessellated triangle list for a mesh shading (type 6/7): a triangle soup where each consecutive
