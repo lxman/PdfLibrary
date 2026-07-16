@@ -67,6 +67,16 @@ internal static class ShadingBuilder
         (bool C, bool M, bool Y, bool K)? overprintPlates =
             ColorSpaceResolver.PlatesForColorSpaceObject(shadingCs, document);
 
+        // SP-7: preserve a spot shading's per-stop spot tints + process-only CMYK so the compositor can
+        // route the spot to its plane instead of flattening it (only for DeviceCMYK-alternate Sep/DeviceN,
+        // i.e. when toCmyk is non-null and the colour space has a spot colorant).
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(shadingCs, null, document);
+        List<string> spotNames = origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : [];
+        bool splitSpots = toCmyk is not null && origin is not null && spotNames.Count > 0;
+        int spotN = spotNames.Count;
+        byte[] stopTints = splitSpots ? new byte[StopCount * spotN] : [];
+        uint[] stopProcess = splitSpots ? new uint[StopCount] : [];
+
         bool extendStart = false, extendEnd = false;
         if (dict.TryGetValue(new PdfName("Extend"), out PdfObject extObj) && extObj is PdfArray { Count: >= 2 } extArr)
         {
@@ -84,6 +94,7 @@ internal static class ShadingBuilder
             double[] components = EvaluateColor(functions, t);
             colors[i] = toColor(components);
             if (toCmyk is not null) cmykColors[i] = toCmyk(components);
+            if (splitSpots) stopProcess[i] = ShadingSpotSplit.Split(components, origin!.Names, stopTints, i * spotN);
             stops[i] = (float)s;
         }
 
@@ -97,7 +108,8 @@ internal static class ShadingBuilder
             Colors = colors,
             CmykColors = cmykColors,
             OverprintPlates = overprintPlates,
-            ColorantOrigin = ColorSpaceResolver.OriginForColorSpaceObject(shadingCs, null, document),
+            ColorantOrigin = origin,
+            SpotInk = splitSpots ? new ShadingSpotInk(spotNames, stopTints, stopProcess) : null,
             PatternMatrix = patternMatrix,
             // Raw source→sRGB sampler for non-CMYK spaces (toCmyk is null): closes over the resolved
             // functions + domain + colour mapper so a CMYK compositor can sample the gradient per-pixel
