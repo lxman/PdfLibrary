@@ -290,18 +290,19 @@ public static class PdfImageToCmyk
         if (sepObj is not PdfArray sep || sep.Count < 4 ||
             sep[0] is not PdfName { Value: "Separation" or "DeviceN" }) return null;
 
-        // Scope match with TryToCmyk (SP-6a spec non-goal): only a DeviceCMYK alternate yields native ink;
-        // an ICCBased/Lab/other-alternate spot image stays on the flattened RGBA path (Spots == null). Mirrors
-        // BuildTintToCmyk's alternate check but without requiring a tint (the split is by colorant name).
-        PdfObject altObj = Deref(sep[2], document);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty,
-        };
-        if (altSpace != "DeviceCMYK") return null;
-
+        // SP-6c: the alternate is deliberately NOT consulted here. ISO 32000-1 §8.6.6.5 conditions reversion
+        // on colorant AVAILABILITY — "Reversion shall occur only if at least one colour component (other than
+        // None) is specified and is not available on the device" — never on what the alternate happens to be.
+        // The split below is by colorant NAME and never reads the alternate or evaluates the tint transform,
+        // so a Lab/ICCBased alternate was never grounds to bail: it is the fallback for colorants we cannot
+        // paint, not a trigger. Availability is decided downstream (the compositor's all-or-nothing routing
+        // falls back to the flatten path for an unregistered spot), and `spotNames.Count == 0` below still
+        // hands purely-process images to the CMYK/RGBA path.
+        //
+        // This intentionally diverges from TryToCmyk, which SP-6a's final review had scope-matched to this
+        // method. TryToCmyk genuinely NEEDS a DeviceCMYK alternate because it converts THROUGH it; this method
+        // does not. Motivating case: GWG080's /Indexed /DeviceN [/Black /PANTONE 265 C /None ×3] with a /Lab
+        // alternate, which flattened through Lab so Black and PANTONE were never painted as separations.
         string[] names = SeparationNames(sep, document);
         int inC = names.Length;
         if (inC == 0) return null;
