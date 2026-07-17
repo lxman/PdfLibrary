@@ -276,19 +276,75 @@ public class PdfImageToCmykTests
         Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));
     }
 
-    // SP-6a final-review Finding 1: TryToSpotInk's scope must match TryToCmyk's — a Separation/DeviceN
-    // image with a non-DeviceCMYK alternate (Lab/ICCBased/RGB/…) stays on the flattened RGBA path in
-    // BOTH, per the SP-6a spec's explicit non-goal. Neither method should emit data for it.
+    // SP-6c deliberately un-matches the two scopes, which SP-6a's final review (Finding 1) had deliberately
+    // matched. They answer different questions:
+    //   TryToCmyk    NEEDS the alternate — it converts through it, so a non-DeviceCMYK alternate is a real
+    //                blocker and it still returns null (unchanged).
+    //   TryToSpotInk NEVER reads the alternate — it splits by colorant NAME. §8.6.6.5 conditions reversion on
+    //                colorant AVAILABILITY, not on what the alternate is, so the alternate was never grounds
+    //                to bail. The alternate is the fallback for colorants we cannot paint, not a trigger.
+    // The divergence is safe: when a spot is unregistered, the compositor's all-or-nothing routing falls back
+    // to the flatten path, finds Cmyk == null, and lands on RGBA — exactly the old behaviour.
     [Fact]
-    public void NonCmyk_alternate_spot_image_returns_null_from_both_paths()
+    public void NonCmyk_alternate_spot_image_still_splits_but_yields_no_cmyk_plane()
     {
         byte[] data = [255, 128]; // 2 px
         var cs = new PdfArray(new PdfName("Separation"), new PdfName("GWG Green"),
             new PdfName("DeviceRGB"), new PdfName("Identity"));
         PdfImage img = Image(cs, data, 2, 1);
 
-        Assert.Null(PdfImageToCmyk.TryToSpotInk(img, null, out _, out _));
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);
+
+        // TryToCmyk still bails: it would have to convert through the alternate, and this one isn't CMYK.
         Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
+    }
+
+    // A Lab colour space array. TryToSpotInk only reads the alternate's NAME (to decide nothing, after
+    // SP-6c) — the dictionary is here so the fixture matches GWG080's real shape rather than a stub.
+    private static PdfArray Lab() =>
+        new(new PdfName("Lab"), new PdfDictionary
+        {
+            [new PdfName("WhitePoint")] = new PdfArray(new PdfReal(0.9642), new PdfReal(1.0), new PdfReal(0.82491)),
+            [new PdfName("Range")] = new PdfArray(new PdfReal(-128), new PdfReal(127), new PdfReal(-128), new PdfReal(127)),
+        });
+
+    private static PdfArray DeviceNWithAlt(PdfObject alternate, params string[] names) =>
+        new(new PdfName("DeviceN"), new PdfArray(names.Select(n => (PdfObject)new PdfName(n)).ToArray()),
+            alternate, new PdfName("Identity"));
+
+    // SP-6c, the motivating fixture. GWG080's Duotone turtle is /Indexed over
+    // /DeviceN [/Black /PANTONE 265 C /None /None /None] with a /Lab alternate. Before SP-6c the altSpace
+    // guard bailed, the image flattened through Lab (Lab→RGB→CMYK), and Black + PANTONE were never painted
+    // as separations at all — gs paints them (Black 87%, PANTONE 92%), which is the fixture's whole point
+    // ("should appear only in Black and Pantone 265C separations").
+    [Fact]
+    public void DeviceN_spot_image_with_a_Lab_alternate_splits_by_name()
+    {
+        // 5 components/pixel. px0 = (Black 1.0, PANTONE 0.5); px1 = (Black 0, PANTONE 1.0).
+        // The three /None channels carry GWG080's Lab fallback values and must contribute nothing.
+        byte[] data = [255, 128, 40, 50, 60,   0, 255, 40, 50, 60];
+        PdfImage img = Image(DeviceNWithAlt(Lab(), "Black", "PANTONE 265 C", "None", "None", "None"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out int w, out int h);
+
+        Assert.NotNull(ink);
+        Assert.Equal(2, w); Assert.Equal(1, h);
+        Assert.Equal(new[] { "PANTONE 265 C" }, ink!.Names);      // only the spot colorant gets a plane
+        Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);
+        // Black → K plate; /None contributes nothing, so C/M/Y stay 0 despite the 40/50/60 channels.
+        Assert.Equal(new byte[] { 0, 0, 0, 255,  0, 0, 0, 0 }, ink.ProcessCmyk);
+    }
+
+    // The non-goal SP-6c must NOT widen into: a purely-process DeviceN has no spot to route, so the
+    // CMYK/RGBA path still owns it whatever the alternate. This is GWG230's shape.
+    [Fact]
+    public void DeviceN_without_a_spot_returns_null_whatever_the_alternate()
+    {
+        PdfImage img = Image(DeviceNWithAlt(new PdfName("DeviceGray"), "Black"), [255, 0], 2, 1);
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(img, null, out _, out _));
     }
 
     // GWG081 Duotone shape: an Indexed image over a DeviceN[Black, GWG Green] base (2 colorants/entry).
