@@ -426,7 +426,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
             PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
             _ => string.Empty
         };
-        if (altSpace != "DeviceCMYK") return null;   // only a CMYK alternate yields native CMYK
+        // A DeviceGray alternate is just as convertible as a DeviceCMYK one: PDF 32000-1 §10.3.3 makes
+        // DeviceGray a DEVICE space that separates onto the black plate alone (k = 1 − gray), which is
+        // exactly the rule the FILL path already applies (Pellucid's InkDecider.ToCmyk). Rejecting it sent
+        // a [/Separation /Black /DeviceGray] image down the managed RGBA path, where RGB(g,g,g) was
+        // ICC-converted into a RICH gray (ink on all four plates) that no longer matched an adjacent
+        // DeviceCMYK(0,0,0,k) box — GWG230 c/d, which draw the same X twice (once as a fill, once as an
+        // image) and so rendered HALF an X: the fill half correct, the image half rich.
+        //
+        // CalGray is deliberately NOT included: it is CIE-based, not a device space, so it keeps colour
+        // management and must still take the RGBA path (same split InkDecider.ToCmyk makes for fills).
+        var grayAlt = altSpace == "DeviceGray";
+        if (altSpace != "DeviceCMYK" && !grayAlt) return null;
 
         PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
         if (tint is null) return null;
@@ -435,6 +446,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         {
             double[] r = tint.Evaluate(colorants);
             static double C01(double v) => v < 0 ? 0 : v > 1 ? 1 : v;
+            // DeviceGray alternate: one output component (gray) → K-only, per §10.3.3.
+            if (grayAlt) return (0, 0, 0, C01(1.0 - (r.Length > 0 ? r[0] : 0)));
             return (C01(r.Length > 0 ? r[0] : 0), C01(r.Length > 1 ? r[1] : 0),
                     C01(r.Length > 2 ? r[2] : 0), C01(r.Length > 3 ? r[3] : 0));
         };

@@ -393,4 +393,69 @@ public class PdfImageToCmykTests
         Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);    // green tints per pixel
         Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b)); // "All" contributes nothing to the split
     }
+
+    // ---- A DeviceGray alternate separates K-only (GWG230 c/d) ----
+
+    private static PdfArray Reals(params double[] v) =>
+        new(v.Select(x => (PdfObject)new PdfReal(x)).ToArray());
+
+    // Type 2 exponential, N=1: a real, evaluable tint transform t -> C0 + t*(C1-C0).
+    private static PdfDictionary Type2(double[] c0, double[] c1)
+    {
+        var d = new PdfDictionary();
+        d.Add(new PdfName("FunctionType"), new PdfInteger(2));
+        d.Add(new PdfName("Domain"), Reals(0, 1));
+        d.Add(new PdfName("C0"), Reals(c0));
+        d.Add(new PdfName("C1"), Reals(c1));
+        d.Add(new PdfName("N"), new PdfReal(1));
+        return d;
+    }
+
+    [Fact]
+    public void Separation_with_a_DeviceGray_alternate_separates_K_only()
+    {
+        // GWG230 patch c, exactly: [/Separation /Black /DeviceGray {t -> gray}], tint 1 -> gray 0 (black),
+        // tint 0 -> gray 1 (white). PDF 32000-1 §10.3.3: DeviceGray is a DEVICE space and separates onto the
+        // black plate alone — k = 1 - gray. Before this, BuildTintToCmyk bailed on any non-DeviceCMYK
+        // alternate, so the image reverted to RGBA and the compositor ICC-converted RGB(g,g,g) into a RICH
+        // gray (ink on all four plates) that no longer matched an adjacent DeviceCMYK(0,0,0,k) box.
+        PdfArray cs = new(new PdfName("Separation"), new PdfName("Black"), new PdfName("DeviceGray"),
+            Type2([1.0], [0.0]));
+        // 2 px: tint 0.0 (-> gray 1.0 -> K 0) and tint 1.0 (-> gray 0.0 -> K 255)
+        PdfImage img = Image(cs, [0, 255], 2, 1);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out int w, out int h);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(2, w); Assert.Equal(1, h);
+        // K-only on BOTH pixels: no ink on C/M/Y at any tint.
+        Assert.Equal(new byte[] { 0, 0, 0, 0, /**/ 0, 0, 0, 255 }, cmyk);
+    }
+
+    [Fact]
+    public void DeviceN_with_a_DeviceGray_alternate_separates_K_only()
+    {
+        // GWG230 patch d: [/DeviceN [/Black] /DeviceGray {t -> gray}].
+        PdfArray cs = new(new PdfName("DeviceN"), new PdfArray(new PdfName("Black")),
+            new PdfName("DeviceGray"), Type2([1.0], [0.0]));
+        PdfImage img = Image(cs, [0, 255], 2, 1);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out _, out _);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(new byte[] { 0, 0, 0, 0, /**/ 0, 0, 0, 255 }, cmyk);
+    }
+
+    [Fact]
+    public void Separation_with_a_CalGray_alternate_still_reverts()
+    {
+        // The NON-GOAL, pinned. CalGray is CIE-based, NOT a device space, so it keeps colour management and
+        // must still take the managed RGBA path — exactly as InkDecider.ToCmyk treats it for fills. Only
+        // DeviceGray is a device space that separates K-only.
+        PdfArray cs = new(new PdfName("Separation"), new PdfName("Black"),
+            new PdfArray(new PdfName("CalGray"), new PdfDictionary()), Type2([1.0], [0.0]));
+        PdfImage img = Image(cs, [0, 255], 2, 1);
+
+        Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
+    }
 }
