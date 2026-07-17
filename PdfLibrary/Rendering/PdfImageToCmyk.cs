@@ -359,6 +359,72 @@ public static class PdfImageToCmyk
         return new SpotImageInk(spotNames, planes, process);
     }
 
+    // SP-6d: a stencil's ink, synthesized from the FILL.
+    //
+    // ISO 32000-1 §8.9.6.2 "Stencil Masking": an image mask's samples "designate places on the page that
+    // should either be marked with the current colour or masked out (not marked at all). Areas that are
+    // masked out retain their former contents. The effect is like applying paint in the current colour
+    // through a cut-out stencil", and "The image dictionary shall not contain a ColorSpace entry".
+    //
+    // So a stencil provably has NO INK OF ITS OWN — TryToSpotInk returning null for it (above) is correct,
+    // not an omission. Its ink is the current fill, which means the fill is also where its SPOT identity
+    // lives. Without this, RecordingRenderTarget bakes only the fill's ALTERNATE into RGBA, the compositor
+    // sees Spots == null, derives ProcessOther (Table 148 row 2 = "paint source on every process colorant")
+    // and paints the alternate on all four plates — ERASING the backdrop the stencil was overprinting.
+    // GWG020's "mask - i": GWG Green at 1% tint over a CMYK green, rendered as a white ✗ where Ghostscript
+    // and Adobe both show uniform green.
+    //
+    // The planes are CONSTANT across the image on purpose: the stencil's shape already lives in the RGBA
+    // alpha (masked-out ⇒ alpha 0 ⇒ never composited), which is exactly §8.9.6.2's "retain their former
+    // contents". Cost is W*H*(N+4) bytes; the design spec's Option D is the escape hatch if that ever bites.
+    //
+    // The name split is SP-6a's, deliberately identical (spot ⇒ its own plane; Cyan/Magenta/Yellow/Black ⇒
+    // their plate at their own tint; All/None ⇒ nothing), so a stencil and an image of the same colorants
+    // decide the same way.
+    internal static SpotImageInk? StencilInkFromFill(ColorantOrigin origin, int width, int height)
+    {
+        if (width <= 0 || height <= 0) return null;
+
+        int inC = origin.Names.Count;
+        if (inC == 0) return null;
+
+        var plate = new int[inC];        // process → 0..3 ; spot → -1
+        var spotOf = new int[inC];       // spot-plane index ; process → -1
+        var spotNames = new List<string>();
+        for (var c = 0; c < inC; c++)
+            if (PageColorant.Classify(origin.Names[c]) == ColorantKind.Spot)
+            { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(origin.Names[c]); }
+            else { plate[c] = ProcessPlate(origin.Names[c]); spotOf[c] = -1; }
+        if (spotNames.Count == 0) return null;   // process-only fill → the RGBA path is fine (a non-goal)
+
+        // One pixel's worth of ink, then replicated: the value is constant by construction.
+        int spotN = spotNames.Count;
+        var cell = new byte[4];
+        var spotCell = new byte[spotN];
+        for (var c = 0; c < inC; c++)
+        {
+            // Tints is allowed to be SHORTER than Names (see InkDecider.ProcessContribution's note); a
+            // missing tint reads as 0 rather than throwing.
+            byte v = B(c < origin.Tints.Count ? origin.Tints[c] : 0.0);
+            if (plate[c] >= 0) cell[plate[c]] = v;
+            else if (spotOf[c] >= 0) spotCell[spotOf[c]] = v;
+            // else: All/None colorant — contributes nothing to the split (SP-6a).
+        }
+
+        int px = width * height;
+        var process = new byte[px * 4];
+        var planes = new byte[px * spotN];
+        for (var i = 0; i < px; i++)
+        {
+            int po = i * 4;
+            process[po] = cell[0]; process[po + 1] = cell[1];
+            process[po + 2] = cell[2]; process[po + 3] = cell[3];
+            int so = i * spotN;
+            for (var s = 0; s < spotN; s++) planes[so + s] = spotCell[s];
+        }
+        return new SpotImageInk(spotNames, planes, process);
+    }
+
     // Separation → the single colorant name; DeviceN → the /Names array.
     private static string[] SeparationNames(PdfArray sep, PdfDocument? document) =>
         Deref(sep[1], document) switch

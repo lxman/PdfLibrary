@@ -149,6 +149,15 @@ public sealed class RecordingRenderTarget : IRenderTarget
         SpotImageInk? spots = PdfImageToCmyk.TryToSpotInk(image, _document, out int sw, out int sh);
         if (spots is not null && (sw != img.Width || sh != img.Height)) spots = null;
 
+        // SP-6d: a stencil has no ink of its own (§8.9.6.2 — no ColorSpace entry; its samples are "marked
+        // with the current colour"), so TryToSpotInk correctly returns null for one. Take its ink from the
+        // FILL instead, or the spot identity is lost to `maskColor`'s alternate-RGB bake at the top of this
+        // method and the compositor knocks out the backdrop this stencil is overprinting.
+        // Gated on the fill's origin, NOT on IsImageMask alone: a process-fill stencil (74 of the GWG
+        // corpus's 76 — glyph stencils) has no origin and keeps today's RGBA path.
+        if (spots is null && image.IsImageMask && state.ResolvedFillColorantOrigin is { } fillOrigin)
+            spots = PdfImageToCmyk.StencilInkFromFill(fillOrigin, img.Width, img.Height);
+
         _commands.Add(new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates, spots));
     }
 
