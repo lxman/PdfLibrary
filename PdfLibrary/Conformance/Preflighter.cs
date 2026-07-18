@@ -48,6 +48,8 @@ public static class Preflighter
         new Rules.RenderingIntentRule(),
         // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
         new Rules.TransparencyColourRule(),
+        // Prohibited XObjects (ISO 19005-2 6.2.9): form /OPI, /PS, /Subtype2 = PS, /Ref; PostScript XObjects.
+        new Rules.ProhibitedXObjectRule(),
         // Slice 7 — annotations, interactive forms, actions.
         new Rules.AnnotationTypeRule(),
         new Rules.AnnotationFlagsRule(),
