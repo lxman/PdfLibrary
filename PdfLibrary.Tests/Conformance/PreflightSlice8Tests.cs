@@ -42,7 +42,7 @@ public class PreflightSlice8Tests
     /// /EmbeddedFiles and optionally referenced from a catalog /AF array.</summary>
     private static void AddEmbeddedFile(
         PdfDocument doc, PdfDictionary catalog, bool hasF, bool hasUF, string? afRelationship,
-        bool referencedByAF, string? subtype = "text/plain")
+        bool referencedByAF, string? subtype = "text/plain", string fValue = "file.txt", string ufValue = "file.txt")
     {
         var streamDict = new PdfDictionary();
         if (subtype is not null) streamDict[N("Subtype")] = N(subtype);
@@ -53,8 +53,8 @@ public class PreflightSlice8Tests
             [N("Type")] = N("Filespec"),
             [N("EF")] = new PdfDictionary { [N("F")] = Ref(11) },
         };
-        if (hasF) spec[N("F")] = Str("file.txt");
-        if (hasUF) spec[N("UF")] = Str("file.txt");
+        if (hasF) spec[N("F")] = Str(fValue);
+        if (hasUF) spec[N("UF")] = Str(ufValue);
         if (afRelationship is not null) spec[N("AFRelationship")] = N(afRelationship);
         doc.AddObject(10, 0, spec);
 
@@ -106,6 +106,32 @@ public class PreflightSlice8Tests
     {
         var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: "Data", referencedByAF: true));
         Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+    }
+
+    // ── 7.11 EmbeddedFileSpecRule under PDF/UA-1 (non-empty /F and /UF) ───────
+
+    [Fact]
+    public void Ua1_embedded_file_missing_UF_is_flagged_at_7_11() // 7.11-t1
+    {
+        var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: false, afRelationship: null, referencedByAF: false));
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
+        Assert.Equal("embedded-file", f.RuleId);
+        Assert.Equal(ConformanceClauses.For(ConformanceProfile.PdfUA1, "7.11"), f.Clause);
+    }
+
+    [Fact]
+    public void Ua1_embedded_file_with_empty_UF_is_flagged() // 7.11-t1 non-empty requirement
+    {
+        // A present but empty /UF passes the PDF/A presence check yet fails UA-1's non-empty requirement.
+        var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: null, referencedByAF: false, ufValue: ""));
+        Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
+    }
+
+    [Fact]
+    public void Ua1_embedded_file_with_nonempty_F_and_UF_passes()
+    {
+        var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: null, referencedByAF: false));
+        Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
     }
 
     // ── 6.9 OptionalContentRule ──────────────────────────────────────────────
