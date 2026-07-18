@@ -50,6 +50,8 @@ public static class Preflighter
         new Rules.TransparencyColourRule(),
         // Prohibited XObjects (ISO 19005-2 6.2.9): form /OPI, /PS, /Subtype2 = PS, /Ref; PostScript XObjects.
         new Rules.ProhibitedXObjectRule(),
+        // Image restrictions (ISO 19005-2 6.2.8): no /Alternates, /OPI; /Interpolate false; /BitsPerComponent set.
+        new Rules.ImageDictionaryRule(),
         // Slice 7 — annotations, interactive forms, actions.
         new Rules.AnnotationTypeRule(),
         new Rules.AnnotationFlagsRule(),
