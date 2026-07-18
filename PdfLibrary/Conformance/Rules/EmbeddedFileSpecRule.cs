@@ -38,7 +38,7 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
         bool isUa1 = context.Target == ConformanceProfile.PdfUA1;
         HashSet<int> associatedFiles = isPart3 ? CollectAssociatedFileRefs(context) : [];
 
-        foreach (PdfDictionary spec in CollectFileSpecs(context))
+        foreach (PdfDictionary spec in CollectFileSpecs(context, includeAnnotationSpecs: isUa1))
         {
             var ef = context.Resolve(spec.Get("EF")) as PdfDictionary;
             if (ef is null)
@@ -108,14 +108,26 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
         return refs;
     }
 
-    private static IEnumerable<PdfDictionary> CollectFileSpecs(ConformanceContext context)
+    private static IEnumerable<PdfDictionary> CollectFileSpecs(ConformanceContext context, bool includeAnnotationSpecs)
     {
-        if (context.Resolve(context.Catalog?.Dictionary.Get("Names")) is not PdfDictionary names)
-            yield break;
+        var seen = new HashSet<int>();
 
-        foreach (PdfObject value in context.EnumerateNameTree(names.Get("EmbeddedFiles")))
-            if (context.Resolve(value) is PdfDictionary spec)
-                yield return spec;
+        if (context.Resolve(context.Catalog?.Dictionary.Get("Names")) is PdfDictionary names)
+            foreach (PdfObject value in context.EnumerateNameTree(names.Get("EmbeddedFiles")))
+                if (context.Resolve(value) is PdfDictionary spec && Fresh(spec))
+                    yield return spec;
+
+        // PDF/UA-1 7.11 also governs embedded files reached through a FileAttachment annotation's /FS, which
+        // the catalog name tree does not include. Scoped to UA-1 so PDF/A 6.8 behaviour is unchanged.
+        if (includeAnnotationSpecs)
+            foreach (var page in context.Pages)
+                if (context.Resolve(page.Dictionary.Get("Annots")) is PdfArray annots)
+                    foreach (PdfObject a in annots)
+                        if (context.Resolve(a) is PdfDictionary annot
+                            && context.Resolve(annot.Get("FS")) is PdfDictionary spec && Fresh(spec))
+                            yield return spec;
+
+        bool Fresh(PdfDictionary spec) => !spec.IsIndirect || seen.Add(spec.ObjectNumber);
     }
 
     /// <summary>The embedded file stream referenced by an /EF dictionary (prefers /UF, falls back to /F).</summary>

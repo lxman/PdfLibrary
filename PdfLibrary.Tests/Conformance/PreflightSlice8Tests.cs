@@ -134,6 +134,56 @@ public class PreflightSlice8Tests
         Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
     }
 
+    /// <summary>A one-page doc whose only embedded file hangs off a FileAttachment annotation's /FS (not the
+    /// catalog name tree) — the veraPDF 7.18.7 test-file shape that also fails 7.11.</summary>
+    private static PdfDocument DocWithFileAttachment(bool hasUF, string ufValue = "file.txt")
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), new byte[] { 1 }));
+        var spec = new PdfDictionary
+        {
+            [N("Type")] = N("Filespec"),
+            [N("F")] = Str("file.txt"),
+            [N("EF")] = new PdfDictionary { [N("F")] = Ref(11) },
+        };
+        if (hasUF) spec[N("UF")] = Str(ufValue);
+        doc.AddObject(10, 0, spec);
+        doc.AddObject(12, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Annot"), [N("Subtype")] = N("FileAttachment"), [N("FS")] = Ref(10),
+        });
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2), [N("Annots")] = new PdfArray(Ref(12)),
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void Ua1_file_attachment_annotation_with_missing_UF_is_flagged() // 7.11 via annotation /FS
+    {
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: false), ConformanceProfile.PdfUA1)));
+        Assert.Equal(ConformanceClauses.For(ConformanceProfile.PdfUA1, "7.11"), f.Clause);
+    }
+
+    [Fact]
+    public void Ua1_file_attachment_annotation_with_nonempty_UF_passes()
+    {
+        Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: true), ConformanceProfile.PdfUA1)));
+    }
+
+    [Fact]
+    public void Pdfa_does_not_collect_annotation_filespecs() // PDF/A behaviour unchanged (name-tree only)
+    {
+        Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: false), ConformanceProfile.PdfA2b)));
+    }
+
     // ── 6.9 OptionalContentRule ──────────────────────────────────────────────
 
     private static void AddOcConfigs(PdfDictionary catalog, PdfDictionary defaultConfig, params PdfDictionary[] alternates)
