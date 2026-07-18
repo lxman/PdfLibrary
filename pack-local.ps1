@@ -20,9 +20,11 @@ $Feed       = Join-Path $PSScriptRoot "local-feed"
 # Base versions come from each csproj so they never drift from what the packages publish as. Skia's
 # csproj has two conditional <Version> lines (the SkiaPackVersion override); take the plain one.
 $baseVersion = ([xml](Get-Content $csproj)).Project.PropertyGroup.Version |
+    ForEach-Object { if ($_ -is [string]) { $_ } else { $_.InnerText } } |
     Where-Object { $_ -and $_ -notmatch '\$' } | Select-Object -First 1
 if (-not $baseVersion) { throw "could not read <Version> from $csproj" }
 $skiaBaseVersion = ([xml](Get-Content $skiaCsproj)).Project.PropertyGroup.Version |
+    ForEach-Object { if ($_ -is [string]) { $_ } else { $_.InnerText } } |
     Where-Object { $_ -and $_ -notmatch '\$' } | Select-Object -First 1
 if (-not $skiaBaseVersion) { throw "could not read base <Version> from $skiaCsproj" }
 

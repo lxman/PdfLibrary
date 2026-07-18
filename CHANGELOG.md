@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Embedded-files read API** — `PdfDocument.GetEmbeddedFiles()` returns read-only
+  `EmbeddedFileDescriptor`s for the catalog's `/Names /EmbeddedFiles` name tree plus catalog-level
+  `/AF` associated files (ISO 32000-2, 7.11.4 / 14.13): the name-tree key, `/F` and `/UF` file
+  names, `/Desc`, `/AFRelationship`, the stream's MIME `/Subtype`, catalog-`/AF` membership, and
+  the decoded file bytes. Content failures degrade per entry (`HasData = false`) — the reader
+  never throws on malformed documents. First consumer: the EInvoice Factur-X bridge (extracting
+  `factur-x.xml` from PDF/A-3 invoices); the API is generic to any embedded attachment.
+
 ## [2.4.0] - 2026-07-09
 
 Minor release: a **read-only conformance preflight** for archival, print, and accessibility PDF
