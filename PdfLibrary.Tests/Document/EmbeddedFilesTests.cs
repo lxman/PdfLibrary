@@ -237,4 +237,37 @@ public class EmbeddedFilesTests
         EmbeddedFileDescriptor file = Assert.Single(doc.GetEmbeddedFiles());
         Assert.True(file.IsAssociated);
     }
+
+    [Fact]
+    public void AfOnlySpec_isYieldedWithNullName()
+    {
+        PdfDocument doc = Doc((d, c) =>
+        {
+            AddFileSpec(d, 10, 11, data: Encoding.ASCII.GetBytes("<x/>"), afRel: "Alternative");
+            c[N("AF")] = new PdfArray(Ref(10)); // no /Names /EmbeddedFiles at all
+        });
+
+        EmbeddedFileDescriptor file = Assert.Single(doc.GetEmbeddedFiles());
+        Assert.Null(file.Name);
+        Assert.Equal("file.xml", file.FileName);
+        Assert.Equal("Alternative", file.AfRelationship);
+        Assert.True(file.IsAssociated);
+        Assert.True(file.HasData);
+        Assert.Equal("<x/>", Encoding.ASCII.GetString(file.GetDataBytes()!));
+    }
+
+    [Fact]
+    public void SpecInBothNameTreeAndAF_yieldsOneDescriptor()
+    {
+        PdfDocument doc = Doc((d, c) =>
+        {
+            AddFileSpec(d, 10, 11, data: [1], afRel: "Data");
+            RegisterInNameTree(c, ("file.xml", 10));
+            c[N("AF")] = new PdfArray(Ref(10)); // same spec, both registries — the Factur-X shape
+        });
+
+        EmbeddedFileDescriptor file = Assert.Single(doc.GetEmbeddedFiles());
+        Assert.Equal("file.xml", file.Name); // the name-tree identity wins
+        Assert.True(file.IsAssociated);
+    }
 }

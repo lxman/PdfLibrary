@@ -85,16 +85,32 @@ internal static class EmbeddedFileReader
                 if (Resolve(document, entry) is PdfDictionary { IsIndirect: true } afSpec)
                     associated.Add(afSpec.ObjectNumber);
 
-        if (Resolve(document, catalog.Get("Names")) is not PdfDictionary names)
-            return result;
-
-        foreach ((string? name, PdfObject value) in EnumerateNameTree(document, names.Get("EmbeddedFiles")))
+        // Primary registry: the /Names /EmbeddedFiles name tree.
+        var yielded = new HashSet<int>();
+        if (Resolve(document, catalog.Get("Names")) is PdfDictionary names)
         {
-            if (Resolve(document, value) is not PdfDictionary spec)
-                continue;
-            bool isAssociated = spec.IsIndirect && associated.Contains(spec.ObjectNumber);
-            result.Add(Describe(document, spec, name, isAssociated));
+            foreach ((string? name, PdfObject value) in EnumerateNameTree(document, names.Get("EmbeddedFiles")))
+            {
+                if (Resolve(document, value) is not PdfDictionary spec)
+                    continue;
+                if (spec.IsIndirect)
+                    yielded.Add(spec.ObjectNumber);
+                bool isAssociated = spec.IsIndirect && associated.Contains(spec.ObjectNumber);
+                result.Add(Describe(document, spec, name, isAssociated));
+            }
         }
+
+        // Union: catalog /AF specs the name tree did not already yield (a Factur-X file references the
+        // SAME spec from both places — that must stay one descriptor, carrying its name-tree identity).
+        if (Resolve(document, catalog.Get("AF")) is PdfArray afArray)
+            foreach (PdfObject entry in afArray)
+                if (Resolve(document, entry) is PdfDictionary { IsIndirect: true } spec
+                    && !yielded.Contains(spec.ObjectNumber))
+                {
+                    yielded.Add(spec.ObjectNumber);
+                    result.Add(Describe(document, spec, name: null, isAssociated: true));
+                }
+
         return result;
     }
 
