@@ -20,6 +20,8 @@ public static class Preflighter
         // Slice 20 — file-structure rules: file header (6.1.2) + implementation limits (6.1.13).
         new Rules.FileHeaderRule(),
         new Rules.ImplementationLimitsRule(),
+        // Permissions dictionary + signature-reference constraints (ISO 19005-2 6.1.12).
+        new Rules.PermissionsRule(),
         new Rules.StreamFiltersRule(),
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),
