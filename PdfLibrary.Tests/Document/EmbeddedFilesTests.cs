@@ -270,4 +270,27 @@ public class EmbeddedFilesTests
         Assert.Equal("file.xml", file.Name); // the name-tree identity wins
         Assert.True(file.IsAssociated);
     }
+
+    [Fact]
+    public void DirectDictInAF_isYielded()
+    {
+        PdfDocument doc = Doc((d, c) =>
+        {
+            d.AddObject(11, 0, new PdfStream(
+                new PdfDictionary { [N("Subtype")] = N("text/xml") }, Encoding.ASCII.GetBytes("<x/>")));
+            // The filespec is an inline direct dictionary inside /AF — no indirect object, no name tree.
+            c[N("AF")] = new PdfArray(new PdfDictionary
+            {
+                [N("Type")] = N("Filespec"),
+                [N("F")] = Str("inline.xml"),
+                [N("EF")] = new PdfDictionary { [N("F")] = Ref(11) },
+            });
+        });
+
+        EmbeddedFileDescriptor file = Assert.Single(doc.GetEmbeddedFiles());
+        Assert.Null(file.Name);
+        Assert.Equal("inline.xml", file.FileName);
+        Assert.True(file.IsAssociated);
+        Assert.Equal("<x/>", Encoding.ASCII.GetString(file.GetDataBytes()!));
+    }
 }

@@ -102,14 +102,16 @@ internal static class EmbeddedFileReader
 
         // Union: catalog /AF specs the name tree did not already yield (a Factur-X file references the
         // SAME spec from both places — that must stay one descriptor, carrying its name-tree identity).
+        // Dedup is only possible for indirect specs; a direct (inline) /AF dict is always yielded.
         if (Resolve(document, catalog.Get("AF")) is PdfArray afArray)
             foreach (PdfObject entry in afArray)
-                if (Resolve(document, entry) is PdfDictionary { IsIndirect: true } spec
-                    && !yielded.Contains(spec.ObjectNumber))
-                {
-                    yielded.Add(spec.ObjectNumber);
-                    result.Add(Describe(document, spec, name: null, isAssociated: true));
-                }
+            {
+                if (Resolve(document, entry) is not PdfDictionary spec)
+                    continue;
+                if (spec.IsIndirect && !yielded.Add(spec.ObjectNumber))
+                    continue;
+                result.Add(Describe(document, spec, name: null, isAssociated: true));
+            }
 
         return result;
     }
