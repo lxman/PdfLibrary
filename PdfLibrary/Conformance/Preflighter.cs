@@ -22,6 +22,8 @@ public static class Preflighter
         new Rules.ImplementationLimitsRule(),
         // Permissions dictionary + signature-reference constraints (ISO 19005-2 6.1.12).
         new Rules.PermissionsRule(),
+        // Name objects must be valid UTF-8 after #-escape expansion (ISO 19005-2 6.1.8).
+        new Rules.NameUtf8Rule(),
         new Rules.StreamFiltersRule(),
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),
