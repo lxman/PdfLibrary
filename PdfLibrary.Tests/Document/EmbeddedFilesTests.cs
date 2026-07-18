@@ -1,5 +1,8 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Text;
+using System.Xml.Linq;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
@@ -292,5 +295,26 @@ public class EmbeddedFilesTests
         Assert.Equal("inline.xml", file.FileName);
         Assert.True(file.IsAssociated);
         Assert.Equal("<x/>", Encoding.ASCII.GetString(file.GetDataBytes()!));
+    }
+
+    // ── real-world fixture ───────────────────────────────────────────────────
+
+    [Fact]
+    public void FacturXInvoice_yieldsDecodableCiiXml()
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Resources", "MINIMUM_Rechnung_fx.pdf");
+        using PdfDocument doc = PdfDocument.Load(path);
+
+        IReadOnlyList<EmbeddedFileDescriptor> files = doc.GetEmbeddedFiles();
+        EmbeddedFileDescriptor facturX = files.Single(x =>
+            x.Name == "factur-x.xml" || x.FileName == "factur-x.xml" || x.UnicodeFileName == "factur-x.xml");
+
+        Assert.True(facturX.HasData);
+        Assert.True(facturX.IsAssociated);            // Factur-X mandates the catalog /AF reference
+        Assert.NotNull(facturX.AfRelationship);       // …and an /AFRelationship on the spec
+        Assert.Equal("text/xml", facturX.MimeType);
+
+        XDocument xml = XDocument.Load(new MemoryStream(facturX.GetDataBytes()!));
+        Assert.Equal("CrossIndustryInvoice", xml.Root!.Name.LocalName);
     }
 }
