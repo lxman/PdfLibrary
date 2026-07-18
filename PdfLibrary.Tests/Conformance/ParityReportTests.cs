@@ -21,7 +21,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 899,   // slice 20 file-structure rules (6.1.2 header 8/9; 6.1.13 impl-limits: page-box 6/6, string 1/2, name 2/2); −1 vs 900 from dropping the 6.2.11.5 width check on CIDFontType0/CFF fonts — its CFF advance extraction false-positives on conformant CFF reference files (PDFUA-Ref-2-08), so FP-safety on real files outweighs one corpus detection
+            [ConformanceProfile.PdfA2b] = 926,   // +5 from prohibited-xobject (6.2.9: form /OPI,/PS,/Subtype2=PS,/Ref + PostScript XObjects → 5/5, 0 FP). Ratchets to the current verified agreement (the prior 899 lagged the 921 baseline). Earlier −1 note: the 6.2.11.5 width check stays dropped on CIDFontType0/CFF fonts (CFF advance extraction false-positives on conformant reference files, PDFUA-Ref-2-08 — FP-safety outweighs one corpus detection)
             [ConformanceProfile.PdfA2u] = 19,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 253,   // + slice 21 annotation rules (7.18 TrapNet/Tabs/Link + 7.18.1 annotation & form-field alt-desc + nesting) and the incremental-update obj-stream resolution fix — +17 vs 236
