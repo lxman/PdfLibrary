@@ -49,6 +49,10 @@
              see Resources/conformant-pdfa2b.LICENSE.txt) — the "clean document" fixture. -->
         <None Update="Resources\conformant-pdfa2b.pdf" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Resources\conformant-pdfa2b.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Official ZUGFeRD 2.5 / Factur-X example invoice (FeRD license; see
+             Resources/MINIMUM_Rechnung_fx.LICENSE.txt) — real PDF/A-3 embedded-files fixture. -->
+        <None Update="Resources\MINIMUM_Rechnung_fx.pdf" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Resources\MINIMUM_Rechnung_fx.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
         <!-- veraPDF verdict snapshot (the parity "answer key"; regenerate via
              tools/verapdf-parity/capture.sh). Copied next to the test binary so the parity
              loader and gates read it without the corpus or any JVM present. -->

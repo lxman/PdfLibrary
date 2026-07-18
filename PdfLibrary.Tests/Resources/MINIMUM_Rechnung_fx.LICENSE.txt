@@ -1,0 +1,7 @@
+MINIMUM_Rechnung_fx.pdf is the official "MINIMUM_Rechnung" example from the ZUGFeRD 2.5 /
+Factur-X 1.09 distribution, © Forum elektronische Rechnung Deutschland (FeRD) / FNFE-MPE, used
+under the FeRD license, which grants an irrevocable, royalty-free right to use the
+ZUGFeRD/Factur-X data format specification and its artifacts, including in commercial software.
+It is a PDF/A-3 invoice carrying an embedded factur-x.xml (CII) attachment and is used as a
+real-world fixture for the embedded-files read API.
+Specification: https://www.ferd-net.de (ZUGFeRD) / https://fnfe-mpe.org (Factur-X).

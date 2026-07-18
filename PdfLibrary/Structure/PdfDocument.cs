@@ -414,6 +414,16 @@ public partial class PdfDocument : IDisposable
     /// </summary>
     public IReadOnlyList<Document.OutputIntentDescriptor> GetOutputIntents() => Document.OutputIntentReader.Read(this);
 
+    /// <summary>
+    /// Reads the document's embedded files — the catalog's <c>/Names /EmbeddedFiles</c> name tree plus
+    /// catalog-level <c>/AF</c> associated files (ISO 32000-2, 7.11.4 / 14.13) — as read-only
+    /// <see cref="Document.EmbeddedFileDescriptor"/>s: names, file names, description, MIME subtype,
+    /// associated-file relationship, and the decoded file bytes. Returns an empty list when the
+    /// document embeds no files.
+    /// </summary>
+    public IReadOnlyList<Document.EmbeddedFileDescriptor> GetEmbeddedFiles() =>
+        Document.EmbeddedFileReader.Read(this);
+
     /// <summary>The distinct named Separation/DeviceN colorants used on a page (Soft-Proof SP-1/SP-6b) — the
     /// plate list + per-colorant tint ramps for the ink-separations preview. Walks the page's reachable
     /// resource graph (its <c>/Resources/ColorSpace</c> plus image XObject colour spaces and, recursively,
