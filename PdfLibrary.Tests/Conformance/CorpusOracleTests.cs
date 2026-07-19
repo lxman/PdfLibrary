@@ -134,7 +134,9 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // prefix. Read per-property via XmlReader (XLinq collapses multiple prefixes on one URI).
             // Cluster 7.1 (role-map, t6/t7): +2 (137 → 139). UaRoleMapRule catches 7.1-t06-fail-a (circular
             // LI→LI) and 7.1-t07-fail-a (standard type Document remapped to Book).
-            [ConformanceProfile.PdfUA1] = 139,
+            // Cluster 7.16 (encryption /P): +1 (139 → 140). UaEncryptionRule catches 7.16-t01-fail-a (an
+            // encrypted file whose /P clears bit 512, the accessibility-extraction permission).
+            [ConformanceProfile.PdfUA1] = 140,
         };
 
     [Fact]

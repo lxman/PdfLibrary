@@ -97,6 +97,7 @@ public static class Preflighter
         // Phase 3b: structure-tree relationship semantics (ISO 32000-1 14.8.4).
         new Rules.UaStandardTypeRule(),
         new Rules.UaRoleMapRule(),
+        new Rules.UaEncryptionRule(),
         new Rules.UaStructureNestingRule(),
         new Rules.UaHeadingsRule(),
         new Rules.UaTableGridRule(),
