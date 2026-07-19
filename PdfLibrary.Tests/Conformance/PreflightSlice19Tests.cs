@@ -11,15 +11,22 @@ namespace PdfLibrary.Tests.Conformance;
 
 /// <summary>
 /// Slice 19 — font-program rules (<c>font-program</c>), shared by PDF/A-2 (ISO 19005-2, 6.2.11) and
-/// PDF/UA-1 (ISO 14289-1, 7.21). These lock the two shipped checks against a REAL embedded font program
+/// PDF/UA-1 (ISO 14289-1, 7.21). These lock the shipped checks against a REAL embedded font program
 /// (the CC0 <c>PublicPixel.ttf</c> — every glyph advances exactly 1000 units in PDF space, so a declared
 /// width of 1000 is consistent and anything else is not), never a faked <see cref="Rules"/> metric:
 /// <list type="bullet">
 ///   <item>font metrics (6.2.11.5 / 7.21.5) — declared vs embedded advance width, TrueType + Type0;</item>
-///   <item>.notdef glyph (6.2.11.8 / 7.21.8) — a shown Type0 code mapping to glyph 0.</item>
+///   <item>.notdef glyph (6.2.11.8 / 7.21.8) — a shown code mapping to glyph 0, for Type0 and (via the
+///     tri-state <c>ResolveSimpleGlyph</c> resolver) simple TrueType / embedded-charset CFF fonts;</item>
+///   <item>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2) — a shown simple-font code whose glyph is absent from
+///     the embedded program, emitted from the same resolution as .notdef;</item>
+///   <item>the resolver's FP-safe skips — a symbolic font (declared <c>/Flags</c> bit 3 or a Windows-Symbol
+///     cmap) routes to <c>Unknown</c> (no finding) so an AGL-Unicode lookup gap is never a false .notdef.</item>
 /// </list>
-/// Real per-font-type detection breadth (Type1/CFF, CIDFontType0, the tolerance) is measured by the
-/// veraPDF parity harness; these pin the profile-aware clause mapping, the message, and the FP-safe skips.
+/// Real per-font-type detection breadth (classic Type1, predefined-charset CFF, CIDFontType0, the tolerance)
+/// is measured by the veraPDF parity harness; these pin the profile-aware clause mapping, the messages, and
+/// the FP-safe skips. There is no committed simple-CFF fixture in this repo (see the note by the CFF tests);
+/// CFF-branch coverage rides on <c>PdfUaReferenceOracleTests</c> and the corpus parity harness.
 /// </summary>
 public class PreflightSlice19Tests
 {
