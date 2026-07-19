@@ -53,6 +53,8 @@ public class PreflightSlice12Tests
 
     private static ConformanceContext Ctx(PdfDocument doc) => new(doc, ConformanceProfile.PdfA2u);
 
+    private static ConformanceContext UaCtx(PdfDocument doc) => new(doc, ConformanceProfile.PdfUA1);
+
     private static PdfDictionary SimpleFont(PdfObject encoding, PdfObject? toUnicode = null)
     {
         var font = new PdfDictionary
@@ -127,6 +129,24 @@ public class PreflightSlice12Tests
     {
         var doc = Doc(Ref(20), "BT /F0 12 Tf <0001> Tj ET", d => AddType0(d, "Identity"));
         Assert.Single(new Pdfa2uToUnicodeRule().Check(Ctx(doc)));
+    }
+
+    [Fact]
+    public void Ua_font_without_unicode_mapping_is_attributed_to_clause_7_21_7()
+    {
+        // The UA-1 font ToUnicode-presence check belongs to the FONT clause 7.21.7 (Unicode character maps),
+        // not the text/structure clause 7.2 — matching veraPDF (whose sole toUnicode rule is 7.21.7 t1) and
+        // PdfLibrary's own A-2u attribution of the identical check to the font clause 6.2.11.7.2.
+        PdfObject encoding = new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("BaseEncoding")] = N("WinAnsiEncoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger(1), N("myCustomGlyph")),
+        };
+        var doc = Doc(SimpleFont(encoding), "BT /F0 12 Tf <01> Tj ET");
+        Finding f = Assert.Single(new UaTextUnicodeRule().Check(UaCtx(doc)));
+        Assert.Equal("ua-text-unicode", f.RuleId);
+        Assert.Equal("ISO 14289-1:2014, 7.21.7", f.Clause);
     }
 
     [Fact] // conservative: a registered Adobe collection carries a derivable mapping we do not model — not flagged
