@@ -155,6 +155,68 @@ public class PreflightSlice13Phase4Tests
         Assert.Empty(new UaRoleMapRule().Check(Ctx(DocWithRoleMap(null))));
     }
 
+    [Fact]
+    public void Long_terminating_chain_passes()
+    {
+        // FP-safety: a multi-hop chain that ends at a standard type is valid — must not be seen as a cycle.
+        var roleMap = new PdfDictionary
+        {
+            [N("Custom")] = N("Custom2"), [N("Custom2")] = N("Custom3"), [N("Custom3")] = N("H1"),
+        };
+        Assert.Empty(new UaRoleMapRule().Check(Ctx(DocWithRoleMap(roleMap))));
+    }
+
+    [Fact]
+    public void Diamond_role_mapping_passes()
+    {
+        // FP-safety: a shared-tail DAG (A→C, B→C) is acyclic and must not be flagged.
+        var roleMap = new PdfDictionary
+        {
+            [N("A")] = N("C"), [N("B")] = N("C"), [N("C")] = N("Div"),
+        };
+        Assert.Empty(new UaRoleMapRule().Check(Ctx(DocWithRoleMap(roleMap))));
+    }
+
+    [Fact]
+    public void Tail_only_cycle_is_flagged()
+    {
+        // A→B→C→B: the cycle is reachable only via the A tail; still detected.
+        var roleMap = new PdfDictionary
+        {
+            [N("A")] = N("B"), [N("B")] = N("C"), [N("C")] = N("B"),
+        };
+        Finding f = Assert.Single(new UaRoleMapRule().Check(Ctx(DocWithRoleMap(roleMap))));
+        Assert.Contains("circular", f.Message);
+    }
+
+    [Fact]
+    public void Non_name_role_map_value_is_ignored()
+    {
+        // FP-safety: an entry whose value is not a name is dropped, not crashed or spuriously flagged.
+        var roleMap = new PdfDictionary { [N("Custom")] = new PdfInteger(5) };
+        Assert.Empty(new UaRoleMapRule().Check(Ctx(DocWithRoleMap(roleMap))));
+    }
+
+    [Fact]
+    public void Non_dictionary_role_map_is_ignored()
+    {
+        // FP-safety: a malformed /RoleMap that is not a dictionary yields no finding.
+        var doc = new PdfDocument();
+        var root = new PdfDictionary { [N("Type")] = N("StructTreeRoot"), [N("RoleMap")] = N("Bogus") };
+        doc.AddObject(31, 0, root);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(3, 0, new PdfDictionary { [N("Type")] = N("Page"), [N("Parent")] = Ref(2) });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2), [N("StructTreeRoot")] = Ref(31),
+        });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        Assert.Empty(new UaRoleMapRule().Check(Ctx(doc)));
+    }
+
     // ── ua-content-tagged (7.1) ───────────────────────────────────────────────
 
     [Fact]
