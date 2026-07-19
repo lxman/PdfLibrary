@@ -101,6 +101,63 @@ public class PreflightSlice13Tests
 
     private const string AiimNs = "http://www.aiim.org/pdfua/ns/id/";
 
+    // A minimal document whose trailer carries an /Encrypt dictionary with the given /P value (or none when
+    // pValue is null) — enough for the encryption rule, which reads only the trailer /Encrypt /P. No real
+    // encryption is applied (the in-memory objects are never decrypted).
+    private static PdfDocument DocWithEncryptP(long? pValue)
+    {
+        var doc = new PdfDocument();
+        var encrypt = new PdfDictionary
+        {
+            [N("Filter")] = N("Standard"), [N("V")] = new PdfInteger(4), [N("R")] = new PdfInteger(4),
+        };
+        if (pValue is not null) encrypt[N("P")] = new PdfInteger(pValue.Value);
+        doc.AddObject(30, 0, encrypt);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(3, 0, new PdfDictionary { [N("Type")] = N("Page"), [N("Parent")] = Ref(2) });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        doc.Trailer.Dictionary[N("Encrypt")] = Ref(30);
+        return doc;
+    }
+
+    // ── ua-encryption (clause 7.16) ───────────────────────────────────────────
+
+    [Fact]
+    public void Encrypted_without_accessibility_permission_is_flagged()
+    {
+        // /P = -3904 (the veraPDF 7.16-t01-fail-a value): bit 512 is clear, so accessibility extraction is
+        // not permitted.
+        Finding f = Assert.Single(new UaEncryptionRule().Check(Ctx(DocWithEncryptP(-3904))));
+        Assert.Equal("ua-encryption", f.RuleId);
+        Assert.Contains("512", f.Message);
+    }
+
+    [Fact]
+    public void Encrypted_with_accessibility_permission_passes()
+    {
+        // -3392 is -3904 with bit 512 set (accessibility extraction permitted).
+        Assert.Empty(new UaEncryptionRule().Check(Ctx(DocWithEncryptP(-3392))));
+    }
+
+    [Fact]
+    public void Encrypted_without_a_p_entry_is_flagged()
+    {
+        // veraPDF requires P != null on an encrypted file; a missing /P is non-conformant.
+        Assert.Single(new UaEncryptionRule().Check(Ctx(DocWithEncryptP(null))));
+    }
+
+    [Fact]
+    public void Unencrypted_document_passes()
+    {
+        // FP-safety: clause 7.16 only constrains encrypted files. A document with no /Encrypt is unaffected.
+        Assert.Empty(new UaEncryptionRule().Check(Ctx(DocWithXmp(RawXmp($"xmlns:pdfuaid=\"{AiimNs}\"",
+            "<pdfuaid:part>1</pdfuaid:part>")))));
+    }
+
     // ── ua-identification (clause 5) ──────────────────────────────────────────
 
     [Fact]

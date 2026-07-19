@@ -25,11 +25,14 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 19 | Notes and References | 2/2 | `ua-note-id` |
 | 20 | Optional Content | 3/3 | `optional-content` (widened to UA 7.10) |
 | 25 | XFA | 1/1 | `ua-xfa` |
+| 26 | Security | 2/2 | `ua-encryption` (encrypted file's /P must set bit 512, accessibility) |
 | 28 | Annotations | 10/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8; media 7.18.6, file-attach 7.18.7 deferred) |
 | 30 | XObjects | 2/2 | `ua-reference-xobject` (30-001), `ua-xobject-mcid` (30-002 tagged-form reuse) |
 | 31 | Fonts | 20/29 | `font-dictionary`, `font-embedded`, `font-program`, `font-subset-coverage` (CharSet/CIDSet, 7.21.4.2), `pdfa2u-tounicode-values` (ToUnicode value validity, 7.21.7-2/3) |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
+
+**Progress 2026-07-19** (UA-1 floor-closing clusters): **02-003/02-004** (role mapping — circular mapping and remapped standard types) now map to `ua-role-map`, taking CP 02 to 3/3; **26-001/26-002** (encryption `/P` accessibility bit) now map to `ua-encryption`, taking CP 26 to 2/2. Whole-file UA-1 parity 284→290, 0 FP.
 
 **Progress 2026-07-19** (font-program slice 3): **31-007** (7.21.3.3-1, embedded CMap `/WMode` dict-vs-body consistency) and **31-008** (7.21.3.3-2, a CMap referencing a non-predefined CMap via `/UseCMap`) now map to `font-dictionary` — veraPDF 6.2.11.3.3 / 7.21.3.3 tests 2 & 3 reached full parity (5/5, 4/4), 0 FP. CP 31 → 20/29.
 
@@ -251,8 +254,8 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 | ID | M/H | ISO 14289-1 | Failure condition | PdfLibrary |
 |---|---|---|---|---|
-| 26-001 | M | 7.16-1 | The file is encrypted but does not contain a P | — |
-| 26-002 | M | 7.16-1 | The file is encrypted and does contain a P entry | — |
+| 26-001 | M | 7.16-1 | The file is encrypted but does not contain a P | ua-encryption |
+| 26-002 | M | 7.16-1 | The file is encrypted and does contain a P entry | ua-encryption |
 
 ## Checkpoint 27 — Navigation  (0 machine)
 
