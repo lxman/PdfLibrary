@@ -105,7 +105,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // 6-1-7-1-t01-fail-a (stream followed by lone CR), -t01-fail-b + -t03-fail-a (/Length != real),
             // and -t02-fail-a (endstream not EOL-preceded). t04-fail-a/b/c (test 3, F keys) were already
             // StreamExternalFileRule's.
-            [ConformanceProfile.PdfA2b] = 564,
+            // Clause 6.2.4.2 test 2 (ICCBased-CMYK overprint): +3 (564 → 567). IccCmykOverprintRule catches
+            // 6-2-4-2-t02-fail-a (CMYK stroke, /OP on, OPM 1), -t02-fail-b (CMYK fill, /op on, OPM 1) and
+            // -t02-fail-c (both). The t02-pass fixtures pair CMYK with the non-matching overprint flag.
+            [ConformanceProfile.PdfA2b] = 567,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:

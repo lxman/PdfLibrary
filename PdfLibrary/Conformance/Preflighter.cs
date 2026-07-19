@@ -56,6 +56,8 @@ public static class Preflighter
         new Rules.ExtGStateRule(),
         // Slice 32 — rendering intents (ISO 19005-2 6.2.6): ExtGState /RI, image /Intent, ri operator.
         new Rules.RenderingIntentRule(),
+        // ICCBased CMYK painted with overprint on and OPM=1 (ISO 19005-2 6.2.4.2 test 2).
+        new Rules.IccCmykOverprintRule(),
         // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
         new Rules.TransparencyColourRule(),
         // Prohibited XObjects (ISO 19005-2 6.2.9): form /OPI, /PS, /Subtype2 = PS, /Ref; PostScript XObjects.
