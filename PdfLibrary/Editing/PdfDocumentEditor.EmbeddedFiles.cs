@@ -26,11 +26,17 @@ public sealed class PdfEmbeddedFileSpec
     /// <summary>The embedded stream's /Params /ModDate.</summary>
     public DateTimeOffset? ModificationDate { get; init; }
 
-    /// <summary>The filespec /AFRelationship, when set.</summary>
+    /// <summary>The filespec /AFRelationship, when set. When null and
+    /// <see cref="AssociateWithDocument"/> is true, defaults to
+    /// <see cref="PdfAfRelationship.Unspecified"/> — ISO 19005-3 §6.8 requires every file
+    /// referenced from the catalog /AF array to carry /AFRelationship. Has no effect (no key is
+    /// written) when null and <see cref="AssociateWithDocument"/> is false.</summary>
     public PdfAfRelationship? Relationship { get; init; }
 
     /// <summary>Also reference the filespec from the catalog-level /AF associated-files array
-    /// (PDF/A-3 requires this for e.g. Factur-X invoices).</summary>
+    /// (PDF/A-3 requires this for e.g. Factur-X invoices). When true and <see cref="Relationship"/>
+    /// is null, the filespec's /AFRelationship defaults to <see cref="PdfAfRelationship.Unspecified"/>
+    /// so the ISO 19005-3 §6.8 requirement is still satisfied.</summary>
     public bool AssociateWithDocument { get; init; }
 }
 
@@ -80,7 +86,12 @@ public sealed partial class PdfDocumentEditor
         };
         if (spec.Description is not null)
             filespec[new PdfName("Desc")] = PdfString.FromText(spec.Description);
-        if (spec.Relationship is { } rel)
+        // ISO 19005-3 §6.8: every filespec referenced from the catalog /AF array shall carry
+        // /AFRelationship. When associated with no explicit relationship, default to Unspecified
+        // rather than silently omitting the key.
+        PdfAfRelationship? effectiveRelationship = spec.Relationship
+            ?? (spec.AssociateWithDocument ? PdfAfRelationship.Unspecified : null);
+        if (effectiveRelationship is { } rel)
             filespec[new PdfName("AFRelationship")] = new PdfName(rel.ToString());
         PdfIndirectReference specRef = _document.RegisterObject(filespec);
 

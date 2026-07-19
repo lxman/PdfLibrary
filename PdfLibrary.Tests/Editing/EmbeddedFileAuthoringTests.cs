@@ -95,4 +95,19 @@ public class EmbeddedFileAuthoringTests
             e.AddEmbeddedFile(new PdfEmbeddedFileSpec { Name = "extra.csv", Data = "1,2"u8.ToArray() }));
         Assert.False(Assert.Single(Reload(pdf)).IsAssociated);
     }
+
+    [Fact]
+    public void AddEmbeddedFile_Associated_Without_Relationship_Defaults_To_Unspecified()
+    {
+        byte[] pdf = EditAndSave(OnePagePdf(), e => e.AddEmbeddedFile(new PdfEmbeddedFileSpec
+        {
+            Name = "extra.csv",
+            Data = "1,2"u8.ToArray(),
+            AssociateWithDocument = true,
+        }));
+
+        EmbeddedFileDescriptor file = Assert.Single(Reload(pdf));
+        Assert.Equal("Unspecified", file.AfRelationship);
+        Assert.True(file.IsAssociated);
+    }
 }
