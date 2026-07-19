@@ -196,6 +196,68 @@ public class PreflightSlice19Tests
         Assert.Equal("6.2.11.5", Clause(f));
     }
 
+    // ── Type3 font metrics (6.2.11.5 / 7.21.5) — slice 2 ──────────────────────────────────────────────
+
+    // A one-glyph Type3 font: code 'A' → glyph "a", whose CharProc sets program width via `<progWidth> 0 d0`.
+    // /Widths declares declaredWidth for code 'A'. FontMatrix is the conventional 1/1000 glyph space.
+    private static PdfDocument Type3Doc(int declaredWidth, int programWidth)
+    {
+        var charProc = new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes($"{programWidth} 0 d0 0 0 750 750 re f"));
+        var encoding = new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger('A'), N("a")),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type3"),
+            [N("FontBBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfInteger(750), new PdfInteger(750)),
+            [N("FontMatrix")] = new PdfArray(new PdfReal(0.001), new PdfReal(0), new PdfReal(0), new PdfReal(0.001), new PdfReal(0), new PdfReal(0)),
+            [N("FirstChar")] = new PdfInteger('A'),
+            [N("LastChar")] = new PdfInteger('A'),
+            [N("Widths")] = new PdfArray(new PdfInteger(declaredWidth)),
+            [N("Encoding")] = Ref(4),
+            [N("CharProcs")] = Ref(3),
+        };
+        var charProcs = new PdfDictionary { [N("a")] = Ref(5) };
+        return DocWith(font, Encoding.ASCII.GetBytes("(A)"),
+            (3, charProcs), (4, encoding), (5, charProc));
+    }
+
+    [Fact]
+    public void Type3_consistent_width_passes()
+    {
+        Assert.Empty(Run(Type3Doc(declaredWidth: 1000, programWidth: 1000)));
+    }
+
+    [Fact]
+    public void Type3_inconsistent_width_fails_metrics()
+    {
+        Finding f = Assert.Single(Run(Type3Doc(declaredWidth: 0, programWidth: 1000)));
+        Assert.Equal("6.2.11.5", Clause(f));
+        Assert.Contains("Type3", f.Message);
+    }
+
+    [Fact]
+    public void Type3_metrics_finding_is_profile_aware_under_pdfua1()
+    {
+        Finding f = Assert.Single(Run(Type3Doc(declaredWidth: 0, programWidth: 1000), ConformanceProfile.PdfUA1));
+        Assert.Equal("7.21.5", Clause(f));
+        Assert.Contains("ISO 14289-1", f.Clause);
+    }
+
+    [Fact]
+    public void Type3_missing_charproc_is_skipped()
+    {
+        // /CharProcs has no entry for "a" → program width can't be read → no finding (FP-safe).
+        PdfDocument doc = Type3Doc(declaredWidth: 0, programWidth: 1000);
+        // Replace the CharProcs dict (object 3) with an empty one.
+        doc.AddObject(3, 0, new PdfDictionary());
+        Assert.Empty(Run(doc));
+    }
+
     // ── .notdef (6.2.11.8 / 7.21.8) ───────────────────────────────────────────────────────────────────
 
     [Fact]
