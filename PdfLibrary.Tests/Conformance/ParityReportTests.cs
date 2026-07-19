@@ -21,10 +21,10 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
-            [ConformanceProfile.PdfA2b] = 899,   // slice 20 file-structure rules (6.1.2 header 8/9; 6.1.13 impl-limits: page-box 6/6, string 1/2, name 2/2); −1 vs 900 from dropping the 6.2.11.5 width check on CIDFontType0/CFF fonts — its CFF advance extraction false-positives on conformant CFF reference files (PDFUA-Ref-2-08), so FP-safety on real files outweighs one corpus detection
+            [ConformanceProfile.PdfA2b] = 937,   // +5 prohibited-xobject (6.2.9 → 5/5) +3 image-dictionary (6.2.8 → 3/4; the 4th is an inline image needing content-stream parsing) +4 permissions (6.1.12 → 4/4: /Perms keys + signature-reference Digest keys under DocMDP) +2 name-utf8 (6.1.8 → 2/2: every name valid UTF-8 after #-escape), all 0 FP. Ratchets to the current verified agreement (the earlier 899 lagged the 921 baseline). Standing −1 note: the 6.2.11.5 width check stays dropped on CIDFontType0/CFF fonts (CFF advance extraction false-positives on conformant reference files, PDFUA-Ref-2-08 — FP-safety outweighs one corpus detection). +2 simple-font glyph-present (6.2.11.4.1 t2 → 8/11) via the tri-state code→GID resolver (font-program slice 1); simple-font .notdef (6.2.11.8) is also live but adds 0 corpus files — its 5 remaining fail files are out-of-scope font types (classic Type1 / predefined-charset CFF / symbolic / Type0-non-identity → Unknown, FP-safe); 0 FP corpus-wide
             [ConformanceProfile.PdfA2u] = 19,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
-            [ConformanceProfile.PdfUA1] = 253,   // + slice 21 annotation rules (7.18 TrapNet/Tabs/Link + 7.18.1 annotation & form-field alt-desc + nesting) and the incremental-update obj-stream resolution fix — +17 vs 236
+            [ConformanceProfile.PdfUA1] = 281,   // +6 from embedded-file widened to UA-1 7.11 (non-empty /F,/UF; filespecs from the catalog name tree AND FileAttachment annotation /FS → 6/6). Ratchets to the current verified agreement (the earlier 253 lagged the 275 baseline: slice-21 annotation rules + the incremental-update obj-stream resolution fix)
         };
 
     [Fact]

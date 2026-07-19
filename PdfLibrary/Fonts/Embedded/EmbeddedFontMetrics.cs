@@ -180,6 +180,23 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// True when the program carries a Unicode-capable cmap subtable (a (3,1) Windows-UnicodeBMP,
+    /// (3,10) Windows-UnicodeUCS4, or any (0,x) Unicode-platform record) — the subtables a code→Unicode→glyph
+    /// lookup can trust. Distinct from <see cref="HasSymbolCmapEncoding"/> (the (3,0) Symbol record, which is
+    /// keyed by raw code, not Unicode).
+    /// </summary>
+    public bool HasUnicodeCmapEncoding()
+    {
+        if (_cmapTable?.EncodingRecords is null)
+            return false;
+
+        return _cmapTable.EncodingRecords.Any(r =>
+            r.PlatformId == PlatformId.Unicode
+            || (r.PlatformId == PlatformId.Windows
+                && r.WindowsEncoding is WindowsEncodingId.UnicodeBmp or WindowsEncodingId.UnicodeUCS4));
+    }
+
+    /// <summary>
     /// Test what glyph ID is returned for a specific character code
     /// Used for debugging cmap behavior
     /// </summary>

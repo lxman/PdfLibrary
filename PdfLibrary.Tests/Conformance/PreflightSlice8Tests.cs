@@ -42,7 +42,7 @@ public class PreflightSlice8Tests
     /// /EmbeddedFiles and optionally referenced from a catalog /AF array.</summary>
     private static void AddEmbeddedFile(
         PdfDocument doc, PdfDictionary catalog, bool hasF, bool hasUF, string? afRelationship,
-        bool referencedByAF, string? subtype = "text/plain")
+        bool referencedByAF, string? subtype = "text/plain", string fValue = "file.txt", string ufValue = "file.txt")
     {
         var streamDict = new PdfDictionary();
         if (subtype is not null) streamDict[N("Subtype")] = N(subtype);
@@ -53,8 +53,8 @@ public class PreflightSlice8Tests
             [N("Type")] = N("Filespec"),
             [N("EF")] = new PdfDictionary { [N("F")] = Ref(11) },
         };
-        if (hasF) spec[N("F")] = Str("file.txt");
-        if (hasUF) spec[N("UF")] = Str("file.txt");
+        if (hasF) spec[N("F")] = Str(fValue);
+        if (hasUF) spec[N("UF")] = Str(ufValue);
         if (afRelationship is not null) spec[N("AFRelationship")] = N(afRelationship);
         doc.AddObject(10, 0, spec);
 
@@ -106,6 +106,82 @@ public class PreflightSlice8Tests
     {
         var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: "Data", referencedByAF: true));
         Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfA3b)));
+    }
+
+    // ── 7.11 EmbeddedFileSpecRule under PDF/UA-1 (non-empty /F and /UF) ───────
+
+    [Fact]
+    public void Ua1_embedded_file_missing_UF_is_flagged_at_7_11() // 7.11-t1
+    {
+        var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: false, afRelationship: null, referencedByAF: false));
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
+        Assert.Equal("embedded-file", f.RuleId);
+        Assert.Equal(ConformanceClauses.For(ConformanceProfile.PdfUA1, "7.11"), f.Clause);
+    }
+
+    [Fact]
+    public void Ua1_embedded_file_with_empty_UF_is_flagged() // 7.11-t1 non-empty requirement
+    {
+        // A present but empty /UF passes the PDF/A presence check yet fails UA-1's non-empty requirement.
+        var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: null, referencedByAF: false, ufValue: ""));
+        Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
+    }
+
+    [Fact]
+    public void Ua1_embedded_file_with_nonempty_F_and_UF_passes()
+    {
+        var doc = Doc((d, c) => AddEmbeddedFile(d, c, hasF: true, hasUF: true, afRelationship: null, referencedByAF: false));
+        Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(doc, ConformanceProfile.PdfUA1)));
+    }
+
+    /// <summary>A one-page doc whose only embedded file hangs off a FileAttachment annotation's /FS (not the
+    /// catalog name tree) — the veraPDF 7.18.7 test-file shape that also fails 7.11.</summary>
+    private static PdfDocument DocWithFileAttachment(bool hasUF, string ufValue = "file.txt")
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), new byte[] { 1 }));
+        var spec = new PdfDictionary
+        {
+            [N("Type")] = N("Filespec"),
+            [N("F")] = Str("file.txt"),
+            [N("EF")] = new PdfDictionary { [N("F")] = Ref(11) },
+        };
+        if (hasUF) spec[N("UF")] = Str(ufValue);
+        doc.AddObject(10, 0, spec);
+        doc.AddObject(12, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Annot"), [N("Subtype")] = N("FileAttachment"), [N("FS")] = Ref(10),
+        });
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2), [N("Annots")] = new PdfArray(Ref(12)),
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void Ua1_file_attachment_annotation_with_missing_UF_is_flagged() // 7.11 via annotation /FS
+    {
+        Finding f = Assert.Single(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: false), ConformanceProfile.PdfUA1)));
+        Assert.Equal(ConformanceClauses.For(ConformanceProfile.PdfUA1, "7.11"), f.Clause);
+    }
+
+    [Fact]
+    public void Ua1_file_attachment_annotation_with_nonempty_UF_passes()
+    {
+        Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: true), ConformanceProfile.PdfUA1)));
+    }
+
+    [Fact]
+    public void Pdfa_does_not_collect_annotation_filespecs() // PDF/A behaviour unchanged (name-tree only)
+    {
+        Assert.Empty(new EmbeddedFileSpecRule().Check(Ctx(DocWithFileAttachment(hasUF: false), ConformanceProfile.PdfA2b)));
     }
 
     // ── 6.9 OptionalContentRule ──────────────────────────────────────────────

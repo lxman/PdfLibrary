@@ -20,6 +20,10 @@ public static class Preflighter
         // Slice 20 — file-structure rules: file header (6.1.2) + implementation limits (6.1.13).
         new Rules.FileHeaderRule(),
         new Rules.ImplementationLimitsRule(),
+        // Permissions dictionary + signature-reference constraints (ISO 19005-2 6.1.12).
+        new Rules.PermissionsRule(),
+        // Name objects must be valid UTF-8 after #-escape expansion (ISO 19005-2 6.1.8).
+        new Rules.NameUtf8Rule(),
         new Rules.StreamFiltersRule(),
         new Rules.StreamExternalFileRule(),
         new Rules.MetadataPresentRule(),
@@ -48,6 +52,10 @@ public static class Preflighter
         new Rules.RenderingIntentRule(),
         // Slice 16a — transparency blending colour space (ISO 19005-2 6.2.10 + 6.2.4.3).
         new Rules.TransparencyColourRule(),
+        // Prohibited XObjects (ISO 19005-2 6.2.9): form /OPI, /PS, /Subtype2 = PS, /Ref; PostScript XObjects.
+        new Rules.ProhibitedXObjectRule(),
+        // Image restrictions (ISO 19005-2 6.2.8): no /Alternates, /OPI; /Interpolate false; /BitsPerComponent set.
+        new Rules.ImageDictionaryRule(),
         // Slice 7 — annotations, interactive forms, actions.
         new Rules.AnnotationTypeRule(),
         new Rules.AnnotationFlagsRule(),

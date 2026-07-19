@@ -30,24 +30,30 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
 
     public string RuleId => "embedded-file";
 
-    public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA;
+    public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA | ConformanceProfile.PdfUA1;
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
         bool isPart3 = context.Target == ConformanceProfile.PdfA3b;
+        bool isUa1 = context.Target == ConformanceProfile.PdfUA1;
         HashSet<int> associatedFiles = isPart3 ? CollectAssociatedFileRefs(context) : [];
 
-        foreach (PdfDictionary spec in CollectFileSpecs(context))
+        foreach (PdfDictionary spec in CollectFileSpecs(context, includeAnnotationSpecs: isUa1))
         {
             var ef = context.Resolve(spec.Get("EF")) as PdfDictionary;
             if (ef is null)
                 continue; // a file spec with no /EF is not an embedded file — 6.8-t2 passes trivially
 
-            // 6.8-t2 (all profiles): an embedded-file spec must carry both /F and /UF.
-            if (!(spec.ContainsKey(F) && spec.ContainsKey(UF)))
+            // PDF/A 6.8-t2: an embedded-file spec must carry both /F and /UF. PDF/UA-1 7.11: the same, but
+            // both keys must additionally be non-empty. Same reachable-filespec set, profile-aware predicate.
+            bool fufOk = isUa1
+                ? NonEmpty(context, spec, "F") && NonEmpty(context, spec, "UF")
+                : spec.ContainsKey(F) && spec.ContainsKey(UF);
+            if (!fufOk)
             {
-                yield return Error(context,
-                    "An embedded-file specification with /EF must contain both /F and /UF keys.");
+                yield return Error(context, isUa1
+                    ? "An embedded-file specification must contain non-empty /F and /UF keys (PDF/UA-1)."
+                    : "An embedded-file specification with /EF must contain both /F and /UF keys.");
             }
 
             if (!isPart3)
@@ -102,25 +108,43 @@ internal sealed class EmbeddedFileSpecRule : IConformanceRule
         return refs;
     }
 
-    private static IEnumerable<PdfDictionary> CollectFileSpecs(ConformanceContext context)
+    private static IEnumerable<PdfDictionary> CollectFileSpecs(ConformanceContext context, bool includeAnnotationSpecs)
     {
-        if (context.Resolve(context.Catalog?.Dictionary.Get("Names")) is not PdfDictionary names)
-            yield break;
+        var seen = new HashSet<int>();
 
-        foreach (PdfObject value in context.EnumerateNameTree(names.Get("EmbeddedFiles")))
-            if (context.Resolve(value) is PdfDictionary spec)
-                yield return spec;
+        if (context.Resolve(context.Catalog?.Dictionary.Get("Names")) is PdfDictionary names)
+            foreach (PdfObject value in context.EnumerateNameTree(names.Get("EmbeddedFiles")))
+                if (context.Resolve(value) is PdfDictionary spec && Fresh(spec))
+                    yield return spec;
+
+        // PDF/UA-1 7.11 also governs embedded files reached through a FileAttachment annotation's /FS, which
+        // the catalog name tree does not include. Scoped to UA-1 so PDF/A 6.8 behaviour is unchanged.
+        if (includeAnnotationSpecs)
+            foreach (var page in context.Pages)
+                if (context.Resolve(page.Dictionary.Get("Annots")) is PdfArray annots)
+                    foreach (PdfObject a in annots)
+                        if (context.Resolve(a) is PdfDictionary annot
+                            && context.Resolve(annot.Get("FS")) is PdfDictionary spec && Fresh(spec))
+                            yield return spec;
+
+        bool Fresh(PdfDictionary spec) => !spec.IsIndirect || seen.Add(spec.ObjectNumber);
     }
 
     /// <summary>The embedded file stream referenced by an /EF dictionary (prefers /UF, falls back to /F).</summary>
     private static PdfStream? EmbeddedStream(ConformanceContext context, PdfDictionary ef) =>
         context.Resolve(ef.Get("UF")) as PdfStream ?? context.Resolve(ef.Get("F")) as PdfStream;
 
+    /// <summary>True when <paramref name="key"/> resolves to a non-empty string on the file spec (PDF/UA-1 7.11).</summary>
+    private static bool NonEmpty(ConformanceContext context, PdfDictionary spec, string key) =>
+        context.Resolve(spec.Get(key)) is PdfString s && s.Value.Length > 0;
+
     private Finding Error(ConformanceContext context, string message) => new()
     {
         RuleId = RuleId,
         Severity = FindingSeverity.Error,
-        Clause = ConformanceClauses.For(context.Target, "6.8"),
+        // PDF/UA-1 governs the non-empty /F,/UF requirement at 7.11; the PDF/A rules live at 6.8.
+        Clause = ConformanceClauses.For(context.Target,
+            context.Target == ConformanceProfile.PdfUA1 ? "7.11" : "6.8"),
         Message = message,
     };
 }
