@@ -95,7 +95,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Clause 6.1.9 (indirect-object spacing): +7 (547 → 554). IndirectObjectSpacingRule is the sole
             // rule that catches 6-1-9-t01-fail-a, -t02-fail-a, -t03-fail-a/b/c and -t04-fail-a/b (all
             // whitespace/EOL framing violations on the last indirect object), none previously detected.
-            [ConformanceProfile.PdfA2b] = 554,
+            // Clause 6.1.13 test 3 (over-long string in page content): +1 (554 → 555). ImplementationLimitsRule
+            // sub-check 4 catches 6-1-13-t03-fail-a (a >32767-byte Tj literal in page content); its sibling
+            // t03-fail-d was already detected (that string is in the reachable object graph).
+            [ConformanceProfile.PdfA2b] = 555,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:

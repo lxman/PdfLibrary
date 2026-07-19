@@ -186,4 +186,57 @@ public class PreflightSlice20Tests
         PdfDocument doc = CatalogDoc(c => c[N(new string('K', 127))] = new PdfName(new string('V', 127)));
         Assert.Empty(Limits(doc));
     }
+
+    // ── Implementation limits: over-long string in a page content stream (6.1.13, test 3) ───────────────
+
+    /// <summary>A one-page document whose page /Contents is an (unfiltered) stream carrying the supplied
+    /// content bytes, so the content-stream string-operand check has a page content stream to parse.</summary>
+    private static PdfDocument ContentPageDoc(byte[] content)
+    {
+        var doc = new PdfDocument();
+        var pageDict = new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = Ref(2),
+            [N("MediaBox")] = Rect(0, 0, 612, 792),
+            [N("Contents")] = Ref(4),
+        };
+        doc.AddObject(4, 0, new PdfStream(new PdfDictionary(), content));
+        doc.AddObject(3, 0, pageDict);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(Ref(3)),
+            [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    private static byte[] TextShowContent(int stringBytes)
+    {
+        var s = new List<byte>();
+        s.AddRange(L("BT ("));
+        s.AddRange(Enumerable.Repeat((byte)'X', stringBytes));
+        s.AddRange(L(") Tj ET"));
+        return s.ToArray();
+    }
+
+    [Fact]
+    public void An_over_long_string_operand_in_page_content_is_flagged()
+    {
+        PdfDocument doc = ContentPageDoc(TextShowContent(32768));
+        Finding finding = Assert.Single(Limits(doc));
+        Assert.Contains("string", finding.Message);
+        Assert.EndsWith("6.1.13", finding.Clause);
+        Assert.Equal("implementation-limits", finding.RuleId);
+    }
+
+    [Fact]
+    public void A_string_operand_at_the_limit_in_page_content_passes()
+    {
+        PdfDocument doc = ContentPageDoc(TextShowContent(32767));
+        Assert.Empty(Limits(doc));
+    }
 }

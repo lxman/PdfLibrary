@@ -1,3 +1,4 @@
+using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -19,6 +20,13 @@ namespace PdfLibrary.Conformance.Rules;
 /// dictionaries, arrays, and stream dictionaries — never content streams), cycle-guarded on indirect
 /// object number, reporting at most one finding per violation type. Name lengths use the decoded name
 /// value (a <c>#XX</c>-escaped name is measured after decoding), matching the reference validator.
+///
+/// A fourth sub-check covers the string limit inside <b>page content streams</b> — a string used as a
+/// content operator's operand (e.g. a huge <c>Tj</c> literal), which the object-graph walk never reaches.
+/// It parses page content only (form/pattern/annotation content is a safe under-report), so the rule stays
+/// a strict subset of the reference validator. The integer (test 1) and q/Q-nesting (test 8) content
+/// limits are out of scope — the content lexer normalises an out-of-range integer operand away, so they
+/// need byte-level content tokenisation, tracked separately.
 /// </summary>
 internal sealed class ImplementationLimitsRule : IConformanceRule
 {
@@ -36,6 +44,8 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
         foreach (Finding f in CheckPageBoxes(context))
             yield return f;
         foreach (Finding f in CheckStringsAndNames(context))
+            yield return f;
+        foreach (Finding f in CheckContentStreamStrings(context))
             yield return f;
     }
 
@@ -133,6 +143,39 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
         }
 
         return findings;
+    }
+
+    // ── Sub-check 4 — over-long string operand in page content (6.1.13 test 3) ──────────────────────────
+    private IEnumerable<Finding> CheckContentStreamStrings(ConformanceContext context)
+    {
+        IReadOnlyList<PdfPage> pages;
+        try { pages = context.Pages; }
+        catch { yield break; } // no navigable page tree — a different clause's concern
+
+        foreach (PdfPage page in pages)
+        {
+            var combined = new List<byte>();
+            foreach (PdfStream content in page.GetContents())
+            {
+                try { combined.AddRange(content.GetDecodedData(context.Document.Decryptor)); }
+                catch { /* an undecodable content stream is a different clause's concern */ }
+                combined.Add((byte)'\n'); // one logical stream (ISO 32000-1, 7.8.2)
+            }
+            if (combined.Count == 0)
+                continue;
+
+            List<PdfOperator> operators;
+            try { operators = PdfContentParser.Parse(combined.ToArray()); }
+            catch { continue; } // unparseable content — never a false positive, just skip the page
+
+            foreach (PdfOperator op in operators)
+                foreach (PdfObject operand in op.Operands)
+                    if (operand is PdfString s && s.Bytes.Length > MaxStringBytes)
+                    {
+                        yield return StringFinding(context, s.Bytes.Length);
+                        yield break; // one finding is enough to mark the document non-conformant
+                    }
+        }
     }
 
     private Finding StringFinding(ConformanceContext context, int length) => new()
