@@ -60,6 +60,8 @@ public static class Preflighter
         new Rules.ProhibitedXObjectRule(),
         // Image restrictions (ISO 19005-2 6.2.8): no /Alternates, /OPI; /Interpolate false; /BitsPerComponent set.
         new Rules.ImageDictionaryRule(),
+        // JPEG2000 image constraints (ISO 19005-2 6.2.8.3): channels, colour-spec APPROX/METH/EnumCS, bit depth.
+        new Rules.Jpeg2000Rule(),
         // Slice 7 — annotations, interactive forms, actions.
         new Rules.AnnotationTypeRule(),
         new Rules.AnnotationFlagsRule(),
