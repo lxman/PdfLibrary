@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using PdfLibrary.Content;
+using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
@@ -38,9 +40,11 @@ namespace PdfLibrary.Conformance.Rules;
 ///     fonts with an embedded charset (advance from the CFF CharString via a glyph-name→charset-GID lookup —
 ///     see <see cref="SimpleCffAdvance"/>; predefined-charset CFF is excluded, see the note in
 ///     <see cref="CheckSimple"/>) and both Type0 descendant kinds — CIDFontType2 (glyf/hmtx) and
-///     CIDFontType0 (CFF CharString: encoded width nominalWidthX+delta, else the FD's defaultWidthX). Classic
-///     Type1 (FontFile) and Type3 fonts remain excluded from the width check (their program-advance extraction
-///     is not reproduced reliably enough here to avoid a false positive — see the tolerance remark).</item>
+///     CIDFontType0 (CFF CharString: encoded width nominalWidthX+delta, else the FD's defaultWidthX), and
+///     Type3 (the CharProc's <c>d0</c>/<c>d1</c> operator gives the glyph-space program width directly — see
+///     <see cref="CheckType3"/>). Classic Type1 (FontFile) remains excluded from the width check (its
+///     program-advance extraction is not reproduced reliably enough here to avoid a false positive — see the
+///     tolerance remark).</item>
 /// </list>
 /// <para>
 /// PDF/X-4 is excluded (ISO 15930-7 carries no such font-program constraints — same reasoning as
@@ -75,6 +79,16 @@ internal sealed class FontProgramRule : IConformanceRule
         foreach (UsedFontCodes usage in context.UsedTextGlyphs)
         {
             PdfFont font = usage.Font;
+
+            // Type3 fonts have no embedded program (glyphs are content streams), so they never reach the
+            // metrics-based checks below. Their 6.2.11.5 width comes from the CharProc's d0/d1 operator.
+            if (font is Type3Font type3)
+            {
+                foreach (Finding f in CheckType3(context, type3, usage.VisibleCodes, metricsReported))
+                    yield return f;
+                continue;
+            }
+
             EmbeddedFontMetrics? metrics = font.GetEmbeddedMetrics();
             if (metrics is null || !metrics.IsValid)
                 continue; // not embedded, or the program will not parse — nothing to compare (FP-safe)
@@ -221,6 +235,64 @@ internal sealed class FontProgramRule : IConformanceRule
                 $"The {kind} font {Name(font)} declares a glyph width that differs "
                 + $"from the embedded font program's advance width by {worstDiff:F0} units "
                 + $"(tolerance {WidthTolerance:F0}).");
+    }
+
+    // ── Type3 fonts — metrics only (glyphs are content streams; width from the d0/d1 operator) ─────────
+    private IEnumerable<Finding> CheckType3(
+        ConformanceContext context, Type3Font font, IReadOnlyCollection<int> visibleCodes,
+        HashSet<string> metricsReported)
+    {
+        // 6.2.11.5 / 7.21.5 for Type3: the /Widths value and the CharProc's d0/d1 width (both raw glyph
+        // space) must be consistent. RM3-exempt → visibleCodes. FP-safe: any code whose glyph name,
+        // CharProc, or d0/d1 width can't be resolved is skipped.
+        if (context.Resolve(font.FontDictionary.Get("Widths")) is not PdfArray widths)
+            yield break;
+
+        double worstDiff = 0;
+        foreach (int code in visibleCodes)
+        {
+            int index = code - font.FirstChar;
+            if (index < 0 || index >= widths.Count)
+                continue; // no declared width for this code
+
+            double? program = Type3ProgramWidth(context, font, code);
+            if (program is null)
+                continue; // glyph/CharProc/d0-d1 not resolvable — skip rather than guess
+
+            double declared = widths[index].ToDouble();
+            worstDiff = Math.Max(worstDiff, Math.Abs(declared - program.Value));
+        }
+
+        if (worstDiff > WidthTolerance && metricsReported.Add(font.BaseFont))
+            yield return Make(context, font, "5",
+                $"The Type3 font {Name(font)} declares a glyph width that differs from the CharProc's "
+                + $"d0/d1 width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
+    }
+
+    /// <summary>
+    /// The program (glyph-space) advance width of a Type3 glyph: the <c>wx</c> operand of the first
+    /// <c>d0</c>/<c>d1</c> operator in the glyph's CharProc (ISO 32000-1 9.6.5.1 requires one of these as the
+    /// procedure's first operator). Returns null when the code has no glyph name, no CharProc, an unparseable
+    /// CharProc, or no d0/d1 — the caller then skips it (FP-safe).
+    /// </summary>
+    private static double? Type3ProgramWidth(ConformanceContext context, Type3Font font, int code)
+    {
+        string? glyphName = font.Encoding?.GetGlyphName(code);
+        if (string.IsNullOrEmpty(glyphName))
+            return null;
+
+        PdfStream? charProc = font.GetCharProc(glyphName);
+        if (charProc is null)
+            return null;
+
+        List<PdfOperator> ops;
+        try { ops = PdfContentParser.Parse(charProc.GetDecodedData(context.Document.Decryptor)); }
+        catch { return null; }
+
+        foreach (PdfOperator op in ops)
+            if (op is GenericOperator { Name: "d0" or "d1" } g && g.Operands.Count >= 1)
+                return g.Operands[0].ToDouble();
+        return null;
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────────────
