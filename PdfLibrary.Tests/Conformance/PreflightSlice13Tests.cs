@@ -70,6 +70,37 @@ public class PreflightSlice13Tests
 
     private static ConformanceContext Ctx(PdfDocument doc) => new(doc, ConformanceProfile.PdfUA1);
 
+    // Raw XMP with the given rdf:Description namespace declarations and property body — for prefix tests,
+    // where XmpPacket cannot help (it collapses multiple prefixes bound to one namespace URI onto a single
+    // serialized prefix, so it cannot reproduce a non-"pdfuaid" prefix on the AIIM pdfuaid namespace).
+    private static byte[] RawXmp(string nsDecls, string body) => System.Text.Encoding.UTF8.GetBytes(
+        "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
+        + "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + $"<rdf:Description rdf:about=\"\" {nsDecls}>{body}</rdf:Description>"
+        + "</rdf:RDF></x:xmpmeta>");
+
+    // A minimal document carrying only the given XMP metadata — enough for UaIdentificationRule, which reads
+    // only the catalog /Metadata stream.
+    private static PdfDocument DocWithXmp(byte[] xmp)
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(30, 0, new PdfStream(
+            new PdfDictionary { [N("Type")] = N("Metadata"), [N("Subtype")] = N("XML") }, xmp));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(3, 0, new PdfDictionary { [N("Type")] = N("Page"), [N("Parent")] = Ref(2) });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2), [N("Metadata")] = Ref(30),
+        });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    private const string AiimNs = "http://www.aiim.org/pdfua/ns/id/";
+
     // ── ua-identification (clause 5) ──────────────────────────────────────────
 
     [Fact]
@@ -89,6 +120,59 @@ public class PreflightSlice13Tests
     public void Wrong_pdfuaid_part_is_flagged()
     {
         Assert.Single(new UaIdentificationRule().Check(Ctx(Doc((_, _) => { }, pdfUaPart: "2"))));
+    }
+
+    [Fact]
+    public void Pdfuaid_part_with_a_non_pdfuaid_prefix_is_flagged()
+    {
+        // AIIM pdfuaid namespace bound to prefix "pdfuaia"; value is correct (1) so only the prefix is wrong.
+        // veraPDF 5 t3 resolves the property by URI and requires the literal prefix "pdfuaid".
+        byte[] xmp = RawXmp($"xmlns:pdfuaia=\"{AiimNs}\"", "<pdfuaia:part>1</pdfuaia:part>");
+        Finding f = Assert.Single(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
+        Assert.Equal("ua-identification", f.RuleId);
+        Assert.Contains("part", f.Message);
+        Assert.Contains("pdfuaia", f.Message);
+    }
+
+    [Fact]
+    public void Pdfuaid_amd_with_a_non_pdfuaid_prefix_is_flagged_while_correct_part_is_not()
+    {
+        // Both prefixes bind the AIIM namespace; part is correctly pdfuaid, amd is pdfuaia. Only amd is
+        // flagged — verifies the reader reads the ACTUAL per-property prefix, not a collapsed namespace map.
+        byte[] xmp = RawXmp(
+            $"xmlns:pdfuaid=\"{AiimNs}\" xmlns:pdfuaia=\"{AiimNs}\"",
+            "<pdfuaid:part>1</pdfuaid:part><pdfuaia:amd>2014</pdfuaia:amd>");
+        Finding f = Assert.Single(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
+        Assert.Contains("amd", f.Message);
+        Assert.DoesNotContain("part", f.Message);
+    }
+
+    [Fact]
+    public void Pdfuaid_corr_with_a_non_pdfuaid_prefix_is_flagged()
+    {
+        byte[] xmp = RawXmp(
+            $"xmlns:pdfuaid=\"{AiimNs}\" xmlns:pdfuaia=\"{AiimNs}\"",
+            "<pdfuaid:part>1</pdfuaid:part><pdfuaia:corr>2014</pdfuaia:corr>");
+        Finding f = Assert.Single(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
+        Assert.Contains("corr", f.Message);
+    }
+
+    [Fact]
+    public void Pdfuaid_part_amd_corr_all_with_the_pdfuaid_prefix_pass()
+    {
+        // FP-safety: the conformant shape — every identification property carries the pdfuaid prefix.
+        byte[] xmp = RawXmp($"xmlns:pdfuaid=\"{AiimNs}\"",
+            "<pdfuaid:part>1</pdfuaid:part><pdfuaid:amd>2014</pdfuaid:amd><pdfuaid:corr>2015</pdfuaid:corr>");
+        Assert.Empty(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
+    }
+
+    [Fact]
+    public void Pdfuaid_part_in_the_default_namespace_is_not_flagged()
+    {
+        // FP-safety: an absent (default-namespace) prefix is allowed — veraPDF's test is
+        // partPrefix == null || partPrefix == "pdfuaid", so a null/empty prefix must not fire.
+        byte[] xmp = RawXmp($"xmlns=\"{AiimNs}\"", "<part>1</part>");
+        Assert.Empty(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
     }
 
     // ── ua-tagged (7.1) ───────────────────────────────────────────────────────
