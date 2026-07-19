@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.RegularExpressions;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -9,15 +10,16 @@ namespace PdfLibrary.Conformance.Rules;
 /// Dictionary-level font requirements shared by PDF/A-2 (ISO 19005-2, 6.2.11) and PDF/UA-1
 /// (ISO 14289-1, 7.21) — the two standards use identical sub-numbers, so a single profile-aware rule
 /// serves both (like <see cref="FontEmbeddingRule"/>). Four groups, all read from the font dictionaries
-/// alone (no font-program parsing — metrics, .notdef, CharSet/CIDSet and the CMap WMode/usecmap checks
-/// are a later slice and out of scope here):
+/// alone (no font-program parsing — metrics, .notdef and CharSet/CIDSet are a later slice and out of
+/// scope here):
 /// <list type="number">
 ///   <item>character encodings of simple TrueType fonts (6.2.11.6 / 7.21.6);</item>
 ///   <item>CIDSystemInfo compatibility of a Type0 font's descendant CIDFont against an embedded CMap
 ///     (6.2.11.3.1 / 7.21.3.1);</item>
 ///   <item>the CIDToGIDMap of a CIDFontType2 descendant (6.2.11.3.2 / 7.21.3.2);</item>
-///   <item>a Type0 font's /Encoding being an embedded CMap stream or a predefined name (6.2.11.3.3 /
-///     7.21.3.3, test 1 only).</item>
+///   <item>a Type0 font's /Encoding being an embedded CMap stream or a predefined name, plus — for an
+///     embedded CMap stream — its /WMode consistency and /UseCMap referencing only predefined CMaps
+///     (6.2.11.3.3 / 7.21.3.3, tests 1–3).</item>
 /// </list>
 /// <para>
 /// Fonts come from <see cref="ConformanceContext.ReferencedFonts"/> (those reachable for rendering), so an
@@ -70,6 +72,9 @@ internal sealed class FontDictionaryRule : IConformanceRule
     // The algorithmic glyph-name forms of the Adobe Glyph List spec that are valid without a table lookup.
     private static readonly Regex UniForm = new("^uni[0-9A-F]{4}$", RegexOptions.Compiled);
     private static readonly Regex UForm = new("^u[0-9A-F]{5,6}$", RegexOptions.Compiled);
+
+    // The integer /WMode declared in a CMap stream body: "/WMode <n> def".
+    private static readonly Regex CMapWMode = new(@"/WMode\s+(-?\d+)\s+def", RegexOptions.Compiled);
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
@@ -172,6 +177,31 @@ internal sealed class FontDictionaryRule : IConformanceRule
             }
         }
 
+        // Group 4 tests 2 & 3 (6.2.11.3.3 / 7.21.3.3) — embedded CMap stream consistency. Independent of the
+        // descendant CIDFont, so checked here before the cidFont guard.
+        if (encoding is PdfStream encodingCMap)
+        {
+            // test 2 — the /WMode dictionary entry must equal the /WMode in the CMap stream body.
+            if (context.Resolve(encodingCMap.Dictionary.Get("WMode")) is PdfInteger dictWMode
+                && ReadCMapBodyWMode(context, encodingCMap) is { } bodyWMode
+                && dictWMode.LongValue != bodyWMode)
+            {
+                yield return Make(context, font, "3.3",
+                    $"The Type0 font {BaseFont(font)} embeds a CMap whose /WMode dictionary entry "
+                    + $"({dictWMode.LongValue}) differs from the /WMode in the CMap stream ({bodyWMode}).");
+            }
+
+            // test 3 — a CMap must not reference a non-predefined CMap (via /UseCMap).
+            if (encodingCMap.Dictionary.Get("UseCMap") is { } useCMapRaw
+                && ReferencedCMapName(context, useCMapRaw) is { } referencedName
+                && !PredefinedCMaps.Contains(referencedName))
+            {
+                yield return Make(context, font, "3.3",
+                    $"The Type0 font {BaseFont(font)} embeds a CMap that references non-predefined CMap "
+                    + $"/{referencedName} via /UseCMap.");
+            }
+        }
+
         if (cidFont is null)
             yield break;
 
@@ -259,6 +289,29 @@ internal sealed class FontDictionaryRule : IConformanceRule
 
     private static string? StringValue(ConformanceContext context, PdfObject? obj) =>
         (context.Resolve(obj) as PdfString)?.Value;
+
+    /// <summary>The integer /WMode declared in the CMap stream body ("/WMode &lt;n&gt; def"), or null when
+    /// absent or the stream cannot be decoded. FP-safe: the caller compares it only when the dictionary also
+    /// carries a /WMode.</summary>
+    private static long? ReadCMapBodyWMode(ConformanceContext context, PdfStream cmap)
+    {
+        byte[] data;
+        try { data = cmap.GetDecodedData(context.Document.Decryptor); }
+        catch { return null; }
+
+        Match m = CMapWMode.Match(Encoding.Latin1.GetString(data));
+        return m.Success && long.TryParse(m.Groups[1].Value, out long w) ? w : null;
+    }
+
+    /// <summary>The name of the CMap referenced by a /UseCMap value: a predefined-name reference directly, or
+    /// the /CMapName of an embedded CMap stream. Null when it cannot be resolved to a name.</summary>
+    private static string? ReferencedCMapName(ConformanceContext context, PdfObject useCMap) =>
+        context.Resolve(useCMap) switch
+        {
+            PdfName name => name.Value,
+            PdfStream stream => (context.Resolve(stream.Dictionary.Get("CMapName")) as PdfName)?.Value,
+            _ => null,
+        };
 
     private static string BaseFont(PdfDictionary font) =>
         (font.Get("BaseFont") as PdfName)?.Value is { } name ? $"'{name}'" : "(unnamed)";
