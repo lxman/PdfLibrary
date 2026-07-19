@@ -444,6 +444,38 @@ public class PreflightSlice18Tests
         Assert.Empty(Run(DocWithFont(Type0Font(cmap, CidFont("CIDFontType0")))));
     }
 
+    [Fact]
+    public void Type0_cmap_wmode_in_a_comment_does_not_false_fire()
+    {
+        // FP-safety: a conformant CMap (dict /WMode 0, real body "/WMode 0 def") whose PostScript header
+        // comment happens to mention a different "/WMode 1 def" must NOT be read as a mismatch — the body
+        // scan must ignore %-comments, matching veraPDF's CMap tokenizer.
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName("Custom-CMap"),
+            [new PdfName("WMode")] = new PdfInteger(0),
+        };
+        var cmap = new PdfStream(dict, Encoding.ASCII.GetBytes(
+            "%%Title: sets /WMode 1 def in the vertical variant\nbegincmap /WMode 0 def endcmap"));
+        Assert.Empty(Run(DocWithFont(Type0Font(cmap, CidFont("CIDFontType0")))));
+    }
+
+    [Fact]
+    public void Type0_cmap_wmode_dict_only_body_absent_is_clean()
+    {
+        // FP-safety: dict carries /WMode but the body declares none — the comparison needs both sides, so
+        // an absent body /WMode skips (never defaults to 0 and fires).
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName("Custom-CMap"),
+            [new PdfName("WMode")] = new PdfInteger(1),
+        };
+        var cmap = new PdfStream(dict, Encoding.ASCII.GetBytes("begincmap endcmap"));
+        Assert.Empty(Run(DocWithFont(Type0Font(cmap, CidFont("CIDFontType0")))));
+    }
+
     // ── general ──────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

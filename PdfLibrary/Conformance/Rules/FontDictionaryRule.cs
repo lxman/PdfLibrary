@@ -76,6 +76,10 @@ internal sealed class FontDictionaryRule : IConformanceRule
     // The integer /WMode declared in a CMap stream body: "/WMode <n> def".
     private static readonly Regex CMapWMode = new(@"/WMode\s+(-?\d+)\s+def", RegexOptions.Compiled);
 
+    // A PostScript %-comment (to end of line). Stripped before the /WMode scan so a "/WMode <n> def"
+    // mentioned in a header comment can't be mistaken for the authoritative definition.
+    private static readonly Regex CMapComment = new("%[^\r\n]*", RegexOptions.Compiled);
+
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
         foreach (PdfDictionary font in context.ReferencedFonts)
@@ -299,7 +303,10 @@ internal sealed class FontDictionaryRule : IConformanceRule
         try { data = cmap.GetDecodedData(context.Document.Decryptor); }
         catch { return null; }
 
-        Match m = CMapWMode.Match(Encoding.Latin1.GetString(data));
+        // CMap bodies are PostScript: drop %-comments first so a "/WMode <n> def" in a header comment
+        // cannot be read as the authoritative WMode (veraPDF's CMap tokenizer likewise skips comments).
+        string body = CMapComment.Replace(Encoding.Latin1.GetString(data), "");
+        Match m = CMapWMode.Match(body);
         return m.Success && long.TryParse(m.Groups[1].Value, out long w) ? w : null;
     }
 
