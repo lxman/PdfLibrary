@@ -22,6 +22,11 @@ namespace PdfLibrary.Conformance.Rules;
 ///     returns <c>Unknown</c> (skip, no finding) whenever the code→glyph path is not reproducible here —
 ///     symbolic TrueType (declared, or carrying only a (3,0) Windows-Symbol cmap) with no usable Unicode
 ///     cmap path, an encoding name with no AGL Unicode, or a predefined-charset CFF.</item>
+///   <item><b>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2):</b> paired with the .notdef check above — for
+///     simple fonts, the same confident glyph-0 resolution that trips .notdef also means the shown code
+///     references a glyph absent from the embedded font program, so both clauses are reported from one
+///     resolution (independently deduplicated). Not yet implemented for Type0 (a later slice covers
+///     CIDToGIDMap→out-of-range).</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
 ///     width. Implemented for simple TrueType fonts (advance from glyf/hmtx via the cmap), simple CFF / Type1C
@@ -60,6 +65,7 @@ internal sealed class FontProgramRule : IConformanceRule
     {
         var notdefReported = new HashSet<string>(StringComparer.Ordinal);
         var metricsReported = new HashSet<string>(StringComparer.Ordinal);
+        var presentReported = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (UsedFontCodes usage in context.UsedTextGlyphs)
         {
@@ -70,7 +76,8 @@ internal sealed class FontProgramRule : IConformanceRule
 
             foreach (Finding f in font is Type0Font type0
                          ? CheckType0(context, type0, metrics, usage.Codes, notdefReported, metricsReported)
-                         : CheckSimple(context, font, metrics, usage.Codes, metricsReported, notdefReported))
+                         : CheckSimple(context, font, metrics, usage.Codes, metricsReported, notdefReported,
+                             presentReported))
             {
                 yield return f;
             }
@@ -126,7 +133,8 @@ internal sealed class FontProgramRule : IConformanceRule
     // ── Simple fonts — .notdef + metrics (TrueType + simple CFF) ──────────────────────────────────────
     private IEnumerable<Finding> CheckSimple(
         ConformanceContext context, PdfFont font, EmbeddedFontMetrics metrics,
-        IReadOnlyCollection<int> codes, HashSet<string> metricsReported, HashSet<string> notdefReported)
+        IReadOnlyCollection<int> codes, HashSet<string> metricsReported, HashSet<string> notdefReported,
+        HashSet<string> presentReported)
     {
         // Two simple embeddings are covered, each with a reliable program-advance path: TrueType (glyf/hmtx via
         // the cmap) and simple CFF / Type1C (CharString advance via the CFF charset). Classic Type1 (FontFile)
@@ -144,7 +152,9 @@ internal sealed class FontProgramRule : IConformanceRule
         if (!isTrueType && !isSimpleCff)
             yield break; // classic Type1 (FontFile) / Type3 / predefined-charset CFF → out of scope (FP-safe)
 
-        // .notdef (6.2.11.8 / 7.21.8): a shown code that confidently resolves to glyph 0.
+        // .notdef (6.2.11.8 / 7.21.8) + glyph-present (6.2.11.4.1 t2): a shown code that confidently resolves
+        // to glyph 0 both renders .notdef AND references a glyph absent from the embedded program — the same
+        // resolution, two independently deduplicated findings (see the class doc for why both are emitted).
         bool symbolic = IsSymbolic(context, font);
         bool notdefHit = false;
         foreach (int code in codes)
@@ -155,10 +165,18 @@ internal sealed class FontProgramRule : IConformanceRule
                 break;
             }
         }
-        if (notdefHit && notdefReported.Add(font.BaseFont))
-            yield return Make(context, font, "8",
-                $"The {(isTrueType ? "TrueType" : "CFF")} font {Name(font)} renders a character code that maps "
-                + "to the .notdef glyph (glyph 0), which is not present in the embedded font program.");
+        if (notdefHit)
+        {
+            string kind = isTrueType ? "TrueType" : "CFF";
+            if (notdefReported.Add(font.BaseFont))
+                yield return Make(context, font, "8",
+                    $"The {kind} font {Name(font)} renders a character code that maps to the .notdef glyph "
+                    + "(glyph 0), which is not present in the embedded font program.");
+            if (presentReported.Add(font.BaseFont))
+                yield return Make(context, font, "4.1",
+                    $"The {kind} font {Name(font)} renders a glyph that is not present in the embedded font "
+                    + "program.");
+        }
 
         // metrics (6.2.11.5 / 7.21.5): unchanged — only runs when /Widths is present.
         if (context.Resolve(font.FontDictionary.Get("Widths")) is not PdfArray widths)

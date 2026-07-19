@@ -271,17 +271,31 @@ public class PreflightSlice19Tests
     [Fact]
     public void Simple_truetype_absent_glyph_fails_notdef()
     {
-        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph()));
-        Assert.Equal("6.2.11.8", Clause(f));
+        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph()), x => Clause(x) == "6.2.11.8");
         Assert.Contains(".notdef", f.Message);
     }
 
     [Fact]
     public void Simple_truetype_absent_glyph_notdef_is_profile_aware()
     {
-        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph(), ConformanceProfile.PdfUA1));
-        Assert.Equal("7.21.8", Clause(f));
+        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph(), ConformanceProfile.PdfUA1),
+            x => Clause(x) == "7.21.8");
         Assert.Contains("ISO 14289-1", f.Clause);
+    }
+
+    [Fact]
+    public void Simple_truetype_absent_glyph_also_fails_embedding_glyph_present()
+    {
+        // The same absent glyph violates 6.2.11.4.1 test 2 (embedded font must define all rendered glyphs).
+        Finding[] fs = Run(TrueTypeDocShowingAbsentGlyph());
+        Assert.Contains(fs, f => Clause(f) == "6.2.11.4.1");
+        Assert.Contains(fs, f => Clause(f) == "6.2.11.8");
+    }
+
+    [Fact]
+    public void Simple_present_glyph_emits_no_glyph_present_finding()
+    {
+        Assert.DoesNotContain(Run(TrueTypeDoc(ProgramWidth)), f => Clause(f) == "6.2.11.4.1");
     }
 
     [Fact]
