@@ -289,6 +289,68 @@ public class PreflightSlice18Tests
         Assert.Empty(Run(DocWithFont(font)));
     }
 
+    // ── Group 2 (slice 4) — 6.2.11.3.1 CIDSystemInfo compatibility for a PREDEFINED CMap name ──────────
+
+    [Fact]
+    public void Type0_predefined_cmap_ordering_mismatch_fails()
+    {
+        // 90ms-RKSJ-H is an Adobe-Japan1 CMap, so the descendant CIDFont's Ordering must be "Japan1".
+        // A CIDFont declaring Ordering "GB1" is incompatible.
+        PdfDictionary font = Type0Font(
+            new PdfName("90ms-RKSJ-H"),
+            CidFont("CIDFontType0", cidSystemInfo: Csi("Adobe", "GB1", 0)));
+        Finding f = Assert.Single(Run(DocWithFont(font)));
+        Assert.Equal("6.2.11.3.1", Clause(f));
+        Assert.Contains("Ordering", f.Message);
+    }
+
+    [Fact]
+    public void Type0_predefined_cmap_registry_mismatch_fails()
+    {
+        // Every predefined CMap has Registry "Adobe"; a CIDFont declaring another Registry is incompatible.
+        PdfDictionary font = Type0Font(
+            new PdfName("UniGB-UCS2-H"),
+            CidFont("CIDFontType0", cidSystemInfo: Csi("NotAdobe", "GB1", 0)));
+        Finding f = Assert.Single(Run(DocWithFont(font)));
+        Assert.Equal("6.2.11.3.1", Clause(f));
+        Assert.Contains("Registry", f.Message);
+    }
+
+    [Theory]
+    [InlineData("GBK-EUC-H", "GB1")]
+    [InlineData("B5pc-H", "CNS1")]
+    [InlineData("90ms-RKSJ-H", "Japan1")]
+    [InlineData("KSCms-UHC-H", "Korea1")]
+    public void Type0_predefined_cmap_matching_collection_passes(string cmapName, string ordering)
+    {
+        // One per Adobe collection: a CIDFont whose CIDSystemInfo matches the predefined CMap's
+        // (Registry Adobe, correct Ordering) is conformant — locks the name→Ordering table.
+        PdfDictionary font = Type0Font(
+            new PdfName(cmapName),
+            CidFont("CIDFontType0", cidSystemInfo: Csi("Adobe", ordering, 0)));
+        Assert.Empty(Run(DocWithFont(font)));
+    }
+
+    [Fact]
+    public void Type0_predefined_cmap_high_supplement_is_not_checked()
+    {
+        // FP-safety: the per-CMap /Supplement is deliberately not tabulated for predefined names, so a
+        // matching Registry/Ordering with any Supplement passes (a strict subset under-reports rather than
+        // risk a false positive from a wrong supplement value).
+        PdfDictionary font = Type0Font(
+            new PdfName("90ms-RKSJ-H"),
+            CidFont("CIDFontType0", cidSystemInfo: Csi("Adobe", "Japan1", 99)));
+        Assert.Empty(Run(DocWithFont(font)));
+    }
+
+    [Fact]
+    public void Type0_predefined_cmap_without_cidsysteminfo_is_clean()
+    {
+        // FP-safety: no CIDFont /CIDSystemInfo to compare against → skip (never fabricate a mismatch).
+        PdfDictionary font = Type0Font(new PdfName("90ms-RKSJ-H"), CidFont("CIDFontType0"));
+        Assert.Empty(Run(DocWithFont(font)));
+    }
+
     // ── Group 3 — 6.2.11.3.2 CIDToGIDMap (CIDFontType2) ──────────────────────────────────────────────
 
     [Fact]
