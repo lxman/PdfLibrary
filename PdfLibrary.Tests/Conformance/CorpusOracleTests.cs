@@ -92,7 +92,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Clause 6.2.2 (content-stream operators): +3 (544 → 547). ContentStreamOperatorRule catches
             // 6-2-2-t01-fail-a/b/c (an undefined operator in page / Do-reached content). Conservative floor —
             // true measured PdfA2b detection is 568/609.
-            [ConformanceProfile.PdfA2b] = 547,
+            // Clause 6.1.9 (indirect-object spacing): +7 (547 → 554). IndirectObjectSpacingRule is the sole
+            // rule that catches 6-1-9-t01-fail-a, -t02-fail-a, -t03-fail-a/b/c and -t04-fail-a/b (all
+            // whitespace/EOL framing violations on the last indirect object), none previously detected.
+            [ConformanceProfile.PdfA2b] = 554,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
