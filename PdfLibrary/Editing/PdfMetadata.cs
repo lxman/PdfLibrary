@@ -129,6 +129,21 @@ public sealed class PdfMetadata
     /// <summary>The XMP packet. Lazily loaded from /Catalog /Metadata or empty.</summary>
     public XmpPacket Xmp => _xmp ??= LoadOrCreateXmp();
 
+    /// <summary>
+    /// Replaces the catalog /Metadata stream with a caller-built XMP packet, verbatim. The bytes
+    /// are not parsed or validated. NOTE: the typed property setters on this facade rewrite the
+    /// stream from a simple-property model that cannot express nested structures (e.g.
+    /// pdfaExtension schema descriptions) — when combining both, call SetRawXmp LAST.
+    /// </summary>
+    public void SetRawXmp(byte[] xmpPacketBytes)
+    {
+        ArgumentNullException.ThrowIfNull(xmpPacketBytes);
+        if (_metadataObjectNumber < 0)
+            _ = Xmp; // locate an existing /Metadata stream so we replace it rather than duplicate
+        _xmp = null; // drop the parsed model; a later read re-parses the raw bytes
+        WriteMetadataStream(xmpPacketBytes);
+    }
+
     // ---- Info dict helpers --------------------------------------------------
 
     private PdfDictionary EnsureInfoDictionary()
@@ -216,9 +231,10 @@ public sealed class PdfMetadata
         return XmpPacket.CreateEmpty();
     }
 
-    private void WriteXmpStream()
+    private void WriteXmpStream() => WriteMetadataStream(Xmp.Serialize());
+
+    private void WriteMetadataStream(byte[] bytes)
     {
-        byte[] bytes = Xmp.Serialize();
         var streamDict = new PdfDictionary
         {
             [new PdfName("Type")]    = new PdfName("Metadata"),
