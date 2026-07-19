@@ -14,7 +14,8 @@ namespace PdfLibrary.Conformance.Rules;
 /// scope here):
 /// <list type="number">
 ///   <item>character encodings of simple TrueType fonts (6.2.11.6 / 7.21.6);</item>
-///   <item>CIDSystemInfo compatibility of a Type0 font's descendant CIDFont against an embedded CMap
+///   <item>CIDSystemInfo compatibility of a Type0 font's descendant CIDFont against its CMap — an embedded
+///     CMap's own /CIDSystemInfo, or the Adobe collection a predefined non-Identity name belongs to
 ///     (6.2.11.3.1 / 7.21.3.1);</item>
 ///   <item>the CIDToGIDMap of a CIDFontType2 descendant (6.2.11.3.2 / 7.21.3.2);</item>
 ///   <item>a Type0 font's /Encoding being an embedded CMap stream or a predefined name, plus — for an
@@ -27,9 +28,9 @@ namespace PdfLibrary.Conformance.Rules;
 /// not reported. Each check is deliberately narrowed to exactly the font kind the reference validator
 /// flags: the simple-font encoding rules apply to TrueType only (a Type1 Encoding dictionary routinely
 /// carries a non-WinAnsi base or Differences names outside the bundled glyph list, and reporting those
-/// would be a false positive), and the CIDSystemInfo comparison runs only when the CMap is an embedded
-/// stream (a predefined name such as Identity-H imposes no CIDSystemInfo compatibility constraint on the
-/// CIDFont). Unlike <see cref="FontEmbeddingRule"/>, PDF/X-4 is excluded: ISO 15930-7 does not carry these
+/// would be a false positive), and the CIDSystemInfo comparison runs for an embedded CMap or a predefined
+/// non-Identity name (Identity-H/V impose no CIDSystemInfo compatibility constraint on the CIDFont). Unlike
+/// <see cref="FontEmbeddingRule"/>, PDF/X-4 is excluded: ISO 15930-7 does not carry these
 /// dictionary-level font constraints (e.g. it permits a CIDFontType2 with no explicit /CIDToGIDMap).
 /// </para>
 /// </summary>
@@ -41,30 +42,41 @@ internal sealed class FontDictionaryRule : IConformanceRule
     // intentionally NOT included (its font rules differ — see the type remarks).
     public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA | ConformanceProfile.PdfUA1;
 
-    // The predefined CMap names of ISO 32000-1:2008, Table 118 (the Identity pair plus the CJK collections).
-    // A Type0 /Encoding that is neither an embedded CMap stream nor one of these names is non-conformant.
-    private static readonly HashSet<string> PredefinedCMaps = new(StringComparer.Ordinal)
+    // The predefined CMaps of ISO 32000-1:2008, Table 118 mapped to the Adobe character-collection Ordering
+    // they belong to (Registry is always "Adobe"). Identity-H/V are intentionally absent — 6.2.11.3.1 exempts
+    // them (any CIDSystemInfo is allowed). This table drives both the predefined-name validity check
+    // (6.2.11.3.3 t1) and the predefined-CMap CIDSystemInfo compatibility check (6.2.11.3.1).
+    private static readonly Dictionary<string, string> PredefinedCMapOrdering = new(StringComparer.Ordinal)
     {
-        "Identity-H", "Identity-V",
         // Adobe-GB1 (Simplified Chinese)
-        "GB-EUC-H", "GB-EUC-V", "GBpc-EUC-H", "GBpc-EUC-V", "GBK-EUC-H", "GBK-EUC-V",
-        "GBKp-EUC-H", "GBKp-EUC-V", "GBK2K-H", "GBK2K-V",
-        "UniGB-UCS2-H", "UniGB-UCS2-V", "UniGB-UTF16-H", "UniGB-UTF16-V",
+        ["GB-EUC-H"] = "GB1", ["GB-EUC-V"] = "GB1", ["GBpc-EUC-H"] = "GB1", ["GBpc-EUC-V"] = "GB1",
+        ["GBK-EUC-H"] = "GB1", ["GBK-EUC-V"] = "GB1", ["GBKp-EUC-H"] = "GB1", ["GBKp-EUC-V"] = "GB1",
+        ["GBK2K-H"] = "GB1", ["GBK2K-V"] = "GB1", ["UniGB-UCS2-H"] = "GB1", ["UniGB-UCS2-V"] = "GB1",
+        ["UniGB-UTF16-H"] = "GB1", ["UniGB-UTF16-V"] = "GB1",
         // Adobe-CNS1 (Traditional Chinese)
-        "B5pc-H", "B5pc-V", "HKscs-B5-H", "HKscs-B5-V", "ETen-B5-H", "ETen-B5-V",
-        "ETenms-B5-H", "ETenms-B5-V", "CNS-EUC-H", "CNS-EUC-V",
-        "UniCNS-UCS2-H", "UniCNS-UCS2-V", "UniCNS-UTF16-H", "UniCNS-UTF16-V",
+        ["B5pc-H"] = "CNS1", ["B5pc-V"] = "CNS1", ["HKscs-B5-H"] = "CNS1", ["HKscs-B5-V"] = "CNS1",
+        ["ETen-B5-H"] = "CNS1", ["ETen-B5-V"] = "CNS1", ["ETenms-B5-H"] = "CNS1", ["ETenms-B5-V"] = "CNS1",
+        ["CNS-EUC-H"] = "CNS1", ["CNS-EUC-V"] = "CNS1", ["UniCNS-UCS2-H"] = "CNS1", ["UniCNS-UCS2-V"] = "CNS1",
+        ["UniCNS-UTF16-H"] = "CNS1", ["UniCNS-UTF16-V"] = "CNS1",
         // Adobe-Japan1 (Japanese)
-        "83pv-RKSJ-H", "90ms-RKSJ-H", "90ms-RKSJ-V", "90msp-RKSJ-H", "90msp-RKSJ-V",
-        "90pv-RKSJ-H", "Add-RKSJ-H", "Add-RKSJ-V", "EUC-H", "EUC-V",
-        "Ext-RKSJ-H", "Ext-RKSJ-V", "H", "V",
-        "UniJIS-UCS2-H", "UniJIS-UCS2-V", "UniJIS-UCS2-HW-H", "UniJIS-UCS2-HW-V",
-        "UniJIS-UTF16-H", "UniJIS-UTF16-V",
+        ["83pv-RKSJ-H"] = "Japan1", ["90ms-RKSJ-H"] = "Japan1", ["90ms-RKSJ-V"] = "Japan1",
+        ["90msp-RKSJ-H"] = "Japan1", ["90msp-RKSJ-V"] = "Japan1", ["90pv-RKSJ-H"] = "Japan1",
+        ["Add-RKSJ-H"] = "Japan1", ["Add-RKSJ-V"] = "Japan1", ["EUC-H"] = "Japan1", ["EUC-V"] = "Japan1",
+        ["Ext-RKSJ-H"] = "Japan1", ["Ext-RKSJ-V"] = "Japan1", ["H"] = "Japan1", ["V"] = "Japan1",
+        ["UniJIS-UCS2-H"] = "Japan1", ["UniJIS-UCS2-V"] = "Japan1", ["UniJIS-UCS2-HW-H"] = "Japan1",
+        ["UniJIS-UCS2-HW-V"] = "Japan1", ["UniJIS-UTF16-H"] = "Japan1", ["UniJIS-UTF16-V"] = "Japan1",
         // Adobe-Korea1 (Korean)
-        "KSC-EUC-H", "KSC-EUC-V", "KSCms-UHC-H", "KSCms-UHC-V",
-        "KSCms-UHC-HW-H", "KSCms-UHC-HW-V", "KSCpc-EUC-H",
-        "UniKS-UCS2-H", "UniKS-UCS2-V", "UniKS-UTF16-H", "UniKS-UTF16-V",
+        ["KSC-EUC-H"] = "Korea1", ["KSC-EUC-V"] = "Korea1", ["KSCms-UHC-H"] = "Korea1",
+        ["KSCms-UHC-V"] = "Korea1", ["KSCms-UHC-HW-H"] = "Korea1", ["KSCms-UHC-HW-V"] = "Korea1",
+        ["KSCpc-EUC-H"] = "Korea1", ["UniKS-UCS2-H"] = "Korea1", ["UniKS-UCS2-V"] = "Korea1",
+        ["UniKS-UTF16-H"] = "Korea1", ["UniKS-UTF16-V"] = "Korea1",
     };
+
+    // The predefined CMap names of ISO 32000-1:2008, Table 118 (the Identity pair plus every collection CMap).
+    // A Type0 /Encoding that is neither an embedded CMap stream nor one of these names is non-conformant.
+    // Derived from PredefinedCMapOrdering so the two never drift.
+    private static readonly HashSet<string> PredefinedCMaps =
+        new(PredefinedCMapOrdering.Keys, StringComparer.Ordinal) { "Identity-H", "Identity-V" };
 
     private static readonly HashSet<string> AllowedBaseEncodings =
         new(StringComparer.Ordinal) { "WinAnsiEncoding", "MacRomanEncoding" };
@@ -209,9 +221,10 @@ internal sealed class FontDictionaryRule : IConformanceRule
         if (cidFont is null)
             yield break;
 
-        // Group 2 (6.2.11.3.1 / 7.21.3.1): CIDSystemInfo compatibility — only decidable against an embedded
-        // CMap, which carries its own /CIDSystemInfo. A predefined name (e.g. Identity-H) imposes no such
-        // constraint, so the check is skipped for it (matching the reference validator).
+        // Group 2 (6.2.11.3.1 / 7.21.3.1): CIDSystemInfo compatibility. Two arms: an embedded CMap carries its
+        // own /CIDSystemInfo (checked here, including /Supplement); a predefined non-Identity name fixes the
+        // collection via PredefinedCMapOrdering (checked in the else-if arm below). Identity-H/V impose no
+        // constraint and are skipped in both arms.
         if (encoding is PdfStream cmap
             && context.Resolve(cmap.Dictionary.Get("CIDSystemInfo")) is PdfDictionary cmapCsi
             && context.Resolve(cidFont.Get("CIDSystemInfo")) is PdfDictionary cidCsi)
@@ -247,6 +260,33 @@ internal sealed class FontDictionaryRule : IConformanceRule
                 yield return Make(context, cidFont, "3.1",
                     $"The CIDFont {BaseFont(cidFont)} /Supplement ({cidSupplement.LongValue}) is greater than "
                     + $"the CMap's ({cmapSupplement.LongValue}).");
+            }
+        }
+        // Group 2 predefined-name arm (6.2.11.3.1 / 7.21.3.1): a predefined non-Identity CMap fixes the
+        // character collection — Registry "Adobe" and a known Ordering — so the descendant CIDFont's
+        // CIDSystemInfo must match it. (Identity-H/V are exempt and never in the table.) Registry and Ordering
+        // only: 6.2.11.3.1 also requires the CIDFont /Supplement <= the CMap's (the embedded arm above checks
+        // it), but a predefined CMap's collection supplement is PDF-version-dependent (e.g. UniGB-UCS2 is
+        // Adobe-GB1-2 in PDF 1.3 but Adobe-GB1-4 in PDF 1.4), so a fixed table would be FP-prone. As a strict
+        // subset we deliberately under-report a supplement-only violation rather than risk that false positive.
+        else if (encoding is PdfName encName
+                 && PredefinedCMapOrdering.TryGetValue(encName.Value, out string? predefinedOrdering)
+                 && context.Resolve(cidFont.Get("CIDSystemInfo")) is PdfDictionary predefCidCsi)
+        {
+            string? cidRegistry = StringValue(context, predefCidCsi.Get("Registry"));
+            string? cidOrdering = StringValue(context, predefCidCsi.Get("Ordering"));
+
+            if (cidRegistry is not null && cidRegistry != "Adobe")
+            {
+                yield return Make(context, cidFont, "3.1",
+                    $"The CIDFont {BaseFont(cidFont)} declares /Registry ({cidRegistry}) incompatible with the "
+                    + $"predefined CMap /{encName.Value} (Adobe).");
+            }
+            else if (cidOrdering is not null && cidOrdering != predefinedOrdering)
+            {
+                yield return Make(context, cidFont, "3.1",
+                    $"The CIDFont {BaseFont(cidFont)} declares /Ordering ({cidOrdering}) incompatible with the "
+                    + $"predefined CMap /{encName.Value} ({predefinedOrdering}).");
             }
         }
 
