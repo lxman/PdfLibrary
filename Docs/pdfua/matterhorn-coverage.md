@@ -5,7 +5,7 @@
 
 Status legend — PdfLibrary rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## PdfLibrary coverage — 62 of 87 machine-checkable conditions
+## PdfLibrary coverage — 64 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
 
@@ -27,9 +27,11 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 25 | XFA | 1/1 | `ua-xfa` |
 | 28 | Annotations | 10/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8; media 7.18.6, file-attach 7.18.7 deferred) |
 | 30 | XObjects | 2/2 | `ua-reference-xobject` (30-001), `ua-xobject-mcid` (30-002 tagged-form reuse) |
-| 31 | Fonts | 18/29 | `font-dictionary`, `font-embedded`, `font-program`, `font-subset-coverage` (CharSet/CIDSet, 7.21.4.2), `pdfa2u-tounicode-values` (ToUnicode value validity, 7.21.7-2/3) |
+| 31 | Fonts | 20/29 | `font-dictionary`, `font-embedded`, `font-program`, `font-subset-coverage` (CharSet/CIDSet, 7.21.4.2), `pdfa2u-tounicode-values` (ToUnicode value validity, 7.21.7-2/3) |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
+
+**Progress 2026-07-19** (font-program slice 3): **31-007** (7.21.3.3-1, embedded CMap `/WMode` dict-vs-body consistency) and **31-008** (7.21.3.3-2, a CMap referencing a non-predefined CMap via `/UseCMap`) now map to `font-dictionary` — veraPDF 6.2.11.3.3 / 7.21.3.3 tests 2 & 3 reached full parity (5/5, 4/4), 0 FP. CP 31 → 20/29.
 
 **Progress 2026-07-18** (font-program slice 1): **31-011** (7.21.4.1-3, a used glyph absent from the embedded program) now maps to `font-program` — the new tri-state simple-font code→GID resolver reports glyph-present (veraPDF 6.2.11.4.1 t2 / 7.21.4.1 t2) for simple TrueType and embedded-charset CFF fonts. The same resolver extends **31-030** (7.21.8-1, `.notdef` reference) from Type0-only to simple fonts (its `font-program` mark already stood). Symbolic fonts, classic Type1, predefined-charset CFF and Type0-non-identity route to `Unknown` (no finding) to hold 0 false positives corpus-wide. CP 31 → 18/29.
 
@@ -306,8 +308,8 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 31-004 | M | 7.21.3.2-1 | A Type 2 CID font contains neither a stream nor the | font-dictionary |
 | 31-005 | M | 7.21.3.2-1 | A Type 2 CID font does not contain a CIDToGIDMap | font-dictionary |
 | 31-006 | M | 7.21.3.3-1 | A CMap is neither listed as described in ISO 32000- | font-dictionary |
-| 31-007 | M | 7.21.3.3-1 | The WMode entry in a CMap dictionary is not | — |
-| 31-008 | M | 7.21.3.3-2 | A CMap references another CMap which is not | — |
+| 31-007 | M | 7.21.3.3-1 | The WMode entry in a CMap dictionary is not | `font-dictionary` |
+| 31-008 | M | 7.21.3.3-2 | A CMap references another CMap which is not | `font-dictionary` |
 | 31-009 | M | 7.21.4.1-1 | For a font used by text intended to be rendered the | font-embedded |
 | 31-010 | H | 7.21.4.1-2 | A font program is embedded that is not legally | n/a |
 | 31-011 | M | 7.21.4.1-3 | For a font used by text the font program is | `font-program` |

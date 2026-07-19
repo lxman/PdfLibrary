@@ -16,7 +16,8 @@ namespace PdfLibrary.Tests.Conformance;
 ///   <item>6.2.11.6 / 7.21.6 — simple TrueType character encodings;</item>
 ///   <item>6.2.11.3.1 / 7.21.3.1 — Type0 descendant CIDSystemInfo vs an embedded CMap;</item>
 ///   <item>6.2.11.3.2 / 7.21.3.2 — CIDFontType2 /CIDToGIDMap;</item>
-///   <item>6.2.11.3.3 / 7.21.3.3 (test 1) — Type0 /Encoding embedded-or-predefined.</item>
+///   <item>6.2.11.3.3 / 7.21.3.3 (tests 1–3) — Type0 /Encoding embedded-or-predefined, plus an embedded
+///     CMap's /WMode dict-vs-body consistency and its /UseCMap referencing only predefined CMaps.</item>
 /// </list>
 /// The parity harness measures real detection over the veraPDF corpus; these lock every branch
 /// deterministically and prove the profile-aware clause mapping.
