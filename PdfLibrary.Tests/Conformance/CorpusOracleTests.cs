@@ -101,7 +101,11 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Clause 6.2.8.3 (JPEG2000): +5 (555 → 560). Jpeg2000Rule catches 6-2-8-3-t01-fail-b (5 channels),
             // -t02-fail-a (two colour specs, no single APPROX 0x01), -t03-fail-a (colr METH 4), -t04-fail-a
             // (enumerated CS 19/CIEJab) and -t05-fail-a (41-bit depth), none previously detected.
-            [ConformanceProfile.PdfA2b] = 560,
+            // Clause 6.1.7.1 tests 1/2 (stream /Length + framing): +4 (560 → 564). StreamObjectRule catches
+            // 6-1-7-1-t01-fail-a (stream followed by lone CR), -t01-fail-b + -t03-fail-a (/Length != real),
+            // and -t02-fail-a (endstream not EOL-preceded). t04-fail-a/b/c (test 3, F keys) were already
+            // StreamExternalFileRule's.
+            [ConformanceProfile.PdfA2b] = 564,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
