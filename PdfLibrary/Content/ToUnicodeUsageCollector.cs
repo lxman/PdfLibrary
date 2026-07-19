@@ -67,6 +67,11 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
         }
 
         var nested = new ToUnicodeUsageCollector(formResources, _document);
+        // A Form XObject inherits the current graphics state at invocation (ISO 32000-1 8.10.2); the RM3
+        // conformance exemption depends on the text rendering mode specifically, so seed just that — not
+        // the rest of the state (font inheritance is a separate, pre-existing under-detection bias, out of
+        // scope here). If the form sets its own Tr, that operator overrides the seeded value normally.
+        nested.CurrentState.RenderingMode = CurrentState.RenderingMode;
         nested.ProcessOperators(PdfContentParser.Parse(contentData));
 
         foreach ((PdfFont font, HashSet<int> codes) in nested.Result)

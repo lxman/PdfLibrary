@@ -404,6 +404,107 @@ public class PreflightSlice19Tests
         Assert.Contains(".notdef", f.Message);
     }
 
+    /// <summary>Same font/encoding as <see cref="TrueTypeDocShowingAbsentGlyph"/>, but the shown code lives
+    /// inside a Form XObject invoked AFTER the page content sets <c>3 Tr</c> — the form itself sets no local
+    /// <c>Tr</c>, relying entirely on the inherited render mode (ISO 32000-1 8.10.2: a Form XObject inherits
+    /// the graphics state in effect at invocation), a legitimate invisible-text-layer technique. Named
+    /// <paramref name="differencesName"/> so the same builder drives both the absent-glyph case (glyph-present
+    /// exemption) and the literal ".notdef" case (not RM3-exempt).</summary>
+    private static PdfDocument TrueTypeDocShowingCodeInsideInheritedRm3Form(string differencesName)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(32), // nonsymbolic
+            [N("FontFile2")] = Ref(3),
+        };
+        var encoding = new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("BaseEncoding")] = N("WinAnsiEncoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger('A'), N(differencesName)),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("FirstChar")] = new PdfInteger('A'),
+            [N("LastChar")] = new PdfInteger('A'),
+            [N("Widths")] = new PdfArray(new PdfInteger(ProgramWidth)),
+            [N("Encoding")] = Ref(4),
+            [N("FontDescriptor")] = Ref(2),
+        };
+
+        // No local /Tr — the shown code's visibility depends entirely on the render mode inherited from
+        // the page's graphics state at the point /Fm1 Do is invoked. No /Resources on the form either, so
+        // the collector falls back to the page's resources (F0 is reachable from inside the form).
+        var formDict = new PdfDictionary
+        {
+            [N("Type")] = N("XObject"),
+            [N("Subtype")] = N("Form"),
+            [N("BBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)),
+        };
+        var form = new PdfStream(formDict, Encoding.ASCII.GetBytes("BT /F0 12 Tf (A) Tj ET"));
+
+        var doc = new PdfDocument();
+        doc.AddObject(1, 0, font);
+        doc.AddObject(2, 0, descriptor);
+        doc.AddObject(3, 0, FontFile());
+        doc.AddObject(4, 0, encoding);
+        doc.AddObject(5, 0, form);
+
+        // Page sets RM3 inside its own text object, then ends it and invokes the form (Do is illegal
+        // inside BT/ET) — the text-state graphics parameter persists past ET.
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf 3 Tr ET /Fm1 Do")));
+
+        doc.AddObject(22, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = Ref(21),
+            [N("Contents")] = Ref(11),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("Font")] = new PdfDictionary { [N("F0")] = Ref(1) },
+                [N("XObject")] = new PdfDictionary { [N("Fm1")] = Ref(5) },
+            },
+        });
+        doc.AddObject(21, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(Ref(22)),
+            [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(20, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"),
+            [N("Pages")] = Ref(21),
+        });
+        doc.Trailer.Dictionary[N("Root")] = Ref(20);
+        return doc;
+    }
+
+    [Fact]
+    public void Rm3_inherited_by_nested_form_exempts_absent_glyph_from_glyph_present()
+    {
+        // The nested collector must seed its RenderingMode from the page's state at /Fm1 Do — not default
+        // to RM0 — so the form's un-Tr'd absent-"ff" code is still recognized as invisible and 6.2.11.4.1
+        // stays exempt, matching the page-level case in Rm3_absent_glyph_is_exempt_from_glyph_present_and_metrics.
+        Finding[] fs = Run(TrueTypeDocShowingCodeInsideInheritedRm3Form(AbsentGlyphName));
+        Assert.DoesNotContain(fs, f => Clause(f) == "6.2.11.4.1");
+    }
+
+    [Fact]
+    public void Rm3_inherited_by_nested_form_still_fails_notdef()
+    {
+        // .notdef (6.2.11.8) is not RM3-exempt — inheriting RM3 through the form must not suppress it either.
+        Finding f = Assert.Single(Run(TrueTypeDocShowingCodeInsideInheritedRm3Form(".notdef")),
+            x => Clause(x) == "6.2.11.8");
+        Assert.Contains(".notdef", f.Message);
+    }
+
     [Fact]
     public void Simple_truetype_present_glyph_is_clean()
     {
