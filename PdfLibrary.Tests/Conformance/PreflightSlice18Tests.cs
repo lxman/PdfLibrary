@@ -16,7 +16,8 @@ namespace PdfLibrary.Tests.Conformance;
 ///   <item>6.2.11.6 / 7.21.6 — simple TrueType character encodings;</item>
 ///   <item>6.2.11.3.1 / 7.21.3.1 — Type0 descendant CIDSystemInfo vs an embedded CMap;</item>
 ///   <item>6.2.11.3.2 / 7.21.3.2 — CIDFontType2 /CIDToGIDMap;</item>
-///   <item>6.2.11.3.3 / 7.21.3.3 (test 1) — Type0 /Encoding embedded-or-predefined.</item>
+///   <item>6.2.11.3.3 / 7.21.3.3 (tests 1–3) — Type0 /Encoding embedded-or-predefined, plus an embedded
+///     CMap's /WMode dict-vs-body consistency and its /UseCMap referencing only predefined CMaps.</item>
 /// </list>
 /// The parity harness measures real detection over the veraPDF corpus; these lock every branch
 /// deterministically and prove the profile-aware clause mapping.
@@ -356,6 +357,123 @@ public class PreflightSlice18Tests
     {
         PdfDictionary font = Type0Font(EmbeddedCMap(Csi("Adobe", "Japan1", 4)), CidFont("CIDFontType0"));
         Assert.Empty(Run(DocWithFont(font)));
+    }
+
+    // ── Group 4 tests 2 & 3 — CMap WMode / UseCMap (6.2.11.3.3 / 7.21.3.3) — slice 3 ──────────────────
+
+    // An embedded CMap stream: dict /WMode = dictWMode; body contains "/WMode <bodyWMode> def".
+    private static PdfStream CMapWithWMode(int dictWMode, int bodyWMode)
+    {
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName("Custom-CMap"),
+            [new PdfName("WMode")] = new PdfInteger(dictWMode),
+        };
+        return new PdfStream(dict, Encoding.ASCII.GetBytes($"begincmap /WMode {bodyWMode} def endcmap"));
+    }
+
+    // An embedded CMap stream whose /UseCMap references another CMap (a stream named referencedName,
+    // or a predefined name when referencedName matches one).
+    private static PdfStream CMapUsing(PdfObject useCMap)
+    {
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName("Custom-CMap"),
+            [new PdfName("UseCMap")] = useCMap,
+        };
+        return new PdfStream(dict, Encoding.ASCII.GetBytes("begincmap endcmap"));
+    }
+
+    private static PdfStream NamedCMap(string cmapName) =>
+        new(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName(cmapName),
+        }, Encoding.ASCII.GetBytes("begincmap endcmap"));
+
+    [Fact]
+    public void Type0_cmap_wmode_mismatch_fails()
+    {
+        PdfDictionary font = Type0Font(CMapWithWMode(dictWMode: 1, bodyWMode: 0), CidFont("CIDFontType0"));
+        Finding f = Assert.Single(Run(DocWithFont(font)));
+        Assert.Equal("6.2.11.3.3", Clause(f));
+        Assert.Contains("WMode", f.Message);
+    }
+
+    [Fact]
+    public void Type0_cmap_wmode_consistent_passes()
+    {
+        PdfDictionary font = Type0Font(CMapWithWMode(dictWMode: 0, bodyWMode: 0), CidFont("CIDFontType0"));
+        Assert.Empty(Run(DocWithFont(font)));
+    }
+
+    [Fact]
+    public void Type0_cmap_wmode_mismatch_is_profile_aware()
+    {
+        PdfDictionary font = Type0Font(CMapWithWMode(dictWMode: 1, bodyWMode: 0), CidFont("CIDFontType0"));
+        Finding f = Assert.Single(Run(DocWithFont(font), ConformanceProfile.PdfUA1));
+        Assert.Equal("7.21.3.3", Clause(f));
+        Assert.Contains("ISO 14289-1", f.Clause);
+    }
+
+    [Fact]
+    public void Type0_cmap_uses_nonpredefined_cmap_fails()
+    {
+        PdfDictionary font = Type0Font(CMapUsing(NamedCMap("Custom-Other")), CidFont("CIDFontType0"));
+        Finding f = Assert.Single(Run(DocWithFont(font)));
+        Assert.Equal("6.2.11.3.3", Clause(f));
+        Assert.Contains("UseCMap", f.Message);
+    }
+
+    [Fact]
+    public void Type0_cmap_uses_predefined_cmap_passes()
+    {
+        // /UseCMap /Identity-H (a predefined name) is allowed.
+        PdfDictionary font = Type0Font(CMapUsing(new PdfName("Identity-H")), CidFont("CIDFontType0"));
+        Assert.Empty(Run(DocWithFont(font)));
+    }
+
+    [Fact]
+    public void Type0_cmap_without_wmode_or_usecmap_is_clean()
+    {
+        // A bare embedded CMap (no dict /WMode, no /UseCMap) triggers neither check.
+        var cmap = new PdfStream(new PdfDictionary { [new PdfName("Type")] = new PdfName("CMap") },
+            Encoding.ASCII.GetBytes("begincmap endcmap"));
+        Assert.Empty(Run(DocWithFont(Type0Font(cmap, CidFont("CIDFontType0")))));
+    }
+
+    [Fact]
+    public void Type0_cmap_wmode_in_a_comment_does_not_false_fire()
+    {
+        // FP-safety: a conformant CMap (dict /WMode 0, real body "/WMode 0 def") whose PostScript header
+        // comment happens to mention a different "/WMode 1 def" must NOT be read as a mismatch — the body
+        // scan must ignore %-comments, matching veraPDF's CMap tokenizer.
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName("Custom-CMap"),
+            [new PdfName("WMode")] = new PdfInteger(0),
+        };
+        var cmap = new PdfStream(dict, Encoding.ASCII.GetBytes(
+            "%%Title: sets /WMode 1 def in the vertical variant\nbegincmap /WMode 0 def endcmap"));
+        Assert.Empty(Run(DocWithFont(Type0Font(cmap, CidFont("CIDFontType0")))));
+    }
+
+    [Fact]
+    public void Type0_cmap_wmode_dict_only_body_absent_is_clean()
+    {
+        // FP-safety: dict carries /WMode but the body declares none — the comparison needs both sides, so
+        // an absent body /WMode skips (never defaults to 0 and fires).
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("CMap"),
+            [new PdfName("CMapName")] = new PdfName("Custom-CMap"),
+            [new PdfName("WMode")] = new PdfInteger(1),
+        };
+        var cmap = new PdfStream(dict, Encoding.ASCII.GetBytes("begincmap endcmap"));
+        Assert.Empty(Run(DocWithFont(Type0Font(cmap, CidFont("CIDFontType0")))));
     }
 
     // ── general ──────────────────────────────────────────────────────────────────────────────────────
