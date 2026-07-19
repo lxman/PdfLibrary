@@ -12,7 +12,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | CP | Area | Covered | Rules |
 |---|---|--:|---|
 | 01 | Real content tagged | 4/4 | `ua-content-tagged`, `ua-artifact-nesting`, `ua-suspects` |
-| 02 | Role mapping | 1/3 | `ua-standard-type` |
+| 02 | Role mapping | 3/3 | `ua-standard-type`, `ua-role-map` |
 | 06 | Metadata | 3/3 | `ua-title`, `ua-identification` |
 | 07 | Dictionary | 2/2 | `ua-display-doc-title` |
 | 09 | Appropriate tags | 3/5 | `ua-structure-nesting` (table/list/TOC; not Ruby/Warichu) |
@@ -57,8 +57,8 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 |---|---|---|---|---|
 | 02-001 | M | 7.1-3 | One or more non-standard tag’s mapping does not | ua-standard-type |
 | 02-002 | H | 7.1-3 | The mapping of one or more non-standard types is | n/a |
-| 02-003 | M | 7.1-3 | A circular mapping exists | — |
-| 02-004 | M | 7.1-4 | One or more standard types are remapped. | — |
+| 02-003 | M | 7.1-3 | A circular mapping exists | ua-role-map |
+| 02-004 | M | 7.1-4 | One or more standard types are remapped. | ua-role-map |
 
 ## Checkpoint 03 — Flickering  (0 machine)
 

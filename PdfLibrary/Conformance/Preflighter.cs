@@ -96,6 +96,7 @@ public static class Preflighter
         new Rules.UaArtifactNestingRule(),
         // Phase 3b: structure-tree relationship semantics (ISO 32000-1 14.8.4).
         new Rules.UaStandardTypeRule(),
+        new Rules.UaRoleMapRule(),
         new Rules.UaStructureNestingRule(),
         new Rules.UaHeadingsRule(),
         new Rules.UaTableGridRule(),

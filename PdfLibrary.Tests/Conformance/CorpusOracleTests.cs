@@ -132,7 +132,9 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Cluster 5 (pdfuaid-prefix, clause 5 t3/t4/t5): +3 (134 → 137). Sole rule catching 5-t03-fail-a
             // (part), 5-t04-fail-a (amd) and 5-t05-fail-a (corr) — the AIIM namespace bound to a non-"pdfuaid"
             // prefix. Read per-property via XmlReader (XLinq collapses multiple prefixes on one URI).
-            [ConformanceProfile.PdfUA1] = 137,
+            // Cluster 7.1 (role-map, t6/t7): +2 (137 → 139). UaRoleMapRule catches 7.1-t06-fail-a (circular
+            // LI→LI) and 7.1-t07-fail-a (standard type Document remapped to Book).
+            [ConformanceProfile.PdfUA1] = 139,
         };
 
     [Fact]
