@@ -108,6 +108,8 @@ public static class Preflighter
         new Rules.UaContentLangRule(),
         new Rules.UaLanguageTagRule(),
         new Rules.UaAnnotationRule(),
+        // Media clip data dictionaries reached from Rendition actions (7.18.6.2 — CT + Alt).
+        new Rules.UaMediaClipRule(),
         // Slice 23 — structural bucket: suspects (7.1), Note IDs (7.9), reference XObjects (7.20).
         // (OptionalContentRule, above, is widened to PDF/UA-1 clause 7.10 in the same slice.)
         new Rules.UaSuspectsRule(),
