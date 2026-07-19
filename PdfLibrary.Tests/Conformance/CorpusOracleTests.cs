@@ -89,7 +89,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // rules (pdfx-separation-consistency, pdfx-nchannel-colorants) were widened to PDF/A, catching the
             // 4 t03 same-name-Separation-inconsistency fixtures and the 3 t02 DeviceN-/Colorants fixtures. t01
             // (device alternate space without an output intent) was already caught by device-colour.
-            [ConformanceProfile.PdfA2b] = 544,
+            // Clause 6.2.2 (content-stream operators): +3 (544 → 547). ContentStreamOperatorRule catches
+            // 6-2-2-t01-fail-a/b/c (an undefined operator in page / Do-reached content). Conservative floor —
+            // true measured PdfA2b detection is 568/609.
+            [ConformanceProfile.PdfA2b] = 547,
             [ConformanceProfile.PdfA2u] = 6,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
