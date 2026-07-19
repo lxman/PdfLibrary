@@ -28,6 +28,8 @@ public static class Preflighter
         new Rules.NameUtf8Rule(),
         new Rules.StreamFiltersRule(),
         new Rules.StreamExternalFileRule(),
+        // Stream /Length vs real length + stream/endstream EOL framing (ISO 19005-2/3 6.1.7.1 t1/t2).
+        new Rules.StreamObjectRule(),
         new Rules.MetadataPresentRule(),
         new Rules.PdfaIdentificationRule(),
         // Slice 14 — XMP predefined-schema property validation (ISO 19005-2 6.6.2.3.1).
