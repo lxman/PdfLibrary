@@ -26,13 +26,13 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 20 | Optional Content | 3/3 | `optional-content` (widened to UA 7.10) |
 | 25 | XFA | 1/1 | `ua-xfa` |
 | 26 | Security | 2/2 | `ua-encryption` (encrypted file's /P must set bit 512, accessibility) |
-| 28 | Annotations | 10/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8; media 7.18.6, file-attach 7.18.7 deferred) |
+| 28 | Annotations | 12/15 | `ua-annotation` (7.18.1 annotation & form-field alt-desc/.2/.3/.4/.5/.8) + `ua-media-clip` (7.18.6.2 CT/Alt); file-attach 7.18.7, PrinterMark-appearance 7.18.8-2 deferred |
 | 30 | XObjects | 2/2 | `ua-reference-xobject` (30-001), `ua-xobject-mcid` (30-002 tagged-form reuse) |
 | 31 | Fonts | 20/29 | `font-dictionary`, `font-embedded`, `font-program`, `font-subset-coverage` (CharSet/CIDSet, 7.21.4.2), `pdfa2u-tounicode-values` (ToUnicode value validity, 7.21.7-2/3) |
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
 
-**Progress 2026-07-19** (UA-1 floor-closing clusters): **02-003/02-004** (role mapping — circular mapping and remapped standard types) now map to `ua-role-map`, taking CP 02 to 3/3; **26-001/26-002** (encryption `/P` accessibility bit) now map to `ua-encryption`, taking CP 26 to 2/2. Whole-file UA-1 parity 284→290, 0 FP.
+**Progress 2026-07-19** (UA-1 floor-closing clusters): **02-003/02-004** (role mapping — circular mapping and remapped standard types) now map to `ua-role-map`, taking CP 02 to 3/3; **26-001/26-002** (encryption `/P` accessibility bit) now map to `ua-encryption`, taking CP 26 to 2/2; **28-014/28-015** (media clip data — missing `/CT` content type and missing/incorrect `/Alt`) now map to `ua-media-clip`, taking CP 28 to 12/15. Whole-file UA-1 parity 284→293, 0 FP.
 
 **Progress 2026-07-19** (font-program slice 3): **31-007** (7.21.3.3-1, embedded CMap `/WMode` dict-vs-body consistency) and **31-008** (7.21.3.3-2, a CMap referencing a non-predefined CMap via `/UseCMap`) now map to `font-dictionary` — veraPDF 6.2.11.3.3 / 7.21.3.3 tests 2 & 3 reached full parity (5/5, 4/4), 0 FP. CP 31 → 20/29.
 
@@ -282,8 +282,8 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 28-011 | M | 7.18.5-1 | A link annotation is not nested within a <Link> tag. | ua-annotation |
 | 28-012 | M | 7.18.5-2 | A link annotation does not include an alternate | ua-annotation |
 | 28-013 | H | 7.18.5-3 | An IsMap entry is present with a value of true but | n/a |
-| 28-014 | M | 7.18.6.2-1 | CT entry is missing from the media clip data | — |
-| 28-015 | M | 7.18.6.2-1 | Alt entry is missing from the media clip data | — |
+| 28-014 | M | 7.18.6.2-1 | CT entry is missing from the media clip data | ua-media-clip |
+| 28-015 | M | 7.18.6.2-1 | Alt entry is missing from the media clip data | ua-media-clip |
 | 28-016 | M | 7.18.7-1 | File attachment annotations do not conform | — |
 | 28-017 | M | 7.18.8-1 | A PrinterMark annotation is included in the logical | ua-annotation |
 | 28-018 | M | 7.18.8-2 | The appearance stream of a PrinterMark | — |

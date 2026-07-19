@@ -136,7 +136,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // LI→LI) and 7.1-t07-fail-a (standard type Document remapped to Book).
             // Cluster 7.16 (encryption /P): +1 (139 → 140). UaEncryptionRule catches 7.16-t01-fail-a (an
             // encrypted file whose /P clears bit 512, the accessibility-extraction permission).
-            [ConformanceProfile.PdfUA1] = 140,
+            // Cluster 7.18.6.2 (media clip): +3 (140 → 143). UaMediaClipRule catches 7.18.6.2-t01-fail-a
+            // (no /CT), -t02-fail-a (no /Alt) and -t02-fail-b (/Alt default text empty). Conservative floor —
+            // true measured PdfUA1 detection is 152/155 (the margin absorbs corpus-load flakiness).
+            [ConformanceProfile.PdfUA1] = 143,
         };
 
     [Fact]
