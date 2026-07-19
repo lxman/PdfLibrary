@@ -20,8 +20,8 @@ namespace PdfLibrary.Conformance.Rules;
 ///     and for simple TrueType and simple CFF fonts (with an embedded charset) via the tri-state
 ///     <see cref="ResolveSimpleGlyph"/> resolver, which only ever reports a confident glyph-0 result and
 ///     returns <c>Unknown</c> (skip, no finding) whenever the code→glyph path is not reproducible here —
-///     symbolic TrueType with no usable Unicode cmap, an encoding name with no AGL Unicode, or a
-///     predefined-charset CFF.</item>
+///     symbolic TrueType (declared, or carrying only a (3,0) Windows-Symbol cmap) with no usable Unicode
+///     cmap path, an encoding name with no AGL Unicode, or a predefined-charset CFF.</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
 ///     width. Implemented for simple TrueType fonts (advance from glyf/hmtx via the cmap), simple CFF / Type1C
@@ -145,10 +145,11 @@ internal sealed class FontProgramRule : IConformanceRule
             yield break; // classic Type1 (FontFile) / Type3 / predefined-charset CFF → out of scope (FP-safe)
 
         // .notdef (6.2.11.8 / 7.21.8): a shown code that confidently resolves to glyph 0.
+        bool symbolic = IsSymbolic(context, font);
         bool notdefHit = false;
         foreach (int code in codes)
         {
-            if (ResolveSimpleGlyph(font, metrics, code, isTrueType) == SimpleGlyphResolution.NotDef)
+            if (ResolveSimpleGlyph(font, metrics, code, isTrueType, symbolic) == SimpleGlyphResolution.NotDef)
             {
                 notdefHit = true;
                 break;
@@ -237,17 +238,25 @@ internal sealed class FontProgramRule : IConformanceRule
     /// <summary>
     /// Resolves a simple-font code to a program glyph with a confidence flag, the FP-safe way. Returns
     /// <see cref="SimpleGlyphResolution.Unknown"/> whenever the standard code→glyph path is not reproducible
-    /// here (symbolic TrueType with no usable Unicode cmap, an encoding name with no Unicode, a
-    /// predefined-charset CFF) so the caller emits nothing. Only a confident glyph-0 result is
-    /// <see cref="SimpleGlyphResolution.NotDef"/>.
+    /// here (symbolic TrueType — declared or carrying only a (3,0) Windows-Symbol cmap — with no usable
+    /// Unicode cmap, an encoding name with no Unicode, a predefined-charset CFF) so the caller emits
+    /// nothing. Only a confident glyph-0 result is <see cref="SimpleGlyphResolution.NotDef"/>.
     /// </summary>
     private static SimpleGlyphResolution ResolveSimpleGlyph(
-        PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType)
+        PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType, bool symbolic)
     {
         string? glyphName = font.Encoding?.GetGlyphName(code);
 
         if (isTrueType)
         {
+            // A symbolic font (PDF-declared /Flags bit 3, or a program carrying only a (3,0) Windows-Symbol
+            // cmap keyed at 0xF000+code) has no reliable AGL-Unicode → cmap path: there is no 0xF000-offset
+            // retry against a Symbol cmap anywhere in the lookup chain, so an AGL-derived Unicode value
+            // missing there is indistinguishable from a genuine .notdef. Skip rather than guess — Unknown is
+            // always FP-safe, even when the font happens to also carry a usable Unicode cmap.
+            if (symbolic || metrics.HasSymbolCmapEncoding())
+                return SimpleGlyphResolution.Unknown;
+
             // Trustworthy only through a real cmap keyed by the encoding name's Unicode value. Without a
             // cmap (GetGlyphId would fall back to "code is the GID", a rendering heuristic) or without an
             // AGL Unicode for the name (symbolic / custom name), we cannot tell absence from a lookup gap.
@@ -282,6 +291,15 @@ internal sealed class FontProgramRule : IConformanceRule
         int upm = metrics.UnitsPerEm <= 0 ? 1000 : metrics.UnitsPerEm;
         return advanceInFontUnits * 1000.0 / upm;
     }
+
+    /// <summary>True when the font's /FontDescriptor /Flags bit 3 (symbolic) is set. Mirrors
+    /// <see cref="FontDictionaryRule.SymbolicFlags"/>'s descriptor resolution (read through
+    /// <see cref="ConformanceContext.Resolve"/>, the same indirection the rest of this rule uses) rather
+    /// than <see cref="PdfFont.GetDescriptor()"/>.</summary>
+    private static bool IsSymbolic(ConformanceContext context, PdfFont font) =>
+        context.Resolve(font.FontDictionary.Get("FontDescriptor")) is PdfDictionary descriptor
+        && context.Resolve(descriptor.Get("Flags")) is PdfInteger flags
+        && (flags.LongValue & 4) != 0;
 
     private static bool IsIdentity(string? encoding) => encoding is "Identity-H" or "Identity-V";
 

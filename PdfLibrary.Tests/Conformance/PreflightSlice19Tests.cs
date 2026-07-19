@@ -257,7 +257,12 @@ public class PreflightSlice19Tests
     [Fact]
     public void Fixture_font_lacks_ff_ligature()
     {
-        // Precondition for the absent-glyph tests: PublicPixel has no glyph for U+FB00 ("ff" ligature).
+        // Precondition for the absent-glyph tests, both sides of it: the AGL table this engine ships still
+        // maps "ff" to U+FB00 (so ResolveSimpleGlyph actually gets a Unicode value to look up — if a future
+        // edit dropped "ff" from GlyphList's partial table, the resolver would route straight to Unknown and
+        // the absent-glyph tests would false-pass for the wrong reason), and PublicPixel has no glyph for it.
+        Assert.Equal("\uFB00", PdfLibrary.Fonts.GlyphList.GetUnicode(AbsentGlyphName));
+
         var metrics = new PdfLibrary.Fonts.Embedded.EmbeddedFontMetrics(FontBytes());
         Assert.True(metrics.IsValid);
         Assert.Equal(0, metrics.GetGlyphId((ushort)AbsentUnicode));
@@ -284,6 +289,63 @@ public class PreflightSlice19Tests
     {
         // 'A' with the default WinAnsi mapping resolves to a real PublicPixel glyph — no finding.
         Assert.Empty(Run(TrueTypeDoc(ProgramWidth)));
+    }
+
+    // NOTE — no committed, always-run unit test drives the CFF branch of ResolveSimpleGlyph (including its
+    // GetGlyphIdByCffEncoding built-in-encoding fallback) below this point: this repo's Resources/ carries
+    // no simple CFF (Type1C /FontFile3) font to build a fixture from. Checked before writing this note:
+    // PublicPixel.ttf is a plain glyf TrueType ('\x00\x01\x00\x00' sfnt tag, not 'OTTO'); MINIMUM_Rechnung_fx.pdf
+    // embeds only /FontFile2 TrueType (verified via `qpdf --qdf --object-streams=disable` + grep — three
+    // /FontFile2 entries, zero /FontFile3); conformant-pdfa2b.pdf embeds no fonts at all (it is a metadata-only
+    // veraPDF 6.6.4 fixture). A hand-authored CFF binary was deliberately NOT invented here — a synthetic CFF
+    // is exactly the kind of guess this resolver exists to avoid, and getting its charset/CharString/built-in
+    // Encoding table byte-correct without a real font as a base is not something to improvise. CFF `.notdef`
+    // detection, including the GetGlyphIdByCffEncoding fallback specifically, is instead exercised by
+    // PdfUaReferenceOracleTests (LocalOnly; real HelveticaNeue-*/SwiftSH-* CFF fonts in
+    // PDFUA-Ref-2-01_Magazine-danish.pdf — the same file that surfaced that fallback's necessity) and by the
+    // controller-run corpus parity task's CFF fail fixtures.
+
+    /// <summary>Same as <see cref="TrueTypeDocShowingAbsentGlyph"/> but /FontDescriptor /Flags declares the
+    /// font symbolic (bit 3). A symbolic font's cmap is not guaranteed to be keyed by AGL Unicode values —
+    /// e.g. a (3,0) Windows-Symbol cmap is keyed at 0xF000+code, which this engine's lookup chain has no
+    /// retry for — so an AGL-derived Unicode miss here must not be trusted as a confident .notdef.</summary>
+    private static PdfDocument SymbolicTrueTypeDocShowingAbsentGlyph()
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        };
+        var encoding = new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("BaseEncoding")] = N("WinAnsiEncoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger('A'), N(AbsentGlyphName)),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("FirstChar")] = new PdfInteger('A'),
+            [N("LastChar")] = new PdfInteger('A'),
+            [N("Widths")] = new PdfArray(new PdfInteger(ProgramWidth)),
+            [N("Encoding")] = Ref(4),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        return DocWith(font, Encoding.ASCII.GetBytes("(A)"), (2, descriptor), (3, FontFile()), (4, encoding));
+    }
+
+    [Fact]
+    public void Simple_truetype_symbolic_absent_glyph_is_unknown_not_notdef()
+    {
+        // The exact same absent-glyph code that fails 6.2.11.8 for a non-symbolic font (see
+        // Simple_truetype_absent_glyph_fails_notdef) must produce NO finding once the font is declared
+        // symbolic: the AGL-Unicode → cmap path this rule relies on is not trustworthy for a symbolic font,
+        // so ResolveSimpleGlyph must route to Unknown (skip) rather than a confident .notdef.
+        Assert.Empty(Run(SymbolicTrueTypeDocShowingAbsentGlyph()));
     }
 
     // ── FP-safe skips ─────────────────────────────────────────────────────────────────────────────────
