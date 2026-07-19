@@ -129,7 +129,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Slice 29 — CIDFontType0 advance-width (font-program 7.21.5 ≡ 6.2.11.5): +0 for PdfUA1. The
             // clause's only UA fail fixture (7.21.5-t01-fail-a) is TrueType/Type1, not CIDFontType0, so the
             // widened check adds no UA detection even though it adds +1 to PdfA2b (6-2-11-5-t01-fail-e).
-            [ConformanceProfile.PdfUA1] = 134,
+            // Cluster 5 (pdfuaid-prefix, clause 5 t3/t4/t5): +3 (134 → 137). Sole rule catching 5-t03-fail-a
+            // (part), 5-t04-fail-a (amd) and 5-t05-fail-a (corr) — the AIIM namespace bound to a non-"pdfuaid"
+            // prefix. Read per-property via XmlReader (XLinq collapses multiple prefixes on one URI).
+            [ConformanceProfile.PdfUA1] = 137,
         };
 
     [Fact]
