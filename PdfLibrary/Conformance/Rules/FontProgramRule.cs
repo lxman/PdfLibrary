@@ -165,8 +165,9 @@ internal sealed class FontProgramRule : IConformanceRule
     {
         // Two simple embeddings are covered, each with a reliable program-advance path: TrueType (glyf/hmtx via
         // the cmap) and simple CFF / Type1C (CharString advance via the CFF charset). Classic Type1 (FontFile)
-        // and Type3 stay excluded — their advance extraction is not reproduced precisely enough here to compare
-        // without risking a false positive. Type0 fonts never reach this method (routed to CheckType0).
+        // stays excluded — its advance extraction is not reproduced precisely enough here to compare without
+        // risking a false positive. Type0 fonts never reach this method (routed to CheckType0), and Type3 fonts
+        // are routed to CheckType3 (their width comes from the CharProc d0/d1 operator) before this point.
         //
         // Simple CFF is gated on an embedded (custom) charset. A CFF using a predefined charset (ISOAdobe /
         // Expert / ExpertSubset) is skipped: the engine does not yet materialise predefined charsets, so
