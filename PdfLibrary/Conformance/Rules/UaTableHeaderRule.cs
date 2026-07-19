@@ -242,14 +242,14 @@ internal sealed class UaTableHeaderRule : IConformanceRule
         LogicalStructure.ChildElements(context.Document, row)
             .Where(c => LogicalStructure.StandardType(context.Document, c) is "TH" or "TD");
 
-    // RowSpan/ColSpan default to 1; a value below 1 (malformed) is clamped to 1 (a safe over-count that only
-    // makes the grid larger — a genuinely short span leaves an empty slot, which BuildGrid treats as irregular).
+    // RowSpan/ColSpan: the raw span (default 1 only when absent), matching veraPDF. A malformed span below 1
+    // leaves a grid slot empty, which BuildGrid then reports as irregular rather than silently clamping to 1.
     private static int IntAttribute(ConformanceContext context, PdfDictionary cell, string key,
         PdfDictionary? classMap)
     {
         foreach (PdfDictionary attr in TableAttributes(context, cell, classMap))
             if (context.Resolve(attr.Get(key)) is PdfInteger i)
-                return Math.Max(1, i.Value);
+                return i.Value;
         return 1;
     }
 

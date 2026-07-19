@@ -46,18 +46,34 @@ internal sealed class UaRoleMapRule : IConformanceRule
                 + "standard structure type.");
     }
 
+    // The RoleMap is a functional graph (each key maps to one target), so a walk from any key either reaches a
+    // terminal (a target that is not itself a key) or revisits a node — a cycle. Nodes proven to terminate are
+    // recorded in <paramref name="safe"/> and never walked again, so the whole scan is O(V+E) rather than the
+    // O(V²) of re-walking each key's chain from scratch.
     private static bool HasCycle(Dictionary<string, string> map)
     {
+        var safe = new HashSet<string>(StringComparer.Ordinal); // keys proven to lead to a terminal (no cycle)
+        var path = new HashSet<string>(StringComparer.Ordinal);
+        var walked = new List<string>();
+
         foreach (string start in map.Keys)
         {
-            var seen = new HashSet<string>(StringComparer.Ordinal);
+            if (safe.Contains(start))
+                continue;
+
+            path.Clear();
+            walked.Clear();
             string current = start;
-            while (map.TryGetValue(current, out string? next))
+            while (map.TryGetValue(current, out string? next) && !safe.Contains(current))
             {
-                if (!seen.Add(current))
-                    return true;
+                if (!path.Add(current))
+                    return true; // current is already on this walk — a cycle
+                walked.Add(current);
                 current = next;
             }
+
+            foreach (string node in walked) // this walk reached a terminal or a known-safe node
+                safe.Add(node);
         }
         return false;
     }

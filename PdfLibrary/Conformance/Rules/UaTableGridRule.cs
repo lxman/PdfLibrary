@@ -128,9 +128,11 @@ internal sealed class UaTableGridRule : IConformanceRule
         int rowSpan = 1, colSpan = 1;
         foreach (PdfDictionary attr in AttributeDicts(context, cell.Get("A")))
         {
-            if (context.Resolve(attr.Get("RowSpan")) is PdfInteger rs && rs.Value >= 1)
+            // The raw span (default 1 only when absent), matching veraPDF: a malformed span below 1 leaves the
+            // grid ragged, which surfaces below as an irregularity rather than being silently clamped to 1.
+            if (context.Resolve(attr.Get("RowSpan")) is PdfInteger rs)
                 rowSpan = rs.Value;
-            if (context.Resolve(attr.Get("ColSpan")) is PdfInteger cs && cs.Value >= 1)
+            if (context.Resolve(attr.Get("ColSpan")) is PdfInteger cs)
                 colSpan = cs.Value;
         }
         return (rowSpan, colSpan);

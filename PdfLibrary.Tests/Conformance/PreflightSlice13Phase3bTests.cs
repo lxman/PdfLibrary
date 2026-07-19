@@ -324,6 +324,17 @@ public class PreflightSlice13Phase3bTests
         Assert.Single(new UaTableGridRule().Check(Ctx(doc)));
     }
 
+    [Fact]
+    public void Zero_colspan_is_flagged()
+    {
+        // A malformed ColSpan of 0 leaves the row short of columns — irregular, as veraPDF treats it (it uses
+        // the raw span, not a clamp). The cell occupies no column, so (1,1) is left empty.
+        var doc = TableDoc(
+            Row(Cell("TH"), Cell("TH")),
+            Row(Cell("TD", colSpan: 0), Cell("TD")));
+        Assert.Single(new UaTableGridRule().Check(Ctx(doc)));
+    }
+
     // ── ua-structure-nesting: lists (7.6) ─────────────────────────────────────
 
     [Fact]
