@@ -62,6 +62,9 @@ internal sealed class UaIdentificationRule : IConformanceRule
     // prefix). Tolerant: an unparseable packet yields nothing — never a false positive.
     private static IEnumerable<(string Local, string Prefix)> MisPrefixedIdProperties(byte[] xmp)
     {
+        if (xmp is null)
+            return [];
+
         var hits = new List<(string, string)>();
         try
         {

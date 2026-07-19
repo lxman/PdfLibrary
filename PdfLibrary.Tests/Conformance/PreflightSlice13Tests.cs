@@ -175,6 +175,28 @@ public class PreflightSlice13Tests
         Assert.Empty(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
     }
 
+    [Fact]
+    public void Malformed_metadata_does_not_crash_or_emit_a_prefix_finding()
+    {
+        // Core robustness claim: binary garbage in the /Metadata stream must not throw (the XmlReader walk
+        // tolerates unparseable input) and must not produce a spurious prefix finding. (The value check may
+        // still flag a missing pdfuaid:part — that is separate and correct.)
+        byte[] garbage = [0x00, 0x01, 0xFF, 0xFE, 0x42, 0x00, 0x99, 0x3C, 0x78];
+        Assert.DoesNotContain(new UaIdentificationRule().Check(Ctx(DocWithXmp(garbage))),
+            f => f.Message.Contains("prefix"));
+    }
+
+    [Fact]
+    public void Pdfuaid_part_in_attribute_form_with_a_wrong_prefix_is_flagged()
+    {
+        // Compact/attribute-form XMP: pdfuaia:part="1" on rdf:Description. The reader must read the
+        // attribute's real prefix, not just element-form properties.
+        byte[] xmp = RawXmp($"xmlns:pdfuaia=\"{AiimNs}\" pdfuaia:part=\"1\"", "");
+        Finding f = Assert.Single(new UaIdentificationRule().Check(Ctx(DocWithXmp(xmp))));
+        Assert.Contains("part", f.Message);
+        Assert.Contains("pdfuaia", f.Message);
+    }
+
     // ── ua-tagged (7.1) ───────────────────────────────────────────────────────
 
     [Fact]
