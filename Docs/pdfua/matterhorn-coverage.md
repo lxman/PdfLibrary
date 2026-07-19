@@ -20,7 +20,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 | 11 | Natural language | 5/6 | `ua-attribute-lang` (Alt/ActualText/E), `ua-object-lang` (outline), `ua-content-lang` (annot Contents/form TU/XMP lang-alt); 11-001 page-content deferred |
 | 13 | Graphics | 1/1 | `ua-figure-alt` |
 | 14 | Headings | 4/4 | `ua-headings` (first-is-H1 + no level skip; ≤1 `<H>`/node; no H/H# mix) |
-| 15 | Tables | 1/1 | `ua-table-regular` |
+| 15 | Tables | 1/1 | `ua-table-regular` (grid regularity) + `ua-table-header` (TD→header association) |
 | 17 | Math | 1/2 | `ua-figure-alt` (Formula Alt) |
 | 19 | Notes and References | 2/2 | `ua-note-id` |
 | 20 | Optional Content | 3/3 | `optional-content` (widened to UA 7.10) |
@@ -32,7 +32,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 
 **Detectors with no *discrete* Matterhorn M condition** (they detect real ISO 14289-1 failures veraPDF also flags, but Matterhorn does not enumerate them as numbered conditions, so they appear nowhere in the column): `ua-tagged` — the document-level Tagged-PDF gate (catalog `/StructTreeRoot` + `/MarkInfo /Marked true`); `ua-language-tag` — `/Lang` BCP-47 syntax validity wherever a `/Lang` appears.
 
-**Progress 2026-07-19** (UA-1 floor-closing clusters): **02-003/02-004** (role mapping — circular mapping and remapped standard types) now map to `ua-role-map`, taking CP 02 to 3/3; **26-001/26-002** (encryption `/P` accessibility bit) now map to `ua-encryption`, taking CP 26 to 2/2; **28-014/28-015** (media clip data — missing `/CT` content type and missing/incorrect `/Alt`) now map to `ua-media-clip`, taking CP 28 to 12/15. Whole-file UA-1 parity 284→293, 0 FP.
+**Progress 2026-07-19** (UA-1 floor-closing clusters): **02-003/02-004** (role mapping — circular mapping and remapped standard types) now map to `ua-role-map`, taking CP 02 to 3/3; **26-001/26-002** (encryption `/P` accessibility bit) now map to `ua-encryption`, taking CP 26 to 2/2; **28-014/28-015** (media clip data — missing `/CT` content type and missing/incorrect `/Alt`) now map to `ua-media-clip`, taking CP 28 to 12/15; **15-003** (table data cells not connected to headers via Headers/IDs or Scope) now also maps to `ua-table-header` (the SETD `hasConnectedHeader` algorithm; the regularity half stays `ua-table-regular`). Whole-file UA-1 parity 284→**296/296 — full machine-checkable veraPDF parity**, 0 FP.
 
 **Progress 2026-07-19** (font-program slice 3): **31-007** (7.21.3.3-1, embedded CMap `/WMode` dict-vs-body consistency) and **31-008** (7.21.3.3-2, a CMap referencing a non-predefined CMap via `/UseCMap`) now map to `font-dictionary` — veraPDF 6.2.11.3.3 / 7.21.3.3 tests 2 & 3 reached full parity (5/5, 4/4), 0 FP. CP 31 → 20/29.
 
@@ -176,7 +176,7 @@ Populated 2026-07-10 by mapping each condition to the rule whose logic actually 
 |---|---|---|---|---|
 | 15-001 | H | 7.5-1 | A row has a header cell, but that header cell is not | n/a |
 | 15-002 | H | 7.5-1 | A column has a header cell, but that header cell is | n/a |
-| 15-003 | M | 7.5-2 | In a table not organized with Headers attributes | ua-table-regular |
+| 15-003 | M | 7.5-2 | In a table not organized with Headers attributes | ua-table-regular, ua-table-header |
 | 15-004 | H | 7.5-3 | Content is tagged as a table for information that is | n/a |
 | 15-005 | H | 7.5-2 | A given cell’s header cannot be unambiguously | n/a |
 

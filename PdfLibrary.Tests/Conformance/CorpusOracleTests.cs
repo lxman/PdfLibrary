@@ -137,9 +137,12 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Cluster 7.16 (encryption /P): +1 (139 → 140). UaEncryptionRule catches 7.16-t01-fail-a (an
             // encrypted file whose /P clears bit 512, the accessibility-extraction permission).
             // Cluster 7.18.6.2 (media clip): +3 (140 → 143). UaMediaClipRule catches 7.18.6.2-t01-fail-a
-            // (no /CT), -t02-fail-a (no /Alt) and -t02-fail-b (/Alt default text empty). Conservative floor —
-            // true measured PdfUA1 detection is 152/155 (the margin absorbs corpus-load flakiness).
-            [ConformanceProfile.PdfUA1] = 143,
+            // (no /CT), -t02-fail-a (no /Alt) and -t02-fail-b (/Alt default text empty).
+            // Cluster 7.5 (table headers): +3 (143 → 146). UaTableHeaderRule catches 7.5-t01-fail-a/-fail-b
+            // (TD with no resolvable header) and 7.5-t02-fail-a (TD /Headers references an undefined id).
+            // Conservative floor — true measured PdfUA1 detection is now 155/155 (full; margin absorbs
+            // corpus-load flakiness).
+            [ConformanceProfile.PdfUA1] = 146,
         };
 
     [Fact]

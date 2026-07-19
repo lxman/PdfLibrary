@@ -101,6 +101,8 @@ public static class Preflighter
         new Rules.UaStructureNestingRule(),
         new Rules.UaHeadingsRule(),
         new Rules.UaTableGridRule(),
+        // Table data-cell header association (7.5 t1/t2 — Headers/IDs or Scope).
+        new Rules.UaTableHeaderRule(),
         new Rules.UaTextAttributeLangRule(),
         new Rules.UaObjectLangRule(),
         // Slice B1 — natural language for non-structure-element text (7.2 t24/t25/t33): annotation
