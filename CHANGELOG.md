@@ -15,6 +15,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the decoded file bytes. Content failures degrade per entry (`HasData = false`) — the reader
   never throws on malformed documents. First consumer: the EInvoice Factur-X bridge (extracting
   `factur-x.xml` from PDF/A-3 invoices); the API is generic to any embedded attachment.
+- Editing: `PdfDocumentEditor.AddEmbeddedFile` (filespec + /Names /EmbeddedFiles + /AF,
+  replace-by-name), `PdfMetadata.SetRawXmp` (verbatim XMP packet), `PdfDocumentEditor.AddOutputIntent`
+  (ICC /DestOutputProfile, /N from header) — PDF/A-3 authoring building blocks.
+
+### Fixed
+
+- **Builder: no more unused standard-14 font on empty pages** — `PdfDocumentWriter.CollectFonts()`
+  used to seed `"Helvetica"` unconditionally and stamp it into every page's `/Resources /Font`,
+  including pages with zero content. That tripped the PDF/A font-embedded rule (a required,
+  non-embedded standard-14 font) for a font nothing ever drew — blocking the new PDF/A-3B
+  authoring integration gate on a `new PdfDocumentBuilder().AddPage(_ => { })` page. Fonts are now
+  collected purely from what a document's content, form fields, and annotations actually reference;
+  pages with no text/fields/annotations carry no `/Font` resource at all.
 
 ## [2.4.0] - 2026-07-09
 
