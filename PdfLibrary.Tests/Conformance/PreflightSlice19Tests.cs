@@ -208,6 +208,84 @@ public class PreflightSlice19Tests
         Assert.Contains("ISO 14289-1", f.Clause);
     }
 
+    // ── simple-font .notdef / glyph-present (slice 1) ─────────────────────────────────────────────────
+
+    // A WinAnsi code remapped via /Differences to a glyph whose Unicode PublicPixel lacks, so the
+    // program resolves it to no glyph. "ff" (the "ff" ligature, U+FB00) is in this engine's own AGL table
+    // (GlyphList) so it resolves to a Unicode value, but PublicPixel — despite covering Greek, currency and
+    // other symbols — has no ligature glyph for it. Guarded by Fixture_font_lacks_ff_ligature so a font
+    // change can't silently invalidate it.
+    //
+    // Contingency note (brief's documented fallback): the brief's original choice, afii10017 (Cyrillic
+    // Capital A, U+0410), failed the precondition twice over — PublicPixel actually has a glyph for U+0410
+    // (gid 522), and separately "afii10017" is not an entry in this codebase's (intentionally partial) AGL
+    // table, so GlyphList.GetUnicode would return null for it regardless of font content. A probe of the
+    // AGL table's own entries against PublicPixel's cmap found "peseta" (U+20A7), "ff" (U+FB00), "ffi"
+    // (U+FB03) and "ffl" (U+FB04) all absent; "ff" was picked as the clearest name.
+    private const int AbsentUnicode = 0xFB00;
+    private const string AbsentGlyphName = "ff";
+
+    private static PdfDocument TrueTypeDocShowingAbsentGlyph()
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(32), // nonsymbolic
+            [N("FontFile2")] = Ref(3),
+        };
+        var encoding = new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("BaseEncoding")] = N("WinAnsiEncoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger('A'), N(AbsentGlyphName)),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("FirstChar")] = new PdfInteger('A'),
+            [N("LastChar")] = new PdfInteger('A'),
+            [N("Widths")] = new PdfArray(new PdfInteger(ProgramWidth)),
+            [N("Encoding")] = Ref(4),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        return DocWith(font, Encoding.ASCII.GetBytes("(A)"), (2, descriptor), (3, FontFile()), (4, encoding));
+    }
+
+    [Fact]
+    public void Fixture_font_lacks_ff_ligature()
+    {
+        // Precondition for the absent-glyph tests: PublicPixel has no glyph for U+FB00 ("ff" ligature).
+        var metrics = new PdfLibrary.Fonts.Embedded.EmbeddedFontMetrics(FontBytes());
+        Assert.True(metrics.IsValid);
+        Assert.Equal(0, metrics.GetGlyphId((ushort)AbsentUnicode));
+    }
+
+    [Fact]
+    public void Simple_truetype_absent_glyph_fails_notdef()
+    {
+        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph()));
+        Assert.Equal("6.2.11.8", Clause(f));
+        Assert.Contains(".notdef", f.Message);
+    }
+
+    [Fact]
+    public void Simple_truetype_absent_glyph_notdef_is_profile_aware()
+    {
+        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph(), ConformanceProfile.PdfUA1));
+        Assert.Equal("7.21.8", Clause(f));
+        Assert.Contains("ISO 14289-1", f.Clause);
+    }
+
+    [Fact]
+    public void Simple_truetype_present_glyph_is_clean()
+    {
+        // 'A' with the default WinAnsi mapping resolves to a real PublicPixel glyph — no finding.
+        Assert.Empty(Run(TrueTypeDoc(ProgramWidth)));
+    }
+
     // ── FP-safe skips ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]

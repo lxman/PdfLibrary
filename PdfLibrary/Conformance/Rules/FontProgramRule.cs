@@ -15,11 +15,13 @@ namespace PdfLibrary.Conformance.Rules;
 /// (<see cref="ConformanceContext.UsedTextGlyphs"/>), matching veraPDF's "used for rendering" scope:
 /// <list type="number">
 ///   <item><b>.notdef glyph (6.2.11.8 / 7.21.8):</b> a shown code that resolves to glyph 0 (.notdef) is
-///     reported. Implemented for Type0 composite fonts with an Identity CMap only, where the code equals the
-///     CID and the CID→GID map (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) is
-///     authoritative. Simple Type1/TrueType are deliberately left unreported: their code→glyph selection
-///     (encoding differences, symbolic cmaps, the WinAnsi remap band) is not reproduced here precisely
-///     enough to distinguish a genuine .notdef from a resolution gap without risking a false positive.</item>
+///     reported. Implemented for Type0 composite fonts with an Identity CMap, where the code equals the CID
+///     and the CID→GID map (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) is authoritative;
+///     and for simple TrueType and simple CFF fonts (with an embedded charset) via the tri-state
+///     <see cref="ResolveSimpleGlyph"/> resolver, which only ever reports a confident glyph-0 result and
+///     returns <c>Unknown</c> (skip, no finding) whenever the code→glyph path is not reproducible here —
+///     symbolic TrueType with no usable Unicode cmap, an encoding name with no AGL Unicode, or a
+///     predefined-charset CFF.</item>
 ///   <item><b>font metrics (6.2.11.5 / 7.21.5):</b> the PDF-declared width of each used glyph
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
 ///     width. Implemented for simple TrueType fonts (advance from glyf/hmtx via the cmap), simple CFF / Type1C
@@ -68,7 +70,7 @@ internal sealed class FontProgramRule : IConformanceRule
 
             foreach (Finding f in font is Type0Font type0
                          ? CheckType0(context, type0, metrics, usage.Codes, notdefReported, metricsReported)
-                         : CheckSimple(context, font, metrics, usage.Codes, metricsReported))
+                         : CheckSimple(context, font, metrics, usage.Codes, metricsReported, notdefReported))
             {
                 yield return f;
             }
@@ -121,10 +123,10 @@ internal sealed class FontProgramRule : IConformanceRule
                 + $"program's advance width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
     }
 
-    // ── Simple fonts — metrics only (TrueType + simple CFF) ───────────────────────────────────────────
+    // ── Simple fonts — .notdef + metrics (TrueType + simple CFF) ──────────────────────────────────────
     private IEnumerable<Finding> CheckSimple(
         ConformanceContext context, PdfFont font, EmbeddedFontMetrics metrics,
-        IReadOnlyCollection<int> codes, HashSet<string> metricsReported)
+        IReadOnlyCollection<int> codes, HashSet<string> metricsReported, HashSet<string> notdefReported)
     {
         // Two simple embeddings are covered, each with a reliable program-advance path: TrueType (glyf/hmtx via
         // the cmap) and simple CFF / Type1C (CharString advance via the CFF charset). Classic Type1 (FontFile)
@@ -140,7 +142,24 @@ internal sealed class FontProgramRule : IConformanceRule
         bool isTrueType = font.FontType == PdfFontType.TrueType;
         bool isSimpleCff = metrics.IsCffFont && metrics.CffHasEmbeddedCharset;
         if (!isTrueType && !isSimpleCff)
-            yield break;
+            yield break; // classic Type1 (FontFile) / Type3 / predefined-charset CFF → out of scope (FP-safe)
+
+        // .notdef (6.2.11.8 / 7.21.8): a shown code that confidently resolves to glyph 0.
+        bool notdefHit = false;
+        foreach (int code in codes)
+        {
+            if (ResolveSimpleGlyph(font, metrics, code, isTrueType) == SimpleGlyphResolution.NotDef)
+            {
+                notdefHit = true;
+                break;
+            }
+        }
+        if (notdefHit && notdefReported.Add(font.BaseFont))
+            yield return Make(context, font, "8",
+                $"The {(isTrueType ? "TrueType" : "CFF")} font {Name(font)} renders a character code that maps "
+                + "to the .notdef glyph (glyph 0), which is not present in the embedded font program.");
+
+        // metrics (6.2.11.5 / 7.21.5): unchanged — only runs when /Widths is present.
         if (context.Resolve(font.FontDictionary.Get("Widths")) is not PdfArray widths)
             yield break;
 
@@ -210,6 +229,51 @@ internal sealed class FontProgramRule : IConformanceRule
 
         ushort gid = metrics.GetGlyphIdByName(glyphName);
         return gid == 0 ? null : Scale(metrics, metrics.GetAdvanceWidth(gid));
+    }
+
+    /// <summary>Confidence-tagged resolution of a simple-font code to its program glyph.</summary>
+    private enum SimpleGlyphResolution { Present, NotDef, Unknown }
+
+    /// <summary>
+    /// Resolves a simple-font code to a program glyph with a confidence flag, the FP-safe way. Returns
+    /// <see cref="SimpleGlyphResolution.Unknown"/> whenever the standard code→glyph path is not reproducible
+    /// here (symbolic TrueType with no usable Unicode cmap, an encoding name with no Unicode, a
+    /// predefined-charset CFF) so the caller emits nothing. Only a confident glyph-0 result is
+    /// <see cref="SimpleGlyphResolution.NotDef"/>.
+    /// </summary>
+    private static SimpleGlyphResolution ResolveSimpleGlyph(
+        PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType)
+    {
+        string? glyphName = font.Encoding?.GetGlyphName(code);
+
+        if (isTrueType)
+        {
+            // Trustworthy only through a real cmap keyed by the encoding name's Unicode value. Without a
+            // cmap (GetGlyphId would fall back to "code is the GID", a rendering heuristic) or without an
+            // AGL Unicode for the name (symbolic / custom name), we cannot tell absence from a lookup gap.
+            string? unicode = glyphName is null ? null : GlyphList.GetUnicode(glyphName);
+            if (string.IsNullOrEmpty(unicode) || metrics.GetCmapSubtableCount() == 0)
+                return SimpleGlyphResolution.Unknown;
+            ushort gid = metrics.GetGlyphId((ushort)char.ConvertToUtf32(unicode, 0));
+            return gid == 0 ? SimpleGlyphResolution.NotDef : SimpleGlyphResolution.Present;
+        }
+
+        // Simple CFF / Type1: code → name → charset GID. Gated (by the caller) on an embedded charset, so a
+        // name absent from the charset is a genuine miss, not the predefined-charset parser bug.
+        if (string.IsNullOrEmpty(glyphName))
+            return SimpleGlyphResolution.Unknown;
+        if (metrics.GetGlyphIdByName(glyphName) != 0)
+            return SimpleGlyphResolution.Present;
+
+        // A name miss is not yet confident .notdef: a producer can point the PDF /Encoding at a standard
+        // name (e.g. code 0xA0 → "nonbreakingspace" under WinAnsiEncoding) while the CFF subset carries no
+        // charset entry of that name, reusing another glyph (typically "space") via the font program's own
+        // built-in Encoding instead. CoreTextRenderer.ResolveGlyphId takes exactly this fallback when
+        // rendering, so a resolver that skipped it would flag glyphs the renderer draws just fine — see
+        // EmbeddedFontMetrics.GetGlyphIdByCffEncoding (same PDFUA-Ref-2-03 precedent it documents).
+        return metrics.GetGlyphIdByCffEncoding((ushort)code) == 0
+            ? SimpleGlyphResolution.NotDef
+            : SimpleGlyphResolution.Present;
     }
 
     /// <summary>Scales a program advance width from font units to PDF 1000-per-em glyph space.</summary>
