@@ -754,9 +754,14 @@ internal class PdfDocumentWriter
 
     private static List<string> CollectFonts(PdfDocumentBuilder builder)
     {
-        var fonts = new HashSet<string> {
-            // Default font
-            "Helvetica" };
+        // No seeded default: a page/document that never references a font (e.g. an empty page)
+        // must not carry a non-embedded standard-14 font into /Resources /Font, or PDF/A-3B
+        // preflight flags it as required-but-not-embedded even though nothing draws it. Every
+        // place that actually defaults to Helvetica (PdfTextContent.FontName, PdfTextFieldBuilder
+        // .FontName, PdfDropdownBuilder.FontName, PdfAcroFormBuilder.DefaultFont) already flows
+        // its concrete font name through the loops below, so this seed was pure redundancy for
+        // any page/form that has content.
+        var fonts = new HashSet<string>();
 
         // Fonts from content
         foreach (PdfPageBuilder page in builder.Pages)
