@@ -20,8 +20,15 @@ internal readonly record struct OutputIntentInfo(
 /// <summary>The colour family of an ICC profile's data colour space, as relevant to device-colour matching.</summary>
 internal enum OutputIntentColour { None, Gray, Rgb, Cmyk, Other }
 
-/// <summary>A font used for text showing and the set of character codes actually drawn with it.</summary>
-internal readonly record struct UsedFontCodes(PdfFont Font, IReadOnlyCollection<int> Codes);
+/// <summary>
+/// A font used for text showing, the full set of character codes actually drawn with it, and the subset of
+/// those codes shown outside text rendering mode 3 (invisible). veraPDF exempts render-mode-3 text from
+/// glyph-present (6.2.11.4.1 t2) and widths (6.2.11.5) — consumers of those clauses should use
+/// <see cref="VisibleCodes"/>; .notdef (6.2.11.8) and ToUnicode ("regardless of rendering mode") stay on
+/// <see cref="Codes"/>.
+/// </summary>
+internal readonly record struct UsedFontCodes(
+    PdfFont Font, IReadOnlyCollection<int> Codes, IReadOnlyCollection<int> VisibleCodes);
 
 /// <summary>
 /// Per-run state handed to each <see cref="IConformanceRule"/>: the document under inspection, the
@@ -400,6 +407,7 @@ internal sealed class ConformanceContext
     private IReadOnlyList<UsedFontCodes> CollectUsedTextGlyphs()
     {
         var merged = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
+        var mergedVisible = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
         foreach (PdfPage page in Pages)
         {
             // Concatenate the page's content streams before parsing so an operator split across a stream
@@ -421,8 +429,18 @@ internal sealed class ConformanceContext
                     merged[font] = set = [];
                 set.UnionWith(codes);
             }
+
+            foreach ((PdfFont font, HashSet<int> codes) in collector.VisibleResult)
+            {
+                if (!mergedVisible.TryGetValue(font, out HashSet<int>? set))
+                    mergedVisible[font] = set = [];
+                set.UnionWith(codes);
+            }
         }
-        return merged.Select(kv => new UsedFontCodes(kv.Key, kv.Value)).ToList();
+        return merged.Select(kv => new UsedFontCodes(
+            kv.Key,
+            kv.Value,
+            mergedVisible.TryGetValue(kv.Key, out HashSet<int>? visible) ? visible : [])).ToList();
     }
 
     private MarkedContentAnalysis AnalyzeMarkedContent()

@@ -232,7 +232,11 @@ public class PreflightSlice19Tests
     private const int AbsentUnicode = 0xFB00;
     private const string AbsentGlyphName = "ff";
 
-    private static PdfDocument TrueTypeDocShowingAbsentGlyph()
+    /// <param name="renderMode">When set, emits <c>{renderMode} Tr</c> before the show operator (e.g. 3 =
+    /// invisible), so the RM3-exemption tests can drive the same fixture under text rendering mode 3.</param>
+    /// <param name="declaredWidth">The /Widths entry for the shown code — defaults to a program-consistent
+    /// value so tests that don't care about 6.2.11.5 don't pick up an incidental width finding.</param>
+    private static PdfDocument TrueTypeDocShowingAbsentGlyph(int? renderMode = null, int declaredWidth = ProgramWidth)
     {
         var descriptor = new PdfDictionary
         {
@@ -254,11 +258,46 @@ public class PreflightSlice19Tests
             [N("BaseFont")] = N("ABCDEF+PublicPixel"),
             [N("FirstChar")] = new PdfInteger('A'),
             [N("LastChar")] = new PdfInteger('A'),
+            [N("Widths")] = new PdfArray(new PdfInteger(declaredWidth)),
+            [N("Encoding")] = Ref(4),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        byte[] show = Encoding.ASCII.GetBytes(renderMode is { } rm ? $"{rm} Tr (A)" : "(A)");
+        return DocWith(font, show, (2, descriptor), (3, FontFile()), (4, encoding));
+    }
+
+    /// <summary>A TrueType font whose <c>/Differences</c> maps the shown code directly to <c>/.notdef</c> —
+    /// the faithful 6.2.11.8 path (veraPDF's predicate is the encoding glyph NAME, not a program lookup).
+    /// Unlike <see cref="TrueTypeDocShowingAbsentGlyph"/> (a real name absent from the program, which fails
+    /// 6.2.11.4.1 only), this must fail 6.2.11.8 only.</summary>
+    private static PdfDocument TrueTypeDocShowingNotdefGlyph(int? renderMode = null)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(32), // nonsymbolic
+            [N("FontFile2")] = Ref(3),
+        };
+        var encoding = new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("BaseEncoding")] = N("WinAnsiEncoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger('A'), N(".notdef")),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("FirstChar")] = new PdfInteger('A'),
+            [N("LastChar")] = new PdfInteger('A'),
             [N("Widths")] = new PdfArray(new PdfInteger(ProgramWidth)),
             [N("Encoding")] = Ref(4),
             [N("FontDescriptor")] = Ref(2),
         };
-        return DocWith(font, Encoding.ASCII.GetBytes("(A)"), (2, descriptor), (3, FontFile()), (4, encoding));
+        byte[] show = Encoding.ASCII.GetBytes(renderMode is { } rm ? $"{rm} Tr (A)" : "(A)");
+        return DocWith(font, show, (2, descriptor), (3, FontFile()), (4, encoding));
     }
 
     [Fact]
@@ -276,33 +315,93 @@ public class PreflightSlice19Tests
     }
 
     [Fact]
+    public void Fixture_font_has_unicode_cmap_encoding()
+    {
+        // Precondition for the tightened TrueType guard (Finding C): every present/absent/notdef test above
+        // routes through ResolveSimpleGlyph's TrueType branch, which now requires HasUnicodeCmapEncoding()
+        // before trusting a cmap lookup — if PublicPixel didn't carry a Unicode-capable subtable, every one
+        // of those tests would silently resolve to Unknown (no finding) for the wrong reason.
+        var metrics = new PdfLibrary.Fonts.Embedded.EmbeddedFontMetrics(FontBytes());
+        Assert.True(metrics.IsValid);
+        Assert.True(metrics.HasUnicodeCmapEncoding());
+    }
+
+    [Fact]
     public void Simple_truetype_absent_glyph_fails_notdef()
     {
-        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph()), x => Clause(x) == "6.2.11.8");
+        // Faithful clause split: "ff" is a REAL glyph name absent from the program, not the literal
+        // ".notdef" name — so this fails 6.2.11.4.1 (glyph-present) only, never 6.2.11.8 (see
+        // Simple_truetype_notdef_glyph_fails_notdef for the ".notdef"-named path).
+        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph()), x => Clause(x) == "6.2.11.4.1");
+        Assert.Contains("not present", f.Message);
+    }
+
+    [Fact]
+    public void Simple_truetype_notdef_glyph_fails_notdef()
+    {
+        Finding f = Assert.Single(Run(TrueTypeDocShowingNotdefGlyph()), x => Clause(x) == "6.2.11.8");
         Assert.Contains(".notdef", f.Message);
     }
 
     [Fact]
-    public void Simple_truetype_absent_glyph_notdef_is_profile_aware()
+    public void Simple_truetype_notdef_glyph_notdef_is_profile_aware()
     {
-        Finding f = Assert.Single(Run(TrueTypeDocShowingAbsentGlyph(), ConformanceProfile.PdfUA1),
+        Finding f = Assert.Single(Run(TrueTypeDocShowingNotdefGlyph(), ConformanceProfile.PdfUA1),
             x => Clause(x) == "7.21.8");
         Assert.Contains("ISO 14289-1", f.Clause);
     }
 
     [Fact]
-    public void Simple_truetype_absent_glyph_also_fails_embedding_glyph_present()
+    public void Simple_truetype_absent_glyph_does_not_also_fail_notdef()
     {
-        // The same absent glyph violates 6.2.11.4.1 test 2 (embedded font must define all rendered glyphs).
+        // Under the OLD (pre-faithful-split) model this code fired both 6.2.11.8 and 6.2.11.4.1 from one
+        // gid==0 resolution. The faithful split attributes 6.2.11.8 only to a literal ".notdef" encoding
+        // name, so the absent-"ff" code — a real name — must fail 6.2.11.4.1 and NOT 6.2.11.8.
         Finding[] fs = Run(TrueTypeDocShowingAbsentGlyph());
         Assert.Contains(fs, f => Clause(f) == "6.2.11.4.1");
+        Assert.DoesNotContain(fs, f => Clause(f) == "6.2.11.8");
+    }
+
+    [Fact]
+    public void Simple_truetype_notdef_glyph_does_not_also_fail_glyph_present()
+    {
+        // The mirror image: a code whose encoding name literally IS ".notdef" resolves to glyph 0, which
+        // — being glyph 0 — IS present in the program, so 6.2.11.4.1 must not fire alongside 6.2.11.8.
+        Finding[] fs = Run(TrueTypeDocShowingNotdefGlyph());
         Assert.Contains(fs, f => Clause(f) == "6.2.11.8");
+        Assert.DoesNotContain(fs, f => Clause(f) == "6.2.11.4.1");
     }
 
     [Fact]
     public void Simple_present_glyph_emits_no_glyph_present_finding()
     {
         Assert.DoesNotContain(Run(TrueTypeDoc(ProgramWidth)), f => Clause(f) == "6.2.11.4.1");
+    }
+
+    // ── RM3 (invisible text) exemption ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Rm3_absent_glyph_is_exempt_from_glyph_present_and_metrics()
+    {
+        // At RM0 (default) the same fixture with a mismatched declared width fires BOTH 6.2.11.4.1
+        // (absent "ff" glyph) and 6.2.11.5 (500 declared vs the real 'A' glyph's 1000-unit program advance
+        // the width fallback resolves to). veraPDF exempts render-mode-3 (invisible) text from both —
+        // but not from 6.2.11.8, see Rm3_notdef_glyph_still_fails_notdef.
+        Finding[] rm0 = Run(TrueTypeDocShowingAbsentGlyph(declaredWidth: 500));
+        Assert.Contains(rm0, f => Clause(f) == "6.2.11.4.1");
+        Assert.Contains(rm0, f => Clause(f) == "6.2.11.5");
+
+        Finding[] rm3 = Run(TrueTypeDocShowingAbsentGlyph(renderMode: 3, declaredWidth: 500));
+        Assert.DoesNotContain(rm3, f => Clause(f) == "6.2.11.4.1");
+        Assert.DoesNotContain(rm3, f => Clause(f) == "6.2.11.5");
+    }
+
+    [Fact]
+    public void Rm3_notdef_glyph_still_fails_notdef()
+    {
+        // .notdef (6.2.11.8) fires "regardless of text rendering mode" — RM3 must NOT suppress it.
+        Finding f = Assert.Single(Run(TrueTypeDocShowingNotdefGlyph(renderMode: 3)), x => Clause(x) == "6.2.11.8");
+        Assert.Contains(".notdef", f.Message);
     }
 
     [Fact]
