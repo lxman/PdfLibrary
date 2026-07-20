@@ -19,7 +19,6 @@ PELLUCID_ROOT="${1:-$(cd "$SCRIPT_DIR/../Pellucid" && pwd)}"
 CONFIGURATION="${2:-Release}"
 
 CSPROJ="$SCRIPT_DIR/PdfLibrary/PdfLibrary.csproj"
-RENDERING_SKIA_CSPROJ="$SCRIPT_DIR/PdfLibrary.Rendering.Skia/PdfLibrary.Rendering.Skia.csproj"
 FEED="$SCRIPT_DIR/local-feed"
 
 # The nuget.config value must be a native path. Under Git Bash on Windows $FEED is an MSYS path
@@ -40,29 +39,12 @@ if [[ -z "$BASE_VERSION" ]]; then
   echo "ERROR: could not read <Version> from $CSPROJ" >&2
   exit 1
 fi
-# Skia's csproj has two conditional <Version> lines. Match the one whose *value* is a plain version
-# ([^<$]+ excludes the "$(SkiaPackVersion)" branch), regardless of the Condition attribute text.
-SKIA_BASE_VERSION="$(grep -oE '<Version[^>]*>[^<$]+</Version>' "$RENDERING_SKIA_CSPROJ" | head -1 | sed -E 's|<[^>]+>||g')"
-if [[ -z "$SKIA_BASE_VERSION" ]]; then
-  echo "ERROR: could not read base <Version> from $RENDERING_SKIA_CSPROJ" >&2
-  exit 1
-fi
 VER="${BASE_VERSION}-dev${STAMP}"
-SKIA_VER="${SKIA_BASE_VERSION}-dev${STAMP}"
 
 mkdir -p "$FEED"
 
 echo "Packing Lxman.PdfLibrary $VER -> $FEED"
 dotnet pack "$CSPROJ" -c "$CONFIGURATION" -p:PackageVersion="$VER" -o "$FEED"
-
-# PdfLibrary.Rendering.Skia is dev-versioned via SkiaPackVersion — a property ONLY its csproj reads.
-# We must NOT use -p:PackageVersion here: that global property would also override the PackageVersion
-# of the ProjectReference to PdfLibrary.csproj built in this same invocation, corrupting the emitted
-# "Lxman.PdfLibrary" dependency version in Skia's own nuspec. SkiaPackVersion sidesteps that — core's
-# dependency edge stays at core's real <Version> while Skia gets its own -dev version so its content
-# propagates to consumers instead of hiding behind a cached static 0.1.1.
-echo "Packing Lxman.PdfLibrary.Rendering.Skia $SKIA_VER -> $FEED"
-dotnet pack "$RENDERING_SKIA_CSPROJ" -c "$CONFIGURATION" -p:SkiaPackVersion="$SKIA_VER" -o "$FEED"
 
 # Pin Pellucid to these exact dev builds (gitignored override). Changed build props force Pellucid's
 # next 'dotnet build' to re-restore deterministically — no --force, no cache clear.
@@ -72,7 +54,6 @@ cat > "$PELLUCID_ROOT/Directory.Build.props.local" <<EOF
        Gitignored. Delete this file + nuget.config to return to the published packages. -->
   <PropertyGroup>
     <LxmanPdfLibraryVersion>$VER</LxmanPdfLibraryVersion>
-    <LxmanPdfLibraryRenderingSkiaVersion>$SKIA_VER</LxmanPdfLibraryRenderingSkiaVersion>
   </PropertyGroup>
 </Project>
 EOF
@@ -98,4 +79,4 @@ EOF
 fi
 
 echo ""
-echo "Pinned Pellucid to core $VER + Rendering.Skia $SKIA_VER. Just 'dotnet build' Pellucid — it re-restores the new builds."
+echo "Pinned Pellucid to core $VER. Just 'dotnet build' Pellucid — it re-restores the new build."
