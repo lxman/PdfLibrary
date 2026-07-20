@@ -9,8 +9,6 @@ logs/
 !PdfLibrary.Tests/Resources/conformant-pdfa2b.pdf
 # Official ZUGFeRD 2.5 / Factur-X example (FeRD license) — real PDF/A-3 embedded-files fixture
 !PdfLibrary.Tests/Resources/MINIMUM_Rechnung_fx.pdf
-# cairo-generated tiling-pattern regression fixture (back__4.pdf, cairo 1.10.2) — must be tracked despite *.pdf
-!PdfLibrary.Rendering.Skia.Tests/Assets/back__4.pdf
 # Local NuGet feed for Pellucid co-development dev packs (never committed)
 local-feed/
 .claude/
