@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-07-20
+
 ### Added
 
 - **Embedded-files read API** — `PdfDocument.GetEmbeddedFiles()` returns read-only
@@ -13,11 +15,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `/AF` associated files (ISO 32000-2, 7.11.4 / 14.13): the name-tree key, `/F` and `/UF` file
   names, `/Desc`, `/AFRelationship`, the stream's MIME `/Subtype`, catalog-`/AF` membership, and
   the decoded file bytes. Content failures degrade per entry (`HasData = false`) — the reader
-  never throws on malformed documents. First consumer: the EInvoice Factur-X bridge (extracting
-  `factur-x.xml` from PDF/A-3 invoices); the API is generic to any embedded attachment.
+  never throws on malformed documents. First consumer: Factur-X e-invoice extraction
+  (`factur-x.xml` from PDF/A-3 invoices); the API is generic to any embedded attachment.
 - Editing: `PdfDocumentEditor.AddEmbeddedFile` (filespec + /Names /EmbeddedFiles + /AF,
   replace-by-name), `PdfMetadata.SetRawXmp` (verbatim XMP packet), `PdfDocumentEditor.AddOutputIntent`
   (ICC /DestOutputProfile, /N from header) — PDF/A-3 authoring building blocks.
+- **Tagged-PDF structure-tree read API** — `PdfDocument.GetTagTree()` returns a read-only
+  `TagTree` (`IsTagged` + `Roots`); each `TagNode` carries `Type`/`RawType`/`IsStandard`,
+  `Alt`/`ActualText`/`Expansion`/`Language`/`Title`, `PageIndex`, `Text`, and `Children` —
+  the logical-structure hierarchy for accessibility inspection.
+- **Output-intent read API** — `PdfDocument.GetOutputIntents()` returns the document's
+  `OutputIntentDescriptor`s (ICC destination-profile output intents, e.g. for PDF/A and PDF/X).
+- **Page colorant inventory** — `PdfDocument.GetPageColorants(pageIndex)` returns the
+  `PageColorant`s used on a page: name, kind (Process/Spot/All/None), alternate space, tint
+  ramp, and a solid sRGB preview.
+- **Expanded conformance coverage** — substantial additional PDF/A-2b clause coverage (content
+  operators, object/token spacing, stream `/Length` framing, JPEG2000, ICC-CMYK overprint,
+  XObject & image dictionaries, embedded files, permissions, font-program/dictionary rules,
+  ExtGState, rendering intent, Separation/DeviceN), PDF/UA-1 brought to full machine-checkable
+  parity, and PDF/X-4 spot-colour rules — validated at zero false positives across the veraPDF
+  corpus. The `Preflighter.Check` API is unchanged; detection is strictly improved.
 
 ### Fixed
 
@@ -28,6 +45,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   authoring integration gate on a `new PdfDocumentBuilder().AddPage(_ => { })` page. Fonts are now
   collected purely from what a document's content, form fields, and annotations actually reference;
   pages with no text/fields/annotations carry no `/Font` resource at all.
+- **CFF text no longer renders blank** — CFF DICT real operands with `E`/`E-` exponent nibbles
+  now decode correctly; symbolic CFF glyphs resolve via the font's built-in Encoding.
+- **Rotated/mirrored text advances** — per-glyph advances are no longer reversed under a
+  rotated or mirrored text matrix.
+- **Glyph advance widths** — Type 3 advances scale by `/FontMatrix` (not a hardcoded 1/1000);
+  simple TrueType fonts lacking `/Widths` fall back to Standard-14 AFM widths; simple-CFF and
+  CIDFontType0 advance widths resolve via the charset GID / `defaultWidthX`.
+- **Colour** — a DeviceGray alternate separates K-only to match the fill path (GWG230); 16-bit
+  DeviceCMYK images render through a native CMYK plane.
+- **Rendering robustness** — content CTM accumulates in double precision so max-magnitude reals
+  no longer blank the page; `CropBox` is clamped to the `MediaBox` intersection (ISO 32000-1
+  §14.11.2); Form XObjects inherit the full graphics state (fill colour), not just CTM/alpha;
+  shading patterns (PatternType 2 dictionaries) resolve correctly; every pattern cell whose
+  BBox overlaps the fill region is tiled.
+- **Parser resilience** — recover from a stream `/Length` that overshoots the real `endstream`;
+  treat `"0 0 R"` as the null object instead of throwing.
 
 ## [2.4.0] - 2026-07-09
 
@@ -486,6 +519,7 @@ First stable release. Completes the *load → edit → optimize* story: a loaded
 | 2.2.0 | 2026-06-30 | Opt-in ICC-based CMYK colour pipeline (`UseIccForDeviceCmyk`); default render path unchanged. |
 | 2.3.0 | 2026-07-04 | AcroForm field authoring on existing documents; text-extraction fixes; field-tree-aware page import. |
 | 2.4.0 | 2026-07-09 | Read-only conformance preflight (PDF/A-2b/2u/3b, PDF/X-4, PDF/UA-1); CMYK / colour-managed render fidelity batch (Ghent Workgroup); 16-bit images; optional content; mesh shadings; transparency-group SPI; text-extraction fixes. |
+| 2.5.0 | 2026-07-20 | Embedded-files read API + PDF/A-3 authoring (`AddEmbeddedFile`/`SetRawXmp`/`AddOutputIntent`); Tagged-PDF tree, output-intent, and page-colorant read APIs; broad PDF/A-2b + full PDF/UA-1 + PDF/X-4 conformance coverage (0 false positives); CFF/text/width and rendering-robustness fixes. |
 
 ---
 

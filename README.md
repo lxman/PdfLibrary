@@ -79,6 +79,11 @@ A comprehensive .NET library for parsing, rendering, creating, editing, optimizi
 - Structured findings: severity (Error/Warning/Info), the governing ISO clause, a message, and the offending page/object where applicable
 - A **structural** validator — a deliberately partial, machine-decidable subset of each standard, not a certification. A "conforms" result means "no violations among the checked rules". Rules are cross-checked against the veraPDF conformance corpus and tuned for zero false positives on conformant files
 
+### Document Inspection & Metadata
+- Read embedded/attached files (`PdfDocument.GetEmbeddedFiles()`) — name, MIME subtype, `/AFRelationship`, and decoded bytes; never throws on malformed attachments
+- Read the Tagged-PDF logical-structure tree (`PdfDocument.GetTagTree()`) for accessibility inspection
+- Read ICC output intents (`PdfDocument.GetOutputIntents()`) and per-page colorant inventory (`PdfDocument.GetPageColorants(pageIndex)`)
+
 ## Project Structure
 
 ```
@@ -247,6 +252,20 @@ foreach (var f in fragments)
 }
 ```
 
+### Reading Embedded Files (e.g. Factur-X attachments)
+
+```csharp
+using PdfLibrary.Structure;
+
+using var doc = PdfDocument.Load("invoice.pdf");
+foreach (var f in doc.GetEmbeddedFiles())
+{
+    Console.WriteLine($"{f.FileName} ({f.MimeType}) — {f.AfRelationship}");
+    if (f.HasData)
+        File.WriteAllBytes(f.FileName ?? "attachment.bin", f.GetDataBytes()!);
+}
+```
+
 ### Editing an Existing PDF
 
 ```csharp
@@ -270,6 +289,27 @@ merged.Save("combined.pdf");
 ```
 
 See the [Complete Guide](Docs/Guide.md) for the full surface.
+
+### PDF/A-3 Authoring (embedding files + output intent)
+
+```csharp
+using PdfLibrary.Structure;
+using PdfLibrary.Editing;
+
+using var doc = PdfDocument.Load("input.pdf");
+var edit = doc.Edit();
+
+edit.AddEmbeddedFile(new PdfEmbeddedFileSpec
+{
+    Name = "factur-x.xml",
+    Data = File.ReadAllBytes("factur-x.xml"),
+    MimeType = "text/xml",
+    Description = "Factur-X invoice data"
+});
+edit.AddOutputIntent(File.ReadAllBytes("sRGB.icc"), "sRGB IEC61966-2.1");
+
+edit.Save("output.pdf");
+```
 
 ### Optimizing a PDF
 
