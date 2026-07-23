@@ -233,4 +233,45 @@ public class XmpPacketParseTests
         XmpPacket pkt = XmpPacket.CreateEmpty();
         Assert.Null(pkt.Get(XmpSchemas.Dc, "title"));
     }
+
+    // ── two sibling rdf:RDF islands (DWC FX Generator / ZUGFeRD shape) ────────
+
+    [Fact]
+    public void Parse_TwoSiblingRdfRdfIslands_SurfacesPropertiesFromBoth()
+    {
+        // Mirrors the real-world shape emitted by "DWC FX Generator" (official ZUGFeRD 2.5
+        // examples): one x:xmpmeta root wrapping TWO sibling rdf:RDF elements, each with its
+        // own rdf:Description. The first island carries ordinary xmp:* properties; the second
+        // carries the Factur-X fx:* properties. The official validator accepts this form, so
+        // Parse must surface properties from both, not just the first rdf:RDF found.
+        string full = """
+            <?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about=""
+                    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+                    xmp:CreatorTool="DWC FX Generator">
+                </rdf:Description>
+              </rdf:RDF>
+              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about=""
+                    xmlns:fx="urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#">
+                  <fx:ConformanceLevel>BASIC</fx:ConformanceLevel>
+                </rdf:Description>
+              </rdf:RDF>
+            </x:xmpmeta>
+            <?xpacket end="w"?>
+            """;
+        byte[] bytes = Encoding.UTF8.GetBytes(full);
+        XmpPacket pkt = XmpPacket.Parse(bytes);
+
+        XmpProperty? creator = pkt.Get(XmpSchemas.Xmp, "CreatorTool");
+        Assert.NotNull(creator);
+        Assert.Equal("DWC FX Generator", creator!.Value);
+
+        XmpProperty? conformance = pkt.Get("urn:factur-x:pdfa:CrossIndustryDocument:invoice:1p0#", "ConformanceLevel");
+        Assert.NotNull(conformance);
+        Assert.Equal(XmpValueKind.Simple, conformance!.Kind);
+        Assert.Equal("BASIC", conformance.Value);
+    }
 }

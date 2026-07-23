@@ -65,13 +65,16 @@ public sealed class XmpPacket
                 doc = XDocument.Load(xr, LoadOptions.PreserveWhitespace);
             }
 
-            // Find x:xmpmeta (or fall through to rdf:RDF at root)
-            XElement? rdfRdf = FindRdfRdf(doc);
-            if (rdfRdf is null) return pkt;
-
-            foreach (XElement desc in rdfRdf.Elements(Rdf("Description")))
+            // Find all rdf:RDF islands under x:xmpmeta (or fall through to rdf:RDF at root).
+            // Real-world packets (e.g. the "DWC FX Generator" used by official ZUGFeRD 2.5
+            // examples) split properties across two sibling rdf:RDF elements inside one
+            // x:xmpmeta; every island must be parsed, not just the first.
+            foreach (XElement rdfRdf in FindAllRdfRdf(doc))
             {
-                pkt.ParseDescription(desc);
+                foreach (XElement desc in rdfRdf.Elements(Rdf("Description")))
+                {
+                    pkt.ParseDescription(desc);
+                }
             }
         }
         catch
@@ -242,19 +245,35 @@ public sealed class XmpPacket
     private static XName Rdf(string local) =>
         XName.Get(local, XmpSchemas.Rdf);
 
-    private static XElement? FindRdfRdf(XDocument doc)
+    /// <summary>
+    /// Finds every rdf:RDF element to parse, in document order.
+    /// </summary>
+    /// <remarks>
+    /// XMP normally carries a single &lt;rdf:RDF&gt; child of &lt;x:xmpmeta&gt;, but some
+    /// generators (e.g. "DWC FX Generator", used by official ZUGFeRD 2.5 examples) emit TWO
+    /// sibling &lt;rdf:RDF&gt; elements under one &lt;x:xmpmeta&gt; -- one holding the ordinary
+    /// dc/xmp/pdf properties, the other holding Factur-X fx:* properties and the pdfaExtension
+    /// schema declaration. The official validator accepts this form, so every rdf:RDF island
+    /// under x:xmpmeta must be parsed, not just the first.
+    /// </remarks>
+    private static IEnumerable<XElement> FindAllRdfRdf(XDocument doc)
     {
-        // x:xmpmeta / rdf:RDF
+        // x:xmpmeta / rdf:RDF*
         XElement? meta = doc.Root?.Name.LocalName == "xmpmeta" ? doc.Root : null;
         if (meta is null)
         {
             // Fallback: search the whole document
             meta = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "xmpmeta");
         }
-        XElement? rdfChild = meta?.Element(Rdf("RDF"));
-        if (rdfChild is not null) return rdfChild;
+        if (meta is not null)
+        {
+            foreach (XElement rdfChild in meta.Elements(Rdf("RDF")))
+                yield return rdfChild;
+            yield break;
+        }
         // Fallback: root is rdf:RDF itself
-        return doc.Root?.Name == Rdf("RDF") ? doc.Root : null;
+        if (doc.Root?.Name == Rdf("RDF"))
+            yield return doc.Root;
     }
 
     private void ParseDescription(XElement desc)
