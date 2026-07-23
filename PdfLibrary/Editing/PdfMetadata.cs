@@ -223,7 +223,10 @@ public sealed class PdfMetadata
                 _metadataObjectNumber = metaRef.ObjectNumber;
                 if (_document.GetObject(metaRef.ObjectNumber) is PdfStream metaStream)
                 {
-                    try { return XmpPacket.Parse(metaStream.Data); }
+                    // /Metadata may be compressed (legal since PDF/A-2; only PDF/A-1 forbade
+                    // filters there) -- decode the same way EmbeddedFileReader/OutputIntentReader
+                    // do before handing bytes to XmpPacket.Parse.
+                    try { return XmpPacket.Parse(metaStream.GetDecodedData(_document.Decryptor)); }
                     catch { return XmpPacket.CreateEmpty(); }
                 }
             }
