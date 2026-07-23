@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Metadata;
 using PdfLibrary.Structure;
@@ -373,5 +374,106 @@ public class PdfMetadataTests
         Assert.Null(edit.Metadata.Title);
         // XMP should also be cleared
         Assert.Null(edit.Metadata.Xmp.Get(XmpSchemas.Dc, "title"));
+    }
+
+    // ── Compressed /Metadata stream must be decoded before XMP parse ─────────
+    //
+    // Compression on /Metadata is legal since PDF/A-2 (only PDF/A-1 forbade filters there), and
+    // is what real-world generators (e.g. the official ZUGFeRD 2.5 example PDFs) commonly do.
+    // LoadOrCreateXmp must decode the stream the same way EmbeddedFileReader/OutputIntentReader
+    // do (GetDecodedData), not read metaStream.Data (raw, possibly-compressed bytes) directly.
+
+    /// <summary>
+    /// Rewrites the document's existing (uncompressed) /Catalog/Metadata stream in place to be
+    /// FlateDecode-compressed, preserving its object number so the catalog reference and any
+    /// PdfMetadata bookkeeping (_metadataObjectNumber) still point at the same object.
+    /// </summary>
+    private static void CompressExistingMetadataStreamInPlace(PdfDocument doc)
+    {
+        PdfDictionary catalog = doc.CatalogDictionary!;
+        var metaRef = (PdfIndirectReference)catalog[new PdfName("Metadata")];
+        var metaStream = (PdfStream)doc.GetObject(metaRef.ObjectNumber)!;
+        byte[] decoded = metaStream.Data; // currently raw/uncompressed XMP bytes
+        metaStream.SetEncodedData(decoded, "FlateDecode");
+    }
+
+    [Fact]
+    public void CompressedMetadataStream_Xmp_SurfacesProperty()
+    {
+        // Build a document with a real /Catalog/Metadata stream (via the normal Title setter),
+        // then compress that stream in place with FlateDecode, exactly like an external
+        // generator's PDF/A-2/3 output would arrive on disk.
+        using PdfDocument doc = Reload(BlankDoc());
+        PdfDocumentEditor edit = doc.Edit();
+        edit.Metadata.Title = "Compressed Metadata Test";
+        CompressExistingMetadataStreamInPlace(doc);
+
+        var ms = new MemoryStream();
+        edit.Save(ms);
+        ms.Position = 0;
+
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+        // Sanity: the reloaded /Metadata stream really is FlateDecode-compressed.
+        PdfDictionary reloadedCatalog = reloaded.CatalogDictionary!;
+        var reloadedMetaRef = (PdfIndirectReference)reloadedCatalog[new PdfName("Metadata")];
+        var reloadedMetaStream = (PdfStream)reloaded.GetObject(reloadedMetaRef.ObjectNumber)!;
+        Assert.True(reloadedMetaStream.Dictionary.ContainsKey(new PdfName("Filter")),
+            "test setup sanity: reloaded /Metadata stream must carry /Filter");
+
+        XmpProperty? prop = reloaded.Edit().Metadata.Xmp.Get(XmpSchemas.Dc, "title");
+        Assert.NotNull(prop);
+        Assert.Equal("Compressed Metadata Test", prop!.LangAlt["x-default"]);
+    }
+
+    [Fact]
+    public void CompressedMetadataStream_SetRawXmp_ReplacesRatherThanDuplicatesAndRoundTrips()
+    {
+        // Guards the ReplaceObject interaction called out in the task: after loading a document
+        // whose /Metadata stream is compressed on disk, SetRawXmp must replace that stream object
+        // (not duplicate it), the replacement must not carry a stale /Filter entry from the
+        // compressed stream it replaced, and the new content must round-trip through Save/Load.
+        //
+        // Phase 1: build a document whose /Metadata stream is FlateDecode-compressed on disk.
+        using PdfDocument doc = Reload(BlankDoc());
+        PdfDocumentEditor edit = doc.Edit();
+        edit.Metadata.Title = "Original";
+        CompressExistingMetadataStreamInPlace(doc);
+        var ms1 = new MemoryStream();
+        edit.Save(ms1);
+        ms1.Position = 0;
+
+        // Phase 2: fresh reload -- a clean PdfMetadata (no cached in-memory packet), reading the
+        // compressed stream from disk for the first time before we replace it.
+        using PdfDocument reloaded = PdfDocument.Load(ms1);
+        PdfDocumentEditor edit2 = reloaded.Edit();
+        PdfDictionary catalog = reloaded.CatalogDictionary!;
+        var originalMetaRef = (PdfIndirectReference)catalog[new PdfName("Metadata")];
+        int originalObjectNumber = originalMetaRef.ObjectNumber;
+
+        Assert.NotNull(edit2.Metadata.Xmp.Get(XmpSchemas.Dc, "title"));
+
+        XmpPacket freshPacket = XmpPacket.CreateEmpty();
+        freshPacket.SetSimple(XmpSchemas.Xmp, XmpSchemas.XmpPrefix, "CreatorTool", "ReplacedPacket");
+        edit2.Metadata.SetRawXmp(freshPacket.Serialize());
+
+        var newMetaRef = (PdfIndirectReference)catalog[new PdfName("Metadata")];
+        Assert.Equal(originalObjectNumber, newMetaRef.ObjectNumber); // replaced, not duplicated
+
+        var newMetaStream = (PdfStream)reloaded.GetObject(newMetaRef.ObjectNumber)!;
+        Assert.False(newMetaStream.Dictionary.ContainsKey(new PdfName("Filter")),
+            "the replacement stream must be a fresh dict with no stale /Filter from the compressed stream it replaced");
+
+        Assert.NotNull(edit2.Metadata.Xmp.Get(XmpSchemas.Xmp, "CreatorTool"));
+        Assert.Null(edit2.Metadata.Xmp.Get(XmpSchemas.Dc, "title")); // old packet is gone, not merged
+
+        // Phase 3: full disk round-trip of the replacement -- must read back cleanly (uncompressed,
+        // no stale filter causing mis-decode).
+        var ms2 = new MemoryStream();
+        edit2.Save(ms2);
+        ms2.Position = 0;
+        using PdfDocument reloaded2 = PdfDocument.Load(ms2);
+        XmpProperty? prop = reloaded2.Edit().Metadata.Xmp.Get(XmpSchemas.Xmp, "CreatorTool");
+        Assert.NotNull(prop);
+        Assert.Equal("ReplacedPacket", prop!.Value);
     }
 }
