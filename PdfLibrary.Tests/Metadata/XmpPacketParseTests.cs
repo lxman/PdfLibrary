@@ -274,4 +274,26 @@ public class XmpPacketParseTests
         Assert.Equal(XmpValueKind.Simple, conformance!.Kind);
         Assert.Equal("BASIC", conformance.Value);
     }
+
+    // ── degenerate: x:xmpmeta with no rdf:RDF island at all ────────────────────
+
+    [Fact]
+    public void Parse_XmpmetaWithNoRdfRdf_ReturnsEmptyPacketWithoutThrowing()
+    {
+        // Degenerate shape: an x:xmpmeta root that contains no rdf:RDF element anywhere
+        // (e.g. a producer that emitted a bare metadata wrapper with nothing inside it).
+        // Contract: this must not throw, and must yield a packet with no properties -- the
+        // same "well-known prefixes only, zero properties" shape as XmpPacket.CreateEmpty().
+        const string full = """
+            <?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+            <x:xmpmeta xmlns:x="adobe:ns:meta/">
+            </x:xmpmeta>
+            <?xpacket end="w"?>
+            """;
+        byte[] bytes = Encoding.UTF8.GetBytes(full);
+
+        XmpPacket pkt = XmpPacket.Parse(bytes);
+
+        Assert.Empty(pkt.Properties);
+    }
 }
