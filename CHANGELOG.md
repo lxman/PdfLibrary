@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.5.1] - 2026-07-24
+
+### Fixed
+
+- **XMP read path — multiple `rdf:RDF` islands.** `XmpPacket.Parse` now reads every sibling
+  `rdf:RDF` element in an XMP packet, not just the first, so metadata split across multiple RDF
+  islands (as some Factur-X / PDF/A generators emit) is fully recovered.
+- **XMP read path — compressed `/Metadata` streams.** `PdfMetadata` now decodes the document
+  `/Metadata` stream (applying its filters) before XMP parsing, so XMP embedded in a
+  Flate-compressed metadata stream is read correctly instead of being parsed as raw bytes.
+
 ## [2.5.0] - 2026-07-20
 
 ### Added
