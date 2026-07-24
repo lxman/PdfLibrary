@@ -37,6 +37,10 @@ public sealed class XmpPacket
     /// <summary>
     /// Parses an XMP packet from the raw bytes of a /Metadata stream.
     /// Tolerant: if the bytes are not valid XMP, returns an empty packet rather than throwing.
+    /// This also covers the degenerate case of an &lt;x:xmpmeta&gt; root with no &lt;rdf:RDF&gt;
+    /// island anywhere inside it -- <see cref="FindAllRdfRdf"/> yields no elements, so the
+    /// result is deterministically an empty packet (no properties beyond the seeded well-known
+    /// prefixes), never a throw.
     /// </summary>
     public static XmpPacket Parse(byte[] xmpBytes)
     {
