@@ -249,12 +249,13 @@ public sealed class XmpPacket
     /// Finds every rdf:RDF element to parse, in document order.
     /// </summary>
     /// <remarks>
-    /// XMP normally carries a single &lt;rdf:RDF&gt; child of &lt;x:xmpmeta&gt;, but some
-    /// generators (e.g. "DWC FX Generator", used by official ZUGFeRD 2.5 examples) emit TWO
-    /// sibling &lt;rdf:RDF&gt; elements under one &lt;x:xmpmeta&gt; -- one holding the ordinary
-    /// dc/xmp/pdf properties, the other holding Factur-X fx:* properties and the pdfaExtension
-    /// schema declaration. The official validator accepts this form, so every rdf:RDF island
-    /// under x:xmpmeta must be parsed, not just the first.
+    /// An XMP packet may legally carry more than one &lt;rdf:RDF&gt; island: either several
+    /// sibling &lt;rdf:RDF&gt; elements as children of &lt;x:xmpmeta&gt;, or (falling back when
+    /// there is no x:xmpmeta wrapper) a single &lt;rdf:RDF&gt; at the document root. Each island
+    /// may carry its own set of rdf:Description blocks and namespaces, so every island found
+    /// must be parsed and merged, not just the first (real-world producers that split
+    /// properties across two sibling rdf:RDF islands do exist -- e.g. the "DWC FX Generator"
+    /// used by official ZUGFeRD 2.5 examples).
     /// </remarks>
     private static IEnumerable<XElement> FindAllRdfRdf(XDocument doc)
     {
