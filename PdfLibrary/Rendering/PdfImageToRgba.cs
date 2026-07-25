@@ -59,6 +59,33 @@ public static class PdfImageToRgba
         bool blackPointCompensation = false,
         string? renderingIntent = null)
     {
+        RgbaImage? decoded = ToRgbaCore(image, doc, imageMaskColor, blackPointCompensation, renderingIntent);
+
+        // /Matte (ISO 32000-1 §11.6.5.3): when a soft-mask image carries /Matte, THIS image's colour
+        // samples have already been pre-multiplied against that matte colour. Compositing them as
+        // straight alpha leaves every partially-transparent pixel pulled toward the matte — with the
+        // usual black matte, visibly too dark (soft drop shadows render grey instead of pale). Undo it:
+        //     c = m + (c' − m) / α
+        // Gated on Unpremultiplied because the Indexed branch above deliberately returns colour already
+        // scaled by alpha (AlphaMode.Premultiplied) — a different contract that this must not re-scale.
+        // Indexed + SMask + /Matte therefore remains uncorrected; it is not a combination the spec's
+        // matte guidance contemplates (matte accompanies continuous-tone parents).
+        if (decoded is { Alpha: AlphaMode.Unpremultiplied } straight
+            && TryGetSMaskMatte(image, doc, out (byte R, byte G, byte B) matte))
+        {
+            UnpremultiplyMatte(straight.Rgba, matte);
+        }
+
+        return decoded;
+    }
+
+    private static RgbaImage? ToRgbaCore(
+        PdfImage image,
+        PdfDocument? doc,
+        (byte R, byte G, byte B, byte A)? imageMaskColor,
+        bool blackPointCompensation,
+        string? renderingIntent)
+    {
         try
         {
             byte[] imageData = image.GetDecodedData();
@@ -811,6 +838,87 @@ public static class PdfImageToRgba
             : ((byte)((255 - c) * (255 - k) / 255),
                (byte)((255 - m) * (255 - k) / 255),
                (byte)((255 - y) * (255 - k) / 255));
+
+    /// <summary>
+    /// Reads the <c>/Matte</c> entry of <paramref name="image"/>'s soft mask and converts it to RGB.
+    /// <para>
+    /// Per ISO 32000-1 §11.6.5.3 the matte is expressed in the PARENT image's colour space, so the
+    /// component count selects the conversion: 1 → DeviceGray, 3 → RGB, 4 → CMYK. Anything else (a
+    /// DeviceN or Separation parent, say) is declined rather than guessed at, leaving the image
+    /// untouched — under-correcting is recoverable, mis-correcting is not.
+    /// </para>
+    /// </summary>
+    private static bool TryGetSMaskMatte(PdfImage image, PdfDocument? doc, out (byte R, byte G, byte B) matte)
+    {
+        matte = default;
+
+        image.Stream.Dictionary.TryGetValue(new PdfName("SMask"), out PdfObject? smaskObj);
+        if (Resolve(smaskObj, doc) is not PdfStream smask)
+            return false;
+
+        smask.Dictionary.TryGetValue(new PdfName("Matte"), out PdfObject? matteObj);
+        if (Resolve(matteObj, doc) is not PdfArray arr)
+            return false;
+
+        Span<double> c = stackalloc double[4];
+        var n = 0;
+        foreach (PdfObject item in arr)
+        {
+            if (n == c.Length) return false;                    // more components than any space we handle
+            switch (Resolve(item, doc))
+            {
+                case PdfReal real: c[n++] = real.Value; break;
+                case PdfInteger integer: c[n++] = integer.Value; break;
+                default: return false;                          // non-numeric entry — malformed, decline
+            }
+        }
+
+        switch (n)
+        {
+            case 1:
+                byte gray = ToSrgbByte(c[0]);
+                matte = (gray, gray, gray);
+                return true;
+            case 3:
+                matte = (ToSrgbByte(c[0]), ToSrgbByte(c[1]), ToSrgbByte(c[2]));
+                return true;
+            case 4:
+                matte = CmykToRgb(ToSrgbByte(c[0]), ToSrgbByte(c[1]), ToSrgbByte(c[2]), ToSrgbByte(c[3]));
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Reverses the matte pre-multiplication in place: <c>c = m + (c' − m) / α</c> for every pixel.
+    /// </summary>
+    /// <remarks>
+    /// α = 0 is skipped because the colour is undefined there (and the division would blow up); α = 255
+    /// is skipped because the formula is the identity — together they cover the overwhelming majority of
+    /// pixels in a typical soft-masked image, so this loop costs nothing on the common path.
+    /// </remarks>
+    private static void UnpremultiplyMatte(byte[] rgba, (byte R, byte G, byte B) matte)
+    {
+        for (var i = 0; i + 3 < rgba.Length; i += 4)
+        {
+            byte a = rgba[i + 3];
+            if (a is 0 or 255) continue;
+
+            rgba[i] = ReconstructMatted(rgba[i], matte.R, a);
+            rgba[i + 1] = ReconstructMatted(rgba[i + 1], matte.G, a);
+            rgba[i + 2] = ReconstructMatted(rgba[i + 2], matte.B, a);
+        }
+    }
+
+    /// <summary>One channel of <c>c = m + (c' − m) / α</c>, clamped to the 8-bit range. Values outside
+    /// it are expected, not exceptional: the reconstruction amplifies by 1/α, so quantisation noise in a
+    /// near-transparent sample can legitimately overshoot.</summary>
+    private static byte ReconstructMatted(byte premultiplied, byte matte, byte alpha)
+    {
+        double c = matte + (premultiplied - matte) * 255.0 / alpha;
+        return c <= 0 ? (byte)0 : c >= 255 ? (byte)255 : (byte)Math.Round(c);
+    }
 
     /// <summary>
     /// Converts raw interleaved pixel bytes from JPEG 2000 decode to RGBA8888.
