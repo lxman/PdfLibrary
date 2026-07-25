@@ -1,6 +1,3 @@
-using PdfLibrary.Document;
-using PdfLibrary.Rendering.SkiaSharp;
-using PdfLibrary.Structure;
 using SkiaSharp;
 
 namespace PdfLibrary.Tests.Rendering;
@@ -33,90 +30,23 @@ namespace PdfLibrary.Tests.Rendering;
 /// </summary>
 public class SeparationSpecialColorantTests
 {
-    /// <summary>
-    /// A one-page PDF whose only content is <paramref name="content"/>, with a single named colour space
-    /// <c>/Cs0</c> defined by the literal PDF syntax in <paramref name="colorSpaceDef"/>. The page is
-    /// 612×792 so the rect below lands well away from every edge.
-    /// </summary>
-    private static byte[] BuildPdf(string colorSpaceDef, string content) =>
-        BuildPdf(colorSpaceDef, content, withFont: false);
+    /// <summary>Fills the shared test rect with tint <paramref name="tint"/> of /Cs0.</summary>
+    private static string FillRect(double tint) => ColourConformancePage.FillRect(
+        $"/Cs0 cs {tint.ToString(System.Globalization.CultureInfo.InvariantCulture)} scn");
 
-    private static byte[] BuildPdf(string colorSpaceDef, string content, bool withFont)
-    {
-        string fontRes = withFont
-            ? " /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >>"
-            : string.Empty;
-        byte[] contentBytes = System.Text.Encoding.Latin1.GetBytes(content);
-
-        using var ms = new MemoryStream();
-        using var w = new StreamWriter(ms, System.Text.Encoding.Latin1, leaveOpen: true) { NewLine = "\r\n" };
-        void Write(string s) { w.Write(s); w.Flush(); }
-
-        Write("%PDF-1.7\r\n");
-        var off = new int[5];
-        w.Flush(); off[1] = (int)ms.Position;
-        Write("1 0 obj\r\n<< /Type /Catalog /Pages 2 0 R >>\r\nendobj\r\n");
-        w.Flush(); off[2] = (int)ms.Position;
-        Write("2 0 obj\r\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\r\nendobj\r\n");
-        w.Flush(); off[3] = (int)ms.Position;
-        Write("3 0 obj\r\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R " +
-              $"/Resources << /ColorSpace << /Cs0 {colorSpaceDef} >>{fontRes} >> >>\r\nendobj\r\n");
-        w.Flush(); off[4] = (int)ms.Position;
-        Write($"4 0 obj\r\n<< /Length {contentBytes.Length} >>\r\nstream\r\n");
-        w.Flush(); ms.Write(contentBytes, 0, contentBytes.Length); Write("\r\nendstream\r\nendobj\r\n");
-        w.Flush(); long xref = ms.Position;
-        Write("xref\r\n0 5\r\n0000000000 65535 f\r\n");
-        for (var i = 1; i <= 4; i++) Write($"{off[i]:D10} 00000 n\r\n");
-        Write("trailer\r\n<< /Size 5 /Root 1 0 R >>\r\nstartxref\r\n");
-        Write($"{xref}\r\n%%EOF\r\n");
-        w.Flush();
-        return ms.ToArray();
-    }
-
-    /// <summary>Fills [100..300]×[400..600] in page space with tint <paramref name="tint"/> of /Cs0.</summary>
-    private static string FillRect(double tint) =>
-        $"/Cs0 cs {tint.ToString(System.Globalization.CultureInfo.InvariantCulture)} scn 100 400 200 200 re f";
-
-    /// <summary>A type 2 tint transform ramping white → <paramref name="c1"/> in DeviceRGB.</summary>
-    private static string RgbTint(string c1) =>
-        $"<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [{c1}] /N 1 >>";
-
-    /// <summary>Renders the page and returns the pixel at the centre of the filled rect.</summary>
-    private static SKColor RenderCentre(byte[] pdf)
-    {
-        using var ms = new MemoryStream(pdf);
-        using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-        // Rect spans page-space x 100..300, y 400..600; bitmap y is flipped (792 − pdfY).
-        return bmp.GetPixel(200, 792 - 500);
-    }
+    /// <summary>A type 2 tint transform ramping white -> <paramref name="c1"/> in DeviceRGB.</summary>
+    private static string RgbTint(string c1) => ColourConformancePage.ExponentialTint("1 1 1", c1);
 
     /// <summary>
     /// Renders <paramref name="pdf"/> and asserts that every pixel well inside the red rectangle is still
     /// red — i.e. the <c>/None</c> operator that followed marked nothing anywhere in the region, not just
     /// at one sampled point. Insets by 5px so path antialiasing at the rect's own edges is not counted.
     /// </summary>
-    private static void AssertRedRectUntouched(byte[] pdf, string what)
-    {
-        using var ms = new MemoryStream(pdf);
-        using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        using SKImage image = page.RenderTo().WithScale(1.0).ToImage();
-        using SKBitmap bmp = SKBitmap.FromImage(image);
-
-        for (var y = 792 - 595; y <= 792 - 405; y++)
-        {
-            for (var x = 105; x <= 295; x++)
-            {
-                SKColor c = bmp.GetPixel(x, y);
-                Assert.True(c.Red > 235 && c.Green < 20 && c.Blue < 20,
-                    $"{what} marked the page at ({x},{y}): RGB({c.Red},{c.Green},{c.Blue}) is not the " +
-                    "underlying red. §8.6.6.4 requires /None to have no effect on the current page");
-            }
-        }
-    }
+    private static void AssertRedRectUntouched(byte[] pdf, string what) =>
+        ColourConformancePage.ForEachPixelInRect(pdf, (x, y, c) =>
+            Assert.True(c.Red > 235 && c.Green < 20 && c.Blue < 20,
+                $"{what} marked the page at ({x},{y}): RGB({c.Red},{c.Green},{c.Blue}) is not the " +
+                "underlying red. §8.6.6.4 requires /None to have no effect on the current page"));
 
     /// <summary>
     /// ISO 32000-2 §8.6.6.4, row 4-8: a Separation space whose colourant is <c>/None</c> "shall not
@@ -135,7 +65,7 @@ public class SeparationSpecialColorantTests
     public void SeparationNone_Fill_LeavesExistingContentUntouched()
     {
         string content = "1 0 0 rg 100 400 200 200 re f " + FillRect(1.0);
-        byte[] pdf = BuildPdf($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content);
+        byte[] pdf = ColourConformancePage.Build($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content);
 
         AssertRedRectUntouched(pdf, "/None fill");
     }
@@ -149,7 +79,7 @@ public class SeparationSpecialColorantTests
     {
         const string content = "1 0 0 rg 100 400 200 200 re f " +
                                "/Cs0 CS 1 SCN 20 w 100 500 m 300 500 l S";
-        byte[] pdf = BuildPdf($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content);
+        byte[] pdf = ColourConformancePage.Build($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content);
 
         AssertRedRectUntouched(pdf, "/None stroke");
     }
@@ -163,9 +93,38 @@ public class SeparationSpecialColorantTests
     {
         const string content = "1 0 0 rg 100 400 200 200 re f " +
                                "/Cs0 cs 1 scn BT /F1 48 Tf 110 480 Td (NONE) Tj ET";
-        byte[] pdf = BuildPdf($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content, withFont: true);
+        byte[] pdf = ColourConformancePage.Build($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content, withFont: true);
 
         AssertRedRectUntouched(pdf, "/None text");
+    }
+
+    /// <summary>
+    /// ISO 32000-2 §8.6.6.5, row 5-9: a DeviceN space whose components are <i>all</i> <c>/None</c>
+    /// "shall always discard its output […] it shall never revert to the alternate colour space".
+    ///
+    /// <para>
+    /// The second half is the part that is easy to get wrong, and is why the tint transform here ramps
+    /// to solid black: an implementation that reverts — the ordinary DeviceN path — paints a black
+    /// rectangle over the red one. Discarding the output is not the same as evaluating the transform and
+    /// then ignoring the result, and it is certainly not the same as painting white.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void AllNoneDeviceN_DiscardsOutput_WithoutRevertingToItsAlternate()
+    {
+        // (tA tB) → (0 tA tB 0) in DeviceCMYK. Tints (1, 0) give CMYK(0,1,0,0) — magenta, which differs
+        // from the red backdrop in the blue channel by the full range. Tints must be chosen to CONTRAST
+        // with the backdrop: (1, 1) would give CMYK(0,1,1,0), which is red, and a reverting renderer
+        // would then paint the rect its existing colour and pass this test without discarding anything.
+        const string ps = "<< /FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1] /Length 16 >>\r\n" +
+                          "stream\r\n{ 0 3 1 roll 0 }\r\nendstream";
+        const string content = "1 0 0 rg 100 400 200 200 re f " +
+                               "/Cs0 cs 1 0 scn 100 400 200 200 re f";
+
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/None /None] /DeviceCMYK 5 0 R]", content, withFont: false, ps);
+
+        AssertRedRectUntouched(pdf, "all-/None DeviceN");
     }
 
     /// <summary>
@@ -177,9 +136,9 @@ public class SeparationSpecialColorantTests
     [Fact]
     public void SeparationAll_AtFullTint_IgnoresTintTransformAndPaintsBlack()
     {
-        byte[] pdf = BuildPdf($"[/Separation /All /DeviceRGB {RgbTint("1 0 0")}]", FillRect(1.0));
+        byte[] pdf = ColourConformancePage.Build($"[/Separation /All /DeviceRGB {RgbTint("1 0 0")}]", FillRect(1.0));
 
-        SKColor c = RenderCentre(pdf);
+        SKColor c = ColourConformancePage.RenderCentre(pdf);
 
         Assert.True(c.Red < 20 && c.Green < 20 && c.Blue < 20,
             $"/All at tint 1 painted RGB({c.Red},{c.Green},{c.Blue}); §8.6.6.4 requires the complement " +
@@ -194,9 +153,9 @@ public class SeparationSpecialColorantTests
     [Fact]
     public void SeparationAll_AtZeroTint_PaintsWhite()
     {
-        byte[] pdf = BuildPdf($"[/Separation /All /DeviceRGB {RgbTint("1 0 0")}]", FillRect(0.0));
+        byte[] pdf = ColourConformancePage.Build($"[/Separation /All /DeviceRGB {RgbTint("1 0 0")}]", FillRect(0.0));
 
-        SKColor c = RenderCentre(pdf);
+        SKColor c = ColourConformancePage.RenderCentre(pdf);
 
         Assert.True(c.Red > 235 && c.Green > 235 && c.Blue > 235,
             $"/All at tint 0 painted RGB({c.Red},{c.Green},{c.Blue}); the complement of 0 is full " +
