@@ -19,7 +19,14 @@ public class BfoOracleTests(ITestOutputHelper output)
     private static readonly IReadOnlySet<string> KnownPassFalsePositives = new HashSet<string>();
 
     /// <summary>Detection floor — a ratchet. Raise as new rules catch more BFO fail fixtures.</summary>
-    private const int DetectionFloor = 10;
+    /// <remarks>
+    /// 2026-07-25 — ratcheted 10 → 14, the measured detection over the 24 PDF/A-2 fail fixtures, after the
+    /// suite was checked out locally again. Stable across three consecutive runs. The 10 remaining misses
+    /// are coverage gaps shared with the veraPDF corpus (chiefly the font-program clauses), not errors:
+    /// the pass-fixture oracle reports zero false positives, so the rule set stays a strict subset here
+    /// exactly as it is against veraPDF.
+    /// </remarks>
+    private const int DetectionFloor = 14;
 
     [Fact]
     public void Pass_fixtures_are_not_flagged()
