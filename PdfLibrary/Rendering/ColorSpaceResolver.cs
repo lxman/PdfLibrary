@@ -956,8 +956,10 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <returns>RGB values in 0.0-1.0 range</returns>
     private static double[] LabToRgb(double L, double a, double b, PdfArray? labArray)
     {
-        // Get white point from Lab color space definition (default to D65)
-        double xn = 0.95047, yn = 1.0, zn = 1.08883;  // D65 white point
+        // Lab colour spaces carry an explicit WhitePoint (ISO 32000-1 §8.6.5.4). Default to D50 — the
+        // ICC PCS white, and the overwhelmingly common choice in print-oriented PDFs — for the
+        // malformed case where it is missing or unusable.
+        double xn = 0.9642, yn = 1.0, zn = 0.8249;  // D50 white point
 
         if (labArray is { Count: >= 2 } && labArray[1] is PdfDictionary labDict)
         {
@@ -982,14 +984,23 @@ internal class ColorSpaceResolver(PdfDocument? document)
                     _ => zn
                 };
 
-                // Validate WhitePoint values - if they seem incorrect, fall back to D65
-                // D65 should have approximately: xn≈0.95, yn=1.0, zn≈1.09
-                if (xn < 0.90 || xn > 1.00 || yn < 0.95 || yn > 1.05 || zn < 1.00 || zn > 1.20)
+                // Reject only genuinely unusable values — a non-finite or non-positive Y divides by
+                // zero in the Lab→XYZ step, and a negative X or Z is physically meaningless. Every
+                // real illuminant is honoured as declared.
+                //
+                // This deliberately does NOT range-check against a particular illuminant. An earlier
+                // version required zn >= 1.00, which D50 (0.8249) always fails, so the declared white
+                // was silently replaced by D65. That was correct when this method ended in a
+                // hard-coded D65 XYZ→sRGB matrix with no chromatic adaptation, but LabToSrgb now
+                // Bradford-adapts from an arbitrary reference white — so the check rejected precisely
+                // the case the converter exists to handle. Neutrals cancel the error, which is why it
+                // went unnoticed; saturated colours drift badly (a mid blue by ~37/255).
+                if (!IsUsableWhitePoint(xn, yn, zn))
                 {
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Invalid Lab WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}] detected, using D65 instead");
-                    xn = 0.95047;
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Unusable Lab WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}], using D50 instead");
+                    xn = 0.9642;
                     yn = 1.0;
-                    zn = 1.08883;
+                    zn = 0.8249;
                 }
                 else
                 {
@@ -998,8 +1009,16 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        // Convert Lab → sRGB respecting the PDF-specified WhitePoint. Falls back to the D65 values
+        // Convert Lab → sRGB respecting the PDF-specified WhitePoint. Falls back to the D50 values
         // initialised at the top of this method if WhitePoint is missing.
         return LabToSrgb.Convert(L, a, b, new ICCSharp.IO.XyzNumber(xn, yn, zn));
     }
+
+    /// <summary>
+    /// Whether a Lab <c>/WhitePoint</c> can be used as a reference white. Y must be strictly positive
+    /// (it is the divisor in the Lab→XYZ step) and X and Z non-negative; all three must be finite.
+    /// </summary>
+    private static bool IsUsableWhitePoint(double x, double y, double z) =>
+        double.IsFinite(x) && double.IsFinite(y) && double.IsFinite(z)
+        && y > 0.0 && x >= 0.0 && z >= 0.0;
 }
