@@ -3,6 +3,9 @@
 > Slice 1 (2026-07-25): **Separation** and **DeviceN** colour spaces. Derived from ISO 32000-2:2020
 > (PDF 2.0) including Errata Collection 2, §8.6.6.4 (pp. 201–203) and §8.6.6.5 (pp. 204–210).
 >
+> Ratchet pass 1 (2026-07-25): ten rows converted from "conformant by inspection" to clause-citing
+> tests. Two of them turned out not to be conformant at all — see the score section.
+>
 > This is the **renderer's** conformance matrix — the companion to `Docs/pdfua/matterhorn-coverage.md`,
 > which does the same job for the validator. It answers "how standards compliant is our colour?" with a
 > number that has a denominator, rather than an impression.
@@ -67,19 +70,19 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 |---|---|---|---|---|
 | 4-1 | "shall be a four-element array whose first element shall be the colour space family name Separation" | N | ␀ | Structural validation on the render path not audited. |
 | 4-2 | Tint is a single component in [0.0, 1.0]; 0.0 = minimum colourant, 1.0 = maximum | N | ␀ | |
-| 4-3 | "Tints shall always be treated as subtractive colours, even if the device produces output for the designated component by an additive method" | N | ␀ | 0.0 = lightest, 1.0 = darkest. Not audited. |
+| 4-3 | "Tints shall always be treated as subtractive colours, even if the device produces output for the designated component by an additive method" | N | ✅ | `SeparationAlternateSpaceTests.SeparationTints_AreSubtractive_HigherTintIsDarker` — tint 0 is lighter than tint 1 by luma. Not implied by the reversion rows: those compare against a direct fill in the alternate space, which inverts identically if the ramp does. |
 | 4-4 | "The initial value for both the stroking and nonstroking colour in the graphics state shall be 1.0" | N | ␀ | No initial-tint handling found in `PdfGraphicsState`; needs a targeted check. |
 | 4-5 | Cyan / Magenta / Yellow / Black "are reserved to name the process colourants of a CMYK device" | N | ⚠️ | `PageColorant.Classify` → `ColorantKind.Process`. Tested in `PageColorantClassifyTests`; not tested end-to-end on the render path. |
 | 4-6 | **All**: "painting operators shall apply tint values to all available colourants at once" | N | ⚠️ | `ColorSpaceResolver.cs:593` — `case "All": c = m = y = k = true`. Sets all four process plates; does **not** include registered spot planes, which "all available colourants" arguably requires. See gap G-2. |
-| 4-7 | **All** on an additive device: "the subtractive tint values […] shall be complemented by subtracting from 1 before applying to all available colourants" | N | ␀ | No complement logic found. See gap G-3. |
-| 4-8 | **None**: "shall not produce any visible output […] shall have no effect on the current page" | N | ⚠️ | `ColorSpaceResolver.cs:594` skips it with the clause cited; `ShadingSpotSplit.cs:43` treats All/None as "recognised, not a plate". `PageColorantsTests` asserts None is excluded from the colorant list. No test asserts *nothing is painted*. |
-| 4-9 | "A PDF processor shall support Separation colour spaces with the colourant names All and None on all devices" | N | ⚠️ | Both are recognised kinds in `ColorantKind`. |
-| 4-10 | For All/None, "PDF processors shall ignore the alternateSpace and tintTransform parameters" | N | ␀ | Not audited — must confirm neither is evaluated for All/None. |
+| 4-7 | **All** on an additive device: "the subtractive tint values […] shall be complemented by subtracting from 1 before applying to all available colourants" | N | ✅ | Fixed 2026-07-25 (was the G-3 violation). `ResolveSeparation` complements before reading the alternate space, so tint *t* paints the neutral 1−*t* on R, G and B. `SeparationSpecialColorantTests.SeparationAll_At{Full,Zero}Tint_*` pin both ends, so a constant black cannot pass. **Additive path only** — see G-5. |
+| 4-8 | **None**: "shall not produce any visible output […] shall have no effect on the current page" | N | ✅ | **Was a violation, not ⚠️ — fixed 2026-07-25.** The line cited in slice 1 (`:594`) is the overprint *plate mask*, not the paint path; nothing suppressed painting, so a `/None` fill whose tint transform ramped to black painted a black rectangle. `PdfGraphicsState.Fill/StrokePaintsNothing` now suppress the operator at the same sites as `OcHidden` (f, S, B per-half, and glyphs incl. Type 3). `SeparationNone_{Fill,Stroke,Text}_*` paint over an existing red rect and assert the whole region survives, so resolving to white cannot pass them. |
+| 4-9 | "A PDF processor shall support Separation colour spaces with the colourant names All and None on all devices" | N | ✅ | Both handled on the render path and tested (rows 4-7, 4-8). "On all devices" holds *structurally* rather than by test: suppression and complement sit in `PdfRenderer`/`ColorSpaceResolver`, upstream of every render target, so the soft-proof path cannot bypass them — but no test exercises the CMYK path directly, and G-5 records a real `/All` gap there. |
+| 4-10 | For All/None, "PDF processors shall ignore the alternateSpace and tintTransform parameters" | N | ✅ | **Was a violation — fixed 2026-07-25.** `ResolveSeparation` evaluated the transform for every colourant name, so `/All` painted whatever it returned. Both names are now handled before the alternate space or the transform is read. Pinned by `SeparationAll_AtFullTint_IgnoresTintTransformAndPaintsBlack`, whose space ramps to red: evaluating the transform paints red, ignoring it paints the required black. |
 | 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only, audited D-1. Availability = registered in `SpotColorantRegistry`. Conformant as §10.8.3 separation simulation. |
-| 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ⚠️ | **Audited 2026-07-25 — conformant.** `WantsCmyk` false ⇒ null ⇒ vector path ⇒ alternate-space reversion; no spot machinery in `Pellucid.Rendering.Skia`. `SoftProofPolicyTests` pins the mode truth table but does not name this clause — a clause-citing test would make this ✅. |
-| 4-13 | If unavailable, "shall arrange for subsequent painting operations to be performed in an alternate colour space" | N | ⚠️ | The compositor falls back to the flatten path for an unregistered spot (`PdfImageToCmyk.TryToSpotInk` comment). |
+| 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ✅ | Audited 2026-07-25 (G-1), and now asserted: `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour` renders a spot Separation on the RGB path and requires the pixel to equal the same colour filled directly in the alternate space. |
+| 4-13 | If unavailable, "shall arrange for subsequent painting operations to be performed in an alternate colour space" | N | ✅ | `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour`. The oracle is the alternate space painted directly, not a hard-coded triple — "reverts to the alternate space" *means* the two are indistinguishable, so the test survives refinements to CMYK→RGB instead of having to be rewritten by them. |
 | 4-14 | alternateSpace "may not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | N | ␀ | Malformed-input rejection not audited. |
-| 4-15 | tintTransform "shall be called with the tint value and shall return the corresponding colour component values" | N | ⚠️ | `ColorSpaceResolver.BuildTintToRgb` / `BuildTintToCmyk`. |
+| 4-15 | tintTransform "shall be called with the tint value and shall return the corresponding colour component values" | N | ✅ | `SpotSeparation_{OnAdditiveDevice,AtFullTint}_*` assert both ends of the ramp, so a renderer that ignored the tint and evaluated at a fixed point fails. |
 | 4-16 | NOTE 7 — alternate space "does not necessarily reflect the interactions […] when overprinting is enabled"; separation simulation "can be used as an alternative method" | L | — | The spec concedes the approximation and names §10.8.3 as the better path. Our spot planes **are** that path. No compliance debt. |
 
 ## §8.6.6.5 — DeviceN colour spaces
@@ -87,14 +90,14 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | # | Normative statement | Class | Status | Implementation / note |
 |---|---|---|---|---|
 | 5-1 | alternateSpace "shall not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | N | ␀ | |
-| 5-2 | "if any of the component names […] do not correspond to a colorant available on the device, [the processor] shall perform subsequent painting operations in the alternate colour space" | N | ⚠️ | All-or-nothing fallback. Correct for plain DeviceN — but see 5-3. |
+| 5-2 | "if any of the component names […] do not correspond to a colorant available on the device, [the processor] shall perform subsequent painting operations in the alternate colour space" | N | ✅ | `DeviceN_RevertsToAlternate_PassingEveryTintToTheTransform`. The all-or-nothing fallback is correct for plain DeviceN, which is what this row covers — but see 5-3. |
 | 5-3 | **"For NChannel colour spaces, the components shall be evaluated individually; that is, only the ones not present on the output device shall use the alternate colour space of that component."** | N | ❌ | **VIOLATION.** `NChannel` appears nowhere in the rendering path of either repo (only in `Conformance/`). With the all-or-nothing fallback, one unregistered colourant in an NChannel space flattens *every* colourant through the alternate, including those we can paint. See gap G-4. |
-| 5-4 | tintTransform "shall be called with n tint values and returns m colour component values" | N | ⚠️ | |
+| 5-4 | tintTransform "shall be called with n tint values and returns m colour component values" | N | ✅ | Same test: a type 4 transform maps (t₁, t₂) → (0, t₁, t₂, 0), so a dropped or transposed component paints a visibly different colour. Verified by mutation — transposing the oracle fails. |
 | 5-5 | **None** "may be present only for DeviceN colour spaces that do not have the NChannel subtype" | N | ␀ | Not enforced; requires Subtype awareness (blocked on G-4). |
 | 5-6 | None "indicates that the corresponding colour component shall never be painted on the page" | N | ⚠️ | `ShadingSpotSplit`, `TryToSpotInk` skip None components. |
 | 5-7 | "When […] painting the named device colourants directly, colour components corresponding to None colourants shall be discarded" | N | ⚠️ | |
 | 5-8 | "when the DeviceN colour space reverts to its alternate colour space, those components shall be passed to the tint transformation function" | N | ␀ | **Subtle and easy to get backwards**: None is discarded when painting directly but *passed through* on reversion. Not audited. |
-| 5-9 | All-None space "shall always discard its output […] it shall never revert to the alternate colour space" | N | ␀ | |
+| 5-9 | All-None space "shall always discard its output […] it shall never revert to the alternate colour space" | N | ✅ | Implemented 2026-07-25 via `ColorSpaceResolver.PaintsNothing`, which treats an all-`/None` DeviceN exactly like `/Separation /None` — so it is never flattened through its tint transform on the way to painting nothing. `AllNoneDeviceN_DiscardsOutput_WithoutRevertingToItsAlternate` paints over red with a transform ramping to magenta. |
 | 5-10 | "Reversion shall occur only if at least one colour component (other than None) is specified and is not available on the device" | N | ⚠️ | Cited verbatim in `PdfImageToCmyk.TryToSpotInk` (SP-6c) — the routing splits by colorant name and never consults the alternate. |
 | 5-11 | Subtype "shall be DeviceN or NChannel. Default value: DeviceN" | N | ❌ | Not read on the render path at all (G-4). |
 | 5-12 | "If the value of the Subtype entry […] is NChannel, such information shall be present" (attributes) | N | ␀ | |
@@ -108,34 +111,61 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 
 ## Score — slice 1
 
-| | Count |
-|---|--:|
-| Normative + machine-verifiable (**N**) | 26 |
-| — ✅ conformant with a test | **0** |
-| — ⚠️ conformant, untested | 13 |
-| — ❌ violation | 2 |
-| — ␀ not yet audited | 11 |
-| Latitude (**L**) | 5 |
-| Device-policy (**D**) | 2 — both audited, both conformant (G-1 closed) |
+Updated 2026-07-25 after the first ratchet pass. The slice-1 column is the original audit; the deltas
+are what writing the clauses as tests actually changed.
 
-**Nothing in this slice is ✅.** That is the headline finding, and it is not the same as "broken": 13 rows
-look correct on inspection and some have unit coverage of their helper, but no test asserts the *clause*.
-Untested conformance is indistinguishable from accidental conformance, and cannot be ratcheted.
+| | Slice 1 | Now |
+|---|--:|--:|
+| Normative + machine-verifiable (**N**) | 26 | 26 |
+| — ✅ conformant with a test | 0 | **10** |
+| — ⚠️ conformant, untested | 11 | 5 |
+| — ❌ violation | 2 | 2 |
+| — ␀ not yet audited | 13 | 9 |
+| Latitude (**L**) | 5 | 5 |
+| Device-policy (**D**) | 2 | 2 — 4-12 now tested, 4-11 (soft-proof) still untested |
+
+> The slice-1 table published 13 untested / 11 unaudited. Those two figures were transposed — counting
+> the rows gives 11 untested and 13 unaudited. Corrected here rather than silently, because the whole
+> point of the matrix is that its denominator can be recomputed from the rows.
+
+**Ten rows are now ✅, and the audit was too generous, not too harsh.** Two rows that slice 1 recorded as
+"conformant, untested" and "not audited" were in fact violations, and writing the clause as a test is what
+exposed them:
+
+- **4-8** (`/None` shall not produce visible output) was marked ⚠️ on the strength of a code comment
+  citing the clause. The line that cited it computes the *overprint plate mask*; nothing on the paint path
+  consulted the colourant name at all, so a `/None` fill painted whatever its tint transform returned —
+  solid black, in the test. Reading a clause citation in a comment is not the same as reading the clause's
+  effect on the page.
+- **4-10** (All/None shall ignore alternateSpace and tintTransform) was ␀, and was being violated for
+  every `/All` space in every document: the transform ran unconditionally. The `/All` complement logic
+  required by 4-7 existed, but only on the branch taken when there is *no* tint transform — i.e. never, in
+  practice.
+
+Both are fixed and pinned. The remaining ⚠️ rows (4-5, 4-6, 5-6, 5-7, 5-10) are the ones whose behaviour
+lives on the CMYK soft-proof path, where the harness in `ColourConformancePage` does not yet reach.
 
 ## Gaps
 
-- ~~**G-1 (D-1) — additive-device reversion.**~~ **CLOSED 2026-07-25 — conformant.** Audited: the
-  additive path never applies a colourant directly (see the device-policy section). Residual work is a
-  test that names §8.6.6.4 and asserts a Separation fill on the RGB path resolves through the alternate
-  space, which would move rows 4-11/4-12 from ⚠️ to ✅. The behaviour is correct today; only the
-  clause-level assertion is missing.
+- ~~**G-1 (D-1) — additive-device reversion.**~~ **CLOSED 2026-07-25.** Audited conformant, and now
+  asserted — row 4-12 is ✅.
 - **G-2 — `All` excludes spot planes.** Row 4-6 requires "all *available* colourants". We set the four
   process plates only. Once spots are registered and paintable, they are available by our own definition,
-  so registration targets would miss them.
-- **G-3 — `All` on an additive device is not complemented.** Row 4-7 requires subtracting from 1 before
-  applying on an additive device. No such logic found.
+  so registration targets would miss them. Untouched by this pass.
+- ~~**G-3 — `All` on an additive device is not complemented.**~~ **CLOSED 2026-07-25.** Row 4-7 is ✅ on
+  the additive path; the subtractive half is now tracked as G-5.
 - **G-4 — NChannel is not implemented on the render path.** Rows 5-3 and 5-11. The per-component
-  evaluation rule is a `shall`, and we do the opposite (all-or-nothing). Blocks 5-5 and 5-12 too.
+  evaluation rule is a `shall`, and we do the opposite (all-or-nothing). Blocks 5-5 and 5-12 too. This
+  remains the substantive violation in the slice, and is untouched by this pass.
+- **G-5 — `/All` is not device-aware on the soft-proof path.** New, and a direct consequence of fixing
+  G-3. The complement in `ResolveSeparation` is unconditional, but §8.6.6.4 requires it *only* on an
+  additive device — on the simulated-subtractive path the tint should be applied to the colourants
+  directly, uncomplemented. Separately, `BuildTintToCmyk` still evaluates the tint transform for `/All`,
+  which 4-10 forbids on any device. Neither shows on the RGB path, so no test catches it today.
+- **G-6 — `/None` suppression does not cover images.** `PaintsNothing` is consulted at the path and text
+  operators, which is where a `/None` *fill or stroke colour* can appear. An image whose own colour space
+  is `[/Separation /None …]` decodes through `BuildTintToRgb` like any other, so 4-8 is not enforced for
+  image XObjects. Rare in practice, but it is a `shall`, and the row is only ✅ for the operators tested.
 
 ## Fixtures
 
@@ -150,6 +180,19 @@ Clause text was read from the indexed ISO 32000-2 EC2 PDF rather than recalled, 
 claim above cites a file and line that was opened. Rows marked ␀ are honestly unaudited — they are not
 assumed conformant. A future slice should either verify or demote them; the count of ␀ is itself the
 measure of how far this slice got.
+
+The ratchet pass added a second rule, learned the hard way. **A ✅ row requires a test that has been seen
+to fail.** Rows 4-8 and 4-10 show why the reading-and-reasoning pass is not enough on its own: both looked
+conformant to a careful reader, and neither was. Less obviously, a test written for an already-correct
+behaviour can be vacuous without anyone noticing — the first draft of the 5-9 test chose tint values whose
+alternate-space colour happened to equal the backdrop it was painted over, so it passed whether or not the
+space discarded anything. Every ✅ in this matrix was therefore run against a deliberate mutation (an
+inverted oracle, a transposed component, a renamed colourant) and confirmed to fail. A test that has only
+ever been green is evidence of nothing.
+
+Claims about painted output are asserted on **rendered pixels**, not on resolver return values. The two
+come apart in both directions: a resolver can return a colour that nothing paints, and a renderer can
+paint black for a space the resolver declined to resolve. Only the raster settles it.
 
 Next slices, in rough value order: §8.6.7 (overprint control / OPM), §8.6.5.x (CalRGB, CalGray, Lab,
 ICCBased), §8.7.3 (blend modes), §11.6.5.3 (soft masks — the `/Matte` rule fixed 2026-07-25).
