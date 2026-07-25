@@ -231,6 +231,35 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Get the colorant name (index 1)
         string colorantName = csArray[1] is PdfName cn ? cn.Value : "Unknown";
 
+        // ISO 32000-2 §8.6.6.4: for the reserved names /All and /None, "PDF processors shall ignore the
+        // alternateSpace and tintTransform parameters" — so both are handled before either is read.
+        //
+        // /All applies the tint to every available colourant at once. On an additive device (our RGB
+        // display path) the clause requires the subtractive tint to "be complemented by subtracting from
+        // 1 before applying to all available colourants": the colourants are R, G and B, so tint t paints
+        // the neutral 1 − t — tint 1 (maximum colourant) is black, tint 0 is white.
+        //
+        // /None resolves to no colour at all: painting is suppressed upstream by PdfGraphicsState's
+        // FillPaintsNothing/StrokePaintsNothing, so whatever value sits here is never marked on the page.
+        // It is deliberately left at the caller's value rather than forced to white — a white fill still
+        // marks the page, and would hide a suppression regression behind a white-on-white coincidence.
+        switch (colorantName)
+        {
+            case "All":
+            {
+                double allTint = color.Count == 1 ? Math.Clamp(color[0], 0.0, 1.0) : 1.0;
+                double v = 1.0 - allTint;
+                color = [v, v, v];
+                colorSpaceName = "DeviceRGB";
+                PdfLogger.Log(LogCategory.Graphics,
+                    $"RESOLVE Separation /All: tint={allTint:F3} -> complement {v:F3} on all colourants");
+                return;
+            }
+            case "None":
+                PdfLogger.Log(LogCategory.Graphics, "RESOLVE Separation /None: paints nothing (§8.6.6.4)");
+                return;
+        }
+
         // Get the alternate color space (index 2) - can be PdfName or PdfArray
         PdfObject? alternateObj = csArray[2];
         if (alternateObj is PdfIndirectReference altRef && document is not null)
@@ -599,6 +628,52 @@ internal class ColorSpaceResolver(PdfDocument? document)
         }
 
         return (c, m, y, k);
+    }
+
+    /// <summary>
+    /// True when a colour space marks nothing on the page, so painting operators using it shall be
+    /// suppressed entirely (ISO 32000-2 §8.6.6.4 and §8.6.6.5).
+    ///
+    /// <para>
+    /// Two cases qualify. A <c>[/Separation /None …]</c> space "shall not produce any visible output […]
+    /// shall have no effect on the current page", on all devices. A DeviceN space whose component names
+    /// are <i>all</i> <c>/None</c> "shall always discard its output […] it shall never revert to the
+    /// alternate colour space" (§8.6.6.5) — so it too paints nothing, and notably must not be flattened
+    /// through its tint transform on the way.
+    /// </para>
+    ///
+    /// <para>
+    /// This is deliberately a separate signal from the resolved colour rather than a colour value.
+    /// Resolving <c>/None</c> to white would still mark the page, which is only invisible when the
+    /// backdrop happens to be white.
+    /// </para>
+    /// </summary>
+    public static bool PaintsNothing(string? csName, PdfDictionary? colorSpaces, PdfDocument? doc)
+    {
+        if (string.IsNullOrEmpty(csName)) return false;
+        if (csName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK" or "Pattern") return false;
+        if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
+            return false;
+
+        csObj = Deref(csObj, doc);
+        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
+            return false;
+
+        switch (csType.Value)
+        {
+            case "Separation":
+                return Deref(csArray[1], doc) is PdfName { Value: "None" };
+            case "DeviceN":
+            {
+                if (Deref(csArray[1], doc) is not PdfArray { Count: > 0 } names) return false;
+                foreach (PdfObject nameObj in names)
+                    if (Deref(nameObj, doc) is not PdfName { Value: "None" })
+                        return false;
+                return true;   // every component is /None
+            }
+            default:
+                return false;
+        }
     }
 
     /// <summary>

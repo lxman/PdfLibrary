@@ -123,6 +123,32 @@ public class PdfGraphicsState
     /// <summary>Resolved fill color components (in device color space)</summary>
     public List<double> ResolvedFillColor { get; set; } = [0.0];
 
+    /// <summary>
+    /// True when the non-stroking colour space marks nothing at all, so painting operators that fill
+    /// (including glyphs) shall be suppressed rather than painted in some colour. Set for
+    /// <c>[/Separation /None …]</c> and for an all-<c>/None</c> DeviceN — ISO 32000-2 §8.6.6.4 requires
+    /// "no visible output […] no effect on the current page", which is a suppression of the operator, not
+    /// a colour. See <see cref="Rendering.ColorSpaceResolver.PaintsNothing"/>.
+    /// </summary>
+    public bool FillPaintsNothing { get; set; }
+
+    /// <summary>Stroking counterpart of <see cref="FillPaintsNothing"/>.</summary>
+    public bool StrokePaintsNothing { get; set; }
+
+    /// <summary>
+    /// True when glyphs painted in this state would mark nothing, because every ink the current text
+    /// rendering mode uses is a <c>/None</c> colourant (ISO 32000-2 §8.6.6.4). Modes 0/4 fill, 1/5 stroke,
+    /// 2/6 do both; 3 and 7 paint no glyphs at all and are handled by the existing render-mode logic, so
+    /// they are not this property's concern.
+    /// </summary>
+    public bool TextPaintsNothing => (RenderingMode & 3) switch
+    {
+        0 => FillPaintsNothing,                             // fill only
+        1 => StrokePaintsNothing,                           // stroke only
+        2 => FillPaintsNothing && StrokePaintsNothing,      // fill + stroke
+        _ => false,                                         // mode 3/7: invisible by definition
+    };
+
     // Pattern state
     /// <summary>Fill pattern name (when using Pattern color space)</summary>
     public string? FillPatternName { get; set; }
@@ -289,6 +315,8 @@ public class PdfGraphicsState
             ResolvedFillColorSpace = ResolvedFillColorSpace,
             ResolvedStrokeColor = [..ResolvedStrokeColor],
             ResolvedFillColor = [..ResolvedFillColor],
+            FillPaintsNothing = FillPaintsNothing,
+            StrokePaintsNothing = StrokePaintsNothing,
             // Pattern state
             FillPatternName = FillPatternName,
             StrokePatternName = StrokePatternName,

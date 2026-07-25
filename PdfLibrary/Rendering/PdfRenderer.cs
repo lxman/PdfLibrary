@@ -553,7 +553,8 @@ internal class PdfRenderer : PdfContentProcessor
         List<double> color = CurrentState.StrokeColor;
         string colorStr = string.Join(",", color.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH STROKE: ColorSpace={CurrentState.StrokeColorSpace}, Color=[{colorStr}], LineWidth={CurrentState.LineWidth}");
-        if (!OcHidden) _target.StrokePath(_currentPath, CurrentState);   // suppressed inside invisible /OC
+        // Suppressed inside invisible /OC, and for a /None stroking colourant (§8.6.6.4).
+        if (!OcHidden && !CurrentState.StrokePaintsNothing) _target.StrokePath(_currentPath, CurrentState);
         _currentPath.Clear();
     }
 
@@ -573,9 +574,10 @@ internal class PdfRenderer : PdfContentProcessor
         string resolvedColorStr = string.Join(",", CurrentState.ResolvedFillColor.Select(c => c.ToString("F2")));
         PdfLogger.Log(LogCategory.Graphics, $"PATH FILL: ColorSpace={CurrentState.FillColorSpace} -> {CurrentState.ResolvedFillColorSpace}, Color=[{colorStr}] -> [{resolvedColorStr}], Pattern={CurrentState.FillPatternName}, PathEmpty={_currentPath.IsEmpty}");
 
-        // Check if we should use pattern fill. Suppressed inside an invisible optional-content region
-        // (the path is still cleared below so later visible content is unaffected).
-        if (!OcHidden)
+        // Check if we should use pattern fill. Suppressed inside an invisible optional-content region,
+        // and for a /None non-stroking colourant (§8.6.6.4) — in both cases the path is still cleared
+        // below so later visible content is unaffected.
+        if (!OcHidden && !CurrentState.FillPaintsNothing)
         {
             if (CurrentState is { ResolvedFillColorSpace: "Pattern", FillPatternName: not null })
             {
@@ -738,7 +740,20 @@ internal class PdfRenderer : PdfContentProcessor
             ClearPendingClip();
         }
 
-        if (!OcHidden) _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);   // suppressed inside invisible /OC
+        // Suppressed inside invisible /OC. A /None colourant suppresses only its own half of B/B*
+        // (§8.6.6.4) — a path filled with /None but stroked with a real ink still gets its stroke, so the
+        // two halves are issued separately in that case rather than dropping the operator wholesale.
+        if (!OcHidden)
+        {
+            bool noFill = CurrentState.FillPaintsNothing;
+            bool noStroke = CurrentState.StrokePaintsNothing;
+            if (!noFill && !noStroke)
+                _target.FillAndStrokePath(_currentPath, CurrentState, evenOdd: false);
+            else if (!noFill)
+                _target.FillPath(_currentPath, CurrentState, evenOdd: false);
+            else if (!noStroke)
+                _target.StrokePath(_currentPath, CurrentState);
+        }
         _currentPath.Clear();
     }
 
@@ -777,7 +792,8 @@ internal class PdfRenderer : PdfContentProcessor
         if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
             PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution");
-            if (!OcHidden) RenderType3Text(text, type3Font);   // suppressed inside invisible /OC
+            // Suppressed inside invisible /OC, and for a /None colourant (§8.6.6.4).
+            if (!OcHidden && !CurrentState.TextPaintsNothing) RenderType3Text(text, type3Font);
             return;
         }
 
@@ -907,7 +923,9 @@ internal class PdfRenderer : PdfContentProcessor
 
         // Render the text: embedded fonts go through the core glyph pipeline; non-embedded
         // fonts use the substitute font path in CoreTextRenderer.
-        if (!OcHidden)   // glyphs suppressed inside invisible /OC; text position still advances
+        // Glyphs suppressed inside invisible /OC, and when every ink this render mode uses is a
+        // /None colourant (§8.6.6.4); text position still advances in both cases.
+        if (!OcHidden && !CurrentState.TextPaintsNothing)
             _coreText.Render(textToRender, glyphWidths, CurrentState, font, charCodes);
 
         // Advance text position by the total width
@@ -956,6 +974,14 @@ internal class PdfRenderer : PdfContentProcessor
             ColorSpaceResolver.OverprintPlatesFor(CurrentState.FillColorSpace, colorSpaces, _document);
         CurrentState.StrokeOverprintPlates =
             ColorSpaceResolver.OverprintPlatesFor(CurrentState.StrokeColorSpace, colorSpaces, _document);
+
+        // A /None colourant marks nothing at all (ISO 32000-2 §8.6.6.4; §8.6.6.5 for an all-/None
+        // DeviceN). Derived from the SOURCE colour space, like the masks above, because the flattened
+        // resolved colour cannot express "paints nothing" — painting operators consult these instead.
+        CurrentState.FillPaintsNothing =
+            ColorSpaceResolver.PaintsNothing(CurrentState.FillColorSpace, colorSpaces, _document);
+        CurrentState.StrokePaintsNothing =
+            ColorSpaceResolver.PaintsNothing(CurrentState.StrokeColorSpace, colorSpaces, _document);
 
         CurrentState.ResolvedFillColorantOrigin =
             ColorSpaceResolver.OriginFor(CurrentState.FillColorSpace, CurrentState.FillColor, colorSpaces, _document);
@@ -1073,7 +1099,8 @@ internal class PdfRenderer : PdfContentProcessor
         if (font.FontType == PdfFontType.Type3 && font is Type3Font type3Font)
         {
             PdfLogger.Log(LogCategory.Text, $"Type3 font '{CurrentState.FontName}' - rendering via CharProc execution (TJ)");
-            if (!OcHidden) RenderType3TextWithPositioning(array, type3Font);   // suppressed inside invisible /OC
+            // Suppressed inside invisible /OC, and for a /None colourant (§8.6.6.4).
+            if (!OcHidden && !CurrentState.TextPaintsNothing) RenderType3TextWithPositioning(array, type3Font);
             return;
         }
 
@@ -1215,7 +1242,9 @@ internal class PdfRenderer : PdfContentProcessor
         }
 
         var combined = combinedText.ToString();
-        if (!OcHidden)   // glyphs suppressed inside invisible /OC; text position still advances
+        // Glyphs suppressed inside invisible /OC, and when every ink this render mode uses is a
+        // /None colourant (§8.6.6.4); text position still advances in both cases.
+        if (!OcHidden && !CurrentState.TextPaintsNothing)
             _coreText.Render(combined, combinedWidths, CurrentState, font, combinedCharCodes);
 
         // Advance text position by total width
