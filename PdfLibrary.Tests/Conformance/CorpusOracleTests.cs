@@ -90,8 +90,7 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // 4 t03 same-name-Separation-inconsistency fixtures and the 3 t02 DeviceN-/Colorants fixtures. t01
             // (device alternate space without an output intent) was already caught by device-colour.
             // Clause 6.2.2 (content-stream operators): +3 (544 → 547). ContentStreamOperatorRule catches
-            // 6-2-2-t01-fail-a/b/c (an undefined operator in page / Do-reached content). Conservative floor —
-            // true measured PdfA2b detection is 568/609.
+            // 6-2-2-t01-fail-a/b/c (an undefined operator in page / Do-reached content).
             // Clause 6.1.9 (indirect-object spacing): +7 (547 → 554). IndirectObjectSpacingRule is the sole
             // rule that catches 6-1-9-t01-fail-a, -t02-fail-a, -t03-fail-a/b/c and -t04-fail-a/b (all
             // whitespace/EOL framing violations on the last indirect object), none previously detected.
@@ -108,9 +107,18 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // Clause 6.2.4.2 test 2 (ICCBased-CMYK overprint): +3 (564 → 567). IccCmykOverprintRule catches
             // 6-2-4-2-t02-fail-a (CMYK stroke, /OP on, OPM 1), -t02-fail-b (CMYK fill, /op on, OPM 1) and
             // -t02-fail-c (both). The t02-pass fixtures pair CMYK with the non-matching overprint flag.
-            [ConformanceProfile.PdfA2b] = 567,
-            [ConformanceProfile.PdfA2u] = 6,
-            [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures)
+            //
+            // 2026-07-25 — re-ratcheted to the measured detection. The floors had drifted below actual
+            // again (A-2b 567 vs 588 measured, A-2u 6 vs 7, UA-1 146 vs 155), leaving up to 21 files of
+            // slack in which a regression would have passed unnoticed. Earlier notes described the gap as
+            // a deliberate margin to "absorb corpus-load flakiness"; that is not observable — three
+            // consecutive full-corpus runs produced byte-identical counts (588 / 7 / 5 / 155). Exact
+            // floors are therefore safe, and a floor that tracks reality is the point of a ratchet.
+            // If a future run does prove flaky, reintroduce a margin WITH the evidence rather than
+            // pre-emptively.
+            [ConformanceProfile.PdfA2b] = 588,
+            [ConformanceProfile.PdfA2u] = 7,
+            [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures — full)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:
             // it adds +7 (112 → 119) by catching every 7.4 heading fail fixture — the numbered-sequence
             // (7.4.2-t01-fail-a/-b), one-<H>-per-node (7.4.4-t01-fail-a) and no-mixing (7.4.4-t02/-t03-fail)
@@ -159,9 +167,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // (no /CT), -t02-fail-a (no /Alt) and -t02-fail-b (/Alt default text empty).
             // Cluster 7.5 (table headers): +3 (143 → 146). UaTableHeaderRule catches 7.5-t01-fail-a/-fail-b
             // (TD with no resolvable header) and 7.5-t02-fail-a (TD /Headers references an undefined id).
-            // Conservative floor — true measured PdfUA1 detection is now 155/155 (full; margin absorbs
-            // corpus-load flakiness).
-            [ConformanceProfile.PdfUA1] = 146,
+            // Now at the measured value: PdfUA1 detection is 155/155 — every machine-checkable UA-1 fail
+            // fixture in the corpus. Because this floor is now also the ceiling, any regression at all
+            // trips it, which is exactly what full parity should mean.
+            [ConformanceProfile.PdfUA1] = 155,
         };
 
     [Fact]

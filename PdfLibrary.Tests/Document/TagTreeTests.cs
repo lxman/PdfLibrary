@@ -165,11 +165,14 @@ public class TagTreeTests
     public void Reference_file_tag_tree_is_populated()
     {
         // Real-world smoke test over a PDF Association PDF/UA reference file (not vendored).
-        string? path = new[]
-            {
-                "/Users/michaeljordan/RiderProjects/PDFUA-Reference-Files/PDFUA-Ref-2-02_Invoice.pdf",
-            }.FirstOrDefault(System.IO.File.Exists);
-        Assert.SkipUnless(path is not null, "no reference file");
+        // Located via PdfUaReferenceHarness — the same walk-up discovery (plus PDFUA_REFERENCE_FILES
+        // override) every other consumer of that set uses. This previously hard-coded one developer's
+        // macOS home directory, so it skipped silently on every other machine even with the reference
+        // files checked out.
+        string? path = Conformance.PdfUaReferenceHarness.Files()
+            .FirstOrDefault(p => System.IO.Path.GetFileName(p)
+                .StartsWith("PDFUA-Ref-2-02", StringComparison.OrdinalIgnoreCase));
+        Assert.SkipUnless(path is not null, "PDFUA-Reference-Files not present (set PDFUA_REFERENCE_FILES)");
 
         using var doc = PdfDocument.Load(
             new System.IO.MemoryStream(System.IO.File.ReadAllBytes(path!)), string.Empty);
