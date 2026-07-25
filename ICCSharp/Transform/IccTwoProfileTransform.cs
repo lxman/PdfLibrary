@@ -68,10 +68,12 @@ public sealed class IccTwoProfileTransform : IColorTransform
             throw new IccTransformException(
                 $"Intermediate PCS must be 3 channels; got {_toPcs.OutputChannels} → {_fromPcs.InputChannels}.");
 
-        _bpc = blackPointCompensation
-            ? Eval.BlackPointCompensation.Build(
-                source.BlackPoint ?? new XyzNumber(0, 0, 0),
-                destination.BlackPoint ?? new XyzNumber(0, 0, 0))
+        // Absolute colorimetric reproduces the source medium literally, so black point compensation is
+        // meaningless there — and ISO 32000-2 8.6.5.9 makes it explicit for PDF: "If the current render
+        // intent of an object is AbsColorimetric then the value of UseBlackPtComp shall be treated as
+        // OFF." lcms disables BPC for absolute for the same reason.
+        _bpc = blackPointCompensation && intent != RenderingIntent.AbsoluteColorimetric
+            ? Eval.BlackPointCompensation.Build(DetectBlackPoint(source), DetectBlackPoint(destination))
             : null;
 
         // Absolute colorimetric reproduces the source's actual media white literally instead of
@@ -125,6 +127,94 @@ public sealed class IccTwoProfileTransform : IColorTransform
         }
 
         _fromPcs.Apply(dstIn, output);
+    }
+
+    // ---- black point detection ------------------------------------------
+
+    /// <summary>
+    /// Determines the darkest colour <paramref name="p"/> can actually reproduce, for black point
+    /// compensation.
+    /// <para>
+    /// The obvious source — the profile's <c>mediaBlackPoint</c> ('bkpt') tag — is NOT used, because in
+    /// real-world profiles it is frequently wrong. The Agfa "Swop Standard" profile shipped with Windows
+    /// declares a black point of L* 24.6 when its reachable black is L* 7.8; feeding that to BPC builds a
+    /// scale that maps every colour darker than the declared point to a negative PCS value, which then
+    /// clamps to zero. Shadow detail collapses: saturated darks such as a C+M violet lose two of three
+    /// channels entirely.
+    /// </para>
+    /// <para>
+    /// Instead the black point is DETECTED, which is what littleCMS does and what Adobe's output matches:
+    /// round-trip PCS black through the profile — <c>Lab(0,0,0) → B2A(relative) → device → A2B(relative)
+    /// → PCS</c> — and take where it lands. That asks the profile itself what its device black maps to.
+    /// Matrix/TRC and gray/TRC profiles are exact at zero (their curves send 0 to 0), so they short
+    /// circuit; only LUT-based profiles — in practice CMYK output profiles, the ones that matter here —
+    /// need the round trip.
+    /// </para>
+    /// </summary>
+    internal static XyzNumber DetectBlackPoint(IccProfile p)
+    {
+        IColorTransform toDevice, toPcs;
+        PcsBoundary fromBoundary, toBoundary;
+        try
+        {
+            // Relative colorimetric on both legs: black point detection asks a media-relative question,
+            // and the perceptual tables would fold in their own black handling.
+            (toDevice, fromBoundary) = BuildFromPcs(p, RenderingIntent.RelativeColorimetric);
+            (toPcs, toBoundary) = BuildToPcs(p, RenderingIntent.RelativeColorimetric);
+        }
+        catch (IccTransformException)
+        {
+            return new XyzNumber(0, 0, 0);   // no usable pipeline in one direction — treat black as zero
+        }
+
+        // A profile whose to-PCS leg is a matrix or gray TRC reaches exact zero; no round trip needed.
+        if (toBoundary == PcsBoundary.AbsoluteXyz || fromBoundary == PcsBoundary.AbsoluteXyz)
+            return new XyzNumber(0, 0, 0);
+
+        if (toDevice.InputChannels != 3 || toPcs.OutputChannels != 3
+            || toDevice.OutputChannels != toPcs.InputChannels)
+            return new XyzNumber(0, 0, 0);
+
+        try
+        {
+            // PCS black is Lab(0,0,0), which is XYZ(0,0,0) — encode it for this profile's boundary.
+            Span<double> pcsBlack = [0, 0, 0];
+            Span<double> encoded = stackalloc double[3];
+            PcsCodec.Encode(pcsBlack, encoded, p.Header.ProfileConnectionSpace,
+                legacyV2Lab: fromBoundary == PcsBoundary.LegacyEncoded);
+
+            Span<double> device = stackalloc double[toDevice.OutputChannels];
+            toDevice.Apply(encoded, device);
+            for (var i = 0; i < device.Length; i++)
+                device[i] = Math.Clamp(device[i], 0.0, 1.0);
+
+            Span<double> back = stackalloc double[3];
+            toPcs.Apply(device, back);
+
+            Span<double> xyz = stackalloc double[3];
+            PcsCodec.Decode(back, xyz, p.Header.ProfileConnectionSpace,
+                legacyV2Lab: toBoundary == PcsBoundary.LegacyEncoded);
+
+            // A malformed profile can round-trip to nonsense. Anything non-finite, negative, or lighter
+            // than a quarter of media white is not a black point; fall back to zero, which degrades to
+            // the pre-detection behaviour for a well-behaved profile rather than corrupting the scale.
+            if (!IsSaneBlack(xyz))
+                return new XyzNumber(0, 0, 0);
+
+            return new XyzNumber(xyz[0], xyz[1], xyz[2]);
+        }
+        catch (IccTransformException)
+        {
+            return new XyzNumber(0, 0, 0);
+        }
+    }
+
+    private static bool IsSaneBlack(ReadOnlySpan<double> xyz)
+    {
+        foreach (double v in xyz)
+            if (double.IsNaN(v) || double.IsInfinity(v) || v < 0.0)
+                return false;
+        return xyz[1] <= 0.25;
     }
 
     // ---- pipeline builders ---------------------------------------------
