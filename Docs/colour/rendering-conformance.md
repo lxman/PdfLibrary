@@ -43,9 +43,21 @@ The spot-plane machinery (`SpotPlaneBuffer`, `SpotColorantRegistry`, `SpotDispla
 a §10.8.3 separation simulation, and is conformant **in the soft-proof path only**. Availability is
 defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane).
 
-> ⚠️ **Open question (D-1).** It is not yet audited whether the RGB display path always reverts, as the
-> additive-device rule requires. If any spot-plane routing is reachable outside soft-proof mode, that is a
-> §8.6.6.4 violation. See the audit gap at the end.
+> ✅ **D-1 audited 2026-07-25 — CONFORMANT.** The additive path provably never applies a colourant
+> directly. The RGB-vs-CMYK decision is single-homed in `PageRenderService.WantsCmyk`:
+> `SoftProofPolicy.WantsRaster(CmykDisplaySettings.Mode, OverprintDetector.HasProofableContent(list))`.
+> Every `RenderForDisplayRasterAsync` overload returns `null` when it is false, and `null` routes the page
+> to the vector path, which paints from `ResolvedFillColor` — the tint transform evaluated into the
+> alternate space. `Pellucid.Rendering.Skia` (the RGB display walker) contains **no** reference to
+> `SpotInk`, `SpotPlaneBuffer`, `SpotColorantRegistry` or `ColorantOrigin`, so there is no second route.
+> Spot construction occurs at exactly two sites, both on the CMYK path (`CmykPageRenderer`, and registry
+> build in `PageItemViewModel`). The mode truth table is pinned by `SoftProofPolicyTests`:
+> `Never` → never raster; `Auto` → raster iff proofable; `Always` → always raster.
+>
+> Note for the record: `Auto` soft-proofs every non-blank page, so the **default** user experience is the
+> simulated-subtractive device, not the additive one. That is a product choice and still conformant — the
+> additive rule is satisfied because the additive path exists and is correct, not because it is the common
+> case.
 
 ---
 
@@ -63,8 +75,8 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | 4-8 | **None**: "shall not produce any visible output […] shall have no effect on the current page" | N | ⚠️ | `ColorSpaceResolver.cs:594` skips it with the clause cited; `ShadingSpotSplit.cs:43` treats All/None as "recognised, not a plate". `PageColorantsTests` asserts None is excluded from the colorant list. No test asserts *nothing is painted*. |
 | 4-9 | "A PDF processor shall support Separation colour spaces with the colourant names All and None on all devices" | N | ⚠️ | Both are recognised kinds in `ColorantKind`. |
 | 4-10 | For All/None, "PDF processors shall ignore the alternateSpace and tintTransform parameters" | N | ␀ | Not audited — must confirm neither is evaluated for All/None. |
-| 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only. Availability = registered in `SpotColorantRegistry`. |
-| 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ␀ | **The key open question.** See D-1 above and gap G-1. |
+| 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only, audited D-1. Availability = registered in `SpotColorantRegistry`. Conformant as §10.8.3 separation simulation. |
+| 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ⚠️ | **Audited 2026-07-25 — conformant.** `WantsCmyk` false ⇒ null ⇒ vector path ⇒ alternate-space reversion; no spot machinery in `Pellucid.Rendering.Skia`. `SoftProofPolicyTests` pins the mode truth table but does not name this clause — a clause-citing test would make this ✅. |
 | 4-13 | If unavailable, "shall arrange for subsequent painting operations to be performed in an alternate colour space" | N | ⚠️ | The compositor falls back to the flatten path for an unregistered spot (`PdfImageToCmyk.TryToSpotInk` comment). |
 | 4-14 | alternateSpace "may not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | N | ␀ | Malformed-input rejection not audited. |
 | 4-15 | tintTransform "shall be called with the tint value and shall return the corresponding colour component values" | N | ⚠️ | `ColorSpaceResolver.BuildTintToRgb` / `BuildTintToCmyk`. |
@@ -104,7 +116,7 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | — ❌ violation | 2 |
 | — ␀ not yet audited | 11 |
 | Latitude (**L**) | 5 |
-| Device-policy (**D**) | 2 |
+| Device-policy (**D**) | 2 — both audited, both conformant (G-1 closed) |
 
 **Nothing in this slice is ✅.** That is the headline finding, and it is not the same as "broken": 13 rows
 look correct on inspection and some have unit coverage of their helper, but no test asserts the *clause*.
@@ -112,10 +124,11 @@ Untested conformance is indistinguishable from accidental conformance, and canno
 
 ## Gaps
 
-- **G-1 (D-1) — additive-device reversion.** §8.6.6.4 requires that on a display, Separation *always*
-  reverts to the alternate. Whether any spot-plane routing is reachable outside the CMYK soft-proof path
-  is unaudited. If it is, that is a violation; if it is not, this is conformant and needs a test naming
-  the clause. **Audit this first — it determines whether rows 4-11/4-12 are compliance or violation.**
+- ~~**G-1 (D-1) — additive-device reversion.**~~ **CLOSED 2026-07-25 — conformant.** Audited: the
+  additive path never applies a colourant directly (see the device-policy section). Residual work is a
+  test that names §8.6.6.4 and asserts a Separation fill on the RGB path resolves through the alternate
+  space, which would move rows 4-11/4-12 from ⚠️ to ✅. The behaviour is correct today; only the
+  clause-level assertion is missing.
 - **G-2 — `All` excludes spot planes.** Row 4-6 requires "all *available* colourants". We set the four
   process plates only. Once spots are registered and paintable, they are available by our own definition,
   so registration targets would miss them.
