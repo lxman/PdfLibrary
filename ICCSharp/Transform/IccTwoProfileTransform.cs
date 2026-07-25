@@ -151,7 +151,7 @@ public sealed class IccTwoProfileTransform : IColorTransform
     /// need the round trip.
     /// </para>
     /// </summary>
-    internal static XyzNumber DetectBlackPoint(IccProfile p)
+    public static XyzNumber DetectBlackPoint(IccProfile p)
     {
         IColorTransform toDevice, toPcs;
         PcsBoundary fromBoundary, toBoundary;
