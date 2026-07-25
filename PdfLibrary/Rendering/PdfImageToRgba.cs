@@ -743,6 +743,66 @@ public static class PdfImageToRgba
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
                         return new RgbaImage(result, width, height, alphaMode);
                     }
+                    case "Lab" when bitsPerComponent == 8:
+                    {
+                        // Lab samples are NOT linear over [0,1] like RGB. Per ISO 32000-1 §8.9.5.2 the
+                        // default /Decode for a Lab image is [0 100 amin amax bmin bmax], where the a/b
+                        // limits come from the colour space's /Range (default [-100 100 -100 100]) —
+                        // so the range has to be read from the colour space, not assumed. An explicit
+                        // /Decode overrides it.
+                        PdfArray? labArray = image.ColorSpaceArray;
+                        ICCSharp.IO.XyzNumber white = ColorSpaceResolver.LabWhitePoint(labArray);
+                        (double aMin, double aMax, double bMin, double bMax) = ColorSpaceResolver.LabRange(labArray);
+
+                        double[]? dec = image.DecodeArray;
+                        bool useDecode = dec is { Length: >= 6 };
+                        double lMin = useDecode ? dec![0] : 0.0, lMax = useDecode ? dec![1] : 100.0;
+                        if (useDecode)
+                        {
+                            aMin = dec![2]; aMax = dec[3];
+                            bMin = dec[4]; bMax = dec[5];
+                        }
+
+                        int pixelCount = width * height;
+                        if (imageData.Length < pixelCount * 3) return null;
+
+                        alphaMode = smaskData is not null ? AlphaMode.Unpremultiplied : AlphaMode.Opaque;
+                        int pixelBufferSize = pixelCount * 4;
+                        byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        // Lab→sRGB runs a chromatic adaptation and a matrix inversion per call, which is
+                        // far too costly per pixel. Photographic Lab images repeat few exact triples, so
+                        // memoize on the packed sample — the same trick the Separation/DeviceN branch uses.
+                        var cache = new Dictionary<int, (byte R, byte G, byte B)>();
+
+                        for (var p = 0; p < pixelCount; p++)
+                        {
+                            int src = p * 3;
+                            byte rawL = imageData[src], rawA = imageData[src + 1], rawB = imageData[src + 2];
+                            int key = (rawL << 16) | (rawA << 8) | rawB;
+
+                            if (!cache.TryGetValue(key, out (byte R, byte G, byte B) rgb))
+                            {
+                                double l = lMin + rawL * (lMax - lMin) / 255.0;
+                                double a = aMin + rawA * (aMax - aMin) / 255.0;
+                                double b = bMin + rawB * (bMax - bMin) / 255.0;
+                                double[] srgb = Icc.LabToSrgb.Convert(l, a, b, white);
+                                rgb = (ToSrgbByte(srgb[0]), ToSrgbByte(srgb[1]), ToSrgbByte(srgb[2]));
+                                cache[key] = rgb;
+                            }
+
+                            int off = p * 4;
+                            pixelBuffer[off] = rgb.R;
+                            pixelBuffer[off + 1] = rgb.G;
+                            pixelBuffer[off + 2] = rgb.B;
+                            pixelBuffer[off + 3] = smaskData is not null && p < smaskData.Length ? smaskData[p] : (byte)255;
+                        }
+
+                        result = new byte[pixelBufferSize];
+                        Array.Copy(pixelBuffer, result, pixelBufferSize);
+                        ArrayPool<byte>.Shared.Return(pixelBuffer);
+                        return new RgbaImage(result, width, height, alphaMode);
+                    }
                     case "Separation" or "DeviceN" when bitsPerComponent == 8:
                     {
                         // Each pixel is N colorant samples; resolve them through the tint transform →

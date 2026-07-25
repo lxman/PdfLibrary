@@ -954,11 +954,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <param name="b">b* value (-128 to 127)</param>
     /// <param name="labArray">Optional Lab color space array with WhitePoint</param>
     /// <returns>RGB values in 0.0-1.0 range</returns>
-    private static double[] LabToRgb(double L, double a, double b, PdfArray? labArray)
+    private static double[] LabToRgb(double L, double a, double b, PdfArray? labArray) =>
+        LabToSrgb.Convert(L, a, b, LabWhitePoint(labArray));
+
+    /// <summary>
+    /// The reference white of a Lab colour space array, as declared by its <c>/WhitePoint</c>
+    /// (ISO 32000-1 §8.6.5.4). Shared by the fill path and the image path so both interpret a Lab
+    /// space identically.
+    /// </summary>
+    internal static ICCSharp.IO.XyzNumber LabWhitePoint(PdfArray? labArray)
     {
-        // Lab colour spaces carry an explicit WhitePoint (ISO 32000-1 §8.6.5.4). Default to D50 — the
-        // ICC PCS white, and the overwhelmingly common choice in print-oriented PDFs — for the
-        // malformed case where it is missing or unusable.
+        // Default to D50 — the ICC PCS white, and the overwhelmingly common choice in print-oriented
+        // PDFs — for the malformed case where /WhitePoint is missing or unusable.
         double xn = 0.9642, yn = 1.0, zn = 0.8249;  // D50 white point
 
         if (labArray is { Count: >= 2 } && labArray[1] is PdfDictionary labDict)
@@ -1009,9 +1016,42 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        // Convert Lab → sRGB respecting the PDF-specified WhitePoint. Falls back to the D50 values
-        // initialised at the top of this method if WhitePoint is missing.
-        return LabToSrgb.Convert(L, a, b, new ICCSharp.IO.XyzNumber(xn, yn, zn));
+        return new ICCSharp.IO.XyzNumber(xn, yn, zn);
+    }
+
+    /// <summary>
+    /// The <c>/Range</c> of a Lab colour space — the limits of its a* and b* components — defaulting
+    /// to <c>[-100 100 -100 100]</c> per ISO 32000-1 §8.6.5.4 Table 66 when absent or malformed.
+    /// </summary>
+    /// <remarks>
+    /// This drives the default <c>/Decode</c> for a Lab IMAGE (§8.9.5.2: <c>[0 100 amin amax bmin
+    /// bmax]</c>), so a wrong range silently rescales every a/b sample rather than failing outright.
+    /// </remarks>
+    internal static (double AMin, double AMax, double BMin, double BMax) LabRange(PdfArray? labArray)
+    {
+        if (labArray is { Count: >= 2 } && labArray[1] is PdfDictionary labDict
+            && labDict.TryGetValue(new PdfName("Range"), out PdfObject? rangeObj)
+            && rangeObj is PdfArray { Count: >= 4 } r)
+        {
+            double[] v = new double[4];
+            for (var i = 0; i < 4; i++)
+            {
+                switch (r[i])
+                {
+                    case PdfInteger n: v[i] = n.Value; break;
+                    case PdfReal n: v[i] = n.Value; break;
+                    default: return (-100, 100, -100, 100);   // non-numeric entry — fall back whole
+                }
+            }
+            // A reversed or degenerate interval would invert or flatten the axis; treat as malformed.
+            if (v[1] > v[0] && v[3] > v[2] && double.IsFinite(v[0]) && double.IsFinite(v[1])
+                && double.IsFinite(v[2]) && double.IsFinite(v[3]))
+            {
+                return (v[0], v[1], v[2], v[3]);
+            }
+        }
+
+        return (-100, 100, -100, 100);
     }
 
     /// <summary>
