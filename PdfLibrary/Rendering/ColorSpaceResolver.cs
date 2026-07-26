@@ -583,12 +583,31 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <para>Dereferencing the entry (and, via <see cref="IsProcessColorant"/>, <c>/Process
     /// /Components</c>) resolves objects no path previously touched here, which is why the try covers the
     /// whole body and not merely the ramp evaluation.</para>
+    ///
+    /// <para><b>Review finding (Important 2):</b> <see cref="PdfLibrary.Document.PageColorant.TintRamp"/>
+    /// is documented, and used by its consumers, as "alternate-space colour" for the SPACE's OWN
+    /// alternate — <see cref="PdfLibrary.Document.PageColorant.AlternateSpace"/> is
+    /// <c>origin.AlternateSpace</c> (the space's alternate name), threaded through unchanged by
+    /// <c>PageColorantReader</c>. This method always emits 4-component DeviceCMYK, taken from the
+    /// <c>/Colorants</c> ENTRY's own alternate via <see cref="BuildTintToCmyk"/> — which need not match
+    /// the SPACE's alternate at all. Emitting CMYK under an <c>AlternateSpace</c> label that still says
+    /// "Lab" (or "DeviceRGB", or a 3-component ICCBased profile) would silently change both the colour
+    /// space AND the component count the label promises, and could do so per-component within one
+    /// page's colorant list. Gating on the space's own alternate already being DeviceCMYK or DeviceGray
+    /// keeps this path's output in the same family the label already advertises; widening to other
+    /// space alternates is a deliberate, separately-gated future change, not a side effect of this
+    /// one.</para>
     /// </summary>
     private static (double[][] Ramp, (byte R, byte G, byte B) Solid)? OwnColorantRamp(
         SpotColorSpace space, int colorantIndex, PdfDocument? doc, int samples)
     {
         try
         {
+            // See the Important-2 remarks above: restrict to spaces whose own alternate is already in
+            // the family this method's output is shaped for (checked before colorantIndex/name, since
+            // it depends only on the space, not the component).
+            if (space.AlternateSpaceName is not ("DeviceCMYK" or "DeviceGray")) return null;
+
             if (colorantIndex < 0 || colorantIndex >= space.Names.Count) return null;
             if (space.Names[colorantIndex] is not { } name) return null;
 
@@ -650,10 +669,29 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <para>Deliberately has no try/catch of its own: every call site is inside
     /// <see cref="OwnColorantRamp"/>'s own try, so a corrupt <c>/Process /Components</c> dereference is
     /// already caught there — adding a second catch here would only duplicate that guard.</para>
+    ///
+    /// <para><b>Two deliberate divergences from <see cref="RoleFor"/> (review finding, Minor 3; each is
+    /// defensible on its own but the disagreement itself needed to be written down):</b></para>
+    /// <para>(a) No <c>/None</c> arm. <see cref="RoleFor"/> tests <c>/None</c> FIRST and unconditionally
+    /// (§8.6.6.5's discard rule must survive even a malformed process dictionary that lists <c>/None</c>).
+    /// This method never sees a <c>/None</c> component today, because <c>PageColorantReader.AddColorants</c>
+    /// filters <c>ColorantKind.All</c>/<c>None</c> out before calling <see cref="BuildTintRamp"/> at all —
+    /// but <see cref="BuildTintRamp"/> is <c>internal static</c> and nothing at that boundary states the
+    /// invariant, so a future caller that skips the filter would see <c>/None</c> fall through to the
+    /// listed-in-/Process/Components check below rather than being forced to <c>true</c> the way
+    /// <see cref="RoleFor"/> forces it to <see cref="ColourantRole.None"/>.</para>
+    /// <para>(b) No <c>/Process /ColorSpace</c> check. A name listed in <c>/Process /Components</c> is
+    /// treated as process here regardless of whether the process colour space is one this engine can
+    /// reduce to plates — <see cref="BuildComponents"/>, by contrast, suppresses the ENTIRE component list
+    /// (via <see cref="ProcessChannelCount"/> returning null) when the process space is non-CMYK/Gray
+    /// (e.g. <c>/DeviceRGB</c>), so a name that would classify Process there never reaches a Role check at
+    /// all in that case. This method only needs "should a /Colorants entry be ignored for this name", which
+    /// Table 71 answers from list membership alone — the process space's reducibility is a different
+    /// question this method has no reason to ask.</para>
     /// </summary>
     private static bool IsProcessColorant(SpotColorSpace space, string name, PdfDocument? doc)
     {
-        if (name is "Cyan" or "Magenta" or "Yellow" or "Black") return true;
+        if (IsReservedProcessName(name)) return true;
         if (space.Process is not { } process) return false;
         if (!process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)) return false;
         if (Deref(compsObj, doc) is not PdfArray comps) return false;
@@ -1118,6 +1156,28 @@ internal class ColorSpaceResolver(PdfDocument? document)
     }
 
     /// <summary>
+    /// Single source of truth for ISO 32000-2 Table 71's four reserved process-colourant names and their
+    /// canonical channel order under a four-channel process space (Cyan=0/Magenta=1/Yellow=2/Black=3).
+    ///
+    /// <para>Review finding (Minor 4): <see cref="RoleFor"/>, <see cref="ProcessChannelFor"/> and
+    /// <see cref="IsProcessColorant"/> each independently listed these four names. All three now consult
+    /// this one map (via <see cref="IsReservedProcessName"/> for the yes/no question, or directly for the
+    /// canonical index) instead of repeating the literal list — behaviour is unchanged.</para>
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, int> ReservedProcessChannels =
+        new Dictionary<string, int>(StringComparer.Ordinal)
+        {
+            ["Cyan"] = 0,
+            ["Magenta"] = 1,
+            ["Yellow"] = 2,
+            ["Black"] = 3,
+        };
+
+    /// <summary>True for the four reserved process-colourant names (Cyan/Magenta/Yellow/Black) — see
+    /// <see cref="ReservedProcessChannels"/> for the single list they're drawn from.</summary>
+    private static bool IsReservedProcessName(string name) => ReservedProcessChannels.ContainsKey(name);
+
+    /// <summary>
     /// Classifies one colourant name. ISO 32000-2 Table 71: the reserved names Cyan, Magenta, Yellow
     /// and Black "shall always be considered to be process colours … they need not have entries in the
     /// process dictionary", and any name listed in the process dictionary is a process component whose
@@ -1131,7 +1191,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
     private static ColourantRole RoleFor(string name, Dictionary<string, int>? processChannels) => name switch
     {
         "None" => ColourantRole.None,
-        "Cyan" or "Magenta" or "Yellow" or "Black" => ColourantRole.Process,
+        _ when IsReservedProcessName(name) => ColourantRole.Process,
         _ when processChannels is not null && processChannels.ContainsKey(name) => ColourantRole.Process,
         _ => ColourantRole.Spot,
     };
@@ -1145,7 +1205,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <para>Null for every non-Process role. For a Process component: its positional index in
     /// <paramref name="processChannels"/> when listed there (bounded by <paramref name="channelCount"/> —
     /// an index at or beyond it is malformed input, not a channel); otherwise, for one of the four
-    /// reserved names, the canonical index Cyan=0/Magenta=1/Yellow=2/Black=3 — but ONLY when
+    /// reserved names, the canonical index from <see cref="ReservedProcessChannels"/> — but ONLY when
     /// <paramref name="channelCount"/> is 4. Under a one-channel process space, nothing in the spec says
     /// which reserved name owns it, so guessing would be exactly the half-built mapping this plan's Scope
     /// warns is worse than not building it — the result is null.</para>
@@ -1162,14 +1222,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // space nothing in the spec says which reserved name owns the single channel, and guessing would
         // be the half-built mapping this plan's Scope warns is worse than not building it.
         if (channelCount != 4) return null;
-        return name switch
-        {
-            "Cyan" => 0,
-            "Magenta" => 1,
-            "Yellow" => 2,
-            "Black" => 3,
-            _ => null,
-        };
+        return ReservedProcessChannels.TryGetValue(name, out int canonicalIndex) ? canonicalIndex : null;
     }
 
     /// <summary>

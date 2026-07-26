@@ -78,23 +78,22 @@ public class NChannelRampTests
     [Fact]
     public void NChannelComponent_SolidComesFromTheSameColorantsSeparationAsTheRamp()
     {
-        // Self-review requirement: the solid swatch must come from the SAME source as the ramp, so the
-        // two cannot disagree. Proven differentially: the /Colorants Separation (C1 = 0.5 cyan) and the
-        // whole-space transform (always 0.9 cyan) must produce visibly DIFFERENT solids — if the solid
-        // quietly kept using the whole-space evaluator while the ramp switched to /Colorants, this would
-        // stay green with the isolated-evaluation solid.
-        PdfArray withColorants = Parse(
+        // Review finding (Important 1): asserting only "differs from the whole-space solid" cannot see
+        // the exact failure this test exists to prevent — a swatch silently going black (solid staying
+        // at its (0,0,0) default) while the ramp is correct, since (0,0,0) also differs from the
+        // whole-space's 0.9-cyan solid and would keep this test green.
+        //
+        // Instead pin the EXACT RGB the /Colorants Separation's C1 = [0.5 0 0 0] converts to at tint 1,
+        // via the SAME conversion (PdfColorToRgb.ToRgb) BuildTintToRgb itself calls — derived from the
+        // fixture's own numbers rather than a hand-typed value copied from a debugger run.
+        PdfArray space = Parse(
             "[/DeviceN [/Spot1 /Cyan] /DeviceCMYK " + WholeSpaceAlways09
             + " << /Subtype /NChannel " + SpotOwnSeparation + " >>]");
-        PdfArray withoutColorants = Parse(
-            "[/DeviceN [/Spot1 /Cyan] /DeviceCMYK " + WholeSpaceAlways09 + " << /Subtype /NChannel >>]");
 
-        (_, (byte R, byte G, byte B) solidWithColorants) =
-            ColorSpaceResolver.BuildTintRamp(withColorants, null, 0, 2);
-        (_, (byte R, byte G, byte B) solidIsolated) =
-            ColorSpaceResolver.BuildTintRamp(withoutColorants, null, 0, 2);
+        (_, (byte R, byte G, byte B) solid) = ColorSpaceResolver.BuildTintRamp(space, null, 0, 2);
 
-        Assert.NotEqual(solidIsolated, solidWithColorants);
+        (byte R, byte G, byte B) expected = PdfColorToRgb.ToRgb([0.5, 0.0, 0.0, 0.0], "DeviceCMYK");
+        Assert.Equal(expected, solid);
     }
 
     // --- Row: NChannel, /Colorants absent -> isolated evaluation ---
@@ -109,6 +108,38 @@ public class NChannelRampTests
 
         Assert.NotNull(ramp);
         Assert.Equal(0.9, ramp![255][0], 3);    // today's behaviour, unchanged
+    }
+
+    // --- Important 2: the new path must not change the ramp's colour space / length out from under
+    // the AlternateSpace label PageColorant ships alongside it. ---
+
+    private const string WholeSpaceLabTint =
+        "<< /FunctionType 2 /Domain [0 1 0 1] /C0 [50 20 -20] /C1 [50 20 -20] /N 1 "
+        + "/Range [0 100 -100 100 -100 100] >>";
+
+    [Fact]
+    public void NChannelWithALabAlternate_KeepsTheIsolatedEvaluation_EvenWithAUsableColorantsEntry()
+    {
+        // PageColorant.TintRamp is documented as "tint 0..1 -> alternate-space colour" for the SPACE's
+        // OWN alternate (Lab, 3 components here), and PageColorant.AlternateSpace still reports "Lab".
+        // OwnColorantRamp always emits 4-component DeviceCMYK from the /Colorants entry regardless of
+        // the entry's own alternate -- taking the entry's ramp here would silently change BOTH the
+        // colour space and the component count while the label still says Lab. A Lab-alternate space
+        // must therefore keep the isolated (whole-space) evaluation even when /Colorants has a usable
+        // CMYK entry for this component.
+        PdfArray space = Parse(
+            "[/DeviceN [/Spot1 /Cyan] /Lab " + WholeSpaceLabTint
+            + " << /Subtype /NChannel " + SpotOwnSeparation + " >>]");
+
+        (double[][]? ramp, _) = ColorSpaceResolver.BuildTintRamp(space, null, 0, 2);
+
+        Assert.NotNull(ramp);
+        // Isolated evaluation: the whole-space Lab tint transform's raw 3-component output (L, a, b),
+        // NOT the /Colorants entry's 4-component CMYK [c, m, y, k].
+        Assert.Equal(3, ramp![255].Length);
+        Assert.Equal(50.0, ramp[255][0], 3);
+        Assert.Equal(20.0, ramp[255][1], 3);
+        Assert.Equal(-20.0, ramp[255][2], 3);
     }
 
     // --- Row: NChannel, no /Colorants entry for THIS name -> isolated evaluation ---
@@ -177,6 +208,35 @@ public class NChannelRampTests
 
         Assert.NotNull(ramp);
         Assert.Equal(0.9, ramp![255][0], 3);
+    }
+
+    // --- Minor 2: entry is a multi-colorant DeviceN (arity != 1) -> isolated evaluation ---
+
+    // A constant-0.3-cyan DeviceN function for the /Colorants entry — deliberately a DIFFERENT constant
+    // from WholeSpaceAlways09's 0.9, so that wrongly accepting this multi-input entry (evaluating its
+    // 2-input transform on the 1-element array OwnColorantRamp supplies) is DISTINGUISHABLE from the
+    // correct isolated-evaluation fallback. Reusing WholeSpaceAlways09 itself here would make the two
+    // outcomes indistinguishable (both constant 0.9) and the test vacuous regardless of which path ran.
+    private const string EntryConstant03 =
+        "<< /FunctionType 2 /Domain [0 1] /C0 [0.3 0 0 0] /C1 [0.3 0 0 0] /N 1 >>";
+
+    [Fact]
+    public void ColorantsEntryThatIsMultiInput_FallsBackToTheIsolatedEvaluation()
+    {
+        // Table 71 requires a /Colorants value to be a full Separation: exactly one input. Without the
+        // `inputs != 1` check, BuildTintToCmyk accepts DeviceN too (inputComponents = Names.Count = 2
+        // here) and its delegate would evaluate a 2-input-declared tint transform on the 1-element array
+        // OwnColorantRamp supplies -- which may not throw, silently yielding a WRONG ramp rather than
+        // falling back. OwnAlternateFor documents this exact hazard for the sibling per-operator path.
+        PdfArray space = Parse(
+            "[/DeviceN [/Spot1 /Cyan] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel /Colorants << /Spot1 [/DeviceN [/Spot1 /Spot2] /DeviceCMYK "
+            + EntryConstant03 + "] >> >>]");
+
+        (double[][]? ramp, _) = ColorSpaceResolver.BuildTintRamp(space, null, 0, 2);
+
+        Assert.NotNull(ramp);
+        Assert.Equal(0.9, ramp![255][0], 3);    // isolated evaluation (whole-space), NOT the entry's 0.3
     }
 
     // --- Row: NChannel, entry's tint transform THROWS on evaluate -> isolated evaluation, no throw ---
