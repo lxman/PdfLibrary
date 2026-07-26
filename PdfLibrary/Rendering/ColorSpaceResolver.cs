@@ -713,6 +713,11 @@ internal class ColorSpaceResolver(PdfDocument? document)
                         return false;
                 return true;   // every component is /None
             }
+            case "Indexed":
+                // An Indexed space paints through its BASE space, so it marks nothing exactly when the
+                // base marks nothing (cf. PlatesForColorSpaceObject, which recurses here for the same
+                // reason). Without this an Indexed-over-/None image escapes suppression entirely.
+                return PaintsNothing(csArray.Count >= 2 ? csArray[1] : null, doc);
             default:
                 return false;
         }

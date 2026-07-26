@@ -38,6 +38,14 @@ internal static class ColourConformancePage
     /// <param name="extraResources">Literal PDF appended inside the page's /Resources dictionary, e.g.
     /// <c>" /XObject &lt;&lt; /Im0 5 0 R &gt;&gt;"</c>. Objects referenced here come from
     /// <paramref name="extraObjects"/>, which are numbered from 5.</param>
+    /// <remarks>
+    /// <paramref name="extraResources"/> sits between <paramref name="withFont"/> and the
+    /// <c>params</c> <paramref name="extraObjects"/>. A call like
+    /// <c>Build(cs, content, withFont: false, someObject)</c> silently binds <c>someObject</c> to
+    /// <paramref name="extraResources"/> instead of <paramref name="extraObjects"/> — it compiles
+    /// (both are <see cref="string"/>) and fails confusingly at render time rather than at the call
+    /// site. Always pass <paramref name="extraResources"/> and <paramref name="extraObjects"/> by name.
+    /// </remarks>
     public static byte[] Build(
         string colorSpaceDef, string content, bool withFont = false, string extraResources = "",
         params string[] extraObjects)
