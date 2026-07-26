@@ -841,8 +841,50 @@ internal class ColorSpaceResolver(PdfDocument? document)
         foreach (string? n in space.Names) names.Add(n!);
 
         double[] tints = rawColor is null ? [] : [.. rawColor];
-        return new ColorantOrigin(names, tints, space.AlternateSpaceName);
+        return new ColorantOrigin(names, tints, space.AlternateSpaceName)
+        {
+            Subtype = space.Subtype,
+            Components = BuildComponents(space, tints),
+        };
     }
+
+    /// <summary>
+    /// Builds the per-component carrier for an NChannel space (ISO 32000-2 §8.6.6.5: "the components
+    /// shall be evaluated individually"). Returns null for every space that is not NChannel — a
+    /// Separation, a plain DeviceN, or an unrecognised subtype — because for those the whole space
+    /// reverts together and there is nothing per-component to say.
+    ///
+    /// <para><paramref name="tints"/> may be SHORTER than the name list, including empty: a shading
+    /// resolves its origin with no per-op colour. Those components get a null tint.</para>
+    /// </summary>
+    private static IReadOnlyList<ColourantComponent>? BuildComponents(
+        SpotColorSpace space, IReadOnlyList<double> tints)
+    {
+        if (!space.IsNChannel) return null;
+
+        var components = new List<ColourantComponent>(space.Names.Count);
+        for (var i = 0; i < space.Names.Count; i++)
+        {
+            string name = space.Names[i]!;   // callers gate on AllNamesResolved before reaching here
+            double? tint = i < tints.Count ? tints[i] : null;
+            components.Add(new ColourantComponent(name, RoleFor(name), tint, OwnAlternateCmyk: null));
+        }
+        return components;
+    }
+
+    /// <summary>
+    /// Classifies one colourant name. ISO 32000-2 Table 71: the reserved names Cyan, Magenta, Yellow
+    /// and Black "shall always be considered to be process colours … they need not have entries in the
+    /// process dictionary". <c>/None</c> is its own role because §8.6.6.5 requires those components to
+    /// be discarded when painting named colourants directly — classifying one as a spot would send it
+    /// down the revert path and paint it, inverting that rule.
+    /// </summary>
+    private static ColourantRole RoleFor(string name) => name switch
+    {
+        "Cyan" or "Magenta" or "Yellow" or "Black" => ColourantRole.Process,
+        "None" => ColourantRole.None,
+        _ => ColourantRole.Spot,
+    };
 
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
 
