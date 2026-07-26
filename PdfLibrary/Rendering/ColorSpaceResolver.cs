@@ -518,6 +518,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (!SpotColorSpace.TryParse(baseArray, doc, out SpotColorSpace? space, minimumElements: 4))
             return (null, (0, 0, 0));
 
+        // ISO 32000-2 Table 71: for an NChannel space, /Attributes /Colorants /<name> is a full
+        // Separation describing "the appearance of that colorant alone" — authoritative for this
+        // component. Zeroing the other inputs of the whole-space transform (below) only approximates it,
+        // and coincides just when that transform is separable. Falls through to the approximation
+        // whenever the entry is absent or unusable, which keeps every non-NChannel space — and every
+        // NChannel space without usable /Colorants — byte-identical to before.
+        if (space.IsNChannel && OwnColorantRamp(space, colorantIndex, doc, samples) is { } ownRamp)
+            return ownRamp;
+
         PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, doc);
         if (tint is null) return (null, (0, 0, 0));
 
@@ -555,6 +564,104 @@ internal class ColorSpaceResolver(PdfDocument? document)
             return (null, (0, 0, 0));
         }
         return (ramp, solid);
+    }
+
+    /// <summary>
+    /// The ramp and representative solid for one NChannel component taken from its own
+    /// <c>/Attributes /Colorants /&lt;name&gt;</c> Separation, or null when there is no usable entry.
+    ///
+    /// <para>Null is the "use the whole-space approximation instead" signal, not an error: a missing
+    /// dictionary, a missing entry, a process colorant (Table 71: a <c>/Colorants</c> definition "shall
+    /// be ignored if the colorant is also present in the process dictionary" — the four reserved names
+    /// always qualify, with or without a <c>/Process</c> dictionary at all), an entry that is not a
+    /// Separation, an alternate this engine cannot reduce, or a tint transform that throws at evaluation
+    /// time all land here. Everything is wrapped because this runs from
+    /// <c>PdfDocument.GetPageColorants</c>, whose contract is that a malformed colour space still lists
+    /// its colorants rather than failing the call — the same reason <see cref="BuildTintRamp"/>'s own
+    /// evaluation loop is wrapped.</para>
+    ///
+    /// <para>Dereferencing the entry (and, via <see cref="IsProcessColorant"/>, <c>/Process
+    /// /Components</c>) resolves objects no path previously touched here, which is why the try covers the
+    /// whole body and not merely the ramp evaluation.</para>
+    /// </summary>
+    private static (double[][] Ramp, (byte R, byte G, byte B) Solid)? OwnColorantRamp(
+        SpotColorSpace space, int colorantIndex, PdfDocument? doc, int samples)
+    {
+        try
+        {
+            if (colorantIndex < 0 || colorantIndex >= space.Names.Count) return null;
+            if (space.Names[colorantIndex] is not { } name) return null;
+
+            // BuildTintRamp is called directly by PageColorantReader with just an index — unlike
+            // OwnAlternateFor's caller, there is no already-built ColourantComponent/Role to consult
+            // here, so the process-vs-spot question is re-derived. Without this gate, an NChannel file
+            // that (legally, if unusually) carries a /Colorants entry keyed by a reserved or listed
+            // process name would take its ramp from that entry instead of falling back — exactly the
+            // shape ProcessComponent_StillUsesTheIsolatedEvaluation pins.
+            if (IsProcessColorant(space, name, doc)) return null;
+
+            if (space.Colorants is not { } colorants) return null;
+            if (!colorants.TryGetValue(new PdfName(name), out PdfObject? entryObj)) return null;
+            if (Deref(entryObj, doc) is not PdfArray entry) return null;
+
+            // Reuse the whole-space builders on the Separation itself: a /Colorants value IS a colour
+            // space array, so the same arity and alternate-space rules apply to it unchanged.
+            Func<double[], (double C, double M, double Y, double K)>? toCmyk =
+                BuildTintToCmyk(entry, doc, out int inputs);
+            if (toCmyk is null || inputs != 1) return null;
+
+            var ramp = new double[samples][];
+            for (var s = 0; s < samples; s++)
+            {
+                double t = samples == 1 ? 0.0 : (double)s / (samples - 1);
+                (double c, double m, double y, double k) = toCmyk([t]);
+                ramp[s] = [c, m, y, k];
+            }
+
+            // The solid comes from the SAME source as the ramp, so a swatch can never disagree with the
+            // plate it represents.
+            (byte R, byte G, byte B) solid = (0, 0, 0);
+            Func<double[], (byte R, byte G, byte B)>? toRgb = BuildTintToRgb(entry, doc, out int _);
+            if (toRgb is not null) solid = toRgb([1.0]);
+
+            return (ramp, solid);
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Graphics, () =>
+                $"OwnColorantRamp: /Colorants entry for component {colorantIndex} threw; falling back to "
+                + $"the whole-space isolated evaluation: {ex}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// True when <paramref name="name"/> is a process colorant per ISO 32000-2 Table 71: the four
+    /// reserved names (Cyan/Magenta/Yellow/Black) "shall always be considered to be process colours …
+    /// they need not have entries in the process dictionary", and any other name listed in
+    /// <c>/Process /Components</c> is a process colorant too — in both cases its <c>/Colorants</c>
+    /// definition, if any, "shall be ignored".
+    ///
+    /// <para>This mirrors <see cref="RoleFor"/>'s reserved-name/listed-name rule but answers only the
+    /// yes/no question <see cref="OwnColorantRamp"/> needs — it does not compute a channel index or
+    /// consult <see cref="ProcessChannelCount"/>, so it does not duplicate <see cref="BuildComponents"/>'s
+    /// channel-count plumbing for a question that has no use for it.</para>
+    ///
+    /// <para>Deliberately has no try/catch of its own: every call site is inside
+    /// <see cref="OwnColorantRamp"/>'s own try, so a corrupt <c>/Process /Components</c> dereference is
+    /// already caught there — adding a second catch here would only duplicate that guard.</para>
+    /// </summary>
+    private static bool IsProcessColorant(SpotColorSpace space, string name, PdfDocument? doc)
+    {
+        if (name is "Cyan" or "Magenta" or "Yellow" or "Black") return true;
+        if (space.Process is not { } process) return false;
+        if (!process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)) return false;
+        if (Deref(compsObj, doc) is not PdfArray comps) return false;
+
+        foreach (PdfObject c in comps)
+            if (Deref(c, doc) is PdfName cn && cn.Value == name)
+                return true;
+        return false;
     }
 
     internal static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
