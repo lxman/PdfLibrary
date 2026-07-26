@@ -35,8 +35,20 @@ internal static class ColourConformancePage
     /// <paramref name="extraObjects"/> become objects 5, 6, … so a colour space can reference e.g. a
     /// type 4 tint transform as <c>5 0 R</c>.
     /// </summary>
+    /// <param name="extraResources">Literal PDF appended inside the page's /Resources dictionary, e.g.
+    /// <c>" /XObject &lt;&lt; /Im0 5 0 R &gt;&gt;"</c>. Objects referenced here come from
+    /// <paramref name="extraObjects"/>, which are numbered from 5.</param>
+    /// <remarks>
+    /// <paramref name="extraResources"/> sits between <paramref name="withFont"/> and the
+    /// <c>params</c> <paramref name="extraObjects"/>. A call like
+    /// <c>Build(cs, content, withFont: false, someObject)</c> silently binds <c>someObject</c> to
+    /// <paramref name="extraResources"/> instead of <paramref name="extraObjects"/> — it compiles
+    /// (both are <see cref="string"/>) and fails confusingly at render time rather than at the call
+    /// site. Always pass <paramref name="extraResources"/> and <paramref name="extraObjects"/> by name.
+    /// </remarks>
     public static byte[] Build(
-        string colorSpaceDef, string content, bool withFont = false, params string[] extraObjects)
+        string colorSpaceDef, string content, bool withFont = false, string extraResources = "",
+        params string[] extraObjects)
     {
         byte[] contentBytes = System.Text.Encoding.Latin1.GetBytes(content);
         string fontRes = withFont
@@ -56,7 +68,8 @@ internal static class ColourConformancePage
         Write("2 0 obj\r\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\r\nendobj\r\n");
         w.Flush(); off[3] = (int)ms.Position;
         Write($"3 0 obj\r\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {PageWidth} {PageHeight}] " +
-              $"/Contents 4 0 R /Resources << /ColorSpace << /Cs0 {colorSpaceDef} >>{fontRes} >> >>\r\nendobj\r\n");
+              $"/Contents 4 0 R /Resources << /ColorSpace << /Cs0 {colorSpaceDef} >>{fontRes}" +
+              $"{extraResources} >> >>\r\nendobj\r\n");
         w.Flush(); off[4] = (int)ms.Position;
         Write($"4 0 obj\r\n<< /Length {contentBytes.Length} >>\r\nstream\r\n");
         w.Flush(); ms.Write(contentBytes, 0, contentBytes.Length); Write("\r\nendstream\r\nendobj\r\n");
@@ -111,4 +124,15 @@ internal static class ColourConformancePage
             for (var x = 105; x <= 295; x++)
                 check(x, y, bmp.GetPixel(x, y));
     }
+
+    /// <summary>
+    /// Renders <paramref name="pdf"/> and asserts that every pixel well inside the red rectangle is still
+    /// red — i.e. the <c>/None</c> operator that followed marked nothing anywhere in the region, not just
+    /// at one sampled point. Insets by 5px so path antialiasing at the rect's own edges is not counted.
+    /// </summary>
+    public static void AssertRedRectUntouched(byte[] pdf, string what) =>
+        ForEachPixelInRect(pdf, (x, y, c) =>
+            Assert.True(c.Red > 235 && c.Green < 20 && c.Blue < 20,
+                $"{what} marked the page at ({x},{y}): RGB({c.Red},{c.Green},{c.Blue}) is not the " +
+                "underlying red. §8.6.6.4 requires /None to have no effect on the current page"));
 }

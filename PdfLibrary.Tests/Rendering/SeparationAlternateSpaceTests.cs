@@ -31,7 +31,7 @@ public class SeparationAlternateSpaceTests
     {
         SKColor actual = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build(colorSpaceDef, ColourConformancePage.FillRect(viaSeparation),
-                withFont: false, extraObjects));
+                withFont: false, extraObjects: extraObjects));
         SKColor expected = ColourConformancePage.RenderCentre(
             ColourConformancePage.Build("/DeviceRGB", ColourConformancePage.FillRect(direct)));
 

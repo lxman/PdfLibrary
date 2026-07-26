@@ -393,6 +393,22 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
             return null;
 
+        // §8.6.6.4 row 4-10: for /All and /None the alternateSpace and tintTransform SHALL be ignored.
+        // Handled before either is read, exactly as ResolveSeparation does for fills — otherwise an /All
+        // IMAGE paints a different colour from an identical /All FILL.
+        if (PaintsNothing(baseArray, document)) return null;   // /None: build no evaluator at all
+        if (head.Value == "Separation" && Deref(baseArray[1], document) is PdfName { Value: "All" })
+        {
+            // Additive device: the subtractive tint is complemented before being applied to R, G and B,
+            // so tint t is the neutral 1 − t.
+            inputComponents = 1;
+            return t =>
+            {
+                byte g = Clamp255(1.0 - (t.Length > 0 ? t[0] : 0.0));
+                return (g, g, g);
+            };
+        }
+
         if (head.Value == "Separation")
             inputComponents = 1;
         else if (Deref(baseArray[1], document) is PdfArray names)
@@ -439,6 +455,21 @@ internal class ColorSpaceResolver(PdfDocument? document)
         inputComponents = 0;
         if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
             return null;
+
+        // §8.6.6.4 row 4-10, as in BuildTintToRgb. Placed BEFORE the alternate-space gate below, because
+        // the clause says the alternate space is ignored for these names — an /All space is convertible
+        // here whatever its alternate happens to be.
+        if (PaintsNothing(baseArray, document)) return null;   // /None: build no evaluator at all
+        if (head.Value == "Separation" && Deref(baseArray[1], document) is PdfName { Value: "All" })
+        {
+            // Subtractive device: the tint applies DIRECTLY to every colourant, uncomplemented.
+            inputComponents = 1;
+            return t =>
+            {
+                double v = Math.Clamp(t.Length > 0 ? t[0] : 0.0, 0.0, 1.0);
+                return (v, v, v, v);
+            };
+        }
 
         if (head.Value == "Separation")
             inputComponents = 1;
@@ -654,7 +685,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (csName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK" or "Pattern") return false;
         if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
             return false;
+        return PaintsNothing(csObj, doc);
+    }
 
+    /// <summary>
+    /// <see cref="PaintsNothing(string?,PdfDictionary?,PdfDocument?)"/> for a colour-space DEFINITION
+    /// object rather than a resource name. Images and shadings carry their colour space as a direct
+    /// object, so they cannot use the name-based form; both share this one body so the rule for the
+    /// reserved names lives in exactly one place.
+    /// </summary>
+    public static bool PaintsNothing(PdfObject? csObj, PdfDocument? doc)
+    {
+        if (csObj is null) return false;
         csObj = Deref(csObj, doc);
         if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
             return false;
@@ -671,6 +713,11 @@ internal class ColorSpaceResolver(PdfDocument? document)
                         return false;
                 return true;   // every component is /None
             }
+            case "Indexed":
+                // An Indexed space paints through its BASE space, so it marks nothing exactly when the
+                // base marks nothing (cf. PlatesForColorSpaceObject, which recurses here for the same
+                // reason). Without this an Indexed-over-/None image escapes suppression entirely.
+                return PaintsNothing(csArray.Count >= 2 ? csArray[1] : null, doc);
             default:
                 return false;
         }

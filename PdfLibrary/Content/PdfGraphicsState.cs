@@ -128,7 +128,7 @@ public class PdfGraphicsState
     /// (including glyphs) shall be suppressed rather than painted in some colour. Set for
     /// <c>[/Separation /None …]</c> and for an all-<c>/None</c> DeviceN — ISO 32000-2 §8.6.6.4 requires
     /// "no visible output […] no effect on the current page", which is a suppression of the operator, not
-    /// a colour. See <see cref="Rendering.ColorSpaceResolver.PaintsNothing"/>.
+    /// a colour. See <see cref="Rendering.ColorSpaceResolver.PaintsNothing(string?, Core.Primitives.PdfDictionary?, Structure.PdfDocument?)"/>.
     /// </summary>
     public bool FillPaintsNothing { get; set; }
 
