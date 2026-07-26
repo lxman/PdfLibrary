@@ -342,7 +342,7 @@ public class ColourantComponentTests
     [Fact]
     public void ProcessWithNoColorSpace_IsTreatedAsNoConstraint()
     {
-        // The `or ""` arm in ProcessSpaceName: an absent /ColorSpace is "no constraint", not a
+        // The `case "":` arm in ProcessChannelCount: an absent /ColorSpace is "no constraint", not a
         // rejection — a malformed process dictionary should still let its /Components list classify
         // names, rather than being suppressed the way a non-CMYK /ColorSpace is.
         ColorantOrigin? o = Origin(
@@ -359,7 +359,7 @@ public class ColourantComponentTests
     [Fact]
     public void CorruptProcessColorSpaceReference_DegradesToReservedNamesOnly_RatherThanThrowing()
     {
-        // /Process /ColorSpace as an indirect reference to a corrupt object. ProcessSpaceName's
+        // /Process /ColorSpace as an indirect reference to a corrupt object. ProcessChannelCount's
         // Deref(csObj, doc) sits OUTSIDE EnsureAttributes's try/catch — that guard only covers the
         // /Attributes dictionary and its immediate Subtype/Colorants/Process values, not what /Process
         // itself points to. Without its own guard, this throws PdfParseException out of
@@ -516,12 +516,12 @@ public class ColourantComponentTests
     [Fact]
     public void ReservedNameUnderDeviceGray_StaysNull_EvenWhenACorruptComponentsElementThrows()
     {
-        // Re-review finding: ProcessSpaceName reads /ColorSpace /DeviceGray successfully at :904
-        // (processIsCmyk correctly lowered to false at :906), but then a corrupt /Components element
-        // throws while the loop is dereferencing it. The catch at :926-932 must NOT reset processIsCmyk
-        // back to true — doing so would let channelCount become 4 and hand Magenta the canonical index
-        // 1 for what is actually a ONE-channel space, exactly the guess ProcessChannelFor's DeviceGray
-        // rule forbids, and an index the range guard would otherwise have rejected outright.
+        // Re-review finding: ProcessChannelCount reads /ColorSpace /DeviceGray successfully at :906
+        // (channelCount correctly lowered to 1 at :907), but then a corrupt /Components element
+        // throws while the loop is dereferencing it. The catch at :927-942 must NOT reset channelCount
+        // back to 4 — doing so would hand Magenta the canonical index 1 for what is actually a
+        // ONE-channel space, exactly the guess ProcessChannelFor's one-channel rule forbids, and an
+        // index the range guard would otherwise have rejected outright.
         //
         // Object 5 is an in-use xref entry whose body is a lone "]" — a genuinely corrupt target, same
         // technique as CorruptIndirectProcessComponentsElement_DegradesToReservedNamesOnly_RatherThanThrowing.
@@ -895,6 +895,33 @@ public class ColourantComponentTests
         }
     }
 
+    /// <summary>THE GRAY-HALF PIN. IccBasedGrayProcessSpace_IsAcceptedAsOneChannel above uses Ink1,
+    /// which is LISTED in /Components — so it is answered by <c>processChannels</c> before
+    /// <c>channelCount</c> is ever consulted (0 &lt; 1 and 0 &lt; 4 are both true, so the channel count
+    /// cannot affect that test's answer). This test uses Magenta — reserved, but UNLISTED — so
+    /// <c>ProcessChannelFor</c> must fall through to the <c>channelCount != 4</c> guard for real: under a
+    /// genuinely one-channel ICCBased process space (<c>/N 1</c>), nothing in the spec says which
+    /// reserved name owns the single channel, so Magenta must get null, not the canonical CMYK index
+    /// 1. Mutating <c>ProcessChannelCount</c>'s <c>/N</c> switch from
+    /// <c>nInt.Value is 4 or 1 ? nInt.Value : null</c> to <c>... ? 4 : null</c> (i.e. Gray silently
+    /// reporting 4 channels) leaves every other ICCBased test green and only THIS one catches it.</summary>
+    [Fact]
+    public void ReservedNameUnderIccBasedGrayProcessSpace_GetsNullProcessChannel()
+    {
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Ink1] >> >>]",
+            "<< /N 1 /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);   // Magenta: reserved name
+            Assert.Null(o.Components[0].ProcessChannel);                  // one channel: no canonical index
+        }
+    }
+
     [Fact]
     public void IccBasedThreeChannelProcessSpace_SuppressesTheComponentList()
     {
@@ -927,13 +954,39 @@ public class ColourantComponentTests
     }
 
     [Fact]
-    public void IccBasedWhoseStreamIsMissing_SuppressesTheComponentList()
+    public void IccBasedWithNoDocumentToResolveAgainst_SuppressesTheComponentList()
     {
-        // Preserves today's behaviour exactly for an ICCBased we cannot read.
+        // NOT "s is a missing object" (Origin always passes doc: null, so Deref(iccArray[1], doc) at
+        // ColorSpaceResolver.cs:560-561 returns the indirect reference UNCHANGED rather than resolving
+        // it against a document — object 99 is never actually looked up). This still lands on the same
+        // `is not PdfStream icc` clause (a PdfIndirectReference is not a PdfStream), so it isn't vacuous,
+        // but it exercises "no document to resolve against", not "s doesn't resolve to a stream". See
+        // IccBasedStreamReferenceResolvesToNonStream_SuppressesTheComponentList below for that half.
         ColorantOrigin? o = Origin(
             NChannel("/Process << /ColorSpace [/ICCBased 99 0 R] /Components [/Magenta] >>"), 0.25, 1.0);
 
         Assert.Null(o!.Components);
+    }
+
+    [Fact]
+    public void IccBasedStreamReferenceResolvesToNonStream_SuppressesTheComponentList()
+    {
+        // The genuinely-missing half of "s unresolvable or not a stream": a real document resolves
+        // object 5, and object 5 is an ordinary DICTIONARY (no `stream` keyword) that carries a real,
+        // readable /N 4 — so if the `is not PdfStream icc` gate were ever weakened to also accept a
+        // plain dictionary, this fixture would flip to non-null. That is deliberately different from
+        // IccBasedWithNoDocumentToResolveAgainst_SuppressesTheComponentList above, whose object has no
+        // /N at all and so would stay null under that same weakening — it wouldn't catch the mutation.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /N 4 >>");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.Null(o!.Components);
+        }
     }
 
     [Fact]
@@ -967,6 +1020,32 @@ public class ColourantComponentTests
             Assert.NotNull(o!.Components);
             Assert.Equal(ColourantRole.Process, o.Components![0].Role);
             Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+        }
+    }
+
+    /// <summary>Distinct from CorruptIccBasedStreamReference_… above: THERE, object 5 (the ICC stream
+    /// itself) is the corrupt target, caught at ColorSpaceResolver.cs:999's
+    /// <c>Deref(iccArray[1], doc) is not PdfStream</c>. HERE object 5 is a well-formed stream and its
+    /// <c>/N</c> is itself an indirect reference to a corrupt object, so the corrupt target is one level
+    /// deeper — at the <c>Deref(nObj, doc)</c> call inside the <c>/N</c> check
+    /// (ColorSpaceResolver.cs:1003). Both throws are caught by the same try/catch in
+    /// <see cref="ColorSpaceResolver"/>'s <c>BuildComponents</c> (mutation-verified in the Task 1 fix
+    /// report), but IndirectN_IsResolved below only pins the happy path for this specific deref.</summary>
+    [Fact]
+    public void CorruptIndirectNReference_DegradesToReservedNamesOnly_RatherThanThrowing()
+    {
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /N 6 0 R /Length 0 >> stream\nendstream",
+            "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);   // Magenta: reserved name
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);       // no processNames survives the throw
         }
     }
 
