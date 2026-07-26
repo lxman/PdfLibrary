@@ -925,8 +925,17 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
             catch (Exception ex)
             {
+                // processIsCmyk is deliberately NOT reset here. It starts true (the "no constraint"
+                // default) and is only ever LOWERED, at the successful read above, once /ColorSpace is
+                // confirmed DeviceGray. If that read already succeeded before this throw (e.g. a corrupt
+                // /Components element under an otherwise-valid /ColorSpace /DeviceGray), processIsCmyk
+                // is correctly false already; resetting it to true here would let channelCount become 4
+                // and hand a reserved name a canonical index for what is actually a one-channel space —
+                // exactly the guess ProcessChannelFor's DeviceGray rule forbids, and an index the range
+                // guard would otherwise reject. The field's initial value already supplies the correct
+                // default on every path where the throw precedes the DeviceGray read, so there is
+                // nothing to restore here.
                 processChannels = null;
-                processIsCmyk = true;   // degrade to "no constraint", matching the no-/Process-dictionary case
                 PdfLogger.Log(LogCategory.Graphics, () =>
                     $"BuildComponents: /Process dereferencing threw, falling back to reserved-name classification: {ex}");
             }

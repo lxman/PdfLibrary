@@ -513,6 +513,65 @@ public class ColourantComponentTests
         Assert.Equal(0, o!.Components![0].ProcessChannel);   // first occurrence of PlateX, not index 2
     }
 
+    [Fact]
+    public void ReservedNameUnderDeviceGray_StaysNull_EvenWhenACorruptComponentsElementThrows()
+    {
+        // Re-review finding: ProcessSpaceName reads /ColorSpace /DeviceGray successfully at :904
+        // (processIsCmyk correctly lowered to false at :906), but then a corrupt /Components element
+        // throws while the loop is dereferencing it. The catch at :926-932 must NOT reset processIsCmyk
+        // back to true — doing so would let channelCount become 4 and hand Magenta the canonical index
+        // 1 for what is actually a ONE-channel space, exactly the guess ProcessChannelFor's DeviceGray
+        // rule forbids, and an index the range guard would otherwise have rejected outright.
+        //
+        // Object 5 is an in-use xref entry whose body is a lone "]" — a genuinely corrupt target, same
+        // technique as CorruptIndirectProcessComponentsElement_DegradesToReservedNamesOnly_RatherThanThrowing.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceGray /Components [5 0 R] >> >>]",
+            "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o);
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);   // Magenta: reserved name still applies
+            Assert.Null(o.Components[0].ProcessChannel);                 // NOT 1 — the space has one channel
+        }
+    }
+
+    [Fact]
+    public void NoneListedInProcessComponents_HasNullProcessChannel()
+    {
+        // RoleFor tests /None first and unconditionally, so a malformed process dictionary listing
+        // /None still classifies it None rather than Process — but ProcessChannelFor must independently
+        // respect that: without its own role != Process guard, /None's LISTED index (0 here) would leak
+        // through as a channel for a component that is never painted at all.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/None /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/None /Magenta /Yellow /Black] >> >>]", 0.5, 0.5);
+
+        Assert.Equal(ColourantRole.None, o!.Components![0].Role);
+        Assert.Null(o.Components[0].ProcessChannel);
+    }
+
+    [Fact]
+    public void ListedIndexWinsOverCanonicalIndex_ForAReservedNameOutOfCanonicalPosition()
+    {
+        // Every other fixture that lists a reserved name in /Components happens to put it at its
+        // canonical position, so a regression that consulted the canonical switch BEFORE processChannels
+        // would stay green everywhere else. Here Magenta is listed at position 0 (canonical 1) and Cyan
+        // at position 1 (canonical 0) — the LISTED index must win.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Magenta /Cyan] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/Magenta /Cyan] >> >>]", 0.25, 0.5);
+
+        Assert.Equal(0, o!.Components![0].ProcessChannel);   // Magenta: listed position 0, not canonical 1
+        Assert.Equal(1, o.Components[1].ProcessChannel);     // Cyan: listed position 1, not canonical 0
+    }
+
     // --- /Process /Components elements that are indirect references (M-2) ---
 
     [Fact]
