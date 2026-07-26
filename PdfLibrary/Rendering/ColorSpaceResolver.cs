@@ -835,41 +835,20 @@ internal class ColorSpaceResolver(PdfDocument? document)
     public static ColorantOrigin? OriginForColorSpaceObject(
         PdfObject? csObj, IReadOnlyList<double>? rawColor, PdfDocument? doc)
     {
-        if (csObj is null) return null;
-        csObj = Deref(csObj, doc);
-        if (csObj is not PdfArray { Count: >= 4 } csArray || csArray[0] is not PdfName csType) return null;
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return null;
 
-        List<string> names;
-        switch (csType.Value)
-        {
-            case "Separation":
-                if (Deref(csArray[1], doc) is not PdfName sepName) return null;
-                names = [sepName.Value];
-                break;
-            case "DeviceN":
-                if (Deref(csArray[1], doc) is not PdfArray namesArr) return null;
-                names = new List<string>(namesArr.Count);
-                foreach (PdfObject nameObj in namesArr)
-                {
-                    if (Deref(nameObj, doc) is not PdfName n) return null;
-                    names.Add(n.Value);
-                }
-                break;
-            default:
-                return null;
-        }
-        if (names.Count == 0) return null;
+        // Pre-Pass-1 this member required Count >= 4, unlike PaintsNothing/PlatesForColorSpaceObject.
+        // A non-null TintTransformObject is exactly that condition, so gate on it to keep a short
+        // [/Separation /Spot1] array yielding no origin, as before.
+        if (space!.TintTransformObject is null) return null;
 
-        PdfObject altObj = Deref(csArray[2], doc);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty
-        };
+        if (!space.AllNamesResolved || space.Names.Count == 0) return null;
+
+        var names = new List<string>(space.Names.Count);
+        foreach (string? n in space.Names) names.Add(n!);
 
         double[] tints = rawColor is null ? [] : [.. rawColor];
-        return new ColorantOrigin(names, tints, altSpace);
+        return new ColorantOrigin(names, tints, space.AlternateSpaceName);
     }
 
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
