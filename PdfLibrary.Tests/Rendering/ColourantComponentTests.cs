@@ -852,4 +852,192 @@ public class ColourantComponentTests
         Assert.Equal(ColourantRole.Process, o.Components![0].Role);
         Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
     }
+
+    // --- ICCBased process spaces (Pass 2a') ---
+
+    /// <summary>An [/ICCBased s] process space whose stream declares /N 4 is CMYK-shaped: components
+    /// classify normally and reserved names get their canonical channels. ISO 32000-1 EXAMPLE 5.</summary>
+    [Fact]
+    public void IccBasedCmykProcessSpace_IsAcceptedAsFourChannel()
+    {
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /N 4 /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+            // Magenta is listed at /Components[0]; the listed index wins over the canonical index
+            // (see ListedIndexWinsOverCanonicalIndex_ForAReservedNameOutOfCanonicalPosition above), so
+            // its channel is 0, not the canonical Magenta=1.
+            Assert.Equal(0, o.Components[0].ProcessChannel);
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+        }
+    }
+
+    [Fact]
+    public void IccBasedGrayProcessSpace_IsAcceptedAsOneChannel()
+    {
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Ink1 /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Ink1] >> >>]",
+            "<< /N 1 /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+            Assert.Equal(0, o.Components[0].ProcessChannel);
+        }
+    }
+
+    [Fact]
+    public void IccBasedThreeChannelProcessSpace_SuppressesTheComponentList()
+    {
+        // /N 3 is not reducible to plates here — the same answer /DeviceRGB gets.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /N 3 /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.Null(o!.Components);
+        }
+    }
+
+    [Fact]
+    public void IccBasedWithoutN_SuppressesTheComponentList()
+    {
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.Null(o!.Components);
+        }
+    }
+
+    [Fact]
+    public void IccBasedWhoseStreamIsMissing_SuppressesTheComponentList()
+    {
+        // Preserves today's behaviour exactly for an ICCBased we cannot read.
+        ColorantOrigin? o = Origin(
+            NChannel("/Process << /ColorSpace [/ICCBased 99 0 R] /Components [/Magenta] >>"), 0.25, 1.0);
+
+        Assert.Null(o!.Components);
+    }
+
+    [Fact]
+    public void IccBasedArrayWithNoStreamElement_SuppressesTheComponentList()
+    {
+        ColorantOrigin? o = Origin(
+            NChannel("/Process << /ColorSpace [/ICCBased] /Components [/Magenta] >>"), 0.25, 1.0);
+
+        Assert.Null(o!.Components);
+    }
+
+    /// <summary>THE AXIS-B TEST. Reading /N dereferences the ICC stream — an object no path previously
+    /// touched here. A corrupt target must degrade, not throw out of OriginForColorSpaceObject, which
+    /// PdfRenderer calls on every colour-setting operator with no try/catch above it.
+    ///
+    /// <para>A reference to a merely NON-EXISTENT object returns null without throwing, so the fixture
+    /// uses a genuinely corrupt target: ColourConformancePage.Build writes an in-use xref entry for every
+    /// extraObject, so an object body of a lone ']' reaches the on-demand parser and throws.</para></summary>
+    [Fact]
+    public void CorruptIccBasedStreamReference_DegradesToReservedNamesOnly_RatherThanThrowing()
+    {
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            // Degrades to reserved-name classification: the list survives, Magenta is still Process.
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+        }
+    }
+
+    [Fact]
+    public void IndirectN_IsResolved()
+    {
+        // /N may itself be an indirect reference; ColorSpaceResolver.cs:714's established idiom derefs it.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /N 6 0 R /Length 0 >> stream\nendstream",
+            "4");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+        }
+    }
+
+    // --- Table rows 2, 5 (CalGray) and 9 (/N wrong type) that the brief's eight tests above don't
+    // individually exercise — completeness check against Task 1's degenerate-input table.
+
+    [Fact]
+    public void ProcessColorSpaceThatIsNeitherNameNorArray_IsTreatedAsNoConstraint()
+    {
+        // Table row 2: /ColorSpace present but resolving to neither a PdfName nor a PdfArray with a
+        // PdfName head. ProcessChannelCount's family-resolution switch falls through to "" (the same
+        // "unreadable shape" arm an absent key hits), which is the no-constraint default — not present
+        // in IccBasedWithoutN_SuppressesTheComponentList/etc., which all exercise ICCBased-shaped inputs.
+        // No /Components here, so this also confirms the canonical-index arm still fires under the
+        // no-constraint default rather than being accidentally gated off by the new switch.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace 42 >> >>]", 0.25, 0.5);
+
+        Assert.NotNull(o!.Components);
+        Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+        Assert.Equal(1, o.Components[0].ProcessChannel);   // canonical Magenta index under channelCount 4
+    }
+
+    [Fact]
+    public void CalGrayProcessSpace_SuppressesTheComponentList()
+    {
+        // Table row 5's CalGray sub-case specifically (NonCmykProcessSpace_SuppressesComponentsEntirely
+        // only covers /DeviceRGB). /CalGray is deliberately NOT treated as Gray: it is CIE-based rather
+        // than a device space, matching InkDecider.ToCmyk's existing DeviceGray/CalGray distinction.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /CalGray >> >>]", 0.25, 0.5);
+
+        Assert.NotNull(o!.Subtype);
+        Assert.Null(o.Components);
+    }
+
+    [Fact]
+    public void IccBasedWithNonIntegerN_SuppressesTheComponentList()
+    {
+        // Table row 9's other half: IccBasedWithoutN_SuppressesTheComponentList covers the KEY being
+        // absent; this covers /N being PRESENT but not a PdfInteger even after Deref, which is a
+        // different branch of the same `is not PdfInteger nInt` check.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Magenta] >> >>]",
+            "<< /N /NotANumber /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.Null(o!.Components);
+        }
+    }
 }

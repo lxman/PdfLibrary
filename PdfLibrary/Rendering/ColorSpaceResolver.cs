@@ -863,19 +863,17 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (!space.IsNChannel) return null;
 
         // ISO 32000-2 Table 72: /Process names the process colour space and its component names. That
-        // space may be any device or CIE-based space, but reducing a non-CMYK one to plates is a colour
-        // conversion this method has no converter for. Rather than classify such components as Process
-        // and leave the consumer unable to say which plate they mark — which maps them onto NONE, worse
-        // than the status quo — suppress the whole component list and let the space fall back to its
-        // document tint transform. Recorded as a gap; see the Pass 2a plan.
+        // space may be any device or CIE-based space, but reducing a non-CMYK/non-Gray one to plates is
+        // a colour conversion this method has no converter for. Rather than classify such components as
+        // Process and leave the consumer unable to say which plate they mark — which maps them onto
+        // NONE, worse than the status quo — suppress the whole component list and let the space fall
+        // back to its document tint transform. Recorded as a gap; see the Pass 2a plan.
         //
-        // The rejection below is BY NAME, not by shape: any /Process /ColorSpace that is not literally
-        // /DeviceCMYK or /DeviceGray is suppressed, INCLUDING an ICCBased space whose stream is itself
-        // 4-component CMYK (ISO 32000-1 EXAMPLE 5 — the canonical calibrated-CMYK NChannel, and what
-        // Illustrator/InDesign emit for /ColorSpace [/ICCBased n 0 R]). Accepting that shape would mean
-        // reading the ICC stream's /N, which is a NEW dereference this branch is not adding at the end of
-        // Pass 2a — the same defect class (a new member access resolving an object no prior code path
-        // touched) this program has fought seven times over. Deliberately deferred; a named follow-up gap.
+        // /DeviceCMYK, /DeviceGray, an absent /ColorSpace ("no constraint"), and an ICCBased space whose
+        // stream declares /N 4 or /N 1 (ISO 32000-1 EXAMPLE 5 — the canonical calibrated-CMYK NChannel,
+        // and what Illustrator/InDesign emit for /ColorSpace [/ICCBased n 0 R]) are accepted; anything
+        // else — /DeviceRGB, /Lab, /CalGray, an ICCBased stream of some other channel count, etc. — stays
+        // suppressed. See ProcessChannelCount for exactly which shapes are which.
         //
         // /ColorSpace and /Components can themselves be indirect references (GWG081 uses both), so
         // reading them dereferences objects that EnsureAttributes's own try/catch does not cover — it
@@ -884,26 +882,29 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // of OriginForColorSpaceObject, which PdfRenderer calls on every colour-setting operator with no
         // try/catch above it. Guarded the same way and for the same reason as EnsureAttributes: fall
         // back to reserved-name-only classification (processChannels stays null) rather than fail a
-        // render that used to succeed. This is deliberately distinct from the non-CMYK case above/below,
-        // which is a successful read that legitimately suppresses the whole list — a throw must NOT take
-        // that branch, or a corrupt process dictionary would silently drop an otherwise-good NChannel
-        // space.
+        // render that used to succeed. This is deliberately distinct from the non-CMYK/non-Gray case
+        // above/below, which is a successful read that legitimately suppresses the whole list — a throw
+        // must NOT take that branch, or a corrupt process dictionary would silently drop an otherwise-
+        // good NChannel space.
         //
         // processChannels maps a /Components name to its POSITIONAL index (Table 71: "correspond, in
         // order, to the components of the process colour space" — position IS the channel identity).
-        // processIsCmyk records whether the effective process space is DeviceCMYK-shaped (explicitly
-        // DeviceCMYK, no /Process dictionary at all, or an unreadable/absent /Process /ColorSpace — the
-        // "no constraint" cases): reserved names get their canonical channel only then, never under
-        // DeviceGray, where one channel cannot be attributed to a specific reserved name.
+        // channelCount is the effective process space's channel count (4 for DeviceCMYK/no-constraint/
+        // ICCBased-N4, 1 for DeviceGray/ICCBased-N1): reserved names get their canonical channel only
+        // when it is 4, never when it is 1, where one channel cannot be attributed to a specific
+        // reserved name.
         Dictionary<string, int>? processChannels = null;
-        var processIsCmyk = true;
+        // Starts at the no-constraint default and is only ever LOWERED, by a successful DeviceGray or
+        // /N 1 read. That is why the catch below does not restore it: if the lowering read already
+        // succeeded, 1 is correct; if the throw preceded it, 4 is already correct. Restoring 4 here would
+        // re-enable the canonical CMYK guess for a space known to have one channel.
+        var channelCount = 4;
         if (space.Process is { } process)
         {
             try
             {
-                string processSpace = ProcessSpaceName(process, doc);
-                if (processSpace is not ("DeviceCMYK" or "DeviceGray" or "")) return null;
-                processIsCmyk = processSpace is "DeviceCMYK" or "";
+                if (ProcessChannelCount(process, doc) is not { } count) return null;
+                channelCount = count;
 
                 if (process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)
                     && Deref(compsObj, doc) is PdfArray comps)
@@ -925,15 +926,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
             catch (Exception ex)
             {
-                // processIsCmyk is deliberately NOT reset here. It starts true (the "no constraint"
-                // default) and is only ever LOWERED, at the successful read above, once /ColorSpace is
-                // confirmed DeviceGray. If that read already succeeded before this throw (e.g. a corrupt
-                // /Components element under an otherwise-valid /ColorSpace /DeviceGray), processIsCmyk
-                // is correctly false already; resetting it to true here would let channelCount become 4
-                // and hand a reserved name a canonical index for what is actually a one-channel space —
-                // exactly the guess ProcessChannelFor's DeviceGray rule forbids, and an index the range
-                // guard would otherwise reject. The field's initial value already supplies the correct
-                // default on every path where the throw precedes the DeviceGray read, so there is
+                // channelCount is deliberately NOT reset here. It starts at 4 (the "no constraint"
+                // default) and is only ever LOWERED, at the successful read above, once the process
+                // space is confirmed one-channel (DeviceGray or ICCBased /N 1). If that read already
+                // succeeded before this throw (e.g. a corrupt /Components element under an otherwise-
+                // valid one-channel /ColorSpace), channelCount is correctly 1 already; resetting it to 4
+                // here would let a reserved name get a canonical index for what is actually a one-channel
+                // space — exactly the guess ProcessChannelFor's one-channel rule forbids, and an index
+                // the range guard would otherwise reject. The field's initial value already supplies the
+                // correct default on every path where the throw precedes the lowering read, so there is
                 // nothing to restore here.
                 processChannels = null;
                 PdfLogger.Log(LogCategory.Graphics, () =>
@@ -941,37 +942,72 @@ internal class ColorSpaceResolver(PdfDocument? document)
             }
         }
 
-        // The process space's channel count: 4 for DeviceCMYK/no-constraint, 1 for DeviceGray. An index
-        // at or beyond this is malformed input (e.g. a fifth /Components entry under DeviceCMYK) and
-        // yields a null ProcessChannel rather than an out-of-range channel.
-        int channelCount = processIsCmyk ? 4 : 1;
-
         var components = new List<ColourantComponent>(space.Names.Count);
         for (var i = 0; i < space.Names.Count; i++)
         {
             string name = space.Names[i]!;   // callers gate on AllNamesResolved before reaching here
             double? tint = i < tints.Count ? tints[i] : null;
             ColourantRole role = RoleFor(name, processChannels);
-            int? processChannel = ProcessChannelFor(name, role, processChannels, processIsCmyk, channelCount);
+            int? processChannel = ProcessChannelFor(name, role, processChannels, channelCount);
             components.Add(new ColourantComponent(
                 name, role, tint, OwnAlternateFor(space, name, role, tint, doc), processChannel));
         }
         return components;
     }
 
-    /// <summary>The family name of an NChannel process dictionary's /ColorSpace, or the empty string
-    /// when absent or unreadable — absent is treated as "no constraint" rather than as a rejection,
-    /// because a malformed process dictionary should degrade to reserved-name classification rather
-    /// than suppress an otherwise usable space.</summary>
-    private static string ProcessSpaceName(PdfDictionary process, PdfDocument? doc)
+    /// <summary>The number of channels in an NChannel space's process colour space, or null when this
+    /// engine cannot say — in which case <see cref="BuildComponents"/> suppresses the whole component
+    /// list and the space falls back to its document tint transform.
+    ///
+    /// <para>An absent or unreadable <c>/ColorSpace</c> returns the no-constraint default rather than
+    /// null: a malformed process dictionary should degrade to reserved-name classification, not suppress
+    /// an otherwise usable space.</para>
+    ///
+    /// <para><c>[/ICCBased s]</c> is accepted by reading the stream's <c>/N</c> — 4 is CMYK-shaped, 1 is
+    /// Gray-shaped, anything else is not reducible to plates here. ISO 32000-1 EXAMPLE 5 is exactly this
+    /// shape and is what Illustrator and InDesign emit. Only the channel COUNT is read: the profile is
+    /// not validated and is not used for conversion, which is a colour-management question rather than a
+    /// plate-identity one. Read the stream's DICTIONARY only — never Data/GetDecodedData; a real profile
+    /// is hundreds of kilobytes of Flate and this runs on every colour-setting operator.</para>
+    ///
+    /// <para>Dereferencing the ICC stream resolves an object no path previously touched here. The call
+    /// site in <see cref="BuildComponents"/> wraps this in try/catch for exactly that reason;
+    /// <c>CorruptIccBasedStreamReference_DegradesToReservedNamesOnly_RatherThanThrowing</c> pins it.</para>
+    /// </summary>
+    private static int? ProcessChannelCount(PdfDictionary process, PdfDocument? doc)
     {
-        if (!process.TryGetValue(new PdfName("ColorSpace"), out PdfObject? csObj)) return string.Empty;
-        return Deref(csObj, doc) switch
+        const int noConstraint = 4;
+
+        if (!process.TryGetValue(new PdfName("ColorSpace"), out PdfObject? csObj)) return noConstraint;
+
+        PdfObject resolved = Deref(csObj, doc);
+        string family = resolved switch
         {
             PdfName n => n.Value,
             PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
             _ => string.Empty,
         };
+
+        switch (family)
+        {
+            case "": return noConstraint;          // unreadable shape — degrade, do not reject
+            case "DeviceCMYK": return 4;
+            case "DeviceGray": return 1;
+
+            case "ICCBased":
+                if (resolved is not PdfArray { Count: >= 2 } iccArray) return null;
+                if (Deref(iccArray[1], doc) is not PdfStream icc) return null;
+                // Matches the established idiom at the ICCBased arm of InitialColorFor: /N may itself be
+                // an indirect reference, and only a PdfInteger counts.
+                if (!icc.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj)
+                    || Deref(nObj, doc) is not PdfInteger nInt) return null;
+                return nInt.Value is 4 or 1 ? nInt.Value : null;
+
+            // /DeviceRGB, /Lab, /CalGray, /Indexed, /Pattern, anything else. /CalGray is deliberately NOT
+            // treated as Gray: it is CIE-based rather than a device space, and InkDecider.ToCmyk already
+            // distinguishes it from /DeviceGray for that reason. Recorded as a gap.
+            default: return null;
+        }
     }
 
     /// <summary>
@@ -1003,20 +1039,22 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <paramref name="processChannels"/> when listed there (bounded by <paramref name="channelCount"/> —
     /// an index at or beyond it is malformed input, not a channel); otherwise, for one of the four
     /// reserved names, the canonical index Cyan=0/Magenta=1/Yellow=2/Black=3 — but ONLY when
-    /// <paramref name="processIsCmyk"/> is true. Under a DeviceGray process space (one channel), nothing
-    /// in the spec says which reserved name owns it, so guessing would be exactly the half-built mapping
-    /// this plan's Scope warns is worse than not building it — the result is null.</para>
+    /// <paramref name="channelCount"/> is 4. Under a one-channel process space, nothing in the spec says
+    /// which reserved name owns it, so guessing would be exactly the half-built mapping this plan's Scope
+    /// warns is worse than not building it — the result is null.</para>
     /// </summary>
     private static int? ProcessChannelFor(
-        string name, ColourantRole role, Dictionary<string, int>? processChannels,
-        bool processIsCmyk, int channelCount)
+        string name, ColourantRole role, Dictionary<string, int>? processChannels, int channelCount)
     {
         if (role != ColourantRole.Process) return null;
 
         if (processChannels is not null && processChannels.TryGetValue(name, out int listedIndex))
             return listedIndex < channelCount ? listedIndex : null;
 
-        if (!processIsCmyk) return null;
+        // Canonical reserved channels exist only for a four-channel process space. Under a one-channel
+        // space nothing in the spec says which reserved name owns the single channel, and guessing would
+        // be the half-built mapping this plan's Scope warns is worse than not building it.
+        if (channelCount != 4) return null;
         return name switch
         {
             "Cyan" => 0,
