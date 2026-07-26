@@ -29,6 +29,24 @@ public class ColourantComponentTests
     private static ColorantOrigin? Origin(string literal, params double[] tints) =>
         ColorSpaceResolver.OriginForColorSpaceObject(Parse(literal), tints, null);
 
+    /// <summary>
+    /// Like <see cref="Parse"/> but keeps the document alive and returns it too, so
+    /// <see cref="ColorSpaceResolver.Deref"/> actually resolves indirect references instead of
+    /// short-circuiting on a null document. Same idiom as
+    /// <c>SpotColorSpaceTests.ParseWithDoc</c> / <c>ColorSpaceResolverCharacterizationTests.ParseWithResources</c>
+    /// — the caller disposes the document via <c>using (doc)</c>.
+    /// </summary>
+    private static (PdfArray Array, PdfDocument Doc) ParseWithDoc(
+        string pdfArrayLiteral, params string[] extraObjects)
+    {
+        byte[] pdf = ColourConformancePage.Build(pdfArrayLiteral, "1 0 0 rg 0 0 1 1 re f",
+            withFont: false, extraResources: "", extraObjects: extraObjects);
+        PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
+        PdfPage page = doc.GetPage(0)!;
+        PdfDictionary colorSpaces = page.GetResources()!.GetColorSpaces()!;
+        return ((PdfArray)colorSpaces[new PdfName("Cs0")]!, doc);
+    }
+
     /// <summary>An NChannel [/Magenta /Spot1] with the given extra attribute entries.</summary>
     private static string NChannel(string extraAttributes) =>
         "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
@@ -163,6 +181,49 @@ public class ColourantComponentTests
 
         Assert.Equal(2, o!.Components!.Count);
         Assert.Equal(0.5, o.Components[1].Tint);
+    }
+
+    [Fact]
+    public void PartiallyShorterTintList_PairsInRangeAndLeavesTheRestNull()
+    {
+        // FewerTintsThanNames_LeavesTheRemainderNull only covers Tints.Count == 0, and
+        // Tints_ArePairedPositionally only covers the exact-length case. Neither shape has SOME indices
+        // in range and SOME out of range in the same call, which is the only shape where an off-by-one
+        // in the pairing loop would actually index out of bounds rather than merely returning the wrong
+        // (but still in-range) value.
+        ColorantOrigin? o = Origin(NChannel(""), 0.25);
+
+        Assert.Equal(2, o!.Components!.Count);
+        Assert.Equal(0.25, o.Components[0].Tint);
+        Assert.Null(o.Components[1].Tint);
+    }
+
+    // --- A corrupt /Attributes must not throw out of the render path ---
+
+    [Fact]
+    public void CorruptAttributesReference_DegradesToDeviceNDefaults_RatherThanThrowing()
+    {
+        // ColorSpaceResolver.cs:846 (Subtype = space.Subtype) is the first engine read of
+        // SpotColorSpace.Subtype anywhere, which triggers EnsureAttributes. Before Pass 2a nothing ever
+        // dereferenced element 4 (/Attributes), so a corrupt /Attributes object could not previously
+        // reach this path. OriginForColorSpaceObject is called from PdfRenderer on every colour-setting
+        // operator with no try/catch above it, so this must degrade rather than throw.
+        //
+        // Object 5 here is an in-use xref entry (so GetObject does not merely return null the way a
+        // reference to a non-existent object number would) whose body is a lone "]" — a genuinely
+        // unparseable token in object-value position, the same shape PdfParserTests pins as
+        // Parser_ThrowsOnInvalidTokenInObjectContext. PdfDocument.GetObject's on-demand load path wraps
+        // whatever PdfParser.ReadObject() throws into PdfParseException.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2 + " 5 0 R]", "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o);
+            Assert.Equal("DeviceN", o!.Subtype);
+            Assert.Null(o.Components);
+        }
     }
 
     // --- The positional constructor is untouched ---

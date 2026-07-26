@@ -153,8 +153,9 @@ public class SpotColorSpaceTests
     [Fact]
     public void Attributes_AsIndirectReference_Resolves()
     {
-        // IMPORTANT: the /Attributes dictionary itself (element 4) is also dereferenced by TryParse;
-        // object 5 here is the attributes dictionary, referenced indirectly rather than inline.
+        // IMPORTANT: the /Attributes dictionary itself (element 4) is dereferenced lazily by
+        // EnsureAttributes (via the Subtype/Colorants/Process properties below), not by TryParse; object
+        // 5 here is the attributes dictionary, referenced indirectly rather than inline.
         (PdfArray arr, PdfDocument doc) = ParseWithDoc(
             "[/DeviceN [/GWGGreen /Cyan] /DeviceCMYK " + Tint2 + " 5 0 R]",
             "<< /Subtype /NChannel "
