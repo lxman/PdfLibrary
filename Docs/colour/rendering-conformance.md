@@ -157,7 +157,7 @@ the RGB-path harness's logic is upstream of every render target. The remaining �
 - ~~**G-2 — `All` excludes spot planes.**~~ **CLOSED 2026-07-25.** Row 4-6 is ✅; `/All` now paints its
   tint on every plane in `SpotColorantRegistry.PlaneNames`.
 - ~~**G-3 — `All` on an additive device is not complemented.**~~ **CLOSED 2026-07-25.** Row 4-7 is ✅ on
-  the additive path; the subtractive half is now tracked as G-5.
+  the additive path; the subtractive half was tracked separately as G-5, closed below the same day.
 - **G-4 — NChannel is not implemented on the render path.** Rows 5-3 and 5-11. The per-component
   evaluation rule is a `shall`, and we do the opposite (all-or-nothing). Blocks 5-5 and 5-12 too. This
   remains the substantive violation in the slice, and is untouched by this pass.
