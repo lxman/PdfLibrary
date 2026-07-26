@@ -398,6 +398,11 @@ public class PageColorantsTests
         using PdfDocument doc = PdfDocument.Load(ms);
         IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
 
+        // Anchored with a positive assertion, not just DoesNotContain: AddColorants' defensive catch
+        // (PageColorantReader.cs:34-38) swallows any throw into a silently EMPTY colorant list, and an
+        // unanchored DoesNotContain passes just as well on a fixture that blew up entirely as on one that
+        // correctly skipped /None. Contains("Spot1") rules out the collapsed-list false pass.
         Assert.DoesNotContain(colorants, c => c.Name == "None");
+        Assert.Contains(colorants, c => c.Name == "Spot1");
     }
 }

@@ -138,6 +138,13 @@ internal static class PageColorantReader
             string name = origin.Names[i];
             ColorantKind kind = KindFor(origin, i, name);
             if (kind is ColorantKind.All or ColorantKind.None) continue; // recognised, not a plate
+            // `Kind` is now order-dependent for the first time: before this change it was a pure function
+            // of `Name`, so first-wins dedup could never affect it. Now the same name can resolve to
+            // Process under one space's role (e.g. an NChannel /Process /Components entry) and Spot under
+            // a plain DeviceN elsewhere on the page — whichever the resource walk (WalkResources, above)
+            // reaches first wins and the later definition is dropped by this dedup. Walk order is
+            // deterministic and page-level-first by design, so this is accepted, not a bug — pathological
+            // input, not one this reader needs to reconcile.
             if (!seen.Add(name)) continue;
 
             (double[][]? ramp, (byte R, byte G, byte B) solid) =
@@ -172,6 +179,11 @@ internal static class PageColorantReader
         return components[index].Role switch
         {
             ColourantRole.Process => ColorantKind.Process,
+            // Documentary, not load-bearing: RoleFor returns None only for the literal name "None"
+            // (ColorSpaceResolver.cs), and Classify("None") independently returns ColorantKind.None, so
+            // this arm and the `_ => Classify(name)` fallback below produce the same result today —
+            // deleting it changes nothing observable. Kept for symmetry with the Process arm above, so
+            // the mapping reads as complete rather than silently relying on Classify to catch None too.
             ColourantRole.None => ColorantKind.None,
             _ => PageColorant.Classify(name),
         };
