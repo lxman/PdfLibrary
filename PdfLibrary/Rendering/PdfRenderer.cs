@@ -972,6 +972,16 @@ internal class PdfRenderer : PdfContentProcessor
         // null = Pattern (whose initial colour is a pattern that paints nothing, not a component
         // vector) or an unidentifiable space. Leaving the current colour untouched is the safer of the
         // two wrong answers: it preserves today's behaviour rather than inventing components.
+        //
+        // For an unidentifiable space specifically (an unresolvable indirect /ColorSpace entry, an
+        // ICCBased whose stream will not dereference, an ICCBased with no /N) this return is early
+        // enough to leave residue: CurrentState.FillColorSpace/StrokeColorSpace was already updated by
+        // the cs/CS operator before this hook runs, but because we return before OnColorChanged(),
+        // ResolvedFillColorSpace/ResolvedStrokeColorSpace, FillPaintsNothing/StrokePaintsNothing and
+        // FillPatternName/StrokePatternName are NOT re-derived and keep whatever they were for the
+        // PREVIOUS colour space. Concretely: `/Pattern cs /P1 scn … /BrokenCs cs … f` still paints
+        // pattern P1, because FillPatternName was never cleared. This is a known, deliberate gap, not a
+        // bug to fix here — see the colour conformance matrix's row 4-4 note.
         if (initial is null) return;
 
         if (stroking) CurrentState.StrokeColor = initial;

@@ -727,9 +727,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
             case "ICCBased":
             {
                 if (Deref(arr.Count >= 2 ? arr[1] : null, doc) is not PdfStream icc) return null;
-                var n = 3;
-                if (icc.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj)
-                    && Deref(nObj, doc) is PdfInteger nInt) n = nInt.Value;
+
+                // /N is required by ISO 32000-2 Table 66 — a stream without it is a malformed file, not
+                // one we should guess a channel count for. (ResolveICCBased separately defaults absent
+                // /N to 1 when actually resolving a colour value, which is a different concern: it needs
+                // *some* count to keep the colour tuple well-formed even for malformed input. Guessing
+                // here would only disagree with that default and pick an initial colour with a component
+                // count the resolve step wouldn't consistently use anyway.) Returning null means "leave
+                // the current colour alone" — the same conservative fallback already used for Pattern and
+                // for unidentifiable spaces.
+                if (!icc.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj)
+                    || Deref(nObj, doc) is not PdfInteger nInt) return null;
+                int n = nInt.Value;
                 if (n < 1) return null;
 
                 var comps = new List<double>(n);
