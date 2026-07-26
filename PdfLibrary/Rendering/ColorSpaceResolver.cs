@@ -607,42 +607,19 @@ internal class ColorSpaceResolver(PdfDocument? document)
     {
         if (csObj is null) return null;
         csObj = Deref(csObj, doc);
-        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
-            return null;
 
-        // Gather colorant names from Separation (single name) or DeviceN (names array).
-        List<string> colorants;
-        switch (csType.Value)
-        {
-            case "Separation":
-                if (Deref(csArray[1], doc) is not PdfName sepName)
-                    return null;
-                colorants = [sepName.Value];
-                break;
-            case "DeviceN":
-                if (Deref(csArray[1], doc) is not PdfArray namesArr)
-                    return null;
-                colorants = new List<string>(namesArr.Count);
-                foreach (PdfObject nameObj in namesArr)
-                {
-                    if (Deref(nameObj, doc) is not PdfName n)
-                        return null;
-                    colorants.Add(n.Value);
-                }
-                break;
-            case "Indexed":
-                // An Indexed image's samples are palette indices into its base space; the plates it marks
-                // are the base space's plates (e.g. an Indexed[/DeviceN[Black Cyan]] duotone marks K + C).
-                return PlatesForColorSpaceObject(csArray[1], doc);
-            default:
-                return null;
-        }
+        // An Indexed image's samples are palette indices into its base space; the plates it marks are
+        // the base space's plates (e.g. Indexed[/DeviceN[Black Cyan]] duotone marks K + C).
+        if (csObj is PdfArray { Count: >= 2 } indexedArr && indexedArr[0] is PdfName { Value: "Indexed" })
+            return PlatesForColorSpaceObject(indexedArr[1], doc);
 
-        if (colorants.Count == 0)
-            return null;
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return null;
+
+        // Any unresolvable colorant name means we cannot know the plate set — fall back to OPM.
+        if (!space!.AllNamesResolved || space.Names.Count == 0) return null;
 
         bool c = false, m = false, y = false, k = false;
-        foreach (string name in colorants)
+        foreach (string? name in space.Names)
         {
             switch (name)
             {
@@ -651,7 +628,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 case "Yellow": y = true; break;
                 case "Black": k = true; break;
                 case "All": c = m = y = k = true; break;
-                case "None": break;   // marks no colorant (ISO 32000 §8.6.6.4) — skip; used as DeviceN padding
+                case "None": break;   // marks no colorant (ISO 32000 §8.6.6.4) — DeviceN padding
                 default:
                     // A real spot colorant isn't a CMYK plate → fall back to OPM behaviour.
                     return null;
@@ -807,29 +784,22 @@ internal class ColorSpaceResolver(PdfDocument? document)
     {
         if (csObj is null) return false;
         csObj = Deref(csObj, doc);
-        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
-            return false;
 
-        switch (csType.Value)
-        {
-            case "Separation":
-                return Deref(csArray[1], doc) is PdfName { Value: "None" };
-            case "DeviceN":
-            {
-                if (Deref(csArray[1], doc) is not PdfArray { Count: > 0 } names) return false;
-                foreach (PdfObject nameObj in names)
-                    if (Deref(nameObj, doc) is not PdfName { Value: "None" })
-                        return false;
-                return true;   // every component is /None
-            }
-            case "Indexed":
-                // An Indexed space paints through its BASE space, so it marks nothing exactly when the
-                // base marks nothing (cf. PlatesForColorSpaceObject, which recurses here for the same
-                // reason). Without this an Indexed-over-/None image escapes suppression entirely.
-                return PaintsNothing(csArray.Count >= 2 ? csArray[1] : null, doc);
-            default:
+        // Indexed paints through its BASE space, so it marks nothing exactly when the base marks
+        // nothing. SpotColorSpace does not model Indexed, so this recursion stays here.
+        if (csObj is PdfArray { Count: >= 2 } indexedArr && indexedArr[0] is PdfName { Value: "Indexed" })
+            return PaintsNothing(indexedArr[1], doc);
+
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return false;
+
+        // Separation: the single colorant is /None.
+        // DeviceN: EVERY component is /None. A name that did not resolve is not "None", so it makes
+        // the answer false — matching the pre-Pass-1 behaviour exactly.
+        if (space!.Names.Count == 0) return false;
+        for (var i = 0; i < space.Names.Count; i++)
+            if (space.Names[i] != "None")
                 return false;
-        }
+        return true;
     }
 
     /// <summary>
