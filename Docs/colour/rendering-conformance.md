@@ -19,11 +19,15 @@ Each row is one normative statement. Statements are classified:
 | **N** | Normative and machine-verifiable — a `shall` we can test. Counts toward the score. |
 | **L** | Latitude — the spec explicitly permits implementation choice (`may`, `should`, "PDF processors are free to", "implementation-dependent"). Cannot be complied with or violated; documented so the freedom is deliberate rather than accidental. |
 | **D** | Device-dependent — the answer depends on what device we model ourselves as. Resolved by our device policy (below), not by the clause alone. |
+| **F** | File validity — the clause constrains what a conformant *file* may contain, not what the renderer paints. The standard specifies no renderer behaviour for violating input, so a renderer test would pin our choice of degradation rather than the standard's requirement. Enforcing these belongs to the validator (`PdfLibrary/Conformance/`), whose own matrix is `Docs/pdfua/matterhorn-coverage.md`. Excluded from the score, like L and D. |
 
 Status: ✅ conformant with a test · ⚠️ conformant but untested · ❌ violation · ␀ not yet audited.
 
 **Score is over N rows only.** L and D rows are deliberately excluded — counting them would inflate the
 denominator with things that cannot be failed.
+F rows are excluded for the same reason, added 2026-07-25. Moving a row to F **reassigns** it — it does
+not retire it. Every F row below names who enforces it, including "validator gap" where nothing
+currently does.
 
 ## Device policy (prerequisite for §8.6.6.4/5)
 
@@ -68,7 +72,7 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 
 | # | Normative statement | Class | Status | Implementation / note |
 |---|---|---|---|---|
-| 4-1 | "shall be a four-element array whose first element shall be the colour space family name Separation" | N | ␀ | Structural validation on the render path not audited. |
+| 4-1 | "shall be a four-element array whose first element shall be the colour space family name Separation" | F | — | File-shape constraint, not renderer behaviour. `ColorSpaceResolver` gates on `csArray.Count >= 4` and falls through for a malformed array, which is robustness rather than conformance. **Validator gap** — no rule in `PdfLibrary/Conformance/Rules/` checks Separation array shape. |
 | 4-2 | Tint is a single component in [0.0, 1.0]; 0.0 = minimum colourant, 1.0 = maximum | N | ␀ | |
 | 4-3 | "Tints shall always be treated as subtractive colours, even if the device produces output for the designated component by an additive method" | N | ✅ | `SeparationAlternateSpaceTests.SeparationTints_AreSubtractive_HigherTintIsDarker` — tint 0 is lighter than tint 1 by luma. Not implied by the reversion rows: those compare against a direct fill in the alternate space, which inverts identically if the ramp does. |
 | 4-4 | "The initial value for both the stroking and nonstroking colour in the graphics state shall be 1.0" | N | ␀ | No initial-tint handling found in `PdfGraphicsState`; needs a targeted check. |
@@ -81,7 +85,7 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only, audited D-1. Availability = registered in `SpotColorantRegistry`. Conformant as §10.8.3 separation simulation. |
 | 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ✅ | Audited 2026-07-25 (G-1), and now asserted: `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour` renders a spot Separation on the RGB path and requires the pixel to equal the same colour filled directly in the alternate space. |
 | 4-13 | If unavailable, "shall arrange for subsequent painting operations to be performed in an alternate colour space" | N | ✅ | `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour`. The oracle is the alternate space painted directly, not a hard-coded triple — "reverts to the alternate space" *means* the two are indistinguishable, so the test survives refinements to CMYK→RGB instead of having to be rewritten by them. |
-| 4-14 | alternateSpace "may not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | N | ␀ | Malformed-input rejection not audited. |
+| 4-14 | alternateSpace "may not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | F | — | Constrains the file's alternateSpace, not what the renderer paints when it is violated. **Validator gap** — no rule checks this. |
 | 4-15 | tintTransform "shall be called with the tint value and shall return the corresponding colour component values" | N | ✅ | `SpotSeparation_{OnAdditiveDevice,AtFullTint}_*` assert both ends of the ramp, so a renderer that ignored the tint and evaluated at a fixed point fails. |
 | 4-16 | NOTE 7 — alternate space "does not necessarily reflect the interactions […] when overprinting is enabled"; separation simulation "can be used as an alternative method" | L | — | The spec concedes the approximation and names §10.8.3 as the better path. Our spot planes **are** that path. No compliance debt. |
 
@@ -89,18 +93,18 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 
 | # | Normative statement | Class | Status | Implementation / note |
 |---|---|---|---|---|
-| 5-1 | alternateSpace "shall not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | N | ␀ | |
+| 5-1 | alternateSpace "shall not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | F | — | Same constraint as 4-14, for DeviceN. **Validator gap** — no rule checks this. |
 | 5-2 | "if any of the component names […] do not correspond to a colorant available on the device, [the processor] shall perform subsequent painting operations in the alternate colour space" | N | ✅ | `DeviceN_RevertsToAlternate_PassingEveryTintToTheTransform`. The all-or-nothing fallback is correct for plain DeviceN, which is what this row covers — but see 5-3. |
 | 5-3 | **"For NChannel colour spaces, the components shall be evaluated individually; that is, only the ones not present on the output device shall use the alternate colour space of that component."** | N | ❌ | **VIOLATION.** `NChannel` appears nowhere in the rendering path of either repo (only in `Conformance/`). With the all-or-nothing fallback, one unregistered colourant in an NChannel space flattens *every* colourant through the alternate, including those we can paint. See gap G-4. |
 | 5-4 | tintTransform "shall be called with n tint values and returns m colour component values" | N | ✅ | Same test: a type 4 transform maps (t₁, t₂) → (0, t₁, t₂, 0), so a dropped or transposed component paints a visibly different colour. Verified by mutation — transposing the oracle fails. |
-| 5-5 | **None** "may be present only for DeviceN colour spaces that do not have the NChannel subtype" | N | ␀ | Not enforced; requires Subtype awareness (blocked on G-4). |
+| 5-5 | **None** "may be present only for DeviceN colour spaces that do not have the NChannel subtype" | F | — | Constrains where `/None` may appear in a file. Previously recorded as blocked on G-4 because it needs DeviceN `/Subtype` awareness — as a validator row, that read belongs to the validator, so the dependency does not apply here. **Validator gap** — `PdfxNChannelColorantsRule` reads `/Subtype` but checks `/Colorants` presence, not `/None` placement. |
 | 5-6 | None "indicates that the corresponding colour component shall never be painted on the page" | N | ⚠️ | `ShadingSpotSplit`, `TryToSpotInk` skip None components. |
 | 5-7 | "When […] painting the named device colourants directly, colour components corresponding to None colourants shall be discarded" | N | ⚠️ | |
 | 5-8 | "when the DeviceN colour space reverts to its alternate colour space, those components shall be passed to the tint transformation function" | N | ␀ | **Subtle and easy to get backwards**: None is discarded when painting directly but *passed through* on reversion. Not audited. |
 | 5-9 | All-None space "shall always discard its output […] it shall never revert to the alternate colour space" | N | ✅ | Implemented 2026-07-25 via `ColorSpaceResolver.PaintsNothing`, which treats an all-`/None` DeviceN exactly like `/Separation /None` — so it is never flattened through its tint transform on the way to painting nothing. `AllNoneDeviceN_DiscardsOutput_WithoutRevertingToItsAlternate` paints over red with a transform ramping to magenta. |
 | 5-10 | "Reversion shall occur only if at least one colour component (other than None) is specified and is not available on the device" | N | ⚠️ | Cited verbatim in `PdfImageToCmyk.TryToSpotInk` (SP-6c) — the routing splits by colorant name and never consults the alternate. |
 | 5-11 | Subtype "shall be DeviceN or NChannel. Default value: DeviceN" | N | ❌ | Not read on the render path at all (G-4). |
-| 5-12 | "If the value of the Subtype entry […] is NChannel, such information shall be present" (attributes) | N | ␀ | |
+| 5-12 | "If the value of the Subtype entry […] is NChannel, such information shall be present" (attributes) | F | — | Requires the attributes dictionary to be present for NChannel. Partially enforced by `PdfxNChannelColorantsRule`, which requires `/Colorants` — but that rule is **profile-gated** (`AppliesToProfiles = AllPdfA | PdfX4`), so nothing enforces this at baseline ISO 32000-2. |
 | 5-13 | Mixing hints: "applications shall ignore these process component entries if they can obtain the information from an ICC profile" | N | ␀ | Mixing hints not consumed on the render path. |
 | 5-14 | "PDF processors need not use the alternateSpace and tintTransform parameters, and may instead use custom blending algorithms" | L | — | Explicit permission for our additive spot fold. **This is the clause that makes the spot-combine model a design decision rather than a compliance question.** |
 | 5-15 | NOTE 5 — processors "are free to use such information instead of the alternateSpace parameter" | L | — | Same permission, restated for the attributes dictionary. |
@@ -117,11 +121,12 @@ writing the clauses as tests actually changed.
 
 | | Slice 1 | Now |
 |---|--:|--:|
-| Normative + machine-verifiable (**N**) | 26 | 26 |
+| Normative + machine-verifiable (**N**) | 26 | 21 |
 | — ✅ conformant with a test | 0 | **11** |
 | — ⚠️ conformant, untested | 11 | 4 |
 | — ❌ violation | 2 | 2 |
-| — ␀ not yet audited | 13 | 9 |
+| — ␀ not yet audited | 13 | 4 |
+| File validity (**F**, new) | — | 5 |
 | Latitude (**L**) | 5 | 5 |
 | Device-policy (**D**) | 2 | 2 — 4-12 now tested, 4-11 (soft-proof) still untested |
 
