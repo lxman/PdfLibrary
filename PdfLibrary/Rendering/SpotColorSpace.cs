@@ -9,11 +9,12 @@ namespace PdfLibrary.Rendering;
 /// <c>[/DeviceN [names] alternateSpace tintTransform attributes?]</c> colour space.
 ///
 /// <para>Before Pass 1 this shape was re-derived positionally by five separate ColorSpaceResolver
-/// members, each with slightly different strictness. This parser is deliberately the PERMISSIVE union
-/// of them — it accepts arrays too short to carry an alternate or tint transform, and records a DeviceN
-/// name element that is not a <see cref="PdfName"/> as <c>null</c> rather than rejecting the whole
-/// space. Callers keep their own strictness via <see cref="AllNamesResolved"/> and null checks, so
-/// unifying the parse changes no behaviour.</para>
+/// members, each with slightly different strictness. This parser is the PERMISSIVE union of them — it
+/// accepts arrays too short to carry an alternate or tint transform, and records a Separation or
+/// DeviceN name element that is not a <see cref="PdfName"/> as <c>null</c> rather than rejecting the
+/// whole space. Callers keep their own strictness via <see cref="AllNamesResolved"/> and null/count
+/// checks, so unifying the parse changes no behaviour — this is the property the whole task exists to
+/// protect; see <see cref="TryParse"/> for the specific cases that make it true.</para>
 ///
 /// <para><c>Indexed</c> is deliberately NOT modelled here. The members that handle it recurse into the
 /// base space themselves, which keeps that recursion where its callers can see it.</para>
@@ -46,7 +47,14 @@ internal sealed record SpotColorSpace(
 {
     /// <summary>True when every entry in <see cref="Names"/> resolved to a name. The members that
     /// refuse to answer for a malformed name list gate on this; the ones that need only the count
-    /// (the tint-transform builders) ignore it.</summary>
+    /// (the tint-transform builders) ignore it.
+    ///
+    /// <para>Vacuously TRUE for an empty <see cref="Names"/> list — a DeviceN with a zero-length names
+    /// array parses successfully with <c>Names.Count == 0</c> and <c>AllNamesResolved == true</c>, even
+    /// though every current ColorSpaceResolver member rejects that array outright. A caller migrating
+    /// "every component is /None"-style logic onto this record must check <c>Names.Count == 0</c>
+    /// separately; this property alone does not distinguish "no colorants" from "all colorants
+    /// resolved".</para></summary>
     internal bool AllNamesResolved
     {
         get
@@ -63,8 +71,12 @@ internal sealed record SpotColorSpace(
     internal bool IsNChannel => Subtype == "NChannel";
 
     /// <summary>Parses a colour-space object into a <see cref="SpotColorSpace"/>. Returns false for
-    /// every other family (including Indexed and ICCBased), for a null object, for an array shorter
-    /// than two elements, and for a Separation whose colorant name does not resolve.</summary>
+    /// every other family (including Indexed and ICCBased), for a null object, and for an array
+    /// shorter than two elements. Does NOT reject a Separation whose colorant name fails to resolve to
+    /// a <see cref="PdfName"/>, nor a DeviceN whose names array is empty — both parse successfully,
+    /// with the caller responsible for its own strictness via <see cref="AllNamesResolved"/> and
+    /// <c>Names.Count</c> (which is vacuously "all resolved" for an empty DeviceN names array; see
+    /// <see cref="AllNamesResolved"/>).</summary>
     internal static bool TryParse(PdfObject? csObj, PdfDocument? doc, out SpotColorSpace? space)
     {
         space = null;
@@ -78,10 +90,12 @@ internal sealed record SpotColorSpace(
         switch (family.Value)
         {
             case "Separation":
-                // Every caller requires a Separation's colorant name, so a missing one is a parse
-                // failure rather than a null entry.
-                if (ColorSpaceResolver.Deref(arr[1], doc) is not PdfName sepName) return false;
-                names = [sepName.Value];
+                // BuildTintToRgb/BuildTintToCmyk set inputComponents = 1 for a Separation without ever
+                // requiring element 1 to be a name (they deref it only to test for /All), so a
+                // non-name colorant must still parse — rejecting it here would be unrecoverable at
+                // those call sites once they migrate onto TryParse. Mirror the DeviceN entry: null when
+                // unresolved, count always 1.
+                names = [ColorSpaceResolver.Deref(arr[1], doc) is PdfName sepName ? sepName.Value : null];
                 break;
 
             case "DeviceN":
