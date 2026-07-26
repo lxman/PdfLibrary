@@ -258,7 +258,7 @@ public class TempPass2aPrimeMeasurement(ITestOutputHelper output)
             {
                 using FileStream fs = File.OpenRead(path);
                 using PdfDocument doc = PdfDocument.Load(fs);
-                IReadOnlyList<PageColorant> colorants = doc.GetPageColorants();
+                IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
                 output.WriteLine($"{f}: LOADED pages={doc.PageCount} colorants="
                                  + string.Join(", ", colorants.Select(c => $"{c.Name}:{c.Kind}"
                                                                            + (c.TintRamp is null ? "(null ramp)" : ""))));
@@ -907,7 +907,7 @@ Append to `PageColorantsTests.cs`:
 
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants();
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
 
         Assert.Equal(ColorantKind.Process, colorants.Single(c => c.Name == "PrCyan").Kind);
         Assert.Equal(ColorantKind.Spot, colorants.Single(c => c.Name == "Spot1").Kind);
@@ -924,7 +924,7 @@ Append to `PageColorantsTests.cs`:
 
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants();
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
 
         Assert.Equal(ColorantKind.Spot, colorants.Single(c => c.Name == "PrCyan").Kind);
     }
@@ -940,7 +940,7 @@ Append to `PageColorantsTests.cs`:
 
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants();
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
 
         Assert.DoesNotContain(colorants, c => c.Name == "All");
         Assert.Contains(colorants, c => c.Name == "Spot1");
@@ -955,7 +955,7 @@ Append to `PageColorantsTests.cs`:
 
         using var ms = new MemoryStream(pdf);
         using PdfDocument doc = PdfDocument.Load(ms);
-        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants();
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
 
         Assert.DoesNotContain(colorants, c => c.Name == "None");
     }
