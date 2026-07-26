@@ -654,7 +654,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (csName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK" or "Pattern") return false;
         if (colorSpaces is null || !colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? csObj))
             return false;
+        return PaintsNothing(csObj, doc);
+    }
 
+    /// <summary>
+    /// <see cref="PaintsNothing(string?,PdfDictionary?,PdfDocument?)"/> for a colour-space DEFINITION
+    /// object rather than a resource name. Images and shadings carry their colour space as a direct
+    /// object, so they cannot use the name-based form; both share this one body so the rule for the
+    /// reserved names lives in exactly one place.
+    /// </summary>
+    public static bool PaintsNothing(PdfObject? csObj, PdfDocument? doc)
+    {
+        if (csObj is null) return false;
         csObj = Deref(csObj, doc);
         if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
             return false;

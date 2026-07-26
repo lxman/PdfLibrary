@@ -709,6 +709,25 @@ internal class PdfRenderer : PdfContentProcessor
             return;
         }
 
+        // §8.6.6.4 row 4-8: a shading whose colour space is a /None colourant marks nothing, so `sh` is
+        // suppressed outright rather than painted in some resolved colour.
+        PdfObject? shResolved = shadingObj is PdfIndirectReference shRef && _document is not null
+            ? _document.ResolveReference(shRef)
+            : shadingObj;
+        PdfDictionary? shDict = shResolved switch
+        {
+            PdfDictionary d => d,
+            PdfStream st => st.Dictionary,
+            _ => null,
+        };
+        if (shDict is not null
+            && shDict.TryGetValue(new PdfName("ColorSpace"), out PdfObject? shCs)
+            && ColorSpaceResolver.PaintsNothing(shCs, _document))
+        {
+            PdfLogger.Log(LogCategory.Graphics, $"SHADING: '{name}' uses a /None colourant — paints nothing (§8.6.6.4)");
+            return;
+        }
+
         ShadingDescriptor? descriptor = ShadingBuilder.Build(shadingObj, _document);
         if (descriptor is null)
         {
@@ -1564,6 +1583,22 @@ internal class PdfRenderer : PdfContentProcessor
 
     // ==================== XObject Rendering ====================
 
+    /// <summary>
+    /// True when this image marks nothing, so its painting operator shall be suppressed
+    /// (ISO 32000-2 §8.6.6.4 row 4-8).
+    ///
+    /// <para>
+    /// A stencil mask (<c>/ImageMask true</c>) has NO colour space of its own — it paints the current
+    /// non-stroking colour through a 1-bit stencil — so it is governed by <c>FillPaintsNothing</c>.
+    /// Every other image is governed by its own <c>/ColorSpace</c>. Checking the wrong one leaves a
+    /// whole class of /None marks on the page.
+    /// </para>
+    /// </summary>
+    private bool ImagePaintsNothing(PdfImage image) =>
+        image.IsImageMask
+            ? CurrentState.FillPaintsNothing
+            : ColorSpaceResolver.PaintsNothing(image.ColorSpaceArray, _document);
+
     protected override void OnInvokeXObject(string name)
     {
         PdfLogger.Log(LogCategory.Images, $"OnInvokeXObject: {name}");
@@ -1606,6 +1641,11 @@ internal class PdfRenderer : PdfContentProcessor
                 long createMs = imageStopwatch.ElapsedMilliseconds;
 
                 PdfLogger.Log(LogCategory.Images, $"  Image: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
+                if (ImagePaintsNothing(image))
+                {
+                    PdfLogger.Log(LogCategory.Images, "  /None colourant — image paints nothing (§8.6.6.4)");
+                    return;
+                }
                 _target.DrawImage(image, CurrentState);
                 imageStopwatch.Stop();
 
@@ -1688,6 +1728,11 @@ internal class PdfRenderer : PdfContentProcessor
             PdfLogger.Log(LogCategory.Images, $"  Created PdfImage: {image.Width}x{image.Height}, ColorSpace={image.ColorSpace}");
 
             // Draw the image using the same mechanism as XObject images
+            if (ImagePaintsNothing(image))
+            {
+                PdfLogger.Log(LogCategory.Images, "  /None colourant — inline image paints nothing (§8.6.6.4)");
+                return;
+            }
             _target.DrawImage(image, CurrentState);
             PdfLogger.Log(LogCategory.Images, "  Inline image drawn successfully");
         }
