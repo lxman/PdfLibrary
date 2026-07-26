@@ -73,9 +73,9 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | # | Normative statement | Class | Status | Implementation / note |
 |---|---|---|---|---|
 | 4-1 | "shall be a four-element array whose first element shall be the colour space family name Separation" | F | — | File-shape constraint, not renderer behaviour. `ColorSpaceResolver` gates on `csArray.Count >= 4` and falls through for a malformed array, which is robustness rather than conformance. **Validator gap** — no rule in `PdfLibrary/Conformance/Rules/` checks Separation array shape. |
-| 4-2 | Tint is a single component in [0.0, 1.0]; 0.0 = minimum colourant, 1.0 = maximum | N | ␀ | |
+| 4-2 | Tint is a single component in [0.0, 1.0]; 0.0 = minimum colourant, 1.0 = maximum | N | ✅ | Audited 2026-07-26. Out-of-range tints behave as the nearest valid tint, but the clamp is **not** independently enforced in `ResolveSeparation` — it is delegated to the tint transform's own `/Domain` (`ExponentialFunction.Evaluate`, `PdfLibrary/Functions/ExponentialFunction.cs:63`, `Clamp(input[0], Domain[0], Domain[1])`). This holds for every conformant file: §7.10.1 Table 38 requires every function dictionary to declare a `Domain`, and "input values outside the declared domain shall be clipped to the nearest boundary value" — a Separation/DeviceN tint transform with the required `/Domain [0 1]` clamps by construction. Widening `/Domain` to `[-1 2]` in the test reproduces an out-of-range colour, but that file has already violated §7.10.1's Domain requirement, so this is class F territory (a malformed tint transform), not a renderer gap — no gap opened. Pinned by `SeparationTintRangeTests` (`TintAboveOne_ClampsToOne`, `TintBelowZero_ClampsToZero`), mutation-verified by widening the test's own `/Domain`. |
 | 4-3 | "Tints shall always be treated as subtractive colours, even if the device produces output for the designated component by an additive method" | N | ✅ | `SeparationAlternateSpaceTests.SeparationTints_AreSubtractive_HigherTintIsDarker` — tint 0 is lighter than tint 1 by luma. Not implied by the reversion rows: those compare against a direct fill in the alternate space, which inverts identically if the ramp does. |
-| 4-4 | "The initial value for both the stroking and nonstroking colour in the graphics state shall be 1.0" | N | ␀ | No initial-tint handling found in `PdfGraphicsState`; needs a targeted check. |
+| 4-4 | "The initial value for both the stroking and nonstroking colour in the graphics state shall be 1.0" | N | ✅ | **Was a confirmed violation, found by auditing — fixed 2026-07-26.** No test previously exercised `cs`/`CS` without a following `sc`/`scn`; when audited, `cs`/`CS` were found to select a colour space but leave the *previous* colour in the graphics state untouched, rather than applying §8.6.8 Table 73's initial value. Fixed via `ColorSpaceResolver.InitialColorFor` (returns the per-space initial value) and a new `PdfContentProcessor.OnColorSpaceChanged` hook, overridden in `PdfRenderer`, invoked from every `cs`/`CS` case. Pinned by `InitialColorValueTests.Separation_WithoutScn_UsesInitialTintOfOne`, part of a 4-test suite covering all families — each test sets a *contrasting* prior colour first, so a carry-over regression paints visibly wrong instead of accidentally matching. **The detail most likely to be re-broken by a future "simplification": DeviceCMYK's initial colour is `[0 0 0 1]`, not all-zeros** — all-zeros in CMYK is white. A prior attempt initialised every space to zero, which broke Separation to white (this row's requirement is 1.0, not 0.0), and was backed out wholesale rather than corrected. Separation and DeviceN initialise to 1.0; DeviceGray/DeviceRGB/CalGray/CalRGB to 0.0; Pattern returns no component vector — its initial colour is a pattern object, not implemented (gap G-11). |
 | 4-5 | Cyan / Magenta / Yellow / Black "are reserved to name the process colourants of a CMYK device" | N | ⚠️ | `PageColorant.Classify` → `ColorantKind.Process`. Tested in `PageColorantClassifyTests`; not tested end-to-end on the render path. |
 | 4-6 | **All**: "painting operators shall apply tint values to all available colourants at once" | N | ✅ | Fixed 2026-07-25 (was the G-2 gap). Scope is **fills and strokes**: `CmykPageRenderer.CompositeInk` (the only call site that can reach the `/All` branch — the shading and mesh sites pass an origin with empty `Tints`, which the guard excludes per G-7, and the image site passes no origin at all) branches on `InkDecision.AllColourants` and, when set, paints the four process plates *and* loops `SpotColorantRegistry.PlaneNames` to cover every registered spot plane — availability as this document's device policy defines it. The four process plates themselves come from `InkDecider.cs:~106` (CMYK path) and `ColorSpaceResolver.cs:250-253` (RGB path); `ColorSpaceResolver.PlatesForColorSpaceObject` (~line 653) also produces four true plates for `/All`, but that is the **overprint mask**, a different computation reached from a different call site, not the paint loop. `AllColourantRoutingTests` asserts all four plates and both registered spot planes, and was mutation-checked by capping the loop at one plane. Images and stencil masks on the CMYK path are NOT covered by this row — see G-9. |
 | 4-7 | **All** on an additive device: "the subtractive tint values […] shall be complemented by subtracting from 1 before applying to all available colourants" | N | ✅ | Fixed 2026-07-25 (was the G-3 violation). `ResolveSeparation` complements before reading the alternate space, so tint *t* paints the neutral 1−*t* on R, G and B. The device fork is honoured on both sides: the additive complement lives in the engine, and the subtractive path applies the tint directly via `InkDecider` (G-5, closed). Pinned by `SeparationAll_At{Full,Zero}Tint_*` and `All_colourant_applies_the_origin_tint_*`. |
@@ -100,12 +100,12 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | 5-5 | **None** "may be present only for DeviceN colour spaces that do not have the NChannel subtype" | F | — | Constrains where `/None` may appear in a file. Previously recorded as blocked on G-4 because it needs DeviceN `/Subtype` awareness — as a validator row, that read belongs to the validator, so the dependency does not apply here. **Validator gap** — `PdfxNChannelColorantsRule` reads `/Subtype` but checks `/Colorants` presence, not `/None` placement. |
 | 5-6 | None "indicates that the corresponding colour component shall never be painted on the page" | N | ⚠️ | `ShadingSpotSplit`, `TryToSpotInk` skip None components. |
 | 5-7 | "When […] painting the named device colourants directly, colour components corresponding to None colourants shall be discarded" | N | ⚠️ | |
-| 5-8 | "when the DeviceN colour space reverts to its alternate colour space, those components shall be passed to the tint transformation function" | N | ␀ | **Subtle and easy to get backwards**: None is discarded when painting directly but *passed through* on reversion. Not audited. |
+| 5-8 | "when the DeviceN colour space reverts to its alternate colour space, those components shall be passed to the tint transformation function" | N | ✅ | Audited 2026-07-26 — **conformant**. `ColorSpaceResolver.ResolveDeviceN` already evaluated the tint transform over every component unfiltered, `/None` included, so reversion was correct before this pass; it simply had no test. Pinned by `DeviceNNoneReversionTests.DeviceN_Reversion_PassesNoneComponentsToTheTintTransform`, mutation-verified: filtering `/None` out before calling the transform (the bug this row exists to catch, and the mirror image of row 5-7's discard-when-direct rule one paragraph away) makes the test fail with the wrong yellow plate. Mutation reverted; suite green again. |
 | 5-9 | All-None space "shall always discard its output […] it shall never revert to the alternate colour space" | N | ✅ | Implemented 2026-07-25 via `ColorSpaceResolver.PaintsNothing`, which treats an all-`/None` DeviceN exactly like `/Separation /None` — so it is never flattened through its tint transform on the way to painting nothing. `AllNoneDeviceN_DiscardsOutput_WithoutRevertingToItsAlternate` paints over red with a transform ramping to magenta. |
 | 5-10 | "Reversion shall occur only if at least one colour component (other than None) is specified and is not available on the device" | N | ⚠️ | Cited verbatim in `PdfImageToCmyk.TryToSpotInk` (SP-6c) — the routing splits by colorant name and never consults the alternate. |
 | 5-11 | Subtype "shall be DeviceN or NChannel. Default value: DeviceN" | N | ❌ | Not read on the render path at all (G-4). |
 | 5-12 | "If the value of the Subtype entry […] is NChannel, such information shall be present" (attributes) | F | — | Requires the attributes dictionary to be present for NChannel. Partially enforced by `PdfxNChannelColorantsRule`, which requires `/Colorants` — but that rule is **profile-gated** (`AppliesToProfiles = AllPdfA | PdfX4`), so nothing enforces this at baseline ISO 32000-2. |
-| 5-13 | Mixing hints: "applications shall ignore these process component entries if they can obtain the information from an ICC profile" | N | ␀ | Mixing hints not consumed on the render path. |
+| 5-13 | Mixing hints: "applications shall ignore these process component entries if they can obtain the information from an ICC profile" | L | — | **Reclassified 2026-07-26, N → L.** Read in context: the paragraph immediately preceding this row states "PDF processors need not use this [MixingHints] information" — the same optionality already recorded as L for the sibling clauses 5-14/5-15, three rows below. This row's `shall` is a conditional obligation nested inside that optional feature: it binds only an application that has chosen to consume `/MixingHints` process-component entries for blending calculations. `grep -rli mixinghints` (case-insensitive) across both the `PDF` and `Pellucid` repos finds **zero** matches outside this document — nothing on the render path reads `/MixingHints` at all, so the antecedent for this row's `shall` never arises for us; the clause is inapplicable rather than satisfied, exactly as 5-14/5-15 are. Reclassifying avoids scoring a row that cannot fail: "we never read the key" is a fact about the codebase, not a behaviour a test can exercise and watch fail — an unfalsifiable ✅ here would misrepresent an absence of engagement as a passed conformance check. |
 | 5-14 | "PDF processors need not use the alternateSpace and tintTransform parameters, and may instead use custom blending algorithms" | L | — | Explicit permission for our additive spot fold. **This is the clause that makes the spot-combine model a design decision rather than a compliance question.** |
 | 5-15 | NOTE 5 — processors "are free to use such information instead of the alternateSpace parameter" | L | — | Same permission, restated for the attributes dictionary. |
 | 5-16 | Guideline: "should apply either the specified tint transformation function or invoke the same alternative blending algorithm for all DeviceN instances in the document" | L | ⚠️ | `should`, not `shall`. We are consistent by construction (one registry per document). |
@@ -115,45 +115,52 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 
 ## Score — slice 1
 
-Updated 2026-07-25, after the first ratchet pass and a same-day second pass closing G-2/G-5/G-6 (row 4-6
-to ✅, rows 4-7/4-8 losing their caveats). The slice-1 column is the original audit; the deltas are what
-writing the clauses as tests actually changed.
+Updated 2026-07-26, at the close of the ␀-sweep. Three passes are folded into this history: the first
+ratchet pass (2026-07-25, ten rows converted from "conformant by inspection" to clause-citing tests, which
+found 4-8 and 4-10 to be violations), a same-day second pass closing G-2/G-5/G-6, and this sweep (Tasks
+1–4), which added class F to separate file-validity rows from renderer rows and then audited every row
+the earlier passes had left ␀. The slice-1 column is the original audit; the deltas are everything since.
 
 | | Slice 1 | Now |
 |---|--:|--:|
-| Normative + machine-verifiable (**N**) | 26 | 21 |
-| — ✅ conformant with a test | 0 | **11** |
+| Normative + machine-verifiable (**N**) | 26 | 20 |
+| — ✅ conformant with a test | 0 | **14** |
 | — ⚠️ conformant, untested | 11 | 4 |
 | — ❌ violation | 2 | 2 |
-| — ␀ not yet audited | 13 | 4 |
-| File validity (**F**, new) | — | 5 |
-| Latitude (**L**) | 5 | 5 |
-| Device-policy (**D**) | 2 | 2 — 4-12 now tested, 4-11 (soft-proof) still untested |
+| — ␀ not yet audited | 13 | **0** |
+| File validity (**F**) | — | 5 |
+| Latitude (**L**) | 5 | 6 |
+| Device-policy (**D**) | 2 | 2 — 4-12 tested, 4-11 (soft-proof) still untested |
 
 > The slice-1 table published 13 untested / 11 unaudited. Those two figures were transposed — counting
 > the rows gives 11 untested and 13 unaudited. Corrected here rather than silently, because the whole
 > point of the matrix is that its denominator can be recomputed from the rows.
 
-**Eleven rows are now ✅, and the audit was too generous, not too harsh.** Two rows that slice 1 recorded as
-"conformant, untested" and "not audited" were in fact violations, and writing the clause as a test is what
-exposed them:
+**Zero rows remain unaudited.** Two reclassifications did part of the work. Five rows (4-1, 4-14, 5-1,
+5-5, 5-12) constrain what a conformant *file* may contain, not what the renderer paints, so class F moved
+them out of the N denominator rather than scoring them against renderer behaviour the standard never
+specifies — a reassignment, not a retirement: every F row still names its enforcer, mostly "validator
+gap". One further row, 5-13 (DeviceN mixing hints), moved from N to **L** in this sweep: its `shall`
+binds only a processor that has chosen to consume `/MixingHints`, which the spec explicitly says a
+processor need not do, and nothing on the render path reads that key at all — the row is inapplicable
+rather than satisfied, and scoring it as N would have meant an unfalsifiable ✅.
 
-- **4-8** (`/None` shall not produce visible output) was marked ⚠️ on the strength of a code comment
-  citing the clause. The line that cited it computes the *overprint plate mask*; nothing on the paint path
-  consulted the colourant name at all, so a `/None` fill painted whatever its tint transform returned —
-  solid black, in the test. Reading a clause citation in a comment is not the same as reading the clause's
-  effect on the page.
-- **4-10** (All/None shall ignore alternateSpace and tintTransform) was ␀, and was being violated for
-  every `/All` space in every document: the transform ran unconditionally. The `/All` complement logic
-  required by 4-7 existed, but only on the branch taken when there is *no* tint transform — i.e. never, in
-  practice.
+The rest of the work was auditing the four rows the ratchet pass left ␀. Three came back conformant:
+**4-2** (Separation tint range — clamped, but via the tint transform's own required `/Domain`, not an
+independent check in `ResolveSeparation`) and **5-8** (DeviceN `/None` components passed through on
+reversion) were already-correct behaviour that simply had no test before now. **4-4 was not** — it is
+this sweep's confirmed violation, found by auditing rather than by a bug report, the same way 4-8 and
+4-10 were in the first ratchet pass. `cs`/`CS` set the current colour space but never applied its §8.6.8
+Table 73 initial value, so a `cs` with no following `sc`/`scn` painted whatever colour was already
+current instead of the colour space's required initial one. Fixed via `ColorSpaceResolver.InitialColorFor`
+and a new `OnColorSpaceChanged` hook, pinned by `InitialColorValueTests` — and recorded there for the
+record most likely to be re-broken by a future "simplification": DeviceCMYK's initial colour is
+`[0 0 0 1]`, not all-zeros, because all-zeros in CMYK is white.
 
-Both are fixed and pinned. A second pass the same day closed three more gaps — G-2 (`/All` excludes spot
-planes, row 4-6), G-5 (`/All` not device-aware on the soft-proof path, rows 4-7/4-9) and G-6 (`/None`
-suppression not covering images, row 4-8's scope) — bringing the soft-proof `InkDecider` path under direct
-test for the first time via `AllColourantRoutingTests`, rather than relying on the structural argument that
-the RGB-path harness's logic is upstream of every render target. The remaining ⚠️ rows (4-5, 5-6, 5-7,
-5-10) are the ones whose behaviour lives on the CMYK soft-proof path where no such direct test yet exists.
+What remains non-✅ in the N class is unchanged by this sweep and pre-existing: four ⚠️ rows (4-5, 5-6,
+5-7, 5-10) whose behaviour lives on the CMYK soft-proof path, where no direct test yet exists, and G-4's
+two ❌ rows (5-3, 5-11) — NChannel colour spaces are not implemented on the render path at all, the one
+substantive violation this matrix has tracked since slice 1.
 
 ## Gaps
 
@@ -207,6 +214,16 @@ the RGB-path harness's logic is upstream of every render target. The remaining �
   should have been clipped out of, which IS a visible effect on the current page, contradicting the very
   clause row 4-8 cites. Pre-existing slice-1 debt, not introduced by this branch; out of scope to fix here
   — flagged so it is not mistaken for coverage row 4-8 already claims.
+- **G-11 — Pattern's initial colour is not implemented, only defaulted.** Noted during the row 4-4 clause
+  read (§8.6.8 Table 73): "In a Pattern colour space, the initial colour shall be a pattern object that
+  causes nothing to be painted." `ColorSpaceResolver.InitialColorFor` returns `null` for `"Pattern"` —
+  which `OnColorSpaceChanged` treats as "leave the current colour alone", i.e. carries over whatever the
+  *previous* colour space's value was. That is a safe default (it cannot invent a plausible-looking wrong
+  colour) but it is not the clause's requirement, which is a pattern object that paints nothing — a
+  distinct concept from the `/None` colourant's `PaintsNothing` signal used elsewhere in this matrix (rows
+  4-8, 5-9). Conflating "no initial value handled" with "correctly initialised to paint nothing" without
+  an audit is exactly the error this matrix exists to prevent. Untested and unclaimed; no fix attempted in
+  this pass.
 
 ## Fixtures
 
