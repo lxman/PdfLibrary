@@ -136,7 +136,7 @@ internal static class PageColorantReader
         for (var i = 0; i < origin.Names.Count; i++)
         {
             string name = origin.Names[i];
-            ColorantKind kind = PageColorant.Classify(name);
+            ColorantKind kind = KindFor(origin, i, name);
             if (kind is ColorantKind.All or ColorantKind.None) continue; // recognised, not a plate
             if (!seen.Add(name)) continue;
 
@@ -144,6 +144,37 @@ internal static class PageColorantReader
                 ColorSpaceResolver.BuildTintRamp(arr, document, i, origin.Names.Count);
             result.Add(new PageColorant(name, kind, origin.AlternateSpace, ramp, solid));
         }
+    }
+
+    /// <summary>
+    /// The colorant's kind, preferring the per-component role the resolver already computed over the
+    /// name-only classification.
+    ///
+    /// <para><see cref="PageColorant.Classify"/> knows only the four reserved names, so a process
+    /// colorant named anything else — <c>/PrCyan</c> in the veraPDF NChannel conformance fixture — reads
+    /// as Spot and is handed a plane by the compositor's registry, while the per-operator path treats it
+    /// as a process channel. The same colorant then exists twice.</para>
+    ///
+    /// <para><c>Components</c> is populated only for NChannel spaces, so every DeviceN and Separation
+    /// space keeps the name-based answer unchanged. A Spot role also falls back to the name, because
+    /// <c>ColourantRole</c> has no <c>All</c> member — <c>RoleFor</c> maps <c>/All</c> to Spot as a
+    /// documented leniency — and that distinction must survive.</para>
+    ///
+    /// <para><c>origin.Components</c> is already-materialised data from the <c>OriginForColorSpaceObject</c>
+    /// call above — reading it resolves nothing new, so no additional guard against a throw is needed
+    /// here beyond the shape checks below (null list, and an index the list is too short to cover).</para>
+    /// </summary>
+    private static ColorantKind KindFor(ColorantOrigin origin, int index, string name)
+    {
+        if (origin.Components is not { } components || index >= components.Count)
+            return PageColorant.Classify(name);
+
+        return components[index].Role switch
+        {
+            ColourantRole.Process => ColorantKind.Process,
+            ColourantRole.None => ColorantKind.None,
+            _ => PageColorant.Classify(name),
+        };
     }
 
     private static PdfObject? Deref(PdfObject? obj, PdfDocument document) =>

@@ -2,12 +2,18 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Structure;
+using PdfLibrary.Tests.Rendering;
 using Xunit;
 
 namespace PdfLibrary.Tests.Document;
 
 public class PageColorantsTests
 {
+    // Duplicated locally rather than shared, matching the established per-file pattern (every other test
+    // file that needs a type-2 tint transform for hand-authored PDF syntax defines its own copy — see
+    // ColorSpaceResolverCharacterizationTests, OriginForColorSpaceObjectTests, SpotColorSpaceTests).
+    private const string Tint2 = "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>";
+
     private static PdfArray Reals(params double[] v)
     {
         var items = new PdfObject[v.Length];
@@ -326,5 +332,72 @@ public class PageColorantsTests
 
         IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0); // must return, not hang
         Assert.Single(colorants, c => c.Name == "CYCLIC SPOT");
+    }
+
+    /// <summary>A name listed in /Process /Components is a PROCESS colorant, whatever it is called.
+    /// Classifying it as Spot gives it a plane in SpotColorantRegistry and lets it be painted twice —
+    /// once on its plate, once on its plane. The veraPDF NChannel conformance fixture is exactly this
+    /// shape: /Components [/PrCyan /PrMagenta /PrYellow /Black].</summary>
+    [Fact]
+    public void NChannelProcessComponent_IsClassifiedProcess_NotSpot()
+    {
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/PrCyan /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK /Components [/PrCyan] >> >>]",
+            "1 0 0 rg 0 0 1 1 re f");
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+
+        Assert.Equal(ColorantKind.Process, colorants.Single(c => c.Name == "PrCyan").Kind);
+        Assert.Equal(ColorantKind.Spot, colorants.Single(c => c.Name == "Spot1").Kind);
+    }
+
+    /// <summary>The name-based classification must survive for everything else — this is what keeps the
+    /// 50 non-NChannel corpus patches byte-identical.</summary>
+    [Fact]
+    public void PlainDeviceN_KeepsTheNameBasedClassification()
+    {
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/PrCyan /Spot1] /DeviceCMYK " + Tint2 + "]",
+            "1 0 0 rg 0 0 1 1 re f");
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+
+        Assert.Equal(ColorantKind.Spot, colorants.Single(c => c.Name == "PrCyan").Kind);
+    }
+
+    /// <summary>ColourantRole has no All member — RoleFor maps /All to Spot as a documented leniency —
+    /// so the name-based All distinction must be preserved for a Spot role rather than lost.</summary>
+    [Fact]
+    public void NChannelAllComponent_IsStillClassifiedAll_AndSkipped()
+    {
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/All /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel >>]",
+            "1 0 0 rg 0 0 1 1 re f");
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+
+        Assert.DoesNotContain(colorants, c => c.Name == "All");
+        Assert.Contains(colorants, c => c.Name == "Spot1");
+    }
+
+    [Fact]
+    public void NChannelNoneComponent_IsStillSkipped()
+    {
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/None /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel >>]",
+            "1 0 0 rg 0 0 1 1 re f");
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        IReadOnlyList<PageColorant> colorants = doc.GetPageColorants(0);
+
+        Assert.DoesNotContain(colorants, c => c.Name == "None");
     }
 }
