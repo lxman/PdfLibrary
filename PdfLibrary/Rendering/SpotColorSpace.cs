@@ -18,33 +18,102 @@ namespace PdfLibrary.Rendering;
 ///
 /// <para><c>Indexed</c> is deliberately NOT modelled here. The members that handle it recurse into the
 /// base space themselves, which keeps that recursion where its callers can see it.</para>
+///
+/// <para><b>The alternate space, tint transform, and /Attributes members are resolved LAZILY, on first
+/// property access, and cached from then on.</b> <see cref="Family"/> and <see cref="Names"/> are
+/// parsed eagerly in <see cref="TryParse"/> because every caller needs them just to decide "is this
+/// /None" or "which plates does this mark". The other five members are read by only SOME callers (the
+/// tint-ramp builders) — and ISO 32000-2 §8.6.6.4 row 4-10 requires that for /All and /None "the
+/// alternateSpace and tintTransform shall be ignored", i.e. never even looked at. Pre-Pass-1,
+/// <see cref="ColorSpaceResolver.PaintsNothing(PdfObject?,PdfDocument?)"/> and
+/// <see cref="ColorSpaceResolver.PlatesForColorSpaceObject"/> only ever read element 1 of the source
+/// array. Eagerly dereferencing elements 2-4 here — as an earlier version of this class did — would
+/// (a) fetch and parse indirect objects those callers never used to touch, so a corrupt
+/// alternate/tint/attributes object newly throws <c>PdfParseException</c> out of a render path that
+/// used to render fine, and (b) violate the §8.6.6.4 "ignored" rule this file itself quotes elsewhere
+/// (see <c>ColorSpaceResolver.BuildTintToRgb</c>). Do NOT "tidy" these back into eager positional
+/// record members — that reintroduces both problems.</para>
 /// </summary>
-/// <param name="Family">"Separation" or "DeviceN".</param>
-/// <param name="Names">One entry for Separation, one per colorant for DeviceN. An entry is null when
-/// that element did not resolve to a name; the COUNT is always the declared colorant count.</param>
-/// <param name="AlternateObject">The dereferenced alternate space object, or null when the array is
-/// shorter than three elements.</param>
-/// <param name="AlternateSpaceName">The alternate's family name ("DeviceCMYK", "Lab", "CalRGB", …), or
-/// the empty string when absent or unrecognised.</param>
-/// <param name="TintTransformObject">The dereferenced tint transform object, or null when the array is
-/// shorter than four elements. Deliberately NOT a built <c>PdfFunction</c>: building one per call is
-/// today's behaviour, and caching a shared instance is a thread-safety question this pass does not
-/// answer (see the Pass 1 plan's scope note).</param>
-/// <param name="Subtype">/Attributes /Subtype, defaulting to "DeviceN" per ISO 32000-2 Table 70.
-/// Always "DeviceN" for a Separation space.</param>
-/// <param name="Colorants">/Attributes /Colorants, or null. Required to be present for NChannel spaces
-/// that carry spot colourants. Parsed but not yet consumed — Pass 2 (G-4) is its consumer.</param>
-/// <param name="Process">/Attributes /Process, or null. Parsed but not yet consumed.</param>
-internal sealed record SpotColorSpace(
-    string Family,
-    IReadOnlyList<string?> Names,
-    PdfObject? AlternateObject,
-    string AlternateSpaceName,
-    PdfObject? TintTransformObject,
-    string Subtype,
-    PdfDictionary? Colorants,
-    PdfDictionary? Process)
+internal sealed record SpotColorSpace
 {
+    private readonly PdfArray _source;
+    private readonly PdfDocument? _doc;
+
+    private bool _alternateComputed;
+    private PdfObject? _alternateObject;
+    private string _alternateSpaceName = string.Empty;
+
+    private bool _tintComputed;
+    private PdfObject? _tintTransformObject;
+
+    private bool _attributesComputed;
+    private string _subtype = "DeviceN";
+    private PdfDictionary? _colorants;
+    private PdfDictionary? _process;
+
+    private SpotColorSpace(string family, IReadOnlyList<string?> names, PdfArray source, PdfDocument? doc)
+    {
+        Family = family;
+        Names = names;
+        _source = source;
+        _doc = doc;
+    }
+
+    /// <summary>"Separation" or "DeviceN".</summary>
+    public string Family { get; }
+
+    /// <summary>One entry for Separation, one per colorant for DeviceN. An entry is null when
+    /// that element did not resolve to a name; the COUNT is always the declared colorant count.</summary>
+    public IReadOnlyList<string?> Names { get; }
+
+    /// <summary>The dereferenced alternate space object, or null when the array is shorter than three
+    /// elements. Resolved lazily on first access and cached — see the class remarks.</summary>
+    public PdfObject? AlternateObject
+    {
+        get { EnsureAlternate(); return _alternateObject; }
+    }
+
+    /// <summary>The alternate's family name ("DeviceCMYK", "Lab", "CalRGB", …), or the empty string
+    /// when absent or unrecognised. Resolved lazily on first access and cached — see the class
+    /// remarks.</summary>
+    public string AlternateSpaceName
+    {
+        get { EnsureAlternate(); return _alternateSpaceName; }
+    }
+
+    /// <summary>The dereferenced tint transform object, or null when the array is shorter than four
+    /// elements. Deliberately NOT a built <c>PdfFunction</c>: building one per call is today's
+    /// behaviour, and caching a shared instance is a thread-safety question this pass does not answer
+    /// (see the Pass 1 plan's scope note). Resolved lazily on first access and cached — see the class
+    /// remarks.</summary>
+    public PdfObject? TintTransformObject
+    {
+        get { EnsureTint(); return _tintTransformObject; }
+    }
+
+    /// <summary>/Attributes /Subtype, defaulting to "DeviceN" per ISO 32000-2 Table 70. Always
+    /// "DeviceN" for a Separation space. Resolved lazily on first access and cached — see the class
+    /// remarks.</summary>
+    public string Subtype
+    {
+        get { EnsureAttributes(); return _subtype; }
+    }
+
+    /// <summary>/Attributes /Colorants, or null. Required to be present for NChannel spaces that carry
+    /// spot colourants. Parsed but not yet consumed — Pass 2 (G-4) is its consumer. Resolved lazily on
+    /// first access and cached — see the class remarks.</summary>
+    public PdfDictionary? Colorants
+    {
+        get { EnsureAttributes(); return _colorants; }
+    }
+
+    /// <summary>/Attributes /Process, or null. Parsed but not yet consumed. Resolved lazily on first
+    /// access and cached — see the class remarks.</summary>
+    public PdfDictionary? Process
+    {
+        get { EnsureAttributes(); return _process; }
+    }
+
     /// <summary>True when every entry in <see cref="Names"/> resolved to a name. The members that
     /// refuse to answer for a malformed name list gate on this; the ones that need only the count
     /// (the tint-transform builders) ignore it.
@@ -76,7 +145,12 @@ internal sealed record SpotColorSpace(
     /// a <see cref="PdfName"/>, nor a DeviceN whose names array is empty — both parse successfully,
     /// with the caller responsible for its own strictness via <see cref="AllNamesResolved"/> and
     /// <c>Names.Count</c> (which is vacuously "all resolved" for an empty DeviceN names array; see
-    /// <see cref="AllNamesResolved"/>).</summary>
+    /// <see cref="AllNamesResolved"/>).
+    ///
+    /// <para>Only <see cref="Family"/> and <see cref="Names"/> are computed here — element 1 is all
+    /// that <c>PaintsNothing</c> and <c>PlatesForColorSpaceObject</c> read pre-Pass-1. Elements 2-4
+    /// (alternate, tint transform, /Attributes) are resolved lazily; see the class remarks.</para>
+    /// </summary>
     internal static bool TryParse(PdfObject? csObj, PdfDocument? doc, out SpotColorSpace? space)
     {
         space = null;
@@ -109,36 +183,50 @@ internal sealed record SpotColorSpace(
                 return false;
         }
 
-        PdfObject? altObj = arr.Count >= 3 ? ColorSpaceResolver.Deref(arr[2], doc) : null;
-        string altName = altObj switch
+        space = new SpotColorSpace(family.Value, names, arr, doc);
+        return true;
+    }
+
+    private void EnsureAlternate()
+    {
+        if (_alternateComputed) return;
+        _alternateComputed = true;
+
+        PdfObject? altObj = _source.Count >= 3 ? ColorSpaceResolver.Deref(_source[2], _doc) : null;
+        _alternateObject = altObj;
+        _alternateSpaceName = altObj switch
         {
             PdfName n => n.Value,
             PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
             _ => string.Empty,
         };
+    }
 
-        PdfObject? tintObj = arr.Count >= 4 ? ColorSpaceResolver.Deref(arr[3], doc) : null;
+    private void EnsureTint()
+    {
+        if (_tintComputed) return;
+        _tintComputed = true;
 
-        var subtype = "DeviceN";
-        PdfDictionary? colorants = null;
-        PdfDictionary? process = null;
+        _tintTransformObject = _source.Count >= 4 ? ColorSpaceResolver.Deref(_source[3], _doc) : null;
+    }
+
+    private void EnsureAttributes()
+    {
+        if (_attributesComputed) return;
+        _attributesComputed = true;
 
         // /Attributes is the optional fifth element and is a DeviceN-only feature.
-        if (family.Value == "DeviceN" && arr.Count >= 5
-            && ColorSpaceResolver.Deref(arr[4], doc) is PdfDictionary attrs)
-        {
-            if (attrs.TryGetValue(new PdfName("Subtype"), out PdfObject? stObj)
-                && ColorSpaceResolver.Deref(stObj!, doc) is PdfName st)
-                subtype = st.Value;
+        if (Family != "DeviceN" || _source.Count < 5) return;
+        if (ColorSpaceResolver.Deref(_source[4], _doc) is not PdfDictionary attrs) return;
 
-            if (attrs.TryGetValue(new PdfName("Colorants"), out PdfObject? coObj))
-                colorants = ColorSpaceResolver.Deref(coObj!, doc) as PdfDictionary;
+        if (attrs.TryGetValue(new PdfName("Subtype"), out PdfObject? stObj)
+            && ColorSpaceResolver.Deref(stObj!, _doc) is PdfName st)
+            _subtype = st.Value;
 
-            if (attrs.TryGetValue(new PdfName("Process"), out PdfObject? prObj))
-                process = ColorSpaceResolver.Deref(prObj!, doc) as PdfDictionary;
-        }
+        if (attrs.TryGetValue(new PdfName("Colorants"), out PdfObject? coObj))
+            _colorants = ColorSpaceResolver.Deref(coObj!, _doc) as PdfDictionary;
 
-        space = new SpotColorSpace(family.Value, names, altObj, altName, tintObj, subtype, colorants, process);
-        return true;
+        if (attrs.TryGetValue(new PdfName("Process"), out PdfObject? prObj))
+            _process = ColorSpaceResolver.Deref(prObj!, _doc) as PdfDictionary;
     }
 }

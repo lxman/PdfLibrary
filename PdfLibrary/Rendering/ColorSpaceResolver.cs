@@ -608,6 +608,12 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (csObj is null) return null;
         csObj = Deref(csObj, doc);
 
+        // GetObject does not chase indirect-reference chains, so a still-unresolved reference here is
+        // exactly what the pre-migration single-Deref lookup would already have failed on. Returning
+        // early restores that single-level resolution — without this, SpotColorSpace.TryParse's own
+        // internal Deref call would newly resolve a second link in the chain, which this pass forbids.
+        if (csObj is PdfIndirectReference) return null;
+
         // An Indexed image's samples are palette indices into its base space; the plates it marks are
         // the base space's plates (e.g. Indexed[/DeviceN[Black Cyan]] duotone marks K + C).
         if (csObj is PdfArray { Count: >= 2 } indexedArr && indexedArr[0] is PdfName { Value: "Indexed" })
@@ -784,6 +790,12 @@ internal class ColorSpaceResolver(PdfDocument? document)
     {
         if (csObj is null) return false;
         csObj = Deref(csObj, doc);
+
+        // GetObject does not chase indirect-reference chains, so a still-unresolved reference here is
+        // exactly what the pre-migration single-Deref lookup would already have failed on. Returning
+        // early restores that single-level resolution — without this, SpotColorSpace.TryParse's own
+        // internal Deref call would newly resolve a second link in the chain, which this pass forbids.
+        if (csObj is PdfIndirectReference) return false;
 
         // Indexed paints through its BASE space, so it marks nothing exactly when the base marks
         // nothing. SpotColorSpace does not model Indexed, so this recursion stays here.
