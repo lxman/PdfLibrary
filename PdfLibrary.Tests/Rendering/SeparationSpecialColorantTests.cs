@@ -38,17 +38,6 @@ public class SeparationSpecialColorantTests
     private static string RgbTint(string c1) => ColourConformancePage.ExponentialTint("1 1 1", c1);
 
     /// <summary>
-    /// Renders <paramref name="pdf"/> and asserts that every pixel well inside the red rectangle is still
-    /// red — i.e. the <c>/None</c> operator that followed marked nothing anywhere in the region, not just
-    /// at one sampled point. Insets by 5px so path antialiasing at the rect's own edges is not counted.
-    /// </summary>
-    private static void AssertRedRectUntouched(byte[] pdf, string what) =>
-        ColourConformancePage.ForEachPixelInRect(pdf, (x, y, c) =>
-            Assert.True(c.Red > 235 && c.Green < 20 && c.Blue < 20,
-                $"{what} marked the page at ({x},{y}): RGB({c.Red},{c.Green},{c.Blue}) is not the " +
-                "underlying red. §8.6.6.4 requires /None to have no effect on the current page"));
-
-    /// <summary>
     /// ISO 32000-2 §8.6.6.4, row 4-8: a Separation space whose colourant is <c>/None</c> "shall not
     /// produce any visible output […] shall have no effect on the current page" — regardless of what its
     /// tint transform would return. Here the transform ramps to solid black at tint 1, so an
@@ -67,7 +56,7 @@ public class SeparationSpecialColorantTests
         string content = "1 0 0 rg 100 400 200 200 re f " + FillRect(1.0);
         byte[] pdf = ColourConformancePage.Build($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content);
 
-        AssertRedRectUntouched(pdf, "/None fill");
+        ColourConformancePage.AssertRedRectUntouched(pdf, "/None fill");
     }
 
     /// <summary>
@@ -81,7 +70,7 @@ public class SeparationSpecialColorantTests
                                "/Cs0 CS 1 SCN 20 w 100 500 m 300 500 l S";
         byte[] pdf = ColourConformancePage.Build($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content);
 
-        AssertRedRectUntouched(pdf, "/None stroke");
+        ColourConformancePage.AssertRedRectUntouched(pdf, "/None stroke");
     }
 
     /// <summary>
@@ -95,7 +84,7 @@ public class SeparationSpecialColorantTests
                                "/Cs0 cs 1 scn BT /F1 48 Tf 110 480 Td (NONE) Tj ET";
         byte[] pdf = ColourConformancePage.Build($"[/Separation /None /DeviceRGB {RgbTint("0 0 0")}]", content, withFont: true);
 
-        AssertRedRectUntouched(pdf, "/None text");
+        ColourConformancePage.AssertRedRectUntouched(pdf, "/None text");
     }
 
     /// <summary>
@@ -122,9 +111,9 @@ public class SeparationSpecialColorantTests
                                "/Cs0 cs 1 0 scn 100 400 200 200 re f";
 
         byte[] pdf = ColourConformancePage.Build(
-            "[/DeviceN [/None /None] /DeviceCMYK 5 0 R]", content, withFont: false, ps);
+            "[/DeviceN [/None /None] /DeviceCMYK 5 0 R]", content, withFont: false, extraObjects: ps);
 
-        AssertRedRectUntouched(pdf, "all-/None DeviceN");
+        ColourConformancePage.AssertRedRectUntouched(pdf, "all-/None DeviceN");
     }
 
     /// <summary>
