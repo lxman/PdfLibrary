@@ -241,18 +241,22 @@ public class ColourantComponentTests
     // --- /Process /Components mapping ---
 
     private const string CmykProcess =
-        "/Process << /ColorSpace /DeviceCMYK /Components [/Cyan /Magenta /Yellow /Black] >>";
+        "/Process << /ColorSpace /DeviceCMYK /Components [/PlateX /Magenta /Yellow /Black] >>";
 
     [Fact]
     public void ProcessComponents_MapNonReservedNamesToProcessRole()
     {
-        // The GWG081 shape: a CMYK process dictionary alongside a spot.
+        // The GWG081 shape: a CMYK process dictionary alongside a spot. PlateX is listed in
+        // /Components and is not one of the four reserved names, so it must classify Process via the
+        // processNames arm specifically — not the reserved-name arm, which an earlier version of this
+        // test (names [/Spot1 /Cyan]) accidentally exercised instead, passing even with processNames
+        // ignored entirely.
         ColorantOrigin? o = Origin(
-            "[/DeviceN [/Spot1 /Cyan] /DeviceCMYK " + Tint2
+            "[/DeviceN [/PlateX /Spot1] /DeviceCMYK " + Tint2
             + " << /Subtype /NChannel " + CmykProcess + " >>]", 0.25, 0.5);
 
-        Assert.Equal(ColourantRole.Spot, o!.Components![0].Role);
-        Assert.Equal(ColourantRole.Process, o.Components[1].Role);
+        Assert.Equal(ColourantRole.Process, o!.Components![0].Role);
+        Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
     }
 
     [Fact]
@@ -333,5 +337,73 @@ public class ColourantComponentTests
         Assert.NotNull(o!.Components);
         Assert.Equal(ColourantRole.Process, o.Components![0].Role);
         Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+    }
+
+    [Fact]
+    public void ProcessWithNoColorSpace_IsTreatedAsNoConstraint()
+    {
+        // The `or ""` arm in ProcessSpaceName: an absent /ColorSpace is "no constraint", not a
+        // rejection — a malformed process dictionary should still let its /Components list classify
+        // names, rather than being suppressed the way a non-CMYK /ColorSpace is.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Ink1 /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /Components [/Ink1 /Magenta /Yellow /Black] >> >>]",
+            0.25, 0.5);
+
+        Assert.NotNull(o!.Components);
+        Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+    }
+
+    // --- Corrupt indirect references inside /Process must not throw ---
+
+    [Fact]
+    public void CorruptProcessColorSpaceReference_DegradesToReservedNamesOnly_RatherThanThrowing()
+    {
+        // /Process /ColorSpace as an indirect reference to a corrupt object. ProcessSpaceName's
+        // Deref(csObj, doc) sits OUTSIDE EnsureAttributes's try/catch — that guard only covers the
+        // /Attributes dictionary and its immediate Subtype/Colorants/Process values, not what /Process
+        // itself points to. Without its own guard, this throws PdfParseException out of
+        // OriginForColorSpaceObject, which PdfRenderer calls on every colour-setting operator with no
+        // try/catch above it — a page that rendered fine before this task would start failing.
+        //
+        // Object 5 here is an in-use xref entry (so GetObject does not merely return null the way a
+        // reference to a non-existent object number would) whose body is a lone "]" — the same
+        // genuinely-unparseable-target technique CorruptAttributesReference_DegradesToDeviceNDefaults_
+        // RatherThanThrowing uses one level up.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace 5 0 R >> >>]", "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o);
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);   // Magenta: reserved name
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);       // Spot1: no processNames survives the throw
+        }
+    }
+
+    [Fact]
+    public void ProcessComponentsAsIndirectReference_IsResolvedThroughTheDocument()
+    {
+        // GWG081's real shape: /Process is itself 52 0 R, and /Components can independently be an
+        // indirect reference to the names array. Deref is a no-op when doc is null, so this test fails
+        // if BuildComponents were ever called with doc: null instead of the OriginForColorSpaceObject
+        // parameter — the exact silent-failure shape a plan correction called out for Task 2, since
+        // every other new test in this file uses the null-document Origin(...) helper with direct
+        // arrays and would stay green regardless.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Ink1 /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK /Components 5 0 R >> >>]",
+            "[/Ink1 /Magenta /Yellow /Black]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);   // Ink1, via the indirect array
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+        }
     }
 }

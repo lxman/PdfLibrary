@@ -868,18 +868,38 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // and leave the consumer unable to say which plate they mark — which maps them onto NONE, worse
         // than the status quo — suppress the whole component list and let the space fall back to its
         // document tint transform. Recorded as a gap; see the Pass 2a plan.
+        //
+        // /ColorSpace and /Components can themselves be indirect references (GWG081 uses both), so
+        // reading them dereferences objects that EnsureAttributes's own try/catch does not cover — it
+        // only guards the /Attributes dictionary and its immediate Subtype/Colorants/Process values, not
+        // what THOSE values point to. A corrupt target here would otherwise throw PdfParseException out
+        // of OriginForColorSpaceObject, which PdfRenderer calls on every colour-setting operator with no
+        // try/catch above it. Guarded the same way and for the same reason as EnsureAttributes: fall
+        // back to reserved-name-only classification (processNames stays null) rather than fail a render
+        // that used to succeed. This is deliberately distinct from the non-CMYK case above/below, which
+        // is a successful read that legitimately suppresses the whole list — a throw must NOT take that
+        // branch, or a corrupt process dictionary would silently drop an otherwise-good NChannel space.
         HashSet<string>? processNames = null;
         if (space.Process is { } process)
         {
-            string processSpace = ProcessSpaceName(process, doc);
-            if (processSpace is not ("DeviceCMYK" or "DeviceGray" or "")) return null;
-
-            if (process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)
-                && Deref(compsObj, doc) is PdfArray comps)
+            try
             {
-                processNames = new HashSet<string>(StringComparer.Ordinal);
-                foreach (PdfObject c in comps)
-                    if (c is PdfName cn) processNames.Add(cn.Value);
+                string processSpace = ProcessSpaceName(process, doc);
+                if (processSpace is not ("DeviceCMYK" or "DeviceGray" or "")) return null;
+
+                if (process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)
+                    && Deref(compsObj, doc) is PdfArray comps)
+                {
+                    processNames = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (PdfObject c in comps)
+                        if (c is PdfName cn) processNames.Add(cn.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                processNames = null;
+                PdfLogger.Log(LogCategory.Graphics,
+                    $"BuildComponents: /Process dereferencing threw, falling back to reserved-name classification: {ex}");
             }
         }
 
