@@ -662,6 +662,115 @@ internal class ColorSpaceResolver(PdfDocument? document)
     }
 
     /// <summary>
+    /// The initial colour a space takes when it becomes current via <c>cs</c>/<c>CS</c>
+    /// (ISO 32000-2 §8.6.8, Table 73). Returns null when no component vector applies — Pattern, whose
+    /// initial "colour" is a pattern object that paints nothing rather than a set of components, and
+    /// any space that cannot be identified, where leaving the current colour alone is safer than
+    /// guessing.
+    ///
+    /// <para>
+    /// The values are NOT uniform across families, which is the trap that sank an earlier attempt at
+    /// this: DeviceCMYK is <c>[0 0 0 1]</c> (black via K — all-zeros would be white), while Separation
+    /// and DeviceN initialise to 1.0 because their tints are subtractive. Lab and ICCBased initialise
+    /// to zero "unless that falls outside the intervals specified by the space's Range entry, in which
+    /// case the nearest valid value shall be substituted".
+    /// </para>
+    /// </summary>
+    public static List<double>? InitialColorFor(string? csName, PdfObject? csObj, PdfDocument? doc)
+    {
+        // The four families nameable without parameters resolve by name alone, and always identify
+        // those spaces directly — they never refer to a ColorSpace resource.
+        switch (csName)
+        {
+            case "DeviceGray": return [0.0];
+            case "DeviceRGB": return [0.0, 0.0, 0.0];
+            case "DeviceCMYK": return [0.0, 0.0, 0.0, 1.0];
+            case "Pattern": return null;
+        }
+
+        if (csObj is null) return null;
+        csObj = Deref(csObj, doc);
+
+        if (csObj is PdfName aliasName)
+            return InitialColorFor(aliasName.Value, null, doc);
+
+        if (csObj is not PdfArray { Count: >= 1 } arr || arr[0] is not PdfName family)
+            return null;
+
+        switch (family.Value)
+        {
+            case "DeviceGray" or "CalGray": return [0.0];
+            case "DeviceRGB" or "CalRGB": return [0.0, 0.0, 0.0];
+            case "DeviceCMYK": return [0.0, 0.0, 0.0, 1.0];
+            case "Indexed": return [0.0];
+            case "Pattern": return null;
+
+            case "Separation": return [1.0];
+
+            case "DeviceN":
+            {
+                if (Deref(arr.Count >= 2 ? arr[1] : null, doc) is not PdfArray { Count: > 0 } names)
+                    return null;
+                var tints = new List<double>(names.Count);
+                for (var i = 0; i < names.Count; i++) tints.Add(1.0);
+                return tints;
+            }
+
+            case "Lab":
+            {
+                // L is always in [0,100] so 0 is valid; a and b are clamped to /Range (default
+                // [-100 100 -100 100]).
+                double[] range = LabRangeOrDefault(arr, doc);
+                return [0.0, Clamp(0.0, range[0], range[1]), Clamp(0.0, range[2], range[3])];
+            }
+
+            case "ICCBased":
+            {
+                if (Deref(arr.Count >= 2 ? arr[1] : null, doc) is not PdfStream icc) return null;
+
+                // /N is required by ISO 32000-2 Table 66 — a stream without it is a malformed file, not
+                // one we should guess a channel count for. (ResolveICCBased separately defaults absent
+                // /N to 1 when actually resolving a colour value, which is a different concern: it needs
+                // *some* count to keep the colour tuple well-formed even for malformed input. Guessing
+                // here would only disagree with that default and pick an initial colour with a component
+                // count the resolve step wouldn't consistently use anyway.) Returning null means "leave
+                // the current colour alone" — the same conservative fallback already used for Pattern and
+                // for unidentifiable spaces.
+                if (!icc.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj)
+                    || Deref(nObj, doc) is not PdfInteger nInt) return null;
+                int n = nInt.Value;
+                if (n < 1) return null;
+
+                var comps = new List<double>(n);
+                PdfArray? iccRange = icc.Dictionary.TryGetValue(new PdfName("Range"), out PdfObject rObj)
+                    ? Deref(rObj, doc) as PdfArray
+                    : null;
+                for (var i = 0; i < n; i++)
+                {
+                    double lo = iccRange is not null && iccRange.Count > 2 * i ? iccRange[2 * i].ToDouble() : 0.0;
+                    double hi = iccRange is not null && iccRange.Count > 2 * i + 1 ? iccRange[2 * i + 1].ToDouble() : 1.0;
+                    comps.Add(Clamp(0.0, lo, hi));
+                }
+                return comps;
+            }
+
+            default: return null;
+        }
+    }
+
+    /// <summary>Lab <c>/Range</c> as [aMin aMax bMin bMax], defaulting per ISO 32000-2 Table 65.</summary>
+    private static double[] LabRangeOrDefault(PdfArray labArray, PdfDocument? doc)
+    {
+        if (labArray.Count >= 2 && Deref(labArray[1], doc) is PdfDictionary d
+            && d.TryGetValue(new PdfName("Range"), out PdfObject rObj)
+            && Deref(rObj, doc) is PdfArray { Count: >= 4 } r)
+            return [r[0].ToDouble(), r[1].ToDouble(), r[2].ToDouble(), r[3].ToDouble()];
+        return [-100.0, 100.0, -100.0, 100.0];
+    }
+
+    private static double Clamp(double v, double lo, double hi) => v < lo ? lo : v > hi ? hi : v;
+
+    /// <summary>
     /// True when a colour space marks nothing on the page, so painting operators using it shall be
     /// suppressed entirely (ISO 32000-2 §8.6.6.4 and §8.6.6.5).
     ///

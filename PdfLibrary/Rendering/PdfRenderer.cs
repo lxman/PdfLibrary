@@ -951,6 +951,45 @@ internal class PdfRenderer : PdfContentProcessor
         CurrentState.AdvanceTextMatrix(totalAdvance, 0);
     }
 
+    /// <summary>
+    /// Applies the newly-selected colour space's initial colour (ISO 32000-2 §8.6.8, Table 73), then
+    /// re-resolves so the Resolved* fields and the colorant-origin/plate masks match it. Named spaces
+    /// are looked up in the page's /ColorSpace resources, which is why this override lives here rather
+    /// than in the base processor.
+    /// </summary>
+    protected override void OnColorSpaceChanged(bool stroking)
+    {
+        string? csName = stroking ? CurrentState.StrokeColorSpace : CurrentState.FillColorSpace;
+        if (string.IsNullOrEmpty(csName)) return;
+
+        PdfObject? csObj = null;
+        PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
+        if (colorSpaces is not null && colorSpaces.TryGetValue(new PdfName(csName), out PdfObject? found))
+            csObj = found;
+
+        List<double>? initial = ColorSpaceResolver.InitialColorFor(csName, csObj, _document);
+
+        // null = Pattern (whose initial colour is a pattern that paints nothing, not a component
+        // vector) or an unidentifiable space. Leaving the current colour untouched is the safer of the
+        // two wrong answers: it preserves today's behaviour rather than inventing components.
+        //
+        // For an unidentifiable space specifically (an unresolvable indirect /ColorSpace entry, an
+        // ICCBased whose stream will not dereference, an ICCBased with no /N) this return is early
+        // enough to leave residue: CurrentState.FillColorSpace/StrokeColorSpace was already updated by
+        // the cs/CS operator before this hook runs, but because we return before OnColorChanged(),
+        // ResolvedFillColorSpace/ResolvedStrokeColorSpace, FillPaintsNothing/StrokePaintsNothing and
+        // FillPatternName/StrokePatternName are NOT re-derived and keep whatever they were for the
+        // PREVIOUS colour space. Concretely: `/Pattern cs /P1 scn … /BrokenCs cs … f` still paints
+        // pattern P1, because FillPatternName was never cleared. This is a known, deliberate gap, not a
+        // bug to fix here — see the colour conformance matrix's row 4-4 note.
+        if (initial is null) return;
+
+        if (stroking) CurrentState.StrokeColor = initial;
+        else CurrentState.FillColor = initial;
+
+        OnColorChanged();
+    }
+
     protected override void OnColorChanged()
     {
         // Resolve named color spaces to device color spaces

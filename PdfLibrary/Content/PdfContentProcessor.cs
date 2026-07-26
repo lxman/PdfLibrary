@@ -310,22 +310,21 @@ public abstract class PdfContentProcessor
                 OnColorChanged();
                 break;
 
-            // Color space operators
+            // cs/CS "shall also set the current […] colour to its initial value, which depends on the
+            // colour space" (ISO 32000-2 §8.6.8, Table 73). An earlier revision skipped this entirely
+            // because initialising every space to zero renders Separation at tint 0 — the lightest
+            // colour, not the required darkest. Zero is simply the wrong constant for half the
+            // families (DeviceCMYK is [0 0 0 1]; Separation and DeviceN are 1.0), so the fix is
+            // per-space initialisation, which OnColorSpaceChanged performs where the resources are.
             case SetStrokeColorSpaceOperator cs:
                 CurrentState.StrokeColorSpace = cs.ColorSpace;
-                // Note: Do NOT initialize color or call OnColorChanged() here.
-                // The color will be set by a subsequent SC/SCN operator.
-                // Initializing color to default values causes Separation color spaces
-                // to render with tint=0 (white) until the SCN operator is processed.
+                OnColorSpaceChanged(stroking: true);
                 break;
 
             case SetFillColorSpaceOperator cs:
                 PdfLogger.Log(LogCategory.Graphics, $"[cs OPERATOR] ColorSpace={cs.ColorSpace}");
                 CurrentState.FillColorSpace = cs.ColorSpace;
-                // Note: Do NOT initialize color or call OnColorChanged() here.
-                // The color will be set by a subsequent sc/scn operator.
-                // Initializing color to default values causes Separation color spaces
-                // to render with tint=0 (white) until the scn operator is processed.
+                OnColorSpaceChanged(stroking: false);
                 break;
 
             // Generic color operators
@@ -393,6 +392,17 @@ public abstract class PdfContentProcessor
     protected virtual void OnPaintShading(string name) { }
     private protected virtual void OnInlineImage(InlineImageOperator inlineImage) { }
     protected virtual void OnColorChanged() { }
+
+    /// <summary>
+    /// Raised after <c>cs</c>/<c>CS</c> sets a new colour space, so a subclass can apply that space's
+    /// initial colour (ISO 32000-2 §8.6.8, Table 73). It is a hook rather than logic here because the
+    /// initial value depends on the space's DEFINITION — a named Separation resolves to 1.0, a named
+    /// ICCBased to zeros clipped to its Range — and this class has no resource dictionary to resolve
+    /// names against. Default: no-op, so the non-rendering subclasses (text extraction, glyph and
+    /// marked-content collection) are unaffected.
+    /// </summary>
+    /// <param name="stroking">True for <c>CS</c>, false for <c>cs</c>.</param>
+    protected virtual void OnColorSpaceChanged(bool stroking) { }
     private protected virtual void OnGenericOperator(GenericOperator op) { }
     protected virtual void OnSetGraphicsState(string dictName) { }
 
