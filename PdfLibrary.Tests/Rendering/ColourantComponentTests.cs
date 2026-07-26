@@ -407,6 +407,159 @@ public class ColourantComponentTests
         }
     }
 
+    // --- ProcessChannel: positional channel identity within the process colour space ---
+
+    [Fact]
+    public void NonReservedNameInProcessComponents_GetsItsPositionalIndex()
+    {
+        // Table 71: /Components names "correspond, in order, to the components of the process colour
+        // space". PlateX is /Components[0], so it must carry channel 0 — not merely classify Process.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/PlateX /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel " + CmykProcess + " >>]", 0.25, 0.5);
+
+        Assert.Equal(ColourantRole.Process, o!.Components![0].Role);
+        Assert.Equal(0, o.Components[0].ProcessChannel);
+    }
+
+    [Fact]
+    public void ReservedNameAbsentFromProcessComponents_GetsCanonicalIndex()
+    {
+        // /Components is present but doesn't list Magenta. Table 71: the reserved names "need not have
+        // entries in the process dictionary" — Magenta still gets its canonical channel (1) because the
+        // effective process space is DeviceCMYK.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK >> >>]", 0.25, 0.5);
+
+        Assert.Equal(1, o!.Components![0].ProcessChannel);
+    }
+
+    [Fact]
+    public void ReservedNames_GetCanonicalIndices_WithNoProcessDictionaryAtAll()
+    {
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Cyan /Magenta /Yellow /Black] /DeviceCMYK "
+            + "<< /FunctionType 2 /Domain [0 1 0 1 0 1 0 1] /C0 [0 0 0 0] /C1 [1 1 1 1] /N 1 >>"
+            + " << /Subtype /NChannel >>]", 0.1, 0.2, 0.3, 0.4);
+
+        Assert.Equal(0, o!.Components![0].ProcessChannel);
+        Assert.Equal(1, o.Components[1].ProcessChannel);
+        Assert.Equal(2, o.Components[2].ProcessChannel);
+        Assert.Equal(3, o.Components[3].ProcessChannel);
+    }
+
+    [Fact]
+    public void ReservedNameUnderDeviceGrayProcessSpace_GetsNullProcessChannel()
+    {
+        // A DeviceGray process space has ONE channel and nothing in the spec says which reserved name
+        // owns it. Guessing would be exactly the half-built mapping the plan's Scope warns is worse
+        // than not building it at all.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Ink1 /Magenta] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceGray /Components [/Ink1] >> >>]",
+            0.25, 0.5);
+
+        Assert.Equal(ColourantRole.Process, o!.Components![1].Role);   // Magenta still classifies Process
+        Assert.Null(o.Components[1].ProcessChannel);
+        Assert.Equal(0, o.Components[0].ProcessChannel);                // Ink1 IS listed, index 0 of 1
+    }
+
+    [Fact]
+    public void SpotComponent_HasNullProcessChannel()
+    {
+        ColorantOrigin? o = Origin(NChannel(""), 0.25, 0.5);
+
+        Assert.Equal(ColourantRole.Spot, o!.Components![1].Role);   // Spot1
+        Assert.Null(o.Components[1].ProcessChannel);
+    }
+
+    [Fact]
+    public void NoneComponent_HasNullProcessChannel()
+    {
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Spot1 /None] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel >>]", 0.5, 0.5);
+
+        Assert.Equal(ColourantRole.None, o!.Components![1].Role);
+        Assert.Null(o.Components[1].ProcessChannel);
+    }
+
+    [Fact]
+    public void ProcessComponentsArrayLongerThanChannelCount_YieldsNullForTheOutOfRangeEntry()
+    {
+        // Five /Components entries under DeviceCMYK, which has 4 channels. The fifth is malformed
+        // input, not a fifth channel — it must classify Process (it IS listed) but carry no channel.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Cyan /Magenta /Yellow /Black /Extra] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/Cyan /Magenta /Yellow /Black /Extra] >> >>]", 0.1, 0.2, 0.3, 0.4, 0.5);
+
+        Assert.Equal(0, o!.Components![0].ProcessChannel);
+        Assert.Equal(1, o.Components[1].ProcessChannel);
+        Assert.Equal(2, o.Components[2].ProcessChannel);
+        Assert.Equal(3, o.Components[3].ProcessChannel);
+        Assert.Equal(ColourantRole.Process, o.Components[4].Role);   // Extra IS listed in /Components
+        Assert.Null(o.Components[4].ProcessChannel);                 // but index 4 >= channel count 4
+    }
+
+    [Fact]
+    public void DuplicateNameInProcessComponents_TakesTheFirstIndex()
+    {
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/PlateX] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/PlateX /Magenta /PlateX /Black] >> >>]", 0.25);
+
+        Assert.Equal(0, o!.Components![0].ProcessChannel);   // first occurrence of PlateX, not index 2
+    }
+
+    // --- /Process /Components elements that are indirect references (M-2) ---
+
+    [Fact]
+    public void IndirectProcessComponentsElement_ResolvesToProcessRole_WithItsIndex()
+    {
+        // Asymmetric with SpotColorSpace.TryParse's DeviceN names-array handling, which derefs every
+        // element for exactly this reason (SpotColorSpace.cs:216). An indirect /Components element must
+        // not be misclassified as Spot, and must still carry its positional channel.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/PlateX /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [5 0 R /Magenta /Yellow /Black] >> >>]",
+            "/PlateX");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.Equal(ColourantRole.Process, o!.Components![0].Role);
+            Assert.Equal(0, o.Components[0].ProcessChannel);
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+        }
+    }
+
+    [Fact]
+    public void CorruptIndirectProcessComponentsElement_DegradesToReservedNamesOnly_RatherThanThrowing()
+    {
+        // Object 5 here is an in-use xref entry whose body is a lone "]" — a genuinely corrupt target,
+        // same technique as CorruptProcessColorSpaceReference_DegradesToReservedNamesOnly_RatherThanThrowing
+        // one level up. A merely non-existent object would return null without throwing and make this
+        // test vacuous.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [5 0 R /Magenta /Yellow /Black] >> >>]",
+            "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 0.5], doc);
+
+            Assert.NotNull(o);
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Process, o.Components![0].Role);   // Magenta: reserved name still applies
+            Assert.Equal(1, o.Components[0].ProcessChannel);              // canonical index; processChannels fell back to null
+            Assert.Equal(ColourantRole.Spot, o.Components[1].Role);       // no processNames survives the throw
+        }
+    }
+
     // --- OwnAlternateCmyk from /Colorants ---
 
     private const string SpotColorants =
@@ -596,5 +749,48 @@ public class ColourantComponentTests
             Assert.Equal(ColourantRole.Spot, o.Components![1].Role);
             Assert.Null(o.Components[1].OwnAlternateCmyk);
         }
+    }
+
+    // --- Degenerate-input table rows with no test (M-1) ---
+
+    [Fact]
+    public void DuplicateNamesInNamesArray_YieldOnePerPosition_WithIndependentAlternates()
+    {
+        // Currently a natural consequence of the positional loop, but OwnAlternateFor is already
+        // name-keyed: a "build a name→alternate map once" optimisation would silently collapse
+        // duplicates with the suite green, because both positions would get the SAME cached alternate
+        // even though their tints (and therefore their true alternates) differ.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Spot1 /Spot1] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + SpotColorants + " >>]", 0.25, 1.0);
+
+        Assert.Equal(2, o!.Components!.Count);
+        Assert.Equal("Spot1", o.Components[0].Name);
+        Assert.Equal("Spot1", o.Components[1].Name);
+        Assert.Equal(0.25, o.Components[0].Tint);
+        Assert.Equal(1.0, o.Components[1].Tint);
+
+        IReadOnlyList<double>? alt0 = o.Components[0].OwnAlternateCmyk;
+        IReadOnlyList<double>? alt1 = o.Components[1].OwnAlternateCmyk;
+        Assert.NotNull(alt0);
+        Assert.NotNull(alt1);
+        Assert.Equal(0.125, alt0![0], 3);   // C1[0]=0.5 * tint 0.25
+        Assert.Equal(0.5, alt1![0], 3);     // C1[0]=0.5 * tint 1.0
+        Assert.NotEqual(alt0[0], alt1[0]);
+    }
+
+    [Fact]
+    public void ProcessComponentsPresentButNotAnArray_DegradesToReservedNamesOnly()
+    {
+        // MalformedProcessDictionary_DegradesToReservedNamesOnly covers /Components MISSING. This
+        // covers the other half of the table row: /Components present but the WRONG TYPE.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components /NotAnArray >> >>]", 0.25, 0.5);
+
+        Assert.NotNull(o!.Components);
+        Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+        Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
     }
 }

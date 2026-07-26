@@ -26,6 +26,13 @@ public sealed record ColorantOrigin(
     /// can be evaluated individually. <b>Null</b> for every other space — a Separation, a plain DeviceN,
     /// an unrecognised subtype, or an NChannel whose process colour space this engine cannot reduce to
     /// CMYK. A null here is the signal to fall back to whole-space behaviour, which is exactly what
-    /// ISO 32000-2 §8.6.6.5 requires of a non-NChannel DeviceN.</summary>
+    /// ISO 32000-2 §8.6.6.5 requires of a non-NChannel DeviceN.
+    ///
+    /// <para><b>A non-null value does not by itself mean per-component routing is available.</b>
+    /// Shadings and meshes resolve their origin with no per-op colour (<c>Tints</c> empty), so every
+    /// component in the list gets a null <c>Tint</c> and therefore a null <c>OwnAlternateCmyk</c> — a
+    /// fully populated, role-classified list whose entries carry nothing a compositor can act on
+    /// individually. A consumer must check for a usable per-component alternate (or tint), not merely
+    /// that <c>Components is not null</c>.</para></summary>
     public IReadOnlyList<ColourantComponent>? Components { get; init; }
 }

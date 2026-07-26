@@ -287,10 +287,22 @@ internal sealed class SpotColorSpace
             // Fall back to the documented defaults set at field-declaration time (Subtype "DeviceN",
             // Colorants/Process null) rather than let a corrupt /Attributes subtree fail a render that
             // used to succeed pre-Pass-2a.
+            //
+            // Deliberate: this resets _subtype even when /Subtype was ALREADY read successfully above
+            // (e.g. "NChannel") before the throw happened while dereferencing /Colorants or /Process. A
+            // partially-read /Attributes dictionary is not trustworthy enough to keep just the Subtype
+            // from it — do not "fix" this by moving the assignment before the throwing reads; it is
+            // pinned by SpotColorSpaceTests.SubtypeIsResetToDeviceN_WhenColorantsDereferencingThrows_
+            // EvenThoughSubtypeWasRead. Behaviourally inconsequential either way: IsNChannel becomes
+            // false and Colorants/Process are null regardless of which reading survives.
             _subtype = "DeviceN";
             _colorants = null;
             _process = null;
-            PdfLogger.Log(LogCategory.Graphics,
+            // Lazy overload: Log(category, string) checks IsCategoryEnabled AFTER the caller has already
+            // formatted the string, so a plain interpolation pays a full Exception.ToString() stack-trace
+            // format even when Graphics logging is disabled, on every colour operator that parses a
+            // SpotColorSpace with a corrupt /Attributes subtree.
+            PdfLogger.Log(LogCategory.Graphics, () =>
                 $"EnsureAttributes: /Attributes dereferencing threw, falling back to DeviceN defaults: {ex}");
         }
     }

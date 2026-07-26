@@ -237,6 +237,34 @@ public class SpotColorSpaceTests
     }
 
     [Fact]
+    public void SubtypeIsResetToDeviceN_WhenColorantsDereferencingThrows_EvenThoughSubtypeWasRead()
+    {
+        // Pins CURRENT, DELIBERATELY UNALTERED behaviour: EnsureAttributes reads /Subtype successfully
+        // ("NChannel") but then throws while dereferencing /Colorants, and the catch resets _subtype to
+        // "DeviceN" even though the file said NChannel. ColorantOrigin.Subtype's doc comment calls the
+        // member authoritative; this is a known, judged-inconsequential exception (see the comment at
+        // the reset site in EnsureAttributes). If a future change makes this test fail because the
+        // behaviour was intentionally corrected, update this test — do not treat a failure here as a
+        // regression to silently work around.
+        //
+        // Object 5 is an in-use xref entry (so GetObject does not merely return null the way a reference
+        // to a non-existent object number would) whose body is a lone "]" — the same genuinely corrupt
+        // target technique used throughout ColourantComponentTests.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/GWGGreen /Cyan] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Colorants 5 0 R >>]", "]");
+        using (doc)
+        {
+            Assert.True(SpotColorSpace.TryParse(arr, doc, out SpotColorSpace? s));
+
+            Assert.Equal("DeviceN", s!.Subtype);   // NOT "NChannel", even though the file said NChannel
+            Assert.False(s.IsNChannel);
+            Assert.Null(s.Colorants);
+            Assert.Null(s.Process);
+        }
+    }
+
+    [Fact]
     public void SeparationNeverCarriesAttributes()
     {
         // /Attributes is a DeviceN-only element; a five-element Separation array is malformed and its
