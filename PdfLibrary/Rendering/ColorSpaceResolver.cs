@@ -565,7 +565,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         return (ramp, solid);
     }
 
-    private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
+    internal static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
     /// <summary>
