@@ -91,6 +91,15 @@ internal sealed record SpotColorSpace
         get { EnsureTint(); return _tintTransformObject; }
     }
 
+    /// <summary>True when the source array has at least four elements, i.e. a tint transform element
+    /// is present. This is the deref-free way to ask the arity question that <c>TintTransformObject is
+    /// null</c> would otherwise answer at the cost of resolving element 3 via <c>EnsureTint</c> (which
+    /// is normally an indirect stream object — a corrupt one throws <c>PdfParseException</c> out of
+    /// that dereference). Callers that only need to preserve the pre-Pass-1 "Count >= 4" rule — without
+    /// triggering that dereference — must read this property, not <see cref="TintTransformObject"/>.
+    /// </summary>
+    internal bool HasTintTransform => _source.Count >= 4;
+
     /// <summary>/Attributes /Subtype, defaulting to "DeviceN" per ISO 32000-2 Table 70. Always
     /// "DeviceN" for a Separation space. Resolved lazily on first access and cached — see the class
     /// remarks.</summary>

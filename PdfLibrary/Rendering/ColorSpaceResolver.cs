@@ -838,9 +838,11 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return null;
 
         // Pre-Pass-1 this member required Count >= 4, unlike PaintsNothing/PlatesForColorSpaceObject.
-        // A non-null TintTransformObject is exactly that condition, so gate on it to keep a short
-        // [/Separation /Spot1] array yielding no origin, as before.
-        if (space!.TintTransformObject is null) return null;
+        // Gate on the arity itself (HasTintTransform), NOT on "TintTransformObject is null": reading
+        // TintTransformObject would deref element 3 (normally an indirect stream object) before the
+        // name checks below even run, so a malformed tint-transform reference could throw out of a
+        // call that the old Count >= 4 check would have rejected without ever touching it.
+        if (!space!.HasTintTransform) return null;
 
         if (!space.AllNamesResolved || space.Names.Count == 0) return null;
 
