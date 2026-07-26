@@ -237,4 +237,101 @@ public class ColourantComponentTests
         Assert.Null(o.Subtype);
         Assert.Null(o.Components);
     }
+
+    // --- /Process /Components mapping ---
+
+    private const string CmykProcess =
+        "/Process << /ColorSpace /DeviceCMYK /Components [/Cyan /Magenta /Yellow /Black] >>";
+
+    [Fact]
+    public void ProcessComponents_MapNonReservedNamesToProcessRole()
+    {
+        // The GWG081 shape: a CMYK process dictionary alongside a spot.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Spot1 /Cyan] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel " + CmykProcess + " >>]", 0.25, 0.5);
+
+        Assert.Equal(ColourantRole.Spot, o!.Components![0].Role);
+        Assert.Equal(ColourantRole.Process, o.Components[1].Role);
+    }
+
+    [Fact]
+    public void NameListedInProcessComponents_IsProcess_EvenIfNotReserved()
+    {
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Ink1 /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/Ink1 /Magenta /Yellow /Black] >> >>]", 0.25, 0.5);
+
+        Assert.Equal(ColourantRole.Process, o!.Components![0].Role);
+        Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+    }
+
+    [Fact]
+    public void ProcessEntryWins_OverAColorantsEntryForTheSameName()
+    {
+        // Table 71: "Any such definition shall be ignored if the colorant is also present in the
+        // process dictionary."
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Ink1 /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/Ink1 /Magenta /Yellow /Black] >> "
+            + "/Colorants << /Ink1 [/Separation /Ink1 /DeviceCMYK " + Tint1 + "] >> >>]", 0.25, 0.5);
+
+        Assert.Equal(ColourantRole.Process, o!.Components![0].Role);
+    }
+
+    [Fact]
+    public void NoneStaysNone_EvenIfListedInProcessComponents()
+    {
+        // /None's discard rule is unconditional; a malformed process dictionary must not override it.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/None /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK "
+            + "/Components [/None /Magenta /Yellow /Black] >> >>]", 0.5, 0.5);
+
+        Assert.Equal(ColourantRole.None, o!.Components![0].Role);
+    }
+
+    [Fact]
+    public void NonCmykProcessSpace_SuppressesComponentsEntirely()
+    {
+        // EXAMPLE 7's shape. Mapping RGB process components onto plates is a colour conversion this
+        // engine has no converter for here, and classifying them as Process without being able to say
+        // which plate they mark would map them onto none. Falling back is the safe answer.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/ProcessRed /ProcessGreen /ProcessBlue /Red] /DeviceCMYK "
+            + "<< /FunctionType 2 /Domain [0 1 0 1 0 1 0 1] /C0 [0 0 0 0] /C1 [1 1 1 1] /N 1 >>"
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceRGB "
+            + "/Components [/ProcessRed /ProcessGreen /ProcessBlue] >> >>]", 0.1, 0.2, 0.3, 0.4);
+
+        Assert.NotNull(o);
+        Assert.Equal("NChannel", o!.Subtype);
+        Assert.Null(o.Components);
+    }
+
+    [Fact]
+    public void DeviceGrayProcessSpace_IsAccepted()
+    {
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Ink1 /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceGray /Components [/Ink1] >> >>]",
+            0.25, 0.5);
+
+        Assert.NotNull(o!.Components);
+        Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+    }
+
+    [Fact]
+    public void MalformedProcessDictionary_DegradesToReservedNamesOnly()
+    {
+        // /Components missing. Reserved names must still classify; the rest stay spots.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK >> >>]", 0.25, 0.5);
+
+        Assert.NotNull(o!.Components);
+        Assert.Equal(ColourantRole.Process, o.Components![0].Role);
+        Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
+    }
 }
