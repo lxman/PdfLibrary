@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -33,8 +34,19 @@ namespace PdfLibrary.Rendering;
 /// used to render fine, and (b) violate the §8.6.6.4 "ignored" rule this file itself quotes elsewhere
 /// (see <c>ColorSpaceResolver.BuildTintToRgb</c>). Do NOT "tidy" these back into eager positional
 /// record members — that reintroduces both problems.</para>
+///
+/// <para>Deliberately a CLASS, not a record. A record synthesizes <c>ToString</c>/<c>PrintMembers</c>,
+/// which enumerates every readable public property — including the three lazily-resolved ones this
+/// class exists to guard. A single interpolated log line (<c>$"{space}"</c>, and this codebase logs by
+/// string interpolation throughout) or an assertion-failure message would invoke all three
+/// <c>Ensure*</c> methods and dereference elements 2-4, which is exactly the "never even looked at"
+/// rule the remarks above quote. Record equality would also be wrong here: it compares the private
+/// memo fields (<c>_alternateComputed</c> etc.), so two logically identical instances would compare
+/// unequal depending on which lazy members happened to have been read. There are no positional
+/// parameters, no deconstruction, no value-equality consumer, and no <c>with</c> usage anywhere in the
+/// codebase, so <c>record</c> buys nothing and only creates a footgun.</para>
 /// </summary>
-internal sealed record SpotColorSpace
+internal sealed class SpotColorSpace
 {
     private readonly PdfArray _source;
     private readonly PdfDocument? _doc;
@@ -60,15 +72,15 @@ internal sealed record SpotColorSpace
     }
 
     /// <summary>"Separation" or "DeviceN".</summary>
-    public string Family { get; }
+    internal string Family { get; }
 
     /// <summary>One entry for Separation, one per colorant for DeviceN. An entry is null when
     /// that element did not resolve to a name; the COUNT is always the declared colorant count.</summary>
-    public IReadOnlyList<string?> Names { get; }
+    internal IReadOnlyList<string?> Names { get; }
 
     /// <summary>The dereferenced alternate space object, or null when the array is shorter than three
     /// elements. Resolved lazily on first access and cached — see the class remarks.</summary>
-    public PdfObject? AlternateObject
+    internal PdfObject? AlternateObject
     {
         get { EnsureAlternate(); return _alternateObject; }
     }
@@ -76,7 +88,7 @@ internal sealed record SpotColorSpace
     /// <summary>The alternate's family name ("DeviceCMYK", "Lab", "CalRGB", …), or the empty string
     /// when absent or unrecognised. Resolved lazily on first access and cached — see the class
     /// remarks.</summary>
-    public string AlternateSpaceName
+    internal string AlternateSpaceName
     {
         get { EnsureAlternate(); return _alternateSpaceName; }
     }
@@ -86,7 +98,7 @@ internal sealed record SpotColorSpace
     /// behaviour, and caching a shared instance is a thread-safety question this pass does not answer
     /// (see the Pass 1 plan's scope note). Resolved lazily on first access and cached — see the class
     /// remarks.</summary>
-    public PdfObject? TintTransformObject
+    internal PdfObject? TintTransformObject
     {
         get { EnsureTint(); return _tintTransformObject; }
     }
@@ -103,7 +115,7 @@ internal sealed record SpotColorSpace
     /// <summary>/Attributes /Subtype, defaulting to "DeviceN" per ISO 32000-2 Table 70. Always
     /// "DeviceN" for a Separation space. Resolved lazily on first access and cached — see the class
     /// remarks.</summary>
-    public string Subtype
+    internal string Subtype
     {
         get { EnsureAttributes(); return _subtype; }
     }
@@ -111,14 +123,14 @@ internal sealed record SpotColorSpace
     /// <summary>/Attributes /Colorants, or null. Required to be present for NChannel spaces that carry
     /// spot colourants. Parsed but not yet consumed — Pass 2 (G-4) is its consumer. Resolved lazily on
     /// first access and cached — see the class remarks.</summary>
-    public PdfDictionary? Colorants
+    internal PdfDictionary? Colorants
     {
         get { EnsureAttributes(); return _colorants; }
     }
 
     /// <summary>/Attributes /Process, or null. Parsed but not yet consumed. Resolved lazily on first
     /// access and cached — see the class remarks.</summary>
-    public PdfDictionary? Process
+    internal PdfDictionary? Process
     {
         get { EnsureAttributes(); return _process; }
     }
@@ -150,23 +162,38 @@ internal sealed record SpotColorSpace
 
     /// <summary>Parses a colour-space object into a <see cref="SpotColorSpace"/>. Returns false for
     /// every other family (including Indexed and ICCBased), for a null object, and for an array
-    /// shorter than two elements. Does NOT reject a Separation whose colorant name fails to resolve to
-    /// a <see cref="PdfName"/>, nor a DeviceN whose names array is empty — both parse successfully,
-    /// with the caller responsible for its own strictness via <see cref="AllNamesResolved"/> and
-    /// <c>Names.Count</c> (which is vacuously "all resolved" for an empty DeviceN names array; see
-    /// <see cref="AllNamesResolved"/>).
+    /// shorter than <paramref name="minimumElements"/> elements. Does NOT reject a Separation whose
+    /// colorant name fails to resolve to a <see cref="PdfName"/>, nor a DeviceN whose names array is
+    /// empty — both parse successfully, with the caller responsible for its own strictness via
+    /// <see cref="AllNamesResolved"/> and <c>Names.Count</c> (which is vacuously "all resolved" for an
+    /// empty DeviceN names array; see <see cref="AllNamesResolved"/>).
     ///
     /// <para>Only <see cref="Family"/> and <see cref="Names"/> are computed here — element 1 is all
     /// that <c>PaintsNothing</c> and <c>PlatesForColorSpaceObject</c> read pre-Pass-1. Elements 2-4
     /// (alternate, tint transform, /Attributes) are resolved lazily; see the class remarks.</para>
     /// </summary>
-    internal static bool TryParse(PdfObject? csObj, PdfDocument? doc, out SpotColorSpace? space)
+    /// <param name="csObj">The colour-space object (or an indirect reference to one) to parse.</param>
+    /// <param name="doc">Document used to resolve indirect references; may be null.</param>
+    /// <param name="space">The parsed space on success; null on failure.</param>
+    /// <param name="minimumElements">The minimum array length to accept, checked BEFORE the family
+    /// switch below and therefore before element 1 (or, for DeviceN, any name element) is dereferenced.
+    /// Default 2 matches the loosest pre-Pass-1 caller (<c>PaintsNothing</c>,
+    /// <c>PlatesForColorSpaceObject</c>). Callers whose pre-Pass-1 body required <c>Count &gt;= 4</c>
+    /// (<c>BuildTintToRgb</c>, <c>BuildTintToCmyk</c>, <c>BuildTintRamp</c>,
+    /// <c>OriginForColorSpaceObject</c>) must pass 4 here, not merely check
+    /// <see cref="HasTintTransform"/> afterwards — checking arity AFTER this method has already
+    /// dereferenced element 1 is too late: a two-element array whose element 1 is an indirect reference
+    /// to a corrupt object would already have thrown <c>PdfParseException</c> by the time the caller's
+    /// own check ran. Counting the array length before touching any element is what makes rejecting a
+    /// short array free of side effects, exactly like every one of the five pre-Pass-1 bodies.</param>
+    internal static bool TryParse(PdfObject? csObj, PdfDocument? doc,
+        [NotNullWhen(true)] out SpotColorSpace? space, int minimumElements = 2)
     {
         space = null;
         if (csObj is null) return false;
 
         PdfObject resolved = ColorSpaceResolver.Deref(csObj, doc);
-        if (resolved is not PdfArray { Count: >= 2 } arr || arr[0] is not PdfName family)
+        if (resolved is not PdfArray arr || arr.Count < minimumElements || arr[0] is not PdfName family)
             return false;
 
         List<string?> names;

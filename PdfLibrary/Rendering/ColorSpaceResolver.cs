@@ -390,15 +390,12 @@ internal class ColorSpaceResolver(PdfDocument? document)
         PdfArray baseArray, PdfDocument? document, out int inputComponents)
     {
         inputComponents = 0;
-        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space)) return null;
-
-        // Pre-Pass-1 this member required Count >= 4. That arity rule is expressed here as arity
-        // (HasTintTransform), deliberately NOT inferred from "TintTransformObject is null": reading
-        // TintTransformObject would deref element 3 (normally an indirect stream object) before the
-        // /All and /None checks below even run, so a malformed tint-transform reference could throw
-        // PdfParseException out of a call the old Count >= 4 check would have rejected without ever
-        // touching it.
-        if (!space!.HasTintTransform) return null;
+        // Pre-Pass-1 this member required Count >= 4 BEFORE touching element 1. minimumElements: 4
+        // enforces that arity gate inside TryParse itself, ahead of any dereference, so a short array
+        // (e.g. a two-element [/Separation 7 0 R] whose element 1 is a corrupt indirect object) is
+        // rejected for free rather than throwing PdfParseException out of this render path.
+        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space, minimumElements: 4))
+            return null;
 
         // §8.6.6.4 row 4-10: for /All and /None the alternateSpace and tintTransform SHALL be ignored.
         // Handled before either is read, exactly as ResolveSeparation does for fills — otherwise an /All
@@ -450,15 +447,12 @@ internal class ColorSpaceResolver(PdfDocument? document)
         PdfArray baseArray, PdfDocument? document, out int inputComponents)
     {
         inputComponents = 0;
-        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space)) return null;
-
-        // Pre-Pass-1 this member required Count >= 4, as in BuildTintToRgb. That arity rule is
-        // expressed here as arity (HasTintTransform), deliberately NOT inferred from
-        // "TintTransformObject is null": reading TintTransformObject would deref element 3 (normally an
-        // indirect stream object) before the /All and /None checks below even run, so a malformed
-        // tint-transform reference could throw PdfParseException out of a call the old Count >= 4 check
-        // would have rejected without ever touching it.
-        if (!space!.HasTintTransform) return null;
+        // Pre-Pass-1 this member required Count >= 4 BEFORE touching element 1, as in BuildTintToRgb.
+        // minimumElements: 4 enforces that arity gate inside TryParse itself, ahead of any dereference,
+        // so a short array is rejected for free rather than throwing PdfParseException out of this
+        // render path.
+        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space, minimumElements: 4))
+            return null;
 
         // §8.6.6.4 row 4-10, as in BuildTintToRgb. Placed BEFORE the alternate-space gate below, because
         // the clause says the alternate space is ignored for these names — an /All space is convertible
@@ -518,15 +512,11 @@ internal class ColorSpaceResolver(PdfDocument? document)
     {
         if (colorantIndex < 0 || colorantIndex >= inputCount)
             return (null, (0, 0, 0));
-        if (!SpotColorSpace.TryParse(baseArray, doc, out SpotColorSpace? space))
+        // Pre-Pass-1 this member required Count >= 4 (baseArray.Count < 4) BEFORE touching element 1.
+        // minimumElements: 4 enforces that arity gate inside TryParse itself, ahead of any dereference,
+        // so a short array is rejected for free (a null ramp) rather than throwing PdfParseException.
+        if (!SpotColorSpace.TryParse(baseArray, doc, out SpotColorSpace? space, minimumElements: 4))
             return (null, (0, 0, 0));
-
-        // Pre-Pass-1 this member required Count >= 4 (baseArray.Count < 4). That arity rule is expressed
-        // here as arity (HasTintTransform), deliberately NOT inferred from "TintTransformObject is
-        // null": reading TintTransformObject would deref element 3 (normally an indirect stream object)
-        // as a side effect of asking a pure arity question, and a corrupt reference would throw
-        // PdfParseException where the old Count >= 4 check would have just returned a null ramp.
-        if (!space!.HasTintTransform) return (null, (0, 0, 0));
 
         PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, doc);
         if (tint is null) return (null, (0, 0, 0));
@@ -837,14 +827,13 @@ internal class ColorSpaceResolver(PdfDocument? document)
     public static ColorantOrigin? OriginForColorSpaceObject(
         PdfObject? csObj, IReadOnlyList<double>? rawColor, PdfDocument? doc)
     {
-        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return null;
-
         // Pre-Pass-1 this member required Count >= 4, unlike PaintsNothing/PlatesForColorSpaceObject.
-        // Gate on the arity itself (HasTintTransform), NOT on "TintTransformObject is null": reading
-        // TintTransformObject would deref element 3 (normally an indirect stream object) before the
-        // name checks below even run, so a malformed tint-transform reference could throw out of a
-        // call that the old Count >= 4 check would have rejected without ever touching it.
-        if (!space!.HasTintTransform) return null;
+        // minimumElements: 4 enforces that arity gate inside TryParse itself, ahead of any dereference,
+        // so a short array (e.g. a two-element [/Separation name]) yields no origin for free rather
+        // than throwing PdfParseException out of a malformed tint-transform reference it never needed
+        // to touch.
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space, minimumElements: 4))
+            return null;
 
         if (!space.AllNamesResolved || space.Names.Count == 0) return null;
 

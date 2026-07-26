@@ -8,12 +8,17 @@ namespace PdfLibrary.Tests.Rendering;
 /// <summary>
 /// Pins the arity rule <see cref="ColorSpaceResolver.OriginForColorSpaceObject"/> alone (among the
 /// five migrated members) enforces — Count >= 4, expressed post-migration as
-/// <c>SpotColorSpace.HasTintTransform</c> — plus the cases that exercise a LIVE
+/// <c>SpotColorSpace.HasTintTransform</c> (and, since the eager-deref fix, as
+/// <c>SpotColorSpace.TryParse</c>'s <c>minimumElements: 4</c>) — plus the cases that exercise a LIVE
 /// <see cref="PdfDocument"/> rather than the null-document short-circuit every prior
 /// characterization test used. Task 4 review found that gating on <c>TintTransformObject is null</c>
-/// (rather than the deref-free <c>HasTintTransform</c>) would deref a possibly-corrupt indirect tint
-/// transform object before the name checks even ran; these tests, combined with the fixed gate, are
-/// the net that catches a regression back to that shape.
+/// would deref a possibly-corrupt indirect tint transform object before the name checks even ran.
+/// These tests do NOT, by themselves, distinguish that gate from the correct one: <c>Deref</c> never
+/// returns null, so <c>TintTransformObject is null</c> and the arity check are exactly equivalent in
+/// VALUE and differ only in side effect, which no assertion here can observe. What actually prevents a
+/// regression back to that shape is code review and the parser's own documentation (see
+/// <c>SpotColorSpace.TryParse</c>'s <c>minimumElements</c> parameter doc) — these tests pin the
+/// user-visible arity behaviour, not the internal gating mechanism.
 /// </summary>
 public class OriginForColorSpaceObjectTests
 {

@@ -119,6 +119,68 @@ public class ColorSpaceResolverCharacterizationTests
         Assert.Equal(2, inputs);
     }
 
+    [Fact]
+    public void BuildTintToCmyk_SeparationWithNonNameColorant_StillEvaluatesWithOneInput()
+    {
+        // The single most important preserved behaviour in the branch: BuildTintToCmyk never required
+        // element 1 (the colorant name) to resolve to a /Name — it uses only the colorant COUNT — so a
+        // Separation whose colorant is a bare integer must still produce a working evaluator.
+        PdfArray cs = Parse("[/Separation 42 /DeviceCMYK " + Tint2 + "]");
+
+        Func<double[], (double C, double M, double Y, double K)>? f =
+            ColorSpaceResolver.BuildTintToCmyk(cs, null, out int inputs);
+
+        Assert.NotNull(f);
+        Assert.Equal(1, inputs);
+    }
+
+    [Fact]
+    public void BuildTintToCmyk_TwoElementSeparation_ReturnsNull()
+    {
+        // Pins the arity rule at the consumer level: a two-element array (no alternate, no tint
+        // transform) must still yield no evaluator, the exact input class of the eager-deref defect.
+        PdfArray cs = Parse("[/Separation /Spot1]");
+        Assert.Null(ColorSpaceResolver.BuildTintToCmyk(cs, null, out int _));
+    }
+
+    [Fact]
+    public void BuildTintToCmyk_ThreeElementSeparation_ReturnsNull()
+    {
+        // The boundary: an alternate is present but the tint transform still is not (Count == 3).
+        PdfArray cs = Parse("[/Separation /Spot1 /DeviceCMYK]");
+        Assert.Null(ColorSpaceResolver.BuildTintToCmyk(cs, null, out int _));
+    }
+
+    // --- BuildTintToRgb ---
+
+    [Fact]
+    public void BuildTintToRgb_SeparationWithNonNameColorant_StillEvaluatesWithOneInput()
+    {
+        // Same non-name-colorant case as BuildTintToCmyk above — BuildTintToRgb likewise uses only
+        // Names.Count and never required element 1 to resolve to a /Name.
+        PdfArray cs = Parse("[/Separation 42 /DeviceCMYK " + Tint2 + "]");
+
+        Func<double[], (byte R, byte G, byte B)>? f =
+            ColorSpaceResolver.BuildTintToRgb(cs, null, out int inputs);
+
+        Assert.NotNull(f);
+        Assert.Equal(1, inputs);
+    }
+
+    [Fact]
+    public void BuildTintToRgb_TwoElementSeparation_ReturnsNull()
+    {
+        PdfArray cs = Parse("[/Separation /Spot1]");
+        Assert.Null(ColorSpaceResolver.BuildTintToRgb(cs, null, out int _));
+    }
+
+    [Fact]
+    public void BuildTintToRgb_ThreeElementSeparation_ReturnsNull()
+    {
+        PdfArray cs = Parse("[/Separation /Spot1 /DeviceCMYK]");
+        Assert.Null(ColorSpaceResolver.BuildTintToRgb(cs, null, out int _));
+    }
+
     // --- OriginForColorSpaceObject ---
 
     [Fact]
@@ -161,7 +223,7 @@ public class ColorSpaceResolverCharacterizationTests
     }
 
     [Fact]
-    public void OriginForColorSpaceObject_IccBased_ReturnsNull()
+    public void OriginForColorSpaceObject_Indexed_ReturnsNull()
     {
         PdfArray cs = Parse("[/Separation /GWGGreen /DeviceCMYK " + Tint2 + "]");
         // A non-Separation/DeviceN family must yield no origin. Reuse an Indexed array as the negative.

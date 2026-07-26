@@ -1143,3 +1143,61 @@ Write into your report: the recorded old pins, NEWVERSION, confirmation that the
 ## Execution Handoff
 
 Executing **subagent-driven**: six tasks, each with its own test cycle, and Tasks 3–5 are exactly the shape where a fresh reviewer should be able to reject one migration while approving its neighbours. Task 6 crosses a repo boundary and has a hard stop condition that benefits from an independent check.
+
+---
+
+## Corrections applied during execution
+
+This plan was committed once and not updated as review rounds found problems with the code it
+prescribes. The task text above is left as originally written — this section records, briefly, where
+what shipped diverges from what was planned, so the record of "planned" vs "shipped" stays intact.
+
+- **The Separation branch must NOT reject a non-name colorant.** Task 2's `TryParse` code block
+  (Step 4) parses a Separation whose element 1 is not a `PdfName` as `return false` — a parse
+  failure. That is wrong: `BuildTintToRgb`/`BuildTintToCmyk` never required the colorant name to
+  resolve (they use only `Names.Count`), so rejecting it here would make a previously-renderable
+  Separation with e.g. `[/Separation 42 /DeviceCMYK …]` stop rendering. The shipped parser mirrors the
+  DeviceN entry instead: an unresolved Separation colorant name is recorded as `null` in `Names[0]`,
+  never as a parse failure. `ColorSpaceResolverCharacterizationTests` pins this directly
+  (`BuildTintToCmyk_SeparationWithNonNameColorant_StillEvaluatesWithOneInput` and its
+  `BuildTintToRgb` counterpart).
+
+- **The arity gate for `BuildTintToRgb`, `BuildTintToCmyk`, `BuildTintRamp` and
+  `OriginForColorSpaceObject` must be `HasTintTransform` or `TryParse`'s `minimumElements` parameter —
+  never `TintTransformObject is null`.** Reading `TintTransformObject` dereferences element 3 (normally
+  an indirect stream object); a corrupt reference there throws `PdfParseException` out of a call the
+  old `Count >= 4` check would have rejected without ever touching it. Task 4's code block (the
+  `OriginForColorSpaceObject` replacement) and Task 5's three code blocks all gate on
+  `TintTransformObject is null` — that is the wrong condition and was corrected in review to
+  `HasTintTransform`, then further tightened: `HasTintTransform` alone was not sufficient either, because
+  `TryParse` itself dereferences element 1 (and, for DeviceN, every name element) BEFORE any caller-side
+  arity check runs. A two-element array whose element 1 is a corrupt indirect object would already have
+  thrown by the time `HasTintTransform` was checked. The shipped fix adds an optional `minimumElements`
+  parameter to `TryParse` (default 2, matching `PaintsNothing`/`PlatesForColorSpaceObject`) and checks it
+  BEFORE the family switch, so the four arity-gated members pass `minimumElements: 4` and a short array
+  is rejected before any element is dereferenced, with no side effect.
+
+- **`SpotColorSpace` resolves the alternate, tint transform and attributes LAZILY, and is a `class`, not
+  a `record`.** Task 2's code block declares `internal sealed record SpotColorSpace(string Family, …)`
+  as an eight-field positional record computing all eight fields eagerly in `TryParse`. Review found
+  this eagerly dereferences elements 2–4 for every caller, including `PaintsNothing` and
+  `PlatesForColorSpaceObject`, which pre-Pass-1 only ever read element 1 — turning a previously
+  side-effect-free call into one that can throw `PdfParseException` fetching an alternate space, tint
+  transform, or attributes dictionary nothing asked for. The shipped type instead computes only `Family`
+  and `Names` eagerly in `TryParse`; `AlternateObject`, `AlternateSpaceName`, `TintTransformObject`,
+  `Subtype`, `Colorants` and `Process` are resolved on first access and cached. Because a record
+  synthesizes `ToString`/`PrintMembers` over every readable public property, a record shape would defeat
+  that laziness the moment anything logged or asserted on a `SpotColorSpace` instance — this codebase
+  logs by string interpolation throughout, so that was a live hazard, not a theoretical one. The shipped
+  type is `internal sealed class SpotColorSpace` with all members `internal` (not the record's mixed
+  `public`/`internal`), and a class-level comment records why it is deliberately not a record.
+
+- **The Self-Review's "Type consistency" note is superseded on both points above.** It asserts
+  "`SpotColorSpace`'s eight positional members are declared once in Task 2" (superseded — the shipped
+  type has no positional members; the eight pieces of data are a mix of eagerly-computed fields and
+  lazily-computed properties) and "`TintTransformObject is null` is the uniform stand-in for the old
+  `Count < 4` guard in Tasks 4 and 5" (superseded — that stand-in was the arity bug described above;
+  the uniform gate is `TryParse`'s `minimumElements` parameter. An intermediate review round had all
+  four call sites check `HasTintTransform` in addition to passing `minimumElements: 4`, which was
+  correct but redundant once the parameter existed. The final fix wave removed that redundant check at
+  all four sites and moved its explanatory comment to sit beside each `minimumElements: 4` argument).
