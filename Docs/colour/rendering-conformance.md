@@ -6,6 +6,9 @@
 > Ratchet pass 1 (2026-07-25): ten rows converted from "conformant by inspection" to clause-citing
 > tests. Two of them turned out not to be conformant at all — see the score section.
 >
+> ␀ sweep (2026-07-26): added class F (five file-validity rows reassigned out of the score) and cleared
+> every remaining unaudited row to zero — see the score section for the full accounting.
+>
 > This is the **renderer's** conformance matrix — the companion to `Docs/pdfua/matterhorn-coverage.md`,
 > which does the same job for the validator. It answers "how standards compliant is our colour?" with a
 > number that has a denominator, rather than an impression.
@@ -171,8 +174,10 @@ substantive violation this matrix has tracked since slice 1.
 - ~~**G-3 — `All` on an additive device is not complemented.**~~ **CLOSED 2026-07-25.** Row 4-7 is ✅ on
   the additive path; the subtractive half was tracked separately as G-5, closed below the same day.
 - **G-4 — NChannel is not implemented on the render path.** Rows 5-3 and 5-11. The per-component
-  evaluation rule is a `shall`, and we do the opposite (all-or-nothing). Blocks 5-5 and 5-12 too. This
-  remains the substantive violation in the slice, and is untouched by this pass.
+  evaluation rule is a `shall`, and we do the opposite (all-or-nothing). This remains the substantive
+  violation in the slice, and is untouched by this pass. (5-5 and 5-12 were previously listed as blocked
+  on this gap too; both moved to class F in this sweep — file-shape constraints are the validator's job by
+  this document's own class definition, so G-4's remaining scope is 5-3 and 5-11 alone.)
 - ~~**G-5 — `/All` is not device-aware on the soft-proof path.**~~ **CLOSED 2026-07-25.** The engine
   keeps producing the additive answer (it cannot know the device — `WantsCmyk` is decided after the
   draw list is built), and `InkDecider` derives the subtractive answer from `ColorantOrigin`.
