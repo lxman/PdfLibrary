@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -249,20 +250,60 @@ internal sealed class SpotColorSpace
     private void EnsureAttributes()
     {
         if (_attributesComputed) return;
-        _attributesComputed = true;
+        _attributesComputed = true;   // set BEFORE the guarded work: a throwing space must not be
+                                       // re-derefed on every subsequent property access.
 
-        // /Attributes is the optional fifth element and is a DeviceN-only feature.
-        if (Family != "DeviceN" || _source.Count < 5) return;
-        if (ColorSpaceResolver.Deref(_source[4], _doc) is not PdfDictionary attrs) return;
+        // Unlike EnsureAlternate (element 2) and EnsureTint (element 3), which the pre-Pass-1 code
+        // already dereferenced at the same call sites — so they carry no new exposure — this method
+        // dereferences element 4 (/Attributes) and then, unconditionally, ITS /Subtype, /Colorants and
+        // /Process values, none of which anything in the engine read before Pass 2a. Deref reaches
+        // PdfDocument.GetObject, which throws PdfParseException for a corrupt on-demand object, and
+        // OriginForColorSpaceObject (the first caller of Subtype) is invoked from PdfRenderer on every
+        // colour-setting operator with no try/catch above it. A DeviceN whose /Attributes — or whose
+        // /Colorants, very commonly an indirect object in real NChannel files — is a broken indirect
+        // reference must not turn a render that used to succeed into one that throws. Degrading to the
+        // documented defaults (Subtype "DeviceN", Colorants/Process null) here is what keeps this method
+        // the only one of the three Ensure* methods that needs a guard — do NOT "tidy" this asymmetry
+        // away by adding or removing guards to match; it exists because only this element is newly
+        // touched.
+        try
+        {
+            // /Attributes is the optional fifth element and is a DeviceN-only feature.
+            if (Family != "DeviceN" || _source.Count < 5) return;
+            if (ColorSpaceResolver.Deref(_source[4], _doc) is not PdfDictionary attrs) return;
 
-        if (attrs.TryGetValue(new PdfName("Subtype"), out PdfObject? stObj)
-            && ColorSpaceResolver.Deref(stObj!, _doc) is PdfName st)
-            _subtype = st.Value;
+            if (attrs.TryGetValue(new PdfName("Subtype"), out PdfObject? stObj)
+                && ColorSpaceResolver.Deref(stObj!, _doc) is PdfName st)
+                _subtype = st.Value;
 
-        if (attrs.TryGetValue(new PdfName("Colorants"), out PdfObject? coObj))
-            _colorants = ColorSpaceResolver.Deref(coObj!, _doc) as PdfDictionary;
+            if (attrs.TryGetValue(new PdfName("Colorants"), out PdfObject? coObj))
+                _colorants = ColorSpaceResolver.Deref(coObj!, _doc) as PdfDictionary;
 
-        if (attrs.TryGetValue(new PdfName("Process"), out PdfObject? prObj))
-            _process = ColorSpaceResolver.Deref(prObj!, _doc) as PdfDictionary;
+            if (attrs.TryGetValue(new PdfName("Process"), out PdfObject? prObj))
+                _process = ColorSpaceResolver.Deref(prObj!, _doc) as PdfDictionary;
+        }
+        catch (Exception ex)
+        {
+            // Fall back to the documented defaults set at field-declaration time (Subtype "DeviceN",
+            // Colorants/Process null) rather than let a corrupt /Attributes subtree fail a render that
+            // used to succeed pre-Pass-2a.
+            //
+            // Deliberate: this resets _subtype even when /Subtype was ALREADY read successfully above
+            // (e.g. "NChannel") before the throw happened while dereferencing /Colorants or /Process. A
+            // partially-read /Attributes dictionary is not trustworthy enough to keep just the Subtype
+            // from it — do not "fix" this by moving the assignment before the throwing reads; it is
+            // pinned by SpotColorSpaceTests.SubtypeIsResetToDeviceN_WhenColorantsDereferencingThrows_
+            // EvenThoughSubtypeWasRead. Behaviourally inconsequential either way: IsNChannel becomes
+            // false and Colorants/Process are null regardless of which reading survives.
+            _subtype = "DeviceN";
+            _colorants = null;
+            _process = null;
+            // Lazy overload: Log(category, string) checks IsCategoryEnabled AFTER the caller has already
+            // formatted the string, so a plain interpolation pays a full Exception.ToString() stack-trace
+            // format even when Graphics logging is disabled, on every colour operator that parses a
+            // SpotColorSpace with a corrupt /Attributes subtree.
+            PdfLogger.Log(LogCategory.Graphics, () =>
+                $"EnsureAttributes: /Attributes dereferencing threw, falling back to DeviceN defaults: {ex}");
+        }
     }
 }

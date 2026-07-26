@@ -153,8 +153,9 @@ public class SpotColorSpaceTests
     [Fact]
     public void Attributes_AsIndirectReference_Resolves()
     {
-        // IMPORTANT: the /Attributes dictionary itself (element 4) is also dereferenced by TryParse;
-        // object 5 here is the attributes dictionary, referenced indirectly rather than inline.
+        // IMPORTANT: the /Attributes dictionary itself (element 4) is dereferenced lazily by
+        // EnsureAttributes (via the Subtype/Colorants/Process properties below), not by TryParse; object
+        // 5 here is the attributes dictionary, referenced indirectly rather than inline.
         (PdfArray arr, PdfDocument doc) = ParseWithDoc(
             "[/DeviceN [/GWGGreen /Cyan] /DeviceCMYK " + Tint2 + " 5 0 R]",
             "<< /Subtype /NChannel "
@@ -233,6 +234,34 @@ public class SpotColorSpaceTests
         Assert.True(s.Colorants!.TryGetValue(new PdfName("GWGGreen"), out PdfObject? _));
         Assert.NotNull(s.Process);
         Assert.True(s.Process!.TryGetValue(new PdfName("Components"), out PdfObject? _));
+    }
+
+    [Fact]
+    public void SubtypeIsResetToDeviceN_WhenColorantsDereferencingThrows_EvenThoughSubtypeWasRead()
+    {
+        // Pins CURRENT, DELIBERATELY UNALTERED behaviour: EnsureAttributes reads /Subtype successfully
+        // ("NChannel") but then throws while dereferencing /Colorants, and the catch resets _subtype to
+        // "DeviceN" even though the file said NChannel. ColorantOrigin.Subtype's doc comment calls the
+        // member authoritative; this is a known, judged-inconsequential exception (see the comment at
+        // the reset site in EnsureAttributes). If a future change makes this test fail because the
+        // behaviour was intentionally corrected, update this test — do not treat a failure here as a
+        // regression to silently work around.
+        //
+        // Object 5 is an in-use xref entry (so GetObject does not merely return null the way a reference
+        // to a non-existent object number would) whose body is a lone "]" — the same genuinely corrupt
+        // target technique used throughout ColourantComponentTests.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/GWGGreen /Cyan] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Colorants 5 0 R >>]", "]");
+        using (doc)
+        {
+            Assert.True(SpotColorSpace.TryParse(arr, doc, out SpotColorSpace? s));
+
+            Assert.Equal("DeviceN", s!.Subtype);   // NOT "NChannel", even though the file said NChannel
+            Assert.False(s.IsNChannel);
+            Assert.Null(s.Colorants);
+            Assert.Null(s.Process);
+        }
     }
 
     [Fact]

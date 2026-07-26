@@ -841,7 +841,252 @@ internal class ColorSpaceResolver(PdfDocument? document)
         foreach (string? n in space.Names) names.Add(n!);
 
         double[] tints = rawColor is null ? [] : [.. rawColor];
-        return new ColorantOrigin(names, tints, space.AlternateSpaceName);
+        return new ColorantOrigin(names, tints, space.AlternateSpaceName)
+        {
+            Subtype = space.Subtype,
+            Components = BuildComponents(space, tints, doc),
+        };
+    }
+
+    /// <summary>
+    /// Builds the per-component carrier for an NChannel space (ISO 32000-2 §8.6.6.5: "the components
+    /// shall be evaluated individually"). Returns null for every space that is not NChannel — a
+    /// Separation, a plain DeviceN, or an unrecognised subtype — because for those the whole space
+    /// reverts together and there is nothing per-component to say.
+    ///
+    /// <para><paramref name="tints"/> may be SHORTER than the name list, including empty: a shading
+    /// resolves its origin with no per-op colour. Those components get a null tint.</para>
+    /// </summary>
+    private static IReadOnlyList<ColourantComponent>? BuildComponents(
+        SpotColorSpace space, IReadOnlyList<double> tints, PdfDocument? doc)
+    {
+        if (!space.IsNChannel) return null;
+
+        // ISO 32000-2 Table 72: /Process names the process colour space and its component names. That
+        // space may be any device or CIE-based space, but reducing a non-CMYK one to plates is a colour
+        // conversion this method has no converter for. Rather than classify such components as Process
+        // and leave the consumer unable to say which plate they mark — which maps them onto NONE, worse
+        // than the status quo — suppress the whole component list and let the space fall back to its
+        // document tint transform. Recorded as a gap; see the Pass 2a plan.
+        //
+        // The rejection below is BY NAME, not by shape: any /Process /ColorSpace that is not literally
+        // /DeviceCMYK or /DeviceGray is suppressed, INCLUDING an ICCBased space whose stream is itself
+        // 4-component CMYK (ISO 32000-1 EXAMPLE 5 — the canonical calibrated-CMYK NChannel, and what
+        // Illustrator/InDesign emit for /ColorSpace [/ICCBased n 0 R]). Accepting that shape would mean
+        // reading the ICC stream's /N, which is a NEW dereference this branch is not adding at the end of
+        // Pass 2a — the same defect class (a new member access resolving an object no prior code path
+        // touched) this program has fought seven times over. Deliberately deferred; a named follow-up gap.
+        //
+        // /ColorSpace and /Components can themselves be indirect references (GWG081 uses both), so
+        // reading them dereferences objects that EnsureAttributes's own try/catch does not cover — it
+        // only guards the /Attributes dictionary and its immediate Subtype/Colorants/Process values, not
+        // what THOSE values point to. A corrupt target here would otherwise throw PdfParseException out
+        // of OriginForColorSpaceObject, which PdfRenderer calls on every colour-setting operator with no
+        // try/catch above it. Guarded the same way and for the same reason as EnsureAttributes: fall
+        // back to reserved-name-only classification (processChannels stays null) rather than fail a
+        // render that used to succeed. This is deliberately distinct from the non-CMYK case above/below,
+        // which is a successful read that legitimately suppresses the whole list — a throw must NOT take
+        // that branch, or a corrupt process dictionary would silently drop an otherwise-good NChannel
+        // space.
+        //
+        // processChannels maps a /Components name to its POSITIONAL index (Table 71: "correspond, in
+        // order, to the components of the process colour space" — position IS the channel identity).
+        // processIsCmyk records whether the effective process space is DeviceCMYK-shaped (explicitly
+        // DeviceCMYK, no /Process dictionary at all, or an unreadable/absent /Process /ColorSpace — the
+        // "no constraint" cases): reserved names get their canonical channel only then, never under
+        // DeviceGray, where one channel cannot be attributed to a specific reserved name.
+        Dictionary<string, int>? processChannels = null;
+        var processIsCmyk = true;
+        if (space.Process is { } process)
+        {
+            try
+            {
+                string processSpace = ProcessSpaceName(process, doc);
+                if (processSpace is not ("DeviceCMYK" or "DeviceGray" or "")) return null;
+                processIsCmyk = processSpace is "DeviceCMYK" or "";
+
+                if (process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)
+                    && Deref(compsObj, doc) is PdfArray comps)
+                {
+                    // Each element can itself be an indirect reference (GWG081 uses this shape for the
+                    // whole array; a well-formed file may do it per-element too) — asymmetric with
+                    // SpotColorSpace.TryParse's DeviceN names-array handling (:216), which derefs every
+                    // element for exactly this reason. Skipping the deref here would misclassify an
+                    // indirect process component as Spot.
+                    processChannels = new Dictionary<string, int>(StringComparer.Ordinal);
+                    for (var ci = 0; ci < comps.Count; ci++)
+                    {
+                        if (Deref(comps[ci], doc) is not PdfName cn) continue;
+                        // First index wins on a duplicate name — Table 71 is positional, and the first
+                        // occurrence is the one the array's own order assigns the name to.
+                        if (!processChannels.ContainsKey(cn.Value)) processChannels[cn.Value] = ci;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // processIsCmyk is deliberately NOT reset here. It starts true (the "no constraint"
+                // default) and is only ever LOWERED, at the successful read above, once /ColorSpace is
+                // confirmed DeviceGray. If that read already succeeded before this throw (e.g. a corrupt
+                // /Components element under an otherwise-valid /ColorSpace /DeviceGray), processIsCmyk
+                // is correctly false already; resetting it to true here would let channelCount become 4
+                // and hand a reserved name a canonical index for what is actually a one-channel space —
+                // exactly the guess ProcessChannelFor's DeviceGray rule forbids, and an index the range
+                // guard would otherwise reject. The field's initial value already supplies the correct
+                // default on every path where the throw precedes the DeviceGray read, so there is
+                // nothing to restore here.
+                processChannels = null;
+                PdfLogger.Log(LogCategory.Graphics, () =>
+                    $"BuildComponents: /Process dereferencing threw, falling back to reserved-name classification: {ex}");
+            }
+        }
+
+        // The process space's channel count: 4 for DeviceCMYK/no-constraint, 1 for DeviceGray. An index
+        // at or beyond this is malformed input (e.g. a fifth /Components entry under DeviceCMYK) and
+        // yields a null ProcessChannel rather than an out-of-range channel.
+        int channelCount = processIsCmyk ? 4 : 1;
+
+        var components = new List<ColourantComponent>(space.Names.Count);
+        for (var i = 0; i < space.Names.Count; i++)
+        {
+            string name = space.Names[i]!;   // callers gate on AllNamesResolved before reaching here
+            double? tint = i < tints.Count ? tints[i] : null;
+            ColourantRole role = RoleFor(name, processChannels);
+            int? processChannel = ProcessChannelFor(name, role, processChannels, processIsCmyk, channelCount);
+            components.Add(new ColourantComponent(
+                name, role, tint, OwnAlternateFor(space, name, role, tint, doc), processChannel));
+        }
+        return components;
+    }
+
+    /// <summary>The family name of an NChannel process dictionary's /ColorSpace, or the empty string
+    /// when absent or unreadable — absent is treated as "no constraint" rather than as a rejection,
+    /// because a malformed process dictionary should degrade to reserved-name classification rather
+    /// than suppress an otherwise usable space.</summary>
+    private static string ProcessSpaceName(PdfDictionary process, PdfDocument? doc)
+    {
+        if (!process.TryGetValue(new PdfName("ColorSpace"), out PdfObject? csObj)) return string.Empty;
+        return Deref(csObj, doc) switch
+        {
+            PdfName n => n.Value,
+            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
+            _ => string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Classifies one colourant name. ISO 32000-2 Table 71: the reserved names Cyan, Magenta, Yellow
+    /// and Black "shall always be considered to be process colours … they need not have entries in the
+    /// process dictionary", and any name listed in the process dictionary is a process component whose
+    /// /Colorants definition, if any, "shall be ignored".
+    ///
+    /// <para><c>/None</c> is tested FIRST and unconditionally: §8.6.6.5 requires those components to be
+    /// discarded when painting named colourants directly, and a malformed process dictionary listing
+    /// /None must not override that. Classifying /None as anything else would send it down a paint
+    /// path.</para>
+    /// </summary>
+    private static ColourantRole RoleFor(string name, Dictionary<string, int>? processChannels) => name switch
+    {
+        "None" => ColourantRole.None,
+        "Cyan" or "Magenta" or "Yellow" or "Black" => ColourantRole.Process,
+        _ when processChannels is not null && processChannels.ContainsKey(name) => ColourantRole.Process,
+        _ => ColourantRole.Spot,
+    };
+
+    /// <summary>
+    /// The zero-based channel index this component marks within the process colour space's channel
+    /// ordering (ISO 32000-2 Table 71: <c>/Process /Components</c> names "correspond, in order" to the
+    /// process space's components — position IS the channel identity, which the name alone does not
+    /// carry for a non-reserved process plate such as <c>/PlateX</c>).
+    ///
+    /// <para>Null for every non-Process role. For a Process component: its positional index in
+    /// <paramref name="processChannels"/> when listed there (bounded by <paramref name="channelCount"/> —
+    /// an index at or beyond it is malformed input, not a channel); otherwise, for one of the four
+    /// reserved names, the canonical index Cyan=0/Magenta=1/Yellow=2/Black=3 — but ONLY when
+    /// <paramref name="processIsCmyk"/> is true. Under a DeviceGray process space (one channel), nothing
+    /// in the spec says which reserved name owns it, so guessing would be exactly the half-built mapping
+    /// this plan's Scope warns is worse than not building it — the result is null.</para>
+    /// </summary>
+    private static int? ProcessChannelFor(
+        string name, ColourantRole role, Dictionary<string, int>? processChannels,
+        bool processIsCmyk, int channelCount)
+    {
+        if (role != ColourantRole.Process) return null;
+
+        if (processChannels is not null && processChannels.TryGetValue(name, out int listedIndex))
+            return listedIndex < channelCount ? listedIndex : null;
+
+        if (!processIsCmyk) return null;
+        return name switch
+        {
+            "Cyan" => 0,
+            "Magenta" => 1,
+            "Yellow" => 2,
+            "Black" => 3,
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// The component's own alternate colour as CMYK, from <c>/Attributes /Colorants /&lt;name&gt;</c> —
+    /// which ISO 32000-2 Table 71 defines as a full Separation space describing "the appearance of that
+    /// colorant alone", i.e. exactly the "alternate colour space of that component" §8.6.6.5 calls for.
+    ///
+    /// <para>Null whenever that cannot be produced: a non-spot role (process components take the process
+    /// space, /None is never painted), no tint to evaluate at, no /Colorants dictionary, no entry for
+    /// this name, an entry that is not a Separation, or an alternate this engine cannot reduce to CMYK.
+    /// Null is a meaningful answer meaning "this component cannot be reverted individually" — the
+    /// consumer falls back rather than inventing a colour.</para>
+    ///
+    /// <para>The evaluation is wrapped because <see cref="BuildTintToCmyk"/> has no internal catch — only
+    /// <see cref="BuildTintRamp"/> does — and a Type 0 or Type 4 function can build successfully and
+    /// still throw at evaluation time on a malformed body. This method runs from
+    /// <see cref="OriginForColorSpaceObject"/>, which <c>PdfRenderer</c> calls on every colour-setting
+    /// operator, so a throw here would take down the render of an otherwise fine page.</para>
+    /// </summary>
+    private static IReadOnlyList<double>? OwnAlternateFor(
+        SpotColorSpace space, string name, ColourantRole role, double? tint, PdfDocument? doc)
+    {
+        if (role != ColourantRole.Spot || tint is not { } t) return null;
+        if (space.Colorants is not { } colorants) return null;
+        if (!colorants.TryGetValue(new PdfName(name), out PdfObject? entryObj)) return null;
+
+        try
+        {
+            // doc is load-bearing: GWG081's /Colorants entry is `14 0 R`, and a Separation's tint
+            // transform is normally an indirect stream object. Passing null here would leave both
+            // unresolved and silently yield no alternate on every real NChannel file.
+            //
+            // This Deref must live INSIDE the try, not above it: it is a live dereference of an object
+            // no engine path previously touched (the /Colorants dictionary itself is already covered by
+            // EnsureAttributes's guard, but not what its entries point to), and PdfDocument.GetObject
+            // wraps a corrupt on-demand object's parse failure in PdfParseException. This runs from
+            // OriginForColorSpaceObject, which PdfRenderer calls on every colour-setting operator with
+            // no try/catch above it — the same lesson /Process's contents needed one level up.
+            if (Deref(entryObj, doc) is not PdfArray entry) return null;
+
+            Func<double[], (double C, double M, double Y, double K)>? toCmyk =
+                BuildTintToCmyk(entry, doc, out int inputs);
+            // Table 71 requires a /Colorants value to be a full Separation space: exactly one input.
+            // BuildTintToCmyk accepts DeviceN too (inputComponents = space.Names.Count), whose delegate
+            // would otherwise evaluate a multi-input tint transform on the one-element array below,
+            // silently producing a WRONG alternate rather than the null the design calls for.
+            if (toCmyk is null || inputs != 1) return null;
+
+            (double c, double m, double y, double k) = toCmyk([t]);
+            return [c, m, y, k];
+        }
+        catch (Exception ex)
+        {
+            // Lazy overload: Log(category, string) checks IsCategoryEnabled AFTER the caller has already
+            // formatted the string, so a plain interpolation pays a full Exception.ToString() stack-trace
+            // format even when Graphics logging is disabled. A fresh SpotColorSpace is parsed per colour
+            // operator, so this runs on every colour-setting operator when an NChannel space is in play.
+            PdfLogger.Log(LogCategory.Graphics, () =>
+                $"OwnAlternateFor: /Colorants entry for '{name}' threw during evaluation; "
+                + $"treating the component as having no individual alternate: {ex}");
+            return null;
+        }
     }
 
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
