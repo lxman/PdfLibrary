@@ -73,10 +73,10 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | 4-3 | "Tints shall always be treated as subtractive colours, even if the device produces output for the designated component by an additive method" | N | ✅ | `SeparationAlternateSpaceTests.SeparationTints_AreSubtractive_HigherTintIsDarker` — tint 0 is lighter than tint 1 by luma. Not implied by the reversion rows: those compare against a direct fill in the alternate space, which inverts identically if the ramp does. |
 | 4-4 | "The initial value for both the stroking and nonstroking colour in the graphics state shall be 1.0" | N | ␀ | No initial-tint handling found in `PdfGraphicsState`; needs a targeted check. |
 | 4-5 | Cyan / Magenta / Yellow / Black "are reserved to name the process colourants of a CMYK device" | N | ⚠️ | `PageColorant.Classify` → `ColorantKind.Process`. Tested in `PageColorantClassifyTests`; not tested end-to-end on the render path. |
-| 4-6 | **All**: "painting operators shall apply tint values to all available colourants at once" | N | ⚠️ | `ColorSpaceResolver.cs:593` — `case "All": c = m = y = k = true`. Sets all four process plates; does **not** include registered spot planes, which "all available colourants" arguably requires. See gap G-2. |
-| 4-7 | **All** on an additive device: "the subtractive tint values […] shall be complemented by subtracting from 1 before applying to all available colourants" | N | ✅ | Fixed 2026-07-25 (was the G-3 violation). `ResolveSeparation` complements before reading the alternate space, so tint *t* paints the neutral 1−*t* on R, G and B. `SeparationSpecialColorantTests.SeparationAll_At{Full,Zero}Tint_*` pin both ends, so a constant black cannot pass. **Additive path only** — see G-5. |
-| 4-8 | **None**: "shall not produce any visible output […] shall have no effect on the current page" | N | ✅ | **Was a violation, not ⚠️ — fixed 2026-07-25.** The line cited in slice 1 (`:594`) is the overprint *plate mask*, not the paint path; nothing suppressed painting, so a `/None` fill whose tint transform ramped to black painted a black rectangle. `PdfGraphicsState.Fill/StrokePaintsNothing` now suppress the operator at the same sites as `OcHidden` (f, S, B per-half, and glyphs incl. Type 3). `SeparationNone_{Fill,Stroke,Text}_*` paint over an existing red rect and assert the whole region survives, so resolving to white cannot pass them. |
-| 4-9 | "A PDF processor shall support Separation colour spaces with the colourant names All and None on all devices" | N | ✅ | Both handled on the render path and tested (rows 4-7, 4-8). "On all devices" holds *structurally* rather than by test: suppression and complement sit in `PdfRenderer`/`ColorSpaceResolver`, upstream of every render target, so the soft-proof path cannot bypass them — but no test exercises the CMYK path directly, and G-5 records a real `/All` gap there. |
+| 4-6 | **All**: "painting operators shall apply tint values to all available colourants at once" | N | ✅ | Fixed 2026-07-25 (was the G-2 gap). `ColorSpaceResolver.cs` sets the four process plates; on the soft-proof path `InkDecider`'s `/All` arm additionally paints the tint on every plane in `SpotColorantRegistry.PlaneNames` — availability as this document's device policy defines it. `AllColourantRoutingTests` asserts all four plates and both registered spot planes, and was mutation-checked by capping the loop at one plane. |
+| 4-7 | **All** on an additive device: "the subtractive tint values […] shall be complemented by subtracting from 1 before applying to all available colourants" | N | ✅ | Fixed 2026-07-25 (was the G-3 violation). `ResolveSeparation` complements before reading the alternate space, so tint *t* paints the neutral 1−*t* on R, G and B. The device fork is honoured on both sides: the additive complement lives in the engine, and the subtractive path applies the tint directly via `InkDecider` (G-5, closed). Pinned by `SeparationAll_At{Full,Zero}Tint_*` and `All_colourant_applies_the_origin_tint_*`. |
+| 4-8 | **None**: "shall not produce any visible output […] shall have no effect on the current page" | N | ✅ | **Was a violation, not ⚠️ — fixed 2026-07-25.** The line cited in slice 1 (`:594`) is the overprint *plate mask*, not the paint path. `PdfGraphicsState.Fill/StrokePaintsNothing` suppress the operator at the same sites as `OcHidden`. Coverage is now **every painting operator**: f, S, B (per-half), glyphs incl. Type 3, image XObjects, inline images, stencil masks (gated on the FILL signal, since a stencil has no colour space of its own) and `sh`. Shading *patterns* are the one remaining route — see G-8. |
+| 4-9 | "A PDF processor shall support Separation colour spaces with the colourant names All and None on all devices" | N | ✅ | Both handled on the render path and tested (rows 4-7, 4-8). For `/All`, the CMYK soft-proof path is now under direct test too — `InkDecider`'s arm is pinned by `AllColourantRoutingTests` (G-5, closed). For `/None`, "on all devices" still holds *structurally* rather than by a dedicated CMYK-path test: suppression sits in `PdfGraphicsState`/`ColorSpaceResolver`, upstream of every render target, so the soft-proof path cannot bypass it, but no test exercises `/None` on the CMYK path directly. |
 | 4-10 | For All/None, "PDF processors shall ignore the alternateSpace and tintTransform parameters" | N | ✅ | **Was a violation — fixed 2026-07-25.** `ResolveSeparation` evaluated the transform for every colourant name, so `/All` painted whatever it returned. Both names are now handled before the alternate space or the transform is read. Pinned by `SeparationAll_AtFullTint_IgnoresTintTransformAndPaintsBlack`, whose space ramps to red: evaluating the transform paints red, ignoring it paints the required black. |
 | 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only, audited D-1. Availability = registered in `SpotColorantRegistry`. Conformant as §10.8.3 separation simulation. |
 | 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ✅ | Audited 2026-07-25 (G-1), and now asserted: `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour` renders a spot Separation on the RGB path and requires the pixel to equal the same colour filled directly in the alternate space. |
@@ -111,14 +111,15 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 
 ## Score — slice 1
 
-Updated 2026-07-25 after the first ratchet pass. The slice-1 column is the original audit; the deltas
-are what writing the clauses as tests actually changed.
+Updated 2026-07-25, after the first ratchet pass and a same-day second pass closing G-2/G-5/G-6 (row 4-6
+to ✅, rows 4-7/4-8 losing their caveats). The slice-1 column is the original audit; the deltas are what
+writing the clauses as tests actually changed.
 
 | | Slice 1 | Now |
 |---|--:|--:|
 | Normative + machine-verifiable (**N**) | 26 | 26 |
-| — ✅ conformant with a test | 0 | **10** |
-| — ⚠️ conformant, untested | 11 | 5 |
+| — ✅ conformant with a test | 0 | **11** |
+| — ⚠️ conformant, untested | 11 | 4 |
 | — ❌ violation | 2 | 2 |
 | — ␀ not yet audited | 13 | 9 |
 | Latitude (**L**) | 5 | 5 |
@@ -128,7 +129,7 @@ are what writing the clauses as tests actually changed.
 > the rows gives 11 untested and 13 unaudited. Corrected here rather than silently, because the whole
 > point of the matrix is that its denominator can be recomputed from the rows.
 
-**Ten rows are now ✅, and the audit was too generous, not too harsh.** Two rows that slice 1 recorded as
+**Eleven rows are now ✅, and the audit was too generous, not too harsh.** Two rows that slice 1 recorded as
 "conformant, untested" and "not audited" were in fact violations, and writing the clause as a test is what
 exposed them:
 
@@ -142,30 +143,37 @@ exposed them:
   required by 4-7 existed, but only on the branch taken when there is *no* tint transform — i.e. never, in
   practice.
 
-Both are fixed and pinned. The remaining ⚠️ rows (4-5, 4-6, 5-6, 5-7, 5-10) are the ones whose behaviour
-lives on the CMYK soft-proof path, where the harness in `ColourConformancePage` does not yet reach.
+Both are fixed and pinned. A second pass the same day closed three more gaps — G-2 (`/All` excludes spot
+planes, row 4-6), G-5 (`/All` not device-aware on the soft-proof path, rows 4-7/4-9) and G-6 (`/None`
+suppression not covering images, row 4-8's scope) — bringing the soft-proof `InkDecider` path under direct
+test for the first time via `AllColourantRoutingTests`, rather than relying on the structural argument that
+the RGB-path harness's logic is upstream of every render target. The remaining ⚠️ rows (4-5, 5-6, 5-7,
+5-10) are the ones whose behaviour lives on the CMYK soft-proof path where no such direct test yet exists.
 
 ## Gaps
 
 - ~~**G-1 (D-1) — additive-device reversion.**~~ **CLOSED 2026-07-25.** Audited conformant, and now
   asserted — row 4-12 is ✅.
-- **G-2 — `All` excludes spot planes.** Row 4-6 requires "all *available* colourants". We set the four
-  process plates only. Once spots are registered and paintable, they are available by our own definition,
-  so registration targets would miss them. Untouched by this pass.
+- ~~**G-2 — `All` excludes spot planes.**~~ **CLOSED 2026-07-25.** Row 4-6 is ✅; `/All` now paints its
+  tint on every plane in `SpotColorantRegistry.PlaneNames`.
 - ~~**G-3 — `All` on an additive device is not complemented.**~~ **CLOSED 2026-07-25.** Row 4-7 is ✅ on
   the additive path; the subtractive half is now tracked as G-5.
 - **G-4 — NChannel is not implemented on the render path.** Rows 5-3 and 5-11. The per-component
   evaluation rule is a `shall`, and we do the opposite (all-or-nothing). Blocks 5-5 and 5-12 too. This
   remains the substantive violation in the slice, and is untouched by this pass.
-- **G-5 — `/All` is not device-aware on the soft-proof path.** New, and a direct consequence of fixing
-  G-3. The complement in `ResolveSeparation` is unconditional, but §8.6.6.4 requires it *only* on an
-  additive device — on the simulated-subtractive path the tint should be applied to the colourants
-  directly, uncomplemented. Separately, `BuildTintToCmyk` still evaluates the tint transform for `/All`,
-  which 4-10 forbids on any device. Neither shows on the RGB path, so no test catches it today.
-- **G-6 — `/None` suppression does not cover images.** `PaintsNothing` is consulted at the path and text
-  operators, which is where a `/None` *fill or stroke colour* can appear. An image whose own colour space
-  is `[/Separation /None …]` decodes through `BuildTintToRgb` like any other, so 4-8 is not enforced for
-  image XObjects. Rare in practice, but it is a `shall`, and the row is only ✅ for the operators tested.
+- ~~**G-5 — `/All` is not device-aware on the soft-proof path.**~~ **CLOSED 2026-07-25.** The engine
+  keeps producing the additive answer (it cannot know the device — `WantsCmyk` is decided after the
+  draw list is built), and `InkDecider` derives the subtractive answer from `ColorantOrigin`.
+  `BuildTintToCmyk`/`BuildTintToRgb` no longer evaluate the tint transform for either reserved name.
+- ~~**G-6 — `/None` suppression does not cover images.**~~ **CLOSED 2026-07-25.** Extended to image
+  XObjects, inline images, stencil masks and `sh`.
+- **G-7 — `/All` shadings and meshes.** A shading resolves its `ColorantOrigin` with `rawColor: null`,
+  so `Tints` is empty: there is no single per-op tint, because the tint varies across the ramp. Such an
+  op falls through to the flattened path. Correct handling needs the `/All` rule applied per-sample
+  inside the ramp evaluation, not once per op.
+- **G-8 — `/None` shading *patterns*.** The `sh` operator is covered; a shading used as a *pattern*
+  (via `scn` on a Pattern colour space) paints through the pattern machinery, which does not consult
+  `PaintsNothing`. Narrower than G-7 and likely a few lines, but untested and so unclaimed.
 
 ## Fixtures
 
