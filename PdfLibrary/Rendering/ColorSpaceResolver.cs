@@ -390,14 +390,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
         PdfArray baseArray, PdfDocument? document, out int inputComponents)
     {
         inputComponents = 0;
-        if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
+        // Pre-Pass-1 this member required Count >= 4 BEFORE touching element 1. minimumElements: 4
+        // enforces that arity gate inside TryParse itself, ahead of any dereference, so a short array
+        // (e.g. a two-element [/Separation 7 0 R] whose element 1 is a corrupt indirect object) is
+        // rejected for free rather than throwing PdfParseException out of this render path.
+        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space, minimumElements: 4))
             return null;
 
         // §8.6.6.4 row 4-10: for /All and /None the alternateSpace and tintTransform SHALL be ignored.
         // Handled before either is read, exactly as ResolveSeparation does for fills — otherwise an /All
         // IMAGE paints a different colour from an identical /All FILL.
         if (PaintsNothing(baseArray, document)) return null;   // /None: build no evaluator at all
-        if (head.Value == "Separation" && Deref(baseArray[1], document) is PdfName { Value: "All" })
+        if (space.Family == "Separation" && space.Names[0] == "All")
         {
             // Additive device: the subtractive tint is complemented before being applied to R, G and B,
             // so tint t is the neutral 1 − t.
@@ -409,25 +413,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
             };
         }
 
-        if (head.Value == "Separation")
-            inputComponents = 1;
-        else if (Deref(baseArray[1], document) is PdfArray names)
-            inputComponents = names.Count;   // DeviceN: one input per colorant name
-        else
-            return null;
+        // Names.Count is the colorant count for both families; the names themselves need not resolve.
+        inputComponents = space.Names.Count;
         if (inputComponents < 1) return null;
 
-        PdfObject altObj = Deref(baseArray[2], document);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty
-        };
+        string altSpace = space.AlternateSpaceName;
         if (altSpace.Length == 0) return null;
-        PdfArray? labArray = altSpace == "Lab" ? altObj as PdfArray : null;
+        PdfArray? labArray = altSpace == "Lab" ? space.AlternateObject as PdfArray : null;
 
-        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
+        PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, document);
         if (tint is null) return null;
 
         return colorants =>
@@ -453,14 +447,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
         PdfArray baseArray, PdfDocument? document, out int inputComponents)
     {
         inputComponents = 0;
-        if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
+        // Pre-Pass-1 this member required Count >= 4 BEFORE touching element 1, as in BuildTintToRgb.
+        // minimumElements: 4 enforces that arity gate inside TryParse itself, ahead of any dereference,
+        // so a short array is rejected for free rather than throwing PdfParseException out of this
+        // render path.
+        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space, minimumElements: 4))
             return null;
 
         // §8.6.6.4 row 4-10, as in BuildTintToRgb. Placed BEFORE the alternate-space gate below, because
         // the clause says the alternate space is ignored for these names — an /All space is convertible
         // here whatever its alternate happens to be.
         if (PaintsNothing(baseArray, document)) return null;   // /None: build no evaluator at all
-        if (head.Value == "Separation" && Deref(baseArray[1], document) is PdfName { Value: "All" })
+        if (space.Family == "Separation" && space.Names[0] == "All")
         {
             // Subtractive device: the tint applies DIRECTLY to every colourant, uncomplemented.
             inputComponents = 1;
@@ -471,21 +469,10 @@ internal class ColorSpaceResolver(PdfDocument? document)
             };
         }
 
-        if (head.Value == "Separation")
-            inputComponents = 1;
-        else if (Deref(baseArray[1], document) is PdfArray names)
-            inputComponents = names.Count;
-        else
-            return null;
+        inputComponents = space.Names.Count;
         if (inputComponents < 1) return null;
 
-        PdfObject altObj = Deref(baseArray[2], document);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty
-        };
+        string altSpace = space.AlternateSpaceName;
         // A DeviceGray alternate is just as convertible as a DeviceCMYK one: PDF 32000-1 §10.3.3 makes
         // DeviceGray a DEVICE space that separates onto the black plate alone (k = 1 − gray), which is
         // exactly the rule the FILL path already applies (Pellucid's InkDecider.ToCmyk). Rejecting it sent
@@ -499,7 +486,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         var grayAlt = altSpace == "DeviceGray";
         if (altSpace != "DeviceCMYK" && !grayAlt) return null;
 
-        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
+        PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, document);
         if (tint is null) return null;
 
         return colorants =>
@@ -523,10 +510,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
     internal static (double[][]? Ramp, (byte R, byte G, byte B) Solid) BuildTintRamp(
         PdfArray baseArray, PdfDocument? doc, int colorantIndex, int inputCount, int samples = 256)
     {
-        if (baseArray.Count < 4 || colorantIndex < 0 || colorantIndex >= inputCount)
+        if (colorantIndex < 0 || colorantIndex >= inputCount)
+            return (null, (0, 0, 0));
+        // Pre-Pass-1 this member required Count >= 4 (baseArray.Count < 4) BEFORE touching element 1.
+        // minimumElements: 4 enforces that arity gate inside TryParse itself, ahead of any dereference,
+        // so a short array is rejected for free (a null ramp) rather than throwing PdfParseException.
+        if (!SpotColorSpace.TryParse(baseArray, doc, out SpotColorSpace? space, minimumElements: 4))
             return (null, (0, 0, 0));
 
-        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], doc), doc);
+        PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, doc);
         if (tint is null) return (null, (0, 0, 0));
 
         var ramp = new double[samples][];
@@ -565,7 +557,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         return (ramp, solid);
     }
 
-    private static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
+    internal static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
     /// <summary>
@@ -607,42 +599,25 @@ internal class ColorSpaceResolver(PdfDocument? document)
     {
         if (csObj is null) return null;
         csObj = Deref(csObj, doc);
-        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
-            return null;
 
-        // Gather colorant names from Separation (single name) or DeviceN (names array).
-        List<string> colorants;
-        switch (csType.Value)
-        {
-            case "Separation":
-                if (Deref(csArray[1], doc) is not PdfName sepName)
-                    return null;
-                colorants = [sepName.Value];
-                break;
-            case "DeviceN":
-                if (Deref(csArray[1], doc) is not PdfArray namesArr)
-                    return null;
-                colorants = new List<string>(namesArr.Count);
-                foreach (PdfObject nameObj in namesArr)
-                {
-                    if (Deref(nameObj, doc) is not PdfName n)
-                        return null;
-                    colorants.Add(n.Value);
-                }
-                break;
-            case "Indexed":
-                // An Indexed image's samples are palette indices into its base space; the plates it marks
-                // are the base space's plates (e.g. an Indexed[/DeviceN[Black Cyan]] duotone marks K + C).
-                return PlatesForColorSpaceObject(csArray[1], doc);
-            default:
-                return null;
-        }
+        // GetObject does not chase indirect-reference chains, so a still-unresolved reference here is
+        // exactly what the pre-migration single-Deref lookup would already have failed on. Returning
+        // early restores that single-level resolution — without this, SpotColorSpace.TryParse's own
+        // internal Deref call would newly resolve a second link in the chain, which this pass forbids.
+        if (csObj is PdfIndirectReference) return null;
 
-        if (colorants.Count == 0)
-            return null;
+        // An Indexed image's samples are palette indices into its base space; the plates it marks are
+        // the base space's plates (e.g. Indexed[/DeviceN[Black Cyan]] duotone marks K + C).
+        if (csObj is PdfArray { Count: >= 2 } indexedArr && indexedArr[0] is PdfName { Value: "Indexed" })
+            return PlatesForColorSpaceObject(indexedArr[1], doc);
+
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return null;
+
+        // Any unresolvable colorant name means we cannot know the plate set — fall back to OPM.
+        if (!space!.AllNamesResolved || space.Names.Count == 0) return null;
 
         bool c = false, m = false, y = false, k = false;
-        foreach (string name in colorants)
+        foreach (string? name in space.Names)
         {
             switch (name)
             {
@@ -651,7 +626,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 case "Yellow": y = true; break;
                 case "Black": k = true; break;
                 case "All": c = m = y = k = true; break;
-                case "None": break;   // marks no colorant (ISO 32000 §8.6.6.4) — skip; used as DeviceN padding
+                case "None": break;   // marks no colorant (ISO 32000 §8.6.6.4) — DeviceN padding
                 default:
                     // A real spot colorant isn't a CMYK plate → fall back to OPM behaviour.
                     return null;
@@ -807,29 +782,28 @@ internal class ColorSpaceResolver(PdfDocument? document)
     {
         if (csObj is null) return false;
         csObj = Deref(csObj, doc);
-        if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
-            return false;
 
-        switch (csType.Value)
-        {
-            case "Separation":
-                return Deref(csArray[1], doc) is PdfName { Value: "None" };
-            case "DeviceN":
-            {
-                if (Deref(csArray[1], doc) is not PdfArray { Count: > 0 } names) return false;
-                foreach (PdfObject nameObj in names)
-                    if (Deref(nameObj, doc) is not PdfName { Value: "None" })
-                        return false;
-                return true;   // every component is /None
-            }
-            case "Indexed":
-                // An Indexed space paints through its BASE space, so it marks nothing exactly when the
-                // base marks nothing (cf. PlatesForColorSpaceObject, which recurses here for the same
-                // reason). Without this an Indexed-over-/None image escapes suppression entirely.
-                return PaintsNothing(csArray.Count >= 2 ? csArray[1] : null, doc);
-            default:
+        // GetObject does not chase indirect-reference chains, so a still-unresolved reference here is
+        // exactly what the pre-migration single-Deref lookup would already have failed on. Returning
+        // early restores that single-level resolution — without this, SpotColorSpace.TryParse's own
+        // internal Deref call would newly resolve a second link in the chain, which this pass forbids.
+        if (csObj is PdfIndirectReference) return false;
+
+        // Indexed paints through its BASE space, so it marks nothing exactly when the base marks
+        // nothing. SpotColorSpace does not model Indexed, so this recursion stays here.
+        if (csObj is PdfArray { Count: >= 2 } indexedArr && indexedArr[0] is PdfName { Value: "Indexed" })
+            return PaintsNothing(indexedArr[1], doc);
+
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space)) return false;
+
+        // Separation: the single colorant is /None.
+        // DeviceN: EVERY component is /None. A name that did not resolve is not "None", so it makes
+        // the answer false — matching the pre-Pass-1 behaviour exactly.
+        if (space!.Names.Count == 0) return false;
+        for (var i = 0; i < space.Names.Count; i++)
+            if (space.Names[i] != "None")
                 return false;
-        }
+        return true;
     }
 
     /// <summary>
@@ -853,41 +827,21 @@ internal class ColorSpaceResolver(PdfDocument? document)
     public static ColorantOrigin? OriginForColorSpaceObject(
         PdfObject? csObj, IReadOnlyList<double>? rawColor, PdfDocument? doc)
     {
-        if (csObj is null) return null;
-        csObj = Deref(csObj, doc);
-        if (csObj is not PdfArray { Count: >= 4 } csArray || csArray[0] is not PdfName csType) return null;
+        // Pre-Pass-1 this member required Count >= 4, unlike PaintsNothing/PlatesForColorSpaceObject.
+        // minimumElements: 4 enforces that arity gate inside TryParse itself, ahead of any dereference,
+        // so a short array (e.g. a two-element [/Separation name]) yields no origin for free rather
+        // than throwing PdfParseException out of a malformed tint-transform reference it never needed
+        // to touch.
+        if (!SpotColorSpace.TryParse(csObj, doc, out SpotColorSpace? space, minimumElements: 4))
+            return null;
 
-        List<string> names;
-        switch (csType.Value)
-        {
-            case "Separation":
-                if (Deref(csArray[1], doc) is not PdfName sepName) return null;
-                names = [sepName.Value];
-                break;
-            case "DeviceN":
-                if (Deref(csArray[1], doc) is not PdfArray namesArr) return null;
-                names = new List<string>(namesArr.Count);
-                foreach (PdfObject nameObj in namesArr)
-                {
-                    if (Deref(nameObj, doc) is not PdfName n) return null;
-                    names.Add(n.Value);
-                }
-                break;
-            default:
-                return null;
-        }
-        if (names.Count == 0) return null;
+        if (!space.AllNamesResolved || space.Names.Count == 0) return null;
 
-        PdfObject altObj = Deref(csArray[2], doc);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty
-        };
+        var names = new List<string>(space.Names.Count);
+        foreach (string? n in space.Names) names.Add(n!);
 
         double[] tints = rawColor is null ? [] : [.. rawColor];
-        return new ColorantOrigin(names, tints, altSpace);
+        return new ColorantOrigin(names, tints, space.AlternateSpaceName);
     }
 
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
