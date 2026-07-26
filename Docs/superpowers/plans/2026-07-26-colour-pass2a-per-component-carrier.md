@@ -57,6 +57,10 @@ Pass 1's post-mortem: every review defect was in the plan text, and all of them 
 | `Tints` longer than `Names` | extra values ignored | Matches how `ProcessContribution` already tolerates the mismatch |
 | A DeviceN component named `All` | `Role` is `Spot`, treated like any other name | §8.6.6.5 forbids `/All` in DeviceN, but `InkDecider.cs:95-100` documents a deliberate leniency for it that Pass 2b must not regress |
 | Duplicate names in the names array | one component per position, duplicates preserved | The list is positional; the registry dedupes separately |
+| **`/Colorants/<name>` is an indirect reference** | resolved, alternate computed normally | **This is the real-world shape, not an edge case.** GWG081 — the corpus's only NChannel file — has `/Colorants 51 0 R` whose value is `<< /GWG#20Green 14 0 R >>`. Both the dictionary and the entry are indirect, and tint transforms are typically indirect stream objects too |
+| **`/Process /Components` is an indirect reference** | resolved | Same shape |
+
+**Threading the document is therefore load-bearing, not hygiene.** `OriginForColorSpaceObject` receives a `PdfDocument? doc`; `BuildComponents` and everything below it must take and use it. Passing `null` would leave every indirect reference unresolved, which fails *silently*: fixture-built tests use direct arrays and pass, the corpus gate cannot see it because nothing consumes the data yet, and the defect would surface only in Pass 2b as "NChannel routing does nothing on real files". Task 2 changes `BuildComponents`'s signature to take `doc`; Task 3 threads it onward.
 
 **Cost note.** Building a component's `OwnAlternateCmyk` calls `PdfFunction.Create` and evaluates it, per spot component, per colour-setting operator. This is gated on `IsNChannel`, and NChannel is rare — one file in the 51-patch corpus — so the common path pays nothing. If it ever matters, the mitigation is caching the built `Func` per `/Colorants` entry object number, which is the same caching-and-thread-safety question Pass 1 deferred. Do not add a cache here.
 
@@ -579,11 +583,17 @@ Expected: the new tests FAIL — non-reserved process names currently classify a
 
 - [ ] **Step 3: Implement the process mapping**
 
-Replace `BuildComponents` and `RoleFor` with:
+`BuildComponents` gains a `PdfDocument? doc` parameter in this step, so **update its call site too**. In `OriginForColorSpaceObject`, change `Components = BuildComponents(space, tints),` to:
+
+```csharp
+            Components = BuildComponents(space, tints, doc),
+```
+
+`doc` is already a parameter of `OriginForColorSpaceObject`. Then replace `BuildComponents` and `RoleFor` with:
 
 ```csharp
     private static IReadOnlyList<ColourantComponent>? BuildComponents(
-        SpotColorSpace space, IReadOnlyList<double> tints)
+        SpotColorSpace space, IReadOnlyList<double> tints, PdfDocument? doc)
     {
         if (!space.IsNChannel) return null;
 
@@ -596,11 +606,11 @@ Replace `BuildComponents` and `RoleFor` with:
         HashSet<string>? processNames = null;
         if (space.Process is { } process)
         {
-            string processSpace = ProcessSpaceName(process);
+            string processSpace = ProcessSpaceName(process, doc);
             if (processSpace is not ("DeviceCMYK" or "DeviceGray" or "")) return null;
 
             if (process.TryGetValue(new PdfName("Components"), out PdfObject? compsObj)
-                && Deref(compsObj, null) is PdfArray comps)
+                && Deref(compsObj, doc) is PdfArray comps)
             {
                 processNames = new HashSet<string>(StringComparer.Ordinal);
                 foreach (PdfObject c in comps)
@@ -623,10 +633,10 @@ Replace `BuildComponents` and `RoleFor` with:
     /// when absent or unreadable — absent is treated as "no constraint" rather than as a rejection,
     /// because a malformed process dictionary should degrade to reserved-name classification rather
     /// than suppress an otherwise usable space.</summary>
-    private static string ProcessSpaceName(PdfDictionary process)
+    private static string ProcessSpaceName(PdfDictionary process, PdfDocument? doc)
     {
         if (!process.TryGetValue(new PdfName("ColorSpace"), out PdfObject? csObj)) return string.Empty;
-        return Deref(csObj, null) switch
+        return Deref(csObj, doc) switch
         {
             PdfName n => n.Value,
             PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
@@ -799,6 +809,38 @@ Append to `ColourantComponentTests.cs`:
     }
 
     [Fact]
+    public void IndirectColorantsEntry_IsResolved()
+    {
+        // THE REAL-WORLD SHAPE, not an edge case. GWG081 — the corpus's only NChannel file — has
+        // /Colorants 51 0 R whose value is << /GWG#20Green 14 0 R >>. Both the dictionary and the
+        // entry are indirect, and the Separation's tint transform is an indirect stream object too.
+        // With a null document every Deref is a no-op, so this test is the only thing standing
+        // between "works" and "silently produces no alternate on every real NChannel file".
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Colorants << /Spot1 5 0 R >> >>]",
+            "1 0 0 rg 0 0 1 1 re f",
+            // Body only — Build writes the "5 0 obj … endobj" wrapper itself. And BY NAME: the
+            // helper's own doc warns that a positional argument here silently binds to
+            // extraResources instead, which compiles and produces a file missing the object.
+            extraObjects:
+            ["[/Separation /Spot1 /DeviceCMYK "
+             + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>]"]);
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        PdfPage page = doc.GetPage(0)!;
+        var cs = (PdfArray)page.GetResources()!.GetColorSpaces()![new PdfName("Cs0")]!;
+
+        ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(cs, [0.25, 1.0], doc);
+
+        IReadOnlyList<double>? alt = o!.Components![1].OwnAlternateCmyk;
+        Assert.NotNull(alt);
+        Assert.Equal(0.5, alt![0], 3);
+        Assert.Equal(1.0, alt[2], 3);
+    }
+
+    [Fact]
     public void NoneComponent_NeverLooksUpAColorantsEntry()
     {
         // Row 5-7: /None components are discarded when painting directly. Evaluating an alternate for
@@ -831,7 +873,7 @@ In `BuildComponents`, replace the component-construction loop with:
             double? tint = i < tints.Count ? tints[i] : null;
             ColourantRole role = RoleFor(name, processNames);
             components.Add(new ColourantComponent(
-                name, role, tint, OwnAlternateFor(space, name, role, tint)));
+                name, role, tint, OwnAlternateFor(space, name, role, tint, doc)));
         }
         return components;
 ```
@@ -857,17 +899,21 @@ And add this helper after `RoleFor`:
     /// operator, so a throw here would take down the render of an otherwise fine page.</para>
     /// </summary>
     private static IReadOnlyList<double>? OwnAlternateFor(
-        SpotColorSpace space, string name, ColourantRole role, double? tint)
+        SpotColorSpace space, string name, ColourantRole role, double? tint, PdfDocument? doc)
     {
         if (role != ColourantRole.Spot || tint is not { } t) return null;
         if (space.Colorants is not { } colorants) return null;
         if (!colorants.TryGetValue(new PdfName(name), out PdfObject? entryObj)) return null;
-        if (Deref(entryObj, null) is not PdfArray entry) return null;
+
+        // doc is load-bearing: GWG081's /Colorants entry is `14 0 R`, and a Separation's tint
+        // transform is normally an indirect stream object. Passing null here would leave both
+        // unresolved and silently yield no alternate on every real NChannel file.
+        if (Deref(entryObj, doc) is not PdfArray entry) return null;
 
         try
         {
             Func<double[], (double C, double M, double Y, double K)>? toCmyk =
-                BuildTintToCmyk(entry, null, out int inputs);
+                BuildTintToCmyk(entry, doc, out int inputs);
             if (toCmyk is null || inputs < 1) return null;
 
             (double c, double m, double y, double k) = toCmyk([t]);
