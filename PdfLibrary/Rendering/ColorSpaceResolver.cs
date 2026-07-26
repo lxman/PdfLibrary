@@ -908,8 +908,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
         {
             string name = space.Names[i]!;   // callers gate on AllNamesResolved before reaching here
             double? tint = i < tints.Count ? tints[i] : null;
+            ColourantRole role = RoleFor(name, processNames);
             components.Add(new ColourantComponent(
-                name, RoleFor(name, processNames), tint, OwnAlternateCmyk: null));
+                name, role, tint, OwnAlternateFor(space, name, role, tint, doc)));
         }
         return components;
     }
@@ -947,6 +948,53 @@ internal class ColorSpaceResolver(PdfDocument? document)
         _ when processNames is not null && processNames.Contains(name) => ColourantRole.Process,
         _ => ColourantRole.Spot,
     };
+
+    /// <summary>
+    /// The component's own alternate colour as CMYK, from <c>/Attributes /Colorants /&lt;name&gt;</c> —
+    /// which ISO 32000-2 Table 71 defines as a full Separation space describing "the appearance of that
+    /// colorant alone", i.e. exactly the "alternate colour space of that component" §8.6.6.5 calls for.
+    ///
+    /// <para>Null whenever that cannot be produced: a non-spot role (process components take the process
+    /// space, /None is never painted), no tint to evaluate at, no /Colorants dictionary, no entry for
+    /// this name, an entry that is not a Separation, or an alternate this engine cannot reduce to CMYK.
+    /// Null is a meaningful answer meaning "this component cannot be reverted individually" — the
+    /// consumer falls back rather than inventing a colour.</para>
+    ///
+    /// <para>The evaluation is wrapped because <see cref="BuildTintToCmyk"/> has no internal catch — only
+    /// <see cref="BuildTintRamp"/> does — and a Type 0 or Type 4 function can build successfully and
+    /// still throw at evaluation time on a malformed body. This method runs from
+    /// <see cref="OriginForColorSpaceObject"/>, which <c>PdfRenderer</c> calls on every colour-setting
+    /// operator, so a throw here would take down the render of an otherwise fine page.</para>
+    /// </summary>
+    private static IReadOnlyList<double>? OwnAlternateFor(
+        SpotColorSpace space, string name, ColourantRole role, double? tint, PdfDocument? doc)
+    {
+        if (role != ColourantRole.Spot || tint is not { } t) return null;
+        if (space.Colorants is not { } colorants) return null;
+        if (!colorants.TryGetValue(new PdfName(name), out PdfObject? entryObj)) return null;
+
+        // doc is load-bearing: GWG081's /Colorants entry is `14 0 R`, and a Separation's tint
+        // transform is normally an indirect stream object. Passing null here would leave both
+        // unresolved and silently yield no alternate on every real NChannel file.
+        if (Deref(entryObj, doc) is not PdfArray entry) return null;
+
+        try
+        {
+            Func<double[], (double C, double M, double Y, double K)>? toCmyk =
+                BuildTintToCmyk(entry, doc, out int inputs);
+            if (toCmyk is null || inputs < 1) return null;
+
+            (double c, double m, double y, double k) = toCmyk([t]);
+            return [c, m, y, k];
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Graphics,
+                $"OwnAlternateFor: /Colorants entry for '{name}' threw during evaluation; "
+                + $"treating the component as having no individual alternate: {ex}");
+            return null;
+        }
+    }
 
     private static byte Clamp255(double v) => (byte)Math.Round(Math.Clamp(v, 0, 1) * 255);
 

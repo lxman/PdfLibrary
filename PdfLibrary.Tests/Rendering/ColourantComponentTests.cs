@@ -406,4 +406,140 @@ public class ColourantComponentTests
             Assert.Equal(ColourantRole.Spot, o.Components[1].Role);
         }
     }
+
+    // --- OwnAlternateCmyk from /Colorants ---
+
+    private const string SpotColorants =
+        "/Colorants << /Spot1 [/Separation /Spot1 /DeviceCMYK "
+        + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>] >>";
+
+    [Fact]
+    public void SpotComponent_GetsItsOwnAlternateEvaluatedAtItsTint()
+    {
+        // C1 is [0.5 0 1 0] with N 1, so at tint 1 the component's own alternate is exactly that —
+        // independently derivable from the function, not copied from a debugger.
+        ColorantOrigin? o = Origin(NChannel(SpotColorants), 0.25, 1.0);
+
+        IReadOnlyList<double>? alt = o!.Components![1].OwnAlternateCmyk;
+        Assert.NotNull(alt);
+        Assert.Equal(4, alt!.Count);
+        Assert.Equal(0.5, alt[0], 3);
+        Assert.Equal(0.0, alt[1], 3);
+        Assert.Equal(1.0, alt[2], 3);
+        Assert.Equal(0.0, alt[3], 3);
+    }
+
+    [Fact]
+    public void SpotComponent_AlternateTracksTheTint()
+    {
+        ColorantOrigin? o = Origin(NChannel(SpotColorants), 0.25, 0.5);
+
+        IReadOnlyList<double>? alt = o!.Components![1].OwnAlternateCmyk;
+        Assert.NotNull(alt);
+        Assert.Equal(0.25, alt![0], 3);   // 0.5 * 0.5
+        Assert.Equal(0.5, alt[2], 3);     // 1.0 * 0.5
+    }
+
+    [Fact]
+    public void ProcessComponent_HasNoOwnAlternate()
+    {
+        ColorantOrigin? o = Origin(NChannel(SpotColorants), 0.25, 1.0);
+
+        Assert.Equal(ColourantRole.Process, o!.Components![0].Role);   // Magenta
+        Assert.Null(o.Components[0].OwnAlternateCmyk);
+    }
+
+    [Fact]
+    public void NChannelWithoutColorants_LeavesSpotAlternatesNull()
+    {
+        // The spec requires /Colorants for an NChannel space with spot colourants, but files lie.
+        // A null alternate means "cannot revert this component individually", which is the signal
+        // Pass 2b falls back on.
+        ColorantOrigin? o = Origin(NChannel(""), 0.25, 1.0);
+
+        Assert.NotNull(o!.Components);
+        Assert.Equal(ColourantRole.Spot, o.Components![1].Role);
+        Assert.Null(o.Components[1].OwnAlternateCmyk);
+    }
+
+    [Fact]
+    public void ColorantsEntryThatIsNotASeparation_LeavesTheAlternateNull()
+    {
+        ColorantOrigin? o = Origin(
+            NChannel("/Colorants << /Spot1 /DeviceRGB >>"), 0.25, 1.0);
+
+        Assert.Null(o!.Components![1].OwnAlternateCmyk);
+    }
+
+    [Fact]
+    public void ColorantsEntryWithANonCmykAlternate_LeavesTheAlternateNull()
+    {
+        // BuildTintToCmyk accepts only DeviceCMYK and DeviceGray alternates; anything else is not
+        // reducible to plates here.
+        ColorantOrigin? o = Origin(
+            NChannel("/Colorants << /Spot1 [/Separation /Spot1 /DeviceRGB "
+                     + "<< /FunctionType 2 /Domain [0 1] /C0 [1 1 1] /C1 [0 0 0] /N 1 >>] >>"),
+            0.25, 1.0);
+
+        Assert.Null(o!.Components![1].OwnAlternateCmyk);
+    }
+
+    [Fact]
+    public void SpotComponentWithNoTint_HasNoAlternate()
+    {
+        // Shadings resolve with no per-op colour, so there is no point to evaluate the alternate at.
+        ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(
+            Parse(NChannel(SpotColorants)), null, null);
+
+        Assert.NotNull(o!.Components);
+        Assert.Null(o.Components![1].Tint);
+        Assert.Null(o.Components[1].OwnAlternateCmyk);
+    }
+
+    [Fact]
+    public void IndirectColorantsEntry_IsResolved()
+    {
+        // THE REAL-WORLD SHAPE, not an edge case. GWG081 — the corpus's only NChannel file — has
+        // /Colorants 51 0 R whose value is << /GWG#20Green 14 0 R >>. Both the dictionary and the
+        // entry are indirect, and the Separation's tint transform is an indirect stream object too.
+        // With a null document every Deref is a no-op, so this test is the only thing standing
+        // between "works" and "silently produces no alternate on every real NChannel file".
+        byte[] pdf = ColourConformancePage.Build(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Colorants << /Spot1 5 0 R >> >>]",
+            "1 0 0 rg 0 0 1 1 re f",
+            // Body only — Build writes the "5 0 obj … endobj" wrapper itself. And BY NAME: the
+            // helper's own doc warns that a positional argument here silently binds to
+            // extraResources instead, which compiles and produces a file missing the object.
+            extraObjects:
+            ["[/Separation /Spot1 /DeviceCMYK "
+             + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>]"]);
+
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        PdfPage page = doc.GetPage(0)!;
+        var cs = (PdfArray)page.GetResources()!.GetColorSpaces()![new PdfName("Cs0")]!;
+
+        ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(cs, [0.25, 1.0], doc);
+
+        IReadOnlyList<double>? alt = o!.Components![1].OwnAlternateCmyk;
+        Assert.NotNull(alt);
+        Assert.Equal(0.5, alt![0], 3);
+        Assert.Equal(1.0, alt[2], 3);
+    }
+
+    [Fact]
+    public void NoneComponent_NeverLooksUpAColorantsEntry()
+    {
+        // Row 5-7: /None components are discarded when painting directly. Evaluating an alternate for
+        // one would be meaningless work on a path that must never paint.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/Spot1 /None] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
+            + "/Colorants << /None [/Separation /None /DeviceCMYK "
+            + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 1 1 1] /N 1 >>] >> >>]",
+            0.5, 1.0);
+
+        Assert.Equal(ColourantRole.None, o!.Components![1].Role);
+        Assert.Null(o.Components[1].OwnAlternateCmyk);
+    }
 }
