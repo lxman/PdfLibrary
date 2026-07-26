@@ -440,10 +440,19 @@ public class ColourantComponentTests
         Assert.Equal(0.5, alt[2], 3);     // 1.0 * 0.5
     }
 
+    // The role gate itself — not an absent /Colorants entry — is what must suppress the process
+    // component's alternate: Magenta gets an entry under its OWN name that would evaluate to a
+    // non-null alternate if the `role != Spot` check in OwnAlternateFor were ever deleted.
+    private const string SpotAndProcessColorants =
+        "/Colorants << /Spot1 [/Separation /Spot1 /DeviceCMYK "
+        + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>] "
+        + "/Magenta [/Separation /Magenta /DeviceCMYK "
+        + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 0 0] /N 1 >>] >>";
+
     [Fact]
     public void ProcessComponent_HasNoOwnAlternate()
     {
-        ColorantOrigin? o = Origin(NChannel(SpotColorants), 0.25, 1.0);
+        ColorantOrigin? o = Origin(NChannel(SpotAndProcessColorants), 0.25, 1.0);
 
         Assert.Equal(ColourantRole.Process, o!.Components![0].Role);   // Magenta
         Assert.Null(o.Components[0].OwnAlternateCmyk);
@@ -485,6 +494,20 @@ public class ColourantComponentTests
     }
 
     [Fact]
+    public void ColorantsEntryThatIsMultiInput_LeavesTheAlternateNull()
+    {
+        // Table 71 requires /Colorants to be a full Separation space: exactly one input. Supplying a
+        // DeviceN there (two names, two inputs) would otherwise have its multi-input tint transform
+        // evaluated on a one-element array, silently producing a WRONG alternate rather than the null
+        // this design specifies for anything that isn't a true single-input Separation.
+        ColorantOrigin? o = Origin(
+            NChannel("/Colorants << /Spot1 [/DeviceN [/Spot1 /Spot2] /DeviceCMYK " + Tint2 + "] >>"),
+            0.25, 1.0);
+
+        Assert.Null(o!.Components![1].OwnAlternateCmyk);
+    }
+
+    [Fact]
     public void SpotComponentWithNoTint_HasNoAlternate()
     {
         // Shadings resolve with no per-op colour, so there is no point to evaluate the alternate at.
@@ -500,46 +523,78 @@ public class ColourantComponentTests
     public void IndirectColorantsEntry_IsResolved()
     {
         // THE REAL-WORLD SHAPE, not an edge case. GWG081 — the corpus's only NChannel file — has
-        // /Colorants 51 0 R whose value is << /GWG#20Green 14 0 R >>. Both the dictionary and the
-        // entry are indirect, and the Separation's tint transform is an indirect stream object too.
-        // With a null document every Deref is a no-op, so this test is the only thing standing
-        // between "works" and "silently produces no alternate on every real NChannel file".
-        byte[] pdf = ColourConformancePage.Build(
+        // /Colorants 51 0 R whose value is << /GWG#20Green 14 0 R >>, and that Separation's own tint
+        // transform is ALSO an indirect object. Both indirections have to resolve through doc
+        // independently: object 5 is the Colorants entry (a Separation array whose tint transform is
+        // itself 6 0 R, not inline), object 6 is that tint transform. A fixture with only the entry
+        // indirect (and the tint transform inline) would stay green even if doc were dropped from the
+        // BuildTintToCmyk call specifically — this shape closes that hole too. Uses the same
+        // ParseWithDoc helper as the /Process indirection tests rather than duplicating its
+        // Build/Load/GetColorSpaces sequence inline.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
             "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
             + " << /Subtype /NChannel /Colorants << /Spot1 5 0 R >> >>]",
-            "1 0 0 rg 0 0 1 1 re f",
-            // Body only — Build writes the "5 0 obj … endobj" wrapper itself. And BY NAME: the
-            // helper's own doc warns that a positional argument here silently binds to
-            // extraResources instead, which compiles and produces a file missing the object.
-            extraObjects:
-            ["[/Separation /Spot1 /DeviceCMYK "
-             + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>]"]);
+            "[/Separation /Spot1 /DeviceCMYK 6 0 R]",
+            "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 1 0] /N 1 >>");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 1.0], doc);
 
-        using var ms = new MemoryStream(pdf);
-        using PdfDocument doc = PdfDocument.Load(ms);
-        PdfPage page = doc.GetPage(0)!;
-        var cs = (PdfArray)page.GetResources()!.GetColorSpaces()![new PdfName("Cs0")]!;
-
-        ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(cs, [0.25, 1.0], doc);
-
-        IReadOnlyList<double>? alt = o!.Components![1].OwnAlternateCmyk;
-        Assert.NotNull(alt);
-        Assert.Equal(0.5, alt![0], 3);
-        Assert.Equal(1.0, alt[2], 3);
+            IReadOnlyList<double>? alt = o!.Components![1].OwnAlternateCmyk;
+            Assert.NotNull(alt);
+            Assert.Equal(0.5, alt![0], 3);
+            Assert.Equal(1.0, alt[2], 3);
+        }
     }
 
     [Fact]
     public void NoneComponent_NeverLooksUpAColorantsEntry()
     {
         // Row 5-7: /None components are discarded when painting directly. Evaluating an alternate for
-        // one would be meaningless work on a path that must never paint.
+        // one would be meaningless work on a path that must never paint. The /Colorants entry keyed
+        // "/None" here is deliberately an ORDINARY Separation (named /Decoy, not /None) that WOULD
+        // evaluate to a non-null alternate if OwnAlternateFor's role gate were ever removed — a
+        // "/None" Separation there would return null via BuildTintToCmyk's own PaintsNothing check
+        // regardless of the gate, which is why the earlier version of this fixture didn't actually
+        // prove the gate does anything.
         ColorantOrigin? o = Origin(
             "[/DeviceN [/Spot1 /None] /DeviceCMYK " + Tint2 + " << /Subtype /NChannel "
-            + "/Colorants << /None [/Separation /None /DeviceCMYK "
+            + "/Colorants << /None [/Separation /Decoy /DeviceCMYK "
             + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 1 1 1] /N 1 >>] >> >>]",
             0.5, 1.0);
 
         Assert.Equal(ColourantRole.None, o!.Components![1].Role);
         Assert.Null(o.Components[1].OwnAlternateCmyk);
+    }
+
+    [Fact]
+    public void CorruptColorantsEntryReference_DegradesToNullAlternate_RatherThanThrowing()
+    {
+        // /Colorants /Spot1 as an indirect reference to a corrupt object. The Deref of the entry must
+        // sit INSIDE OwnAlternateFor's own try/catch (a review finding moved it there — it originally
+        // sat above the try, matching the plan's Step 3 snippet verbatim). Without that placement, a
+        // corrupt /Colorants entry throws PdfParseException out of OriginForColorSpaceObject, which
+        // PdfRenderer calls on every colour-setting operator with no try/catch above it — a page that
+        // rendered fine before Task 3 would start failing. This test errors (rather than merely
+        // failing an assertion) if the guard is removed, because nothing above OwnAlternateFor's own
+        // try/catch would catch the escaping exception.
+        //
+        // Object 5 here is an in-use xref entry (so GetObject does not merely return null the way a
+        // reference to a non-existent object number would) whose body is a lone "]" — the same
+        // genuinely-unparseable-target technique
+        // CorruptAttributesReference_DegradesToDeviceNDefaults_RatherThanThrowing and
+        // CorruptProcessColorSpaceReference_DegradesToReservedNamesOnly_RatherThanThrowing use one and
+        // two levels up.
+        (PdfArray arr, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Magenta /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Colorants << /Spot1 5 0 R >> >>]", "]");
+        using (doc)
+        {
+            ColorantOrigin? o = ColorSpaceResolver.OriginForColorSpaceObject(arr, [0.25, 1.0], doc);
+
+            Assert.NotNull(o!.Components);
+            Assert.Equal(ColourantRole.Spot, o.Components![1].Role);
+            Assert.Null(o.Components[1].OwnAlternateCmyk);
+        }
     }
 }

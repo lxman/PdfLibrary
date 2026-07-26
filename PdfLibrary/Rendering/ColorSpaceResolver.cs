@@ -973,16 +973,27 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (space.Colorants is not { } colorants) return null;
         if (!colorants.TryGetValue(new PdfName(name), out PdfObject? entryObj)) return null;
 
-        // doc is load-bearing: GWG081's /Colorants entry is `14 0 R`, and a Separation's tint
-        // transform is normally an indirect stream object. Passing null here would leave both
-        // unresolved and silently yield no alternate on every real NChannel file.
-        if (Deref(entryObj, doc) is not PdfArray entry) return null;
-
         try
         {
+            // doc is load-bearing: GWG081's /Colorants entry is `14 0 R`, and a Separation's tint
+            // transform is normally an indirect stream object. Passing null here would leave both
+            // unresolved and silently yield no alternate on every real NChannel file.
+            //
+            // This Deref must live INSIDE the try, not above it: it is a live dereference of an object
+            // no engine path previously touched (the /Colorants dictionary itself is already covered by
+            // EnsureAttributes's guard, but not what its entries point to), and PdfDocument.GetObject
+            // wraps a corrupt on-demand object's parse failure in PdfParseException. This runs from
+            // OriginForColorSpaceObject, which PdfRenderer calls on every colour-setting operator with
+            // no try/catch above it — the same lesson /Process's contents needed one level up.
+            if (Deref(entryObj, doc) is not PdfArray entry) return null;
+
             Func<double[], (double C, double M, double Y, double K)>? toCmyk =
                 BuildTintToCmyk(entry, doc, out int inputs);
-            if (toCmyk is null || inputs < 1) return null;
+            // Table 71 requires a /Colorants value to be a full Separation space: exactly one input.
+            // BuildTintToCmyk accepts DeviceN too (inputComponents = space.Names.Count), whose delegate
+            // would otherwise evaluate a multi-input tint transform on the one-element array below,
+            // silently producing a WRONG alternate rather than the null the design calls for.
+            if (toCmyk is null || inputs != 1) return null;
 
             (double c, double m, double y, double k) = toCmyk([t]);
             return [c, m, y, k];
