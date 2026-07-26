@@ -390,14 +390,21 @@ internal class ColorSpaceResolver(PdfDocument? document)
         PdfArray baseArray, PdfDocument? document, out int inputComponents)
     {
         inputComponents = 0;
-        if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
-            return null;
+        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space)) return null;
+
+        // Pre-Pass-1 this member required Count >= 4. That arity rule is expressed here as arity
+        // (HasTintTransform), deliberately NOT inferred from "TintTransformObject is null": reading
+        // TintTransformObject would deref element 3 (normally an indirect stream object) before the
+        // /All and /None checks below even run, so a malformed tint-transform reference could throw
+        // PdfParseException out of a call the old Count >= 4 check would have rejected without ever
+        // touching it.
+        if (!space!.HasTintTransform) return null;
 
         // §8.6.6.4 row 4-10: for /All and /None the alternateSpace and tintTransform SHALL be ignored.
         // Handled before either is read, exactly as ResolveSeparation does for fills — otherwise an /All
         // IMAGE paints a different colour from an identical /All FILL.
         if (PaintsNothing(baseArray, document)) return null;   // /None: build no evaluator at all
-        if (head.Value == "Separation" && Deref(baseArray[1], document) is PdfName { Value: "All" })
+        if (space.Family == "Separation" && space.Names[0] == "All")
         {
             // Additive device: the subtractive tint is complemented before being applied to R, G and B,
             // so tint t is the neutral 1 − t.
@@ -409,25 +416,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
             };
         }
 
-        if (head.Value == "Separation")
-            inputComponents = 1;
-        else if (Deref(baseArray[1], document) is PdfArray names)
-            inputComponents = names.Count;   // DeviceN: one input per colorant name
-        else
-            return null;
+        // Names.Count is the colorant count for both families; the names themselves need not resolve.
+        inputComponents = space.Names.Count;
         if (inputComponents < 1) return null;
 
-        PdfObject altObj = Deref(baseArray[2], document);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty
-        };
+        string altSpace = space.AlternateSpaceName;
         if (altSpace.Length == 0) return null;
-        PdfArray? labArray = altSpace == "Lab" ? altObj as PdfArray : null;
+        PdfArray? labArray = altSpace == "Lab" ? space.AlternateObject as PdfArray : null;
 
-        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
+        PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, document);
         if (tint is null) return null;
 
         return colorants =>
@@ -453,14 +450,21 @@ internal class ColorSpaceResolver(PdfDocument? document)
         PdfArray baseArray, PdfDocument? document, out int inputComponents)
     {
         inputComponents = 0;
-        if (baseArray.Count < 4 || baseArray[0] is not PdfName { Value: "Separation" or "DeviceN" } head)
-            return null;
+        if (!SpotColorSpace.TryParse(baseArray, document, out SpotColorSpace? space)) return null;
+
+        // Pre-Pass-1 this member required Count >= 4, as in BuildTintToRgb. That arity rule is
+        // expressed here as arity (HasTintTransform), deliberately NOT inferred from
+        // "TintTransformObject is null": reading TintTransformObject would deref element 3 (normally an
+        // indirect stream object) before the /All and /None checks below even run, so a malformed
+        // tint-transform reference could throw PdfParseException out of a call the old Count >= 4 check
+        // would have rejected without ever touching it.
+        if (!space!.HasTintTransform) return null;
 
         // §8.6.6.4 row 4-10, as in BuildTintToRgb. Placed BEFORE the alternate-space gate below, because
         // the clause says the alternate space is ignored for these names — an /All space is convertible
         // here whatever its alternate happens to be.
         if (PaintsNothing(baseArray, document)) return null;   // /None: build no evaluator at all
-        if (head.Value == "Separation" && Deref(baseArray[1], document) is PdfName { Value: "All" })
+        if (space.Family == "Separation" && space.Names[0] == "All")
         {
             // Subtractive device: the tint applies DIRECTLY to every colourant, uncomplemented.
             inputComponents = 1;
@@ -471,21 +475,10 @@ internal class ColorSpaceResolver(PdfDocument? document)
             };
         }
 
-        if (head.Value == "Separation")
-            inputComponents = 1;
-        else if (Deref(baseArray[1], document) is PdfArray names)
-            inputComponents = names.Count;
-        else
-            return null;
+        inputComponents = space.Names.Count;
         if (inputComponents < 1) return null;
 
-        PdfObject altObj = Deref(baseArray[2], document);
-        string altSpace = altObj switch
-        {
-            PdfName n => n.Value,
-            PdfArray { Count: >= 1 } a when a[0] is PdfName t => t.Value,
-            _ => string.Empty
-        };
+        string altSpace = space.AlternateSpaceName;
         // A DeviceGray alternate is just as convertible as a DeviceCMYK one: PDF 32000-1 §10.3.3 makes
         // DeviceGray a DEVICE space that separates onto the black plate alone (k = 1 − gray), which is
         // exactly the rule the FILL path already applies (Pellucid's InkDecider.ToCmyk). Rejecting it sent
@@ -499,7 +492,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         var grayAlt = altSpace == "DeviceGray";
         if (altSpace != "DeviceCMYK" && !grayAlt) return null;
 
-        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], document), document);
+        PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, document);
         if (tint is null) return null;
 
         return colorants =>
@@ -523,10 +516,19 @@ internal class ColorSpaceResolver(PdfDocument? document)
     internal static (double[][]? Ramp, (byte R, byte G, byte B) Solid) BuildTintRamp(
         PdfArray baseArray, PdfDocument? doc, int colorantIndex, int inputCount, int samples = 256)
     {
-        if (baseArray.Count < 4 || colorantIndex < 0 || colorantIndex >= inputCount)
+        if (colorantIndex < 0 || colorantIndex >= inputCount)
+            return (null, (0, 0, 0));
+        if (!SpotColorSpace.TryParse(baseArray, doc, out SpotColorSpace? space))
             return (null, (0, 0, 0));
 
-        PdfFunction? tint = PdfFunction.Create(Deref(baseArray[3], doc), doc);
+        // Pre-Pass-1 this member required Count >= 4 (baseArray.Count < 4). That arity rule is expressed
+        // here as arity (HasTintTransform), deliberately NOT inferred from "TintTransformObject is
+        // null": reading TintTransformObject would deref element 3 (normally an indirect stream object)
+        // as a side effect of asking a pure arity question, and a corrupt reference would throw
+        // PdfParseException where the old Count >= 4 check would have just returned a null ramp.
+        if (!space!.HasTintTransform) return (null, (0, 0, 0));
+
+        PdfFunction? tint = PdfFunction.Create(space.TintTransformObject, doc);
         if (tint is null) return (null, (0, 0, 0));
 
         var ramp = new double[samples][];
