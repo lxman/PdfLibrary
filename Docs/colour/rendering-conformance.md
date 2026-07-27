@@ -98,15 +98,15 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 |---|---|---|---|---|
 | 5-1 | alternateSpace "shall not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | F | — | Same constraint as 4-14, for DeviceN. **Validator gap** — no rule checks this. |
 | 5-2 | "if any of the component names […] do not correspond to a colorant available on the device, [the processor] shall perform subsequent painting operations in the alternate colour space" | N | ✅ | `DeviceN_RevertsToAlternate_PassingEveryTintToTheTransform`. The all-or-nothing fallback is correct for plain DeviceN, which is what this row covers — but see 5-3. |
-| 5-3 | **"For NChannel colour spaces, the components shall be evaluated individually; that is, only the ones not present on the output device shall use the alternate colour space of that component."** | N | ❌ | **VIOLATION.** `NChannel` appears nowhere in the rendering path of either repo (only in `Conformance/`). With the all-or-nothing fallback, one unregistered colourant in an NChannel space flattens *every* colourant through the alternate, including those we can paint. See gap G-4. |
+| 5-3 | **"For NChannel colour spaces, the components shall be evaluated individually; that is, only the ones not present on the output device shall use the alternate colour space of that component."** | N | ⚠️ | **Was ❌ VIOLATION. Implemented 2026-07-27 (Pass 2b), for fills/strokes and images — NOT a clean ✅, and the exclusions below are the reason.** Fills/strokes: `InkDecider.TryPerComponent` routes each Process component to its `/Process /Components` **position** (Table 71 makes position the channel identity, which a name cannot carry), routes registered spots to their planes, and reverts unregistered spots through their own `/Colorants` alternate. Images/stencils: `PdfImageToCmyk` splits by role and channel rather than by name. **Evidence:** veraPDF `6-2-4-4-t02-pass-a` renders C=0.36 M=0.57 Y=0.02 K=0.0, asserted positionally on the real file, against a measured pre-change `C=0 M=0.36 Y=0.57 K=0.02` — its tint transform is an identity pass-through, so the whole visible defect was a channel permutation, and only a positional assertion can see it. Mutation-verified: routing by position instead of channel reproduces the pre-change tuple exactly. **Still excluded:** shadings and meshes (G-7 — no per-op tint); a one-channel (`/DeviceGray` or ICCBased `/N 1`) process space, where channel 0 is not the cyan plate; an all-process NChannel *image or stencil* (see G-4's note — the overprint category, not the colour, decides that); and spot reversion for images. **Reversion has no corpus instance anywhere** — synthetic fixtures plus plane-cap invariance only. |
 | 5-4 | tintTransform "shall be called with n tint values and returns m colour component values" | N | ✅ | Same test: a type 4 transform maps (t₁, t₂) → (0, t₁, t₂, 0), so a dropped or transposed component paints a visibly different colour. Verified by mutation — transposing the oracle fails. |
 | 5-5 | **None** "may be present only for DeviceN colour spaces that do not have the NChannel subtype" | F | — | Constrains where `/None` may appear in a file. Previously recorded as blocked on G-4 because it needs DeviceN `/Subtype` awareness — as a validator row, that read belongs to the validator, so the dependency does not apply here. **Validator gap** — `PdfxNChannelColorantsRule` reads `/Subtype` but checks `/Colorants` presence, not `/None` placement. |
 | 5-6 | None "indicates that the corresponding colour component shall never be painted on the page" | N | ⚠️ | `ShadingSpotSplit`, `TryToSpotInk` skip None components. |
 | 5-7 | "When […] painting the named device colourants directly, colour components corresponding to None colourants shall be discarded" | N | ⚠️ | |
 | 5-8 | "when the DeviceN colour space reverts to its alternate colour space, those components shall be passed to the tint transformation function" | N | ✅ | Audited 2026-07-26 — **conformant**. `ColorSpaceResolver.ResolveDeviceN` already evaluated the tint transform over every component unfiltered, `/None` included, so reversion was correct before this pass; it simply had no test. Pinned by `DeviceNNoneReversionTests.DeviceN_Reversion_PassesNoneComponentsToTheTintTransform`, mutation-verified: filtering `/None` out before calling the transform (the bug this row exists to catch, and the mirror image of row 5-7's discard-when-direct rule one paragraph away) makes the test fail with the wrong yellow plate. Mutation reverted; suite green again. |
 | 5-9 | All-None space "shall always discard its output […] it shall never revert to the alternate colour space" | N | ✅ | Implemented 2026-07-25 via `ColorSpaceResolver.PaintsNothing`, which treats an all-`/None` DeviceN exactly like `/Separation /None` — so it is never flattened through its tint transform on the way to painting nothing. `AllNoneDeviceN_DiscardsOutput_WithoutRevertingToItsAlternate` paints over red with a transform ramping to magenta. |
-| 5-10 | "Reversion shall occur only if at least one colour component (other than None) is specified and is not available on the device" | N | ⚠️ | Cited verbatim in `PdfImageToCmyk.TryToSpotInk` (SP-6c) — the routing splits by colorant name and never consults the alternate. |
-| 5-11 | Subtype "shall be DeviceN or NChannel. Default value: DeviceN" | N | ❌ | Not read on the render path at all (G-4). |
+| 5-10 | "Reversion shall occur only if at least one colour component (other than None) is specified and is not available on the device" | N | ⚠️ | Cited verbatim in `PdfImageToCmyk.TryToSpotInk` (SP-6c). **Narrowed 2026-07-27 (Pass 2b):** for **fills and strokes** reversion is now genuinely per-component — only a spot with no registered plane takes its own alternate, and the components that *are* available are painted directly, which is what this row and 5-3 together require. Still ⚠️, for three reasons: reversion remains whole-space for **images** (an image's tint varies per pixel and no per-pixel own-alternate colour is carried anywhere); it remains whole-space for shadings/meshes (G-7); and **no corpus file anywhere exercises reversion at all** — not GWG, not veraPDF — so the per-component path is covered by synthetic fixtures plus the plane-cap invariance property test and by nothing else. |
+| 5-11 | Subtype "shall be DeviceN or NChannel. Default value: DeviceN" | N | ✅ | **Was ❌. Closed 2026-07-27 (Pass 2b).** `/Subtype` is read on the render path by both halves: `ColorSpaceResolver.BuildComponents` gates the whole per-component carrier on `space.IsNChannel`, and that gate is what keeps a plain DeviceN (`Components == null`) on the unchanged whole-space path. The default is honoured — `SpotColorSpace` defaults an absent `/Subtype` to `"DeviceN"` per Table 70. Mutation-verified from the other side: removing the `IsNChannel` gate changes a plain DeviceN's ramp, which the 51-fixture GWG gate catches. |
 | 5-12 | "If the value of the Subtype entry […] is NChannel, such information shall be present" (attributes) | F | — | Requires the attributes dictionary to be present for NChannel. Partially enforced by `PdfxNChannelColorantsRule`, which requires `/Colorants` — but that rule is **profile-gated** (`AppliesToProfiles = AllPdfA | PdfX4`), so nothing enforces this at baseline ISO 32000-2. |
 | 5-13 | Mixing hints: "applications shall ignore these process component entries if they can obtain the information from an ICC profile" | L | — | **Reclassified 2026-07-26, N → L.** Read in context: the paragraph immediately preceding this row states "PDF processors need not use this [MixingHints] information" — the same optionality already recorded as L for the sibling clauses 5-14/5-15, three rows below. This row's `shall` is a conditional obligation nested inside that optional feature: it binds only an application that has chosen to consume `/MixingHints` process-component entries for blending calculations. `grep -rli mixinghints` (case-insensitive) across both the `PDF` and `Pellucid` repos finds **zero** matches outside this document — nothing on the render path reads `/MixingHints` at all, so the antecedent for this row's `shall` never arises for us; the clause is inapplicable rather than satisfied, exactly as 5-14/5-15 are. Reclassifying avoids scoring a row that cannot fail: "we never read the key" is a fact about the codebase, not a behaviour a test can exercise and watch fail — an unfalsifiable ✅ here would misrepresent an absence of engagement as a passed conformance check. |
 | 5-14 | "PDF processors need not use the alternateSpace and tintTransform parameters, and may instead use custom blending algorithms" | L | — | Explicit permission for our additive spot fold. **This is the clause that makes the spot-combine model a design decision rather than a compliance question.** |
@@ -173,11 +173,48 @@ substantive violation this matrix has tracked since slice 1.
   tint on every plane in `SpotColorantRegistry.PlaneNames`.
 - ~~**G-3 — `All` on an additive device is not complemented.**~~ **CLOSED 2026-07-25.** Row 4-7 is ✅ on
   the additive path; the subtractive half was tracked separately as G-5, closed below the same day.
-- **G-4 — NChannel is not implemented on the render path.** Rows 5-3 and 5-11. The per-component
+- ~~**G-4 — NChannel is not implemented on the render path.**~~ **SUBSTANTIALLY CLOSED 2026-07-27** by
+  Pass 2b (2b-engine `fef2e7b`, 2b-compositor). Row 5-11 is ✅; row 5-3 moved ❌ → ⚠️, and the ⚠️ is
+  honest rather than grudging — read its cell for the exclusions. Original text, kept: *the per-component
   evaluation rule is a `shall`, and we do the opposite (all-or-nothing). This remains the substantive
-  violation in the slice, and is untouched by this pass. (5-5 and 5-12 were previously listed as blocked
-  on this gap too; both moved to class F in this sweep — file-shape constraints are the validator's job by
-  this document's own class definition, so G-4's remaining scope is 5-3 and 5-11 alone.)
+  violation in the slice.* (5-5 and 5-12 were previously listed as blocked on this gap too; both moved to
+  class F in the 2026-07-26 sweep — file-shape constraints are the validator's job by this document's own
+  class definition, so G-4's remaining scope was 5-3 and 5-11 alone.)
+
+  **What actually closed it, and what the corpora did and did not prove.** Fills and strokes evaluate
+  per-component in `InkDecider.TryPerComponent`; images and stencils split by role and channel in
+  `PdfImageToCmyk`. The evidence is **one file** — veraPDF `6-2-4-4-t02-pass-a`, asserted positionally at
+  C=0.36 M=0.57 Y=0.02 K=0.0 against a measured pre-change `C=0 M=0.36 Y=0.57 K=0.02`. The other two files
+  in `NChannelRenderHashGateTests` are plain `DeviceN` (measured) and can never reach the new branch: they
+  are a must-not-throw check and regression ballast, **not** three-fixture evidence. The 51-fixture GWG
+  gate stayed at zero differences throughout both halves — which proves *silence*, not correctness, because
+  GWG contains **zero** NChannel spaces in any page `/ColorSpace` resource (measured twice, two independent
+  ways) and its only two NChannel spaces are a shading and an `/Indexed` image whose colorants split
+  identically under the old and new rules.
+
+  **Deliberate exclusions, each a live gap:**
+  1. **Shadings and meshes** — no per-op tint (`rawColor: null`). **G-7**, unchanged. Note they *reach*
+     `TryPerComponent` and are turned away one arm at a time; a `placed` guard keeps an all-`/None` space
+     from succeeding there, because the correctness of an out-of-scope path should not be decided by which
+     `case` a null tint happens to fall through.
+  2. **A one-channel process space** (`/DeviceGray`, ICCBased `/N 1`) is refused whole.
+     `ColourantComponent.ProcessChannel` indexes the *process* space, so a listed name there gets index 0 —
+     byte-identical to `/Cyan` under four channels, measured. Mapping a gray channel to a plate is a guess
+     this pass declines to make.
+  3. **An all-process NChannel image or stencil** is refused whole — a knowing trade. Returning null would
+     leave `ImageCommand.Spots` null, flipping `InkSourceCategory` out of Table 148 row 3, so an
+     **overprinting** op would erase a backdrop it used to preserve (the GWG020 shape SP-6d closed). Better
+     on colour, worse on overprint; the overprint regression is the one with teeth.
+  4. **Image spot reversion** — an image's tint varies per pixel and no per-pixel own-alternate colour is
+     carried anywhere.
+  5. **Plane-cap invariance is not universal.** `OwnColorantRamp` (`ColorSpaceResolver.cs:621`) requires the
+     space's whole-space alternate to be `DeviceCMYK`; `OwnAlternateFor` (`:1286`) does not. For an NChannel
+     space with a Lab/RGB/ICCBased/Gray whole-space alternate and a CMYK-reducible `/Colorants` entry, a
+     spot reverts through its real alternate while the registry ramp falls back to the zeroed approximation
+     — the routed and reverted paths give different ink and the invariant genuinely fails. Derived by
+     reading both engine methods; no corpus instance; the compositor's own invariance test cannot see it,
+     because at that level both values are inputs. Closing it means widening a gate Pass 2a′ deliberately
+     narrowed, so it is a separately-gated engine change.
 
   **Note (Pass 2a′, engine-only, 2026-07-26; corrected post-merge by whole-branch review):** this pass
   does not close G-4 (that is Pass 2b's job — the compositor still does not evaluate NChannel components
