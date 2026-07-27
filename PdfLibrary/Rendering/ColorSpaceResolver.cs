@@ -998,10 +998,13 @@ internal class ColorSpaceResolver(PdfDocument? document)
         foreach (string? n in space.Names) names.Add(n!);
 
         double[] tints = rawColor is null ? [] : [.. rawColor];
+        IReadOnlyList<ColourantComponent>? components =
+            BuildComponents(space, tints, doc, out int? processChannelCount);
         return new ColorantOrigin(names, tints, space.AlternateSpaceName)
         {
             Subtype = space.Subtype,
-            Components = BuildComponents(space, tints, doc),
+            Components = components,
+            ProcessChannelCount = processChannelCount,
         };
     }
 
@@ -1013,10 +1016,17 @@ internal class ColorSpaceResolver(PdfDocument? document)
     ///
     /// <para><paramref name="tints"/> may be SHORTER than the name list, including empty: a shading
     /// resolves its origin with no per-op colour. Those components get a null tint.</para>
+    ///
+    /// <para><paramref name="processChannelCount"/> surfaces the effective process-space channel count
+    /// alongside the list, non-null exactly when the return value is non-null. It adds no resolution
+    /// site: the value is the one the guarded <c>/Process</c> read below already computed and the
+    /// component loop is already bounded by. See <see cref="ColorantOrigin.ProcessChannelCount"/> for why
+    /// a consumer cannot infer it from <see cref="ColourantComponent.ProcessChannel"/> alone.</para>
     /// </summary>
     private static IReadOnlyList<ColourantComponent>? BuildComponents(
-        SpotColorSpace space, IReadOnlyList<double> tints, PdfDocument? doc)
+        SpotColorSpace space, IReadOnlyList<double> tints, PdfDocument? doc, out int? processChannelCount)
     {
+        processChannelCount = null;
         if (!space.IsNChannel) return null;
 
         // ISO 32000-2 Table 72: /Process names the process colour space and its component names. That
@@ -1098,6 +1108,13 @@ internal class ColorSpaceResolver(PdfDocument? document)
                     $"BuildComponents: /Process dereferencing threw, falling back to reserved-name classification: {ex}");
             }
         }
+
+        // Surfaced alongside the list, from the value ProcessChannelFor was already bounded by. Set HERE
+        // rather than at each successful read: every early return above is a suppression, and a
+        // suppressed list must carry a suppressed count (see ColorantOrigin.ProcessChannelCount). No new
+        // dereference — `channelCount` is already resolved by the guarded read above, and its catch
+        // deliberately leaves it lowered-or-default, so this is the same number the loop below uses.
+        processChannelCount = channelCount;
 
         var components = new List<ColourantComponent>(space.Names.Count);
         for (var i = 0; i < space.Names.Count; i++)

@@ -35,4 +35,22 @@ public sealed record ColorantOrigin(
     /// individually. A consumer must check for a usable per-component alternate (or tint), not merely
     /// that <c>Components is not null</c>.</para></summary>
     public IReadOnlyList<ColourantComponent>? Components { get; init; }
+
+    /// <summary>The number of channels in this NChannel space's process colour space — 4 for
+    /// <c>/DeviceCMYK</c>, for an ICCBased process space whose stream declares <c>/N 4</c>, and for the
+    /// "no constraint" case (no <c>/Process</c> dictionary, or one whose <c>/ColorSpace</c> is absent or
+    /// unreadable); 1 for <c>/DeviceGray</c> and ICCBased <c>/N 1</c>. <b>Non-null exactly when
+    /// <see cref="Components"/> is non-null</b> — the two are one answer, and a suppressed component list
+    /// suppresses this too.
+    ///
+    /// <para><b>Why a consumer needs this and cannot infer it.</b>
+    /// <see cref="ColourantComponent.ProcessChannel"/> indexes the PROCESS space's channels, not the CMYK
+    /// plates. Under a one-channel process space a name listed in <c>/Process /Components</c> still gets
+    /// index 0 (it is in range for that space), which is byte-identical to the index a <c>/Cyan</c> gets
+    /// under a four-channel space. A consumer mapping channel→plate must therefore check this is 4 before
+    /// treating an index as a CMYK plate; at any other count the component is not placeable on plates and
+    /// the consumer must fall back rather than guess. Mirrors the reasoning in
+    /// <c>ProcessChannelFor</c>'s own one-channel rule, which refuses to guess for exactly the same
+    /// reason.</para></summary>
+    public int? ProcessChannelCount { get; init; }
 }

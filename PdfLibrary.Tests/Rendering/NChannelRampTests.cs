@@ -409,4 +409,107 @@ public class NChannelRampTests
         Assert.NotNull(ramp);
         Assert.Equal(0.9, ramp![255][0], 3);
     }
+
+    // --- Pass 2b-engine Task 1: ColorantOrigin.ProcessChannelCount ---
+    //
+    // Deliberately NOT re-testing ProcessChannelCount()'s own table: Pass 2a-prime Task 1 already pins
+    // every row of it (/DeviceCMYK, /DeviceGray, absent, unreadable, ICCBased /N 4 / /N 1 / other,
+    // unresolvable stream, Count < 2, every other family). These pin the NEW thing — that the value is
+    // surfaced faithfully and paired with Components. The ICCBased row is the one exception, included
+    // because it is the only path where the count comes from neither a default nor a literal name.
+
+    [Fact]
+    public void NChannelOverDeviceCmyk_CarriesAProcessChannelCountOfFour()
+    {
+        PdfArray space = Parse(
+            "[/DeviceN [/Cyan /Spot1] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK /Components [/Cyan] >> >>]");
+
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(space, [0.5, 0.5], null);
+
+        Assert.NotNull(origin);
+        Assert.NotNull(origin!.Components);
+        Assert.Equal(4, origin.ProcessChannelCount);
+    }
+
+    // THE LOAD-BEARING TEST. Ink1 is LISTED, so ProcessChannelFor answers from processChannels and returns
+    // index 0 (0 < 1, so it is in range) — the same value a /Cyan gets under a four-channel space. Only the
+    // COUNT tells the two apart, which is the entire reason this property exists. Task 2 and the compositor
+    // both refuse to place a component when this is not 4; if this test can pass with the count reported as
+    // 4, both refusals are unpinned and a gray colorant lands on the cyan plate.
+    [Fact]
+    public void ListedNameUnderAOneChannelProcessSpace_GetsChannelZeroButACountOfOne()
+    {
+        PdfArray space = Parse(
+            "[/DeviceN [/Ink1] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceGray /Components [/Ink1] >> >>]");
+
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(space, [0.5], null);
+
+        ColourantComponent ink1 = Assert.Single(origin!.Components!);
+        Assert.Equal(ColourantRole.Process, ink1.Role);
+        Assert.Equal(0, ink1.ProcessChannel);        // indistinguishable from cyan on its own …
+        Assert.Equal(1, origin.ProcessChannelCount); // … until the count says otherwise
+    }
+
+    [Fact]
+    public void NChannelWithNoProcessDictionary_CarriesTheNoConstraintCountOfFour()
+    {
+        PdfArray space = Parse(
+            "[/DeviceN [/Cyan /Spot1] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel >>]");
+
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(space, [0.5, 0.5], null);
+
+        Assert.NotNull(origin!.Components);
+        Assert.Equal(4, origin.ProcessChannelCount);
+    }
+
+    // The ICCBased row: the count comes from the profile stream's /N, which must be an INDIRECT object, so
+    // this is the one case needing ParseWithDoc. /N 1 (not 4) so the assertion cannot pass by defaulting.
+    [Fact]
+    public void NChannelOverAnIccBasedGrayProcessSpace_CarriesACountOfOne()
+    {
+        (PdfArray space, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Ink1] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel /Process << /ColorSpace [/ICCBased 5 0 R] /Components [/Ink1] >> >>]",
+            "<< /N 1 /Length 0 >> stream\nendstream");
+        using (doc)
+        {
+            ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(space, [0.5], doc);
+
+            Assert.NotNull(origin!.Components);
+            Assert.Equal(1, origin.ProcessChannelCount);
+        }
+    }
+
+    // A suppressed component list must carry a suppressed count too: the two are one answer, and a consumer
+    // that saw ProcessChannelCount == 4 alongside Components == null would be told the space is
+    // four-channel-shaped when the engine has in fact declined to describe it at all.
+    [Fact]
+    public void NChannelOverAnUnsupportedProcessSpace_SuppressesBothComponentsAndTheCount()
+    {
+        PdfArray space = Parse(
+            "[/DeviceN [/Cyan /Spot1] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceRGB /Components [/Cyan] >> >>]");
+
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(space, [0.5, 0.5], null);
+
+        Assert.NotNull(origin);
+        Assert.Null(origin!.Components);
+        Assert.Null(origin.ProcessChannelCount);
+    }
+
+    // A plain DeviceN has no per-component answer at all, so it has no count either.
+    [Fact]
+    public void PlainDeviceN_CarriesNoProcessChannelCount()
+    {
+        PdfArray space = Parse("[/DeviceN [/Cyan /Spot1] /DeviceCMYK " + WholeSpaceAlways09 + "]");
+
+        ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(space, [0.5, 0.5], null);
+
+        Assert.NotNull(origin);
+        Assert.Null(origin!.Components);
+        Assert.Null(origin.ProcessChannelCount);
+    }
 }
