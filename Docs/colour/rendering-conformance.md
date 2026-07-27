@@ -178,6 +178,20 @@ substantive violation this matrix has tracked since slice 1.
   violation in the slice, and is untouched by this pass. (5-5 and 5-12 were previously listed as blocked
   on this gap too; both moved to class F in this sweep — file-shape constraints are the validator's job by
   this document's own class definition, so G-4's remaining scope is 5-3 and 5-11 alone.)
+
+  **Note (Pass 2a′, engine-only, 2026-07-26; corrected post-merge by whole-branch review):** this pass
+  does not close G-4 (that is Pass 2b's job — the compositor still does not evaluate NChannel components
+  individually). But `PageColorant.Kind`/`TintRamp`, which Pass 2a′ *does* change, already feed the
+  shipped `SpotColorantRegistry`/`CorpusRenderHash` in Pellucid. The corpus render-hash gate stayed
+  silent through Pass 2a′ only because the 51-fixture GWG corpus contains none of three input shapes:
+  (1) an ICCBased process space with a non-reserved process name (e.g. `/PrCyan`) — routes to zero spot
+  planes now instead of three, and until Pass 2b lands `ProcessChannel` routing such a colorant's tint
+  reaches neither a plate nor a plane, only the flattened alternate; (2) an NChannel space with a
+  non-separable whole-space transform and a usable `/Colorants` entry — different ramp, different plane
+  ink; (3) an NChannel space with a `DeviceGray` alternate and a usable `/Colorants` entry — closed by
+  this same pass narrowing `OwnColorantRamp`'s gate to `DeviceCMYK` only. **If a future corpus digest
+  moves and traces to `SpotColorantRegistry.Build`/`BuildCmykRamp`, check these three shapes before
+  treating it as an unexplained regression** — see the design doc's Gaps section for the full writeup.
 - ~~**G-5 — `/All` is not device-aware on the soft-proof path.**~~ **CLOSED 2026-07-25.** The engine
   keeps producing the additive answer (it cannot know the device — `WantsCmyk` is decided after the
   draw list is built), and `InkDecider` derives the subtractive answer from `ColorantOrigin`.
