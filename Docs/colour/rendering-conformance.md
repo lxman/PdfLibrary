@@ -192,6 +192,50 @@ substantive violation this matrix has tracked since slice 1.
   this same pass narrowing `OwnColorantRamp`'s gate to `DeviceCMYK` only. **If a future corpus digest
   moves and traces to `SpotColorantRegistry.Build`/`BuildCmykRamp`, check these three shapes before
   treating it as an unexplained regression** — see the design doc's Gaps section for the full writeup.
+
+  **Note (Pass 2b-engine, 2026-07-26).** Rows 5-3 and 5-11 stay ❌ — this pass does not close G-4 either.
+  It closes the **images** half of the routed→flattened window Pass 2a′ recorded, and supplies the one
+  carrier the compositor half needs. Two changes: `ColorantOrigin.ProcessChannelCount`, and
+  `PdfImageToCmyk.TryToSpotInk`/`StencilInkFromFill` splitting an NChannel space's colorants by
+  **role and channel** rather than by name, all-or-nothing, gated on a four-channel process space.
+
+  Three things this pass makes true that the matrix should not overstate:
+
+  1. **The window is now closed for images that carry a spot, still open for fills/strokes.** `InkDecider.
+     ProcessContribution` still switches on the literal names `Cyan`/`Magenta`/`Yellow`/`Black`, so a
+     non-reserved process colorant in a **fill or stroke** still reaches neither a plate nor a plane.
+     That is Pass 2b-compositor's first obligation. And note the qualifier: an **all-process** NChannel
+     image or stencil is refused by the per-component split (gap 3 below), so the window stays open for it
+     too. That is not a corner case — the design's own driving fixture, `t02-pass-a`'s `/CS0`, is all four
+     components Process, so the *image* analogue of the motivating case is precisely the shape that falls
+     back.
+  2. **Nothing in either corpus exercises any of it.** Measured, not assumed: across all 51 GWG fixtures
+     there are exactly **two** NChannel spaces, both in GWG081 — an axial shading (G-7) and an `/Indexed`
+     image whose colorants split **identically** under the old and new rules. And **zero** NChannel spaces
+     appear in any page `/ColorSpace` resource, so there is no NChannel fill, stroke *or stencil* anywhere
+     in GWG. The render-hash gate's 51/51 zero-difference result is therefore proof of *silence*, not of
+     correctness. The three veraPDF NChannel files exercise a **fill**, not an image.
+  3. **New gaps opened, deliberately:**
+     - **An all-process NChannel op is not per-component-evaluated.** When the per-component split yields
+       no spot colorant, both splitters fall back to the name split. This is a *correctness trade made
+       knowingly*: placing those components on their plates is better on colour, but returning null would
+       leave `ImageCommand.Spots` null, which flips `CmykPageRenderer`'s `InkSourceCategory` from
+       `SeparationDeviceN` to `ProcessOther` — moving the op out of Table 148 row 3, so an **overprinting**
+       image or stencil would erase a backdrop it used to preserve (the GWG020-class failure SP-6d
+       closed). The overprint regression has teeth; the colour approximation does not. Closing this
+       properly needs a compositor-side signal for "process-only, preserve plates".
+     - **NChannel over a one-channel process space** (`/DeviceGray`, ICCBased `/N 1`) is not
+       per-component-evaluated at all. `ColourantComponent.ProcessChannel` indexes the *process space's*
+       channels, so a listed name there gets index 0 — byte-identical to `/Cyan` under a four-channel
+       space. Measured directly. Mapping a gray channel to a plate is a guess this pass declines to make.
+     - **Image spot reversion remains out of scope.** An NChannel image whose spot has no registered plane
+       still drops the whole image to the whole-space flatten: an image's tint varies per pixel and no
+       per-pixel own-alternate colour is carried anywhere. Reversion lands for fills/strokes only.
+     - **Pre-existing, untouched, now precisely located:** `PdfImageToCmyk.TryToCmyk` reaches a corrupt
+       colour-space *alternate* unguarded, one call **before** `TryToSpotInk` on the render path
+       (`RecordingRenderTarget.cs:139` → `TryToCmyk` → `BuildTintToCmyk` → `AlternateSpaceName` →
+       `SpotColorSpace.EnsureAlternate`). `ComponentSplit`'s own call-site catch is therefore
+       defence-in-depth for a public method, not the thing standing between the pipeline and a crash.
 - ~~**G-5 — `/All` is not device-aware on the soft-proof path.**~~ **CLOSED 2026-07-25.** The engine
   keeps producing the additive answer (it cannot know the device — `WantsCmyk` is decided after the
   draw list is built), and `InkDecider` derives the subtractive answer from `ColorantOrigin`.

@@ -202,4 +202,95 @@ public class RecordingRenderTargetSpotTests
         Assert.Equal(new byte[] { 64, 64 }, cmd.Spots.TintPlanes);        // B(0.25) = 64
         Assert.Equal(new byte[] { 0, 0, 0, 128, 0, 0, 0, 128 }, cmd.Spots.ProcessCmyk);   // B(0.5) = 128 on K
     }
+
+    // ---- Pass 2b-engine: the stencil path's PER-COMPONENT branch, pinned ----
+    //
+    // Every test above builds its ColorantOrigin positionally, so Components is null and all of them take
+    // StencilInkFromFill's NAME-split fallback. The per-component branch added in Pass 2b-engine was
+    // therefore entirely unpinned: forcing it off left the whole suite green, and no GWG corpus patch
+    // reaches it either (Task 0's M2 found no NChannel stencil fill). These three fixtures are the only
+    // thing that makes the branch, its four-channel gate, and its spotless-split refusal observable.
+
+    /// <summary>An NChannel fill origin: the per-component carrier ColorSpaceResolver builds for
+    /// <c>/Subtype /NChannel</c>, constructed directly because a stencil's origin arrives already built —
+    /// StencilInkFromFill adds no resolution site.</summary>
+    private static ColorantOrigin NChannelFill(int processChannelCount, params ColourantComponent[] comps) =>
+        new([.. comps.Select(c => c.Name)], [.. comps.Select(c => c.Tint ?? 0.0)], "DeviceCMYK")
+        {
+            Subtype = "NChannel",
+            Components = comps,
+            ProcessChannelCount = processChannelCount,
+        };
+
+    private static PdfGraphicsState StencilFillState(ColorantOrigin origin) => new()
+    {
+        ResolvedFillColorSpace = "DeviceCMYK",
+        ResolvedFillColor = [0.0, 0.0, 0.0, 0.0],
+        ResolvedFillColorantOrigin = origin,
+        FillOverprint = true,
+    };
+
+    // THE BRANCH ITSELF. PrCyan is a non-reserved name listed in /Process /Components, so it is a PROCESS
+    // component on channel 0. The name split calls it Spot and hands it a plane the registry never holds;
+    // per-component its tint lands on the CYAN plate and only GWG Green is a spot. Disabling the branch
+    // makes Names come back ["PrCyan", "GWG Green"] with an all-zero ProcessCmyk.
+    [Fact]
+    public void DrawImage_splits_a_stencils_NChannel_fill_by_COMPONENT_not_by_name()
+    {
+        var rec = new RecordingRenderTarget(document: null);
+
+        rec.DrawImage(StencilImage(), StencilFillState(NChannelFill(4,
+            new ColourantComponent("PrCyan", ColourantRole.Process, 0.5, null, 0),
+            new ColourantComponent("GWG Green", ColourantRole.Spot, 0.25, null, null))));
+
+        var cmd = Assert.IsType<ImageCommand>(Assert.Single(rec.TakeSnapshot().Commands));
+        Assert.NotNull(cmd.Spots);
+        Assert.Equal(new[] { "GWG Green" }, cmd.Spots!.Names);             // PrCyan is NOT a spot
+        Assert.Equal(new byte[] { 64, 64 }, cmd.Spots.TintPlanes);         // B(0.25) = 64
+        // PrCyan → process channel 0 = the CYAN plate at B(0.5) = 128, on both stencil pixels.
+        Assert.Equal(new byte[] { 128, 0, 0, 0, 128, 0, 0, 0 }, cmd.Spots.ProcessCmyk);
+    }
+
+    // THE FOUR-CHANNEL GATE. ProcessChannel indexes the PROCESS space's channels, not the plates: under a
+    // one-channel process space a listed name ALSO gets index 0, and painting it on cyan would be a colour
+    // error the name split never made. Ink1 must stay an ordinary spot. Dropping the ProcessChannelCount: 4
+    // gate at the stencil call site puts Ink1's 128 on the cyan plate and drops it from Names.
+    [Fact]
+    public void DrawImage_stencil_over_a_ONE_channel_process_space_falls_back_to_the_name_split()
+    {
+        var rec = new RecordingRenderTarget(document: null);
+
+        rec.DrawImage(StencilImage(), StencilFillState(NChannelFill(1,
+            new ColourantComponent("Ink1", ColourantRole.Process, 0.5, null, 0),
+            new ColourantComponent("GWG Green", ColourantRole.Spot, 0.25, null, null))));
+
+        var cmd = Assert.IsType<ImageCommand>(Assert.Single(rec.TakeSnapshot().Commands));
+        Assert.NotNull(cmd.Spots);
+        Assert.Equal(new[] { "Ink1", "GWG Green" }, cmd.Spots!.Names);     // BOTH spots — the name split
+        Assert.Equal(new byte[] { 128, 64, 128, 64 }, cmd.Spots.TintPlanes);
+        Assert.Equal(new byte[8], cmd.Spots.ProcessCmyk);                  // nothing on any plate
+    }
+
+    // THE SPOTLESS-SPLIT REFUSAL, from the stencil side. An all-process NChannel fill splits validly with
+    // an EMPTY spot list, and StencilInkFromFill would then return null on `spotNames.Count == 0` — which
+    // is not a colour change downstream but a CATEGORY change: cmd.Spots null means ProcessOther means
+    // knockout, so an overprinting stencil erases the backdrop it used to preserve. That is precisely the
+    // GWG020 failure SP-6d closed, re-opened from the other direction. SplitByComponents refuses instead,
+    // and the name split's answer (both unreserved names are Spot) is what this pins — today's behaviour,
+    // unchanged. Removing the `spotNames.Count > 0` guard makes this fail on Assert.NotNull.
+    [Fact]
+    public void DrawImage_stencil_whose_NChannel_fill_is_ALL_process_keeps_the_name_splits_answer()
+    {
+        var rec = new RecordingRenderTarget(document: null);
+
+        rec.DrawImage(StencilImage(), StencilFillState(NChannelFill(4,
+            new ColourantComponent("PrCyan", ColourantRole.Process, 0.5, null, 0),
+            new ColourantComponent("PrMagenta", ColourantRole.Process, 0.25, null, 1))));
+
+        var cmd = Assert.IsType<ImageCommand>(Assert.Single(rec.TakeSnapshot().Commands));
+        Assert.NotNull(cmd.Spots);
+        Assert.Equal(new[] { "PrCyan", "PrMagenta" }, cmd.Spots!.Names);
+        Assert.Equal(new byte[] { 128, 64, 128, 64 }, cmd.Spots.TintPlanes);
+        Assert.Equal(new byte[8], cmd.Spots.ProcessCmyk);
+    }
 }
