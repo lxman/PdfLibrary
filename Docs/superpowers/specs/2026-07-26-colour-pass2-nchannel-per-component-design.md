@@ -297,7 +297,47 @@ retired.
 
 ---
 
-## Delivery — two plans, not one
+## Delivery — CORRECTED (Pass 2b planning, 2026-07-26): THREE plans, not two
+
+**The section below is preserved as written, and its premise about Pass 2b is wrong.** It scopes Pass 2b
+to "the compositor", one plan, in the Pellucid repo. Reading the code this design names showed two things
+that are not so:
+
+1. **The image path has no `ColorantOrigin`.** This design cites `CmykPageRenderer.cs:1157` as the images'
+   all-or-nothing gate. It is — but what it gates is `registry.TryGetPlane(ink.Names[k])` over a
+   `SpotImageInk`, which carries *spot names + tint planes + a pre-split `ProcessCmyk` plane*. The
+   `ColourantComponent` list never reaches that site. The colorant→plate/plane decision for images is made
+   **engine-side**, in `PdfImageToCmyk.TryToSpotInk` and `StencilInkFromFill`, both splitting by
+   `PageColorant.Classify` + `ProcessPlate` — the same literal reserved-name switch this design flags at
+   `InkDecider.ProcessContribution`. So the images half of Pass 2b is an **engine** change.
+2. **`ProcessChannel` is not safe to consume alone.** It indexes the *process colour space's* channels.
+   Under a `/DeviceGray` process space a name listed in `/Process /Components` also gets index **0** —
+   measured directly, byte-identical to what `/Cyan` gets under a four-channel space. A consumer mapping
+   channel 0 → the cyan plate would paint a gray colorant on cyan. Nothing carried today distinguishes
+   them, so `ColorantOrigin` needed a `ProcessChannelCount`.
+
+**Actual delivery:** Pass 2a′ (engine, merged `0c0f3db`) → **Pass 2b-engine** (`ProcessChannelCount` +
+the image/stencil per-component split; plan
+`Docs/superpowers/plans/2026-07-26-colour-pass2b-engine-nchannel-image-split.md`) → **Pass 2b-compositor**
+(per-component fills/strokes + `NChannelRenderHashGateTests`), written after 2b-engine merges because its
+measurements are that plan's inputs.
+
+**Two further corrections to this design's own claims**, both measured:
+
+- **"GWG081's renderable-with-evidence instance is the image"** (Scope, consequence 2) does **not** hold
+  for Pass 2b. GWG081's image colorants split *identically* under the name rule and the per-component
+  rule, so it yields no evidence for the image change either. Combined with Pass 2a′'s Task 0 measuring
+  the ramp difference at 5.55e-17, GWG081 has now supplied **zero** evidence across both passes.
+- **There is no NChannel fill, stroke *or stencil* anywhere in GWG** — zero NChannel spaces appear in any
+  page `/ColorSpace` resource across all 51 fixtures. Stronger than this design's census recorded, and it
+  means `StencilInkFromFill`'s half is covered by synthetic fixtures alone.
+
+**Per-component rules table, addendum:** consuming `ProcessChannel` as a CMYK plate index requires
+`ProcessChannelCount == 4`. At any other count the component is not placeable and the op falls back whole.
+And an all-process NChannel op is deliberately *not* per-component-evaluated — see the conformance
+matrix's G-4 note for why the overprint category, not the colour, decides that.
+
+## Delivery — two plans, not one *(original text, superseded above)*
 
 This design spawns **two implementation plans**, matching the repo boundary and giving each its own gate:
 
