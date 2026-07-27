@@ -1048,6 +1048,30 @@ public class NChannelPerComponentRenderTests
 }
 ```
 
+> **⚠️ What this property test CANNOT observe — record it in the test's own doc comment, do not let the
+> green run imply more than it proves.** (Task 1 review, I-2.)
+>
+> Plane-cap invariance is **not universal**, and this fixture is constitutionally unable to see where it
+> breaks. Both sides read the same `/Attributes /Colorants` Separation through the same
+> `BuildTintToCmyk(entry, …)` + `inputs != 1` gate — **but `OwnColorantRamp`
+> (`ColorSpaceResolver.cs:621`) additionally requires the space's WHOLE-SPACE alternate to be
+> `DeviceCMYK`, and `OwnAlternateFor` (`:1286`) has no such gate.** So for an NChannel space whose
+> whole-space alternate is Lab/RGB/ICCBased/Gray but whose `/Colorants` entry is a CMYK-reducible
+> Separation, the **reverted** path gets the real alternate while the **registry ramp** falls back to the
+> zeroed whole-space approximation. The two paths give different ink and **the invariant genuinely
+> fails.**
+>
+> This fixture uses `AlternateSpace = "DeviceCMYK"` and builds the ramp and the alternate from one
+> function, so the invariant is true there *by construction*.
+>
+> **Do not try to fix this with a second compositor fixture.** At this level `TintRamp` and
+> `OwnAlternateCmyk` are both *inputs* — a test that hands the compositor a mismatched pair proves only
+> that addition works, not that the engine ever produces such a pair. The divergence is an **engine**
+> property (which gate admits what), so it belongs in the conformance matrix as a recorded gap (Task 4),
+> not in a compositor test that would look like coverage without being any.
+>
+> No corpus instance is known; the class is derived by reading both engine methods, not measured.
+>
 > **One interaction to be aware of in `Render`.** With `planeCap: 0` the registry holds **zero** ramps
 > while `SpotPlaneBuffer` is still allocated with `Math.Max(SpotCount, 1) == 1` plane. `SpotDisplayCombiner`
 > then takes its slow path (`s == 1`, so the byte-identity fast path is skipped) and loops that plane — but
@@ -1331,6 +1355,20 @@ corpus, so nothing there can reach the new branch. Do not regenerate.
 - **Row 5-10** — the "reversion only if a component is unavailable" warning narrows: reversion is now
   per-component for fills/strokes. Note that it still has **no corpus instance anywhere**, and is covered
   by synthetic fixtures plus plane-cap invariance.
+- **New gap — plane-cap invariance is not universal.** `OwnColorantRamp` (`ColorSpaceResolver.cs:621`)
+  requires the space's whole-space alternate to be `DeviceCMYK`; `OwnAlternateFor` (`:1286`) does not. For
+  an NChannel space whose whole-space alternate is Lab/RGB/ICCBased/Gray but whose `/Colorants` entry is a
+  CMYK-reducible Separation, a spot reverts through its real alternate while the registry ramp falls back
+  to the zeroed whole-space approximation — **the routed and reverted paths give different ink.** Derived
+  by reading both engine methods; no corpus instance known; the compositor's invariance test cannot see it
+  (both values are inputs at that level). Closing it means widening `OwnColorantRamp`'s gate, which Pass
+  2a′ deliberately narrowed to `DeviceCMYK` — so it is a separately-gated engine change, not a fix to make
+  in passing.
+- **New gap — an all-`/None` NChannel op is excluded from per-component evaluation** by the `placed`
+  guard (Task 1 fix round). Reachable only from the shading/mesh paths, which are out of scope; the
+  fill/stroke case is already suppressed upstream by `ColorSpaceResolver.PaintsNothing`. Row 5-9 arguably
+  makes "paint nothing" the more correct answer, but that is an out-of-scope path's correctness and is not
+  decided here.
 - **G-4** — record it as closed for fills, strokes and images, with the exclusions above; the remaining
   scope is G-7.
 
