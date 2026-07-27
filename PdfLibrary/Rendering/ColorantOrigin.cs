@@ -38,10 +38,18 @@ public sealed record ColorantOrigin(
 
     /// <summary>The number of channels in this NChannel space's process colour space — 4 for
     /// <c>/DeviceCMYK</c>, for an ICCBased process space whose stream declares <c>/N 4</c>, and for the
-    /// "no constraint" case (no <c>/Process</c> dictionary, or one whose <c>/ColorSpace</c> is absent or
-    /// unreadable); 1 for <c>/DeviceGray</c> and ICCBased <c>/N 1</c>. <b>Non-null exactly when
-    /// <see cref="Components"/> is non-null</b> — the two are one answer, and a suppressed component list
-    /// suppresses this too.
+    /// "no constraint" case (no <c>/Process</c> dictionary, or one whose <c>/ColorSpace</c> is absent,
+    /// unreadable, or whose dereference THREW); 1 for <c>/DeviceGray</c> and ICCBased <c>/N 1</c>.
+    /// <b>Non-null exactly when <see cref="Components"/> is non-null</b> — the two are one answer, and a
+    /// suppressed component list suppresses this too.
+    ///
+    /// <para><b>4 can therefore mean "we never found out".</b> When dereferencing <c>/Process</c> throws,
+    /// the read degrades to reserved-name-only classification and this stays at its no-constraint
+    /// default rather than being suppressed — the same number <c>ProcessChannelFor</c> was already
+    /// bounding indices by on that path, so this surfaces the engine's existing behaviour rather than
+    /// inventing one. It is safe for a consumer precisely because that path also leaves the listed-name
+    /// map null, so every component falls back to reserved-name classification, where a channel→plate
+    /// mapping and a name→plate mapping agree by construction.</para>
     ///
     /// <para><b>Why a consumer needs this and cannot infer it.</b>
     /// <see cref="ColourantComponent.ProcessChannel"/> indexes the PROCESS space's channels, not the CMYK

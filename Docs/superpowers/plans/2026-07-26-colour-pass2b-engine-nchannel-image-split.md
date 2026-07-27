@@ -411,7 +411,11 @@ Append inside the record body of `PdfLibrary/Rendering/ColorantOrigin.cs`, after
 
 - [ ] **Step 4: Emit the count from `BuildComponents`**
 
-In `ColorSpaceResolver.cs`, change the signature at `:1017` and every `return` inside it:
+In `ColorSpaceResolver.cs`, change the signature at `:1017`. **No `return` inside the body needs
+changing** — the single `processChannelCount = null;` on the first line covers every early return, which
+is the whole point of putting it there (see the comment in the next step, which says the same thing from
+the other direction). Setting the count at each successful read instead would be the defect this shape
+exists to avoid.
 
 ```csharp
     private static IReadOnlyList<ColourantComponent>? BuildComponents(
