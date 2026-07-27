@@ -53,12 +53,71 @@ reach `SpotImageInk.Names`. The design listed "images" in Pass 2b's scope; that 
   planes an op does not name, and this branch matches it. Deferral, not a decision.
 - **ICC colour conversion through an ICCBased process space.** `/N` is a channel count, nothing more.
 
+## Task 0 result — measured 2026-07-27, before any production line was written
+
+All four predictions **HELD**; no stop condition fired.
+
+- **M1** — all three veraPDF files render through `CmykPageRenderer` without throwing, 1 page each,
+  1224 × 1584 at scale 2.0. `SpotCount`: `t02-pass-a` **0**, `t03-fail-c` 4 (`Red, Green, Blue, Gray`),
+  `t03-fail-d` 3 (`Red, Green, Blue`). All three record the same 7-command draw list.
+- **M2 — what `t02-pass-a` paints today: `C=0, M=0.36, Y=0.57, K=0.02`** on 18,400 pixels (first at
+  x=120, y=144); every other pixel is `(0,0,0,0)`; zero non-zero spot samples.
+  **The mechanism is sharper than this plan originally assumed and it changes how the fix must be tested.**
+  Object 14 is `/FunctionType 4` with body `{}` over `/Domain [0 1 ×4] /Range [0 1 ×4]` — an **identity
+  4-in/4-out pass-through**, not a transform that returns junk. So today's output is the tint vector taken
+  verbatim in **names order** `[Black, PrCyan, PrMagenta, PrYellow]`. **The entire defect is a channel
+  permutation.**
+- **M3 (load-bearing)** — the carrier survives the recorder onto `PdfGraphicsState`, field for field:
+  `Subtype=NChannel`, `ProcessChannelCount=4`, components `Black`/Process/0.0/**ch 3**,
+  `PrCyan`/Process/0.36/**ch 0**, `PrMagenta`/Process/0.57/**ch 1**, `PrYellow`/Process/0.02/**ch 2**,
+  all four `OwnAlternateCmyk` **null** (object 19 *does* define all four as full `/Separation` spaces —
+  Table 71 suppression confirmed at the recorder as well as the resolver). **Task 1 can work as designed.**
+- **M4** — NChannel in GWG page `/ColorSpace` resources: **zero**, measured two independent ways.
+  A draw-list scan of all 51 fixtures found 18,503 fill/stroke colorant origins, subtype histogram
+  `DeviceN × 18,503`. A raw-byte + inflated-stream grep (1,021 streams inflated) found **2** occurrences
+  of `NChannel` in the whole corpus, both in GWG081: obj 54, referenced only by a `/ShadingType 2`; and
+  obj 62, referenced only through `/Indexed` by an image XObject. **No GWG fill or stroke can reach the
+  new branch.**
+
+### ⚠️ The permutation hazard — read before writing ANY value assertion
+
+Before: `(C, M, Y, K) = (0, 0.36, 0.57, 0.02)`. After: `(0.36, 0.57, 0.02, 0)`.
+
+**The multiset is identical. The sum is identical (0.95). The max is identical. Total ink is identical.**
+
+So every one of these assertions **passes before and after** and proves nothing:
+
+- "total ink is 0.95" / "sum of plates" / "average ink"
+- "some plate equals 0.36"
+- any ΔE or sRGB tolerance against a flat swatch, if the tolerance is loose enough to admit a permutation
+- `Assert.Contains(0.36f, plates)`
+
+**Every value assertion must be positional — all four plates, each named.** And every mutation must be
+observed against *that* assertion. This is the "a mutation is only as good as the fixture it runs against"
+hazard from Global Constraints, arriving in the plan's own driving fixture.
+
+### Two more Task 0 corrections
+
+- **`t02-pass-a` has THREE NChannel `FillCommand`s, not one** (draw list `Save, Fill, Restore, Save, Fill,
+  Fill, Restore`). Command [1] carries the tints above; commands [4] and [5] carry the **same origin with
+  all tints 0**, so they enter the new branch and paint `(0,0,0,0)` both before and after. Wherever this
+  plan says "the `FillCommand`", read "the first of three".
+- **Two of the three gate fixtures can never reach the new branch.** `t03-fail-c` and `t03-fail-d` are
+  plain `DeviceN` — `Components=null`, `ProcessChannelCount=null` at every fill — and `t03-fail-d` puts no
+  ink on the process plates at all. They are **regression ballast and a must-not-throw check, not evidence
+  for the feature.** "The veraPDF gate passed" means *one* fixture exercised the branch plus two
+  invariance checks. Do not write it as three.
+
 ## What this plan can and cannot prove — read before writing a success claim
 
 - **`t02-pass-a` is the only real evidence, and it proves ONE thing: process routing by channel.** All four
-  of its components are Process (measured — Pass 2b-engine Task 0 M3: channels `[3, 0, 1, 2]`, every
-  `OwnAlternateCmyk` null because Table 71 says a process colorant's `/Colorants` entry is ignored). It
-  exercises **no** spot, and therefore **no reversion**.
+  of its components are Process (measured twice — Pass 2b-engine Task 0 M3 at the resolver, this plan's
+  Task 0 M3 at the recorder: channels `[3, 0, 1, 2]`, every `OwnAlternateCmyk` null because Table 71 says
+  a process colorant's `/Colorants` entry is ignored). It exercises **no** spot, and therefore **no
+  reversion**. And what it proves is specifically that the four tints stop being **permuted** — its tint
+  transform is an identity pass-through, so the whole visible defect is channel order.
+- **The other two gate fixtures prove nothing about the branch.** `t03-fail-c` and `t03-fail-d` are plain
+  `DeviceN` with `Components == null`, measured. They are a must-not-throw check and a regression baseline.
 - **Spot reversion has no corpus instance anywhere** — not in GWG, not in veraPDF. It is covered by
   synthetic fixtures plus the plane-cap invariance property test, and **nothing else**. Say exactly that;
   do not let "the veraPDF gate passes" imply reversion is validated.
@@ -1012,8 +1071,21 @@ Derivation, stated in the test as a comment: the content stream sets `/CS0 cs` t
 PrMagenta 0.57 → M, PrYellow 0.02 → Y, Black 0.0 → K. **Derived from the file, not from a debugger, and
 not from the digest.**
 
-Contrast it with Task 0's M2 measurement of what the same pixel painted **before** this branch existed,
-and put that number in the comment. That is what makes this a demonstrated change rather than an assertion.
+**Assert all four plates positionally. Nothing else can see this fix** — see the permutation hazard above:
+before is `(0, 0.36, 0.57, 0.02)` and after is `(0.36, 0.57, 0.02, 0)`, so multiset, sum, max and total
+ink are all unchanged. Put Task 0's measured *before* tuple in the comment; that contrast is what makes
+this a demonstrated change rather than an assertion.
+
+**Sample a pixel known to be covered.** Task 0 measured the painted region as 18,400 pixels with the first
+at **(120, 144)** on a 1224 × 1584 buffer at scale 2.0 — the page centre is *not* guaranteed to be inside
+it. Either use (120, 144), or scan for the first pixel with any non-zero plate and assert on that; if you
+scan, also assert the painted-pixel **count** is 18,400, so a fixture that silently starts painting
+almost nothing cannot pass by finding one lucky pixel.
+
+**There are three NChannel fills, not one.** Commands [4] and [5] carry the same origin with all tints 0
+and paint `(0,0,0,0)` before and after. If you assert on "the fill", disambiguate — and note that their
+existence means the *number* of distinct plate tuples on the page (two: `(0,0,0,0)` and the painted one)
+is itself a usable invariant.
 
 - [ ] **Step 2: Discovery helper**
 
