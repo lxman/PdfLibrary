@@ -29,8 +29,10 @@ to today's behaviour.
   `Directory.Build.props.local` also pins Skia `0.1.1-dev20260717153208` — **if you re-pack the engine for
   any reason, that line is silently deleted and must be restored by hand** (eight occurrences on record).
 - Entering baselines: Pellucid **1278 passing / 0 failing / 78 skipped**; engine 2643/0.
-  The 78 skipped are `Pellucid.Print.Cups.Tests` (39 × net8 + 39 × net10), which is **not** in the default
-  `dotnet test` set — run it by full path if you need to see it.
+  The 78 skipped are `Pellucid.Print.Cups.Tests` (39 × net8 + 39 × net10). **CORRECTED (Task 1): they DO
+  appear in a plain `dotnet test` run**, reported on a `Skipped!` summary line. An earlier note here said
+  otherwise; that was an artefact of filtering output for `Passed!|Failed!`, which does not match
+  `Skipped!`. Seeing 78 skipped is normal.
 
 ## What Pass 2b-engine already did, so this plan does not redo it
 
@@ -47,6 +49,14 @@ reach `SpotImageInk.Names`. The design listed "images" in Pass 2b's scope; that 
 **Out, and staying out:**
 - **Shadings and meshes** — they resolve with `rawColor: null`, so every component's `Tint` is null and
   there is no per-op tint to place. Unchanged. **G-7.**
+  **CORRECTED (Task 1 fix round): "out" was being enforced by accident, not by the gate.** The new branch
+  is *reachable* from `CompositeShading` (`CmykPageRenderer.cs:621`) and `CompositeMesh` (`:775`) — both
+  call `Decide` with the shading's origin. Almost every shading falls back because the null `Tint` fails
+  every `case` arm and `default: return false` fires, but **an NChannel space whose components are ALL
+  `/None` survives**: the loop `continue`s over each one and succeeds with `(0,0,0,0)`, an empty route
+  list and an all-false mask. Measured live: mutating `default: return false` → `continue` moves GWG081's
+  render digest, and GWG081's only shading-reachable NChannel is its `/ShadingType 2`, so `TryPerComponent`
+  runs on **every** GWG081 render. Now gated explicitly on a `placed` flag (Task 1 Step 5).
 - **NChannel over a one-channel process space** — `ProcessChannel` indexes the *process* space, so channel
   0 there is not the cyan plate. Falls back whole. Gap opened by Pass 2b-engine, unchanged here.
 - **Other-spot knockout on the per-component path** — the existing routed arm does not knock out the spot
@@ -406,6 +416,42 @@ public void NChannel_None_component_is_discarded_not_reverted()
     Assert.Equal(0f, d.M, 3); Assert.Equal(0f, d.Y, 3); Assert.Equal(0f, d.K, 3);
 }
 
+// ADDED (Task 1 fix round). NOTHING PLACED = DECLINE. Every component /None: the loop skips all of them
+// and would otherwise "succeed" with (0,0,0,0), no routes and an all-false mask. This is the ONE shape
+// that reaches the branch from a SHADING (out of scope, G-7). Without this fixture the `placed` guard is
+// UNPINNED — removing it leaves the whole rest of the suite green.
+[Fact]
+public void NChannel_with_every_component_None_declines_the_perComponent_branch()
+{
+    ColorantOrigin origin = NChannel([
+        new ColourantComponent("None", ColourantRole.None, 1.0, [1, 1, 1, 1], null),
+        new ColourantComponent("None", ColourantRole.None, 0.5, null, null),
+    ]);
+
+    InkDecision d = InkDecider.Decide(InkSourceCategory.SeparationDeviceN,
+        [1.0, 0.5], "DeviceN", origin, overprint: false, overprintMode: 0, Conv);
+
+    Assert.Null(d.SpotRoutes);
+}
+
+// ADDED (Task 1 fix round). The companion to the guard above, and the reason it counts PLACEMENTS rather
+// than marks or routes. A spot reverting through an ALL-ZERO alternate (a white spot — the GWG041 shape)
+// adds no ink and marks no plate, so `marked.Any() || routes.Count > 0` would read it as unplaceable and
+// fall the op back. It was placeable; evaluation must succeed, and under overprint it must mark nothing.
+[Fact]
+public void NChannel_spot_reverting_through_an_all_zero_alternate_still_succeeds()
+{
+    ColorantOrigin origin = NChannel(
+        [new ColourantComponent("White", ColourantRole.Spot, 1.0, [0, 0, 0, 0], null)]);
+
+    InkDecision d = InkDecider.Decide(InkSourceCategory.SeparationDeviceN,
+        [1.0], "DeviceN", origin, overprint: true, overprintMode: 0, Conv);
+
+    Assert.NotNull(d.SpotRoutes);
+    Assert.Empty(d.SpotRoutes!);
+    Assert.True(d is { PaintC: false, PaintM: false, PaintY: false, PaintK: false });
+}
+
 // THE GOVERNING PRINCIPLE. A Process component with no determinable channel is unplaceable, so the
 // WHOLE op falls back — here to the flattened path, since no name is registered. Never a partial
 // placement: silently dropping a component is strictly worse than the status quo.
@@ -551,12 +597,20 @@ construction site is untouched):
 
 ```csharp
     // Non-null ONLY on the per-component branch (ISO 32000-2 §8.6.6.5). An EMPTY list is meaningful and
-    // is not the same as null: it means per-component evaluation succeeded and this space has no spot to
-    // route (every component is Process, or reverted into the process buffer above). Null means the
-    // branch declined and one of the older arms produced this decision. A consumer must test for null,
-    // not for emptiness.
+    // is not the same as null: it means per-component evaluation succeeded, placed at least one component,
+    // and this space has no spot to route — every component is Process, or reverted into the process
+    // buffer above, or reverted through an all-zero alternate (which places nothing but marks nothing
+    // either: the white-spot-overprint shape). A space whose components are ALL /None does NOT reach here:
+    // it places nothing at all, and TryPerComponent declines it so the older arms keep deciding it. Null
+    // means the branch declined and one of the older arms produced this decision. A consumer must test for
+    // null, not for emptiness.
     IReadOnlyList<SpotRoute>? SpotRoutes = null);
 ```
+
+> **CORRECTED (Task 1 fix round).** The original text of this comment said the empty list means "every
+> component is Process, or reverted into the process buffer above" — which omitted the all-`/None` case,
+> the one shape that reached this branch from a shading. The `placed` guard in Step 5 makes the corrected
+> wording true; keep the two in step.
 
 - [ ] **Step 5: Add the branch**
 
@@ -572,9 +626,12 @@ Insert in `Decide`, **after** the `/All` arm and **before** the routed arm:
         // Gated on ProcessChannelCount == 4 because ProcessChannel indexes the PROCESS space's channels,
         // not the plates: under a one-channel process space a listed name also gets index 0. See
         // ColorantOrigin.ProcessChannelCount.
+        // NOTE the pattern variable is `nchannelComponents`, not `components`: `Decide`'s own parameter
+        // list already binds `IReadOnlyList<double> components`, and reusing the name is CS0136 plus four
+        // cascading CS1503s at the call below.
         if (category == InkSourceCategory.SeparationDeviceN
-            && origin is { Components: { } components, ProcessChannelCount: 4 }
-            && TryPerComponent(components, registry, overprint, out InkDecision perComponent))
+            && origin is { Components: { } nchannelComponents, ProcessChannelCount: 4 }
+            && TryPerComponent(nchannelComponents, registry, overprint, out InkDecision perComponent))
             return perComponent;
 ```
 
@@ -591,10 +648,20 @@ and the helper:
     /// rather than lose ink. Dropping a component is strictly worse than not evaluating individually.</para>
     /// <para><b>Combining is additive with clamp</b>, which is DERIVED rather than chosen:
     /// <see cref="SpotDisplayCombiner"/> already folds a spot plane in as
-    /// <c>clamp(process + Σ ramp_s(tint))</c> (SP-2, shipped and validated). A reverted spot's alternate is
-    /// exactly what <c>registry.SpotToCmyk</c> would have contributed had it owned a plane; reverting folds
-    /// it in earlier. Same arithmetic, different stage. That equivalence is the plane-cap invariance
-    /// property test.</para>
+    /// <c>clamp(process + Σ ramp_s(tint))</c> (SP-2, shipped and validated). A reverted spot's alternate
+    /// comes from the SAME <c>/Attributes /Colorants</c> Separation the registry's ramp is built from —
+    /// both go through <c>BuildTintToCmyk(entry, …)</c> under the same <c>inputs != 1</c> gate — so where
+    /// the ramp exists, reverting folds in the value the plane would have contributed, just at an earlier
+    /// stage. That equivalence is what the plane-cap invariance property test measures.</para>
+    /// <para><b>Where the equivalence does NOT hold, and why that is not a bug here.</b> The two paths
+    /// have different gates on the SPACE's own alternate: <c>ColorSpaceResolver.OwnColorantRamp</c>
+    /// (`ColorSpaceResolver.cs:621`) additionally requires <c>space.AlternateSpaceName is "DeviceCMYK"</c>,
+    /// while <c>OwnAlternateFor</c> — which produces the <c>OwnAlternateCmyk</c> this method reverts
+    /// through — has no such gate. For an NChannel space whose WHOLE-SPACE alternate is
+    /// Lab/DeviceRGB/ICCBased/DeviceGray but whose <c>/Colorants</c> entry IS a CMYK-reducible Separation,
+    /// this method reverts through that entry while the registry ramp falls back to the zeroed whole-space
+    /// approximation: different ink, and plane-cap invariance genuinely fails. Inherited from the engine's
+    /// two gates, not introduced here, no corpus instance — recorded, not silently carried.</para>
     /// <para><b>The paint mask widens.</b> Under overprint it is the union of the process components'
     /// channels and the plates a reverted alternate actually marks — otherwise reverted ink is computed
     /// and then masked away. Under knockout every process plate is painted, matching
@@ -607,10 +674,22 @@ and the helper:
         decision = default;
         Span<float> cmyk = stackalloc float[4];
         Span<bool> marked = stackalloc bool[4];
-        // Allocated unconditionally rather than lazily: an NChannel op is rare, and `routes ?? []` in the
-        // construction below needs a target type that the named-argument position does not reliably
-        // supply. One small allocation beats a cast dance at the return site.
+        // Allocated unconditionally rather than lazily. An NChannel op is rare, so one small list per op is
+        // not worth a null-and-lazily-materialise dance for; deferring it would also make the empty-list
+        // contract on InkDecision.SpotRoutes (empty ≠ null) something the return site has to reconstruct.
+        // (An earlier version of this comment claimed `routes ?? []` would not compile in the named-argument
+        // position. It compiles fine — the justification was wrong, the choice is still the simpler one.)
         List<SpotRoute> routes = [];
+
+        // Did ANY component actually get placed? Guards the shape whose every component is /None: the loop
+        // `continue`s over all of them and would otherwise "succeed" with (0,0,0,0), no routes and an
+        // all-false mask. That matters because this branch IS reachable from the shading and mesh paths,
+        // which Scope puts out of bounds (G-7) — see the corrected Scope entry. §8.6.6.5 row 5-9 arguably
+        // makes "paint nothing" the more correct answer for an all-/None space, which is exactly why it
+        // must not be decided by an accident of which case arm a null tint falls through. An all-/None
+        // FILL/STROKE never gets here at all: ColorSpaceResolver.PaintsNothing (`:959-963`) suppresses the
+        // whole op at PdfRenderer.cs:557/:580.
+        var placed = false;
 
         for (var i = 0; i < components.Count; i++)
         {
@@ -628,17 +707,25 @@ and the helper:
                 case ColourantRole.Process when c is { ProcessChannel: >= 0 and <= 3, Tint: { } pt }:
                     cmyk[c.ProcessChannel!.Value] += (float)pt;
                     marked[c.ProcessChannel.Value] = true;
+                    placed = true;
                     continue;
 
                 case ColourantRole.Spot when registry?.TryGetPlane(c.Name) is { } plane
                                              && c.Tint is { } st:
                     routes.Add(new SpotRoute(plane, (float)st));
+                    placed = true;
                     continue;
 
                 // No plane: revert through this component's OWN alternate (Table 71 — the /Colorants
                 // Separation describing "the appearance of that colorant alone"), which the engine has
                 // already evaluated at this component's tint.
                 case ColourantRole.Spot when c.OwnAlternateCmyk is { Count: >= 4 } alt:
+                    // `placed` is set OUTSIDE the loop below, deliberately: a spot whose alternate is all
+                    // zeros (white — the shape the flatten arm's comment says GWG041 requires) marks
+                    // nothing and routes nothing, yet it WAS placeable and the op must still succeed.
+                    // That is why the guard below is a `placed` flag and NOT `marked.Any() ||
+                    // routes.Count > 0`, which would misread this component as unplaceable.
+                    placed = true;
                     for (var p = 0; p < 4; p++)
                     {
                         var v = (float)alt[p];
@@ -654,6 +741,10 @@ and the helper:
                     return false;
             }
         }
+
+        // Nothing was placed — see the `placed` declaration. Decline rather than return a vacuous
+        // (0,0,0,0)/no-routes/no-marks decision that only an out-of-scope caller could ever receive.
+        if (!placed) return false;
 
         for (var p = 0; p < 4; p++) cmyk[p] = Clamp(cmyk[p]);
 
@@ -681,7 +772,18 @@ and the helper:
 dotnet test Pellucid.Rendering.Avalonia.Tests
 ```
 
-Expected: 500 + 13 = **513 passing** in that assembly, 0 failing; full suite **1291 / 0**.
+**CORRECTED (Task 1): Step 2's block contains TWELVE `[Fact]`s, not thirteen.** Expected: 500 + 12 =
+**512 passing** in that assembly, 0 failing; full suite **1290 / 0 / 78**. Task 2's and Task 4's expected
+counts shift by the same one.
+
+**CORRECTED AGAIN (Task 1 fix round): FOURTEEN `[Fact]`s** once the two `placed`-guard tests above are
+added. **514 passing** in `Pellucid.Rendering.Avalonia.Tests`, full suite **1292 / 0 / 78**. Task 2's and
+Task 4's expected counts shift by two from the original, not one.
+
+**Also corrected: SIX tests pass trivially before the branch exists, not four.** The five that assert
+`SpotRoutes is null`, plus `NChannel_knockout_paints_every_process_plate` — which passes on the *flatten*
+arm for an unrelated reason (flatten under knockout also paints all four plates). That last one is a
+weaker anchor than it looks; it cannot distinguish the two arms at all.
 
 - [ ] **Step 7: Mutation-verify — five mutations, each naming its own observable**
 
@@ -695,6 +797,8 @@ For each: apply, run, record **which test and which assertion changed value, and
 | 3 | `default: return false;` → `continue;` (drop the component silently) | `NChannel_unplaceable_process_component_falls_the_whole_op_back` **and** `NChannel_spot_with_no_plane_and_no_alternate_falls_the_whole_op_back` |
 | 4 | In the revert arm, delete `marked[p] = true;` | `NChannel_overprint_paints_only_the_marked_plates_including_reverted_ink` — `PaintM` becomes false |
 | 5 | Move the branch **above** the `/All` arm | `NChannel_All_still_takes_the_All_arm_not_the_perComponent_branch` — `AllColourants` becomes false |
+| 6 | Delete `if (!placed) return false;` | `NChannel_with_every_component_None_declines_the_perComponent_branch` — `SpotRoutes` becomes `[]` instead of null. **Observed:** `Assert.Null() Failure: Value is not null / Actual: []` |
+| 7 | `if (!placed)` → `if (no plate marked && routes.Count == 0)` | `NChannel_spot_reverting_through_an_all_zero_alternate_still_succeeds` — `SpotRoutes` becomes null. **Observed:** `Assert.NotNull() Failure: Value is null`. Mutation 6's test still passes, which is what separates the two conditions |
 
 **If any leaves the suite green, that guard is unpinned** — add the fixture that observes it before
 proceeding. Do not report a green mutation as acceptable.
