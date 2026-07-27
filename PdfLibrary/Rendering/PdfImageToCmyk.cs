@@ -1,4 +1,5 @@
 using System.Linq;
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
@@ -267,11 +268,18 @@ public static class PdfImageToCmyk
     private static byte B(double v) => (byte)Math.Round((v < 0 ? 0 : v > 1 ? 1 : v) * 255.0);
 
     // SP-6a: per-spot image ink. Splits a Separation/DeviceN (or Indexed-over-those) image's per-pixel
-    // colorant tints BY NAME — process colorants (Cyan/Magenta/Yellow/Black) → the ProcessCmyk plane, spot
-    // colorants → their own tint plane — so SP-2's combiner routes the spot to its plane and applies the
-    // spot's alternate ONCE (registry ramp), never double-counting. Returns null when the image has no spot
-    // colorant (the existing flattened Cmyk / RGBA path is used unchanged). Scope mirrors TryToCmyk: 8/16-bpc,
-    // non-image-mask, DeviceCMYK-alternate spaces. Honours /Decode per colorant, matching TryToCmyk.
+    // colorant tints — process colorants → the ProcessCmyk plane, spot colorants → their own tint plane —
+    // so SP-2's combiner routes the spot to its plane and applies the spot's alternate ONCE (registry
+    // ramp), never double-counting. Returns null when the image has no spot colorant (the existing
+    // flattened Cmyk / RGBA path is used unchanged). Scope mirrors TryToCmyk: 8/16-bpc, non-image-mask,
+    // DeviceCMYK-alternate spaces. Honours /Decode per colorant, matching TryToCmyk.
+    //
+    // Pass 2b-engine: the split is by per-component ROLE and CHANNEL (ISO 32000-2 §8.6.6.5, ColorantOrigin
+    // .Components) when the space is NChannel over a FOUR-channel process space, and by colorant NAME
+    // otherwise — a Separation and a plain DeviceN carry no per-component roles, so the name split is
+    // still their whole answer. The preference is WHOLE-IMAGE either way: one component the per-component
+    // rule cannot place falls the entire image back to the name split rather than producing a partial
+    // split, which would silently drop a colorant and be strictly worse than the status quo.
     public static SpotImageInk? TryToSpotInk(PdfImage image, PdfDocument? document, out int width, out int height)
     {
         width = image.Width; height = image.Height;
@@ -307,14 +315,27 @@ public static class PdfImageToCmyk
         int inC = names.Length;
         if (inC == 0) return null;
 
-        // Map each colorant → a process plate (0..3) or a spot-plane index. Bail if no spot colorant.
-        var plate = new int[inC];        // process → 0..3 ; spot → -1
-        var spotOf = new int[inC];       // spot-plane index ; process → -1
-        var spotNames = new List<string>();
-        for (var c = 0; c < inC; c++)
-            if (PageColorant.Classify(names[c]) == ColorantKind.Spot)
-            { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(names[c]); }
-            else { plate[c] = ProcessPlate(names[c]); spotOf[c] = -1; }
+        // Map each colorant → a process plate (0..3) or a spot-plane index. Prefer the per-component
+        // answer (ISO 32000-2 §8.6.6.5) when the space is NChannel over a four-channel process space;
+        // otherwise the colorant-NAME split, unchanged, which is what a Separation or a plain DeviceN
+        // gets and is why the 50 non-NChannel GWG patches cannot move. Bail if no spot colorant.
+        int[] plate;
+        int[] spotOf;
+        List<string> spotNames;
+        if (ComponentSplit(sepObj, document, inC) is { } split)
+        {
+            (plate, spotOf, spotNames) = split;
+        }
+        else
+        {
+            plate = new int[inC];
+            spotOf = new int[inC];
+            spotNames = [];
+            for (var c = 0; c < inC; c++)
+                if (PageColorant.Classify(names[c]) == ColorantKind.Spot)
+                { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(names[c]); }
+                else { plate[c] = ProcessPlate(names[c]); spotOf[c] = -1; }
+        }
         if (spotNames.Count == 0) return null;
 
         byte[] data;
@@ -378,9 +399,12 @@ public static class PdfImageToCmyk
     // alpha (masked-out ⇒ alpha 0 ⇒ never composited), which is exactly §8.9.6.2's "retain their former
     // contents". Cost is W*H*(N+4) bytes; the design spec's Option D is the escape hatch if that ever bites.
     //
-    // The name split is SP-6a's, deliberately identical (spot ⇒ its own plane; Cyan/Magenta/Yellow/Black ⇒
+    // The split is SP-6a's, deliberately identical (spot ⇒ its own plane; Cyan/Magenta/Yellow/Black ⇒
     // their plate at their own tint; All/None ⇒ nothing), so a stencil and an image of the same colorants
-    // decide the same way.
+    // decide the same way. Pass 2b-engine preserved that invariant by changing BOTH together: this method
+    // and TryToSpotInk now prefer the same per-component split (SplitByComponents, gated on an NChannel
+    // space over a four-channel process space) and fall back whole to the same name split otherwise. That
+    // shared decision is WHY both were changed in one step rather than the image path alone.
     internal static SpotImageInk? StencilInkFromFill(ColorantOrigin origin, int width, int height)
     {
         if (width <= 0 || height <= 0) return null;
@@ -388,13 +412,28 @@ public static class PdfImageToCmyk
         int inC = origin.Names.Count;
         if (inC == 0) return null;
 
-        var plate = new int[inC];        // process → 0..3 ; spot → -1
-        var spotOf = new int[inC];       // spot-plane index ; process → -1
-        var spotNames = new List<string>();
-        for (var c = 0; c < inC; c++)
-            if (PageColorant.Classify(origin.Names[c]) == ColorantKind.Spot)
-            { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(origin.Names[c]); }
-            else { plate[c] = ProcessPlate(origin.Names[c]); spotOf[c] = -1; }
+        // The same per-component preference as TryToSpotInk, so a stencil and an image of the same
+        // colorants still decide the same way (SP-6d's stated invariant). No try/catch here and none
+        // needed: Components is a materialised list already built and guarded upstream, not a lazy
+        // handle onto the document.
+        int[] plate;
+        int[] spotOf;
+        List<string> spotNames;
+        if (origin is { Components: { } comps, ProcessChannelCount: 4 } && comps.Count == inC
+            && SplitByComponents(comps) is { } split)
+        {
+            (plate, spotOf, spotNames) = split;
+        }
+        else
+        {
+            plate = new int[inC];
+            spotOf = new int[inC];
+            spotNames = [];
+            for (var c = 0; c < inC; c++)
+                if (PageColorant.Classify(origin.Names[c]) == ColorantKind.Spot)
+                { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(origin.Names[c]); }
+                else { plate[c] = ProcessPlate(origin.Names[c]); spotOf[c] = -1; }
+        }
         if (spotNames.Count == 0) return null;   // process-only fill → the RGBA path is fine (a non-goal)
 
         // One pixel's worth of ink, then replicated: the value is constant by construction.
@@ -436,6 +475,100 @@ public static class PdfImageToCmyk
 
     private static int ProcessPlate(string name) =>
         name switch { "Cyan" => 0, "Magenta" => 1, "Yellow" => 2, "Black" => 3, _ => -1 };
+
+    // ISO 32000-2 §8.6.6.5, for images: "the components shall be evaluated individually". The name split
+    // in TryToSpotInk/StencilInkFromFill is right for a Separation or a plain DeviceN — neither carries
+    // per-component roles — but for an NChannel space it misroutes two shapes the name cannot see:
+    //   * a NON-RESERVED process colorant (e.g. /PrCyan listed in /Process /Components) — Classify calls
+    //     it Spot, it is handed a plane the registry never holds, and the whole image drops to the
+    //     whole-space flatten with its tint on neither a plate nor a plane;
+    //   * a reserved name listed at a NON-CANONICAL index — Table 71 makes position the channel
+    //     identity, so /Components [/Black /Cyan] puts Black on channel 0, and routing by name would
+    //     transpose the colour.
+    //
+    // ALL OR NOTHING, deliberately. One component this cannot place returns null and the caller uses the
+    // name split for the WHOLE image. A half-per-component split would silently drop a colorant, which is
+    // strictly worse than the status quo — the governing principle the Pass 2 design borrows from SP-6c.
+    private static (int[] Plate, int[] SpotOf, List<string> SpotNames)? SplitByComponents(
+        IReadOnlyList<ColourantComponent> comps)
+    {
+        var plate = new int[comps.Count];       // process → 0..3 ; otherwise -1
+        var spotOf = new int[comps.Count];      // spot-plane index ; otherwise -1
+        var spotNames = new List<string>();
+        for (var c = 0; c < comps.Count; c++)
+        {
+            ColourantComponent cp = comps[c];
+            switch (cp.Role)
+            {
+                // Table 71: a process colorant's own /Colorants entry "shall be ignored", which is why
+                // nothing here consults it. The bound is belt-and-braces — the caller has already
+                // required a four-channel process space, and ProcessChannelFor bounds the index by that
+                // same count — but it is what makes "plate[c] is a CMYK plate" true at THIS level rather
+                // than only at the call site's.
+                case ColourantRole.Process when cp.ProcessChannel is >= 0 and <= 3:
+                    plate[c] = cp.ProcessChannel!.Value; spotOf[c] = -1; break;
+
+                // §8.6.6.5: /None "shall never be painted on the page". Contributes nothing to either
+                // output — the same answer the name split's All/None arm gives.
+                case ColourantRole.None:
+                    plate[c] = -1; spotOf[c] = -1; break;
+
+                // ColourantRole has no All member — RoleFor maps the reserved /All onto Spot, and
+                // KindFor recovers the distinction downstream. /All means "every available colourant",
+                // which SpotImageInk cannot express (it has no per-name "paint everything" channel), so
+                // its presence disqualifies the per-component split rather than being demoted to an
+                // ordinary spot plane.
+                case ColourantRole.Spot when cp.Name == "All":
+                    return null;
+
+                case ColourantRole.Spot:
+                    plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(cp.Name); break;
+
+                // A Process component whose channel could not be determined. Unplaceable ⇒ fall back
+                // whole. Never invent a plate for it.
+                default:
+                    return null;
+            }
+        }
+        return (plate, spotOf, spotNames);
+    }
+
+    // Resolves the space's per-component carrier for TryToSpotInk. Null whenever the per-component split
+    // does not apply, which the caller reads as "use the name split".
+    //
+    // GATED ON A FOUR-CHANNEL PROCESS SPACE. ColourantComponent.ProcessChannel indexes the PROCESS
+    // space's channels, not the plates: under a /DeviceGray process space a listed name also gets index
+    // 0, and painting it on cyan would be a colour error the name split never made. Four channels or
+    // fall back — the conservative direction, matching ProcessChannelFor's own refusal to guess.
+    //
+    // WRAPPED AT THIS CALL SITE, not per level. OriginForColorSpaceObject resolves objects this file
+    // never touched: SpotColorSpace.TryParse derefs the names array, the alternate and the tint
+    // transform, and BuildComponents derefs /Attributes, /Process /ColorSpace (possibly an ICC stream)
+    // and every /Components element. BuildComponents guards its own /Process subtree and EnsureAttributes
+    // guards the /Attributes subtree, but EnsureAlternate — which OriginForColorSpaceObject triggers by
+    // reading AlternateSpaceName, and which this file's own code path never reaches — is deliberately NOT
+    // guarded, and PdfDocument.GetObject wraps a corrupt on-demand object's parse failure in
+    // PdfParseException. A call-site wrap covers arbitrary DEPTH rather than exactly the level it names —
+    // the design rule that took Pass 2a-prime from four review rounds to one. Returning null is always
+    // safe here: the caller keeps the flatten/RGBA path it used before this method existed.
+    private static (int[] Plate, int[] SpotOf, List<string> SpotNames)? ComponentSplit(
+        PdfObject spaceObj, PdfDocument? document, int nameCount)
+    {
+        try
+        {
+            if (ColorSpaceResolver.OriginForColorSpaceObject(spaceObj, rawColor: null, document)
+                is not { Components: { } comps, ProcessChannelCount: 4 }) return null;
+            // The two lists are built from the same names array, so a disagreement means one of them is
+            // not describing this space. Refuse rather than index across them.
+            return comps.Count == nameCount ? SplitByComponents(comps) : null;
+        }
+        catch (Exception ex)
+        {
+            PdfLogger.Log(LogCategory.Graphics, () =>
+                $"TryToSpotInk: per-component split threw, falling back to the colorant-name split: {ex}");
+            return null;
+        }
+    }
 
     // 16-bit big-endian samples → their high byte (sub-perceptual low byte dropped), matching TryToCmyk.
     private static byte[] HighBytes(byte[] data)

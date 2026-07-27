@@ -3,6 +3,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Rendering;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Tests.Rendering;
 
@@ -220,13 +221,49 @@ public class PdfImageToCmykTests
         Assert.Equal(new byte[] { 0, 0, 0, 0 }, cmyk);
     }
 
-    // A minimal Separation/DeviceN colour space. The tint-function slot is never evaluated by TryToSpotInk
-    // (it splits by colorant NAME), so a bare name placeholder suffices.
+    // A minimal Separation/DeviceN colour space. The tint-function slot is still never evaluated by
+    // TryToSpotInk — the per-component path resolves the space with rawColor: null, so every component's
+    // Tint is null and OwnAlternateFor returns at its first line without building a transform, and the
+    // name-split fallback reads only names — so a bare name placeholder suffices.
     private static PdfArray Separation(string name) =>
         new(new PdfName("Separation"), new PdfName(name), new PdfName("DeviceCMYK"), new PdfName("Identity"));
     private static PdfArray DeviceN(params string[] names) =>
         new(new PdfName("DeviceN"), new PdfArray(names.Select(n => (PdfObject)new PdfName(n)).ToArray()),
             new PdfName("DeviceCMYK"), new PdfName("Identity"));
+
+    // An NChannel space: [/DeviceN [names] /DeviceCMYK <tint fn> << /Subtype /NChannel /Process <<…>> >>].
+    private static PdfArray NChannel(PdfDictionary? process, params string[] names)
+    {
+        var attrs = new PdfDictionary { [new PdfName("Subtype")] = new PdfName("NChannel") };
+        if (process is not null) attrs[new PdfName("Process")] = process;
+        return new PdfArray(
+            new PdfName("DeviceN"),
+            new PdfArray(names.Select(n => (PdfObject)new PdfName(n)).ToArray()),
+            new PdfName("DeviceCMYK"), new PdfName("Identity"), attrs);
+    }
+
+    private static PdfDictionary Process(string colorSpace, params string[] components) =>
+        new()
+        {
+            [new PdfName("ColorSpace")] = new PdfName(colorSpace),
+            [new PdfName("Components")] =
+                new PdfArray(components.Select(n => (PdfObject)new PdfName(n)).ToArray()),
+        };
+
+    /// <summary>Same idiom as <c>NChannelRampTests.ParseWithDoc</c> (:50-59) — a private per-file copy, the
+    /// established convention in this test project (five existing files each carry their own) rather than a
+    /// shared helper. Keeps the document alive so indirect references actually resolve; the caller disposes
+    /// via <c>using (doc)</c>.</summary>
+    private static (PdfArray Array, PdfDocument Doc) ParseWithDoc(
+        string pdfArrayLiteral, params string[] extraObjects)
+    {
+        byte[] pdf = ColourConformancePage.Build(pdfArrayLiteral, "1 0 0 rg 0 0 1 1 re f",
+            withFont: false, extraResources: "", extraObjects: extraObjects);
+        PdfDocument doc = PdfDocument.Load(new MemoryStream(pdf));
+        PdfPage page = doc.GetPage(0)!;
+        PdfDictionary colorSpaces = page.GetResources()!.GetColorSpaces()!;
+        return ((PdfArray)colorSpaces[new PdfName("Cs0")]!, doc);
+    }
 
     [Fact]
     public void Separation_spot_image_splits_to_spot_plane_only()
@@ -457,5 +494,187 @@ public class PdfImageToCmykTests
         PdfImage img = Image(cs, [0, 255], 2, 1);
 
         Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
+    }
+
+    // ---- Pass 2b-engine: an NChannel image's colorants split by ROLE and CHANNEL, not by name ----
+
+    // THE DEFECT THIS TASK CLOSES. PrCyan is a non-reserved name listed in /Process /Components, so it is a
+    // PROCESS colorant on channel 0. The name split calls it Spot (Classify sees an unreserved name) and
+    // hands it a spot plane the registry will never hold, dropping the whole image to the whole-space
+    // flatten. Per-component: its tint lands on the cyan plate and it is not a spot at all.
+    [Fact]
+    public void NChannel_nonReservedProcessName_paints_its_channel_not_a_spot_plane()
+    {
+        // NChannel [PrCyan, GWG Green] over DeviceCMYK with /Components [PrCyan].
+        // 2 px: (PrCyan 1.0, Green 0.5) then (PrCyan 0, Green 1.0).
+        byte[] data = [255, 128, 0, 255];
+        PdfImage img = Image(NChannel(Process("DeviceCMYK", "PrCyan"), "PrCyan", "GWG Green"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);          // PrCyan is NOT a spot
+        Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);
+        // PrCyan → process channel 0 = the CYAN plate, at its own per-pixel tint.
+        Assert.Equal(new byte[] { 255, 0, 0, 0,  0, 0, 0, 0 }, ink.ProcessCmyk);
+    }
+
+    // Table 71 makes POSITION the channel identity, so a reserved name listed at a non-canonical index takes
+    // the listed one. Routing by name instead would transpose the colour visibly — the same failure
+    // veraPDF t02-pass-a is built to catch.
+    [Fact]
+    public void NChannel_listed_index_beats_the_reserved_name_canonical_index()
+    {
+        // /Components [/Black /Cyan] ⇒ Black is process channel 0 (cyan plate), Cyan is channel 1 (magenta).
+        // 1 px, 3 colorants: Black 1.0, Cyan 0.0, GWG Green ~0.5.
+        PdfImage img = Image(NChannel(Process("DeviceCMYK", "Black", "Cyan"), "Black", "Cyan", "GWG Green"),
+            [255, 0, 128], 1, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 128 }, ink.TintPlanes);
+        // Black's 255 on channel 0, Cyan's 0 on channel 1 — NOT K=255 as the name split would give.
+        Assert.Equal(new byte[] { 255, 0, 0, 0 }, ink.ProcessCmyk);
+    }
+
+    // A one-channel process space hands a listed name index 0, which is NOT the cyan plate. There is no
+    // mapping from a gray channel to plates here, so the per-component split must refuse ENTIRELY and the
+    // name split must handle it — Ink1 is unreserved, so it stays a spot exactly as before this task.
+    [Fact]
+    public void NChannel_over_a_gray_process_space_falls_back_to_the_name_split()
+    {
+        PdfImage img = Image(NChannel(Process("DeviceGray", "Ink1"), "Ink1", "GWG Green"),
+            [255, 64, 128, 32], 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "Ink1", "GWG Green" }, ink!.Names);   // BOTH spots — the name split's answer
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));
+    }
+
+    // The governing principle: one unplaceable component falls the WHOLE op back, never a half-split. /All
+    // means "every available colourant" and SpotImageInk cannot express that, so its presence disqualifies
+    // the per-component split — and the name split's existing All arm (contributes nothing) takes over.
+    [Fact]
+    public void NChannel_containing_All_falls_back_to_the_name_split_whole()
+    {
+        PdfImage img = Image(NChannel(Process("DeviceCMYK", "Cyan"), "Cyan", "All", "GWG Green"),
+            [255, 255, 128], 1, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);           // All contributes nothing, as today
+        Assert.Equal(new byte[] { 255, 0, 0, 0 }, ink.ProcessCmyk);// Cyan → plate 0 via the NAME split
+    }
+
+    // §8.6.6.5: /None components "shall never be painted on the page".
+    //
+    // PLAN DEFECT (Task 2, Step 2): the plan classifies this test as a regression anchor that "must already
+    // pass", on the stated grounds that it gives the "same answer under both rules". It does NOT — its
+    // PrCyan channel is the very shape the task fixes, so under the name split PrCyan is a Spot, Names
+    // comes back ["PrCyan", "GWG Green"] and ProcessCmyk is all zero. Observed failing at Step 2 alongside
+    // the two the plan predicted. What it genuinely pins is that /None contributes to NEITHER output on the
+    // per-component path, so a future edit there cannot silently start painting it.
+    [Fact]
+    public void NChannel_None_component_contributes_nothing()
+    {
+        PdfImage img = Image(NChannel(Process("DeviceCMYK", "PrCyan"), "PrCyan", "None", "GWG Green"),
+            [255, 255, 128], 1, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 255, 0, 0, 0 }, ink.ProcessCmyk);  // None's 255 landed nowhere
+    }
+
+    // THE ALL-OR-NOTHING RULE, pinned. Added at Step 8 because Mutation B (SplitByComponents' default arm
+    // changed from `return null` to silently dropping the component) left the WHOLE suite green: none of
+    // the plan's seven fixtures reaches that arm, so the rule the task calls governing was unpinned.
+    //
+    // PrCyan is listed in /Components at index 4, which is at the four-channel process space's channel
+    // count, so ProcessChannelFor rejects it as out of range and returns null while RoleFor still calls it
+    // Process — a Process component with no determinable channel, the one shape that is neither placeable
+    // nor droppable. The whole image must fall back to the name split, where PrCyan is an ordinary spot.
+    // Under Mutation B it is dropped instead and Names comes back ["GWG Green"].
+    [Fact]
+    public void NChannel_processComponent_withNoDeterminableChannel_fallsBackWhole()
+    {
+        PdfImage img = Image(
+            NChannel(Process("DeviceCMYK", "A", "B", "C", "D", "PrCyan"), "PrCyan", "GWG Green"),
+            [255, 128], 1, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "PrCyan", "GWG Green" }, ink!.Names);   // the NAME split's answer, whole
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));
+    }
+
+    // The 50 unaffected GWG patches depend on this: a plain DeviceN carries Components == null, so the name
+    // split is untouched and the output is byte-identical to before this task.
+    [Fact]
+    public void PlainDeviceN_is_unaffected_by_the_perComponent_split()
+    {
+        byte[] data = [255, 128, 0, 255];
+        PdfImage img = Image(DeviceN("Black", "GWG Green"), data, 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "GWG Green" }, ink!.Names);
+        Assert.Equal(new byte[] { 128, 255 }, ink.TintPlanes);
+        Assert.Equal(new byte[] { 0, 0, 0, 255,  0, 0, 0, 0 }, ink.ProcessCmyk);
+    }
+
+    // AXIS B GUARD. A corrupt indirect reference somewhere under the colour space must degrade to the name
+    // split rather than throw out of TryToSpotInk.
+    //
+    // PLAN DEFECT (Task 2, Step 1): the plan's fixture puts the corrupt reference at /Attributes /Process
+    // (`/Process 5 0 R`). That target is ALREADY guarded — SpotColorSpace.EnsureAttributes wraps the deref
+    // of /Attributes and of its immediate /Subtype, /Colorants and /Process values, and on a throw resets
+    // Subtype to "DeviceN". Nothing would ever reach ComponentSplit's catch, so the plan's fixture is
+    // vacuous and Mutation C would not go red (verified empirically: with the catch removed, the
+    // /Process 5 0 R shape still passes).
+    //
+    // The ALTERNATE (element 2) is the genuinely unguarded target on this path. SpotColorSpace.EnsureAlternate
+    // derefs it with no try of its own — deliberately, because pre-Pass-1 callers already dereferenced it —
+    // and OriginForColorSpaceObject reads AlternateSpaceName to construct the ColorantOrigin. TryToSpotInk
+    // itself never touches element 2 (SP-6c: the alternate is not consulted), so this reference is resolved
+    // for the FIRST time by the new per-component call, which is exactly what a call-site wrap has to cover.
+    // Object 5's xref entry is IN USE but its body is a lone ']', so GetObject's on-demand path wraps and
+    // RETHROWS PdfParseException; a merely NON-EXISTENT object returns null without throwing and would make
+    // this test vacuous. Same technique and same object number as
+    // NChannelRampTests.CorruptProcessComponentsReference_FallsBackToTheIsolatedEvaluation_RatherThanThrowing.
+    [Fact]
+    public void CorruptAlternateReference_fallsBackToTheNameSplit_ratherThanThrowing()
+    {
+        // /Components [/Black /Cyan] would put Black on channel 0 and Cyan on channel 1 if the resolve had
+        // succeeded, so the assertion below distinguishes the NAME split's answer from the per-component
+        // one rather than merely observing that something came back.
+        (PdfArray space, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/Black /Cyan /GWGGreen] 5 0 R "
+            + "<< /FunctionType 2 /Domain [0 1 0 1 0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 "
+            + "/Range [0 1 0 1 0 1 0 1] >> "
+            + "<< /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK /Components [/Black /Cyan] >> >>]",
+            "]");
+        using (doc)
+        {
+            PdfImage img = Image(space, [255, 0, 128], 1, 1);
+
+            SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, doc, out _, out _);
+
+            // Degrades to the NAME split: Black ⇒ the K plate (NOT channel 0), Cyan ⇒ plate 0 at tint 0,
+            // GWGGreen ⇒ a spot plane.
+            Assert.NotNull(ink);
+            Assert.Equal(new[] { "GWGGreen" }, ink!.Names);
+            Assert.Equal(new byte[] { 128 }, ink.TintPlanes);
+            Assert.Equal(new byte[] { 0, 0, 0, 255 }, ink.ProcessCmyk);
+        }
     }
 }
