@@ -201,10 +201,14 @@ substantive violation this matrix has tracked since slice 1.
 
   Three things this pass makes true that the matrix should not overstate:
 
-  1. **The window is now closed for images, still open for fills/strokes.** `InkDecider.
+  1. **The window is now closed for images that carry a spot, still open for fills/strokes.** `InkDecider.
      ProcessContribution` still switches on the literal names `Cyan`/`Magenta`/`Yellow`/`Black`, so a
      non-reserved process colorant in a **fill or stroke** still reaches neither a plate nor a plane.
-     That is Pass 2b-compositor's first obligation.
+     That is Pass 2b-compositor's first obligation. And note the qualifier: an **all-process** NChannel
+     image or stencil is refused by the per-component split (gap 3 below), so the window stays open for it
+     too. That is not a corner case — the design's own driving fixture, `t02-pass-a`'s `/CS0`, is all four
+     components Process, so the *image* analogue of the motivating case is precisely the shape that falls
+     back.
   2. **Nothing in either corpus exercises any of it.** Measured, not assumed: across all 51 GWG fixtures
      there are exactly **two** NChannel spaces, both in GWG081 — an axial shading (G-7) and an `/Indexed`
      image whose colorants split **identically** under the old and new rules. And **zero** NChannel spaces

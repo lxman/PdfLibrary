@@ -280,6 +280,12 @@ public static class PdfImageToCmyk
     // still their whole answer. The preference is WHOLE-IMAGE either way: one component the per-component
     // rule cannot place falls the entire image back to the name split rather than producing a partial
     // split, which would silently drop a colorant and be strictly worse than the status quo.
+    //
+    // THERE IS A SECOND FALLBACK, and it fires when every component IS placeable: a split producing NO spot
+    // colorant is refused (see SplitByComponents' closing guard), so an ALL-PROCESS NChannel image takes the
+    // name split too. That is a deliberate trade — better on colour, worse on overprint — and the overprint
+    // side is the one with teeth. Read that guard before assuming an all-process NChannel image is
+    // per-component-evaluated; it is not.
     public static SpotImageInk? TryToSpotInk(PdfImage image, PdfDocument? document, out int width, out int height)
     {
         width = image.Width; height = image.Height;
@@ -301,11 +307,21 @@ public static class PdfImageToCmyk
         // SP-6c: the alternate is deliberately NOT consulted here. ISO 32000-1 §8.6.6.5 conditions reversion
         // on colorant AVAILABILITY — "Reversion shall occur only if at least one colour component (other than
         // None) is specified and is not available on the device" — never on what the alternate happens to be.
-        // The split below is by colorant NAME and never reads the alternate or evaluates the tint transform,
+        // No split below DECIDES anything from the alternate's colour, and none evaluates the tint transform,
         // so a Lab/ICCBased alternate was never grounds to bail: it is the fallback for colorants we cannot
         // paint, not a trigger. Availability is decided downstream (the compositor's all-or-nothing routing
         // falls back to the flatten path for an unregistered spot), and `spotNames.Count == 0` below still
         // hands purely-process images to the CMYK/RGBA path.
+        //
+        // CORRECTED (Pass 2b-engine): "never READS the alternate" is no longer true, and the distinction is
+        // load-bearing. ComponentSplit below calls OriginForColorSpaceObject, which reads
+        // `space.AlternateSpaceName` to construct the ColorantOrigin — and that triggers
+        // SpotColorSpace.EnsureAlternate's UNGUARDED Deref of colour-space array element 2. So this method
+        // now DEREFERENCES the alternate even though it still never consults its colour. That dereference is
+        // the whole reason ComponentSplit wraps at its call site, and the reason
+        // CorruptAlternateReference_fallsBackToTheNameSplit_ratherThanThrowing exists. **Do not read the
+        // sentence above as licence to remove that catch as dead defensive code** — removing it makes that
+        // test throw an unhandled PdfParseException.
         //
         // This intentionally diverges from TryToCmyk, which SP-6a's final review had scope-matched to this
         // method. TryToCmyk genuinely NEEDS a DeviceCMYK alternate because it converts THROUGH it; this method
@@ -408,6 +424,12 @@ public static class PdfImageToCmyk
     // half of it is pinned by RecordingRenderTargetSpotTests' three NChannel-fill fixtures — added in the
     // Task 2 fix round, because until then this branch was reachable only from production and forcing it
     // off left the whole suite green.
+    //
+    // The shared fallback has TWO triggers, not one — see TryToSpotInk's note. Besides an unplaceable
+    // component, a split yielding NO spot colorant is refused, so an ALL-PROCESS NChannel fill takes the
+    // name split here too. That matters more for a stencil than for an image: returning null leaves
+    // Spots == null, which is exactly the ProcessOther/backdrop-erasure failure the paragraph above
+    // describes SP-6d closing. The guard is what keeps this method from re-opening it.
     internal static SpotImageInk? StencilInkFromFill(ColorantOrigin origin, int width, int height)
     {
         if (width <= 0 || height <= 0) return null;
