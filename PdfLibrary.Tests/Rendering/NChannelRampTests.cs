@@ -142,6 +142,34 @@ public class NChannelRampTests
         Assert.Equal(-20.0, ramp[255][2], 3);
     }
 
+    // --- Minor 1 (whole-branch review): DeviceGray own-alternate must NOT take the /Colorants ramp ---
+
+    private const string WholeSpaceGrayAlways09 =
+        "<< /FunctionType 2 /Domain [0 1 0 1] /C0 [0.9] /C1 [0.9] /N 1 /Range [0 1] >>";
+
+    [Fact]
+    public void NChannelWithADeviceGrayAlternate_KeepsTheIsolatedEvaluation_EvenWithAUsableColorantsEntry()
+    {
+        // OwnColorantRamp always emits 4-component DeviceCMYK from the /Colorants entry. Before this
+        // fix the gate at ColorSpaceResolver.cs:609 admitted DeviceGray alongside DeviceCMYK, but
+        // PageColorant.AlternateSpace would still report "DeviceGray" (1 component) while the ramp
+        // silently became 4-component CMYK -- exactly the hazard the Lab exclusion above protects
+        // against, just for Gray instead of Lab. The gate is narrowed to DeviceCMYK only; a
+        // DeviceGray-alternate space must keep the isolated (whole-space) evaluation even when
+        // /Colorants has a usable CMYK entry for this component.
+        PdfArray space = Parse(
+            "[/DeviceN [/Spot1 /Cyan] /DeviceGray " + WholeSpaceGrayAlways09
+            + " << /Subtype /NChannel " + SpotOwnSeparation + " >>]");
+
+        (double[][]? ramp, _) = ColorSpaceResolver.BuildTintRamp(space, null, 0, 2);
+
+        Assert.NotNull(ramp);
+        // Isolated evaluation: the whole-space Gray tint transform's raw 1-component output,
+        // NOT the /Colorants entry's 4-component CMYK [c, m, y, k] (C1 = [0.5 0 0 0]).
+        Assert.Single(ramp![255]);
+        Assert.Equal(0.9, ramp[255][0], 3);
+    }
+
     // --- Row: NChannel, no /Colorants entry for THIS name -> isolated evaluation ---
     // Distinct from the row above: here /Colorants is present and has entries, just not for Spot1.
 
@@ -309,6 +337,37 @@ public class NChannelRampTests
             (double[][]? ramp, _) = ColorSpaceResolver.BuildTintRamp(space, doc, 0, 2);
 
             Assert.NotNull(ramp);
+            Assert.Equal(0.9, ramp![255][0], 3);
+        }
+    }
+
+    // --- M-5 (whole-branch review): /Process /Components is a CORRUPT indirect reference, exercised
+    // through IsProcessColorant -> isolated evaluation, no throw (Axis B, at IsProcessColorant's own
+    // level, not merely at OwnColorantRamp's) ---
+
+    [Fact]
+    public void CorruptProcessComponentsReference_FallsBackToTheIsolatedEvaluation_RatherThanThrowing()
+    {
+        // IsProcessColorant dereferences /Process /Components (ColorSpaceResolver.cs, inside
+        // IsProcessColorant) with no try/catch of its own -- by design, documented as relying entirely on
+        // OwnColorantRamp's enclosing try covering "the whole body and not merely the ramp evaluation".
+        // This pins that reliance at the level it actually matters: if OwnColorantRamp's try were ever
+        // narrowed to cover only the ramp-evaluation loop (a shape this program has hit before — see the
+        // sibling CorruptColorantsEntryReference test above for the /Colorants-side version of the same
+        // guard), a corrupt /Process /Components reference would throw out of GetPageColorants instead of
+        // falling back. Genuinely corrupt target — a lone ']' body under an in-use xref entry — because a
+        // merely non-existent object returns null without throwing, which would make this test vacuous.
+        (PdfArray space, PdfDocument doc) = ParseWithDoc(
+            "[/DeviceN [/PlateX /Cyan] /DeviceCMYK " + WholeSpaceAlways09
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK /Components 5 0 R >> "
+            + "/Colorants << /PlateX [/Separation /PlateX /DeviceCMYK "
+            + "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0.5 0 0 0] /N 1 >>] >> >>]", "]");
+        using (doc)
+        {
+            (double[][]? ramp, _) = ColorSpaceResolver.BuildTintRamp(space, doc, 0, 2);
+
+            Assert.NotNull(ramp);
+            // Isolated (whole-space) evaluation, NOT the /PlateX /Colorants entry (which would ramp to 0.5).
             Assert.Equal(0.9, ramp![255][0], 3);
         }
     }

@@ -149,6 +149,26 @@ public class ColourantComponentTests
         Assert.Equal(ColourantRole.Spot, o!.Components![0].Role);
     }
 
+    [Fact]
+    public void AllListedInProcessComponents_StaysRoleSpot_NotAbsorbedIntoProcess()
+    {
+        // Minor 2 (whole-branch review): RoleFor tests "None" first and unconditionally but had no
+        // /All counterpart, so a malformed-but-real /Process /Components array that lists /All hit the
+        // processChannels.ContainsKey arm and was classified Process -- losing the distinction
+        // PageColorant needs to skip /All as "paint every plate" rather than route it to a channel.
+        // /All is reserved and must never be absorbed into the process set, no matter what a malformed
+        // /Process dictionary lists. The sibling test above (AllInADeviceN_IsTreatedAsAnOrdinarySpotName)
+        // does not catch this: its fixture has no /Process dictionary at all, so processChannels is null
+        // there and the ContainsKey arm never fires.
+        ColorantOrigin? o = Origin(
+            "[/DeviceN [/All /Spot1] /DeviceCMYK " + Tint2
+            + " << /Subtype /NChannel /Process << /ColorSpace /DeviceCMYK /Components [/All] >> >>]",
+            0.5, 0.5);
+
+        Assert.NotNull(o);
+        Assert.Equal(ColourantRole.Spot, o!.Components![0].Role);
+    }
+
     // --- Tints ---
 
     [Fact]

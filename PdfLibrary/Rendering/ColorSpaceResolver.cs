@@ -593,20 +593,32 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// the SPACE's alternate at all. Emitting CMYK under an <c>AlternateSpace</c> label that still says
     /// "Lab" (or "DeviceRGB", or a 3-component ICCBased profile) would silently change both the colour
     /// space AND the component count the label promises, and could do so per-component within one
-    /// page's colorant list. Gating on the space's own alternate already being DeviceCMYK or DeviceGray
-    /// keeps this path's output in the same family the label already advertises; widening to other
-    /// space alternates is a deliberate, separately-gated future change, not a side effect of this
-    /// one.</para>
+    /// page's colorant list. Gating on the space's own alternate already being DeviceCMYK keeps this
+    /// path's output in the same family the label already advertises; widening to other space alternates
+    /// is a deliberate, separately-gated future change, not a side effect of this one.</para>
+    ///
+    /// <para><b>Minor 1 (whole-branch review):</b> the gate previously also admitted <c>DeviceGray</c>,
+    /// on the theory that Gray is "in the same family" as CMYK. It is not, in both respects the Lab
+    /// exclusion above protects: <c>AlternateSpace</c> would still say <c>DeviceGray</c> while the ramp
+    /// silently became 4-component CMYK, and the component count would go 1 → 4 — exactly the
+    /// AlternateSpace/component-count mismatch this method exists to avoid. Narrowed to
+    /// <c>DeviceCMYK</c> only; a <c>DeviceGray</c>-alternate NChannel space keeps the isolated
+    /// whole-space evaluation even with a usable <c>/Colorants</c> entry (see
+    /// <c>NChannelWithADeviceGrayAlternate_KeepsTheIsolatedEvaluation_EvenWithAUsableColorantsEntry</c>).
+    /// Widening back to Gray is a deliberate, separately-gated future change, the same reasoning that
+    /// produced the Lab exclusion.</para>
     /// </summary>
     private static (double[][] Ramp, (byte R, byte G, byte B) Solid)? OwnColorantRamp(
         SpotColorSpace space, int colorantIndex, PdfDocument? doc, int samples)
     {
         try
         {
-            // See the Important-2 remarks above: restrict to spaces whose own alternate is already in
-            // the family this method's output is shaped for (checked before colorantIndex/name, since
-            // it depends only on the space, not the component).
-            if (space.AlternateSpaceName is not ("DeviceCMYK" or "DeviceGray")) return null;
+            // See the Important-2/Minor-1 remarks above: restrict to spaces whose own alternate is
+            // already DeviceCMYK (checked before colorantIndex/name, since it depends only on the
+            // space, not the component). DeviceGray was excluded by Minor 1: this method always emits
+            // 4-component CMYK, which would silently promote a 1-component Gray ramp under a label that
+            // still says DeviceGray.
+            if (space.AlternateSpaceName is not "DeviceCMYK") return null;
 
             if (colorantIndex < 0 || colorantIndex >= space.Names.Count) return null;
             if (space.Names[colorantIndex] is not { } name) return null;
@@ -1187,10 +1199,22 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// discarded when painting named colourants directly, and a malformed process dictionary listing
     /// /None must not override that. Classifying /None as anything else would send it down a paint
     /// path.</para>
+    ///
+    /// <para><b>Minor 2 (whole-branch review):</b> <c>/All</c> is likewise tested unconditionally,
+    /// alongside <c>/None</c>. <c>ColourantRole</c> has no <c>All</c> member —
+    /// <see cref="ColourantRole.Spot"/> stands in for it, and <c>PageColorantReader.KindFor</c> recovers
+    /// the distinction by falling back to
+    /// <c>PageColorant.Classify</c> whenever the role is Spot. Without this arm, a malformed-but-real
+    /// <c>/Process /Components</c> array that (illegally) lists <c>/All</c> would hit the
+    /// <c>processChannels.ContainsKey</c> arm below and classify Process — silently absorbing the
+    /// reserved "paint every plate" name into the process set, where <c>KindFor</c> can no longer recover
+    /// the All/Spot distinction it depends on this method to preserve. <c>/All</c> must never be treated
+    /// as process, regardless of what a malformed process dictionary lists.</para>
     /// </summary>
     private static ColourantRole RoleFor(string name, Dictionary<string, int>? processChannels) => name switch
     {
         "None" => ColourantRole.None,
+        "All" => ColourantRole.Spot,
         _ when IsReservedProcessName(name) => ColourantRole.Process,
         _ when processChannels is not null && processChannels.ContainsKey(name) => ColourantRole.Process,
         _ => ColourantRole.Spot,
