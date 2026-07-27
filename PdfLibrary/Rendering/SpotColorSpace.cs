@@ -157,8 +157,16 @@ internal sealed class SpotColorSpace
         }
     }
 
-    /// <summary>ISO 32000-2 §8.6.6.5: NChannel spaces evaluate their components individually. Nothing
-    /// consumes this yet — Pass 2 does.</summary>
+    /// <summary>ISO 32000-2 §8.6.6.5: NChannel spaces evaluate their components individually.
+    ///
+    /// <para><b>CORRECTED 2026-07-27 — this is consumed, at two distinct sites, and they answer different
+    /// questions.</b> The comment previously said "nothing consumes this yet", which stopped being true
+    /// when Pass 2 landed. <see cref="ColorSpaceResolver"/>'s <c>BuildComponents</c> gates the whole
+    /// per-component carrier on it — that gate is what keeps a plain DeviceN's <c>Components</c> null and
+    /// therefore off the per-component path entirely, and it is what conformance-matrix row 5-11's ✅ rests
+    /// on. <c>BuildTintRamp</c> gates the <c>/Colorants</c>-sourced ramp on it separately; removing THAT
+    /// one changes a plain DeviceN's ramp. Do not conflate the two — a matrix draft did, and cited
+    /// evidence about the second while naming the first.</para></summary>
     internal bool IsNChannel => Subtype == "NChannel";
 
     /// <summary>Parses a colour-space object into a <see cref="SpotColorSpace"/>. Returns false for

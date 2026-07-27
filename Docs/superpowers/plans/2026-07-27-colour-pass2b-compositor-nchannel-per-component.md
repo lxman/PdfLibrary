@@ -141,11 +141,17 @@ hazard from Global Constraints, arriving in the plan's own driving fixture.
 
 ## Global Constraints
 
-- **GWG render-hash gate: 51/51, zero differences.** Predicted structurally, not hoped for: GWG has
-  **zero NChannel spaces in any page `/ColorSpace` resource** (measured, Pass 2b-engine Task 0 M2), so no
-  GWG fill or stroke can reach the new branch. Its only two NChannel spaces are a shading (out of scope)
-  and an image (engine-side, already landed with zero movement). **A moved GWG digest is a defect. Do not
-  regenerate that baseline.**
+- **GWG render-hash gate: 51/51, zero differences.** GWG has **zero NChannel spaces in any page
+  `/ColorSpace` resource** (measured twice, two independent ways), so no GWG **fill or stroke** can reach
+  the new branch. Its only two NChannel spaces are a shading and an `/Indexed` image.
+  **CORRECTED (Task 1 review, and re-confirmed by the whole-branch review's instrumentation): this does
+  NOT mean GWG cannot reach the branch.** GWG081's `/ShadingType 2` **enters `TryPerComponent` on every
+  render**. A probe throwing at method *entry* reddens exactly that one fixture; a probe throwing on
+  *success* is never reached at all. What holds the digest at zero is the **`placed` guard** — every
+  shading resolves its origin with `rawColor: null`, so no placing arm can fire, and an all-`/None` space
+  would otherwise succeed with `(0,0,0,0)`. Removing that guard leaves the suite **and** the gate green,
+  so nothing here would catch its loss. Read the Scope entry before touching it.
+  **A moved GWG digest is a defect. Do not regenerate that baseline.**
 - **Every new guard must be OBSERVED to fail by mutation, with the failure mode reported** — assertion vs
   crash. They are not interchangeable. Re-running an implementer's claim is not verification; re-running
   the mutation is.
