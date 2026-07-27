@@ -404,7 +404,10 @@ public static class PdfImageToCmyk
     // decide the same way. Pass 2b-engine preserved that invariant by changing BOTH together: this method
     // and TryToSpotInk now prefer the same per-component split (SplitByComponents, gated on an NChannel
     // space over a four-channel process space) and fall back whole to the same name split otherwise. That
-    // shared decision is WHY both were changed in one step rather than the image path alone.
+    // shared decision is WHY both were changed in one step rather than the image path alone. The stencil
+    // half of it is pinned by RecordingRenderTargetSpotTests' three NChannel-fill fixtures — added in the
+    // Task 2 fix round, because until then this branch was reachable only from production and forcing it
+    // off left the whole suite green.
     internal static SpotImageInk? StencilInkFromFill(ColorantOrigin origin, int width, int height)
     {
         if (width <= 0 || height <= 0) return null;
@@ -530,7 +533,35 @@ public static class PdfImageToCmyk
                     return null;
             }
         }
-        return (plate, spotOf, spotNames);
+
+        // NO SPOT IN THE SPLIT ⇒ REFUSE, and let the caller's name split have the whole op.
+        // TryToSpotInk and StencilInkFromFill exist to separate spot ink from process ink; a split with
+        // no spot in it has nothing for either to do. This is not a limitation of the per-component rule
+        // — it routes the op to exactly where it went before Pass 2b-engine, and the two answers are NOT
+        // interchangeable downstream.
+        //
+        // The shape: an NChannel space whose components are ALL Process, e.g. /Components
+        // [/PrCyan /PrMagenta] with both names listed and neither reserved. Placing them on their plates
+        // leaves spotNames empty, both callers' `if (spotNames.Count == 0) return null;` fires, and
+        // ImageCommand.Spots stays null. Pellucid's CmykPageRenderer (:1119) picks
+        // InkSourceCategory.SeparationDeviceN iff Spots is non-null — OverprintPlates is null here,
+        // because PlatesForColorSpaceObject yields nothing for a non-reserved colorant name, so the
+        // category alone decides. Null Spots ⇒ ProcessOther ⇒ InkDecider's "paint source on every process
+        // plate" (:201-205) ⇒ KNOCKOUT. Under overprint that erases a backdrop this op used to preserve
+        // via Table 148 row 3's nonzero-markedness proxy (InkDecider:149) — the GWG020-class failure this
+        // programme treats as a defect everywhere else.
+        //
+        // The name split instead calls those non-reserved names Spot, hands them spot planes the registry
+        // will not hold, and the compositor flattens — but Spots stays non-null and the op stays in row 3.
+        // Per-component placement would be MORE correct on colour and LESS correct on overprint, and the
+        // overprint regression is the one with teeth. Colour-only is the conservative direction here.
+        //
+        // GAP, recorded deliberately: an all-process NChannel op is not per-component-evaluated.
+        //
+        // Placed in THIS method, not in ComponentSplit, because this is the single point both callers
+        // share: StencilInkFromFill calls SplitByComponents directly and would otherwise flip the same
+        // category for a stencil — the exact inversion of the GWG020 backdrop erasure SP-6d closed.
+        return spotNames.Count > 0 ? (plate, spotOf, spotNames) : null;
     }
 
     // Resolves the space's per-component carrier for TryToSpotInk. Null whenever the per-component split
@@ -541,16 +572,34 @@ public static class PdfImageToCmyk
     // 0, and painting it on cyan would be a colour error the name split never made. Four channels or
     // fall back — the conservative direction, matching ProcessChannelFor's own refusal to guess.
     //
-    // WRAPPED AT THIS CALL SITE, not per level. OriginForColorSpaceObject resolves objects this file
-    // never touched: SpotColorSpace.TryParse derefs the names array, the alternate and the tint
-    // transform, and BuildComponents derefs /Attributes, /Process /ColorSpace (possibly an ICC stream)
-    // and every /Components element. BuildComponents guards its own /Process subtree and EnsureAttributes
-    // guards the /Attributes subtree, but EnsureAlternate — which OriginForColorSpaceObject triggers by
-    // reading AlternateSpaceName, and which this file's own code path never reaches — is deliberately NOT
-    // guarded, and PdfDocument.GetObject wraps a corrupt on-demand object's parse failure in
+    // WRAPPED AT THIS CALL SITE, not per level. What each layer actually dereferences, traced rather than
+    // assumed:
+    //   * SpotColorSpace.TryParse (:196-221) derefs EAGERLY only the space object itself and element 1 —
+    //     for DeviceN, every element of the names array. It never touches element 2 or element 3;
+    //     minimumElements: 4 is an ARITY check ahead of any dereference, not a dereference of its own.
+    //   * The alternate (element 2) is LAZY, behind EnsureAlternate, which has no try of its own.
+    //     OriginForColorSpaceObject triggers it by reading AlternateSpaceName to build the ColorantOrigin
+    //     (ColorSpaceResolver.cs:1003) — a resolution this file's TryToSpotInk path had never performed.
+    //   * The tint transform (element 3) is never dereferenced on this path AT ALL: nothing in
+    //     OriginForColorSpaceObject or BuildComponents reads TintTransformObject.
+    //   * BuildComponents derefs /Attributes, /Process /ColorSpace (possibly an ICC stream) and every
+    //     /Components element; it guards its own /Process subtree, and EnsureAttributes guards
+    //     /Attributes.
+    // The LAZINESS is what justifies wrapping here rather than at a named level: resolution happens when
+    // a property is read, not when TryParse returns, so the depth reachable from this one call is
+    // unbounded — and PdfDocument.GetObject wraps a corrupt on-demand object's parse failure in
     // PdfParseException. A call-site wrap covers arbitrary DEPTH rather than exactly the level it names —
     // the design rule that took Pass 2a-prime from four review rounds to one. Returning null is always
     // safe here: the caller keeps the flatten/RGBA path it used before this method existed.
+    //
+    // This catch is DEFENCE-IN-DEPTH FOR A PUBLIC METHOD, not the thing standing between the pipeline and
+    // a crash. On the real render path a corrupt alternate throws one call EARLIER, unguarded:
+    // RecordingRenderTarget.cs:139 calls TryToCmyk before :149's TryToSpotInk, and TryToCmyk (:141-144)
+    // hands the same array to ColorSpaceResolver.BuildTintToCmyk, which reads space.AlternateSpaceName
+    // (ColorSpaceResolver.cs:475) and so triggers the same EnsureAlternate deref with no catch anywhere
+    // above it. That is PRE-EXISTING and deliberately not fixed here — out of scope for Pass 2b-engine,
+    // recorded as a gap. What this catch does buy is that TryToSpotInk, which is public and reachable
+    // without TryToCmyk having run first, degrades rather than throwing.
     private static (int[] Plate, int[] SpotOf, List<string> SpotNames)? ComponentSplit(
         PdfObject spaceObj, PdfDocument? document, int nameCount)
     {

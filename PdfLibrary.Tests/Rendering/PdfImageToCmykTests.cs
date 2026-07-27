@@ -616,6 +616,34 @@ public class PdfImageToCmykTests
         Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));
     }
 
+    // THE OVERPRINT CATEGORY MUST NOT FLIP. An NChannel image whose components are ALL Process produces a
+    // valid per-component split with an EMPTY spot list. Placing those components on their plates would be
+    // more correct on colour and would leave spotNames empty, so TryToSpotInk's `spotNames.Count == 0`
+    // would return null where it previously returned a two-plane SpotImageInk — and downstream that is not
+    // a colour change: CmykPageRenderer picks InkSourceCategory.SeparationDeviceN iff Spots is non-null
+    // (OverprintPlates is null for non-reserved names, so the category alone decides), so null Spots means
+    // ProcessOther means "paint source on every process plate" means KNOCKOUT, and an overprinting image
+    // erases a backdrop it used to preserve under Table 148 row 3.
+    //
+    // So SplitByComponents refuses a spotless split and the NAME split answers whole: PrCyan/PrMagenta are
+    // unreserved, Classify calls them Spot, and this is byte-for-byte what the file did before Task 2. The
+    // colour is wrong the same way it was already wrong; only the overprint category is protected. Removing
+    // the `spotNames.Count > 0` guard in SplitByComponents must make this test fail on Assert.NotNull.
+    [Fact]
+    public void NChannel_allProcess_image_keeps_the_name_splits_answer()
+    {
+        // 1 px, 2 colorants both listed in /Process /Components: PrCyan 1.0, PrMagenta ~0.5.
+        PdfImage img = Image(NChannel(Process("DeviceCMYK", "PrCyan", "PrMagenta"), "PrCyan", "PrMagenta"),
+            [255, 128], 1, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.NotNull(ink);
+        Assert.Equal(new[] { "PrCyan", "PrMagenta" }, ink!.Names);   // the NAME split's answer, whole
+        Assert.Equal(new byte[] { 255, 128 }, ink.TintPlanes);
+        Assert.All(ink.ProcessCmyk, b => Assert.Equal((byte)0, b));  // nothing on any plate
+    }
+
     // The 50 unaffected GWG patches depend on this: a plain DeviceN carries Components == null, so the name
     // split is untouched and the output is byte-identical to before this task.
     [Fact]
