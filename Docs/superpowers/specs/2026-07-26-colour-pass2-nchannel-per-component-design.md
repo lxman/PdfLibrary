@@ -248,6 +248,14 @@ channels and the plates the reverted alternates actually touch.
 
 ## Verification
 
+**CORRECTED (whole-branch review, post-merge):** the GWG/veraPDF gates below prove *corpus* silence
+only — they are not evidence that Pass 2a′ has no live consumer, and they must not be read that way.
+`PageColorant.Kind`/`TintRamp` already feed Pellucid's shipped `SpotColorantRegistry`/`CorpusRenderHash`
+before this design's compositor half (Pass 2b) exists. The corpus stays silent because none of its 51
+GWG fixtures happens to exercise the three input shapes Pass 2a′ classifies or ramps differently — see
+Gaps for the shapes and why a future moved digest outside GWG081 is this surfacing on new input, not
+necessarily a defect.
+
 **Ghostscript is not the oracle.** The project's standing constraint says so, and diff-vs-gs can rise
 precisely when Pellucid improves. Evidence is derived from the files.
 
@@ -299,10 +307,14 @@ This design spawns **two implementation plans**, matching the repo boundary and 
    `NChannelRenderHashGateTests`. Its gate: the three veraPDF digests land on values derived from the
    files, and GWG stays put.
 
-Splitting matches Pass 2a's shape — engine work landing behind an "output unchanged (or explained)" gate
-before any consumer exists — which is what made Pass 2a's regressions cheap to localise. Pass 2a′ ships
-and merges before Pass 2b is planned in detail, because 2a′'s measurements (does object 14 differ from
-the isolated evaluation? do the three files even render?) are inputs to 2b's plan.
+Splitting matches Pass 2a's shape — engine work landing behind a "*corpus* output unchanged (or
+explained)" gate before any **new** consumer exists — which is what made Pass 2a's regressions cheap to
+localise. **CORRECTED (whole-branch review, post-merge):** unlike Pass 2a (which touched
+`ColorantOrigin`, genuinely unconsumed at the time), Pass 2a′'s `Kind`/`TintRamp` changes reach the
+already-shipped `SpotColorantRegistry`/`CorpusRenderHash` immediately on merge — the gate proves the GWG
+corpus doesn't move, not that nothing downstream does. Pass 2a′ ships and merges before Pass 2b is
+planned in detail, because 2a′'s measurements (does object 14 differ from the isolated evaluation? do
+the three files even render?) are inputs to 2b's plan.
 
 ## Cost
 
@@ -326,7 +338,37 @@ warning narrows.
 - **New** — `/CalGray` as an NChannel process space stays suppressed.
 - **New** — ICCBased process spaces are accepted for *plate identity* only; no colour conversion through
   the profile.
+- **New** — `OwnColorantRamp`'s gate is narrowed to a `DeviceCMYK` own-alternate only (Minor 1,
+  whole-branch review); a `DeviceGray`-alternate NChannel space keeps the isolated whole-space evaluation
+  even with a usable `/Colorants` entry, rather than being promoted from a 1-component ramp to 4. This is
+  the conservative direction (mirrors the existing Lab exclusion's reasoning) — widening it back to
+  include Gray is a deliberate, separately-gated future change, not something this design signs off on.
 - **G-12** — no caching of built tint transforms.
+- **New (whole-branch review, post-merge correction) — three input classes move a live consumer that the
+  GWG/veraPDF corpora do not exercise, so the corpus render-hash gate is silent about them by absence,
+  not by proof of no effect:**
+  1. **ICCBased process space + non-reserved process names** (e.g. `/PrCyan`). Before Pass 2a′:
+     `PageColorant.Classify` said Spot → `SpotColorantRegistry.Build` gave it a plane →
+     `AnyRegistered` true → the routed arm painted it (imperfectly — by name, not by channel). After:
+     `KindFor` says Process → zero planes → `AnyRegistered` false → flattened. **Interim
+     routed→flattened window:** until Pass 2b lands `ProcessChannel`-based routing, `InkDecider.
+     ProcessContribution` still switches on the literal reserved names `Cyan`/`Magenta`/`Yellow`/`Black`,
+     so a non-reserved process colorant's tint reaches **neither** a plate **nor** a plane in this
+     window — it survives only inside the flattened whole-space alternate. This is expected and
+     temporary, not a regression to chase before Pass 2b ships.
+  2. **NChannel with a non-separable whole-space tint transform and a usable `/Colorants` entry** — the
+     per-component ramp (Task 2) now differs from the whole-space approximation by construction, so
+     `SpotColorantRegistry.BuildCmykRamp` bakes different plane ink for that colorant.
+  3. **NChannel with a `DeviceGray` alternate and a usable `/Colorants` entry** *before this correction's
+     Minor-1 narrowing* — the ramp would go from 1 component to 4, flipping
+     `SpotColorantRegistry.BuildCmykRamp` from its solid-scaled branch to its true per-tint branch. Minor
+     1 (above) closes this specific instance by excluding Gray from `OwnColorantRamp`'s gate; recorded
+     here because the same shape (own-alternate CMYK-family gating) could reopen it if the gate is ever
+     widened without a matching test.
+
+  None of the three has a corpus instance today — measured, not assumed, the same discipline Task 0 used
+  for the GWG census. A future moved render-hash digest matching one of these shapes is this change
+  surfacing on new input, not a mystery regression; see `Docs/colour/rendering-conformance.md`, G-4.
 
 ## Success criteria
 
