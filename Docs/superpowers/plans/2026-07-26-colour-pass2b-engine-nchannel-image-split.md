@@ -49,13 +49,48 @@ Pass 2a/2a′: this engine plan lands, merges, packs and repins first; the compo
 this plan's Task 0 measurements are inputs to it. Update the design doc's "Delivery" section as part of
 Task 4.
 
+## Task 0 result — measured 2026-07-26, before any production line was written
+
+All four recorded predictions **HELD**. The numbers, which every later task's criterion depends on:
+
+- **M1** — GWG081 (`2-SPOT/Patches/GWG081_DeviceN-Support_5c_X1a.pdf`). `Im0` is `/Indexed` over an
+  NChannel `[Black, GWG Green]`, `/Process << /ColorSpace /DeviceCMYK /Components [/Cyan /Magenta /Yellow
+  /Black] >>`. Per-component: `Black` → Process/**3**, `GWG Green` → Spot/null. Name split: `Black` →
+  `ProcessPlate` **3**, `GWG Green` → Spot. **AGREE on every component.** A second image `Im1` is
+  `/Indexed` over a plain `Separation`, so `Components` is **null** and it never enters the new path.
+  ⇒ **Task 3's criterion stays "zero of 51 digests move."**
+- **M2** — **2 NChannel spaces, 1 file**, exactly the design's census: GWG081's `Sh0` axial shading (G-7,
+  untouched) and `Im0`. Confirmed against 73 Separation and 32 DeviceN spaces across all 51 fixtures, by a
+  walk that also recursed into Form-XObject and tiling-pattern resources — *further* than the original
+  census — and still found only these two.
+- **M3** — `t02-pass-a` `/CS0`: Subtype `NChannel`, `/Process /ColorSpace [/ICCBased 7 0 R]` with the
+  stream dictionary `<< /Filter /FlateDecode /N 4 /Length 384790 >>`. Components:
+  `Black` Process/tint 0/**ch 3**, `PrCyan` Process/0.36/**ch 0**, `PrMagenta` Process/0.57/**ch 1**,
+  `PrYellow` Process/0.02/**ch 2**; `OwnAlternateCmyk` **null for all four** (Table 71 — a process
+  colorant's `/Colorants` entry is ignored). Effective channel count **4** (derived: a listed index is
+  returned only when `< channelCount`, `Black` got 3, and the only other possible values are 1 or null —
+  null would have suppressed `Components`). **This is the compositor plan's input contract, and it holds.**
+- **M4** — `/Process << /ColorSpace /DeviceGray /Components [/Ink1] >>` → `Ink1` = Process/**0**. The
+  identical space under `/DeviceCMYK` → `Ink1` = Process/**0**. **Byte-identical carrier state.** Probed
+  with an unlisted `/Black` alongside: under Gray `Black` → **null**, under CMYK `Black` → **3**,
+  confirming the counts were 1 and 4 respectively. **Task 1 is justified and does not shrink.**
+- **Bonus, validating Task 2's transposition test before it is written:** `/Components [/Black /Cyan]`
+  under `/DeviceCMYK` over `[Black, Cyan, GWGGreen]` gives `Black` → ch **0**, `Cyan` → ch **1**,
+  `GWGGreen` → Spot. Listed index does beat the canonical index.
+
 ## What this plan does NOT claim
 
-- **No corpus instance proves the image change.** GWG081 is the corpus's only NChannel file, and its image
-  space's colorants are expected to split identically under both rules (Task 0 measures this, it is not
-  assumed). The three veraPDF NChannel files exercise a **fill**, not an image. So the image split is
-  covered by **synthetic fixtures only**, and the GWG gate's role here is to prove *silence*, not to
-  prove the feature. Do not write "corpus-validated" anywhere about Task 2.
+- **No corpus instance proves the image change.** GWG081 is the corpus's only NChannel file, and M1
+  measured its image splitting **identically** under both rules. The three veraPDF NChannel files exercise
+  a **fill**, not an image. So the image split is covered by **synthetic fixtures only**, and the GWG
+  gate's role here is to prove *silence*, not to prove the feature. Do not write "corpus-validated"
+  anywhere about Task 2.
+- **`StencilInkFromFill`'s change has no corpus instance either — this is stronger than the design knew.**
+  M2 found **zero NChannel spaces in any page `/ColorSpace` resource** across all 51 GWG fixtures. Both
+  NChannel instances are a shading and an image XObject. So there is no NChannel fill, stroke *or stencil*
+  anywhere in GWG, and a stencil reaches `StencilInkFromFill` only from a fill's colorant origin. Task 2's
+  stencil half is therefore pinned by its shared `SplitByComponents` helper and by nothing else — worth
+  stating rather than letting the GWG green run imply coverage it does not have.
 - **No colour conversion through an ICC process space.** `ProcessChannelCount` is a count, nothing more.
 - **Shadings and meshes are untouched** (`ShadingSpotInk`/`MeshSpotInk` keep their name split). That is
   **G-7**, unchanged.
@@ -156,9 +191,11 @@ re-derived.
 - [ ] **Step 3: M3 — what does `t02-pass-a` actually carry?**
 
 For `veraPDF-corpus/PDF_A-2b/6.2 Graphics/6.2.4.4 Separation and DeviceN colour spaces/veraPDF test suite 6-2-4-4-t02-pass-a.pdf`,
-resolve the page's `/CS0` colour space with `rawColor: [0.0, 0.36, 0.57, 0.02]` and print every
-component's `(Name, Role, Tint, ProcessChannel, OwnAlternateCmyk)` plus the new-in-Task-1
-`ProcessChannelCount`.
+resolve the page's `/CS0` colour space with `rawColor: [0.0, 0.36, 0.57, 0.02]` and print `Subtype` plus
+every component's `(Name, Role, Tint, ProcessChannel, OwnAlternateCmyk)`. **Do not try to print
+`ProcessChannelCount` — Task 1 has not added it yet.** Derive it instead, and show the derivation: a
+*listed* name only receives its index when that index is `< channelCount`, and `ProcessChannelCount()`
+returns only 4, 1 or null (null suppresses `Components` entirely).
 
 **Recorded prediction:** names `[Black, PrCyan, PrMagenta, PrYellow]`, all four `Role.Process`,
 `ProcessChannel` = `[3, 0, 1, 2]` (Black is at *space position 0* but *process channel 3* — the
@@ -171,18 +208,27 @@ which is precisely why it is not being written until this measurement exists.
 - [ ] **Step 4: M4 — does a one-channel process space really hand out channel 0?**
 
 Build an in-memory NChannel space with `/Process << /ColorSpace /DeviceGray /Components [/Ink1] >>` and
-names `[/Ink1]`, resolve it, and print `(Role, ProcessChannel)` and the `channelCount` the resolver used.
+names `[/Ink1]`, resolve it, and print `(Role, ProcessChannel)`.
+
+**`channelCount` is a local inside `BuildComponents` and is not observable from outside — do not try to
+print it.** Probe it instead: add an *unlisted reserved* name to the same space (`[/Ink1 /Black]`), since
+a reserved name receives its canonical index **only** when the count is 4. Run the identical space twice,
+once under `/DeviceGray` and once under `/DeviceCMYK`, and compare. That gives direct evidence of the
+count while `Ink1` reports channel 0 in both.
 
 **Recorded prediction:** `Role.Process`, `ProcessChannel == 0` — i.e. indistinguishable, from the carrier
 alone, from cyan under a four-channel space. This is the fact that justifies Task 1 existing at all. **If
 this prediction is wrong, Task 1 shrinks or disappears — stop and re-plan rather than adding a property
 nothing needs.**
 
-- [ ] **Step 5: Record and clean up**
+- [ ] **Step 5: Report and clean up**
 
-Append every measured value to the ledger (see Task 4 for its path), then delete the scaffold directory.
-Run `git status` in **both** repos and confirm each is clean. State the four measurements in your report
-as numbers, not as "as predicted".
+**Do not write the ledger here** — this task forbids commits and requires a clean `git status`, and Task 4
+Step 3 is what creates the ledger file. Return every measured value **in your report**, as numbers, never
+as "as predicted"; Task 4 transcribes them.
+
+Delete the scaffold directory, then run `git status` in **both** repos and confirm each is clean
+(Pellucid's untracked `website/` is pre-existing and expected; nothing else may appear).
 
 ---
 
@@ -428,9 +474,13 @@ programme). Apply this mutation and confirm the named test goes red **for the ri
 
 Run `dotnet test PdfLibrary.Tests --filter FullyQualifiedName~NChannelRampTests`. Expected:
 `ListedNameUnderAOneChannelProcessSpace_GetsChannelZeroButACountOfOne` **and**
-`NChannelOverDeviceGray_CarriesAProcessChannelCountOfOne` FAIL with an *assertion* failure (`Assert.Equal`
-1 vs 4) — **not** a crash, and not a compile error. Then revert the mutation, delete any backup file, and
-confirm `git status` shows only the intended files.
+`NChannelOverAnIccBasedGrayProcessSpace_CarriesACountOfOne` FAIL with an *assertion* failure
+(`Assert.Equal` 1 vs 4) — **not** a crash, and not a compile error. Then revert the mutation, delete any
+backup file, and confirm `git status` shows only the intended files.
+
+(If the ICCBased fixture was dropped per Step 1's note, `ListedNameUnder…` alone must go red — and that is
+then the *only* test standing between this property and a wrong answer, which is worth saying in the
+ledger.)
 
 Also run the second mutation, on the suppression path:
 
