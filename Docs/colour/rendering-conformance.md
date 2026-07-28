@@ -428,6 +428,29 @@ substantive violation this matrix has tracked since slice 1~~.
   >   a no-op on that arm — the regression is specific to the mixed shape.
   > - **Still open.** `/All` shadings (row 4-6) and per-stop spot reversion for unregistered spots
   >   (row 5-10).
+  > - **Still open — an unbounded slot index, in both repos, recorded 2026-07-28 by G-7 Plan 3's final
+  >   review.** Both placement consumers index a 4-element process buffer with `slot.Index` directly.
+  >   `ColorantPlacement.Build` bounds every Plate index via `ColorSpaceResolver.ProcessChannelFor`, and
+  >   it is the only production construction path in either repo, so **there is no reachable defect
+  >   today** — but `ColorantSlot`'s public constructor permits `new(Plate, 9)`, the same
+  >   inconsistent-construction hazard the "branch on `slot.Kind`, never on `slot == ColorantSlot.Nothing`"
+  >   rule exists to guard. The two are **not** equally severe:
+  >   `Pellucid`'s `InkDecider.cs` writes through a bounds-checked `Span<float>` and would **throw**,
+  >   whereas `ShadingSpotSplit.cs:80`'s `spotDest[destOffset + slot.Index]` writes into `stopTints` and
+  >   an over-range Spot index lands inside a **different gradient stop's tint slice — silent
+  >   corruption, no exception.** That one is the worse of the pair and was missed by every per-task
+  >   review; it surfaced only in the whole-branch pass. If this is ever acted on, the fix is one
+  >   validating constructor on `ColorantSlot` (or an assert in `Build`), not scattered bounds checks
+  >   across two repos.
+  > - **Still open — the placement branch's *tint* half has little production reach.** For any
+  >   well-formed mixed NChannel **fill**, `InkDecider.TryPerComponent` succeeds and the routed arm is
+  >   never taken, so `ProcessContribution`'s placement branch is reached mainly by shadings and meshes —
+  >   whose `ColorantOrigin` resolves with `rawColor: null`, leaving `Tints` **empty** and every tint it
+  >   reads 0. The mask half is what carries the fix. Reachability itself is unpinned: the unit fixtures
+  >   construct a `Placement` directly rather than arriving through `Decide`'s routing, so a future change
+  >   that stopped `TryPerComponent` declining would leave those tests green while the fixed code stopped
+  >   firing. The cross-repo join test (`Pellucid`, `NChannelPerComponentRenderTests`) covers the shading
+  >   path end to end; no equivalent pins the fill path's routing.
   >
   > ~~**No render-hash gate can observe site 3.** Across all 2999 corpus files there are 17 NChannel
   > spaces, exactly 2 where name-split and placement disagree — both the same `6-2-4-4-t02-pass-a`
