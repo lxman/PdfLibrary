@@ -126,4 +126,49 @@ public class ShadingSpotInkTests
         Assert.NotNull(sh);
         Assert.Null(sh!.SpotInk);   // non-CMYK ⇒ SampleRgbAt path, no spot plane
     }
+
+    private static PdfDictionary NChannelProcessAttributes(string[] processComponents)
+    {
+        var process = new PdfDictionary();
+        process[new PdfName("ColorSpace")] = new PdfName("DeviceCMYK");
+        process[new PdfName("Components")] =
+            new PdfArray(System.Array.ConvertAll(processComponents, n => (PdfObject)new PdfName(n)));
+
+        var attrs = new PdfDictionary();
+        attrs[new PdfName("Subtype")] = new PdfName("NChannel");
+        attrs[new PdfName("Process")] = process;
+        return attrs;
+    }
+
+    // Names order deliberately differs from /Process /Components order (as in
+    // ShadingAllProcessNChannelTests) so a placement, not a name match, is what has to fire.
+    private static PdfArray AllProcessDeviceN(string[] names, string[] processComponents) => new(
+        new PdfName("DeviceN"),
+        new PdfArray(System.Array.ConvertAll(names, n => (PdfObject)new PdfName(n))),
+        new PdfName("DeviceCMYK"),
+        Type2Fn([0, 0, 0, 0], [1, 1, 1, 1]),
+        NChannelProcessAttributes(processComponents));
+
+    [Fact]
+    public void AllProcessNChannelShading_NoSpotInk_TakesTheAllProcessBypassInstead()
+    {
+        // G-7 Plan 3, final-review finding 4 (2026-07-28): when every component of an NChannel space is
+        // Process (no spot colorant at all), Placement.SpotNames comes back empty, so `spotNames` here
+        // is empty too, `splitSpots` flips false, and SpotInk must be null -- the space is instead
+        // handled by ShadingBuilder.BuildCmykMapper's all-process bypass (see
+        // ShadingAllProcessNChannelTests), which packs each component onto its own plate directly.
+        // Nothing asserted this outcome before; the corpus census could not sample this shape either
+        // (no NChannel space anywhere in GWG/veraPDF has zero spot components), so this synthetic
+        // fixture is the only thing that can pin it.
+        PdfDictionary dict = AxialShading(
+            AllProcessDeviceN(["Black", "PrCyan", "PrMagenta", "PrYellow"],
+                               ["PrCyan", "PrMagenta", "PrYellow", "Black"]),
+            Type2Fn([0, 0, 0, 0], [0.36, 0.57, 0.02, 0.80]));
+
+        ShadingDescriptor? sh = ShadingBuilder.Build(dict, null);
+
+        Assert.NotNull(sh);
+        Assert.Null(sh!.SpotInk);          // no spot plane emitted
+        Assert.NotEmpty(sh.CmykColors);    // the bypass still resolves native CMYK directly
+    }
 }

@@ -71,7 +71,13 @@ internal static class ShadingBuilder
         // route the spot to its plane instead of flattening it (only for DeviceCMYK-alternate Sep/DeviceN,
         // i.e. when toCmyk is non-null and the colour space has a spot colorant).
         ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(shadingCs, null, document);
-        List<string> spotNames = origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : [];
+        // Placement first: a listed process name such as /PrCyan is NOT a spot, and the name-derived
+        // split would put its ink on a spot plane while the cyan unit sat dry. Falls back whole when
+        // the space has no placement (plain DeviceN, one-channel process space, /All, unplaceable).
+        ColorantPlacement? placement = origin?.Placement;
+        List<string> spotNames = placement is not null
+            ? [.. placement.SpotNames]
+            : origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : [];
         bool splitSpots = toCmyk is not null && origin is not null && spotNames.Count > 0;
         int spotN = spotNames.Count;
         byte[] stopTints = splitSpots ? new byte[StopCount * spotN] : [];
@@ -94,7 +100,10 @@ internal static class ShadingBuilder
             double[] components = EvaluateColor(functions, t);
             colors[i] = toColor(components);
             if (toCmyk is not null) cmykColors[i] = toCmyk(components);
-            if (splitSpots) stopProcess[i] = ShadingSpotSplit.Split(components, origin!.Names, stopTints, i * spotN);
+            if (splitSpots)
+                stopProcess[i] = placement is not null
+                    ? ShadingSpotSplit.SplitByPlacement(components, placement, stopTints, i * spotN)
+                    : ShadingSpotSplit.Split(components, origin!.Names, stopTints, i * spotN);
             stops[i] = (float)s;
         }
 
