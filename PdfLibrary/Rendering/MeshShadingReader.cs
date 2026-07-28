@@ -59,11 +59,18 @@ internal static class MeshShadingReader
         // SP-7-mesh: preserve a spot mesh's per-vertex spot tints + process-only CMYK (only for a
         // DeviceCMYK-alternate Separation/DeviceN, i.e. toCmyk non-null and a spot colorant present).
         ColorantOrigin? origin = ColorSpaceResolver.OriginForColorSpaceObject(csObj, null, document);
-        List<string> spotNames = origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : [];
+        // Placement first: a listed process name such as /PrCyan is NOT a spot, and the name-derived
+        // split would put its ink on a spot plane while the cyan unit sat dry. Falls back whole when
+        // the space has no placement (plain DeviceN, one-channel process space, /All, unplaceable).
+        ColorantPlacement? placement = origin?.Placement;
+        List<string> spotNames = placement is not null
+            ? [.. placement.SpotNames]
+            : origin is not null ? ShadingSpotSplit.SpotNames(origin.Names) : [];
         bool splitSpots = toCmyk is not null && origin is not null && spotNames.Count > 0;
         int spotN = spotNames.Count;
-        bool hasProcess = origin is not null &&
-            origin.Names.Any(n => PageColorant.Classify(n) == ColorantKind.Process);
+        bool hasProcess = placement is not null
+            ? placement.Slots.Any(s => s.Kind == ColorantSlotKind.Plate)
+            : origin is not null && origin.Names.Any(n => PageColorant.Classify(n) == ColorantKind.Process);
         var vertProc = splitSpots ? new List<uint>() : null;
         var vertTints = splitSpots ? new List<byte>() : null;
 
@@ -133,7 +140,9 @@ internal static class MeshShadingReader
                 if (splitSpots)
                 {
                     tints = new byte[spotN];
-                    proc = ShadingSpotSplit.Split(colorSpaceComps, origin!.Names, tints, 0);
+                    proc = placement is not null
+                        ? ShadingSpotSplit.SplitByPlacement(colorSpaceComps, placement, tints, 0)
+                        : ShadingSpotSplit.Split(colorSpaceComps, origin!.Names, tints, 0);
                 }
                 patch.Corner[corner] = (toRgb(colorSpaceComps), toCmyk?.Invoke(colorSpaceComps) ?? 0u, proc, tints);
             }
