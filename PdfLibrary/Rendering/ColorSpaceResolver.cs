@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -714,7 +715,19 @@ internal class ColorSpaceResolver(PdfDocument? document)
         return false;
     }
 
-    internal static PdfObject Deref(PdfObject obj, PdfDocument? document) =>
+    /// <summary>
+    /// Resolves an indirect reference against <paramref name="document"/>, returning the object itself
+    /// when it is direct, when there is no document, or when the reference does not resolve.
+    /// </summary>
+    /// <remarks>
+    /// Null-in/null-out: several callers index a PDF array defensively (<c>arr.Count >= 2 ? arr[1] : null</c>)
+    /// and then pattern-match the result, so accepting null here is the shape the call sites already want.
+    /// <see cref="NotNullIfNotNullAttribute"/> keeps that from leaking a nullable return to the ~29 sites
+    /// that pass a value the compiler already knows is non-null — without it, this signature change would
+    /// have to be paid for in null-forgiving operators, which is the opposite of the point.
+    /// </remarks>
+    [return: NotNullIfNotNull(nameof(obj))]
+    internal static PdfObject? Deref(PdfObject? obj, PdfDocument? document) =>
         obj is PdfIndirectReference r && document is not null ? document.ResolveReference(r) ?? obj : obj;
 
     /// <summary>

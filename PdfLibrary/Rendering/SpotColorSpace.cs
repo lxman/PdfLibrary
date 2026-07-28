@@ -281,14 +281,14 @@ internal sealed class SpotColorSpace
             if (ColorSpaceResolver.Deref(_source[4], _doc) is not PdfDictionary attrs) return;
 
             if (attrs.TryGetValue(new PdfName("Subtype"), out PdfObject? stObj)
-                && ColorSpaceResolver.Deref(stObj!, _doc) is PdfName st)
+                && ColorSpaceResolver.Deref(stObj, _doc) is PdfName st)
                 _subtype = st.Value;
 
             if (attrs.TryGetValue(new PdfName("Colorants"), out PdfObject? coObj))
-                _colorants = ColorSpaceResolver.Deref(coObj!, _doc) as PdfDictionary;
+                _colorants = ColorSpaceResolver.Deref(coObj, _doc) as PdfDictionary;
 
             if (attrs.TryGetValue(new PdfName("Process"), out PdfObject? prObj))
-                _process = ColorSpaceResolver.Deref(prObj!, _doc) as PdfDictionary;
+                _process = ColorSpaceResolver.Deref(prObj, _doc) as PdfDictionary;
         }
         catch (Exception ex)
         {
