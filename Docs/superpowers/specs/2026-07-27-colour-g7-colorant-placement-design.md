@@ -404,6 +404,24 @@ the original text preserved and superseded rather than deleted, per this program
 > versus sites 3/4's mixed or spot-bearing case — so taking site 5 first cannot interact with, or be
 > blocked by, sites 3+4's still-open pairing constraint. Steps (2) and (4) are unaffected and remain
 > open.
+>
+> **Corrected 2026-07-28 by the final whole-branch review (Finding 2 / MINOR 2), superseding "the one
+> behaviour change on malformed input ... is in the safe direction and corpus-unreachable."** That
+> undercounts by one, and the second change is on WELL-FORMED input, not malformed. `AllProcessPlacement`
+> derives entirely from `/Process /ColorSpace` (inside `/Attributes`); it never inspects the DeviceN/
+> Separation array's OWN alternate (element 2). So an all-process NChannel whose own alternate is
+> `/DeviceRGB`, `/Lab`, or an ICCBased-3 stream — none of which `BuildTintToCmyk` accepts
+> (`ColorSpaceResolver.cs:488` requires `DeviceCMYK` or `DeviceGray`) — also gets `toCmyk` widened from
+> null to a working mapper. Pre-fix, such a space's `toCmyk` was null and the shading took the sRGB
+> `SampleRgbAt` path; post-fix it gets a native CMYK mapper that packs straight onto plates and
+> `SampleRgbAt` becomes null. The array is perfectly legal PDF — an all-process NChannel is entitled to
+> declare any alternate it likes, since §8.6.6.5 does not require the alternate to describe the process
+> case. **The behaviour is kept, not reverted**: an all-process NChannel over a four-channel process
+> space IS CMYK regardless of what its alternate claims, so treating it as CMYK is the more correct
+> answer than trusting a non-CMYK alternate. This note corrects the count and the "malformed input
+> only" framing, not the outcome. Covered by
+> `AllProcessNChannel_WithADeviceRgbAlternate_StillBypassesAndPacksByPlacement` in
+> `PdfLibrary.Tests/Rendering/ShadingAllProcessNChannelTests.cs`.
 
 ---
 

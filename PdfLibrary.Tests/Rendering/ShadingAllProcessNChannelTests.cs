@@ -83,12 +83,15 @@ public class ShadingAllProcessNChannelTests
 
     // Note the no-attributes overload still yields a FOUR-element array, which matters:
     // OriginForColorSpaceObject parses with minimumElements: 4 and returns no origin for a shorter one.
-    private static PdfArray DeviceN(PdfArray names, PdfDictionary? attributes, PdfObject? tint = null)
+    // altSpace is the array's OWN alternate (element 2) — independent of Attributes' processSpace
+    // (the /Process /ColorSpace inside /Attributes), which is what placement is actually derived from.
+    private static PdfArray DeviceN(
+        PdfArray names, PdfDictionary? attributes, PdfObject? tint = null, string altSpace = "DeviceCMYK")
     {
         PdfObject t = tint ?? ConstantTint();
         return attributes is null
-            ? new PdfArray(new PdfName("DeviceN"), names, new PdfName("DeviceCMYK"), t)
-            : new PdfArray(new PdfName("DeviceN"), names, new PdfName("DeviceCMYK"), t, attributes);
+            ? new PdfArray(new PdfName("DeviceN"), names, new PdfName(altSpace), t)
+            : new PdfArray(new PdfName("DeviceN"), names, new PdfName(altSpace), t, attributes);
     }
 
     private static (byte C, byte M, byte Y, byte K) Cmyk(uint packed) =>
@@ -108,6 +111,18 @@ public class ShadingAllProcessNChannelTests
         DeviceN(Names("Black", "PrCyan", "PrMagenta", "PrYellow"),
                 Attributes(Names("PrCyan", "PrMagenta", "PrYellow", "Black")),
                 IdentityTint());
+
+    /// <summary>The same all-process shape, but with the array's OWN alternate (element 2) set to
+    /// <c>/DeviceRGB</c> instead of <c>/DeviceCMYK</c>. All nine pre-existing fixtures in this file use
+    /// a DeviceCMYK alternate; this is the untested shape MINOR 2 of the 2026-07-28 review flagged —
+    /// <c>AllProcessPlacement</c> never looks at this alternate at all, only at <c>/Process
+    /// /ColorSpace</c> (via <c>Attributes</c>), so the bypass must still fire and pack onto plates even
+    /// though a non-CMYK, non-Gray alternate would otherwise send <c>BuildTintToCmyk</c> down the
+    /// null-returning path at <c>ColorSpaceResolver.cs:488</c>.</summary>
+    private static PdfArray AllProcessSpaceRgbAlternate() =>
+        DeviceN(Names("Black", "PrCyan", "PrMagenta", "PrYellow"),
+                Attributes(Names("PrCyan", "PrMagenta", "PrYellow", "Black")),
+                altSpace: "DeviceRGB");
 
     [Fact]
     public void AllProcessNChannel_PlacesEachComponentOnItsOwnPlate_NotThroughTheTintTransform()
@@ -197,6 +212,43 @@ public class ShadingAllProcessNChannelTests
         Assert.Equal(0, m);
         Assert.Equal(0, y);
         Assert.Equal(0, k);     // /None's 1.0 went nowhere
+    }
+
+    [Fact]
+    public void AllProcessNChannel_WithADeviceRgbAlternate_StillBypassesAndPacksByPlacement()
+    {
+        // MINOR 2 (2026-07-28 review): the bypass widens toCmyk for an all-process NChannel whose OWN
+        // alternate is not DeviceCMYK/DeviceGray — a shape BuildTintToCmyk would otherwise refuse
+        // (ColorSpaceResolver.cs:488) and send down the sRGB SampleRgbAt path. Placement is derived
+        // from /Process /ColorSpace, not this array's alternate, so a DeviceRGB alternate must not
+        // change the outcome: the mapper is non-null and packs per plate, identically to
+        // AllProcessSpace's DeviceCMYK-alternate fixture.
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(AllProcessSpaceRgbAlternate(), null);
+        Assert.NotNull(toCmyk);
+
+        (byte c, byte m, byte y, byte k) = Cmyk(toCmyk!([0.36, 0.57, 0.02, 0.80]));
+
+        Assert.Equal(145, c);   // 0.57
+        Assert.Equal(5, m);     // 0.02
+        Assert.Equal(204, y);   // 0.80
+        Assert.Equal(92, k);    // 0.36
+    }
+
+    [Fact]
+    public void AllNoneNChannel_DoesNotBypass_SoTheTintPathStillRefusesIt()
+    {
+        // Every colorant is /None: SpotNames is empty (no Spot slot exists) but there is also no Plate
+        // slot — placement is [Nothing, Nothing]. Before the fix, `placement is { SpotNames.Count: 0 }`
+        // alone was satisfied, so the bypass fired and packed zero into every plate (0x00000000) — a
+        // path BuildTintToCmyk had always refused via its own PaintsNothing check. After the fix the
+        // bypass requires at least one Plate slot too, so it declines, BuildCmykMapper falls through to
+        // BuildTintToCmyk, and PaintsNothing refuses the space outright: the mapper must be null.
+        PdfArray space = DeviceN(Names("None", "None"),
+                                 Attributes(Names("PrCyan", "PrMagenta", "PrYellow", "Black")));
+
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(space, null);
+
+        Assert.Null(toCmyk);
     }
 
     // --- shapes that must STILL take the tint transform ---

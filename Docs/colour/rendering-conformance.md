@@ -315,12 +315,33 @@ substantive violation this matrix has tracked since slice 1.
   >   (`ShadingBuilder.cs:66`, `MeshShadingReader.cs:57`), so this single change **covers axial, radial
   >   and mesh together** — `MeshShadingReader.cs` itself is unmodified.
   >
+  >   **Tightened 2026-07-28 by the final whole-branch review (IMPORTANT 1), superseding "non-null iff
+  >   ... `SpotNames.Count == 0`."** That predicate alone is also satisfied when EVERY colorant is
+  >   `/None` — `Placement.Slots` is then `[Nothing, Nothing, …]` with no `Plate` slot at all, so the
+  >   bypass fired and `PackByPlacement` returned `0x00000000` for a space `BuildTintToCmyk` had always
+  >   refused via its own `PaintsNothing` check (`ColorSpaceResolver.cs:461`). `AllProcessPlacement` now
+  >   additionally requires `placement.Slots.Any(s => s.Kind == ColorantSlotKind.Plate)`, so an all-`/None`
+  >   space declines the bypass and falls through to `BuildTintToCmyk`/`PaintsNothing` as before. Covered
+  >   by `AllNoneNChannel_DoesNotBypass_SoTheTintPathStillRefusesIt` in
+  >   `ShadingAllProcessNChannelTests.cs`.
+  >
   >   **The evidence is synthetic, not corpus.** Task 0's M3 found **zero** all-process NChannel
   >   shadings or meshes across 3 005 corpus files (7 NChannel shadings total, every one carrying a
   >   spot; 0 NChannel meshes), so no render-hash gate can move on this fix. The gate (51 GWG + 3
   >   veraPDF fixtures, both green, embedded engine SHA equal to `25f0f23`) is therefore a **guard
   >   against unintended movement, not evidence for the fix** — the evidence is the commit's per-plate
   >   synthetic assertions.
+  >
+  >   **Scoped 2026-07-28 by the final whole-branch review (Finding 5).** "Zero" here is zero among
+  >   what M3 walked, not an absolute zero — state it as a lower bound. M3's method (Task 0's report,
+  >   §4) inspected every page's `/Shading` and `/Pattern` resources, recursing into Form-XObject
+  >   `/Resources` and tiling-pattern `/Resources`. It did **not** descend into annotation appearance
+  >   streams or soft-mask group `/Resources` — both are separate resource trees this walk never
+  >   visited. Since this count is the row's load-bearing safety claim (it is the reason no
+  >   render-hash gate can move on the fix), an all-process NChannel shading or mesh reachable only
+  >   through an annotation appearance stream or a soft-mask group would not have been counted either
+  >   way, so "zero corpus instances" should be read as "zero among page content, Form XObjects, and
+  >   tiling patterns" rather than "zero, full stop."
   >
   >   **The plate mask can change, and this is recorded rather than smoothed over.** `OverprintPlates`
   >   is null for this space, so at `op=true` the compositor's process mask is the nonzero-markedness
@@ -331,6 +352,23 @@ substantive violation this matrix has tracked since slice 1.
   >   that used to be overpainted — an overprint-behaviour change, not merely a colour change. With
   >   every component non-zero the mask is `[CMYK]` on both sides (a property of that vector, not of
   >   the fix), and at `op=false` the mask is fixed `(T,T,T,T)` and unaffected.
+  >
+  >   **Corrected 2026-07-28 by the final whole-branch review (Finding 3 / MINOR 3), superseding
+  >   "`OverprintPlates` is null for this space."** That is not a property of the SHAPE (an
+  >   all-process NChannel with a permuted `/Process /Components`) — it is a property of THIS
+  >   fixture's colorant names, which are the non-reserved `PrCyan`/`PrMagenta`/`PrYellow` (plus
+  >   `Black`). `PlatesForColorSpaceObject` (`ColorSpaceResolver.cs:789-806`) reads `space.Names` — the
+  >   array's own colorant names — and returns null only when one of them is not among the six it
+  >   recognises (`Cyan`, `Magenta`, `Yellow`, `Black`, `All`, `None`); it never looks at `/Process
+  >   /Components` at all. So a *different*, equally legal all-process NChannel whose colorant names
+  >   ARE the four reserved ones — `[/Cyan /Magenta /Yellow /Black]` — but whose `/Process
+  >   /Components` lists them in non-canonical order still hits this row and still gets its bypass:
+  >   `PlatesForColorSpaceObject` returns `(T,T,T,T)` for that space (every name is reserved), while
+  >   the permutation defect — which lives entirely in `/Process /Components`, a table
+  >   `PlatesForColorSpaceObject` never reads — still fires. **The conclusion survives**: a fixed
+  >   `(T,T,T,T)` mask at `op=false` is unaffected either way, which is all this row's stated behaviour
+  >   depends on. But the reason is "this fixture's names happen to be non-reserved", not "this space
+  >   has no plate mask" — the same fix over reserved names would keep a non-null mask throughout.
   > - **The two name-switch sites must land together — measured, not argued, and this is the MIXED
   >   case specifically:** an NChannel shading with a registered spot alongside a process colorant the
   >   name switch mislabels, e.g. `[PrCyan(Process ch0), Spot1(registered)]`. Fixing site 3 alone removes
