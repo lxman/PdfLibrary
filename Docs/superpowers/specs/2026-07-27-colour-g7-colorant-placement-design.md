@@ -47,8 +47,8 @@ mechanism: it does not mis-place the ink, it simulates ink it should have placed
 |---|------|------|-----------|--------|
 | 1 | `PdfImageToCmyk` (`TryToSpotInk` / `StencilInkFromFill`) | PDF | name switch | closed by Pass 2b-engine |
 | 2 | `InkDecider.TryPerComponent` (fills/strokes) | Pellucid | name switch | closed by Pass 2b-compositor |
-| 3 | `ShadingSpotSplit.Split` + the mesh path | PDF | name switch | **open** |
-| 4 | `InkDecider.ProcessContribution` (`:446-468`) | Pellucid | name switch | **open** |
+| 3 | `ShadingSpotSplit.Split` + the mesh path | PDF | name switch | closed by G-7 Plan 3 (`6bcaa38`) |
+| 4 | `InkDecider.ProcessContribution` (`:446-468`) | Pellucid | name switch | closed by G-7 Plan 3 (`37f7c5b`) |
 | 5 | `ShadingBuilder.BuildCmykMapper`'s all-process arm | PDF | runs the tint transform | closed by G-7 Plan 2 (`25f0f23`) |
 
 Site 3, verbatim at HEAD:
@@ -422,6 +422,27 @@ the original text preserved and superseded rather than deleted, per this program
 > only" framing, not the outcome. Covered by
 > `AllProcessNChannel_WithADeviceRgbAlternate_StillBypassesAndPacksByPlacement` in
 > `PdfLibrary.Tests/Rendering/ShadingAllProcessNChannelTests.cs`.
+>
+> **Corrected 2026-07-28 by G-7 Plan 3 (Task 5), superseding "Steps (2) and (4) are unaffected and
+> remain open."** Step (2) — site 3 **and** site 4 together — is **done**: engine
+> `colour/g7-sites-3-and-4` @ `6bcaa38` (`ShadingSpotSplit.SplitByPlacement` plus placement-preferring
+> wiring in `ShadingBuilder`/`MeshShadingReader`, including `hasProcess`), Pellucid @ `37f7c5b`
+> (`InkDecider.ProcessContribution` deriving its plate mask and tints from placement). Both fall back
+> whole to the name-driven path when a space has no placement, and the pack-and-repin was sequenced
+> between the two exactly as this section required — landing site 3 alone flips a mixed op onto the
+> still-name-based mask and drops ink (measured: C 0.3608 → 0 at overprint on the compositor's routed
+> arm), the same mixed-case finding §6.2's own revised-delivery correction already recorded above.
+> There is a second, independent break the same pairing closes: leaving `hasProcess` name-based in the
+> mesh reader while the spot names go placement-based nulls `MeshSpotInk.VertexProcessCmyk`, which
+> bites at knockout rather than overprint. **The evidence is synthetic, not corpus**: Task 0's M4 census
+> for this closure — 3 005 files / 13 233 pages, extended past the earlier walk into annotation
+> appearance streams and soft-mask groups — finds 7 mixed NChannel shadings, 0 differing between name
+> split and placement, and no NChannel mesh anywhere; see `Docs/colour/rendering-conformance.md`'s G-7
+> entry for the full writeup. The gates (GWG 51/51, NChannel 3/3, both 0 differences, engine SHA
+> `6bcaa38` verified embedded) are a guard against unintended movement, not evidence the fix works —
+> that evidence is the unit and builder-level tests, each verified red-by-assertion under mutation.
+> Suites: engine 2672/0 (net8.0/net9.0/net10.0, 0 warnings), Pellucid 1309/0. Step (4), migration,
+> remains open.
 
 ---
 
