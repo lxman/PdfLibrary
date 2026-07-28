@@ -428,7 +428,15 @@ substantive violation this matrix has tracked since slice 1~~.
   >   a no-op on that arm — the regression is specific to the mixed shape.
   > - **Still open.** `/All` shadings (row 4-6) and per-stop spot reversion for unregistered spots
   >   (row 5-10).
-  > - **Still open — an unbounded slot index, in both repos, recorded 2026-07-28 by G-7 Plan 3's final
+  > - ~~**Still open — an unbounded slot index, in both repos**~~ **Closed 2026-07-28.** `ColorantSlot`'s
+  >   constructor now validates the index against its kind (Plate in [0,4), Spot ≥ 0, Nothing = 0), and
+  >   `ColorantPlacement`'s constructor refuses a Spot index ≥ `SpotNames.Count` — the bound the slot
+  >   alone cannot check, and the one that actually closed the silent adjacent-stop write at
+  >   `ShadingSpotSplit.cs:80`. Duplicate in-bounds spot indexes remain legal (Pellucid's mutation
+  >   fixtures construct that shape deliberately). Covered by the construction-validation tests in
+  >   `ColorantPlacementTests.cs`. Original record follows.
+  >
+  > - **Recorded 2026-07-28 by G-7 Plan 3's final
   >   review.** Both placement consumers index a 4-element process buffer with `slot.Index` directly.
   >   `ColorantPlacement.Build` bounds every Plate index via `ColorSpaceResolver.ProcessChannelFor`, and
   >   it is the only production construction path in either repo, so **there is no reachable defect

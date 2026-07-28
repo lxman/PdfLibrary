@@ -15,11 +15,38 @@ public enum ColorantSlotKind
     Spot,
 }
 
-/// <summary>Where one colorant is placed. <paramref name="Index"/> is the plate index for
+/// <summary>Where one colorant is placed. <see cref="Index"/> is the plate index for
 /// <see cref="ColorantSlotKind.Plate"/>, the spot index for <see cref="ColorantSlotKind.Spot"/>, and
-/// meaningless (0) for <see cref="ColorantSlotKind.Nothing"/>.</summary>
-public readonly record struct ColorantSlot(ColorantSlotKind Kind, int Index)
+/// meaningless (0) for <see cref="ColorantSlotKind.Nothing"/>.
+///
+/// <para>Construction validates the index against its kind: both placement consumers index arrays
+/// with <see cref="Index"/> unchecked, and an over-range Spot index in
+/// <c>ShadingSpotSplit.SplitByPlacement</c> would write into an ADJACENT stop's tints silently. The
+/// Spot upper bound needs <see cref="ColorantPlacement.SpotNames"/> and lives on
+/// <see cref="ColorantPlacement"/>'s constructor instead.</para></summary>
+public readonly record struct ColorantSlot
 {
+    public ColorantSlotKind Kind { get; }
+    public int Index { get; }
+
+    public ColorantSlot(ColorantSlotKind kind, int index)
+    {
+        switch (kind)
+        {
+            case ColorantSlotKind.Nothing when index != 0:
+                throw new ArgumentOutOfRangeException(nameof(index), index,
+                    "A Nothing slot's index is meaningless and must be 0.");
+            case ColorantSlotKind.Plate when index is < 0 or > 3:
+                throw new ArgumentOutOfRangeException(nameof(index), index,
+                    "A plate index is an index into the four-channel process space.");
+            case ColorantSlotKind.Spot when index < 0:
+                throw new ArgumentOutOfRangeException(nameof(index), index,
+                    "A spot index is an index into ColorantPlacement.SpotNames.");
+        }
+        Kind = kind;
+        Index = index;
+    }
+
     public static ColorantSlot Nothing => new(ColorantSlotKind.Nothing, 0);
     public static ColorantSlot Plate(int plateIndex) => new(ColorantSlotKind.Plate, plateIndex);
     public static ColorantSlot Spot(int spotIndex) => new(ColorantSlotKind.Spot, spotIndex);
@@ -40,14 +67,32 @@ public readonly record struct ColorantSlot(ColorantSlotKind Kind, int Index)
 /// 2 has a unit" — registration is a registry fact and the registry is compositor-side. The carrier
 /// answers <i>which colorant is this</i>; the compositor answers <i>do we have that unit</i>.</para>
 /// </summary>
-/// <param name="Slots">One slot per component, aligned index-for-index with
-/// <see cref="ColorantOrigin.Names"/> and <see cref="ColorantOrigin.Components"/>.</param>
-/// <param name="SpotNames">The spot colorant names, in slot order. Empty when every component is
-/// Process or None.</param>
-public sealed record ColorantPlacement(
-    IReadOnlyList<ColorantSlot> Slots,
-    IReadOnlyList<string> SpotNames)
+public sealed record ColorantPlacement
 {
+    /// <summary>One slot per component, aligned index-for-index with
+    /// <see cref="ColorantOrigin.Names"/> and <see cref="ColorantOrigin.Components"/>.</summary>
+    public IReadOnlyList<ColorantSlot> Slots { get; }
+
+    /// <summary>The spot colorant names, in slot order. Empty when every component is Process or
+    /// None.</summary>
+    public IReadOnlyList<string> SpotNames { get; }
+
+    /// <summary>Refuses a Spot slot whose index is beyond <paramref name="spotNames"/> — the one
+    /// bound <see cref="ColorantSlot"/> cannot check alone. Per-stop spot buffers are sized by
+    /// <see cref="SpotNames"/>.Count, so an over-range index would write into an adjacent stop's
+    /// tints silently. Duplicate in-bounds spot indexes are legal: the bound is buffer sizing, not
+    /// uniqueness.</summary>
+    public ColorantPlacement(IReadOnlyList<ColorantSlot> slots, IReadOnlyList<string> spotNames)
+    {
+        foreach (ColorantSlot slot in slots)
+            if (slot.Kind == ColorantSlotKind.Spot && slot.Index >= spotNames.Count)
+                throw new ArgumentOutOfRangeException(nameof(slots), slot.Index,
+                    $"Spot slot index must be < SpotNames.Count ({spotNames.Count}).");
+
+        Slots = slots;
+        SpotNames = spotNames;
+    }
+
     /// <summary>
     /// Builds the table, or returns null meaning "fall back to whole-space behaviour".
     ///
