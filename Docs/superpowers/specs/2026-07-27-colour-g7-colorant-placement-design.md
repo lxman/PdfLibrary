@@ -48,7 +48,7 @@ mechanism: it does not mis-place the ink, it simulates ink it should have placed
 | 1 | `PdfImageToCmyk` (`TryToSpotInk` / `StencilInkFromFill`) | PDF | name switch | closed by Pass 2b-engine |
 | 2 | `InkDecider.TryPerComponent` (fills/strokes) | Pellucid | name switch | closed by Pass 2b-compositor |
 | 3 | `ShadingSpotSplit.Split` + the mesh path | PDF | name switch | closed by G-7 Plan 3 (`6bcaa38`) |
-| 4 | `InkDecider.ProcessContribution` (`:446-468`) | Pellucid | name switch | closed by G-7 Plan 3 (`37f7c5b`) |
+| 4 | `InkDecider.ProcessContribution` (`:458-497`) | Pellucid | name switch | closed by G-7 Plan 3 (`37f7c5b`) |
 | 5 | `ShadingBuilder.BuildCmykMapper`'s all-process arm | PDF | runs the tint transform | closed by G-7 Plan 2 (`25f0f23`) |
 
 Site 3, verbatim at HEAD:
