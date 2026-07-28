@@ -18,3 +18,5 @@ local-feed/
 # Abandoned Jpeg2k implementation
 Compressors/Compressors.Jpeg2k/
 Compressors/Compressors.Jpeg2k.Tests/
+# Test result artifacts (timestamped .trx from Directory.Build.props)
+TestResults/

@@ -1,0 +1,42 @@
+<Project>
+
+  <!-- Capture a .trx for every test project, automatically.
+
+       WHY THIS EXISTS. On 2026-07-28 a merge-result verification run failed 1 of 2667 tests. Four
+       re-runs came back green, the two known flake suspects ran clean three times each, and the test
+       was NEVER IDENTIFIED — because the failing run left no artifact and by the time an explicit
+       trx logger argument was passed on the command line, the failure no longer reproduced. The only
+       evidence was a generic
+       `MethodBaseInvoker.InvokeWithNoArgs` frame, which names nothing. The change was pushed on a
+       judgement call rather than on evidence, and that judgement could have been wrong.
+
+       A .trx carries the failing test NAMES, messages and stack traces — precisely what distinguishes
+       "an unrelated test raced on shared state" from "the change under review broke something".
+
+       Set here as an MSBuild property rather than documented as a command-line flag DELIBERATELY: a
+       flag has to be remembered by every person and every agent that runs the suite, and it was not
+       remembered the one time it mattered. As a property it applies to every `dotnet test` invocation
+       of every *.Tests project automatically, including the first run after a merge — which is exactly
+       when the evidence went missing.
+
+       The filename is TIMESTAMPED so a green re-run cannot overwrite the red run that preceded it.
+       Losing the red run is the specific failure this is here to stop.
+
+       Files accumulate under TestResults/ (gitignored) and can be deleted freely; keep any that came
+       from a failing run.
+
+       Passing an explicit logger argument on the command line overrides this (the Condition only sets
+       VSTestLogger when it is empty), which is fine for targeted runs. A run narrowed with a filter
+       but no explicit logger DOES still leave a trx — verified on adding this, because the sibling
+       comment this was adapted from claims otherwise and that claim does not hold here.
+
+       Mirrors the identical convention in the Pellucid repo's Directory.Build.props, which was added
+       there for the same reason after two investigations stalled at the same point. This repo had no
+       Directory.Build.props at all, so this file also becomes the place for any future repo-wide
+       MSBuild settings. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+    <VSTestResultsDirectory>$(MSBuildThisFileDirectory)TestResults</VSTestResultsDirectory>
+    <VSTestLogger Condition="'$(VSTestLogger)' == ''">trx%3BLogFileName=$(MSBuildProjectName)-$([System.DateTime]::Now.ToString(`yyyyMMdd-HHmmss-fff`)).trx</VSTestLogger>
+  </PropertyGroup>
+
+</Project>
