@@ -114,6 +114,53 @@ public class ColorantPlacementTests
         Assert.Null(ColorantPlacement.Build(null, 4));
     }
 
+    // --- construction refuses an index its kind cannot mean ---
+    //
+    // Both placement consumers index arrays with slot.Index unchecked. Build bounds every index it
+    // produces, so this is unreachable through Build — but a hand-built over-range Spot index at
+    // ShadingSpotSplit.SplitByPlacement writes into an ADJACENT stop's tints, silently. The bound
+    // lives here, at construction, not as scattered checks in the consumers.
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(4)]
+    public void APlateIndexOutsideTheFourChannelProcessSpace_ThrowsAtConstruction(int index)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorantSlot.Plate(index));
+    }
+
+    [Fact]
+    public void ANegativeSpotIndex_ThrowsAtConstruction()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => ColorantSlot.Spot(-1));
+    }
+
+    [Fact]
+    public void ANothingSlotWithANonZeroIndex_ThrowsAtConstruction()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ColorantSlot(ColorantSlotKind.Nothing, 1));
+    }
+
+    [Fact]
+    public void ASpotIndexBeyondSpotNames_ThrowsAtPlacementConstruction()
+    {
+        // The slot alone cannot know SpotNames.Count; only the placement can close the actual
+        // hazard (spotDest is sized by SpotNames.Count per stop).
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ColorantPlacement([ColorantSlot.Spot(1)], ["only"]));
+    }
+
+    [Fact]
+    public void DuplicateSpotIndexesWithinBounds_AreLegal()
+    {
+        // Two components may share a spot slot — Pellucid's mutation fixtures construct exactly
+        // this shape. The bound is spotDest sizing, not uniqueness.
+        var p = new ColorantPlacement(
+            [ColorantSlot.Spot(0), ColorantSlot.Plate(0), ColorantSlot.Spot(0)], ["Spot1", "Spot2"]);
+
+        Assert.Equal(2, p.SpotNames.Count);
+    }
+
     // --- through the real resolver, on real parsed PDF colour spaces ---
 
     private const string Tint4 = "<< /FunctionType 2 /Domain [0 1 0 1 0 1 0 1] "
