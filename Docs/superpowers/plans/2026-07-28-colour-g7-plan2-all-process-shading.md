@@ -24,7 +24,8 @@ is mandatory (Task 2) and is a real check rather than a formality.
 
 ## Global Constraints
 
-- **BASE** = PDF `master` @ `79577ae`. Branch `colour/g7-all-process-shading`.
+- **BASE** = PDF `master` @ **`b429928`** (the plan commit itself; `79577ae` is the Plan 1 merge one
+  commit earlier). Branch `colour/g7-all-process-shading`.
 - Entering baselines, verified before any change: **engine 2656 passing / 0 failing**; build **0
   warnings** across net8.0/net9.0/net10.0. Pellucid **1304 / 0 / 78**, pinned to engine
   `2.5.1-dev20260727160451` (built from `fef2e7b`) — Plan 1 was never packed, so Pellucid has not
@@ -218,6 +219,7 @@ Read the SCOPE VERDICT in
 Create `PdfLibrary.Tests/Rendering/ShadingAllProcessNChannelTests.cs`:
 
 ```csharp
+using System.Text;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Rendering;
 using Xunit;
@@ -254,24 +256,37 @@ public class ShadingAllProcessNChannelTests
     /// identity: it makes "the transform ran" and "the transform was bypassed" impossible to confuse,
     /// so a bypass failure shows up as 0xFFFFFFFF rather than as a subtly wrong ramp.
     ///
-    /// <para><paramref name="inputs"/> sizes <c>/Domain</c> to ONE PAIR PER INPUT COMPONENT, matching
-    /// the idiom in <c>ColourantComponentTests.Tint2</c>. A fixed one-pair domain would under-declare
-    /// the arity for every space here except the single-component one, and the tint transform would
-    /// then fail to build — which shows up as <c>BuildCmykMapper</c> returning null and the "still
-    /// runs the tint transform" tests failing on <c>Assert.NotNull</c> rather than on their real
-    /// claim.</para></summary>
-    private static PdfDictionary ConstantTint(int inputs)
+    /// <para><b>Its /Domain is one pair, and that is correct.</b> A <c>FunctionType 2</c> exponential
+    /// is single-input by construction — <c>ExponentialFunction</c> consumes <c>input[0]</c> and
+    /// ignores the declared arity — so <c>/Domain [0 1]</c> and <c>/Domain [0 1 0 1 0 1 0 1]</c>
+    /// return byte-identical output. Measured, both arities give (255,255,255,255).</para></summary>
+    private static PdfDictionary ConstantTint()
     {
-        var domain = new double[inputs * 2];
-        for (var i = 0; i < inputs; i++) domain[i * 2 + 1] = 1.0;   // each pair is [0 1]
-
         var d = new PdfDictionary();
         d.Add(new PdfName("FunctionType"), new PdfInteger(2));
-        d.Add(new PdfName("Domain"), Reals(domain));
+        d.Add(new PdfName("Domain"), Reals(0, 1));
         d.Add(new PdfName("C0"), Reals(1, 1, 1, 1));
         d.Add(new PdfName("C1"), Reals(1, 1, 1, 1));
         d.Add(new PdfName("N"), new PdfReal(1));
         return d;
+    }
+
+    /// <summary>A true 4-in/4-out IDENTITY tint transform: a Type 4 PostScript calculator whose body
+    /// is empty, so the four inputs are left on the stack as the four outputs. This is exactly the
+    /// shape veraPDF <c>6-2-4-4-t02-pass-a</c> uses.
+    ///
+    /// <para><b>Why both fixtures exist.</b> The constant transform proves the BYPASS (bypassed and
+    /// not-bypassed cannot produce the same bytes). Only the identity transform shows the DEFECT — a
+    /// pure channel permutation, where the four values arrive in <c>/DeviceN</c> names order at CMYK
+    /// positions. With the constant transform every "before" value is (255,255,255,255) and the
+    /// permutation is invisible.</para></summary>
+    private static PdfStream IdentityTint()
+    {
+        var d = new PdfDictionary();
+        d.Add(new PdfName("FunctionType"), new PdfInteger(4));
+        d.Add(new PdfName("Domain"), Reals(0, 1, 0, 1, 0, 1, 0, 1));
+        d.Add(new PdfName("Range"), Reals(0, 1, 0, 1, 0, 1, 0, 1));
+        return new PdfStream(d, Encoding.ASCII.GetBytes("{ }"));
     }
 
     private static PdfDictionary Attributes(PdfArray components, string processSpace = "DeviceCMYK")
@@ -286,15 +301,15 @@ public class ShadingAllProcessNChannelTests
         return attrs;
     }
 
-    // The tint transform's arity follows the NAMES array — a DeviceN's transform takes one input per
-    // colorant. Note the no-attributes overload still yields a FOUR-element array, which matters:
+    // Note the no-attributes overload still yields a FOUR-element array, which matters:
     // OriginForColorSpaceObject parses with minimumElements: 4 and returns no origin for a shorter one.
-    private static PdfArray DeviceN(PdfArray names, PdfDictionary? attributes) =>
-        attributes is null
-            ? new PdfArray(new PdfName("DeviceN"), names, new PdfName("DeviceCMYK"),
-                           ConstantTint(names.Count))
-            : new PdfArray(new PdfName("DeviceN"), names, new PdfName("DeviceCMYK"),
-                           ConstantTint(names.Count), attributes);
+    private static PdfArray DeviceN(PdfArray names, PdfDictionary? attributes, PdfObject? tint = null)
+    {
+        PdfObject t = tint ?? ConstantTint();
+        return attributes is null
+            ? new PdfArray(new PdfName("DeviceN"), names, new PdfName("DeviceCMYK"), t)
+            : new PdfArray(new PdfName("DeviceN"), names, new PdfName("DeviceCMYK"), t, attributes);
+    }
 
     private static (byte C, byte M, byte Y, byte K) Cmyk(uint packed) =>
         ((byte)(packed >> 24), (byte)(packed >> 16), (byte)(packed >> 8), (byte)packed);
@@ -306,6 +321,13 @@ public class ShadingAllProcessNChannelTests
     private static PdfArray AllProcessSpace() =>
         DeviceN(Names("Black", "PrCyan", "PrMagenta", "PrYellow"),
                 Attributes(Names("PrCyan", "PrMagenta", "PrYellow", "Black")));
+
+    /// <summary>The same space with a true IDENTITY transform — the shape that shows the defect as a
+    /// permutation rather than merely showing that the bypass fired.</summary>
+    private static PdfArray AllProcessSpaceIdentity() =>
+        DeviceN(Names("Black", "PrCyan", "PrMagenta", "PrYellow"),
+                Attributes(Names("PrCyan", "PrMagenta", "PrYellow", "Black")),
+                IdentityTint());
 
     [Fact]
     public void AllProcessNChannel_PlacesEachComponentOnItsOwnPlate_NotThroughTheTintTransform()
@@ -322,6 +344,44 @@ public class ShadingAllProcessNChannelTests
         Assert.Equal(5, m);     // 0.02
         Assert.Equal(204, y);   // 0.80
         Assert.Equal(92, k);    // 0.36
+    }
+
+    [Fact]
+    public void AllProcessNChannel_UnderAnIdentityTransform_TheDefectIsAPurePermutation()
+    {
+        // THE fixture that shows the defect rather than merely showing the bypass fired. Measured
+        // before this change: (92, 145, 5, 204) — the four values in /DeviceN NAMES order at CMYK
+        // positions (Black 0.36 -> C, PrCyan 0.57 -> M, PrMagenta 0.02 -> Y, PrYellow 0.80 -> K).
+        // After: each on the plate /Process /Components gives it. IDENTICAL multiset, sum, max and
+        // total ink — which is why this is asserted per plate and can be asserted no other way.
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(AllProcessSpaceIdentity(), null);
+        Assert.NotNull(toCmyk);
+
+        (byte c, byte m, byte y, byte k) = Cmyk(toCmyk!([0.36, 0.57, 0.02, 0.80]));
+
+        Assert.Equal(145, c);   // was 92
+        Assert.Equal(5, m);     // was 145
+        Assert.Equal(204, y);   // was 5
+        Assert.Equal(92, k);    // was 204
+    }
+
+    [Fact]
+    public void AllProcessNChannel_IdentityTransform_ZeroComponent_MovesTheMARKEDPlate()
+    {
+        // The overprint consequence, pinned. Measured before: (0, 145, 5, 204) marks {M,Y,K}.
+        // After: (145, 5, 204, 0) marks {C,M,Y}. One plate GAINED, one LOST — on the flatten arm at
+        // op=true the mask is the nonzero-markedness proxy against this colour, so this is an
+        // overprint-behaviour change, not only a colour change. A gained plate paints where a
+        // backdrop used to survive; a lost plate preserves one that used to be overpainted.
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(AllProcessSpaceIdentity(), null);
+        Assert.NotNull(toCmyk);
+
+        (byte c, byte m, byte y, byte k) = Cmyk(toCmyk!([0.0, 0.57, 0.02, 0.80]));
+
+        Assert.Equal(145, c);   // C GAINED: was 0
+        Assert.Equal(5, m);
+        Assert.Equal(204, y);
+        Assert.Equal(0, k);     // K LOST: was 204
     }
 
     [Fact]
@@ -519,7 +579,34 @@ would be the fifth false comment this programme has shipped.
 dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj -c Debug --filter "FullyQualifiedName~ShadingAllProcessNChannelTests"
 ```
 
-Expected: PASS, 6 tests.
+Expected: PASS, 8 tests (Step 8 adds a ninth for the mesh path). Count them and report the actual
+number rather than trusting this line.
+
+### Two scope declarations this task must make explicitly
+
+Both were surfaced by Task 0. Neither is a defect in the code; both are things a reviewer would
+otherwise raise, and silence on them reads as an oversight rather than a decision.
+
+**1. One behaviour change on malformed input, and it is in the safe direction.** The bypass returns
+*before* `BuildTintToCmyk` runs, so an all-process NChannel space with a **corrupt tint transform**
+goes from **throwing** to **returning a working mapper**. That is strictly better — the page renders
+where it previously did not — and Task 0's M3 measured **zero** corpus instances of an all-process
+NChannel shading, so nothing real changes. **State it in the commit message.** Do not add a test for
+it: a test asserting "no longer throws" would pin the bypass's *position* relative to the transform
+build, which is incidental, not contractual.
+
+**2. `ShadingBuilder.cs:74`'s name-derived spot names are OUT of scope.** For the all-process space it
+still classifies `PrCyan`/`PrMagenta`/`PrYellow` as spots by name and ships
+`SpotInk.Names = [PrCyan, PrMagenta, PrYellow]` for a space with **zero** spots by placement — on the
+very descriptor this task corrects. It is **inert**: Plan 1's Task 0 measured that
+`PageColorantReader` classifies those names as **Process**, so they are never registered as planes,
+`routeShadingSpots` is always False for them, the op always flattens, and the bogus `SpotInk` is
+discarded unread.
+
+That derivation is **site 3**, which was deliberately deferred because fixing it alone drops ink on a
+*mixed* space. Do not fix it here. Record the limitation instead: **if a page ever did register such
+a name as a spot plane, the op would route and consume `ShadingSpotSplit.Split`'s name-based process
+CMYK, and this plan's fix would not apply.** Plan 1's measurement says that cannot happen today.
 
 - [ ] **Step 6: Run the full engine suite and the multi-TFM build**
 
@@ -538,15 +625,22 @@ Revert after each; confirm the tree is clean between.
 
 | # | Mutation | Must go red, by ASSERTION |
 |---|----------|---------------------------|
-| A | Delete the `if (AllProcessPlacement(...) is { } placement)` bypass | `AllProcessNChannel_PlacesEachComponentOnItsOwnPlate_...` — all four plates read 255 |
-| B | `plates[slot.Index] = …` → `plates[j] = …` | `AllProcessNChannel_PlacesEachComponentOnItsOwnPlate_...` — C reads 92 not 145, K reads 204 not 92 |
+| A | Delete the `if (AllProcessPlacement(...) is { } placement)` bypass | `AllProcessNChannel_PlacesEachComponentOnItsOwnPlate_...` — all four plates read 255. **Also** `..._UnderAnIdentityTransform_TheDefectIsAPurePermutation` — reads `(92,145,5,204)`, the pre-change permutation |
+| B | `plates[slot.Index] = …` → `plates[j] = …` | `..._UnderAnIdentityTransform_TheDefectIsAPurePermutation` — C reads 92 not 145, K reads 204 not 92. **Named against the identity fixture deliberately**: see below |
 | C | Change the guard to `placement is not null` (drop the `SpotNames.Count: 0` test) | `NChannelWithASpotComponent_StillRunsTheTintTransform` — reads the placement-derived bytes instead of 255 |
 | D | Remove the `slot.Kind != ColorantSlotKind.Plate` continue, packing every slot | `NoneComponent_ContributesToNoPlate` — /None's 1.0 lands on a plate |
+| E | `plates[slot.Index] = …` → `plates[j] = …` (same as B) | `AllProcessNChannel_IdentityTransform_ZeroComponent_MovesTheMARKEDPlate` — C reads 0 and K reads 204, i.e. the MARKED SET reverts. Confirms the mask claim is pinned and not merely documented |
 
 **Mutation B is the one that must be checked most carefully.** For the all-process fixture the names
 order is `[Black, PrCyan, PrMagenta, PrYellow]` and the plates are `[3, 0, 1, 2]`, so **no component
 has `j == slot.Index`** and every plate moves. Confirm that; if any plate reads the same under B, the
 fixture's `/Components` order is not doing its job and must be changed before this task completes.
+
+**B and E are named against the IDENTITY fixture, not the constant one, and that distinction is the
+plan's own Task 0 finding.** Under the constant transform every pre-change value is
+`(255,255,255,255)`, so the constant fixture can show that the bypass *fired* but can never show
+*what it fixed* — the permutation is invisible there. The constant fixture pins mutations A, C and D;
+the identity fixture pins B and E. **Do not collapse them into one fixture.**
 
 - [ ] **Step 8: Pin the mesh path's inheritance of the fix**
 
@@ -740,16 +834,35 @@ are fully specified.
 match the types shipped in `79577ae`. `BuildCmykMapper`'s existing signature is unchanged, so both
 callers keep compiling untouched.
 
-**Caught in this self-review and fixed inline, recorded because the class matters.**
+**Caught in this self-review and fixed inline.**
 
-- `ConstantTint` originally hardcoded `/Domain [0 1]` while being used for 1-, 2- and 4-component
-  spaces. The codebase's idiom is one domain pair per input. Under-declared arity would have made the
-  tint transform fail to build, so `BuildCmykMapper` would return null and the three "still runs the
-  tint transform" tests would have failed on `Assert.NotNull` — **failing for a reason unrelated to
-  what they assert**, which is the most misleading way for a test to go red. Now parameterised.
 - Three tests compared a `(byte, byte, byte, byte)` tuple against an int tuple literal, which will not
   unify for `Assert.Equal`'s type inference. Rewritten as per-plate assertions, which the plan's own
   Global Constraints demand anyway.
+- I also parameterised `ConstantTint`'s `/Domain` by input count, reasoning that under-declared arity
+  would make the transform fail to build. **Task 0 measured that wrong and it has been reverted:** a
+  `FunctionType 2` is single-input by construction, `ExponentialFunction` reads `input[0]` and ignores
+  the declared arity, and both `/Domain [0 1]` and `/Domain [0 1 0 1 0 1 0 1]` return
+  (255,255,255,255). The parameterisation was dead weight defending against a failure that cannot
+  occur. Recorded because a self-review guess is a prediction like any other and this one was wrong.
+
+**Amended after Task 0 (six plan defects, all in this plan's or its brief's text — zero in code).**
+
+- **The fixture could not show the defect it was chosen to characterise.** The constant `(1,1,1,1)`
+  transform makes every pre-change value `(255,255,255,255)`, so it proves the bypass *fired* but
+  never shows *what it fixed* — and the plan's Global Constraints quoted the permutation numbers
+  `(92,145,5,204) → (145,5,204,92)` as if they were this fixture's. **Both fixtures now exist:** the
+  constant one pins mutations A/C/D, and a true Type 4 `{ }` identity — the shape veraPDF
+  `6-2-4-4-t02-pass-a` actually uses — pins B/E and carries the permutation and mask assertions.
+  This is the sixth time in this programme a prescribed mutation has been aimed at a fixture that
+  cannot observe it.
+- **The mask claim is now pinned, not merely documented.** Task 0's M4 measured that at
+  `[0.0, 0.57, 0.02, 0.80]` the marked set moves `{M,Y,K} → {C,M,Y}` — one plate gained, one lost.
+  That is an overprint change, and I-1's lesson is that such a change can be invisible in colour, so
+  it gets its own test and its own mutation rather than a sentence in the matrix.
+- **BASE corrected** from `79577ae` to `b429928`; the brief's Step 1 could not have passed as written.
+- **Two scope declarations added to Task 1** (the corrupt-tint-transform throw→return, and site 3's
+  name-derived spot names being deliberately out of scope), so neither reads as an oversight.
 
 **Known weaknesses, stated rather than hidden.**
 
