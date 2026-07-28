@@ -71,7 +71,7 @@ Both trees must be clean when it ends; delete any scaffold.
 **Interfaces:**
 - Consumes: nothing.
 - Produces: the six measurements below, written to the ledger at
-  `PDF/.superpowers/sdd/2026-07-27-colour-g7-carrier/progress.md`, and a **SCOPE VERDICT** that
+  `PDF/.superpowers/sdd/2026-07-27-colour-g7-plan1-carrier-placement/progress.md`, and a **SCOPE VERDICT** that
   amends this plan.
 
 - [ ] **Step 1: Verify the entering baselines rather than trusting this plan**
@@ -649,7 +649,7 @@ Step 1.**
 
 - [ ] **Step 1: Confirm the task is not blocked**
 
-Read the SCOPE VERDICT in `PDF/.superpowers/sdd/2026-07-27-colour-g7-carrier/progress.md`. If it says
+Read the SCOPE VERDICT in `PDF/.superpowers/sdd/2026-07-27-colour-g7-plan1-carrier-placement/progress.md`. If it says
 Task 2 is blocked, **STOP and report** — do not proceed on the argument that the change looks safe.
 
 - [ ] **Step 2: Write the failing tests**
