@@ -49,7 +49,7 @@ mechanism: it does not mis-place the ink, it simulates ink it should have placed
 | 2 | `InkDecider.TryPerComponent` (fills/strokes) | Pellucid | name switch | closed by Pass 2b-compositor |
 | 3 | `ShadingSpotSplit.Split` + the mesh path | PDF | name switch | **open** |
 | 4 | `InkDecider.ProcessContribution` (`:446-468`) | Pellucid | name switch | **open** |
-| 5 | `ShadingBuilder.BuildCmykMapper`'s all-process arm | PDF | runs the tint transform | **open** |
+| 5 | `ShadingBuilder.BuildCmykMapper`'s all-process arm | PDF | runs the tint transform | closed by G-7 Plan 2 (`25f0f23`) |
 
 Site 3, verbatim at HEAD:
 
@@ -388,6 +388,40 @@ the original text preserved and superseded rather than deleted, per this program
 > **not a drop-in**: the two shipped sites refuse in three cases the table does not (a Process
 > component with a null `Tint`, a Spot with neither plane nor own alternate, and a split with no spot
 > at all).
+>
+> **Corrected 2026-07-28 by G-7 Plan 2 (Task 3), superseding the order above — not its content.**
+> Step (3), site 5, is **done**: commit `25f0f23` (`ShadingBuilder.BuildCmykMapper`,
+> `PdfLibrary/Rendering/ShadingBuilder.cs:155-156`, `AllProcessPlacement` at `:189`, `PackByPlacement`
+> at `:200`). **The execution order deviated from the list above:** site 5 landed *before* step (2)
+> (sites 3+4), not after it as the revised delivery states. Reason: site 5 is **engine-only** — one
+> production entry point, `BuildCmykMapper`, with exactly two callers, both PDF-repo — whereas step
+> (2) needs a Pellucid pack-and-repin sequenced between the two sites so the split and the mask are
+> never separated by a pin. Site 5 is also **independently safe**: Task 0's M2 showed no caller can
+> reach it without an unrelated resolution (`OriginForColorSpaceObject`) already about to be made on
+> the same object, and the one behaviour change on malformed input (a corrupt tint transform moves
+> from THROW to a working mapper) is in the safe direction and corpus-unreachable. And it applies to a
+> **disjoint shape**: an all-process NChannel space (zero spot components, by the fix's own predicate)
+> versus sites 3/4's mixed or spot-bearing case — so taking site 5 first cannot interact with, or be
+> blocked by, sites 3+4's still-open pairing constraint. Steps (2) and (4) are unaffected and remain
+> open.
+>
+> **Corrected 2026-07-28 by the final whole-branch review (Finding 2 / MINOR 2), superseding "the one
+> behaviour change on malformed input ... is in the safe direction and corpus-unreachable."** That
+> undercounts by one, and the second change is on WELL-FORMED input, not malformed. `AllProcessPlacement`
+> derives entirely from `/Process /ColorSpace` (inside `/Attributes`); it never inspects the DeviceN/
+> Separation array's OWN alternate (element 2). So an all-process NChannel whose own alternate is
+> `/DeviceRGB`, `/Lab`, or an ICCBased-3 stream — none of which `BuildTintToCmyk` accepts
+> (`ColorSpaceResolver.cs:488` requires `DeviceCMYK` or `DeviceGray`) — also gets `toCmyk` widened from
+> null to a working mapper. Pre-fix, such a space's `toCmyk` was null and the shading took the sRGB
+> `SampleRgbAt` path; post-fix it gets a native CMYK mapper that packs straight onto plates and
+> `SampleRgbAt` becomes null. The array is perfectly legal PDF — an all-process NChannel is entitled to
+> declare any alternate it likes, since §8.6.6.5 does not require the alternate to describe the process
+> case. **The behaviour is kept, not reverted**: an all-process NChannel over a four-channel process
+> space IS CMYK regardless of what its alternate claims, so treating it as CMYK is the more correct
+> answer than trusting a non-CMYK alternate. This note corrects the count and the "malformed input
+> only" framing, not the outcome. Covered by
+> `AllProcessNChannel_WithADeviceRgbAlternate_StillBypassesAndPacksByPlacement` in
+> `PdfLibrary.Tests/Rendering/ShadingAllProcessNChannelTests.cs`.
 
 ---
 

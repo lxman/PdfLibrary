@@ -121,9 +121,12 @@ internal static class ShadingBuilder
     }
 
     // Builds a "function output → 0xCCMMYYKK (native CMYK bytes)" mapper for shading colour spaces that
-    // resolve to DeviceCMYK: DeviceCMYK / ICCBased-4 pass their 4 components through; Separation/DeviceN
-    // with a DeviceCMYK alternate run their tint transform to CMYK. Returns null otherwise (the compositor
-    // then falls back to the sRGB stops).
+    // resolve to DeviceCMYK: DeviceCMYK / ICCBased-4 pass their 4 components through; an all-process
+    // Separation/DeviceN (no spot colorant, and AT LEAST ONE colorant actually on a plate — an
+    // all-/None space has no spot either, but nothing to pack, so it is excluded and falls to the tint
+    // path below) packs straight onto its plates; any other Separation/DeviceN with a DeviceCMYK or
+    // DeviceGray alternate runs its tint transform to CMYK. Returns null otherwise (the compositor then
+    // falls back to the sRGB stops).
     internal static Func<double[], uint>? BuildCmykMapper(PdfObject? csObj, PdfDocument? document)
     {
         if (csObj is PdfIndirectReference r && document is not null)
@@ -139,15 +142,96 @@ internal static class ShadingBuilder
                     case "ICCBased" when IccComponents(arr, document) == 4:
                         return PackCmyk;
                     case "Separation" or "DeviceN":
+                    {
+                        // ISO 32000-2 §8.6.6.5: "only the ones not present on the output device shall
+                        // use the alternate colour space of that component." Read physically: the
+                        // alternate + tint transform are the recipe for SIMULATING an ink the device
+                        // has no unit for. When every colorant of this space is a process colorant
+                        // with a plate, the device has a unit for all of them and nothing may be
+                        // simulated — the components go straight to their plates.
+                        //
+                        // This is the shape where running the transform is most obviously wrong: with
+                        // an identity transform (veraPDF 6-2-4-4-t02-pass-a's is a Type 4 `{}`) the
+                        // values arrive in NAMES order at CMYK positions, which is a pure channel
+                        // permutation — same total ink, wrong plate for every component.
+                        if (AllProcessPlacement(csObj, document) is { } placement)
+                            return c => PackByPlacement(c, placement);
+
                         Func<double[], (double C, double M, double Y, double K)>? tint =
                             ColorSpaceResolver.BuildTintToCmyk(arr, document, out _);
                         if (tint is not null)
                             return c => { (double cc, double mm, double yy, double kk) = tint(c); return PackCmyk([cc, mm, yy, kk]); };
                         break;
+                    }
                 }
                 break;
         }
         return null;
+    }
+
+    /// <summary>
+    /// This space's colorant placement when there is AT LEAST ONE process plate and NO spot component —
+    /// i.e. the output device has a unit for every colorant the space names, and at least one colorant
+    /// actually uses one, so §8.6.6.5 leaves nothing to simulate. Null otherwise, which sends the caller
+    /// to the tint transform unchanged: any spot component at all (the space needs simulating), a
+    /// non-NChannel space, an /All, a component whose plate cannot be determined, an NChannel over a
+    /// process space that is not four-channel, or a space whose colorants are ALL <c>/None</c> (zero
+    /// spots, but also zero plates — nothing to place, so the tint path must still run its own
+    /// <c>PaintsNothing</c> refusal rather than have this bypass hand back an empty pack).
+    /// <see cref="ColorantPlacement.Build"/> owns the first set of refusals; the zero-plate case is
+    /// this method's own guard, because <see cref="ColorantPlacement.Build"/> has no reason to refuse a
+    /// legal (if degenerate) all-<c>/None</c> placement.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Emptiness of <see cref="ColorantPlacement.SpotNames"/> is necessary but not
+    /// sufficient.</b> Spot slots and spot names are appended in lockstep, so no spot names means no
+    /// <see cref="ColorantSlotKind.Spot"/> slot exists — every slot is Plate or Nothing. But "no Spot
+    /// slots" alone permits the all-<c>/None</c> shape, which has no <see cref="ColorantSlotKind.Plate"/>
+    /// slot either — there is nothing to pack, so the bypass must decline and let
+    /// <see cref="ColorSpaceResolver.BuildTintToCmyk"/>'s <c>PaintsNothing</c> check refuse it as it
+    /// always has. Hence the added <c>Slots.Any(Plate)</c> requirement below.</para>
+    /// <para><b>On the resolution this adds.</b> Both callers of
+    /// <see cref="BuildCmykMapper"/> — <c>Build</c> and <c>MeshShadingReader.Build</c> — already call
+    /// <see cref="ColorSpaceResolver.OriginForColorSpaceObject"/> on this same object a few lines
+    /// later, with no try/catch in between, so this resolves nothing they were not about to resolve
+    /// anyway and a throw leaves the same method it always did. The cost is one extra resolve per
+    /// shading BUILD, not per stop and not per pixel.</para>
+    /// </remarks>
+    private static ColorantPlacement? AllProcessPlacement(PdfObject? csObj, PdfDocument? document)
+    {
+        ColorantPlacement? placement =
+            ColorSpaceResolver.OriginForColorSpaceObject(csObj, null, document)?.Placement;
+        return placement is { SpotNames.Count: 0 }
+               && placement.Slots.Any(s => s.Kind == ColorantSlotKind.Plate)
+            ? placement
+            : null;
+    }
+
+    /// <summary>Packs components onto the plates <paramref name="placement"/> assigns them
+    /// (0xCCMMYYKK). A <see cref="ColorantSlotKind.Nothing"/> slot contributes to no plate — /None is
+    /// a colorant the printer deliberately does not run. Callers must have established that no slot is
+    /// <see cref="ColorantSlotKind.Spot"/>; <see cref="AllProcessPlacement"/> is that check.
+    ///
+    /// <para><b>Known, accepted limitation: last-write-wins on a duplicate plate index.</b>
+    /// <c>plates[slot.Index] = …</c> below overwrites rather than accumulates, so two components that
+    /// resolve to the same plate index silently drop all but the later one in slot order. This is
+    /// self-contradictory input — e.g. names <c>[/Cyan /PlateX]</c> where <c>/Process /Components</c>
+    /// lists <c>/PlateX</c> at position 0 while <c>/Cyan</c> falls through to its own canonical index 0
+    /// (<see cref="ColorSpaceResolver.ProcessChannelFor"/>) — not a shape a well-formed
+    /// <c>/Process /Components</c> table produces. Left unguarded on purpose: it matches the image
+    /// path's equally last-wins <c>plate[c] =</c>, and no fixture in the corpus exercises it.</para>
+    /// </summary>
+    private static uint PackByPlacement(double[] comps, ColorantPlacement placement)
+    {
+        var plates = new double[4];
+        IReadOnlyList<ColorantSlot> slots = placement.Slots;
+        for (var j = 0; j < slots.Count; j++)
+        {
+            ColorantSlot slot = slots[j];
+            if (slot.Kind != ColorantSlotKind.Plate) continue;
+            plates[slot.Index] = j < comps.Length ? comps[j] : 0.0;
+        }
+        return PackCmyk(plates);
     }
 
     private static uint PackCmyk(double[] c) =>

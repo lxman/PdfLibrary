@@ -98,7 +98,7 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 |---|---|---|---|---|
 | 5-1 | alternateSpace "shall not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | F | — | Same constraint as 4-14, for DeviceN. **Validator gap** — no rule checks this. |
 | 5-2 | "if any of the component names […] do not correspond to a colorant available on the device, [the processor] shall perform subsequent painting operations in the alternate colour space" | N | ✅ | `DeviceN_RevertsToAlternate_PassingEveryTintToTheTransform`. The all-or-nothing fallback is correct for plain DeviceN, which is what this row covers — but see 5-3. |
-| 5-3 | **"For NChannel colour spaces, the components shall be evaluated individually; that is, only the ones not present on the output device shall use the alternate colour space of that component."** | N | ⚠️ | **Was ❌ VIOLATION. Implemented 2026-07-27 (Pass 2b), for fills/strokes and images — NOT a clean ✅, and the exclusions below are the reason.** Fills/strokes: `InkDecider.TryPerComponent` routes each Process component to its `/Process /Components` **position** (Table 71 makes position the channel identity, which a name cannot carry), routes registered spots to their planes, and reverts unregistered spots through their own `/Colorants` alternate. Images/stencils: `PdfImageToCmyk` splits by role and channel rather than by name. **Evidence:** veraPDF `6-2-4-4-t02-pass-a` renders C=0.36 M=0.57 Y=0.02 K=0.0, asserted positionally on the real file, against a measured pre-change `C=0 M=0.36 Y=0.57 K=0.02` — its tint transform is an identity pass-through, so the whole visible defect was a channel permutation, and only a positional assertion can see it. Mutation-verified: routing by position instead of channel reproduces the pre-change tuple exactly. **Still excluded:** shadings and meshes (G-7 — no per-op tint); a one-channel (`/DeviceGray` or ICCBased `/N 1`) process space, where channel 0 is not the cyan plate; an all-process NChannel *image or stencil* (see G-4's note — the overprint category, not the colour, decides that); and spot reversion for images. **Reversion has no corpus instance anywhere** — synthetic fixtures plus plane-cap invariance only. |
+| 5-3 | **"For NChannel colour spaces, the components shall be evaluated individually; that is, only the ones not present on the output device shall use the alternate colour space of that component."** | N | ⚠️ | **Was ❌ VIOLATION. Implemented 2026-07-27 (Pass 2b), for fills/strokes and images — NOT a clean ✅, and the exclusions below are the reason.** Fills/strokes: `InkDecider.TryPerComponent` routes each Process component to its `/Process /Components` **position** (Table 71 makes position the channel identity, which a name cannot carry), routes registered spots to their planes, and reverts unregistered spots through their own `/Colorants` alternate. Images/stencils: `PdfImageToCmyk` splits by role and channel rather than by name. **Evidence:** veraPDF `6-2-4-4-t02-pass-a` renders C=0.36 M=0.57 Y=0.02 K=0.0, asserted positionally on the real file, against a measured pre-change `C=0 M=0.36 Y=0.57 K=0.02` — its tint transform is an identity pass-through, so the whole visible defect was a channel permutation, and only a positional assertion can see it. Mutation-verified: routing by position instead of channel reproduces the pre-change tuple exactly. **Still excluded:** shadings and meshes **with a spot component** (sites 3/4, still open — no per-op tint reaches `InkDecider`, so name-based routing stands there); a one-channel (`/DeviceGray` or ICCBased `/N 1`) process space, where channel 0 is not the cyan plate; an all-process NChannel *image or stencil* (see G-4's note — the overprint category, not the colour, decides that); and spot reversion for images. **Narrowed 2026-07-28 (G-7 site 5, `25f0f23`):** an all-process NChannel shading or mesh — no spot component at all — is no longer excluded from this row. `ShadingBuilder.BuildCmykMapper` now evaluates its components individually, packing each onto its own plate instead of running the tint transform (see the G-7 site-5 entry below). That path is independent of `InkDecider`, so it narrows this row's exclusion list without touching the two sites still open above. **Reversion has no corpus instance anywhere** — synthetic fixtures plus plane-cap invariance only. |
 | 5-4 | tintTransform "shall be called with n tint values and returns m colour component values" | N | ✅ | Same test: a type 4 transform maps (t₁, t₂) → (0, t₁, t₂, 0), so a dropped or transposed component paints a visibly different colour. Verified by mutation — transposing the oracle fails. |
 | 5-5 | **None** "may be present only for DeviceN colour spaces that do not have the NChannel subtype" | F | — | Constrains where `/None` may appear in a file. Previously recorded as blocked on G-4 because it needs DeviceN `/Subtype` awareness — as a validator row, that read belongs to the validator, so the dependency does not apply here. **Validator gap** — `PdfxNChannelColorantsRule` reads `/Subtype` but checks `/Colorants` presence, not `/None` placement. |
 | 5-6 | None "indicates that the corresponding colour component shall never be painted on the page" | N | ⚠️ | `ShadingSpotSplit`, `TryToSpotInk` skip None components. |
@@ -304,10 +304,71 @@ substantive violation this matrix has tracked since slice 1.
   >   `/PrCyan` is routed to a spot plane instead of the cyan plate.
   > - **Still open — site 4.** `InkDecider.ProcessContribution` (Pellucid, `:446-468`) derives the
   >   process-plate mask from the same literal names.
-  > - **Still open — site 5.** `ShadingBuilder.BuildCmykMapper`'s all-process arm still runs the tint
-  >   transform even when every component is Process with a determinable channel — i.e. it simulates
-  >   inks the device actually has, the mirror-image defect to sites 3/4. Confirmed live by Task 0's M5;
-  >   design §1.1 row 5 / §4.3; the design's revised §6.2 delivery lists it as its own step, gated on M5.
+  > - **Closed 2026-07-28 — site 5.** ~~`ShadingBuilder.BuildCmykMapper`'s all-process arm still runs
+  >   the tint transform even when every component is Process with a determinable channel — i.e. it
+  >   simulates inks the device actually has, the mirror-image defect to sites 3/4.~~ Superseded by
+  >   commit `25f0f23`: `BuildCmykMapper` (`PdfLibrary/Rendering/ShadingBuilder.cs:155-156`) now checks
+  >   `AllProcessPlacement` (`:189` — non-null iff `ColorantOrigin.Placement` is non-null **and**
+  >   `Placement.SpotNames.Count == 0`, i.e. every colorant is Process with a plate) and, when it
+  >   holds, packs components straight onto their plates via `PackByPlacement` (`:200`) instead of
+  >   building the tint transform. `BuildCmykMapper` has exactly two production callers
+  >   (`ShadingBuilder.cs:66`, `MeshShadingReader.cs:57`), so this single change **covers axial, radial
+  >   and mesh together** — `MeshShadingReader.cs` itself is unmodified.
+  >
+  >   **Tightened 2026-07-28 by the final whole-branch review (IMPORTANT 1), superseding "non-null iff
+  >   ... `SpotNames.Count == 0`."** That predicate alone is also satisfied when EVERY colorant is
+  >   `/None` — `Placement.Slots` is then `[Nothing, Nothing, …]` with no `Plate` slot at all, so the
+  >   bypass fired and `PackByPlacement` returned `0x00000000` for a space `BuildTintToCmyk` had always
+  >   refused via its own `PaintsNothing` check (`ColorSpaceResolver.cs:461`). `AllProcessPlacement` now
+  >   additionally requires `placement.Slots.Any(s => s.Kind == ColorantSlotKind.Plate)`, so an all-`/None`
+  >   space declines the bypass and falls through to `BuildTintToCmyk`/`PaintsNothing` as before. Covered
+  >   by `AllNoneNChannel_DoesNotBypass_SoTheTintPathStillRefusesIt` in
+  >   `ShadingAllProcessNChannelTests.cs`.
+  >
+  >   **The evidence is synthetic, not corpus.** Task 0's M3 found **zero** all-process NChannel
+  >   shadings or meshes across 3 005 corpus files (7 NChannel shadings total, every one carrying a
+  >   spot; 0 NChannel meshes), so no render-hash gate can move on this fix. The gate (51 GWG + 3
+  >   veraPDF fixtures, both green, embedded engine SHA equal to `25f0f23`) is therefore a **guard
+  >   against unintended movement, not evidence for the fix** — the evidence is the commit's per-plate
+  >   synthetic assertions.
+  >
+  >   **Scoped 2026-07-28 by the final whole-branch review (Finding 5).** "Zero" here is zero among
+  >   what M3 walked, not an absolute zero — state it as a lower bound. M3's method (Task 0's report,
+  >   §4) inspected every page's `/Shading` and `/Pattern` resources, recursing into Form-XObject
+  >   `/Resources` and tiling-pattern `/Resources`. It did **not** descend into annotation appearance
+  >   streams or soft-mask group `/Resources` — both are separate resource trees this walk never
+  >   visited. Since this count is the row's load-bearing safety claim (it is the reason no
+  >   render-hash gate can move on the fix), an all-process NChannel shading or mesh reachable only
+  >   through an annotation appearance stream or a soft-mask group would not have been counted either
+  >   way, so "zero corpus instances" should be read as "zero among page content, Form XObjects, and
+  >   tiling patterns" rather than "zero, full stop."
+  >
+  >   **The plate mask can change, and this is recorded rather than smoothed over.** `OverprintPlates`
+  >   is null for this space, so at `op=true` the compositor's process mask is the nonzero-markedness
+  >   proxy against the per-pixel colour. For an all-process shading or mesh with at least one
+  >   zero-valued component whose permuted destination plate differs from its pre-permutation one, the
+  >   marked set moves — measured at `[0.0, 0.57, 0.02, 0.80]`: `{M,Y,K} → {C,M,Y}`, one plate gained
+  >   and one lost. A gained plate paints where a backdrop used to survive; a lost plate preserves one
+  >   that used to be overpainted — an overprint-behaviour change, not merely a colour change. With
+  >   every component non-zero the mask is `[CMYK]` on both sides (a property of that vector, not of
+  >   the fix), and at `op=false` the mask is fixed `(T,T,T,T)` and unaffected.
+  >
+  >   **Corrected 2026-07-28 by the final whole-branch review (Finding 3 / MINOR 3), superseding
+  >   "`OverprintPlates` is null for this space."** That is not a property of the SHAPE (an
+  >   all-process NChannel with a permuted `/Process /Components`) — it is a property of THIS
+  >   fixture's colorant names, which are the non-reserved `PrCyan`/`PrMagenta`/`PrYellow` (plus
+  >   `Black`). `PlatesForColorSpaceObject` (`ColorSpaceResolver.cs:789-806`) reads `space.Names` — the
+  >   array's own colorant names — and returns null only when one of them is not among the six it
+  >   recognises (`Cyan`, `Magenta`, `Yellow`, `Black`, `All`, `None`); it never looks at `/Process
+  >   /Components` at all. So a *different*, equally legal all-process NChannel whose colorant names
+  >   ARE the four reserved ones — `[/Cyan /Magenta /Yellow /Black]` — but whose `/Process
+  >   /Components` lists them in non-canonical order still hits this row and still gets its bypass:
+  >   `PlatesForColorSpaceObject` returns `(T,T,T,T)` for that space (every name is reserved), while
+  >   the permutation defect — which lives entirely in `/Process /Components`, a table
+  >   `PlatesForColorSpaceObject` never reads — still fires. **The conclusion survives**: a fixed
+  >   `(T,T,T,T)` mask at `op=false` is unaffected either way, which is all this row's stated behaviour
+  >   depends on. But the reason is "this fixture's names happen to be non-reserved", not "this space
+  >   has no plate mask" — the same fix over reserved names would keep a non-null mask throughout.
   > - **The two name-switch sites must land together — measured, not argued, and this is the MIXED
   >   case specifically:** an NChannel shading with a registered spot alongside a process colorant the
   >   name switch mislabels, e.g. `[PrCyan(Process ch0), Spot1(registered)]`. Fixing site 3 alone removes
