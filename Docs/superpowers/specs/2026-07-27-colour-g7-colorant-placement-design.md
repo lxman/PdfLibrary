@@ -49,7 +49,7 @@ mechanism: it does not mis-place the ink, it simulates ink it should have placed
 | 2 | `InkDecider.TryPerComponent` (fills/strokes) | Pellucid | name switch | closed by Pass 2b-compositor |
 | 3 | `ShadingSpotSplit.Split` + the mesh path | PDF | name switch | **open** |
 | 4 | `InkDecider.ProcessContribution` (`:446-468`) | Pellucid | name switch | **open** |
-| 5 | `ShadingBuilder.BuildCmykMapper`'s all-process arm | PDF | runs the tint transform | **open** |
+| 5 | `ShadingBuilder.BuildCmykMapper`'s all-process arm | PDF | runs the tint transform | closed by G-7 Plan 2 (`25f0f23`) |
 
 Site 3, verbatim at HEAD:
 
@@ -388,6 +388,22 @@ the original text preserved and superseded rather than deleted, per this program
 > **not a drop-in**: the two shipped sites refuse in three cases the table does not (a Process
 > component with a null `Tint`, a Spot with neither plane nor own alternate, and a split with no spot
 > at all).
+>
+> **Corrected 2026-07-28 by G-7 Plan 2 (Task 3), superseding the order above — not its content.**
+> Step (3), site 5, is **done**: commit `25f0f23` (`ShadingBuilder.BuildCmykMapper`,
+> `PdfLibrary/Rendering/ShadingBuilder.cs:155-156`, `AllProcessPlacement` at `:189`, `PackByPlacement`
+> at `:200`). **The execution order deviated from the list above:** site 5 landed *before* step (2)
+> (sites 3+4), not after it as the revised delivery states. Reason: site 5 is **engine-only** — one
+> production entry point, `BuildCmykMapper`, with exactly two callers, both PDF-repo — whereas step
+> (2) needs a Pellucid pack-and-repin sequenced between the two sites so the split and the mask are
+> never separated by a pin. Site 5 is also **independently safe**: Task 0's M2 showed no caller can
+> reach it without an unrelated resolution (`OriginForColorSpaceObject`) already about to be made on
+> the same object, and the one behaviour change on malformed input (a corrupt tint transform moves
+> from THROW to a working mapper) is in the safe direction and corpus-unreachable. And it applies to a
+> **disjoint shape**: an all-process NChannel space (zero spot components, by the fix's own predicate)
+> versus sites 3/4's mixed or spot-bearing case — so taking site 5 first cannot interact with, or be
+> blocked by, sites 3+4's still-open pairing constraint. Steps (2) and (4) are unaffected and remain
+> open.
 
 ---
 
