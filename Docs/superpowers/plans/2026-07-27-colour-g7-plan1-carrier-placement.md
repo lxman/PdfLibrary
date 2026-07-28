@@ -958,16 +958,33 @@ record), a repin, and a Pellucid suite run with a known headless-session hang.
 
 - [ ] **Step 1: Prove no consumer exists**
 
+A plain `grep "\.Placement"` in PDF is a false negative: the declaration
+(`Placement { get; init; }`) and the assignment (`Placement = ColorantPlacement.Build(...)`) both
+have no leading dot, so that pattern misses the two sites it's meant to find and instead surfaces
+`PdfPageCollection.Stamping.cs:49-51` — an unrelated `PdfStampBuilder.Placement` (page-stamp
+placement, nothing to do with colorants) that trips the STOP condition on a known false positive.
+Pin the greps to the actual types instead:
+
 ```bash
-cd /c/Users/jorda/RiderProjects/PDF && grep -rn "\.Placement" --include=*.cs . | grep -v /obj/
-cd /c/Users/jorda/RiderProjects/Pellucid && grep -rn "Placement\|ColorantSlot" --include=*.cs . | grep -v /obj/
+cd /c/Users/jorda/RiderProjects/PDF && grep -rn "ColorantPlacement\|ColorantSlot\|ColorantOrigin.*Placement\|\.Placement" --include=*.cs . | grep -v /obj/
+cd /c/Users/jorda/RiderProjects/Pellucid && grep -rn "ColorantPlacement\|ColorantSlot" --include=*.cs . | grep -v /obj/
 ```
 
-Expected: in PDF, hits **only** in `ColorantOrigin.cs` (the declaration), `ColorSpaceResolver.cs` (the
-one assignment) and `ColorantPlacementTests.cs`. In Pellucid, **zero** hits.
+Expected: in PDF, hits only in `ColorantOrigin.cs` (the `Placement` and `Components` declarations),
+`ColorSpaceResolver.cs` (the `Placement = ColorantPlacement.Build(...)` assignment),
+`ColorantPlacement.cs` itself, and `ColorantPlacementTests.cs`. The `\.Placement` alternative will
+also surface `PdfPageCollection.Stamping.cs:49-51` (`PdfStampBuilder.Placement`) — this is a known,
+already-triaged false positive (unrelated stamping-placement type, not a colorant consumer); do not
+STOP on it. In Pellucid, `ColorantPlacement` and `ColorantSlot` are genuinely **zero** hits — do not
+report this as "zero hits" for bare `Placement`, which is not true: bare `Placement` also matches
+`PdfRadioOptionPlacement` (`Pellucid.Core/Forms/FormDesignService.cs` and
+`FormDesignReadTests.cs`), an unrelated form-field type, so the search must stay pinned to the two
+real type names.
 
-**If anything else reads `.Placement`, STOP** — the no-consumer argument is void and the gate must be
-run after all.
+**If anything else reads a `ColorantPlacement`/`ColorantSlot` value (beyond the known false
+positives named above), STOP** — the no-consumer argument is void and the gate must be run after
+all. The conclusion itself (no real consumer exists) is sound and was independently re-derived with
+this broader search; this step is an evidence-hygiene correction, not a reversal.
 
 - [ ] **Step 2: Engine suite and build**
 

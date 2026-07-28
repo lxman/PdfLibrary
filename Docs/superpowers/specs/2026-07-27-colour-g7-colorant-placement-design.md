@@ -112,8 +112,15 @@ role, channel and channel-count there. Placement is the fourth thing derivable f
 
 ### 2.2 The shape
 
+The line below is **informal notation, not C#** — it sketches the shape of a slot, it is not a
+symbol you can type. The real API, in `PdfLibrary/Rendering/ColorantPlacement.cs`, is the enum
+`ColorantSlotKind { Nothing, Plate, Spot }` plus the record struct `ColorantSlot`, constructed only
+through its three factories: `ColorantSlot.Nothing`, `ColorantSlot.Plate(int plateIndex)`,
+`ColorantSlot.Spot(int spotIndex)`. Where this document writes `Plate(n)` / `Spot(n)` / `Nothing`
+below, it means those factories.
+
 ```
-Slot      = Plate(0..3) | SpotSlot(n) | Nothing
+Slot      = Plate(0..3) | Spot(n) | Nothing        [notation — see ColorantSlot factories above]
 Placement = { IReadOnlyList<Slot> Slots;  IReadOnlyList<string> SpotNames; }
 ```
 
@@ -121,21 +128,28 @@ Exposed as `ColorantOrigin.Placement`, non-null **exactly when every component i
 `ProcessChannelCount == 4`**; null otherwise.
 
 **"Placeable" is defined, not left to the reader.** A component is placeable when it maps to exactly
-one of `Plate`, `SpotSlot` or `Nothing`:
+one of `Plate`, `Spot` or `Nothing`:
 
 | Role | Condition | Slot |
 |------|-----------|------|
 | Process | `ProcessChannel` non-null | `Plate(channel)` |
 | Process | `ProcessChannel` null | **unplaceable** — refuses the whole table |
-| Spot | always | `SpotSlot(next)` |
+| Spot | always | `Spot(next)` |
 | None | always | `Nothing` |
 | `/All` | always | **unplaceable** — refuses the whole table (§8) |
 
 `Nothing` is a placement, not a failure: `/None` is a colorant the printer deliberately does not run.
 Only a Process component whose channel cannot be determined, or an `/All`, refuses the table.
 
-`Slots` is aligned index-for-index with `Names`/`Components`. `SpotSlot(n)` indexes `SpotNames`,
+`Slots` is aligned index-for-index with `Names`/`Components`. `Spot(n)` indexes `SpotNames`,
 which fixes the order spot tint arrays are written in.
+
+**Consumer rule.** Consumers must branch on `slot.Kind`, never on `slot == ColorantSlot.Nothing`.
+`ColorantSlot` is a positional record struct whose public constructor permits
+`new ColorantSlot(ColorantSlotKind.Nothing, 5)` — a distinct value under structural equality that
+does **not** equal `ColorantSlot.Nothing`. `Build` only ever uses the factories, so this is
+unreachable today; the tests' use of the equality form is fine for tests and wrong as a pattern to
+copy into a consumer.
 
 ### 2.3 What that one nullability rule buys
 
@@ -159,7 +173,7 @@ if (origin.Placement is { } p) { /* place by slot */ } else { /* whole-space fal
 
 ### 2.4 The boundary the table does not cross
 
-The table says `SpotSlot(2)`. It never says *"spot slot 2 has a unit."* Registration is a registry
+The table says `Spot(2)`. It never says *"spot slot 2 has a unit."* Registration is a registry
 fact and the registry is compositor-side.
 
 > **The carrier answers "which colorant is this." The compositor answers "do we have that unit."**

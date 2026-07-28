@@ -54,7 +54,13 @@ public sealed record ColorantPlacement(
     /// <para><b>Null in exactly three cases</b>, and this single nullability rule is why consumers do
     /// not each re-implement them:</para>
     /// <list type="number">
-    /// <item><b>No components</b> — not an NChannel space, so there is nothing per-component to say.</item>
+    /// <item><b><paramref name="components"/> is null.</b> Not just "not an NChannel space" — see
+    /// <see cref="ColorantOrigin.Components"/> for the full case list, which also includes a genuine
+    /// NChannel space whose <c>/Process /ColorSpace</c> this engine cannot reduce to plates (e.g.
+    /// <c>/Lab</c>, <c>/DeviceRGB</c>, <c>/CalGray</c>, or an ICCBased stream whose <c>/N</c> is neither
+    /// 4 nor 1 — see <c>ColorSpaceResolver.BuildComponents</c>). Treating null here as proof the space
+    /// is not NChannel would make a consumer skip an NChannel-only branch for exactly the space it is
+    /// meant to catch.</item>
     /// <item><b><paramref name="processChannelCount"/> is not 4.</b> A channel index is a PLATE index
     /// only under a four-channel process space; under <c>/DeviceGray</c> a listed name also gets index
     /// 0, byte-identical to a <c>/Cyan</c> under CMYK. See
