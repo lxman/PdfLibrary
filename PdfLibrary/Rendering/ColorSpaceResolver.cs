@@ -1018,6 +1018,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
             Subtype = space.Subtype,
             Components = components,
             ProcessChannelCount = processChannelCount,
+            Placement = ColorantPlacement.Build(components, processChannelCount),
         };
     }
 

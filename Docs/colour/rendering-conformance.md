@@ -280,9 +280,51 @@ substantive violation this matrix has tracked since slice 1.
 - ~~**G-6 — `/None` suppression does not cover images.**~~ **CLOSED 2026-07-25.** Extended to image
   XObjects, inline images, stencil masks and `sh`.
 - **G-7 — `/All` shadings and meshes.** A shading resolves its `ColorantOrigin` with `rawColor: null`,
-  so `Tints` is empty: there is no single per-op tint, because the tint varies across the ramp. Such an
-  op falls through to the flattened path. Correct handling needs the `/All` rule applied per-sample
+  so `Tints` is empty: there is no single per-op tint, because the tint varies across the ramp. ~~Such an
+  op falls through to the flattened path.~~ Correct handling needs the `/All` rule applied per-sample
   inside the ramp evaluation, not once per op.
+
+  > **Corrected 2026-07-27 by the G-7 colorant-placement plan (Task 0 / Task 4), superseding "such an op
+  > falls through to the flattened path."** That was false, and had been for some time:
+  > `ShadingBuilder.cs:73-97` already builds a per-stop spot split (SP-7) and `MeshShadingReader.cs:61` a
+  > per-vertex one (SP-7-mesh), both consumed by the compositor — `CmykPageRenderer.cs:611` for the
+  > per-stop split, `:806` for the mesh one. What survives from the original sentence is correct and
+  > load-bearing: `rawColor: null` leaving `origin.Tints` empty is exactly what keeps a shading out of the
+  > fills/strokes machinery — it does not mean the shading goes unhandled.
+  >
+  > The real position, split into its genuine sub-gaps:
+  >
+  > - **Landed.** The placement carrier exists: `ColorantOrigin.Placement`, a colorant→slot table —
+  >   `ColorantSlotKind.Nothing` / `.Plate` / `.Spot`, built via `ColorantSlot.Nothing` /
+  >   `ColorantSlot.Plate(int plateIndex)` / `ColorantSlot.Spot(int spotIndex)` — computed in
+  >   `ColorSpaceResolver.OriginForColorSpaceObject`. **Nothing consumes it yet** — verified by grep
+  >   across both the PDF and Pellucid repos.
+  > - **Still open — site 3.** `ShadingSpotSplit.Split` (`PdfLibrary/Rendering/ShadingSpotSplit.cs`) still
+  >   switches on the literal names Cyan/Magenta/Yellow/Black, so an NChannel colorant named e.g.
+  >   `/PrCyan` is routed to a spot plane instead of the cyan plate.
+  > - **Still open — site 4.** `InkDecider.ProcessContribution` (Pellucid, `:446-468`) derives the
+  >   process-plate mask from the same literal names.
+  > - **Still open — site 5.** `ShadingBuilder.BuildCmykMapper`'s all-process arm still runs the tint
+  >   transform even when every component is Process with a determinable channel — i.e. it simulates
+  >   inks the device actually has, the mirror-image defect to sites 3/4. Confirmed live by Task 0's M5;
+  >   design §1.1 row 5 / §4.3; the design's revised §6.2 delivery lists it as its own step, gated on M5.
+  > - **The two name-switch sites must land together — measured, not argued, and this is the MIXED
+  >   case specifically:** an NChannel shading with a registered spot alongside a process colorant the
+  >   name switch mislabels, e.g. `[PrCyan(Process ch0), Spot1(registered)]`. Fixing site 3 alone removes
+  >   `PrCyan` from the spot-name list, which flips `routeShadingSpots` from False to True, which routes
+  >   the op to `ProcessContribution` — still name-based — whose mask comes back `(F,F,F,F)`, so
+  >   `anyProcess` is false at `CmykPageRenderer.cs:697` and the process split is never composited.
+  >   Measured: today that op flattens and paints C=0.3608 M=0.5020; after site 3 alone, `PrCyan`'s 0.36
+  >   is lost outright. **The all-process case is different and was measured safe** (Task 0's M1c):
+  >   `routeShadingSpots` is already False there today, with or without site 3, so fixing site 3 alone is
+  >   a no-op on that arm — the regression is specific to the mixed shape.
+  > - **Still open.** `/All` shadings (row 4-6) and per-stop spot reversion for unregistered spots
+  >   (row 5-10).
+  >
+  > **No render-hash gate can observe site 3.** Across all 2999 corpus files there are 17 NChannel
+  > spaces, exactly 2 where name-split and placement disagree — both the same `6-2-4-4-t02-pass-a`
+  > `/CS0`, and both a **fill** space, not a shading. Zero corpus NChannel shadings differ, and there is
+  > no NChannel mesh anywhere in the corpus, so evidence for site 3 will have to be synthetic.
 - **G-8 — `/None` shading *patterns*.** The `sh` operator is covered; a shading used as a *pattern*
   (via `scn` on a Pattern colour space) paints through the pattern machinery, which does not consult
   `PaintsNothing`. Narrower than G-7 and likely a few lines, but untested and so unclaimed.

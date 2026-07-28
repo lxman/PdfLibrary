@@ -22,6 +22,31 @@ compositor mask / preserve signal), site 5 (`BuildCmykMapper`'s all-process arm,
 migration of the two shipped Pass 2b sites (gated on M4) are later plans. **The delivery count is
 provisional** — Pass 2b's design said two plans and it was three.
 
+## SCOPE AMENDMENT (2026-07-27, after Task 0) — supersedes the paragraph above
+
+**Task 0 measured that site 3 is unfunded without site 4, so it drops out of this plan** (design §6.1
+rule 3). The original text is preserved above rather than deleted, per this programme's convention.
+
+**Plan 1 is now Task 0 → Task 1 → Task 3′ → Task 4.** Task 2 is deferred to Plan 2, which pairs site 3
+(engine) with site 4 (Pellucid), with the pack-and-repin sequenced between them so the split and the
+mask are never separated by a pin.
+
+**Why, measured (plan defect #6, task-0-report.md).** On a mixed NChannel shading
+`[PrCyan(Process ch0), Spot1(registered)]`:
+
+| | routing gate | arm taken | result |
+|---|---|---|---|
+| today | spots `[PrCyan, Spot1]`, PrCyan has no plane → **False** | flatten | C=0.3608 M=0.5020 |
+| site 3 alone | spots `[Spot1]`, registered → **True** | routed → `ProcessContribution` still name-based → mask `(F,F,F,F)` → `anyProcess=False` (`CmykPageRenderer.cs:697`) | **PrCyan's ink dropped** |
+
+Fixing the split changes which ARM is taken while the arm downstream is still name-based — Pass
+2b-engine's I-1 shape, but deleting ink rather than changing overprint. All three remedies considered
+fail: restricting site 3 to spot-free shapes and using placement for slots only are both **no-ops**
+(the all-process arm already flattens per M1c), and accepting the regression ships known ink loss.
+
+**Task 1 is unaffected and ships.** It is pure addition with no consumer, so no render path can change
+— and that is checkable by grep rather than argued (Task 3′ Step 1).
+
 ## Global Constraints
 
 - **BASE** = PDF `master` @ `c812a2d`. Branch `colour/g7-carrier-placement`.
@@ -71,7 +96,7 @@ Both trees must be clean when it ends; delete any scaffold.
 **Interfaces:**
 - Consumes: nothing.
 - Produces: the six measurements below, written to the ledger at
-  `PDF/.superpowers/sdd/2026-07-27-colour-g7-carrier/progress.md`, and a **SCOPE VERDICT** that
+  `PDF/.superpowers/sdd/2026-07-27-colour-g7-plan1-carrier-placement/progress.md`, and a **SCOPE VERDICT** that
   amends this plan.
 
 - [ ] **Step 1: Verify the entering baselines rather than trusting this plan**
@@ -630,7 +655,25 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 2: The shading and mesh split consume placement
+## Task 2: The shading and mesh split consume placement — **DEFERRED TO PLAN 2**
+
+> **DO NOT EXECUTE THIS TASK IN PLAN 1.** Task 0's measurement (plan defect #6) showed site 3 is
+> unfunded without site 4 and **drops ink** if landed alone. See the SCOPE AMENDMENT at the top.
+> The task text below is retained verbatim because Plan 2 will reuse it — its tests, its mutation
+> table and its positive-control labelling are all still correct; only its *pairing* was wrong.
+>
+> **Corrections Plan 2 must fold in before using it:**
+> - GWG081 `Sh0` is `[GWG Green, Cyan]` with **Cyan at `/Process` channel 0** — NOT `[Black, GWG
+>   Green]` with Black at 3, which is GWG081's *image* space (defect #3). A fixture written from the
+>   old text asserts the wrong plate.
+> - **Zero** corpus NChannel shadings differ between name-split and placement, so no corpus fixture
+>   can observe site 3. Its evidence is **synthetic**, with the corpus as ballast; say so rather than
+>   letting design §6.1 rule 1(b) exclude the site on its own terms (defect #5).
+> - **There is no NChannel mesh anywhere in the corpus** (all four NChannel shadings are ShadingType
+>   2), so the mesh half has no corpus instance at all — the same position `StencilInkFromFill` was in
+>   during Pass 2b-engine, where the branch shipped entirely unpinned until I-2 caught it.
+> - The site-3 quote in design §1.1 omits the enclosing `switch (PageColorant.Classify(names[j]))` at
+>   `ShadingSpotSplit.cs:32`; both switches move together (defect #7).
 
 **BLOCKED IF** Task 0's M1c showed that `routeShadingSpots` succeeds today for an all-process
 NChannel shading. In that case this task changes an overprint category with no preserve signal to
@@ -649,7 +692,7 @@ Step 1.**
 
 - [ ] **Step 1: Confirm the task is not blocked**
 
-Read the SCOPE VERDICT in `PDF/.superpowers/sdd/2026-07-27-colour-g7-carrier/progress.md`. If it says
+Read the SCOPE VERDICT in `PDF/.superpowers/sdd/2026-07-27-colour-g7-plan1-carrier-placement/progress.md`. If it says
 Task 2 is blocked, **STOP and report** — do not proceed on the argument that the change looks safe.
 
 - [ ] **Step 2: Write the failing tests**
@@ -900,7 +943,67 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 3: Gate, suites, and the pin
+## Task 3′: Prove there is no consumer (replaces Task 3 for Plan 1)
+
+**Task 3 as written below packs the engine, repins Pellucid and runs both render-hash gates. Plan 1
+does not do that**, because Plan 1 no longer changes any render path: with Task 2 deferred, the only
+change is a new type plus a new property that **nothing reads**.
+
+That is a stronger claim than a green gate, and unlike a gate it is directly checkable. This
+programme's standing lesson is that *a green gate is consistent with both "nothing changed" and "the
+gate cannot see what changed"* — and Task 0 measured that the gate is blind here anyway: **zero**
+corpus NChannel shadings differ between name-split and placement. Running it would produce a green
+result that proves nothing, at the cost of a pack (which silently drops the Skia pin, eight times on
+record), a repin, and a Pellucid suite run with a known headless-session hang.
+
+- [ ] **Step 1: Prove no consumer exists**
+
+A plain `grep "\.Placement"` in PDF is a false negative: the declaration
+(`Placement { get; init; }`) and the assignment (`Placement = ColorantPlacement.Build(...)`) both
+have no leading dot, so that pattern misses the two sites it's meant to find and instead surfaces
+`PdfPageCollection.Stamping.cs:49-51` — an unrelated `PdfStampBuilder.Placement` (page-stamp
+placement, nothing to do with colorants) that trips the STOP condition on a known false positive.
+Pin the greps to the actual types instead:
+
+```bash
+cd /c/Users/jorda/RiderProjects/PDF && grep -rn "ColorantPlacement\|ColorantSlot\|ColorantOrigin.*Placement\|\.Placement" --include=*.cs . | grep -v /obj/
+cd /c/Users/jorda/RiderProjects/Pellucid && grep -rn "ColorantPlacement\|ColorantSlot" --include=*.cs . | grep -v /obj/
+```
+
+Expected: in PDF, hits only in `ColorantOrigin.cs` (the `Placement` and `Components` declarations),
+`ColorSpaceResolver.cs` (the `Placement = ColorantPlacement.Build(...)` assignment),
+`ColorantPlacement.cs` itself, and `ColorantPlacementTests.cs`. The `\.Placement` alternative will
+also surface `PdfPageCollection.Stamping.cs:49-51` (`PdfStampBuilder.Placement`) — this is a known,
+already-triaged false positive (unrelated stamping-placement type, not a colorant consumer); do not
+STOP on it. In Pellucid, `ColorantPlacement` and `ColorantSlot` are genuinely **zero** hits — do not
+report this as "zero hits" for bare `Placement`, which is not true: bare `Placement` also matches
+`PdfRadioOptionPlacement` (`Pellucid.Core/Forms/FormDesignService.cs` and
+`FormDesignReadTests.cs`), an unrelated form-field type, so the search must stay pinned to the two
+real type names.
+
+**If anything else reads a `ColorantPlacement`/`ColorantSlot` value (beyond the known false
+positives named above), STOP** — the no-consumer argument is void and the gate must be run after
+all. The conclusion itself (no real consumer exists) is sound and was independently re-derived with
+this broader search; this step is an evidence-hygiene correction, not a reversal.
+
+- [ ] **Step 2: Engine suite and build**
+
+```bash
+cd /c/Users/jorda/RiderProjects/PDF
+dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj -c Debug 2>&1 | tail -3
+dotnet build PdfLibrary/PdfLibrary.csproj -c Debug --no-incremental 2>&1 | grep -E "Warning\(s\)|error"
+```
+
+Expected: 0 failed, 2643 + the new tests; `0 Warning(s)`.
+
+- [ ] **Step 3: Record in the ledger**
+
+Write the grep results, both totals, and the explicit statement that **no pack, repin or gate run was
+performed, and why**. No commit — nothing here changes a tracked file.
+
+---
+
+## Task 3 (ORIGINAL — for Plan 2, not Plan 1): Gate, suites, and the pin
 
 **Files:** `Pellucid/Directory.Build.props.local`, `C:\Users\jorda\PDFs\PdfCompare\PdfCompare.csproj`
 (pins only — no source changes).
