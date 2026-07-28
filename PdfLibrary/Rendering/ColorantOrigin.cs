@@ -61,4 +61,20 @@ public sealed record ColorantOrigin(
     /// <c>ProcessChannelFor</c>'s own one-channel rule, which refuses to guess for exactly the same
     /// reason.</para></summary>
     public int? ProcessChannelCount { get; init; }
+
+    /// <summary>Which output colorant each component belongs to (ISO 32000-2 Table 71), or null when
+    /// this space must fall back to whole-space behaviour. See <see cref="ColorantPlacement.Build"/>
+    /// for the three cases that produce null.
+    ///
+    /// <para><b>Non-null implies <see cref="Components"/> non-null and
+    /// <see cref="ProcessChannelCount"/> == 4, but NOT the converse</b> — a component list can be
+    /// fully populated and still be unplaceable (an <c>/All</c>, or a Process component whose channel
+    /// could not be determined). A consumer that wants to place ink checks THIS, not
+    /// <c>Components is not null</c>.</para>
+    ///
+    /// <para>Populated for shadings and meshes too. Those resolve their origin with no per-op colour,
+    /// so every <see cref="ColourantComponent.Tint"/> is null — but placement does not depend on tint.
+    /// Which unit a colorant belongs on is a property of the COLOUR SPACE, not of the paint operation:
+    /// the shading supplies the per-stop values, this supplies the destinations.</para></summary>
+    public ColorantPlacement? Placement { get; init; }
 }
