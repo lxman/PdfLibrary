@@ -235,8 +235,14 @@ channels directly.
 This is the purest instance of the clause in the whole programme — "every colorant is available" is
 exactly the condition under which *nothing* should use an alternate — and it is the one shape where
 we currently simulate 100% of the colour. In veraPDF `6-2-4-4-t02-pass-a` the tint transform is an
-identity pass-through, so values arrive in **names** order at CMYK positions: the yellow value prints
-on the magenta unit.
+identity pass-through, so values arrive in **names** order at CMYK positions.
+
+> **Corrected 2026-07-27 by Task 0 (M5), superseding "the yellow value prints on the magenta unit".**
+> Measured: the names order is `[Black, PrCyan, PrMagenta, PrYellow]`, so **the yellow value prints on
+> the black unit**. The alternate (array element 2) is the direct name `/DeviceCMYK`, `BuildCmykMapper`
+> is non-null, and `toCmyk([0.36, 0.57, 0.02, 0.80])` returns `(92, 145, 5, 204)` — an exact identity
+> pass-through, confirming the mechanism. The original sentence was off by one position, in a design
+> whose §5.2 demands positional assertions.
 
 **Gated on M5**, which must confirm a shading of that space gets `toCmyk` non-null at all.
 
@@ -254,8 +260,18 @@ replacing verified code on an argument rather than a measurement is how this pro
 
 ### 5.1 The corpus is a guard, not evidence
 
-M2's prediction on record: **no digest moves.** GWG081 `Sh0` is `[Black, GWG Green]`, where Black is
-both a reserved name and `/Process` channel 3, so name-split and per-component agree.
+M2's prediction on record: **no digest moves.**
+
+> **Corrected 2026-07-27 by Task 0 (M2), superseding "GWG081 `Sh0` is `[Black, GWG Green]`, where
+> Black is both a reserved name and `/Process` channel 3".** Measured: GWG081 `Sh0` is
+> `[GWG Green, Cyan]` with **Cyan at `/Process` channel 0**. `[Black, GWG Green]` is GWG081's *image*
+> space, not its shading. The conclusion survives — name-split and placement still agree, so no digest
+> moves — but a fixture written from the original sentence would have asserted the wrong plate.
+>
+> The prediction is now established **independently of the gate**, which is the standard §5.1 demands:
+> across all 2999 corpus files there are 17 NChannel spaces and exactly **2** where name-split and
+> placement disagree — both the same `6-2-4-4-t02-pass-a` `/CS0`, and both a **fill** space, not a
+> shading. **Zero** corpus NChannel shadings differ, and **there is no NChannel mesh anywhere.**
 
 A green gate is consistent with both *"nothing changed"* and *"the gate cannot see what changed"* —
 the Pass 2a′ shape. Pass 2b-engine's whole-branch reviewer had to prove the central claim with an
@@ -342,6 +358,22 @@ Expected shape, to be confirmed or corrected by Task 0:
 
 The count is a prediction. If Task 0 contradicts it, the correction is recorded in the design with
 the original text preserved and superseded rather than deleted, per this programme's convention.
+
+> **Corrected 2026-07-27 by Task 0, and the prediction was wrong in its pairing, not its count.**
+> Site 3 is **unfunded without site 4** and drops ink if landed alone — measured, not argued: on a
+> mixed NChannel shading `[PrCyan(Process ch0), Spot1(registered)]`, placement removes `PrCyan` from
+> the spot list, which flips `routeShadingSpots` from False to True, which routes the op to
+> `ProcessContribution` — still name-based — whose mask comes back `(F,F,F,F)`, so `anyProcess` is
+> false and the process split is never composited. Today that op flattens and paints C=0.3608
+> M=0.5020; after site 3 alone, `PrCyan`'s 0.36 is simply lost.
+>
+> §6.1 rule 3 governs: a site the mask cannot reach is unfunded and drops out. **Revised delivery:**
+> (1) engine carrier alone — no consumer, no render change; (2) site 3 **and** site 4 together, with
+> the pack-and-repin sequenced between them so the split and the mask are never separated by a pin;
+> (3) site 5, gated on M5 (now confirmed); (4) migration, gated on M4 — which Task 0 measured is
+> **not a drop-in**: the two shipped sites refuse in three cases the table does not (a Process
+> component with a null `Tint`, a Spot with neither plane nor own alternate, and a split with no spot
+> at all).
 
 ---
 
