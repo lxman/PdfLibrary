@@ -297,8 +297,16 @@ substantive violation this matrix has tracked since slice 1.
   > - **Landed.** The placement carrier exists: `ColorantOrigin.Placement`, a colorant→slot table —
   >   `ColorantSlotKind.Nothing` / `.Plate` / `.Spot`, built via `ColorantSlot.Nothing` /
   >   `ColorantSlot.Plate(int plateIndex)` / `ColorantSlot.Spot(int spotIndex)` — computed in
-  >   `ColorSpaceResolver.OriginForColorSpaceObject`. **Nothing consumes it yet** — verified by grep
-  >   across both the PDF and Pellucid repos.
+  >   `ColorSpaceResolver.OriginForColorSpaceObject`. ~~**Nothing consumes it yet** — verified by grep
+  >   across both the PDF and Pellucid repos.~~
+  >
+  >   **Corrected 2026-07-28, superseding "nothing consumes it yet."** That was already stale the same
+  >   day it was written: `ShadingBuilder.BuildCmykMapper`'s `AllProcessPlacement` (site 5, engine
+  >   `25f0f23`) consumed `Placement` first, closed earlier the same day and already merged. Two more
+  >   consumers land below in this same list: `ShadingSpotSplit.SplitByPlacement` (site 3, engine,
+  >   `colour/g7-sites-3-and-4` @ `6bcaa38`) and `InkDecider.ProcessContribution` (site 4, Pellucid @
+  >   `37f7c5b`) both consume `Placement.Slots` — landed together, each still on its own unmerged
+  >   branch, not yet on either repo's default branch.
   > - ~~**Still open — site 3.** `ShadingSpotSplit.Split` (`PdfLibrary/Rendering/ShadingSpotSplit.cs`) still
   >   switches on the literal names Cyan/Magenta/Yellow/Black, so an NChannel colorant named e.g.
   >   `/PrCyan` is routed to a spot plane instead of the cyan plate.~~
