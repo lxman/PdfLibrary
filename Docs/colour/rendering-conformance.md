@@ -9,6 +9,12 @@
 > ␀ sweep (2026-07-26): added class F (five file-validity rows reassigned out of the score) and cleared
 > every remaining unaudited row to zero — see the score section for the full accounting.
 >
+> G-14 close-out (2026-07-29): reserved-name direct application landed in every painting context
+> (fills/strokes, shadings/meshes, images, stencils) on the CMYK soft-proof path. Spec:
+> `Docs/superpowers/specs/2026-07-29-g14-reserved-separation-direct-design.md`; plan:
+> `Docs/superpowers/plans/2026-07-29-colour-g14-reserved-separation-direct.md`. See the G-14 gap entry
+> and rows 4-5/4-11 for detail.
+>
 > This is the **renderer's** conformance matrix — the companion to `Docs/pdfua/matterhorn-coverage.md`,
 > which does the same job for the validator. It answers "how standards compliant is our colour?" with a
 > number that has a denominator, rather than an impression.
@@ -79,13 +85,13 @@ defined as "registered in `SpotColorantRegistry`" (`TryGetPlane` returns a plane
 | 4-2 | Tint is a single component in [0.0, 1.0]; 0.0 = minimum colourant, 1.0 = maximum | N | ✅ | Audited 2026-07-26. Out-of-range tints behave as the nearest valid tint, but the clamp is **not** independently enforced in `ResolveSeparation` — it is delegated to the tint transform's own `/Domain` (`ExponentialFunction.Evaluate`, `PdfLibrary/Functions/ExponentialFunction.cs:63`, `Clamp(input[0], Domain[0], Domain[1])`). This holds for every conformant file: §7.10.1 Table 38 requires every function dictionary to declare a `Domain`, and "input values outside the declared domain shall be clipped to the nearest boundary value" — a Separation/DeviceN tint transform with the required `/Domain [0 1]` clamps by construction. Widening `/Domain` to `[-1 2]` in the test reproduces an out-of-range colour, but that file has already violated §7.10.1's Domain requirement, so this is class F territory (a malformed tint transform), not a renderer gap — no gap opened. Pinned by `SeparationTintRangeTests` (`TintAboveOne_ClampsToOne`, `TintBelowZero_ClampsToZero`) — but the mutation (widening the test's own `/Domain`) only kills the **low** half: `TintBelowZero_ClampsToZero` fails as intended (the unclamped tint −0.5 overflows the `(byte)` cast in `ColorConverter`'s DeviceCMYK conversion, which has no lower clamp, producing a wrapped RGB(255,126,255) instead of white). `TintAboveOne_ClampsToOne` passes unchanged under the same mutation: the unclamped high tint (M = 1.5) is independently re-saturated one layer downstream by `ColorConverter`'s own `Math.Min(1.0, …)`, which lands on the exact same byte as the correctly-clamped M = 1.0 case — so no pixel-level assertion through `DeviceCMYK`'s magenta channel can tell "clamped by `ExponentialFunction`'s `/Domain`" apart from "left unclamped, saturated downstream by coincidence". The high side of this row is therefore conformant **by inspection** of `ExponentialFunction` and the required `/Domain` (the same §7.10.1 argument above), not by a test that has been seen to fail against it — a genuine, currently-unclosable gap in this row's own "test that has been seen to fail" standard, recorded honestly rather than papered over with a vacuous assertion. |
 | 4-3 | "Tints shall always be treated as subtractive colours, even if the device produces output for the designated component by an additive method" | N | ✅ | `SeparationAlternateSpaceTests.SeparationTints_AreSubtractive_HigherTintIsDarker` — tint 0 is lighter than tint 1 by luma. Not implied by the reversion rows: those compare against a direct fill in the alternate space, which inverts identically if the ramp does. |
 | 4-4 | "The initial value for both the stroking and nonstroking colour in the graphics state shall be 1.0" | N | ✅ | **Was a confirmed violation, found by auditing — fixed 2026-07-26.** No test previously exercised `cs`/`CS` without a following `sc`/`scn`; when audited, `cs`/`CS` were found to select a colour space but leave the *previous* colour in the graphics state untouched, rather than applying §8.6.8 Table 73's initial value. Fixed via `ColorSpaceResolver.InitialColorFor` (returns the per-space initial value) and a new `PdfContentProcessor.OnColorSpaceChanged` hook, overridden in `PdfRenderer`, invoked from every `cs`/`CS` case. Pinned by `InitialColorValueTests`, a 6-test suite — each test sets a *contrasting* prior colour first, so a carry-over regression paints visibly wrong instead of accidentally matching. **Exercised:** Separation, DeviceN, DeviceCMYK, DeviceRGB, Lab (`Lab_WithoutScn_ClampsAToDeclaredRange` — a narrow `/Range` forces initial *a* to clamp away from 0, the only way to observe the clamp rather than a coincidental default) and ICCBased (`ICCBased_WithoutScn_ClampsToDeclaredRange`, `/N 4` with a narrow `/Range`, same reasoning). **Not exercised:** Indexed, CalGray, CalRGB — all three take the same constant-value code path as an already-tested sibling (Indexed → `[0.0]` same as DeviceGray's arm; CalGray/CalRGB share `InitialColorFor`'s `DeviceGray`/`DeviceRGB` case labels outright), so the gap is structural rather than a distinct behaviour, but it is still untested and unclaimed rather than assumed. **The detail most likely to be re-broken by a future "simplification": DeviceCMYK's initial colour is `[0 0 0 1]`, not all-zeros** — all-zeros in CMYK is white. A prior attempt initialised every space to zero, which broke Separation to white (this row's requirement is 1.0, not 0.0), and was backed out wholesale rather than corrected. Separation and DeviceN initialise to 1.0; DeviceGray/DeviceRGB/CalGray/CalRGB to 0.0; Pattern returns no component vector — its initial colour is a pattern object, not implemented (gap G-11). Stencil-mask routing after a bare `cs` (no `scn`) is untested in either direction — see gap G-13. |
-| 4-5 | Cyan / Magenta / Yellow / Black "are reserved to name the process colourants of a CMYK device" | N | ✅ | **Closed 2026-07-28 (test-debt trio).** `PageColorant.Classify` → `ColorantKind.Process` (`PageColorantClassifyTests`), now also pinned END-TO-END on the CMYK render path: `ReservedAndNoneRenderTests.ReservedName_InRoutedDeviceN_TakesItsPlate_ByClassificationNotRegistration` — a routed DeviceN's `/Magenta` (deliberately NOT registered) takes plate 1 positionally while the registered spot takes its plane, so classification, not registration, is what routes a reserved name. Mutation-verified: deleting `ProcessContribution`'s `case "Magenta"` arm fails this fixture's `m` assertion (and both 5-7 fixtures'). **The DIRECT-APPLICATION half for a pure reserved-name Separation is gap G-14** — this row's claim is the reserved-name identity, which holds; what a lone unregistered `Separation /Cyan` paints is 4-11's availability policy, measured and ruled on there. |
+| 4-5 | Cyan / Magenta / Yellow / Black "are reserved to name the process colourants of a CMYK device" | N | ✅ | **Closed 2026-07-28 (test-debt trio).** `PageColorant.Classify` → `ColorantKind.Process` (`PageColorantClassifyTests`), now also pinned END-TO-END on the CMYK render path: `ReservedAndNoneRenderTests.ReservedName_InRoutedDeviceN_TakesItsPlate_ByClassificationNotRegistration` — a routed DeviceN's `/Magenta` (deliberately NOT registered) takes plate 1 positionally while the registered spot takes its plane, so classification, not registration, is what routes a reserved name. Mutation-verified: deleting `ProcessContribution`'s `case "Magenta"` arm fails this fixture's `m` assertion (and both 5-7 fixtures'). **The DIRECT-APPLICATION half for a pure reserved-name Separation was gap G-14 — CLOSED 2026-07-29.** This row's claim is the reserved-name identity, which holds; what a lone unregistered `Separation /Cyan` paints is 4-11's availability policy — now direct application on the CMYK soft-proof path, pinned by `ReservedSeparation_Unregistered_AppliesTheProcessColourantDirectly` (Pellucid, replacing the retired `..._FlattensThroughItsAlternate_G14Baseline`). See the G-14 gap entry and row 4-11 for the full closure. |
 | 4-6 | **All**: "painting operators shall apply tint values to all available colourants at once" | N | ✅ | Fixed 2026-07-25 (was the G-2 gap). Scope is **fills and strokes**: `CmykPageRenderer.CompositeInk` (the only call site that can reach the `/All` branch — the shading and mesh sites pass an origin with empty `Tints`, which the guard excludes per G-7, and the image site passes no origin at all) branches on `InkDecision.AllColourants` and, when set, paints the four process plates *and* loops `SpotColorantRegistry.PlaneNames` to cover every registered spot plane — availability as this document's device policy defines it. The four process plates themselves come from `InkDecider.cs:~106` (CMYK path) and `ColorSpaceResolver.cs:250-253` (RGB path); `ColorSpaceResolver.PlatesForColorSpaceObject` (~line 653) also produces four true plates for `/All`, but that is the **overprint mask**, a different computation reached from a different call site, not the paint loop. `AllColourantRoutingTests` asserts all four plates and both registered spot planes, and was mutation-checked by capping the loop at one plane. Images and stencil masks on the CMYK path are NOT covered by this row — see G-9. |
 | 4-7 | **All** on an additive device: "the subtractive tint values […] shall be complemented by subtracting from 1 before applying to all available colourants" | N | ✅ | Fixed 2026-07-25 (was the G-3 violation). `ResolveSeparation` complements before reading the alternate space, so tint *t* paints the neutral 1−*t* on R, G and B. The device fork is honoured on both sides: the additive complement lives in the engine, and the subtractive path applies the tint directly via `InkDecider` (G-5, closed). Pinned by `SeparationAll_At{Full,Zero}Tint_*` and `All_colourant_applies_the_origin_tint_*`. |
 | 4-8 | **None**: "shall not produce any visible output […] shall have no effect on the current page" | N | ✅ | **Was a violation, not ⚠️ — fixed 2026-07-25.** The line cited in slice 1 (`:594`) is the overprint *plate mask*, not the paint path. `PdfGraphicsState.Fill/StrokePaintsNothing` suppress the operator at the same sites as `OcHidden`. Coverage is now **every painting operator**: f, S, B (per-half), glyphs incl. Type 3, image XObjects (incl. `/Indexed` over a `/None` base), inline images, stencil masks (gated on the FILL signal, since a stencil has no colour space of its own) and `sh`. Shading *patterns* are the one remaining route — see G-8. Glyph suppression for mode 4 (fill + clip) has its own caveat — see G-10: the fill is correctly suppressed, but so is the clip it was meant to add, which is not itself "no effect on the current page". |
 | 4-9 | "A PDF processor shall support Separation colour spaces with the colourant names All and None on all devices" | N | ✅ | Handled and tested for **fills and strokes** on both devices (rows 4-7, 4-8). For `/All` on the CMYK soft-proof path, the paint loop lives in `CmykPageRenderer.CompositeInk` (fed by `InkDecider`'s arm, `InkDecider.cs:~106`) and is pinned by `AllColourantRoutingTests` (G-5, closed) — but that test exercises fills/strokes only; `/All` images and stencil masks diverge on the CMYK path (G-9), so "all devices" does not yet hold for every painting operator. For `/None`, "on all devices" still holds *structurally* rather than by a dedicated CMYK-path test: suppression sits in `PdfGraphicsState`/`ColorSpaceResolver`, upstream of every render target, so the soft-proof path cannot bypass it, but no test exercises `/None` on the CMYK path directly. |
 | 4-10 | For All/None, "PDF processors shall ignore the alternateSpace and tintTransform parameters" | N | ✅ | **Was a violation — fixed 2026-07-25.** `ResolveSeparation` evaluated the transform for every colourant name, so `/All` painted whatever it returned. Both names are now handled before the alternate space or the transform is read. Pinned by `SeparationAll_AtFullTint_IgnoresTintTransformAndPaintsBlack`, whose space ramps to red: evaluating the transform paints red, ignoring it paints the required black. |
-| 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only, audited D-1. Availability = registered in `SpotColorantRegistry`. Conformant as §10.8.3 separation simulation. **Measured 2026-07-28 (test-debt trio Task 0), and ruled on:** an unregistered `Separation /Cyan` with a deliberately magenta-ramping alternate paints **M=0.7, C=0** — the flatten arm paints the alternate's output; `ResolveSeparation` special-cases only `/All`/`/None`, so a reserved name genuinely flattens through element 2. That is this row's documented policy working as recorded — but the **user ruling of 2026-07-28 sets the bar at "Adobe or better"**, and Adobe applies a reserved-name separation directly on a CMYK device (C=0.7, alternate ignored). The divergence is **gap G-14**; the current behaviour is pinned as a baseline by `ReservedAndNoneRenderTests.ReservedSeparation_Unregistered_FlattensThroughItsAlternate_G14Baseline`, which the G-14 fix flips red and must update deliberately. Invisible in any well-formed file (a real `/Cyan` alternate is a cyan ramp), hence the 51/51/0 gates. |
+| 4-11 | "the PDF reader shall determine whether the device has an available colourant […] If so […] shall apply the designated colourant directly" | D | ⚠️ | Soft-proof path only, audited D-1. **Availability rule rewritten 2026-07-29 (G-14 close):** available = registered in `SpotColorantRegistry` **OR** the name is a reserved process colourant (Cyan/Magenta/Yellow/Black) — `ColorSpaceResolver.AllReservedProcessOrNone`/`ReservedChannelOf`/`ColorantNamesOf` (engine) and `InkDecider`'s reserved-direct arm (Pellucid) implement the rule; a reserved name now applies its process colourant directly instead of falling through to the registry check. **Closed for fills/strokes, shadings/meshes (`ShadingBuilder.PackByReservedName`), images (`PdfImageToCmyk.TryToCmyk` reserved route) and stencil masks (`StencilInkFromFill` process-only empty-Names ink, gated by `CmykPageRenderer`'s relaxed empty-Names check).** Pinned by `ReservedSeparation_Unregistered_AppliesTheProcessColourantDirectly` (fills/strokes, replacing the retired `..._FlattensThroughItsAlternate_G14Baseline` baseline), `Separation_Black_CalGrayAlternate_RoutesDirectly_G14` plus its negative control `Separation_SpotName_CalGrayAlternate_StillReverts` (replacing `Separation_with_a_CalGray_alternate_still_reverts` — scope half preserved: a non-reserved spot name still reverts through a CalGray alternate), and `G14_ReservedSeparation_BuildPacksTheLastStopDirectly` (engine-level, `ShadingBuilder.Build` — the shading pin lands at the engine level, not render level; see G-14 residual (c)). **Still ⚠️, not ✅ — one caveat survives this pass:** an **Indexed image over an all-reserved base still flattens** (out of scope this pass — G-14 residual (a)); the stencil fix also requires the spot-plane-buffer configuration (spots + registry passed, the standard soft-proof path — residual (b)), which is the ordinary case but worth naming since a bare empty-config stencil is untested. Gate outcome: GWG 51/51, NChannel 3/3 unaffected structurally; exactly two digests re-pinned (`GWG030_Gray_K_black_OP_X1`, `GWG230_Four_different Grays_x1a`), both value-only sub-perceptual quantisation deltas verified against each fixture's own `_ReadMe` criterion — GWG230 now matches its DeviceCMYK reference exactly. Invisible in any well-formed file whose reserved-name alternate already ramps to the same colour; visible under a lying alternate. See the G-14 gap entry for the full closure record. |
 | 4-12 | Additive device: "never applies a process colourant directly; it always reverts to the alternate colour space" | D | ✅ | Audited 2026-07-25 (G-1), and now asserted: `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour` renders a spot Separation on the RGB path and requires the pixel to equal the same colour filled directly in the alternate space. |
 | 4-13 | If unavailable, "shall arrange for subsequent painting operations to be performed in an alternate colour space" | N | ✅ | `SpotSeparation_OnAdditiveDevice_PaintsItsAlternateSpaceColour`. The oracle is the alternate space painted directly, not a hard-coded triple — "reverts to the alternate space" *means* the two are indistinguishable, so the test survives refinements to CMYK→RGB instead of having to be rewritten by them. |
 | 4-14 | alternateSpace "may not be another special colour space (Pattern, Indexed, Separation, or DeviceN)" | F | — | Constrains the file's alternateSpace, not what the renderer paints when it is violated. **Validator gap** — no rule checks this. |
@@ -133,7 +139,7 @@ the earlier passes had left ␀. The slice-1 column is the original audit; the d
 | — ␀ not yet audited | 13 | **0** |
 | File validity (**F**) | — | 5 |
 | Latitude (**L**) | 5 | 6 |
-| Device-policy (**D**) | 2 | 2 — 4-12 tested, 4-11 (soft-proof) still untested |
+| Device-policy (**D**) | 2 | 2 — 4-12 tested; 4-11 (soft-proof) tested and closed for fills/strokes, shadings/meshes, images and stencils as of 2026-07-29 (G-14), still ⚠️ on the Indexed-image residual — see Delta 2026-07-29 |
 
 > The slice-1 table published 13 untested / 11 unaudited. Those two figures were transposed — counting
 > the rows gives 11 untested and 13 unaudited. Corrected here rather than silently, because the whole
@@ -177,6 +183,16 @@ substantive violation this matrix has tracked since slice 1~~.
 > (unregistered reserved-name Separations flatten through their alternate; ruled a gap against the
 > "Adobe or better" bar — see the gap entry and row 4-11), so the D class gained its first
 > measured, pinned divergence.
+>
+> **Delta 2026-07-29 (G-14 close-out).** **G-14 is CLOSED.** Row 4-11's availability rule now reads
+> "registered OR reserved process name" and is closed for fills/strokes, shadings/meshes, images and
+> stencils on the CMYK soft-proof path — but the row **stays ⚠️, not ✅**: an Indexed image over an
+> all-reserved base still flattens (residual (a), out of scope this pass), so the row's own caveat
+> list is not fully empty. **N class unaffected — 4-11 is class D**, not N; the N counts above are
+> unchanged by this delta. D class is now **2 — 4-12 tested, 4-11 tested for its closed contexts,
+> ⚠️ for residual (a)**. Gate outcome: GWG 51/51, NChannel 3/3, two digests re-pinned
+> (quantisation-only, verified against each fixture's own criterion — see the G-14 gap entry). Engine
+> suite 2694/2694; Pellucid `Pellucid.Rendering.Avalonia.Tests` 547/547.
 
 ## Gaps
 
@@ -557,7 +573,12 @@ substantive violation this matrix has tracked since slice 1~~.
   was fixed, because the fill colour it inherits is no longer the graphics state's untouched carry-over.
   That is a different compositing behaviour, not merely a different shade, and no fixture in the corpus
   gate exercises the combination, so it has not been observed rendering correctly, only reasoned about.
-  Recorded per this matrix's own discipline (row 4-4) rather than left implicit.
+  Recorded per this matrix's own discipline (row 4-4) rather than left implicit. **Note added 2026-07-29
+  (G-14 close):** `StencilInkFromFill`'s "spot-ink, overprint-preserving CMYK path" characterisation above
+  is no longer the whole story — G-14 added a **process-only** variant (empty `Names`, reserved-colourant
+  ink) reached through the same relaxed `CmykPageRenderer` empty-`Names` gate, so a stencil inheriting a
+  reserved-name Separation's initial colour after a bare `cs` can now take either arm depending on
+  registration; this row's untested combination is unaffected either way.
 
 - **G-14 — Unregistered reserved-name Separations flatten through their alternate instead of
   applying the process colourant directly.** Found 2026-07-28 by the test-debt trio's Task 0 probe,
@@ -569,15 +590,61 @@ substantive violation this matrix has tracked since slice 1~~.
   4-11's documented availability-equals-registry policy behaving as recorded — and the **user
   ruling of 2026-07-28 supersedes that policy's sufficiency: the bar is "Adobe or better"**, and
   Adobe applies a reserved-name separation directly on a CMYK device (C=0.7, alternate ignored;
-  §8.6.6.4 row 4-11's own first clause). The fix is a deliberate behaviour change on the CMYK
-  soft-proof path — treat C/M/Y/K as always-available for a reserved-name Separation — with its own
-  pass, measurement and gate run. Until then the current behaviour is pinned by
-  `ReservedAndNoneRenderTests.ReservedSeparation_Unregistered_FlattensThroughItsAlternate_G14Baseline`
-  (Pellucid), written so the fix flips it red and must retire it deliberately. Reachability:
-  invisible in any well-formed file (a real reserved-name alternate is a matching ramp — the two
-  answers coincide); visible under a lying alternate, which prepress files do contain as pranks and
-  errors. The RGB path is NOT in scope: row 4-12 requires reversion there, and reversion is what it
-  does.
+  §8.6.6.4 row 4-11's own first clause).
+
+  **CLOSED 2026-07-29.** The availability rule is now: available = registered in
+  `SpotColorantRegistry` **OR** the name is a reserved process colourant. Fix sites, both repos:
+
+  - Pellucid `InkDecider` — reserved-direct arm plus `AllReservedProcessOrNone` (`083be5e`).
+  - Engine `ColorSpaceResolver` — `AllReservedProcessOrNone`/`ReservedChannelOf`/`ColorantNamesOf`,
+    and `ShadingBuilder.PackByReservedName` — the shading bypass that packs a reserved name's plate
+    directly instead of running the tint transform (`ea3edbe`).
+  - Engine `PdfImageToCmyk.TryToCmyk` — reserved-name image route (`1459d73`).
+  - Engine `StencilInkFromFill` — process-only ink for the empty-`Names` (reserved) case
+    (`f13bd52`).
+  - Pellucid `CmykPageRenderer` — empty-`Names` gate relaxed so the process-only ink above actually
+    composites, plus image/stencil render pins (`180aeab`).
+  - Engine — IVT grant plus the ENGINE-LEVEL shading pin
+    `G14_ReservedSeparation_BuildPacksTheLastStopDirectly` (`768e6d4`).
+
+  **Retired pins, both recorded:**
+  1. `ReservedSeparation_Unregistered_FlattensThroughItsAlternate_G14Baseline` → replaced by
+     `ReservedSeparation_Unregistered_AppliesTheProcessColourantDirectly` (the baseline pin flipped
+     red on the fix, as designed, and was retired rather than inverted in place).
+  2. `Separation_with_a_CalGray_alternate_still_reverts` → replaced by
+     `Separation_Black_CalGrayAlternate_RoutesDirectly_G14` (positive: a reserved name with a CalGray
+     alternate now routes directly) plus a new negative control
+     `Separation_SpotName_CalGrayAlternate_StillReverts` (a non-reserved spot name with the same
+     CalGray alternate still reverts) — the original pin's scope is half preserved, half superseded,
+     not silently dropped.
+
+  **Residuals, recorded rather than closed:**
+  - **(a)** An **Indexed image over an all-reserved base still flattens** — out of scope this pass
+    (Task 4 scope note); the reserved-direct image route covers a directly-named reserved Separation
+    driving image ink, not an Indexed palette resolving to one.
+  - **(b)** The stencil fix requires the **spot-plane-buffer configuration** — `spots`/`registry`
+    passed through, the standard soft-proof path. A stencil rendered with no spot-plane configuration
+    at all is not exercised by this pass's fixtures.
+  - **(c)** The shading pin is **ENGINE-level** (`ShadingBuilder.Build`), not render-level — measurement
+    (Task 3/7) found the mapper site small enough that the render-level pin's bounded fallback to an
+    engine-level pin, reserved by the design's escape hatch, was what actually landed; recorded here
+    rather than claimed as render-level coverage it isn't.
+
+  **Gate outcome:** GWG 51/51, NChannel 3/3. Exactly two digests re-pinned
+  (`GWG030_Gray_K_black_OP_X1`, `GWG230_Four_different Grays_x1a`), both value-only sub-perceptual
+  quantisation deltas, each verified against its own fixture's `_ReadMe` criterion — GWG230 now
+  matches its DeviceCMYK reference exactly, which is strictly better than before. **Census lesson
+  worth keeping:** a correctness tolerance (0.004) cannot predict digest-identity flips; only
+  quantisation-only deltas move a SHA gate, and the two that moved here were exactly that kind.
+
+  **Suites at close:** engine 2694/2694 (net8/9/10, 0 warnings); Pellucid
+  `Pellucid.Rendering.Avalonia.Tests` 547/547.
+
+  Reachability: invisible in any well-formed file (a real reserved-name alternate is a matching ramp
+  — the two answers coincide); visible under a lying alternate, which prepress files do contain as
+  pranks and errors. The RGB path is NOT in scope: row 4-12 requires reversion there, and reversion
+  is what it does. Design: `Docs/superpowers/specs/2026-07-29-g14-reserved-separation-direct-design.md`;
+  plan: `Docs/superpowers/plans/2026-07-29-colour-g14-reserved-separation-direct.md`.
 
 ## Fixtures
 
