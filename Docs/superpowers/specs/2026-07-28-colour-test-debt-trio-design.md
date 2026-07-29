@@ -148,6 +148,24 @@ Grepping the actual suites before planning found the coverage picture better tha
 Net scope after corrections: four render-level pins in Pellucid (4-5a, 4-5b, 5-7a, 5-7b), zero new
 engine tests, and the matrix close-out cites the existing engine pins for 5-6.
 
+## 6b. Correction (2026-07-28, Task 0 measurement + user ruling — superseding §3's fixture 4-5a)
+
+Task 0 measured fixture 4-5a's shape against production: an unregistered `Separation /Cyan` with a
+magenta-ramping alternate paints **M=0.7, C=0** — the flatten arm paints the alternate's output,
+verified production-shaped (`ResolveSeparation` special-cases only `/All`/`/None`; a reserved name
+flattens through element 2). This matches row 4-11's audited D-1 policy (availability = registry),
+but the **user ruling of 2026-07-28 sets the bar at "Adobe or better"**, and Adobe applies a
+reserved-name separation directly on a CMYK device — C=0.7, alternate ignored. The divergence is
+therefore a **discovered gap, G-14**, not a defensible policy: recorded in the matrix with the
+measured tuple; the production fix (treat C/M/Y/K as always-available on the CMYK soft-proof path,
+i.e. widen row 4-11's availability rule for reserved names) is its own future pass.
+
+In this pass: fixture 4-5a becomes a **G-14 baseline pin** asserting the measured current behaviour
+with a comment naming the goal — so the G-14 fix flips it red and must update it deliberately, and
+interim drift is caught. Row 4-5 flips ✅ on fixture 4-5b (classification end-to-end) with a cell
+pointer to G-14 for the direct-application half; row 4-11 stays ⚠️ and gains the measurement and
+the ruling. Visible only under a lying alternate — no well-formed file diverges, hence 51/51/0.
+
 ## 7. Verification frame
 
 - Suites: Pellucid 1315 + new (expected +5 or +6 per §5) / 0; engine unchanged (2685/0) unless §5's
