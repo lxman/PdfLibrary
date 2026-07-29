@@ -129,25 +129,43 @@ public class AtomicFileWriterTests : IDisposable
         Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
     }
 
-    // A PERSISTENT hold is a genuine failure and must still throw once the budget is spent —
-    // the retry must not convert real permission problems into hangs or silent success. Uses
-    // the internal overload with a tiny budget so the test stays fast.
+    // A PERSISTENT hold: platform semantics genuinely differ, and the test pins each.
+    // Windows enforces sharing modes at the kernel, so the rename fails every attempt and the
+    // last exception must propagate once the budget is spent — the retry must not convert real
+    // permission problems into hangs or silent success. POSIX rename() replaces the directory
+    // entry regardless of open handles (FileShare is advisory there and rename never consults
+    // it), so the same write SUCCEEDS on Unix — the reader keeps the old inode, the path gets
+    // the new bytes. This platform split is why the Windows-flake retry exists at all.
     [Fact]
-    public void Write_DestinationHeldPastRetryBudget_StillThrows_AndCleansUpTemp()
+    public void Write_DestinationHeldPastRetryBudget_WindowsThrows_UnixReplaces()
     {
         string dir = NewTempDir();
         string path = Path.Combine(dir, "held.bin");
         File.WriteAllBytes(path, [1, 2, 3]);
 
         using var handle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
-        Assert.ThrowsAny<Exception>(() =>
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.ThrowsAny<Exception>(() =>
+                AtomicFileWriter.Write(path, stream =>
+                {
+                    stream.Write([9]);
+                    return true;
+                }, maxMoveAttempts: 2, baseRetryDelayMs: 1));
+
+            Assert.Empty(Directory.GetFiles(dir, "*.tmp"));   // temp cleaned up on final failure
+        }
+        else
+        {
             AtomicFileWriter.Write(path, stream =>
             {
                 stream.Write([9]);
                 return true;
-            }, maxMoveAttempts: 2, baseRetryDelayMs: 1));
+            }, maxMoveAttempts: 2, baseRetryDelayMs: 1);
 
-        Assert.Empty(Directory.GetFiles(dir, "*.tmp"));   // temp cleaned up on final failure
+            Assert.Equal(new byte[] { 9 }, File.ReadAllBytes(path));
+            Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
+        }
     }
 
     [Theory]
