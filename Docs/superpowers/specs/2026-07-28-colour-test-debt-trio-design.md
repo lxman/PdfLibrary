@@ -118,6 +118,36 @@ tests are Pellucid-side — the doc commit references the Pellucid commit SHA):
 - Score block: append a dated delta row — N-class now 18 ✅ / 2 ⚠️ (5-3, 5-10) / 0 ❌ — preserving
   the existing snapshot text per the doc's convention.
 
+## 6a. Corrections (2026-07-28, pre-plan coverage audit — superseding parts of §4/§5)
+
+Grepping the actual suites before planning found the coverage picture better than §4 assumed:
+
+1. **Row 5-6's two named contexts are ALREADY pinned, engine-side, through real calls** —
+   `ShadingSpotSplitTests.Split_AllNone_ContributeNothing` (name arm) and
+   `SplitByPlacement_NoneContributesNothing_ToAnyPlateOrSpot` (placement arm) for the shading
+   split; `PdfImageToCmykTests`' GWG080-shaped fixture (`:356-374`, a real parsed
+   `/DeviceN [/Black /PANTONE 265 C /None /None /None]` through `TryToSpotInk`, "/None contributes
+   nothing" asserted per-plate) for the image split. **Fixtures 5-6a and 5-6b are therefore not
+   written; the row closes by CITING these tests**, and §5's decision rule is moot.
+2. **Row 5-7's per-component arm is already pinned at decision level** —
+   `InkDeciderTests.NChannel_None_component_is_discarded_not_reverted`, including the poisoned
+   own-alternate (`[1,1,1,1]`) malformed-`/Colorants` trap. What remains for 5-7 is the ROUTED
+   (named-colorant) arm at render level, plates + overprint mask: fixtures 5-7a/5-7b stand, but
+   their space gains a registered spot (`[Magenta, None, Spot1]`, Spot1 registered) because direct
+   painting on the routed arm requires a registered name — a plain unregistered DeviceN correctly
+   REVERTS whole (row 5-8's rule, where `/None` must flow INTO the transform), and a fixture
+   without the spot would be pinning reversion, not discard.
+3. **Fixture 4-5a's expectation must be measured before it is asserted.** An unregistered
+   `Separation /Cyan` fill reaches the flatten arm (nothing registered ⇒ not routed), where the
+   painted value is the resolved fill colour and the reserved name's plate identity arrives via the
+   overprint plate-set — an arm interaction this spec's author cannot derive with confidence. The
+   plan therefore leads with a Task 0 probe measuring what production paints for every fixture
+   shape in this spec; pins assert the measured values ONLY where they match the row's normative
+   requirement, and any mismatch is §1's stop rule firing early and cheaply.
+
+Net scope after corrections: four render-level pins in Pellucid (4-5a, 4-5b, 5-7a, 5-7b), zero new
+engine tests, and the matrix close-out cites the existing engine pins for 5-6.
+
 ## 7. Verification frame
 
 - Suites: Pellucid 1315 + new (expected +5 or +6 per §5) / 0; engine unchanged (2685/0) unless §5's
