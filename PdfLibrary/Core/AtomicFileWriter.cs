@@ -30,7 +30,8 @@ internal static class AtomicFileWriter
     /// Atomically writes to <paramref name="path"/> using <paramref name="writePayload"/>,
     /// returning the payload's result once the destination has been replaced.
     /// </summary>
-    public static T Write<T>(string path, Func<Stream, T> writePayload)
+    public static T Write<T>(string path, Func<Stream, T> writePayload,
+        int maxMoveAttempts = 5, int baseRetryDelayMs = 10)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         ArgumentNullException.ThrowIfNull(writePayload);
@@ -48,13 +49,42 @@ internal static class AtomicFileWriter
                 temp.Flush(flushToDisk: true);
             }
 
-            File.Move(tempPath, fullPath, overwrite: true);
+            MoveWithRetry(tempPath, fullPath, maxMoveAttempts, baseRetryDelayMs);
             return result;
         }
         catch
         {
             TryDelete(tempPath);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// The replace-rename, retried with exponential backoff on the two exceptions Windows
+    /// raises when something transiently holds the destination — <see cref="IOException"/>
+    /// (sharing violation) and <see cref="UnauthorizedAccessException"/> (access denied, the
+    /// shape antivirus/Search-indexer scans produce). Real-time scanners love to sniff freshly
+    /// written files, so a rename can land while a scanner holds the target; git retries its
+    /// renames on Windows for the same reason. Default budget: 5 attempts over ~150 ms of
+    /// backoff (10·2ⁿ ms). A PERSISTENT hold — a genuine lock or permission problem — fails
+    /// every attempt and the last exception propagates unchanged, so real errors still throw.
+    /// Observed 2026-07-29 as rotating flakes across the editing tests, every stack ending in
+    /// this File.Move; each victim passed in isolation.
+    /// </summary>
+    private static void MoveWithRetry(string tempPath, string fullPath, int maxAttempts, int baseDelayMs)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(tempPath, fullPath, overwrite: true);
+                return;
+            }
+            catch (Exception ex) when (attempt < maxAttempts
+                                       && ex is IOException or UnauthorizedAccessException)
+            {
+                Thread.Sleep(baseDelayMs * (1 << (attempt - 1)));
+            }
         }
     }
 

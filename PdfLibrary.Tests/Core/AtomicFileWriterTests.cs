@@ -105,6 +105,51 @@ public class AtomicFileWriterTests : IDisposable
         Assert.Equal(4, new FileInfo(path).Length);
     }
 
+    // Windows file-lock race, seen as rotating test flakes (2026-07-29): the replace-rename in
+    // File.Move throws IOException (sharing violation) or UnauthorizedAccessException when an
+    // external scanner (Defender, Search indexer) transiently holds the destination. The writer
+    // must absorb a TRANSIENT hold by retrying the rename — this test holds the destination
+    // open briefly on another thread and releases it well inside the retry budget.
+    [Fact]
+    public void Write_DestinationTransientlyLocked_RetriesAndSucceeds()
+    {
+        string dir = NewTempDir();
+        string path = Path.Combine(dir, "locked.bin");
+        File.WriteAllBytes(path, [1, 2, 3]);
+
+        // Hold the destination so the rename cannot replace it, release after ~50 ms —
+        // far inside the default retry budget, far beyond attempt #1.
+        var handle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        Task releaser = Task.Run(() => { Thread.Sleep(50); handle.Dispose(); });
+
+        AtomicFileWriter.Write(path, stream => stream.Write([7, 8, 9]));
+
+        releaser.Wait();
+        Assert.Equal(new byte[] { 7, 8, 9 }, File.ReadAllBytes(path));
+        Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
+    }
+
+    // A PERSISTENT hold is a genuine failure and must still throw once the budget is spent —
+    // the retry must not convert real permission problems into hangs or silent success. Uses
+    // the internal overload with a tiny budget so the test stays fast.
+    [Fact]
+    public void Write_DestinationHeldPastRetryBudget_StillThrows_AndCleansUpTemp()
+    {
+        string dir = NewTempDir();
+        string path = Path.Combine(dir, "held.bin");
+        File.WriteAllBytes(path, [1, 2, 3]);
+
+        using var handle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        Assert.ThrowsAny<Exception>(() =>
+            AtomicFileWriter.Write(path, stream =>
+            {
+                stream.Write([9]);
+                return true;
+            }, maxMoveAttempts: 2, baseRetryDelayMs: 1));
+
+        Assert.Empty(Directory.GetFiles(dir, "*.tmp"));   // temp cleaned up on final failure
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
