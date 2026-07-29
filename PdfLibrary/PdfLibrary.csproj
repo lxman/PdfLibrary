@@ -67,6 +67,9 @@
         <!-- Test projects need internal access for thorough testing -->
         <InternalsVisibleTo Include="PdfLibrary.Tests" />
         <InternalsVisibleTo Include="PdfLibrary.Integration" />
+        <!-- G-14 Task 7: Pellucid's render-level pins call PdfImageToCmyk.StencilInkFromFill directly
+             (an internal SP-6d hook) to observe the process-only stencil ink Task 5 produces. -->
+        <InternalsVisibleTo Include="Pellucid.Rendering.Avalonia.Tests" />
     </ItemGroup>
 
     <ItemGroup>
