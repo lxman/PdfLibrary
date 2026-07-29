@@ -140,6 +140,37 @@ public static class PdfImageToCmyk
         // --- Direct Separation/DeviceN with a DeviceCMYK alternate: N colorant bytes/pixel → tint → CMYK ---
         if (cs is { Count: >= 4 } && cs[0] is PdfName { Value: "Separation" or "DeviceN" })
         {
+            // G-14: all-reserved colourants (± /None) — samples go straight to their plates;
+            // the alternate + tint transform are ignored (§8.6.6.4 first clause; the fill/stroke
+            // sibling is InkDecider's reserved-direct arm, the shading sibling is
+            // ShadingBuilder.PackByReservedName). Indexed images over such a base are NOT routed
+            // here (the Indexed branch above already returned) — recorded in the matrix.
+            string[] rNames = SeparationNames(cs, document);
+            if (rNames.Length >= 1 && ColorSpaceResolver.AllReservedProcessOrNone(rNames))
+            {
+                int rInC = rNames.Length;
+                if (data.Length < px * rInC) return null;
+                double[]? rDec = image.DecodeArray;
+                bool rApplyDecode = rDec is not null && rDec.Length >= rInC * 2;
+                var plateOf = new int[rInC];
+                for (var c = 0; c < rInC; c++)
+                    plateOf[c] = ColorSpaceResolver.ReservedChannelOf(rNames[c]) ?? -1;   // /None → −1
+
+                var outR = new byte[px * 4];
+                for (var i = 0; i < px; i++)
+                {
+                    int src = i * rInC, po = i * 4;
+                    for (var c = 0; c < rInC; c++)
+                    {
+                        if (plateOf[c] < 0) continue;
+                        double s = data[src + c] / 255.0;
+                        if (rApplyDecode) s = rDec![2 * c] + s * (rDec[2 * c + 1] - rDec[2 * c]);
+                        outR[po + plateOf[c]] = B(s);
+                    }
+                }
+                return outR;
+            }
+
             Func<double[], (double C, double M, double Y, double K)>? tint =
                 ColorSpaceResolver.BuildTintToCmyk(cs, document, out int inC);
             if (tint is null || inC < 1) return null;
