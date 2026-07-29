@@ -156,4 +156,22 @@ public class InitialColorValueTests
             "0.3 rather than left at the un-clamped 0. RGB(255,0,0) means the previous colour carried " +
             "over; RGB(255,255,255) means C was left at 0 instead of being clamped.");
     }
+
+    // G-11 BASELINE: InitialColorFor("Pattern") returns null, and OnColorSpaceChanged treats
+    // null as "leave the current colour alone" — so a fill after `/Pattern cs` with no scn
+    // paints the PREVIOUS space's colour (the red set by rg). Ruled goal (§8.6.8 Table 73):
+    // the initial colour of a Pattern space is "a pattern object that causes nothing to be
+    // painted", so this fill should leave the page untouched (white here). The fix must flip
+    // this pin red and retire it deliberately.
+    [Fact]
+    public void Pattern_without_scn_carries_over_previous_colour_G11Baseline()
+    {
+        SKColor c = ColourConformancePage.RenderCentre(
+            ColourConformancePage.Build("/DeviceRGB", "1 0 0 rg /Pattern cs 100 400 200 200 re f"));
+
+        Assert.True(c.Red > 235 && c.Green < 20 && c.Blue < 20,
+            $"G-11 baseline moved: fill after bare /Pattern cs painted RGB({c.Red},{c.Green},{c.Blue}), " +
+            "not the carried-over red. If the page is now untouched, G-11 is FIXED — retire this " +
+            "pin deliberately and update the matrix.");
+    }
 }
