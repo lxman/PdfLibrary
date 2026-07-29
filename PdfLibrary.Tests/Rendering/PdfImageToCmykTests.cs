@@ -483,13 +483,37 @@ public class PdfImageToCmykTests
         Assert.Equal(new byte[] { 0, 0, 0, 0, /**/ 0, 0, 0, 255 }, cmyk);
     }
 
+    // Deliberately retires the old Separation_with_a_CalGray_alternate_still_reverts pin. What that pin
+    // protected was TryToCmyk's SCOPE half: before G-14, only a DeviceCMYK/DeviceGray alternate was
+    // converted to ink here — a CIE-based (CalGray/Lab/ICCBased) alternate deferred to the managed RGBA
+    // path, same as InkDecider.ToCmyk for fills. G-14 retires that for ALL-RESERVED colourant names
+    // specifically (§8.6.6.4 first clause): the alternate space + tint transform are a simulation recipe
+    // for when the colourant is UNAVAILABLE, but a reserved name (/Black, /Cyan, /Magenta, /Yellow, /All)
+    // is always available on a CMYK device — so its tint IS the ink percentage, and the alternate (of
+    // whatever flavour, device or CIE) is ignored unconditionally. /Black over CalGray now routes
+    // directly to the K plate instead of deferring.
     [Fact]
-    public void Separation_with_a_CalGray_alternate_still_reverts()
+    public void Separation_Black_CalGrayAlternate_RoutesDirectly_G14()
     {
-        // The NON-GOAL, pinned. CalGray is CIE-based, NOT a device space, so it keeps colour management and
-        // must still take the managed RGBA path — exactly as InkDecider.ToCmyk treats it for fills. Only
-        // DeviceGray is a device space that separates K-only.
         PdfArray cs = new(new PdfName("Separation"), new PdfName("Black"),
+            new PdfArray(new PdfName("CalGray"), new PdfDictionary()), Type2([1.0], [0.0]));
+        // 2 px: tint 0.0 and tint 1.0 — sampled straight onto K, alternate/tint transform ignored.
+        PdfImage img = Image(cs, [0, 255], 2, 1);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out int w, out int h);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(2, w); Assert.Equal(1, h);
+        Assert.Equal(new byte[] { 0, 0, 0, 0, /**/ 0, 0, 0, 255 }, cmyk);
+    }
+
+    // The scope half of the retired pin, still live: a NON-reserved Separation name (a genuine spot) with
+    // a CalGray alternate is NOT all-reserved, so G-14's direct route does not fire, and this still defers
+    // to the managed RGBA/CalGray path — TryToCmyk returns null exactly as before.
+    [Fact]
+    public void Separation_SpotName_CalGrayAlternate_StillReverts()
+    {
+        PdfArray cs = new(new PdfName("Separation"), new PdfName("SpotX"),
             new PdfArray(new PdfName("CalGray"), new PdfDictionary()), Type2([1.0], [0.0]));
         PdfImage img = Image(cs, [0, 255], 2, 1);
 
@@ -706,6 +730,146 @@ public class PdfImageToCmykTests
             Assert.Equal(new[] { "GWGGreen" }, ink!.Names);
             Assert.Equal(new byte[] { 128 }, ink.TintPlanes);
             Assert.Equal(new byte[] { 0, 0, 0, 255 }, ink.ProcessCmyk);
+        }
+    }
+
+    // --- G-14: all-reserved Separation/DeviceN image samples go straight to their plates ---
+
+    private static PdfDictionary LyingMagentaTint()
+    {
+        // t → (0, t, 0, 0): a WRONG alternate for a /Cyan image. Direct routing must ignore it.
+        var d = new PdfDictionary
+        {
+            [new PdfName("FunctionType")] = new PdfInteger(2),
+            [new PdfName("Domain")] = new PdfArray(new PdfReal(0), new PdfReal(1)),
+            [new PdfName("C0")] = new PdfArray(new PdfReal(0), new PdfReal(0), new PdfReal(0), new PdfReal(0)),
+            [new PdfName("C1")] = new PdfArray(new PdfReal(0), new PdfReal(1), new PdfReal(0), new PdfReal(0)),
+            [new PdfName("N")] = new PdfReal(1),
+        };
+        return d;
+    }
+
+    [Fact]
+    public void G14_ReservedSeparationImage_SamplesGoToItsPlate()
+    {
+        var cs = new PdfArray(new PdfName("Separation"), new PdfName("Cyan"),
+            new PdfName("DeviceCMYK"), LyingMagentaTint());
+        // Two pixels: tint 0.7 (178), tint 0 (0).
+        PdfImage img = Image(cs, [178, 0], 2, 1);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out int w, out int h);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(2, w); Assert.Equal(1, h);
+        Assert.Equal(178, cmyk![0]);  // C ← the sample, directly
+        Assert.Equal(0, cmyk[1]);     // M — the lying alternate is ignored
+        Assert.Equal(0, cmyk[2]);
+        Assert.Equal(0, cmyk[3]);
+        Assert.Equal(0, cmyk[4]); Assert.Equal(0, cmyk[5]); Assert.Equal(0, cmyk[6]); Assert.Equal(0, cmyk[7]);
+    }
+
+    [Fact]
+    public void G14_ReservedDeviceNImage_PacksByName_HonoursDecode()
+    {
+        // [Black, Cyan] with /Decode [1 0  0 1]: Black's samples invert, Cyan's pass through.
+        var tint = LyingMagentaTint();   // any transform — it must be IGNORED
+        var cs = new PdfArray(new PdfName("DeviceN"),
+            new PdfArray(new PdfName("Black"), new PdfName("Cyan")),
+            new PdfName("DeviceCMYK"), tint);
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(1),
+            [new PdfName("Height")] = new PdfInteger(1),
+            [new PdfName("ColorSpace")] = cs,
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+            [new PdfName("Decode")] = new PdfArray(
+                new PdfReal(1), new PdfReal(0), new PdfReal(0), new PdfReal(1)),
+        };
+        var img = new PdfImage(new PdfStream(dict, [51, 102]));   // 0.2, 0.4
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out _, out _);
+
+        Assert.NotNull(cmyk);
+        Assert.Equal(102, cmyk![0]);  // Cyan (names[1]) → C, decode identity: 0.4
+        Assert.Equal(0, cmyk[1]);
+        Assert.Equal(0, cmyk[2]);
+        Assert.Equal(204, cmyk[3]);   // Black (names[0]) → K, decode [1 0]: 1−0.2 = 0.8
+    }
+
+    // Whole-branch final review, minor finding 3: a malformed DeviceN whose /Names array mixes a
+    // non-PdfName element (here, an integer) in with real reserved names must NOT take the G-14 direct
+    // route — SeparationNames drops the non-name element, silently understating the declared colourant
+    // count and walking the sample data at the wrong stride. The guard requires the extracted name count
+    // to equal the array's DECLARED count before taking the route; on a mismatch it falls through to the
+    // pre-G-14 behaviour.
+    [Fact]
+    public void G14_MalformedDeviceNNamesArray_DoesNotTakeTheDirectRoute()
+    {
+        var cs = new PdfArray(new PdfName("DeviceN"),
+            new PdfArray(new PdfName("Cyan"), new PdfInteger(5)),   // declared count 2, one non-name
+            new PdfName("DeviceCMYK"), LyingMagentaTint());
+        // Declared stride is 2 (the array's raw length), regardless of the dropped element.
+        PdfImage img = Image(cs, [178, 0], 1, 1);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out _, out _);
+
+        // Measured: the malformed space is refused by the direct route's count guard. Whatever the
+        // fallback path ultimately does with it (decline outright, or run the tint transform on the
+        // declared 2-component stride) is NOT this test's concern — what matters is that C did NOT
+        // receive the raw sample 178/255 = 0.7 directly on its own plate, which is what the (buggy)
+        // direct route would have produced for [/Cyan, <non-name>] read as ["Cyan"] alone.
+        if (cmyk is not null)
+            Assert.NotEqual(178, cmyk[0]);
+    }
+
+    [Fact]
+    public void G14_StencilInk_AllReservedFill_ReturnsProcessOnlyInk()
+    {
+        // A stencil whose FILL is [/Separation /Cyan] tint 0.7 (unregistered). Pre-G-14 the
+        // no-spot guard returned null and the stencil painted the fill's resolved ALTERNATE.
+        var origin = new ColorantOrigin(["Cyan"], [0.7], "DeviceCMYK");
+
+        SpotImageInk? ink = PdfImageToCmyk.StencilInkFromFill(origin, 2, 2);
+
+        Assert.NotNull(ink);
+        Assert.Empty(ink!.Names);                 // no spot to route
+        Assert.Empty(ink.TintPlanes);
+        Assert.Equal(2 * 2 * 4, ink.ProcessCmyk.Length);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(178, ink.ProcessCmyk[i * 4]);      // C = 0.7, directly
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 1]);    // M/Y/K untouched
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 2]);
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 3]);
+        }
+    }
+
+    [Fact]
+    public void G14_StencilInk_MixedUnregisteredFill_StillDeclines()
+    {
+        // NEGATIVE CONTROL, measured red-first: with names ["Cyan","PANTONE-X"], the name split
+        // classifies PANTONE-X as spot (PageColorant.Classify), so spotNames.Count == 1 != 0 —
+        // the guard never fires and the method proceeds down the EXISTING per-spot build below
+        // it, not the new all-reserved branch. The point pinned here is only that the new branch
+        // does not hijack this case: the spot ("PANTONE-X") still gets its own plane, unaffected
+        // by G-14.
+        var origin = new ColorantOrigin(["Cyan", "PANTONE-X"], [0.5, 0.5], "DeviceCMYK");
+
+        SpotImageInk? ink = PdfImageToCmyk.StencilInkFromFill(origin, 2, 2);
+
+        Assert.NotNull(ink);
+        Assert.Single(ink!.Names);
+        Assert.Equal("PANTONE-X", ink.Names[0]);
+        Assert.Equal(2 * 2, ink.TintPlanes.Length);
+        Assert.All(ink.TintPlanes, b => Assert.Equal(128, b));   // 0.5 → round-to-even 128
+        Assert.Equal(2 * 2 * 4, ink.ProcessCmyk.Length);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(128, ink.ProcessCmyk[i * 4]);      // Cyan plate, 0.5 → 128
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 1]);
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 2]);
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 3]);
         }
     }
 }

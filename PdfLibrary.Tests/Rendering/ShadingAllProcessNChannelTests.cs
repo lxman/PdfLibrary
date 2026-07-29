@@ -360,4 +360,120 @@ public class ShadingAllProcessNChannelTests
         Assert.Equal(204, y);   // was 5
         Assert.Equal(92, k);    // was 204
     }
+
+    // --- G-14: plain (non-NChannel) all-reserved Separation/DeviceN pack straight onto plates ---
+
+    private static PdfDictionary LyingMagentaTint()
+    {
+        // tint t → (0, t, 0, 0): a deliberately WRONG alternate for a /Cyan separation. Direct
+        // application must ignore it; the flatten path is positionally visible on the M plate.
+        var d = new PdfDictionary();
+        d.Add(new PdfName("FunctionType"), new PdfInteger(2));
+        d.Add(new PdfName("Domain"), Reals(0, 1));
+        d.Add(new PdfName("C0"), Reals(0, 0, 0, 0));
+        d.Add(new PdfName("C1"), Reals(0, 1, 0, 0));
+        d.Add(new PdfName("N"), new PdfReal(1));
+        return d;
+    }
+
+    [Fact]
+    public void G14_ReservedSeparation_MapperPacksItsPlateDirectly()
+    {
+        var cs = new PdfArray(new PdfName("Separation"), new PdfName("Cyan"),
+            new PdfName("DeviceCMYK"), LyingMagentaTint());
+
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(cs, null);
+
+        Assert.NotNull(toCmyk);
+        (byte c, byte m, byte y, byte k) = Cmyk(toCmyk!([0.7]));
+        Assert.Equal(178, c);        // 0.7 → its OWN plate
+        Assert.Equal(0, m);          // the lying alternate is ignored
+        Assert.Equal(0, y);
+        Assert.Equal(0, k);
+    }
+
+    [Fact]
+    public void G14_ReservedPlainDeviceN_MapperPacksByName_NoneDiscarded()
+    {
+        // Plain DeviceN (NO /Attributes → no placement → the pre-G-14 code ran the tint transform).
+        // Names deliberately non-canonical order + /None: [Black, Cyan, None].
+        var cs = new PdfArray(new PdfName("DeviceN"), Names("Black", "Cyan", "None"),
+            new PdfName("DeviceCMYK"), IdentityTint());
+
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(cs, null);
+
+        Assert.NotNull(toCmyk);
+        (byte c, byte m, byte y, byte k) = Cmyk(toCmyk!([0.5, 0.25, 0.9]));
+        Assert.Equal(64, c);         // Cyan is names[1] → C plate gets 0.25
+        Assert.Equal(0, m);
+        Assert.Equal(0, y);
+        Assert.Equal(128, k);        // Black is names[0] → K plate gets 0.5; 0.5×255 = 127.5 → 128 (Clamp255 rounds to even)
+        // /None's 0.9 appears NOWHERE. Measured OLD-path behaviour: the pre-existing tint-transform
+        // code right-shifts a 3-component identity result by one plate (C=0, M=0.5, Y=0.25, K=0.9),
+        // a pre-existing 3-into-4-domain padding artifact unrelated to this task — every plate still
+        // distinguishes the two paths positionally.
+    }
+
+    // A shading ramp function, 1-in/1-out: maps the gradient parameter s in [0,1] linearly onto the
+    // Separation's own tint domain, s=0 -> 0, s=1 -> 0.7. This is the shading dict's top-level
+    // /Function (produces the Separation's component value per stop) — distinct from LyingMagentaTint,
+    // which is the COLOUR SPACE's own (bypassed) alternate tint transform.
+    private static PdfDictionary CyanRampFunction()
+    {
+        var d = new PdfDictionary();
+        d.Add(new PdfName("FunctionType"), new PdfInteger(2));
+        d.Add(new PdfName("Domain"), Reals(0, 1));
+        d.Add(new PdfName("C0"), Reals(0));
+        d.Add(new PdfName("C1"), Reals(0.7));
+        d.Add(new PdfName("N"), new PdfReal(1));
+        return d;
+    }
+
+    // G-14 Task 7: a render-level pin for the shading context (Pellucid's ReservedAndNoneRenderTests)
+    // cannot call ShadingBuilder.Build — it is internal to PdfLibrary, and Pellucid's test assembly has
+    // no IVT grant onto it (unlike PdfImageToCmyk.StencilInkFromFill, which Task 7 needed to expose for
+    // the stencil pin). Per the Task 7 decision rule, this pin lands ENGINE-side instead, at the Build
+    // entry point rather than BuildCmykMapper directly, so the Function evaluation + StopCount sampling
+    // loop is exercised too, not only the per-call mapper Task 3 already pinned.
+    [Fact]
+    public void G14_ReservedSeparation_BuildPacksTheLastStopDirectly()
+    {
+        var cs = new PdfArray(new PdfName("Separation"), new PdfName("Cyan"),
+            new PdfName("DeviceCMYK"), LyingMagentaTint());
+
+        var dict = new PdfDictionary();
+        dict.Add(new PdfName("ShadingType"), new PdfInteger(2));
+        dict.Add(new PdfName("ColorSpace"), cs);
+        dict.Add(new PdfName("Coords"), Reals(0, 0, 8, 0));
+        dict.Add(new PdfName("Function"), CyanRampFunction());
+
+        ShadingDescriptor? d = ShadingBuilder.Build(dict, null);
+
+        Assert.NotNull(d);
+        Assert.NotEmpty(d!.CmykColors);
+        // The ramp's last stop samples s=1 => Separation tint 0.7. Direct application packs 0.7 onto
+        // ITS OWN plate (Cyan); the colour space's lying alternate (magenta) must not appear.
+        (byte c, byte m, byte y, byte k) = Cmyk(d.CmykColors[^1]);
+        Assert.Equal(178, c);   // 0.7 → C, byte-quantised
+        Assert.Equal(0, m);     // the lying alternate is ignored
+        Assert.Equal(0, y);
+        Assert.Equal(0, k);
+    }
+
+    [Fact]
+    public void G14_MixedDeviceN_MapperStillRunsTheTintTransform()
+    {
+        // NEGATIVE CONTROL: one non-reserved name → the predicate fails → tint transform runs.
+        var cs = new PdfArray(new PdfName("DeviceN"), Names("Cyan", "PANTONE-X"),
+            new PdfName("DeviceCMYK"), ConstantTint());
+
+        Func<double[], uint>? toCmyk = ShadingBuilder.BuildCmykMapper(cs, null);
+
+        Assert.NotNull(toCmyk);
+        (byte c, byte m, byte y, byte k) = Cmyk(toCmyk!([0.5, 0.5]));
+        Assert.Equal((byte)255, c);  // ConstantTint returns (1,1,1,1) — proof the transform RAN
+        Assert.Equal((byte)255, m);
+        Assert.Equal((byte)255, y);
+        Assert.Equal((byte)255, k);
+    }
 }

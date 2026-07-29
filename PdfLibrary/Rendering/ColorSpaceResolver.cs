@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -1219,6 +1220,74 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <summary>True for the four reserved process-colourant names (Cyan/Magenta/Yellow/Black) — see
     /// <see cref="ReservedProcessChannels"/> for the single list they're drawn from.</summary>
     private static bool IsReservedProcessName(string name) => ReservedProcessChannels.ContainsKey(name);
+
+    /// <summary>G-14 predicate — the ONE definition of "all-reserved" on the engine side (the
+    /// compositor's copy is InkDecider.AllReservedProcessOrNone, kept in step by the cross-repo
+    /// pins): every name reserved-process or /None, at least one reserved-process. /All fails it.
+    /// True means ISO 32000-2 §8.6.6.4's first clause applies on a CMYK device — every colourant
+    /// is available, nothing may be simulated, tints go straight to plates.</summary>
+    internal static bool AllReservedProcessOrNone(IReadOnlyList<string> names)
+    {
+        var anyProcess = false;
+        foreach (string n in names)
+        {
+            if (n == "None") continue;
+            if (!IsReservedProcessName(n)) return false;
+            anyProcess = true;
+        }
+        return anyProcess;
+    }
+
+    /// <summary>The CMYK plate index of a reserved process name (Cyan 0 … Black 3); null for any
+    /// other name, including /None and /All. The lookup is <see cref="ReservedProcessChannels"/> —
+    /// the same single list every reserved-name decision draws from.</summary>
+    internal static int? ReservedChannelOf(string name) =>
+        ReservedProcessChannels.TryGetValue(name, out int ch) ? ch : null;
+
+    /// <summary>Element-1 colourant names of a Separation/DeviceN array: a single name for
+    /// Separation, the /Names array for DeviceN. Empty on any other shape.</summary>
+    internal static string[] ColorantNamesOf(PdfArray sepOrDeviceN, PdfDocument? document)
+    {
+        PdfObject el = sepOrDeviceN.Count > 1 ? sepOrDeviceN[1] : PdfNull.Instance;
+        if (el is PdfIndirectReference r && document is not null)
+            el = document.ResolveReference(r) ?? el;
+        return el switch
+        {
+            PdfName one => [one.Value],
+            PdfArray arr => [.. arr.Select(x =>
+                x is PdfIndirectReference xr && document is not null
+                    ? document.ResolveReference(xr) ?? x : x)
+                .OfType<PdfName>().Select(p => p.Value)],
+            _ => [],
+        };
+    }
+
+    /// <summary>Element-1 colourant COUNT of a Separation/DeviceN array, as the array DECLARES it —
+    /// unlike <see cref="ColorantNamesOf"/>, which silently drops any non-<see cref="PdfName"/> element
+    /// via <c>OfType&lt;PdfName&gt;</c>. Separation is always 1 (a single name, never an array); DeviceN
+    /// is the /Names array's raw <c>Count</c>, non-name elements included. −1 on any other shape (no
+    /// count to declare).</summary>
+    /// <remarks>
+    /// Whole-branch final review, minor finding 3: a malformed DeviceN whose /Names array mixes a
+    /// non-<see cref="PdfName"/> element in with real names (e.g. <c>[/Cyan 5]</c>) makes
+    /// <c>ColorantNamesOf(...).Length</c> LIE about the space's declared colourant count — the dropped
+    /// element silently shifts every following sample's stride. A caller that walks per-pixel samples at
+    /// stride <c>ColorantNamesOf(...).Length</c> must first confirm that count against THIS one; on a
+    /// mismatch the space is malformed and the caller should decline (fall through to its existing path)
+    /// rather than walk samples at the wrong stride.
+    /// </remarks>
+    internal static int DeclaredColourantCount(PdfArray sepOrDeviceN, PdfDocument? document)
+    {
+        PdfObject el = sepOrDeviceN.Count > 1 ? sepOrDeviceN[1] : PdfNull.Instance;
+        if (el is PdfIndirectReference r && document is not null)
+            el = document.ResolveReference(r) ?? el;
+        return el switch
+        {
+            PdfName => 1,
+            PdfArray arr => arr.Count,
+            _ => -1,
+        };
+    }
 
     /// <summary>
     /// Classifies one colourant name. ISO 32000-2 Table 71: the reserved names Cyan, Magenta, Yellow

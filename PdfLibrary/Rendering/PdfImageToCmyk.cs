@@ -137,9 +137,55 @@ public static class PdfImageToCmyk
             return outCmyk;
         }
 
-        // --- Direct Separation/DeviceN with a DeviceCMYK alternate: N colorant bytes/pixel → tint → CMYK ---
+        // --- Direct Separation/DeviceN with any alternate: N colorant bytes/pixel → tint → CMYK ---
         if (cs is { Count: >= 4 } && cs[0] is PdfName { Value: "Separation" or "DeviceN" })
         {
+            // G-14: all-reserved colourants (± /None) — samples go straight to their plates;
+            // the alternate + tint transform are ignored (§8.6.6.4 first clause; the fill/stroke
+            // sibling is InkDecider's reserved-direct arm, the shading sibling is
+            // ShadingBuilder.PackByReservedName). Indexed images over such a base are NOT routed
+            // here (the Indexed branch above already returned) — recorded in the matrix.
+            //
+            // Divergent from the fill/stencil routes on a pathological /Process /Components reassignment
+            // (whole-branch final review, minor finding 4): this route packs by CANONICAL NAME channel
+            // (ReservedChannelOf), whereas InkDecider's fill/stroke sibling and StencilInkFromFill's
+            // placement split pack by PLACEMENT POSITION for the same space. Table 71 makes position the
+            // identity, so the fill/stencil answer is the better one where they could differ — but they
+            // can differ only if a source file reassigns a reserved name to a non-canonical index, which
+            // has no corpus instance.
+            string[] rNames = SeparationNames(cs, document);
+            // Minor finding 3: `rNames.Length` alone is not the space's DECLARED colourant count —
+            // SeparationNames (like ColorSpaceResolver.ColorantNamesOf) drops any non-PdfName /Names
+            // element, silently shifting the stride below. Require the two counts to agree before taking
+            // this route; on a mismatch the space is malformed and falls through to the existing tint-
+            // transform / decline paths, exactly as pre-G-14.
+            int declaredCount = ColorSpaceResolver.DeclaredColourantCount(cs, document);
+            if (rNames.Length >= 1 && rNames.Length == declaredCount
+                && ColorSpaceResolver.AllReservedProcessOrNone(rNames))
+            {
+                int rInC = rNames.Length;
+                if (data.Length < px * rInC) return null;
+                double[]? rDec = image.DecodeArray;
+                bool rApplyDecode = rDec is not null && rDec.Length >= rInC * 2;
+                var plateOf = new int[rInC];
+                for (var c = 0; c < rInC; c++)
+                    plateOf[c] = ColorSpaceResolver.ReservedChannelOf(rNames[c]) ?? -1;   // /None → −1
+
+                var outR = new byte[px * 4];
+                for (var i = 0; i < px; i++)
+                {
+                    int src = i * rInC, po = i * 4;
+                    for (var c = 0; c < rInC; c++)
+                    {
+                        if (plateOf[c] < 0) continue;
+                        double s = data[src + c] / 255.0;
+                        if (rApplyDecode) s = rDec![2 * c] + s * (rDec[2 * c + 1] - rDec[2 * c]);
+                        outR[po + plateOf[c]] = B(s);
+                    }
+                }
+                return outR;
+            }
+
             Func<double[], (double C, double M, double Y, double K)>? tint =
                 ColorSpaceResolver.BuildTintToCmyk(cs, document, out int inC);
             if (tint is null || inC < 1) return null;
@@ -465,7 +511,30 @@ public static class PdfImageToCmyk
                 { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(origin.Names[c]); }
                 else { plate[c] = ProcessPlate(origin.Names[c]); spotOf[c] = -1; }
         }
-        if (spotNames.Count == 0) return null;   // process-only fill → the RGBA path is fine (a non-goal)
+        if (spotNames.Count == 0)
+        {
+            // G-14: an ALL-RESERVED fill (± /None) is no longer "the RGBA path is fine" — that path
+            // paints the fill's resolved ALTERNATE, and for a reserved-name separation the alternate
+            // is ignored (§8.6.6.4 first clause). Return process-only ink: the plates directly from
+            // the tints, no spot names, no planes. The compositor routes it with a zero-length spot
+            // loop (CmykPageRenderer's image gate accepts empty Names for exactly this shape). Any
+            // other process-only fill (e.g. a DeviceN of non-reserved process names without a
+            // placement) still declines to the RGBA path, unchanged.
+            if (!ColorSpaceResolver.AllReservedProcessOrNone(origin.Names)) return null;
+            var cellR = new byte[4];
+            for (var c = 0; c < inC; c++)
+                if (plate[c] >= 0)
+                    cellR[plate[c]] = B(c < origin.Tints.Count ? origin.Tints[c] : 0.0);
+            int pxR = width * height;
+            var processR = new byte[pxR * 4];
+            for (var i = 0; i < pxR; i++)
+            {
+                int po = i * 4;
+                processR[po] = cellR[0]; processR[po + 1] = cellR[1];
+                processR[po + 2] = cellR[2]; processR[po + 3] = cellR[3];
+            }
+            return new SpotImageInk([], [], processR);
+        }
 
         // One pixel's worth of ink, then replicated: the value is constant by construction.
         int spotN = spotNames.Count;
