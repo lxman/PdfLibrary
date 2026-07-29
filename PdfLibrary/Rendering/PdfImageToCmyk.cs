@@ -137,7 +137,7 @@ public static class PdfImageToCmyk
             return outCmyk;
         }
 
-        // --- Direct Separation/DeviceN with a DeviceCMYK alternate: N colorant bytes/pixel → tint → CMYK ---
+        // --- Direct Separation/DeviceN with any alternate: N colorant bytes/pixel → tint → CMYK ---
         if (cs is { Count: >= 4 } && cs[0] is PdfName { Value: "Separation" or "DeviceN" })
         {
             // G-14: all-reserved colourants (± /None) — samples go straight to their plates;
@@ -145,8 +145,23 @@ public static class PdfImageToCmyk
             // sibling is InkDecider's reserved-direct arm, the shading sibling is
             // ShadingBuilder.PackByReservedName). Indexed images over such a base are NOT routed
             // here (the Indexed branch above already returned) — recorded in the matrix.
+            //
+            // Divergent from the fill/stencil routes on a pathological /Process /Components reassignment
+            // (whole-branch final review, minor finding 4): this route packs by CANONICAL NAME channel
+            // (ReservedChannelOf), whereas InkDecider's fill/stroke sibling and StencilInkFromFill's
+            // placement split pack by PLACEMENT POSITION for the same space. Table 71 makes position the
+            // identity, so the fill/stencil answer is the better one where they could differ — but they
+            // can differ only if a source file reassigns a reserved name to a non-canonical index, which
+            // has no corpus instance.
             string[] rNames = SeparationNames(cs, document);
-            if (rNames.Length >= 1 && ColorSpaceResolver.AllReservedProcessOrNone(rNames))
+            // Minor finding 3: `rNames.Length` alone is not the space's DECLARED colourant count —
+            // SeparationNames (like ColorSpaceResolver.ColorantNamesOf) drops any non-PdfName /Names
+            // element, silently shifting the stride below. Require the two counts to agree before taking
+            // this route; on a mismatch the space is malformed and falls through to the existing tint-
+            // transform / decline paths, exactly as pre-G-14.
+            int declaredCount = ColorSpaceResolver.DeclaredColourantCount(cs, document);
+            if (rNames.Length >= 1 && rNames.Length == declaredCount
+                && ColorSpaceResolver.AllReservedProcessOrNone(rNames))
             {
                 int rInC = rNames.Length;
                 if (data.Length < px * rInC) return null;

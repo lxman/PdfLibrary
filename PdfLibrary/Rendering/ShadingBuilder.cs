@@ -173,8 +173,13 @@ internal static class ShadingBuilder
                         // and the tint transform (which prepress files use to LIE — the G-14 fixture
                         // is a /Cyan separation with a magenta-ramping alternate) is ignored. The
                         // compositor's fill/stroke sibling is InkDecider's reserved-direct arm.
+                        // Minor finding 3's rider: ColorantNamesOf drops any non-PdfName /Names element,
+                        // which can silently understate the space's declared colourant count for a
+                        // malformed DeviceN. Require the two counts to agree before taking the bypass; on
+                        // a mismatch the space is malformed and falls through to the tint transform below.
                         string[] reservedNames = ColorSpaceResolver.ColorantNamesOf(arr, document);
-                        if (reservedNames.Length >= 1
+                        int declaredReservedCount = ColorSpaceResolver.DeclaredColourantCount(arr, document);
+                        if (reservedNames.Length >= 1 && reservedNames.Length == declaredReservedCount
                             && ColorSpaceResolver.AllReservedProcessOrNone(reservedNames))
                             return c => PackByReservedName(c, reservedNames);
 

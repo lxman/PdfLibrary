@@ -1262,6 +1262,33 @@ internal class ColorSpaceResolver(PdfDocument? document)
         };
     }
 
+    /// <summary>Element-1 colourant COUNT of a Separation/DeviceN array, as the array DECLARES it —
+    /// unlike <see cref="ColorantNamesOf"/>, which silently drops any non-<see cref="PdfName"/> element
+    /// via <c>OfType&lt;PdfName&gt;</c>. Separation is always 1 (a single name, never an array); DeviceN
+    /// is the /Names array's raw <c>Count</c>, non-name elements included. −1 on any other shape (no
+    /// count to declare).</summary>
+    /// <remarks>
+    /// Whole-branch final review, minor finding 3: a malformed DeviceN whose /Names array mixes a
+    /// non-<see cref="PdfName"/> element in with real names (e.g. <c>[/Cyan 5]</c>) makes
+    /// <c>ColorantNamesOf(...).Length</c> LIE about the space's declared colourant count — the dropped
+    /// element silently shifts every following sample's stride. A caller that walks per-pixel samples at
+    /// stride <c>ColorantNamesOf(...).Length</c> must first confirm that count against THIS one; on a
+    /// mismatch the space is malformed and the caller should decline (fall through to its existing path)
+    /// rather than walk samples at the wrong stride.
+    /// </remarks>
+    internal static int DeclaredColourantCount(PdfArray sepOrDeviceN, PdfDocument? document)
+    {
+        PdfObject el = sepOrDeviceN.Count > 1 ? sepOrDeviceN[1] : PdfNull.Instance;
+        if (el is PdfIndirectReference r && document is not null)
+            el = document.ResolveReference(r) ?? el;
+        return el switch
+        {
+            PdfName => 1,
+            PdfArray arr => arr.Count,
+            _ => -1,
+        };
+    }
+
     /// <summary>
     /// Classifies one colourant name. ISO 32000-2 Table 71: the reserved names Cyan, Magenta, Yellow
     /// and Black "shall always be considered to be process colours … they need not have entries in the

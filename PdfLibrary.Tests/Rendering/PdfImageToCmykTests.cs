@@ -797,6 +797,32 @@ public class PdfImageToCmykTests
         Assert.Equal(204, cmyk[3]);   // Black (names[0]) → K, decode [1 0]: 1−0.2 = 0.8
     }
 
+    // Whole-branch final review, minor finding 3: a malformed DeviceN whose /Names array mixes a
+    // non-PdfName element (here, an integer) in with real reserved names must NOT take the G-14 direct
+    // route — SeparationNames drops the non-name element, silently understating the declared colourant
+    // count and walking the sample data at the wrong stride. The guard requires the extracted name count
+    // to equal the array's DECLARED count before taking the route; on a mismatch it falls through to the
+    // pre-G-14 behaviour.
+    [Fact]
+    public void G14_MalformedDeviceNNamesArray_DoesNotTakeTheDirectRoute()
+    {
+        var cs = new PdfArray(new PdfName("DeviceN"),
+            new PdfArray(new PdfName("Cyan"), new PdfInteger(5)),   // declared count 2, one non-name
+            new PdfName("DeviceCMYK"), LyingMagentaTint());
+        // Declared stride is 2 (the array's raw length), regardless of the dropped element.
+        PdfImage img = Image(cs, [178, 0], 1, 1);
+
+        byte[]? cmyk = PdfImageToCmyk.TryToCmyk(img, null, out _, out _);
+
+        // Measured: the malformed space is refused by the direct route's count guard. Whatever the
+        // fallback path ultimately does with it (decline outright, or run the tint transform on the
+        // declared 2-component stride) is NOT this test's concern — what matters is that C did NOT
+        // receive the raw sample 178/255 = 0.7 directly on its own plate, which is what the (buggy)
+        // direct route would have produced for [/Cyan, <non-name>] read as ["Cyan"] alone.
+        if (cmyk is not null)
+            Assert.NotEqual(178, cmyk[0]);
+    }
+
     [Fact]
     public void G14_StencilInk_AllReservedFill_ReturnsProcessOnlyInk()
     {
