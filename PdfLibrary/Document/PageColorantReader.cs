@@ -1,3 +1,4 @@
+using Logging;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Rendering;
@@ -31,10 +32,13 @@ internal static class PageColorantReader
         {
             WalkResources(page?.GetResources(), document, seen, result, graphSeen, 0);
         }
-        catch
+        catch (Exception ex)
         {
             // Defensive: a malformed resource graph must never throw out of the public GetPageColorants
-            // (spec "Guards and stability" contract). Return whatever was collected before the fault.
+            // (spec "Guards and stability" contract). Return whatever was collected before the fault —
+            // but say so, or a truncated inventory is indistinguishable from a complete one.
+            PdfLogger.Log(LogCategory.Graphics,
+                $"GetPageColorants: resource walk faulted ({ex.GetType().Name}: {ex.Message}); returning partial inventory");
         }
         return result;
     }
