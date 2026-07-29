@@ -796,4 +796,54 @@ public class PdfImageToCmykTests
         Assert.Equal(0, cmyk[2]);
         Assert.Equal(204, cmyk[3]);   // Black (names[0]) → K, decode [1 0]: 1−0.2 = 0.8
     }
+
+    [Fact]
+    public void G14_StencilInk_AllReservedFill_ReturnsProcessOnlyInk()
+    {
+        // A stencil whose FILL is [/Separation /Cyan] tint 0.7 (unregistered). Pre-G-14 the
+        // no-spot guard returned null and the stencil painted the fill's resolved ALTERNATE.
+        var origin = new ColorantOrigin(["Cyan"], [0.7], "DeviceCMYK");
+
+        SpotImageInk? ink = PdfImageToCmyk.StencilInkFromFill(origin, 2, 2);
+
+        Assert.NotNull(ink);
+        Assert.Empty(ink!.Names);                 // no spot to route
+        Assert.Empty(ink.TintPlanes);
+        Assert.Equal(2 * 2 * 4, ink.ProcessCmyk.Length);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(178, ink.ProcessCmyk[i * 4]);      // C = 0.7, directly
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 1]);    // M/Y/K untouched
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 2]);
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 3]);
+        }
+    }
+
+    [Fact]
+    public void G14_StencilInk_MixedUnregisteredFill_StillDeclines()
+    {
+        // NEGATIVE CONTROL, measured red-first: with names ["Cyan","PANTONE-X"], the name split
+        // classifies PANTONE-X as spot (PageColorant.Classify), so spotNames.Count == 1 != 0 —
+        // the guard never fires and the method proceeds down the EXISTING per-spot build below
+        // it, not the new all-reserved branch. The point pinned here is only that the new branch
+        // does not hijack this case: the spot ("PANTONE-X") still gets its own plane, unaffected
+        // by G-14.
+        var origin = new ColorantOrigin(["Cyan", "PANTONE-X"], [0.5, 0.5], "DeviceCMYK");
+
+        SpotImageInk? ink = PdfImageToCmyk.StencilInkFromFill(origin, 2, 2);
+
+        Assert.NotNull(ink);
+        Assert.Single(ink!.Names);
+        Assert.Equal("PANTONE-X", ink.Names[0]);
+        Assert.Equal(2 * 2, ink.TintPlanes.Length);
+        Assert.All(ink.TintPlanes, b => Assert.Equal(128, b));   // 0.5 → round-to-even 128
+        Assert.Equal(2 * 2 * 4, ink.ProcessCmyk.Length);
+        for (var i = 0; i < 4; i++)
+        {
+            Assert.Equal(128, ink.ProcessCmyk[i * 4]);      // Cyan plate, 0.5 → 128
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 1]);
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 2]);
+            Assert.Equal(0, ink.ProcessCmyk[i * 4 + 3]);
+        }
+    }
 }

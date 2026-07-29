@@ -496,7 +496,30 @@ public static class PdfImageToCmyk
                 { plate[c] = -1; spotOf[c] = spotNames.Count; spotNames.Add(origin.Names[c]); }
                 else { plate[c] = ProcessPlate(origin.Names[c]); spotOf[c] = -1; }
         }
-        if (spotNames.Count == 0) return null;   // process-only fill → the RGBA path is fine (a non-goal)
+        if (spotNames.Count == 0)
+        {
+            // G-14: an ALL-RESERVED fill (± /None) is no longer "the RGBA path is fine" — that path
+            // paints the fill's resolved ALTERNATE, and for a reserved-name separation the alternate
+            // is ignored (§8.6.6.4 first clause). Return process-only ink: the plates directly from
+            // the tints, no spot names, no planes. The compositor routes it with a zero-length spot
+            // loop (CmykPageRenderer's image gate accepts empty Names for exactly this shape). Any
+            // other process-only fill (e.g. a DeviceN of non-reserved process names without a
+            // placement) still declines to the RGBA path, unchanged.
+            if (!ColorSpaceResolver.AllReservedProcessOrNone(origin.Names)) return null;
+            var cellR = new byte[4];
+            for (var c = 0; c < inC; c++)
+                if (plate[c] >= 0)
+                    cellR[plate[c]] = B(c < origin.Tints.Count ? origin.Tints[c] : 0.0);
+            int pxR = width * height;
+            var processR = new byte[pxR * 4];
+            for (var i = 0; i < pxR; i++)
+            {
+                int po = i * 4;
+                processR[po] = cellR[0]; processR[po + 1] = cellR[1];
+                processR[po + 2] = cellR[2]; processR[po + 3] = cellR[3];
+            }
+            return new SpotImageInk([], [], processR);
+        }
 
         // One pixel's worth of ink, then replicated: the value is constant by construction.
         int spotN = spotNames.Count;
