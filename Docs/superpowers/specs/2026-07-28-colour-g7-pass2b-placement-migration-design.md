@@ -100,6 +100,25 @@ gate passed but `Placement` is null are exactly `/All` (old path: Spot arm → r
 alternate miss → `default` → refuse) and unplaceable-Process (old path: `default` → refuse) — both
 already ended in the same whole-op fallback, one layer deeper.
 
+> **Corrected 2026-07-28 by the whole-branch review, superseding the sentence above:** the premise
+> is false. `Decide`'s `/All` arm fires only when `Names.Count == 1`; `RoleFor("All")` resolves to
+> `Spot`; and `ColorSpaceResolver.OwnAlternateFor` has no `/All` special case. So a mixed-NChannel
+> `/All` component carrying a tint plus an `/Attributes`/`/Colorants` entry did **not** fall through
+> registry miss → alternate miss → default → refuse — it took the own-alternate **revert** arm,
+> before this migration. Registry-plane divergence for `/All` is unreachable in practice
+> (`PageColorantReader` filters `ColorantKind.All` out of the inventory), so the own-alternate
+> revert was the *sole* live vector for such a component. After the migration, `Build`'s table is
+> null for this shape, so the whole op now takes the routed/flatten arm instead of reverting.
+>
+> This is a fourth accepted divergence, **R4**: a mixed NChannel `/All` component with a tinted
+> own-alternate `/Colorants` entry reverted before the migration and refuses-to-flatten after it.
+> Accepted because it is corpus-unreachable (no fixture in the corpus reaches the own-alternate
+> revert arm through `/All`), the post-migration behaviour is the more correct reading of "every
+> colorant on the device at once" (an `/All` component is not a single ordinary spot and should not
+> silently revert to one colorant's own alternate), and restoring the old behaviour would mean
+> re-adding an `/All` special case to `Build` — exactly the kind of case this migration exists to
+> delete.
+
 **No engine pack, no repin.** `ColorantPlacement` is in the pinned `2.5.1-dev20260728182856`;
 `ProcessContribution` already consumes it in the same file.
 
