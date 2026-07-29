@@ -213,13 +213,18 @@ public class RecordingRenderTargetSpotTests
 
     /// <summary>An NChannel fill origin: the per-component carrier ColorSpaceResolver builds for
     /// <c>/Subtype /NChannel</c>, constructed directly because a stencil's origin arrives already built —
-    /// StencilInkFromFill adds no resolution site.</summary>
+    /// StencilInkFromFill adds no resolution site. Placement is built the same way
+    /// ColorSpaceResolver.OriginForColorSpaceObject builds it (from Components and
+    /// ProcessChannelCount, via ColorantPlacement.Build) — a real per-component origin always carries
+    /// both together, so a fixture that omitted Placement would not be a synthetic stand-in for
+    /// production data, it would be a shape production never produces.</summary>
     private static ColorantOrigin NChannelFill(int processChannelCount, params ColourantComponent[] comps) =>
         new([.. comps.Select(c => c.Name)], [.. comps.Select(c => c.Tint ?? 0.0)], "DeviceCMYK")
         {
             Subtype = "NChannel",
             Components = comps,
             ProcessChannelCount = processChannelCount,
+            Placement = ColorantPlacement.Build(comps, processChannelCount),
         };
 
     private static PdfGraphicsState StencilFillState(ColorantOrigin origin) => new()
