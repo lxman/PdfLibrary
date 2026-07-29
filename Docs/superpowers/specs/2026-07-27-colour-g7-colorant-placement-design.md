@@ -268,6 +268,9 @@ corpus instance.** Where they do not, the site stays as it is and the duplicatio
 Two implementations of one physical rule is how a plate ends up disagreeing with itself. But
 replacing verified code on an argument rather than a measurement is how this programme got I-1.
 
+> **Migrated 2026-07-28 (Plan 4): both sites consume Placement; refusal divergences R1-R3 preserved;
+> one additional accepted divergence R4 recorded in the migration design.**
+
 ---
 
 ## 5. Evidence

@@ -459,6 +459,26 @@ substantive violation this matrix has tracked since slice 1~~.
   >   that stopped `TryPerComponent` declining would leave those tests green while the fixed code stopped
   >   firing. The cross-repo join test (`Pellucid`, `NChannelPerComponentRenderTests`) covers the shading
   >   path end to end; no equivalent pins the fill path's routing.
+  > - ~~**Still open — migration of Pass 2b's two shipped sites onto Placement.** Sites 1
+  >   (`PdfImageToCmyk`) and 2 (`InkDecider.TryPerComponent`) still carry their own
+  >   position/role-derived split rather than consuming `ColorantOrigin.Placement`, the carrier sites 3,
+  >   4 and 5 already read — two implementations of one physical rule, recorded rather than argued away
+  >   in the parent design's §4.4.~~ **Closed 2026-07-28.** Site 1 (engine `d56c22f`) and site 2
+  >   (Pellucid `5457fd5`) now both consume `ColorantOrigin.Placement`; `ColorantPlacement.Build` is the
+  >   only code in either repo that turns `ColourantComponent.Role`/`ProcessChannel` into slots. Zero
+  >   behaviour change: GWG 51/51 and NChannel 3/3, both 0 differences, embedded engine SHA verified
+  >   equal to the merge commit; engine suite 2685/0 and Pellucid suite 1315/0. The three M4-measured
+  >   refusal divergences (R1: site 2 refuses a null-`Tint` Process component the table would place; R2:
+  >   site 2 refuses an unregistered spot with no own alternate the table would still slot; R3: site 1
+  >   refuses a no-spot split the table succeeds on, site 2 does not — the asymmetry is load-bearing, per
+  >   site 1's I-1 category-flip guard) are preserved verbatim at their sites. One additional divergence
+  >   was found and accepted during the migration, **R4**: a mixed NChannel `/All` component with a
+  >   tinted own-alternate `/Colorants` entry reverted through its own alternate before the migration and
+  >   refuses-to-flatten after it — corpus-unreachable, and the post-migration reading is the more
+  >   correct one (see the migration design's §4, dated-correction block, for the full argument). Engine
+  >   merge `66b11565e42839ff57459daa116c28d835efb757`, Pellucid merge
+  >   `fa0c76e19fad11e21a52344e0d175b7308a11adf`. Design:
+  >   `Docs/superpowers/specs/2026-07-28-colour-g7-pass2b-placement-migration-design.md`.
   >
   > ~~**No render-hash gate can observe site 3.** Across all 2999 corpus files there are 17 NChannel
   > spaces, exactly 2 where name-split and placement disagree — both the same `6-2-4-4-t02-pass-a`
