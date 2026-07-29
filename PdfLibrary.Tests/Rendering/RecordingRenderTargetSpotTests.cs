@@ -258,8 +258,9 @@ public class RecordingRenderTargetSpotTests
 
     // THE FOUR-CHANNEL GATE. ProcessChannel indexes the PROCESS space's channels, not the plates: under a
     // one-channel process space a listed name ALSO gets index 0, and painting it on cyan would be a colour
-    // error the name split never made. Ink1 must stay an ordinary spot. Dropping the ProcessChannelCount: 4
-    // gate at the stencil call site puts Ink1's 128 on the cyan plate and drops it from Names.
+    // error the name split never made. Ink1 must stay an ordinary spot. Dropping the
+    // `processChannelCount != 4` refusal in ColorantPlacement.Build puts Ink1's 128 on the cyan plate and
+    // drops it from Names.
     [Fact]
     public void DrawImage_stencil_over_a_ONE_channel_process_space_falls_back_to_the_name_split()
     {
@@ -280,9 +281,10 @@ public class RecordingRenderTargetSpotTests
     // an EMPTY spot list, and StencilInkFromFill would then return null on `spotNames.Count == 0` — which
     // is not a colour change downstream but a CATEGORY change: cmd.Spots null means ProcessOther means
     // knockout, so an overprinting stencil erases the backdrop it used to preserve. That is precisely the
-    // GWG020 failure SP-6d closed, re-opened from the other direction. SplitByComponents refuses instead,
-    // and the name split's answer (both unreserved names are Spot) is what this pins — today's behaviour,
-    // unchanged. Removing the `spotNames.Count > 0` guard makes this fail on Assert.NotNull.
+    // GWG020 failure SP-6d closed, re-opened from the other direction. StencilInkFromFill's
+    // `spotNames.Count == 0 return null` guard refuses instead, and the name split's answer (both
+    // unreserved names are Spot) is what this pins — today's behaviour, unchanged. Removing that guard
+    // makes this fail on Assert.NotNull.
     [Fact]
     public void DrawImage_stencil_whose_NChannel_fill_is_ALL_process_keeps_the_name_splits_answer()
     {

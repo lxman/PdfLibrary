@@ -592,9 +592,10 @@ public class PdfImageToCmykTests
         Assert.Equal(new byte[] { 255, 0, 0, 0 }, ink.ProcessCmyk);  // None's 255 landed nowhere
     }
 
-    // THE ALL-OR-NOTHING RULE, pinned. Added at Step 8 because Mutation B (SplitByComponents' default arm
-    // changed from `return null` to silently dropping the component) left the WHOLE suite green: none of
-    // the plan's seven fixtures reaches that arm, so the rule the task calls governing was unpinned.
+    // THE ALL-OR-NOTHING RULE, pinned. Added at Step 8 because Mutation B (ColorantPlacement.Build's
+    // `if (c.ProcessChannel is not { } channel) return null;` arm changed to silently dropping the
+    // component) left the WHOLE suite green: none of the plan's seven fixtures reaches that arm, so the
+    // rule the task calls governing was unpinned.
     //
     // PrCyan is listed in /Components at index 4, which is at the four-channel process space's channel
     // count, so ProcessChannelFor rejects it as out of range and returns null while RoleFor still calls it
@@ -625,10 +626,12 @@ public class PdfImageToCmykTests
     // ProcessOther means "paint source on every process plate" means KNOCKOUT, and an overprinting image
     // erases a backdrop it used to preserve under Table 148 row 3.
     //
-    // So SplitByComponents refuses a spotless split and the NAME split answers whole: PrCyan/PrMagenta are
-    // unreserved, Classify calls them Spot, and this is byte-for-byte what the file did before Task 2. The
-    // colour is wrong the same way it was already wrong; only the overprint category is protected. Removing
-    // the `spotNames.Count > 0` guard in SplitByComponents must make this test fail on Assert.NotNull.
+    // So the per-component split refuses a spotless split and the NAME split answers whole: PrCyan/PrMagenta
+    // are unreserved, Classify calls them Spot, and this is byte-for-byte what the file did before Task 2.
+    // The colour is wrong the same way it was already wrong; only the overprint category is protected.
+    // Removing the `spotNames.Count == 0 return null` guard in THIS file (R3 stays verbatim at the per-
+    // component call sites; ColorantPlacement.Build does not own this guard) must make this test fail on
+    // Assert.NotNull.
     [Fact]
     public void NChannel_allProcess_image_keeps_the_name_splits_answer()
     {
