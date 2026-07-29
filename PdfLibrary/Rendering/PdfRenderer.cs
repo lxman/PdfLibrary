@@ -33,6 +33,8 @@ internal class PdfRenderer : PdfContentProcessor
     private bool OcHidden => _ocHiddenDepth > 0;
     private readonly PdfDocument? _document;
     private readonly ColorSpaceResolver _colorSpaceResolver;
+    /// <summary>Total ResolveColorSpace calls this renderer has made — the G-12 hook's observable.</summary>
+    internal int ColorSpaceResolveCount => _colorSpaceResolver.ResolveCallCount;
     private readonly ExtGStateApplier _extGStateApplier;
     private readonly FixupManager? _fixupManager;
     private readonly ISystemFontProvider _fontProvider;

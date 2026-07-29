@@ -18,6 +18,13 @@ internal class ColorSpaceResolver(PdfDocument? document)
     private readonly IccColorConverter _iccConverter = new(document);
 
     /// <summary>
+    /// Diagnostic counter for the G-12 throughput hook (Docs/colour/rendering-conformance.md):
+    /// incremented once per ResolveColorSpace entry, read by PdfRenderer.ColorSpaceResolveCount.
+    /// One resolver instance per PdfRenderer, so no thread-safety needed.
+    /// </summary>
+    internal int ResolveCallCount { get; private set; }
+
+    /// <summary>
     /// Resolves a named color space from resources to a device color space
     /// </summary>
     /// <param name="colorSpaceName">The color space name (may be modified to device color space)</param>
@@ -27,6 +34,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <param name="renderingIntent">PDF rendering-intent name (ri / RI) selecting the ICC intent for ICC conversions; null = relative colorimetric.</param>
     public void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color, PdfDictionary? colorSpaces, bool blackPointCompensation = false, string? renderingIntent = null)
     {
+        ResolveCallCount++;
+
         if (string.IsNullOrEmpty(colorSpaceName))
             return;
 
