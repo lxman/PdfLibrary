@@ -166,6 +166,18 @@ internal static class ShadingBuilder
                         if (AllProcessPlacement(csObj, document) is { } placement)
                             return c => PackByPlacement(c, placement);
 
+                        // G-14: a PLAIN Separation/DeviceN whose colourants are all reserved process
+                        // names (± /None). The placement bypass above cannot see it — placement is
+                        // NChannel-only by construction — but §8.6.6.4's first clause applies all the
+                        // same: the device has a unit for every colourant, nothing may be simulated,
+                        // and the tint transform (which prepress files use to LIE — the G-14 fixture
+                        // is a /Cyan separation with a magenta-ramping alternate) is ignored. The
+                        // compositor's fill/stroke sibling is InkDecider's reserved-direct arm.
+                        string[] reservedNames = ColorSpaceResolver.ColorantNamesOf(arr, document);
+                        if (reservedNames.Length >= 1
+                            && ColorSpaceResolver.AllReservedProcessOrNone(reservedNames))
+                            return c => PackByReservedName(c, reservedNames);
+
                         Func<double[], (double C, double M, double Y, double K)>? tint =
                             ColorSpaceResolver.BuildTintToCmyk(arr, document, out _);
                         if (tint is not null)
@@ -241,6 +253,16 @@ internal static class ShadingBuilder
             plates[slot.Index] = j < comps.Length ? comps[j] : 0.0;
         }
         return PackCmyk(plates);
+    }
+
+    // G-14: components at NAMES order → their canonical plates; /None contributes nothing.
+    private static uint PackByReservedName(double[] comps, string[] names)
+    {
+        Span<double> plates = stackalloc double[4];
+        for (var i = 0; i < names.Length && i < comps.Length; i++)
+            if (ColorSpaceResolver.ReservedChannelOf(names[i]) is { } ch)
+                plates[ch] = comps[i];
+        return PackCmyk([plates[0], plates[1], plates[2], plates[3]]);
     }
 
     private static uint PackCmyk(double[] c) =>
