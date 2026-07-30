@@ -214,6 +214,12 @@ substantive violation this matrix has tracked since slice 1~~.
 > and 5-10 carry `Hook status` notes naming their surviving exclusions, of which **5-3's one-channel
 > process space is the strongest candidate for the next pass**. Engine suite 2661/2661 at the time of
 > the pins (`Category!=LocalOnly`).
+>
+> **One NEW gap was found by this pass's own review, not by the pass:** **G-15** —
+> `BuildColorMapper` conflates "cannot map this space" with "this space must paint nothing" and
+> fabricates a colour for both. It surfaced only because the review refused to accept the G-8 pin's
+> unexplained white and traced it to ground. It is **unpinned**, and it is the one open colour gap
+> with no hook — recorded so that the accounting stays honest rather than looking complete.
 
 ## Gaps
 
@@ -547,11 +553,10 @@ substantive violation this matrix has tracked since slice 1~~.
   `ColorSpaceResolver.cs:414` and returns null before `PdfFunction.Create` ever touches the
   Separation's tint transform. `BuildColorMapper` then falls through to the `ToArgbByCount`
   fallback, which reads the shading `/Function`'s single 1.0 tint component as DeviceGray level
-  1.0 = white. This also exposes a distinct, second defect worth its own row: `BuildColorMapper`
-  cannot distinguish "unrecognised colour space" from "colour space that refused a mapper because
-  it paints nothing", and guesses (via the component-count fallback) in both cases — a fix to
-  `FillWithShadingPattern`'s missing `PaintsNothing` gate alone would leave that conflation in
-  place for any other caller.
+  1.0 = white. That second defect is now recorded as its own row — **see G-15**, which enumerates
+  all five `BuildTintToRgb` null sites and explains why closing G-8 does not close it. **Do not
+  retire this pin without reading G-15 first:** this pin is currently the only thing that
+  incidentally exercises the conflation, and retiring it on G-8's fix removes that coverage.
 - **G-9 — `/All` images and stencil masks diverge on the CMYK path.** Rows 4-6/4-9's `/All` coverage is
   fills and strokes only, via `CmykPageRenderer.CompositeInk`'s `AllColourants` branch. Two other painting
   operators reach the CMYK page by a different route and do NOT go through that branch:
@@ -730,6 +735,53 @@ substantive violation this matrix has tracked since slice 1~~.
   pranks and errors. The RGB path is NOT in scope: row 4-12 requires reversion there, and reversion
   is what it does. Design: `Docs/superpowers/specs/2026-07-29-g14-reserved-separation-direct-design.md`;
   plan: `Docs/superpowers/plans/2026-07-29-colour-g14-reserved-separation-direct.md`.
+
+- **G-15 — `BuildColorMapper` cannot tell "no mapper possible" from "must paint nothing", and
+  invents a colour for both.** Found 2026-07-29 while the release-hooks whole-branch review was
+  tracing *why* the G-8 pin measured white instead of the predicted black. It is the mechanism
+  underneath G-8 rather than a restatement of it: G-8 is "the pattern route doesn't consult
+  `PaintsNothing`", this is "even the route that *did* consult it cannot say so to its caller".
+
+  `ColorSpaceResolver.BuildTintToRgb` (`ColorSpaceResolver.cs:400`) returns `null` at **five**
+  distinct sites, and only one of them means "this space must not paint":
+  - `:409` — `SpotColorSpace.TryParse` fails the `minimumElements: 4` arity gate (malformed).
+  - `:414` — **`PaintsNothing(baseArray, document)` — the `/None` case. Semantic: paint nothing.**
+  - `:429` — `inputComponents < 1` (malformed).
+  - `:432` — empty alternate space (malformed).
+  - `:436` — the tint transform could not be built (malformed / unsupported function type).
+
+  `ShadingBuilder.BuildColorMapper`'s `case "Separation" or "DeviceN"` arm
+  (`ShadingBuilder.cs:342-346`) does `if (tint is not null) return …; break;` — so all five
+  collapse to the same `break`, falling through to the `ToArgbByCount` fallback
+  (`:351`, `:367-388`). That fallback **fabricates a colour from the component count alone**:
+  one component is read as DeviceGray, three as RGB, four as CMYK. For the G-8 fixture the
+  shading `/Function` emits a single constant 1.0, so `/None` — a space whose entire contract is
+  to mark nothing — renders as **DeviceGray 1.0 = opaque white**, which is not "nothing"; it is
+  an opaque paint that obliterates whatever was behind it. On a white page that is invisible, and
+  that invisibility is why it survived this long.
+
+  **Why this is its own row and not a G-8 sub-clause:** fixing G-8 (adding the `PaintsNothing`
+  gate to `FillWithShadingPattern`, mirroring `OnPaintShading:725`) stops the *pattern* route
+  reaching this code, and the G-8 pin flips. It does **not** fix the conflation. Any other caller
+  of `BuildColorMapper` — present or future — still gets a fabricated colour where the honest
+  answers are "suppress this paint" (the `/None` case) and "decline, I cannot map this"
+  (the four malformed cases), which are different instructions that a `null` cannot distinguish.
+  A malformed Separation currently renders as a plausible-looking grey/RGB/CMYK value rather than
+  failing visibly, which is the same "correct in value, wrong in cost" substitution species this
+  matrix has caught repeatedly.
+
+  **Ruled goal:** `BuildTintToRgb` (or a sibling) must distinguish *paints-nothing* from
+  *cannot-map*, and `BuildColorMapper` must honour the first by suppressing rather than
+  substituting. The `ToArgbByCount` fallback should remain reachable only for genuinely
+  unrecognised spaces.
+
+  **Hook status: UNPINNED.** No test asserts this today, and the G-8 pin does not cover it — that
+  pin asserts the *paint*, and after G-8 is fixed it will be retired, taking the only incidental
+  coverage with it. Pinning it needs a fixture that reaches `BuildColorMapper` by a route other
+  than the fill-pattern one (e.g. `sh` with a malformed Separation, where `OnPaintShading`'s
+  `PaintsNothing` gate does not apply because the space is malformed rather than `/None`).
+  Recorded unfixed and unpinned rather than folded into G-8, so that closing G-8 cannot be
+  mistaken for closing this.
 
 ## Fixtures
 
