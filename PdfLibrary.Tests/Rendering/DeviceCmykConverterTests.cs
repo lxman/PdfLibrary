@@ -152,6 +152,24 @@ public class DeviceCmykConverterTests
     }
 
     [Fact]
+    public void Naive_round_trips_neutral_grays_exactly()
+    {
+        // Naive exists for luminosity soft-mask derivation (§11.6.5.2): device-space arithmetic with
+        // no profile in either leg, so gray g -> CMYK -> RGB returns g to within a rounding ulp (an
+        // ICC round trip floors black at the proofed K luminance and crushes shadows).
+        foreach (double g in new[] { 0.0, 0.1, 0.25, 0.5, 0.75, 1.0 })
+        {
+            (double c, double m, double y, double k) = DeviceCmykConverter.Naive.ToCmyk(g, g, g);
+            (byte r, byte gg, byte b) = DeviceCmykConverter.Naive.ToRgb(c, m, y, k);
+            var expected = (int)Math.Round(g * 255.0);
+            Assert.True(Math.Abs(r - expected) <= 1 && Math.Abs(gg - expected) <= 1 && Math.Abs(b - expected) <= 1,
+                $"gray {g}: expected ~{expected}, got ({r},{gg},{b}) via cmyk ({c},{m},{y},{k})");
+        }
+        // And the backdrop case the mask renderer relies on: K-only black reads exactly 0.
+        Assert.Equal((byte)0, DeviceCmykConverter.Naive.ToRgb(0, 0, 0, 1).R);
+    }
+
+    [Fact]
     public void Roundtrip_relative_is_near_identity_for_in_gamut_grey()
     {
         var conv = new DeviceCmykConverter(IccProfile.Parse(IccResources.ReadDefaultCmykProfile()));

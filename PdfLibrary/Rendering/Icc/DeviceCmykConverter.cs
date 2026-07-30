@@ -21,6 +21,14 @@ public sealed class DeviceCmykConverter
     /// <summary>True when ICC transforms could not be built and naive fallback math is in use.</summary>
     public bool IsDegraded => _toRgb is null || _toCmyk is null;
 
+    private DeviceCmykConverter() { }   // naive-only instance: all transforms null → fallback formulas
+
+    /// <summary>Converter that always uses the naive device formulas (no ICC profile in either
+    /// direction). Deliberate device-space arithmetic, not a degraded fallback: luminosity soft-mask
+    /// derivation (ISO 32000-2 §11.6.5.2) must measure the mask group's own device values — a
+    /// profile round-trip floors black at the proofed K luminance and crushes shadow gradients.</summary>
+    public static DeviceCmykConverter Naive { get; } = new();
+
     /// <summary>Builds a converter. The FORWARD (CMYK→sRGB display) transform uses
     /// <paramref name="forwardIntent"/> + <paramref name="forwardBpc"/>; the INVERSE (sRGB→CMYK
     /// compositing) transform is always RelativeColorimetric (accurate in-gamut, clip out-of-gamut).</summary>
