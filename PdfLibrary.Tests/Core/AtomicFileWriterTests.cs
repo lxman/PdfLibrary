@@ -111,7 +111,7 @@ public class AtomicFileWriterTests : IDisposable
     // must absorb a TRANSIENT hold by retrying the rename — this test holds the destination
     // open briefly on another thread and releases it well inside the retry budget.
     [Fact]
-    public void Write_DestinationTransientlyLocked_RetriesAndSucceeds()
+    public async Task Write_DestinationTransientlyLocked_RetriesAndSucceeds()
     {
         string dir = NewTempDir();
         string path = Path.Combine(dir, "locked.bin");
@@ -119,12 +119,19 @@ public class AtomicFileWriterTests : IDisposable
 
         // Hold the destination so the rename cannot replace it, release after ~50 ms —
         // far inside the default retry budget, far beyond attempt #1.
-        var handle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
-        Task releaser = Task.Run(() => { Thread.Sleep(50); handle.Dispose(); });
+        // The `using` is belt-and-braces, and specifically covers the cancellation path: the
+        // releaser normally disposes the handle mid-test, but a cancelled run can stop that task
+        // ever starting, and a still-held handle would then block the temp-dir cleanup.
+        // FileStream.Dispose is idempotent, so the resulting double dispose is harmless.
+        using var handle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        Task releaser = Task.Run(() => { Thread.Sleep(50); handle.Dispose(); },
+            TestContext.Current.CancellationToken);
 
+        // Must run while the releaser still holds the file — this is the retry the test exists to
+        // pin, so the await deliberately comes AFTER the write, not before.
         AtomicFileWriter.Write(path, stream => stream.Write([7, 8, 9]));
 
-        releaser.Wait();
+        await releaser;
         Assert.Equal(new byte[] { 7, 8, 9 }, File.ReadAllBytes(path));
         Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
     }
