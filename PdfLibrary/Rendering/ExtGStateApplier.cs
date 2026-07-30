@@ -163,6 +163,26 @@ internal class ExtGStateApplier(PdfDocument? document, IRenderTarget target)
                     }
                     break;
 
+                // BG/UCR/HT/TR are recorded-and-dropped BY DESIGN, not as pending work. Audited over
+                // 3005 corpus files / 5045 ExtGState dicts (PdfLibrary.Tests ExtGStateAuditTests):
+                //
+                //   /BG, /BG2   38 occurrences — instruct a DEVICE how to synthesise black when
+                //   /UCR, /UCR2 38 occurrences — converting to DeviceCMYK, and how much undercolour
+                //                                to remove. An anti-aliased display rasteriser does
+                //                                neither, so there is no output to be wrong about.
+                //   /HT         12 occurrences — selects a halftone screen; likewise device-side.
+                //   /TR, /TR2   16 occurrences — the only visually-impactful key, and the only one
+                //                                worth revisiting. Half are no-ops (/Identity 4,
+                //                                /Default 4). All 8 real functions live in
+                //                                deliberately-invalid conformance fixtures, because
+                //                                PDF/A and PDF/X FORBID /TR outright — see
+                //                                Conformance/Rules/ExtGStateRule.cs:59, which reports
+                //                                it as a violation. A conformant print file cannot
+                //                                carry one.
+                //
+                // Revisit /TR only if a real (non-fixture) document turns up needing it; re-run the
+                // audit to check. The other three need no revisiting: they are not display concepts.
+
                 // Black generation (BG, BG2)
                 case "BG":
                 case "BG2":
