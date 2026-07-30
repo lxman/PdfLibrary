@@ -10,9 +10,11 @@ namespace PdfLibrary.Rendering;
 /// Builds a <see cref="ShadingDescriptor"/> from a PDF shading dictionary — the /Shading resource
 /// painted by the <c>sh</c> operator, or the /Shading inside a PatternType 2 pattern. Axial (type 2)
 /// and radial (type 3) shadings pre-sample the colour ramp by evaluating the shading's /Function
-/// across its /Domain; mesh shadings (Coons type 6, tensor-product type 7) are delegated to
-/// <see cref="MeshShadingReader"/>, which tessellates them into a triangle soup. Returns null for
-/// shading types/functions we don't model yet (types 1, 4, 5), so the caller can skip the paint cleanly.
+/// across its /Domain; mesh shadings (Gouraud 4/5, Coons 6, tensor-product 7) are delegated to
+/// <see cref="MeshShadingReader"/>, which tessellates them into a triangle soup, and the
+/// function-based type 1 to <see cref="FunctionShadingReader"/>, which samples its 2-D function onto
+/// the same triangle grid. Returns null when a shading can't be modelled — an unknown /ShadingType, a
+/// function we can't evaluate, or geometry that spans nothing — so the caller skips the paint cleanly.
 /// </summary>
 internal static class ShadingBuilder
 {
@@ -34,6 +36,11 @@ internal static class ShadingBuilder
         if (!dict.TryGetValue(new PdfName("ShadingType"), out PdfObject typeObj) || typeObj is not PdfInteger typeInt)
             return null;
         int shadingType = typeInt.Value;
+
+        // Function-based (type 1): no geometry of its own — a 2-D function evaluated over /Domain and
+        // placed by /Matrix. Tessellated into the same triangle soup the mesh types produce.
+        if (shadingType == 1)
+            return FunctionShadingReader.Build(dict, document, patternMatrix);
 
         // Mesh shadings are streams; decode separately. Gouraud triangle meshes (4, 5) yield triangles
         // directly; patch meshes (Coons 6, tensor-product 7) are tessellated into them.
@@ -299,15 +306,23 @@ internal static class ShadingBuilder
         return list;
     }
 
-    internal static double[] EvaluateColor(List<PdfFunction> functions, double t)
+    internal static double[] EvaluateColor(List<PdfFunction> functions, double t) =>
+        EvaluateColor(functions, [t]);
+
+    /// <summary>
+    /// Evaluates a shading's /Function at <paramref name="inputs"/>: one n-output function gives the
+    /// colour components directly, an array of single-output functions one component each. Types 2–7
+    /// pass a single parametric t; the function-based type 1 passes the (x, y) domain point.
+    /// </summary>
+    internal static double[] EvaluateColor(List<PdfFunction> functions, double[] inputs)
     {
         if (functions.Count == 1)
-            return functions[0].Evaluate([t]);
+            return functions[0].Evaluate(inputs);
 
         var outv = new double[functions.Count];
         for (var i = 0; i < functions.Count; i++)
         {
-            double[] r = functions[i].Evaluate([t]);
+            double[] r = functions[i].Evaluate(inputs);
             outv[i] = r.Length > 0 ? r[0] : 0.0;
         }
         return outv;
@@ -393,7 +408,7 @@ internal static class ShadingBuilder
 
     private static int Clamp255(double v) => v <= 0.0 ? 0 : v >= 1.0 ? 255 : (int)Math.Round(v * 255.0);
 
-    private static double[]? GetNumbers(PdfDictionary dict, string key, PdfDocument? document)
+    internal static double[]? GetNumbers(PdfDictionary dict, string key, PdfDocument? document)
     {
         if (!dict.TryGetValue(new PdfName(key), out PdfObject? obj)) return null;
         if (obj is PdfIndirectReference r && document is not null) obj = document.ResolveReference(r);
