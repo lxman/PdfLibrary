@@ -12,10 +12,17 @@ public class ColourGapBaselineTests
 {
     // G-8 BASELINE: a shading used as a PATTERN (PatternType 2 via scn) does not consult
     // PaintsNothing — only OnFill's fill-space gate does, and the FILL space here is /Pattern,
-    // not /None. The shading's own [/Separation /None ...] colour space paints through
-    // ShadingBuilder anyway. Tint transform is CONSTANT black so the current behaviour has one
-    // predictable value. Ruled goal (§8.6.6.4, G-7's rule extended to the pattern route): a
-    // /None shading paints nothing and the red backdrop survives.
+    // not /None. The pattern resolves and FillWithShadingPattern has no PaintsNothing check
+    // (unlike OnPaintShading's sh route), so the shading route paints. The tint transform
+    // (object 8) is NEVER EVALUATED: ShadingBuilder.BuildColorMapper calls
+    // ColorSpaceResolver.BuildTintToRgb, which declines the /None colourant at
+    // ColorSpaceResolver.cs:414 and returns null before PdfFunction.Create ever touches the
+    // Separation's tint transform. BuildColorMapper then falls through to the ToArgbByCount
+    // fallback, which reads the shading /Function's single 1.0 tint component as DeviceGray
+    // level 1.0 = white. So the fixture's element-8 tint transform is dead weight — it is never
+    // consulted, and any C0/C1 pair would still measure white. Ruled goal (§8.6.6.4, G-7's rule
+    // extended to the pattern route): a /None shading paints nothing and the red backdrop
+    // survives.
     [Fact]
     public void NoneShadingPattern_paints_G8Baseline()
     {

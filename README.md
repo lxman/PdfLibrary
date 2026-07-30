@@ -481,12 +481,13 @@ All codec implementations are in-tree (no git submodules required).
 ## Known Limitations
 
 Colour rendering: a small set of edge-case gaps is tracked in
-[`Docs/colour/rendering-conformance.md`](Docs/colour/rendering-conformance.md) (entries G-8 … G-13),
+[`Docs/colour/rendering-conformance.md`](Docs/colour/rendering-conformance.md) (entries G-8 … G-14),
 each pinned by a baseline test that a future fix must deliberately flip. The notable ones:
 `/None` shadings used as fill *patterns* still paint; `/All` images and stencil masks do not
 receive spot planes on the CMYK soft-proof path; text rendering mode 4 with a `/None` fill drops
 the add-to-clip half; a bare `/Pattern cs` (no `scn`) carries the previous colour over instead of
-painting nothing. General-purpose RGB rendering is unaffected by all of these.
+painting nothing; Indexed images over an all-reserved base still flatten. General-purpose RGB
+rendering is unaffected by all of these.
 
 ## License
 

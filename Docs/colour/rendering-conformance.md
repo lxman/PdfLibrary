@@ -202,9 +202,14 @@ substantive violation this matrix has tracked since slice 1~~.
 > for any of these starts by flipping its pin red — none can land half-done or unnoticed.
 > **Two corrections this pass, both to prediction rather than to code:** G-8's pin measured **white
 > RGB(255,255,255)**, not the predicted constant black — still a *paints* outcome (the fixture's red
-> backdrop is what "paints nothing" would leave), but the fixture's colour arithmetic is not fully
-> explained and whoever fixes G-8 should resolve that first; and G-10's two line references were
-> stale (`:947`→`:949`, `:1266`→`:1307`). **Unpinned by decision, not omission:** G-14 residual (b)
+> backdrop is what "paints nothing" would leave); the tint transform is never evaluated (`BuildTintToRgb`
+> declines the `/None` space, `BuildColorMapper` falls back to reading the shading function's single
+> 1.0 tint as grey), explained during independent review; and G-10's two line references were
+> stale (`:947`→`:949`, `:1266`→`:1307`). **Also corrected during independent review:** the G-14
+> residual (a) fixture's `/Lookup` placeholder was a `PdfName`, which `ResolveLookup` rejects before
+> reaching the base colour space, so the pin measured malformed-lookup validation, not G-14; it now
+> uses a real lookup string so the decline happens for the intended reason and the pin can flip on
+> the fix. **Unpinned by decision, not omission:** G-14 residual (b)
 > needs a Pellucid no-spot-buffer harness; residual (c) is pinned engine-level by design; rows 5-3
 > and 5-10 carry `Hook status` notes naming their surviving exclusions, of which **5-3's one-channel
 > process space is the strongest candidate for the next pass**. Engine suite 2661/2661 at the time of
@@ -535,11 +540,18 @@ substantive violation this matrix has tracked since slice 1~~.
   fixture's constant-black tint transform would show through, but the measured centre pixel is
   **white RGB(255,255,255)**, so the pin asserts white. White is still a *paints* outcome here, not a
   disguised pass: the fixture lays a red backdrop first, so "paints nothing" would render RED — and
-  when G-8 is fixed the surviving red fails the pin's `Green > 235` clause exactly as intended. Why
-  the constant-black chain renders white rather than black is *not* explained (the shading `/Function`
-  vs the Separation's element-3 transform may not be wired as the fixture assumes); that is an open
-  question about the fixture, not a blocker for the hook, and whoever fixes G-8 should resolve it
-  before trusting the fixture's colour arithmetic.
+  when G-8 is fixed the surviving red fails the pin's `Green > 235` clause exactly as intended.
+  **Why it renders white, not the constant-black tint transform (answered 2026-07-29):** the tint
+  transform (fixture object 8) is never evaluated. `ShadingBuilder.BuildColorMapper` calls
+  `ColorSpaceResolver.BuildTintToRgb`, which declines the `/None` colourant at
+  `ColorSpaceResolver.cs:414` and returns null before `PdfFunction.Create` ever touches the
+  Separation's tint transform. `BuildColorMapper` then falls through to the `ToArgbByCount`
+  fallback, which reads the shading `/Function`'s single 1.0 tint component as DeviceGray level
+  1.0 = white. This also exposes a distinct, second defect worth its own row: `BuildColorMapper`
+  cannot distinguish "unrecognised colour space" from "colour space that refused a mapper because
+  it paints nothing", and guesses (via the component-count fallback) in both cases — a fix to
+  `FillWithShadingPattern`'s missing `PaintsNothing` gate alone would leave that conflation in
+  place for any other caller.
 - **G-9 — `/All` images and stencil masks diverge on the CMYK path.** Rows 4-6/4-9's `/All` coverage is
   fills and strokes only, via `CmykPageRenderer.CompositeInk`'s `AllColourants` branch. Two other painting
   operators reach the CMYK page by a different route and do NOT go through that branch:
@@ -601,13 +613,19 @@ substantive violation this matrix has tracked since slice 1~~.
   a parsed tint transform per colour-space resource, not a one-line change.
   **Hooked 2026-07-29:** `Cs_then_sc_resolves_four_times_G12Baseline` (`ColorSpaceResolveCountTests`)
   pins one `cs`+`sc` at **4** `ResolveColorSpace` passes (the predicted count, measured exactly) via the
-  new `ColorSpaceResolver.ResolveCallCount` counter, surfaced as `PdfRenderer.ColorSpaceResolveCount`;
-  the de-dup design must lower it. **Counter semantics, so a future change does not silently redefine
+  new `ColorSpaceResolver.ResolveCallCount` counter, surfaced as `PdfRenderer.ColorSpaceResolveCount`.
+  **Counter semantics, so a future change does not silently redefine
   the metric:** the increment is the *first* statement of `ResolveColorSpace`, so it counts method
   **entries**, not resolutions performed — the early `string.IsNullOrEmpty` return and the
   device-colour-space skip both count. The pinned 4 depends on that: the fixture uses `/DeviceRGB`,
-  whose passes all take the device-skip return. Anyone lowering this number must keep the counting
-  semantics identical or retire the pin explicitly rather than re-baselining it.
+  whose passes all take the device-skip return. **This pin guards the fill/stroke-split fix shape
+  only** (4 → 2 if `cs`/`sc` resolve only the side they set). Caching a parsed tint transform per
+  colour-space resource — the option the G-12 entry emphasises, since the complaint is redundant
+  re-parsing through the uncached `PdfFunction.Create` — leaves this method-entry count at 4 and
+  does NOT flip this pin; that shape remains unhooked. Guarding it needs a second counter
+  incremented at the tint-transform parse site, exercised by a `/Separation` fixture with a real
+  type-2 tint transform. Anyone lowering this number must keep the counting semantics identical or
+  retire the pin explicitly rather than re-baselining it.
 - **G-13 — Stencil-mask routing after a bare `cs` is untested.** No test exercises `cs` immediately
   followed by an image-mask `Do` with no intervening `scn` — i.e. whether a stencil mask picks up a colour
   space's *initial* colour the same way a fill does. Traced as spec-correct (the initial colour populates
@@ -673,8 +691,14 @@ substantive violation this matrix has tracked since slice 1~~.
   - **(a)** An **Indexed image over an all-reserved base still flattens** — out of scope this pass
     (Task 4 scope note); the reserved-direct image route covers a directly-named reserved Separation
     driving image ink, not an Indexed palette resolving to one.
-    **Pinned 2026-07-29:** `Indexed_over_reserved_base_still_declines_G14ResidualBaseline`
-    (`PdfImageToCmykTests`) asserts both CMYK routes decline.
+    **Pinned 2026-07-29 (fixture corrected 2026-07-29):** `Indexed_over_reserved_base_still_declines_G14ResidualBaseline`
+    (`PdfImageToCmykTests`) uses a real `/Lookup` string so the route actually reaches the base
+    colour space instead of bailing on a malformed placeholder. It asserts both CMYK routes
+    decline for the right reason: `TryToCmyk` reaches `BuildIndexedEntryToCmyk`'s Separation arm
+    and dies in the uncached tint transform (`BuildTintToCmyk`/`PdfFunction.Create`), because the
+    Indexed route has no reserved-direct arm mirroring `ShadingBuilder.BuildCmykMapper`.
+    `TryToSpotInk` declines separately and permanently (`Classify("Cyan") != Spot`), which is
+    decoration, not part of the hook. The reserved-direct fix flips `TryToCmyk`'s assertion red.
   - **(b)** The stencil fix requires the **spot-plane-buffer configuration** — `spots`/`registry`
     passed through, the standard soft-proof path. A stencil rendered with no spot-plane configuration
     at all is not exercised by this pass's fixtures.
