@@ -1650,7 +1650,14 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
     /// <summary>
     /// Resolves a CalRGB color space: [/CalRGB &lt;&lt; /WhitePoint [...] /Gamma [...] /Matrix [...] &gt;&gt;]
-    /// For now, we simply pass through to DeviceRGB
+    /// <para>
+    /// The components ARE calibrated: <see cref="CalRgbConverter"/> applies the dictionary's
+    /// <c>/Gamma</c> and <c>/Matrix</c> through the CIE XYZ pipeline and returns sRGB, which replaces
+    /// <paramref name="color"/> in place. Only when the dictionary cannot be parsed
+    /// (<c>FromCalRgbArray</c> returns null) do the raw components survive and get reinterpreted as
+    /// DeviceRGB. Either way <paramref name="colorSpaceName"/> ends as <c>DeviceRGB</c> — that
+    /// rename is the space substitution, NOT evidence that calibration was skipped.
+    /// </para>
     /// </summary>
     private void ResolveCalRgb(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
     {
@@ -1679,7 +1686,15 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
     /// <summary>
     /// Resolves a CalGray color space: [/CalGray &lt;&lt; /WhitePoint [...] /Gamma [...] &gt;&gt;]
-    /// For now, we simply pass through to DeviceGray
+    /// <para>
+    /// The component IS calibrated: <see cref="CalGrayConverter"/> applies the dictionary's
+    /// <c>/Gamma</c> and <c>/WhitePoint</c> and returns sRGB. Note the two exits differ in BOTH
+    /// component count and space: on success the single grey is replaced by three sRGB components
+    /// and <paramref name="colorSpaceName"/> becomes <c>DeviceRGB</c> (the calibrated white point
+    /// need not be neutral in sRGB, so one channel cannot carry the result); only the
+    /// unparseable-dictionary fallback leaves the lone raw component and names it
+    /// <c>DeviceGray</c>.
+    /// </para>
     /// </summary>
     private void ResolveCalGray(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
     {
