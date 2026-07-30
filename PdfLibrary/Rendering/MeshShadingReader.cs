@@ -90,6 +90,51 @@ internal static class MeshShadingReader
         double compMax = Math.Pow(2, bpComp) - 1;
 
         var triangles = new List<MeshVertex>();
+
+        // Shared by the patch (6/7) and Gouraud (4/5) paths: both decode a point and a colour the same
+        // way, so these live here rather than being written twice.
+        Vector2 ReadPoint()
+        {
+            double px = decode[0] + reader.Read(bpc) * (decode[1] - decode[0]) / coordMax;
+            double py = decode[2] + reader.Read(bpc) * (decode[3] - decode[2]) / coordMax;
+            return new Vector2((float)px, (float)py);
+        }
+
+        (uint Rgb, uint Cmyk, uint Proc, byte[] Tints) ReadColour()
+        {
+            var comps = new double[colorValues];
+            for (var c = 0; c < colorValues; c++)
+            {
+                double lo = decode[4 + 2 * c], hi = decode[5 + 2 * c];
+                comps[c] = lo + reader.Read(bpComp) * (hi - lo) / compMax;
+            }
+            double[] csComps = hasFunction ? ShadingBuilder.EvaluateColor(functions, comps[0]) : comps;
+            uint proc = 0;
+            byte[] tints = [];
+            if (splitSpots)
+            {
+                tints = new byte[spotN];
+                proc = placement is not null
+                    ? ShadingSpotSplit.SplitByPlacement(csComps, placement, tints, 0)
+                    : ShadingSpotSplit.Split(csComps, origin!.Names, tints, 0);
+            }
+            return (toRgb(csComps), toCmyk?.Invoke(csComps) ?? 0u, proc, tints);
+        }
+
+        // Types 4 and 5 are triangle meshes, not patch meshes: the vertices ARE the triangles, so they
+        // bypass the bicubic tessellation entirely and feed Finish() directly.
+        if (shadingType is 4 or 5)
+        {
+            bool ok = shadingType == 4
+                ? ReadFreeForm(reader, bpf, ReadPoint, ReadColour, triangles, vertProc, vertTints, spotN)
+                : ReadLattice(GetInt(dict, "VerticesPerRow", document), reader,
+                    ReadPoint, ReadColour, triangles, vertProc, vertTints, spotN);
+
+            return ok && triangles.Count > 0
+                ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, spotNames, vertProc, vertTints, hasProcess)
+                : null;
+        }
+
         Patch? prev = null;
 
         while (reader.HasData)
@@ -154,6 +199,129 @@ internal static class MeshShadingReader
         }
 
         return triangles.Count > 0 ? Finish(triangles, toCmyk, patternMatrix, shadingType, origin, spotNames, vertProc, vertTints, hasProcess) : null;
+    }
+
+    /// <summary>
+    /// One decoded Gouraud vertex: position plus every colour representation the mesh carries.
+    /// </summary>
+    private readonly record struct Vtx(Vector2 Pos, uint Rgb, uint Cmyk, uint Proc, byte[] Tints);
+
+    /// <summary>
+    /// Type 4 (ISO 32000-2 §8.7.4.5.5). Each vertex carries an edge flag: 0 starts a new triangle
+    /// (and is followed by two more vertices completing it), 1 continues from the previous triangle's
+    /// (vb, vc), and 2 continues from (va, vc). Every vertex's data — flag included — occupies a whole
+    /// number of bytes, so the reader re-aligns after each one; without that, a component width that
+    /// is not a multiple of 8 slides every subsequent vertex and decodes garbage.
+    /// </summary>
+    private static bool ReadFreeForm(BitReader reader, int bpf,
+        Func<Vector2> readPoint, Func<(uint Rgb, uint Cmyk, uint Proc, byte[] Tints)> readColour,
+        List<MeshVertex> tris, List<uint>? outProc, List<byte>? outTints, int spotN)
+    {
+        Vtx va = default, vb = default, vc = default;
+        var have = false;
+
+        Vtx ReadVertex()
+        {
+            Vector2 p = readPoint();
+            (uint rgb, uint cmyk, uint proc, byte[] tints) = readColour();
+            reader.Align();                       // per-vertex byte padding
+            return new Vtx(p, rgb, cmyk, proc, tints);
+        }
+
+        while (reader.HasData)
+        {
+            var flag = (int)(reader.Read(bpf) & 0x3);
+            if (reader.Eof) break;
+
+            if (flag == 0)
+            {
+                Vtx a = ReadVertex();
+                if (reader.Eof) break;
+                // The two vertices completing the triangle carry their own (ignored) flags.
+                reader.Read(bpf);
+                Vtx b = ReadVertex();
+                if (reader.Eof) break;
+                reader.Read(bpf);
+                Vtx c = ReadVertex();
+                if (reader.Eof) break;
+
+                (va, vb, vc) = (a, b, c);
+                have = true;
+            }
+            else
+            {
+                // A continuation flag with no preceding triangle is malformed: decline rather than
+                // inventing geometry from default-initialised vertices.
+                if (!have) return false;
+
+                Vtx d = ReadVertex();
+                if (reader.Eof) break;
+
+                if (flag == 1) (va, vb, vc) = (vb, vc, d);   // side vbc — va is dropped
+                else (vb, vc) = (vc, d);                     // flag 2, side vac — va is KEPT
+            }
+
+            Emit(tris, outProc, outTints, spotN, va, vb, vc);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Type 5 (ISO 32000-2 §8.7.4.5.6). No edge flags: vertices are read in row-major order,
+    /// <c>/VerticesPerRow</c> per row, and each adjacent pair of rows contributes the triplets
+    /// (Vi,j  Vi,j+1  Vi+1,j) and (Vi,j+1  Vi+1,j  Vi+1,j+1). §8.7.4.5.6 defers to §8.7.4.5.5 for the
+    /// vertex format, so the per-vertex byte padding applies here too.
+    /// </summary>
+    private static bool ReadLattice(int verticesPerRow, BitReader reader,
+        Func<Vector2> readPoint, Func<(uint Rgb, uint Cmyk, uint Proc, byte[] Tints)> readColour,
+        List<MeshVertex> tris, List<uint>? outProc, List<byte>? outTints, int spotN)
+    {
+        // Required, and >= 2 (Table 82). Without it the row stride is unknowable — decline rather
+        // than guess a lattice shape.
+        if (verticesPerRow < 2) return false;
+
+        var verts = new List<Vtx>();
+        while (reader.HasData)
+        {
+            Vector2 p = readPoint();
+            (uint rgb, uint cmyk, uint proc, byte[] tints) = readColour();
+            if (reader.Eof) break;
+            reader.Align();
+            verts.Add(new Vtx(p, rgb, cmyk, proc, tints));
+        }
+
+        int rows = verts.Count / verticesPerRow;
+        if (rows < 2) return false;                 // a single row spans no triangles
+
+        for (var i = 0; i < rows - 1; i++)
+        for (var j = 0; j < verticesPerRow - 1; j++)
+        {
+            Vtx v00 = verts[i * verticesPerRow + j];
+            Vtx v01 = verts[i * verticesPerRow + j + 1];
+            Vtx v10 = verts[(i + 1) * verticesPerRow + j];
+            Vtx v11 = verts[(i + 1) * verticesPerRow + j + 1];
+            Emit(tris, outProc, outTints, spotN, v00, v01, v10);
+            Emit(tris, outProc, outTints, spotN, v01, v10, v11);
+        }
+
+        return true;
+    }
+
+    /// <summary>Appends one triangle, keeping the parallel spot arrays in step with the vertex list.</summary>
+    private static void Emit(List<MeshVertex> tris, List<uint>? outProc, List<byte>? outTints, int spotN,
+        Vtx a, Vtx b, Vtx c)
+    {
+        Add(a); Add(b); Add(c);
+
+        void Add(Vtx v)
+        {
+            tris.Add(new MeshVertex(v.Pos.X, v.Pos.Y, v.Rgb, v.Cmyk));
+            if (outProc is null) return;
+            outProc.Add(v.Proc);
+            for (var s = 0; s < spotN; s++)
+                outTints!.Add(s < v.Tints.Length ? v.Tints[s] : (byte)0);
+        }
     }
 
     private static ShadingDescriptor Finish(List<MeshVertex> triangles, Func<double[], uint>? toCmyk,

@@ -35,8 +35,9 @@ internal static class ShadingBuilder
             return null;
         int shadingType = typeInt.Value;
 
-        // Mesh shadings (Coons type 6, tensor-product type 7) are streams; decode + tessellate separately.
-        if (shadingType is 6 or 7)
+        // Mesh shadings are streams; decode separately. Gouraud triangle meshes (4, 5) yield triangles
+        // directly; patch meshes (Coons 6, tensor-product 7) are tessellated into them.
+        if (shadingType is 4 or 5 or 6 or 7)
             return shadingObj is PdfStream meshStream
                 ? MeshShadingReader.Build(meshStream, dict, shadingType, document, patternMatrix)
                 : null;
