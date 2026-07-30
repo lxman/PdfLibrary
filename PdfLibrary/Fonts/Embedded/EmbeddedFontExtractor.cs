@@ -1,9 +1,17 @@
 namespace PdfLibrary.Fonts.Embedded
 {
     /// <summary>
-    /// Extracts and parses embedded fonts from PDF font descriptors
-    /// Supports TrueType (FontFile2) fonts for glyph name extraction
-    /// Used as fallback when ToUnicode CMap is missing or incomplete
+    /// Extracts glyph names from an embedded <c>/FontFile2</c> (TrueType) post table, as a
+    /// last-resort code→Unicode fallback for a <see cref="Type0Font"/> whose <c>/ToUnicode</c> CMap
+    /// is missing or incomplete.
+    /// <para>
+    /// Scope is deliberately narrow, and narrower than it looks: this is constructed only from
+    /// <c>Type0Font.LoadEmbeddedFont()</c> with the descendant CIDFont's descriptor, so
+    /// <c>/FontFile2</c> is the only font-file flavour that both appears here and carries glyph
+    /// names. See the constructor for why <c>/FontFile3</c> and <c>/FontFile</c> are not simply
+    /// unimplemented. This affects text extraction (copy/search) only — glyph RENDERING resolves
+    /// CFF/Type1 independently via <c>GlyphOutline</c> and does not use this class.
+    /// </para>
     /// </summary>
     internal class EmbeddedFontExtractor
     {
@@ -33,9 +41,32 @@ namespace PdfLibrary.Fonts.Embedded
                 return;
             }
 
-            // TODO: Add FontFile3 (CFF/OpenType) support in future
-            // TODO: Add FontFile (Type1) support in future
-
+            // NOT a TODO — the two obvious "missing" cases are mostly unreachable here, and the
+            // TODOs that used to sit on this line sent a backlog sweep scoping work that cannot pay
+            // off. This type is constructed from ONE place: Type0Font.LoadEmbeddedFont(), using the
+            // DESCENDANT CIDFont's descriptor. So the descriptor is always a CIDFont's, and per
+            // ISO 32000-2 §9.7.4.2 a CIDFont carries only:
+            //
+            //   CIDFontType2 -> /FontFile2 (TrueType)  — handled above, via post-table names.
+            //   CIDFontType0 -> /FontFile3, Subtype /CIDFontType0C or /OpenType.
+            //
+            // A CID-keyed CFF HAS NO GLYPH NAMES: its charset maps GID -> CID, not GID -> SID.
+            // That is the point of CID-keying (see FontParser Type1Table.IsCid). There is nothing
+            // to extract, so /FontFile3 support would return null here anyway for conformant files.
+            //
+            // /FontFile (Type1) is only valid on a SIMPLE font descriptor, never on a CIDFont, so
+            // it should not reach this constructor at all.
+            //
+            // The name-keyed CFF that does carry usable names is Subtype /Type1C, which appears on
+            // SIMPLE font descriptors — and simple fonts deliberately do not use this class: their
+            // text extraction reads glyph names from the PDF's own /Encoding and /Differences, so
+            // the font program never needs cracking.
+            //
+            // The one genuinely reachable gap is a NAME-keyed CFF wrongly embedded as
+            // /CIDFontType0C by a broken producer. Adding that needs a GID->name accessor on
+            // FontParser's ICharset (today an empty marker interface) plus range expansion for
+            // charset formats 1 and 2. Gated on evidence that such files exist in practice — do not
+            // build it speculatively.
             _isValid = false;
         }
 
