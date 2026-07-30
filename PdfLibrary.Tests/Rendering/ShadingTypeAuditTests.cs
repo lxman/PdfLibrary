@@ -11,16 +11,15 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Tests.Rendering;
 
 /// <summary>
-/// AUDIT, not a gate. Issue #9: <c>ShadingBuilder</c> handles axial (2), radial (3), Coons (6) and
-/// tensor-product (7); types <b>1</b> (function-based), <b>4</b> (free-form Gouraud) and <b>5</b>
-/// (lattice-form Gouraud) return null and therefore paint NOTHING.
+/// AUDIT, not a gate. Issue #9, now closed: <c>ShadingBuilder</c> handles all seven shading types.
+/// Types 4/5 landed first, then type 1; before that each returned null and therefore painted NOTHING.
 ///
 /// <para>
-/// Unlike the other audited entries this is a genuine missing feature — an unimplemented type is a
-/// silently blank area, not a device concept or a producer bug. What the census establishes is
-/// FREQUENCY: how often types 1/4/5 actually occur, and via which route (a bare <c>sh</c> operator's
-/// <c>/Shading</c> resource, or a shading <i>pattern</i> reached through <c>scn</c>), so the work can
-/// be prioritised against real usage rather than the spec's type count.
+/// Support here is MEASURED, never declared — a type counts as supported only when every occurrence
+/// of it in the corpora actually produced a <c>ShadingDescriptor</c>. Kept as a regression census
+/// rather than deleted with the issue: it is what would catch a type silently regressing to null, and
+/// it still reports FREQUENCY by route (a bare <c>sh</c> operator's <c>/Shading</c> resource, or a
+/// shading <i>pattern</i> reached through <c>scn</c>) for whatever comes next.
 /// </para>
 ///
 /// <para>LocalOnly: needs ../veraPDF-corpus and/or ../gwg-gos.</para>
@@ -88,8 +87,10 @@ public class ShadingTypeAuditTests
             return $"  type {t} {name,-22} {mark} {total,5} occurrences  {ok,5} built  {files,4} files  ({pat} as pattern)";
         }
 
-        var missingExamples = new[] { 1, 4, 5 }
-            .Where(t => c.FilesByType.ContainsKey(t))
+        // Example files for any type that did NOT fully build — empty now that all seven are
+        // implemented, and the first thing to look at if one ever regresses.
+        var missingExamples = Enumerable.Range(1, 7)
+            .Where(t => c.ByType.GetValueOrDefault(t) > c.BuiltOk.GetValueOrDefault(t))
             .Select(t => $"type {t}: {string.Join(", ", c.FilesByType[t].Take(4))}")
             .ToList();
 
@@ -109,7 +110,7 @@ public class ShadingTypeAuditTests
              {Row(c, 7, "tensor-product patch")}
 
              MISSING/PARTIAL = ShadingBuilder returned null, i.e. a silently blank area.
-             {(missingExamples.Count == 0 ? "No occurrences of types 1/4/5 in these corpora." : string.Join("\n             ", missingExamples))}
+             {(missingExamples.Count == 0 ? "Every shading type present in these corpora built." : string.Join("\n             ", missingExamples))}
              =========================================
 
              """;
