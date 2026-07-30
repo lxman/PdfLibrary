@@ -907,14 +907,20 @@ public class PdfImageToCmykTests
     // Indexed palette whose BASE resolves to one. An Indexed-over-[/Separation /Cyan …] image
     // declines both CMYK routes and flattens through the RGBA/ICC path. The ruled goal is the
     // same "Adobe or better" direct application G-14 delivered for the direct case; extending it
-    // to Indexed must flip this pin red and retire it deliberately. The /Lookup placeholder is
-    // never consulted on the decline path — if this test ever throws or passes differently, the
-    // route has started reading Indexed entries: STOP and report.
+    // to Indexed must flip this pin red and retire it deliberately.
+    // The /Lookup element IS consulted, first, and is the sole cause of today's decline: with a
+    // real lookup (below) ResolveLookup succeeds, BuildIndexedEntryToCmyk takes the Separation
+    // arm, and BuildTintToCmyk's PdfFunction.Create fails on the helper's /Identity tint name, so
+    // TryToCmyk declines for the RIGHT reason — the Indexed route has no reserved-direct arm
+    // (unlike ShadingBuilder.BuildCmykMapper) and falls through to the tint transform, which then
+    // dies. That is what the fix must remove. TryToSpotInk's half declines for a separate,
+    // permanent reason (Classify("Cyan") != Spot, so spotNames.Count == 0) and will never flip —
+    // it is decoration confirming the spot-ink route is unaffected, not a hook.
     [Fact]
     public void Indexed_over_reserved_base_still_declines_G14ResidualBaseline()
     {
         PdfArray indexed = new(new PdfName("Indexed"), Separation("Cyan"),
-            new PdfInteger(1), new PdfName("Lookup"));
+            new PdfInteger(1), new PdfString([0xFF, 0x00]));   // hival 1, 1 comp/entry
         PdfImage img = Image(indexed, [0, 1], 2, 1);
 
         Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
