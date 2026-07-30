@@ -42,54 +42,31 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Ensure the color list exists
         color ??= [];
 
-        // DIAGNOSTIC: Log every color space resolution attempt
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE START: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
-
         // Skip device color spaces - they don't need resolution
         if (colorSpaceName is "DeviceGray" or "DeviceRGB" or "DeviceCMYK")
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: '{colorSpaceName}' is device color space, skipping");
             return;
         }
 
         // Try to resolve named color space from resources
         if (colorSpaces is null)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: No ColorSpace dict in resources for '{colorSpaceName}'");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: No ColorSpace dict in resources for '{colorSpaceName}'");
             return;
         }
-
-        // DIAGNOSTIC: Log what's in the ColorSpace dictionary
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace dict has {colorSpaces.Keys.Count} entries: [{string.Join(", ", colorSpaces.Keys.Take(10).Select(k => k.Value))}]");
 
         if (!colorSpaces.TryGetValue(new PdfName(colorSpaceName), out PdfObject? csObj))
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ColorSpace '{colorSpaceName}' not found in dict");
             return;
         }
-
-        // DIAGNOSTIC: Log successful lookup
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Found '{colorSpaceName}' in dict, type={csObj?.GetType().Name ?? "NULL"}");
 
         // Resolve indirect reference
         if (csObj is PdfIndirectReference reference && document is not null)
         {
             csObj = document.ResolveReference(reference);
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Resolved indirect reference for '{colorSpaceName}', type={csObj?.GetType().Name ?? "NULL"}");
-        }
-
-        // DIAGNOSTIC: Log PdfArray contents
-        if (csObj is PdfArray debugArray)
-        {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: PdfArray Count={debugArray.Count}");
-            if (debugArray.Count > 0)
-            {
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: PdfArray[0] type={debugArray[0]?.GetType().Name ?? "NULL"}, value={debugArray[0]}");
-            }
-            if (debugArray.Count > 1)
-            {
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: PdfArray[1] type={debugArray[1]?.GetType().Name ?? "NULL"}");
-            }
         }
 
         switch (csObj)
@@ -102,7 +79,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             // Handle Pattern with underlying color space: [/Pattern /DeviceRGB] or [/Pattern [/ICCBased ...]]
             case PdfArray { Count: >= 2 } patternArray when patternArray[0] is PdfName patternName && patternName.Value == "Pattern":
                 colorSpaceName = "Pattern";
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (colored, underlying={patternArray[1]})");
+                if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Pattern color space detected (colored, underlying={patternArray[1]})");
                 return;
         }
 
@@ -110,12 +88,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Can be: [/ICCBased stream] or [/Separation name alternateSpace tintTransform]
         if (csObj is not PdfArray { Count: >= 2 } csArray || csArray[0] is not PdfName csType)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Early return - condition failed. csObj is PdfArray: {csObj is PdfArray}, count check: {(csObj as PdfArray)?.Count >= 2}, [0] is PdfName: {(csObj as PdfArray)?[0] is PdfName}");
             return;
         }
-
-        // DIAGNOSTIC: Log what we're switching on
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Entering switch with csType.Value='{csType.Value}', csArray.Count={csArray.Count}");
 
         switch (csType.Value)
         {
@@ -179,7 +153,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             numComponents = nNum.Value;
         }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ICCBased '{colorSpaceName}': N={numComponents}, current color has {color.Count} components, color=[{string.Join(", ", color.Select(c => c.ToString("F2")))}]");
+        if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: ICCBased '{colorSpaceName}': N={numComponents}, current color has {color.Count} components, color=[{string.Join(", ", color.Select(c => c.ToString("F2")))}]");
 
         // Get /Alternate color space (fallback when the ICC transform can't be built).
         string? alternateSpace = null;
@@ -262,8 +237,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 double v = 1.0 - allTint;
                 color = [v, v, v];
                 colorSpaceName = "DeviceRGB";
-                PdfLogger.Log(LogCategory.Graphics,
-                    $"RESOLVE Separation /All: tint={allTint:F3} -> complement {v:F3} on all colourants");
+                if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                    PdfLogger.Log(LogCategory.Graphics,
+                        $"RESOLVE Separation /All: tint={allTint:F3} -> complement {v:F3} on all colourants");
                 return;
             }
             case "None":
@@ -298,7 +274,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             ? PdfFunction.Create(tintTransformObj, document)
             : null;
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation: colorant='{colorantName}', altSpace='{altSpace}', tintTransform={tintTransform?.GetType().Name ?? "NULL"}, color.Count={color.Count}");
+        if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation: colorant='{colorantName}', altSpace='{altSpace}', tintTransform={tintTransform?.GetType().Name ?? "NULL"}, color.Count={color.Count}");
 
         if (color.Count == 1)
         {
@@ -308,18 +285,18 @@ internal class ColorSpaceResolver(PdfDocument? document)
             if (tintTransform is not null)
             {
                 double[] result = tintTransform.Evaluate([tint]);
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
+                if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> tint={tint:F3} -> function result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
                 ApplyTintTransformResult(result, altSpace, alternateObj, ref colorSpaceName, ref color);
             }
             else
             {
                 // Fallback: simple heuristic when tint transform not available
-                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> using fallback (no tint transform), tint={tint:F3}");
+                if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Separation '{colorantName}' -> using fallback (no tint transform), tint={tint:F3}");
                 ApplySeparationFallback(colorantName, altSpace, tint, ref colorSpaceName, ref color);
             }
         }
-
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Separation END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color?.Select(c => c.ToString("F3")) ?? [])}]");
     }
 
     /// <summary>
@@ -350,7 +327,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (tintTransform is null) return;   // DeviceN requires a tint transform to flatten to the alternate
 
         double[] result = tintTransform.Evaluate(color.ToArray());
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE DeviceN: altSpace='{altSpace}', tints={color.Count} -> result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
+        if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE DeviceN: altSpace='{altSpace}', tints={color.Count} -> result=[{string.Join(", ", result.Select(r => r.ToString("F3")))}]");
         ApplyTintTransformResult(result, altSpace, alternateObj, ref colorSpaceName, ref color);
     }
 
@@ -570,8 +548,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
             // still throw at runtime on a malformed Type-0/Type-4 function body (e.g. a Domain that
             // doesn't match the colour space's actual input count); treat that identically to "no usable
             // tint transform" rather than letting the page-inventory call (GetPageColorants) fail.
-            PdfLogger.Log(LogCategory.Graphics,
-                $"BuildTintRamp: tint transform threw during ramp/solid evaluation for colorant index {colorantIndex}, falling back to null ramp: {ex}");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics,
+                    $"BuildTintRamp: tint transform threw during ramp/solid evaluation for colorant index {colorantIndex}, falling back to null ramp: {ex}");
             return (null, (0, 0, 0));
         }
         return (ramp, solid);
@@ -1432,7 +1411,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Indexed color space requires a single component (the palette index)
         if (color.Count != 1)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Expected 1 component (palette index), got {color.Count}");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Expected 1 component (palette index), got {color.Count}");
             return;
         }
 
@@ -1493,7 +1473,6 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         // Get lookup table (index 3) - can be string or stream
         PdfObject? lookupObj = csArray[3];
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed LOOKUP OBJECT: type={lookupObj?.GetType().Name ?? "NULL"}, value={(lookupObj is PdfString s ? $"PdfString len={s.Bytes.Length}" : lookupObj?.ToString() ?? "null")}");
 
         if (lookupObj is PdfIndirectReference lookupRef && document is not null)
             lookupObj = document.ResolveReference(lookupRef);
@@ -1505,25 +1484,17 @@ internal class ColorSpaceResolver(PdfDocument? document)
             _ => null
         };
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed PALETTE DATA: paletteData={(paletteData is not null ? $"len={paletteData.Length}" : "NULL")}");
-
         if (paletteData is null)
         {
             PdfLogger.Log(LogCategory.Graphics, "RESOLVE Indexed: No palette data found");
             return;
         }
 
-        // DIAGNOSTIC: Log palette data extraction for debugging
-        if (paletteData.Length >= 10)
-        {
-            string bytesHex = string.Join(" ", paletteData.Take(20).Select(b => b.ToString("X2")));
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed PALETTE BYTES: first 20 bytes=[{bytesHex}]");
-        }
-
         // Validate palette index
         if (paletteIndex < 0 || paletteIndex > hival)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Palette index {paletteIndex} out of range [0, {hival}]");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Palette index {paletteIndex} out of range [0, {hival}]");
             paletteIndex = Math.Clamp(paletteIndex, 0, hival);
         }
 
@@ -1534,7 +1505,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
 
         if (byteOffset + bytesPerEntry > paletteData.Length)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Palette index {paletteIndex} * {bytesPerEntry} = {byteOffset} exceeds palette size {paletteData.Length}");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: Palette index {paletteIndex} * {bytesPerEntry} = {byteOffset} exceeds palette size {paletteData.Length}");
             return;
         }
 
@@ -1547,7 +1519,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
             paletteColor.Add(normalizedValue);
         }
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: index={paletteIndex}, base={baseColorSpace}, components={baseComponents}, palette color=[{string.Join(", ", paletteColor.Select(c => c.ToString("F3")))}]");
+        if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Indexed: index={paletteIndex}, base={baseColorSpace}, components={baseComponents}, palette color=[{string.Join(", ", paletteColor.Select(c => c.ToString("F3")))}]");
 
         // Now we have the color from the palette, resolve the base color space if needed
         color = paletteColor;
@@ -1571,9 +1544,6 @@ internal class ColorSpaceResolver(PdfDocument? document)
             },
             _ => baseColorSpace ?? "DeviceRGB"
         };
-
-        PdfLogger.Log(LogCategory.Graphics,
-            $"RESOLVE Indexed END: colorSpaceName='{colorSpaceName}', color=[{string.Join(", ", color.Select(c => c.ToString("F3")))}]");
     }
 
     /// <summary>
@@ -1629,7 +1599,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Lab color space requires 3 components: L, a, b
         if (color.Count != 3)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab: Expected 3 components (L,a,b), got {color.Count}");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab: Expected 3 components (L,a,b), got {color.Count}");
             return;
         }
 
@@ -1637,15 +1608,14 @@ internal class ColorSpaceResolver(PdfDocument? document)
         double a = color[1];
         double b = color[2];
 
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab: L={L:F2}, a={a:F2}, b={b:F2}");
+        if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab: L={L:F2}, a={a:F2}, b={b:F2}");
 
         // Convert Lab to RGB using the existing LabToRgb helper
         double[] rgb = LabToRgb(L, a, b, csArray);
 
         color = [rgb[0], rgb[1], rgb[2]];
         colorSpaceName = "DeviceRGB";
-
-        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE Lab END: R={rgb[0]:F3}, G={rgb[1]:F3}, B={rgb[2]:F3}");
     }
 
     /// <summary>
@@ -1666,7 +1636,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // CalRGB requires 3 components: R, G, B
         if (color.Count != 3)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalRGB: Expected 3 components, got {color.Count}");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalRGB: Expected 3 components, got {color.Count}");
             return;
         }
 
@@ -1676,8 +1647,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (converter is not null)
         {
             double[] rgb = converter.ToSrgb(color[0], color[1], color[2]);
-            PdfLogger.Log(LogCategory.Graphics,
-                $"RESOLVE CalRGB: ({color[0]:F3},{color[1]:F3},{color[2]:F3}) calibrated to sRGB ({rgb[0]:F3},{rgb[1]:F3},{rgb[2]:F3})");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics,
+                    $"RESOLVE CalRGB: ({color[0]:F3},{color[1]:F3},{color[2]:F3}) calibrated to sRGB ({rgb[0]:F3},{rgb[1]:F3},{rgb[2]:F3})");
             color = [rgb[0], rgb[1], rgb[2]];
         }
 
@@ -1703,7 +1675,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // CalGray requires 1 component: Gray value
         if (color.Count != 1)
         {
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: Expected 1 component, got {color.Count}");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: Expected 1 component, got {color.Count}");
             return;
         }
 
@@ -1713,7 +1686,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
         if (converter is not null)
         {
             double[] rgb = converter.ToSrgb(color[0]);
-            PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: {color[0]:F3} calibrated to sRGB ({rgb[0]:F3})");
+            if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                PdfLogger.Log(LogCategory.Graphics, $"RESOLVE CalGray: {color[0]:F3} calibrated to sRGB ({rgb[0]:F3})");
             color = [rgb[0], rgb[1], rgb[2]];
             colorSpaceName = "DeviceRGB";
             return;
@@ -1780,14 +1754,16 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 // went unnoticed; saturated colours drift badly (a mid blue by ~37/255).
                 if (!IsUsableWhitePoint(xn, yn, zn))
                 {
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Unusable Lab WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}], using D50 instead");
+                    if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Unusable Lab WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}], using D50 instead");
                     xn = 0.9642;
                     yn = 1.0;
                     zn = 0.8249;
                 }
                 else
                 {
-                    PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Using PDF WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}]");
+                    if (PdfLogger.IsCategoryEnabled(LogCategory.Graphics))
+                        PdfLogger.Log(LogCategory.Graphics, $"RESOLVE: Using PDF WhitePoint [{xn:F6}, {yn:F6}, {zn:F6}]");
                 }
             }
         }
