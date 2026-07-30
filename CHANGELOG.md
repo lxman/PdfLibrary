@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [2.5.2] - 2026-07-29
+
+### Fixed
+
+- **Reserved process-name Separations/DeviceN now apply their colourant directly on the CMYK
+  soft-proof path** — an unregistered `[/Separation /Cyan …]` (or an all-reserved DeviceN) paints
+  its process plate directly, ignoring the alternate's tint transform, in every painting context:
+  fills, strokes, shadings, images, and stencil masks (ISO 32000-2 §8.6.6.4; matches Adobe).
+  Previously such spaces flattened through their alternate, so a lying alternate painted the wrong
+  plate. `/None` components in such spaces still paint nothing. The RGB rendering path is
+  unchanged (it correctly keeps reverting through the alternate).
+- **Atomic file saves retry transient Windows locks** — the final rename in `PdfDocument.Save`
+  (and all atomic writes) now retries with backoff when antivirus/Search-indexer scans transiently
+  hold the destination (`IOException`/`UnauthorizedAccessException`), instead of failing the save.
+  Persistent locks still throw after the retry budget.
+- **`GetPageColorants` logs when a malformed resource graph truncates the inventory** instead of
+  swallowing the fault silently (the partial-result contract is unchanged).
+
+### Known limitations (colour rendering)
+
+Tracked, each pinned by a baseline test so no fix can land unnoticed — see
+`Docs/colour/rendering-conformance.md` (gap entries G-8 … G-14) for mechanisms and pins:
+`/None` shadings used as *patterns* still paint; `/All` images/stencils get no spot planes on the
+CMYK path; a `/None` fill in text mode 4 drops the add-to-clip half; a bare `/Pattern cs` carries
+over the previous colour instead of painting nothing; `cs`+`sc` costs 4 colour-space resolves
+(uncached tint-transform parse); Indexed images over all-reserved bases still flatten.
+
 ## [2.5.1] - 2026-07-24
 
 ### Fixed
@@ -531,6 +558,7 @@ First stable release. Completes the *load → edit → optimize* story: a loaded
 | 2.3.0 | 2026-07-04 | AcroForm field authoring on existing documents; text-extraction fixes; field-tree-aware page import. |
 | 2.4.0 | 2026-07-09 | Read-only conformance preflight (PDF/A-2b/2u/3b, PDF/X-4, PDF/UA-1); CMYK / colour-managed render fidelity batch (Ghent Workgroup); 16-bit images; optional content; mesh shadings; transparency-group SPI; text-extraction fixes. |
 | 2.5.0 | 2026-07-20 | Embedded-files read API + PDF/A-3 authoring (`AddEmbeddedFile`/`SetRawXmp`/`AddOutputIntent`); Tagged-PDF tree, output-intent, and page-colorant read APIs; broad PDF/A-2b + full PDF/UA-1 + PDF/X-4 conformance coverage (0 false positives); CFF/text/width and rendering-robustness fixes. |
+| 2.5.2 | 2026-07-29 | Reserved-name direct colour application on the CMYK soft-proof path; atomic-save retry on transient Windows locks; colour-gap baseline pins (G-8 … G-14) so no future colour fix lands unnoticed. |
 
 ---
 

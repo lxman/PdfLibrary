@@ -872,4 +872,58 @@ public class PdfImageToCmykTests
             Assert.Equal(0, ink.ProcessCmyk[i * 4 + 3]);
         }
     }
+
+    // G-9 BASELINE (see Docs/colour/rendering-conformance.md, G-9): an /All image gets correct
+    // process plates but NO spot planes — TryToSpotInk routes a colourant to a plane only when
+    // Classify(name) == Spot, and Classify("All") is ColorantKind.All, so spotNames stays empty
+    // and the whole call declines. The ruled goal (rows 4-6/4-9, §8.6.6.4) is that /All paints
+    // ALL colourants — process plates AND every open spot plane — matching the fill path's
+    // AllColourants arm. The fix must flip this pin red and retire it deliberately.
+    [Fact]
+    public void All_image_gets_no_spot_ink_G9Baseline()
+    {
+        PdfImage img = Image(Separation("All"), [255, 128], 2, 1);
+
+        SpotImageInk? ink = PdfImageToCmyk.TryToSpotInk(img, null, out _, out _);
+
+        Assert.Null(ink);
+    }
+
+    // G-9 BASELINE, stencil half: an /All fill behind a stencil produces no ink either —
+    // StencilInkFromFill has the same Classify(name) == Spot gate, and "All" is not reserved
+    // process, so the all-reserved G-14 arm declines too. The stencil then takes the RGBA path
+    // with ResolvedFillColor's ADDITIVE complement baked in — a different colour than the same
+    // tint painted as a fill on the same CMYK page (the divergence the G-9 entry records).
+    [Fact]
+    public void All_stencil_fill_gets_no_ink_G9Baseline()
+    {
+        var origin = new ColorantOrigin(["All"], [0.7], "DeviceCMYK");
+
+        Assert.Null(PdfImageToCmyk.StencilInkFromFill(origin, 2, 2));
+    }
+
+    // G-14 RESIDUAL (a) BASELINE (rendering-conformance.md, G-14 residuals): the reserved-direct
+    // image route covers a DIRECTLY-named reserved Separation/DeviceN driving image ink — not an
+    // Indexed palette whose BASE resolves to one. An Indexed-over-[/Separation /Cyan …] image
+    // declines both CMYK routes and flattens through the RGBA/ICC path. The ruled goal is the
+    // same "Adobe or better" direct application G-14 delivered for the direct case; extending it
+    // to Indexed must flip this pin red and retire it deliberately.
+    // The /Lookup element IS consulted, first, and is the sole cause of today's decline: with a
+    // real lookup (below) ResolveLookup succeeds, BuildIndexedEntryToCmyk takes the Separation
+    // arm, and BuildTintToCmyk's PdfFunction.Create fails on the helper's /Identity tint name, so
+    // TryToCmyk declines for the RIGHT reason — the Indexed route has no reserved-direct arm
+    // (unlike ShadingBuilder.BuildCmykMapper) and falls through to the tint transform, which then
+    // dies. That is what the fix must remove. TryToSpotInk's half declines for a separate,
+    // permanent reason (Classify("Cyan") != Spot, so spotNames.Count == 0) and will never flip —
+    // it is decoration confirming the spot-ink route is unaffected, not a hook.
+    [Fact]
+    public void Indexed_over_reserved_base_still_declines_G14ResidualBaseline()
+    {
+        PdfArray indexed = new(new PdfName("Indexed"), Separation("Cyan"),
+            new PdfInteger(1), new PdfString([0xFF, 0x00]));   // hival 1, 1 comp/entry
+        PdfImage img = Image(indexed, [0, 1], 2, 1);
+
+        Assert.Null(PdfImageToCmyk.TryToCmyk(img, null, out _, out _));
+        Assert.Null(PdfImageToCmyk.TryToSpotInk(img, null, out _, out _));
+    }
 }
