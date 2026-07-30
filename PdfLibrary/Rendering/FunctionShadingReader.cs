@@ -8,7 +8,7 @@ using PdfLibrary.Structure;
 namespace PdfLibrary.Rendering;
 
 /// <summary>
-/// Builds a function-based (type 1) shading — ISO 32000-2 §8.7.4.5.3. Unlike every other shading type
+/// Builds a function-based (type 1) shading — ISO 32000-2 §8.7.4.5.2. Unlike every other shading type
 /// this one has no geometry of its own: it evaluates a 2-in/n-out function (or n 2-in/1-out functions)
 /// over a rectangular /Domain in its own parameter space, and /Matrix maps that domain into the
 /// shading's target coordinate space.
@@ -29,6 +29,10 @@ namespace PdfLibrary.Rendering;
 internal static class FunctionShadingReader
 {
     // Per-axis grid resolution: (N+1)² function evaluations and 2N² triangles per shading.
+    // Known limit: the spec says the function "need not be smooth or continuous", so a step function
+    // or a type 0 sampled function finer than this grid is under-sampled and smeared linearly across
+    // each cell. A resolution hint (e.g. a sampled function's /Size) would need PdfFunction to expose
+    // one; not worth it until a real file shows the seam.
     private const int Subdivisions = 32;
 
     public static ShadingDescriptor? Build(PdfDictionary dict, PdfDocument? document, Matrix3x2? patternMatrix)
@@ -37,8 +41,10 @@ internal static class FunctionShadingReader
         List<PdfFunction> functions = ShadingBuilder.ResolveFunctions(funcObj, document);
         if (functions.Count == 0) return null;                 // a function type we can't evaluate
 
-        double[] domain = ShadingBuilder.GetNumbers(dict, "Domain", document) ?? [0.0, 1.0, 0.0, 1.0];
-        if (domain.Length < 4) return null;
+        // /Domain is optional with a default of the unit square (Table 78), so an array too short to
+        // carry a rectangle is treated as absent rather than fatal — same leniency as /Matrix below.
+        double[]? domainArr = ShadingBuilder.GetNumbers(dict, "Domain", document);
+        double[] domain = domainArr is { Length: >= 4 } ? domainArr : [0.0, 1.0, 0.0, 1.0];
         double x0 = domain[0], x1 = domain[1], y0 = domain[2], y1 = domain[3];
         // Table 78 gives /Domain as [x0 x1 y0 y1] with x0 < x1 and y0 < y1. A degenerate or reversed
         // rectangle spans no area, so there is nothing to tessellate — decline rather than emit

@@ -8,7 +8,7 @@ using Xunit;
 namespace PdfLibrary.Tests.Rendering;
 
 /// <summary>
-/// Function-based (type 1) shadings, ISO 32000-2 §8.7.4.5.3. A type 1 shading evaluates a 2-in/n-out
+/// Function-based (type 1) shadings, ISO 32000-2 §8.7.4.5.2. A type 1 shading evaluates a 2-in/n-out
 /// function over a rectangular /Domain and maps that domain into the shading's target space with
 /// /Matrix — it shares nothing with the axial/radial ramp or the mesh stream decoders. Previously
 /// <c>ShadingBuilder</c> returned null for it, so such a shading painted NOTHING.
@@ -16,7 +16,8 @@ namespace PdfLibrary.Tests.Rendering;
 /// <para>
 /// The implementation tessellates the domain into a Gouraud triangle grid, which is why these tests
 /// assert on <see cref="ShadingDescriptor.MeshTriangles"/>: the existing triangle paint path (Skia's
-/// <c>DrawVertices</c>, and the CMYK compositor's mesh arm) then renders it with no backend change.
+/// <c>DrawVertices</c>, reached because the renderer dispatches on triangle count rather than on
+/// <see cref="ShadingDescriptor.ShadingType"/>) then renders it with no backend change.
 /// </para>
 ///
 /// <para>
@@ -43,6 +44,28 @@ public class FunctionShadingTests
         dict.Add(new PdfName("Range"), range);
         return new PdfStream(dict, Encoding.Latin1.GetBytes(program));
     }
+
+    /// <summary>A Type-2 exponential 0→1 tint transform (a Separation/DeviceN alternate).</summary>
+    private static PdfDictionary Type2Fn(double[] c0, double[] c1)
+    {
+        var d = new PdfDictionary();
+        d[new PdfName("FunctionType")] = new PdfInteger(2);
+        d[new PdfName("Domain")] = Reals(0, 1);
+        d[new PdfName("C0")] = Reals(c0);
+        d[new PdfName("C1")] = Reals(c1);
+        d[new PdfName("N")] = new PdfReal(1);
+        return d;
+    }
+
+    private static PdfArray SeparationCmyk(string name) => new(
+        new PdfName("Separation"), new PdfName(name), new PdfName("DeviceCMYK"),
+        Type2Fn([0, 0, 0, 0], [0, 1, 0, 0]));
+
+    private static PdfArray DeviceNCmyk(string[] names) => new(
+        new PdfName("DeviceN"),
+        new PdfArray(Array.ConvertAll(names, n => (PdfObject)new PdfName(n))),
+        new PdfName("DeviceCMYK"),
+        Type2Fn([0, 0, 0, 0], [0, 1, 0, 0]));
 
     /// <summary>R = x, G = y, B = 0 over the unit square, in DeviceRGB.</summary>
     private static PdfStream XyRgbFunction() =>
@@ -123,8 +146,8 @@ public class FunctionShadingTests
     [Fact]
     public void Type1_NonUnitDomain_EvaluatesTheFunctionOverThatDomain()
     {
-        // Domain x∈[0,2], y∈[0,1]; the function clamps its own /Domain at 1, so the right-hand edge
-        // saturates to R=255 — the point is that the SHADING's domain drives the sample positions.
+        // Domain x∈[0,2], y∈[0,1] — the point is that the SHADING's /Domain drives the sample
+        // positions, so a vertex exists out at x = 2.
         PdfStream fn = PostScript("{ 0 }", Reals(0, 2, 0, 1), Reals(0, 1, 0, 1, 0, 1));
         ShadingDescriptor? d = ShadingBuilder.Build(ShadingDict(fn, domain: [0, 2, 0, 1]), null);
 
@@ -199,9 +222,87 @@ public class FunctionShadingTests
     [InlineData(new double[] { 1, 1, 0, 1 })]        // zero-width domain
     [InlineData(new double[] { 0, 1, 2, 2 })]        // zero-height domain
     [InlineData(new double[] { 1, 0, 0, 1 })]        // reversed x
-    [InlineData(new double[] { 0, 1, 0 })]           // too few entries
-    public void Type1_DegenerateDomain_ReturnsNull(double[] domain)
+    [InlineData(new double[] { 0, 1, 1, 0 })]        // reversed y
+    public void Type1_DomainSpanningNoArea_ReturnsNull(double[] domain)
     {
         Assert.Null(ShadingBuilder.Build(ShadingDict(XyRgbFunction(), domain: domain), null));
+    }
+
+    [Fact]
+    public void Type1_ShortDomainArray_FallsBackToTheUnitSquare()
+    {
+        // A malformed /Domain carries no usable rectangle, but the key is optional with a default —
+        // so treat it as absent (as /Matrix is) rather than painting nothing.
+        ShadingDescriptor? d = ShadingBuilder.Build(ShadingDict(XyRgbFunction(), domain: [0, 1, 0]), null);
+
+        Assert.NotNull(d);
+        Assert.True(HasVertex(d!.MeshTriangles, 0f, 0f));
+        Assert.True(HasVertex(d.MeshTriangles, 1f, 1f));
+    }
+
+    [Fact]
+    public void Type1_InteriorVertex_IsSampledFromTheFunctionNotInterpolatedFromTheCorners()
+    {
+        // R = x², G = y, B = 0 — deliberately NOT bilinear in x, so a grid that only sampled the four
+        // corners (or an interior row dropped by an off-by-one) would show the straight-line value.
+        PdfStream fn = PostScript("{ exch dup mul exch 0 }", Reals(0, 1, 0, 1), Reals(0, 1, 0, 1, 0, 1));
+        ShadingDescriptor? d = ShadingBuilder.Build(ShadingDict(fn), null);
+
+        Assert.NotNull(d);
+        // x = 0.5 is a grid line for any even subdivision count. Sampled: 0.5² = 0.25 → 64.
+        // Interpolated from the corners it would be ≈128, which is what this pins against.
+        byte red = (byte)((VertexAt(d!.MeshTriangles, 0.5f, 0f).Rgb >> 16) & 0xFF);
+        Assert.Equal(64, red);
+    }
+
+    [Fact]
+    public void Type1_RotationMatrix_PlacesTheDomainCornersByTheFullMatrix()
+    {
+        // [0 1 -1 0 0 0] is PDF's +90° rotation: (1,0) → (0,1) and (0,1) → (-1,0). An axis-aligned
+        // scale cannot tell b/c apart from a transposition; this can.
+        ShadingDescriptor? d = ShadingBuilder.Build(
+            ShadingDict(XyRgbFunction(), matrix: [0, 1, -1, 0, 0, 0]), null);
+
+        Assert.NotNull(d);
+        Assert.True(HasVertex(d!.MeshTriangles, 0f, 1f), "domain (1,0) should map to (0,1)");
+        Assert.True(HasVertex(d.MeshTriangles, -1f, 0f), "domain (0,1) should map to (-1,0)");
+    }
+
+    [Fact]
+    public void Type1_PureSeparation_PopulatesPerVertexSpotInkWithNoProcessPlane()
+    {
+        // Tint = x, so the spot plane ramps 0 → 255 across the domain.
+        PdfStream fn = PostScript("{ pop }", Reals(0, 1, 0, 1), Reals(0, 1));
+        var dict = ShadingDict(fn);
+        dict[new PdfName("ColorSpace")] = SeparationCmyk("GWG Green");
+
+        ShadingDescriptor? d = ShadingBuilder.Build(dict, null);
+
+        Assert.NotNull(d);
+        Assert.NotNull(d!.MeshSpotInk);
+        Assert.Equal(new[] { "GWG Green" }, d.MeshSpotInk!.Names);
+        Assert.Null(d.MeshSpotInk.VertexProcessCmyk);                            // pure spot ⇒ no process plane
+        Assert.Equal(d.MeshTriangles.Length, d.MeshSpotInk.VertexTints.Length);  // one spot ⇒ stride 1
+        Assert.Contains(d.MeshSpotInk.VertexTints, b => b > 200);
+        Assert.Contains(d.MeshSpotInk.VertexTints, b => b < 40);
+    }
+
+    [Fact]
+    public void Type1_DeviceNWithSpotAndProcess_KeepsBothPlanesPerVertex()
+    {
+        // Two colorants, both ramping with x: one spot, one process. `{ pop dup }` ⇒ outputs (x, x).
+        PdfStream fn = PostScript("{ pop dup }", Reals(0, 1, 0, 1), Reals(0, 1, 0, 1));
+        var dict = ShadingDict(fn);
+        dict[new PdfName("ColorSpace")] = DeviceNCmyk(["GWG Green", "Cyan"]);
+
+        ShadingDescriptor? d = ShadingBuilder.Build(dict, null);
+
+        Assert.NotNull(d);
+        Assert.NotNull(d!.MeshSpotInk);
+        Assert.Equal(new[] { "GWG Green" }, d.MeshSpotInk!.Names);               // only the spot is split out
+        Assert.NotNull(d.MeshSpotInk.VertexProcessCmyk);                         // /Cyan is a process plane
+        Assert.Equal(d.MeshTriangles.Length, d.MeshSpotInk.VertexTints.Length);
+        Assert.Equal(d.MeshTriangles.Length, d.MeshSpotInk.VertexProcessCmyk!.Length);
+        Assert.Contains(d.MeshSpotInk.VertexProcessCmyk, p => (p >> 24) > 200);  // C plane reaches full tint
     }
 }

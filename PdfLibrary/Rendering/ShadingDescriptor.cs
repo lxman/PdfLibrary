@@ -44,14 +44,17 @@ public sealed record MeshSpotInk(
 /// <summary>
 /// Backend-agnostic description of a PDF shading. Axial (type 2) and radial (type 3) carry a
 /// pre-sampled colour ramp (<see cref="Coords"/> + <see cref="Stops"/> + <see cref="Colors"/>);
-/// mesh shadings (Coons type 6, tensor-product type 7) instead carry a pre-tessellated triangle
-/// list (<see cref="MeshTriangles"/>). Produced by <see cref="ShadingBuilder"/> and consumed by
+/// every other type — function-based (1), Gouraud triangle meshes (4, 5) and patch meshes (Coons 6,
+/// tensor-product 7) — instead carries a pre-tessellated triangle list (<see cref="MeshTriangles"/>),
+/// so consumers dispatch on triangle count rather than on <see cref="ShadingType"/>.
+/// Produced by <see cref="ShadingBuilder"/> and consumed by
 /// <see cref="IRenderTarget.PaintShading"/> (the <c>sh</c> operator) and
 /// <see cref="IRenderTarget.FillPathWithShadingPattern"/> (a PatternType 2 shading pattern).
 /// </summary>
 public sealed class ShadingDescriptor
 {
-    /// <summary>2 = axial (linear), 3 = radial, 6 = Coons patch mesh, 7 = tensor-product patch mesh.</summary>
+    /// <summary>1 = function-based, 2 = axial (linear), 3 = radial, 4/5 = Gouraud triangle mesh
+    /// (free-form / lattice-form), 6 = Coons patch mesh, 7 = tensor-product patch mesh.</summary>
     public int ShadingType { get; init; }
 
     /// <summary>Axial: [x0, y0, x1, y1]. Radial: [x0, y0, r0, x1, y1, r1]. In shading space.</summary>
@@ -89,15 +92,17 @@ public sealed class ShadingDescriptor
     /// (renders exactly as before via <see cref="CmykColors"/>).</summary>
     public ShadingSpotInk? SpotInk { get; init; }
 
-    /// <summary>Per-spot ink for a spot mesh (type 6/7) shading (Soft-Proof SP-7-mesh); null ⇒ no spot
-    /// colorant (renders exactly as before via <see cref="MeshVertex.Cmyk"/>).</summary>
+    /// <summary>Per-spot ink for any spot TRIANGULATED shading — types 1 and 4–7 (Soft-Proof SP-7-mesh);
+    /// null ⇒ no spot colorant (renders exactly as before via <see cref="MeshVertex.Cmyk"/>).</summary>
     public MeshSpotInk? MeshSpotInk { get; init; }
 
     /// <summary>
-    /// Tessellated triangle list for a mesh shading (type 6/7): a triangle soup where each consecutive
-    /// triple of vertices forms one Gouraud-shaded triangle, positions in the shading's target coordinate
-    /// space. Empty for axial/radial shadings. Each patch's bicubic surface is sampled on a grid and its
-    /// four corner colours bilinearly interpolated (ISO 32000 §8.7.4.5.7–8).
+    /// Tessellated triangle list for every shading type that is not a ramp — a triangle soup where each
+    /// consecutive triple of vertices forms one Gouraud-shaded triangle, positions in the shading's
+    /// target coordinate space. Empty for axial/radial shadings. Types 4/5 supply the triangles
+    /// directly; types 6/7 sample each patch's bicubic surface on a grid and bilinearly interpolate its
+    /// four corner colours (ISO 32000 §8.7.4.5.7–8); type 1 samples its 2-D function on a grid over
+    /// /Domain (§8.7.4.5.2).
     /// </summary>
     public MeshVertex[] MeshTriangles { get; init; } = [];
 
