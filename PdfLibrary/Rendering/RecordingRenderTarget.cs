@@ -1,6 +1,7 @@
 using System.Numerics;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
+using PdfLibrary.Rendering.Icc;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Rendering;
@@ -18,6 +19,13 @@ public sealed class RecordingRenderTarget : IRenderTarget
     private BeginPageArgs _begin = new(1, 0, 0, 1, 0, 0, 0);
     private (int w, int h, double scale) _dims;
 
+    // One proof resolver (destination profile parsed once) and one ICC converter (transform cache) per
+    // recorder instance, shared across every image DrawImage decodes on this recording pass — avoids
+    // re-parsing the same ICC profile per image (cache defeat) the way a fresh `new IccColorConverter(doc)`
+    // per call would.
+    private readonly ProofCmykResolver _proofResolver;
+    private readonly IccColorConverter _iccConverter;
+
     // Soft-mask lifecycle (mirrors PdfLibrary.Rendering.SkiaSharp SoftMaskManager): a mask set via
     // RenderSoftMask stays active until its owning save-scope exits (Q) or it is cleared to /None
     // (OnGraphicsStateChanged). The engine driver never calls ClearSoftMask, so the matching pop
@@ -26,7 +34,12 @@ public sealed class RecordingRenderTarget : IRenderTarget
     private bool _softMaskActive;
     private int _softMaskOwnerDepth = -1;
 
-    public RecordingRenderTarget(PdfDocument? document) => _document = document;
+    public RecordingRenderTarget(PdfDocument? document)
+    {
+        _document = document;
+        _proofResolver = new ProofCmykResolver(document);
+        _iccConverter = new IccColorConverter(document);
+    }
 
     public static PageDrawList Record(PdfPage page, double scale)
     {
@@ -128,8 +141,11 @@ public sealed class RecordingRenderTarget : IRenderTarget
         // BPC + intent from the graphics state (PDF 2.0 /UseBlackPtComp, /RI); an image's own
         // /Intent wins over the state's — same precedence as the Skia ImageRenderer. Closes the
         // Phase-0 known-diff: ICC-profiled images previously converted with BPC off, default intent.
+        // The shared _proofResolver/_iccConverter (one per recorder instance) both surface a proof-target
+        // CMYK plane for ICC-managed images and avoid re-parsing the same ICC profile per image.
         PdfImageToRgba.RgbaImage? decoded = PdfImageToRgba.ToRgba(image, _document, maskColor,
-            state.UseBlackPointCompensation, image.Intent ?? state.RenderingIntent);
+            state.UseBlackPointCompensation, image.Intent ?? state.RenderingIntent,
+            _proofResolver, _iccConverter, out byte[]? proofCmyk);
         if (decoded is not { } img || img.Rgba.Length == 0) return;
 
         // Native DeviceCMYK samples (if the image resolves to CMYK) so the CMYK compositor paints native
@@ -158,7 +174,11 @@ public sealed class RecordingRenderTarget : IRenderTarget
         if (spots is null && image.IsImageMask && state.ResolvedFillColorantOrigin is { } fillOrigin)
             spots = PdfImageToCmyk.StencilInkFromFill(fillOrigin, img.Width, img.Height);
 
-        _commands.Add(new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates, spots));
+        // Native ink and spot routing keep priority over the proof plane (ImageCommand.ProofCmyk's
+        // contract): never emit ProofCmyk alongside Cmyk or Spots.
+        byte[]? proof = cmyk is not null || spots is not null ? null : proofCmyk;
+
+        _commands.Add(new ImageCommand(img.Rgba, img.Width, img.Height, img.Alpha, state.Ctm, state.Clone(), cmyk, plates, spots, proof));
     }
 
     public void ApplyCtm(Matrix3x2 ctm) { }

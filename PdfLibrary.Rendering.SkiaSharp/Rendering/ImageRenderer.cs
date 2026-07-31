@@ -148,7 +148,7 @@ internal class ImageRenderer
 
     /// <summary>
     /// Creates a SkiaSharp bitmap from PDF image data by delegating to the SkiaSharp-free
-    /// <see cref="PdfImageToRgba.ToRgba"/> core helper, then pinning the result into an
+    /// <see cref="PdfImageToRgba.ToRgba(PdfImage, PdfLibrary.Structure.PdfDocument?, ValueTuple{byte, byte, byte, byte}?, bool, string?)"/> core helper, then pinning the result into an
     /// <see cref="SKBitmap"/> via Marshal.Copy.
     /// </summary>
     private SKBitmap? CreateBitmapFromPdfImage(PdfImage image, SKColor? imageMaskColor = null,

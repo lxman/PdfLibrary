@@ -59,7 +59,50 @@ public static class PdfImageToRgba
         bool blackPointCompensation = false,
         string? renderingIntent = null)
     {
-        RgbaImage? decoded = ToRgbaCore(image, doc, imageMaskColor, blackPointCompensation, renderingIntent);
+        return ToRgba(image, doc, imageMaskColor, blackPointCompensation, renderingIntent,
+            proofResolver: null, out _);
+    }
+
+    /// <summary>
+    /// Same as the 5-arg overload, plus a proof-target CMYK plane: when <paramref name="proofResolver"/>
+    /// is supplied and the image's colour reaches sRGB through an embedded ICC profile (ICCBased N=3/N=4
+    /// 8-bit, or JPX with a 3-channel PDF-level profile), <paramref name="proofCmyk"/> receives a
+    /// Width*Height*4 CMYK plane produced from the SOURCE samples via <see
+    /// cref="ProofCmykResolver.TryIccImageToProofCmyk"/>. Null when the resolver is null, the image
+    /// isn't ICC-managed, or the proof leg fails — mirrors <see cref="ImageCommand.ProofCmyk"/>'s
+    /// contract (see PageDrawList.cs).
+    /// </summary>
+    internal static RgbaImage? ToRgba(
+        PdfImage image,
+        PdfDocument? doc,
+        (byte R, byte G, byte B, byte A)? imageMaskColor,
+        bool blackPointCompensation,
+        string? renderingIntent,
+        ProofCmykResolver? proofResolver,
+        out byte[]? proofCmyk)
+    {
+        return ToRgba(image, doc, imageMaskColor, blackPointCompensation, renderingIntent,
+            proofResolver, iccConverter: null, out proofCmyk);
+    }
+
+    /// <summary>
+    /// Full overload used by <see cref="RecordingRenderTarget"/>: also accepts a shared <see
+    /// cref="IccColorConverter"/> so one recorder instance reuses a single converter (and its transform
+    /// cache) across every image on the page instead of constructing one per image. A null converter
+    /// falls back to a per-image instance (today's behaviour) for callers that can't share one.
+    /// </summary>
+    internal static RgbaImage? ToRgba(
+        PdfImage image,
+        PdfDocument? doc,
+        (byte R, byte G, byte B, byte A)? imageMaskColor,
+        bool blackPointCompensation,
+        string? renderingIntent,
+        ProofCmykResolver? proofResolver,
+        IccColorConverter? iccConverter,
+        out byte[]? proofCmyk)
+    {
+        RgbaImage? decoded = ToRgbaCore(image, doc, imageMaskColor, blackPointCompensation, renderingIntent,
+            proofResolver, iccConverter, out proofCmyk);
 
         // /Matte (ISO 32000-1 §11.6.5.3): when a soft-mask image carries /Matte, THIS image's colour
         // samples have already been pre-multiplied against that matte colour. Compositing them as
@@ -84,8 +127,12 @@ public static class PdfImageToRgba
         PdfDocument? doc,
         (byte R, byte G, byte B, byte A)? imageMaskColor,
         bool blackPointCompensation,
-        string? renderingIntent)
+        string? renderingIntent,
+        ProofCmykResolver? proofResolver,
+        IccColorConverter? iccConverter,
+        out byte[]? proofCmyk)
     {
+        proofCmyk = null;
         try
         {
             byte[] imageData = image.GetDecodedData();
@@ -136,10 +183,17 @@ public static class PdfImageToRgba
                             PdfStream? srcIcc = GetJpxSourceIccProfile(image, doc);
                             if (srcIcc is not null)
                             {
-                                byte[]? managed = new IccColorConverter(doc)
+                                byte[]? managed = (iccConverter ?? new IccColorConverter(doc))
                                     .TryConvertInterleavedToSrgb(srcIcc, pixelData, 3, blackPointCompensation, renderingIntent);
                                 if (managed is not null)
+                                {
+                                    // Proof leg from the PRE-conversion source samples (mirrors what
+                                    // TryConvertInterleavedToSrgb just consumed), only once the sRGB
+                                    // conversion itself succeeded — see ImageCommand.ProofCmyk's contract.
+                                    proofCmyk = proofResolver?.TryIccImageToProofCmyk(
+                                        srcIcc, pixelData, 3, jp2Width * jp2Height);
                                     pixelData = managed;
+                                }
                             }
                         }
 
@@ -566,10 +620,17 @@ public static class PdfImageToRgba
                             if (imageData.Length >= needed)
                             {
                                 byte[] src = imageData.Length == needed ? imageData : imageData[..needed];
-                                byte[]? managed = new IccColorConverter(doc)
+                                byte[]? managed = (iccConverter ?? new IccColorConverter(doc))
                                     .TryConvertInterleavedToSrgb(iccProfile, src, numComponents, blackPointCompensation, renderingIntent);
                                 if (managed is not null)
                                 {
+                                    // Proof leg from the SOURCE samples before they're overwritten to sRGB
+                                    // below, only once the sRGB conversion itself succeeded — see
+                                    // ImageCommand.ProofCmyk's contract. numComponents is still the
+                                    // pre-conversion count (1/3/4); the resolver's own N>=3 guard excludes
+                                    // gray (N=1) sources.
+                                    proofCmyk = proofResolver?.TryIccImageToProofCmyk(
+                                        iccProfile, src, numComponents, width * height);
                                     imageData = managed;
                                     numComponents = 3;
                                 }

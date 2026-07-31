@@ -37,10 +37,14 @@ public sealed record SpotImageInk(
 // Cmyk: optional native DeviceCMYK plane (Width*Height*4 bytes, 0..255) for images whose colour resolves
 // to DeviceCMYK. When present the CMYK compositor paints native ink (no lossy RGB→CMYK round-trip) so the
 // image matches adjacent DeviceCMYK vector content; alpha still comes from Rgba. Null → RGB fallback.
+// ProofCmyk: optional proof-target CMYK plane (Width*Height*4 bytes, row-major, 0..255) for images whose
+// colour reached sRGB through an ICC profile (ICCBased N=3/N=4 8-bit, JPX with a 3-channel PDF-level
+// profile) AND the proof leg succeeded (see PdfImageToRgba.ToRgba's ProofCmykResolver overload). Alpha
+// still comes from Rgba. Never set alongside Cmyk or Spots — native ink and spot routing keep priority.
 public sealed record ImageCommand(
     byte[] Rgba, int Width, int Height, AlphaMode Alpha, Matrix3x2 Ctm, PdfGraphicsState State,
     byte[]? Cmyk = null, (bool C, bool M, bool Y, bool K)? OverprintPlates = null,
-    SpotImageInk? Spots = null) : DrawCommand;
+    SpotImageInk? Spots = null, byte[]? ProofCmyk = null) : DrawCommand;
 public sealed record SoftMaskPushCommand(string Subtype, PageDrawList Mask) : DrawCommand;
 public sealed record SoftMaskPopCommand : DrawCommand;
 
