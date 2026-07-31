@@ -1006,7 +1006,7 @@ internal class PdfRenderer : PdfContentProcessor
         var beforeFillColor = $"[{string.Join(", ", CurrentState.FillColor.Select(c => c.ToString("F3")))}]";
 
         PdfDictionary? colorSpaces = _currentResources?.GetColorSpaces();
-        _colorSpaceResolver.ResolveColorSpace(ref fillCs, ref fillColor, colorSpaces, CurrentState.UseBlackPointCompensation, CurrentState.RenderingIntent);
+        _colorSpaceResolver.ResolveColorSpace(ref fillCs, ref fillColor, colorSpaces, CurrentState.UseBlackPointCompensation, CurrentState.RenderingIntent, out double[]? fillProofCmyk);
 
         string afterFillCs = fillCs ?? "null";
         string afterFillColor = fillColor is not null ? $"[{string.Join(", ", fillColor.Select(c => c.ToString("F3")))}]" : "null";
@@ -1019,12 +1019,16 @@ internal class PdfRenderer : PdfContentProcessor
         // Store resolved values for rendering, but keep original color space name
         CurrentState.ResolvedFillColorSpace = fillCs ?? string.Empty;
         CurrentState.ResolvedFillColor = fillColor ?? [];
+        // Unconditional: null out here is as meaningful as a value — stops a stale proof CMYK from a
+        // previous ICCBased/Lab fill leaking onto a colour change that didn't resolve one.
+        CurrentState.ResolvedFillProofCmyk = fillProofCmyk;
 
         string? strokeCs = CurrentState.StrokeColorSpace;
         List<double>? strokeColor = [..CurrentState.StrokeColor]; // Copy to avoid modifying original
-        _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces, CurrentState.UseBlackPointCompensation, CurrentState.RenderingIntent);
+        _colorSpaceResolver.ResolveColorSpace(ref strokeCs, ref strokeColor, colorSpaces, CurrentState.UseBlackPointCompensation, CurrentState.RenderingIntent, out double[]? strokeProofCmyk);
         CurrentState.ResolvedStrokeColorSpace = strokeCs ?? string.Empty;
         CurrentState.ResolvedStrokeColor = strokeColor ?? [];
+        CurrentState.ResolvedStrokeProofCmyk = strokeProofCmyk;
 
         // Derive the per-plate overprint mask from the SOURCE colour space (before flattening to a
         // device space): a Separation/DeviceN colour that overprints preserves the plates it doesn't

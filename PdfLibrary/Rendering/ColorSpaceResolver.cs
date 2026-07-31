@@ -16,6 +16,7 @@ namespace PdfLibrary.Rendering;
 internal class ColorSpaceResolver(PdfDocument? document)
 {
     private readonly IccColorConverter _iccConverter = new(document);
+    private readonly ProofCmykResolver _proofResolver = new(document);
 
     /// <summary>
     /// Diagnostic counter for the G-12 throughput hook (Docs/colour/rendering-conformance.md):
@@ -34,6 +35,30 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <param name="renderingIntent">PDF rendering-intent name (ri / RI) selecting the ICC intent for ICC conversions; null = relative colorimetric.</param>
     public void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color, PdfDictionary? colorSpaces, bool blackPointCompensation = false, string? renderingIntent = null)
     {
+        ResolveColorSpace(ref colorSpaceName, ref color, colorSpaces, blackPointCompensation, renderingIntent, out _);
+    }
+
+    /// <summary>
+    /// Convenience overload for callers that only need the proof-CMYK out value with default
+    /// black-point-compensation/rendering-intent behaviour.
+    /// </summary>
+    public void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color, PdfDictionary? colorSpaces, out double[]? proofCmyk)
+    {
+        ResolveColorSpace(ref colorSpaceName, ref color, colorSpaces, false, null, out proofCmyk);
+    }
+
+    /// <param name="colorSpaceName">The color space name (may be modified to device color space)</param>
+    /// <param name="color">The color components (may be modified based on color space conversion)</param>
+    /// <param name="colorSpaces">The ColorSpace resource dictionary</param>
+    /// <param name="blackPointCompensation">When true, ICC conversions apply black-point compensation (PDF 2.0 /UseBlackPtComp).</param>
+    /// <param name="renderingIntent">PDF rendering-intent name (ri / RI) selecting the ICC intent for ICC conversions; null = relative colorimetric.</param>
+    /// <param name="proofCmyk">
+    /// Proof-target CMYK (0..1 ×4) for the resolved colour when the source was device-independent
+    /// (ICCBased N≥3 / Lab) and the proof destination resolved; null otherwise.
+    /// </param>
+    public void ResolveColorSpace(ref string? colorSpaceName, ref List<double>? color, PdfDictionary? colorSpaces, bool blackPointCompensation, string? renderingIntent, out double[]? proofCmyk)
+    {
+        proofCmyk = null;
         ResolveCallCount++;
 
         if (string.IsNullOrEmpty(colorSpaceName))
@@ -94,7 +119,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         switch (csType.Value)
         {
             case "ICCBased" when csArray.Count >= 2:
-                ResolveICCBased(csArray, ref colorSpaceName, ref color, blackPointCompensation, renderingIntent);
+                ResolveICCBased(csArray, ref colorSpaceName, ref color, out proofCmyk, blackPointCompensation, renderingIntent);
                 break;
 
             case "Separation" when csArray.Count >= 4:
@@ -110,7 +135,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 break;
 
             case "Lab" when csArray.Count >= 2:
-                ResolveLab(csArray, ref colorSpaceName, ref color);
+                ResolveLab(csArray, ref colorSpaceName, ref color, out proofCmyk);
                 break;
 
             case "CalRGB" when csArray.Count >= 2:
@@ -132,8 +157,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <summary>
     /// Resolves an ICCBased color space: [/ICCBased stream]
     /// </summary>
-    private void ResolveICCBased(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color, bool blackPointCompensation = false, string? renderingIntent = null)
+    private void ResolveICCBased(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color, out double[]? proofCmyk, bool blackPointCompensation = false, string? renderingIntent = null)
     {
+        proofCmyk = null;
         color ??= [];
 
         // Get the ICC profile stream
@@ -185,6 +211,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         double[]? srgb = _iccConverter.TryConvertToSrgb(iccStream, color, blackPointCompensation, renderingIntent);
         if (srgb is not null)
         {
+            proofCmyk = _proofResolver.TryIccToProofCmyk(iccStream, color);
             color = [srgb[0], srgb[1], srgb[2]];
             colorSpaceName = "DeviceRGB";
             return;
@@ -1528,7 +1555,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // If the base color space is ICCBased or another complex type, resolve it recursively
         if (baseObj is PdfArray baseArray2 and [PdfName { Value: "ICCBased" }, _, ..])
         {
-            ResolveICCBased(baseArray2, ref baseColorSpace, ref color);
+            ResolveICCBased(baseArray2, ref baseColorSpace, ref color, out _);
         }
 
         // Set the resolved color space
@@ -1592,8 +1619,9 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <summary>
     /// Resolves a Lab color space: [/Lab &lt;&lt; /WhitePoint [...] /Range [...] &gt;&gt;]
     /// </summary>
-    private void ResolveLab(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color)
+    private void ResolveLab(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color, out double[]? proofCmyk)
     {
+        proofCmyk = null;
         color ??= [];
 
         // Lab color space requires 3 components: L, a, b
@@ -1614,6 +1642,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Convert Lab to RGB using the existing LabToRgb helper
         double[] rgb = LabToRgb(L, a, b, csArray);
 
+        proofCmyk = _proofResolver.TryLabToProofCmyk(L, a, b);
         color = [rgb[0], rgb[1], rgb[2]];
         colorSpaceName = "DeviceRGB";
     }

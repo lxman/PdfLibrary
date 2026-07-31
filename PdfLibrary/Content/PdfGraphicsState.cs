@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Numerics;
 using Logging;
 using PdfLibrary.Document;
@@ -122,6 +123,20 @@ public class PdfGraphicsState
 
     /// <summary>Resolved fill color components (in device color space)</summary>
     public List<double> ResolvedFillColor { get; set; } = [0.0];
+
+    /// <summary>
+    /// Proof-target CMYK (0..1 ×4) for the resolved colour when the source was device-independent
+    /// (ICCBased N≥3 / Lab) and the proof destination resolved; null otherwise. Set by
+    /// <c>PdfRenderer.OnColorChanged</c>, consumed by the CMYK compositor.
+    /// </summary>
+    public double[]? ResolvedFillProofCmyk { get; set; }
+
+    /// <summary>
+    /// Proof-target CMYK (0..1 ×4) for the resolved stroke colour when the source was
+    /// device-independent (ICCBased N≥3 / Lab) and the proof destination resolved; null otherwise.
+    /// Set by <c>PdfRenderer.OnColorChanged</c>, consumed by the CMYK compositor.
+    /// </summary>
+    public double[]? ResolvedStrokeProofCmyk { get; set; }
 
     /// <summary>
     /// True when the non-stroking colour space marks nothing at all, so painting operators that fill
@@ -315,6 +330,8 @@ public class PdfGraphicsState
             ResolvedFillColorSpace = ResolvedFillColorSpace,
             ResolvedStrokeColor = [..ResolvedStrokeColor],
             ResolvedFillColor = [..ResolvedFillColor],
+            ResolvedFillProofCmyk = ResolvedFillProofCmyk?.ToArray(),
+            ResolvedStrokeProofCmyk = ResolvedStrokeProofCmyk?.ToArray(),
             FillPaintsNothing = FillPaintsNothing,
             StrokePaintsNothing = StrokePaintsNothing,
             // Pattern state

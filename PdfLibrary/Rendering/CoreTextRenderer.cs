@@ -167,6 +167,7 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
             bold.LineWidth = boldWidthUser;
             bold.ResolvedStrokeColor = state.ResolvedFillColor;
             bold.ResolvedStrokeColorSpace = state.ResolvedFillColorSpace;
+            bold.ResolvedStrokeProofCmyk = state.ResolvedFillProofCmyk;
             bold.StrokeAlpha = state.FillAlpha;
             target.StrokePath(userPath, bold);
         }
