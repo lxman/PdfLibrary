@@ -1112,6 +1112,16 @@ internal class PdfRenderer : PdfContentProcessor
         byte[] contentData = softMask.Group.GetDecodedData(_document?.Decryptor);
         List<PdfOperator> operators = PdfContentParser.Parse(contentData);
 
+        // The mask's coordinate system is the group's /Matrix concatenated with "the current
+        // transformation matrix at the moment the soft mask is established in the graphics state
+        // with the gs operator" (ISO 32000-1 §11.6.5.2 / 32000-2 §11.6.5.1). Seeding identity here
+        // instead only coincided with the spec when the gs executed at page top level; inside a
+        // placed Form XObject the placement CTM was dropped and the mask rendered at form-local
+        // coordinates — on the GWG V50 ALL X4 umbrella page every soft-masked object whose own
+        // paint rides the mask vanished (misplaced mask reads 0 over the op), while the same
+        // patches as single-patch fixture pages (gs at top level) rendered fine. SoftMaskCtmTests.
+        Matrix3x2 ctmAtGs = CurrentState.Ctm;
+
         // Use the render target's soft mask rendering method with a callback
         _target.RenderSoftMask(softMask.Subtype, maskTarget =>
         {
@@ -1120,8 +1130,7 @@ internal class PdfRenderer : PdfContentProcessor
             {
                 CurrentState =
                 {
-                    // Start with identity CTM - the mask is in its own coordinate space
-                    Ctm = Matrix3x2.Identity
+                    Ctm = ctmAtGs
                 }
             };
 
