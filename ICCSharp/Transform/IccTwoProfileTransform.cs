@@ -20,7 +20,7 @@ namespace ICCSharp.Transform;
 public sealed class IccTwoProfileTransform : IColorTransform
 {
     /// <summary>How the source/destination pipeline represents PCS values at its boundary.</summary>
-    private enum PcsBoundary
+    internal enum PcsBoundary
     {
         /// <summary>Pipeline emits or consumes absolute XYZ directly (matrix/TRC).</summary>
         AbsoluteXyz,
@@ -239,7 +239,7 @@ public sealed class IccTwoProfileTransform : IColorTransform
             $"Source profile has no usable to-PCS path (no A2B0, no matrix/TRC, no gray TRC). Class={p.Header.Class}.");
     }
 
-    private static (IColorTransform, PcsBoundary) BuildFromPcs(IccProfile p, RenderingIntent intent)
+    internal static (IColorTransform, PcsBoundary) BuildFromPcs(IccProfile p, RenderingIntent intent)
     {
         TagElement? b2a = SelectBToA(p, intent);
         if (b2a is LutBToATagElement modernMba)
