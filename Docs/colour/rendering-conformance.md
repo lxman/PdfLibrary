@@ -840,12 +840,11 @@ ICCBased), §8.7.3 (blend modes), §11.6.5.3 (soft masks — the `/Matte` rule f
 > veraPDF rule ID, since none could be read. If the profiles repo is cloned later, this note is the
 > marker to go back and add rule-ID citations alongside the clause numbers.
 >
-> **Status column legend for this slice:** the merged Phase A+B landed 2026-08-01 (rows 7-1..7-4 are
-> tested, and row 6-1's OutputIntent proof destination graduated to `✅` this phase — see below).
-> Remaining rows still marked `🔧 PLANNED` describe behaviour designed and cited but unverified by any
-> test, awaiting Phase C — deliberately not `✅`, per this document's own rule that a ✅ row needs a
-> test seen to fail. `✅`/`⚠️`/`␀` keep their normal meanings for rows describing already-existing
-> behaviour.
+> **Status column legend for this slice:** rows 7-1..7-4 and 6-1 are `✅` (landed Phase A+B,
+> 2026-08-01 — tested, see below). Row 7-10 is `🔧 PLANNED` for Phase C (this edit re-marks it from
+> `GAP`, ahead of the code that lands it). The remaining `GAP` rows (6-3, 7-5..7-9, 7-11) are
+> deliberate scoped-out gaps with no phase currently assigned. `✅`/`⚠️`/`␀` keep their normal
+> meanings for rows describing already-existing behaviour.
 
 ## §14.11.5 — Output intents
 
@@ -873,8 +872,23 @@ ICCBased), §8.7.3 (blend modes), §11.6.5.3 (soft masks — the `/Matte` rule f
 | 7-7 | Same clause as 7-2, applied to image sample data (paired with row 7-3's ICCBased-image pairing: §8.9.5.2 reuses §8.6.5.4 unchanged for image colour spaces) | N | GAP | **Lab images.** Row 7-2 covers Lab operands (`scn`); Lab image XObjects are not converted through the destination profile this phase — `ImageCommand.ProofCmyk` is populated for ICCBased image sources (row 7-3) but not for a `/Lab` image `/ColorSpace`. |
 | 7-8 | Same clause as 7-1/7-2, applied to a shading or mesh's embedded ICCBased/Lab colour space (§8.7.4.5.x shading dictionaries reuse §8.6.5 colour space definitions for their `/ColorSpace` entry, same as every other colour-space-bearing dictionary) | N | GAP | **Shadings/meshes through embedded profiles.** `ShadingBuilder.BuildColorMapper` flattens a shading's colour space by component count (`/N`) only — the same fabricate-by-count fallback documented in gap G-15 above for the Separation/DeviceN slice, and structurally the same gap here: an ICCBased or Lab shading colour space is read for its channel count, not converted through this phase's transform. Not scoped to this phase's tasks; recorded so a future ICC-aware shading pass has a named starting point. |
 | 7-9 | §8.6.5.3 CalRGB / (CalGray, by the parallel clause immediately preceding it in both editions) colour spaces: WhitePoint/Gamma/Matrix (CalRGB) or WhitePoint/Gamma (CalGray) define a **matrix/TRC-style transform to CIE XYZ** — not an ICC profile, so it has no AToB/BToA legs of its own (ISO 32000-2 §8.6.5.3, p.187/202; PDF 32000-1:2008 §8.6.5.3, p.146) | N | GAP | **CalRGB/CalGray CMM legs.** This phase's `IccPcsLabTransform` is built for ICC profile AToB/BToA data; CalRGB/CalGray have no ICC profile to read; They need their own matrix/TRC-to-XYZ evaluation followed by XYZ→destination-profile-BToA, which is out of scope this phase. Existing CalRGB/CalGray handling (device-space approximation) is unchanged and untouched by the B-2 work. |
-| 7-10 | §11.7.5.3 (EC2; §11.4.5 in pre-EC2/32000-1 numbering) Rendering intent and colour conversions: "the rendering intent used shall be the current rendering intent in effect in the graphics state at the time of the painting operation" — a per-object parameter, set by the `ri` operator (§8.4.5 Table 57) | N | GAP | **Per-object rendering intents — Phase C, per this plan's rendering-intent decision.** The whole B-2 phase fixes the rendering intent at **RelativeColorimetric, no black-point compensation** for every conversion (rows 7-1 through 7-4), rather than reading the graphics state's current `ri` value per object as this clause requires. Documented here as a deliberate, scoped-out gap rather than an oversight — Phase C's job, not this plan's. |
+| 7-10 | §11.7.5.3 (EC2; §11.4.5 in pre-EC2/32000-1 numbering) Rendering intent and colour conversions: "the rendering intent used shall be the current rendering intent in effect in the graphics state at the time of the painting operation" — a per-object parameter, set by the `ri` operator (§8.4.5 Table 57) | N | 🔧 PLANNED | **Phase C (in flight):** the proof-CMYK leg (`ProofCmykResolver`) gains a per-call rendering-intent parameter mapped from the graphics state's current `ri` value (vector: `ColorSpaceResolver` ICCBased + Lab legs; images: `image.Intent ?? state.RenderingIntent`, mirroring the sRGB leg's existing precedence). PDF name → ICC intent mapping: Perceptual→Perceptual, Saturation→Saturation, AbsoluteColorimetric→AbsoluteColorimetric, anything else (incl. absent and RelativeColorimetric) → RelativeColorimetric. Transform caches key on intent (`IccColorConverter._cache`'s existing `(Stream, Bpc, Intent)` key is the precedent). Scoped out, documented not approximated: black-point compensation stays OFF on the proof leg (the sRGB leg honours state BPC; the proof leg does not this phase); `IccPcsLabTransform` has no AbsoluteColorimetric media-white scaling (Lab-source AbsCol behaves as relative apart from table choice); the CMYK→display simulation (`DeviceCmykConverter`) keeps a single global intent — §11.7.5.3's per-object requirement governs source→proof conversion, not the proof-to-monitor leg. |
 | 7-11 | §8.6.5.4 Lab colour spaces: `/WhitePoint` is a **required, per-space** array — "[XW YW ZW] that shall specify the tristimulus value … of the diffuse white point" — with no PDF-mandated default to D50 or any other illuminant (ISO 32000-2 §8.6.5.4 Table 64, p.190/204) | N | GAP | **Non-D50 Lab `/WhitePoint` — chromatic adaptation not performed.** This phase's Lab path (row 7-2) assumes the source white point is already D50 (the ICC PCS illuminant `IccPcsLabTransform` targets) and does not chromatically adapt a Lab space whose `/WhitePoint` differs (e.g. the D65 `[0.9505 1.0000 1.0890]` shown in both editions' own §8.6.5.4 EXAMPLE). A `/WhitePoint` that is not approximately D50 will convert with a colour cast this phase does not correct. |
+
+### ICC intent-table selection and fallback (Phase C pin)
+
+Per ICC.1, a profile need not carry a table for every rendering intent, and a CMM must define what
+happens when the requested one is missing. Rather than approximate that silently, this is the
+fallback rule Phase C pins, as actually implemented by `IccTwoProfileTransform.SelectAToB`/
+`SelectBToA` (`ICCSharp\Transform\IccTwoProfileTransform.cs:262-286`): Perceptual selects A2B0/B2A0;
+RelativeColorimetric **and** AbsoluteColorimetric both select A2B1/B2A1 (absolute is the relative
+table plus per-axis media-white scaling, per §8.6.5.9); Saturation selects A2B2/B2A2. When the
+profile has no table for the selected intent, the transform falls back one step at a time: to tag 0
+(Perceptual), then to a matrix/TRC transform, then to a gray-TRC transform, else the transform fails
+outright — and on the proof leg, that failure is soft: the resolved proof-CMYK value comes back
+`null` rather than throwing. Black-point compensation is suppressed for AbsoluteColorimetric, and the
+transform's internal black-point detection pass itself forces RelativeColorimetric regardless of the
+caller's requested intent (`IccTwoProfileTransform.cs:162-163`).
 
 **Score note:** these two sections are **not** folded into the "Score — slice 1" table above — that
 table's Normative/Latitude/Device denominators are scoped to §8.6.6.4/§8.6.6.5 (Separation/DeviceN) by
