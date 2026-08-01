@@ -23,13 +23,13 @@ internal sealed class ProofCmykResolver
     private readonly PdfDocument? _document;
     private readonly IccProfile? _destination;
 
-    // Keyed by ICC-profile stream reference, mirroring IccColorConverter._cache's key discipline —
-    // same stream instance reuses the parsed transform; a failed parse is cached as null so repeated
-    // calls on a bad stream don't re-parse (or re-log) every time.
-    private readonly Dictionary<PdfStream, IccTransform?> _iccCache = new();
+    // Keyed by (ICC-profile stream reference, mapped ICC intent) — the per-intent widening of
+    // IccColorConverter._cache's key discipline; a failed parse is cached as null per intent so
+    // repeated calls on a bad stream don't re-parse (or re-log) every time.
+    private readonly Dictionary<(PdfStream Stream, RenderingIntent Intent), IccTransform?> _iccCache = new();
 
-    private IccPcsLabTransform? _labTransform;
-    private bool _labTransformAttempted;
+    // One PCS-Lab→destination transform per intent; null = attempted and failed for that intent.
+    private readonly Dictionary<RenderingIntent, IccPcsLabTransform?> _labTransforms = new();
 
     public ProofCmykResolver(PdfDocument? document)
     {
@@ -87,7 +87,7 @@ internal sealed class ProofCmykResolver
     /// (excludes N=1 gray sources — not this resolver's job), the source profile's channel count
     /// doesn't match, or the source profile fails to parse.
     /// </summary>
-    public double[]? TryIccToProofCmyk(PdfStream iccStream, IReadOnlyList<double> components)
+    public double[]? TryIccToProofCmyk(PdfStream iccStream, IReadOnlyList<double> components, string? renderingIntent = null)
     {
         if (!HasTarget) return null;
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
@@ -96,7 +96,8 @@ internal sealed class ProofCmykResolver
 
         try
         {
-            IccTransform? transform = GetOrCreateTransform(iccStream);
+            RenderingIntent intent = PdfRenderingIntents.Map(renderingIntent);
+            IccTransform? transform = GetOrCreateTransform(iccStream, intent);
             if (transform is null) return null;
             if (components.Count != transform.InputChannels) return null;
 
@@ -119,13 +120,14 @@ internal sealed class ProofCmykResolver
     /// destination via the destination profile's PCS→device leg. Returns <see langword="null"/> when
     /// there is no destination or the destination's from-PCS leg can't be built.
     /// </summary>
-    public double[]? TryLabToProofCmyk(double l, double a, double b)
+    public double[]? TryLabToProofCmyk(double l, double a, double b, string? renderingIntent = null)
     {
         if (!HasTarget) return null;
 
         try
         {
-            IccPcsLabTransform? transform = GetOrCreateLabTransform();
+            RenderingIntent intent = PdfRenderingIntents.Map(renderingIntent);
+            IccPcsLabTransform? transform = GetOrCreateLabTransform(intent);
             if (transform is null) return null;
 
             Span<double> lab = stackalloc double[3]
@@ -155,7 +157,7 @@ internal sealed class ProofCmykResolver
     /// <see langword="null"/> on any failure (no destination, &lt;3 components/pixel, channel-count
     /// mismatch, bad profile, buffer-length mismatch).
     /// </summary>
-    public byte[]? TryIccImageToProofCmyk(PdfStream iccStream, byte[] samples, int componentsPerPixel, int pixelCount)
+    public byte[]? TryIccImageToProofCmyk(PdfStream iccStream, byte[] samples, int componentsPerPixel, int pixelCount, string? renderingIntent = null)
     {
         if (!HasTarget) return null;
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
@@ -164,7 +166,8 @@ internal sealed class ProofCmykResolver
 
         try
         {
-            IccTransform? transform = GetOrCreateTransform(iccStream);
+            RenderingIntent intent = PdfRenderingIntents.Map(renderingIntent);
+            IccTransform? transform = GetOrCreateTransform(iccStream, intent);
             if (transform is null) return null;
             if (transform.InputChannels != componentsPerPixel) return null;
             if (samples.Length != componentsPerPixel * pixelCount) return null;
@@ -187,9 +190,10 @@ internal sealed class ProofCmykResolver
         }
     }
 
-    private IccTransform? GetOrCreateTransform(PdfStream iccStream)
+    private IccTransform? GetOrCreateTransform(PdfStream iccStream, RenderingIntent intent)
     {
-        if (_iccCache.TryGetValue(iccStream, out IccTransform? cached))
+        (PdfStream, RenderingIntent) key = (iccStream, intent);
+        if (_iccCache.TryGetValue(key, out IccTransform? cached))
             return cached;
 
         IccTransform? transform = null;
@@ -198,34 +202,35 @@ internal sealed class ProofCmykResolver
             byte[] profileBytes = iccStream.GetDecodedData(_document?.Decryptor);
             IccProfile profile = IccProfile.Parse(profileBytes);
             transform = IccTransform.Create(profile, _destination!,
-                new TransformOptions { Intent = RenderingIntent.RelativeColorimetric });
+                new TransformOptions { Intent = intent });
         }
         catch (Exception ex)
         {
             PdfLogger.Log(LogCategory.Graphics, $"ProofCmykResolver ICC parse FAIL: {ex.GetType().Name}: {ex.Message}");
         }
 
-        _iccCache[iccStream] = transform;
+        _iccCache[key] = transform;
         return transform;
     }
 
-    private IccPcsLabTransform? GetOrCreateLabTransform()
+    private IccPcsLabTransform? GetOrCreateLabTransform(RenderingIntent intent)
     {
-        if (_labTransformAttempted) return _labTransform;
-        _labTransformAttempted = true;
+        if (_labTransforms.TryGetValue(intent, out IccPcsLabTransform? cached))
+            return cached;
 
+        IccPcsLabTransform? transform = null;
         try
         {
-            _labTransform = IccPcsLabTransform.Create(_destination!,
-                new TransformOptions { Intent = RenderingIntent.RelativeColorimetric });
+            transform = IccPcsLabTransform.Create(_destination!,
+                new TransformOptions { Intent = intent });
         }
         catch (Exception ex)
         {
             PdfLogger.Log(LogCategory.Graphics, $"ProofCmykResolver Lab transform FAIL: {ex.GetType().Name}: {ex.Message}");
-            _labTransform = null;
         }
 
-        return _labTransform;
+        _labTransforms[intent] = transform;
+        return transform;
     }
 
     private static double Clamp01(double v) => v < 0.0 ? 0.0 : v > 1.0 ? 1.0 : v;
