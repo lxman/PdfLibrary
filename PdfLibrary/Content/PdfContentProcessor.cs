@@ -92,6 +92,12 @@ public abstract class PdfContentProcessor
 
             case SetRenderingIntentOperator ri:
                 CurrentState.RenderingIntent = ri.Intent;
+                // ISO 32000 §11.7.5.3: the intent in effect at PAINTING time governs. A fill/stroke
+                // colour may already have been resolved (proof CMYK + device colour) under the PRIOR
+                // intent by an earlier sc/scn/g/rg/k operator in this q-scope; re-trigger resolution now
+                // so a later `ri` retroactively applies before the paint operator runs. Mirrors every
+                // colour-operator case above.
+                OnColorChanged();
                 break;
 
             case SetGraphicsStateOperator gs:

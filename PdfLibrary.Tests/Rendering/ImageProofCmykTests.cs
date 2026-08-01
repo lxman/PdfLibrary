@@ -132,6 +132,114 @@ public class ImageProofCmykTests
         Assert.Null(proof);
     }
 
+    // Defect B (B-2 Phase C Task 5 debug report, panel 13.0): Indexed-over-ICCBased images use a
+    // wholly separate palette-resolution path (PdfImage.GetIndexedPalette/TransformIccPalette) that
+    // Phase C never wired to renderingIntent/ProofCmykResolver — the "Indexed" case in
+    // PdfImageToRgba.cs never assigned proofCmyk. Builds a small (2-entry palette, 2x1 pixel) Indexed
+    // image whose base is ICCBased (N=3, sRGB) and drives it through the full ToRgba pipeline exactly
+    // like the direct-ICCBased tests above, plus a palette-expansion correctness check against a direct
+    // TryIccToProofCmyk conversion of the palette entries.
+    private static PdfImage IndexedIccImage(byte[] palette2Entries3Comp, byte[] pixelIndices, int width, int height, int hival)
+    {
+        PdfStream iccStream = new(
+            new PdfDictionary { [new PdfName("N")] = new PdfInteger(3) },
+            BuiltInProfiles.Srgb.Bytes.ToArray());
+
+        var indexedColorSpace = new PdfArray(
+            new PdfName("Indexed"),
+            new PdfArray(new PdfName("ICCBased"), iccStream),
+            new PdfInteger(hival),
+            new PdfString(palette2Entries3Comp));
+
+        var dict = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Image"),
+            [new PdfName("Width")] = new PdfInteger(width),
+            [new PdfName("Height")] = new PdfInteger(height),
+            [new PdfName("ColorSpace")] = indexedColorSpace,
+            [new PdfName("BitsPerComponent")] = new PdfInteger(8),
+        };
+        return new PdfImage(new PdfStream(dict, pixelIndices));
+    }
+
+    [Fact]
+    public void Indexed_over_iccbased_image_intent_perceptual_differs_from_default()
+    {
+        if (!File.Exists(RswopIccPath)) return;
+        PdfLibrary.Structure.PdfDocument doc = DocWithCmykOutputIntent(File.ReadAllBytes(RswopIccPath));
+        var resolver = new ProofCmykResolver(doc);
+
+        // 2-entry palette: pure blue, pure red (same colours ProofCmykResolverTests/ImageProofCmykTests
+        // use elsewhere to show a real RSWOP per-intent delta). Pixels: index 0, index 1.
+        byte[] palette = { 0, 0, 255, 255, 0, 0 };
+        byte[] pixels = { 0, 1 };
+        PdfImage image = IndexedIccImage(palette, pixels, width: 2, height: 1, hival: 1);
+
+        PdfImageToRgba.RgbaImage? decodedDefault = PdfImageToRgba.ToRgba(image, doc, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: null, resolver, out byte[]? proofDefault);
+        PdfImageToRgba.RgbaImage? decodedPerceptual = PdfImageToRgba.ToRgba(image, doc, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: "Perceptual", resolver, out byte[]? proofPerceptual);
+
+        Assert.NotNull(decodedDefault);
+        Assert.NotNull(decodedPerceptual);
+        Assert.NotNull(proofDefault);
+        Assert.NotNull(proofPerceptual);
+        Assert.Equal(proofDefault!.Length, proofPerceptual!.Length);
+
+        var maxDelta = 0;
+        for (var i = 0; i < proofDefault.Length; i++)
+            maxDelta = Math.Max(maxDelta, Math.Abs(proofDefault[i] - proofPerceptual[i]));
+        Assert.True(maxDelta > 1, $"expected per-intent difference, max byte delta was {maxDelta}");
+    }
+
+    [Fact]
+    public void Indexed_over_iccbased_image_gets_proof_plane_with_correct_palette_expansion()
+    {
+        if (!File.Exists(RswopIccPath)) return;
+        PdfLibrary.Structure.PdfDocument doc = DocWithCmykOutputIntent(File.ReadAllBytes(RswopIccPath));
+        var resolver = new ProofCmykResolver(doc);
+
+        // 2-entry palette: pure blue (index 0), pure red (index 1). 2x1 pixels: [1, 0] — deliberately
+        // reversed from palette order so a position bug (e.g. accidentally using pixel order instead of
+        // palette index) would be caught.
+        byte[] palette = { 0, 0, 255, 255, 0, 0 };
+        byte[] pixels = { 1, 0 };
+        PdfImage image = IndexedIccImage(palette, pixels, width: 2, height: 1, hival: 1);
+
+        PdfImageToRgba.RgbaImage? decoded = PdfImageToRgba.ToRgba(image, doc, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: "Perceptual", resolver, out byte[]? proof);
+
+        Assert.NotNull(decoded);
+        Assert.NotNull(proof);
+        Assert.Equal(2 * 1 * 4, proof!.Length);
+
+        // Independent oracle: convert the SAME two palette entries directly via TryIccToProofCmyk
+        // (ColorSpaceResolver's underlying single-colour path), through the same ICC stream/intent.
+        PdfStream iccStream = new(
+            new PdfDictionary { [new PdfName("N")] = new PdfInteger(3) },
+            BuiltInProfiles.Srgb.Bytes.ToArray());
+        double[]? expectedBlue = resolver.TryIccToProofCmyk(iccStream, [0.0 / 255, 0.0 / 255, 255.0 / 255], "Perceptual");
+        double[]? expectedRed = resolver.TryIccToProofCmyk(iccStream, [255.0 / 255, 0.0 / 255, 0.0 / 255], "Perceptual");
+        Assert.NotNull(expectedBlue);
+        Assert.NotNull(expectedRed);
+
+        // Pixel 0 (palette index 1 = red), pixel 1 (palette index 0 = blue).
+        AssertProofTupleMatches(proof, pixelOffset: 0, expectedRed!);
+        AssertProofTupleMatches(proof, pixelOffset: 4, expectedBlue!);
+    }
+
+    private static void AssertProofTupleMatches(byte[] proof, int pixelOffset, double[] expected01)
+    {
+        for (var c = 0; c < 4; c++)
+        {
+            var actualByte = proof[pixelOffset + c];
+            var expectedByte = (byte)Math.Round(Math.Clamp(expected01[c], 0.0, 1.0) * 255.0);
+            Assert.True(Math.Abs(actualByte - expectedByte) <= 1,
+                $"channel {c} at pixelOffset {pixelOffset}: actual={actualByte}, expected={expectedByte}");
+        }
+    }
+
     [Fact]
     public void Null_proof_resolver_yields_null_plane()
     {

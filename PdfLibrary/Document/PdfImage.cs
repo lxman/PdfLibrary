@@ -3,6 +3,7 @@ using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Filters;
+using PdfLibrary.Rendering.Icc;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Document;
@@ -611,8 +612,27 @@ public class PdfImage
     /// <returns>Palette data as byte array, or null if not applicable</returns>
     public byte[]? GetIndexedPalette(out string? baseColorSpace, out int hival)
     {
+        return GetIndexedPalette(out baseColorSpace, out hival, renderingIntent: null, proofResolver: null, out _);
+    }
+
+    /// <summary>
+    /// Same as <see cref="GetIndexedPalette(out string?, out int)"/>, plus a proof-target CMYK
+    /// palette (Defect B, B-2 Phase C Task 5 debug report): when the Indexed image's base colour space
+    /// is ICCBased and <paramref name="proofResolver"/> is supplied, <paramref name="proofCmykPalette"/>
+    /// receives one 4-component CMYK entry per palette index (same entry count as the returned RGB
+    /// palette), produced from the SOURCE (pre-sRGB) palette samples via
+    /// <see cref="ProofCmykResolver.TryIccImageToProofCmyk"/> — mirroring the direct-ICCBased image
+    /// branch (<see cref="Rendering.PdfImageToRgba"/>'s <c>"ICCBased"</c> case) but indexed by palette
+    /// entry instead of by raw sample. Null when the resolver is null, the base isn't ICCBased, the
+    /// base has fewer than 3 components (gray excluded — same N&gt;=3 contract as the direct path), or
+    /// the conversion fails.
+    /// </summary>
+    internal byte[]? GetIndexedPalette(out string? baseColorSpace, out int hival,
+        string? renderingIntent, ProofCmykResolver? proofResolver, out byte[]? proofCmykPalette)
+    {
         baseColorSpace = null;
         hival = 0;
+        proofCmykPalette = null;
 
         if (!_stream.Dictionary.TryGetValue(new PdfName("ColorSpace"), out PdfObject? obj))
             return null;
@@ -783,7 +803,8 @@ public class PdfImage
                 iccStreamObj = _document.ResolveReference(iccRef2);
 
             if (iccStreamObj is not PdfStream iccStream2) return paletteData;
-            paletteData = TransformIccPalette(iccStream2, paletteData, resolvedBaseColorSpace ?? "DeviceRGB");
+            paletteData = TransformIccPalette(iccStream2, paletteData, resolvedBaseColorSpace ?? "DeviceRGB",
+                renderingIntent, proofResolver, out proofCmykPalette);
 
             // Debug: Log AFTER transformation
             if (paletteData.Length < 12) return paletteData;
@@ -867,8 +888,11 @@ public class PdfImage
     /// the embedded profile. Returns the original palette bytes on any failure (malformed profile,
     /// channel-count mismatch, etc.).
     /// </summary>
-    private byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace)
+    private byte[] TransformIccPalette(PdfStream iccStream, byte[] paletteBytes, string targetColorSpace,
+        string? renderingIntent, ProofCmykResolver? proofResolver, out byte[]? proofCmykPalette)
     {
+        proofCmykPalette = null;
+
         // Get the number of components from the ICC profile dictionary.
         var numComponents = 3;
         if (iccStream.Dictionary.TryGetValue(new PdfName("N"), out PdfObject nObj) && nObj is PdfInteger nInt)
@@ -893,6 +917,19 @@ public class PdfImage
 
         PdfLogger.Log(LogCategory.Images,
             $"ICC PALETTE OK: transformed {paletteBytes.Length / numComponents} entries from {numComponents}-channel ICC to sRGB.");
+
+        // Defect B proof leg: from the SOURCE (pre-sRGB) palette samples, one CMYK entry per palette
+        // index — a palette-sized conversion (hival+1 entries), not a per-pixel CMM call. Mirrors the
+        // direct-ICCBased image branch's proof leg, only run once the sRGB conversion above succeeded
+        // (ImageCommand.ProofCmyk's contract) and gated the same way TryIccImageToProofCmyk already
+        // gates itself: componentsPerPixel < 3 (N=1 gray base) yields null with no extra check needed.
+        if (proofResolver is not null)
+        {
+            int entries = paletteBytes.Length / numComponents;
+            proofCmykPalette = proofResolver.TryIccImageToProofCmyk(
+                iccStream, paletteBytes, numComponents, entries, renderingIntent);
+        }
+
         return transformed;
     }
 

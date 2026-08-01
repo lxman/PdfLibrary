@@ -329,7 +329,8 @@ public static class PdfImageToRgba
                 {
                     case "Indexed":
                     {
-                        byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival);
+                        byte[]? paletteData = image.GetIndexedPalette(out string? baseColorSpace, out int hival,
+                            renderingIntent, proofResolver, out byte[]? proofPalette);
                         if (paletteData is null || baseColorSpace is null)
                             return null;
 
@@ -343,6 +344,15 @@ public static class PdfImageToRgba
                         alphaMode = hasActualSMask ? AlphaMode.Premultiplied : AlphaMode.Opaque;
                         int pixelBufferSize = width * height * 4;
                         byte[] pixelBuffer = ArrayPool<byte>.Shared.Rent(pixelBufferSize);
+
+                        // Defect B proof leg (Indexed-over-ICCBased): proofPalette is one 4-component
+                        // CMYK entry per palette index (built by PdfImage.TransformIccPalette from the
+                        // SOURCE palette samples). Expand it per pixel via the SAME paletteIndex lookup
+                        // used for the RGB buffer below — no new ICC/CMS logic, just wiring the existing
+                        // per-colour proof-CMYK conversion through the palette-building step.
+                        byte[]? proofBuffer = proofPalette is not null
+                            ? ArrayPool<byte>.Shared.Rent(width * height * 4)
+                            : null;
 
                         int debugPixelCount = Math.Min(10, width * height);
                         int bytesPerRowIdx = (width * bitsPerComponent + 7) / 8;
@@ -405,6 +415,18 @@ public static class PdfImageToRgba
                                 int paletteOffset = paletteIndex * componentsPerEntry;
                                 int bufferOffset = pixelIndex * 4;
 
+                                if (proofBuffer is not null && proofPalette is not null)
+                                {
+                                    int proofOffset = paletteIndex * 4;
+                                    if (proofOffset + 3 < proofPalette.Length)
+                                    {
+                                        proofBuffer[bufferOffset] = proofPalette[proofOffset];
+                                        proofBuffer[bufferOffset + 1] = proofPalette[proofOffset + 1];
+                                        proofBuffer[bufferOffset + 2] = proofPalette[proofOffset + 2];
+                                        proofBuffer[bufferOffset + 3] = proofPalette[proofOffset + 3];
+                                    }
+                                }
+
                                 byte r, g, b, alpha;
                                 switch (componentsPerEntry)
                                 {
@@ -466,6 +488,15 @@ public static class PdfImageToRgba
                         result = new byte[pixelBufferSize];
                         Array.Copy(pixelBuffer, result, pixelBufferSize);
                         ArrayPool<byte>.Shared.Return(pixelBuffer);
+
+                        if (proofBuffer is not null)
+                        {
+                            var proofResult = new byte[pixelBufferSize];
+                            Array.Copy(proofBuffer, proofResult, pixelBufferSize);
+                            ArrayPool<byte>.Shared.Return(proofBuffer);
+                            proofCmyk = proofResult;
+                        }
+
                         return new RgbaImage(result, width, height, alphaMode);
                     }
                     case "DeviceRGB" or "CalRGB" when bitsPerComponent == 8:

@@ -1077,6 +1077,14 @@ internal class PdfRenderer : PdfContentProcessor
 
         // Apply all ExtGState parameters to the current graphics state
         _extGStateApplier.ApplyExtGState(extGState, CurrentState);
+
+        // /RI and /UseBlackPtComp (PDF 2.0) both feed the colour-resolution hook's inputs but don't
+        // re-trigger it themselves (ExtGStateApplier just assigns CurrentState fields) — same staleness
+        // gap as the bare `ri` operator (see SetRenderingIntentOperator above): a fill/stroke resolved
+        // before this `gs` under the OLD intent/BPC must re-resolve now, before the paint operator runs.
+        // Unconditional and cheap: OnColorChanged() already runs on every colour operator in normal
+        // content, so once per `gs` call is not a new order-of-magnitude cost.
+        OnColorChanged();
     }
 
     /// <summary>

@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using ICCSharp.Profile;
 using PdfLibrary.Content;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 using Xunit;
@@ -156,6 +158,130 @@ public class ProofCmykStateTests
         Assert.NotNull(proof);
         Assert.Equal(4, proof!.Length);
         for (var i = 0; i < 4; i++) Assert.True(proof[i] < 0.08, $"channel {i} = {proof[i]}");
+    }
+
+    // Defect A (B-2 Phase C Task 5 debug report, panel 22.1): the resolved proof CMYK (and resolved
+    // device colour) for a fill is computed eagerly at the colour operator, keyed off
+    // CurrentState.RenderingIntent *at that instant*. A later `ri`/ExtGState `/RI` only assigns
+    // RenderingIntent without re-triggering resolution, so it silently no-ops when it follows the
+    // colour operator in the content stream — exactly GWG 22.1's own operator order:
+    //   /CS1 cs 60 0 0 sc     <-- Lab fill colour SET here (resolved under stale default intent)
+    //   /Perceptual ri        <-- has zero effect on the fill below, pre-fix
+    //   0 0 10 10 re f        <-- paints with whatever was resolved at the `sc` line above
+    // Drives the real content-processing pipeline (PdfContentParser -> PdfRenderer.ProcessOperators)
+    // rather than ColorSpaceResolver directly, since the bug is in operator-ordering/re-trigger timing,
+    // not in resolution itself. Reuses this file's RSWOP OutputIntent fixture/skip-guard because the
+    // bundled default CMYK profile's A2B tables are byte-identical across intents (documented above).
+    private static PdfResources LabResources()
+    {
+        var labDict = new PdfDictionary
+        {
+            [N("WhitePoint")] = new PdfArray(new PdfReal(0.9642), new PdfReal(1.0), new PdfReal(0.8249)),
+        };
+        var colorSpaces = new PdfDictionary
+        {
+            [N("CS1")] = new PdfArray(new PdfName("Lab"), labDict),
+        };
+        var resourcesDict = new PdfDictionary { [N("ColorSpace")] = colorSpaces };
+        return new PdfResources(resourcesDict);
+    }
+
+    [Fact]
+    public void Ri_operator_after_colour_op_retroactively_reresolves_fill_proof_cmyk()
+    {
+        if (!File.Exists(RswopIccPath)) return;
+        PdfDocument doc = DocWithCmykOutputIntent(File.ReadAllBytes(RswopIccPath));
+        PdfResources resources = LabResources();
+
+        // Independent oracle: what ColorSpaceResolver itself produces for this Lab colour under each
+        // intent (same computation ProofCmykStateTests already trusts above).
+        var oracle = new ColorSpaceResolver(doc);
+        var spacesForOracle = new PdfDictionary { [N("CS1")] = new PdfArray(new PdfName("Lab"),
+            new PdfDictionary { [N("WhitePoint")] = new PdfArray(new PdfReal(0.9642), new PdfReal(1.0), new PdfReal(0.8249)) }) };
+        string? oracleNameDefault = "CS1";
+        List<double>? oracleColorDefault = [60.0, 0.0, 0.0];
+        oracle.ResolveColorSpace(ref oracleNameDefault, ref oracleColorDefault, spacesForOracle, false, null, out double[]? expectedDefault);
+        string? oracleNamePerceptual = "CS1";
+        List<double>? oracleColorPerceptual = [60.0, 0.0, 0.0];
+        oracle.ResolveColorSpace(ref oracleNamePerceptual, ref oracleColorPerceptual, spacesForOracle, false, "Perceptual", out double[]? expectedPerceptual);
+        Assert.NotNull(expectedDefault);
+        Assert.NotNull(expectedPerceptual);
+
+        var mock = new MockRenderTarget();
+        var renderer = new PdfRenderer(mock, resources, document: doc);
+
+        byte[] content = Encoding.ASCII.GetBytes("/CS1 cs 60 0 0 sc /Perceptual ri 0 0 10 10 re f");
+        List<PdfOperator> ops = PdfContentParser.Parse(content);
+        renderer.ProcessOperators(ops);
+
+        Assert.NotNull(mock.LastFillState);
+        double[]? actual = mock.LastFillState!.ResolvedFillProofCmyk;
+        Assert.NotNull(actual);
+
+        double maxDeltaFromPerceptual = actual!.Zip(expectedPerceptual!, (a, b) => Math.Abs(a - b)).Max();
+        Assert.True(maxDeltaFromPerceptual < 0.005,
+            $"expected the post-fix fill to resolve under the LATER /Perceptual ri, max delta from perceptual oracle was {maxDeltaFromPerceptual}");
+
+        double maxDeltaFromDefault = actual.Zip(expectedDefault!, (a, b) => Math.Abs(a - b)).Max();
+        Assert.True(maxDeltaFromDefault > 0.002,
+            $"expected the resolved proof to differ from the stale default-intent value, max delta was {maxDeltaFromDefault}");
+    }
+
+    [Fact]
+    public void ExtGState_RI_after_colour_op_retroactively_reresolves_fill_proof_cmyk()
+    {
+        if (!File.Exists(RswopIccPath)) return;
+        PdfDocument doc = DocWithCmykOutputIntent(File.ReadAllBytes(RswopIccPath));
+
+        var labDict = new PdfDictionary
+        {
+            [N("WhitePoint")] = new PdfArray(new PdfReal(0.9642), new PdfReal(1.0), new PdfReal(0.8249)),
+        };
+        var colorSpaces = new PdfDictionary
+        {
+            [N("CS1")] = new PdfArray(new PdfName("Lab"), labDict),
+        };
+        var extGState = new PdfDictionary { [N("RI")] = new PdfName("Perceptual") };
+        var extGStates = new PdfDictionary { [N("GS0")] = extGState };
+        var resourcesDict = new PdfDictionary
+        {
+            [N("ColorSpace")] = colorSpaces,
+            [N("ExtGState")] = extGStates,
+        };
+        var resources = new PdfResources(resourcesDict);
+
+        var oracle = new ColorSpaceResolver(doc);
+        var spacesForOracle = new PdfDictionary { [N("CS1")] = new PdfArray(new PdfName("Lab"),
+            new PdfDictionary { [N("WhitePoint")] = new PdfArray(new PdfReal(0.9642), new PdfReal(1.0), new PdfReal(0.8249)) }) };
+        string? oracleNameDefault = "CS1";
+        List<double>? oracleColorDefault = [60.0, 0.0, 0.0];
+        oracle.ResolveColorSpace(ref oracleNameDefault, ref oracleColorDefault, spacesForOracle, false, null, out double[]? expectedDefault);
+        string? oracleNamePerceptual = "CS1";
+        List<double>? oracleColorPerceptual = [60.0, 0.0, 0.0];
+        oracle.ResolveColorSpace(ref oracleNamePerceptual, ref oracleColorPerceptual, spacesForOracle, false, "Perceptual", out double[]? expectedPerceptual);
+        Assert.NotNull(expectedDefault);
+        Assert.NotNull(expectedPerceptual);
+
+        var mock = new MockRenderTarget();
+        var renderer = new PdfRenderer(mock, resources, document: doc);
+
+        // /GS0 gs applies /RI /Perceptual AFTER the colour operator — mirrors the ri-operator scenario
+        // above but through the ExtGState path (PdfRenderer.OnSetGraphicsState -> ExtGStateApplier).
+        byte[] content = Encoding.ASCII.GetBytes("/CS1 cs 60 0 0 sc /GS0 gs 0 0 10 10 re f");
+        List<PdfOperator> ops = PdfContentParser.Parse(content);
+        renderer.ProcessOperators(ops);
+
+        Assert.NotNull(mock.LastFillState);
+        double[]? actual = mock.LastFillState!.ResolvedFillProofCmyk;
+        Assert.NotNull(actual);
+
+        double maxDeltaFromPerceptual = actual!.Zip(expectedPerceptual!, (a, b) => Math.Abs(a - b)).Max();
+        Assert.True(maxDeltaFromPerceptual < 0.005,
+            $"expected the post-fix fill to resolve under ExtGState /RI /Perceptual, max delta from perceptual oracle was {maxDeltaFromPerceptual}");
+
+        double maxDeltaFromDefault = actual.Zip(expectedDefault!, (a, b) => Math.Abs(a - b)).Max();
+        Assert.True(maxDeltaFromDefault > 0.002,
+            $"expected the resolved proof to differ from the stale default-intent value, max delta was {maxDeltaFromDefault}");
     }
 
     [Fact]
