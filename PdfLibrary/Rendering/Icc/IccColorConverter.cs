@@ -42,7 +42,7 @@ internal sealed class IccColorConverter
         if (iccStream is null) throw new ArgumentNullException(nameof(iccStream));
         if (sourceColor is null) throw new ArgumentNullException(nameof(sourceColor));
 
-        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation, MapIntent(renderingIntent));
+        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation, PdfRenderingIntents.Map(renderingIntent));
         if (transform is null) return null;
 
         if (sourceColor.Count != transform.InputChannels)
@@ -71,7 +71,7 @@ internal sealed class IccColorConverter
         if (data is null) throw new ArgumentNullException(nameof(data));
         if (sourceChannels < 1) throw new ArgumentOutOfRangeException(nameof(sourceChannels));
 
-        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation, MapIntent(renderingIntent));
+        IccTransform? transform = GetOrCreate(iccStream, blackPointCompensation, PdfRenderingIntents.Map(renderingIntent));
         if (transform is null) return null;
 
         if (transform.InputChannels != sourceChannels)
@@ -159,16 +159,6 @@ internal sealed class IccColorConverter
         _cache[key] = transform;
         return transform;
     }
-
-    // Maps a PDF rendering-intent name (ri operator / ExtGState /RI / image /Intent) to the ICC
-    // intent. Unknown or absent → relative colorimetric (the PDF and ICC default).
-    private static RenderingIntent MapIntent(string? pdfIntent) => pdfIntent switch
-    {
-        "Perceptual" => RenderingIntent.Perceptual,
-        "Saturation" => RenderingIntent.Saturation,
-        "AbsoluteColorimetric" => RenderingIntent.AbsoluteColorimetric,
-        _ => RenderingIntent.RelativeColorimetric,
-    };
 
     private static byte ToByte(double v)
     {
