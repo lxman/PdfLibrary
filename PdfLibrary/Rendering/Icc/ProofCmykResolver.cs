@@ -70,8 +70,9 @@ internal sealed class ProofCmykResolver
                     PdfLogger.Log(LogCategory.Graphics,
                         $"ProofCmykResolver: OutputIntent dest profile failed to parse ({ex.GetType().Name}: {ex.Message}); falling back.");
                 }
-                // Not CMYK (or failed to parse) — keep scanning remaining intents, then fall through
-                // to the provider default below.
+                // Not CMYK (or failed to parse) — stop at this first qualifying intent rather than
+                // scanning the rest (first-match short-circuit; row 6-3 documents multi-intent
+                // selection as a gap) and fall through to the provider default below.
                 break;
             }
         }
