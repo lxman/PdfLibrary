@@ -191,7 +191,7 @@ public static class PdfImageToRgba
                                     // TryConvertInterleavedToSrgb just consumed), only once the sRGB
                                     // conversion itself succeeded — see ImageCommand.ProofCmyk's contract.
                                     proofCmyk = proofResolver?.TryIccImageToProofCmyk(
-                                        srcIcc, pixelData, 3, jp2Width * jp2Height);
+                                        srcIcc, pixelData, 3, jp2Width * jp2Height, renderingIntent);
                                     pixelData = managed;
                                 }
                             }
@@ -630,7 +630,7 @@ public static class PdfImageToRgba
                                     // pre-conversion count (1/3/4); the resolver's own N>=3 guard excludes
                                     // gray (N=1) sources.
                                     proofCmyk = proofResolver?.TryIccImageToProofCmyk(
-                                        iccProfile, src, numComponents, width * height);
+                                        iccProfile, src, numComponents, width * height, renderingIntent);
                                     imageData = managed;
                                     numComponents = 3;
                                 }

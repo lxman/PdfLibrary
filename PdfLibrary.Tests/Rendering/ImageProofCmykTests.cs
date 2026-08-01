@@ -1,3 +1,4 @@
+using System.IO;
 using ICCSharp;
 using ICCSharp.Profile;
 using PdfLibrary.Core.Primitives;
@@ -48,6 +49,58 @@ public class ImageProofCmykTests
             [new PdfName("BitsPerComponent")] = new PdfInteger(8),
         };
         return new PdfImage(new PdfStream(dict, interleavedRgb));
+    }
+
+    // Task 4: image /Intent proof-CMYK differentiation. Same escape hatch as ProofCmykResolverTests /
+    // ProofCmykStateTests — the bundled default CMYK profile's A2B tables are byte-identical across
+    // intents, so this reuses ProofCmykResolverTests' exact /OutputIntents fixture (RSWOP.icm) and
+    // skip-if-absent guard rather than inventing a second one.
+    private static readonly string RswopIccPath =
+        @"C:\Windows\System32\spool\drivers\color\RSWOP.icm";
+
+    private static PdfLibrary.Structure.PdfDocument DocWithCmykOutputIntent(byte[] destProfileBytes)
+    {
+        var doc = new PdfLibrary.Structure.PdfDocument();
+        var intentDict = new PdfDictionary { [new PdfName("S")] = new PdfName("GTS_PDFA1") };
+        doc.AddObject(2, 0, new PdfStream(new PdfDictionary(), destProfileBytes));
+        intentDict[new PdfName("DestOutputProfile")] = new PdfIndirectReference(2, 0);
+        var intents = new PdfArray { intentDict };
+        var catalog = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Catalog"),
+            [new PdfName("OutputIntents")] = intents,
+        };
+        doc.AddObject(1, 0, catalog);
+        doc.Trailer.Dictionary[new PdfName("Root")] = new PdfIndirectReference(1, 0);
+        return doc;
+    }
+
+    [Fact]
+    public void Iccbased_image_intent_perceptual_differs_from_default()
+    {
+        if (!File.Exists(RswopIccPath)) return;
+        PdfLibrary.Structure.PdfDocument doc = DocWithCmykOutputIntent(File.ReadAllBytes(RswopIccPath));
+        var resolver = new ProofCmykResolver(doc);
+        byte[] samples = { 0, 0, 255, 0, 0, 255 };   // 2x1 RGB blue — shows a real per-intent delta
+                                                       // through RSWOP.icm (see ProofCmykResolverTests).
+        PdfImage image = IccRgbImage(samples, width: 2, height: 1);
+
+        PdfImageToRgba.RgbaImage? decodedDefault = PdfImageToRgba.ToRgba(image, doc: null, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: null, resolver, out byte[]? proofDefault);
+        PdfImageToRgba.RgbaImage? decodedPerceptual = PdfImageToRgba.ToRgba(image, doc: null, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: "Perceptual", resolver, out byte[]? proofPerceptual);
+
+        Assert.NotNull(decodedDefault);
+        Assert.NotNull(decodedPerceptual);
+        Assert.NotNull(proofDefault);
+        Assert.NotNull(proofPerceptual);
+        Assert.Equal(proofDefault!.Length, proofPerceptual!.Length);
+
+        var maxDelta = 0;
+        for (var i = 0; i < proofDefault.Length; i++)
+            maxDelta = Math.Max(maxDelta, Math.Abs(proofDefault[i] - proofPerceptual[i]));
+        // > 0.005 on the 0..1 scale used elsewhere in this suite == > ~1.3 on the 0..255 byte plane.
+        Assert.True(maxDelta > 1, $"expected per-intent difference, max byte delta was {maxDelta}");
     }
 
     [Fact]

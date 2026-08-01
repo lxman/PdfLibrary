@@ -135,7 +135,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
                 break;
 
             case "Lab" when csArray.Count >= 2:
-                ResolveLab(csArray, ref colorSpaceName, ref color, out proofCmyk);
+                ResolveLab(csArray, ref colorSpaceName, ref color, renderingIntent, out proofCmyk);
                 break;
 
             case "CalRGB" when csArray.Count >= 2:
@@ -211,7 +211,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         double[]? srgb = _iccConverter.TryConvertToSrgb(iccStream, color, blackPointCompensation, renderingIntent);
         if (srgb is not null)
         {
-            proofCmyk = _proofResolver.TryIccToProofCmyk(iccStream, color);
+            proofCmyk = _proofResolver.TryIccToProofCmyk(iccStream, color, renderingIntent);
             color = [srgb[0], srgb[1], srgb[2]];
             colorSpaceName = "DeviceRGB";
             return;
@@ -1619,7 +1619,8 @@ internal class ColorSpaceResolver(PdfDocument? document)
     /// <summary>
     /// Resolves a Lab color space: [/Lab &lt;&lt; /WhitePoint [...] /Range [...] &gt;&gt;]
     /// </summary>
-    private void ResolveLab(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color, out double[]? proofCmyk)
+    private void ResolveLab(PdfArray csArray, ref string? colorSpaceName, ref List<double>? color,
+        string? renderingIntent, out double[]? proofCmyk)
     {
         proofCmyk = null;
         color ??= [];
@@ -1642,7 +1643,7 @@ internal class ColorSpaceResolver(PdfDocument? document)
         // Convert Lab to RGB using the existing LabToRgb helper
         double[] rgb = LabToRgb(L, a, b, csArray);
 
-        proofCmyk = _proofResolver.TryLabToProofCmyk(L, a, b);
+        proofCmyk = _proofResolver.TryLabToProofCmyk(L, a, b, renderingIntent);
         color = [rgb[0], rgb[1], rgb[2]];
         colorSpaceName = "DeviceRGB";
     }
