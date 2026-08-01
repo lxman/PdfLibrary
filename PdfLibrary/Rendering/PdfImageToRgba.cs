@@ -425,6 +425,13 @@ public static class PdfImageToRgba
                                         proofBuffer[bufferOffset + 2] = proofPalette[proofOffset + 2];
                                         proofBuffer[bufferOffset + 3] = proofPalette[proofOffset + 3];
                                     }
+                                    else
+                                    {
+                                        proofBuffer[bufferOffset] = 0;
+                                        proofBuffer[bufferOffset + 1] = 0;
+                                        proofBuffer[bufferOffset + 2] = 0;
+                                        proofBuffer[bufferOffset + 3] = 0;
+                                    }
                                 }
 
                                 byte r, g, b, alpha;

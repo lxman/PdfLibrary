@@ -240,6 +240,46 @@ public class ImageProofCmykTests
         }
     }
 
+    // Final-review finding (B-2 Phase C): malformed file where the Indexed /Lookup string is
+    // shorter than (hival+1) x N — TransformIccPalette sizes proofCmykPalette by the ACTUAL entry
+    // count in the lookup string (paletteBytes.Length / numComponents), not by hival+1, so a
+    // palette index that is in-range for hival but past the end of the lookup string has no
+    // corresponding proof-palette entry. The per-pixel proof-expansion loop in PdfImageToRgba.cs
+    // must write deterministic zero bytes for that pixel (matching the RGB path's own
+    // out-of-range default), not leave the ArrayPool-rented proofBuffer region untouched.
+    [Fact]
+    public void Indexed_over_iccbased_image_zero_fills_proof_plane_for_out_of_range_palette_lookup()
+    {
+        if (!File.Exists(RswopIccPath)) return;
+        PdfLibrary.Structure.PdfDocument doc = DocWithCmykOutputIntent(File.ReadAllBytes(RswopIccPath));
+        var resolver = new ProofCmykResolver(doc);
+
+        // hival=1 (2 valid palette indices, 0 and 1) but the /Lookup string carries only 1 entry
+        // (3 bytes, N=3) — malformed per the spec's (hival+1)xN sizing rule. Pixel index 1 is
+        // in-range for hival but has no palette/proof-palette entry.
+        byte[] palette = { 0, 0, 255 };   // single entry: blue
+        byte[] pixels = { 0, 1 };
+        PdfImage image = IndexedIccImage(palette, pixels, width: 2, height: 1, hival: 1);
+
+        PdfImageToRgba.RgbaImage? decoded1 = PdfImageToRgba.ToRgba(image, doc, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: "Perceptual", resolver, out byte[]? proof1);
+        PdfImageToRgba.RgbaImage? decoded2 = PdfImageToRgba.ToRgba(image, doc, imageMaskColor: null,
+            blackPointCompensation: false, renderingIntent: "Perceptual", resolver, out byte[]? proof2);
+
+        Assert.NotNull(decoded1);
+        Assert.NotNull(proof1);
+        Assert.NotNull(proof2);
+
+        // Pixel 1 (the out-of-range palette lookup) must be exactly zero in the proof plane, not
+        // ArrayPool-rented garbage.
+        for (var c = 0; c < 4; c++)
+            Assert.Equal(0, proof1![4 + c]);
+
+        // Deterministic across repeated conversions of the same malformed input — garbage from the
+        // pool would be free to differ run to run.
+        Assert.Equal(proof1, proof2);
+    }
+
     [Fact]
     public void Null_proof_resolver_yields_null_plane()
     {
