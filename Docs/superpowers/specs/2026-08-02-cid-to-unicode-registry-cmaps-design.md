@@ -75,17 +75,16 @@ New `PdfLibrary/Fonts/AdobeCidToUnicode.cs` + four embedded resources under
 `PdfLibrary/Resources/CMaps/` (gzip-compressed):
 
 - `Adobe-Japan1-UCS2`, `Adobe-Korea1-UCS2`, `Adobe-GB1-UCS2`, `Adobe-CNS1-UCS2` from Adobe's
-  `cmap-resources` (github.com/adobe-type-tools/cmap-resources, BSD-3-Clause). Their license file
-  is bundled alongside as `LICENSE-Adobe-CMaps.txt` and referenced from the class doc. (Korea1 is
-  the ordering the measured fonts declare; if the current Adobe repo ships it under the KR
-  supersession, take the latest file that still names Adobe-Korea1 — the plan pins exact
-  files/checksums at fetch time.)
-- These are CMaps in the same syntax (`begincidrange` with UTF-16BE *codes* mapping code→CID —
-  note the direction: the UCS2 CMaps map **Unicode→CID**; the table must be **inverted** at load
-  into CID→Unicode. Collisions (two Unicode points mapping to one CID) keep the first — matching
-  the stable ordering of the source file — and the class doc says so.)
-- Loaded lazily, once per ordering, behind `Lazy<T>`; parsed with the same `CidCMap` machinery
-  (the file syntax is identical; only the interpretation of "code" differs).
+  **`mapping-resources-pdf`** repo (`pdf2unicode/` directory, BSD-3-Clause) — *(execution
+  correction 2026-08-02: the spec originally named `cmap-resources`, which hosts only code→CID
+  encoding CMaps; the `*-UCS2` ToUnicode mappings live in `mapping-resources-pdf`. Same org, same
+  license; verified at fetch, SHA256s in the Task 1 report.)* The license ships alongside as
+  `LICENSE-Adobe-CMaps.txt` and is referenced from the class doc.
+- **These files are `CMapType 2` ToUnicode CMaps in the `bfchar`/`bfrange` dialect, mapping CID →
+  UTF-16BE Unicode DIRECTLY** *(execution correction: the original spec presumed `cidrange`
+  Unicode→CID needing inversion — reviewer-verified false; no inversion, no collision policy
+  needed)*. Loaded lazily, once per ordering, behind `Lazy<T>`, and parsed with the existing
+  `ToUnicodeCMap.Parse` — the bundled files use exactly the dialect that parser already handles.
 - API: `static string? Lookup(string ordering, int cid)` returning a UTF-16 string (surrogate
   pairs possible) or null.
 
@@ -151,9 +150,9 @@ records the exact measured sizes.
 
 ## Risks
 
-- **UCS2-file direction inversion** is the one subtle step (Unicode→CID source inverted to
-  CID→Unicode) — mis-reading it produces systematically wrong text that still LOOKS like CJK. The
-  per-ordering spot-check triples (from the files' own lines) pin the direction.
+- ~~UCS2-file direction inversion~~ **RETIRED at execution (2026-08-02):** the real files map
+  CID→Unicode directly (bf* dialect); no inversion exists to get wrong. The per-ordering
+  spot-checks against the files' own lines remain as the direction pin regardless.
 - **License hygiene**: BSD-3-Clause requires retaining Adobe's notice — the bundled license file +
   class-doc reference satisfy it; the plan adds it to the package's third-party-notices if the
   engine ships one.

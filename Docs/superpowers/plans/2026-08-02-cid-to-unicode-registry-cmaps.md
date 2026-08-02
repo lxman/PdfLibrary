@@ -144,7 +144,7 @@ git commit -m "feat(fonts): bundle Adobe *-UCS2 CMaps as embedded resources (B-1
 
 **Interfaces:**
 - Consumes: nothing new.
-- Produces: `public partial class CidCMap` with `static CidCMap Parse(byte[] data)`, `int? MapCodeToCid(int code)`, `string? UseCMapName`, `int MappingCount`, and `internal IEnumerable<KeyValuePair<int, int>> Entries` (parse-order enumeration; Task 3's inverter consumes it).
+- Produces: `public partial class CidCMap` with `static CidCMap Parse(byte[] data)`, `int? MapCodeToCid(int code)`, `string? UseCMapName`, `int MappingCount`. *(Amended 2026-08-02: the original plan also had an `Entries` enumeration for Task 3's inverter — retired with the inversion itself; see Task 3's amendment note.)*
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -257,9 +257,6 @@ public partial class CidCMap
 
     public int MappingCount => _codeToCid.Count;
 
-    /// <summary>Parse-order enumeration of (code, CID) — consumed by AdobeCidToUnicode's inverter.</summary>
-    internal IEnumerable<KeyValuePair<int, int>> Entries => _codeToCid;
-
     public int? MapCodeToCid(int code) =>
         _codeToCid.TryGetValue(code, out int cid) ? cid : null;
 
@@ -355,47 +352,48 @@ git commit -m "feat(fonts): CidCMap parser for embedded Type0 encoding streams (
 
 ---
 
-### Task 3: `AdobeCidToUnicode` — inverted lookup over the bundled tables
+### Task 3: `AdobeCidToUnicode` — direct CID→Unicode lookup over the bundled tables
+
+> **AMENDED 2026-08-02 after Task 1** (controller adjudication, reviewer-verified): the bundled
+> files are `CMapType 2` ToUnicode CMaps in the `bfchar`/`bfrange` dialect mapping **CID→Unicode
+> directly** — the plan's original inversion design (`BuildInverse`, collision policy, surrogate
+> skip) is retired. Load = decompress + `ToUnicodeCMap.Parse`. The test/impl blocks below are the
+> amended versions; ignore any reference to inversion elsewhere in this file.
 
 **Files:**
 - Create: `PdfLibrary/Fonts/AdobeCidToUnicode.cs`
 - Modify: `PdfLibrary.Tests/Fonts/AdobeCidToUnicodeTests.cs` (extend Task 1's class)
 
 **Interfaces:**
-- Consumes: Task 1's embedded resources (by LogicalName); Task 2's `CidCMap.Parse` + `Entries`.
-- Produces: `public static class AdobeCidToUnicode` with `static bool IsSupportedOrdering(string? ordering)` and `static string? Lookup(string? ordering, int cid)`; `internal static Dictionary<int, string> BuildInverse(string cmapText)` (testable core).
+- Consumes: Task 1's embedded resources (by LogicalName); the existing `ToUnicodeCMap.Parse` (bf* dialect — exactly what the bundled files use).
+- Produces: `public static class AdobeCidToUnicode` with `static bool IsSupportedOrdering(string? ordering)` and `static string? Lookup(string? ordering, int cid)`.
 
 - [ ] **Step 1: Write the failing tests** — add to `AdobeCidToUnicodeTests`:
 
 ```csharp
-    // ---- direction inversion + lookup (Task 3) ---------------------------------------------
+    // ---- direct CID→Unicode lookup (Task 3, amended: bf* dialect, no inversion) -------------
 
-    [Fact]
-    public void BuildInverse_InvertsUnicodeToCid_IntoCidToUnicode()
+    [Theory]
+    [InlineData("Japan1")]
+    [InlineData("Korea1")]
+    [InlineData("GB1")]
+    [InlineData("CNS1")]
+    public void BundledTable_AgreesWithItsOwnFirstBfRangeEntry(string ordering)
     {
-        // Source dialect: cidrange maps UTF-16 code → CID. Inverse must serve CID → Unicode.
-        Dictionary<int, string> inv = AdobeCidToUnicode.BuildInverse(
-            "1 begincidrange\n<0041> <0043> 34\nendcidrange\n");
-        Assert.Equal("A", inv[34]);
-        Assert.Equal("B", inv[35]);
-        Assert.Equal("C", inv[36]);
-        Assert.False(inv.ContainsKey(0x0041));   // NOT keyed by Unicode — the direction pin
-    }
+        // Ground truth from the shipped resource ITSELF: independently decompress + regex the
+        // first bfrange entry (<cidLo> <cidHi> <unicodeStart>), and assert Lookup serves the
+        // CID→Unicode direction for both endpoints. No hand-remembered CIDs.
+        string text = DecompressResource($"PdfLibrary.Resources.CMaps.Adobe-{ordering}-UCS2.gz");
+        Match m = Regex.Match(text,
+            @"beginbfrange\s*<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>\s*<([0-9A-Fa-f]{4})>");
+        Assert.True(m.Success, "no bfrange entry found in bundled resource");
+        int cidLo = int.Parse(m.Groups[1].Value, NumberStyles.HexNumber);
+        int cidHi = int.Parse(m.Groups[2].Value, NumberStyles.HexNumber);
+        int uniStart = int.Parse(m.Groups[3].Value, NumberStyles.HexNumber);
 
-    [Fact]
-    public void BuildInverse_CollisionKeepsFirstInParseOrder()
-    {
-        Dictionary<int, string> inv = AdobeCidToUnicode.BuildInverse(
-            "2 begincidchar\n<0041> 34\n<FF21> 34\nendcidchar\n");   // 'A' and fullwidth 'Ａ' → CID 34
-        Assert.Equal("A", inv[34]);
-    }
-
-    [Fact]
-    public void BuildInverse_SkipsSurrogateCodes()
-    {
-        Dictionary<int, string> inv = AdobeCidToUnicode.BuildInverse(
-            "1 begincidchar\n<D800> 99\nendcidchar\n");
-        Assert.False(inv.ContainsKey(99));
+        Assert.Equal(((char)uniStart).ToString(), AdobeCidToUnicode.Lookup(ordering, cidLo));
+        Assert.Equal(((char)(uniStart + (cidHi - cidLo))).ToString(),
+            AdobeCidToUnicode.Lookup(ordering, cidHi));
     }
 
     [Theory]
@@ -403,17 +401,17 @@ git commit -m "feat(fonts): CidCMap parser for embedded Type0 encoding streams (
     [InlineData("Korea1")]
     [InlineData("GB1")]
     [InlineData("CNS1")]
-    public void BundledTable_AgreesWithItsOwnFirstRangeEntry(string ordering)
+    public void BundledTable_ServesACjkCodePoint(string ordering)
     {
-        // Ground truth from the shipped resource ITSELF: independently decompress + regex the
-        // first cidrange entry, and assert Lookup serves its inversion. No hand-remembered CIDs.
-        string text = DecompressResource($"PdfLibrary.Resources.CMaps.Adobe-{ordering}-UCS2.gz");
-        Match m = Regex.Match(text, @"begincidrange\s*<([0-9A-Fa-f]{4})>\s*<[0-9A-Fa-f]{4}>\s+(\d+)");
-        Assert.True(m.Success, "no cidrange entry found in bundled resource");
-        int unicode = int.Parse(m.Groups[1].Value, NumberStyles.HexNumber);
-        int cid = int.Parse(m.Groups[2].Value);
-
-        Assert.Equal(((char)unicode).ToString(), AdobeCidToUnicode.Lookup(ordering, cid));
+        // Sanity that the table is genuinely CJK-bearing, not just the ASCII-range head: some CID
+        // under 65536 must map into the CJK blocks (Han/Kana/Hangul, U+2E80..U+D7FF or U+F900+).
+        var found = false;
+        for (var cid = 1; cid < 65536 && !found; cid++)
+        {
+            string? u = AdobeCidToUnicode.Lookup(ordering, cid);
+            if (u is [>= '⺀' and <= '퟿'] or [>= '豈']) found = true;
+        }
+        Assert.True(found, $"{ordering}: no CJK mapping found in the whole CID range");
     }
 
     [Fact]
@@ -444,24 +442,22 @@ git commit -m "feat(fonts): CidCMap parser for embedded Type0 encoding streams (
 
 ```csharp
 using System.IO.Compression;
-using System.Text;
 
 namespace PdfLibrary.Fonts;
 
 /// <summary>
 /// CID→Unicode lookup for the registered Adobe CID collections (B-1 text extraction), backed by
-/// Adobe's published <c>Adobe-&lt;Ordering&gt;-UCS2</c> CMaps (github.com/adobe-type-tools/
-/// cmap-resources, BSD-3-Clause — Resources/CMaps/LICENSE-Adobe-CMaps.txt ships alongside),
-/// bundled gzip-compressed and loaded lazily once per ordering.
-/// <para>DIRECTION: the source files map UTF-16 code → CID; the table is INVERTED at load into
-/// CID→Unicode. On collision (several Unicode points → one CID) the FIRST mapping in parse order
-/// wins (cidchar blocks before cidrange blocks, file order within each) — stable per shipped
-/// file. Surrogate code values are skipped (the UCS2 files are BMP-only by construction).</para>
+/// Adobe's published <c>Adobe-&lt;Ordering&gt;-UCS2</c> mapping CMaps (github.com/adobe-type-tools/
+/// mapping-resources-pdf, <c>pdf2unicode/</c>, BSD-3-Clause —
+/// Resources/CMaps/LICENSE-Adobe-CMaps.txt ships alongside), bundled gzip-compressed and loaded
+/// lazily once per ordering. The files are <c>CMapType 2</c> ToUnicode CMaps in the
+/// <c>bfchar</c>/<c>bfrange</c> dialect mapping CID→UTF-16BE Unicode DIRECTLY, so they parse with
+/// the existing <see cref="ToUnicodeCMap"/> and its Lookup keys ARE CIDs — no inversion.
 /// Any load failure yields a null table and Lookup returns null — extraction falls through.
 /// </summary>
 public static class AdobeCidToUnicode
 {
-    private static readonly Dictionary<string, Lazy<Dictionary<int, string>?>> Tables =
+    private static readonly Dictionary<string, Lazy<ToUnicodeCMap?>> Tables =
         new(StringComparer.Ordinal)
         {
             ["Japan1"] = new(() => Load("Adobe-Japan1-UCS2")),
@@ -475,12 +471,12 @@ public static class AdobeCidToUnicode
 
     public static string? Lookup(string? ordering, int cid)
     {
-        if (ordering is null || !Tables.TryGetValue(ordering, out Lazy<Dictionary<int, string>?>? lazy))
+        if (ordering is null || !Tables.TryGetValue(ordering, out Lazy<ToUnicodeCMap?>? lazy))
             return null;
-        return lazy.Value?.GetValueOrDefault(cid);
+        return lazy.Value?.Lookup(cid);
     }
 
-    private static Dictionary<int, string>? Load(string name)
+    private static ToUnicodeCMap? Load(string name)
     {
         try
         {
@@ -490,26 +486,12 @@ public static class AdobeCidToUnicode
             using var gz = new GZipStream(s, CompressionMode.Decompress);
             using var ms = new MemoryStream();
             gz.CopyTo(ms);
-            return BuildInverse(Encoding.ASCII.GetString(ms.ToArray()));
+            return ToUnicodeCMap.Parse(ms.ToArray());
         }
         catch
         {
             return null;
         }
-    }
-
-    /// <summary>Testable core: parse a UCS2-dialect CMap text (codes are UTF-16 values) with
-    /// <see cref="CidCMap"/> and invert into CID→Unicode, first-in-parse-order wins.</summary>
-    internal static Dictionary<int, string> BuildInverse(string cmapText)
-    {
-        CidCMap parsed = CidCMap.Parse(Encoding.ASCII.GetBytes(cmapText));
-        var inverse = new Dictionary<int, string>();
-        foreach ((int unicode, int cid) in parsed.Entries)
-        {
-            if ((unicode & 0xF800) == 0xD800 || unicode is < 0 or > 0xFFFF) continue;
-            if (!inverse.ContainsKey(cid)) inverse[cid] = ((char)unicode).ToString();
-        }
-        return inverse;
     }
 }
 ```
@@ -518,13 +500,10 @@ public static class AdobeCidToUnicode
 
 Run: `dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --filter "FullyQualifiedName~AdobeCidToUnicodeTests"`
 
-**Note on `Entries` order:** `CidCMap` parses cidchar blocks before cidrange blocks; `Dictionary`
-preserves insertion order for enumeration absent removals in practice, but the collision-policy
-test constructs its collision *within a single cidchar block*, so it does not depend on that
-implementation detail. If the bundled-table agreement test fails for exactly one ordering, check
-whether the resource's first cidrange target CID is also mapped by an earlier cidchar entry
-(first-wins would then serve the cidchar value) — pick the resource's second cidrange entry in
-that case and note it in your report.
+**Note (amended):** if `BundledTable_AgreesWithItsOwnFirstBfRangeEntry` fails for one ordering,
+check whether `ToUnicodeCMap.Parse`'s bfchar pass (which runs before bfrange) already mapped that
+CID from an earlier bfchar entry — pick the resource's second bfrange entry in that case and note
+it in your report. Do not modify `ToUnicodeCMap`.
 
 - [ ] **Step 5: Commit**
 
