@@ -17,6 +17,14 @@ internal class Type0Font : PdfFont
     private EmbeddedFontMetrics? _embeddedMetrics;
     private bool _metricsLoaded;
 
+    // B-1 registry CID→Unicode context (lazy; armed only when the descendant declares Registry
+    // "Adobe" with a bundled ordering). _ordering non-null == the path is armed.
+    private bool _registryContextLoaded;
+    private string? _ordering;
+    private CidCMap? _encodingCMap;     // parsed embedded /Encoding stream (stream-encoding case)
+    private bool _identityEncoding;     // Identity-H / Identity-V
+    private bool _ucs2Encoding;         // Uni*-UCS2-*: the code IS a UCS-2 value
+
     public Type0Font(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
     {
@@ -68,13 +76,19 @@ internal class Type0Font : PdfFont
 
     public override string DecodeCharacter(int charCode)
     {
-        // 3-step fallback chain for Type 0 fonts:
+        // 4-step fallback chain for Type 0 fonts:
         // 1. Try ToUnicode CMap (standard, correct approach)
         string? unicode = ToUnicode?.Lookup(charCode);
         if (unicode is not null)
             return unicode;
 
-        // 2. Try embedded font glyph name → Unicode (handles broken PDFs)
+        // 2. Registered Adobe CID collection (B-1): code→CID (embedded /Encoding CMap, Identity,
+        //    or UCS2 shortcut) → CID→Unicode (bundled Adobe-<Ordering>-UCS2 tables).
+        string? registryUnicode = DecodeViaRegistry(charCode);
+        if (registryUnicode is not null)
+            return registryUnicode;
+
+        // 3. Try embedded font glyph name → Unicode (handles broken PDFs)
         if (_embeddedFont is not { IsValid: true }) return char.ConvertFromUtf32(charCode);
         string? unicodeFromGlyph = _embeddedFont.GetUnicodeFromGlyphName(charCode);
         if (unicodeFromGlyph is null) return char.ConvertFromUtf32(charCode);
@@ -83,7 +97,64 @@ internal class Type0Font : PdfFont
             $"Type0Font: Using embedded font fallback for charCode 0x{charCode:X4} → '{unicodeFromGlyph}'");
         return unicodeFromGlyph;
 
-        // 3. Fall back to character code as Unicode (last resort)
+        // 4. Fall back to character code as Unicode (last resort)
+    }
+
+    // B-1 registry CID→Unicode context (lazy; armed only when the descendant declares Registry
+    // "Adobe" with a bundled ordering).
+    private void EnsureRegistryContext()
+    {
+        if (_registryContextLoaded) return;
+        _registryContextLoaded = true;
+
+        if ((_descendantFont as CidFont)?.RawDictionary is not { } cidDict) return;
+        PdfObject? csiObj = cidDict.Get("CIDSystemInfo");
+        if (csiObj is PdfIndirectReference csiRef && _document is not null)
+            csiObj = _document.ResolveReference(csiRef);
+        if (csiObj is not PdfDictionary csi) return;
+        if (Resolve(csi.Get("Registry")) is not PdfString { Value: "Adobe" }) return;
+        if (Resolve(csi.Get("Ordering")) is not PdfString ord
+            || !AdobeCidToUnicode.IsSupportedOrdering(ord.Value)) return;
+
+        if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? enc)) return;
+        if (enc is PdfIndirectReference encRef && _document is not null)
+            enc = _document.ResolveReference(encRef);
+        switch (enc)
+        {
+            case PdfName { Value: "Identity-H" or "Identity-V" }:
+                _identityEncoding = true;
+                break;
+            case PdfName n when n.Value.StartsWith("Uni", StringComparison.Ordinal)
+                                && n.Value.Contains("-UCS2-", StringComparison.Ordinal):
+                _ucs2Encoding = true;
+                break;
+            case PdfStream stream:
+                _encodingCMap = CidCMap.Parse(stream.GetDecodedData(_document?.Decryptor));
+                break;
+            default:
+                return;   // predefined non-Identity, non-UCS2 name: not bundled (spec non-goal)
+        }
+        _ordering = ord.Value;
+        PdfLogger.Log(LogCategory.Text,
+            $"Type0Font: registry CID→Unicode path active (Adobe-{_ordering})");
+    }
+
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference r && _document is not null ? _document.ResolveReference(r) : obj;
+
+    // B-1 step 2 of the decode chain: registered-collection mapping. Null = fall through.
+    private string? DecodeViaRegistry(int charCode)
+    {
+        EnsureRegistryContext();
+        if (_ordering is null) return null;
+        if (_ucs2Encoding)
+        {
+            // The character code IS a UCS-2 value. Exclude NUL and surrogate halves.
+            if (charCode is <= 0 or > 0xFFFF || (charCode & 0xF800) == 0xD800) return null;
+            return ((char)charCode).ToString();
+        }
+        int? cid = _identityEncoding ? charCode : _encodingCMap?.MapCodeToCid(charCode);
+        return cid is null ? null : AdobeCidToUnicode.Lookup(_ordering, cid.Value);
     }
 
     internal override EmbeddedFontMetrics? GetEmbeddedMetrics()
