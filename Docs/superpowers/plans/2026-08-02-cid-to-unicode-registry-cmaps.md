@@ -790,6 +790,15 @@ Expected: PASS — all 18 registered-ordering rows decode, all 33 Identity rows 
 registered-ordering font that decodes nothing is a real gap: report it with its file/BaseFont
 (do not weaken the assertion; the measured population says all 18 are embedded-CMap/Identity/UCS2).
 
+> **AMENDED 2026-08-02 (execution finding, controller-adjudicated):** the must-differ criterion is
+> unsatisfiable for a `Uni*-UCS2-*`-NAMED-encoding font — there the character code IS UCS-2, so
+> the correct answer equals the raw fallback byte-for-byte over the non-surrogate BMP (the raw
+> fallback was accidentally correct pre-feature; the corpus has exactly one such row,
+> `isartor-6-3-3-3-t01-fail-a.pdf`). Amended contract: fonts whose Type0 `/Encoding` is a
+> `Uni*-UCS2-*` NAME assert **identity-correctness** instead — `DecodeCharacter(code)` equals the
+> UCS-2 character for a sample of CJK codes (e.g. 0x3042, 0x4E00, 0xAC00 as applicable) — while
+> embedded-CMap and Identity-H/V rows keep the must-differ bar (17 of 18).
+
 - [ ] **Step 3: Run the census + the full engine suite (including LocalOnly conformance corpora)**
 
 ```powershell
