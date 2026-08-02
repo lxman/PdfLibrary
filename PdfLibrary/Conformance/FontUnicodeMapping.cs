@@ -31,7 +31,7 @@ internal static class FontUnicodeMapping
 
         // Type0 (composite) fonts: only an Identity-ordered CID font has no derivable CID-to-Unicode mapping
         // without /ToUnicode. A registered Adobe collection (Japan1/Korea1/GB1/CNS1) carries a mapping through
-        // Adobe's cid2unicode tables — which we do not bundle — so we do not flag it (benefit of the doubt).
+        // Adobe's cid2unicode tables — which are bundled for extraction (AdobeCidToUnicode); this rule stays conservative regardless.
         if (font is Type0Font type0)
             return !IsIdentityOrdering(context, type0);
 
