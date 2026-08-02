@@ -58,6 +58,25 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Adobe CID→Unicode CMaps (B-1 text extraction): the four Adobe-<Ordering>-UCS2 CMaps from
+             github.com/adobe-type-tools/mapping-resources-pdf, BSD-3-Clause (license bundled alongside),
+             gzip-compressed. Loaded lazily by AdobeCidToUnicode. -->
+        <EmbeddedResource Include="Resources\CMaps\Adobe-Japan1-UCS2.gz">
+            <LogicalName>PdfLibrary.Resources.CMaps.Adobe-Japan1-UCS2.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\CMaps\Adobe-Korea1-UCS2.gz">
+            <LogicalName>PdfLibrary.Resources.CMaps.Adobe-Korea1-UCS2.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\CMaps\Adobe-GB1-UCS2.gz">
+            <LogicalName>PdfLibrary.Resources.CMaps.Adobe-GB1-UCS2.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\CMaps\Adobe-CNS1-UCS2.gz">
+            <LogicalName>PdfLibrary.Resources.CMaps.Adobe-CNS1-UCS2.gz</LogicalName>
+        </EmbeddedResource>
+        <None Include="Resources\CMaps\LICENSE-Adobe-CMaps.txt" Pack="true" PackagePath="licenses\" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" PrivateAssets="all" />
     </ItemGroup>
 
