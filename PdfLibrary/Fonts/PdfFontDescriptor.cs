@@ -272,23 +272,28 @@ internal class PdfFontDescriptor(PdfDictionary dictionary, PdfDocument? document
     /// Gets the raw PdfStream object for /FontFile2 without decoding.
     /// Used by the font subsetter to replace the embedded program.
     /// </summary>
-    internal PdfStream? GetFontFile2Stream()
-    {
-        if (!_dictionary.TryGetValue(new PdfName("FontFile2"), out PdfObject? obj))
-            return null;
-        if (obj is PdfIndirectReference reference && _document is not null)
-            obj = _document.ResolveReference(reference);
-        return obj as PdfStream;
-    }
+    internal PdfStream? GetFontFile2Stream() => GetFontFileStreamRaw("FontFile2");
 
     /// <summary>
     /// Gets the raw PdfStream object for /FontFile3 (CFF) without decoding.
     /// Used by the font subsetter to replace the embedded program in place.
     /// </summary>
-    internal PdfStream? GetFontFile3Stream()
+    internal PdfStream? GetFontFile3Stream() => GetFontFileStreamRaw("FontFile3");
+
+    /// <summary>True when the descriptor carries an embedded font program stream under any of
+    /// /FontFile, /FontFile2, /FontFile3 (ISO 32000-1 §9.8.2, Table 126). PRESENCE ONLY — resolves
+    /// the reference but never decodes the stream (P-4: the decoded-bytes accessors cost a full
+    /// decrypt+inflate per call, which a per-ShowText presence probe must not pay).</summary>
+    public bool HasEmbeddedFontProgram =>
+        GetFontFileStreamRaw("FontFile") is not null
+        || GetFontFileStreamRaw("FontFile2") is not null
+        || GetFontFileStreamRaw("FontFile3") is not null;
+
+    /// <summary>Raw stream object under <paramref name="key"/> (reference resolved, NOT decoded) —
+    /// the shared core of the presence probe and the subsetter's raw accessors.</summary>
+    private PdfStream? GetFontFileStreamRaw(string key)
     {
-        if (!_dictionary.TryGetValue(new PdfName("FontFile3"), out PdfObject? obj))
-            return null;
+        if (!_dictionary.TryGetValue(new PdfName(key), out PdfObject? obj)) return null;
         if (obj is PdfIndirectReference reference && _document is not null)
             obj = _document.ResolveReference(reference);
         return obj as PdfStream;

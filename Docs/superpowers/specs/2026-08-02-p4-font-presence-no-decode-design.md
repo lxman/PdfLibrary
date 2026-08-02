@@ -72,10 +72,13 @@ private static bool HasEmbeddedFontData(PdfFont? font) =>
     font?.GetDescriptor()?.HasEmbeddedFontProgram ?? false;
 ```
 
-**Semantic delta, accepted and pinned:** a PRESENT-but-corrupt font stream previously made the
-presence probe throw (or pay a failed decode) mid-ShowText; presence-only reports true without
-touching the bytes. That matches the question the fixup context asks ("does the font claim
-embedded data?") and removes a decode-failure crash path from text rendering.
+**Semantic delta — RETIRED at execution (2026-08-02):** the spec presumed a present-but-corrupt
+stream could throw mid-ShowText. Measured false: `FlateDecodeFilter` never throws — on total
+failure it returns the raw bytes as-is ("uncompressed fallback"), so the old decoding probe also
+answered true for corrupt streams, after paying three failed inflate attempts. The change is
+therefore **pure work-elimination with identical answers in every case** — stronger than spec'd.
+The corrupt-stream test pins the equivalence (and the filter degrade behavior it rests on)
+instead of a crash-path delta; the acceptance re-profile is the authoritative no-decode proof.
 
 ## Testing & acceptance
 

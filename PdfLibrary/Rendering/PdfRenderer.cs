@@ -2060,19 +2060,10 @@ internal class PdfRenderer : PdfContentProcessor
 
     /// <summary>
     /// Checks if a font has embedded font data (FontFile/FontFile2/FontFile3).
+    /// Presence only — never decodes the font program (P-4: this runs once per ShowText).
     /// </summary>
     private static bool HasEmbeddedFontData(PdfFont? font)
     {
-        if (font is null)
-            return false;
-
-        PdfFontDescriptor? descriptor = font.GetDescriptor();
-        if (descriptor is null)
-            return false;
-
-        // Check for any of the three font file streams
-        return descriptor.GetFontFile() is not null ||
-               descriptor.GetFontFile2() is not null ||
-               descriptor.GetFontFile3() is not null;
+        return font?.GetDescriptor()?.HasEmbeddedFontProgram ?? false;
     }
 }
