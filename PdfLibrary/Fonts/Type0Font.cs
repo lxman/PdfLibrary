@@ -129,7 +129,8 @@ internal class Type0Font : PdfFont
                 _ucs2Encoding = true;
                 break;
             case PdfStream stream:
-                _encodingCMap = CidCMap.Parse(stream.GetDecodedData(_document?.Decryptor));
+                try { _encodingCMap = CidCMap.Parse(stream.GetDecodedData(_document?.Decryptor)); }
+                catch { return; }   // corrupt/undecodable /Encoding stream: leave the path unarmed
                 break;
             default:
                 return;   // predefined non-Identity, non-UCS2 name: not bundled (spec non-goal)

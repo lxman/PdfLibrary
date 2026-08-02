@@ -95,7 +95,7 @@ public class Type0FallbackAuditTests
         Assert.Skip(report);
     }
 
-    private sealed record FoundFont(string File, string BaseFont, string Ordering, Type0Font Font);
+    private sealed record FoundFont(string File, string BaseFont, string Ordering, Type0Font Font, string? ResolvedEncodingName);
 
     /// <summary>B-1 acceptance: every registered-ordering (Japan1/Korea1/GB1/CNS1) Type0 font with
     /// no /ToUnicode in the corpus now decodes at least one code to something other than the
@@ -152,7 +152,7 @@ public class Type0FallbackAuditTests
 
         foreach (FoundFont ff in registered)
         {
-            if (IsUcs2Encoding(ff.Font.EncodingName))
+            if (IsUcs2Encoding(ff.ResolvedEncodingName))
             {
                 // Carve-out: the code IS the UCS-2 value for these fonts, so it can never differ
                 // from the raw fallback. Assert identity-correctness instead (see doc comment).
@@ -190,8 +190,9 @@ public class Type0FallbackAuditTests
         }
     }
 
-    // Mirrors Type0Font.EnsureRegistryContext's own UCS2 name shape (Uni*-UCS2-*) so the test's
-    // carve-out branch and the product's actual dispatch never drift apart.
+    // Mirrors Type0Font.EnsureRegistryContext's own UCS2 name shape (Uni*-UCS2-*). The caller
+    // resolves an indirect /Encoding reference before this check (CollectFont, above) — the same
+    // order EnsureRegistryContext uses — so the two can't drift apart on an indirect /Encoding name.
     private static bool IsUcs2Encoding(string? encodingName) =>
         encodingName is not null
         && encodingName.StartsWith("Uni", StringComparison.Ordinal)
@@ -262,7 +263,11 @@ public class Type0FallbackAuditTests
         string baseFont = (font.Get("BaseFont") as PdfName)?.Value ?? "(no BaseFont)";
         if (PdfFont.Create(font, doc) is not Type0Font type0Font) return;
 
-        found.Add(new FoundFont(Path.GetFileName(path), baseFont, $"{reg}-{ord}", type0Font));
+        // Resolve /Encoding the same way Type0Font.EnsureRegistryContext does (indirect ref first)
+        // so the classifier below can't see a name shape the product itself would also have missed.
+        string? resolvedEncodingName = (Deref(font.Get("Encoding"), doc) as PdfName)?.Value;
+
+        found.Add(new FoundFont(Path.GetFileName(path), baseFont, $"{reg}-{ord}", type0Font, resolvedEncodingName));
     }
 
     private static void ScanDocument(string path, Census c)
