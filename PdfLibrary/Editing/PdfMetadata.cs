@@ -5,6 +5,11 @@ using PdfLibrary.Structure;
 
 namespace PdfLibrary.Editing;
 
+/// <summary>The Info dictionary's <c>/Trapped</c> value. PDF/X-4 (ISO 15930-7) requires an explicit
+/// <see cref="True"/> or <see cref="False"/>; <see cref="Unknown"/> is a legal PDF value that fails
+/// that rule, so it must be representable and is NOT the same as the key being absent.</summary>
+public enum PdfTrapped { Unknown, True, False }
+
 /// <summary>
 /// Facade for reading and writing document information (Info dictionary + XMP stream).
 /// Obtained via <see cref="PdfDocumentEditor.Metadata"/>.
@@ -71,6 +76,53 @@ public sealed class PdfMetadata
             SyncXmp(value is not null
                 ? () => SyncKeywordsXmp(value)
                 : () => { Xmp.Remove(XmpSchemas.Pdf, "Keywords"); Xmp.Remove(XmpSchemas.Dc, "subject"); });
+        }
+    }
+
+    /// <summary>The document's default natural language (catalog <c>/Lang</c>), an RFC 3066 tag such
+    /// as "en-US". Null when the entry is absent; setting null removes it.</summary>
+    public string? Language
+    {
+        get
+        {
+            if (_document.CatalogDictionary is not { } cat) return null;
+            return cat.TryGetValue(new PdfName("Lang"), out PdfObject obj) && obj is PdfString s
+                ? s.GetText()
+                : null;
+        }
+        set
+        {
+            if (_document.CatalogDictionary is not { } cat) return;
+            if (value is null) cat.Remove(new PdfName("Lang"));
+            else cat[new PdfName("Lang")] = PdfString.FromText(value);
+        }
+    }
+
+    /// <summary>The Info dictionary's <c>/Trapped</c> entry. Null when absent — deliberately distinct
+    /// from <see cref="PdfTrapped.Unknown"/>, which is an explicit <c>/Unknown</c> value.</summary>
+    public PdfTrapped? Trapped
+    {
+        get
+        {
+            if (_document.Trailer.Info is null) return null;
+            if (_document.GetObject(_document.Trailer.Info.ObjectNumber) is not PdfDictionary info)
+                return null;
+            if (!info.TryGetValue(new PdfName("Trapped"), out PdfObject obj)) return null;
+            return obj is PdfName n
+                ? n.Value switch
+                {
+                    "True" => PdfTrapped.True,
+                    "False" => PdfTrapped.False,
+                    "Unknown" => PdfTrapped.Unknown,
+                    _ => null,          // a non-conforming value reads as absent
+                }
+                : null;
+        }
+        set
+        {
+            PdfDictionary info = EnsureInfoDictionary();
+            if (value is null) info.Remove(new PdfName("Trapped"));
+            else info[new PdfName("Trapped")] = new PdfName(value.Value.ToString());
         }
     }
 
