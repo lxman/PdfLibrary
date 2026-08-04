@@ -134,10 +134,14 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     /// a candidate must not regress the merged score either, or step 1 would violate its own "never
     /// return a lower-scoring face than today" contract under the metric that steps 2/3 use.</para>
     ///
-    /// <para>Ties among equally-best siblings break on (PostScriptName ordinal, FaceIndex) — the same
-    /// shape as <see cref="FontMetadataIndex.PickBest"/> — so the winner does not depend on
-    /// <c>Directory.EnumerateFiles</c> order, which is not stable across machines and would otherwise
-    /// break the Windows/Linux bit-identical render goal.</para></summary>
+    /// <para>Ties among equally-best siblings break via <see cref="FontMetadataIndex.SortsBefore"/> —
+    /// literally the comparator <see cref="FontMetadataIndex.PickBest"/> uses, not merely one of the
+    /// same shape. One comparator because the two can genuinely disagree: a family bucket is keyed on
+    /// both name ID 1 and ID 16, so it can hold faces whose EnglishFamily order is opposite to their
+    /// PostScriptName order, and a second copy of the rule would resolve those differently in step 1
+    /// than in step 2. Either way the winner does not depend on <c>Directory.EnumerateFiles</c> order,
+    /// which is not stable across machines and would otherwise break the Windows/Linux bit-identical
+    /// render goal.</para></summary>
     private FontFaceRecord BetterStyledSibling(
         FontFaceRecord hit, bool bold, bool italic, bool mergedBold, bool mergedItalic)
     {
@@ -166,9 +170,7 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
                 // best is non-null, tie-break deterministically instead of keeping first-seen, which
                 // would otherwise depend on Directory.EnumerateFiles order (unstable across machines).
                 if (best is null) continue;
-                int cmp = string.CompareOrdinal(f.PostScriptName, best.PostScriptName);
-                if (cmp < 0 || (cmp == 0 && f.FaceIndex < best.FaceIndex))
-                    best = f;
+                if (FontMetadataIndex.SortsBefore(f, best)) best = f;
             }
         return best ?? hit;
     }

@@ -103,11 +103,10 @@ internal sealed class FontMetadataIndex
 
     /// <summary>Best style match among <paramref name="candidates"/>.
     ///
-    /// <para>Ties break on (EnglishFamily, PostScriptName) ordinal, then face index. The face index
-    /// alone is not enough: it only discriminates WITHIN one file, and the family lookup that feeds
-    /// this method draws candidates from different files that all have face index 0 — so the
-    /// effective rule was Directory.EnumerateFiles order, which is not stable across machines.
-    /// Ordinal, never culture-aware, so the choice cannot vary with the host locale.</para></summary>
+    /// <para>Ties break via <see cref="SortsBefore"/>. The face index alone is not enough: it only
+    /// discriminates WITHIN one file, and the family lookup that feeds this method draws candidates
+    /// from different files that all have face index 0 — so the effective rule was
+    /// Directory.EnumerateFiles order, which is not stable across machines.</para></summary>
     public static FontFaceRecord? PickBest(IEnumerable<FontFaceRecord> candidates, bool bold, bool italic)
     {
         FontFaceRecord? best = null;
@@ -123,14 +122,28 @@ internal sealed class FontMetadataIndex
         return best;
     }
 
-    /// <summary>Deterministic ordering for equally-good candidates.</summary>
-    private static bool SortsBefore(FontFaceRecord a, FontFaceRecord b)
+    /// <summary>Deterministic ordering for equally-good candidates: (EnglishFamily, PostScriptName,
+    /// FaceIndex, Path), every leg ordinal and never culture-aware, so the choice cannot vary with
+    /// the host locale.
+    ///
+    /// <para>The single tie-break for the WHOLE ladder — step 1's sibling search calls this too, so
+    /// two equally-scoring faces resolve identically whichever step meets them. They can genuinely
+    /// differ on the leading key: <c>_byFamily</c> is keyed on both name ID 1 and ID 16, so one
+    /// bucket can hold faces with different <c>EnglishFamily</c> values ("Foo" and "Foo Light" both
+    /// under typographic family "Foo").</para>
+    ///
+    /// <para>The <c>Path</c> leg is the floor. The index walks system AND per-user font directories
+    /// recursively and <c>_byFamily</c> — unlike <c>_byPostScript</c> — does not de-duplicate, so two
+    /// installs of one face are both candidates and agree on every other leg. Without this the
+    /// winner would be enumeration order, which is what the whole comparator exists to escape.</para></summary>
+    internal static bool SortsBefore(FontFaceRecord a, FontFaceRecord b)
     {
         int byFamily = string.CompareOrdinal(a.EnglishFamily, b.EnglishFamily);
         if (byFamily != 0) return byFamily < 0;
         int byName = string.CompareOrdinal(a.PostScriptName, b.PostScriptName);
         if (byName != 0) return byName < 0;
-        return a.FaceIndex < b.FaceIndex;
+        if (a.FaceIndex != b.FaceIndex) return a.FaceIndex < b.FaceIndex;
+        return string.CompareOrdinal(a.Path, b.Path) < 0;
     }
 
     /// <summary>Best face index WITHIN one font file's bytes. Exists for

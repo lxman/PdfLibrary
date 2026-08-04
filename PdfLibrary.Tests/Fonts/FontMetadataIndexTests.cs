@@ -196,4 +196,33 @@ public class FontMetadataIndexTests
         Assert.Equal(1, FontMetadataIndex.StyleScore(reverse!, false, false));
         Assert.Equal(forward!.PostScriptName, reverse!.PostScriptName);
     }
+
+    [Fact]
+    public void PickBest_ties_break_on_EnglishFamily_before_PostScriptName()
+    {
+        // The PRIMARY tie-break key, and the only case that can distinguish it from the secondary
+        // one: the two orders are OPPOSED. Ordinally "Foo" < "Foo Light" (space is 0x20, below every
+        // letter) but "Foo-Alpha" < "Foo-Zeta", so whichever key leads picks a different winner.
+        // Not a contrived pairing — _byFamily is keyed on name ID 1 AND ID 16, so a "Foo" bucket
+        // really does hold faces whose own EnglishFamily reads "Foo Light".
+        var light = new FontFaceRecord("/l.ttf", 0, "Foo-Alpha", ["Foo"], "Foo Light", "Regular", false, false);
+        var plain = new FontFaceRecord("/p.ttf", 0, "Foo-Zeta", ["Foo"], "Foo", "Regular", false, false);
+
+        Assert.Equal("Foo-Zeta", FontMetadataIndex.PickBest([light, plain], false, false)!.PostScriptName);
+        Assert.Equal("Foo-Zeta", FontMetadataIndex.PickBest([plain, light], false, false)!.PostScriptName);
+    }
+
+    [Fact]
+    public void PickBest_ties_break_on_Path_when_every_other_key_agrees()
+    {
+        // The floor of the comparator. Two installs of one face — the index walks system AND per-user
+        // font directories, and _byFamily (unlike _byPostScript) does not de-duplicate — agree on
+        // family, PostScript name and face index, so without the Path leg the winner would be
+        // enumeration order, the very thing the comparator exists to escape.
+        var second = new FontFaceRecord("/b/Foo.ttf", 0, "Foo", ["Foo"], "Foo", "Regular", false, false);
+        var first = new FontFaceRecord("/a/Foo.ttf", 0, "Foo", ["Foo"], "Foo", "Regular", false, false);
+
+        Assert.Equal("/a/Foo.ttf", FontMetadataIndex.PickBest([second, first], false, false)!.Path);
+        Assert.Equal("/a/Foo.ttf", FontMetadataIndex.PickBest([first, second], false, false)!.Path);
+    }
 }

@@ -185,4 +185,35 @@ public class LadderStep1StyleTests
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    [Fact]
+    public void A_request_stating_no_style_at_all_keeps_the_exact_hit_even_when_its_own_bits_disagree()
+    {
+        // Pins the `explicitBold || explicitItalic` gate, which nothing else in the suite held in
+        // place: delete it and the other 2857 tests still pass. It IS load-bearing, and on the
+        // overwhelmingly common path — a /BaseFont with no style token and no descriptor, which the
+        // design spec promises is byte-identical to before this branch.
+        //
+        // The fixture is the case that makes the gate bite: "Foo" is an exact PostScript hit whose
+        // OWN head macStyle says italic, and nothing in the request says otherwise (no token in the
+        // name for Base35Aliases.Split to find, no descriptor flags), so the explicit pair is empty.
+        // Ungated, the hit would score 1 against the upright request and be swapped for the upright
+        // "Foo-Regular" sibling scoring 2 — a silent substitution the document never asked for.
+        string dir = TempDir();
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dir, "named.ttf"), SfntFixtures.Sfnt(0x2,
+                (3, 0x409, 1, "Foo"), (3, 0x409, 2, "Italic"), (3, 0x409, 6, "Foo")));
+            File.WriteAllBytes(Path.Combine(dir, "upright.ttf"), SfntFixtures.Sfnt(0,
+                (3, 0x409, 1, "Foo"), (3, 0x409, 2, "Regular"), (3, 0x409, 6, "Foo-Regular")));
+            var locator = new SystemFontLocator([dir]);
+
+            FontMatch? m = locator.Resolve(new FontRequest("Foo", false, false));
+
+            Assert.NotNull(m);
+            Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "named.ttf")), m!.Data);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
