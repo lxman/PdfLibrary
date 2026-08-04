@@ -21,9 +21,17 @@ internal sealed class SubstituteFontResolver(ISystemFontProvider provider)
     {
         // Style comes from the descriptor AND the name; Classify already merges both. The provider
         // owns the ladder from here — this method no longer knows anything about filenames.
-        (bool _, bool _, bool bold, bool italic) = Classify(baseFont, descriptor);
+        (bool serif, bool mono, bool bold, bool italic) = Classify(baseFont, descriptor);
 
-        FontMatch? match = provider.Resolve(new FontRequest(baseFont, bold, italic));
+        // Second attempt under the synthetic standard-14 name. A provider that implements only
+        // GetFontData keys off the /BaseFont string, so an opaque subset name ("ABCDEF+FooSans")
+        // misses where the standard face it stands in for would have hit — without this retry such
+        // providers resolve nothing, contradicting ISystemFontProvider.Resolve's own "keep working
+        // unchanged" contract. It costs SystemFontLocator nothing: step 3 of its ladder already
+        // tries the same name, so the first call has covered it and this one never fires.
+        FontMatch? match = provider.Resolve(new FontRequest(baseFont, bold, italic, serif, mono))
+                        ?? provider.Resolve(new FontRequest(
+                               SyntheticStd14Name(serif, mono, bold, italic), bold, italic, serif, mono));
         if (match is null) return null;
 
         var metrics = new EmbeddedFontMetrics(match.Data, match.FaceIndex);

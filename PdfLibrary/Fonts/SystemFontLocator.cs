@@ -89,8 +89,14 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
         // what keeps a machine with no base-35 clones on its own core serif/sans/mono.
         if (hit is null)
         {
-            (bool serif, bool mono, bool _, bool _) = SubstituteFontResolver.Classify(request.BaseFont, null);
-            string synthetic = SubstituteFontResolver.SyntheticStd14Name(serif, mono, bold, italic);
+            // Descriptor flags and name spelling are independent signals and either one alone decides
+            // the family: a subset name is opaque while /Flags says Serif, and a descriptor can carry
+            // no flags at all while the name says "Times". Hence the OR — dropping either side sends
+            // the font to Helvetica.
+            (bool nameSerif, bool nameMono, bool _, bool _) =
+                SubstituteFontResolver.Classify(request.BaseFont, null);
+            string synthetic = SubstituteFontResolver.SyntheticStd14Name(
+                request.Serif || nameSerif, request.Mono || nameMono, bold, italic);
             (string synthFamily, bool _, bool _) = Base35Aliases.Split(synthetic);
             hit = _index.ByPostScriptName(synthetic)
                ?? FirstFamilyHit(Base35Aliases.FamiliesFor(synthFamily), bold, italic);
