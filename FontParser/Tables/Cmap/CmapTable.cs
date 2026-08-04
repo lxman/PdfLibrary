@@ -102,11 +102,50 @@ namespace FontParser.Tables.Cmap
             }
         }
 
+        /// <summary>
+        /// Maps a code point to a glyph, consulting subtables in PLATFORM-PREFERENCE order rather than
+        /// the order they happen to appear in the file.
+        ///
+        /// <para>Encoding records are sorted by file offset in the constructor, which bears no relation
+        /// to how trustworthy a subtable is for a Unicode lookup. Taking the first non-zero hit in that
+        /// order meant a font listing Mac/Roman at a lower offset than Windows/UnicodeBmp resolved
+        /// Unicode code points through MacRoman — identical below U+0080, where the two encodings
+        /// coincide, and wrong above it. Real case: C059-Italic.otf orders its subtables Mac/Roman,
+        /// Unicode, Windows/UnicodeBmp, so U+00E4 'a-dieresis' returned the glyph MacRoman keeps at
+        /// 0xE4. Fonts that happened to list Unicode first were correct only by luck.</para>
+        ///
+        /// <para>Every subtable is still tried, so a font carrying only a Mac subtable resolves exactly
+        /// as before; only the ORDER changes, and only where two subtables disagree.</para>
+        /// </summary>
         public ushort GetGlyphId(ushort codePoint)
         {
-            return SubTables
-                .Select(subTable => subTable.GetGlyphId(codePoint))
-                .FirstOrDefault(glyphId => glyphId != 0);
+            foreach (CmapEncoding encoding in Encodings.OrderBy(SubtableRank))
+            {
+                ushort glyphId = encoding.SubTable.GetGlyphId(codePoint);
+                if (glyphId != 0) return glyphId;
+            }
+
+            return 0;
+        }
+
+        /// <summary>Lower ranks are consulted first. OrderBy is a stable sort, so subtables sharing a
+        /// rank keep their existing file-offset order.</summary>
+        private static int SubtableRank(CmapEncoding encoding)
+        {
+            EncodingRecord record = encoding.Encoding;
+            switch (record.PlatformId)
+            {
+                case PlatformId.Windows when record.WindowsEncoding == WindowsEncodingId.UnicodeUCS4:
+                    return 0;
+                case PlatformId.Windows when record.WindowsEncoding == WindowsEncodingId.UnicodeBmp:
+                    return 1;
+                case PlatformId.Unicode:
+                    return 2;
+                default:
+                    // Mac/Roman, (3,0) Symbol, ISO and anything else: usable as a fallback, never as
+                    // the first answer to a Unicode question.
+                    return 3;
+            }
         }
     }
 }
