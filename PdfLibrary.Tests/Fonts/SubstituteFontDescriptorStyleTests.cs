@@ -22,11 +22,27 @@ public class SubstituteFontDescriptorStyleTests
             [new PdfName("Flags")] = new PdfInteger(flags),
         });
 
+    /// <summary>Adds /StemV alongside /Flags, for tests distinguishing the StemV inference from the
+    /// descriptor's own style flags.</summary>
+    private static PdfFontDescriptor DescriptorWithFlagsAndStemV(int flags, int stemV) =>
+        new(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("FontDescriptor"),
+            [new PdfName("FontName")] = new PdfName("XYZ123"),
+            [new PdfName("Flags")] = new PdfInteger(flags),
+            [new PdfName("StemV")] = new PdfInteger(stemV),
+        });
+
     /// <summary>Captures the requests it is handed and resolves every one of them, so a test can read
     /// back exactly what the resolver decided before the provider's own ladder gets a say.</summary>
     private sealed class RecordingProvider(byte[] data) : ISystemFontProvider
     {
         public List<FontRequest> Requests { get; } = [];
+
+        /// <summary>The most recent request handed to <see cref="Resolve"/>, for tests that only
+        /// care about the last hop of the ladder rather than the full history.</summary>
+        public FontRequest? Last => Requests.Count > 0 ? Requests[^1] : null;
+
         public IReadOnlyCollection<string> GetAvailableFontFamilies() => [];
         public bool IsFontAvailable(string familyName) => false;
         public string? FindFirstAvailable(IEnumerable<string> candidates) => null;
@@ -146,5 +162,31 @@ public class SubstituteFontDescriptorStyleTests
 
         Assert.NotNull(byName);
         Assert.Equal(courier!.Data, byName!.Data);
+    }
+
+    [Fact]
+    public void A_StemV_inference_does_not_reach_the_explicit_style_pair()
+    {
+        // StemV >= 120 makes Classify report bold, which is right for the guessing steps of the ladder
+        // but must never gain the power to reject a face the document named outright.
+        PdfFontDescriptor descriptor = DescriptorWithFlagsAndStemV(flags: 0, stemV: 140);
+        var provider = new RecordingProvider(RealFont());
+
+        new SubstituteFontResolver(provider).Resolve("ABCDEF+XYZ123", descriptor);
+
+        Assert.True(provider.Last!.Bold);           // merged pair: the inference counts
+        Assert.False(provider.Last!.ExplicitBold);  // explicit pair: it does not
+    }
+
+    [Fact]
+    public void Descriptor_style_flags_do_reach_the_explicit_style_pair()
+    {
+        PdfFontDescriptor descriptor = DescriptorWithFlags(0x40 | 0x40000);   // Italic | ForceBold
+        var provider = new RecordingProvider(RealFont());
+
+        new SubstituteFontResolver(provider).Resolve("ABCDEF+XYZ123", descriptor);
+
+        Assert.True(provider.Last!.ExplicitBold);
+        Assert.True(provider.Last!.ExplicitItalic);
     }
 }
