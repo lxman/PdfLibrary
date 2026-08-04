@@ -14,9 +14,14 @@ public class SfntNameReaderTests
         var records = new List<byte>();
         foreach ((int pid, int lang, int nid, string v) in names)
         {
-            byte[] bytes = pid == 3 ? Encoding.BigEndianUnicode.GetBytes(v) : Encoding.ASCII.GetBytes(v);
+            // Platform 3 (Windows) AND platform 0 (Unicode) name strings are both UTF-16BE per the
+            // OpenType spec; only the legacy Mac platform 1 is a byte encoding. Mirrors the
+            // production decode in SfntNameReader — if these two drift, the fixtures stop being
+            // fonts and the tests stop meaning anything.
+            byte[] bytes = pid is 3 or 0 ? Encoding.BigEndianUnicode.GetBytes(v) : Encoding.ASCII.GetBytes(v);
             AddU16(records, pid);
-            AddU16(records, pid == 3 ? 1 : 0);   // encodingID
+            // encodingID: 1 = Unicode BMP (Windows), 3 = Unicode 2.0 BMP (Unicode platform).
+            AddU16(records, pid switch { 3 => 1, 0 => 3, _ => 0 });
             AddU16(records, lang);
             AddU16(records, nid);
             AddU16(records, bytes.Length);
@@ -253,9 +258,74 @@ public class SfntNameReaderTests
             Assert.NotNull(fromStream);
             Assert.Equal(fromBytes!.PostScriptName, fromStream!.PostScriptName);
             Assert.Equal(fromBytes.EnglishFamily, fromStream.EnglishFamily);
+            Assert.Equal(fromBytes.Families, fromStream.Families);
             Assert.Equal(fromBytes.Italic, fromStream.Italic);
             Assert.Equal(fromBytes.Bold, fromStream.Bold);
         }
+    }
+
+    /// <summary>Platform 0 (Unicode) records are UTF-16BE just like platform 3. A font whose ONLY
+    /// name records are platform 0 is spec-legal and is emitted by some OTF/CJK toolchains; decoding
+    /// those bytes as ASCII yields "T\0e\0s\0t\0..." which Trim('\0') cannot clean up because the
+    /// NULs are interior, and the face lands in the index under garbage keys.</summary>
+    [Fact]
+    public void Platform0_only_font_is_indexed_with_clean_strings()
+    {
+        byte[] data = Sfnt(0x0002,
+            (0, 0, 1, "Unicode Family"),
+            (0, 0, 2, "Italic"),
+            (0, 0, 6, "UnicodeFamily-Italic"));
+
+        FontFaceRecord? face = SfntNameReader.ReadFace(data, 0, "unicode-only.otf");
+
+        Assert.NotNull(face);
+        Assert.Equal("UnicodeFamily-Italic", face!.PostScriptName);
+        Assert.Equal("Unicode Family", face.EnglishFamily);
+        Assert.Contains("Unicode Family", face.Families);
+        Assert.True(face.Italic);
+    }
+
+    /// <summary>Guards the interior NUL directly: "looks right at the ends" is exactly what the ASCII
+    /// decode produced, since Trim('\0') strips only the trailing NUL of the last code unit.</summary>
+    [Fact]
+    public void Platform0_strings_contain_no_nul_anywhere()
+    {
+        byte[] data = Sfnt(0,
+            (0, 0, 1, "Unicode Family"),
+            (0, 0, 2, "Regular"),
+            (0, 0, 6, "UnicodeFamily-Regular"));
+
+        FontFaceRecord? face = SfntNameReader.ReadFace(data, 0, "unicode-only.otf");
+
+        Assert.NotNull(face);
+        Assert.DoesNotContain('\0', face!.PostScriptName);
+        Assert.DoesNotContain('\0', face.EnglishFamily);
+        foreach (string f in face.Families) Assert.DoesNotContain('\0', f);
+    }
+
+    [Fact]
+    public void Stream_overload_matches_byte_array_overload_for_a_platform0_only_font()
+    {
+        byte[] data = Sfnt(0x0002,
+            (0, 0, 1, "Unicode Family"),
+            (0, 0, 2, "Italic"),
+            (0, 0, 6, "UnicodeFamily-Italic"));
+
+        using var stream = new MemoryStream(data);
+
+        FontFaceRecord? fromBytes = SfntNameReader.ReadFace(data, 0, "unicode-only.otf");
+        FontFaceRecord? fromStream = SfntNameReader.ReadFace(stream, 0, "unicode-only.otf");
+
+        Assert.NotNull(fromBytes);
+        Assert.NotNull(fromStream);
+        Assert.Equal("UnicodeFamily-Italic", fromStream!.PostScriptName);
+        Assert.Equal(fromBytes!.PostScriptName, fromStream.PostScriptName);
+        Assert.Equal(fromBytes.EnglishFamily, fromStream.EnglishFamily);
+        Assert.Equal(fromBytes.Families, fromStream.Families);
+        Assert.Equal(fromBytes.Italic, fromStream.Italic);
+        Assert.Equal(fromBytes.Bold, fromStream.Bold);
+        Assert.DoesNotContain('\0', fromStream.PostScriptName);
+        Assert.DoesNotContain('\0', fromStream.EnglishFamily);
     }
 
     [Fact]

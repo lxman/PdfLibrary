@@ -59,11 +59,21 @@ internal static class SfntNameReader
 
                 long s = nameOff + storage + off;
                 if (len == 0 || s + len > data.Length) continue;
-                string v = (pid == 3
+                // Platform 0 (Unicode) strings are UTF-16BE exactly as platform 3 (Windows) are;
+                // only the legacy Mac platform 1 is a byte encoding. ASCII-decoding a platform-0
+                // record yields "T\0e\0s\0t\0..." whose INTERIOR NULs Trim('\0') cannot remove, so
+                // a font whose only records are platform 0 — spec-legal, emitted by some OTF/CJK
+                // toolchains — would index entirely under garbage keys.
+                bool utf16 = pid is 3 or 0;
+                string v = (utf16
                     ? Encoding.BigEndianUnicode.GetString(data, (int)s, len)
                     : Encoding.ASCII.GetString(data, (int)s, len)).Trim('\0').Trim();
                 if (v.Length == 0) continue;
 
+                // Platform 0 deliberately does NOT count as English: its language field is
+                // language-neutral, so a platform-0 record is no evidence the string IS English, and
+                // treating it as such would let the LAST such record overwrite a genuine 0x409 one.
+                // Platform-0-only fonts still resolve, via the `english.Length == 0` fallback below.
                 bool isEnglish = (pid == 3 && lang == 0x409) || (pid == 1 && lang == 0);
                 switch (nid)
                 {
@@ -158,11 +168,17 @@ internal static class SfntNameReader
                 long strAt = nameOff + storage + off;
                 if (len == 0 || strAt + len > s.Length) continue;
                 byte[] raw = ReadBytes(s, strAt, len);
-                string v = (pid == 3
+                // Same platform-0-is-UTF-16BE rule as the byte[] twin above; the two must agree.
+                bool utf16 = pid is 3 or 0;
+                string v = (utf16
                     ? Encoding.BigEndianUnicode.GetString(raw)
                     : Encoding.ASCII.GetString(raw)).Trim('\0').Trim();
                 if (v.Length == 0) continue;
 
+                // Platform 0 deliberately does NOT count as English: its language field is
+                // language-neutral, so a platform-0 record is no evidence the string IS English, and
+                // treating it as such would let the LAST such record overwrite a genuine 0x409 one.
+                // Platform-0-only fonts still resolve, via the `english.Length == 0` fallback below.
                 bool isEnglish = (pid == 3 && lang == 0x409) || (pid == 1 && lang == 0);
                 switch (nid)
                 {
