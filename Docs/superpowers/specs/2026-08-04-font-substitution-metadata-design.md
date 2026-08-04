@@ -3,12 +3,28 @@
 **Date:** 2026-08-04
 **Repo:** PdfLibrary (engine)
 **Status:** design, awaiting review
+**Scope:** SLICE 1 of 2 — the metadata index and the resolution ladder over *installed* fonts.
+
+## Slicing
+
+Split deliberately, because the two halves have different risk profiles and the first carries all of
+the measured benefit.
+
+- **Slice 1 (this spec)** — `FontMetadataIndex`, the base-35 alias table, and ladder steps 1–3 over
+  installed fonts. Pure code, no new binaries, no licence question. Delivers the whole measured
+  outcome: Windows and Linux move to `C059-Italic`, macOS is unchanged.
+- **Slice 2 (separate spec)** — bundled Liberation as a guaranteed floor, plus the symbolic guard that
+  exists only to keep symbolic fonts away from that floor. Adds ~4 MB of binaries and a licence file.
+
+The symbolic guard belongs with slice 2, not here: it protects against falling back to a Latin
+substitute that has none of the required glyphs, and in slice 1 there is no such fallback to protect
+against. Slice 1 must therefore introduce **no Latin floor of any kind** — failing the ladder returns
+null, exactly as today.
 
 ## Goal
 
 Resolve a font that the renderer cannot use from the PDF itself to the best available face on the
-machine, by matching the font's own metadata rather than guessing at filenames — and guarantee a
-styled floor when the machine has nothing suitable.
+machine, by matching the font's own metadata rather than guessing at filenames.
 
 ## Why
 
@@ -97,8 +113,8 @@ Reads only the sfnt header, table directory, `name` and `head` — kilobytes per
 font. Malformed or unreadable files are skipped, matching today's best-effort behaviour.
 
 `OS/2` is deliberately **not** read. The ladder scores on italic and bold only, so `usWeightClass` and
-`usWidthClass` would be recorded and never consulted; and the symbolic guard keys off the PDF's own
-`/Flags`, not the font's. Adding them later is a one-line change if a weight-aware score is ever
+`usWidthClass` would be recorded and never consulted; and slice 2's symbolic guard keys off the PDF's
+own `/Flags`, not the font's. Adding them later is a one-line change if a weight-aware score is ever
 wanted.
 
 **PostScript name is the primary key.** It is ASCII by specification, has no language variants, is
@@ -121,28 +137,11 @@ make CJK families unmatchable.
    plus the standard-14 families to their Nimbus / Liberation / Tinos-Arimo-Cousine equivalents.
 3. **Synthetic standard-14 name** from the existing `Classify` + `SyntheticStd14Name`, matched by
    PostScript name then aliased family. This is what keeps macOS on `Times.ttc#2` today.
-4. **Bundled Liberation** — the guaranteed floor.
-5. Style scoring throughout: `+1` italic match, `+1` bold match, ties break on lowest face index so an
-   indistinguishable collection resolves as it does today.
+4. Failing all three, return `null` — the run is not drawn, exactly as today. *(Slice 2 inserts the
+   bundled-Liberation floor here, with the symbolic guard in front of it.)*
 
-### Bundled fallback
-
-Liberation Serif / Sans / Mono, 4 styles each — 12 files, ~4 MB, embedded as `EmbeddedResource`
-alongside the existing ICC profile and CMaps. **SIL OFL 1.1**, chosen over URW base-35 (AGPL + font
-exception) because this is a public repo shipping a NuGet package and OFL needs no legal review.
-
-Liberation is metric-compatible with Times New Roman / Arial / Courier New and covers the standard-14
-Latin cases. It does **not** cover Symbol, ZapfDingbats, or the base-35 extras — see the guard below.
-
-### Symbolic guard
-
-Symbol, ZapfDingbats, and any font whose FontDescriptor `/Flags` has the Symbolic bit set (bit 3
-counting from 1, i.e. value `0x4`) **must not reach step 4**. Liberation has none of those glyphs, so
-falling back to it would render confidently wrong characters — a worse failure than today's "nothing
-drawn". Symbolic fonts resolve through steps 1–3 only; failing that they return null, exactly as now.
-
-The flag is read from the PDF, not the font file: it is the document's declaration of how the font is
-encoded, which is what determines whether a Latin substitute could ever be correct.
+Style scoring throughout: `+1` italic match, `+1` bold match, ties break on lowest face index so an
+indistinguishable collection resolves as it does today.
 
 ### `ISystemFontProvider` compatibility
 
@@ -174,7 +173,8 @@ detail of the metadata index rather than a separate structure.
   `SubstituteFontFaceSelectionTests` already does for collections.
 - **Localized names:** a face whose only family record is non-English must be matchable by that name,
   and its `EnglishFamily` must fall back deterministically.
-- **Symbolic guard:** a Symbol request with no system Symbol font returns null, never Liberation.
+- **No new floor:** a request that matches nothing must still return null. This is the regression test
+  that keeps slice 1 honest — it is the assertion slice 2 will deliberately invert.
 - **Style scoring:** italic request against a Regular/Bold-only collection keeps face 0.
 - **Gates:** GWG render-hash and Ghent scoreboard on all three platforms. Exactly one fixture
   (GWG090) and one panel (p3/s0 [9.0]) are expected to move; the crop must be viewed and re-triaged
@@ -182,6 +182,11 @@ detail of the metadata index rather than a separate structure.
 
 ## Out of scope
 
+- **Bundled fonts and the symbolic guard — slice 2.** Liberation Serif / Sans / Mono, 4 styles each,
+  ~4 MB as `EmbeddedResource` alongside the existing ICC profile and CMaps, under **SIL OFL 1.1**
+  (chosen over URW base-35's AGPL-plus-font-exception because this is a public repo shipping a NuGet
+  package, and OFL needs no legal review). Liberation covers the standard-14 Latin cases but has no
+  Symbol or ZapfDingbats glyphs, which is exactly why the guard ships alongside it rather than before.
 - **The Type1C parse failure.** GWG090 embeds `NewCenturySchlbk-Italic` as Type1C; the engine cannot
   parse it (`EmbeddedFontMetrics.IsValid == false`) and silently substitutes. This is why that fixture
   reaches substitution at all. It is a **separate and arguably higher-value defect** — a document with
@@ -198,7 +203,8 @@ detail of the metadata index rather than a separate structure.
 - **Baseline movement beyond the predicted one fixture.** Mitigated by the gates; anything unexpected
   blocks until explained.
 - **A machine whose fonts differ from the three measured.** The ladder degrades through steps rather
-  than failing, and step 4 is a floor, so the worst case is a less apt but correctly styled face.
+  than failing, so the worst case is a less apt but correctly styled face — or, where the machine has
+  nothing at all, the same null the engine returns today. Slice 2's floor removes that last case.
 - **Index cost on cold cache / slow disk.** 42 ms is warm and Debug. `Parallel.ForEach` takes it to
   11 ms and is a one-line change if a cold measurement ever justifies it — measure before applying,
   since parallel random reads can degrade on spinning disks.
