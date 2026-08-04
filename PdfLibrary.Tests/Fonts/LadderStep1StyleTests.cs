@@ -25,9 +25,10 @@ public class LadderStep1StyleTests
     [Fact]
     public void An_explicit_italic_request_gets_the_italic_sibling_of_an_exact_upright_hit()
     {
-        string dir = WriteFamily(TempDir());
+        string dir = TempDir();
         try
         {
+            WriteFamily(dir);
             var locator = new SystemFontLocator([dir]);
             FontMatch? m = locator.Resolve(
                 new FontRequest("ArialMT", false, true, ExplicitItalic: true));
@@ -41,9 +42,10 @@ public class LadderStep1StyleTests
     [Fact]
     public void An_exact_hit_that_already_agrees_is_returned_unchanged()
     {
-        string dir = WriteFamily(TempDir());
+        string dir = TempDir();
         try
         {
+            WriteFamily(dir);
             var locator = new SystemFontLocator([dir]);
             FontMatch? m = locator.Resolve(new FontRequest("ArialMT", false, false));
 
@@ -121,6 +123,65 @@ public class LadderStep1StyleTests
 
             Assert.NotNull(m);
             Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "trueitalic.ttf")), m!.Data);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void Equally_scoring_siblings_break_ties_by_ordinal_PostScriptName_not_enumeration_order()
+    {
+        // Review finding: BetterStyledSibling originally kept the first tied candidate it encountered,
+        // which meant Directory.EnumerateFiles order — not stable across machines — decided the
+        // winner among equally-scored siblings. Filenames here are chosen so alphabetical enumeration
+        // meets a HIGHER-ordinal PostScript name before a LOWER-ordinal one: "1-a.ttf" (PostScript
+        // "Fam2-Zeta") enumerates before "2-b.ttf" (PostScript "Fam2-Alpha"). The old first-seen code
+        // would return Zeta; the fix must return Alpha regardless of file order.
+        string dir = TempDir();
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dir, "0-upright.ttf"), SfntFixtures.Sfnt(0,
+                (3, 0x409, 1, "Fam2"), (3, 0x409, 2, "Regular"), (3, 0x409, 6, "Fam2-Regular")));
+            File.WriteAllBytes(Path.Combine(dir, "1-a.ttf"), SfntFixtures.Sfnt(0x2,
+                (3, 0x409, 1, "Fam2"), (3, 0x409, 2, "Italic"), (3, 0x409, 6, "Fam2-Zeta")));
+            File.WriteAllBytes(Path.Combine(dir, "2-b.ttf"), SfntFixtures.Sfnt(0x2,
+                (3, 0x409, 1, "Fam2"), (3, 0x409, 2, "Italic"), (3, 0x409, 6, "Fam2-Alpha")));
+            var locator = new SystemFontLocator([dir]);
+
+            FontMatch? m = locator.Resolve(
+                new FontRequest("Fam2-Regular", false, true, ExplicitItalic: true));
+
+            Assert.NotNull(m);
+            Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "2-b.ttf")), m!.Data);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public void A_sibling_that_improves_the_explicit_score_but_regresses_the_merged_score_is_rejected()
+    {
+        // Review finding: explicit implies merged pointwise, but not the reverse — a descriptor can
+        // set StemV (feeding the merged pair) without an explicit bold flag. Here the exact hit is
+        // bold+italic; the request's explicit pair is italic-only (bold false), so a non-bold italic
+        // sibling scores higher explicitly (2 vs the hit's 1) — but under the MERGED pair (bold true
+        // via StemV-style inference, italic true) the hit scores 2 and that same sibling scores only
+        // 1. Swapping to the sibling would make step 1 return a lower-scoring face than today under
+        // the metric steps 2/3 use, which the ladder's own contract forbids. The hit must survive.
+        string dir = TempDir();
+        Directory.CreateDirectory(dir);
+        try
+        {
+            File.WriteAllBytes(Path.Combine(dir, "boldoblique.ttf"), SfntFixtures.Sfnt(0x3,
+                (3, 0x409, 1, "Foo"), (3, 0x409, 2, "BoldOblique"), (3, 0x409, 6, "Foo-Oblique")));
+            File.WriteAllBytes(Path.Combine(dir, "italic.ttf"), SfntFixtures.Sfnt(0x2,
+                (3, 0x409, 1, "Foo"), (3, 0x409, 2, "Italic"), (3, 0x409, 6, "Foo-Italic")));
+            var locator = new SystemFontLocator([dir]);
+
+            FontMatch? m = locator.Resolve(new FontRequest(
+                "Foo-Oblique", Bold: true, Italic: true, ExplicitBold: false, ExplicitItalic: true));
+
+            Assert.NotNull(m);
+            Assert.Equal(File.ReadAllBytes(Path.Combine(dir, "boldoblique.ttf")), m!.Data);
         }
         finally { Directory.Delete(dir, true); }
     }

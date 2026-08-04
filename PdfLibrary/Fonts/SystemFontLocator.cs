@@ -93,7 +93,7 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
         // string here would look up a key that cannot exist and silently do nothing.
         FontFaceRecord? hit = _index.ByPostScriptName(stripped);
         if (hit is not null && (explicitBold || explicitItalic))
-            hit = BetterStyledSibling(hit, explicitBold, explicitItalic);
+            hit = BetterStyledSibling(hit, explicitBold, explicitItalic, bold, italic);
 
         // Step 2: aliased family, best style match.
         if (hit is null)
@@ -124,11 +124,27 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     /// <summary>The face among <paramref name="hit"/>'s own family that matches the requested style
     /// STRICTLY better than <paramref name="hit"/> does, or <paramref name="hit"/> itself. Strictly,
     /// not weakly: a sibling that fixes italic while breaking bold ties, and a tie is not evidence —
-    /// the named face stays. Never returns null, so step 1 can only ever improve on today.</summary>
-    private FontFaceRecord BetterStyledSibling(FontFaceRecord hit, bool bold, bool italic)
+    /// the named face stays. Never returns null, so step 1 can only ever improve on today under the
+    /// explicit metric.
+    ///
+    /// <para><paramref name="mergedBold"/>/<paramref name="mergedItalic"/> are the StemV-inference-
+    /// inclusive pair used by steps 2 and 3. Explicit implies merged pointwise, but not the reverse —
+    /// a descriptor can set StemV without an explicit bold flag — so a sibling that scores higher on
+    /// the explicit pair can still score LOWER than the hit on the merged pair. Guard against that:
+    /// a candidate must not regress the merged score either, or step 1 would violate its own "never
+    /// return a lower-scoring face than today" contract under the metric that steps 2/3 use.</para>
+    ///
+    /// <para>Ties among equally-best siblings break on (PostScriptName ordinal, FaceIndex) — the same
+    /// shape as <see cref="FontMetadataIndex.PickBest"/> — so the winner does not depend on
+    /// <c>Directory.EnumerateFiles</c> order, which is not stable across machines and would otherwise
+    /// break the Windows/Linux bit-identical render goal.</para></summary>
+    private FontFaceRecord BetterStyledSibling(
+        FontFaceRecord hit, bool bold, bool italic, bool mergedBold, bool mergedItalic)
     {
         int hitScore = FontMetadataIndex.StyleScore(hit, bold, italic);
         if (hitScore == 2) return hit;
+
+        int hitMergedScore = FontMetadataIndex.StyleScore(hit, mergedBold, mergedItalic);
 
         FontFaceRecord? best = null;
         var bestScore = hitScore;
@@ -136,9 +152,23 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
             foreach (FontFaceRecord f in _index.ByFamily(family))
             {
                 int score = FontMetadataIndex.StyleScore(f, bold, italic);
-                if (score <= bestScore) continue;
-                best = f;
-                bestScore = score;
+                if (score < bestScore) continue;
+                if (FontMetadataIndex.StyleScore(f, mergedBold, mergedItalic) < hitMergedScore) continue;
+
+                if (score > bestScore)
+                {
+                    best = f;
+                    bestScore = score;
+                    continue;
+                }
+                // score == bestScore here. If best is still null, bestScore == hitScore, i.e. this
+                // candidate only ties the hit rather than beating it — not an improvement, skip. Once
+                // best is non-null, tie-break deterministically instead of keeping first-seen, which
+                // would otherwise depend on Directory.EnumerateFiles order (unstable across machines).
+                if (best is null) continue;
+                int cmp = string.CompareOrdinal(f.PostScriptName, best.PostScriptName);
+                if (cmp < 0 || (cmp == 0 && f.FaceIndex < best.FaceIndex))
+                    best = f;
             }
         return best ?? hit;
     }
