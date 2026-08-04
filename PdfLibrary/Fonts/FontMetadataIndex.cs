@@ -96,17 +96,21 @@ internal sealed class FontMetadataIndex
 
     public IReadOnlyCollection<string> FileBaseNames => _byFileBaseName.Keys;
 
-    /// <summary>Best style match: +1 for italic agreement, +1 for bold agreement. Scored rather than
-    /// matched exactly so a family lacking the requested combination degrades to its nearest face
-    /// instead of failing. Ties keep the LOWEST face index, so a set of indistinguishable faces
-    /// resolves exactly as it did before this index existed.</summary>
+    /// <summary>+1 for italic agreement, +1 for bold agreement. Scored rather than matched exactly so
+    /// a family lacking the requested combination degrades to its nearest face instead of failing.</summary>
+    internal static int StyleScore(FontFaceRecord f, bool bold, bool italic) =>
+        (f.Italic == italic ? 1 : 0) + (f.Bold == bold ? 1 : 0);
+
+    /// <summary>Best style match among <paramref name="candidates"/>. Ties keep the LOWEST face
+    /// index, so a set of indistinguishable faces resolves exactly as it did before this index
+    /// existed.</summary>
     public static FontFaceRecord? PickBest(IEnumerable<FontFaceRecord> candidates, bool bold, bool italic)
     {
         FontFaceRecord? best = null;
         var bestScore = -1;
         foreach (FontFaceRecord f in candidates)
         {
-            int score = (f.Italic == italic ? 1 : 0) + (f.Bold == bold ? 1 : 0);
+            int score = StyleScore(f, bold, italic);
             if (best is not null && (score < bestScore || (score == bestScore && f.FaceIndex >= best.FaceIndex)))
                 continue;
             best = f;

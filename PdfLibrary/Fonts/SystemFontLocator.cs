@@ -77,9 +77,23 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
             ? request.BaseFont[7..]
             : request.BaseFont;
 
+        // The explicit pair: what the document stated outright, descriptor flags merged with the
+        // name's own style tokens. Deliberately excludes the StemV inference behind `bold`/`italic`.
+        bool explicitBold = request.ExplicitBold || nameBold;
+        bool explicitItalic = request.ExplicitItalic || nameItalic;
+
         // Step 1: exact PostScript name. ASCII by spec and language-free, so this is the one lookup
-        // that cannot be confounded by localisation.
+        // that cannot be confounded by localisation. An exact hit is the document naming a FACE, so
+        // it is the incumbent — but a face whose own style bits contradict what the document stated
+        // outright is the "file whose name looked right" failure this ladder exists to end, so we
+        // look for a better-styled sibling. Siblings come from the hit's OWN Families and nowhere
+        // else: the alias table is not consulted, because the document named this typeface and an
+        // upright Arial beats some other typeface's italic. Note the family index is keyed on
+        // name-table families ("Arial"), NOT PostScript names ("ArialMT") — re-splitting the request
+        // string here would look up a key that cannot exist and silently do nothing.
         FontFaceRecord? hit = _index.ByPostScriptName(stripped);
+        if (hit is not null && (explicitBold || explicitItalic))
+            hit = BetterStyledSibling(hit, explicitBold, explicitItalic);
 
         // Step 2: aliased family, best style match.
         if (hit is null)
@@ -105,6 +119,28 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
         if (hit is null) return null;
         try { return new FontMatch(File.ReadAllBytes(hit.Path), hit.FaceIndex); }
         catch { return null; }
+    }
+
+    /// <summary>The face among <paramref name="hit"/>'s own family that matches the requested style
+    /// STRICTLY better than <paramref name="hit"/> does, or <paramref name="hit"/> itself. Strictly,
+    /// not weakly: a sibling that fixes italic while breaking bold ties, and a tie is not evidence —
+    /// the named face stays. Never returns null, so step 1 can only ever improve on today.</summary>
+    private FontFaceRecord BetterStyledSibling(FontFaceRecord hit, bool bold, bool italic)
+    {
+        int hitScore = FontMetadataIndex.StyleScore(hit, bold, italic);
+        if (hitScore == 2) return hit;
+
+        FontFaceRecord? best = null;
+        var bestScore = hitScore;
+        foreach (string family in hit.Families)
+            foreach (FontFaceRecord f in _index.ByFamily(family))
+            {
+                int score = FontMetadataIndex.StyleScore(f, bold, italic);
+                if (score <= bestScore) continue;
+                best = f;
+                bestScore = score;
+            }
+        return best ?? hit;
     }
 
     private FontFaceRecord? FirstFamilyHit(IReadOnlyList<string> families, bool bold, bool italic)
