@@ -231,6 +231,28 @@ public class SfntNameReaderTests
         Assert.DoesNotContain('\0', fromStream.EnglishFamily);
     }
 
+    /// <summary>Pins the null contract that survived the byte[]-onto-Stream collapse: the old
+    /// ReadFace(byte[]) dereferenced data.Length inside its OWN try/catch, so a null array was caught
+    /// and turned into null. The wrapper now has to guard explicitly, since the try/catch it delegates
+    /// to lives in the Stream overload and never sees the null — it's the MemoryStream constructor
+    /// that would throw first if the guard were missing.</summary>
+    [Fact]
+    public void ReadFace_byte_array_returns_null_for_a_null_array_rather_than_throwing()
+    {
+        Assert.Null(SfntNameReader.ReadFace((byte[])null!, 0, "null.ttf"));
+    }
+
+    /// <summary>FaceCount(byte[]) never had a try/catch, so a null array threw before the collapse
+    /// (NullReferenceException, from indexing d[0] inside IsTtc) and still throws after it
+    /// (ArgumentNullException, from the MemoryStream constructor). This is a deliberate non-goal: the
+    /// contract was already "throws on null", only the exception TYPE changed, and no caller today
+    /// passes null (FontMetadataIndex.PickFaceIndex always has non-null bytes).</summary>
+    [Fact]
+    public void FaceCount_byte_array_throws_ArgumentNullException_for_a_null_array()
+    {
+        Assert.Throws<ArgumentNullException>(() => SfntNameReader.FaceCount((byte[])null!));
+    }
+
     [Fact]
     public void Stream_overload_returns_null_for_malformed_data_rather_than_throwing()
     {

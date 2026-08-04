@@ -9,15 +9,22 @@ internal static class SfntNameReader
 {
     /// <summary>Number of faces: the `ttcf` header's count for a collection, otherwise 1. Wraps the
     /// stream implementation — the two used to be separate copies of one algorithm, and the
-    /// platform-0 decode fix had to be made twice before they were collapsed.</summary>
+    /// platform-0 decode fix had to be made twice before they were collapsed. A null array throws
+    /// (unchanged from before the collapse), but now as <see cref="ArgumentNullException"/> from the
+    /// <see cref="MemoryStream"/> constructor rather than a <see cref="NullReferenceException"/> from
+    /// indexing into it directly — deliberately not normalised, since both are "throws" and no caller
+    /// today passes null (see <see cref="ReadFace(byte[], int, string)"/> for the overload where the
+    /// old contract WAS behavioural and had to be preserved).</summary>
     public static int FaceCount(byte[] data) => FaceCount(new MemoryStream(data, writable: false));
 
     /// <summary>In-memory twin of <see cref="ReadFace(Stream, int, string)"/>, for callers holding
     /// bytes a third-party provider handed them rather than a file they can seek. Wrapping an array
     /// already in memory reads nothing new, so the never-read-a-whole-font-file rule that governs
-    /// indexing is not in play here.</summary>
+    /// indexing is not in play here. A null array returns null rather than throwing, matching the
+    /// pre-collapse behaviour where `data.Length` was dereferenced inside this method's own try/catch;
+    /// that guard has to live here now that the try/catch moved to the <see cref="Stream"/> overload.</summary>
     public static FontFaceRecord? ReadFace(byte[] data, int faceIndex, string path) =>
-        ReadFace(new MemoryStream(data, writable: false), faceIndex, path);
+        data is null ? null : ReadFace(new MemoryStream(data, writable: false), faceIndex, path);
 
     /// <summary>Number of faces: the `ttcf` header's count for a collection, otherwise 1. Reads a
     /// few bytes of a seekable stream instead of the whole file into memory. Used by
