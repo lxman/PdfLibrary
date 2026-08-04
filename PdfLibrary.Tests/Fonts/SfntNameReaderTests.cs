@@ -203,4 +203,70 @@ public class SfntNameReaderTests
 
         Assert.Null(SfntNameReader.ReadFace(data, 2, "test.ttc"));
     }
+
+    [Fact]
+    public void Stream_overload_matches_byte_array_overload_for_a_bare_sfnt()
+    {
+        byte[] data = Sfnt(0x0002,
+            (3, 0x409, 1, "Test Family"),
+            (3, 0x409, 2, "Italic"),
+            (3, 0x409, 6, "TestFamily-Italic"));
+
+        using var stream = new MemoryStream(data);
+
+        Assert.Equal(SfntNameReader.FaceCount(data), SfntNameReader.FaceCount(stream));
+
+        FontFaceRecord? fromBytes = SfntNameReader.ReadFace(data, 0, "test.ttf");
+        FontFaceRecord? fromStream = SfntNameReader.ReadFace(stream, 0, "test.ttf");
+
+        Assert.NotNull(fromBytes);
+        Assert.NotNull(fromStream);
+        Assert.Equal(fromBytes!.PostScriptName, fromStream!.PostScriptName);
+        Assert.Equal(fromBytes.EnglishFamily, fromStream.EnglishFamily);
+        Assert.Equal(fromBytes.Families, fromStream.Families);
+        Assert.Equal(fromBytes.Italic, fromStream.Italic);
+        Assert.Equal(fromBytes.Bold, fromStream.Bold);
+    }
+
+    [Fact]
+    public void Stream_overload_matches_byte_array_overload_for_each_face_of_a_ttc()
+    {
+        byte[] face0 = Sfnt(0,
+            (3, 0x409, 1, "Face Regular"),
+            (3, 0x409, 6, "FaceA-Regular"));
+        byte[] face1 = Sfnt(0x0002,
+            (3, 0x409, 1, "Face Italic"),
+            (3, 0x409, 2, "Italic"),
+            (3, 0x409, 6, "FaceB-Italic"));
+        byte[] data = Ttc(face0, face1);
+
+        using var stream = new MemoryStream(data);
+
+        Assert.Equal(SfntNameReader.FaceCount(data), SfntNameReader.FaceCount(stream));
+
+        for (var i = 0; i < 2; i++)
+        {
+            FontFaceRecord? fromBytes = SfntNameReader.ReadFace(data, i, "test.ttc");
+            FontFaceRecord? fromStream = SfntNameReader.ReadFace(stream, i, "test.ttc");
+
+            Assert.NotNull(fromBytes);
+            Assert.NotNull(fromStream);
+            Assert.Equal(fromBytes!.PostScriptName, fromStream!.PostScriptName);
+            Assert.Equal(fromBytes.EnglishFamily, fromStream.EnglishFamily);
+            Assert.Equal(fromBytes.Italic, fromStream.Italic);
+            Assert.Equal(fromBytes.Bold, fromStream.Bold);
+        }
+    }
+
+    [Fact]
+    public void Stream_overload_returns_null_for_malformed_data_rather_than_throwing()
+    {
+        using var truncated = new MemoryStream([0x00, 0x01]);
+        using var empty = new MemoryStream([]);
+
+        Assert.Null(SfntNameReader.ReadFace(truncated, 0, "truncated.ttf"));
+        Assert.Null(SfntNameReader.ReadFace(empty, 0, "empty.ttf"));
+        Assert.Equal(0, SfntNameReader.FaceCount(truncated));
+        Assert.Equal(0, SfntNameReader.FaceCount(empty));
+    }
 }

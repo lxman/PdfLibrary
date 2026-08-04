@@ -6,7 +6,9 @@ namespace PdfLibrary.Fonts;
 /// <para>Supersedes the filename-only lookup that preceded it: on the Windows dev box 755 faces are
 /// installed and only the ~40 hardcoded candidate filenames were ever reachable. Building this costs
 /// ~42 ms serially for 732 files (measured 2026-08-04) because only the sfnt header, table directory,
-/// `name` and `head` are read — reading the files whole measured 591 ms.</para>
+/// `name` and `head` are read via <see cref="SfntNameReader.FaceCount(Stream)"/> /
+/// <see cref="SfntNameReader.ReadFace(Stream, int, string)"/> — reading the files whole measured
+/// 591 ms and destabilised an unrelated, timing-sensitive file-lock test running in parallel.</para>
 ///
 /// <para>Constructed once per process via <see cref="SystemFontLocator.Default"/>. Rebuilding it per
 /// renderer would repeat the mistake that once made directory scanning 86% of page-record time, since
@@ -35,15 +37,21 @@ internal sealed class FontMetadataIndex
                 // First writer wins, so earlier directories take precedence - as before.
                 _byFileBaseName.TryAdd(Path.GetFileNameWithoutExtension(file), file);
 
-                byte[] data;
-                try { data = File.ReadAllBytes(file); }
+                List<FontFaceRecord> faces = [];
+                try
+                {
+                    using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+                    int faceCount = SfntNameReader.FaceCount(stream);
+                    for (var i = 0; i < faceCount; i++)
+                    {
+                        FontFaceRecord? face = SfntNameReader.ReadFace(stream, i, file);
+                        if (face is not null) faces.Add(face);
+                    }
+                }
                 catch { continue; }
 
-                int faceCount = SfntNameReader.FaceCount(data);
-                for (var i = 0; i < faceCount; i++)
+                foreach (FontFaceRecord face in faces)
                 {
-                    FontFaceRecord? face = SfntNameReader.ReadFace(data, i, file);
-                    if (face is null) continue;
                     _faces.Add(face);
 
                     if (face.PostScriptName.Length > 0)
