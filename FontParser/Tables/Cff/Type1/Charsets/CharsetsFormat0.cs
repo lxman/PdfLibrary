@@ -14,5 +14,14 @@ namespace FontParser.Tables.Cff.Type1.Charsets
             // not encoded. Reading numGlyphs entries over-reads one phantom value from the next section.
             Glyphs = reader.ReadUShortArray(numGlyphs > 0 ? (uint)(numGlyphs - 1) : 0u).ToList();
         }
+
+        /// <summary>
+        /// Builds the charset from a per-glyph SID list directly, for a PREDEFINED charset (Adobe TN #5176
+        /// §14) which names a built-in mapping and has no table anywhere in the font data to read.
+        /// </summary>
+        public CharsetsFormat0(IEnumerable<ushort> glyphs)
+        {
+            Glyphs = glyphs.ToList();
+        }
     }
 }

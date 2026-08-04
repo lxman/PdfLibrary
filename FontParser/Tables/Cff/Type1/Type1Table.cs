@@ -166,21 +166,39 @@ namespace FontParser.Tables.Cff.Type1
 
             var charStrings = new Type1Index(reader);
 
-            var charsetOffset = Convert.ToInt64(_topDictOperatorEntries.First(e => e.Name == "charset").Operand);
-            reader.Seek(charsetOffset);
-            long charsetStart = reader.Position;
-
-            byte charsetFormat = reader.ReadByte();
-            CharSet = charsetFormat switch
+            // The charset operator is OPTIONAL and defaults to 0 (CFF spec, Technical Note #5176 Table 9),
+            // so an absent one means ISOAdobe — not a malformed font. Values 0/1/2 name a PREDEFINED
+            // charset rather than an offset, so there is no table to seek to; byte 0 is the CFF header,
+            // and reading a format byte there parses the header as charset data.
+            CffDictEntry? charsetEntry = _topDictOperatorEntries.FirstOrDefault(e => e.Name == "charset");
+            long charsetOffset = charsetEntry is null ? 0L : Convert.ToInt64(charsetEntry.Operand);
+            long charsetStart = 0;
+            if (charsetOffset > 2)
             {
-                0 => new CharsetsFormat0(reader,
-                    Convert.ToUInt16(charStrings.Data.Count)),
-                1 => new CharsetsFormat1(reader,
-                    Convert.ToUInt16(charStrings.Data.Count)),
-                2 => new CharsetsFormat2(reader,
-                    Convert.ToUInt16(charStrings.Data.Count)),
-                _ => CharSet
-            };
+                reader.Seek(charsetOffset);
+                charsetStart = reader.Position;
+
+                byte charsetFormat = reader.ReadByte();
+                CharSet = charsetFormat switch
+                {
+                    0 => new CharsetsFormat0(reader,
+                        Convert.ToUInt16(charStrings.Data.Count)),
+                    1 => new CharsetsFormat1(reader,
+                        Convert.ToUInt16(charStrings.Data.Count)),
+                    2 => new CharsetsFormat2(reader,
+                        Convert.ToUInt16(charStrings.Data.Count)),
+                    _ => CharSet
+                };
+            }
+            else if (charsetOffset == 0)
+            {
+                CharSet = new CharsetsFormat0(BuildIsoAdobeSids(charStrings.Data.Count));
+            }
+            // Predefined Expert (1) and ExpertSubset (2) are specific SID lists (#5176 Appendix C), not the
+            // identity mapping, and are not implemented — CharSet is left null. Every consumer already
+            // handles a null charset by declining to answer, which is better than the confidently wrong
+            // glyph names that parsing bytes at offset 1/2 produces. No font in the measured corpus uses them.
+
             // Custom charset (offset > 2) is kept verbatim by the subsetter; predefined (0/1/2) is no table.
             RawCharset = charsetOffset > 2
                 ? data[(int)charsetStart..(int)reader.Position]
@@ -198,6 +216,26 @@ namespace FontParser.Tables.Cff.Type1
             ReadPrivateDictEntries(reader, privateDictSize);
             BuildLocalSubroutines(reader, privateDictInfo);
             BuildCharStrings(charStrings, globalSubroutines);
+        }
+
+        /// <summary>Highest SID in the ISOAdobe predefined charset (CFF spec Appendix C).</summary>
+        private const int IsoAdobeLastSid = 228;
+
+        /// <summary>
+        /// The ISOAdobe predefined charset as a per-glyph SID list: GID i maps to SID i, for i = 1..228.
+        /// GID 0 is .notdef and is never represented in charset data, so the list starts at GID 1. Bounded
+        /// by the font's own glyph count, and by 228 — a font with more glyphs than ISOAdobe names has no
+        /// charset entry for the rest.
+        /// </summary>
+        private static List<ushort> BuildIsoAdobeSids(int numGlyphs)
+        {
+            int count = Math.Min(numGlyphs - 1, IsoAdobeLastSid);
+            var sids = new List<ushort>(Math.Max(count, 0));
+            for (var sid = 1; sid <= count; sid++)
+            {
+                sids.Add((ushort)sid);
+            }
+            return sids;
         }
 
         /// <summary>
