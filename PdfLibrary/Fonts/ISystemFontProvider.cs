@@ -39,4 +39,16 @@ public interface ISystemFontProvider
     /// <c>null</c> if no suitable substitute is available. The default returns <c>null</c>.
     /// </summary>
     byte[]? GetFontData(string baseFontName) => null;
+
+    /// <summary>
+    /// Resolves a substitute for <paramref name="request"/>, including which face of a collection to
+    /// use. The default implementation delegates to <see cref="GetFontData"/> and then selects the
+    /// best face within those bytes, so providers written before this member existed keep working
+    /// unchanged AND keep the collection face selection they have today. Returning face 0 here would
+    /// silently reintroduce the defect fixed in 6afbe7a for every third-party provider.
+    /// </summary>
+    FontMatch? Resolve(FontRequest request) =>
+        GetFontData(request.BaseFont) is { } bytes
+            ? new FontMatch(bytes, FontMetadataIndex.PickFaceIndex(bytes, request.Bold, request.Italic))
+            : null;
 }

@@ -7,7 +7,7 @@ namespace PdfLibrary.Fonts;
 /// </summary>
 public sealed partial class SystemFontLocator : ISystemFontProvider
 {
-    private readonly FontDirectoryIndex _index;
+    private readonly FontMetadataIndex _index;
 
     // Building the index recursively scans every OS font directory, so the default locator is a
     // process-wide shared singleton: the scan happens once per process, not once per PdfRenderer.
@@ -23,8 +23,7 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     /// <summary>Create a locator that scans the given directories (used for testing).</summary>
     public SystemFontLocator(IEnumerable<string> directories)
     {
-        string[] dirs = directories as string[] ?? directories.ToArray();
-        _index = new FontDirectoryIndex(dirs);
+        _index = new FontMetadataIndex(directories as string[] ?? directories.ToArray());
     }
 
     /// <inheritdoc/>
@@ -45,7 +44,7 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     /// Returns installed font file base-names (e.g. "LiberationSans-Regular"),
     /// not family display-names.
     /// </remarks>
-    public IReadOnlyCollection<string> GetAvailableFontFamilies() => _index.BaseNames;
+    public IReadOnlyCollection<string> GetAvailableFontFamilies() => _index.FileBaseNames;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -64,4 +63,53 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
 
     /// <inheritdoc/>
     public void RefreshCache() { /* Index is built at construction; create a new locator to refresh. */ }
+
+    /// <summary>The metadata ladder. Step 1 PostScript name, step 2 aliased family, step 3 the
+    /// synthetic standard-14 name — each matched against the font's OWN metadata rather than against
+    /// a filename. Returns null when all three miss; slice 1 adds no fallback floor.</summary>
+    public FontMatch? Resolve(FontRequest request)
+    {
+        (string family, bool nameBold, bool nameItalic) = Base35Aliases.Split(request.BaseFont);
+        bool bold = request.Bold || nameBold;
+        bool italic = request.Italic || nameItalic;
+
+        string stripped = request.BaseFont.Length > 7 && request.BaseFont[6] == '+'
+            ? request.BaseFont[7..]
+            : request.BaseFont;
+
+        // Step 1: exact PostScript name. ASCII by spec and language-free, so this is the one lookup
+        // that cannot be confounded by localisation.
+        FontFaceRecord? hit = _index.ByPostScriptName(stripped);
+
+        // Step 2: aliased family, best style match.
+        if (hit is null)
+            hit = FirstFamilyHit(Base35Aliases.FamiliesFor(family), bold, italic);
+
+        // Step 3: the synthetic standard-14 name, by PostScript name then by aliased family. This is
+        // what keeps a machine with no base-35 clones on its own core serif/sans/mono.
+        if (hit is null)
+        {
+            (bool serif, bool mono, bool _, bool _) = SubstituteFontResolver.Classify(request.BaseFont, null);
+            string synthetic = SubstituteFontResolver.SyntheticStd14Name(serif, mono, bold, italic);
+            (string synthFamily, bool _, bool _) = Base35Aliases.Split(synthetic);
+            hit = _index.ByPostScriptName(synthetic)
+               ?? FirstFamilyHit(Base35Aliases.FamiliesFor(synthFamily), bold, italic);
+        }
+
+        if (hit is null) return null;
+        try { return new FontMatch(File.ReadAllBytes(hit.Path), hit.FaceIndex); }
+        catch { return null; }
+    }
+
+    private FontFaceRecord? FirstFamilyHit(IReadOnlyList<string> families, bool bold, bool italic)
+    {
+        foreach (string family in families)
+        {
+            IReadOnlyList<FontFaceRecord> candidates = _index.ByFamily(family);
+            if (candidates.Count == 0) continue;
+            FontFaceRecord? best = FontMetadataIndex.PickBest(candidates, bold, italic);
+            if (best is not null) return best;
+        }
+        return null;
+    }
 }
