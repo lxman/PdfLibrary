@@ -23,6 +23,35 @@ internal static class FontFaultCanary
     /// before any Faults list can be read, so the canary has to name it from outside.</summary>
     public const string MetricsNullValue = "MetricsNull";
 
+    /// <summary>Emitted when a program has an embedded font file, threw nothing anywhere, and STILL came
+    /// back unusable. A truncated font does exactly this: the sfnt directory parses, every table offset
+    /// lands out of range, GetTableBytes returns null, and no reader is ever entered — so there is
+    /// nothing to catch and nothing to record. Failure by absence rather than by exception. Without this
+    /// row the canary scores such a program clean, which is the same class of blindness it exists to
+    /// close.</summary>
+    public const string InvalidNoFaultValue = "InvalidNoFault";
+
+    /// <summary>
+    /// The baseline row value for one font's embedded program, or null when there is nothing to report.
+    /// Pure apart from one deliberate side effect: it forces the lazy loca/glyf stage (see below), so the
+    /// unit tests exercise the exact path production takes.
+    /// </summary>
+    public static string? Classify(EmbeddedFontMetrics? metrics)
+    {
+        if (metrics is null) return MetricsNullValue;
+
+        // Force the lazy loca/glyf stage so a GlyfLoca fault can be seen. Faults is append-only, so this
+        // must happen BEFORE reading it. The return value is irrelevant — we want the side effect.
+        try { metrics.GetGlyphOutline(0); }
+        catch { /* an outline throw is not a parse fault; the recorded Faults are the signal */ }
+
+        // Multiple faults on one program join with '+' so a font stays a single, greppable baseline line.
+        if (metrics.Faults.Count > 0)
+            return string.Join("+", metrics.Faults.Select(f => f.ToString()));
+
+        return metrics.IsValid ? null : InvalidNoFaultValue;
+    }
+
     /// <summary>Diffs freshly collected faults against the committed baseline. Pure — no corpus, no I/O,
     /// no skip semantics (see <c>FontFaultCompareTests</c>).</summary>
     public static List<string> Compare(
@@ -103,22 +132,8 @@ internal static class FontFaultCanary
         try { metrics = pdfFont.GetEmbeddedMetrics(); }
         catch (Exception ex) { into[key] = $"Throw:{ex.GetType().Name}"; return; }
 
-        if (metrics is null)
-        {
-            into[key] = MetricsNullValue;
-            return;
-        }
-
-        // Force the lazy loca/glyf stage so a GlyfLoca fault can be seen. Faults is append-only, so this
-        // must happen BEFORE reading it. The return value is irrelevant — we want the side effect.
-        try { metrics.GetGlyphOutline(0); }
-        catch { /* an outline throw is not a parse fault; the recorded Faults are the signal */ }
-
-        if (metrics.Faults.Count == 0) return;
-
-        // One row per font. Multiple faults on one program join with '+' so a font stays a single,
-        // greppable baseline line.
-        into[key] = string.Join("+", metrics.Faults.Select(f => f.ToString()));
+        if (Classify(metrics) is { } row)
+            into[key] = row;
     }
 
     /// <summary>True when the font (or a Type0's descendant CIDFont) declares any FontFile stream. The
