@@ -112,8 +112,12 @@ public class SfntNameReaderTests
         Assert.Null(SfntNameReader.ReadFace(data, 2, "test.ttc"));
     }
 
+    /// <summary>Since the collapse the byte[] overload IS a MemoryStream wrapper over the Stream one,
+    /// so this can no longer fail for a decode reason — it guards the wrapper: that it still forwards
+    /// every argument and hands back what the Stream overload produced. Kept, not deleted, because a
+    /// future re-divergence of the two entry points is exactly what it would catch.</summary>
     [Fact]
-    public void Stream_overload_matches_byte_array_overload_for_a_bare_sfnt()
+    public void Byte_array_overload_delegates_to_the_stream_overload_for_a_bare_sfnt()
     {
         byte[] data = SfntFixtures.Sfnt(0x0002,
             (3, 0x409, 1, "Test Family"),
@@ -136,8 +140,10 @@ public class SfntNameReaderTests
         Assert.Equal(fromBytes.Bold, fromStream.Bold);
     }
 
+    /// <summary>Wrapper guard, as above — plus the face-index argument, the one the wrapper actually
+    /// has to forward rather than merely pass through.</summary>
     [Fact]
-    public void Stream_overload_matches_byte_array_overload_for_each_face_of_a_ttc()
+    public void Byte_array_overload_delegates_to_the_stream_overload_for_each_face_of_a_ttc()
     {
         byte[] face0 = SfntFixtures.Sfnt(0,
             (3, 0x409, 1, "Face Regular"),
@@ -206,8 +212,10 @@ public class SfntNameReaderTests
         foreach (string f in face.Families) Assert.DoesNotContain('\0', f);
     }
 
+    /// <summary>Wrapper guard, as above. The platform-0 assertions are not redundant with it: they
+    /// pin the decode itself, which one shared implementation now has to get right for both.</summary>
     [Fact]
-    public void Stream_overload_matches_byte_array_overload_for_a_platform0_only_font()
+    public void Byte_array_overload_delegates_to_the_stream_overload_for_a_platform0_only_font()
     {
         byte[] data = SfntFixtures.Sfnt(0x0002,
             (0, 0, 1, "Unicode Family"),
@@ -243,7 +251,8 @@ public class SfntNameReaderTests
     }
 
     /// <summary>FaceCount(byte[]) never had a try/catch, so a null array threw before the collapse
-    /// (NullReferenceException, from indexing d[0] inside IsTtc) and still throws after it
+    /// (NullReferenceException, from the `data.Length` on the first line of the old FaceCount(byte[])
+    /// — IsTtc was never reached) and still throws after it
     /// (ArgumentNullException, from the MemoryStream constructor). This is a deliberate non-goal: the
     /// contract was already "throws on null", only the exception TYPE changed, and no caller today
     /// passes null (FontMetadataIndex.PickFaceIndex always has non-null bytes).</summary>

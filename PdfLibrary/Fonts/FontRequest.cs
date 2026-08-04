@@ -13,8 +13,19 @@ namespace PdfLibrary.Fonts;
 /// pair; the step that can override an exact PostScript-name match uses this one, so a heavy stem
 /// width can never swap out a face the document named.</para>
 ///
-/// <para>All five style members default to false so a provider constructing a request from a bare
-/// /BaseFont keeps compiling and keeps its previous meaning.</para></summary>
+/// <para>One documented exception to "only what the document stated outright":
+/// <see cref="SubstituteFontResolver"/>'s synthetic-standard-14 retry builds its /BaseFont from the
+/// MERGED bold/italic pair, and a provider then re-derives the explicit pair from that name's own
+/// "-Bold"/"-Italic" tokens — so on that one hop a StemV inference does reach the explicit pair.
+/// Benign, not a leak worth plugging: the retry only fires when the first Resolve returned null, by
+/// which point the whole request is synthetic and there is no document-named face left to protect.
+/// (It never fires for <see cref="SystemFontLocator"/> at all — step 3 of its ladder has already
+/// tried the same name.)</para>
+///
+/// <para><paramref name="Serif"/>, <paramref name="Mono"/>, <paramref name="ExplicitBold"/> and
+/// <paramref name="ExplicitItalic"/> default to false so a provider constructing a request from a
+/// bare /BaseFont keeps compiling and keeps its previous meaning. <paramref name="Bold"/> and
+/// <paramref name="Italic"/> are required — they predate the rest.</para></summary>
 public sealed record FontRequest(
     string BaseFont,
     bool Bold,
