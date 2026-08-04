@@ -180,4 +180,20 @@ public class FontMetadataIndexTests
     {
         Assert.Equal(0, FontMetadataIndex.PickFaceIndex([0x00, 0x01], bold: false, italic: false));
     }
+
+    [Fact]
+    public void PickBest_breaks_ties_the_same_way_regardless_of_candidate_order()
+    {
+        // Both score 1 against a Regular request: one is bold-only, one is italic-only. Today the
+        // winner is whichever was enumerated first, which is filesystem order and not portable.
+        var boldOnly = new FontFaceRecord("/b.ttf", 0, "Fam-Bold", ["Fam"], "Fam", "Bold", false, true);
+        var italicOnly = new FontFaceRecord("/i.ttf", 0, "Fam-Italic", ["Fam"], "Fam", "Italic", true, false);
+
+        FontFaceRecord? forward = FontMetadataIndex.PickBest([boldOnly, italicOnly], false, false);
+        FontFaceRecord? reverse = FontMetadataIndex.PickBest([italicOnly, boldOnly], false, false);
+
+        Assert.Equal(1, FontMetadataIndex.StyleScore(forward!, false, false));
+        Assert.Equal(1, FontMetadataIndex.StyleScore(reverse!, false, false));
+        Assert.Equal(forward!.PostScriptName, reverse!.PostScriptName);
+    }
 }

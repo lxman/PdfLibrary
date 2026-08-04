@@ -101,9 +101,13 @@ internal sealed class FontMetadataIndex
     internal static int StyleScore(FontFaceRecord f, bool bold, bool italic) =>
         (f.Italic == italic ? 1 : 0) + (f.Bold == bold ? 1 : 0);
 
-    /// <summary>Best style match among <paramref name="candidates"/>. Ties keep the LOWEST face
-    /// index, so a set of indistinguishable faces resolves exactly as it did before this index
-    /// existed.</summary>
+    /// <summary>Best style match among <paramref name="candidates"/>.
+    ///
+    /// <para>Ties break on (EnglishFamily, PostScriptName) ordinal, then face index. The face index
+    /// alone is not enough: it only discriminates WITHIN one file, and the family lookup that feeds
+    /// this method draws candidates from different files that all have face index 0 — so the
+    /// effective rule was Directory.EnumerateFiles order, which is not stable across machines.
+    /// Ordinal, never culture-aware, so the choice cannot vary with the host locale.</para></summary>
     public static FontFaceRecord? PickBest(IEnumerable<FontFaceRecord> candidates, bool bold, bool italic)
     {
         FontFaceRecord? best = null;
@@ -111,12 +115,22 @@ internal sealed class FontMetadataIndex
         foreach (FontFaceRecord f in candidates)
         {
             int score = StyleScore(f, bold, italic);
-            if (best is not null && (score < bestScore || (score == bestScore && f.FaceIndex >= best.FaceIndex)))
+            if (best is not null && (score < bestScore || (score == bestScore && !SortsBefore(f, best))))
                 continue;
             best = f;
             bestScore = score;
         }
         return best;
+    }
+
+    /// <summary>Deterministic ordering for equally-good candidates.</summary>
+    private static bool SortsBefore(FontFaceRecord a, FontFaceRecord b)
+    {
+        int byFamily = string.CompareOrdinal(a.EnglishFamily, b.EnglishFamily);
+        if (byFamily != 0) return byFamily < 0;
+        int byName = string.CompareOrdinal(a.PostScriptName, b.PostScriptName);
+        if (byName != 0) return byName < 0;
+        return a.FaceIndex < b.FaceIndex;
     }
 
     /// <summary>Best face index WITHIN one font file's bytes. Exists for
