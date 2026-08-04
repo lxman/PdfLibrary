@@ -72,6 +72,102 @@ public class FontMetadataIndexTests
     }
 
     [Fact]
+    public void A_fault_partway_through_a_directory_walk_does_not_escape_the_constructor()
+    {
+        // Directory.EnumerateFiles is LAZY: it throws nothing when called, so a try wrapped only
+        // around the call catches nothing. The IO/permission fault surfaces while the foreach pulls
+        // items. This matters far more than a skipped directory: the constructor runs inside a
+        // Lazy<SystemFontLocator> with LazyThreadSafetyMode.ExecutionAndPublication, which CACHES a
+        // thrown exception and rethrows it on every later access — one transient fault on one font
+        // directory would kill font substitution for the whole process lifetime.
+        string root = NewTempDir();
+        string before = NewTempDir();
+        string after = NewTempDir();
+        // The subdirectory sorts AFTER the font file: Windows opens a subdirectory handle the moment
+        // the walk meets the entry, so a name sorting first would fault before anything is yielded
+        // and there would be nothing to prove survived.
+        string denied = Path.Combine(root, "zz-denied");
+        Directory.CreateDirectory(denied);
+
+        byte[] font = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+        File.WriteAllBytes(Path.Combine(before, "BeforeFont.ttf"), font);
+        File.WriteAllBytes(Path.Combine(root, "RootFont.ttf"), font);
+        File.WriteAllBytes(Path.Combine(denied, "DeniedFont.ttf"), font);
+        File.WriteAllBytes(Path.Combine(after, "AfterFont.ttf"), font);
+
+        try
+        {
+            Assert.SkipUnless(TryDenyTraversal(denied), "cannot revoke directory access on this platform/account");
+
+            // Prove the walk really faults MID-traversal here — otherwise this test would pass for
+            // the wrong reason (nothing thrown at all).
+            var yielded = 0;
+            Exception? fault = Record.Exception(() =>
+            {
+                foreach (string _ in Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)) yielded++;
+            });
+            Assert.SkipWhen(fault is null, "the denied subdirectory did not fault the walk (elevated account?)");
+            Assert.SkipWhen(yielded == 0, "the walk faulted before yielding anything — cannot prove survival");
+
+            var index = new FontMetadataIndex([before, root, after]);
+
+            // Earlier directories keep their results, the faulting directory keeps what it walked
+            // before the fault, and later directories are still scanned.
+            Assert.NotNull(index.FindPath("BeforeFont"));
+            Assert.NotNull(index.FindPath("RootFont"));
+            Assert.NotNull(index.FindPath("AfterFont"));
+        }
+        finally
+        {
+            RestoreTraversal(denied);
+            foreach (string d in new[] { root, before, after })
+                try { Directory.Delete(d, true); } catch { /* best effort */ }
+        }
+    }
+
+    private static string NewTempDir() =>
+        Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "fmi-" + Guid.NewGuid().ToString("N"))).FullName;
+
+    /// <summary>Make <paramref name="dir"/> unlistable by this process. Windows needs an explicit
+    /// deny ACE (an owner still has implicit rights, so removing an allow ACE is not enough); Unix
+    /// mode 0 does it, except for root.</summary>
+    private static bool TryDenyTraversal(string dir)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            try { File.SetUnixFileMode(dir, UnixFileMode.None); return true; }
+            catch { return false; }
+        }
+        return Icacls(dir, $"/deny \"{CurrentUser()}\":(OI)(CI)(RX)");
+    }
+
+    private static void RestoreTraversal(string dir)
+    {
+        if (!Directory.Exists(dir)) return;
+        if (OperatingSystem.IsWindows()) Icacls(dir, $"/remove:d \"{CurrentUser()}\"");
+        else try { File.SetUnixFileMode(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+             catch { /* best effort */ }
+    }
+
+    private static string CurrentUser() =>
+        string.IsNullOrEmpty(Environment.UserDomainName)
+            ? Environment.UserName
+            : Environment.UserDomainName + "\\" + Environment.UserName;
+
+    private static bool Icacls(string dir, string args)
+    {
+        try
+        {
+            using var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("icacls",
+                $"\"{dir}\" {args}") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            if (p is null) return false;
+            p.WaitForExit(30_000);
+            return p.HasExited && p.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
+    [Fact]
     public void PickFaceIndex_of_a_single_face_font_is_zero()
     {
         byte[] bare = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));

@@ -27,44 +27,54 @@ internal sealed class FontMetadataIndex
         foreach (string dir in directories)
         {
             if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) continue;
-            IEnumerable<string> files;
-            try { files = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories); }
-            catch { continue; }
-
-            foreach (string file in files)
+            // The foreach MUST stay inside the try: EnumerateFiles is lazy, so the call itself throws
+            // nothing and every IO/permission fault of the recursive walk surfaces while iterating.
+            // A fault escaping here is not merely one lost directory — the constructor runs inside a
+            // Lazy<SystemFontLocator>(ExecutionAndPublication), which caches the exception and
+            // rethrows it forever, so one transient fault would kill substitution process-wide.
+            try
             {
-                if (Array.IndexOf(Extensions, Path.GetExtension(file).ToLowerInvariant()) < 0) continue;
-                // First writer wins, so earlier directories take precedence - as before.
-                _byFileBaseName.TryAdd(Path.GetFileNameWithoutExtension(file), file);
-
-                List<FontFaceRecord> faces = [];
-                try
+                foreach (string file in Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories))
                 {
-                    using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    int faceCount = SfntNameReader.FaceCount(stream);
-                    for (var i = 0; i < faceCount; i++)
+                    if (Array.IndexOf(Extensions, Path.GetExtension(file).ToLowerInvariant()) < 0) continue;
+                    // First writer wins, so earlier directories take precedence - as before.
+                    _byFileBaseName.TryAdd(Path.GetFileNameWithoutExtension(file), file);
+
+                    List<FontFaceRecord> faces = [];
+                    try
                     {
-                        FontFaceRecord? face = SfntNameReader.ReadFace(stream, i, file);
-                        if (face is not null) faces.Add(face);
+                        using var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+                        int faceCount = SfntNameReader.FaceCount(stream);
+                        for (var i = 0; i < faceCount; i++)
+                        {
+                            FontFaceRecord? face = SfntNameReader.ReadFace(stream, i, file);
+                            if (face is not null) faces.Add(face);
+                        }
+                    }
+                    catch { continue; }
+
+                    foreach (FontFaceRecord face in faces)
+                    {
+                        _faces.Add(face);
+
+                        if (face.PostScriptName.Length > 0)
+                            _byPostScript.TryAdd(face.PostScriptName, face);
+
+                        foreach (string family in face.Families)
+                        {
+                            string key = Normalize(family);
+                            if (!_byFamily.TryGetValue(key, out List<FontFaceRecord>? list))
+                                _byFamily[key] = list = [];
+                            list.Add(face);
+                        }
                     }
                 }
-                catch { continue; }
-
-                foreach (FontFaceRecord face in faces)
-                {
-                    _faces.Add(face);
-
-                    if (face.PostScriptName.Length > 0)
-                        _byPostScript.TryAdd(face.PostScriptName, face);
-
-                    foreach (string family in face.Families)
-                    {
-                        string key = Normalize(family);
-                        if (!_byFamily.TryGetValue(key, out List<FontFaceRecord>? list))
-                            _byFamily[key] = list = [];
-                        list.Add(face);
-                    }
-                }
+            }
+            catch
+            {
+                // Permission or IO error during recursive traversal — skip the rest of this
+                // directory, keep everything indexed so far, and go on to the next directory.
+                continue;
             }
         }
     }

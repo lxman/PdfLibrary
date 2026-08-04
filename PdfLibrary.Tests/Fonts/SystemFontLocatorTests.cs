@@ -80,7 +80,7 @@ public class SystemFontLocatorTests
     [Fact]
     public void Default_ReturnsSharedSingleton_NotRebuiltPerAccess()
     {
-        // The default locator builds a FontDirectoryIndex by recursively scanning every OS font
+        // The default locator builds a FontMetadataIndex by recursively scanning every OS font
         // directory — expensive. It must be a process-wide shared instance so the scan happens once,
         // not once per PdfRenderer (and, for Type3 fonts, once per glyph). Sharing is the whole fix.
         SystemFontLocator a = SystemFontLocator.Default;
