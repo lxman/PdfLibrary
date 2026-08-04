@@ -181,4 +181,36 @@ public class FontProgramFaultTests
 
         Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.GlyfLoca);
     }
+
+    [Fact]
+    public void BrokenCffTableInsideAnSfnt_RecordsACffTableFaultAndFallsBackToNonCff()
+    {
+        // The stage that hid the Type1C charset bug for months. An OpenType/CFF wrapper whose
+        // 'CFF ' payload is truncated: the sfnt directory parses, the CFF parser throws, and the
+        // font silently becomes "not a CFF font" — after which GlyphPathService sends it down the
+        // TrueType path to read a glyf table it does not have, and draws nothing.
+        byte[] wholeCff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
+        byte[] truncatedCff = wholeCff[..(wholeCff.Length / 2)];
+
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("CFF ", truncatedCff)));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.CffTable);
+        Assert.False(metrics.IsCffFont);      // the silent-success fallback, unchanged
+        Assert.False(metrics.IsValid);
+        Assert.Null(metrics.GetCffGlyphOutlineDirect(0));
+    }
+
+    [Fact]
+    public void IntactCffTableInsideAnSfnt_RecordsNothing()
+    {
+        // Scope guard: the fault must be caused by the breakage, not by the sfnt wrapper itself.
+        // Without this, the test above would pass even if MinimalSfnt produced a wrapper the CFF
+        // reader could never parse — the fixture-passes-for-the-wrong-reason failure mode.
+        byte[] wholeCff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
+
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("CFF ", wholeCff)));
+
+        Assert.DoesNotContain(metrics.Faults, f => f.Stage == FontProgramStage.CffTable);
+        Assert.True(metrics.IsCffFont);
+    }
 }
