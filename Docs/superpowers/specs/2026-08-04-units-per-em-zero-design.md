@@ -1,8 +1,9 @@
 # UnitsPerEm can be zero, and seven division sites do not guard it
 
 Date: 2026-08-04
-Status: design — **needs a decision before a plan is written** (see "The decision")
+Status: **decided 2026-08-04 — Option A now, Option B recorded as the end state.** Ready to plan.
 Found by: the font-fault probe, 2026-08-04
+Depends on: `2026-08-04-minimal-sfnt-fixture-builder-design.md` (its tests need that builder)
 
 ## The defect
 
@@ -85,28 +86,46 @@ Set `IsValid = false` when `UnitsPerEm <= 0`.
 Reject. Seven sites, no enforcement, and it leaves the poisoned value in circulation for the next
 reader to trip over.
 
-## Recommendation
+## Decision (2026-08-04)
 
-**Option A.** It is the smallest change, it is consistent with behaviour the file already documents,
-it routes the problem into the diagnostic channel just built for it, and it does not depend on the
-unfixed `IsValid` call sites.
+**Option A now. Option B is the recorded end state.**
 
-Option B is the better *eventual* answer, but only after the three ignoring call sites are fixed. That
-sequencing is deliberate: the canary exists to measure the consequences of those call sites before
-their behaviour changes.
+A is the smallest change, is consistent with behaviour the file already documents, routes the problem
+into the diagnostic channel just built for it, and does not depend on the unfixed `IsValid` call sites.
 
-## Design, if Option A is chosen
+B is the more honest answer and is where this should end up — but it is inert until the three call
+sites that ignore `IsValid` are fixed, because until then a `false` there does not stop the zero
+reaching the seven division sites. That sequencing is deliberate, not timidity: the corpus canary
+exists precisely to measure the consequences of those call sites *before* anyone changes their
+behaviour.
+
+### The gate for moving to B
+
+B becomes actionable when all three of `TrueTypeFont.cs:113`, `Type1Font.cs:212`, and
+`Type0Font.cs:182` honour `IsValid`. That is its own spec, and it should be written only after the
+canary has run against a wider corpus than GWG — the whole point of measuring first is to know how
+many real documents an `IsValid` gate would stop rendering.
+
+Until then, A's clamp is containment, and the `Head:UnitsPerEmZero` fault row is the measurement.
+When B lands, the clamp is removed in the same change; the fault row stays.
+
+## Design
 
 ### Representing a non-throwing fault
 
 `FontProgramFault` currently carries `(FontProgramStage Stage, string ExceptionType)`. A zero
 `UnitsPerEm` is a fault with no exception, so `ExceptionType` is the wrong field name for it.
 
-Rename that field `Detail`. The baseline's wire format is unchanged — still `Stage:Detail`, still
-`Head:ArgumentException` for a throwing fault — and the new case reads `Head:UnitsPerEmZero`.
+Rename that field `Detail` (**decided 2026-08-04**). The baseline's wire format is unchanged — still
+`Stage:Detail`, still `Head:ArgumentException` for a throwing fault — and the new case reads
+`Head:UnitsPerEmZero`.
 
 **Now is the cheap moment for this rename:** the committed baseline body is currently empty, so no
-committed row churns. Deferring it means paying the churn later.
+committed row churns. That stops being true the first time a real fault gets pinned.
+
+The rename is sequenced **first** in the plan, ahead of the clamp. Renaming a field that four test
+files already reference is mechanical; doing it before the clamp lands keeps the clamp's diff about
+the clamp.
 
 ### The change
 
