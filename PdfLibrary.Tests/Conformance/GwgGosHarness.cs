@@ -35,6 +35,32 @@ internal static class GwgGosHarness
         }
     }
 
+    /// <summary>
+    /// Every patch file under the GOS checkout — <c>*/Categories/*/Patches/*.pdf</c>, all PDF/X flavours,
+    /// in stable path order. Distinct from <see cref="PdfX4Files"/>, which is deliberately narrowed to
+    /// PDF/X-4 for the conformance oracle: the font canary wants maximum font variety, and the x1a/x3
+    /// patches embed programs the x4 set does not.
+    /// </summary>
+    public static IEnumerable<string> PatchFiles()
+    {
+        if (Root is null)
+            yield break;
+
+        foreach (string path in Directory.EnumerateFiles(Root, "*.pdf", SearchOption.AllDirectories)
+                                         .OrderBy(p => p, StringComparer.Ordinal))
+        {
+            string rel = Path.GetRelativePath(Root, path).Replace('\\', '/');
+            if (rel.Contains("/Categories/") && rel.Contains("/Patches/"))
+                yield return path;
+        }
+    }
+
+    /// <summary>Corpus-root-relative, forward-slashed path — the stable key form for committed
+    /// baselines. Absolute paths differ per machine and must never reach a baseline file.</summary>
+    public static string RelativeKey(string absolutePath) =>
+        Root is null ? Path.GetFileName(absolutePath)
+                     : Path.GetRelativePath(Root, absolutePath).Replace('\\', '/');
+
     private static string? Locate()
     {
         string? env = Environment.GetEnvironmentVariable("GWG_GOS");
