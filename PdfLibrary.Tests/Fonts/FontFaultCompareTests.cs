@@ -55,7 +55,7 @@ public class FontFaultCompareTests
 
         string problem = Assert.Single(problems);
         Assert.StartsWith("  CHANGED", problem);
-        // Both sides carry their stage: a baseline row is only meaningful as Stage:ExceptionType.
+        // Both sides carry their stage: a baseline row is only meaningful as Stage:Detail.
         Assert.Contains("CffTable:IndexOutOfRangeException -> CffTable:EndOfStreamException", problem);
     }
 

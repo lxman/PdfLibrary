@@ -56,8 +56,8 @@ public class FontProgramFaultTests
         Assert.NotEmpty(metrics.Faults);
         Assert.All(metrics.Faults, f =>
         {
-            Assert.False(string.IsNullOrEmpty(f.ExceptionType));
-            Assert.DoesNotContain(" ", f.ExceptionType); // a type name, not a sentence
+            Assert.False(string.IsNullOrEmpty(f.Detail));
+            Assert.DoesNotContain(" ", f.Detail); // a short tag, not a sentence
         });
     }
 
