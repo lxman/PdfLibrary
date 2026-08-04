@@ -219,7 +219,11 @@ internal class EmbeddedFontMetrics
     /// Creates embedded font metrics from raw TrueType/OpenType font data
     /// </summary>
     /// <param name="fontData">Raw font bytes (TrueType, OpenType/CFF, or raw CFF)</param>
-    public EmbeddedFontMetrics(byte[] fontData)
+    /// <param name="faceIndex">Face to open within a TrueType Collection. Ignored for a bare sfnt (which
+    /// has exactly one face) and for raw CFF. Substituted system fonts need this: on macOS the serif
+    /// candidate list lands on <c>Times.ttc</c>, whose Regular / Bold / Italic / Bold Italic faces all
+    /// live in ONE file, so defaulting to face 0 silently discards the requested style.</param>
+    public EmbeddedFontMetrics(byte[] fontData, int faceIndex = 0)
     {
         // Check for raw CFF data (starts with version 01 00)
         if (fontData is [0x01, 0x00, ..])
@@ -262,7 +266,7 @@ internal class EmbeddedFontMetrics
 
         // Parse the sfnt directory once via FontParser's entry point. A non-sfnt/malformed
         // program leaves _sfnt null, so the table lookups below return null and IsValid=false.
-        try { _sfnt = new FontParser.SfntFont(fontData); }
+        try { _sfnt = new FontParser.SfntFont(fontData, faceIndex); }
         catch { _sfnt = null; }
 
         // Parse head table (required)
