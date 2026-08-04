@@ -94,4 +94,91 @@ public class FontProgramFaultTests
         Assert.NotNull(new EmbeddedFontMetrics(MinimalCff.Build(charsetOperand: null, numGlyphs: 4)).Faults);
         Assert.NotNull(new EmbeddedFontMetrics([], length1: 0, length2: 0).Faults);
     }
+
+    // ---- Per-stage coverage via synthetic sfnts (see MinimalSfnt) ----------------------------
+    // Each asserts BOTH that the stage is recorded AND that the documented fallback is unchanged.
+    // The second assertion is the load-bearing one: this whole mechanism is only defensible if
+    // recording a fault changed no behaviour.
+
+    [Fact]
+    public void ShortHeadTable_RecordsAHeadFaultAndKeepsTheUnitsPerEmFallback()
+    {
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("head", MinimalSfnt.TooShort())));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.Head);
+        Assert.Equal(1000, metrics.UnitsPerEm); // documented "Fallback default"
+        Assert.False(metrics.IsValid);
+    }
+
+    [Fact]
+    public void ShortMaxpTable_RecordsAMaxPFaultAndLeavesNumGlyphsZero()
+    {
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("maxp", MinimalSfnt.TooShort())));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.MaxP);
+        Assert.Equal(0, metrics.NumGlyphs);
+    }
+
+    [Fact]
+    public void ShortHheaTable_RecordsAnHheaFaultAndLeavesMetricsAtZero()
+    {
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("hhea", MinimalSfnt.TooShort())));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.Hhea);
+        Assert.Equal(0, metrics.Ascender);
+        Assert.Equal(0, metrics.Descender);
+        Assert.Equal(0, metrics.NumberOfHMetrics);
+    }
+
+    [Fact]
+    public void ShortNameTable_RecordsANameFaultAndLeavesNamesNull()
+    {
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("name", MinimalSfnt.TooShort())));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.Name);
+        Assert.Null(metrics.FamilyName);
+        Assert.Null(metrics.PostScriptName);
+    }
+
+    [Fact]
+    public void GarbageCmapTable_RecordsACmapFaultAndLeavesLookupsAtNotdef()
+    {
+        // A 4-byte cmap returns CLEANLY — the reader never runs off the end. cmap only throws on
+        // garbage CONTENT. head/maxp/hhea/name fail the opposite way. Do not "simplify" this to
+        // TooShort(): the test would then pass while asserting nothing.
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("cmap", MinimalSfnt.Garbage(64))));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.Cmap);
+        Assert.False(metrics.HasCmapTable);
+        Assert.Equal(0, metrics.GetGlyphId(65));
+    }
+
+    [Fact]
+    public void ShortCmapTable_RecordsNothing_PinningTheAsymmetry()
+    {
+        // The counterpart guard for the comment above. If a future parser change makes a short cmap
+        // throw, this test goes red and tells the next reader the asymmetry is gone.
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("cmap", MinimalSfnt.TooShort())));
+
+        Assert.DoesNotContain(metrics.Faults, f => f.Stage == FontProgramStage.Cmap);
+    }
+
+    [Fact]
+    public void BrokenLocaTable_RecordsAGlyfLocaFaultOnlyAfterAnOutlineIsRequested()
+    {
+        // loca/glyf load lazily, so the fault cannot exist until something asks for an outline.
+        // Requires a parseable head (all-zero parses) and a maxp with NumGlyphs > 0, or
+        // LoadGlyphTables returns before reaching the loca reader.
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(
+            ("head", MinimalSfnt.ZeroHead()),
+            ("maxp", MinimalSfnt.Maxp(4)),
+            ("loca", MinimalSfnt.TooShort()),
+            ("glyf", MinimalSfnt.Garbage(16))));
+
+        Assert.DoesNotContain(metrics.Faults, f => f.Stage == FontProgramStage.GlyfLoca);
+
+        Assert.Null(metrics.GetGlyphOutline(0));
+
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.GlyfLoca);
+    }
 }
