@@ -213,4 +213,38 @@ public class FontProgramFaultTests
         Assert.DoesNotContain(metrics.Faults, f => f.Stage == FontProgramStage.CffTable);
         Assert.True(metrics.IsCffFont);
     }
+
+    [Fact]
+    public void ZeroHeadTable_ParsesButYieldsUnitsPerEmZero_WhichIsClampedAndRecorded()
+    {
+        // A 54-byte all-zero head parses SUCCESSFULLY — nothing throws, so before this clamp there
+        // was no fault and IsValid stayed true, while UnitsPerEm came out 0.
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("head", MinimalSfnt.ZeroHead())));
+
+        Assert.Equal(1000, metrics.UnitsPerEm);
+        Assert.Contains(metrics.Faults, f => f.Stage == FontProgramStage.Head && f.Detail == "UnitsPerEmZero");
+    }
+
+    [Fact]
+    public void AClampedUnitsPerEm_MakesScaleToUserUnitsFinite()
+    {
+        // The actual harm, asserted directly rather than inferred from the property. Seven
+        // production sites divide by UnitsPerEm in double arithmetic — no DivideByZeroException,
+        // just Infinity propagating into text positioning and into written /Widths arrays.
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("head", MinimalSfnt.ZeroHead())));
+
+        double scaled = metrics.ScaleToUserUnits(500, 12.0);
+
+        Assert.True(double.IsFinite(scaled), $"expected a finite scale, got {scaled}");
+    }
+
+    [Fact]
+    public void AHealthyProgram_IsNotClampedAndRecordsNoUnitsPerEmFault()
+    {
+        // Scope guard: the clamp must fire on zero alone, never blanket.
+        var metrics = new EmbeddedFontMetrics(MinimalCff.Build(charsetOperand: null, numGlyphs: 4));
+
+        Assert.Equal(1000, metrics.UnitsPerEm); // from the CFF FontMatrix default, not the clamp
+        Assert.DoesNotContain(metrics.Faults, f => f.Detail == "UnitsPerEmZero");
+    }
 }

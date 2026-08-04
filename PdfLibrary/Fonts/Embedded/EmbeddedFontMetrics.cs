@@ -244,6 +244,34 @@ internal class EmbeddedFontMetrics
             $"[FONT-FAULT] stage={stage} exception={ex.GetType().Name}: {ex.Message}");
     }
 
+    /// <summary>Records a fault that did NOT throw — a program can be unusable without any reader
+    /// raising. <paramref name="detail"/> must be a short stable PascalCase tag; it lands in a
+    /// committed baseline, so it must not carry runtime- or locale-varying text.</summary>
+    private void RecordFault(FontProgramStage stage, string detail)
+    {
+        _faults.Add(new FontProgramFault(stage, detail));
+        PdfLogger.Log(LogCategory.Text, $"[FONT-FAULT] stage={stage} detail={detail}");
+    }
+
+    /// <summary>
+    /// The single place a parsed units-per-em becomes the value the rest of the engine divides by.
+    /// Zero is treated exactly as a missing head: fall back to 1000 and record it.
+    /// <para>Seven production sites divide by <see cref="UnitsPerEm"/> in double arithmetic, so a
+    /// zero raises nothing — it yields Infinity, and two of those sites write it into a produced
+    /// PDF. Guarding each site is the pattern that produced this bug's neighbours; it holds until
+    /// someone adds an eighth. This is the chokepoint instead.</para>
+    /// <para>1000 is chosen for consistency: the two existing fallback paths already answer an
+    /// unusable head with 1000, and it is the near-universal convention for CFF. A font whose true
+    /// value was 2048 will render at half scale — wrong, but visibly wrong, and now carrying a
+    /// fault row that says so.</para>
+    /// </summary>
+    private ushort UnitsPerEmOrFallback(ushort parsed, FontProgramStage stage)
+    {
+        if (parsed != 0) return parsed;
+        RecordFault(stage, "UnitsPerEmZero");
+        return 1000;
+    }
+
     /// <summary>
     /// Creates embedded font metrics from raw TrueType/OpenType font data
     /// </summary>
@@ -268,7 +296,7 @@ internal class EmbeddedFontMetrics
                 List<double>? fontMatrix = _cffTable.FontMatrix;
                 if (fontMatrix is not null && fontMatrix is [> 0, _, _, _, ..])
                 {
-                    UnitsPerEm = (ushort)Math.Round(1.0 / fontMatrix[0]);
+                    UnitsPerEm = UnitsPerEmOrFallback((ushort)Math.Round(1.0 / fontMatrix[0]), FontProgramStage.RawCff);
                     string matrixStr = string.Join(", ", fontMatrix);
                     PdfLogger.Log(LogCategory.Text, $"[FONTMATRIX] CFF FontMatrix: [{matrixStr}], calculated UnitsPerEm: {UnitsPerEm}, NominalWidthX: {_cffTable.NominalWidthX}");
                 }
@@ -306,7 +334,7 @@ internal class EmbeddedFontMetrics
             try
             {
                 _headTable = new HeadTable(headData);
-                UnitsPerEm = _headTable.UnitsPerEm;
+                UnitsPerEm = UnitsPerEmOrFallback(_headTable.UnitsPerEm, FontProgramStage.Head);
             }
             catch (Exception ex)
             {
@@ -502,7 +530,7 @@ internal class EmbeddedFontMetrics
             if (_type1Parser.IsValid)
             {
                 _isType1Font = true;
-                UnitsPerEm = (ushort)_type1Parser.UnitsPerEm;
+                UnitsPerEm = UnitsPerEmOrFallback((ushort)_type1Parser.UnitsPerEm, FontProgramStage.Type1Program);
                 NumGlyphs = (ushort)_type1Parser.GlyphCount;
                 IsValid = true;
 
