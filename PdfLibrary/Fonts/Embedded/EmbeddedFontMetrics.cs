@@ -50,7 +50,7 @@ internal class EmbeddedFontMetrics
     /// <summary>
     /// Units per em - critical for scaling glyphs to correct size
     /// </summary>
-    public ushort UnitsPerEm { get; }
+    public ushort UnitsPerEm { get; } = 1000;
 
     /// <summary>
     /// Number of glyphs in the font
@@ -254,12 +254,16 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
-    /// The single place a parsed units-per-em becomes the value the rest of the engine divides by.
-    /// Zero is treated exactly as a missing head: fall back to 1000 and record it.
-    /// <para>Seven production sites divide by <see cref="UnitsPerEm"/> in double arithmetic, so a
-    /// zero raises nothing — it yields Infinity, and two of those sites write it into a produced
-    /// PDF. Guarding each site is the pattern that produced this bug's neighbours; it holds until
-    /// someone adds an eighth. This is the chokepoint instead.</para>
+    /// Where a parsed units-per-em becomes the value the rest of the engine divides by, on the three
+    /// paths that assign it from a parsed number. Zero is treated exactly as a missing head: fall
+    /// back to 1000 and record it. The invariant that <see cref="UnitsPerEm"/> is never zero is not
+    /// solely this helper's doing — the property also defaults to 1000, which covers the paths
+    /// (e.g. a Type1 constructor whose parser is invalid) that never assign it at all.
+    /// <para>Most production consumers of <see cref="UnitsPerEm"/> divide by it in double arithmetic,
+    /// where a zero would not raise but silently yield Infinity — including sites that write the
+    /// result into a produced PDF. One consumer, <see cref="PdfLibrary.Rendering.GlyphOutlineToPath"/>,
+    /// explicitly throws on a zero instead. Either way, guarding the value at the source (here) is
+    /// simpler than guarding every consumer.</para>
     /// <para>1000 is chosen for consistency: the two existing fallback paths already answer an
     /// unusable head with 1000, and it is the near-universal convention for CFF. A font whose true
     /// value was 2048 will render at half scale — wrong, but visibly wrong, and now carrying a

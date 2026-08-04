@@ -35,6 +35,17 @@ internal static class MinimalSfnt
     /// loca/glyf stage at all.</summary>
     public static byte[] ZeroHead() => new byte[54];
 
+    /// <summary>A 54-byte head carrying a real units-per-em at its documented offset (bytes 18-19).
+    /// HeadTable validates neither the magic number nor the version — which is why an all-zero head
+    /// parses at all — so this is enough to exercise the non-zero path through the clamp.</summary>
+    public static byte[] Head(ushort unitsPerEm)
+    {
+        var head = new byte[54];
+        head[18] = (byte)(unitsPerEm >> 8);
+        head[19] = (byte)unitsPerEm;
+        return head;
+    }
+
     /// <summary>A 6-byte maxp (version 0.5 + numGlyphs). NumGlyphs must be non-zero or
     /// LoadGlyphTables returns before it reaches the loca reader.</summary>
     public static byte[] Maxp(ushort numGlyphs) =>
@@ -44,15 +55,18 @@ internal static class MinimalSfnt
     /// Checksums are written as zero; nothing in the reader validates them.</summary>
     public static byte[] Build(params (string Tag, byte[] Data)[] tables)
     {
-        Array.Sort(tables, (a, b) => string.CompareOrdinal(a.Tag, b.Tag));
+        // Sort a copy, not the caller's array: Array.Sort on `tables` directly would reorder a
+        // shared array out from under whoever passed it in.
+        (string Tag, byte[] Data)[] sorted = tables[..];
+        Array.Sort(sorted, (a, b) => string.CompareOrdinal(a.Tag, b.Tag));
 
         var data = new List<byte>();
         U32(data, 0x00010000);        // sfntVersion: TrueType outlines
-        U16(data, tables.Length);
+        U16(data, sorted.Length);
         U16(data, 0); U16(data, 0); U16(data, 0); // searchRange/entrySelector/rangeShift: unread
 
-        int offset = 12 + tables.Length * 16;
-        foreach ((string tag, byte[] payload) in tables)
+        int offset = 12 + sorted.Length * 16;
+        foreach ((string tag, byte[] payload) in sorted)
         {
             data.AddRange(Encoding.ASCII.GetBytes(tag));
             U32(data, 0);             // checksum: not validated
@@ -61,7 +75,7 @@ internal static class MinimalSfnt
             offset += payload.Length;
         }
 
-        foreach ((_, byte[] payload) in tables) data.AddRange(payload);
+        foreach ((_, byte[] payload) in sorted) data.AddRange(payload);
         return data.ToArray();
     }
 

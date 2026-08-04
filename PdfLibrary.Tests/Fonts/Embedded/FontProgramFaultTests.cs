@@ -228,9 +228,11 @@ public class FontProgramFaultTests
     [Fact]
     public void AClampedUnitsPerEm_MakesScaleToUserUnitsFinite()
     {
-        // The actual harm, asserted directly rather than inferred from the property. Seven
-        // production sites divide by UnitsPerEm in double arithmetic — no DivideByZeroException,
-        // just Infinity propagating into text positioning and into written /Widths arrays.
+        // Demonstrates the clamp working through one specific consumer, ScaleToUserUnits — which
+        // happens to be the one member with no production caller (only this test calls it). It does
+        // NOT prove the clamp protects production code; that is what UnitsPerEm's own
+        // Assert.Equal(1000, ...) above already covers directly, for every consumer at once. Kept
+        // because it is still a genuine, cheap check that the division itself behaves once clamped.
         var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("head", MinimalSfnt.ZeroHead())));
 
         double scaled = metrics.ScaleToUserUnits(500, 12.0);
@@ -245,6 +247,18 @@ public class FontProgramFaultTests
         var metrics = new EmbeddedFontMetrics(MinimalCff.Build(charsetOperand: null, numGlyphs: 4));
 
         Assert.Equal(1000, metrics.UnitsPerEm); // from the CFF FontMatrix default, not the clamp
+        Assert.DoesNotContain(metrics.Faults, f => f.Detail == "UnitsPerEmZero");
+    }
+
+    [Fact]
+    public void AHealthyUnitsPerEm_PassesThroughTheClampUnchangedAndRecordsNothing()
+    {
+        // The pass-through half of the clamp, which nothing else on CI exercises: without this,
+        // deleting the helper's `if (parsed != 0) return parsed;` guard would leave the suite green
+        // while every font in the corpus silently rescaled to 1000 units per em.
+        var metrics = new EmbeddedFontMetrics(MinimalSfnt.Build(("head", MinimalSfnt.Head(2048))));
+
+        Assert.Equal(2048, metrics.UnitsPerEm);
         Assert.DoesNotContain(metrics.Faults, f => f.Detail == "UnitsPerEmZero");
     }
 }
