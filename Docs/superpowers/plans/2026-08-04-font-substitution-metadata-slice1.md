@@ -345,6 +345,7 @@ git commit -m "feat(fonts): read face identity from sfnt name and head tables"
   - `public string? FindPath(string fileBaseName)`
   - `public IReadOnlyCollection<string> FileBaseNames { get; }`
   - `public static FontFaceRecord? PickBest(IEnumerable<FontFaceRecord> candidates, bool bold, bool italic)`
+  - `public static int PickFaceIndex(byte[] data, bool bold, bool italic)`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -422,6 +423,20 @@ public class FontMetadataIndexTests
     {
         var index = new FontMetadataIndex(["/definitely/not/a/real/path", ""]);
         Assert.Empty(index.Faces);
+    }
+
+    [Fact]
+    public void PickFaceIndex_of_a_single_face_font_is_zero()
+    {
+        byte[] bare = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+
+        Assert.Equal(0, FontMetadataIndex.PickFaceIndex(bare, bold: false, italic: true));
+    }
+
+    [Fact]
+    public void PickFaceIndex_of_malformed_bytes_is_zero_not_an_exception()
+    {
+        Assert.Equal(0, FontMetadataIndex.PickFaceIndex([0x00, 0x01], bold: false, italic: false));
     }
 }
 ```
@@ -533,6 +548,25 @@ internal sealed class FontMetadataIndex
             bestScore = score;
         }
         return best;
+    }
+
+    /// <summary>Best face index WITHIN one font file's bytes. Exists for
+    /// <see cref="ISystemFontProvider.Resolve"/>'s default implementation, which has bytes from a
+    /// third-party provider and no index: without this, any provider that implements only
+    /// <c>GetFontData</c> would silently return face 0 of a collection and lose the requested style —
+    /// the exact defect fixed in 6afbe7a. Returns 0 for a bare sfnt or unreadable bytes.</summary>
+    public static int PickFaceIndex(byte[] data, bool bold, bool italic)
+    {
+        int count = SfntNameReader.FaceCount(data);
+        if (count <= 1) return 0;
+
+        var faces = new List<FontFaceRecord>(count);
+        for (var i = 0; i < count; i++)
+        {
+            FontFaceRecord? face = SfntNameReader.ReadFace(data, i, string.Empty);
+            if (face is not null) faces.Add(face);
+        }
+        return PickBest(faces, bold, italic)?.FaceIndex ?? 0;
     }
 
     private static string Normalize(string s) => s.Replace(" ", string.Empty);
@@ -776,7 +810,7 @@ public class FontResolutionLadderTests
     public void The_default_interface_implementation_keeps_existing_providers_working()
     {
         // An ISystemFontProvider written before Resolve existed must still function.
-        ISystemFontProvider legacy = new LegacyProvider();
+        ISystemFontProvider legacy = new LegacyProvider([1, 2, 3]);
 
         FontMatch? match = legacy.Resolve(new FontRequest("Anything", Bold: false, Italic: false));
 
@@ -785,13 +819,29 @@ public class FontResolutionLadderTests
         Assert.Equal(0, match.FaceIndex);
     }
 
-    private sealed class LegacyProvider : ISystemFontProvider
+    [Fact]
+    public void The_default_implementation_still_selects_the_face_inside_a_collection()
+    {
+        // A provider implementing ONLY GetFontData hands back whole-file bytes. If the default
+        // Resolve returned face 0 unconditionally it would silently undo the collection face
+        // selection shipped in 6afbe7a for every third-party provider. The real font here is a
+        // single-face file, so the assertion is that the selection RUNS and yields a valid index.
+        byte[] bare = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+        ISystemFontProvider legacy = new LegacyProvider(bare);
+
+        FontMatch? match = legacy.Resolve(new FontRequest("Anything", Bold: false, Italic: true));
+
+        Assert.NotNull(match);
+        Assert.Equal(0, match!.FaceIndex);
+    }
+
+    private sealed class LegacyProvider(byte[] data) : ISystemFontProvider
     {
         public IReadOnlyCollection<string> GetAvailableFontFamilies() => [];
         public bool IsFontAvailable(string familyName) => false;
         public string? FindFirstAvailable(IEnumerable<string> candidates) => null;
         public void RefreshCache() { }
-        public byte[]? GetFontData(string baseFontName) => [1, 2, 3];
+        public byte[]? GetFontData(string baseFontName) => data;
     }
 }
 ```
@@ -822,11 +872,15 @@ Modify `PdfLibrary/Fonts/ISystemFontProvider.cs` — append inside the interface
 ```csharp
     /// <summary>
     /// Resolves a substitute for <paramref name="request"/>, including which face of a collection to
-    /// use. The default implementation delegates to <see cref="GetFontData"/> and face 0, so
-    /// providers written before this member existed keep working unchanged.
+    /// use. The default implementation delegates to <see cref="GetFontData"/> and then selects the
+    /// best face within those bytes, so providers written before this member existed keep working
+    /// unchanged AND keep the collection face selection they have today. Returning face 0 here would
+    /// silently reintroduce the defect fixed in 6afbe7a for every third-party provider.
     /// </summary>
     FontMatch? Resolve(FontRequest request) =>
-        GetFontData(request.BaseFont) is { } bytes ? new FontMatch(bytes, 0) : null;
+        GetFontData(request.BaseFont) is { } bytes
+            ? new FontMatch(bytes, FontMetadataIndex.PickFaceIndex(bytes, request.Bold, request.Italic))
+            : null;
 ```
 
 Modify `PdfLibrary/Fonts/SystemFontLocator.cs` — replace the `_index` field, the constructor body and `GetFontData`/`GetAvailableFontFamilies`/`IsFontAvailable` with the index-backed versions, and add `Resolve`:
@@ -1037,7 +1091,13 @@ Expected: PASS, 2 tests.
 - [ ] **Step 5: Run the whole engine suite**
 
 Run: `dotnet test PdfLibrary.Tests --framework net10.0`
-Expected: PASS, 0 failed. `SubstituteFontFaceSelectionTests` (the collection face-selection tests from `6afbe7a`) must still pass — they exercise the same behaviour through the new path.
+Expected: PASS, 0 failed.
+
+`SubstituteFontFaceSelectionTests` (the collection face-selection tests from `6afbe7a`) must still
+pass **unchanged**. Their `OneCollectionProvider` implements only `GetFontData`, so it reaches the
+default `Resolve` — which is exactly why that default performs face selection via
+`FontMetadataIndex.PickFaceIndex` rather than returning face 0. If those tests fail here, the defect
+is in the default implementation, not in the tests: do not edit them to pass.
 
 - [ ] **Step 6: Commit**
 
