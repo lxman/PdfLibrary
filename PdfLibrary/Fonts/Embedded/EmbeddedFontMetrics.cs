@@ -43,6 +43,10 @@ internal class EmbeddedFontMetrics
     private readonly Type1FontParser? _type1Parser;
     private readonly bool _isType1Font;
 
+    // Swallowed font-program parse failures. Append-only: constructor stages fill it first, and the
+    // lazy GlyfLoca stage can add to it later on the first outline request.
+    private readonly List<FontProgramFault> _faults = [];
+
     /// <summary>
     /// Units per em - critical for scaling glyphs to correct size
     /// </summary>
@@ -77,6 +81,20 @@ internal class EmbeddedFontMetrics
     /// Indicates if all required tables were successfully parsed
     /// </summary>
     public bool IsValid { get; }
+
+    /// <summary>
+    /// Every font-program parse failure this instance swallowed, in the order they happened. Empty when
+    /// the program parsed cleanly.
+    /// <para>Exists because the fallbacks below are silent by construction: a failed <c>CFF </c> parse
+    /// sets <see cref="IsCffFont"/> false, and the font then renders through the TrueType path reading a
+    /// <c>glyf</c> table it does not have — producing blank glyphs and no error. That is how the Type1C
+    /// charset bug (engine 6564363) hid for months. Nothing here changes any fallback; it only records
+    /// that one was taken, so a test can assert on it.</para>
+    /// <para>Append-only across the object's lifetime, not frozen at construction:
+    /// <see cref="FontProgramStage.GlyfLoca"/> is recorded by the lazy <c>LoadGlyphTables</c>, so a
+    /// caller wanting full coverage must request an outline before reading this.</para>
+    /// </summary>
+    public IReadOnlyList<FontProgramFault> Faults => _faults;
 
     /// <summary>
     /// Indicates if this is a CFF (OpenType/CFF) font rather than TrueType
@@ -217,6 +235,15 @@ internal class EmbeddedFontMetrics
         return (0, "Not found");
     }
 
+    /// <summary>Records a swallowed parse failure and mirrors it to the log. The record is the
+    /// mechanism; the log line is a courtesy, because PdfLogger defaults every category to off.</summary>
+    private void RecordFault(FontProgramStage stage, Exception ex)
+    {
+        _faults.Add(new FontProgramFault(stage, ex.GetType().Name));
+        PdfLogger.Log(LogCategory.Text,
+            $"[FONT-FAULT] stage={stage} exception={ex.GetType().Name}: {ex.Message}");
+    }
+
     /// <summary>
     /// Creates embedded font metrics from raw TrueType/OpenType font data
     /// </summary>
@@ -259,9 +286,10 @@ internal class EmbeddedFontMetrics
                 _sfnt = null;
                 return;
             }
-            catch
+            catch (Exception ex)
             {
                 // CFF parsing failed, try as TrueType below
+                RecordFault(FontProgramStage.RawCff, ex);
                 _isCffFont = false;
             }
         }
@@ -269,7 +297,7 @@ internal class EmbeddedFontMetrics
         // Parse the sfnt directory once via FontParser's entry point. A non-sfnt/malformed
         // program leaves _sfnt null, so the table lookups below return null and IsValid=false.
         try { _sfnt = new FontParser.SfntFont(fontData, faceIndex); }
-        catch { _sfnt = null; }
+        catch (Exception ex) { RecordFault(FontProgramStage.SfntDirectory, ex); _sfnt = null; }
 
         // Parse head table (required)
         byte[]? headData = _sfnt?.GetTableBytes("head");
@@ -280,8 +308,9 @@ internal class EmbeddedFontMetrics
                 _headTable = new HeadTable(headData);
                 UnitsPerEm = _headTable.UnitsPerEm;
             }
-            catch
+            catch (Exception ex)
             {
+                RecordFault(FontProgramStage.Head, ex);
                 UnitsPerEm = 1000; // Fallback default
             }
         }
@@ -299,9 +328,10 @@ internal class EmbeddedFontMetrics
                 _maxpTable = new MaxPTable(maxpData);
                 NumGlyphs = _maxpTable.NumGlyphs;
             }
-            catch
+            catch (Exception ex)
             {
                 // MaxP table parse failed
+                RecordFault(FontProgramStage.MaxP, ex);
             }
         }
 
@@ -313,9 +343,10 @@ internal class EmbeddedFontMetrics
             {
                 _hheaTable = new HheaTable(hheaData);
             }
-            catch
+            catch (Exception ex)
             {
                 // Hhea table parse failed
+                RecordFault(FontProgramStage.Hhea, ex);
             }
         }
 
@@ -328,9 +359,10 @@ internal class EmbeddedFontMetrics
                 _hmtxTable = new HmtxTable(hmtxData);
                 _hmtxTable.Process(_hheaTable.NumberOfHMetrics, NumGlyphs);
             }
-            catch
+            catch (Exception ex)
             {
                 // Hmtx table parse failed
+                RecordFault(FontProgramStage.Hmtx, ex);
             }
         }
 
@@ -342,9 +374,10 @@ internal class EmbeddedFontMetrics
             {
                 _nameTable = new NameTable(nameData);
             }
-            catch
+            catch (Exception ex)
             {
                 // Name table parse failed
+                RecordFault(FontProgramStage.Name, ex);
             }
         }
 
@@ -360,6 +393,7 @@ internal class EmbeddedFontMetrics
             }
             catch (Exception ex)
             {
+                RecordFault(FontProgramStage.Cmap, ex);
                 PdfLogger.Log(LogCategory.Text, $"CMAP-PARSE-FAIL: Failed to parse cmap table: {ex.GetType().Name}: {ex.Message}");
                 _cmapTable = null;
             }
@@ -391,9 +425,10 @@ internal class EmbeddedFontMetrics
                     PdfLogger.Log(LogCategory.Text, $"[FONTMATRIX] OpenType CFF FontMatrix: null (using default [0.001, 0, 0, 0.001, 0, 0]), head table UnitsPerEm: {UnitsPerEm}, NominalWidthX: {_cffTable?.NominalWidthX}");
                 }
             }
-            catch
+            catch (Exception ex)
             {
                 // CFF parsing failed, treat as invalid
+                RecordFault(FontProgramStage.CffTable, ex);
                 _cffTable = null;
                 _isCffFont = false;
             }
@@ -483,6 +518,7 @@ internal class EmbeddedFontMetrics
         }
         catch (Exception ex)
         {
+            RecordFault(FontProgramStage.Type1Program, ex);
             _isType1Font = false;
             IsValid = false;
             PdfLogger.Log(LogCategory.Text, $"[TYPE1] Type1 font parsing exception: {ex.Message}\n{ex.StackTrace}");
@@ -1398,9 +1434,10 @@ internal class EmbeddedFontMetrics
             _glyphTable = new GlyphTable(glyfData);
             _glyphTable.Process(NumGlyphs, _locaTable);
         }
-        catch
+        catch (Exception ex)
         {
             // If parsing fails, leave tables as null
+            RecordFault(FontProgramStage.GlyfLoca, ex);
             _glyphTable = null;
             _locaTable = null;
         }
