@@ -87,9 +87,11 @@ internal class EmbeddedFontMetrics
     /// True when this CFF font carries an embedded (custom) charset — Top DICT charset offset &gt; 2, so the
     /// charset table is present in the font and <see cref="GetGlyphIdByName"/> resolves glyph names via it
     /// reliably. Subsetted CFF fonts always emit a custom charset, so this holds for them. It is <c>false</c>
-    /// for a font using a predefined charset (ISOAdobe / Expert / ExpertSubset, offset 0/1/2): the parser does
-    /// not yet materialise those, so name→GID resolution is not trustworthy on such fonts. Consumers that need
-    /// a dependable glyph-name→GID mapping (e.g. the font-metrics conformance check) should gate on this.
+    /// for a font using a predefined charset (ISOAdobe / Expert / ExpertSubset, offset 0/1/2), and stays false
+    /// as deliberate conservatism: the parser now materialises the ISOAdobe default (so name→GID does resolve
+    /// there), but Expert/ExpertSubset are still unmaterialised, and the consumers of this flag have not been
+    /// re-validated against the predefined population. Widening it is deferred, not blocked. Consumers that
+    /// need a dependable glyph-name→GID mapping (e.g. the font-metrics conformance check) should gate on this.
     /// </summary>
     public bool CffHasEmbeddedCharset => _isCffFont && _cffTable is not null && _cffTable.RawCharset.Length > 0;
 
@@ -598,13 +600,17 @@ internal class EmbeddedFontMetrics
     /// classic Type1 program (via the Type1 parser) and a non-CID CFF/Type1C program (via the CFF charset,
     /// resolving each glyph's SID to its name); <c>.notdef</c> is included. Returns null for anything else
     /// (a CID-keyed CFF, a TrueType program, or no embedded program) so the caller skips it — never guesses.
+    /// <para>Also returns null when the CFF program has no charset (a predefined Expert/ExpertSubset
+    /// charset, which the parser does not materialise). Falling through would return the non-null set
+    /// <c>{".notdef"}</c>, which reads as "the program contains exactly one glyph" and makes the
+    /// subset-coverage rule reject every /CharSet it is compared against.</para>
     /// </summary>
     public IReadOnlySet<string>? EnumerateProgramGlyphNames()
     {
         if (_isType1Font && _type1Parser is not null)
             return new HashSet<string>(_type1Parser.GlyphNames, StringComparer.Ordinal);
 
-        if (_isCffFont && _cffTable is not null && !_cffTable.IsCid)
+        if (_isCffFont && _cffTable is { IsCid: false, CharSet: not null })
         {
             var names = new HashSet<string>(StringComparer.Ordinal) { ".notdef" }; // GID 0 is always .notdef
             foreach (int sid in EnumerateCharsetValues())
@@ -626,10 +632,13 @@ internal class EmbeddedFontMetrics
     /// subset-coverage check (test 2, a CID font's /CIDSet). In a CID-keyed CFF the charset entries are
     /// CIDs; CID 0 (.notdef) is included. Returns null for anything else (a plain CFF, a TrueType program,
     /// or no embedded program) so the caller uses the appropriate path or skips.
+    /// <para>Also returns null when the program has no charset, for the same reason as
+    /// <see cref="EnumerateProgramGlyphNames"/>: the bare <c>{0}</c> it would otherwise return is
+    /// indistinguishable from a genuine single-CID program and would fail every /CIDSet comparison.</para>
     /// </summary>
     public IReadOnlySet<int>? EnumerateProgramCids()
     {
-        if (!_isCffFont || _cffTable is null || !_cffTable.IsCid)
+        if (!_isCffFont || _cffTable is null || !_cffTable.IsCid || _cffTable.CharSet is null)
             return null;
         var cids = new HashSet<int> { 0 }; // CID 0 is always .notdef
         foreach (int cid in EnumerateCharsetValues())

@@ -43,9 +43,13 @@ public class Type1CDefaultCharsetTests
     public void Gwg090_NewCenturySchlbkItalic_Type1C_ParsesWithDefaultCharset()
     {
         string? path = FindGwg(Gwg090);
-        if (path is null) return; // corpus not present locally
+        // Skip, never a silent return: this is the only PDF-level guard on the defect, and it is LocalOnly,
+        // so a quiet green on a machine without the corpus would look exactly like a passing test.
+        Assert.SkipUnless(path is not null,
+            $"gwg-gos checkout not found; expected a sibling ../gwg-gos containing " +
+            $"Ghent_PDF_Output_Suite_V50_Patches/Categories/1-CMYK/Patches/{Gwg090}");
 
-        using PdfDocument doc = PdfDocument.Load(path);
+        using PdfDocument doc = PdfDocument.Load(path!);
 
         var fonts = new Dictionary<string, PdfFont>();
         for (var pageNum = 0; pageNum < doc.PageCount; pageNum++)

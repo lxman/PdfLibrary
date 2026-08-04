@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,7 +18,12 @@ namespace FontParser.Tables.Cff.Type1
 
         public IEncoding Encoding { get; }
 
-        public ICharset CharSet { get; }
+        /// <summary>
+        /// The glyph charset, or null when it cannot be determined: a predefined Expert/ExpertSubset
+        /// charset, a CID-keyed CFF with no charset, or an unrecognised charset format byte. Null is a
+        /// designed state, not an oversight — consumers must decline to answer rather than assume a default.
+        /// </summary>
+        public ICharset? CharSet { get; }
 
         public List<string> Names { get; } = new();
 
@@ -166,6 +171,10 @@ namespace FontParser.Tables.Cff.Type1
 
             var charStrings = new Type1Index(reader);
 
+            // Read before the charset block, which needs it: the Top DICT entries are complete by now, so
+            // this is the same answer it would give further down.
+            IsCid = _topDictOperatorEntries.Any(e => e.Name == "ROS");
+
             // The charset operator is OPTIONAL and defaults to 0 (CFF spec, Technical Note #5176 Table 9),
             // so an absent one means ISOAdobe — not a malformed font. Values 0/1/2 name a PREDEFINED
             // charset rather than an offset, so there is no table to seek to; byte 0 is the CFF header,
@@ -190,20 +199,25 @@ namespace FontParser.Tables.Cff.Type1
                     _ => CharSet
                 };
             }
-            else if (charsetOffset == 0)
+            else if (charsetOffset == 0 && !IsCid)
             {
                 CharSet = new CharsetsFormat0(BuildIsoAdobeSids(charStrings.Data.Count));
             }
-            // Predefined Expert (1) and ExpertSubset (2) are specific SID lists (#5176 Appendix C), not the
-            // identity mapping, and are not implemented — CharSet is left null. Every consumer already
-            // handles a null charset by declining to answer, which is better than the confidently wrong
-            // glyph names that parsing bytes at offset 1/2 produces. No font in the measured corpus uses them.
+            // Two cases deliberately leave CharSet null rather than guess:
+            //  - Predefined Expert (1) / ExpertSubset (2): specific SID lists (#5176 Appendix C), not the
+            //    identity mapping, so they cannot be synthesized from a rule.
+            //  - A CID-keyed CFF with charset 0 or none. A CID charset holds CIDs, not SIDs, so the ISOAdobe
+            //    SID list is the wrong kind of value AND its 228 bound is a SID bound — a 5000-glyph CID font
+            //    would silently resolve every CID >= 229 to .notdef while still reporting a valid font. Blank
+            //    text that claims to be fine is worse than no charset. Per the spec a CID-keyed CFF always
+            //    carries a charset, so this only arises on a malformed font.
+            // Callers must treat a null charset as "cannot answer" and decline rather than substitute a
+            // default; see EnumerateProgramGlyphNames/EnumerateProgramCids in PdfLibrary, which return null.
 
             // Custom charset (offset > 2) is kept verbatim by the subsetter; predefined (0/1/2) is no table.
             RawCharset = charsetOffset > 2
                 ? data[(int)charsetStart..(int)reader.Position]
                 : Array.Empty<byte>();
-            IsCid = _topDictOperatorEntries.Any(e => e.Name == "ROS");
             if (IsCid)
             {
                 ProcessCid(data, reader, charStrings, globalSubroutines);

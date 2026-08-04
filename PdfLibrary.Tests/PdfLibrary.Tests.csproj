@@ -41,6 +41,13 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Shared test source, not a project reference: the CFF charset fixtures are needed both by the
+             parser-level tests in FontParser.Tests and by the EmbeddedFontMetrics-level tests here, and
+             linking one file is cheaper than making two test projects depend on each other. -->
+        <Compile Include="..\FontParser.Tests\Cff\MinimalCff.cs" Link="Fonts\Embedded\MinimalCff.cs" />
+    </ItemGroup>
+
+    <ItemGroup>
         <!-- CC0 public-domain test font (see Resources/PublicPixel.LICENSE.txt) used by the
              PdfDocumentBuilder.LoadFont(byte[]/Stream) overload tests. -->
         <None Update="Resources\PublicPixel.ttf" CopyToOutputDirectory="PreserveNewest" />

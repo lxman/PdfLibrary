@@ -1,5 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
+using CffTestFixtures;
 using FontParser.Tables.Cff.Type1;
 using FontParser.Tables.Cff.Type1.Charsets;
 using Xunit;
@@ -50,15 +49,33 @@ public class Type1TablePredefinedCharsetTests
         Assert.Equal(228, f0.Glyphs[^1]);
     }
 
-    [Theory]
-    [InlineData(1)] // Expert
-    [InlineData(2)] // ExpertSubset
-    public void PredefinedExpertCharsets_ParseWithoutThrowing_AndLeaveCharsetNull(int operand)
+    /// <summary>
+    /// The Expert arm is the one that discriminates against the old code: <c>charset 1</c> used to seek to
+    /// byte 1 and read the header's minor-version byte (0x00) as a format-0 charset marker, producing
+    /// <c>Glyphs = [1025, 1, 257]</c> — header and Name INDEX bytes presented as glyph SIDs.
+    /// </summary>
+    [Fact]
+    public void PredefinedExpertCharset_IsNotParsedFromTheHeader()
     {
-        var t = new Type1Table(MinimalCff.Build(charsetOperand: operand, numGlyphs: 4));
+        var t = new Type1Table(MinimalCff.Build(charsetOperand: 1, numGlyphs: 4));
 
-        // Expert/ExpertSubset are not the identity mapping and are not implemented; null is the honest
-        // answer. What must NOT happen is reading a format byte at offset 1/2 (inside the CFF header).
+        Assert.Null(t.CharSet);
+        Assert.Equal(4, t.RawCharStrings.Count);
+    }
+
+    /// <summary>
+    /// ExpertSubset gets the same treatment, but be honest about what this test proves: it does NOT
+    /// discriminate against the old code for this fixture. <c>charset 2</c> seeked to byte 2 and read
+    /// hdrSize (0x04), which fell into the unrecognised-format arm and left the charset null for entirely
+    /// the wrong reason. Making it bite would need a header lying about its own size — a worse fixture
+    /// than an honest test with a narrow claim. Kept as a forward regression guard: it pins ExpertSubset
+    /// to "null, and the rest of the font still parses".
+    /// </summary>
+    [Fact]
+    public void PredefinedExpertSubsetCharset_LeavesCharsetNull()
+    {
+        var t = new Type1Table(MinimalCff.Build(charsetOperand: 2, numGlyphs: 4));
+
         Assert.Null(t.CharSet);
         Assert.Equal(4, t.RawCharStrings.Count);
     }
@@ -68,7 +85,7 @@ public class Type1TablePredefinedCharsetTests
     {
         // Regression guard for the offset > 2 path: a real format-0 table must still win over the default.
         var t = new Type1Table(MinimalCff.Build(charsetOperand: null, numGlyphs: 4,
-            customCharsetSids: new ushort[] { 40, 41, 42 }));
+            customCharsetSids: [40, 41, 42]));
 
         var f0 = Assert.IsType<CharsetsFormat0>(t.CharSet);
         Assert.Equal(new ushort[] { 40, 41, 42 }, f0.Glyphs);
@@ -76,99 +93,19 @@ public class Type1TablePredefinedCharsetTests
     }
 
     /// <summary>
-    /// Builds a minimal but structurally valid non-CID CFF: header, Name INDEX, Top DICT INDEX, empty
-    /// String and Global Subr INDEXes, a CharStrings INDEX of <c>endchar</c>-only glyphs and a Private
-    /// DICT. Every Top DICT number uses the fixed 5-byte (0x1D) integer form so the dict length — and
-    /// therefore every absolute offset in it — is known before the bytes are laid out.
+    /// A CID-keyed CFF with no charset must NOT get the ISOAdobe list. A CID charset holds CIDs, and the
+    /// 228 bound is a SID bound — synthesizing it would make every CID ≥ 229 in a large font resolve to
+    /// .notdef while the font still reported itself valid, i.e. blank text that looks fine. Null instead,
+    /// so callers decline. The font must still parse: that is the part that beats the old throw.
     /// </summary>
-    private static class MinimalCff
+    [Fact]
+    public void CidKeyedCffWithNoCharset_DoesNotSynthesizeIsoAdobe()
     {
-        private static readonly byte[] FontName = "TestFont"u8.ToArray();
+        var t = new Type1Table(MinimalCff.BuildCid(numGlyphs: 300)); // must NOT throw
 
-        public static byte[] Build(int? charsetOperand, int numGlyphs, ushort[]? customCharsetSids = null)
-        {
-            // Sizes of every section, so the Top DICT's absolute offsets can be computed up front.
-            int nameIndexSize = 2 + 1 + 2 + FontName.Length;
-            int topDictLen = (charsetOperand is null && customCharsetSids is null ? 0 : 6) // charset
-                             + 6                                                          // CharStrings
-                             + 11;                                                        // Private
-            int topDictIndexSize = 2 + 1 + 2 + topDictLen;
-            int charStringsSize = 2 + 1 + 2 * (numGlyphs + 1) + numGlyphs;
-            byte[] privateDict = { 0x1D, 0, 0, 0, 0, 0x15 }; // nominalWidthX 0
-            byte[] charsetTable = BuildCharsetTable(customCharsetSids);
-
-            // Layout: header | name | topDict | string | globalSubr | pad | charset | charStrings | private
-            int charsetOffset = 4 + nameIndexSize + topDictIndexSize + 2 + 2 + 1;
-            int charStringsOffset = charsetOffset + charsetTable.Length;
-            int privateOffset = charStringsOffset + charStringsSize;
-
-            var top = new List<byte>();
-            if (customCharsetSids is not null) AppendNumberOp(top, charsetOffset, 15);
-            else if (charsetOperand is not null) AppendNumberOp(top, charsetOperand.Value, 15);
-            AppendNumberOp(top, charStringsOffset, 17);
-            AppendInt32(top, privateDict.Length);
-            AppendInt32(top, privateOffset);
-            top.Add(18);
-            Assert.Equal(topDictLen, top.Count); // the offsets above depend on this
-
-            var data = new List<byte> { 0x01, 0x00, 0x04, 0x01 }; // major, minor, hdrSize, offSize
-            AppendIndex(data, new List<byte[]> { FontName });
-            AppendIndex(data, new List<byte[]> { top.ToArray() });
-            data.AddRange(new byte[] { 0x00, 0x00 }); // empty String INDEX
-            data.AddRange(new byte[] { 0x00, 0x00 }); // empty Global Subr INDEX
-            data.Add(0xFF);                           // Encoding format byte: neither 0 nor 1 => no Encoding
-            data.AddRange(charsetTable);
-            AppendIndex(data, Enumerable.Repeat(new byte[] { 0x0E }, numGlyphs).ToList(), offSize: 2);
-            data.AddRange(privateDict);
-            return data.ToArray();
-        }
-
-        private static byte[] BuildCharsetTable(ushort[]? sids)
-        {
-            if (sids is null) return [];
-            var table = new List<byte> { 0x00 }; // format 0
-            foreach (ushort sid in sids)
-            {
-                table.Add((byte)(sid >> 8));
-                table.Add((byte)sid);
-            }
-            return table.ToArray();
-        }
-
-        private static void AppendNumberOp(List<byte> dict, int value, byte op)
-        {
-            AppendInt32(dict, value);
-            dict.Add(op);
-        }
-
-        private static void AppendInt32(List<byte> dict, int value)
-        {
-            dict.Add(0x1D);
-            dict.Add((byte)(value >> 24));
-            dict.Add((byte)(value >> 16));
-            dict.Add((byte)(value >> 8));
-            dict.Add((byte)value);
-        }
-
-        private static void AppendIndex(List<byte> data, List<byte[]> entries, int offSize = 1)
-        {
-            data.Add((byte)(entries.Count >> 8));
-            data.Add((byte)entries.Count);
-            data.Add((byte)offSize);
-            var offset = 1;
-            AppendOffset(data, offset, offSize);
-            foreach (byte[] entry in entries)
-            {
-                offset += entry.Length;
-                AppendOffset(data, offset, offSize);
-            }
-            foreach (byte[] entry in entries) data.AddRange(entry);
-        }
-
-        private static void AppendOffset(List<byte> data, int offset, int offSize)
-        {
-            for (int shift = (offSize - 1) * 8; shift >= 0; shift -= 8)
-                data.Add((byte)(offset >> shift));
-        }
+        Assert.True(t.IsCid);
+        Assert.Null(t.CharSet);
+        Assert.Equal(300, t.RawCharStrings.Count);
+        Assert.Equal(-1, t.GetGlyphIndexByCid(250)); // no charset -> no answer, rather than a wrong one
     }
 }

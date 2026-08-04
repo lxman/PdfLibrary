@@ -170,11 +170,14 @@ internal sealed class FontProgramRule : IConformanceRule
         // are routed to CheckType3 (their width comes from the CharProc d0/d1 operator) before this point.
         //
         // Simple CFF is gated on an embedded (custom) charset. A CFF using a predefined charset (ISOAdobe /
-        // Expert / ExpertSubset) is skipped: the engine does not yet materialise predefined charsets, so
-        // glyph-name→GID resolution misfires on such fonts (e.g. a full 'Helvetica' resolves "space" to the
-        // wrong glyph), which would be a false positive. Subsetted fonts — the conformant-producer norm, and
-        // the form of every corpus fail fixture this rule targets — always carry a custom charset, so they are
-        // covered. Widening to predefined-charset CFF is deferred to the CFF charset (Tier-2) engine work.
+        // Expert / ExpertSubset) is skipped, and stays skipped as deliberate conservatism. The engine now
+        // materialises the ISOAdobe default, so name→GID does resolve for that case, but Expert/ExpertSubset
+        // still yield no charset, and this rule's advance comparison has not been validated against the
+        // predefined-charset population — admitting it untested is how a false positive gets shipped (e.g. a
+        // full 'Helvetica' resolving "space" to the wrong glyph). Subsetted fonts — the conformant-producer
+        // norm, and the form of every corpus fail fixture this rule targets — always carry a custom charset,
+        // so they are covered. Widening to predefined-charset CFF is deferred, and is now a validation job
+        // rather than an engine one.
         bool isTrueType = font.FontType == PdfFontType.TrueType;
         bool isSimpleCff = metrics.IsCffFont && metrics.CffHasEmbeddedCharset;
         if (!isTrueType && !isSimpleCff)
