@@ -19,56 +19,16 @@ internal sealed class SubstituteFontResolver(ISystemFontProvider provider)
 
     private EmbeddedFontMetrics? Load(string baseFont, PdfFontDescriptor? descriptor)
     {
-        // Classified up front, not just on the fallback branch: the style is needed to pick the FACE
-        // even when the raw BaseFont resolves, because the file it resolves to may be a collection.
-        (bool serif, bool mono, bool bold, bool italic) = Classify(baseFont, descriptor);
+        // Style comes from the descriptor AND the name; Classify already merges both. The provider
+        // owns the ladder from here — this method no longer knows anything about filenames.
+        (bool _, bool _, bool bold, bool italic) = Classify(baseFont, descriptor);
 
-        // Try the raw BaseFont first (resolves genuine Standard-14 names incl. Symbol/ZapfDingbats
-        // precisely), then a synthetic name from classification (covers arbitrary subset names).
-        byte[]? bytes = provider.GetFontData(baseFont)
-                        ?? provider.GetFontData(SyntheticStd14Name(serif, mono, bold, italic));
-        if (bytes is null) return null;
+        FontMatch? match = provider.Resolve(new FontRequest(baseFont, bold, italic));
+        if (match is null) return null;
 
-        EmbeddedFontMetrics? metrics = SelectFace(bytes, bold, italic);
-        return metrics is { IsValid: true } ? metrics : null;
+        var metrics = new EmbeddedFontMetrics(match.Data, match.FaceIndex);
+        return metrics.IsValid ? metrics : null;
     }
-
-    /// <summary>Opens the face of <paramref name="bytes"/> whose own style bits best match the requested
-    /// style. A bare sfnt has one face and this is a no-op; a TrueType Collection is the case that
-    /// matters, since its styles share a single file and face 0 is the upright regular.
-    ///
-    /// <para>Scored rather than matched exactly so a collection lacking the exact combination still
-    /// degrades sensibly (an italic request against a Regular/Bold-only collection keeps face 0 instead
-    /// of failing). Ties keep the LOWEST face index, so a collection whose faces are indistinguishable
-    /// resolves exactly as it did before this existed.</para></summary>
-    private static EmbeddedFontMetrics? SelectFace(byte[] bytes, bool bold, bool italic)
-    {
-        var face0 = new EmbeddedFontMetrics(bytes);
-
-        int faceCount;
-        try { faceCount = new FontParser.SfntFont(bytes).FaceCount; }
-        catch { return face0; }
-        if (faceCount <= 1) return face0;
-
-        EmbeddedFontMetrics best = face0;
-        int bestScore = Score(face0, bold, italic);
-        for (var i = 1; i < faceCount && bestScore < 2; i++)
-        {
-            EmbeddedFontMetrics candidate;
-            try { candidate = new EmbeddedFontMetrics(bytes, i); }
-            catch { continue; }
-            if (!candidate.IsValid) continue;
-
-            int score = Score(candidate, bold, italic);
-            if (score <= bestScore) continue;
-            best = candidate;
-            bestScore = score;
-        }
-        return best;
-    }
-
-    private static int Score(EmbeddedFontMetrics face, bool bold, bool italic)
-        => (face.IsItalic == italic ? 1 : 0) + (face.IsBold == bold ? 1 : 0);
 
     public static (bool serif, bool mono, bool bold, bool italic) Classify(
         string baseFont, PdfFontDescriptor? descriptor)
