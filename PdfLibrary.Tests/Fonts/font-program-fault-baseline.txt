@@ -1,0 +1,7 @@
+# Embedded font-program parse faults across the GWG corpus.
+# key = <corpus-relative path>\t<BaseFont>, value = Stage:ExceptionType
+# (multiple faults on one program join with '+'; 'MetricsNull' means the font
+# class swallowed the failure and returned null before any fault list existed).
+# An EMPTY body is the healthy state: every embedded program parsed cleanly.
+# 136 programs examined across 51 files (0 unreadable).
+# 0 faulting fonts. Regenerate with PDFLIBRARY_FONT_FAULT_REGEN=1 and review the diff.
