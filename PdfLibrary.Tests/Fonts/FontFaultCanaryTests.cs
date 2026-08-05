@@ -92,7 +92,7 @@ public class FontFaultCanaryTests
         {
             var sb = new StringBuilder();
             sb.AppendLine("# Embedded font-program parse faults across the GWG corpus.");
-            sb.AppendLine("# key = <corpus-relative path>\\t<BaseFont>, value = Stage:ExceptionType");
+            sb.AppendLine("# key = <corpus-relative path>\\t<BaseFont>, value = Stage:Detail");
             sb.AppendLine("# (multiple faults on one program join with '+'; 'MetricsNull' means the font");
             sb.AppendLine("# class swallowed the failure and returned null before any fault list existed).");
             sb.AppendLine("# An EMPTY body is the healthy state: every embedded program parsed cleanly.");

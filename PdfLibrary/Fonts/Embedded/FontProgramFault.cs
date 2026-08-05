@@ -26,14 +26,16 @@ internal enum FontProgramStage
 }
 
 /// <summary>
-/// A single swallowed font-program parse failure: which stage threw, and the exception's type name.
-/// <para>The exception MESSAGE is deliberately absent. These records are compared against a committed
-/// corpus baseline, and messages vary across .NET versions and locales — including the message would
-/// make the baseline churn for reasons that have nothing to do with the parser. The message still
-/// reaches <c>PdfLogger</c>, which is not committed to anything.</para>
+/// A single swallowed font-program parse failure: which stage went wrong, and a short stable
+/// description of what.
+/// <para><c>Detail</c> is an exception type name for a fault that threw (<c>ArgumentException</c>),
+/// or a short PascalCase tag for one that did not (<c>UnitsPerEmZero</c>) — a program can be
+/// unusable without anything throwing. It is deliberately NOT an exception message: these records
+/// are compared against a committed corpus baseline, and messages vary across .NET versions and
+/// locales. The message still reaches <c>PdfLogger</c>, which is not committed to anything.</para>
 /// </summary>
-internal readonly record struct FontProgramFault(FontProgramStage Stage, string ExceptionType)
+internal readonly record struct FontProgramFault(FontProgramStage Stage, string Detail)
 {
-    /// <summary>Stable one-line form for the corpus baseline, e.g. <c>CffTable:IndexOutOfRangeException</c>.</summary>
-    public override string ToString() => $"{Stage}:{ExceptionType}";
+    /// <summary>Stable one-line form for the corpus baseline, e.g. <c>CffTable:ArgumentException</c>.</summary>
+    public override string ToString() => $"{Stage}:{Detail}";
 }
