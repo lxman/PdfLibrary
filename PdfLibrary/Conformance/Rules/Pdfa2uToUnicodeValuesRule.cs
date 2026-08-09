@@ -48,6 +48,9 @@ internal sealed class Pdfa2uToUnicodeValuesRule : IConformanceRule
                               + "character to U+0000, U+FFFE or U+FEFF, which PDF/UA-1 forbids."
                             : $"Font '{usage.Font.BaseFont}' has a /ToUnicode entry mapping a rendered "
                               + "character to U+0000 or U+FFFF, which PDF/A-2u forbids.",
+                        ObjectNumber = usage.Font.FontDictionary.IsIndirect
+                            ? usage.Font.FontDictionary.ObjectNumber
+                            : null,
                     };
                 break;
             }
