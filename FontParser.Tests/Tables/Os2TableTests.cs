@@ -42,9 +42,12 @@ public class Os2TableTests
     }
 
     [Fact]
-    public void Version_0_reports_no_CapHeight_rather_than_reading_past_the_table()
+    public void A_short_version_0_table_does_not_throw_and_reports_no_CapHeight()
     {
-        // A version-0 table is 78 bytes: sCapHeight does not exist in it at all.
+        // A version-0 table is 78 bytes: sCapHeight does not exist in it at all. This exercises
+        // the BytesRemaining length guard (offsets 86/88 are past the end of a 78-byte buffer),
+        // NOT the version guard — see Version_below_2_ignores_CapHeight_bytes_even_when_present
+        // below for the test that isolates the version check itself.
         byte[] v0 = BuildOs2(0, 400, 0, 1500, -400, 0, 0)[..78];
 
         var table = new Os2Table(v0);
@@ -61,6 +64,24 @@ public class Os2TableTests
         Os2Table table = new(BuildOs2(4, 400, 0, 1500, -400, 1000, 1400)[..20]);
 
         Assert.Equal(400, table.UsWeightClass);
+        Assert.Equal(0, table.SCapHeight);
+    }
+
+    [Theory]
+    [InlineData((ushort)0)]
+    [InlineData((ushort)1)]
+    public void Version_below_2_ignores_CapHeight_bytes_even_when_present(ushort version)
+    {
+        // Full-length buffer (100 bytes) — offsets 86/88 are well within range and hold non-zero
+        // garbage, so BytesRemaining alone would happily return it. Only the explicit
+        // `if (Version < 2) return;` guard in Os2Table stops that garbage from surfacing. This is
+        // the test that isolates the version guard: it fails if that line is removed.
+        byte[] data = BuildOs2(version, 400, 0, 1500, -400, /*xHeight*/ 1234, /*capHeight*/ 5678);
+
+        var table = new Os2Table(data);
+
+        Assert.Equal(version, table.Version);
+        Assert.Equal(0, table.SxHeight);
         Assert.Equal(0, table.SCapHeight);
     }
 
