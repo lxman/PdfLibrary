@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
 
@@ -20,7 +21,10 @@ internal static class FontUnicodeMapping
     private const char ByteOrderMark = (char)0xFEFF;    // U+FEFF (BOM / ZWNBSP)
     private const char NonCharacterFffe = (char)0xFFFE; // U+FFFE (a non-character)
     private const char NotACharacter = (char)0xFFFF;    // U+FFFF (a non-character)
-    private const char ReplacementChar = (char)0xFFFD;  // U+FFFD (GlyphList's .notdef marker)
+
+    /// <summary>U+FFFD, GlyphList's <c>.notdef</c> marker. Shared so callers deriving a value from a
+    /// glyph name (not just this class's own boolean check) can apply the same exclusion.</summary>
+    internal const char ReplacementChar = (char)0xFFFD;
 
     /// <summary>True when <paramref name="code"/> has — or may plausibly have — a Unicode mapping in
     /// <paramref name="font"/>. Returns false only on positive evidence that no mapping exists.</summary>
@@ -45,7 +49,7 @@ internal static class FontUnicodeMapping
         if (GlyphList.GetUnicode(glyphName) is { } unicode && !unicode.Contains(ReplacementChar))
             return true;
 
-        return IsUnicodeGlyphName(glyphName);
+        return UnicodeGlyphNameValue(glyphName) is not null;
     }
 
     /// <summary>The <c>/ToUnicode</c> value for the code, or null when the font has no entry for it.</summary>
@@ -95,14 +99,33 @@ internal static class FontUnicodeMapping
         return (context.Resolve(systemInfo.Get("Ordering")) as PdfString)?.Value == "Identity";
     }
 
-    // The "uXXXXXX" convention: 'u' followed by 4–6 hex digits. ("uniXXXX" is already resolved by GlyphList.)
-    private static bool IsUnicodeGlyphName(string name)
+    /// <summary>
+    /// The "uXXXXXX" convention: a literal 'u' followed by 4–6 hex digits, taken directly as the
+    /// Unicode scalar value ("uniXXXX" is a different convention, already resolved by
+    /// <see cref="GlyphList.GetUnicode"/>). Null when <paramref name="name"/> does not match the
+    /// pattern, or the hex digits do not form a valid Unicode scalar value (e.g. a surrogate).
+    /// Internal and value-producing so a caller deriving a proposed value — not just checking
+    /// reliability — has one place to get it from; <see cref="HasReliableUnicode"/> uses this same
+    /// method (reduced to a null check) so the two can never disagree about what the convention covers.
+    /// </summary>
+    internal static string? UnicodeGlyphNameValue(string name)
     {
         if (name.Length is < 5 or > 7 || name[0] != 'u')
-            return false;
+            return null;
         for (int i = 1; i < name.Length; i++)
             if (!Uri.IsHexDigit(name[i]))
-                return false;
-        return true;
+                return null;
+
+        if (!int.TryParse(name.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int codePoint))
+            return null;
+
+        try
+        {
+            return char.ConvertFromUtf32(codePoint);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null; // a syntactically-valid hex run that is not a valid Unicode scalar value
+        }
     }
 }

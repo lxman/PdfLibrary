@@ -144,6 +144,32 @@ public class FontRemediationPlannerTests
         Assert.DoesNotContain(0x41, proposal.Provable.Keys);
     }
 
+    // Important-1 fix: a partial /ToUnicode CMap (routine in subset fonts) must not be re-derived
+    // and lost. pdfa2u-tounicode only flags a font's UNCOVERED codes (HasReliableUnicode is true for
+    // any code that already has a mapping), but a proposal spans every drawn code — so the covered
+    // code here, whose glyph name is NOT AGL-derivable on its own, must still surface with its
+    // EXISTING value rather than falling into NeedsUserInput (which would then make
+    // PdfDocumentEditor.SetToUnicode, a REPLACE not a merge, destroy the correct existing entry).
+    [Fact]
+    public void Propose_KeepsAnExistingCoveredCodeFromAPartialCMap()
+    {
+        (PdfDocument doc, PreflightResult findings) = Run(BuildPartialCMapDocument());
+        using PdfDocument document = doc;
+
+        ToUnicodeProposal proposal = Assert.IsType<ToUnicodeProposal>(
+            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+
+        // Covered by the existing (partial) CMap, non-AGL glyph name: must come from the existing
+        // entry, not be abandoned to the user just because a fresh glyph-name derivation would fail.
+        Assert.Equal("A", proposal.Provable[0x41]);
+        Assert.DoesNotContain(0x41, proposal.NeedsUserInput);
+
+        // NOT covered by the CMap, ALSO non-AGL: genuinely unprovable, and the reason the finding
+        // fired in the first place.
+        Assert.Contains(0x42, proposal.NeedsUserInput);
+        Assert.DoesNotContain(0x42, proposal.Provable.Keys);
+    }
+
     [Fact]
     public void Propose_IgnoresFindingsFromOtherRuleFamilies()
     {
@@ -248,6 +274,41 @@ public class FontRemediationPlannerTests
             {
                 [N("BaseEncoding")] = N("WinAnsiEncoding"),
                 [N("Differences")] = new PdfArray(new PdfInteger(0x41), N("uFFFF")),
+            },
+            [N("FirstChar")] = new PdfInteger(65),
+            [N("LastChar")] = new PdfInteger(66),
+            [N("Widths")] = new PdfArray(new PdfInteger(722), new PdfInteger(667)),
+            [N("ToUnicode")] = Ref(31),
+        });
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT /F0 12 Tf (AB) Tj ET")));
+        AddSinglePageCatalog(doc, font: 30);
+        return doc;
+    }
+
+    /// <summary>A Type1 font (object 30) with a PARTIAL /ToUnicode CMap (object 31) — routine in
+    /// subset fonts. /Differences gives BOTH drawn codes non-AGL glyph names ("g41", "g42"), so
+    /// neither can be freshly re-derived from the encoding alone. Only code 'A' (0x41) is covered by
+    /// the existing CMap (correctly, to "A"); code 'B' (0x42) is not. Fires pdfa2u-tounicode on 0x42
+    /// only — HasReliableUnicode returns true for 0x41 purely because it already has a /ToUnicode
+    /// entry (checked before the glyph-name path), regardless of whether that glyph name is
+    /// AGL-derivable.</summary>
+    private static PdfDocument BuildPartialCMapDocument()
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(31, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin\n"
+            + "1 begincodespacerange\n<00> <FF>\nendcodespacerange\n"
+            + "1 beginbfchar\n<41> <0041>\nendbfchar\n"
+            + "endcmap\nend\nend")));
+        doc.AddObject(30, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type1"),
+            [N("BaseFont")] = N("PartialCMapFont"),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("BaseEncoding")] = N("WinAnsiEncoding"),
+                [N("Differences")] = new PdfArray(new PdfInteger(0x41), N("g41"), N("g42")),
             },
             [N("FirstChar")] = new PdfInteger(65),
             [N("LastChar")] = new PdfInteger(66),
