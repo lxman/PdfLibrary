@@ -186,6 +186,45 @@ public class FontRemediationPlannerTests
         Assert.Empty(new FontRemediationPlanner().Propose(document, findings).Fonts);
     }
 
+    // Minor-2 fix: FontId(0) is an overloaded sentinel FontInventory assigns to every DIRECT
+    // (non-indirect) logical font dictionary. Two distinct such fonts, each with an INDIRECT program
+    // holder of its own, collide on Id alone; keying the dedup set on
+    // (Id.ObjectNumber, ProgramHolderId.ObjectNumber, RuleId) tells them apart. Findings are
+    // hand-constructed (bypassing Preflighter) because the two rules this planner currently handles
+    // only ever report a WRAPPER's own object number, never a descendant's — so this exact collision
+    // needs a Finding shaped the way a FUTURE rule (naming the descendant, per FontEmbeddingRule's own
+    // convention) would produce; PreflightResult/Finding are ordinary public types, so building it
+    // directly is the natural way to test a case current rules cannot yet trigger end to end.
+    [Fact]
+    public void Propose_DoesNotDropASecondDirectFontWithADifferentProgramHolder()
+    {
+        using PdfDocument document = BuildTwoDirectType0WrappersDocument();
+        var findings = new PreflightResult
+        {
+            Profile = ConformanceProfile.PdfA2u,
+            Findings =
+            [
+                new Finding
+                {
+                    RuleId = "pdfa2u-tounicode", Severity = FindingSeverity.Error,
+                    Clause = "test", Message = "test", ObjectNumber = 21, // first font's descendant
+                },
+                new Finding
+                {
+                    RuleId = "pdfa2u-tounicode", Severity = FindingSeverity.Error,
+                    Clause = "test", Message = "test", ObjectNumber = 41, // second font's descendant
+                },
+            ],
+        };
+
+        IReadOnlyList<FontProposal> proposals = new FontRemediationPlanner().Propose(document, findings).Fonts;
+
+        // Both are unaddressable (direct wrapper) so both are declines, not ToUnicode proposals - the
+        // point under test is that there are TWO of them, not one silently swallowed by the other.
+        Assert.Equal(2, proposals.Count);
+        Assert.All(proposals, p => Assert.IsType<DeclineProposal>(p));
+    }
+
     private static (PdfDocument, PreflightResult) Run(PdfDocument document)
     {
         PreflightResult findings = Preflighter.Check(document, ConformanceProfile.PdfA2u);
@@ -359,6 +398,88 @@ public class FontRemediationPlannerTests
         });
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT /F0 12 Tf <0001> Tj ET")));
         AddSinglePageCatalog(doc, font: 20);
+        return doc;
+    }
+
+    /// <summary>Two Type0 wrappers, BOTH embedded DIRECTLY (non-indirect) in the page's /Font
+    /// resources — so both get FontId(0) as their <c>Id</c> — each over its OWN INDIRECT descendant
+    /// CIDFont (objects 21 and 41, distinct). Neither wrapper is ever registered via
+    /// <c>doc.AddObject</c>; only their descendants are.</summary>
+    private static PdfDocument BuildTwoDirectType0WrappersDocument()
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(21, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("CIDFontA"),
+            [N("CIDSystemInfo")] = new PdfDictionary
+            {
+                [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+                [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+                [N("Supplement")] = new PdfInteger(0),
+            },
+            [N("FontDescriptor")] = new PdfDictionary
+            {
+                [N("Type")] = N("FontDescriptor"), [N("FontName")] = N("CIDFontA"),
+            },
+        });
+        doc.AddObject(41, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("CIDFontB"),
+            [N("CIDSystemInfo")] = new PdfDictionary
+            {
+                [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+                [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+                [N("Supplement")] = new PdfInteger(0),
+            },
+            [N("FontDescriptor")] = new PdfDictionary
+            {
+                [N("Type")] = N("FontDescriptor"), [N("FontName")] = N("CIDFontB"),
+            },
+        });
+
+        var directWrapperA = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("CIDFontA"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(21)),
+        };
+        var directWrapperB = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("CIDFontB"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(41)),
+        };
+        Assert.False(directWrapperA.IsIndirect); // guards the fixture's own premise
+        Assert.False(directWrapperB.IsIndirect);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0001> Tj /F1 12 Tf <0001> Tj ET")));
+        var page = new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = Ref(2),
+            [N("MediaBox")] = Rect(0, 0, 612, 792),
+            [N("Contents")] = Ref(11),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("Font")] = new PdfDictionary { [N("F0")] = directWrapperA, [N("F1")] = directWrapperB },
+            },
+        };
+        doc.AddObject(3, 0, page);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
         return doc;
     }
 

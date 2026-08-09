@@ -24,14 +24,25 @@ public sealed class FontRemediationPlanner
 
         IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(document);
         var proposals = new List<FontProposal>();
-        var seen = new HashSet<(FontId, string)>();
+        // Keyed on (Id.ObjectNumber, ProgramHolderId.ObjectNumber, RuleId) rather than just Id: FontId
+        // is a single-field record struct (FontId(int ObjectNumber)), so keying on Id ALONE is really
+        // still keying on the raw object number — and FontInventory.cs assigns FontId(0) to every
+        // DIRECT (non-indirect) font dictionary as a sentinel, so two distinct direct dictionaries
+        // that each have an indirect program holder would collide on Id==0 and silently drop the
+        // second one's proposal. Including ProgramHolderId's object number distinguishes them because
+        // it's real per FontInventoryEntry.BuildEntry (indirect dictionaries never share a program
+        // holder). This is a workaround, not a fix: FontId(0) is an overloaded sentinel for "direct
+        // dictionary" in the public read model, and disambiguating it properly (a nullable or
+        // discriminated id) ripples through FontInventory's public surface — deferred, out of scope
+        // for this task.
+        var seen = new HashSet<(int, int?, string)>();
 
         foreach (Finding finding in findings.Findings)
         {
             if (!HandledRules.Contains(finding.RuleId)) continue;
             if (finding.ObjectNumber is not { } objectNumber) continue;
             if (FontInventory.Find(inventory, objectNumber) is not { } entry) continue;
-            if (!seen.Add((entry.Id, finding.RuleId))) continue;
+            if (!seen.Add((entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber, finding.RuleId))) continue;
 
             proposals.Add(ProposeToUnicode(document, entry, finding.RuleId));
         }
