@@ -37,6 +37,9 @@ internal sealed class Pdfa2uToUnicodeRule : IConformanceRule
                         Message = $"Font '{usage.Font.BaseFont}' renders text with a character code that has "
                                   + "no Unicode mapping (no /ToUnicode entry and no mappable encoding); "
                                   + "PDF/A-2u requires all rendered text to map to Unicode.",
+                        ObjectNumber = usage.Font.FontDictionary.IsIndirect
+                            ? usage.Font.FontDictionary.ObjectNumber
+                            : null,
                     };
                 break; // this font instance is already accounted for
             }

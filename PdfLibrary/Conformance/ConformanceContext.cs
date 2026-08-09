@@ -49,6 +49,7 @@ internal sealed class ConformanceContext
     private OutputIntentColour? _outputIntentColour;
     private IReadOnlyList<TransparencyAnalysis.PageTransparency>? _pageTransparency;
     private IReadOnlyList<UsedFontCodes>? _usedTextGlyphs;
+    private IReadOnlyDictionary<PdfDictionary, IReadOnlyList<int>>? _fontPagesUsed;
     private MarkedContentAnalysis? _markedContent;
     private bool _xmpResolved;
     private XmpPacket? _xmp;
@@ -122,7 +123,24 @@ internal sealed class ConformanceContext
     /// Form XObjects. Backs the PDF/A-2u Unicode-mapping rules (which need the codes actually used, not the
     /// codes a font declares). Cached.
     /// </summary>
-    public IReadOnlyList<UsedFontCodes> UsedTextGlyphs => _usedTextGlyphs ??= CollectUsedTextGlyphs();
+    public IReadOnlyList<UsedFontCodes> UsedTextGlyphs { get { EnsureUsedTextGlyphs(); return _usedTextGlyphs!; } }
+
+    /// <summary>
+    /// For each font dictionary actually drawn with — a character shown via a text-showing operator
+    /// while it was the selected /Tf font — the indices of the pages it was drawn on. Computed from
+    /// the SAME per-page content-stream walk as <see cref="UsedTextGlyphs"/>, captured before that
+    /// walk merges codes across pages and discards which page each one came from. A font merely
+    /// PRESENT in a page's (or an inherited, or a Form XObject's) resource dictionary but never
+    /// selected to draw a character is not "used" on that page: recovering page attribution from
+    /// resource-dictionary presence instead of this walk both under-reports (misses a font only
+    /// reachable through a Form XObject, tiling pattern or annotation appearance that a page-level
+    /// resource scan does not see) and over-reports (counts a font that sits, unused, in a shared
+    /// resource dictionary). Cached alongside <see cref="UsedTextGlyphs"/>.
+    /// </summary>
+    internal IReadOnlyDictionary<PdfDictionary, IReadOnlyList<int>> FontPagesUsed
+    {
+        get { EnsureUsedTextGlyphs(); return _fontPagesUsed!; }
+    }
 
     /// <summary>
     /// The page-content marked-content facts for the PDF/UA-1 rules — whether any real content is untagged,
@@ -239,124 +257,8 @@ internal sealed class ConformanceContext
         return Document.Objects.Values.OfType<PdfStream>().ToList();
     }
 
-    private IReadOnlyList<PdfDictionary> CollectReferencedFonts()
-    {
-        var fonts = new List<PdfDictionary>();
-        var fontSeen = new HashSet<int>();      // font object numbers already collected
-        var resourceSeen = new HashSet<int>();  // resource dictionaries already walked (cycle guard)
-        var streamSeen = new HashSet<int>();    // XObject / pattern streams already walked
-
-        void AddFont(PdfObject? fontObj)
-        {
-            if (Resolve(fontObj) is not PdfDictionary font)
-                return;
-            if (font.IsIndirect && !fontSeen.Add(font.ObjectNumber))
-                return;
-
-            fonts.Add(font);
-
-            switch (ResolveName(font.Get("Subtype")))
-            {
-                // A composite font's program lives on its descendant CIDFont — reach it so embedding is checked.
-                case "Type0" when Resolve(font.Get("DescendantFonts")) is PdfArray descendants && descendants.Count > 0:
-                    AddFont(descendants[0]);
-                    break;
-                // A Type3 glyph is a content stream drawn through the font's own resources.
-                case "Type3" when Resolve(font.Get("Resources")) is PdfDictionary type3Resources:
-                    WalkResources(new PdfResources(type3Resources, Document));
-                    break;
-            }
-        }
-
-        void WalkResources(PdfResources? resources)
-        {
-            if (resources is null)
-                return;
-            if (resources.Dictionary.IsIndirect && !resourceSeen.Add(resources.Dictionary.ObjectNumber))
-                return;
-
-            if (resources.GetFonts() is { } fontDict)
-                foreach (PdfObject font in fontDict.Values)
-                    AddFont(font);
-
-            if (resources.GetXObjects() is { } xobjects)
-                foreach (PdfObject xobject in xobjects.Values)
-                    WalkStreamResources(xobject);
-
-            if (resources.GetPatterns() is { } patterns)
-                foreach (PdfObject pattern in patterns.Values)
-                    WalkStreamResources(pattern); // tiling patterns are streams that carry /Resources
-
-            // An ExtGState /Font entry ([font size]) can be the only reference to a rendered font.
-            if (resources.GetExtGStates() is { } extGStates)
-                foreach (PdfObject graphicsState in extGStates.Values)
-                    if (Resolve(graphicsState) is PdfDictionary gsDict
-                        && Resolve(gsDict.Get("Font")) is PdfArray gsFont && gsFont.Count > 0)
-                        AddFont(gsFont[0]);
-        }
-
-        void WalkStreamResources(PdfObject? streamObj)
-        {
-            if (Resolve(streamObj) is not PdfStream stream)
-                return;
-            if (stream.IsIndirect && !streamSeen.Add(stream.ObjectNumber))
-                return;
-            if (Resolve(stream.Dictionary.Get("Resources")) is PdfDictionary resourceDict)
-                WalkResources(new PdfResources(resourceDict, Document));
-        }
-
-        void WalkAppearance(PdfObject? apObj)
-        {
-            if (Resolve(apObj) is not PdfDictionary appearance)
-                return;
-            foreach (PdfObject state in appearance.Values) // /N, /D, /R
-            {
-                switch (Resolve(state))
-                {
-                    case PdfStream:
-                        WalkStreamResources(state);
-                        break;
-                    case PdfDictionary subStates: // per-state appearances (e.g. button on/off)
-                        foreach (PdfObject sub in subStates.Values)
-                            WalkStreamResources(sub);
-                        break;
-                }
-            }
-        }
-
-        // The nearest /Resources up a page's full /Parent chain (page.GetResources() only inherits one
-        // level, unlike page.GetMediaBox()), so a font in a grandparent /Pages node is still reached.
-        PdfResources? EffectiveResources(PdfDictionary? node)
-        {
-            var chainSeen = new HashSet<int>();
-            while (node is not null)
-            {
-                if (node.IsIndirect && !chainSeen.Add(node.ObjectNumber))
-                    break; // guard a cyclic /Parent chain
-                if (Resolve(node.Get("Resources")) is PdfDictionary resourceDict)
-                    return new PdfResources(resourceDict, Document);
-                node = Resolve(node.Get("Parent")) as PdfDictionary;
-            }
-            return null;
-        }
-
-        foreach (PdfPage page in Pages)
-            WalkResources(EffectiveResources(page.Dictionary));
-        foreach (PdfDictionary annot in Annotations)
-            WalkAppearance(annot.Get("AP"));
-
-        // AcroForm /DR fonts are rendered only when the viewer generates field appearances
-        // (/NeedAppearances true); otherwise appearances come from /AP (already walked) and the /DR pool
-        // is not necessarily drawn. Including /DR unconditionally would re-introduce the orphan over-report.
-        if (Catalog?.GetAcroForm() is { } acroForm
-            && Resolve(acroForm.Get("NeedAppearances")) is PdfBoolean { Value: true }
-            && Resolve(acroForm.Get("DR")) is PdfDictionary defaultResources)
-        {
-            WalkResources(new PdfResources(defaultResources, Document));
-        }
-
-        return fonts;
-    }
+    private IReadOnlyList<PdfDictionary> CollectReferencedFonts() =>
+        ReferencedFontWalker.Collect(Document, Pages, Annotations, Catalog);
 
     private IReadOnlyList<PdfDictionary> CollectAnnotations()
     {
@@ -404,12 +306,22 @@ internal sealed class ConformanceContext
         return result;
     }
 
-    private IReadOnlyList<UsedFontCodes> CollectUsedTextGlyphs()
+    /// <summary>Populates both <see cref="_usedTextGlyphs"/> and <see cref="_fontPagesUsed"/> from a
+    /// single per-page content-stream walk (see <see cref="FontPagesUsed"/> for why they share one
+    /// walk rather than each re-deriving usage a different, less precise way).</summary>
+    private void EnsureUsedTextGlyphs()
     {
+        if (_usedTextGlyphs is not null)
+            return;
+
         var merged = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
         var mergedVisible = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
-        foreach (PdfPage page in Pages)
+        var pagesByFont = new Dictionary<PdfDictionary, SortedSet<int>>(ReferenceEqualityComparer.Instance);
+
+        for (var i = 0; i < Pages.Count; i++)
         {
+            PdfPage page = Pages[i];
+
             // Concatenate the page's content streams before parsing so an operator split across a stream
             // boundary still parses (ISO 32000-1 7.8.2), matching the renderer's page-content handling.
             var combined = new List<byte>();
@@ -428,6 +340,12 @@ internal sealed class ConformanceContext
                 if (!merged.TryGetValue(font, out HashSet<int>? set))
                     merged[font] = set = [];
                 set.UnionWith(codes);
+
+                if (codes.Count == 0)
+                    continue; // present in collector.Result but nothing actually shown on this page
+                if (!pagesByFont.TryGetValue(font.FontDictionary, out SortedSet<int>? pages))
+                    pagesByFont[font.FontDictionary] = pages = [];
+                pages.Add(i);
             }
 
             foreach ((PdfFont font, HashSet<int> codes) in collector.VisibleResult)
@@ -437,10 +355,16 @@ internal sealed class ConformanceContext
                 set.UnionWith(codes);
             }
         }
-        return merged.Select(kv => new UsedFontCodes(
+
+        _usedTextGlyphs = merged.Select(kv => new UsedFontCodes(
             kv.Key,
             kv.Value,
             mergedVisible.TryGetValue(kv.Key, out HashSet<int>? visible) ? visible : [])).ToList();
+
+        var pagesResult = new Dictionary<PdfDictionary, IReadOnlyList<int>>(ReferenceEqualityComparer.Instance);
+        foreach (KeyValuePair<PdfDictionary, SortedSet<int>> kv in pagesByFont)
+            pagesResult[kv.Key] = kv.Value.ToList();
+        _fontPagesUsed = pagesResult;
     }
 
     private MarkedContentAnalysis AnalyzeMarkedContent()

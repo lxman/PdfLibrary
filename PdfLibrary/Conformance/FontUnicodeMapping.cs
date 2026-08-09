@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
 
@@ -20,7 +21,10 @@ internal static class FontUnicodeMapping
     private const char ByteOrderMark = (char)0xFEFF;    // U+FEFF (BOM / ZWNBSP)
     private const char NonCharacterFffe = (char)0xFFFE; // U+FFFE (a non-character)
     private const char NotACharacter = (char)0xFFFF;    // U+FFFF (a non-character)
-    private const char ReplacementChar = (char)0xFFFD;  // U+FFFD (GlyphList's .notdef marker)
+
+    /// <summary>U+FFFD, GlyphList's <c>.notdef</c> marker. Shared so callers deriving a value from a
+    /// glyph name (not just this class's own boolean check) can apply the same exclusion.</summary>
+    internal const char ReplacementChar = (char)0xFFFD;
 
     /// <summary>True when <paramref name="code"/> has — or may plausibly have — a Unicode mapping in
     /// <paramref name="font"/>. Returns false only on positive evidence that no mapping exists.</summary>
@@ -96,6 +100,12 @@ internal static class FontUnicodeMapping
     }
 
     // The "uXXXXXX" convention: 'u' followed by 4–6 hex digits. ("uniXXXX" is already resolved by GlyphList.)
+    // SYNTAX ONLY — deliberately does not check whether the hex digits form a valid Unicode scalar
+    // value. This is what HasReliableUnicode consults, and this rule is conservative BY DESIGN: it
+    // "flags only positive evidence of no mapping" (see the class doc), so a name that merely LOOKS
+    // like the convention gets the benefit of the doubt even if its code point turns out to be a
+    // surrogate or out of range — rejecting it here would be an unrequested tightening of a rule
+    // whose whole point is to avoid false positives.
     private static bool IsUnicodeGlyphName(string name)
     {
         if (name.Length is < 5 or > 7 || name[0] != 'u')
@@ -104,5 +114,43 @@ internal static class FontUnicodeMapping
             if (!Uri.IsHexDigit(name[i]))
                 return false;
         return true;
+    }
+
+    /// <summary>
+    /// The "uXXXXXX" convention: a literal 'u' followed by 4–6 hex digits, taken directly as the
+    /// Unicode scalar value ("uniXXXX" is a different convention, already resolved by
+    /// <see cref="GlyphList.GetUnicode"/>). Null when <paramref name="name"/> does not match the
+    /// syntax, OR the hex digits do not form a valid Unicode scalar value (a surrogate code point
+    /// D800–DFFF, or a value above 10FFFF — e.g. <c>uD800</c>, <c>uDFFF</c>, <c>u110000</c>,
+    /// <c>uFFFFFF</c>).
+    ///
+    /// <para><b>Deliberately STRICTER than <see cref="IsUnicodeGlyphName"/>/<see cref="HasReliableUnicode"/>.</b>
+    /// The two ask different questions: <c>HasReliableUnicode</c> asks "is this positive evidence of
+    /// no mapping" (syntax alone answers that — a name that merely fits the pattern earns the
+    /// conservative rule's benefit of the doubt), while this method asks "do I have an actual value I
+    /// can propose" (syntax fitting the pattern is not enough if the resulting code point cannot
+    /// exist — <see cref="char.ConvertFromUtf32(int)"/> would throw). A syntactically-valid-but-out-of-range
+    /// name such as <c>uD800</c> therefore returns <c>true</c> from <c>IsUnicodeGlyphName</c> but
+    /// <c>null</c> from here — an EARLIER version of this method collapsed the two into one, which
+    /// silently tightened the conformance rule (four such names newly failed <c>pdfa2u-tounicode</c>
+    /// with no fixture ever exercising the difference); they must stay separate, sharing only the
+    /// syntactic prefix check.</para>
+    /// </summary>
+    internal static string? UnicodeGlyphNameValue(string name)
+    {
+        if (!IsUnicodeGlyphName(name))
+            return null;
+
+        if (!int.TryParse(name.AsSpan(1), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int codePoint))
+            return null;
+
+        try
+        {
+            return char.ConvertFromUtf32(codePoint);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return null; // a syntactically-valid hex run that is not a valid Unicode scalar value
+        }
     }
 }
