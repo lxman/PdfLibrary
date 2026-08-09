@@ -28,9 +28,38 @@ internal partial class Type1Font : PdfFont
 
     public override double GetCharacterWidth(int charCode)
     {
-        // Try to use embedded font metrics first for more accurate widths
-        // This matches TrueTypeFont behavior and fixes garbled text issues
-        // when the PDF /Widths array has incorrect values
+        // ISO 32000-2 §9.2.4: the width "shall be stored both in the font dictionary and in the font
+        // program", and NOTE 2 is explicit that the dictionary copy exists so a processor can position
+        // glyphs "without having to look inside the font program". NOTE 3 adds that the two legitimately
+        // differ, so preferring the program is not "more accurate" — it is a guarantee of drift.
+        //
+        // The > 0 test is a deliberate concession, not a claim that a zero advance is invalid (it is a
+        // legal value). Program-first ordering was originally introduced here to fix garbled text
+        // caused by files whose /Widths array carries incorrect/degenerate values; a zero or
+        // out-of-range entry still falls through to the program, so those files render exactly as
+        // they did.
+        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Checking PDF widths array: _widths={(_widths is not null ? "exists" : "NULL")}, FirstChar={FirstChar}, LastChar={LastChar}, charCode={charCode}");
+        if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
+        {
+            int index = charCode - FirstChar;
+            if (index >= 0 && index < _widths.Length && _widths[index] > 0)
+            {
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array[{index}]: {_widths[index]:F1}");
+                return _widths[index];
+            }
+
+            if (index >= 0 && index < _widths.Length)
+            {
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] PDF widths array[{index}] is zero — a legal but unusable advance, falling through to the embedded program");
+            }
+            else
+            {
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] PDF widths array index out of bounds: index={index}, _widths.Length={_widths.Length}");
+            }
+        }
+
+        // Fall back to embedded font metrics when /Widths cannot answer.
+        // This matches TrueTypeFont behavior.
         EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
         PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: embeddedMetrics={(embeddedMetrics is not null ? "exists" : "NULL")}, IsValid={embeddedMetrics?.IsValid}, Encoding={(Encoding is not null ? "exists" : "NULL")}");
 
@@ -72,14 +101,17 @@ internal partial class Type1Font : PdfFont
                         if (glyphWidth > 0)
                         {
                             // For CFF fonts: if glyph width equals nominalWidthX, the glyph doesn't specify
-                            // its own width and is using the default. In this case, prefer PDF /Widths array.
+                            // its own width and is using the default. The /Widths array is now checked
+                            // BEFORE this branch (see the top of the method), so reaching here already
+                            // means /Widths had no usable entry for this code; this is not a discovered
+                            // width, just the CFF default, and falls through to the remaining fallbacks
+                            // below like any other unusable embedded width.
                             if (embeddedMetrics.IsCffFont)
                             {
                                 int nominalWidthX = embeddedMetrics.GetNominalWidthX();
                                 if (glyphWidth == nominalWidthX)
                                 {
-                                    PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: CFF glyph width equals nominalWidthX ({nominalWidthX}), trying PDF widths array");
-                                    // Fall through to PDF widths array check below
+                                    PdfLogger.Log(LogCategory.Text, $"  [WIDTH-DEBUG] Type1 charCode={charCode}: CFF glyph width equals nominalWidthX ({nominalWidthX}) and /Widths already had no usable entry, falling through to remaining fallbacks");
                                 }
                                 else
                                 {
@@ -100,20 +132,6 @@ internal partial class Type1Font : PdfFont
                     }
                 }
             }
-        }
-
-        // Fallback to widths array from PDF
-        PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] Checking PDF widths array: _widths={(_widths is not null ? "exists" : "NULL")}, FirstChar={FirstChar}, LastChar={LastChar}, charCode={charCode}");
-        if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
-        {
-            int index = charCode - FirstChar;
-            if (index >= 0 && index < _widths.Length)
-            {
-                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] Type1 charCode={charCode} -> PDF widths array[{index}]: {_widths[index]:F1}");
-                return _widths[index];
-            }
-
-            PdfLogger.Log(LogCategory.Text, $"  [WIDTH-PATH] PDF widths array index out of bounds: index={index}, _widths.Length={_widths.Length}");
         }
 
         // For standard 14 fonts, use built-in metrics
