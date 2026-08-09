@@ -62,9 +62,51 @@ public class PdfDocumentEditorEmbedProgramTests
         var stream = Assert.IsType<PdfStream>(document.GetObject(
             ((PdfIndirectReference)descriptor.Get("FontFile2")!).ObjectNumber));
         Assert.Equal(program.Length, stream.Data.Length);
+        Assert.Equal(program, stream.Data); // the payload itself, not merely its length, must survive
         Assert.Equal(program.Length, ((PdfInteger)stream.Dictionary.Get("Length1")!).Value);
         Assert.Null(descriptor.Get("FontFile"));
         Assert.Null(descriptor.Get("FontFile3"));
+    }
+
+    [Fact]
+    public void Writes_the_program_to_FontFile3_with_the_exact_bytes_for_Type1C()
+    {
+        (PdfDocument document, FontId id, _, PdfDictionary descriptor) = UnembeddedWithWidths();
+        byte[] program = [0x01, 0x00, 0x04, 0x02, 0x03, 0x10, 0x20, 0x30, 0x40, 0x50, 0x99, 0x01];
+        using var editor = new PdfDocumentEditor(document);
+
+        editor.EmbedProgram(id, program, FontProgramFormat.Type1C);
+
+        var stream = Assert.IsType<PdfStream>(document.GetObject(
+            ((PdfIndirectReference)descriptor.Get("FontFile3")!).ObjectNumber));
+        Assert.Equal(program, stream.Data); // the /FontFile3 path builds a different stream dict;
+        // confirm it doesn't diverge on the payload the way /FontFile2 could have.
+        Assert.Equal("Type1C", ((PdfName)stream.Dictionary.Get("Subtype")!).Value);
+    }
+
+    [Fact]
+    public void A_program_that_fails_to_parse_leaves_existing_descriptor_metrics_untouched()
+    {
+        // FontDescriptorMetrics.Compute returns null for bytes it cannot parse as a loadable font.
+        // EmbedProgram must leave whatever metrics already sit on the descriptor rather than
+        // overwrite them with zeroes -- a descriptor of zeroes would be worse than the
+        // stale-but-plausible values it replaces.
+        //
+        // TrueType is the format used here deliberately: WriteProgramStream never parses or
+        // validates the bytes for that format (it only measures Length1 = the byte count), so
+        // garbage reaches FontDescriptorMetrics.Compute and returns null there instead of throwing
+        // earlier in WriteProgramStream -- which is what a non-PFB Type1 program would do.
+        (PdfDocument document, FontId id, _, PdfDictionary descriptor) = UnembeddedWithWidths();
+        descriptor.Set("FontBBox", new PdfArray(
+            new PdfInteger(-100), new PdfInteger(-200), new PdfInteger(900), new PdfInteger(800)));
+        using var editor = new PdfDocumentEditor(document);
+        byte[] garbage = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99];
+
+        editor.EmbedProgram(id, garbage, FontProgramFormat.TrueType);
+
+        Assert.Equal(80, ((PdfInteger)descriptor.Get("StemV")!).Value);
+        int[] bbox = ((PdfArray)descriptor.Get("FontBBox")!).Select(n => ((PdfInteger)n).Value).ToArray();
+        Assert.Equal([-100, -200, 900, 800], bbox);
     }
 
     [Fact]
