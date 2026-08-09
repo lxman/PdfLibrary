@@ -90,8 +90,18 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// policy position — so each reason names the specific cause, and the fsType (embedding
     /// restricted) check runs BEFORE the proposal is built, never after: a font whose vendor forbids
     /// embedding must not have its bytes carried in view state at all.
+    ///
+    /// <para>Internal rather than private: F-2 declines every composite font, so
+    /// <c>entry.ProgramHolderId ?? entry.Id</c> can never observably diverge from
+    /// <c>entry.Id</c> through <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>
+    /// in THIS increment — <see cref="FontInventory"/> only ever produces a <c>ProgramHolderId</c>
+    /// different from <c>Id</c> for a Type0 font, and that kind declines one branch earlier. Exposing
+    /// this lets a test hand-build a <see cref="FontInventoryEntry"/> whose <c>ProgramHolderId</c>
+    /// differs from <c>Id</c> under a non-composite <c>Kind</c> and prove the targeting expression
+    /// itself is correct, ahead of the composite-font increment that will make it reachable
+    /// end-to-end through <c>Propose</c>.</para>
     /// </summary>
-    private FontProposal ProposeEmbed(PdfDocument document, FontInventoryEntry entry, string ruleId)
+    internal FontProposal ProposeEmbed(PdfDocument document, FontInventoryEntry entry, string ruleId)
     {
         if (!entry.IsAddressable)
         {
@@ -157,18 +167,24 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "will not embed it.");
         }
 
-        // Mirrors PdfDocumentEditor.EmbedProgram's own leading-byte check for a bare PFA program
-        // exactly (PdfDocumentEditor.Fonts.cs, WriteProgramStream): a Type1 program that does not
-        // start with the PFB segment marker 0x80 carries no embedded segment markers, so /Length1,
-        // /Length2 and /Length3 cannot be recovered. EmbedProgram throws NotSupportedException for
-        // this — the planner must decline it here instead, so a proposal never reaches Save only to
-        // throw there.
-        if (classified.Format == FontProgramFormat.Type1
-            && (classified.Program.Length == 0 || classified.Program[0] != 0x80))
+        // Calls the SAME validation PdfDocumentEditor.EmbedProgram runs (Type1PfbSegments.Split,
+        // shared rather than mirrored) so the two cannot diverge: a bare PFA with no PFB segment
+        // markers, a corrupt segment table, or a PFB with no binary segment all throw
+        // NotSupportedException there — declined here instead, so a proposal never reaches Save only
+        // to throw there. The split result itself is discarded; only whether it succeeds matters, since
+        // EmbedProgram (Task 5) re-splits the SAME bytes when the proposal is actually applied.
+        if (classified.Format == FontProgramFormat.Type1)
         {
-            return Decline(entry, ruleId,
-                $"The Type 1 program found for '{entry.FamilyName}' does not declare its segment "
-                + "lengths, which are required to embed it.");
+            try
+            {
+                Type1PfbSegments.Split(classified.Program);
+            }
+            catch (NotSupportedException)
+            {
+                return Decline(entry, ruleId,
+                    $"The Type 1 program found for '{entry.FamilyName}' does not declare its segment "
+                    + "lengths, which are required to embed it.");
+            }
         }
 
         string style = (metrics.IsBold, metrics.IsItalic) switch

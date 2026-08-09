@@ -146,20 +146,14 @@ public sealed partial class PdfDocumentEditor
             case FontProgramFormat.Type1:
             {
                 // A PDF /FontFile stream is the bare concatenation of the clear-text, encrypted and
-                // trailer segments — WITHOUT the PFB format's 6-byte segment headers. A PFB program
-                // carries its segment boundaries in those headers, so they can be split out and the
-                // lengths recovered exactly. A bare PFA has no such markers; determining Length1/2/3
-                // for one means locating the eexec boundary and the trailing 512-zero region, which
-                // is not implemented here — throw rather than write wrong lengths (a font no consumer
-                // can load). The planner should decline a PFA Type 1 program before reaching here
-                // (Task 6); this is the backstop if it does not.
-                if (program.Length == 0 || program[0] != 0x80)
-                    throw new NotSupportedException(
-                        "Cannot determine Type 1 /Length1, /Length2 and /Length3 for a bare PFA program: " +
-                        "the ASCII format carries no embedded segment markers. Embed a PFB-formatted " +
-                        "program instead, or decline it before calling EmbedProgram.");
-
-                (byte[] data, int length1, int length2, int length3) = SplitType1PfbSegments(program);
+                // trailer segments — WITHOUT the PFB format's 6-byte segment headers. Type1PfbSegments
+                // recovers those lengths from a PFB program's own segment headers and throws
+                // NotSupportedException for anything it cannot determine them from (a bare PFA, a
+                // corrupt segment table, or a PFB with no binary segment) — shared with
+                // FontRemediationPlanner (Task 6) so the planner's pre-embed decline and this
+                // operation's own validation cannot diverge. The planner should decline such a
+                // program before reaching here; this throw is the backstop if it does not.
+                (byte[] data, int length1, int length2, int length3) = Type1PfbSegments.Split(program);
 
                 var streamDict = new PdfDictionary();
                 streamDict.Set("Length1", new PdfInteger(length1));
@@ -175,63 +169,6 @@ public sealed partial class PdfDocumentEditor
             default:
                 throw new ArgumentOutOfRangeException(nameof(format), format, "Unknown font program format.");
         }
-    }
-
-    /// <summary>Splits a PFB-formatted Type 1 program (leading 0x80 segment markers) into its bare
-    /// concatenated bytes plus the clear-text/encrypted/trailer segment sizes those markers record.
-    /// Segment type 1 (ASCII) occurring before the first type 2 (binary) segment contributes to
-    /// Length1; type 2 contributes to Length2; any type 1 segment(s) after the binary one — the
-    /// trailing cleartext/<c>cleartomark</c> — contribute to Length3. Type 3 is the EOF marker and
-    /// ends the scan without a length field of its own.</summary>
-    private static (byte[] Data, int Length1, int Length2, int Length3) SplitType1PfbSegments(byte[] program)
-    {
-        var data = new List<byte>(program.Length);
-        int length1 = 0, length2 = 0, length3 = 0;
-        var sawBinary = false;
-        var offset = 0;
-
-        while (offset + 6 <= program.Length && program[offset] == 0x80)
-        {
-            byte segmentType = program[offset + 1];
-            if (segmentType == 3) break; // EOF marker — no length field follows.
-
-            int segmentLength = program[offset + 2]
-                | (program[offset + 3] << 8)
-                | (program[offset + 4] << 16)
-                | (program[offset + 5] << 24);
-            offset += 6;
-
-            if (segmentLength < 0 || offset + segmentLength > program.Length)
-                throw new NotSupportedException(
-                    "Type 1 PFB segment table is corrupt: a segment claims more bytes than the program contains.");
-
-            for (var i = 0; i < segmentLength; i++)
-                data.Add(program[offset + i]);
-
-            switch (segmentType)
-            {
-                case 1 when !sawBinary:
-                    length1 += segmentLength;
-                    break;
-                case 2:
-                    length2 += segmentLength;
-                    sawBinary = true;
-                    break;
-                case 1:
-                    length3 += segmentLength;
-                    break;
-                default:
-                    throw new NotSupportedException($"Unrecognised Type 1 PFB segment type {segmentType}.");
-            }
-
-            offset += segmentLength;
-        }
-
-        if (length2 == 0)
-            throw new NotSupportedException(
-                "Cannot determine Type 1 segment lengths: the PFB program has no binary (eexec-encrypted) segment.");
-
-        return (data.ToArray(), length1, length2, length3);
     }
 
     /// <summary>Obligation 3: writes the recomputed metric entries. Never called with a null

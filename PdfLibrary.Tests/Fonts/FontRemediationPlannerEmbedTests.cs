@@ -125,6 +125,42 @@ public class FontRemediationPlannerEmbedTests
     }
 
     [Fact]
+    public void ProposeEmbed_targets_the_program_holder_even_when_it_differs_from_the_logical_font_id()
+    {
+        // The_proposal_targets_the_program_holder above cannot actually discriminate: for
+        // EmbedFixtures.UnembeddedArial() (a simple font) entry.ProgramHolderId equals entry.Id, so
+        // "entry.ProgramHolderId ?? entry.Id" and a bare "entry.Id" would pass that test identically.
+        // FontInventory only ever produces a ProgramHolderId DIFFERENT from Id for a Type0 font
+        // (FontInventory.BuildEntry), and F-2 declines every composite Kind one branch earlier in
+        // ProposeEmbed — so that divergence is genuinely unreachable through Propose() in this
+        // increment. This test hand-builds a FontInventoryEntry (mirroring the hand-built Finding in
+        // Propose_DoesNotDropASecondDirectFontWithADifferentProgramHolder, which hand-builds a case
+        // the live rules cannot produce end-to-end either) with a non-composite Kind whose
+        // ProgramHolderId differs from Id, and calls ProposeEmbed directly to prove the targeting
+        // expression itself — §3.2's central invariant — ahead of the composite-font increment that
+        // will make it reachable through Propose.
+        var entry = new FontInventoryEntry(
+            Id: new FontId(30),
+            ProgramHolderId: new FontId(999),
+            BaseFont: "Arial",
+            SubsetTag: null,
+            FamilyName: "Arial",
+            Kind: FontKind.TrueType,
+            IsEmbedded: false,
+            HasToUnicode: false,
+            HasWidths: true,
+            IsAddressable: true,
+            UsedCodes: [],
+            PagesUsedOn: []);
+        using var document = new PdfDocument();
+
+        FontProposal proposal = Planner().ProposeEmbed(document, entry, "font-embedded");
+
+        var embed = Assert.IsType<EmbedProposal>(proposal);
+        Assert.Equal(999, embed.Font.ObjectNumber);
+    }
+
+    [Fact]
     public void The_planner_does_not_mutate_the_document()
     {
         // §6: "The planner never mutates." Proposals are bytes in memory until the user saves.
