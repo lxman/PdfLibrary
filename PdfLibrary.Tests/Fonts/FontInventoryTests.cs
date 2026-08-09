@@ -46,17 +46,35 @@ public class FontInventoryTests
     [MemberData(nameof(CorpusDocuments))]
     public void Read_ListsTheSameFontsTheRulesConsiderReferenced(string fixture)
     {
+        Assert.SkipUnless(fixture.Length > 0, CorpusMissing);
+
         using PdfDocument document = PdfDocument.Load(fixture, "");
         AssertInventoryMatchesRules(document);
     }
 
+    private const string CorpusMissing =
+        "TestPDFs corpus not present. *.pdf is gitignored, so the corpus is local-only and CI "
+        + "runners have no copy — the hand-built fixtures below carry this guarantee there.";
+
+    /// <summary>
+    /// Every local corpus document, or a single empty sentinel when the corpus is absent.
+    ///
+    /// <para>The sentinel exists because a <c>[Theory]</c> with zero rows FAILS rather than skips,
+    /// which is how this test broke CI on Linux while passing on every developer machine: the
+    /// corpus is gitignored, so it exists locally and nowhere else. Returning a row that the test
+    /// skips on reports the absence honestly instead of pretending the guarantee was checked.</para>
+    /// </summary>
     public static TheoryData<string> CorpusDocuments()
     {
         string dir = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "..", "..", "..", "..", "TestPDFs"));
+
         var data = new TheoryData<string>();
-        foreach (string file in Directory.GetFiles(dir, "*.pdf"))
-            data.Add(file);
+        if (Directory.Exists(dir))
+            foreach (string file in Directory.GetFiles(dir, "*.pdf"))
+                data.Add(file);
+
+        if (data.Count == 0) data.Add(string.Empty);
         return data;
     }
 
