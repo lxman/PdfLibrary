@@ -32,6 +32,7 @@ internal class EmbeddedFontMetrics
     private readonly HmtxTable? _hmtxTable;
     private readonly NameTable? _nameTable;
     private readonly Os2Table? _os2Table;
+    private readonly PostTable? _postTable;
     private readonly CmapTable? _cmapTable;
     private GlyphTable? _glyphTable;
     private LocaTable? _locaTable;
@@ -132,6 +133,20 @@ internal class EmbeddedFontMetrics
 
     /// <summary>The parsed OS/2 table, or null when the program has none (bare CFF, Type 1).</summary>
     internal Os2Table? Os2 => _os2Table;
+
+    /// <summary>The parsed head table, or null when the program has none (bare CFF, Type 1 — those
+    /// are not sfnt-wrapped, so there is no head table to read).</summary>
+    internal HeadTable? Head => _headTable;
+
+    /// <summary>The parsed hhea table, or null when the program has none (bare CFF, Type 1).</summary>
+    internal HheaTable? Hhea => _hheaTable;
+
+    /// <summary>The parsed post table, or null when the program has none (bare CFF, Type 1, or an
+    /// sfnt that omitted it).</summary>
+    internal PostTable? Post => _postTable;
+
+    /// <summary>The parsed CFF/Type1C table, or null when this program is not CFF-flavoured.</summary>
+    internal Type1Table? Cff => _cffTable;
 
     /// <summary>
     /// Gets the nominal width (default width) for CFF glyphs that don't specify explicit widths
@@ -398,6 +413,20 @@ internal class EmbeddedFontMetrics
             catch (Exception ex)
             {
                 RecordFault(FontProgramStage.Os2, ex);
+            }
+        }
+
+        // Parse post table (optional — ItalicAngle for font-descriptor construction)
+        byte[]? postData = _sfnt?.GetTableBytes("post");
+        if (postData is not null)
+        {
+            try
+            {
+                _postTable = new PostTable(postData);
+            }
+            catch (Exception ex)
+            {
+                RecordFault(FontProgramStage.Post, ex);
             }
         }
 
