@@ -1,3 +1,4 @@
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
 
@@ -34,9 +35,16 @@ public sealed partial class PdfDocumentEditor
         // The codespace must match the font's own encoding (ISO 32000-1 / 32000-2 §9.10.3, both
         // normative): one byte for a simple font, two for a composite one. SetToUnicode targets the
         // LOGICAL font, so /Subtype on this very dictionary is the right thing to read — a Type0
-        // wrapper says "Type0", and everything else here is simple.
+        // wrapper says "Type0", and everything else here is simple. /Subtype may itself be an
+        // indirect reference (syntactically legal), so resolve before comparing — reading the
+        // unresolved PdfIndirectReference would silently misclassify a genuine Type0 font as simple
+        // and emit a one-byte-codespace CMap for a font whose content-stream codes are two bytes
+        // wide: the fix would report success and the mapping would be unusable, the same failure
+        // shape as writing /ToUnicode onto the descendant. A missing /Subtype falls through to
+        // OneByte: an unidentifiable font cannot be assumed composite, and a simple font is the more
+        // common case this default protects.
         ToUnicodeCodespace codespace =
-            (dictionary.Get("Subtype") as PdfName)?.Value == "Type0"
+            (Resolve(dictionary.Get("Subtype")) as PdfName)?.Value == "Type0"
                 ? ToUnicodeCodespace.TwoByte
                 : ToUnicodeCodespace.OneByte;
 
@@ -70,4 +78,7 @@ public sealed partial class PdfDocumentEditor
         dictionary = _document.GetObject(font.ObjectNumber) as PdfDictionary;
         return dictionary is not null;
     }
+
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference reference ? _document.GetObject(reference.ObjectNumber) : obj;
 }
