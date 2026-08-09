@@ -1,5 +1,7 @@
 using PdfLibrary.Conformance;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Fonts.Remediation;
@@ -9,13 +11,19 @@ namespace PdfLibrary.Fonts.Remediation;
 /// document — that separation is what lets the app stage a proposal and let the user's ordinary
 /// Save commit it.
 ///
-/// <para>F-1 handles the two ToUnicode rules. F-2/F-3/F-4 extend the switch in
-/// <see cref="Propose(PdfDocument, PreflightResult)"/>; the shape does not change.</para>
+/// <para>F-1 handles the two ToUnicode rules. F-2 (landed) adds <c>font-embedded</c>. F-3/F-4 extend
+/// the switch in <see cref="Propose(PdfDocument, PreflightResult)"/> further; the shape does not
+/// change.</para>
+///
+/// <para><paramref name="fonts"/> resolves a requested face to real system-font bytes for
+/// <c>font-embedded</c> proposals. It is REQUIRED, not defaulted: a planner silently unable to
+/// resolve fonts would decline every embed and look exactly like "no system fonts installed" — a
+/// caller must choose a real provider explicitly.</para>
 /// </summary>
-public sealed class FontRemediationPlanner
+public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 {
     private static readonly HashSet<string> HandledRules =
-        new(StringComparer.Ordinal) { "pdfa2u-tounicode", "pdfa2u-tounicode-values" };
+        new(StringComparer.Ordinal) { "pdfa2u-tounicode", "pdfa2u-tounicode-values", "font-embedded" };
 
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
     {
@@ -68,11 +76,149 @@ public sealed class FontRemediationPlanner
             if (FontInventory.Find(inventory, objectNumber) is not { } entry) continue;
             if (!seen.Add((entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber, ruleId))) continue;
 
-            proposals.Add(ProposeToUnicode(document, entry, ruleId));
+            proposals.Add(ruleId == "font-embedded"
+                ? ProposeEmbed(document, entry, ruleId)
+                : ProposeToUnicode(document, entry, ruleId));
         }
 
         return new FontRemediationProposal(proposals);
     }
+
+    /// <summary>
+    /// Proposes embedding a font program for a <c>font-embedded</c> finding, or explains why it
+    /// cannot. Every decline here is a FACT about this font on this machine (design §6.1) — never a
+    /// policy position — so each reason names the specific cause, and the fsType (embedding
+    /// restricted) check runs BEFORE the proposal is built, never after: a font whose vendor forbids
+    /// embedding must not have its bytes carried in view state at all.
+    /// </summary>
+    private FontProposal ProposeEmbed(PdfDocument document, FontInventoryEntry entry, string ruleId)
+    {
+        if (!entry.IsAddressable)
+        {
+            return Decline(entry, ruleId,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so there is nothing to attach a font program to.");
+        }
+
+        if (entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2)
+        {
+            // Under Identity-H with /CIDToGIDMap /Identity the document's CIDs ARE the original
+            // program's glyph indices, so a substitute with a different glyph order renders real
+            // glyphs in the wrong places — plausible-looking garbage that errors nowhere. A later
+            // increment's problem (design §3.2's own note); not attempted here.
+            return Decline(entry, ruleId,
+                "Substituting a program for a composite font would need its character-to-glyph "
+                + "mapping rewritten in step, which Pellucid does not yet do.");
+        }
+
+        if (entry.Kind is FontKind.Type3)
+        {
+            return Decline(entry, ruleId, "Type 3 font glyphs are drawing instructions, not a font program.");
+        }
+
+        // Guaranteed non-null: IsAddressable required dict.IsIndirect && programHolder.IsIndirect,
+        // and FontInventory only assigns a null ProgramHolderId when the program holder is NOT
+        // indirect (FontInventory.BuildEntry).
+        FontId programHolder = entry.ProgramHolderId ?? entry.Id;
+
+        FontRequest request = BuildRequest(document, entry, programHolder);
+
+        FontMatch? match = fonts.Resolve(request);
+        if (match is null)
+        {
+            return Decline(entry, ruleId,
+                $"No font matching '{entry.FamilyName}' is installed on this computer. Installing "
+                + "it would let Pellucid embed it.");
+        }
+
+        ClassifiedProgram? classified = FontProgramClassifier.Classify(match.Data, match.FaceIndex);
+        if (classified is null)
+        {
+            return Decline(entry, ruleId,
+                $"The font file found for '{entry.FamilyName}' is not in a format Pellucid can embed.");
+        }
+
+        // Reads Os2/Head via the SAME internal metrics reader FontDescriptorMetrics.Compute and
+        // PdfDocumentEditor.WriteDerivedWidths use, so this cannot disagree with what those consult
+        // later. Never on the request's bytes — always on classified.Program, what will actually be
+        // written (design §7; §6.2 rejected re-resolving at apply time for exactly this reason).
+        EmbeddedFontMetrics metrics = classified.Format == FontProgramFormat.Type1
+            ? new EmbeddedFontMetrics(classified.Program, length1: 0, length2: 0, length3: 0)
+            : new EmbeddedFontMetrics(classified.Program);
+
+        string resolvedFamily = metrics.FamilyName ?? entry.FamilyName;
+
+        // Checked BEFORE the proposal is built (design requirement, restated in the class doc): a
+        // font whose vendor forbids embedding must not have its bytes carried in view state at all.
+        if (metrics.Os2?.EmbeddingRestricted == true)
+        {
+            return Decline(entry, ruleId,
+                $"'{resolvedFamily}' is licensed by its vendor with embedding restricted, so Pellucid "
+                + "will not embed it.");
+        }
+
+        // Mirrors PdfDocumentEditor.EmbedProgram's own leading-byte check for a bare PFA program
+        // exactly (PdfDocumentEditor.Fonts.cs, WriteProgramStream): a Type1 program that does not
+        // start with the PFB segment marker 0x80 carries no embedded segment markers, so /Length1,
+        // /Length2 and /Length3 cannot be recovered. EmbedProgram throws NotSupportedException for
+        // this — the planner must decline it here instead, so a proposal never reaches Save only to
+        // throw there.
+        if (classified.Format == FontProgramFormat.Type1
+            && (classified.Program.Length == 0 || classified.Program[0] != 0x80))
+        {
+            return Decline(entry, ruleId,
+                $"The Type 1 program found for '{entry.FamilyName}' does not declare its segment "
+                + "lengths, which are required to embed it.");
+        }
+
+        string style = (metrics.IsBold, metrics.IsItalic) switch
+        {
+            (true, true) => "Bold Italic",
+            (true, false) => "Bold",
+            (false, true) => "Italic",
+            (false, false) => "Regular",
+        };
+
+        return new EmbedProposal(
+            programHolder, ruleId,
+            $"{resolvedFamily} ({style}) — from your system fonts",
+            classified.Program, classified.Format);
+    }
+
+    /// <summary>
+    /// The face to search for. <paramref name="entry"/>'s <c>FamilyName</c> (<c>/BaseFont</c> with any
+    /// subset tag stripped) is the search term; Bold/Italic are derived preferentially from that
+    /// name's own suffix convention (<c>-Bold</c>, <c>,Italic</c>, <c>BoldItalic</c> — a stronger
+    /// signal than a flags bit), falling back to the program holder's <c>/FontDescriptor</c> Italic
+    /// flag (bit 6, 0x40) and a non-zero <c>/ItalicAngle</c> when the name says nothing.
+    /// </summary>
+    private static FontRequest BuildRequest(PdfDocument document, FontInventoryEntry entry, FontId programHolder)
+    {
+        string name = entry.FamilyName;
+        string lower = name.ToLowerInvariant();
+        bool bold = lower.Contains("bold");
+        bool italic = lower.Contains("italic") || lower.Contains("oblique");
+
+        if (!italic
+            && document.GetObject(programHolder.ObjectNumber) is PdfDictionary holderDict
+            && Resolve(document, holderDict.Get("FontDescriptor")) is PdfDictionary descriptor)
+        {
+            if (Resolve(document, descriptor.Get("Flags")) is PdfInteger flags && (flags.Value & 0x40) != 0)
+                italic = true;
+
+            PdfObject? italicAngle = Resolve(document, descriptor.Get("ItalicAngle"));
+            if (italicAngle is PdfReal { Value: not 0 } or PdfInteger { Value: not 0 })
+                italic = true;
+        }
+
+        return new FontRequest(name, bold, italic);
+    }
+
+    private static DeclineProposal Decline(FontInventoryEntry entry, string ruleId, string reason) =>
+        new(entry.Id, ruleId, reason);
+
+    private static PdfObject? Resolve(PdfDocument document, PdfObject? obj) =>
+        obj is PdfIndirectReference reference ? document.GetObject(reference.ObjectNumber) : obj;
 
     private static FontProposal ProposeToUnicode(
         PdfDocument document, FontInventoryEntry entry, string ruleId)

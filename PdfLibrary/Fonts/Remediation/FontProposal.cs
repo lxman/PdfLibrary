@@ -30,5 +30,20 @@ public sealed record ToUnicodeProposal(
 public sealed record DeclineProposal(
     FontId Font, string RuleId, string Reason) : FontProposal(Font, RuleId);
 
+/// <summary>
+/// Embed <paramref name="Program"/> as <paramref name="Font"/>'s font program. <paramref name="Font"/>
+/// is the PROGRAM HOLDER (design §3.2) — <c>entry.ProgramHolderId ?? entry.Id</c> — never the logical
+/// font, because <c>/FontFile*</c> and <c>/FontDescriptor</c> live there.
+///
+/// <para><paramref name="SourceDescription"/> is derived from the RESOLVED bytes in
+/// <paramref name="Program"/>, never from the request that produced them — the confirmation the user
+/// sees must name the face that will actually be written (design §7), and a fuzzy system-font locator
+/// can resolve to something other than what was asked for.</para>
+/// </summary>
+public sealed record EmbedProposal(
+    FontId Font, string RuleId,
+    string SourceDescription,
+    byte[] Program, FontProgramFormat Format) : FontProposal(Font, RuleId);
+
 /// <summary>Everything the planner proposes for one document.</summary>
 public sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);

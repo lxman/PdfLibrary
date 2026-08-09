@@ -38,19 +38,23 @@ namespace FontParser.Tables.Name
         }
 
         /// <summary>
-        /// Gets the font family name (name ID 1)
+        /// Gets the font family name (name ID 1). NameId is matched against
+        /// <see cref="NameIdTranslator.Translate"/>'s own output ("Family"), not the raw OpenType
+        /// field label — a prior version of this method compared against "Font Family name", a
+        /// string the translator never produces, so this getter always returned null.
         /// </summary>
         public string? GetFamilyName()
         {
-            return NameRecords.FirstOrDefault(r => r.NameId == "Font Family name")?.Name;
+            return NameRecords.FirstOrDefault(r => r.NameId == "Family")?.Name;
         }
 
         /// <summary>
-        /// Gets the PostScript name (name ID 6)
+        /// Gets the PostScript name (name ID 6). Same fix as <see cref="GetFamilyName"/>: matched
+        /// against the translator's actual "PostScript Name" (capital N), not "PostScript name".
         /// </summary>
         public string? GetPostScriptName()
         {
-            return NameRecords.FirstOrDefault(r => r.NameId == "PostScript name")?.Name;
+            return NameRecords.FirstOrDefault(r => r.NameId == "PostScript Name")?.Name;
         }
     }
 }
