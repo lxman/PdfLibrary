@@ -121,6 +121,12 @@ public class EmbedProgramRoundTripTests
             if (descriptor.Get("FontFile2") is not null)
             {
                 // "FontFile2 … may appear in the font descriptor for a TrueType font dictionary."
+                // ACCEPTED LIMITATION: this does not discriminate the /Type1 -> /TrueType rewrite
+                // itself on a machine whose Helvetica substitute resolves CFF-flavoured (plausibly
+                // including CI) — it only checks the pair is consistent, not which rewrite produced
+                // it. The deterministic pin for that rewrite is the editor unit test
+                // A_TrueType_program_in_a_Type1_dictionary_rewrites_the_dictionary_subtype, which
+                // passes FontProgramFormat.TrueType explicitly.
                 Assert.Equal("TrueType", subtype);
                 checkedAny = true;
             }
@@ -146,10 +152,13 @@ public class EmbedProgramRoundTripTests
                 case "OpenType":
                     // "a TrueType font dictionary … if the program contains a 'glyf' table; a Type1
                     // font dictionary … if it contains a 'CFF ' table without CIDFont operators."
-                    // Read straight off the embedded bytes, independently of what wrote them.
+                    // Note /MMType1 does NOT appear in this row (unlike /FontFile and /FontFile3
+                    // /Type1C above, which explicitly say "a Type1 or MMType1 font dictionary") — so
+                    // a CFF-flavoured OpenType program permits only /Type1, never /MMType1. Read
+                    // straight off the embedded bytes, independently of what wrote them.
                     Assert.Contains(subtype, new SfntFont(stream.Data, 0).TableTags.Contains("glyf")
                         ? new[] { "TrueType" }
-                        : new[] { "Type1", "MMType1" });
+                        : new[] { "Type1" });
                     break;
                 default:
                     Assert.Fail($"/FontFile3 carries an unrecognised /Subtype /{streamSubtype}.");

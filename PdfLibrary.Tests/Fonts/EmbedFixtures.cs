@@ -156,9 +156,6 @@ internal static class EmbedFixtures
     /// <summary>The Type0 composite fixture's descendant CIDFont object number.</summary>
     public static int DescendantObjectNumber(PdfDocument document) => 22;
 
-    /// <summary>The single page object number, shared by every fixture that has a page.</summary>
-    public static int PageObjectNumber(PdfDocument document) => 3;
-
     /// <summary>The number of indirect objects currently registered — used to prove the planner adds
     /// none.</summary>
     public static int ObjectCount(PdfDocument document) => document.Objects.Count;

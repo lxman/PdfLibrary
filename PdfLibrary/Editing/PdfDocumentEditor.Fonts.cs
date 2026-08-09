@@ -112,13 +112,20 @@ public sealed partial class PdfDocumentEditor
             fontDict.Set("Subtype", new PdfName(reconciledSubtype));
     }
 
-    /// <summary>True for the subtypes that make a font dictionary part of a COMPOSITE font — the
-    /// Type0 wrapper and either flavour of descendant CIDFont. Table 124's simple-font rows do not
-    /// apply to these, and F-2 does not handle them (see <see cref="EmbedProgram"/>'s own note).
-    /// A missing /Subtype falls through to "simple": an unidentifiable font cannot be assumed
-    /// composite, and simple is both the far commoner case and the one this increment serves.</summary>
+    /// <summary>True for the subtypes <see cref="EmbedProgram"/> must NOT reconcile via
+    /// <see cref="SimpleFontProgramSubtype"/> — the Type0 wrapper and either flavour of descendant
+    /// CIDFont (Table 124's simple-font rows do not apply to these, and F-2 does not handle them,
+    /// see <see cref="EmbedProgram"/>'s own note), plus /Type3. /Type3 is a "simple" font by Table
+    /// 124's own classification, but its /Subtype is not a font-PROGRAM-format label at all — it is
+    /// load-bearing together with /CharProcs and /FontMatrix (Table 112), so overwriting it based on
+    /// an embedded program's format would silently destroy that meaning. The planner already
+    /// declines /Type3 before a proposal reaches here; this is the same backstop reasoning as
+    /// <see cref="EmbedProgram"/>'s own throws — <see cref="EmbedProgram"/> is public, so a direct
+    /// caller must be stopped here too. A missing /Subtype falls through to "simple": an
+    /// unidentifiable font cannot be assumed composite, and simple is both the far commoner case and
+    /// the one this increment serves.</summary>
     private static bool IsCompositeSubtype(string? subtype) =>
-        subtype is "Type0" or "CIDFontType0" or "CIDFontType2";
+        subtype is "Type0" or "CIDFontType0" or "CIDFontType2" or "Type3";
 
     /// <summary>Resolves the font dictionary's existing <c>/FontDescriptor</c>, or registers and
     /// wires up a freshly created one.</summary>

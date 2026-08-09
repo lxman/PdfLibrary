@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
@@ -234,6 +236,66 @@ public class PdfDocumentEditorEmbedProgramTests
         editor.EmbedProgram(id, [0x01, 0x00, 0x04, 0x02, 0x03, 0x10, 0x20], FontProgramFormat.Type1C);
 
         Assert.Equal("MMType1", ((PdfName)font.Get("Subtype")!).Value);
+    }
+
+    /// <summary>Builds a minimal, structurally valid OpenType/CFF ('OTTO') sfnt with a single 'CFF '
+    /// table and no 'glyf' table, wrapping <see cref="CffTestFixtures.MinimalCff.Build"/>'s non-CID
+    /// CFF bytes. <see cref="FontParser.SfntFont"/> does not validate the table directory checksum
+    /// or searchRange/entrySelector/rangeShift, so those are left at zero.</summary>
+    private static byte[] OpenTypeCffProgram()
+    {
+        byte[] cff = CffTestFixtures.MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
+        const int headerSize = 12;
+        const int directoryEntrySize = 16;
+        const int tableOffset = headerSize + directoryEntrySize; // exactly one table
+
+        var data = new List<byte>();
+        data.AddRange([0x4F, 0x54, 0x54, 0x4F]); // sfntVersion 'OTTO'
+        AppendUInt16(data, 1); // numTables
+        AppendUInt16(data, 0); // searchRange (unused by the parser)
+        AppendUInt16(data, 0); // entrySelector (unused)
+        AppendUInt16(data, 0); // rangeShift (unused)
+        data.AddRange("CFF "u8.ToArray()); // tag
+        AppendUInt32(data, 0); // checksum (not validated)
+        AppendUInt32(data, tableOffset);
+        AppendUInt32(data, (uint)cff.Length);
+        data.AddRange(cff);
+        return data.ToArray();
+    }
+
+    private static void AppendUInt16(List<byte> data, ushort value)
+    {
+        data.Add((byte)(value >> 8));
+        data.Add((byte)value);
+    }
+
+    private static void AppendUInt32(List<byte> data, uint value)
+    {
+        data.Add((byte)(value >> 24));
+        data.Add((byte)(value >> 16));
+        data.Add((byte)(value >> 8));
+        data.Add((byte)value);
+    }
+
+    [Fact]
+    public void An_MMType1_dictionary_receiving_a_CFF_flavoured_OpenType_program_becomes_Type1()
+    {
+        // Re-review Critical: ResolveOpenType's CFF-without-CIDFont-operators arm used to preserve
+        // /MMType1 via Type1Flavoured, but Table 124's OpenType row names only "a Type1 font
+        // dictionary" for that case — /MMType1 appears in the /FontFile and /FontFile3 /Type1C rows,
+        // never in the OpenType one. An /MMType1 dictionary that resolves a CFF-flavoured OpenType
+        // substitute must therefore become /Type1, or the pair (/MMType1, /FontFile3 /OpenType)
+        // — permitted nowhere in the table — gets written.
+        (PdfDocument document, FontId id, PdfDictionary font, PdfDictionary descriptor) = UnembeddedWithWidths();
+        font.Set("Subtype", new PdfName("MMType1"));
+        using var editor = new PdfDocumentEditor(document);
+
+        editor.EmbedProgram(id, OpenTypeCffProgram(), FontProgramFormat.OpenType);
+
+        Assert.Equal("Type1", ((PdfName)font.Get("Subtype")!).Value);
+        var stream = Assert.IsType<PdfStream>(document.GetObject(
+            ((PdfIndirectReference)descriptor.Get("FontFile3")!).ObjectNumber));
+        Assert.Equal("OpenType", ((PdfName)stream.Dictionary.Get("Subtype")!).Value);
     }
 
     [Fact]

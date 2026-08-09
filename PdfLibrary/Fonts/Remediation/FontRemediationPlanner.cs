@@ -208,6 +208,11 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 $"The font program found for '{entry.FamilyName}' cannot be embedded in this font: "
                 + ex.Message);
         }
+        // ACCEPTED LIMITATION: this decline path for a CID-keyed CidFontType0C program in a simple
+        // font is proven only compositionally (SimpleFontProgramSubtype's own unit tests drive the
+        // throw directly) — there is no committed CID-keyed CFF fixture in this repo to exercise the
+        // planner end-to-end through a real font program. See the CFF-fixture note in
+        // PreflightSlice19Tests.cs for why one was not hand-authored.
 
         string style = (metrics.IsBold, metrics.IsItalic) switch
         {

@@ -56,6 +56,13 @@ internal static class SimpleFontProgramSubtype
             // /FontFile (Type1) and /FontFile3 /Type1C are both permitted for "a Type1 or MMType1
             // font dictionary" — so an MMType1 dictionary keeps its subtype and everything else
             // becomes /Type1.
+            //
+            // ACCEPTED LIMITATION: when currentSubtype is "TrueType" this rewrites a TrueType
+            // dictionary to /Type1, which is spec-required but can change glyph SELECTION for a
+            // symbolic font with no /Encoding — a TrueType simple font resolves code -> glyph through
+            // its own cmap-based algorithm (§9.6.5.4), while a Type1 dictionary resolves code -> glyph
+            // NAME instead. No gate here detects that: the position gates all read /Widths, which this
+            // rewrite never touches.
             FontProgramFormat.Type1 or FontProgramFormat.Type1C => Type1Flavoured(currentSubtype),
 
             FontProgramFormat.OpenType => ResolveOpenType(program, currentSubtype),
@@ -121,6 +128,15 @@ internal static class SimpleFontProgramSubtype
                 + "124 permits only for a composite (CIDFontType0) font, never for a simple one.");
         }
 
-        return Type1Flavoured(currentSubtype);
+        // Table 124's OpenType row reads, verbatim: "A FontFile3 entry with an OpenType subtype may
+        // appear in the font descriptor for these types of font dictionaries: … A Type1 font
+        // dictionary or CIDFontType0 CIDFont dictionary, if the embedded font program contains a
+        // 'CFF ' table without CIDFont operators". /MMType1 does not appear in that sentence —
+        // unlike the /FontFile and /FontFile3 /Type1C rows, which say "a Type1 or MMType1 font
+        // dictionary" and DO license Type1Flavoured's preservation of /MMType1 above. An /MMType1
+        // dictionary that receives a CFF-flavoured OpenType program must therefore become /Type1,
+        // not keep /MMType1 — the pair (/MMType1, /FontFile3 /OpenType) is permitted nowhere in the
+        // table.
+        return "Type1";
     }
 }
