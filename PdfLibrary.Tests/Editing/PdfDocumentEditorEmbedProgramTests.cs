@@ -3,6 +3,7 @@ using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Fonts;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
 using Xunit;
 
@@ -178,6 +179,125 @@ public class PdfDocumentEditorEmbedProgramTests
             ((PdfIndirectReference)descriptorObj!).ObjectNumber)!;
         Assert.Equal("FontDescriptor", ((PdfName)descriptor.Get("Type")!).Value);
         Assert.NotNull(descriptor.Get("FontFile2"));
+    }
+
+    [Fact]
+    public void A_TrueType_program_in_a_Type1_dictionary_rewrites_the_dictionary_subtype()
+    {
+        // Final-review Critical: the stream key was chosen from the program's format alone, so a
+        // /Subtype /Type1 dictionary (the commonest real case — /BaseFont /Helvetica) receiving a
+        // system TrueType substitute got a /FontFile2 written into a Type1 descriptor. ISO 32000-2
+        // §9.9.1 Table 124 permits /FontFile2 only "for a TrueType font dictionary or … a
+        // CIDFontType2 CIDFont", so F-2 closed font-embedded by opening a different violation.
+        (PdfDocument document, FontId id, PdfDictionary font, PdfDictionary descriptor) = UnembeddedWithWidths();
+        font.Set("Subtype", new PdfName("Type1"));
+        using var editor = new PdfDocumentEditor(document);
+
+        editor.EmbedProgram(id, ArialProgram(), FontProgramFormat.TrueType);
+
+        Assert.Equal("TrueType", ((PdfName)font.Get("Subtype")!).Value);
+        Assert.NotNull(descriptor.Get("FontFile2"));
+        Assert.Null(descriptor.Get("FontFile"));
+        Assert.Null(descriptor.Get("FontFile3"));
+        // The rewrite is legal precisely because nothing else has to move with it (Table 109/111).
+        Assert.Equal("Arial", ((PdfName)font.Get("BaseFont")!).Value);
+        Assert.Equal(65, ((PdfInteger)font.Get("FirstChar")!).Value);
+    }
+
+    [Fact]
+    public void A_Type1C_program_leaves_a_Type1_dictionary_declaring_Type1()
+    {
+        // The other side of the reconciliation: Table 124 permits /FontFile3 /Type1C "for a Type1 or
+        // MMType1 font dictionary", so this pair was already correct and must not be disturbed.
+        (PdfDocument document, FontId id, PdfDictionary font, PdfDictionary descriptor) = UnembeddedWithWidths();
+        font.Set("Subtype", new PdfName("Type1"));
+        byte[] program = [0x01, 0x00, 0x04, 0x02, 0x03, 0x10, 0x20, 0x30, 0x40, 0x50, 0x99, 0x01];
+        using var editor = new PdfDocumentEditor(document);
+
+        editor.EmbedProgram(id, program, FontProgramFormat.Type1C);
+
+        Assert.Equal("Type1", ((PdfName)font.Get("Subtype")!).Value);
+        var stream = Assert.IsType<PdfStream>(document.GetObject(
+            ((PdfIndirectReference)descriptor.Get("FontFile3")!).ObjectNumber));
+        Assert.Equal("Type1C", ((PdfName)stream.Dictionary.Get("Subtype")!).Value);
+    }
+
+    [Fact]
+    public void An_MMType1_dictionary_keeps_its_subtype_for_a_Type1C_program()
+    {
+        // Table 124 names Type1 and MMType1 equally for /Type1C, so the reconciliation must not
+        // flatten a multiple-master dictionary into a plain Type1 one.
+        (PdfDocument document, FontId id, PdfDictionary font, _) = UnembeddedWithWidths();
+        font.Set("Subtype", new PdfName("MMType1"));
+        using var editor = new PdfDocumentEditor(document);
+
+        editor.EmbedProgram(id, [0x01, 0x00, 0x04, 0x02, 0x03, 0x10, 0x20], FontProgramFormat.Type1C);
+
+        Assert.Equal("MMType1", ((PdfName)font.Get("Subtype")!).Value);
+    }
+
+    [Fact]
+    public void A_CID_keyed_program_is_refused_for_a_simple_font_and_writes_nothing()
+    {
+        // Table 124: /CIDFontType0C "may appear in the font descriptor for a CIDFontType0 CIDFont
+        // dictionary" — and nowhere else. There is no permitted pair for a simple font, so the only
+        // honest outcome is a refusal; the planner declines this before it can ever get here.
+        (PdfDocument document, FontId id, PdfDictionary font, PdfDictionary descriptor) = UnembeddedWithWidths();
+        font.Set("Subtype", new PdfName("Type1"));
+        using var editor = new PdfDocumentEditor(document);
+
+        NotSupportedException ex = Assert.Throws<NotSupportedException>(() =>
+            editor.EmbedProgram(id, [0x01, 0x00, 0x04, 0x02, 0x03], FontProgramFormat.CidFontType0C));
+
+        Assert.Contains("Table 124", ex.Message, StringComparison.Ordinal);
+        // Refused BEFORE anything was written: a half-embedded font would be worse than none.
+        Assert.Null(descriptor.Get("FontFile"));
+        Assert.Null(descriptor.Get("FontFile2"));
+        Assert.Null(descriptor.Get("FontFile3"));
+        Assert.Equal("Type1", ((PdfName)font.Get("Subtype")!).Value);
+    }
+
+    [Fact]
+    public void Derived_widths_are_measured_through_the_fonts_own_Encoding()
+    {
+        // Final-review Critical: the derived-/Widths branch fed the raw character code to a UNICODE
+        // lookup, which is wrong for every code WinAnsiEncoding remaps — 0x92 is `quoteright`
+        // (U+2019), not U+0092. §5.1 makes the derived case the one where written widths genuinely
+        // position text, so the old code gave a curly quote the width of an unmapped control
+        // character (i.e. /MissingWidth) and moved every line containing one.
+        (PdfDocument document, FontId id, PdfDictionary font, _) = UnembeddedWithWidths();
+        font.Set("Subtype", new PdfName("TrueType"));
+        font.Set("Encoding", new PdfName("WinAnsiEncoding"));
+        font.Remove(new PdfName("Widths"));
+        font.Remove(new PdfName("FirstChar"));
+        font.Remove(new PdfName("LastChar"));
+
+        byte[] program = ArialProgram();
+        var metrics = new EmbeddedFontMetrics(program);
+        double scale = 1000.0 / metrics.UnitsPerEm;
+        ushort quoterightAdvance = metrics.GetUnicodeAdvanceWidth(0x2019);
+        // The fixture's own premises, asserted rather than assumed: the substitute really does have
+        // a quoteright glyph, and the two readings of code 0x92 — WinAnsi's U+2019 and the old
+        // code's raw-code-as-Unicode U+0092 — provably DISAGREE on the advance, so this test can
+        // discriminate them. (They disagree by a lot: the raw reading lands on a full-width glyph.)
+        Assert.True(quoterightAdvance > 0, "The resolved substitute has no glyph for U+2019.");
+        Assert.NotEqual(quoterightAdvance, metrics.GetUnicodeAdvanceWidth(0x92));
+
+        using var editor = new PdfDocumentEditor(document);
+        editor.EmbedProgram(id, program, FontProgramFormat.TrueType);
+
+        var widths = Assert.IsType<PdfArray>(font.Get("Widths"));
+        int first = ((PdfInteger)font.Get("FirstChar")!).Value;
+        int last = ((PdfInteger)font.Get("LastChar")!).Value;
+        Assert.InRange(0x92, first, last);
+
+        var expected = (int)Math.Round(quoterightAdvance * scale);
+        Assert.Equal(expected, ((PdfInteger)widths[0x92 - first]).Value);
+
+        // And a code whose WinAnsi glyph IS its Latin-1 reading still lands on the same advance.
+        Assert.Equal(
+            (int)Math.Round(metrics.GetUnicodeAdvanceWidth('A') * scale),
+            ((PdfInteger)widths['A' - first]).Value);
     }
 
     [Fact]

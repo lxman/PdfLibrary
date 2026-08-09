@@ -88,44 +88,64 @@ internal static class EmbedFixtures
         return doc;
     }
 
-    /// <summary>A simple font dictionary embedded DIRECTLY (not by reference) in the page's
-    /// <c>/Resources/Font</c> — never registered via <see cref="PdfDocument.AddObject"/>, so
-    /// <c>FontInventoryEntry.Id</c> is the <c>FontId(0)</c> sentinel and there is no object number of
-    /// its own a finding could ever legitimately name.</summary>
-    public static PdfDocument DirectFontDictionary()
+    /// <summary>
+    /// An UNADDRESSABLE font: an INDIRECT Type0 wrapper (object <see cref="UnaddressableObjectNumber"/>)
+    /// over a DIRECT descendant CIDFont. Mirrors <c>FontRemediationPlannerTests</c>'s
+    /// <c>BuildDirectDescendantType0Document</c>, and is the only shape that reaches
+    /// <c>ProposeEmbed</c>'s <c>!entry.IsAddressable</c> branch through <c>Propose</c>: the finding
+    /// can name the wrapper (indirect, so a <c>Finding.ObjectNumber</c> exists for it) while the
+    /// PROGRAM HOLDER — the descendant — has no object number of its own to attach a program to.
+    ///
+    /// <para>A wholly direct simple font dictionary cannot do this job: it is never registered, so
+    /// <c>FontInventory.Find</c> returns null for every object number a finding could name, the
+    /// planner's <c>continue</c> fires, and <c>result.Fonts</c> comes back EMPTY — which is what made
+    /// the previous version of this fixture's test pass vacuously over an empty collection.</para>
+    /// </summary>
+    public static PdfDocument UnaddressableType0()
     {
-        var doc = new PdfDocument();
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT /F0 12 Tf (A) Tj ET")));
-
-        var directFont = new PdfDictionary
+        var directDescendant = new PdfDictionary
         {
             [N("Type")] = N("Font"),
-            [N("Subtype")] = N("TrueType"),
-            [N("BaseFont")] = N("DirectFont"),
-            [N("Encoding")] = N("WinAnsiEncoding"),
-            [N("FirstChar")] = new PdfInteger(65),
-            [N("LastChar")] = new PdfInteger(65),
-            [N("Widths")] = new PdfArray(new PdfInteger(722)),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("CIDFontX"),
+            [N("CIDSystemInfo")] = new PdfDictionary
+            {
+                [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+                [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+                [N("Supplement")] = new PdfInteger(0),
+            },
+            [N("FontDescriptor")] = new PdfDictionary
+            {
+                [N("Type")] = N("FontDescriptor"), [N("FontName")] = N("CIDFontX"),
+            },
         };
-        Assert.False(directFont.IsIndirect); // guards the fixture's own premise
+        Assert.False(directDescendant.IsIndirect); // guards the fixture's own premise
 
-        var page = new PdfDictionary
+        var doc = new PdfDocument();
+        doc.AddObject(UnaddressableObjectNumber, 0, new PdfDictionary
         {
-            [N("Type")] = N("Page"),
-            [N("Parent")] = Ref(2),
-            [N("MediaBox")] = Rect(0, 0, 612, 792),
-            [N("Contents")] = Ref(11),
-            [N("Resources")] = new PdfDictionary { [N("Font")] = new PdfDictionary { [N("F0")] = directFont } },
-        };
-        doc.AddObject(3, 0, page);
-        doc.AddObject(2, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("CIDFontX"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(directDescendant),
         });
-        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
-        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT /F0 12 Tf <0001> Tj ET")));
+        AddSinglePageCatalog(doc, font: UnaddressableObjectNumber);
         return doc;
     }
+
+    /// <summary>The <see cref="UnaddressableType0"/> wrapper's own object number — the one a
+    /// <c>font-embedded</c> finding on that document would carry.</summary>
+    public const int UnaddressableObjectNumber = 20;
+
+    /// <summary>Bytes that classify as <see cref="FontProgramFormat.OpenType"/> on their 'OTTO' magic
+    /// alone but carry no readable sfnt table directory — so nothing can say which font dictionary
+    /// ISO 32000-2 Table 124 would permit them in. Used to prove the planner DECLINES a program the
+    /// editor's own reconciliation would refuse, rather than proposing one that throws at Save time.
+    /// </summary>
+    public static byte[] UnreadableOpenTypeProgram() =>
+        [0x4F, 0x54, 0x54, 0x4F, 0xFF, 0xFF, 0xFF, 0xFF, 0x01, 0x02, 0x03, 0x04];
 
     /// <summary>The simple font's own object number — 30 in every fixture that has one.</summary>
     public static int FontObjectNumber(PdfDocument document) => 30;

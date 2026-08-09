@@ -1,7 +1,9 @@
 using System.Text;
+using FontParser;
 using PdfLibrary.Builder;
 using PdfLibrary.Conformance;
 using PdfLibrary.Content;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Fonts;
@@ -89,7 +91,78 @@ public class EmbedProgramRoundTripTests
         output.Position = 0;
         using PdfDocument after = PdfDocument.Load(output);
         Assert.DoesNotContain(Preflight(after), f => f.RuleId == "font-embedded");
+        AssertPermittedTable124Pair(after);
     }
+
+    /// <summary>
+    /// Every simple font in <paramref name="document"/> declares a <c>/Subtype</c> that ISO 32000-2
+    /// §9.9.1 Table 124 actually pairs with the font-file key on its descriptor.
+    ///
+    /// <para>THIS is the assertion whose absence let the original defect through: preflight's
+    /// <c>font-embedded</c> rule only asks whether SOME program is present, so a <c>/FontFile2</c>
+    /// written into a <c>/Type1</c> descriptor closed the finding while producing a combination the
+    /// table permits nowhere. Written out from the table's own text rather than by calling the
+    /// production reconciliation, so it can disagree with it.</para>
+    /// </summary>
+    private static void AssertPermittedTable124Pair(PdfDocument document)
+    {
+        var checkedAny = false;
+
+        foreach (FontInventoryEntry entry in FontInventory.Read(document))
+        {
+            int number = (entry.ProgramHolderId ?? entry.Id).ObjectNumber;
+            if (document.GetObject(number) is not PdfDictionary font) continue;
+
+            var subtype = (Deref(document, font.Get("Subtype")) as PdfName)?.Value;
+            if (subtype is null or "Type0" or "CIDFontType0" or "CIDFontType2") continue; // not simple
+
+            if (Deref(document, font.Get("FontDescriptor")) is not PdfDictionary descriptor) continue;
+
+            if (descriptor.Get("FontFile2") is not null)
+            {
+                // "FontFile2 … may appear in the font descriptor for a TrueType font dictionary."
+                Assert.Equal("TrueType", subtype);
+                checkedAny = true;
+            }
+
+            if (descriptor.Get("FontFile") is not null)
+            {
+                // "FontFile … a Type 1 font program" — a Type1 or MMType1 font dictionary.
+                Assert.Contains(subtype, new[] { "Type1", "MMType1" });
+                checkedAny = true;
+            }
+
+            if (Deref(document, descriptor.Get("FontFile3")) is not PdfStream stream) continue;
+
+            string? streamSubtype = (stream.Dictionary.Get("Subtype") as PdfName)?.Value;
+            switch (streamSubtype)
+            {
+                case "Type1C":
+                    Assert.Contains(subtype, new[] { "Type1", "MMType1" });
+                    break;
+                case "CIDFontType0C":
+                    Assert.Fail($"/CIDFontType0C is permitted only for a CIDFontType0 CIDFont, not /{subtype}.");
+                    break;
+                case "OpenType":
+                    // "a TrueType font dictionary … if the program contains a 'glyf' table; a Type1
+                    // font dictionary … if it contains a 'CFF ' table without CIDFont operators."
+                    // Read straight off the embedded bytes, independently of what wrote them.
+                    Assert.Contains(subtype, new SfntFont(stream.Data, 0).TableTags.Contains("glyf")
+                        ? new[] { "TrueType" }
+                        : new[] { "Type1", "MMType1" });
+                    break;
+                default:
+                    Assert.Fail($"/FontFile3 carries an unrecognised /Subtype /{streamSubtype}.");
+                    break;
+            }
+            checkedAny = true;
+        }
+
+        Assert.True(checkedAny, "No embedded simple font was found to check — the gate proved nothing.");
+    }
+
+    private static PdfObject? Deref(PdfDocument document, PdfObject? obj) =>
+        obj is PdfIndirectReference reference ? document.GetObject(reference.ObjectNumber) : obj;
 
     [Fact]
     public void Embedding_does_not_move_the_text()

@@ -1,3 +1,4 @@
+using PdfLibrary.Conformance;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
@@ -13,10 +14,17 @@ public sealed partial class PdfDocumentEditor
     ///
     /// <para><paramref name="font"/> is the PROGRAM HOLDER, not necessarily the logical font (design
     /// §3.2): for a simple font they are the same dictionary; for a composite font the caller must
-    /// pass the descendant CIDFont's id. F-2's planner never proposes a composite font, but this
-    /// operation is written to handle one correctly regardless, because F-4 will call it for one.</para>
+    /// pass the descendant CIDFont's id.</para>
     ///
-    /// <para>Five obligations, all load-bearing:</para>
+    /// <para>COMPOSITE FONTS ARE NOT YET HANDLED. F-2's planner declines every composite font, so
+    /// this is unreachable rather than merely untested — but obligation 5 below reads
+    /// <c>fontDict.Get("Widths")</c>, which is ALWAYS null on a CIDFont (a CIDFont declares its
+    /// widths with <c>/W</c> and <c>/DW</c>, ISO 32000-2 §9.7.4.3), so calling this with a descendant
+    /// CIDFont's id today would write a bogus <c>/Widths</c>/<c>/FirstChar</c>/<c>/LastChar</c> into a
+    /// dictionary those entries mean nothing in. F-4 must teach obligation 5 about <c>/W</c> — and
+    /// obligation 6 about the CIDFont subtypes — before it calls this for a composite font.</para>
+    ///
+    /// <para>Six obligations, all load-bearing:</para>
     /// <list type="number">
     /// <item>Writes the program to the right stream key/subtype for <paramref name="format"/>:
     /// <c>/FontFile2</c> (TrueType, +<c>/Length1</c>), <c>/FontFile3</c> with <c>/Subtype</c>
@@ -41,7 +49,12 @@ public sealed partial class PdfDocumentEditor
     /// <item><c>/Widths</c>: never touched when present — it is what preserves the document's existing
     /// layout, and the substitute program's own metrics are irrelevant to it (ISO 32000-2 §9.2.4 NOTE
     /// 2/3). Only derived (<c>/FirstChar</c>, <c>/LastChar</c>, <c>/Widths</c>, scaled to 1000
-    /// units/em) when <c>/Widths</c> is absent.</item>
+    /// units/em) when <c>/Widths</c> is absent. Derived widths are measured through the font's own
+    /// <c>/Encoding</c>, not by treating a character code as a Unicode code point.</item>
+    /// <item>Reconciles a SIMPLE font dictionary's own <c>/Subtype</c> with the embedded program's
+    /// format (<see cref="SimpleFontProgramSubtype"/>), because ISO 32000-2 §9.9.1 Table 124
+    /// constrains the PAIR and not the stream key alone — see that type's own documentation. Refuses
+    /// (<see cref="NotSupportedException"/>) the pairs Table 124 permits nowhere.</item>
     /// </list>
     ///
     /// <para>Mutates the in-memory object graph only; does not call Save.</para>
@@ -50,12 +63,22 @@ public sealed partial class PdfDocumentEditor
     /// is not a dictionary.</exception>
     /// <exception cref="NotSupportedException"><paramref name="format"/> is
     /// <see cref="FontProgramFormat.Type1"/> and the program's clear-text/encrypted/trailer segment
-    /// lengths cannot be determined.</exception>
+    /// lengths cannot be determined, or no ISO 32000-2 Table 124 pair permits this program in a simple
+    /// font dictionary (a CID-keyed program, in particular). The planner declines both shapes before
+    /// they reach here; these throws are the backstop.</exception>
     public void EmbedProgram(FontId font, byte[] program, FontProgramFormat format)
     {
         ArgumentNullException.ThrowIfNull(program);
 
         PdfDictionary fontDict = ResolveFontDictionary(font);
+
+        // Obligation 6, resolved FIRST so a refusal leaves the document entirely untouched rather
+        // than half-embedded. /Subtype may itself be an indirect reference (syntactically legal), so
+        // resolve before comparing — the same reason SetToUnicode below resolves it.
+        var dictSubtype = (Resolve(fontDict.Get("Subtype")) as PdfName)?.Value;
+        string? reconciledSubtype = IsCompositeSubtype(dictSubtype)
+            ? null // composite: see the "NOT YET HANDLED" note above — left exactly as it was.
+            : SimpleFontProgramSubtype.Resolve(format, program, dictSubtype);
 
         // Obligations 2 + 4: resolve or create the descriptor. An existing descriptor's /Flags is
         // never touched; a fresh one gets the Nonsymbolic default (see the helper's own comment).
@@ -76,7 +99,26 @@ public sealed partial class PdfDocumentEditor
         // Obligation 5: /Widths is sacred when present; derived only when absent.
         if (fontDict.Get("Widths") is null)
             WriteDerivedWidths(fontDict, program, format, values);
+
+        // Obligation 6, applied last: a simple font dictionary must declare the subtype Table 124
+        // pairs with the stream key just written. Rewriting /Type1 to /TrueType (the common case: a
+        // /BaseFont /Helvetica dictionary resolving to a system TrueType substitute) is safe because
+        // a TrueType font dictionary carries the SAME entries a Type1 one does — /BaseFont,
+        // /FirstChar, /LastChar, /Widths, /FontDescriptor, /Encoding (Table 109 / Table 111) — so
+        // nothing else has to move with it. Without this, F-2 would close the font-embedded finding
+        // by writing a /FontFile2 into a /Type1 descriptor: a combination Table 124 permits nowhere,
+        // i.e. one conformance finding traded for another.
+        if (reconciledSubtype is not null && reconciledSubtype != dictSubtype)
+            fontDict.Set("Subtype", new PdfName(reconciledSubtype));
     }
+
+    /// <summary>True for the subtypes that make a font dictionary part of a COMPOSITE font — the
+    /// Type0 wrapper and either flavour of descendant CIDFont. Table 124's simple-font rows do not
+    /// apply to these, and F-2 does not handle them (see <see cref="EmbedProgram"/>'s own note).
+    /// A missing /Subtype falls through to "simple": an unidentifiable font cannot be assumed
+    /// composite, and simple is both the far commoner case and the one this increment serves.</summary>
+    private static bool IsCompositeSubtype(string? subtype) =>
+        subtype is "Type0" or "CIDFontType0" or "CIDFontType2";
 
     /// <summary>Resolves the font dictionary's existing <c>/FontDescriptor</c>, or registers and
     /// wires up a freshly created one.</summary>
@@ -190,12 +232,19 @@ public sealed partial class PdfDocumentEditor
 
     /// <summary>Obligation 5, the absent-/Widths branch only — a present /Widths array is never
     /// reached here (the caller checks first). Derives /FirstChar, /LastChar and /Widths from the
-    /// program's own advances over the codes a simple font's default (StandardEncoding-flavoured)
-    /// text-space encoding addresses (32-255, printable ASCII plus the Latin-1 supplement), scaled to
-    /// 1000 units per em. A code the program does not cover within that span falls back to the
-    /// descriptor's own /MissingWidth rather than a bare zero, matching ISO 32000-2 §9.8.3's own
-    /// fallback for an omitted /Widths entry.</summary>
-    private static void WriteDerivedWidths(
+    /// program's own advances over the codes a simple font's one-byte encoding addresses (32-255,
+    /// printable ASCII plus the upper half), scaled to 1000 units per em. A code the program does not
+    /// cover within that span falls back to the descriptor's own /MissingWidth rather than a bare
+    /// zero, matching ISO 32000-2 §9.8.3's own fallback for an omitted /Widths entry.
+    ///
+    /// <para>Each code is resolved through the font's OWN /Encoding — code to glyph NAME, glyph name
+    /// to Unicode, Unicode to advance — the same ladder <c>FontRemediationPlanner.ProvableUnicode</c>
+    /// walks. Feeding the raw code to a Unicode lookup instead is wrong for every code above 127 the
+    /// encodings this branch actually meets remap: WinAnsiEncoding sends 0x80 to U+20AC (euro) and
+    /// 0x92 to U+2019 (right single quote), and StandardEncoding's whole upper half diverges from
+    /// Latin-1. Since §5.1 makes the DERIVED case the one where written widths genuinely position
+    /// text, a width measured from the wrong glyph moves text on the page.</para></summary>
+    private void WriteDerivedWidths(
         PdfDictionary fontDict, byte[] program, FontProgramFormat format, FontDescriptorValues? values)
     {
         EmbeddedFontMetrics metrics = format == FontProgramFormat.Type1
@@ -205,6 +254,7 @@ public sealed partial class PdfDocumentEditor
         if (!metrics.IsValid || metrics.UnitsPerEm == 0)
             return; // Nothing sound to derive from; leave /Widths absent rather than guess.
 
+        PdfFontEncoding encoding = ResolveEncoding(fontDict);
         double scale = 1000.0 / metrics.UnitsPerEm;
         int missingWidth = values?.MissingWidth ?? 0;
 
@@ -214,7 +264,7 @@ public sealed partial class PdfDocumentEditor
 
         for (int code = rangeStart; code <= rangeEnd; code++)
         {
-            ushort advance = metrics.GetUnicodeAdvanceWidth(code);
+            ushort advance = EncodedAdvance(metrics, encoding, code);
             widths[code - rangeStart] = advance == 0 ? missingWidth : (int)Math.Round(advance * scale);
             if (advance == 0) continue;
             if (firstCovered < 0) firstCovered = code;
@@ -231,6 +281,51 @@ public sealed partial class PdfDocumentEditor
         fontDict.Set("FirstChar", new PdfInteger(firstCovered));
         fontDict.Set("LastChar", new PdfInteger(lastCovered));
         fontDict.Set("Widths", widthsArray);
+    }
+
+    /// <summary>The encoding <see cref="WriteDerivedWidths"/> measures through: the font's own
+    /// <c>/Encoding</c>, whether written as a base-encoding name or as an encoding dictionary
+    /// (<c>/BaseEncoding</c> plus <c>/Differences</c>). When there is no <c>/Encoding</c> at all, ISO
+    /// 32000-2 §9.6.5.2 makes the font program's built-in encoding the default and StandardEncoding
+    /// the fallback for the simple Latin subtypes this branch serves — which is what
+    /// <see cref="PdfFontEncoding"/>'s own default is. Deliberately NOT Latin-1: assuming code ==
+    /// Unicode is the very defect this ladder exists to fix.</summary>
+    private PdfFontEncoding ResolveEncoding(PdfDictionary fontDict) =>
+        Resolve(fontDict.Get("Encoding")) switch
+        {
+            PdfName name => PdfFontEncoding.GetStandardEncoding(name.Value),
+            PdfDictionary dict => PdfFontEncoding.FromDictionary(dict),
+            _ => PdfFontEncoding.GetStandardEncoding("StandardEncoding"),
+        };
+
+    /// <summary>One code's advance in the program's own font units, resolved code → glyph name →
+    /// Unicode → advance. Falls back to a direct glyph-NAME lookup when the program is CFF/Type1
+    /// flavoured (whose glyphs are named, and which may carry no Unicode cmap at all), and only for a
+    /// code the encoding cannot name at all does it fall back to the raw code — where code and
+    /// Unicode code point coincide for the ASCII range that case realistically covers. Returns 0 for
+    /// a code this program does not cover, which the caller turns into /MissingWidth.</summary>
+    private static ushort EncodedAdvance(EmbeddedFontMetrics metrics, PdfFontEncoding encoding, int code)
+    {
+        string? glyphName = encoding.GetGlyphName(code);
+        if (string.IsNullOrEmpty(glyphName) || glyphName == ".notdef")
+            return metrics.GetUnicodeAdvanceWidth(code);
+
+        string? text = GlyphList.GetUnicode(glyphName);
+        if (text is { Length: > 0 } && !text.Contains(FontUnicodeMapping.ReplacementChar))
+        {
+            // A ligature/multi-codepoint glyph name has no single code point to look up; the
+            // by-name route below is the honest answer for one, not the first component's advance.
+            var codePoints = 0;
+            for (var i = 0; i < text.Length; i += char.IsSurrogatePair(text, i) ? 2 : 1) codePoints++;
+            if (codePoints == 1)
+            {
+                ushort byUnicode = metrics.GetUnicodeAdvanceWidth(char.ConvertToUtf32(text, 0));
+                if (byUnicode != 0) return byUnicode;
+            }
+        }
+
+        ushort gid = metrics.GetGlyphIdByName(glyphName);
+        return gid == 0 ? (ushort)0 : metrics.GetAdvanceWidth(gid);
     }
     /// <summary>
     /// Writes (or removes) a font's <c>/ToUnicode</c> CMap.

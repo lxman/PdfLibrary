@@ -187,6 +187,28 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             }
         }
 
+        // Calls the SAME reconciliation PdfDocumentEditor.EmbedProgram runs
+        // (SimpleFontProgramSubtype.Resolve, shared rather than mirrored) for the SAME reason the
+        // Type1PfbSegments check above exists: the editor refuses a program ISO 32000-2 Table 124
+        // permits in no simple font dictionary (a CID-keyed CFF, an OpenType program whose shape
+        // cannot be read), and a proposal that survived to throw at Save time would be a crash where
+        // an honest decline belongs. Everything reaching here is a SIMPLE font — composites declined
+        // two branches up — so the simple-font question is the right one to ask. The current subtype
+        // is passed as null deliberately: it only chooses between /Type1 and /MMType1 for a program
+        // this ACCEPTS, and never affects whether it throws, so the planner does not need to have
+        // resolved the dictionary to predict a refusal. The answer itself is discarded; only whether
+        // it succeeds matters, since EmbedProgram re-resolves it when the proposal is applied.
+        try
+        {
+            SimpleFontProgramSubtype.Resolve(classified.Format, classified.Program, currentSubtype: null);
+        }
+        catch (NotSupportedException ex)
+        {
+            return Decline(entry, ruleId,
+                $"The font program found for '{entry.FamilyName}' cannot be embedded in this font: "
+                + ex.Message);
+        }
+
         string style = (metrics.IsBold, metrics.IsItalic) switch
         {
             (true, true) => "Bold Italic",

@@ -135,6 +135,34 @@ public class FontDescriptorMetricsTests
         // default weight class of 400 (Regular): 50 + (400/100)^2 * 3 = 98.
         Assert.Equal(98, values.StemV);
     }
+
+    [Fact]
+    public void Descent_is_strictly_negative_even_when_every_source_measures_zero()
+    {
+        // Final-review finding: a NON-NEGATIVE /Descent is itself a conformance violation, so a fix
+        // that closes font-embedded while writing /Descent 0 trades one finding for another. The
+        // existing "Descent < 0" assertion only ever runs against Arial, which cannot reach this —
+        // this fixture can: a bare CFF has neither OS/2 nor hhea, its only glyph is an empty
+        // .notdef, so the measured FontBBox is [0 0 0 0] and the old `-fontBBox[1]` produced exactly
+        // 0. (The `descent > 0 → -descent` guard on the primary path left exact 0 alone for the same
+        // reason.)
+        byte[] program = MinimalCffWithPrivateDict.Build(stdVw: null);
+
+        FontDescriptorValues? values = FontDescriptorMetrics.Compute(program, FontProgramFormat.Type1C);
+
+        Assert.NotNull(values);
+        Assert.Equal(0, values.FontBBox[1]); // the fixture's premise: nothing measured a depth
+        Assert.True(values.Descent < 0, $"Descent must be strictly negative, was {values.Descent}");
+    }
+
+    [Theory]
+    [InlineData(-210, 0, -210)]   // an already-negative measurement is returned unchanged
+    [InlineData(210, 0, -210)]    // a positive one has its sign flipped, as before
+    [InlineData(0, -180, -180)]   // zero falls back to a genuinely negative FontBBox bottom
+    [InlineData(0, 0, -1)]        // and to -1 when even that measured nothing
+    public void StrictlyNegativeDescent_covers_every_path(int descent, int bboxBottom, int expected) =>
+        Assert.Equal(expected, FontDescriptorMetrics.StrictlyNegativeDescent(
+            descent, [0, bboxBottom, 0, 0]));
 }
 
 /// <summary>

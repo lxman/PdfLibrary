@@ -120,8 +120,9 @@ public static class FontDescriptorMetrics
     }
 
     /// <summary>/Ascent and /Descent: OS/2 sTypo{Ascender,Descender} when non-zero, else hhea's.
-    /// Descent is forced negative — a positive descender is itself a conformance violation, and both
-    /// sources are negative in a well-formed font.
+    /// Descent is forced STRICTLY negative (<see cref="StrictlyNegativeDescent"/>) — a non-negative
+    /// descender is itself a conformance violation, and both sources are negative in a well-formed
+    /// font.
     /// <para>Extension beyond the literal source table: a bare CFF program (Type1C/CIDFontType0C,
     /// no sfnt wrapper) has neither an OS/2 nor an hhea table at all — the ladder's assumption that
     /// hhea is always present holds only for sfnt-wrapped programs. When both are entirely absent,
@@ -137,18 +138,38 @@ public static class FontDescriptorMetrics
         {
             // Neither table exists (bare CFF, no sfnt wrapper) — derive from the measured FontBBox.
             int bboxAscent = fontBBox[3];
-            int bboxDescent = fontBBox[1] < 0 ? fontBBox[1] : -fontBBox[1];
-            return (bboxAscent, bboxDescent);
+            return (bboxAscent, StrictlyNegativeDescent(fontBBox[1], fontBBox));
         }
 
         int ascentUnits = os2 is not null && os2.STypoAscender != 0 ? os2.STypoAscender : hhea?.Ascender ?? 0;
         int descentUnits = os2 is not null && os2.STypoDescender != 0 ? os2.STypoDescender : hhea?.Descender ?? 0;
 
         int ascent = RoundScale(ascentUnits, scale);
-        int descent = RoundScale(descentUnits, scale);
-        if (descent > 0) descent = -descent;
+        int descent = StrictlyNegativeDescent(RoundScale(descentUnits, scale), fontBBox);
 
         return (ascent, descent);
+    }
+
+    /// <summary>
+    /// Coerces a measured descent into the strictly negative value <c>/Descent</c> is required to be.
+    ///
+    /// <para>Flipping a positive value's sign is the obvious half; ZERO is the half that was missed.
+    /// Both descent sources rounding to exactly 0 (a program declaring no descender, or one whose
+    /// descender is smaller than half a 1000-unit step) leaves a <c>/Descent 0</c> that is itself a
+    /// conformance violation — so the fix that closes <c>font-embedded</c> would open a new finding
+    /// on the descriptor it just wrote. The bare-CFF path had the same hole from the other direction:
+    /// <c>-fontBBox[1]</c> is 0 whenever the measured bbox bottom is 0.</para>
+    ///
+    /// <para>The fallback is the FontBBox bottom when that is genuinely negative — the only other
+    /// measurement of the same quantity this type has — and otherwise -1: nothing here measured a
+    /// depth, so the smallest magnitude that still satisfies the constraint is more honest than a
+    /// fabricated one.</para>
+    /// </summary>
+    internal static int StrictlyNegativeDescent(int descent, int[] fontBBox)
+    {
+        if (descent < 0) return descent;
+        if (descent > 0) return -descent;
+        return fontBBox is [_, < 0, ..] ? fontBBox[1] : -1;
     }
 
     /// <summary>/CapHeight: OS/2 sCapHeight (version >= 2, non-zero), else the measured top of the

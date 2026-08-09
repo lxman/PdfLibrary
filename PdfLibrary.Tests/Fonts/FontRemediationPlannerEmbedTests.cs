@@ -100,14 +100,41 @@ public class FontRemediationPlannerEmbedTests
     }
 
     [Fact]
-    public void Declines_a_direct_font_dictionary_rather_than_throwing()
+    public void Declines_an_unaddressable_font_rather_than_throwing()
     {
-        using PdfDocument document = EmbedFixtures.DirectFontDictionary();
+        // Final-review finding: the previous version of this test passed the PAGE's object number,
+        // which FontInventory.Find cannot resolve to a font — so Propose hit `continue`, result.Fonts
+        // came back EMPTY, and an Assert.All over an empty collection proved only "does not throw".
+        // ProposeEmbed's !entry.IsAddressable branch had zero coverage. An indirect Type0 wrapper
+        // over a DIRECT descendant is the only shape that genuinely reaches it through Propose.
+        using PdfDocument document = EmbedFixtures.UnaddressableType0();
 
         FontRemediationProposal result = Planner().Propose(
-            document, [("font-embedded", EmbedFixtures.PageObjectNumber(document))]);
+            document, [("font-embedded", EmbedFixtures.UnaddressableObjectNumber)]);
 
-        Assert.All(result.Fonts, p => Assert.IsType<DeclineProposal>(p));
+        var decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        // The REASON is what discriminates: with the !IsAddressable branch removed, this font still
+        // declines — one branch later, as a composite — so a bare "it declined" assertion would pass
+        // over the very defect this test exists to catch.
+        Assert.Contains("directly", decline.Reason, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("composite", decline.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Declines_a_program_that_no_simple_font_dictionary_may_carry()
+    {
+        // Fix 1's planner half: PdfDocumentEditor.EmbedProgram refuses a program ISO 32000-2 Table
+        // 124 pairs with no simple-font /Subtype (a CID-keyed program, or one whose shape cannot be
+        // read at all). The planner must predict that refusal — exactly as it already does for Type 1
+        // PFB segment lengths — so a proposal never survives to throw during a user's Save.
+        var locator = new StubFontProvider(EmbedFixtures.UnreadableOpenTypeProgram());
+        using PdfDocument document = EmbedFixtures.UnembeddedArial();
+
+        FontRemediationProposal result = Planner(locator).Propose(
+            document, [("font-embedded", EmbedFixtures.FontObjectNumber(document))]);
+
+        var decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("Table 124", decline.Reason, StringComparison.Ordinal);
     }
 
     [Fact]
