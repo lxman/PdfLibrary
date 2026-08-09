@@ -49,6 +49,7 @@ internal sealed class ConformanceContext
     private OutputIntentColour? _outputIntentColour;
     private IReadOnlyList<TransparencyAnalysis.PageTransparency>? _pageTransparency;
     private IReadOnlyList<UsedFontCodes>? _usedTextGlyphs;
+    private IReadOnlyDictionary<PdfDictionary, IReadOnlyList<int>>? _fontPagesUsed;
     private MarkedContentAnalysis? _markedContent;
     private bool _xmpResolved;
     private XmpPacket? _xmp;
@@ -122,7 +123,24 @@ internal sealed class ConformanceContext
     /// Form XObjects. Backs the PDF/A-2u Unicode-mapping rules (which need the codes actually used, not the
     /// codes a font declares). Cached.
     /// </summary>
-    public IReadOnlyList<UsedFontCodes> UsedTextGlyphs => _usedTextGlyphs ??= CollectUsedTextGlyphs();
+    public IReadOnlyList<UsedFontCodes> UsedTextGlyphs { get { EnsureUsedTextGlyphs(); return _usedTextGlyphs!; } }
+
+    /// <summary>
+    /// For each font dictionary actually drawn with — a character shown via a text-showing operator
+    /// while it was the selected /Tf font — the indices of the pages it was drawn on. Computed from
+    /// the SAME per-page content-stream walk as <see cref="UsedTextGlyphs"/>, captured before that
+    /// walk merges codes across pages and discards which page each one came from. A font merely
+    /// PRESENT in a page's (or an inherited, or a Form XObject's) resource dictionary but never
+    /// selected to draw a character is not "used" on that page: recovering page attribution from
+    /// resource-dictionary presence instead of this walk both under-reports (misses a font only
+    /// reachable through a Form XObject, tiling pattern or annotation appearance that a page-level
+    /// resource scan does not see) and over-reports (counts a font that sits, unused, in a shared
+    /// resource dictionary). Cached alongside <see cref="UsedTextGlyphs"/>.
+    /// </summary>
+    internal IReadOnlyDictionary<PdfDictionary, IReadOnlyList<int>> FontPagesUsed
+    {
+        get { EnsureUsedTextGlyphs(); return _fontPagesUsed!; }
+    }
 
     /// <summary>
     /// The page-content marked-content facts for the PDF/UA-1 rules — whether any real content is untagged,
@@ -288,12 +306,22 @@ internal sealed class ConformanceContext
         return result;
     }
 
-    private IReadOnlyList<UsedFontCodes> CollectUsedTextGlyphs()
+    /// <summary>Populates both <see cref="_usedTextGlyphs"/> and <see cref="_fontPagesUsed"/> from a
+    /// single per-page content-stream walk (see <see cref="FontPagesUsed"/> for why they share one
+    /// walk rather than each re-deriving usage a different, less precise way).</summary>
+    private void EnsureUsedTextGlyphs()
     {
+        if (_usedTextGlyphs is not null)
+            return;
+
         var merged = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
         var mergedVisible = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
-        foreach (PdfPage page in Pages)
+        var pagesByFont = new Dictionary<PdfDictionary, SortedSet<int>>(ReferenceEqualityComparer.Instance);
+
+        for (var i = 0; i < Pages.Count; i++)
         {
+            PdfPage page = Pages[i];
+
             // Concatenate the page's content streams before parsing so an operator split across a stream
             // boundary still parses (ISO 32000-1 7.8.2), matching the renderer's page-content handling.
             var combined = new List<byte>();
@@ -312,6 +340,12 @@ internal sealed class ConformanceContext
                 if (!merged.TryGetValue(font, out HashSet<int>? set))
                     merged[font] = set = [];
                 set.UnionWith(codes);
+
+                if (codes.Count == 0)
+                    continue; // present in collector.Result but nothing actually shown on this page
+                if (!pagesByFont.TryGetValue(font.FontDictionary, out SortedSet<int>? pages))
+                    pagesByFont[font.FontDictionary] = pages = [];
+                pages.Add(i);
             }
 
             foreach ((PdfFont font, HashSet<int> codes) in collector.VisibleResult)
@@ -321,10 +355,16 @@ internal sealed class ConformanceContext
                 set.UnionWith(codes);
             }
         }
-        return merged.Select(kv => new UsedFontCodes(
+
+        _usedTextGlyphs = merged.Select(kv => new UsedFontCodes(
             kv.Key,
             kv.Value,
             mergedVisible.TryGetValue(kv.Key, out HashSet<int>? visible) ? visible : [])).ToList();
+
+        var pagesResult = new Dictionary<PdfDictionary, IReadOnlyList<int>>(ReferenceEqualityComparer.Instance);
+        foreach (KeyValuePair<PdfDictionary, SortedSet<int>> kv in pagesByFont)
+            pagesResult[kv.Key] = kv.Value.ToList();
+        _fontPagesUsed = pagesResult;
     }
 
     private MarkedContentAnalysis AnalyzeMarkedContent()

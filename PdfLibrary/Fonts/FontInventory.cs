@@ -53,15 +53,22 @@ public static class FontInventory
 
         // Descendant CIDFonts appear in the walk in their own right. They are not logical fonts —
         // they are the program holder of the Type0 that precedes them — so collect them first and
-        // exclude them from the top-level pass.
-        var descendantOf = new Dictionary<int, PdfDictionary>();
+        // exclude them from the top-level pass. Keyed on dictionary IDENTITY, not object number:
+        // ISO 32000-1 Table 121 requires /DescendantFonts to be an array but does not require its
+        // element be an indirect reference, and PdfDictionary carries no Equals/GetHashCode override
+        // (see PdfObject), so reference equality is exactly what Dictionary<PdfDictionary,_> gives by
+        // default — explicit here so that stays true even if that assumption ever changes. Keying on
+        // object number instead would silently let a direct descendant (ObjectNumber 0, IsIndirect
+        // false) through unexcluded, since ObjectNumber alone cannot distinguish it from every OTHER
+        // direct dictionary.
+        var descendantOf = new Dictionary<PdfDictionary, PdfDictionary>(ReferenceEqualityComparer.Instance);
         foreach (PdfDictionary dict in referenced)
         {
             if (Name(document, dict.Get("Subtype")) != "Type0") continue;
             if (Resolve(document, dict.Get("DescendantFonts")) is not PdfArray descendants
                 || descendants.Count == 0) continue;
             if (Resolve(document, descendants[0]) is not PdfDictionary descendant) continue;
-            if (descendant.IsIndirect) descendantOf[descendant.ObjectNumber] = dict;
+            descendantOf[descendant] = dict;
         }
 
         Dictionary<PdfDictionary, (List<int> Codes, SortedSet<int> Pages)> usage = CollectUsage(context);
@@ -69,7 +76,7 @@ public static class FontInventory
         var entries = new List<FontInventoryEntry>();
         foreach (PdfDictionary dict in referenced)
         {
-            if (dict.IsIndirect && descendantOf.ContainsKey(dict.ObjectNumber))
+            if (descendantOf.ContainsKey(dict))
                 continue; // reached as the program holder of its Type0 parent
 
             entries.Add(BuildEntry(document, dict, usage));
@@ -141,18 +148,19 @@ public static class FontInventory
                 result[dict] = entry = ([], []);
             entry.Codes.AddRange(used.Codes);
         }
-        // Page attribution is not carried by UsedFontCodes (it merges across pages), so pages are
-        // recovered from the page-level resource walk rather than invented here.
-        for (var i = 0; i < context.Pages.Count; i++)
+        // Page attribution comes from ConformanceContext.FontPagesUsed — the SAME per-page
+        // content-stream walk that produced UsedTextGlyphs above, captured before that walk merges
+        // codes across pages and discards which page each one came from. A resource-presence scan
+        // (an earlier version of this method used context.Pages[i].GetResources()?.GetFonts()) both
+        // under-reports — misses a font only reachable through a Form XObject, tiling pattern or
+        // annotation appearance a page-level-only scan does not see — and over-reports — counts a
+        // font that sits, unused, in a page's (or an inherited) resource dictionary. FontPagesUsed
+        // avoids both because it only records a page where a character was actually drawn.
+        foreach ((PdfDictionary dict, IReadOnlyList<int> pages) in context.FontPagesUsed)
         {
-            if (context.Pages[i].GetResources()?.GetFonts() is not { } fontDict) continue;
-            foreach (PdfObject fontObj in fontDict.Values)
-            {
-                if (Resolve(context.Document, fontObj) is not PdfDictionary dict) continue;
-                if (!result.TryGetValue(dict, out (List<int> Codes, SortedSet<int> Pages) entry))
-                    result[dict] = entry = ([], []);
-                entry.Pages.Add(i);
-            }
+            if (!result.TryGetValue(dict, out (List<int> Codes, SortedSet<int> Pages) entry))
+                result[dict] = entry = ([], []);
+            entry.Pages.UnionWith(pages);
         }
         return result;
     }
