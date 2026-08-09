@@ -110,6 +110,54 @@ namespace FontParser.Tables.Cff.Type1
             }
         }
 
+        /// <summary>
+        /// FontBBox from the CFF Top DICT (llx, lly, urx, ury in font units), or null when the
+        /// operator was not present. Used as the /FontBBox fallback for a bare CFF program (no head
+        /// table to read it from directly).
+        /// </summary>
+        public IReadOnlyList<double>? FontBBox
+        {
+            get
+            {
+                CffDictEntry? entry = _topDictOperatorEntries.FirstOrDefault(e => e.Name == "FontBBox");
+                return entry?.Operand as List<double>;
+            }
+        }
+
+        /// <summary>
+        /// StdVW from the Private DICT — the font's own statement of its dominant vertical stem
+        /// width, and the most reliable source for /StemV. Null when the operator was not present
+        /// (common: many fonts omit it and rely on a reader's own heuristic).
+        /// <para>For a CID-keyed CFF the top-level Private DICT is empty (each FD carries its own);
+        /// this checks each FD's Private DICT in FDArray order and returns the first StdVW found.</para>
+        /// </summary>
+        public int? StdVW
+        {
+            get
+            {
+                CffDictEntry? entry = _type1PrivateDictOperatorEntries.FirstOrDefault(e => e.Name == "StdVW");
+                if (entry?.Operand is int direct) return direct;
+
+                foreach (CffCidFd fd in CidFds)
+                {
+                    if (fd.RawPrivateDict.Length == 0) continue;
+                    var fdEntries = new List<CffDictEntry>();
+                    try
+                    {
+                        DictEntryReader.Read(fd.RawPrivateDict.ToList(), _privateDictOperatorEntries, fdEntries);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                    CffDictEntry? fdStdVw = fdEntries.FirstOrDefault(e => e.Name == "StdVW");
+                    if (fdStdVw?.Operand is int fdValue) return fdValue;
+                }
+
+                return null;
+            }
+        }
+
         private readonly Type1TopDictOperatorEntries _type1TopDictOperatorEntries =
             new(new Dictionary<ushort, CffDictEntry?>());
 

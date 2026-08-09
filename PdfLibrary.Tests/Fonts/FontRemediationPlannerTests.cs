@@ -56,8 +56,14 @@ public class FontRemediationPlannerTests
         (PdfDocument doc, PreflightResult findings) = Run(BuildForbiddenValueDocument());
         using PdfDocument document = doc;
 
+        // F-2 lands "font-embedded" as a second HANDLED rule; this fixture's Helvetica font is
+        // genuinely unembedded, so Preflighter now also fires font-embedded and the planner adds a
+        // legitimate EmbedProposal alongside the ToUnicode one. Selecting the ToUnicode-family
+        // proposal specifically (rather than asserting the whole collection is a singleton) keeps
+        // this test's real subject — ToUnicode derivation — unaffected by that addition.
         ToUnicodeProposal proposal = Assert.IsType<ToUnicodeProposal>(
-            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+            Assert.Single(new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts,
+                p => p is ToUnicodeProposal));
 
         Assert.Equal("pdfa2u-tounicode-values", proposal.RuleId);
         Assert.NotEmpty(proposal.Provable);
@@ -77,8 +83,11 @@ public class FontRemediationPlannerTests
         (PdfDocument doc, PreflightResult findings) = Run(BuildSymbolicDifferencesDocument());
         using PdfDocument document = doc;
 
+        // See the comment in Propose_MapsAProvableCodeThroughItsGlyphName: this fixture's font is
+        // also unembedded, so F-2's font-embedded rule now legitimately adds an EmbedProposal too.
         ToUnicodeProposal proposal = Assert.IsType<ToUnicodeProposal>(
-            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+            Assert.Single(new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts,
+                p => p is ToUnicodeProposal));
 
         Assert.Equal("pdfa2u-tounicode", proposal.RuleId);
         Assert.NotEmpty(proposal.NeedsUserInput);
@@ -95,8 +104,10 @@ public class FontRemediationPlannerTests
         (PdfDocument doc, PreflightResult findings) = Run(BuildForbiddenValueDocument());
         using PdfDocument document = doc;
 
+        // See the comment in Propose_MapsAProvableCodeThroughItsGlyphName.
         ToUnicodeProposal proposal = Assert.IsType<ToUnicodeProposal>(
-            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+            Assert.Single(new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts,
+                p => p is ToUnicodeProposal));
 
         Assert.NotEmpty(proposal.Provable);
         char[] forbidden = ['\u0000', '\uFEFF', '\uFFFE', '\uFFFF'];
@@ -121,7 +132,7 @@ public class FontRemediationPlannerTests
         using PdfDocument document = doc;
 
         DeclineProposal decline = Assert.IsType<DeclineProposal>(
-            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+            Assert.Single(new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts));
 
         Assert.NotEmpty(decline.Reason);
         Assert.Equal(20, decline.Font.ObjectNumber);
@@ -137,8 +148,10 @@ public class FontRemediationPlannerTests
         (PdfDocument doc, PreflightResult findings) = Run(BuildForbiddenUConventionDocument());
         using PdfDocument document = doc;
 
+        // See the comment in Propose_MapsAProvableCodeThroughItsGlyphName.
         ToUnicodeProposal proposal = Assert.IsType<ToUnicodeProposal>(
-            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+            Assert.Single(new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts,
+                p => p is ToUnicodeProposal));
 
         Assert.Contains(0x41, proposal.NeedsUserInput);
         Assert.DoesNotContain(0x41, proposal.Provable.Keys);
@@ -156,8 +169,10 @@ public class FontRemediationPlannerTests
         (PdfDocument doc, PreflightResult findings) = Run(BuildPartialCMapDocument());
         using PdfDocument document = doc;
 
+        // See the comment in Propose_MapsAProvableCodeThroughItsGlyphName.
         ToUnicodeProposal proposal = Assert.IsType<ToUnicodeProposal>(
-            Assert.Single(new FontRemediationPlanner().Propose(document, findings).Fonts));
+            Assert.Single(new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts,
+                p => p is ToUnicodeProposal));
 
         // Covered by the existing (partial) CMap, non-AGL glyph name: must come from the existing
         // entry, not be abandoned to the user just because a fresh glyph-name derivation would fail.
@@ -183,7 +198,13 @@ public class FontRemediationPlannerTests
         Assert.Contains(findings.Findings, f => f.RuleId is not "pdfa2u-tounicode" and not "pdfa2u-tounicode-values");
         Assert.DoesNotContain(findings.Findings, f => f.RuleId is "pdfa2u-tounicode" or "pdfa2u-tounicode-values");
 
-        Assert.Empty(new FontRemediationPlanner().Propose(document, findings).Fonts);
+        // F-2 lands "font-embedded" as a second HANDLED rule, and this fixture's font is genuinely
+        // unembedded — so "some other finding" this fixture was built to guarantee now legitimately
+        // includes one the planner DOES act on. This test's real subject is the ToUnicode-family
+        // filter, so it asserts that filter specifically rather than "produces nothing at all".
+        Assert.DoesNotContain(
+            new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts,
+            p => p is ToUnicodeProposal);
     }
 
     // Minor-2 fix: FontId(0) is an overloaded sentinel FontInventory assigns to every DIRECT
@@ -217,7 +238,7 @@ public class FontRemediationPlannerTests
             ],
         };
 
-        IReadOnlyList<FontProposal> proposals = new FontRemediationPlanner().Propose(document, findings).Fonts;
+        IReadOnlyList<FontProposal> proposals = new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts;
 
         // Both are unaddressable (direct wrapper) so both are declines, not ToUnicode proposals - the
         // point under test is that there are TWO of them, not one silently swallowed by the other.
@@ -235,13 +256,13 @@ public class FontRemediationPlannerTests
         using PdfDocument document = doc;
 
         IReadOnlyList<FontProposal> viaPreflightResult =
-            new FontRemediationPlanner().Propose(document, findings).Fonts;
+            new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, findings).Fonts;
 
         IEnumerable<(string RuleId, int ObjectNumber)> projected = findings.Findings
             .Where(f => f.ObjectNumber is not null)
             .Select(f => (f.RuleId, f.ObjectNumber!.Value));
         IReadOnlyList<FontProposal> viaTuples =
-            new FontRemediationPlanner().Propose(document, projected).Fonts;
+            new FontRemediationPlanner(SystemFontLocator.Default).Propose(document, projected).Fonts;
 
         // FontProposal's synthesized record equality falls through to Dictionary<int,string>.Equals
         // for ToUnicodeProposal.Provable, which is reference equality (Dictionary does not override
@@ -263,6 +284,13 @@ public class FontRemediationPlannerTests
                     break;
                 case (DeclineProposal da, DeclineProposal db):
                     Assert.Equal(da.Reason, db.Reason);
+                    break;
+                // F-2 addition: this fixture's font is unembedded, so font-embedded now legitimately
+                // fires here too, and the projection-fidelity claim under test must cover it.
+                case (EmbedProposal ea, EmbedProposal eb):
+                    Assert.Equal(ea.SourceDescription, eb.SourceDescription);
+                    Assert.Equal(ea.Program, eb.Program);
+                    Assert.Equal(ea.Format, eb.Format);
                     break;
                 default:
                     Assert.Fail($"Proposal kind mismatch at index {i}: {a.GetType().Name} vs {b.GetType().Name}");

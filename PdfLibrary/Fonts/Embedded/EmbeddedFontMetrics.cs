@@ -9,6 +9,7 @@ using FontParser.Tables.Head;
 using FontParser.Tables.Hhea;
 using FontParser.Tables.Hmtx;
 using FontParser.Tables.Name;
+using FontParser.Tables.Os2;
 using FontParser.Tables.PostScriptType1;
 using FontParser.Tables.TtTables;
 using FontParser.Tables.TtTables.Glyf;
@@ -30,6 +31,8 @@ internal class EmbeddedFontMetrics
     private readonly MaxPTable? _maxpTable;
     private readonly HmtxTable? _hmtxTable;
     private readonly NameTable? _nameTable;
+    private readonly Os2Table? _os2Table;
+    private readonly PostTable? _postTable;
     private readonly CmapTable? _cmapTable;
     private GlyphTable? _glyphTable;
     private LocaTable? _locaTable;
@@ -127,6 +130,23 @@ internal class EmbeddedFontMetrics
     /// Indicates if this font is italic according to the head table's macStyle
     /// </summary>
     public bool IsItalic => _headTable?.MacStyle.HasFlag(MacStyle.Italic) ?? false;
+
+    /// <summary>The parsed OS/2 table, or null when the program has none (bare CFF, Type 1).</summary>
+    internal Os2Table? Os2 => _os2Table;
+
+    /// <summary>The parsed head table, or null when the program has none (bare CFF, Type 1 — those
+    /// are not sfnt-wrapped, so there is no head table to read).</summary>
+    internal HeadTable? Head => _headTable;
+
+    /// <summary>The parsed hhea table, or null when the program has none (bare CFF, Type 1).</summary>
+    internal HheaTable? Hhea => _hheaTable;
+
+    /// <summary>The parsed post table, or null when the program has none (bare CFF, Type 1, or an
+    /// sfnt that omitted it).</summary>
+    internal PostTable? Post => _postTable;
+
+    /// <summary>The parsed CFF/Type1C table, or null when this program is not CFF-flavoured.</summary>
+    internal Type1Table? Cff => _cffTable;
 
     /// <summary>
     /// Gets the nominal width (default width) for CFF glyphs that don't specify explicit widths
@@ -379,6 +399,34 @@ internal class EmbeddedFontMetrics
             {
                 // Hhea table parse failed
                 RecordFault(FontProgramStage.Hhea, ex);
+            }
+        }
+
+        // Parse OS/2 table (optional — CapHeight, weight class, fsType embedding permission)
+        byte[]? os2Data = _sfnt?.GetTableBytes("OS/2");
+        if (os2Data is not null)
+        {
+            try
+            {
+                _os2Table = new Os2Table(os2Data);
+            }
+            catch (Exception ex)
+            {
+                RecordFault(FontProgramStage.Os2, ex);
+            }
+        }
+
+        // Parse post table (optional — ItalicAngle for font-descriptor construction)
+        byte[]? postData = _sfnt?.GetTableBytes("post");
+        if (postData is not null)
+        {
+            try
+            {
+                _postTable = new PostTable(postData);
+            }
+            catch (Exception ex)
+            {
+                RecordFault(FontProgramStage.Post, ex);
             }
         }
 

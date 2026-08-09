@@ -33,7 +33,27 @@ internal class TrueTypeFont : PdfFont
 
     public override double GetCharacterWidth(int charCode)
     {
-        // Try to use embedded font metrics first for more accurate widths
+        // ISO 32000-2 §9.2.4: the width "shall be stored both in the font dictionary and in the font
+        // program", and NOTE 2 is explicit that the dictionary copy exists so a processor can position
+        // glyphs "without having to look inside the font program". NOTE 3 adds that the two legitimately
+        // differ — TrueType stores advances per 1024 or 2048 units to the em, /Widths per 1000 — so
+        // preferring the program is not "more accurate", it is a guarantee of sub-point drift.
+        //
+        // The > 0 test is a deliberate concession, not a claim that a zero advance is invalid (it is a
+        // legal value). Program-first ordering was originally introduced here to rescue files whose
+        // /Widths array is degenerate; a zero or out-of-range entry still falls through to the program,
+        // so those files render exactly as they did.
+        if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
+        {
+            int index = charCode - FirstChar;
+            if (index >= 0 && index < _widths.Length && _widths[index] > 0)
+            {
+                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
+                return _widths[index];
+            }
+        }
+
+        // Fall back to embedded font metrics when /Widths cannot answer.
         EmbeddedFontMetrics? embeddedMetrics = GetEmbeddedMetrics();
         if (embeddedMetrics is { IsValid: true })
         {
@@ -45,17 +65,6 @@ internal class TrueTypeFont : PdfFont
                 double scaledWidth = glyphWidth * 1000.0 / embeddedMetrics.UnitsPerEm;
                 PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> embedded: rawWidth={glyphWidth}, unitsPerEm={embeddedMetrics.UnitsPerEm}, scaled={scaledWidth:F1}");
                 return scaledWidth;
-            }
-        }
-
-        // Fallback to widths array from PDF
-        if (_widths is not null && charCode >= FirstChar && charCode <= LastChar)
-        {
-            int index = charCode - FirstChar;
-            if (index >= 0 && index < _widths.Length)
-            {
-                PdfLogger.Log(LogCategory.Text, $"  [WIDTH] charCode={charCode} -> PDF widths array: {_widths[index]:F1}");
-                return _widths[index];
             }
         }
 
