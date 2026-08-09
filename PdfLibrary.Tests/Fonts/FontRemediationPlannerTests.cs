@@ -225,6 +225,52 @@ public class FontRemediationPlannerTests
         Assert.All(proposals, p => Assert.IsType<DeclineProposal>(p));
     }
 
+    // The (document, PreflightResult) overload is now a thin projection over the
+    // (document, IEnumerable<(string,int)>) overload — this pins that the projection is faithful:
+    // same document, same findings (just reshaped), same proposals out.
+    [Fact]
+    public void Propose_BothOverloadsProduceIdenticalProposalsForTheSameFindings()
+    {
+        (PdfDocument doc, PreflightResult findings) = Run(BuildForbiddenValueDocument());
+        using PdfDocument document = doc;
+
+        IReadOnlyList<FontProposal> viaPreflightResult =
+            new FontRemediationPlanner().Propose(document, findings).Fonts;
+
+        IEnumerable<(string RuleId, int ObjectNumber)> projected = findings.Findings
+            .Where(f => f.ObjectNumber is not null)
+            .Select(f => (f.RuleId, f.ObjectNumber!.Value));
+        IReadOnlyList<FontProposal> viaTuples =
+            new FontRemediationPlanner().Propose(document, projected).Fonts;
+
+        // FontProposal's synthesized record equality falls through to Dictionary<int,string>.Equals
+        // for ToUnicodeProposal.Provable, which is reference equality (Dictionary does not override
+        // it) — two structurally-identical-but-distinct dictionaries would never compare equal, so
+        // this compares the shape explicitly instead of via Assert.Equal(IEnumerable<FontProposal>).
+        Assert.Equal(viaPreflightResult.Count, viaTuples.Count);
+        for (var i = 0; i < viaPreflightResult.Count; i++)
+        {
+            FontProposal a = viaPreflightResult[i];
+            FontProposal b = viaTuples[i];
+            Assert.Equal(a.Font, b.Font);
+            Assert.Equal(a.RuleId, b.RuleId);
+
+            switch (a, b)
+            {
+                case (ToUnicodeProposal ta, ToUnicodeProposal tb):
+                    Assert.Equal(ta.Provable, tb.Provable);
+                    Assert.Equal(ta.NeedsUserInput, tb.NeedsUserInput);
+                    break;
+                case (DeclineProposal da, DeclineProposal db):
+                    Assert.Equal(da.Reason, db.Reason);
+                    break;
+                default:
+                    Assert.Fail($"Proposal kind mismatch at index {i}: {a.GetType().Name} vs {b.GetType().Name}");
+                    break;
+            }
+        }
+    }
+
     private static (PdfDocument, PreflightResult) Run(PdfDocument document)
     {
         PreflightResult findings = Preflighter.Check(document, ConformanceProfile.PdfA2u);

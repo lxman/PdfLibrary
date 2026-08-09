@@ -10,7 +10,7 @@ namespace PdfLibrary.Fonts.Remediation;
 /// Save commit it.
 ///
 /// <para>F-1 handles the two ToUnicode rules. F-2/F-3/F-4 extend the switch in
-/// <see cref="Propose"/>; the shape does not change.</para>
+/// <see cref="Propose(PdfDocument, PreflightResult)"/>; the shape does not change.</para>
 /// </summary>
 public sealed class FontRemediationPlanner
 {
@@ -18,6 +18,31 @@ public sealed class FontRemediationPlanner
         new(StringComparer.Ordinal) { "pdfa2u-tounicode", "pdfa2u-tounicode-values" };
 
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(findings);
+
+        // Findings without an ObjectNumber cannot be attributed to a font, and Propose(document,
+        // IEnumerable<(string,int)>) below has no null-ObjectNumber case to represent — skipping them
+        // here, before the projection, keeps that identically to what the old single-overload body did.
+        IEnumerable<(string RuleId, int ObjectNumber)> projected = findings.Findings
+            .Where(f => f.ObjectNumber is not null)
+            .Select(f => (f.RuleId, f.ObjectNumber!.Value));
+
+        return Propose(document, projected);
+    }
+
+    /// <summary>
+    /// Same proposal logic as <see cref="Propose(PdfDocument, PreflightResult)"/>, but takes only the
+    /// two fields the planner actually reads off a finding rather than a whole engine
+    /// <see cref="PreflightResult"/>. A caller that has already mirrored preflight findings into its
+    /// own type (Pellucid.Core's <c>PreflightReport</c>/<c>PreflightFinding</c>, for instance) should
+    /// not have to reconstruct an engine <see cref="PreflightResult"/> — or re-run preflight — just to
+    /// call this planner. Re-running would also risk planning against a different finding set than the
+    /// one the caller is actually showing the user.
+    /// </summary>
+    public FontRemediationProposal Propose(
+        PdfDocument document, IEnumerable<(string RuleId, int ObjectNumber)> findings)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(findings);
@@ -37,14 +62,13 @@ public sealed class FontRemediationPlanner
         // for this task.
         var seen = new HashSet<(int, int?, string)>();
 
-        foreach (Finding finding in findings.Findings)
+        foreach ((string ruleId, int objectNumber) in findings)
         {
-            if (!HandledRules.Contains(finding.RuleId)) continue;
-            if (finding.ObjectNumber is not { } objectNumber) continue;
+            if (!HandledRules.Contains(ruleId)) continue;
             if (FontInventory.Find(inventory, objectNumber) is not { } entry) continue;
-            if (!seen.Add((entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber, finding.RuleId))) continue;
+            if (!seen.Add((entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber, ruleId))) continue;
 
-            proposals.Add(ProposeToUnicode(document, entry, finding.RuleId));
+            proposals.Add(ProposeToUnicode(document, entry, ruleId));
         }
 
         return new FontRemediationProposal(proposals);
