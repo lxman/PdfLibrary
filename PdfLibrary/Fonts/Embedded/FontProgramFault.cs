@@ -14,6 +14,8 @@ internal enum FontProgramStage
     Hmtx,
     Name,
     Cmap,
+    /// <summary>The <c>OS/2</c> and Windows Metrics table (optional — CapHeight, weight class, fsType).</summary>
+    Os2,
     /// <summary>A bare CFF program (no sfnt wrapper), detected by the <c>01 00</c> version prefix.</summary>
     RawCff,
     /// <summary>The <c>CFF </c> table inside an sfnt wrapper (OpenType/CFF).</summary>
