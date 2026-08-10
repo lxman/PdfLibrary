@@ -141,78 +141,23 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "it would let Pellucid embed it.");
         }
 
-        ClassifiedProgram? classified = FontProgramClassifier.Classify(match.Data, match.FaceIndex);
-        if (classified is null)
-        {
-            return Decline(entry, ruleId,
-                $"The font file found for '{entry.FamilyName}' is not in a format Pellucid can embed.");
-        }
-
-        // Reads Os2/Head via the SAME internal metrics reader FontDescriptorMetrics.Compute and
-        // PdfDocumentEditor.WriteDerivedWidths use, so this cannot disagree with what those consult
-        // later. Never on the request's bytes — always on classified.Program, what will actually be
-        // written (design §7; §6.2 rejected re-resolving at apply time for exactly this reason).
-        EmbeddedFontMetrics metrics = classified.Format == FontProgramFormat.Type1
-            ? new EmbeddedFontMetrics(classified.Program, length1: 0, length2: 0, length3: 0)
-            : new EmbeddedFontMetrics(classified.Program);
-
-        string resolvedFamily = metrics.FamilyName ?? entry.FamilyName;
-
-        // Checked BEFORE the proposal is built (design requirement, restated in the class doc): a
-        // font whose vendor forbids embedding must not have its bytes carried in view state at all.
-        if (metrics.Os2?.EmbeddingRestricted == true)
-        {
-            return Decline(entry, ruleId,
-                $"'{resolvedFamily}' is licensed by its vendor with embedding restricted, so Pellucid "
-                + "will not embed it.");
-        }
-
-        // Calls the SAME validation PdfDocumentEditor.EmbedProgram runs (Type1PfbSegments.Split,
-        // shared rather than mirrored) so the two cannot diverge: a bare PFA with no PFB segment
-        // markers, a corrupt segment table, or a PFB with no binary segment all throw
-        // NotSupportedException there — declined here instead, so a proposal never reaches Save only
-        // to throw there. The split result itself is discarded; only whether it succeeds matters, since
-        // EmbedProgram (Task 5) re-splits the SAME bytes when the proposal is actually applied.
-        if (classified.Format == FontProgramFormat.Type1)
-        {
-            try
-            {
-                Type1PfbSegments.Split(classified.Program);
-            }
-            catch (NotSupportedException)
-            {
-                return Decline(entry, ruleId,
-                    $"The Type 1 program found for '{entry.FamilyName}' does not declare its segment "
-                    + "lengths, which are required to embed it.");
-            }
-        }
-
-        // Calls the SAME reconciliation PdfDocumentEditor.EmbedProgram runs
-        // (SimpleFontProgramSubtype.Resolve, shared rather than mirrored) for the SAME reason the
-        // Type1PfbSegments check above exists: the editor refuses a program ISO 32000-2 Table 124
-        // permits in no simple font dictionary (a CID-keyed CFF, an OpenType program whose shape
-        // cannot be read), and a proposal that survived to throw at Save time would be a crash where
-        // an honest decline belongs. Everything reaching here is a SIMPLE font — composites declined
-        // two branches up — so the simple-font question is the right one to ask. The current subtype
-        // is passed as null deliberately: it only chooses between /Type1 and /MMType1 for a program
-        // this ACCEPTS, and never affects whether it throws, so the planner does not need to have
-        // resolved the dictionary to predict a refusal. The answer itself is discarded; only whether
-        // it succeeds matters, since EmbedProgram re-resolves it when the proposal is applied.
-        try
-        {
-            SimpleFontProgramSubtype.Resolve(classified.Format, classified.Program, currentSubtype: null);
-        }
-        catch (NotSupportedException ex)
-        {
-            return Decline(entry, ruleId,
-                $"The font program found for '{entry.FamilyName}' cannot be embedded in this font: "
-                + ex.Message);
-        }
-        // ACCEPTED LIMITATION: this decline path for a CID-keyed CidFontType0C program in a simple
-        // font is proven only compositionally (SimpleFontProgramSubtype's own unit tests drive the
-        // throw directly) — there is no committed CID-keyed CFF fixture in this repo to exercise the
-        // planner end-to-end through a real font program. See the CFF-fixture note in
+        // Runs the SAME byte-facing gates AssessCandidate uses on a caller-supplied candidate
+        // (classify, fsType, Type 1 PFB segments, ISO 32000-2 Table 124 reconciliation) — extracted
+        // so the automatic and manual paths cannot drift apart. ACCEPTED LIMITATION carried over from
+        // before the extraction: the Table 124 decline for a CID-keyed CidFontType0C program in a
+        // simple font is proven only compositionally (SimpleFontProgramSubtype's own unit tests drive
+        // the throw directly) — there is no committed CID-keyed CFF fixture in this repo to exercise
+        // the planner end-to-end through a real font program. See the CFF-fixture note in
         // PreflightSlice19Tests.cs for why one was not hand-authored.
+        ByteGateOutcome gates = RunByteGates(match.Data, match.FaceIndex, entry.FamilyName);
+        if (gates.HardBlockReason is not null)
+        {
+            return Decline(entry, ruleId, gates.HardBlockReason);
+        }
+
+        EmbeddedFontMetrics metrics = gates.Metrics!;
+        string resolvedFamily = gates.ResolvedFamily!;
+        ClassifiedProgram classified = gates.Classified!;
 
         // Checked AFTER fsType (a vendor's embedding restriction is a harder no than a coverage gap)
         // and BEFORE the proposal is built, for the same reason as every decline above: a glyph
@@ -251,6 +196,192 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             $"{resolvedFamily} ({style}) — from your system fonts",
             classified.Program, classified.Format);
     }
+
+    /// <summary>
+    /// Runs a caller-supplied substitute face's bytes through the SAME gate chain
+    /// <see cref="ProposeEmbed"/> uses, for the manual font picker: a user has already chosen this
+    /// candidate on purpose, so a coverage shortfall or a Symbol/Latin mismatch is reported as a
+    /// <see cref="CandidateAssessment.Warnings"/> entry rather than an outright decline — but fsType,
+    /// an undeclared Type 1 PFB segment table, and an ISO 32000-2 Table 124 refusal remain hard blocks
+    /// (<see cref="CandidateAssessment.HardBlockReason"/>): those are facts about what Pellucid can
+    /// legally and mechanically write, not something the user's judgement can override.
+    /// </summary>
+    public CandidateAssessment AssessCandidate(
+        PdfDocument document, FontInventoryEntry entry, string ruleId,
+        byte[] candidateBytes, int faceIndex, string sourceDescription)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(candidateBytes);
+        ArgumentNullException.ThrowIfNull(sourceDescription);
+
+        // Entry-shape hard blocks mirror ProposeEmbed exactly, including reason strings: these are
+        // facts about the DOCUMENT's font, independent of which candidate bytes were offered.
+        if (!entry.IsAddressable)
+        {
+            return new CandidateAssessment(null,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so there is nothing to attach a font program to.",
+                [], null);
+        }
+
+        if (entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2)
+        {
+            return new CandidateAssessment(null,
+                "Substituting a program for a composite font would need its character-to-glyph "
+                + "mapping rewritten in step, which Pellucid does not yet do.",
+                [], null);
+        }
+
+        if (entry.Kind is FontKind.Type3)
+        {
+            return new CandidateAssessment(null,
+                "Type 3 font glyphs are drawing instructions, not a font program.", [], null);
+        }
+
+        FontId programHolder = entry.ProgramHolderId ?? entry.Id;
+
+        ByteGateOutcome gates = RunByteGates(candidateBytes, faceIndex, entry.FamilyName);
+        if (gates.HardBlockReason is not null)
+        {
+            return new CandidateAssessment(gates.Classified?.Format, gates.HardBlockReason, [], null);
+        }
+
+        EmbeddedFontMetrics metrics = gates.Metrics!;
+        string resolvedFamily = gates.ResolvedFamily!;
+        ClassifiedProgram classified = gates.Classified!;
+
+        var warnings = new List<string>();
+
+        // Coverage shortfall: the same GlyphCoverage check ProposeEmbed declines on, reported as a
+        // consequence instead — the manual path lets the user accept .notdef glyphs on purpose.
+        if (document.GetObject(entry.Id.ObjectNumber) is PdfDictionary fontDictionary
+            && PdfFont.Create(fontDictionary, document) is { } pdfFont)
+        {
+            IReadOnlyList<int> uncovered =
+                GlyphCoverage.UncoveredCodes(pdfFont, metrics, pdfFont.FirstChar, pdfFont.LastChar);
+            if (uncovered.Count > 0)
+            {
+                string? glyphName = pdfFont.Encoding?.GetGlyphName(uncovered[0]);
+                string? uni = string.IsNullOrEmpty(glyphName) ? null : GlyphList.GetUnicode(glyphName);
+                int codePoint = string.IsNullOrEmpty(uni) ? 0 : char.ConvertToUtf32(uni, 0);
+
+                warnings.Add(
+                    $"'{resolvedFamily}' has no glyph for {uncovered.Count} character(s) this font "
+                    + $"draws (first: U+{codePoint:X4}); they will embed as .notdef.");
+            }
+        }
+
+        // Symbol/Dingbats mismatch: the entry's /BaseFont aliases to Symbol or ZapfDingbats (via the
+        // SAME Base35Aliases.Split ProposeEmbed's system-font search uses to name a face), but the
+        // candidate carries no symbol-encoded cmap (Windows platform, Symbol encoding) — so its codes
+        // would render through whatever Latin glyphs those raw byte values happen to hit.
+        (string aliasFamily, _, _) = Base35Aliases.Split(entry.BaseFont);
+        if ((aliasFamily.Equals("symbol", StringComparison.OrdinalIgnoreCase)
+                || aliasFamily.Equals("zapfdingbats", StringComparison.OrdinalIgnoreCase))
+            && !metrics.HasSymbolCmapEncoding())
+        {
+            warnings.Add(
+                "this font is symbol-encoded; a Latin text face will render its content as garbage.");
+        }
+
+        var proposal = new EmbedProposal(
+            programHolder, ruleId, sourceDescription, classified.Program, classified.Format);
+
+        return new CandidateAssessment(classified.Format, null, warnings, proposal);
+    }
+
+    /// <summary>
+    /// The byte-facing gates shared by <see cref="ProposeEmbed"/> and <see cref="AssessCandidate"/>:
+    /// classify the program, read its metrics, and check fsType embedding restriction, Type 1 PFB
+    /// segment declaration, and ISO 32000-2 Table 124 reconciliation, in that order — extracted from
+    /// <see cref="ProposeEmbed"/> so the automatic and manual paths cannot silently drift apart. Every
+    /// reason string here is verbatim what <see cref="ProposeEmbed"/> produced before the extraction:
+    /// its own tests pin them, and this refactor must not move them.
+    /// </summary>
+    private static ByteGateOutcome RunByteGates(byte[] bytes, int faceIndex, string familyName)
+    {
+        ClassifiedProgram? classified = FontProgramClassifier.Classify(bytes, faceIndex);
+        if (classified is null)
+        {
+            return new ByteGateOutcome(null, null, null,
+                $"The font file found for '{familyName}' is not in a format Pellucid can embed.");
+        }
+
+        // Reads Os2/Head via the SAME internal metrics reader FontDescriptorMetrics.Compute and
+        // PdfDocumentEditor.WriteDerivedWidths use, so this cannot disagree with what those consult
+        // later. Never on the request's bytes — always on classified.Program, what will actually be
+        // written (design §7; §6.2 rejected re-resolving at apply time for exactly this reason).
+        EmbeddedFontMetrics metrics = classified.Format == FontProgramFormat.Type1
+            ? new EmbeddedFontMetrics(classified.Program, length1: 0, length2: 0, length3: 0)
+            : new EmbeddedFontMetrics(classified.Program);
+
+        string resolvedFamily = metrics.FamilyName ?? familyName;
+
+        // Checked BEFORE the proposal is built (design requirement, restated in the class doc): a
+        // font whose vendor forbids embedding must not have its bytes carried in view state at all.
+        if (metrics.Os2?.EmbeddingRestricted == true)
+        {
+            return new ByteGateOutcome(classified, metrics, resolvedFamily,
+                $"'{resolvedFamily}' is licensed by its vendor with embedding restricted, so Pellucid "
+                + "will not embed it.");
+        }
+
+        // Calls the SAME validation PdfDocumentEditor.EmbedProgram runs (Type1PfbSegments.Split,
+        // shared rather than mirrored) so the two cannot diverge: a bare PFA with no PFB segment
+        // markers, a corrupt segment table, or a PFB with no binary segment all throw
+        // NotSupportedException there — declined here instead, so a proposal never reaches Save only
+        // to throw there. The split result itself is discarded; only whether it succeeds matters, since
+        // EmbedProgram (Task 5) re-splits the SAME bytes when the proposal is actually applied.
+        if (classified.Format == FontProgramFormat.Type1)
+        {
+            try
+            {
+                Type1PfbSegments.Split(classified.Program);
+            }
+            catch (NotSupportedException)
+            {
+                return new ByteGateOutcome(classified, metrics, resolvedFamily,
+                    $"The Type 1 program found for '{familyName}' does not declare its segment "
+                    + "lengths, which are required to embed it.");
+            }
+        }
+
+        // Calls the SAME reconciliation PdfDocumentEditor.EmbedProgram runs
+        // (SimpleFontProgramSubtype.Resolve, shared rather than mirrored) for the SAME reason the
+        // Type1PfbSegments check above exists: the editor refuses a program ISO 32000-2 Table 124
+        // permits in no simple font dictionary (a CID-keyed CFF, an OpenType program whose shape
+        // cannot be read), and a proposal that survived to throw at Save time would be a crash where
+        // an honest decline belongs. Everything reaching here is a SIMPLE font — composites declined
+        // by the caller before RunByteGates is ever invoked — so the simple-font question is the right
+        // one to ask. The current subtype is passed as null deliberately: it only chooses between
+        // /Type1 and /MMType1 for a program this ACCEPTS, and never affects whether it throws, so the
+        // planner does not need to have resolved the dictionary to predict a refusal. The answer
+        // itself is discarded; only whether it succeeds matters, since EmbedProgram re-resolves it
+        // when the proposal is applied.
+        try
+        {
+            SimpleFontProgramSubtype.Resolve(classified.Format, classified.Program, currentSubtype: null);
+        }
+        catch (NotSupportedException ex)
+        {
+            return new ByteGateOutcome(classified, metrics, resolvedFamily,
+                $"The font program found for '{familyName}' cannot be embedded in this font: "
+                + ex.Message);
+        }
+
+        return new ByteGateOutcome(classified, metrics, resolvedFamily, null);
+    }
+
+    /// <summary>Result of <see cref="RunByteGates"/>: the classified program and its metrics whenever
+    /// classification succeeded (even if a later gate then hard-blocked it — a caller may still want
+    /// <see cref="Classified"/>'s <see cref="ClassifiedProgram.Format"/> to report), and the first
+    /// hard-block reason, if any.</summary>
+    private readonly record struct ByteGateOutcome(
+        ClassifiedProgram? Classified,
+        EmbeddedFontMetrics? Metrics,
+        string? ResolvedFamily,
+        string? HardBlockReason);
 
     /// <summary>
     /// The face to search for. <paramref name="entry"/>'s <c>FamilyName</c> (<c>/BaseFont</c> with any

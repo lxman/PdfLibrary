@@ -61,6 +61,7 @@ public sealed class BundledStandard14Provider(
     public bool IsFontAvailable(string familyName) => inner.IsFontAvailable(familyName);
     public string? FindFirstAvailable(IEnumerable<string> candidates) => inner.FindFirstAvailable(candidates);
     public void RefreshCache() => inner.RefreshCache();
+    public IReadOnlyList<SystemFontFace> EnumerateFaces() => inner.EnumerateFaces();
     public byte[]? GetFontData(string baseFontName) => Resolve(
         new FontRequest(baseFontName, false, false, false, false, false, false))?.Data;
 }
