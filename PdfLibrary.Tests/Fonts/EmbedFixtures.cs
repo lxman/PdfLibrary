@@ -176,6 +176,12 @@ internal static class EmbedFixtures
         return match.Data;
     }
 
+    /// <summary>Non-throwing sibling of <see cref="CourierBytes"/> — returns null instead of raising
+    /// when no monospace face resolves, so a caller on a font-poor CI runner can skip honestly rather
+    /// than crash with an NRE.</summary>
+    public static byte[]? TryCourierBytes() =>
+        SystemFontLocator.Default.Resolve(new FontRequest("Courier New", Bold: false, Italic: false))?.Data;
+
     /// <summary>Real Arial bytes with the OS/2 table's <c>fsType</c> bit 1 (Restricted License
     /// Embedding) forced on — two bytes patched in place, exactly as the design brief specifies. Does
     /// not depend on a synthetic OS/2 builder: Arial's own OS/2 table is located via the sfnt table

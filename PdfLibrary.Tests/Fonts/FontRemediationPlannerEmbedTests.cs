@@ -1,4 +1,5 @@
 using PdfLibrary.Fonts;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Fonts.Remediation;
 using PdfLibrary.Structure;
 
@@ -8,6 +9,24 @@ public class FontRemediationPlannerEmbedTests
 {
     private static FontRemediationPlanner Planner(ISystemFontProvider? provider = null) =>
         new(provider ?? SystemFontLocator.Default);
+
+    /// <summary>
+    /// Derives the family name the planner itself would read from <paramref name="programBytes"/> —
+    /// via the same classify-then-read-the-name-table path <c>FontRemediationPlanner.ProposeEmbed</c>
+    /// uses (§7: the description names the RESOLVED program, never the request). Used so a test's
+    /// expected family is computed from the bytes at runtime rather than hardcoded, which is the
+    /// only way the expectation stays machine-independent.
+    /// </summary>
+    private static string FamilyNameFromBytes(byte[] programBytes)
+    {
+        ClassifiedProgram? classified = FontProgramClassifier.Classify(programBytes, faceIndex: 0);
+        Assert.NotNull(classified);
+        EmbeddedFontMetrics metrics = classified.Format == FontProgramFormat.Type1
+            ? new EmbeddedFontMetrics(classified.Program, length1: 0, length2: 0, length3: 0)
+            : new EmbeddedFontMetrics(classified.Program);
+        Assert.NotNull(metrics.FamilyName);
+        return metrics.FamilyName!;
+    }
 
     [Fact]
     public void Proposes_an_embed_for_an_unembedded_simple_font()
@@ -29,13 +48,23 @@ public class FontRemediationPlannerEmbedTests
         // Design §7: the panel row IS the licensing confirmation, so the row's text must name the
         // face. A proposal whose description said "embed font" would satisfy a non-empty check and
         // fail the actual requirement.
+        //
+        // The expected family is never hardcoded: whichever face SystemFontLocator actually resolves
+        // for "Arial" on THIS machine (Arial itself, or a substitute such as Liberation Sans / DejaVu
+        // Sans / Nimbus Sans on a box without Arial) is captured once, fed through a StubFontProvider
+        // so the planner is deterministic, and the expectation is read back from those same bytes'
+        // name table — proving the description names what was actually resolved, not a fixed string.
+        FontMatch? match = SystemFontLocator.Default.Resolve(new FontRequest("Arial", Bold: false, Italic: false));
+        Assert.SkipWhen(match is null, "No system font resolved on this machine to build the fixture from.");
+        string expectedFamily = FamilyNameFromBytes(match!.Data);
+
         using PdfDocument document = EmbedFixtures.UnembeddedArial();
 
-        FontRemediationProposal result = Planner().Propose(
+        FontRemediationProposal result = Planner(new StubFontProvider(match.Data)).Propose(
             document, [("font-embedded", EmbedFixtures.FontObjectNumber(document))]);
 
         var proposal = Assert.IsType<EmbedProposal>(Assert.Single(result.Fonts));
-        Assert.Contains("Arial", proposal.SourceDescription, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(expectedFamily, proposal.SourceDescription, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("system fonts", proposal.SourceDescription, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -45,7 +74,17 @@ public class FontRemediationPlannerEmbedTests
         // A locator whose fuzzy ladder returns Courier for a font that is not installed must not
         // produce a description claiming the requested name. The confirmation has to name what
         // will actually be written to the file.
-        var locator = new StubFontProvider(EmbedFixtures.CourierBytes());
+        //
+        // "Courier" itself is never hardcoded in the assertion below: on a machine without a real
+        // Courier face, EmbedFixtures.CourierBytes() resolves whatever substitute is installed
+        // (Nimbus Mono, Liberation Mono, DejaVu Sans Mono, ...), and the expected family is read back
+        // from those same bytes. What genuinely discriminates the requirement — that the description
+        // must NOT name the requested "Frutiger" — is unchanged.
+        byte[]? courierBytes = EmbedFixtures.TryCourierBytes();
+        Assert.SkipWhen(courierBytes is null, "No monospace system font resolved on this machine to build the fixture from.");
+        string expectedFamily = FamilyNameFromBytes(courierBytes!);
+
+        var locator = new StubFontProvider(courierBytes);
         using PdfDocument document = EmbedFixtures.UnembeddedNamed("Frutiger-Light");
 
         FontRemediationProposal result = Planner(locator).Propose(
@@ -53,7 +92,7 @@ public class FontRemediationPlannerEmbedTests
 
         var proposal = Assert.IsType<EmbedProposal>(Assert.Single(result.Fonts));
         Assert.DoesNotContain("Frutiger", proposal.SourceDescription, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Courier", proposal.SourceDescription, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(expectedFamily, proposal.SourceDescription, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
