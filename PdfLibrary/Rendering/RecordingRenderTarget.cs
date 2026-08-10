@@ -42,6 +42,16 @@ public sealed class RecordingRenderTarget : IRenderTarget
         _iccConverter = new IccColorConverter(document);
     }
 
+    /// <summary>
+    /// Records a page's draw list using the default font source (<see cref="SystemFontLocator.Default"/>)
+    /// to resolve non-embedded fonts. Delegates directly to
+    /// <see cref="Record(PdfPage, double, ISystemFontProvider?)"/> with a null provider, so identity
+    /// between this overload's output and that overload's null-provider output is structural (the same
+    /// call), not something a test can independently verify — every render entry point in this codebase
+    /// (this method, <see cref="PdfPage.Render(IRenderTarget, int, double)"/>) funnels to the same
+    /// internal <c>PdfPage.Render(IRenderTarget, ISystemFontProvider?, int, double)</c>, so there is no
+    /// second, independent code path to compare against.
+    /// </summary>
     public static PageDrawList Record(PdfPage page, double scale) => Record(page, scale, fontProvider: null);
 
     /// <summary>

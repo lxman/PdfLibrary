@@ -68,7 +68,7 @@
              Fed to BundledStandard14Provider so the embed round-trip gates resolve the same
              TrueType/glyf face on every machine instead of whatever the OS ships for Helvetica/Times/
              Courier. These must never appear in PdfLibrary.csproj — the engine ships none. -->
-        <None Include="Resources\Liberation\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Resources\Liberation\*.ttf" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Resources\Liberation\LICENSE-Liberation.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 

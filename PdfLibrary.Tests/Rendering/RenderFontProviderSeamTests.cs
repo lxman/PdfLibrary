@@ -69,23 +69,11 @@ public class RenderFontProviderSeamTests
         }
     }
 
-    [Fact]
-    public void Record_WithoutProvider_BehavesIdenticallyToTodaysEntryPoint()
-    {
-        // Existing two-arg Record(page, scale) must remain exactly today's behaviour: passing the new
-        // overload an explicit null provider must produce the same command stream (same BeginPage args,
-        // same command count and types, in order) as the untouched legacy entry point.
-        using PdfDocument doc = BuildEmbeddedFontDoc(out MemoryStream stream);
-        using (stream)
-        {
-            PdfPage page = doc.GetPage(0)!;
-
-            PageDrawList legacy = RecordingRenderTarget.Record(page, 1.0);
-            PageDrawList viaNewOverload = RecordingRenderTarget.Record(page, 1.0, fontProvider: null);
-
-            Assert.Equal(legacy.Begin, viaNewOverload.Begin);
-            Assert.Equal(legacy.Commands.Count, viaNewOverload.Commands.Count);
-            Assert.Equal(legacy.Commands.Select(c => c.GetType()), viaNewOverload.Commands.Select(c => c.GetType()));
-        }
-    }
+    // Record_WithoutProvider_BehavesIdenticallyToTodaysEntryPoint was removed (review finding, L-2
+    // whole-branch review): it compared Record(page, 1.0) with Record(page, 1.0, null), but the
+    // former delegates directly to the latter (see RecordingRenderTarget.Record(PdfPage, double)),
+    // and every render entry point in this codebase funnels to the same internal
+    // PdfPage.Render(IRenderTarget, ISystemFontProvider?, int, double) — there is no second,
+    // independent code path for a test to compare against, so the assertion could never fail.
+    // The identity is now documented as structural on the two-arg overload's doc comment instead.
 }
