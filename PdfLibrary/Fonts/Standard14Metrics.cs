@@ -107,23 +107,24 @@ internal static class Standard14Metrics
     /// AFM advance width by raw character code, used only when no glyph name is available (no
     /// /Encoding). Interprets the code as **WinAnsi** — which is what the previous hand-written
     /// tables did — and resolves the resulting glyph name through <see cref="WidthByName"/>, so the
-    /// two paths cannot drift apart the way they did before.
+    /// two paths cannot drift apart the way they did before. A null or not-a-Standard-14
+    /// <paramref name="baseFont"/> and an unmapped glyph name are not re-checked here:
+    /// <see cref="WidthByName"/> already rejects both, so duplicating those checks would be dead
+    /// code no test could ever observe.
     ///
     /// <para>Symbol and ZapfDingbats return null: their built-in encodings are not WinAnsi, so a raw
-    /// code carries no information about which glyph is intended. They resolve by NAME only.</para>
+    /// code carries no information about which glyph is intended. They resolve by NAME only. This
+    /// guard IS load-bearing — <see cref="WidthByName"/> would otherwise happily answer a WinAnsi
+    /// code that happens to collide with a Symbol/ZapfDingbats glyph name (e.g. "space").</para>
     /// </summary>
     public static double? WidthByCode(string? baseFont, int charCode)
     {
         string? canonical = CanonicalName(baseFont);
-        if (canonical is null)
-            return null;
         if (canonical is "Symbol" or "ZapfDingbats")
             return null;
 
         string? glyphName = WinAnsi.GetGlyphName(charCode);
-        return string.IsNullOrEmpty(glyphName) || glyphName == ".notdef"
-            ? null
-            : WidthByName(baseFont, glyphName);
+        return glyphName == ".notdef" ? null : WidthByName(baseFont, glyphName);
     }
 
     private static readonly PdfFontEncoding WinAnsi =

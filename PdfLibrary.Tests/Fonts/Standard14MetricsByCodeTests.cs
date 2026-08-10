@@ -50,13 +50,24 @@ public class Standard14MetricsByCodeTests
         Assert.Equal(600, Standard14Metrics.WidthByCode("Courier-Bold", 0xE9));
     }
 
-    [Fact]
-    public void SymbolAndDingbatsReturnNullByCode()
+    [Theory]
+    // Their built-in encodings are not WinAnsi, so a WinAnsi code says nothing about which glyph is
+    // meant. By NAME they resolve; by code they must not guess.
+    //
+    // 0x61 alone does NOT prove the guard: its WinAnsi glyph name is "a", and neither Symbol.afm nor
+    // ZapfDingbats.afm has a glyph literally named "a" (Symbol's own code 97 is "alpha"), so
+    // WidthByName misses and returns null with or without the guard. 0x20 ("space") and 0x95
+    // ("bullet") DO collide with real glyph names in these AFMs (Symbol space=250, bullet=460;
+    // ZapfDingbats space=278) — removing the guard turns these into non-null widths, which is what
+    // makes the case load-bearing.
+    [InlineData("Symbol", 0x61)]
+    [InlineData("Symbol", 0x20)]        // space, WX 250 in Symbol.afm
+    [InlineData("Symbol", 0x95)]        // bullet, WX 460 in Symbol.afm
+    [InlineData("ZapfDingbats", 0x61)]
+    [InlineData("ZapfDingbats", 0x20)]  // space, WX 278 in ZapfDingbats.afm
+    public void SymbolAndDingbatsReturnNullByCode(string baseFont, int code)
     {
-        // Their built-in encodings are not WinAnsi, so a WinAnsi code says nothing about which glyph
-        // is meant. By NAME they resolve; by code they must not guess.
-        Assert.Null(Standard14Metrics.WidthByCode("Symbol", 0x61));
-        Assert.Null(Standard14Metrics.WidthByCode("ZapfDingbats", 0x61));
+        Assert.Null(Standard14Metrics.WidthByCode(baseFont, code));
     }
 
     [Theory]
