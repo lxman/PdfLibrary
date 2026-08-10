@@ -1,6 +1,7 @@
 using System.Numerics;
 using PdfLibrary.Content;
 using PdfLibrary.Document;
+using PdfLibrary.Fonts;
 using PdfLibrary.Rendering.Icc;
 using PdfLibrary.Structure;
 
@@ -41,10 +42,21 @@ public sealed class RecordingRenderTarget : IRenderTarget
         _iccConverter = new IccColorConverter(document);
     }
 
-    public static PageDrawList Record(PdfPage page, double scale)
+    public static PageDrawList Record(PdfPage page, double scale) => Record(page, scale, fontProvider: null);
+
+    /// <summary>
+    /// Records a page's draw list using <paramref name="fontProvider"/> to resolve non-embedded fonts,
+    /// instead of the default <see cref="SystemFontLocator.Default"/>. This is the public seam a
+    /// consuming app (e.g. Pellucid) uses to inject its own font source into rendering — the render
+    /// entry points a caller actually reaches (<see cref="Record(PdfPage, double)"/> and the
+    /// Skia/Avalonia extension methods built on it) previously had no way to supply one; only
+    /// <c>PdfRenderer</c>'s internal constructor and <c>PdfPage</c>'s internal <c>Render</c> overload
+    /// could. Passing <c>null</c> reproduces exactly the behaviour of the two-argument overload above.
+    /// </summary>
+    public static PageDrawList Record(PdfPage page, double scale, ISystemFontProvider? fontProvider)
     {
         var t = new RecordingRenderTarget(page.Document);
-        page.Render(t, pageNumber: 1, scale: scale);
+        page.Render(t, fontProvider, pageNumber: 1, scale: scale);
         return new PageDrawList(t._begin, t._commands);
     }
 
