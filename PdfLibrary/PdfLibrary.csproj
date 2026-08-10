@@ -77,6 +77,39 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Adobe Core-14 AFM metrics (L4 font remediation): the eight vendored Core-14 faces from
+             Adobe's APAFML-licensed AFM files (license bundled alongside), gzip-compressed, shipped
+             verbatim. Loaded lazily by Standard14Metrics. -->
+        <EmbeddedResource Include="Resources\Afm\Helvetica.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Helvetica.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\Helvetica-Bold.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Helvetica-Bold.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\Times-Roman.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Times-Roman.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\Times-Bold.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Times-Bold.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\Times-Italic.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Times-Italic.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\Times-BoldItalic.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Times-BoldItalic.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\Symbol.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.Symbol.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\ZapfDingbats.afm.gz">
+            <LogicalName>PdfLibrary.Resources.Afm.ZapfDingbats.afm.gz</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Afm\LICENSE-Adobe-Core14-AFM.txt">
+            <LogicalName>PdfLibrary.Resources.Afm.LICENSE-Adobe-Core14-AFM.txt</LogicalName>
+        </EmbeddedResource>
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" PrivateAssets="all" />
     </ItemGroup>
 
