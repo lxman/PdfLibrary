@@ -66,6 +66,31 @@ public class Base35AliasesTests
     }
 
     [Fact]
+    public void Split_algorithm_is_pinned_because_Pellucid_mirrors_it()
+    {
+        // CHARACTERIZATION TEST — the exact output is load-bearing beyond this repo.
+        //
+        // Pellucid's ManualFaceOverrides.NormalizeKey (Pellucid.Core/Fonts/ManualFaceOverrides.cs)
+        // deliberately duplicates Split's subset-tag strip and separator rules, because this type
+        // is internal and widening the engine's public surface for six lines was ruled out. That
+        // copy keys the manual face-override map, so if Split's rules change and the copy does
+        // not, ABCDEF+Helvetica-Bold silently stops hitting the user's Helvetica override — with
+        // no failing test in either repo. Changing any assertion here means updating the Pellucid
+        // copy in the same change.
+        Assert.Equal(("Helvetica", false, false), Base35Aliases.Split("Helvetica"));
+        Assert.Equal(("Helvetica", true, false), Base35Aliases.Split("Helvetica-Bold"));
+        Assert.Equal(("Helvetica", true, true), Base35Aliases.Split("ABCDEF+Helvetica-BoldOblique"));
+        Assert.Equal(("Arial", true, true), Base35Aliases.Split("Arial,BoldItalic"));
+        // The tag strip is positional: exactly six characters then '+'. A name whose '+' sits
+        // elsewhere is NOT a subset tag and must pass through untouched.
+        Assert.Equal(("ABC+Helvetica", false, false), Base35Aliases.Split("ABC+Helvetica"));
+        // Only the FIRST '-' or ',' splits; the rest of the name is style, never family.
+        Assert.Equal(("Nimbus", false, false), Base35Aliases.Split("Nimbus-Mono-PS"));
+        // A leading separator (sep == 0) does not split.
+        Assert.Equal(("-Weird", false, false), Base35Aliases.Split("-Weird"));
+    }
+
+    [Fact]
     public void Null_and_empty_input_do_not_throw()
     {
         Assert.Equal("", Base35Aliases.Split(null!).Family);
