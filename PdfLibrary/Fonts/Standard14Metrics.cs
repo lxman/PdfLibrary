@@ -73,10 +73,24 @@ internal static class Standard14Metrics
 
     /// <summary>
     /// AFM advance width (1000-unit em) for the glyph named <paramref name="glyphName"/> in the
-    /// Standard-14 font <paramref name="baseFont"/> maps to, or null when the name is not a
-    /// recognised Standard-14 family or no glyph name is supplied. This is the preferred lookup:
-    /// it is encoding-correct because the caller resolves charCode→glyphName through the font's
-    /// /Encoding first.
+    /// Standard-14 font <paramref name="baseFont"/> maps to. Null when no glyph name is supplied or
+    /// the base font is not a recognised Standard-14 family.
+    ///
+    /// <para><b>KNOWN DEFECT (L-4).</b> This does NOT return null for an unrecognised glyph NAME.
+    /// Each per-face table ends in a catch-all (<c>_ => 556</c> for Helvetica, <c>_ => 500</c> for
+    /// Times) and every table holds only ~98 ASCII names, so the catch-all is currently carrying the
+    /// entire Latin-1 range — 143 of the 214 WinAnsi names land on it.</para>
+    ///
+    /// <para>Do NOT "fix" this by returning null until the tables are completed. Nulling
+    /// <c>WidthByName</c> alone changes nothing: callers chain it as
+    /// <c>WidthByName(...) ?? WidthByCode(...)</c>, and <c>WidthByCode</c>'s own by-code tables
+    /// (<see cref="GetHelveticaWidth"/> etc.) carry the SAME incompleteness — they cover only codes
+    /// 32-126, so a null from <c>WidthByName</c> just falls through to the by-code catch-all and
+    /// comes back with the same wrong value (e.g. Helvetica's true <c>eacute</c> is 556, which both
+    /// catch-alls happen to get right, but WinAnsi 145/146 <c>quoteleft</c>/<c>quoteright</c>
+    /// (0x91/0x92) hit the by-code catch-all and return 556 against a true 222). Both the by-name AND
+    /// by-code tables are incomplete, and both catch-alls would have to be removed together for
+    /// nulling to help — which is the larger piece of work tracked as L-4.</para>
     /// </summary>
     public static double? WidthByName(string? baseFont, string? glyphName)
     {
@@ -350,7 +364,8 @@ internal static class Standard14Metrics
             "dollar" => 556,
             "percent" => 889,
             "ampersand" => 667,
-            "quotesingle" or "quoteright" => 191,
+            "quotesingle" => 191,
+            "quoteright" => 222,
             "parenleft" => 333,
             "parenright" => 333,
             "asterisk" => 389,
@@ -407,7 +422,8 @@ internal static class Standard14Metrics
             "bracketright" => 278,
             "asciicircum" => 469,
             "underscore" => 556,
-            "grave" or "quoteleft" => 333,
+            "grave" => 333,
+            "quoteleft" => 222,
             "a" => 556,
             "b" => 556,
             "c" => 500,
@@ -457,7 +473,8 @@ internal static class Standard14Metrics
             "dollar" => 556,
             "percent" => 889,
             "ampersand" => 722,
-            "quotesingle" or "quoteright" => 238,
+            "quotesingle" => 238,
+            "quoteright" => 278,
             "parenleft" => 333,
             "parenright" => 333,
             "asterisk" => 389,
@@ -514,7 +531,8 @@ internal static class Standard14Metrics
             "bracketright" => 333,
             "asciicircum" => 584,
             "underscore" => 556,
-            "grave" or "quoteleft" => 333,
+            "grave" => 333,
+            "quoteleft" => 278,
             "a" => 556,
             "b" => 611,
             "c" => 556,
@@ -670,7 +688,8 @@ internal static class Standard14Metrics
             "dollar" => 500,
             "percent" => 833,
             "ampersand" => 778,
-            "quotesingle" or "quoteright" => 333,
+            "quotesingle" => 180,
+            "quoteright" => 333,
             "parenleft" => 333,
             "parenright" => 333,
             "asterisk" => 500,
@@ -778,7 +797,8 @@ internal static class Standard14Metrics
             "dollar" => 500,
             "percent" => 1000,
             "ampersand" => 833,
-            "quotesingle" or "quoteright" => 333,
+            "quotesingle" => 278,
+            "quoteright" => 333,
             "parenleft" => 333,
             "parenright" => 333,
             "asterisk" => 500,
@@ -885,7 +905,8 @@ internal static class Standard14Metrics
             "dollar" => 500,
             "percent" => 833,
             "ampersand" => 778,
-            "quotesingle" or "quoteright" => 333,
+            "quotesingle" => 214,
+            "quoteright" => 333,
             "parenleft" => 333,
             "parenright" => 333,
             "asterisk" => 500,
@@ -992,7 +1013,8 @@ internal static class Standard14Metrics
             "dollar" => 500,
             "percent" => 833,
             "ampersand" => 778,
-            "quotesingle" or "quoteright" => 333,
+            "quotesingle" => 278,
+            "quoteright" => 333,
             "parenleft" => 333,
             "parenright" => 333,
             "asterisk" => 500,
