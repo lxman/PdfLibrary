@@ -73,10 +73,19 @@ internal static class Standard14Metrics
 
     /// <summary>
     /// AFM advance width (1000-unit em) for the glyph named <paramref name="glyphName"/> in the
-    /// Standard-14 font <paramref name="baseFont"/> maps to, or null when the name is not a
-    /// recognised Standard-14 family or no glyph name is supplied. This is the preferred lookup:
-    /// it is encoding-correct because the caller resolves charCode→glyphName through the font's
-    /// /Encoding first.
+    /// Standard-14 font <paramref name="baseFont"/> maps to. Null when no glyph name is supplied or
+    /// the base font is not a recognised Standard-14 family.
+    ///
+    /// <para><b>KNOWN DEFECT (L-4).</b> This does NOT return null for an unrecognised glyph NAME.
+    /// Each per-face table ends in a catch-all (<c>_ => 556</c> for Helvetica, <c>_ => 500</c> for
+    /// Times) and every table holds only ~98 ASCII names, so the catch-all is currently carrying the
+    /// entire Latin-1 range — 143 of the 214 WinAnsi names land on it.</para>
+    ///
+    /// <para>Do NOT "fix" this by returning null until the tables are completed. Helvetica's true
+    /// <c>eacute</c> is 556, which the catch-all happens to get right; nulling it sends
+    /// <see cref="TrueTypeFont.GetCharacterWidth"/> down to /MissingWidth → /AvgWidth → 500 and makes
+    /// every accented lowercase letter worse, while fixing only the genuinely-wide outliers
+    /// (<c>bullet</c> 350, <c>emdash</c> 1000). Completing the tables first is L-4.</para>
     /// </summary>
     public static double? WidthByName(string? baseFont, string? glyphName)
     {
