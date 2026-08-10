@@ -1,8 +1,9 @@
 namespace PdfLibrary.Fonts;
 
 /// <summary>
-/// Adobe AFM advance-width metrics for the Standard-14 fonts (Helvetica/Times/Courier families),
-/// plus /BaseFont-name normalisation (ISO 32000-1 §9.6.2.1 / §9.10.1).
+/// Adobe AFM advance-width metrics for the Standard-14 fonts (Helvetica/Times/Courier families,
+/// plus Symbol and ZapfDingbats resolved by glyph name), plus /BaseFont-name normalisation
+/// (ISO 32000-1 §9.6.2.1 / §9.10.1).
 ///
 /// A non-embedded simple font (Type1 or TrueType) may legally omit its /Widths array; the viewer
 /// must then lay the text out with the AFM metrics of the Standard-14 font the /BaseFont maps to.
@@ -112,10 +113,13 @@ internal static class Standard14Metrics
     /// <see cref="WidthByName"/> already rejects both, so duplicating those checks would be dead
     /// code no test could ever observe.
     ///
-    /// <para>Symbol and ZapfDingbats return null: their built-in encodings are not WinAnsi, so a raw
-    /// code carries no information about which glyph is intended. They resolve by NAME only. This
-    /// guard IS load-bearing — <see cref="WidthByName"/> would otherwise happily answer a WinAnsi
-    /// code that happens to collide with a Symbol/ZapfDingbats glyph name (e.g. "space").</para>
+    /// <para>Symbol and ZapfDingbats return null here (by-code lookups only — the by-NAME arm is not
+    /// gated by this check; see the caveat on <see cref="CodeAliases"/>'s call site below and
+    /// TrueTypeFont.cs, which defaults /Encoding to WinAnsi and tries WidthByName first regardless of
+    /// /BaseFont): their built-in encodings are not WinAnsi, so a raw code carries no information
+    /// about which glyph is intended. This guard IS load-bearing for the by-code path —
+    /// <see cref="WidthByName"/> would otherwise happily answer a WinAnsi code that happens to
+    /// collide with a Symbol/ZapfDingbats glyph name (e.g. "space").</para>
     /// </summary>
     public static double? WidthByCode(string? baseFont, int charCode)
     {
@@ -123,9 +127,32 @@ internal static class Standard14Metrics
         if (canonical is "Symbol" or "ZapfDingbats")
             return null;
 
-        string? glyphName = WinAnsi.GetGlyphName(charCode);
-        return glyphName == ".notdef" ? null : WidthByName(baseFont, glyphName);
+        // WinAnsiEncoding is incomplete: a handful of codes either resolve to a name the AFMs don't
+        // use (0xA0 "nonbreakingspace", where the AFM glyph is "space") or resolve to nothing at all
+        // (0xAD, 0x88, 0x98, 0xB5). CodeAliases overrides those five with the AFM-recognised glyph
+        // name; the actual widths still come from WidthByName per face, so a face missing one of
+        // these glyphs still returns null rather than a fabricated value.
+        string? glyphName = CodeAliases.TryGetValue(charCode, out string? alias)
+            ? alias
+            : WinAnsi.GetGlyphName(charCode);
+        return WidthByName(baseFont, glyphName);
     }
+
+    /// <summary>
+    /// WinAnsi code → AFM glyph name overrides for codes where <see cref="PdfFontEncoding"/>'s
+    /// WinAnsi table either names a glyph the AFMs don't recognise, or names none at all. Local to
+    /// <see cref="WidthByCode"/> deliberately: widening the shared encoding table would change glyph
+    /// resolution for the whole renderer, a far larger blast radius than this by-code AFM fallback
+    /// owns.
+    /// </summary>
+    private static readonly Dictionary<int, string> CodeAliases = new()
+    {
+        [0xA0] = "space",       // no-break space; WinAnsi names it "nonbreakingspace", not an AFM glyph
+        [0xAD] = "hyphen",      // soft hyphen; WinAnsi has no name for this code
+        [0x88] = "circumflex",  // WinAnsi has no name for this code
+        [0x98] = "tilde",       // WinAnsi has no name for this code
+        [0xB5] = "mu",          // micro sign; WinAnsi has no name for this code
+    };
 
     private static readonly PdfFontEncoding WinAnsi =
         PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");

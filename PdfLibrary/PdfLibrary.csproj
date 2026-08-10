@@ -107,6 +107,7 @@
         <EmbeddedResource Include="Resources\Afm\LICENSE-Adobe-Core14-AFM.txt">
             <LogicalName>PdfLibrary.Resources.Afm.LICENSE-Adobe-Core14-AFM.txt</LogicalName>
         </EmbeddedResource>
+        <None Include="Resources\Afm\LICENSE-Adobe-Core14-AFM.txt" Pack="true" PackagePath="licenses\" />
     </ItemGroup>
 
     <ItemGroup>
