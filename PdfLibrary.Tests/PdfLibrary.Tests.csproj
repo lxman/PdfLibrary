@@ -64,6 +64,12 @@
              tools/verapdf-parity/capture.sh). Copied next to the test binary so the parity
              loader and gates read it without the corpus or any JVM present. -->
         <None Update="Conformance\parity\verapdf-verdicts.json" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Liberation 2.1.5 faces (OFL-1.1; see Resources/Liberation/LICENSE-Liberation.txt), test-only.
+             Fed to BundledStandard14Provider so the embed round-trip gates resolve the same
+             TrueType/glyf face on every machine instead of whatever the OS ships for Helvetica/Times/
+             Courier. These must never appear in PdfLibrary.csproj — the engine ships none. -->
+        <None Include="Resources\Liberation\*.ttf" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Resources\Liberation\LICENSE-Liberation.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

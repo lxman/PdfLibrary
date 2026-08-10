@@ -20,6 +20,23 @@ namespace PdfLibrary.Tests.Fonts;
 public class EmbedProgramRoundTripTests
 {
     /// <summary>
+    /// Consults the test-only Liberation faces (Resources/Liberation, vendored 2.1.5, OFL-1.1)
+    /// ahead of whatever the OS ships, so Helvetica/Times/Courier resolve the same TrueType/glyf
+    /// face on every machine — closing the skip-on-decline hole that let these gates go green by
+    /// skipping on a machine with no substitute, and the CFF-vs-TrueType nondeterminism that let
+    /// Table 124's Type1->TrueType rewrite go unchecked on a machine whose Helvetica substitute
+    /// resolved CFF-flavoured (design note above <see cref="BundledStandard14Provider"/>).
+    /// </summary>
+    internal static readonly ISystemFontProvider DeterministicFonts =
+        new BundledStandard14Provider(LoadLiberationFace, SystemFontLocator.Default);
+
+    private static byte[]? LoadLiberationFace(string faceFileName)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Resources", "Liberation", $"{faceFileName}.ttf");
+        return File.Exists(path) ? File.ReadAllBytes(path) : null;
+    }
+
+    /// <summary>
     /// A one-page document drawing text in Helvetica with no embedded program. PdfDocumentBuilder
     /// emits a bare /Type1 /BaseFont /Helvetica dict with no /FontFile when LoadFont was never
     /// called, which is exactly the defect font-embedded fires on — so no corpus file is needed
@@ -45,7 +62,7 @@ public class EmbedProgramRoundTripTests
     /// </summary>
     private static EmbedProposal ResolveEmbedProposal(PdfDocument document, int objectNumber)
     {
-        FontRemediationProposal proposal = new FontRemediationPlanner(SystemFontLocator.Default)
+        FontRemediationProposal proposal = new FontRemediationPlanner(DeterministicFonts)
             .Propose(document, [("font-embedded", objectNumber)]);
 
         FontProposal single = Assert.Single(proposal.Fonts);
@@ -103,10 +120,21 @@ public class EmbedProgramRoundTripTests
     /// written into a <c>/Type1</c> descriptor closed the finding while producing a combination the
     /// table permits nowhere. Written out from the table's own text rather than by calling the
     /// production reconciliation, so it can disagree with it.</para>
+    ///
+    /// <para><b>Table 124 limitation LIFTED (was accepted as of the pre-Liberation revision of this
+    /// file):</b> the earlier text here recorded that this gate could not discriminate the
+    /// <c>/Type1</c>-&gt;<c>/TrueType</c> rewrite itself on a machine whose Helvetica substitute
+    /// resolved CFF-flavoured (plausibly including CI) — it only checked the pair was consistent, not
+    /// which rewrite produced it. <see cref="DeterministicFonts"/> now resolves Helvetica to
+    /// LiberationSans-Regular (TrueType/glyf) on every machine, so
+    /// <see cref="Staging_and_applying_the_embed_closes_the_finding"/>'s single font ALWAYS takes the
+    /// <c>/FontFile2</c> branch below — never <c>/FontFile3</c> <c>Type1C</c>/<c>OpenType</c> — which
+    /// is why <c>sawTrueTypeRewrite</c> is now asserted, not merely observed.</para>
     /// </summary>
     private static void AssertPermittedTable124Pair(PdfDocument document)
     {
         var checkedAny = false;
+        var sawTrueTypeRewrite = false;
 
         foreach (FontInventoryEntry entry in FontInventory.Read(document))
         {
@@ -121,14 +149,9 @@ public class EmbedProgramRoundTripTests
             if (descriptor.Get("FontFile2") is not null)
             {
                 // "FontFile2 … may appear in the font descriptor for a TrueType font dictionary."
-                // ACCEPTED LIMITATION: this does not discriminate the /Type1 -> /TrueType rewrite
-                // itself on a machine whose Helvetica substitute resolves CFF-flavoured (plausibly
-                // including CI) — it only checks the pair is consistent, not which rewrite produced
-                // it. The deterministic pin for that rewrite is the editor unit test
-                // A_TrueType_program_in_a_Type1_dictionary_rewrites_the_dictionary_subtype, which
-                // passes FontProgramFormat.TrueType explicitly.
                 Assert.Equal("TrueType", subtype);
                 checkedAny = true;
+                sawTrueTypeRewrite = true;
             }
 
             if (descriptor.Get("FontFile") is not null)
@@ -168,6 +191,10 @@ public class EmbedProgramRoundTripTests
         }
 
         Assert.True(checkedAny, "No embedded simple font was found to check — the gate proved nothing.");
+        Assert.True(sawTrueTypeRewrite,
+            "Expected the /Type1 -> /TrueType rewrite to have fired: DeterministicFonts resolves "
+            + "Helvetica to LiberationSans-Regular (TrueType/glyf) on every machine, so this fixture's "
+            + "single font must have taken the /FontFile2 branch above, not /FontFile3.");
     }
 
     private static PdfObject? Deref(PdfDocument document, PdfObject? obj) =>
@@ -341,12 +368,17 @@ internal static class EmbeddedWidthsFixture
     private const int CatalogObjectNumber = 1;
 
     /// <summary>Resolves the same substitute <see cref="FontRemediationPlanner"/> will independently
-    /// resolve for this fixture's <c>/BaseFont /Helvetica</c> (deterministic per machine/install), or
-    /// skips — matching the convention in <c>PdfDocumentEditorEmbedProgramTests.ArialProgram</c> and
+    /// resolve for this fixture's <c>/BaseFont /Helvetica</c> — via
+    /// <see cref="EmbedProgramRoundTripTests.DeterministicFonts"/>, so this fixture's Helvetica and
+    /// <see cref="EmbedProgramRoundTripTests.ResolveEmbedProposal"/>'s Helvetica are the same face on
+    /// every machine, not two independently-resolved substitutes that happen to agree on a dev box.
+    /// Still skips if a host supplies neither a bundled face nor a system substitute — matching the
+    /// convention in <c>PdfDocumentEditorEmbedProgramTests.ArialProgram</c> and
     /// <c>FontDescriptorMetricsTests</c>.</summary>
     private static (byte[] Program, FontProgramFormat Format) ResolveSubstitute()
     {
-        FontMatch? match = SystemFontLocator.Default.Resolve(new FontRequest("Helvetica", Bold: false, Italic: false));
+        FontMatch? match = EmbedProgramRoundTripTests.DeterministicFonts
+            .Resolve(new FontRequest("Helvetica", Bold: false, Italic: false));
         Assert.SkipWhen(match is null,
             "No substitute for Helvetica resolved on this machine; the /Widths-present gate cannot run.");
         ClassifiedProgram? classified = FontProgramClassifier.Classify(match!.Data, match.FaceIndex);
