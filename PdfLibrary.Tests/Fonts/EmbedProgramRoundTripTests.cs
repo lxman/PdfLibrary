@@ -312,6 +312,51 @@ public class EmbedProgramRoundTripTests
     }
 
     [Fact]
+    public void Embed_save_reopen_program_bytes_are_byte_identical()
+    {
+        // The gap this closes: Staging_and_applying_the_embed_closes_the_finding (above) saves and
+        // reopens but only re-checks preflight; PdfDocumentEditorEmbedProgramTests's own
+        // Writes_the_program_to_FontFile2 asserts in-memory, before any save/reopen at all. Neither
+        // actually reads the /FontFile2 stream back OUT of a reopened document and compares it,
+        // byte for byte, against what was embedded — which is the one claim "the preview predicts
+        // the embed" actually rests on. This is that fact.
+        byte[] original = UnembeddedDocument();
+        using var output = new MemoryStream();
+        byte[] embeddedProgram;
+
+        using (PdfDocument document = PdfDocument.Load(new MemoryStream(original)))
+        {
+            Finding finding = Preflight(document).First(f => f.RuleId == "font-embedded");
+            EmbedProposal embed = ResolveEmbedProposal(document, finding.ObjectNumber!.Value);
+            embeddedProgram = embed.Program;
+
+            // DeterministicFonts always resolves Helvetica to LiberationSans-Regular (TrueType/glyf)
+            // on every machine — see AssertPermittedTable124Pair's own doc comment above — so this
+            // fixture's single font always takes the /FontFile2 branch, never /FontFile3 or /FontFile.
+            Assert.Equal(FontProgramFormat.TrueType, embed.Format);
+
+            using var editor = new PdfDocumentEditor(document);
+            editor.EmbedProgram(embed.Font, embed.Program, embed.Format);
+            editor.Save(output);
+        }
+
+        output.Position = 0;
+        using PdfDocument after = PdfDocument.Load(output);
+
+        FontInventoryEntry entry = Assert.Single(FontInventory.Read(after));
+        int number = (entry.ProgramHolderId ?? entry.Id).ObjectNumber;
+        var fontDict = Assert.IsType<PdfDictionary>(after.GetObject(number));
+        PdfFontDescriptor? descriptor = PdfFont.Create(fontDict, after)!.GetDescriptor();
+        Assert.NotNull(descriptor);
+
+        byte[]? readBack = descriptor!.GetFontFile2();
+        Assert.NotNull(readBack);
+        Assert.True(embeddedProgram.SequenceEqual(readBack),
+            "the bytes read back from the reopened document's /FontFile2 are not byte-identical "
+            + "to the bytes EmbedProgram was given to embed");
+    }
+
+    [Fact]
     public void The_embedded_program_is_a_full_program_carrying_no_subset_tag()
     {
         // §1.1: F-2 embeds the FULL program, which produces no subset tag, which is what keeps
