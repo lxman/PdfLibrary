@@ -64,6 +64,17 @@ public sealed partial class SystemFontLocator : ISystemFontProvider
     /// <inheritdoc/>
     public void RefreshCache() { /* Index is built at construction; create a new locator to refresh. */ }
 
+    /// <inheritdoc/>
+    /// <remarks>Projects <see cref="FontMetadataIndex.Faces"/> — every face already indexed at
+    /// construction — into the public DTO. No new scanning.</remarks>
+    public IReadOnlyList<SystemFontFace> EnumerateFaces() =>
+        _index.Faces.Select(f => new SystemFontFace(
+            f.EnglishFamily.Length > 0 ? f.EnglishFamily : f.Families.FirstOrDefault() ?? "",
+            f.PostScriptName,
+            f.Bold, f.Italic,
+            f.Path,
+            f.FaceIndex)).ToList();
+
     /// <summary>The metadata ladder. Step 1 PostScript name, step 2 aliased family, step 3 the
     /// synthetic standard-14 name — each matched against the font's OWN metadata rather than against
     /// a filename. Returns null when all three miss; slice 1 adds no fallback floor.</summary>

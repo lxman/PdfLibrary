@@ -51,4 +51,11 @@ public interface ISystemFontProvider
         GetFontData(request.BaseFont) is { } bytes
             ? new FontMatch(bytes, FontMetadataIndex.PickFaceIndex(bytes, request.Bold, request.Italic))
             : null;
+
+    /// <summary>
+    /// Lists every face this provider knows about, for the manual substitute-face picker
+    /// ("list what you have"). The default returns nothing, so providers written before this
+    /// member existed keep compiling and behaving exactly as they did.
+    /// </summary>
+    IReadOnlyList<SystemFontFace> EnumerateFaces() => [];
 }
