@@ -214,6 +214,30 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // planner end-to-end through a real font program. See the CFF-fixture note in
         // PreflightSlice19Tests.cs for why one was not hand-authored.
 
+        // Checked AFTER fsType (a vendor's embedding restriction is a harder no than a coverage gap)
+        // and BEFORE the proposal is built, for the same reason as every decline above: a glyph
+        // missing from a RENDER is transient — reopening on a better-equipped machine fixes it — but
+        // a glyph missing from an EMBEDDED program is .notdef baked into the file permanently
+        // (GlyphCoverage's own doc comment). Reads entry.Id, not the program holder: for a composite
+        // font those diverge, but composites decline two branches up, so entry.Id and programHolder
+        // agree on everything reaching here.
+        if (document.GetObject(entry.Id.ObjectNumber) is PdfDictionary fontDictionary
+            && PdfFont.Create(fontDictionary, document) is { } pdfFont)
+        {
+            IReadOnlyList<int> uncovered =
+                GlyphCoverage.UncoveredCodes(pdfFont, metrics, pdfFont.FirstChar, pdfFont.LastChar);
+            if (uncovered.Count > 0)
+            {
+                string? glyphName = pdfFont.Encoding?.GetGlyphName(uncovered[0]);
+                string? uni = string.IsNullOrEmpty(glyphName) ? null : GlyphList.GetUnicode(glyphName);
+                int codePoint = string.IsNullOrEmpty(uni) ? 0 : char.ConvertToUtf32(uni, 0);
+
+                return Decline(entry, ruleId,
+                    $"'{resolvedFamily}' has no glyph for {uncovered.Count} character(s) this font "
+                    + $"draws (first: U+{codePoint:X4}); embedding it would bake them in as .notdef.");
+            }
+        }
+
         string style = (metrics.IsBold, metrics.IsItalic) switch
         {
             (true, true) => "Bold Italic",
