@@ -52,11 +52,16 @@ public class Standard14MetricsQuoteWidthTests
     /// <summary>
     /// The catch-all default (<c>_ => 556</c> / <c>_ => 500</c>) is still present and still carries
     /// the whole Latin-1 range, because the by-name tables hold only ~98 ASCII names each. Removing
-    /// it is L-4, and doing it before the tables are completed would REGRESS accented letters —
-    /// Helvetica's true eacute is 556, which the default happens to get right.
+    /// it is L-4 — but not in isolation: <c>WidthByCode</c>'s by-code tables carry the same
+    /// incompleteness (they cover only codes 32-126), and production callers chain
+    /// <c>WidthByName(...) ?? WidthByCode(...)</c>, so nulling <c>WidthByName</c>'s catch-all alone
+    /// would not change what a real font actually renders — the <c>WidthByCode</c> catch-all would
+    /// still return the same value for any glyph outside the ASCII range. Both catch-alls need to be
+    /// removed together, which is the larger scope tracked as L-4.
     ///
-    /// <para>This test documents that as deliberate. It is not an endorsement: when L-4 completes the
-    /// tables and returns null, this test SHOULD fail, and that failure is the signal to delete it.</para>
+    /// <para>This test, however, calls <c>WidthByName</c> directly, bypassing that fallback chain — so
+    /// it SHOULD fail once <c>WidthByName</c>'s own catch-all is removed, and that failure is the
+    /// signal to delete it.</para>
     /// </summary>
     [Theory]
     [InlineData("Helvetica", 556)]

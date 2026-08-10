@@ -81,11 +81,16 @@ internal static class Standard14Metrics
     /// Times) and every table holds only ~98 ASCII names, so the catch-all is currently carrying the
     /// entire Latin-1 range — 143 of the 214 WinAnsi names land on it.</para>
     ///
-    /// <para>Do NOT "fix" this by returning null until the tables are completed. Helvetica's true
-    /// <c>eacute</c> is 556, which the catch-all happens to get right; nulling it sends
-    /// <see cref="TrueTypeFont.GetCharacterWidth"/> down to /MissingWidth → /AvgWidth → 500 and makes
-    /// every accented lowercase letter worse, while fixing only the genuinely-wide outliers
-    /// (<c>bullet</c> 350, <c>emdash</c> 1000). Completing the tables first is L-4.</para>
+    /// <para>Do NOT "fix" this by returning null until the tables are completed. Nulling
+    /// <c>WidthByName</c> alone changes nothing: callers chain it as
+    /// <c>WidthByName(...) ?? WidthByCode(...)</c>, and <c>WidthByCode</c>'s own by-code tables
+    /// (<see cref="GetHelveticaWidth"/> etc.) carry the SAME incompleteness — they cover only codes
+    /// 32-126, so a null from <c>WidthByName</c> just falls through to the by-code catch-all and
+    /// comes back with the same wrong value (e.g. Helvetica's true <c>eacute</c> is 556, which both
+    /// catch-alls happen to get right, but WinAnsi 145/146 <c>quoteleft</c>/<c>quoteright</c>
+    /// (0x91/0x92) hit the by-code catch-all and return 556 against a true 222). Both the by-name AND
+    /// by-code tables are incomplete, and both catch-alls would have to be removed together for
+    /// nulling to help — which is the larger piece of work tracked as L-4.</para>
     /// </summary>
     public static double? WidthByName(string? baseFont, string? glyphName)
     {
