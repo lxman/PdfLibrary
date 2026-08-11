@@ -210,4 +210,33 @@ public class PreflightSlice2Tests
         Assert.True(result.Conforms);
         Assert.Contains(result.Findings, f => f is { RuleId: "post-eof", Severity: FindingSeverity.Info });
     }
+
+    /// <summary>The <c>Check(PdfDocument, ConformanceProfile, byte[]?)</c> overload (added for a
+    /// caller — Pellucid's BatchScanService — that already has BOTH the parsed document and its
+    /// bytes on hand, and would otherwise have to parse a second document just to reach the
+    /// byte-level rules). Passing the source bytes here must behave exactly like the byte[]-first
+    /// overload: no post-eof Info note, because the rule can actually check the bytes.</summary>
+    [Fact]
+    public void Check_document_with_explicit_source_bytes_reports_no_posteof_info()
+    {
+        byte[] bytes = CleanBuilderBytes();
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(bytes));
+        PreflightResult result = Preflighter.Check(doc, ConformanceProfile.PdfA2b, bytes);
+
+        Assert.True(result.Conforms);
+        Assert.DoesNotContain(result.Findings, f => f.RuleId == "post-eof");
+    }
+
+    /// <summary>The same overload with a null <paramref name="sourceBytes"/> must behave exactly
+    /// like the two-argument <see cref="Preflighter.Check(PdfDocument, ConformanceProfile)"/>
+    /// overload it forwards to.</summary>
+    [Fact]
+    public void Check_document_with_null_source_bytes_behaves_like_the_two_argument_overload()
+    {
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(CleanBuilderBytes()));
+        PreflightResult result = Preflighter.Check(doc, ConformanceProfile.PdfA2b, sourceBytes: null);
+
+        Assert.True(result.Conforms);
+        Assert.Contains(result.Findings, f => f is { RuleId: "post-eof", Severity: FindingSeverity.Info });
+    }
 }
