@@ -87,6 +87,8 @@ public class ConformanceClaimTests
     [InlineData("2", "U", ConformanceProfile.PdfA2u)]
     [InlineData("2", "A", ConformanceProfile.PdfA2u)]
     [InlineData("3", "B", ConformanceProfile.PdfA3b)]
+    [InlineData("3", "U", ConformanceProfile.PdfA3b)]
+    [InlineData("3", "A", ConformanceProfile.PdfA3b)]
     public void Read_maps_pdfaid_part_and_conformance_to_the_expected_profile(
         string part, string conformance, ConformanceProfile expected)
     {

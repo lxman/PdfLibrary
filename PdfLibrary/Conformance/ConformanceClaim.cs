@@ -88,7 +88,7 @@ public static class ConformanceClaim
         string? conformance = packet.Get(PdfaIdNs, "conformance")?.Value?.Trim();
         return part switch
         {
-            "3" when conformance == "B" => ConformanceProfile.PdfA3b,
+            "3" when conformance is "B" or "U" or "A" => ConformanceProfile.PdfA3b,
             "2" when conformance == "B" => ConformanceProfile.PdfA2b,
             "2" when conformance is "U" or "A" => ConformanceProfile.PdfA2u,
             _ => null,
