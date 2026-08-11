@@ -142,6 +142,17 @@ public static class Preflighter
         Run(document, profile, sourceBytes: null);
 
     /// <summary>
+    /// Checks an already-loaded document, ALSO passing the raw source bytes it was loaded from so
+    /// byte-level rules (e.g. post-EOF data) can run instead of degrading to an informational "not
+    /// checked" note. For a caller that already has both the parsed document and its bytes on hand
+    /// (avoiding a second parse the <see cref="Check(byte[],ConformanceProfile)"/> overload would
+    /// otherwise force) — <paramref name="sourceBytes"/> may be null, which behaves exactly like
+    /// <see cref="Check(PdfDocument,ConformanceProfile)"/>.
+    /// </summary>
+    public static PreflightResult Check(PdfDocument document, ConformanceProfile profile, byte[]? sourceBytes) =>
+        Run(document, profile, sourceBytes);
+
+    /// <summary>
     /// Loads a document from raw PDF bytes and checks it. Byte-level rules (e.g. post-EOF data) can run
     /// because the source bytes are retained.
     /// </summary>
