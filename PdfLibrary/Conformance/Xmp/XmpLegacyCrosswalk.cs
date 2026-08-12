@@ -9,7 +9,14 @@ namespace PdfLibrary.Conformance.Xmp;
 /// 111 findings, of which 98.2% migrate with no collision.
 ///
 /// <para>Note that 'xap' is the former NAME of the xmp namespace, not a different URI: xap:Title and
-/// xmp:Title are the same property, so both appear here under the one xap/1.0 URI.</para></summary>
+/// xmp:Title are the same property, so both appear here under the one xap/1.0 URI.</para>
+///
+/// <para><b>Three of the eight targets are not scalar.</b> <c>dc:title</c> and <c>dc:description</c>
+/// are <c>lang alt</c>; <c>dc:creator</c> is <c>seq propername</c>. Every legacy source here is a
+/// plain string, so a caller migrating a value must WRAP it to match — a Lang Alt needs an
+/// <c>x-default</c> item, a Seq needs a one-item sequence — not copy the literal across. This table
+/// intentionally carries no type; the target's predefined type is recoverable from
+/// <see cref="XmpPredefinedSchemas.TypeOf"/> on the returned namespace/local name.</para></summary>
 internal static class XmpLegacyCrosswalk
 {
     private const string Pdf = "http://ns.adobe.com/pdf/1.3/";

@@ -300,4 +300,22 @@ public class XmpConformanceTests
     {
         Assert.Null(XmpConformance.ModernEquivalentOf("http://ns.adobe.com/pdfx/1.3/", "Company"));
     }
+
+    [Theory]
+    // Pins the predefined type of every crosswalk target, not just its existence. Three targets are
+    // non-scalar (dc:title, dc:description are "lang alt"; dc:creator is "seq propername") while every
+    // legacy source is a plain string, so a migration must wrap the value rather than copy it verbatim.
+    // If XmpPredefinedSchemas' table ever changes under us, this fails loudly instead of a migration
+    // silently writing a bare literal into a lang-alt or seq property.
+    [InlineData("http://purl.org/dc/elements/1.1/", "title",       "lang alt")]
+    [InlineData("http://purl.org/dc/elements/1.1/", "creator",     "seq propername")]
+    [InlineData("http://purl.org/dc/elements/1.1/", "description", "lang alt")]
+    [InlineData("http://ns.adobe.com/xap/1.0/",     "CreatorTool", "agentname")]
+    [InlineData("http://ns.adobe.com/xap/1.0/",     "CreateDate",  "date")]
+    [InlineData("http://ns.adobe.com/xap/1.0/",     "ModifyDate",  "date")]
+    public void Crosswalk_target_predefined_types_match_what_this_task_assumed(
+        string namespaceUri, string localName, string expectedType)
+    {
+        Assert.Equal(expectedType, XmpPredefinedSchemas.TypeOf(namespaceUri, localName));
+    }
 }

@@ -112,7 +112,12 @@ public static class XmpConformance
     private static bool IsStructural(string namespaceUri) => StructuralNamespaces.Contains(namespaceUri);
 
     /// <summary>The predefined property that supersedes a pre-2005 spelling, or null when the property
-    /// has no standard equivalent and must be declared by an extension schema instead.</summary>
+    /// has no standard equivalent and must be declared by an extension schema instead.
+    /// <para>Three targets are not scalar — <c>dc:title</c> and <c>dc:description</c> are <c>lang
+    /// alt</c>, <c>dc:creator</c> is <c>seq propername</c> — while every legacy source is a plain
+    /// string, so a caller must wrap the value to match rather than copy it verbatim. This method does
+    /// not report the type; look it up via <see cref="XmpPredefinedSchemas.TypeOf"/> on the returned
+    /// namespace/local name before writing the migrated value.</para></summary>
     public static XmpModernEquivalent? ModernEquivalentOf(string namespaceUri, string localName) =>
         XmpLegacyCrosswalk.TryGet(namespaceUri, localName, out (string ns, string prefix, string name) m)
             ? new XmpModernEquivalent(m.ns, m.prefix, m.name)
