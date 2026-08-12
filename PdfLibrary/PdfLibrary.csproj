@@ -175,6 +175,7 @@
             <BuildOutputInPackage Include="$(OutputPath)Jbig2Decoder.dll" />
             <BuildOutputInPackage Include="$(OutputPath)Jp2Codec.dll" />
             <BuildOutputInPackage Include="$(OutputPath)CcittCodec.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)PdfLibrary.Xmp.dll" />
         </ItemGroup>
     </Target>
 
