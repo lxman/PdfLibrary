@@ -1,8 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 
-namespace PdfLibrary.Conformance.Xmp;
+namespace PdfLibrary.Xmp;
 
 /// <summary>
 /// A single node in a faithful XMP RDF value tree — the structure the clause 6.6.2.3.1 value-type
@@ -54,6 +58,44 @@ internal sealed class XmpNode
     /// <c>"en-US"</c>), or null when the item carried none. Backs the PDF/UA-1 clause 7.2 lang-alt
     /// natural-language check (veraPDF <c>XMPLangAlt.xDefault</c>).</summary>
     public string? XmlLang { get; set; }
+
+    /// <summary>Set when the parser met a shape this model cannot express (e.g. <c>rdf:value</c> with
+    /// qualifiers). The serializer prefers this and emits it verbatim, so an unfamiliar packet is
+    /// preserved rather than silently reshaped. Every OTHER facet on the node (<see cref="Value"/>,
+    /// <see cref="Children"/>, the shape flags) is still populated with this node's best-effort
+    /// classification — the same classification the pre-fallback code would have produced — so every
+    /// reader that is not the serializer (conformance rules, <c>XmpProperty.FromNode</c>, extension
+    /// schema resolution, ...) keeps its pre-existing verdict undisturbed. RawXml is purely an
+    /// additional, serializer-only override; it never blanks out the rest of the node.</summary>
+    public string? RawXml
+    {
+        get => _rawXml;
+        set
+        {
+            // A non-null value must be well-formed XML: the serializer parses it verbatim
+            // (XElement.Parse) with no further validation, and this type's contract (like the
+            // serializer's) is to fail loudly and predictably — ArgumentException — for caller error,
+            // never an undocumented XmlException surfacing later out of Serialize. Parser-produced
+            // values always satisfy this (they came from an XElement in the first place), so this only
+            // ever fires for a directly-constructed node.
+            if (value is not null)
+            {
+                try
+                {
+                    XElement.Parse(value);
+                }
+                catch (XmlException ex)
+                {
+                    throw new ArgumentException(
+                        $"RawXml must be well-formed XML: {ex.Message}", nameof(value), ex);
+                }
+            }
+
+            _rawXml = value;
+        }
+    }
+
+    private string? _rawXml;
 }
 
 /// <summary>
@@ -69,7 +111,31 @@ internal static class XmpTreeParser
     private static readonly XNamespace Xml = "http://www.w3.org/XML/1998/namespace";
 
     /// <summary>The top-level XMP properties of a packet, or an empty list when it will not parse.</summary>
-    public static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes)
+    public static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes) =>
+        Parse(metadataBytes, allRdfIslands: false);
+
+    /// <summary>
+    /// As <see cref="Parse(byte[])"/>, but when <paramref name="allRdfIslands"/> is true every
+    /// <c>rdf:RDF</c> island under <c>x:xmpmeta</c> is read and merged, not just the first.
+    /// </summary>
+    /// <remarks>
+    /// A packet may legally carry more than one sibling <c>rdf:RDF</c> island — the "DWC FX
+    /// Generator" used by the official ZUGFeRD 2.5 examples splits ordinary <c>xmp:*</c> properties
+    /// and the Factur-X <c>fx:*</c> properties across two of them. <see cref="PdfLibrary.Metadata.XmpPacket"/>
+    /// has always merged them and has a regression test pinning that, so it passes true.
+    ///
+    /// <para>This splits the conformance rules in two, exactly as it did before this overload
+    /// existed — no rule's behaviour changed. The rules that read the packet
+    /// (<c>ConformanceClaim</c>, <c>ConformanceContext.Xmp</c>, and through them
+    /// <c>PdfaIdentificationRule</c>, <c>PdfxVersionRule</c>, <c>UaIdentificationRule</c> and
+    /// <c>UaTitleRule</c>) see every island. The rules that read <c>ConformanceContext.XmpTree</c>
+    /// (<c>XmpPropertyTypeRule</c>, <c>XmpPropertyPredefinedRule</c>,
+    /// <c>XmpExtensionSchemaStructureRule</c>, <c>UaContentLangRule</c>) see the first island only,
+    /// which is the behaviour their veraPDF parity was verified against across 1,316 files.
+    /// Widening the tree side is a separate, evidence-backed change, not a side effect of the
+    /// packet refactor.</para>
+    /// </remarks>
+    internal static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes, bool allRdfIslands)
     {
         var properties = new List<XmpNode>();
         if (metadataBytes is null || metadataBytes.Length == 0)
@@ -94,12 +160,11 @@ internal static class XmpTreeParser
                 doc = XDocument.Load(xr, LoadOptions.PreserveWhitespace);
             }
 
-            XElement? rdf = FindRdf(doc);
-            if (rdf is null)
-                return properties;
-
-            foreach (XElement desc in rdf.Elements(Rdf + "Description"))
-                ReadDescription(desc, properties);
+            foreach (XElement rdf in FindRdf(doc, allRdfIslands))
+            {
+                foreach (XElement desc in rdf.Elements(Rdf + "Description"))
+                    ReadDescription(desc, properties);
+            }
         }
         catch
         {
@@ -110,15 +175,20 @@ internal static class XmpTreeParser
         return properties;
     }
 
-    private static XElement? FindRdf(XDocument doc)
+    private static IEnumerable<XElement> FindRdf(XDocument doc, bool allIslands)
     {
         XElement? meta = doc.Root?.Name.LocalName == "xmpmeta"
             ? doc.Root
             : doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "xmpmeta");
-        XElement? child = meta?.Element(Rdf + "RDF");
-        if (child is not null)
-            return child;
-        return doc.Root?.Name == Rdf + "RDF" ? doc.Root : null;
+
+        if (meta is not null)
+        {
+            List<XElement> islands = meta.Elements(Rdf + "RDF").ToList();
+            if (islands.Count > 0)
+                return allIslands ? islands : islands.Take(1);
+        }
+
+        return doc.Root?.Name == Rdf + "RDF" ? new[] { doc.Root } : [];
     }
 
     // Every property carried by one rdf:Description — attribute-form (always simple) then element-form.
@@ -143,12 +213,20 @@ internal static class XmpTreeParser
     {
         string ns = el.Name.NamespaceName;
         var node = new XmpNode(ns, el.Name.LocalName, PrefixOf(el, el.Name.Namespace));
-        DetermineValue(el, node);
+        DetermineValue(el, node, el);
         return node;
     }
 
     // Classifies el's value as array, struct, or simple and populates the node accordingly.
-    private static void DetermineValue(XElement el, XmpNode node)
+    //
+    // <paramref name="captureRoot"/> is the element to snapshot into RawXml when this call (or a
+    // nested rdf:value recursion originating from it) turns out to be an unmodelled qualified value.
+    // It is always the outermost property/field/array-item element for this node — NOT necessarily
+    // `el`, which for a recursive rdf:value call is the inner <rdf:value> element itself. Capturing
+    // `el` there would snapshot a bare, unnamed <rdf:value> fragment instead of the named property
+    // that owns it, losing the property's own name/namespace on serialize and, on re-parse, vanishing
+    // entirely (ReadDescription skips rdf:*-namespaced children as structural).
+    private static void DetermineValue(XElement el, XmpNode node, XElement captureRoot)
     {
         XElement? container = el.Elements().FirstOrDefault(e =>
             e.Name.Namespace == Rdf && e.Name.LocalName is "Bag" or "Seq" or "Alt");
@@ -164,19 +242,39 @@ internal static class XmpTreeParser
         {
             XElement source = descChild ?? el;
 
-            // A general qualified value: an rdf:value field carries the actual value and the sibling
-            // fields are qualifiers. The Adobe XMP model surfaces this as the rdf:value's own kind (a
-            // simple value with qualifiers is still simple), so parse the rdf:value and drop qualifiers.
+            // A general qualified value: an rdf:value field carries the actual value and any sibling
+            // fields are qualifiers. When rdf:value stands alone (no qualifiers), the Adobe XMP model
+            // surfaces it as the rdf:value's own kind (a simple value with no qualifiers is still
+            // simple), so parse the rdf:value directly — same as always. A TRULY qualified value —
+            // rdf:value PLUS one or more real qualifier fields (any non-rdf: sibling element, a
+            // non-rdf:/non-xml: sibling attribute, or an xml:lang qualifier) — is a shape this node
+            // model has no field for: there is nowhere on XmpNode to hang the qualifiers without a
+            // struct field silently eating them (the bug this whole slice exists to fix). That case
+            // ADDITIONALLY captures the property verbatim for the serializer, on top of — not instead
+            // of — the normal classification below, so every other reader of the node (conformance
+            // rules, XmpProperty.FromNode, extension-schema resolution) keeps seeing exactly what it
+            // always saw. rdf:type and other rdf:*-namespaced siblings are deliberately not qualifiers
+            // here, matching SetStruct's own treatment of them ("rdf:type qualifier and the like are
+            // not struct fields") — <rdf:value>v</rdf:value><rdf:type .../> is still a plain simple "v".
             XElement? rdfValue = source.Element(Rdf + "value");
-            if (rdfValue is not null)
+            XAttribute? rdfValueAttr = source.Attribute(Rdf + "value");
+            if (rdfValue is not null || rdfValueAttr is not null)
             {
-                DetermineValue(rdfValue, node);
-                return;
-            }
-            if (source.Attribute(Rdf + "value") is { } valueAttr)
-            {
-                node.IsSimple = true;
-                node.Value = valueAttr.Value;
+                bool hasQualifierElements = source.Elements().Any(e =>
+                    !ReferenceEquals(e, rdfValue) && e.Name.Namespace != Rdf);
+                bool hasQualifierAttributes = source.Attributes().Any(IsPropertyAttribute)
+                    || source.Attribute(Xml + "lang") is not null;
+
+                if (rdfValue is not null)
+                    DetermineValue(rdfValue, node, captureRoot);
+                else
+                {
+                    node.IsSimple = true;
+                    node.Value = rdfValueAttr!.Value;
+                }
+
+                if (hasQualifierElements || hasQualifierAttributes)
+                    node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
                 return;
             }
 
@@ -211,7 +309,7 @@ internal static class XmpTreeParser
                 HasXmlLang = lang is not null,
                 XmlLang = lang?.Value,
             };
-            DetermineValue(li, item);
+            DetermineValue(li, item, li);
             node.Children.Add(item);
         }
 

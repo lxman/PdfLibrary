@@ -3,6 +3,7 @@ using PdfLibrary.Conformance.Xmp;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
+using PdfLibrary.Xmp;
 
 namespace PdfLibrary.Conformance.Rules;
 

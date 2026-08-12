@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **XMP: structured properties are no longer destroyed on save.** Setting any document property
+  (`PdfDocumentEditor.Metadata.Title` and friends) re-serialized the XMP packet through a model with
+  no struct representation, flattening `xmpMM:History`, `xmpMM:DerivedFrom`, `xmpTPg:Fonts` and
+  similar into a single concatenated text blob — irrecoverably. `XmpPacket` is now backed by the
+  recursive `XmpNode` model and emits structs and arrays-of-structs faithfully. Shapes the model
+  still cannot express (a general XMP qualifier — `rdf:value` plus a non-`xml:lang` qualifier field
+  or attribute) are preserved verbatim rather than dropped.
+
+### Changed
+- The XMP format layer moved to its own assembly, `PdfLibrary.Xmp`, bundled in the package as with
+  `ICCSharp` and `FontParser`. Namespaces are unchanged and `PdfLibrary` forwards the four public
+  types, so this is source- and binary-compatible. **The forwarders are transitional and are due for
+  removal at 3.0.0**, which will require a recompile for consumers still binding to the old
+  assembly.
+- **`XmpProperty`'s read projection of a struct-shaped property changed.** The old flat parser
+  returned the concatenated text of a struct's descendants as `Value`; now that structs are modelled
+  faithfully (see Fixed, above), a struct has no scalar value and `XmpProperty.FromNode` projects it
+  to `Value = ""` instead. This is deliberate and more correct, but it is a read-side behaviour
+  change on a public type, and it reaches conformance: `UaTitleRule` reads `dc:title` through this
+  projection, so a struct-shaped (qualified) title now reads as empty rather than as its
+  concatenated text. Note also that the verbatim-preservation fallback this release adds is narrow —
+  it only preserves an `rdf:value`-plus-qualifiers shape, not any unfamiliar XMP in general; see
+  `Docs/Architecture.md` for what it does and does not cover (e.g. `rdf:type` on a struct is still
+  dropped).
+
+### Added
+- `XmpPacket.SetStruct` / `SetStructArray` and `XmpField`, for authoring nested XMP structs and
+  arrays-of-structs (e.g. `pdfaExtension:schemas`).
+- **`XmpPacket.Serialize()`'s name/value contract is now explicit.** An illegal character in a
+  property *value* (a NUL/control character, an unpaired surrogate) is sanitized to U+FFFD rather
+  than rejected, so a save is never blocked by garbage data the library did not write. An illegal
+  property or struct-field *name* — only ever caller-supplied, via `SetSimple`/`SetArray`/
+  `SetStruct`/`SetStructArray` — throws `ArgumentException` instead, since there is nothing to
+  repair it into. Callers authoring structs with dynamic field names should validate them first.
+
 ## [2.5.2] - 2026-07-29
 
 ### Fixed

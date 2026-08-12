@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>PdfLibrary.Xmp</AssemblyName>
+    <RootNamespace>PdfLibrary</RootNamespace>
+
+    <!-- This assembly carries public API (XmpPacket/XmpProperty/XmpSchemas/XmpValueKind, forwarded
+         from PdfLibrary; plus XmpField and the SetStruct/SetStructArray surface this branch adds).
+         In 2.5.2 those types' docs shipped inside PdfLibrary.xml because the types lived directly in
+         PdfLibrary.dll; now that they live here, this project must generate its own XML doc file so
+         consumers keep IntelliSense. See PdfLibrary.csproj's CopyProjectReferencesToPackage target,
+         which must bundle PdfLibrary.Xmp.xml alongside PdfLibrary.Xmp.dll. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- XmpNode/XmpTreeParser/XmpDate are internal to this assembly; PdfLibrary's conformance
+         rules and the test project consume them directly. -->
+    <InternalsVisibleTo Include="PdfLibrary" />
+    <InternalsVisibleTo Include="PdfLibrary.Tests" />
+  </ItemGroup>
+
+</Project>

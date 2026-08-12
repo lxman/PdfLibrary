@@ -1,3 +1,5 @@
+using PdfLibrary.Xmp;
+
 namespace PdfLibrary.Conformance.Xmp;
 
 /// <summary>

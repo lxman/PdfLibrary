@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using PdfLibrary.Xmp;
 
 namespace PdfLibrary.Conformance.Xmp;
 
@@ -42,6 +43,10 @@ internal sealed class XmpTypeContainer
     /// <summary>True when <paramref name="node"/> satisfies the value type <paramref name="typeName"/>.</summary>
     public bool Validate(XmpNode node, string typeName)
     {
+        // Note: a node whose RawXml is set (an unmodelled qualified value the serializer will emit
+        // verbatim) still carries a normal best-effort classification alongside it — see
+        // XmpNode.RawXml and XmpTreeParser.DetermineValue — so it is validated exactly like any other
+        // node here. No special-casing needed.
         string type = Simplify(typeName);
         if (type == "any")
             return true;

@@ -1,4 +1,5 @@
 using PdfLibrary.Conformance.Xmp;
+using PdfLibrary.Xmp;
 
 namespace PdfLibrary.Conformance.Rules;
 

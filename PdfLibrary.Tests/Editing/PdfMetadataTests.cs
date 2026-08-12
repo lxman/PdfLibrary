@@ -476,4 +476,65 @@ public class PdfMetadataTests
         Assert.NotNull(prop);
         Assert.Equal("ReplacedPacket", prop!.Value);
     }
+
+    // ── End-to-end through PdfDocumentEditor.Metadata + Save ─────────────────
+    //
+    // XmpStructRoundTripTests.Setting_a_metadata_property_does_not_flatten_existing_structs proves
+    // the headline fix one level down, directly against XmpPacket. Nothing exercised the same claim
+    // through the actual public save path -- PdfDocumentEditor.Metadata setters, Save, and reading
+    // the /Metadata stream back out of the saved bytes -- which is the surface a regression here
+    // would actually hit.
+
+    private const string IllustratorXmpPacket = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:xmpMM="http://ns.adobe.com/xap/1.0/mm/"
+    xmlns:stEvt="http://ns.adobe.com/xap/1.0/sType/ResourceEvent#"
+    xmlns:dc="http://purl.org/dc/elements/1.1/">
+   <dc:format>application/pdf</dc:format>
+   <xmpMM:History>
+    <rdf:Seq>
+     <rdf:li rdf:parseType="Resource">
+      <stEvt:action>saved</stEvt:action>
+      <stEvt:instanceID>xmp.iid:7acea5a3-d3b5-4e05-a570-0a5cf27dfe45</stEvt:instanceID>
+      <stEvt:when>2021-06-04T14:38:59+09:00</stEvt:when>
+      <stEvt:softwareAgent>Adobe Illustrator 25.2 (Macintosh)</stEvt:softwareAgent>
+     </rdf:li>
+    </rdf:Seq>
+   </xmpMM:History>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+
+    [Fact]
+    public void SettingTitle_ThroughEditorSave_PreservesExistingXmpStructInTheSavedMetadataStream()
+    {
+        // Adobe Illustrator XMP (same packet as XmpStructRoundTripTests) is installed via SetRawXmp
+        // to stand in for a document that arrived with real structured XMP already in it.
+        using PdfDocument doc = Reload(BlankDoc());
+        PdfDocumentEditor edit = doc.Edit();
+        edit.Metadata.SetRawXmp(Encoding.UTF8.GetBytes(IllustratorXmpPacket));
+
+        edit.Metadata.Title = "New Title";
+
+        var ms = new MemoryStream();
+        edit.Save(ms);
+        ms.Position = 0;
+
+        using PdfDocument reloaded = PdfDocument.Load(ms);
+        PdfDictionary catalog = reloaded.CatalogDictionary!;
+        var metaRef = (PdfIndirectReference)catalog[new PdfName("Metadata")];
+        var metaStream = (PdfStream)reloaded.GetObject(metaRef.ObjectNumber)!;
+        string xmpText = Encoding.UTF8.GetString(metaStream.GetDecodedData(reloaded.Decryptor));
+
+        // The struct survived the Title edit, saved through the real /Metadata stream ...
+        Assert.Contains("stEvt:softwareAgent", xmpText);
+        Assert.Contains("Adobe Illustrator 25.2 (Macintosh)", xmpText);
+        // ... and the new title actually landed.
+        Assert.Contains("New Title", xmpText);
+    }
 }

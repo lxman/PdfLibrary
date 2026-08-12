@@ -58,6 +58,59 @@ PdfLibrary/
 └── Security/              # Encryption/decryption
 ```
 
+### XMP (`Xmp/`)
+
+The XMP format layer — model, parser, serializer — as its own `netstandard2.1` assembly
+(`PdfLibrary.Xmp`), alongside `ICCSharp` and `FontParser`. It knows nothing about PDF; it reads and
+writes ISO 16684-1 packets.
+
+`XmpNode`/`XmpTreeParser`/`XmpTreeSerializer` are the single shared model. Both consumers use it: the
+conformance rules read it, and `XmpPacket` (public, namespace `PdfLibrary.Metadata`) is a facade over
+it for editing. There was previously a second, flatter write-side model here, which could not
+represent structs and silently flattened `xmpMM:History` on save.
+
+PDF/A's *rules about* XMP — `XmpPredefinedSchemas`, `XmpStructTypes`, `XmpTypeContainer`,
+`XmpExtensionSchemas` — deliberately stay in `Conformance/`. They encode ISO 19005, not XMP.
+
+`PdfLibrary` carries `TypeForwardedTo` for the four public types that moved out of it in 2.5.x. Those
+forwarders are **transitional and should be removed at 3.0.0** — see `PdfLibrary/TypeForwards.cs`.
+
+`PdfLibrary.csproj` references `Xmp.csproj` with `PrivateAssets="all"`, same as `ICCSharp` and
+`Logging`: it's bundled into the `.nupkg` by `CopyProjectReferencesToPackage` instead of becoming a
+package dependency. A **published-package** consumer is unaffected — `PdfLibrary.Xmp.dll` lands in
+`lib/<tfm>/` next to `PdfLibrary.dll` and NuGet references everything under `lib/<tfm>/`
+automatically. A **source/project-reference** consumer does NOT get this for free: `PrivateAssets`
+stops the reference from flowing across a `ProjectReference` edge, and the `TypeForwardedTo` only
+resolves at runtime, not compile time. Such a consumer needs its own direct `ProjectReference` to
+`Xmp.csproj` (PdfLibrary's own test project hit this during the branch and added one; Pellucid's
+`Directory.Build.targets` hit the same thing and added a matching line alongside its existing
+ICCSharp/Logging references). If `Xmp` ever adds a public type, expect this again for anyone building
+a fourth internal library into the package this way.
+
+A general XMP qualifier (`rdf:value` plus a non-`xml:lang` qualifier field/attribute) is still not
+part of the model; `XmpNode.RawXml` preserves that shape verbatim on serialize rather than dropping
+it, and the node keeps its ordinary classification so no conformance rule's verdict changes.
+
+This verbatim fallback is narrow, not a general "anything unfamiliar is preserved" mechanism: it
+triggers only on the specific `rdf:value`-plus-qualifiers shape (`XmpTreeParser.DetermineValue`).
+Other unmodelled shapes still lose data. In particular, `rdf:type` on a struct is dropped —
+`XmpNode.SetStruct` treats every `rdf:*`-namespaced child as structural, not a field — so
+`<xmpMM:DerivedFrom rdf:parseType="Resource"><rdf:type rdf:resource="…"/><stRef:instanceID>x`
+`</stRef:instanceID></xmpMM:DerivedFrom>` round-trips without its `rdf:type`.
+
+`XmpPacket.Serialize()` treats property/field **names** and **values** differently on purpose. A
+value carrying a character XML 1.0 forbids, or an unpaired surrogate, is sanitized to U+FFFD rather
+than rejected — that's document data the library did not write, and a save must not fail over it. A
+property or struct-field **name** — the kind of thing only a caller passing to `SetSimple`/`SetArray`/
+`SetStruct`/`SetStructArray` controls — is held to the stricter standard and throws
+`ArgumentException` if it is not a legal XML name. A caller authoring structs should validate names
+before calling `SetStruct`/`SetStructArray` if the source isn't already known-good.
+
+`XmpPacket.Parse` merges every sibling `rdf:RDF` island in a packet (some PDF/A-3/Factur-X generators
+split properties across more than one); the `XmpTree`-based conformance rules deliberately keep
+reading only the first, which is the behavior their veraPDF parity was verified against. That split
+predates this refactor and is unchanged by it.
+
 ---
 
 ## Component Details

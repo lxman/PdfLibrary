@@ -146,6 +146,7 @@
            (CopyProjectReferencesToPackage target) rather than referenced as separate
            NuGet packages, so they must NOT be emitted as package dependencies. -->
       <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" PrivateAssets="all" />
+      <ProjectReference Include="..\Xmp\Xmp.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\ImageLibrary\PixelResampler\PixelResampler.csproj" PrivateAssets="all" />
       <ProjectReference Include="..\FontParser\FontParser.csproj" PrivateAssets="all" />
@@ -174,6 +175,11 @@
             <BuildOutputInPackage Include="$(OutputPath)Jbig2Decoder.dll" />
             <BuildOutputInPackage Include="$(OutputPath)Jp2Codec.dll" />
             <BuildOutputInPackage Include="$(OutputPath)CcittCodec.dll" />
+            <BuildOutputInPackage Include="$(OutputPath)PdfLibrary.Xmp.dll" />
+            <!-- Xmp.csproj generates its own XML docs (public XmpPacket/XmpProperty/XmpSchemas/
+                 XmpValueKind/XmpField/etc. moved out of PdfLibrary.dll, so their docs no longer ship
+                 inside PdfLibrary.xml); bundle it alongside the DLL so consumers keep IntelliSense. -->
+            <BuildOutputInPackage Include="$(OutputPath)PdfLibrary.Xmp.xml" />
         </ItemGroup>
     </Target>
 

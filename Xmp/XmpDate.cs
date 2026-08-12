@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace PdfLibrary.Conformance.Xmp;
+namespace PdfLibrary.Xmp;
 
 /// <summary>
 /// The XMP <c>date</c> value check: the reference validates a date node by feeding its value to the
