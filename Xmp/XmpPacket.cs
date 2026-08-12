@@ -61,7 +61,13 @@ public sealed class XmpPacket
 
     /// <summary>The parsed top-level nodes. Internal because <see cref="XmpNode"/> is internal — the
     /// conformance classifier in PdfLibrary needs the real tree (shape facets and children), which the
-    /// flat <see cref="XmpProperty"/> projection deliberately cannot express.</summary>
+    /// flat <see cref="XmpProperty"/> projection deliberately cannot express.
+    ///
+    /// <para><b>The returned list is a copy, but the nodes it holds are the packet's own live
+    /// <see cref="XmpNode"/> instances</b> — <see cref="XmpNode.Value"/>, every shape flag, and
+    /// <see cref="XmpNode.Children"/> are all publicly mutable. This accessor is read-only BY CONTRACT
+    /// ONLY: nothing stops a caller from mutating a returned node and corrupting the packet's state
+    /// behind its setters' backs. Treat every node reached from here as immutable.</para></summary>
     internal IReadOnlyList<XmpNode> Nodes => _nodes.Values.ToList();
 
     // ── Setters ───────────────────────────────────────────────────────────────

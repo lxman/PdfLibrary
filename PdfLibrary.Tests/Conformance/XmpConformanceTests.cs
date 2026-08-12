@@ -5,6 +5,7 @@ using System.Text;
 using PdfLibrary.Conformance;
 using PdfLibrary.Metadata;
 using PdfLibrary.Structure;
+using PdfLibrary.Xmp;
 using Xunit;
 
 namespace PdfLibrary.Tests.Conformance;
@@ -81,6 +82,67 @@ public class XmpConformanceTests
     }
 
     /// <summary>
+    /// Proves the classifier's documented multi-island contract (see the class doc comment on
+    /// <see cref="XmpConformance"/>): a packet may legally carry two sibling <c>rdf:RDF</c> islands
+    /// under one <c>x:xmpmeta</c> root (the "DWC FX Generator" / ZUGFeRD shape — see
+    /// <c>PdfLibrary.Tests.Metadata.XmpPacketParseTests.Parse_TwoSiblingRdfRdfIslands_SurfacesPropertiesFromBoth</c>
+    /// for the pin that <see cref="XmpPacket.Parse"/> merges both). This is the test the corpus agreement test
+    /// below CANNOT be: the veraPDF corpus contains no multi-island fixture, so it can only prove
+    /// agreement on the (identical, for single-island packets) trees — it could not have caught the
+    /// classifier reading a genuinely different tree from the rules.
+    ///
+    /// <para>Island 1 carries an offending property visible to both trees (an undeclared custom
+    /// property, <c>ex:Widget</c>). Island 2 carries a second offending property
+    /// (<c>ex:Gadget</c>) that exists ONLY in island 2. <see cref="XmpConformance.ClassifyProperties"/>
+    /// reads <see cref="XmpPacket.Nodes"/> — the packet's one merged model — so it must report BOTH.
+    /// <see cref="XmpTreeParser.Parse(byte[])"/> (the one-argument, first-island-only overload
+    /// <c>ConformanceContext.XmpTree</c> actually uses to drive the real rules) must NOT surface
+    /// <c>ex:Gadget</c> at all — demonstrating that a document in this shape really would produce
+    /// fewer findings today than the classifier reports, which is exactly the superset the class doc
+    /// comment promises.</para>
+    /// </summary>
+    [Fact]
+    public void Multi_island_packet_is_classified_as_a_superset_of_what_the_rules_currently_see()
+    {
+        const string bytes = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:ex="http://example.com/ns/island-one/">
+   <ex:Widget>island one offender</ex:Widget>
+  </rdf:Description>
+ </rdf:RDF>
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:ex="http://example.com/ns/island-two/">
+   <ex:Gadget>island two offender</ex:Gadget>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        byte[] xmpBytes = Encoding.UTF8.GetBytes(bytes);
+
+        // What ConformanceContext.XmpTree — and so the real rules — actually reads: first island only.
+        IReadOnlyList<XmpNode> firstIslandOnly = XmpTreeParser.Parse(xmpBytes);
+        Assert.Contains(firstIslandOnly, n => n.LocalName == "Widget");
+        Assert.DoesNotContain(firstIslandOnly, n => n.LocalName == "Gadget");
+
+        // What the classifier reads: XmpPacket's merged model — both islands.
+        IReadOnlyList<XmpPropertyVerdict> verdicts =
+            XmpConformance.ClassifyProperties(XmpPacket.Parse(xmpBytes));
+
+        XmpPropertyVerdict widget = Find(verdicts, "Widget");
+        Assert.False(widget.IsPredefined);
+        Assert.False(widget.IsDeclaredByExtension);
+
+        XmpPropertyVerdict gadget = Find(verdicts, "Gadget");
+        Assert.False(gadget.IsPredefined);
+        Assert.False(gadget.IsDeclaredByExtension);
+    }
+
+    /// <summary>
     /// Corpus-level proof that the classifier never drifts from the two rules it mirrors: for every
     /// PDF/A fixture in the external veraPDF corpus, the count of properties the classifier marks
     /// "neither predefined nor extension-declared" equals the count of
@@ -88,6 +150,17 @@ public class XmpConformanceTests
     /// the count marked "type does not conform" equals the count of <c>pdfa-xmp-property-type</c>
     /// findings. The corpus is a sibling checkout absent on CI and fresh clones, so this is
     /// <c>[Trait("Category","LocalOnly")]</c> and skips when it is not present.
+    ///
+    /// <para><b>Scope: this is honestly an equality check only because every corpus fixture is
+    /// single-island.</b> The classifier reads <see cref="XmpPacket.Nodes"/> (every <c>rdf:RDF</c>
+    /// island merged); the rules read <c>ConformanceContext.XmpTree</c> (first island only). For a
+    /// single-island document — every fixture the veraPDF corpus contains — those two trees are
+    /// textually identical, so the equality asserted here really is a like-with-like comparison, not
+    /// an accidental pass. It CANNOT exercise the documented multi-island superset relationship
+    /// (classifier verdicts covering a property the rules do not yet see) because the corpus carries
+    /// no multi-island fixture — see
+    /// <see cref="Multi_island_packet_is_classified_as_a_superset_of_what_the_rules_currently_see"/>
+    /// for the synthetic test that proves that relationship instead.</para>
     /// </summary>
     [Fact]
     [Trait("Category", "LocalOnly")]

@@ -27,6 +27,23 @@ public readonly record struct XmpPropertyVerdict(
 /// report. There is deliberately no profile parameter: <see cref="XmpPredefinedSchemas"/>'s predefined
 /// table is one unconditional union with no per-profile branching, and both rules declare
 /// <c>AppliesToProfiles => ConformanceProfile.AllPdfA</c> — a parameter here could not be honoured.</para>
+///
+/// <para><b>Multi-island packets: verdicts describe the packet as it would be SAVED, not necessarily
+/// the packet as the rules see it today.</b> A packet may legally carry more than one sibling
+/// <c>rdf:RDF</c> island under <c>x:xmpmeta</c> (the "DWC FX Generator" shape the official ZUGFeRD 2.5
+/// examples use). <see cref="XmpPacket.Parse"/> has always merged every island into one property set —
+/// that merged set is <see cref="XmpPacket"/>'s only model, and <see cref="XmpPacket.Serialize"/> always
+/// writes it back as ONE island — so <see cref="ClassifyProperties"/>, which classifies exactly that
+/// model via <see cref="XmpPacket.Nodes"/>, necessarily classifies every island merged together. The two
+/// rules this mirrors instead read <c>ConformanceContext.XmpTree</c>, which parses the FIRST island
+/// only. On a single-island packet (the overwhelming majority) the two trees are identical and verdicts
+/// agree with findings exactly. On a genuine multi-island packet, this classifier's verdicts are a
+/// SUPERSET of what the rules currently report: a property that lives only in island 2 is invisible to
+/// today's rules but IS classified here — deliberately, because the next <c>Serialize()</c> merges it
+/// into island 1, at which point the rules WOULD report it. A remediation fixer built on this classifier
+/// is therefore correct to act on every verdict now, pre-empting a finding the rules have not raised yet
+/// but will raise on the saved document. A caller that instead wants exactly what the rules report today,
+/// island-for-island, must not use this method on a multi-island packet.</para>
 /// </summary>
 public static class XmpConformance
 {
@@ -45,10 +62,15 @@ public static class XmpConformance
         "http://www.aiim.org/pdfa/ns/field#",
     };
 
+    /// <summary>Classifies every top-level property of <paramref name="packet"/>'s merged node tree
+    /// (see the class doc comment for the multi-island / superset contract this implies).</summary>
     public static IReadOnlyList<XmpPropertyVerdict> ClassifyProperties(XmpPacket packet)
     {
         if (packet is null) throw new ArgumentNullException(nameof(packet));
 
+        // packet.Nodes is XmpPacket's one model — already every rdf:RDF island merged (XmpPacket.Parse
+        // always parses with allRdfIslands: true). See the class doc comment: this is deliberately a
+        // superset of ConformanceContext.XmpTree (first island only) on a multi-island packet.
         IReadOnlyList<XmpNode> topLevel = packet.Nodes;
         XmpExtensionSchemas extensions = XmpExtensionSchemas.Parse(topLevel);
 
