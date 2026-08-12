@@ -526,4 +526,51 @@ public class XmpStructRoundTripTests
         Assert.Throws<ArgumentNullException>(() =>
             packet.SetStruct(mm, "xmpMM", "History", [new XmpField(evt, "stEvt", "action", null!)]));
     }
+
+    private const string AltStructItemWithLangPacket = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:stEvt="http://ns.adobe.com/xap/1.0/sType/ResourceEvent#">
+   <dc:title>
+    <rdf:Alt>
+     <rdf:li xml:lang="en-GB" rdf:parseType="Resource">
+      <stEvt:action>saved</stEvt:action>
+     </rdf:li>
+    </rdf:Alt>
+   </dc:title>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+
+    /// <summary>EmitShape used to emit xml:lang only on the simple-value fall-through, AFTER the
+    /// IsArray/IsStruct early returns — so a struct-form alt-text item (e.g. a pdfaExtension
+    /// description keyed by language) lost its xml:lang on save. On re-parse the lost lang flips
+    /// IsArrayAltText false (SetArray requires every item to carry xml:lang) and XmpProperty.FromNode
+    /// re-keys the item under "x-default", silently overwriting a genuine x-default sibling if one
+    /// existed. The lang qualifier belongs to the ITEM, independent of its value shape, so it must
+    /// survive regardless of which branch EmitShape takes.</summary>
+    [Fact]
+    public void A_struct_shaped_alt_text_item_keeps_its_xml_lang_through_a_re_parse()
+    {
+        IReadOnlyList<XmpNode> before = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(AltStructItemWithLangPacket));
+        XmpNode titleBefore = Find(before, "title");
+        Assert.True(titleBefore.IsArrayAltText);
+
+        byte[] serialized = XmpTreeSerializer.Serialize(before);
+        string text = Encoding.UTF8.GetString(serialized);
+        Assert.Contains("xml:lang=\"en-GB\"", text); // the emitted XML must carry lang on the struct item
+
+        IReadOnlyList<XmpNode> after = XmpTreeParser.Parse(serialized);
+        XmpNode titleAfter = Find(after, "title");
+
+        Assert.True(titleAfter.IsArrayAltText); // stays a lang-alt, not silently demoted to a plain Alt
+        XmpNode item = Assert.Single(titleAfter.Children);
+        Assert.True(item.IsStruct);
+        Assert.Equal("en-GB", item.XmlLang);
+    }
 }

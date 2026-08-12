@@ -183,9 +183,14 @@ public sealed class PdfMetadata
 
     /// <summary>
     /// Replaces the catalog /Metadata stream with a caller-built XMP packet, verbatim. The bytes
-    /// are not parsed or validated. NOTE: the typed property setters on this facade rewrite the
-    /// stream from a simple-property model that cannot express nested structures (e.g.
-    /// pdfaExtension schema descriptions) — when combining both, call SetRawXmp LAST.
+    /// are not parsed or validated. NOTE: unlike before, the typed property setters on this facade
+    /// no longer flatten the packet — they edit the underlying XMP node tree in place, so nested
+    /// structures (e.g. pdfaExtension schema descriptions) already present in the packet
+    /// survive a setter call untouched. Combining both is still order-sensitive, but for a different
+    /// reason: <c>SetRawXmp</c> writes its bytes unparsed and unvalidated, so if they are not
+    /// well-formed XMP, the NEXT read of <see cref="Xmp"/> (which a later typed setter triggers)
+    /// silently falls back to an empty packet, discarding the raw content. Call SetRawXmp LAST when
+    /// you need its bytes to be exactly what ends up in the stream.
     /// </summary>
     public void SetRawXmp(byte[] xmpPacketBytes)
     {

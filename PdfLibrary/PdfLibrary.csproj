@@ -176,6 +176,10 @@
             <BuildOutputInPackage Include="$(OutputPath)Jp2Codec.dll" />
             <BuildOutputInPackage Include="$(OutputPath)CcittCodec.dll" />
             <BuildOutputInPackage Include="$(OutputPath)PdfLibrary.Xmp.dll" />
+            <!-- Xmp.csproj generates its own XML docs (public XmpPacket/XmpProperty/XmpSchemas/
+                 XmpValueKind/XmpField/etc. moved out of PdfLibrary.dll, so their docs no longer ship
+                 inside PdfLibrary.xml); bundle it alongside the DLL so consumers keep IntelliSense. -->
+            <BuildOutputInPackage Include="$(OutputPath)PdfLibrary.Xmp.xml" />
         </ItemGroup>
     </Target>
 

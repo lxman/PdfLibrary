@@ -28,7 +28,10 @@ internal static class XmpTreeSerializer
     private static readonly XNamespace XmlNs = "http://www.w3.org/XML/1998/namespace";
 
     /// <summary>Padding lets a consumer rewrite the packet in place without moving the rest of the
-    /// file; the XMP spec recommends roughly 2 KB. Matches the previous writer's behaviour.</summary>
+    /// file; the XMP spec recommends roughly 2 KB — ≈2 KB, as the previous writer emitted. The shape
+    /// differs: the previous writer spread its padding across 80-char lines, where this emits it as
+    /// 2048 spaces on one line. (The `begin=` BOM is unaffected by this change and is still
+    /// emitted.)</summary>
     private const int PaddingBytes = 2048;
 
     /// <summary>
@@ -244,6 +247,13 @@ internal static class XmpTreeSerializer
     /// particular). The two callers differ only in how the element itself is named.</summary>
     private static void EmitShape(XmpNode node, XElement element)
     {
+        // xml:lang is a qualifier on the ITEM, independent of the item's own value shape — an
+        // rdf:Alt entry (e.g. a pdfaExtension description) can be struct- or array-shaped and still
+        // carry xml:lang. Emitting it before the shape dispatch below means every branch (array,
+        // struct, simple) carries it, instead of only the simple fall-through path reaching it.
+        if (node.HasXmlLang && node.XmlLang is { } lang)
+            element.Add(new XAttribute(XmlNs + "lang", Sanitize(lang)));
+
         if (node.IsArray)
         {
             string container = node.IsArrayAlternate ? "Alt" : node.IsArrayOrdered ? "Seq" : "Bag";
@@ -261,9 +271,6 @@ internal static class XmpTreeSerializer
                 element.Add(Emit(field));
             return;
         }
-
-        if (node.HasXmlLang && node.XmlLang is { } lang)
-            element.Add(new XAttribute(XmlNs + "lang", Sanitize(lang)));
 
         element.Value = Sanitize(node.Value ?? string.Empty);
     }

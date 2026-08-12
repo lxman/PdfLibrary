@@ -21,6 +21,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   types, so this is source- and binary-compatible. **The forwarders are transitional and are due for
   removal at 3.0.0**, which will require a recompile for consumers still binding to the old
   assembly.
+- **`XmpProperty`'s read projection of a struct-shaped property changed.** The old flat parser
+  returned the concatenated text of a struct's descendants as `Value`; now that structs are modelled
+  faithfully (see Fixed, above), a struct has no scalar value and `XmpProperty.FromNode` projects it
+  to `Value = ""` instead. This is deliberate and more correct, but it is a read-side behaviour
+  change on a public type, and it reaches conformance: `UaTitleRule` reads `dc:title` through this
+  projection, so a struct-shaped (qualified) title now reads as empty rather than as its
+  concatenated text. Note also that the verbatim-preservation fallback this release adds is narrow —
+  it only preserves an `rdf:value`-plus-qualifiers shape, not any unfamiliar XMP in general; see
+  `Docs/Architecture.md` for what it does and does not cover (e.g. `rdf:type` on a struct is still
+  dropped).
 
 ### Added
 - `XmpPacket.SetStruct` / `SetStructArray` and `XmpField`, for authoring nested XMP structs and

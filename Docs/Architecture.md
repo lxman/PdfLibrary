@@ -79,6 +79,13 @@ A general XMP qualifier (`rdf:value` plus a non-`xml:lang` qualifier field/attri
 part of the model; `XmpNode.RawXml` preserves that shape verbatim on serialize rather than dropping
 it, and the node keeps its ordinary classification so no conformance rule's verdict changes.
 
+This verbatim fallback is narrow, not a general "anything unfamiliar is preserved" mechanism: it
+triggers only on the specific `rdf:value`-plus-qualifiers shape (`XmpTreeParser.DetermineValue`).
+Other unmodelled shapes still lose data. In particular, `rdf:type` on a struct is dropped —
+`XmpNode.SetStruct` treats every `rdf:*`-namespaced child as structural, not a field — so
+`<xmpMM:DerivedFrom rdf:parseType="Resource"><rdf:type rdf:resource="…"/><stRef:instanceID>x`
+`</stRef:instanceID></xmpMM:DerivedFrom>` round-trips without its `rdf:type`.
+
 `XmpPacket.Serialize()` treats property/field **names** and **values** differently on purpose. A
 value carrying a character XML 1.0 forbids, or an unpaired surrogate, is sanitized to U+FFFD rather
 than rejected — that's document data the library did not write, and a save must not fail over it. A

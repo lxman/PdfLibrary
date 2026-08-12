@@ -25,8 +25,14 @@ public class XmpTypeForwardingTests
         Assert.Contains(fullName, forwarded);
     }
 
+    /// <summary>NOT a forwarding check: this test project has a direct <c>ProjectReference</c> to
+    /// <c>Xmp.csproj</c>, so <c>typeof(XmpPacket)</c> binds at COMPILE time to <c>PdfLibrary.Xmp</c>
+    /// regardless of whether <c>PdfLibrary</c>'s forwarders exist or work — it cannot fail, and does
+    /// not exercise <c>GetForwardedTypes()</c> or the runtime redirect the way the
+    /// <c>[Theory]</c> above does. It only pins that this assembly is what a from-source consumer
+    /// resolves the type from, as a compile-binding sanity check.</summary>
     [Fact]
-    public void The_forwarded_types_resolve_out_of_the_Xmp_assembly()
+    public void The_types_resolve_from_the_Xmp_assembly_when_referenced_directly()
     {
         Assert.Equal("PdfLibrary.Xmp", typeof(XmpPacket).Assembly.GetName().Name);
     }
