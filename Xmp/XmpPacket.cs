@@ -59,6 +59,11 @@ public sealed class XmpPacket
     /// <summary>All properties in the packet.</summary>
     public IEnumerable<XmpProperty> Properties => _nodes.Values.Select(XmpProperty.FromNode);
 
+    /// <summary>The parsed top-level nodes. Internal because <see cref="XmpNode"/> is internal — the
+    /// conformance classifier in PdfLibrary needs the real tree (shape facets and children), which the
+    /// flat <see cref="XmpProperty"/> projection deliberately cannot express.</summary>
+    internal IReadOnlyList<XmpNode> Nodes => _nodes.Values.ToList();
+
     // ── Setters ───────────────────────────────────────────────────────────────
 
     /// <summary>Sets or replaces a simple string property.</summary>
