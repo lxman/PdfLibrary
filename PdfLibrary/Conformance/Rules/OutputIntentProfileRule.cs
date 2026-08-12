@@ -1,5 +1,3 @@
-using ICCSharp.Profile;
-
 namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
@@ -22,30 +20,16 @@ internal sealed class OutputIntentProfileRule : IConformanceRule
 
             int? objectNumber = intent.ProfileRef?.ObjectNumber;
 
-            IccProfile? profile = null;
-            // Malformed or undecodable profile data is treated as "not a valid ICC profile".
-            try { profile = IccProfile.Parse(intent.Profile.GetDecodedData(context.Document.Decryptor)); }
-            catch (Exception) { /* handled below */ }
-
-            if (profile is null)
+            string? failure;
+            try { failure = OutputIntentProfileValidator.Validate(intent.Profile.GetDecodedData(context.Document.Decryptor)); }
+            catch (Exception)
             {
-                yield return Error(context.Target, objectNumber,
-                    "The output intent /DestOutputProfile is not a valid ICC profile.");
-                continue;
+                // Malformed or undecodable profile data is treated as "not a valid ICC profile".
+                failure = "The output intent /DestOutputProfile is not a valid ICC profile.";
             }
 
-            ProfileHeader h = profile.Header;
-            bool classOk = h.Class is ProfileClass.Output or ProfileClass.Display;
-            bool spaceOk = h.DataColorSpace == ColorSpaceSignatures.RGB
-                           || h.DataColorSpace == ColorSpaceSignatures.CMYK
-                           || h.DataColorSpace == ColorSpaceSignatures.Gray;
-            bool versionOk = h.Version.Major < 5;
-            if (!(classOk && spaceOk && versionOk))
-            {
-                yield return Error(context.Target, objectNumber,
-                    $"The output intent ICC profile has an invalid header (device class {h.RawClass}, "
-                    + $"colour space {h.DataColorSpace}, version {h.Version.Major}).");
-            }
+            if (failure is not null)
+                yield return Error(context.Target, objectNumber, failure);
         }
     }
 
