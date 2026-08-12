@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using PdfLibrary.Metadata;
 using PdfLibrary.Xmp;
 using Xunit;
 
@@ -84,5 +85,22 @@ public class XmpStructRoundTripTests
                 XmpTreeParser.Parse(Encoding.UTF8.GetBytes(IllustratorPacket))));
 
         Assert.Equal("application/pdf", Find(after, "format").Value);
+    }
+
+    /// <summary>The end-to-end point of the whole slice: the destruction reached real files through
+    /// the public editing API, because every PdfMetadata setter mutates the parsed packet and the
+    /// save re-serializes it. Against the pre-fix XmpPacket (flat XmpProperty model) this fails on
+    /// the first assertion — the History Seq had been read as two rdf:li text blobs, so no
+    /// stEvt: field name survived to be written back.</summary>
+    [Fact]
+    public void Setting_a_metadata_property_does_not_flatten_existing_structs()
+    {
+        XmpPacket packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(IllustratorPacket));
+        packet.SetSimple("http://ns.adobe.com/pdf/1.3/", "pdf", "Producer", "Pellucid");
+
+        string text = Encoding.UTF8.GetString(packet.Serialize());
+
+        Assert.Contains("stEvt:softwareAgent", text);   // the History struct survived the edit
+        Assert.Contains("Pellucid", text);              // and the edit landed
     }
 }

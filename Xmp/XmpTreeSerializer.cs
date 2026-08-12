@@ -47,7 +47,11 @@ internal static class XmpTreeSerializer
                 description));
 
         var sb = new StringBuilder();
-        sb.Append("<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
+        // The begin attribute carries the Unicode BOM character U+FEFF, which UTF-8-encodes to the
+        // canonical three bytes EF BB BF. This is what Adobe writes and what a scanner looking for
+        // the packet header expects; XmpPacketRegressionTests pins both the canonical form and the
+        // absence of the six-byte "ï»¿" mojibake a naive Latin-1 escape produces.
+        sb.Append("<?xpacket begin=\"﻿\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
         sb.Append(meta);
         sb.Append('\n');
         sb.Append(' ', PaddingBytes);

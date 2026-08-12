@@ -1,94 +1,51 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
 using System.Linq;
-using System.Text;
-using System.Xml;
-using System.Xml.Linq;
+using PdfLibrary.Xmp;
 
 namespace PdfLibrary.Metadata;
 
 /// <summary>
 /// A mutable, round-trip-stable XMP metadata packet.
 /// Parse from raw stream bytes; mutate via Set*/Remove; serialize back via <see cref="Serialize"/>.
+///
+/// <para>The model is the faithful <see cref="XmpNode"/> tree; <see cref="XmpProperty"/> is a
+/// computed projection of it. That is what makes an edit non-destructive: a struct — an
+/// <c>xmpMM:History</c> entry with its <c>stEvt:action</c>/<c>when</c>/<c>softwareAgent</c> fields,
+/// say — has no representation in the flat Simple/Array/LangAlt shape, so when the flat shape WAS
+/// the model, re-serializing after any setter collapsed it into one whitespace blob. Now the node
+/// keeps the real data, the projection reports what it can, and <see cref="Serialize"/> emits the
+/// tree.</para>
 /// </summary>
 public sealed class XmpPacket
 {
-    // Keyed by (namespaceUri, localName).
-    // We store the full XmpProperty to carry prefix + value shape together.
-    private readonly Dictionary<(string ns, string local), XmpProperty> _props =
+    // Keyed by (namespaceUri, localName), in insertion order — the parsed tree IS the model now.
+    private readonly Dictionary<(string ns, string local), XmpNode> _nodes =
         new(EqualityComparer<(string, string)>.Default);
-
-    // Namespace-uri → preferred prefix; populated during parse, used during serialize.
-    private readonly Dictionary<string, string> _prefixMap = new(StringComparer.Ordinal);
-
-    // Reverse map: prefix -> namespace-uri, for collision detection.
-    private readonly Dictionary<string, string> _reversePrefixMap = new(StringComparer.Ordinal);
 
     private XmpPacket() { }
 
     // ── Factory ───────────────────────────────────────────────────────────────
 
-    /// <summary>Creates a packet with the standard well-known namespace prefixes seeded.</summary>
-    public static XmpPacket CreateEmpty()
-    {
-        var pkt = new XmpPacket();
-        pkt.SeedWellKnownPrefixes();
-        return pkt;
-    }
+    /// <summary>Creates an empty packet.</summary>
+    public static XmpPacket CreateEmpty() => new();
 
     /// <summary>
     /// Parses an XMP packet from the raw bytes of a /Metadata stream.
     /// Tolerant: if the bytes are not valid XMP, returns an empty packet rather than throwing.
     /// This also covers the degenerate case of an &lt;x:xmpmeta&gt; root with no &lt;rdf:RDF&gt;
-    /// island anywhere inside it -- <see cref="FindAllRdfRdf"/> yields no elements, so the
-    /// result is deterministically an empty packet (no properties beyond the seeded well-known
-    /// prefixes), never a throw.
+    /// island anywhere inside it — the parser yields no properties, so the result is
+    /// deterministically an empty packet, never a throw.
     /// </summary>
     public static XmpPacket Parse(byte[] xmpBytes)
     {
         var pkt = new XmpPacket();
-        pkt.SeedWellKnownPrefixes();
-        if (xmpBytes is null || xmpBytes.Length == 0) return pkt;
 
-        try
-        {
-            // Strip leading UTF-8 BOM if present (the xpacket PI may already embed one as a char).
-            ReadOnlySpan<byte> span = xmpBytes;
-            if (span.Length >= 3 && span[0] == 0xEF && span[1] == 0xBB && span[2] == 0xBF)
-                xmpBytes = xmpBytes[3..];
-
-            // XDocument tolerates the <?xpacket?> PIs (they're parsed as XProcessingInstruction).
-            XDocument doc;
-            using (var reader = new StringReader(Encoding.UTF8.GetString(xmpBytes)))
-            {
-                var settings = new XmlReaderSettings
-                {
-                    DtdProcessing = DtdProcessing.Ignore,
-                    IgnoreWhitespace = false,
-                    ConformanceLevel = ConformanceLevel.Document
-                };
-                using XmlReader xr = XmlReader.Create(reader, settings);
-                doc = XDocument.Load(xr, LoadOptions.PreserveWhitespace);
-            }
-
-            // Find all rdf:RDF islands under x:xmpmeta (or fall through to rdf:RDF at root).
-            // Real-world packets (e.g. the "DWC FX Generator" used by official ZUGFeRD 2.5
-            // examples) split properties across two sibling rdf:RDF elements inside one
-            // x:xmpmeta; every island must be parsed, not just the first.
-            foreach (XElement rdfRdf in FindAllRdfRdf(doc))
-            {
-                foreach (XElement desc in rdfRdf.Elements(Rdf("Description")))
-                {
-                    pkt.ParseDescription(desc);
-                }
-            }
-        }
-        catch
-        {
-            // Tolerant: any exception → return what we have (likely empty)
-        }
+        // allRdfIslands: a packet may carry several sibling rdf:RDF islands (the "DWC FX Generator"
+        // shape used by the official ZUGFeRD 2.5 examples splits properties across two); every one
+        // must be merged, which this type has always done.
+        foreach (XmpNode node in XmpTreeParser.Parse(xmpBytes, allRdfIslands: true))
+            pkt._nodes[(node.NamespaceUri, node.LocalName)] = node;
 
         return pkt;
     }
@@ -97,10 +54,10 @@ public sealed class XmpPacket
 
     /// <summary>Returns the property matching the given namespace URI and local name, or null.</summary>
     public XmpProperty? Get(string namespaceUri, string localName) =>
-        _props.TryGetValue((namespaceUri, localName), out XmpProperty? p) ? p : null;
+        _nodes.TryGetValue((namespaceUri, localName), out XmpNode? node) ? XmpProperty.FromNode(node) : null;
 
     /// <summary>All properties in the packet.</summary>
-    public IEnumerable<XmpProperty> Properties => _props.Values;
+    public IEnumerable<XmpProperty> Properties => _nodes.Values.Select(XmpProperty.FromNode);
 
     // ── Setters ───────────────────────────────────────────────────────────────
 
@@ -111,9 +68,12 @@ public sealed class XmpPacket
         if (prefix is null) throw new ArgumentNullException(nameof(prefix));
         if (localName is null) throw new ArgumentNullException(nameof(localName));
         if (value is null) throw new ArgumentNullException(nameof(value));
-        RegisterPrefix(namespaceUri, prefix);
-        string actualPrefixSimple = _prefixMap[namespaceUri];
-        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixSimple, localName, value);
+
+        _nodes[(namespaceUri, localName)] = new XmpNode(namespaceUri, localName, prefix)
+        {
+            IsSimple = true,
+            Value = value,
+        };
     }
 
     /// <summary>Sets or replaces an array property (Seq when <paramref name="ordered"/>=true, Bag otherwise).</summary>
@@ -124,10 +84,16 @@ public sealed class XmpPacket
         if (prefix is null) throw new ArgumentNullException(nameof(prefix));
         if (localName is null) throw new ArgumentNullException(nameof(localName));
         if (items is null) throw new ArgumentNullException(nameof(items));
-        RegisterPrefix(namespaceUri, prefix);
-        string actualPrefixArr = _prefixMap[namespaceUri];
-        IReadOnlyList<string> list = items.ToList();
-        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixArr, localName, list, ordered);
+
+        var node = new XmpNode(namespaceUri, localName, prefix)
+        {
+            IsArray = true,
+            IsArrayOrdered = ordered,
+        };
+        foreach (string item in items)
+            node.Children.Add(Item(item));
+
+        _nodes[(namespaceUri, localName)] = node;
     }
 
     /// <summary>Sets or merges a language alternative property.</summary>
@@ -138,284 +104,65 @@ public sealed class XmpPacket
         if (prefix is null) throw new ArgumentNullException(nameof(prefix));
         if (localName is null) throw new ArgumentNullException(nameof(localName));
         if (text is null) throw new ArgumentNullException(nameof(text));
-        RegisterPrefix(namespaceUri, prefix);
-        string actualPrefixLa = _prefixMap[namespaceUri];
 
         // If a LangAlt property already exists, merge into it; otherwise create fresh.
         Dictionary<string, string> map;
-        if (_props.TryGetValue((namespaceUri, localName), out XmpProperty? existing) &&
-            existing.Kind == XmpValueKind.LangAlt)
+        if (_nodes.TryGetValue((namespaceUri, localName), out XmpNode? existing) &&
+            XmpProperty.FromNode(existing) is { Kind: XmpValueKind.LangAlt } existingProp)
         {
-            map = existing.LangAlt.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+            map = existingProp.LangAlt.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
         }
         else
         {
             map = new Dictionary<string, string>(StringComparer.Ordinal);
         }
         map[lang] = text;
-        _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixLa, localName, map);
+
+        var node = new XmpNode(namespaceUri, localName, prefix)
+        {
+            IsArray = true,
+            IsArrayOrdered = true,
+            IsArrayAlternate = true,
+            IsArrayAltText = true,
+        };
+
+        // x-default first if present, then the others sorted for stability — the emission order the
+        // string writer this facade replaced used.
+        if (map.TryGetValue("x-default", out string? defText))
+            node.Children.Add(AltItem("x-default", defText));
+        foreach (KeyValuePair<string, string> entry in map
+                     .Where(kv => kv.Key != "x-default")
+                     .OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            node.Children.Add(AltItem(entry.Key, entry.Value));
+        }
+
+        _nodes[(namespaceUri, localName)] = node;
     }
 
     /// <summary>Removes a property. No-op if absent.</summary>
     public void Remove(string namespaceUri, string localName) =>
-        _props.Remove((namespaceUri, localName));
+        _nodes.Remove((namespaceUri, localName));
 
     // ── Serialize ─────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Serializes the packet to a full xpacket-wrapped, UTF-8-encoded byte array with ~2 KB of
     /// padding and a trailing <c>&lt;?xpacket end="w"?&gt;</c> instruction.
-    /// All formatting uses <see cref="CultureInfo.InvariantCulture"/>.
     /// </summary>
-    public byte[] Serialize()
-    {
-        var sb = new StringBuilder();
-
-
-        // The begin attribute is the Unicode BOM character U+FEFF.
-        // When encoded to UTF-8 it produces the canonical 3-byte sequence EF BB BF.
-        // Do NOT use ï»¿ (three separate Latin-1 escapes) -- those produce mojibake.
-        sb.Append("<?xpacket begin=\"﻿\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
-
-        // x:xmpmeta
-        sb.Append("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n");
-        sb.Append("  <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n");
-        sb.Append("    <rdf:Description rdf:about=\"\"");
-
-        // Declare all namespaces (except rdf/x which are already declared above)
-        foreach ((string nsUri, string prefix) in _prefixMap)
-        {
-            if (nsUri == XmpSchemas.Rdf || nsUri == XmpSchemas.X) continue;
-            sb.Append($"\n        xmlns:{XmlEncode(prefix)}=\"{XmlEncode(nsUri)}\"");
-        }
-        sb.Append(">\n");
-
-        // Properties
-        foreach (XmpProperty prop in _props.Values)
-        {
-            string resolvedPfx = _prefixMap.TryGetValue(prop.NamespaceUri, out string? mpfx) ? mpfx : prop.Prefix;
-            string qname = $"{resolvedPfx}:{prop.LocalName}";
-            switch (prop.Kind)
-            {
-                case XmpValueKind.Simple:
-                    sb.Append($"      <{qname}>{XmlEncode(prop.Value!)}</{qname}>\n");
-                    break;
-
-                case XmpValueKind.Array:
-                {
-                    string container = prop.Ordered ? "rdf:Seq" : "rdf:Bag";
-                    sb.Append($"      <{qname}><{container}>\n");
-                    foreach (string item in prop.Items)
-                        sb.Append($"          <rdf:li>{XmlEncode(item)}</rdf:li>\n");
-                    sb.Append($"        </{container}></{qname}>\n");
-                    break;
-                }
-
-                case XmpValueKind.LangAlt:
-                {
-                    sb.Append($"      <{qname}><rdf:Alt>\n");
-                    // x-default first if present, then others sorted for stability
-                    if (prop.LangAlt.TryGetValue("x-default", out string? defText))
-                        sb.Append($"          <rdf:li xml:lang=\"x-default\">{XmlEncode(defText)}</rdf:li>\n");
-                    foreach ((string lang, string text) in prop.LangAlt
-                                 .Where(kv => kv.Key != "x-default")
-                                 .OrderBy(kv => kv.Key, StringComparer.Ordinal))
-                        sb.Append($"          <rdf:li xml:lang=\"{XmlEncode(lang)}\">{XmlEncode(text)}</rdf:li>\n");
-                    sb.Append($"        </rdf:Alt></{qname}>\n");
-                    break;
-                }
-            }
-        }
-
-        sb.Append("    </rdf:Description>\n");
-        sb.Append("  </rdf:RDF>\n");
-        sb.Append("</x:xmpmeta>\n");
-
-        // ~2 KB padding of ASCII spaces (in 80-char lines) before trailing PI
-        int paddingChars = 2048;
-        int lineLen = 80;
-        while (paddingChars > 0)
-        {
-            int take = Math.Min(paddingChars, lineLen);
-            sb.Append(' ', take);
-            sb.Append('\n');
-            paddingChars -= take;
-        }
-
-        // Trailer PI
-        sb.Append("<?xpacket end=\"w\"?>");
-
-        return Encoding.UTF8.GetBytes(sb.ToString());
-    }
+    public byte[] Serialize() => XmpTreeSerializer.Serialize(_nodes.Values.ToList());
 
     // ── Internals ─────────────────────────────────────────────────────────────
 
-    private static XName Rdf(string local) =>
-        XName.Get(local, XmpSchemas.Rdf);
+    // An array item carries no qualified name of its own — rdf:li supplies it.
+    private static XmpNode Item(string value) =>
+        new(string.Empty, string.Empty, string.Empty) { IsSimple = true, Value = value };
 
-    /// <summary>
-    /// Finds every rdf:RDF element to parse, in document order.
-    /// </summary>
-    /// <remarks>
-    /// An XMP packet may legally carry more than one &lt;rdf:RDF&gt; island: either several
-    /// sibling &lt;rdf:RDF&gt; elements as children of &lt;x:xmpmeta&gt;, or (falling back when
-    /// there is no x:xmpmeta wrapper) a single &lt;rdf:RDF&gt; at the document root. Each island
-    /// may carry its own set of rdf:Description blocks and namespaces, so every island found
-    /// must be parsed and merged, not just the first (real-world producers that split
-    /// properties across two sibling rdf:RDF islands do exist -- e.g. the "DWC FX Generator"
-    /// used by official ZUGFeRD 2.5 examples).
-    /// </remarks>
-    private static IEnumerable<XElement> FindAllRdfRdf(XDocument doc)
+    private static XmpNode AltItem(string lang, string text)
     {
-        // x:xmpmeta / rdf:RDF*
-        XElement? meta = doc.Root?.Name.LocalName == "xmpmeta" ? doc.Root : null;
-        if (meta is null)
-        {
-            // Fallback: search the whole document
-            meta = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "xmpmeta");
-        }
-        if (meta is not null)
-        {
-            foreach (XElement rdfChild in meta.Elements(Rdf("RDF")))
-                yield return rdfChild;
-            yield break;
-        }
-        // Fallback: root is rdf:RDF itself
-        if (doc.Root?.Name == Rdf("RDF"))
-            yield return doc.Root;
-    }
-
-    private void ParseDescription(XElement desc)
-    {
-        // Collect namespace declarations on this element
-        foreach (XAttribute nsDecl in desc.Attributes().Where(a => a.IsNamespaceDeclaration))
-        {
-            string prefix = nsDecl.Name.LocalName == "xmlns" ? "" : nsDecl.Name.LocalName;
-            if (!string.IsNullOrEmpty(prefix))
-                RegisterPrefix(nsDecl.Value, prefix);
-        }
-
-        // (a) Attribute-form properties (skip rdf:about and xmlns:* declarations)
-        foreach (XAttribute attr in desc.Attributes()
-            .Where(a => !a.IsNamespaceDeclaration && a.Name.LocalName != "about"))
-        {
-            string ns = attr.Name.NamespaceName;
-            string local = attr.Name.LocalName;
-            if (string.IsNullOrEmpty(ns) || ns == XmpSchemas.Rdf) continue;
-            string prefix = PrefixFor(ns, local);
-            _props[(ns, local)] = new XmpProperty(ns, prefix, local, attr.Value);
-        }
-
-        // (b/c/d/e) Child element-form properties
-        foreach (XElement child in desc.Elements())
-        {
-            string ns = child.Name.NamespaceName;
-            string local = child.Name.LocalName;
-            if (string.IsNullOrEmpty(ns)) continue;
-
-            // Collect any namespace declarations on the child element too
-            foreach (XAttribute nsDecl in child.Attributes().Where(a => a.IsNamespaceDeclaration))
-            {
-                string pref = nsDecl.Name.LocalName == "xmlns" ? "" : nsDecl.Name.LocalName;
-                if (!string.IsNullOrEmpty(pref))
-                    RegisterPrefix(nsDecl.Value, pref);
-            }
-
-            string prefix = PrefixFor(ns, local);
-
-            // Does this element contain an rdf:Alt / rdf:Seq / rdf:Bag?
-            XElement? altEl = child.Element(Rdf("Alt"));
-            XElement? seqEl = child.Element(Rdf("Seq"));
-            XElement? bagEl = child.Element(Rdf("Bag"));
-
-            if (altEl is not null)
-            {
-                // LangAlt
-                var map = new Dictionary<string, string>(StringComparer.Ordinal);
-                foreach (XElement li in altEl.Elements(Rdf("li")))
-                {
-                    XAttribute? langAttr = li.Attribute(XNamespace.Xml + "lang");
-                    string lang = langAttr?.Value ?? "x-default";
-                    map[lang] = li.Value;
-                }
-                _props[(ns, local)] = new XmpProperty(ns, prefix, local, map);
-            }
-            else if (seqEl is not null)
-            {
-                // Ordered array
-                List<string> items = seqEl.Elements(Rdf("li")).Select(li => li.Value).ToList();
-                _props[(ns, local)] = new XmpProperty(ns, prefix, local, items, ordered: true);
-            }
-            else if (bagEl is not null)
-            {
-                // Unordered array
-                List<string> items = bagEl.Elements(Rdf("li")).Select(li => li.Value).ToList();
-                _props[(ns, local)] = new XmpProperty(ns, prefix, local, items, ordered: false);
-            }
-            else
-            {
-                // Simple element text
-                _props[(ns, local)] = new XmpProperty(ns, prefix, local, child.Value);
-            }
-        }
-    }
-
-    private void SeedWellKnownPrefixes()
-    {
-        RegisterPrefix(XmpSchemas.Dc,  XmpSchemas.DcPrefix);
-        RegisterPrefix(XmpSchemas.Xmp, XmpSchemas.XmpPrefix);
-        RegisterPrefix(XmpSchemas.Pdf, XmpSchemas.PdfPrefix);
-        RegisterPrefix(XmpSchemas.Rdf, XmpSchemas.RdfPrefix);
-        RegisterPrefix(XmpSchemas.X,   XmpSchemas.XPrefix);
-    }
-
-    /// <summary>
-    /// Registers ns-&gt;prefix with collision-safe de-duplication.
-    /// No-op when ns already mapped (first-one-wins).
-    /// Appends a numeric suffix (2, 3, ...) when the desired prefix is already taken
-    /// by a different namespace URI -- prevents duplicate xmlns: attrs (malformed XML).
-    /// </summary>
-    private void RegisterPrefix(string ns, string prefix)
-    {
-        if (_prefixMap.ContainsKey(ns))
-            return;
-
-        if (!_reversePrefixMap.TryGetValue(prefix, out string? existingNs) || existingNs == ns)
-        {
-            _prefixMap[ns] = prefix;
-            _reversePrefixMap[prefix] = ns;
-            return;
-        }
-
-        int counter = 2;
-        string candidate;
-        do
-        {
-            candidate = prefix + counter.ToString(CultureInfo.InvariantCulture);
-            counter++;
-        }
-        while (_reversePrefixMap.ContainsKey(candidate));
-
-        _prefixMap[ns] = candidate;
-        _reversePrefixMap[candidate] = ns;
-    }
-
-    private string PrefixFor(string ns, string localNameHint)
-    {
-        if (_prefixMap.TryGetValue(ns, out string? p)) return p;
-        // Generate a fallback from hash; RegisterPrefix de-duplicates collisions.
-        string fallback = "ns" + Math.Abs(ns.GetHashCode() % 1000).ToString(CultureInfo.InvariantCulture);
-        RegisterPrefix(ns, fallback);
-        return _prefixMap[ns]; // may differ if fallback collided
-    }
-
-    private static string XmlEncode(string s)
-    {
-        // Minimal XML entity encoding for element text and attribute values
-        return s
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("\"", "&quot;");
+        XmpNode item = Item(text);
+        item.HasXmlLang = true;
+        item.XmlLang = lang;
+        return item;
     }
 }

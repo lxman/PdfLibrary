@@ -72,7 +72,23 @@ internal static class XmpTreeParser
     private static readonly XNamespace Xml = "http://www.w3.org/XML/1998/namespace";
 
     /// <summary>The top-level XMP properties of a packet, or an empty list when it will not parse.</summary>
-    public static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes)
+    public static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes) =>
+        Parse(metadataBytes, allRdfIslands: false);
+
+    /// <summary>
+    /// As <see cref="Parse(byte[])"/>, but when <paramref name="allRdfIslands"/> is true every
+    /// <c>rdf:RDF</c> island under <c>x:xmpmeta</c> is read and merged, not just the first.
+    /// </summary>
+    /// <remarks>
+    /// A packet may legally carry more than one sibling <c>rdf:RDF</c> island — the "DWC FX
+    /// Generator" used by the official ZUGFeRD 2.5 examples splits ordinary <c>xmp:*</c> properties
+    /// and the Factur-X <c>fx:*</c> properties across two of them. <see cref="PdfLibrary.Metadata.XmpPacket"/>
+    /// has always merged them and has a regression test pinning that. The conformance rules, whose
+    /// veraPDF-parity was verified across 1,316 files against first-island-only behaviour, keep
+    /// reading through the default <see cref="Parse(byte[])"/> — widening what they see is a
+    /// separate, evidence-backed change, not a side effect of the packet refactor.
+    /// </remarks>
+    internal static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes, bool allRdfIslands)
     {
         var properties = new List<XmpNode>();
         if (metadataBytes is null || metadataBytes.Length == 0)
@@ -97,12 +113,11 @@ internal static class XmpTreeParser
                 doc = XDocument.Load(xr, LoadOptions.PreserveWhitespace);
             }
 
-            XElement? rdf = FindRdf(doc);
-            if (rdf is null)
-                return properties;
-
-            foreach (XElement desc in rdf.Elements(Rdf + "Description"))
-                ReadDescription(desc, properties);
+            foreach (XElement rdf in FindRdf(doc, allRdfIslands))
+            {
+                foreach (XElement desc in rdf.Elements(Rdf + "Description"))
+                    ReadDescription(desc, properties);
+            }
         }
         catch
         {
@@ -113,15 +128,20 @@ internal static class XmpTreeParser
         return properties;
     }
 
-    private static XElement? FindRdf(XDocument doc)
+    private static IEnumerable<XElement> FindRdf(XDocument doc, bool allIslands)
     {
         XElement? meta = doc.Root?.Name.LocalName == "xmpmeta"
             ? doc.Root
             : doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "xmpmeta");
-        XElement? child = meta?.Element(Rdf + "RDF");
-        if (child is not null)
-            return child;
-        return doc.Root?.Name == Rdf + "RDF" ? doc.Root : null;
+
+        if (meta is not null)
+        {
+            List<XElement> islands = meta.Elements(Rdf + "RDF").ToList();
+            if (islands.Count > 0)
+                return allIslands ? islands : islands.Take(1);
+        }
+
+        return doc.Root?.Name == Rdf + "RDF" ? new[] { doc.Root } : [];
     }
 
     // Every property carried by one rdf:Description — attribute-form (always simple) then element-form.
