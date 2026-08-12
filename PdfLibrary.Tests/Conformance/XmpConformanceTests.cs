@@ -3,12 +3,30 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using PdfLibrary.Conformance;
+using PdfLibrary.Conformance.Xmp;
 using PdfLibrary.Metadata;
 using PdfLibrary.Structure;
 using PdfLibrary.Xmp;
 using Xunit;
 
 namespace PdfLibrary.Tests.Conformance;
+
+/// <summary>The eight pre-2005 (namespace, local name) pairs <see cref="XmpLegacyCrosswalk"/> maps,
+/// duplicated here as test data rather than exposing the whole table publicly.</summary>
+internal static class XmpLegacyCrosswalkTestData
+{
+    public static IEnumerable<(string ns, string name)> AllLegacy { get; } =
+    [
+        ("http://ns.adobe.com/pdf/1.3/", "Title"),
+        ("http://ns.adobe.com/pdf/1.3/", "Author"),
+        ("http://ns.adobe.com/pdf/1.3/", "Subject"),
+        ("http://ns.adobe.com/pdf/1.3/", "Creator"),
+        ("http://ns.adobe.com/pdf/1.3/", "CreationDate"),
+        ("http://ns.adobe.com/pdf/1.3/", "ModDate"),
+        ("http://ns.adobe.com/xap/1.0/", "Title"),
+        ("http://ns.adobe.com/xap/1.0/", "Author"),
+    ];
+}
 
 /// <summary>The classifier exists so a remediation fixer can identify an offending property without
 /// regex-parsing a Finding's free-text Message. Its verdicts must therefore agree with the rules
@@ -240,5 +258,46 @@ public class XmpConformanceTests
         Assert.True(checkedFiles > 0, "corpus reported available but no fixtures were checked");
         Assert.True(mismatches.Count == 0,
             $"{mismatches.Count} disagreement(s) between classifier and rules: {string.Join("; ", mismatches)}");
+    }
+
+    [Theory]
+    // The measured crosswalk head: pre-2005 spellings whose modern equivalents are predefined.
+    // 'xap' is the former NAME of the xmp namespace — the URI is identical, so xap:Title and
+    // xmp:Title are the same property and both map to dc:title.
+    [InlineData("http://ns.adobe.com/pdf/1.3/", "Title",        "http://purl.org/dc/elements/1.1/", "title")]
+    [InlineData("http://ns.adobe.com/pdf/1.3/", "Author",       "http://purl.org/dc/elements/1.1/", "creator")]
+    [InlineData("http://ns.adobe.com/pdf/1.3/", "Subject",      "http://purl.org/dc/elements/1.1/", "description")]
+    [InlineData("http://ns.adobe.com/pdf/1.3/", "Creator",      "http://ns.adobe.com/xap/1.0/",     "CreatorTool")]
+    [InlineData("http://ns.adobe.com/pdf/1.3/", "CreationDate", "http://ns.adobe.com/xap/1.0/",     "CreateDate")]
+    [InlineData("http://ns.adobe.com/pdf/1.3/", "ModDate",      "http://ns.adobe.com/xap/1.0/",     "ModifyDate")]
+    [InlineData("http://ns.adobe.com/xap/1.0/", "Title",        "http://purl.org/dc/elements/1.1/", "title")]
+    [InlineData("http://ns.adobe.com/xap/1.0/", "Author",       "http://purl.org/dc/elements/1.1/", "creator")]
+    public void Legacy_properties_map_to_their_modern_equivalent(
+        string legacyNs, string legacyName, string modernNs, string modernName)
+    {
+        XmpModernEquivalent modern =
+            Assert.NotNull(XmpConformance.ModernEquivalentOf(legacyNs, legacyName));
+
+        Assert.Equal(modernNs, modern.NamespaceUri);
+        Assert.Equal(modernName, modern.LocalName);
+    }
+
+    [Fact]
+    public void Every_crosswalk_target_is_itself_predefined()
+    {
+        // A migration that lands on a property the standard does not predefine would trade one
+        // finding for another.
+        foreach ((string ns, string name) in XmpLegacyCrosswalkTestData.AllLegacy)
+        {
+            XmpModernEquivalent m = Assert.NotNull(XmpConformance.ModernEquivalentOf(ns, name));
+            Assert.True(XmpPredefinedSchemas.IsPredefined(m.NamespaceUri, m.LocalName),
+                $"{m.Prefix}:{m.LocalName} is a migration target but is not predefined.");
+        }
+    }
+
+    [Fact]
+    public void A_property_with_no_modern_equivalent_returns_null()
+    {
+        Assert.Null(XmpConformance.ModernEquivalentOf("http://ns.adobe.com/pdfx/1.3/", "Company"));
     }
 }

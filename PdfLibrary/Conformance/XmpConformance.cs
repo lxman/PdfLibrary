@@ -110,4 +110,14 @@ public static class XmpConformance
     }
 
     private static bool IsStructural(string namespaceUri) => StructuralNamespaces.Contains(namespaceUri);
+
+    /// <summary>The predefined property that supersedes a pre-2005 spelling, or null when the property
+    /// has no standard equivalent and must be declared by an extension schema instead.</summary>
+    public static XmpModernEquivalent? ModernEquivalentOf(string namespaceUri, string localName) =>
+        XmpLegacyCrosswalk.TryGet(namespaceUri, localName, out (string ns, string prefix, string name) m)
+            ? new XmpModernEquivalent(m.ns, m.prefix, m.name)
+            : null;
 }
+
+/// <summary>One property's modern predefined replacement.</summary>
+public readonly record struct XmpModernEquivalent(string NamespaceUri, string Prefix, string LocalName);
