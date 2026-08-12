@@ -79,6 +79,14 @@ A general XMP qualifier (`rdf:value` plus a non-`xml:lang` qualifier field/attri
 part of the model; `XmpNode.RawXml` preserves that shape verbatim on serialize rather than dropping
 it, and the node keeps its ordinary classification so no conformance rule's verdict changes.
 
+`XmpPacket.Serialize()` treats property/field **names** and **values** differently on purpose. A
+value carrying a character XML 1.0 forbids, or an unpaired surrogate, is sanitized to U+FFFD rather
+than rejected — that's document data the library did not write, and a save must not fail over it. A
+property or struct-field **name** — the kind of thing only a caller passing to `SetSimple`/`SetArray`/
+`SetStruct`/`SetStructArray` controls — is held to the stricter standard and throws
+`ArgumentException` if it is not a legal XML name. A caller authoring structs should validate names
+before calling `SetStruct`/`SetStructArray` if the source isn't already known-good.
+
 `XmpPacket.Parse` merges every sibling `rdf:RDF` island in a packet (some PDF/A-3/Factur-X generators
 split properties across more than one); the `XmpTree`-based conformance rules deliberately keep
 reading only the first, which is the behavior their veraPDF parity was verified against. That split

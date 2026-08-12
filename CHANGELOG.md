@@ -25,6 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 - `XmpPacket.SetStruct` / `SetStructArray` and `XmpField`, for authoring nested XMP structs and
   arrays-of-structs (e.g. `pdfaExtension:schemas`).
+- **`XmpPacket.Serialize()`'s name/value contract is now explicit.** An illegal character in a
+  property *value* (a NUL/control character, an unpaired surrogate) is sanitized to U+FFFD rather
+  than rejected, so a save is never blocked by garbage data the library did not write. An illegal
+  property or struct-field *name* — only ever caller-supplied, via `SetSimple`/`SetArray`/
+  `SetStruct`/`SetStructArray` — throws `ArgumentException` instead, since there is nothing to
+  repair it into. Callers authoring structs with dynamic field names should validate them first.
 
 ## [2.5.2] - 2026-07-29
 
