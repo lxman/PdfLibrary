@@ -83,10 +83,18 @@ internal static class XmpTreeParser
     /// A packet may legally carry more than one sibling <c>rdf:RDF</c> island — the "DWC FX
     /// Generator" used by the official ZUGFeRD 2.5 examples splits ordinary <c>xmp:*</c> properties
     /// and the Factur-X <c>fx:*</c> properties across two of them. <see cref="PdfLibrary.Metadata.XmpPacket"/>
-    /// has always merged them and has a regression test pinning that. The conformance rules, whose
-    /// veraPDF-parity was verified across 1,316 files against first-island-only behaviour, keep
-    /// reading through the default <see cref="Parse(byte[])"/> — widening what they see is a
-    /// separate, evidence-backed change, not a side effect of the packet refactor.
+    /// has always merged them and has a regression test pinning that, so it passes true.
+    ///
+    /// <para>This splits the conformance rules in two, exactly as it did before this overload
+    /// existed — no rule's behaviour changed. The rules that read the packet
+    /// (<c>ConformanceClaim</c>, <c>ConformanceContext.Xmp</c>, and through them
+    /// <c>PdfaIdentificationRule</c>, <c>PdfxVersionRule</c>, <c>UaIdentificationRule</c> and
+    /// <c>UaTitleRule</c>) see every island. The rules that read <c>ConformanceContext.XmpTree</c>
+    /// (<c>XmpPropertyTypeRule</c>, <c>XmpPropertyPredefinedRule</c>,
+    /// <c>XmpExtensionSchemaStructureRule</c>, <c>UaContentLangRule</c>) see the first island only,
+    /// which is the behaviour their veraPDF parity was verified against across 1,316 files.
+    /// Widening the tree side is a separate, evidence-backed change, not a side effect of the
+    /// packet refactor.</para>
     /// </remarks>
     internal static IReadOnlyList<XmpNode> Parse(byte[]? metadataBytes, bool allRdfIslands)
     {

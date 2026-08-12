@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 
 namespace PdfLibrary.Xmp;
@@ -29,6 +31,20 @@ internal static class XmpTreeSerializer
     /// file; the XMP spec recommends roughly 2 KB. Matches the previous writer's behaviour.</summary>
     private const int PaddingBytes = 2048;
 
+    /// <summary>
+    /// Emits the tree as a complete xpacket-wrapped UTF-8 packet.
+    ///
+    /// <para>Serializing is TOTAL over property VALUES: a value carrying a character XML 1.0 does not
+    /// permit (a NUL or other stray control character) or an unpaired surrogate is sanitized on the
+    /// way out rather than throwing — see <see cref="Sanitize"/>. A PDF library meets that kind of
+    /// garbage in real packets it did not write, and a save must not fail because of it.</para>
+    ///
+    /// <para>An invalid property or field NAME is a different matter — it is caller error, not
+    /// document data — and throws <see cref="ArgumentException"/>. An invalid namespace PREFIX never
+    /// throws; <see cref="AssignPrefixes"/> synthesizes a legal one.</para>
+    /// </summary>
+    /// <exception cref="ArgumentException">A node's <see cref="XmpNode.LocalName"/> is not a legal
+    /// XML name.</exception>
     internal static byte[] Serialize(IReadOnlyList<XmpNode> properties)
     {
         var description = new XElement(Rdf + "Description", new XAttribute(Rdf + "about", string.Empty));
@@ -92,7 +108,7 @@ internal static class XmpTreeSerializer
         foreach (string uri in uris)
         {
             string candidate = preferredPrefix[uri];
-            if (!string.IsNullOrEmpty(candidate) && usedPrefixes.Add(candidate))
+            if (IsLegalName(candidate) && usedPrefixes.Add(candidate))
             {
                 prefixByUri[uri] = candidate;
                 continue;
@@ -114,9 +130,87 @@ internal static class XmpTreeSerializer
     private static XElement Emit(XmpNode node)
     {
         XNamespace ns = node.NamespaceUri;
-        var element = new XElement(ns + node.LocalName);
+        var element = new XElement(ns + VerifyName(node.LocalName));
         EmitShape(node, element);
         return element;
+    }
+
+    /// <summary>A property or struct-field name must be a legal XML name — unlike a value, it cannot
+    /// be sanitized into something meaningful, and a name that is not a name means the caller built a
+    /// nonsense node. Thrown as <see cref="ArgumentException"/> so the contract is this type's and
+    /// stable, rather than whatever <see cref="System.Xml.Linq"/> happens to surface (which is
+    /// variously <see cref="XmlException"/> or <see cref="ArgumentException"/> depending on how the
+    /// name is malformed).</summary>
+    private static string VerifyName(string localName)
+    {
+        if (IsLegalName(localName))
+            return localName;
+
+        throw new ArgumentException(
+            $"'{localName}' is not a legal XML name, so it cannot be written as an XMP property or "
+            + "field name.", nameof(localName));
+    }
+
+    private static bool IsLegalName(string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return false;
+
+        try
+        {
+            XmlConvert.VerifyNCName(name);
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Makes a value string writable. XML 1.0 admits only tab, LF, CR, and the ranges
+    /// #x20-#xD7FF / #xE000-#xFFFD / #x10000-#x10FFFF; a lone surrogate is not a character at all.
+    /// Everything outside that becomes U+FFFD (REPLACEMENT CHARACTER), which is what a decoder would
+    /// have produced anyway and keeps the emitted packet re-parseable.
+    /// </summary>
+    /// <remarks>The string writer this serializer replaced was accidentally total here: it
+    /// concatenated the raw value and let <c>Encoding.UTF8.GetBytes</c> turn lone surrogates into
+    /// U+FFFD. It did NOT strip control characters, so a value carrying a NUL produced a packet that
+    /// no longer parsed. Sanitizing keeps the "never throws on a value" guarantee that behaviour
+    /// implied while also fixing the unparseable-output half of it.</remarks>
+    private static string Sanitize(string value)
+    {
+        if (value.Length == 0)
+            return value;
+
+        StringBuilder? clean = null;
+        for (int i = 0; i < value.Length; i++)
+        {
+            char c = value[i];
+
+            // A well-formed surrogate pair is a legal character (planes 1-16); copy it whole.
+            if (char.IsHighSurrogate(c) && i + 1 < value.Length && char.IsLowSurrogate(value[i + 1]))
+            {
+                clean?.Append(c).Append(value[i + 1]);
+                i++;
+                continue;
+            }
+
+            bool legal = c is '\t' or '\n' or '\r'
+                         || (c >= ' ' && c <= '\uD7FF')
+                         || (c >= '\uE000' && c <= '\uFFFD');
+
+            if (legal)
+            {
+                clean?.Append(c);
+                continue;
+            }
+
+            clean ??= new StringBuilder(value.Length).Append(value, 0, i);
+            clean.Append('\uFFFD');
+        }
+
+        return clean?.ToString() ?? value;
     }
 
     /// <summary>An array item is an rdf:li whose content is the item's own shape — a struct item
@@ -156,8 +250,8 @@ internal static class XmpTreeSerializer
         }
 
         if (node.HasXmlLang && node.XmlLang is { } lang)
-            element.Add(new XAttribute(XmlNs + "lang", lang));
+            element.Add(new XAttribute(XmlNs + "lang", Sanitize(lang)));
 
-        element.Value = node.Value ?? string.Empty;
+        element.Value = Sanitize(node.Value ?? string.Empty);
     }
 }

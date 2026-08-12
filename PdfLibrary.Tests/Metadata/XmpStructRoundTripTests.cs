@@ -103,4 +103,57 @@ public class XmpStructRoundTripTests
         Assert.Contains("stEvt:softwareAgent", text);   // the History struct survived the edit
         Assert.Contains("Pellucid", text);              // and the edit landed
     }
+
+    /// <summary>An rdf:Alt whose items are not all plain strings. SetLangAlt used to merge by reading
+    /// the flat lang-to-string projection and rebuilding the array from it, which rewrote every
+    /// sibling item as text — a struct item came back empty. Merging against the item NODES touches
+    /// only the language being set.</summary>
+    private const string AltWithStructItemPacket = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:stEvt="http://ns.adobe.com/xap/1.0/sType/ResourceEvent#">
+   <dc:title>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Existing Title</rdf:li>
+     <rdf:li rdf:parseType="Resource">
+      <stEvt:action>saved</stEvt:action>
+      <stEvt:softwareAgent>Adobe Illustrator 25.2 (Macintosh)</stEvt:softwareAgent>
+     </rdf:li>
+    </rdf:Alt>
+   </dc:title>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+
+    [Fact]
+    public void Setting_one_language_does_not_flatten_the_other_items_of_an_alt_array()
+    {
+        XmpPacket packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(AltWithStructItemPacket));
+        packet.SetLangAlt("http://purl.org/dc/elements/1.1/", "dc", "title", "Neuer Titel", "de");
+
+        string text = Encoding.UTF8.GetString(packet.Serialize());
+
+        Assert.Contains("stEvt:softwareAgent", text);                    // the struct item survived
+        Assert.Contains("Adobe Illustrator 25.2 (Macintosh)", text);     // with its content
+        Assert.Contains("Existing Title", text);                         // the untouched language too
+        Assert.Contains("Neuer Titel", text);                            // and the edit landed
+    }
+
+    [Fact]
+    public void Setting_an_existing_language_replaces_only_that_item()
+    {
+        XmpPacket packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(AltWithStructItemPacket));
+        packet.SetLangAlt("http://purl.org/dc/elements/1.1/", "dc", "title", "Replaced Title");
+
+        string text = Encoding.UTF8.GetString(packet.Serialize());
+
+        Assert.DoesNotContain("Existing Title", text);
+        Assert.Contains("Replaced Title", text);
+        Assert.Contains("stEvt:softwareAgent", text);
+    }
 }

@@ -105,37 +105,35 @@ public sealed class XmpPacket
         if (localName is null) throw new ArgumentNullException(nameof(localName));
         if (text is null) throw new ArgumentNullException(nameof(text));
 
-        // If a LangAlt property already exists, merge into it; otherwise create fresh.
-        Dictionary<string, string> map;
-        if (_nodes.TryGetValue((namespaceUri, localName), out XmpNode? existing) &&
-            XmpProperty.FromNode(existing) is { Kind: XmpValueKind.LangAlt } existingProp)
-        {
-            map = existingProp.LangAlt.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
-        }
-        else
-        {
-            map = new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-        map[lang] = text;
-
         var node = new XmpNode(namespaceUri, localName, prefix)
         {
             IsArray = true,
             IsArrayOrdered = true,
             IsArrayAlternate = true,
-            IsArrayAltText = true,
         };
 
-        // x-default first if present, then the others sorted for stability — the emission order the
-        // string writer this facade replaced used.
-        if (map.TryGetValue("x-default", out string? defText))
-            node.Children.Add(AltItem("x-default", defText));
-        foreach (KeyValuePair<string, string> entry in map
-                     .Where(kv => kv.Key != "x-default")
-                     .OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        // Merge against the existing ITEM NODES, never against their flat projection. Reading the
+        // projected lang→string map and rebuilding from it would rewrite every sibling item as a
+        // plain string — an item that is a struct would come back empty, which is precisely the
+        // destruction this whole facade exists to stop. Carrying the nodes over touches only the
+        // one language being set.
+        if (_nodes.TryGetValue((namespaceUri, localName), out XmpNode? existing) &&
+            existing is { IsArray: true, IsArrayAlternate: true })
         {
-            node.Children.Add(AltItem(entry.Key, entry.Value));
+            node.Children.AddRange(existing.Children);
         }
+
+        int index = node.Children.FindIndex(c => (c.XmlLang ?? "x-default") == lang);
+        XmpNode item = AltItem(lang, text);
+        if (index >= 0)
+            node.Children[index] = item;
+        else if (lang == "x-default")
+            node.Children.Insert(0, item); // x-default leads, as the string writer this replaced emitted
+        else
+            node.Children.Add(item);
+
+        // A lang-alt is an alt array whose items all carry xml:lang — the same rule the parser uses.
+        node.IsArrayAltText = node.Children.TrueForAll(c => c.HasXmlLang);
 
         _nodes[(namespaceUri, localName)] = node;
     }
@@ -149,7 +147,20 @@ public sealed class XmpPacket
     /// <summary>
     /// Serializes the packet to a full xpacket-wrapped, UTF-8-encoded byte array with ~2 KB of
     /// padding and a trailing <c>&lt;?xpacket end="w"?&gt;</c> instruction.
+    ///
+    /// <para>Never fails because of a property VALUE. A value carrying a character XML 1.0 forbids
+    /// (a NUL or other stray control character) or an unpaired surrogate is sanitized to U+FFFD on
+    /// the way out, so a document whose existing packet contains such garbage — or a caller passing
+    /// it — still saves, and the emitted packet still re-parses. This is deliberate: the setters on
+    /// <c>PdfMetadata</c> re-serialize the packet on every assignment, and a property setter must
+    /// not throw over document data.</para>
+    ///
+    /// <para>A property NAME is held to the stricter standard, because an illegal one can only come
+    /// from the caller and cannot be repaired into anything meaningful.</para>
     /// </summary>
+    /// <exception cref="ArgumentException">A property or struct-field local name in the packet is
+    /// not a legal XML name. Namespace prefixes are exempt — an illegal or colliding prefix is
+    /// replaced with a synthesized one rather than throwing.</exception>
     public byte[] Serialize() => XmpTreeSerializer.Serialize(_nodes.Values.ToList());
 
     // ── Internals ─────────────────────────────────────────────────────────────
