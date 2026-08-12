@@ -1,8 +1,11 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 
-namespace PdfLibrary.Conformance.Xmp;
+namespace PdfLibrary.Xmp;
 
 /// <summary>
 /// A single node in a faithful XMP RDF value tree — the structure the clause 6.6.2.3.1 value-type

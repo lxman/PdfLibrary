@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using PdfLibrary.Xmp;
 
 namespace PdfLibrary.Conformance.Xmp;
 
