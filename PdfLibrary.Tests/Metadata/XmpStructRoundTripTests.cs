@@ -415,4 +415,115 @@ public class XmpStructRoundTripTests
         var node = new XmpNode("http://example.invalid/ns/", "broken", "ex");
         Assert.Throws<ArgumentException>(() => node.RawXml = "<not-well-formed");
     }
+
+    /// <summary>The authoring side of struct-array support: SetStructArray must produce a shape that
+    /// both serializes with field names intact AND re-parses back into the same struct shape — not
+    /// merely emit text containing the right substrings.</summary>
+    [Fact]
+    public void A_struct_array_can_be_authored_and_round_trips()
+    {
+        var packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(IllustratorPacket));
+        const string mm = "http://ns.adobe.com/xap/1.0/mm/";
+        const string evt = "http://ns.adobe.com/xap/1.0/sType/ResourceEvent#";
+
+        packet.SetStructArray(mm, "xmpMM", "History",
+            [[ new XmpField(evt, "stEvt", "action", "converted"),
+               new XmpField(evt, "stEvt", "softwareAgent", "Pellucid") ]],
+            ordered: true);
+
+        byte[] serialized = packet.Serialize();
+        string text = Encoding.UTF8.GetString(serialized);
+        Assert.Contains("stEvt:action", text);
+        Assert.Contains("converted", text);
+        Assert.Contains("Pellucid", text);
+
+        // Round trip: re-parse the serialized packet and assert the struct shape, not just substrings.
+        IReadOnlyList<XmpNode> reparsed = XmpTreeParser.Parse(serialized);
+        XmpNode history = Find(reparsed, "History");
+        Assert.True(history.IsArray);
+        Assert.True(history.IsArrayOrdered);
+        XmpNode item = Assert.Single(history.Children);
+        Assert.True(item.IsStruct);
+        Assert.Equal(
+            new[] { ("action", "converted"), ("softwareAgent", "Pellucid") },
+            item.Children.Select(c => (c.LocalName, c.Value!)).OrderBy(x => x.LocalName));
+    }
+
+    /// <summary>SetStruct is the non-array counterpart: a single struct-valued property.</summary>
+    [Fact]
+    public void A_struct_can_be_authored_and_round_trips()
+    {
+        var packet = XmpPacket.CreateEmpty();
+        const string mm = "http://ns.adobe.com/xap/1.0/mm/";
+        const string stRef = "http://ns.adobe.com/xap/1.0/sType/ResourceRef#";
+
+        packet.SetStruct(mm, "xmpMM", "DerivedFrom",
+            [ new XmpField(stRef, "stRef", "documentID", "xmp.did:1234"),
+              new XmpField(stRef, "stRef", "instanceID", "xmp.iid:5678") ]);
+
+        byte[] serialized = packet.Serialize();
+        IReadOnlyList<XmpNode> reparsed = XmpTreeParser.Parse(serialized);
+
+        XmpNode derivedFrom = Find(reparsed, "DerivedFrom");
+        Assert.True(derivedFrom.IsStruct);
+        Assert.Equal(
+            new[] { ("documentID", "xmp.did:1234"), ("instanceID", "xmp.iid:5678") },
+            derivedFrom.Children.Select(c => (c.LocalName, c.Value!)).OrderBy(x => x.LocalName));
+    }
+
+    /// <summary>An empty fields/items collection must not throw — it authors a struct with no fields,
+    /// or an array with no items, both legal RDF shapes.</summary>
+    [Fact]
+    public void An_empty_struct_and_an_empty_struct_array_author_without_throwing()
+    {
+        var packet = XmpPacket.CreateEmpty();
+        const string mm = "http://ns.adobe.com/xap/1.0/mm/";
+
+        packet.SetStruct(mm, "xmpMM", "Empty", []);
+        packet.SetStructArray(mm, "xmpMM", "EmptyHistory", [], ordered: true);
+
+        byte[] serialized = packet.Serialize();
+        IReadOnlyList<XmpNode> reparsed = XmpTreeParser.Parse(serialized);
+
+        XmpNode empty = Find(reparsed, "Empty");
+        Assert.True(empty.IsStruct);
+        Assert.Empty(empty.Children);
+
+        XmpNode emptyHistory = Find(reparsed, "EmptyHistory");
+        Assert.True(emptyHistory.IsArray);
+        Assert.Empty(emptyHistory.Children);
+    }
+
+    /// <summary>Authoring over an existing property (of any prior shape) must replace it cleanly, the
+    /// same contract every other setter on XmpPacket already carries.</summary>
+    [Fact]
+    public void Authoring_a_struct_array_over_an_existing_property_replaces_it()
+    {
+        var packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(IllustratorPacket));
+        const string mm = "http://ns.adobe.com/xap/1.0/mm/";
+        const string evt = "http://ns.adobe.com/xap/1.0/sType/ResourceEvent#";
+
+        // IllustratorPacket's History already has one "saved" item; replace it entirely.
+        packet.SetStructArray(mm, "xmpMM", "History",
+            [[ new XmpField(evt, "stEvt", "action", "converted") ]],
+            ordered: true);
+
+        string text = Encoding.UTF8.GetString(packet.Serialize());
+        Assert.DoesNotContain("saved", text);
+        Assert.DoesNotContain("Adobe Illustrator 25.2 (Macintosh)", text);
+        Assert.Contains("converted", text);
+    }
+
+    /// <summary>A null field Value is caller error, not document data — matches SetSimple's contract
+    /// (ArgumentNullException, not a silently-swallowed empty string).</summary>
+    [Fact]
+    public void A_null_field_value_throws_ArgumentNullException()
+    {
+        var packet = XmpPacket.CreateEmpty();
+        const string mm = "http://ns.adobe.com/xap/1.0/mm/";
+        const string evt = "http://ns.adobe.com/xap/1.0/sType/ResourceEvent#";
+
+        Assert.Throws<ArgumentNullException>(() =>
+            packet.SetStruct(mm, "xmpMM", "History", [new XmpField(evt, "stEvt", "action", null!)]));
+    }
 }

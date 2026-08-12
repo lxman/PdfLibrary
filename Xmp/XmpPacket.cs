@@ -138,6 +138,55 @@ public sealed class XmpPacket
         _nodes[(namespaceUri, localName)] = node;
     }
 
+    /// <summary>Sets or replaces a struct-valued property (serialized as <c>rdf:parseType="Resource"</c>).
+    /// Fields carry their own namespace/prefix because a struct's fields routinely live in a
+    /// different namespace from the property itself — <c>stEvt:</c> fields inside an
+    /// <c>xmpMM:History</c> item, for instance.</summary>
+    public void SetStruct(string namespaceUri, string prefix, string localName, IReadOnlyList<XmpField> fields)
+    {
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (prefix is null) throw new ArgumentNullException(nameof(prefix));
+        if (localName is null) throw new ArgumentNullException(nameof(localName));
+        if (fields is null) throw new ArgumentNullException(nameof(fields));
+
+        var node = new XmpNode(namespaceUri, localName, prefix) { IsStruct = true };
+        foreach (XmpField field in fields)
+            node.Children.Add(FieldNode(field));
+
+        _nodes[(namespaceUri, localName)] = node;
+    }
+
+    /// <summary>Sets or replaces an array-of-structs property (<c>rdf:Seq</c> when
+    /// <paramref name="ordered"/>, <c>rdf:Bag</c> otherwise). Each item is one struct's fields.</summary>
+    public void SetStructArray(string namespaceUri, string prefix, string localName,
+                               IReadOnlyList<IReadOnlyList<XmpField>> items, bool ordered)
+    {
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (prefix is null) throw new ArgumentNullException(nameof(prefix));
+        if (localName is null) throw new ArgumentNullException(nameof(localName));
+        if (items is null) throw new ArgumentNullException(nameof(items));
+
+        var node = new XmpNode(namespaceUri, localName, prefix)
+        {
+            IsArray = true,
+            IsArrayOrdered = ordered,
+        };
+
+        foreach (IReadOnlyList<XmpField> item in items)
+        {
+            if (item is null) throw new ArgumentNullException(nameof(items));
+
+            // An array item carries no qualified name of its own — rdf:li supplies it, same as
+            // every other array item this facade emits (see Item(string) below).
+            var element = new XmpNode(string.Empty, string.Empty, string.Empty) { IsStruct = true };
+            foreach (XmpField field in item)
+                element.Children.Add(FieldNode(field));
+            node.Children.Add(element);
+        }
+
+        _nodes[(namespaceUri, localName)] = node;
+    }
+
     /// <summary>Removes a property. No-op if absent.</summary>
     public void Remove(string namespaceUri, string localName) =>
         _nodes.Remove((namespaceUri, localName));
@@ -176,4 +225,23 @@ public sealed class XmpPacket
         item.XmlLang = lang;
         return item;
     }
+
+    private static XmpNode FieldNode(XmpField field)
+    {
+        if (field.NamespaceUri is null)
+            throw new ArgumentNullException(nameof(field), $"{nameof(XmpField.NamespaceUri)} must not be null.");
+        if (field.Prefix is null)
+            throw new ArgumentNullException(nameof(field), $"{nameof(XmpField.Prefix)} must not be null.");
+        if (field.LocalName is null)
+            throw new ArgumentNullException(nameof(field), $"{nameof(XmpField.LocalName)} must not be null.");
+        if (field.Value is null)
+            throw new ArgumentNullException(nameof(field), $"{nameof(XmpField.Value)} must not be null.");
+
+        return new XmpNode(field.NamespaceUri, field.LocalName, field.Prefix) { IsSimple = true, Value = field.Value };
+    }
 }
+
+/// <summary>One field of an authored XMP struct. Fields carry their own namespace/prefix because a
+/// struct's fields routinely live in a different namespace from the property that holds them — an
+/// <c>xmpMM:History</c> item's fields are all <c>stEvt:</c>, for example.</summary>
+public readonly record struct XmpField(string NamespaceUri, string Prefix, string LocalName, string Value);
