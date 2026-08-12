@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -59,11 +60,42 @@ internal sealed class XmpNode
     public string? XmlLang { get; set; }
 
     /// <summary>Set when the parser met a shape this model cannot express (e.g. <c>rdf:value</c> with
-    /// qualifiers). The serializer emits this verbatim and ignores everything else on the node, so an
-    /// unfamiliar packet is preserved rather than silently reshaped. When set, all the shape flags
-    /// above are left false and <see cref="Value"/> and <see cref="Children"/> are left empty/unused —
-    /// this is the node's sole content.</summary>
-    public string? RawXml { get; set; }
+    /// qualifiers). The serializer prefers this and emits it verbatim, so an unfamiliar packet is
+    /// preserved rather than silently reshaped. Every OTHER facet on the node (<see cref="Value"/>,
+    /// <see cref="Children"/>, the shape flags) is still populated with this node's best-effort
+    /// classification — the same classification the pre-fallback code would have produced — so every
+    /// reader that is not the serializer (conformance rules, <c>XmpProperty.FromNode</c>, extension
+    /// schema resolution, ...) keeps its pre-existing verdict undisturbed. RawXml is purely an
+    /// additional, serializer-only override; it never blanks out the rest of the node.</summary>
+    public string? RawXml
+    {
+        get => _rawXml;
+        set
+        {
+            // A non-null value must be well-formed XML: the serializer parses it verbatim
+            // (XElement.Parse) with no further validation, and this type's contract (like the
+            // serializer's) is to fail loudly and predictably — ArgumentException — for caller error,
+            // never an undocumented XmlException surfacing later out of Serialize. Parser-produced
+            // values always satisfy this (they came from an XElement in the first place), so this only
+            // ever fires for a directly-constructed node.
+            if (value is not null)
+            {
+                try
+                {
+                    XElement.Parse(value);
+                }
+                catch (XmlException ex)
+                {
+                    throw new ArgumentException(
+                        $"RawXml must be well-formed XML: {ex.Message}", nameof(value), ex);
+                }
+            }
+
+            _rawXml = value;
+        }
+    }
+
+    private string? _rawXml;
 }
 
 /// <summary>
@@ -181,12 +213,20 @@ internal static class XmpTreeParser
     {
         string ns = el.Name.NamespaceName;
         var node = new XmpNode(ns, el.Name.LocalName, PrefixOf(el, el.Name.Namespace));
-        DetermineValue(el, node);
+        DetermineValue(el, node, el);
         return node;
     }
 
     // Classifies el's value as array, struct, or simple and populates the node accordingly.
-    private static void DetermineValue(XElement el, XmpNode node)
+    //
+    // <paramref name="captureRoot"/> is the element to snapshot into RawXml when this call (or a
+    // nested rdf:value recursion originating from it) turns out to be an unmodelled qualified value.
+    // It is always the outermost property/field/array-item element for this node — NOT necessarily
+    // `el`, which for a recursive rdf:value call is the inner <rdf:value> element itself. Capturing
+    // `el` there would snapshot a bare, unnamed <rdf:value> fragment instead of the named property
+    // that owns it, losing the property's own name/namespace on serialize and, on re-parse, vanishing
+    // entirely (ReadDescription skips rdf:*-namespaced children as structural).
+    private static void DetermineValue(XElement el, XmpNode node, XElement captureRoot)
     {
         XElement? container = el.Elements().FirstOrDefault(e =>
             e.Name.Namespace == Rdf && e.Name.LocalName is "Bag" or "Seq" or "Alt");
@@ -205,30 +245,36 @@ internal static class XmpTreeParser
             // A general qualified value: an rdf:value field carries the actual value and any sibling
             // fields are qualifiers. When rdf:value stands alone (no qualifiers), the Adobe XMP model
             // surfaces it as the rdf:value's own kind (a simple value with no qualifiers is still
-            // simple), so parse the rdf:value directly. But a qualified value — rdf:value PLUS one or
-            // more qualifier fields — is a shape this node model has no field for: there is nowhere on
-            // XmpNode to hang the qualifiers without a struct field silently eating them (the bug this
-            // whole slice exists to fix). Preserve the whole property verbatim rather than drop them.
+            // simple), so parse the rdf:value directly — same as always. A TRULY qualified value —
+            // rdf:value PLUS one or more real qualifier fields (any non-rdf: sibling element, a
+            // non-rdf:/non-xml: sibling attribute, or an xml:lang qualifier) — is a shape this node
+            // model has no field for: there is nowhere on XmpNode to hang the qualifiers without a
+            // struct field silently eating them (the bug this whole slice exists to fix). That case
+            // ADDITIONALLY captures the property verbatim for the serializer, on top of — not instead
+            // of — the normal classification below, so every other reader of the node (conformance
+            // rules, XmpProperty.FromNode, extension-schema resolution) keeps seeing exactly what it
+            // always saw. rdf:type and other rdf:*-namespaced siblings are deliberately not qualifiers
+            // here, matching SetStruct's own treatment of them ("rdf:type qualifier and the like are
+            // not struct fields") — <rdf:value>v</rdf:value><rdf:type .../> is still a plain simple "v".
             XElement? rdfValue = source.Element(Rdf + "value");
             XAttribute? rdfValueAttr = source.Attribute(Rdf + "value");
             if (rdfValue is not null || rdfValueAttr is not null)
             {
-                bool hasQualifierElements = source.Elements().Any(e => !ReferenceEquals(e, rdfValue));
-                bool hasQualifierAttributes = source.Attributes().Any(a =>
-                    IsPropertyAttribute(a) && !ReferenceEquals(a, rdfValueAttr));
-                if (hasQualifierElements || hasQualifierAttributes)
-                {
-                    node.RawXml = el.ToString(SaveOptions.DisableFormatting);
-                    return;
-                }
+                bool hasQualifierElements = source.Elements().Any(e =>
+                    !ReferenceEquals(e, rdfValue) && e.Name.Namespace != Rdf);
+                bool hasQualifierAttributes = source.Attributes().Any(IsPropertyAttribute)
+                    || source.Attribute(Xml + "lang") is not null;
 
                 if (rdfValue is not null)
-                    DetermineValue(rdfValue, node);
+                    DetermineValue(rdfValue, node, captureRoot);
                 else
                 {
                     node.IsSimple = true;
                     node.Value = rdfValueAttr!.Value;
                 }
+
+                if (hasQualifierElements || hasQualifierAttributes)
+                    node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
                 return;
             }
 
@@ -263,7 +309,7 @@ internal static class XmpTreeParser
                 HasXmlLang = lang is not null,
                 XmlLang = lang?.Value,
             };
-            DetermineValue(li, item);
+            DetermineValue(li, item, li);
             node.Children.Add(item);
         }
 

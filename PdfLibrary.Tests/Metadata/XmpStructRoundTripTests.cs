@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -157,12 +158,7 @@ public class XmpStructRoundTripTests
         Assert.Contains("stEvt:softwareAgent", text);
     }
 
-    /// <summary>A model that loses data on meeting the unfamiliar is exactly what caused this bug.
-    /// Anything the node model cannot express must survive verbatim.</summary>
-    [Fact]
-    public void An_unmodelled_shape_survives_verbatim()
-    {
-        const string exotic = """
+    private const string QualifiedValuePacket = """
 <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -178,11 +174,32 @@ public class XmpStructRoundTripTests
 </x:xmpmeta>
 <?xpacket end="w"?>
 """;
-        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(exotic));
+
+    /// <summary>A model that loses data on meeting the unfamiliar is exactly what caused this bug.
+    /// Anything the node model cannot express must survive verbatim.</summary>
+    [Fact]
+    public void An_unmodelled_shape_survives_verbatim()
+    {
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(QualifiedValuePacket));
         string text = Encoding.UTF8.GetString(XmpTreeSerializer.Serialize(parsed));
 
         Assert.Contains("ex:qualifier", text);
         Assert.Contains("the qualifier", text);
+    }
+
+    /// <summary>Setting RawXml must NOT blank out the node's normal classification: every reader
+    /// that isn't the serializer (conformance rules, XmpProperty.FromNode, extension-schema
+    /// resolution) has to keep seeing the same best-effort verdict it always saw, so RawXml has to be
+    /// an ADDITION to the facets, not a replacement for them.</summary>
+    [Fact]
+    public void RawXml_is_additional_and_does_not_blank_the_normal_classification()
+    {
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(QualifiedValuePacket));
+
+        XmpNode qualified = Assert.Single(parsed);
+        Assert.NotNull(qualified.RawXml);
+        Assert.True(qualified.IsSimple);
+        Assert.Equal("the value", qualified.Value);
     }
 
     /// <summary>The verbatim fallback is a last resort, not a catch-all: an rdf:value with NO
@@ -216,5 +233,186 @@ public class XmpStructRoundTripTests
 
         string text = Encoding.UTF8.GetString(XmpTreeSerializer.Serialize(parsed));
         Assert.Contains("<ex:plain>the value</ex:plain>", text);
+    }
+
+    /// <summary>rdf:type is not a qualifier — SetStruct already treats a struct's own rdf:*-namespaced
+    /// children as structural, not fields ("rdf:type qualifier and the like are not struct fields"),
+    /// so the classic RDF typed-value pattern (rdf:value plus an rdf:type) must classify the same way:
+    /// a plain simple value, not an unmodelled shape.</summary>
+    [Fact]
+    public void An_rdf_type_qualifier_does_not_trigger_the_verbatim_path()
+    {
+        const string typed = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.invalid/ns/">
+   <ex:typed>
+    <rdf:Description>
+     <rdf:value>v</rdf:value>
+     <rdf:type rdf:resource="http://example.invalid/type/Thing"/>
+    </rdf:Description>
+   </ex:typed>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(typed));
+
+        XmpNode typedNode = Assert.Single(parsed);
+        Assert.True(typedNode.IsSimple);
+        Assert.Null(typedNode.RawXml);
+        Assert.Equal("v", typedNode.Value);
+    }
+
+    /// <summary>dc:title read through the flat XmpProperty/PdfMetadata/UaTitleRule projection path
+    /// must keep working when the title happens to be written as a qualified rdf:value: the fix has to
+    /// preserve the node's normal classification alongside RawXml, not replace it, or every consumer
+    /// of that projection (UaTitleRule among them) regresses on a document that used to pass.</summary>
+    [Fact]
+    public void A_qualified_dc_title_still_projects_to_a_readable_XmpProperty()
+    {
+        const string qualifiedTitle = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:ex="http://example.invalid/ns/">
+   <dc:title>
+    <rdf:Description>
+     <rdf:value>My Document</rdf:value>
+     <ex:qualifier>the qualifier</ex:qualifier>
+    </rdf:Description>
+   </dc:title>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        XmpPacket packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(qualifiedTitle));
+        XmpProperty? title = packet.Get("http://purl.org/dc/elements/1.1/", "title");
+
+        Assert.NotNull(title);
+        Assert.Equal(XmpValueKind.Simple, title!.Kind);
+        Assert.Equal("My Document", title.Value);
+
+        // The full round trip still carries the qualifier the flat projection cannot see.
+        string text = Encoding.UTF8.GetString(packet.Serialize());
+        Assert.Contains("My Document", text);
+        Assert.Contains("ex:qualifier", text);
+        Assert.Contains("the qualifier", text);
+    }
+
+    /// <summary>An unqualified rdf:value that itself wraps a deeper qualified value must capture the
+    /// OUTER property element for RawXml, not the inner &lt;rdf:value&gt; element the recursion is
+    /// currently looking at — capturing the inner element would drop the property's own name/namespace
+    /// on serialize, and lose the property entirely on re-parse (ReadDescription skips rdf:*-namespaced
+    /// children as structural, and a bare &lt;rdf:value&gt; re-emitted at the top level is exactly
+    /// that).</summary>
+    [Fact]
+    public void A_nested_qualified_value_captures_the_owning_property_not_the_inner_rdf_value()
+    {
+        const string nested = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.invalid/ns/">
+   <ex:outer>
+    <rdf:Description>
+     <rdf:value>
+      <rdf:Description>
+       <rdf:value>deep value</rdf:value>
+       <ex:qualifier>deep qualifier</ex:qualifier>
+      </rdf:Description>
+     </rdf:value>
+    </rdf:Description>
+   </ex:outer>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(nested));
+
+        XmpNode outer = Assert.Single(parsed);
+        Assert.NotNull(outer.RawXml);
+        Assert.Contains("ex:outer", outer.RawXml); // captured the OWNING property, not a bare rdf:value
+
+        byte[] serialized = XmpTreeSerializer.Serialize(parsed);
+        string text = Encoding.UTF8.GetString(serialized);
+        Assert.Contains("ex:outer", text);
+        Assert.Contains("ex:qualifier", text);
+        Assert.Contains("deep qualifier", text);
+
+        // The property must survive re-parsing too — a bare re-emitted <rdf:value> would vanish here
+        // (ReadDescription skips rdf:*-namespaced children as structural).
+        IReadOnlyList<XmpNode> reparsed = XmpTreeParser.Parse(serialized);
+        XmpNode roundTripped = Assert.Single(reparsed);
+        Assert.Equal("http://example.invalid/ns/", roundTripped.NamespaceUri);
+        Assert.Equal("outer", roundTripped.LocalName);
+    }
+
+    /// <summary>Parse → serialize → parse → serialize must converge: the second serialization is
+    /// byte-identical to the first. A RawXml subtree that depended on the first pass's specific prefix
+    /// assignment (rather than self-declaring) would drift on a second round trip.</summary>
+    [Fact]
+    public void An_unmodelled_shape_round_trips_idempotently()
+    {
+        byte[] firstPass = XmpTreeSerializer.Serialize(
+            XmpTreeParser.Parse(Encoding.UTF8.GetBytes(QualifiedValuePacket)));
+        byte[] secondPass = XmpTreeSerializer.Serialize(XmpTreeParser.Parse(firstPass));
+
+        Assert.Equal(Encoding.UTF8.GetString(firstPass), Encoding.UTF8.GetString(secondPass));
+    }
+
+    /// <summary>The preserved fragment must be self-declaring, not reliant on AssignPrefixes: here the
+    /// qualifier field's namespace ("other") differs from the property's own ("ex"), and node.Children
+    /// stays empty for a RawXml node, so AssignPrefixes (which only walks NamespaceUri/Children) never
+    /// even sees the "other" URI. If the fragment depended on an ancestor-declared xmlns:other rather
+    /// than declaring its own, this would serialize to a broken, unparseable packet.</summary>
+    [Fact]
+    public void An_unmodelled_shapes_inner_namespace_is_self_declared_not_borrowed()
+    {
+        const string differingNamespace = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:ex="http://example.invalid/ns/"
+    xmlns:other="http://example.invalid/other/">
+   <ex:qualified>
+    <rdf:Description>
+     <rdf:value>the value</rdf:value>
+     <other:qualifier>the qualifier</other:qualifier>
+    </rdf:Description>
+   </ex:qualified>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(differingNamespace));
+        byte[] serialized = XmpTreeSerializer.Serialize(parsed);
+        string text = Encoding.UTF8.GetString(serialized);
+
+        Assert.Contains("other:qualifier", text);
+        Assert.Contains("the qualifier", text);
+
+        // Well-formed and re-readable: the "other" prefix must have resolved to a real namespace
+        // wherever it was declared, not silently produced an unbound-prefix parse failure.
+        IReadOnlyList<XmpNode> reparsed = XmpTreeParser.Parse(serialized);
+        Assert.NotEmpty(reparsed);
+    }
+
+    /// <summary>RawXml's contract mirrors Serialize's documented one: an invalid value is caller error
+    /// (ArgumentException), never an undocumented XmlException surfacing later out of Serialize when a
+    /// directly-constructed node (not one the parser produced) carries malformed content.</summary>
+    [Fact]
+    public void Setting_RawXml_to_malformed_xml_throws_ArgumentException()
+    {
+        var node = new XmpNode("http://example.invalid/ns/", "broken", "ex");
+        Assert.Throws<ArgumentException>(() => node.RawXml = "<not-well-formed");
     }
 }
