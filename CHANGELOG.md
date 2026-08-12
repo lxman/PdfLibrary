@@ -6,6 +6,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **XMP: structured properties are no longer destroyed on save.** Setting any document property
+  (`PdfDocumentEditor.Metadata.Title` and friends) re-serialized the XMP packet through a model with
+  no struct representation, flattening `xmpMM:History`, `xmpMM:DerivedFrom`, `xmpTPg:Fonts` and
+  similar into a single concatenated text blob — irrecoverably. `XmpPacket` is now backed by the
+  recursive `XmpNode` model and emits structs and arrays-of-structs faithfully. Shapes the model
+  still cannot express (a general XMP qualifier — `rdf:value` plus a non-`xml:lang` qualifier field
+  or attribute) are preserved verbatim rather than dropped.
+
+### Changed
+- The XMP format layer moved to its own assembly, `PdfLibrary.Xmp`, bundled in the package as with
+  `ICCSharp` and `FontParser`. Namespaces are unchanged and `PdfLibrary` forwards the four public
+  types, so this is source- and binary-compatible. **The forwarders are transitional and are due for
+  removal at 3.0.0**, which will require a recompile for consumers still binding to the old
+  assembly.
+
+### Added
+- `XmpPacket.SetStruct` / `SetStructArray` and `XmpField`, for authoring nested XMP structs and
+  arrays-of-structs (e.g. `pdfaExtension:schemas`).
+
 ## [2.5.2] - 2026-07-29
 
 ### Fixed

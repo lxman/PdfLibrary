@@ -58,6 +58,32 @@ PdfLibrary/
 └── Security/              # Encryption/decryption
 ```
 
+### XMP (`Xmp/`)
+
+The XMP format layer — model, parser, serializer — as its own `netstandard2.1` assembly
+(`PdfLibrary.Xmp`), alongside `ICCSharp` and `FontParser`. It knows nothing about PDF; it reads and
+writes ISO 16684-1 packets.
+
+`XmpNode`/`XmpTreeParser`/`XmpTreeSerializer` are the single shared model. Both consumers use it: the
+conformance rules read it, and `XmpPacket` (public, namespace `PdfLibrary.Metadata`) is a facade over
+it for editing. There was previously a second, flatter write-side model here, which could not
+represent structs and silently flattened `xmpMM:History` on save.
+
+PDF/A's *rules about* XMP — `XmpPredefinedSchemas`, `XmpStructTypes`, `XmpTypeContainer`,
+`XmpExtensionSchemas` — deliberately stay in `Conformance/`. They encode ISO 19005, not XMP.
+
+`PdfLibrary` carries `TypeForwardedTo` for the four public types that moved out of it in 2.5.x. Those
+forwarders are **transitional and should be removed at 3.0.0** — see `PdfLibrary/TypeForwards.cs`.
+
+A general XMP qualifier (`rdf:value` plus a non-`xml:lang` qualifier field/attribute) is still not
+part of the model; `XmpNode.RawXml` preserves that shape verbatim on serialize rather than dropping
+it, and the node keeps its ordinary classification so no conformance rule's verdict changes.
+
+`XmpPacket.Parse` merges every sibling `rdf:RDF` island in a packet (some PDF/A-3/Factur-X generators
+split properties across more than one); the `XmpTree`-based conformance rules deliberately keep
+reading only the first, which is the behavior their veraPDF parity was verified against. That split
+predates this refactor and is unchanged by it.
+
 ---
 
 ## Component Details
