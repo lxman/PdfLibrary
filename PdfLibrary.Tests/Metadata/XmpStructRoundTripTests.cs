@@ -156,4 +156,65 @@ public class XmpStructRoundTripTests
         Assert.Contains("Replaced Title", text);
         Assert.Contains("stEvt:softwareAgent", text);
     }
+
+    /// <summary>A model that loses data on meeting the unfamiliar is exactly what caused this bug.
+    /// Anything the node model cannot express must survive verbatim.</summary>
+    [Fact]
+    public void An_unmodelled_shape_survives_verbatim()
+    {
+        const string exotic = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.invalid/ns/">
+   <ex:qualified>
+    <rdf:Description>
+     <rdf:value>the value</rdf:value>
+     <ex:qualifier>the qualifier</ex:qualifier>
+    </rdf:Description>
+   </ex:qualified>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(exotic));
+        string text = Encoding.UTF8.GetString(XmpTreeSerializer.Serialize(parsed));
+
+        Assert.Contains("ex:qualifier", text);
+        Assert.Contains("the qualifier", text);
+    }
+
+    /// <summary>The verbatim fallback is a last resort, not a catch-all: an rdf:value with NO
+    /// qualifiers is a shape the model already expresses as a plain simple value, and must keep going
+    /// through the normal shape/prefix/sanitizer machinery rather than being dumped as raw XML (which
+    /// would, for instance, skip prefix re-assignment and risk a stale or colliding prefix).</summary>
+    [Fact]
+    public void An_unqualified_rdf_value_still_takes_the_normal_simple_path()
+    {
+        const string unqualified = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.invalid/ns/">
+   <ex:plain>
+    <rdf:Description>
+     <rdf:value>the value</rdf:value>
+    </rdf:Description>
+   </ex:plain>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        IReadOnlyList<XmpNode> parsed = XmpTreeParser.Parse(Encoding.UTF8.GetBytes(unqualified));
+
+        XmpNode plain = Assert.Single(parsed);
+        Assert.True(plain.IsSimple);
+        Assert.Null(plain.RawXml);
+        Assert.Equal("the value", plain.Value);
+
+        string text = Encoding.UTF8.GetString(XmpTreeSerializer.Serialize(parsed));
+        Assert.Contains("<ex:plain>the value</ex:plain>", text);
+    }
 }

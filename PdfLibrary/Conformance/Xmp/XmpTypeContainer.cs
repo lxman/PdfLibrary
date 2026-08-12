@@ -43,6 +43,14 @@ internal sealed class XmpTypeContainer
     /// <summary>True when <paramref name="node"/> satisfies the value type <paramref name="typeName"/>.</summary>
     public bool Validate(XmpNode node, string typeName)
     {
+        // A shape the node model cannot express (e.g. rdf:value with qualifiers) was preserved
+        // verbatim rather than fitted into the simple/struct/array facets this validator reads. There
+        // is nothing structural left to check, and reporting a value-type mismatch against a node the
+        // parser never actually classified would be a false positive the parser's own tolerance
+        // philosophy (never flag what we couldn't faithfully model) forbids.
+        if (node.RawXml is not null)
+            return true;
+
         string type = Simplify(typeName);
         if (type == "any")
             return true;

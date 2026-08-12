@@ -129,6 +129,14 @@ internal static class XmpTreeSerializer
 
     private static XElement Emit(XmpNode node)
     {
+        // A shape this node model cannot express was preserved verbatim at parse time; re-emit that
+        // subtree unchanged rather than routing it through the normal name/shape machinery, which has
+        // nowhere to put it. XElement.Parse re-declares whatever namespaces the fragment's own
+        // elements/attributes use that were only in scope via an ancestor in the source document, so
+        // the fragment stays self-contained and valid wherever it lands in the rewritten tree.
+        if (node.RawXml is { } raw)
+            return XElement.Parse(raw);
+
         XNamespace ns = node.NamespaceUri;
         var element = new XElement(ns + VerifyName(node.LocalName));
         EmitShape(node, element);
@@ -219,6 +227,11 @@ internal static class XmpTreeSerializer
     /// emitted; rdf:li replaces it.</summary>
     private static XElement EmitArrayItem(XmpNode item)
     {
+        // As in Emit: an unmodelled array item (its raw capture already includes its own rdf:li tag)
+        // is re-emitted verbatim rather than re-wrapped.
+        if (item.RawXml is { } raw)
+            return XElement.Parse(raw);
+
         var li = new XElement(Rdf + "li");
         EmitShape(item, li);
         return li;

@@ -57,6 +57,13 @@ internal sealed class XmpNode
     /// <c>"en-US"</c>), or null when the item carried none. Backs the PDF/UA-1 clause 7.2 lang-alt
     /// natural-language check (veraPDF <c>XMPLangAlt.xDefault</c>).</summary>
     public string? XmlLang { get; set; }
+
+    /// <summary>Set when the parser met a shape this model cannot express (e.g. <c>rdf:value</c> with
+    /// qualifiers). The serializer emits this verbatim and ignores everything else on the node, so an
+    /// unfamiliar packet is preserved rather than silently reshaped. When set, all the shape flags
+    /// above are left false and <see cref="Value"/> and <see cref="Children"/> are left empty/unused —
+    /// this is the node's sole content.</summary>
+    public string? RawXml { get; set; }
 }
 
 /// <summary>
@@ -195,19 +202,33 @@ internal static class XmpTreeParser
         {
             XElement source = descChild ?? el;
 
-            // A general qualified value: an rdf:value field carries the actual value and the sibling
-            // fields are qualifiers. The Adobe XMP model surfaces this as the rdf:value's own kind (a
-            // simple value with qualifiers is still simple), so parse the rdf:value and drop qualifiers.
+            // A general qualified value: an rdf:value field carries the actual value and any sibling
+            // fields are qualifiers. When rdf:value stands alone (no qualifiers), the Adobe XMP model
+            // surfaces it as the rdf:value's own kind (a simple value with no qualifiers is still
+            // simple), so parse the rdf:value directly. But a qualified value — rdf:value PLUS one or
+            // more qualifier fields — is a shape this node model has no field for: there is nowhere on
+            // XmpNode to hang the qualifiers without a struct field silently eating them (the bug this
+            // whole slice exists to fix). Preserve the whole property verbatim rather than drop them.
             XElement? rdfValue = source.Element(Rdf + "value");
-            if (rdfValue is not null)
+            XAttribute? rdfValueAttr = source.Attribute(Rdf + "value");
+            if (rdfValue is not null || rdfValueAttr is not null)
             {
-                DetermineValue(rdfValue, node);
-                return;
-            }
-            if (source.Attribute(Rdf + "value") is { } valueAttr)
-            {
-                node.IsSimple = true;
-                node.Value = valueAttr.Value;
+                bool hasQualifierElements = source.Elements().Any(e => !ReferenceEquals(e, rdfValue));
+                bool hasQualifierAttributes = source.Attributes().Any(a =>
+                    IsPropertyAttribute(a) && !ReferenceEquals(a, rdfValueAttr));
+                if (hasQualifierElements || hasQualifierAttributes)
+                {
+                    node.RawXml = el.ToString(SaveOptions.DisableFormatting);
+                    return;
+                }
+
+                if (rdfValue is not null)
+                    DetermineValue(rdfValue, node);
+                else
+                {
+                    node.IsSimple = true;
+                    node.Value = rdfValueAttr!.Value;
+                }
                 return;
             }
 
