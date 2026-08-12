@@ -10,11 +10,33 @@ namespace PdfLibrary.Conformance;
 /// <paramref name="ExpectedType"/> is the type that governs — predefined wins over an extension
 /// declaration, exactly as <c>XmpPropertyTypeRule</c> resolves it — and is null when neither knows
 /// the property, in which case <paramref name="TypeConforms"/> is true because there is no type to
-/// violate (the predefined rule, not the type rule, owns that case).</summary>
+/// violate (the predefined rule, not the type rule, owns that case).
+///
+/// <para><b>The four SHAPE facets (2026-08-12, Task 7b) describe the property's RDF shape</b>, read
+/// straight off the <c>XmpNode</c> the classifier walked. They exist because that node is internal to
+/// the engine and the public <see cref="XmpProperty"/> projection is flat: a struct projects as a
+/// Simple with an empty value, an array of structs as blank items, and a qualified value loses its
+/// qualifiers entirely. A consumer with only the projection therefore had to infer shape from "does
+/// it carry text anywhere", which is not a shape test at all — it cannot distinguish a struct from a
+/// genuinely blank property, and it is blind to a qualified value (which DOES carry text). Both
+/// mistakes destroyed real metadata before these facets existed.</para>
+///
+/// <para>They are read-only descriptions of the node as classified, and they follow the same
+/// merged-superset contract as every other member — see <see cref="XmpConformance"/>'s class doc
+/// comment: on a multi-island packet a verdict describes the MERGED node, because that is the node
+/// the next <c>Serialize()</c> will write.</para>
+///
+/// <para><paramref name="IsLangAlt"/> REFINES <paramref name="IsArray"/> rather than replacing it —
+/// a lang alt is an <c>rdf:Alt</c> whose items all carry <c>xml:lang</c>, so both are true.
+/// <paramref name="CarriesRawXml"/> is a SUBTREE question: the parser snapshots an unmodelled
+/// qualified value onto the node that owns it, which for an array is the <c>rdf:li</c> ITEM, not the
+/// property — so this is true when this node or ANY descendant carries a snapshot. A fixer that
+/// rebuilds such a property's container drops the snapshot and the qualifiers with it.</para></summary>
 public readonly record struct XmpPropertyVerdict(
     string NamespaceUri, string Prefix, string LocalName,
     bool IsPredefined, bool IsDeclaredByExtension,
-    string? ExpectedType, bool TypeConforms);
+    string? ExpectedType, bool TypeConforms,
+    bool IsStruct = false, bool IsArray = false, bool IsLangAlt = false, bool CarriesRawXml = false);
 
 /// <summary>Public read-only view of what the XMP conformance rules conclude about a packet's
 /// properties. Exists so a remediation fixer can identify offending properties structurally instead
@@ -102,11 +124,34 @@ public static class XmpConformance
 
             bool conforms = type is null || container!.Validate(node, type);
 
+            // Shape facets, straight off the node this verdict is ABOUT — deliberately the same
+            // `node` the classification above used, so the facets can never describe a different tree
+            // from the one that produced IsPredefined/TypeConforms (the merged-superset contract in
+            // the class doc comment applies to both alike). IsArrayAltText is the parser's own lang-alt
+            // marker (an rdf:Alt whose items all carry xml:lang), not a re-derivation.
             verdicts.Add(new XmpPropertyVerdict(
-                node.NamespaceUri, node.Prefix, node.LocalName, predefined, declared, type, conforms));
+                node.NamespaceUri, node.Prefix, node.LocalName, predefined, declared, type, conforms,
+                IsStruct: node.IsStruct, IsArray: node.IsArray, IsLangAlt: node.IsArrayAltText,
+                CarriesRawXml: CarriesRawXml(node)));
         }
 
         return verdicts;
+    }
+
+    /// <summary>Whether <paramref name="node"/> or any descendant carries an unmodelled-shape snapshot.
+    ///
+    /// <para>It must be a SUBTREE walk, not a property-level test. <c>XmpTreeParser.SetArray</c> passes
+    /// each <c>rdf:li</c> as its own capture root, so a qualified value inside an array — the
+    /// <c>xmp:Identifier</c> / <c>xmpidq:Scheme</c> shape veraPDF fixture <c>6-6-2-3-1-t07-fail-j.pdf</c>
+    /// carries — lands on the ITEM node while the property node's own <c>RawXml</c> stays null. A
+    /// top-level-only test would report false there, and a caller trusting it would rebuild the array
+    /// and destroy the qualifier, which is precisely the defect this facet exists to prevent.</para></summary>
+    private static bool CarriesRawXml(XmpNode node)
+    {
+        if (node.RawXml is not null) return true;
+        foreach (XmpNode child in node.Children)
+            if (CarriesRawXml(child)) return true;
+        return false;
     }
 
     private static bool IsStructural(string namespaceUri) => StructuralNamespaces.Contains(namespaceUri);

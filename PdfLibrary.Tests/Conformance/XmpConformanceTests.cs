@@ -318,4 +318,199 @@ public class XmpConformanceTests
     {
         Assert.Equal(expectedType, XmpPredefinedSchemas.TypeOf(namespaceUri, localName));
     }
+
+    // ── shape facets (Task 7b, 2026-08-12) ────────────────────────────────────────────────────────
+    //
+    // A verdict used to carry no shape at all, so a remediation fixer had to infer one from the flat
+    // XmpProperty projection — "does it carry text anywhere". That proxy failed three times (see
+    // task-7b-brief.md), most destructively on the anchor packet below, whose xmpidq:Scheme qualifier
+    // a retype silently deleted. These four facets are the shape the engine already knew and simply
+    // did not expose.
+
+    private const string ShapesPacket = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:ex="http://example.com/ns/shapes/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:pdf="http://ns.adobe.com/pdf/1.3/"
+    xmlns:stEvt="http://ns.adobe.com/xap/1.0/sType/ResourceEvent#">
+   <pdf:Producer>Acme Writer</pdf:Producer>
+   <ex:Blank></ex:Blank>
+   <ex:Structured rdf:parseType="Resource">
+    <stEvt:action>converted</stEvt:action>
+    <stEvt:softwareAgent>Acme Writer</stEvt:softwareAgent>
+   </ex:Structured>
+   <ex:Bagged>
+    <rdf:Bag><rdf:li>one</rdf:li><rdf:li>two</rdf:li></rdf:Bag>
+   </ex:Bagged>
+   <dc:title>
+    <rdf:Alt><rdf:li xml:lang="x-default">A title</rdf:li></rdf:Alt>
+   </dc:title>
+   <ex:PlainAlt>
+    <rdf:Alt><rdf:li>no language here</rdf:li></rdf:Alt>
+   </ex:PlainAlt>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+
+    /// <summary>The `xmp:Identifier` shape carried by veraPDF corpus fixture
+    /// <c>6-6-2-3-1-t07-fail-j.pdf</c>, copied verbatim from its packet: a <c>rdf:Seq</c> whose single
+    /// item is an <c>rdf:value</c> qualified by <c>xmpidq:Scheme</c>. The qualifier has nowhere to live
+    /// on <see cref="XmpNode"/>, so the parser additionally snapshots the item into
+    /// <see cref="XmpNode.RawXml"/> and the serializer emits that verbatim — which is exactly why a
+    /// fixer must not rewrite the property: rebuilding the container drops the snapshot and the
+    /// qualifier with it.</summary>
+    private const string QualifiedValuePacket = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:xmpidq="http://ns.adobe.com/xmp/Identifier/qual/1.0/" rdf:about="">
+   <xmp:Identifier>
+    <rdf:Seq>
+     <rdf:li>
+      <rdf:Description>
+       <rdf:value>Some value</rdf:value>
+       <xmpidq:Scheme>Some name</xmpidq:Scheme>
+      </rdf:Description>
+     </rdf:li>
+    </rdf:Seq>
+   </xmp:Identifier>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+
+    private static IReadOnlyList<XmpPropertyVerdict> Shapes() =>
+        XmpConformance.ClassifyProperties(XmpPacket.Parse(Encoding.UTF8.GetBytes(ShapesPacket)));
+
+    [Fact]
+    public void A_struct_property_reports_IsStruct()
+    {
+        XmpPropertyVerdict v = Find(Shapes(), "Structured");
+        Assert.True(v.IsStruct);
+        Assert.False(v.IsArray);
+        Assert.False(v.IsLangAlt);
+        Assert.False(v.CarriesRawXml);
+    }
+
+    [Fact]
+    public void An_array_property_reports_IsArray_but_not_IsLangAlt()
+    {
+        XmpPropertyVerdict v = Find(Shapes(), "Bagged");
+        Assert.True(v.IsArray);
+        Assert.False(v.IsLangAlt);
+        Assert.False(v.IsStruct);
+    }
+
+    [Fact]
+    public void A_lang_alt_property_reports_both_IsArray_and_IsLangAlt()
+    {
+        // IsLangAlt is a REFINEMENT of IsArray (XmpNode.IsArrayAltText is only ever set on an array),
+        // never an alternative to it — a consumer testing IsArray must still see a lang alt.
+        XmpPropertyVerdict v = Find(Shapes(), "title");
+        Assert.True(v.IsArray);
+        Assert.True(v.IsLangAlt);
+    }
+
+    [Fact]
+    public void An_alt_array_without_xml_lang_is_not_a_lang_alt()
+    {
+        XmpPropertyVerdict v = Find(Shapes(), "PlainAlt");
+        Assert.True(v.IsArray);
+        Assert.False(v.IsLangAlt);
+    }
+
+    [Fact]
+    public void A_simple_property_reports_no_shape_facet_at_all()
+    {
+        // Including a genuinely BLANK one: the whole point of the facets is that "carries no text"
+        // and "is a struct" stop being the same observation.
+        foreach (string name in new[] { "Producer", "Blank" })
+        {
+            XmpPropertyVerdict v = Find(Shapes(), name);
+            Assert.False(v.IsStruct, name);
+            Assert.False(v.IsArray, name);
+            Assert.False(v.IsLangAlt, name);
+            Assert.False(v.CarriesRawXml, name);
+        }
+    }
+
+    /// <summary>The anchor case. <c>xmp:Identifier</c>'s RawXml snapshot lives on the ARRAY ITEM, not
+    /// on the top-level property node (<c>XmpTreeParser.SetArray</c> passes the <c>rdf:li</c> as the
+    /// capture root), so <see cref="XmpPropertyVerdict.CarriesRawXml"/> has to be a SUBTREE question.
+    /// A facet that only looked at the top-level node would report false here and the fixer would
+    /// destroy the qualifier exactly as it did before this task.</summary>
+    [Fact]
+    public void A_qualified_value_nested_in_an_array_item_reports_CarriesRawXml()
+    {
+        XmpPacket packet = XmpPacket.Parse(Encoding.UTF8.GetBytes(QualifiedValuePacket));
+        XmpPropertyVerdict v = Find(XmpConformance.ClassifyProperties(packet), "Identifier");
+
+        Assert.True(v.CarriesRawXml);
+        Assert.True(v.IsArray);
+
+        // And the qualifier really is only reachable through that snapshot — the flat projection has
+        // lost it entirely (it reads as a one-item array holding just the rdf:value text), which is
+        // what made the text-based proxy blind.
+        XmpProperty? flat = packet.Get("http://ns.adobe.com/xap/1.0/", "Identifier");
+        Assert.NotNull(flat);
+        Assert.Equal(["Some value"], flat!.Items);
+    }
+
+    [Fact]
+    public void A_qualified_value_at_the_top_level_reports_CarriesRawXml()
+    {
+        const string packet = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.com/ns/shapes/" xmlns:q="http://example.com/ns/qual/">
+   <ex:Qualified rdf:parseType="Resource">
+    <rdf:value>the value</rdf:value>
+    <q:Scheme>the qualifier</q:Scheme>
+   </ex:Qualified>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        XmpPropertyVerdict v = Find(
+            XmpConformance.ClassifyProperties(XmpPacket.Parse(Encoding.UTF8.GetBytes(packet))), "Qualified");
+
+        Assert.True(v.CarriesRawXml);
+    }
+
+    /// <summary>The facets must describe the node the classifier ACTUALLY classified — the merged
+    /// superset of every <c>rdf:RDF</c> island (see the class doc comment). A property living only in
+    /// island 2 gets a verdict, so it must get that verdict's shape too, not a default.</summary>
+    [Fact]
+    public void Facets_describe_the_merged_node_the_classifier_classified()
+    {
+        const string packet = """
+<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.com/ns/island-one/">
+   <ex:Widget>island one offender</ex:Widget>
+  </rdf:Description>
+ </rdf:RDF>
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:ex="http://example.com/ns/island-two/" xmlns:stEvt="http://ns.adobe.com/xap/1.0/sType/ResourceEvent#">
+   <ex:Gadget rdf:parseType="Resource"><stEvt:action>converted</stEvt:action></ex:Gadget>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+""";
+        IReadOnlyList<XmpPropertyVerdict> verdicts =
+            XmpConformance.ClassifyProperties(XmpPacket.Parse(Encoding.UTF8.GetBytes(packet)));
+
+        Assert.False(Find(verdicts, "Widget").IsStruct);
+        Assert.True(Find(verdicts, "Gadget").IsStruct);
+    }
 }
