@@ -1,4 +1,8 @@
+using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.Linq;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
@@ -103,10 +107,10 @@ public sealed class XmpPacket
     /// <summary>Sets or replaces a simple string property.</summary>
     public void SetSimple(string namespaceUri, string prefix, string localName, string value)
     {
-        ArgumentNullException.ThrowIfNull(namespaceUri);
-        ArgumentNullException.ThrowIfNull(prefix);
-        ArgumentNullException.ThrowIfNull(localName);
-        ArgumentNullException.ThrowIfNull(value);
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (prefix is null) throw new ArgumentNullException(nameof(prefix));
+        if (localName is null) throw new ArgumentNullException(nameof(localName));
+        if (value is null) throw new ArgumentNullException(nameof(value));
         RegisterPrefix(namespaceUri, prefix);
         string actualPrefixSimple = _prefixMap[namespaceUri];
         _props[(namespaceUri, localName)] = new XmpProperty(namespaceUri, actualPrefixSimple, localName, value);
@@ -116,10 +120,10 @@ public sealed class XmpPacket
     public void SetArray(string namespaceUri, string prefix, string localName,
                          IEnumerable<string> items, bool ordered)
     {
-        ArgumentNullException.ThrowIfNull(namespaceUri);
-        ArgumentNullException.ThrowIfNull(prefix);
-        ArgumentNullException.ThrowIfNull(localName);
-        ArgumentNullException.ThrowIfNull(items);
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (prefix is null) throw new ArgumentNullException(nameof(prefix));
+        if (localName is null) throw new ArgumentNullException(nameof(localName));
+        if (items is null) throw new ArgumentNullException(nameof(items));
         RegisterPrefix(namespaceUri, prefix);
         string actualPrefixArr = _prefixMap[namespaceUri];
         IReadOnlyList<string> list = items.ToList();
@@ -130,10 +134,10 @@ public sealed class XmpPacket
     public void SetLangAlt(string namespaceUri, string prefix, string localName,
                             string text, string lang = "x-default")
     {
-        ArgumentNullException.ThrowIfNull(namespaceUri);
-        ArgumentNullException.ThrowIfNull(prefix);
-        ArgumentNullException.ThrowIfNull(localName);
-        ArgumentNullException.ThrowIfNull(text);
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (prefix is null) throw new ArgumentNullException(nameof(prefix));
+        if (localName is null) throw new ArgumentNullException(nameof(localName));
+        if (text is null) throw new ArgumentNullException(nameof(text));
         RegisterPrefix(namespaceUri, prefix);
         string actualPrefixLa = _prefixMap[namespaceUri];
 
@@ -142,7 +146,7 @@ public sealed class XmpPacket
         if (_props.TryGetValue((namespaceUri, localName), out XmpProperty? existing) &&
             existing.Kind == XmpValueKind.LangAlt)
         {
-            map = new Dictionary<string, string>(existing.LangAlt, StringComparer.Ordinal);
+            map = existing.LangAlt.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
         }
         else
         {
