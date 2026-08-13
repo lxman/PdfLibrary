@@ -93,4 +93,74 @@ public sealed class XmpRoundTripFidelityTests
         Assert.Contains("xml:lang=\"fr-FR\"", outXml);
         Assert.Contains("Titre", outXml);
     }
+
+    // ── D3 / D5: rdf:parseType values XMP forbids ───────────────────────────────────────────────
+    //
+    // Part 1 §C.2.10 forbids parseType="Collection" and §C.2.11 forbids any other parseType (i.e.
+    // anything but "Resource" and "Literal"; "Literal" is RDF-legal but has no XMP data model). A
+    // document carrying one is ALREADY INVALID, so the goal here is not to model these shapes — it is
+    // to stop silently mangling them, so the bytes a human would inspect still say what the producer
+    // actually wrote. Preservation, not interpretation.
+
+    /// <summary>An <c>rdf:parseType="Collection"</c> property survives intact.
+    ///
+    /// <para>Before 2026-08-13 it lost everything after the first item AND was re-emitted as
+    /// <c>parseType="Resource"</c> — silently rewriting one forbidden production into a different,
+    /// legal-looking one. <c>el.Element(Rdf + "Description")</c> returns only the FIRST match, and the
+    /// struct branch then treated that single Description as the whole value.</para></summary>
+    [Fact]
+    public void A_parse_type_collection_property_survives_the_round_trip()
+    {
+        string outXml = RoundTrip("""
+              <xmp:Things rdf:parseType="Collection">
+                <rdf:Description><dc:title>one</dc:title></rdf:Description>
+                <rdf:Description><dc:title>two</dc:title></rdf:Description>
+              </xmp:Things>
+        """);
+
+        Assert.Contains("one", outXml);
+        Assert.Contains("two", outXml);                       // was dropped entirely
+        Assert.Contains("parseType=\"Collection\"", outXml);  // was rewritten to "Resource"
+    }
+
+    /// <summary>An <c>rdf:parseType="Literal"</c> property keeps its mixed content.
+    ///
+    /// <para>Before 2026-08-13, <c>rich &lt;b&gt;text&lt;/b&gt;</c> came back as
+    /// <c>&lt;ns1:b&gt;text&lt;/ns1:b&gt;</c>: the bare text node "rich" was destroyed and the literal
+    /// was reshaped into a struct, because <c>HasStructContent</c> sees element children and the
+    /// struct branch keeps only element-shaped fields.</para></summary>
+    [Fact]
+    public void A_parse_type_literal_property_keeps_its_mixed_content()
+    {
+        string outXml = RoundTrip("""
+              <xmp:Note rdf:parseType="Literal"><p xmlns="http://www.w3.org/1999/xhtml">rich <b>text</b></p></xmp:Note>
+        """);
+
+        Assert.Contains("rich", outXml);   // the bare text node, previously destroyed
+        Assert.Contains("text", outXml);
+        Assert.Contains("parseType=\"Literal\"", outXml);
+    }
+
+    /// <summary>An ORDINARY <c>parseType="Resource"</c> struct is untouched by the D3/D5 fix.
+    ///
+    /// <para>The guard that matters most here. Capturing verbatim is the right answer for a shape the
+    /// model cannot express and the WRONG answer for one it can: routing ordinary structs through the
+    /// raw path would freeze them against every later edit and change the serializer's output for the
+    /// overwhelming majority of real packets. Passed before the fix as well as after.</para></summary>
+    [Fact]
+    public void An_ordinary_resource_struct_is_not_captured_verbatim()
+    {
+        string outXml = RoundTrip("""
+              <xmp:Thing rdf:parseType="Resource">
+                <dc:title>a</dc:title>
+              </xmp:Thing>
+        """);
+
+        Assert.Contains("parseType=\"Resource\"", outXml);
+        Assert.Contains("<dc:title>a</dc:title>", outXml);
+        // The serializer re-declares namespaces on the elements it builds; a verbatim capture would
+        // instead reproduce the source fragment's own prefixes. Asserting the REBUILT shape is what
+        // distinguishes "went through the normal path" from "was snapshotted".
+        Assert.DoesNotContain("parseType=\"Collection\"", outXml);
+    }
 }

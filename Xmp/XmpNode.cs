@@ -248,6 +248,31 @@ internal static class XmpTreeParser
             node.XmlLang = xmlLang.Value;
         }
 
+        // An rdf:parseType this model cannot express. "Resource" is the ONE this parser models (it is
+        // the struct shorthand); Part 1 §C.2.10 forbids "Collection" outright, §C.2.11 forbids every
+        // other value, and "Literal" is RDF-legal but has no XMP data model at all. A packet carrying
+        // one is therefore ALREADY INVALID — the job here is not to model these shapes, it is to stop
+        // silently MANGLING them, so the bytes a human inspects still say what the producer wrote.
+        //
+        // Until 2026-08-13 both were quietly reshaped into structs, which is how the struct branch
+        // treats any element with element children:
+        //   parseType="Collection" — el.Element(Rdf+"Description") returns only the FIRST match, so
+        //     every item after the first was destroyed, and the property was re-emitted as
+        //     parseType="Resource": one forbidden production silently rewritten into a legal-looking
+        //     different one.
+        //   parseType="Literal"    — mixed content lost its bare text nodes ("rich <b>text</b>" came
+        //     back as "<b>text</b>") and the literal became a struct.
+        //
+        // Capturing verbatim is ADDITIVE — classification below is deliberately left exactly as it
+        // was. That is what makes this change safe: RawXml governs only serialization, so the packet
+        // now round-trips faithfully while every conformance rule keeps the verdict it reached before,
+        // and the veraPDF parity snapshot cannot move. The classification is still wrong for these
+        // shapes; it is wrong identically to before, which is the point. Modelling them properly is a
+        // separate question that would carry real parity risk.
+        string? parseType = el.Attribute(Rdf + "parseType")?.Value;
+        if (parseType is not null && parseType != "Resource")
+            node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
+
         XElement? container = el.Elements().FirstOrDefault(e =>
             e.Name.Namespace == Rdf && e.Name.LocalName is "Bag" or "Seq" or "Alt");
         if (container is not null)
@@ -257,7 +282,6 @@ internal static class XmpTreeParser
         }
 
         XElement? descChild = el.Element(Rdf + "Description");
-        string? parseType = el.Attribute(Rdf + "parseType")?.Value;
         if (parseType == "Resource" || descChild is not null || HasStructContent(el))
         {
             XElement source = descChild ?? el;
