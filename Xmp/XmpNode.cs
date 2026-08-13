@@ -228,6 +228,26 @@ internal static class XmpTreeParser
     // entirely (ReadDescription skips rdf:*-namespaced children as structural).
     private static void DetermineValue(XElement el, XmpNode node, XElement captureRoot)
     {
+        // xml:lang BEFORE the shape dispatch below, mirroring XmpTreeSerializer.EmitShape, which
+        // emits it ahead of its own dispatch for the same reason: Part 1 makes xml:lang a qualifier
+        // legal on ANY value, so reading it in one shape's branch means the others silently drop it.
+        //
+        // Until 2026-08-13 it was read ONLY in SetArray, for rdf:li items. A plain literal's language
+        // was therefore never read at all — <dc:source xml:lang="en-us">v</dc:source> round-tripped as
+        // <dc:source>v</dc:source> — and the RawXml safety net could not cover it, because that
+        // engages only in the rdf:value branch a plain literal never reaches.
+        //
+        // SetArray still sets these on the item node before calling here (it reads the li's own
+        // attribute), so for an array item this re-reads the same attribute off the same element and
+        // writes the same value. Harmless, and left that way deliberately: making this the single
+        // place that reads xml:lang would move it out of SetArray, which needs it BEFORE this call to
+        // decide IsArrayAltText.
+        if (el.Attribute(Xml + "lang") is { } xmlLang)
+        {
+            node.HasXmlLang = true;
+            node.XmlLang = xmlLang.Value;
+        }
+
         XElement? container = el.Elements().FirstOrDefault(e =>
             e.Name.Namespace == Rdf && e.Name.LocalName is "Bag" or "Seq" or "Alt");
         if (container is not null)
