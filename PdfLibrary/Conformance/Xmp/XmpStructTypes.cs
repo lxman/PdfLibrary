@@ -8,6 +8,20 @@ namespace PdfLibrary.Conformance.Xmp;
 /// mode PdfLibrary builds, only <c>fieldName</c> + <c>baseType</c> are used and the regex is ignored, so a
 /// restricted field degrades to its permissive base type. This is factual schema data, reproduced (not
 /// copied from any implementation) so PdfLibrary's verdict tracks the reference.
+///
+/// <para><b>THESE TABLES WILL CONTRADICT THE PUBLISHED XMP SPECIFICATION, AND THAT IS CORRECT.</b>
+/// They answer to veraPDF, not to the XMP Specification, which is newer than both veraPDF and the
+/// 2005-era ISO 19005-2 Annex B snapshot PDF/A actually governs by. Divergences a reader will notice:
+/// <c>ResourceEvent</c> has no <c>stEvt:changed</c> (Part 2 Table 8 defines it), <c>ResourceRef</c>
+/// has neither <c>originalDocumentID</c> nor <c>filePath</c>, <c>Marker</c>'s <c>type</c> enumerates
+/// <c>Beat</c> where Part 2 Table 16 says <c>Speech</c>, and <c>CuePointParam</c> / <c>Track</c> are
+/// not modelled at all. Every one matches veraPDF, which models none of them either. Adding one makes
+/// this engine reject structs the reference accepts — a false positive, the one thing its contract
+/// forbids.</para>
+///
+/// <para>Pinned field-by-field by <c>XmpParityTests</c> against a committed dump of veraPDF's own
+/// effective definition. Full divergence list and evidence:
+/// <c>Docs/superpowers/notes/2026-08-13-xmp-standards-audit.md</c>.</para>
 /// </summary>
 internal static class XmpStructTypes
 {

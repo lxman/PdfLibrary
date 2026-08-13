@@ -15,6 +15,25 @@ namespace PdfLibrary.Conformance.Xmp;
 /// (an extension schema's) resolves its custom types while predefined structs still resolve their
 /// predefined fields — matching the reference's object graph. Recursion into array elements uses the
 /// current container, which is at worst more permissive than the reference (never a false positive).</para>
+///
+/// <para><b>THESE VALIDATORS WILL CONTRADICT THE PUBLISHED XMP SPECIFICATION, AND THAT IS CORRECT.</b>
+/// They answer to veraPDF, not to the XMP Specification. Two the 2026-08-13 audit initially reported
+/// as bugs, both since confirmed character-for-character identical to the reference's own regexes by
+/// decompiling <c>SimpleTypeValidator$SimpleTypeEnum</c>:
+/// <c>real</c> accepts a trailing decimal point with no fraction digits (<c>"123."</c>) though
+/// Part 1 §8.2.1.4 requires at least one, and <c>mimetype</c> is narrower than RFC 2046's
+/// <c>token</c> grammar. A third: <see cref="MakeStructValidator"/> treats structured types as CLOSED
+/// — any field not in the table invalidates the whole struct — though Part 1 §6.3.3 imposes no such
+/// closedness. That is deliberate reference mirroring, and it is why one post-2005 field
+/// (<c>stEvt:changed</c>) invalidates an entire <c>xmpMM:History</c>.</para>
+///
+/// <para><b>The simple-type regexes are NOT pinned by <c>XmpParityTests</c></b> — they are stored as
+/// <c>Func&lt;XmpNode,bool&gt;</c>, so a registered pattern is unrecoverable from this container and
+/// cannot be diffed. Only the type-name SET is pinned. A behavioural pin was considered and
+/// deliberately deferred: this container does <c>IsMatch(value) || IsMatch(value.Trim())</c> where the
+/// reference uses a bare anchored match, so a naive comparison fires on every trailing-whitespace case
+/// and would need an expected-difference list that rots. Recorded as a known residual rather than
+/// half-pinned. Full detail: <c>Docs/superpowers/notes/2026-08-13-xmp-standards-audit.md</c>.</para>
 /// </summary>
 internal sealed class XmpTypeContainer
 {

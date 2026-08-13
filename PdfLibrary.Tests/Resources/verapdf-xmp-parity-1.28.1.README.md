@@ -17,6 +17,35 @@ oracle existed. Changing any one makes the engine raise findings the reference d
 
 See `Docs/superpowers/notes/2026-08-13-xmp-standards-audit.md`.
 
+## The known divergences — every one of these is CORRECT
+
+Consolidated here rather than annotated at nine separate sites, deliberately: nine comments each
+asserting "the spec says X" are nine things that can rot independently of the fixture, and a stale
+claim about the specification misleads worse than no claim at all.
+
+Verified against veraPDF 1.28.1 on 2026-08-13. **Do not "fix" any row.** Each matches the reference;
+changing one makes the engine raise findings veraPDF does not.
+
+| Site | Engine | Published XMP Specification |
+|---|---|---|
+| `XmpPredefinedSchemas` xmpRights | `Certificate` / `WebStatement` = `url` | Part 1 Table 6: Text |
+| `XmpPredefinedSchemas` pdf | no `Trapped` | Part 2 Table 30 defines it (Boolean) |
+| `XmpPredefinedSchemas` xmpMM | no `OriginalDocumentID` | Part 2 Table 25 defines it (GUID) |
+| `XmpStructTypes.ResourceEvent` | no `stEvt:changed` | Part 2 Table 8 defines it |
+| `XmpStructTypes.ResourceRef` | no `originalDocumentID`, no `filePath` | Part 1 Table 3 / Part 2 Table 9 |
+| `XmpStructTypes.MarkerRestricted` | `type` enumerates `Beat` | Part 2 Table 16: `Speech` |
+| `XmpStructTypes` | `CuePointParam` / `Track` unmodelled | Part 2 Tables 13 and 23 define them |
+| `XmpTypeContainer` `real` | accepts `"123."` | Part 1 §8.2.1.4: fraction needs ≥1 digit |
+| `XmpTypeContainer` `mimetype` | `[-\w+\.]+/[-\w+\.]+` | RFC 2046 `token` is wider |
+| `XmpTypeContainer.MakeStructValidator` | structs are closed | Part 1 §6.3.3 imposes no closedness |
+
+Two consequences worth knowing, because they look like engine bugs when met in the wild:
+
+- The closed-struct rule is why a single post-2005 field (`stEvt:changed`, `stRef:originalDocumentID`)
+  invalidates an entire `xmpMM:History` or `xmpMM:DerivedFrom`. veraPDF does the same.
+- `pdf:Trapped` in a PDF/A document genuinely fires clause 6.6.2.3.1. Those findings are correct, and
+  the property must not be added to the predefined table to silence them.
+
 ## Procedure
 
 Requires a JDK (any 11+) and the veraPDF jar. Neither is in this repo.

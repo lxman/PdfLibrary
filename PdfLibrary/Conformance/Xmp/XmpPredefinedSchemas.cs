@@ -17,6 +17,23 @@ namespace PdfLibrary.Conformance.Xmp;
 /// the type check here can only ever accept a superset of what the reference accepts — it never
 /// rejects a value the reference would pass. The tighter closed-choice regexes are intentionally
 /// NOT applied.</para>
+///
+/// <para><b>THIS TABLE WILL CONTRADICT THE PUBLISHED XMP SPECIFICATION, AND THAT IS CORRECT.</b>
+/// It answers to veraPDF, not to the XMP Specification. PDF/A-2's governing list is ISO 19005-2
+/// Annex B — a 2005-era snapshot — and the published XMP Specification is newer than both Annex B
+/// and veraPDF. So a reader holding the current spec will find entries here that look plainly wrong:
+/// <c>xmpRights:Certificate</c> typed <c>url</c> where Part 1 Table 6 says Text, <c>pdf:Trapped</c>
+/// absent though Part 2 Table 30 defines it, <c>xmpMM:OriginalDocumentID</c> absent though Part 2
+/// Table 25 defines it. Each of those matches veraPDF exactly. "Correcting" one makes this engine
+/// raise findings the reference does not — a false positive, which is the single thing its contract
+/// forbids. The 2026-08-13 audit reported four such entries as bugs before the reference was
+/// available to check against; see <c>Docs/superpowers/notes/2026-08-13-xmp-standards-audit.md</c>
+/// for the full divergence list and the evidence.</para>
+///
+/// <para>Pinned by <c>XmpParityTests</c> against a committed dump of veraPDF's own effective schema
+/// definition, so drift in either direction fails the build rather than being discovered by a future
+/// audit. If you genuinely need to move away from parity, regenerate that fixture in the same commit
+/// and justify it — see <c>PdfLibrary.Tests/Resources/verapdf-xmp-parity-1.28.1.README.md</c>.</para>
 /// </summary>
 internal static class XmpPredefinedSchemas
 {

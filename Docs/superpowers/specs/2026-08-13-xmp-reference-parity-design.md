@@ -1,8 +1,19 @@
 # XMP: pinning veraPDF parity
 
 **Date:** 2026-08-13
-**Status:** slice 1 IMPLEMENTED (fixture + `XmpParityTests` + regeneration README); slice 2
-(divergence documentation) not started
+**Status:** COMPLETE. Slice 1 (fixture + `XmpParityTests` + regeneration README) and slice 2
+(divergence documentation) both implemented.
+
+**Slice 2 was deliberately reshaped from what this spec proposed.** The spec called for one doctrine
+comment plus nine one-line notes at the divergence sites. After slice 1 shipped, most of that job was
+already done: `XmpParityTests`' failure message tells anyone EDITING a table to stop. What remained
+was the reader who *investigates without editing* — compares a table to the spec, finds a
+contradiction, and burns an afternoon or files a bug, with no test to fire because nothing changed.
+So slice 2 became: a doctrine paragraph at the head of each of the three data files (where that
+reader's eye lands), and the nine-row divergence table consolidated in the fixture README instead of
+scattered. The per-site notes were dropped as drift surface — nine comments each asserting "the spec
+says X" are nine things that can rot independently of the fixture, and a stale claim about the
+specification misleads worse than none.
 
 **Slice 1 outcome:** the fixture is built by calling veraPDF's own
 `SchemasDefinitionCreator.getPredefinedSchemaDefinitionForPDFA_2_3(false)` and reading the assembled
