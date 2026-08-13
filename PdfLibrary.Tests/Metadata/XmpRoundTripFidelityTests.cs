@@ -163,4 +163,90 @@ public sealed class XmpRoundTripFidelityTests
         // distinguishes "went through the normal path" from "was snapshotted".
         Assert.DoesNotContain("parseType=\"Collection\"", outXml);
     }
+
+    // ── D2: the rdf:Alt projection ──────────────────────────────────────────────────────────────
+    //
+    // Unlike D1/D3/D5 this is NOT document data loss — the probe confirmed the serializer works from
+    // the node, so a multi-item untagged Alt re-serializes with every item intact. The damage is in
+    // the PROJECTION: XmpProperty reported Kind=LangAlt with ONE entry, because it keyed every item
+    // on `XmlLang ?? "x-default"` and later items overwrote earlier ones.
+    //
+    // It matters because consumers act on the projection and can write back. Pellucid's
+    // XmpDomain.ComparableValue reads exactly this to decide whether a rewrite would narrow a value,
+    // so the fixer could judge — and rewrite — a property having seen one of its three values.
+
+    private static XmpProperty? Project(string body, string ns, string name) =>
+        XmpPacket.Parse(Packet(body)).Get(ns, name);
+
+    private const string XmpNs = "http://ns.adobe.com/xap/1.0/";
+    private const string DcNs = "http://purl.org/dc/elements/1.1/";
+
+    /// <summary>A multi-item <c>rdf:Alt</c> whose items carry no <c>xml:lang</c> is an ordinary
+    /// alternatives array, not a language alternative (Part 1 §6.3.4: Alt is general-purpose;
+    /// language is one use of it, not its definition). All items must reach the consumer.</summary>
+    [Fact]
+    public void A_multi_item_alt_without_languages_projects_every_item()
+    {
+        XmpProperty? p = Project("""
+              <xmp:Nickname><rdf:Alt>
+                <rdf:li>first</rdf:li><rdf:li>second</rdf:li><rdf:li>third</rdf:li>
+              </rdf:Alt></xmp:Nickname>
+        """, XmpNs, "Nickname");
+
+        Assert.NotNull(p);
+        Assert.Equal(XmpValueKind.Array, p!.Kind);
+        Assert.Equal(["first", "second", "third"], p.Items);
+    }
+
+    /// <summary>A SINGLE-item untagged <c>rdf:Alt</c> still projects as a Lang Alt under
+    /// <c>x-default</c>.
+    ///
+    /// <para>Load-bearing, and the reason the old behaviour existed: a <c>dc:title</c> written without
+    /// <c>xml:lang</c> has to keep reaching <c>PdfMetadata.Title</c> and <c>UaTitleRule</c>. What the
+    /// old code never intended was to let SIBLING items overwrite one another. Passed before the fix
+    /// as well as after.</para></summary>
+    [Fact]
+    public void A_single_item_alt_without_a_language_still_projects_as_lang_alt()
+    {
+        XmpProperty? p = Project("""      <dc:title><rdf:Alt><rdf:li>Only</rdf:li></rdf:Alt></dc:title>""",
+                                 DcNs, "title");
+
+        Assert.NotNull(p);
+        Assert.Equal(XmpValueKind.LangAlt, p!.Kind);
+        Assert.Equal("Only", p.LangAlt["x-default"]);
+    }
+
+    /// <summary>A genuine lang alt — every item carrying <c>xml:lang</c> — is unchanged.</summary>
+    [Fact]
+    public void A_real_lang_alt_still_projects_as_lang_alt_with_every_language()
+    {
+        XmpProperty? p = Project("""
+              <dc:title><rdf:Alt>
+                <rdf:li xml:lang="x-default">Title</rdf:li>
+                <rdf:li xml:lang="fr-FR">Titre</rdf:li>
+              </rdf:Alt></dc:title>
+        """, DcNs, "title");
+
+        Assert.NotNull(p);
+        Assert.Equal(XmpValueKind.LangAlt, p!.Kind);
+        Assert.Equal("Title", p.LangAlt["x-default"]);
+        Assert.Equal("Titre", p.LangAlt["fr-FR"]);
+    }
+
+    /// <summary>The document was never damaged by D2 and must stay undamaged: the node keeps every
+    /// item and the serializer emits them, regardless of how the projection reads it.</summary>
+    [Fact]
+    public void A_multi_item_alt_still_round_trips_every_item()
+    {
+        string outXml = RoundTrip("""
+              <xmp:Nickname><rdf:Alt>
+                <rdf:li>first</rdf:li><rdf:li>second</rdf:li><rdf:li>third</rdf:li>
+              </rdf:Alt></xmp:Nickname>
+        """);
+
+        Assert.Contains("first", outXml);
+        Assert.Contains("second", outXml);
+        Assert.Contains("third", outXml);
+        Assert.Contains("<rdf:Alt>", outXml);   // still an Alt, not silently downgraded to a Seq
+    }
 }

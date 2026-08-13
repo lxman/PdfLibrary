@@ -37,12 +37,25 @@ internal sealed class UaTitleRule : IConformanceRule
     }
 
     // dc:title is normally a language alternative; accept the x-default (or any) entry, or a simple value.
+    //
+    // The Array case is an ALTERNATIVES list only (2026-08-13, D2). Before the projection was fixed,
+    // every rdf:Alt surfaced as LangAlt, so a multi-item Alt with no xml:lang reached the LangAlt
+    // branch and yielded a title; now it projects as an Array and would fall to `_ => null`, newly
+    // firing ua-title on documents that never triggered it. That would be a false positive introduced
+    // by a projection refactor, which must not change any conformance verdict.
+    //
+    // Deliberately gated on IsAlternate rather than accepting every Array: an rdf:Seq or rdf:Bag
+    // dc:title projected as an Array BEFORE this change too, and returned null then. Accepting all
+    // arrays would silently stop reporting those, moving the verdict in the other direction. Only the
+    // Alt case changed, so only the Alt case is restored.
     private static string? TitleText(XmpProperty? property) => property?.Kind switch
     {
         XmpValueKind.Simple => property.Value,
         XmpValueKind.LangAlt => property.LangAlt.TryGetValue("x-default", out string? text)
             ? text
             : property.LangAlt.Values.FirstOrDefault(),
+        XmpValueKind.Array when property.IsAlternate =>
+            property.Items.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i)),
         _ => null,
     };
 }

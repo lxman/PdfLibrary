@@ -303,6 +303,40 @@ public class PreflightSlice13Tests
         Assert.Empty(new UaTitleRule().Check(Ctx(Doc((_, _) => { }))));
     }
 
+    /// <summary>A multi-item <c>rdf:Alt</c> title with no <c>xml:lang</c> still counts as a title.
+    ///
+    /// <para>Guards a verdict against the 2026-08-13 D2 projection fix. Every <c>rdf:Alt</c> used to
+    /// project as <c>LangAlt</c>, so this shape reached the LangAlt branch and yielded a title; after
+    /// D2 it projects as an Array and would have fallen through to null, newly firing ua-title on
+    /// documents that never triggered it. A projection refactor must not change a conformance
+    /// verdict, and this is the test that says so.</para></summary>
+    [Fact]
+    public void Multi_item_alt_dc_title_without_languages_still_counts_as_a_title()
+    {
+        byte[] xmp = RawXmp(
+            $"xmlns:dc=\"{DublinCoreNs}\"",
+            "<dc:title><rdf:Alt><rdf:li>First</rdf:li><rdf:li>Second</rdf:li></rdf:Alt></dc:title>");
+
+        Assert.Empty(new UaTitleRule().Check(Ctx(DocWithXmp(xmp))));
+    }
+
+    /// <summary>An <c>rdf:Seq</c> title is still NOT a title.
+    ///
+    /// <para>The other half of the D2 guard, and the reason <c>UaTitleRule</c> gates on
+    /// <c>IsAlternate</c> rather than accepting every Array. A Seq projected as an Array BEFORE D2 too
+    /// and returned null then; accepting all arrays would silently stop reporting these, moving the
+    /// verdict in the opposite direction. Only the Alt case changed, so only the Alt case was
+    /// restored.</para></summary>
+    [Fact]
+    public void Seq_dc_title_is_still_flagged()
+    {
+        byte[] xmp = RawXmp(
+            $"xmlns:dc=\"{DublinCoreNs}\"",
+            "<dc:title><rdf:Seq><rdf:li>First</rdf:li><rdf:li>Second</rdf:li></rdf:Seq></dc:title>");
+
+        Assert.Single(new UaTitleRule().Check(Ctx(DocWithXmp(xmp))));
+    }
+
     // ── ua-xfa (7.15) ─────────────────────────────────────────────────────────
 
     [Fact]
