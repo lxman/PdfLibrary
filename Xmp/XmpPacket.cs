@@ -59,6 +59,17 @@ public sealed class XmpPacket
     /// <summary>All properties in the packet.</summary>
     public IEnumerable<XmpProperty> Properties => _nodes.Values.Select(XmpProperty.FromNode);
 
+    /// <summary>The parsed top-level nodes. Internal because <see cref="XmpNode"/> is internal — the
+    /// conformance classifier in PdfLibrary needs the real tree (shape facets and children), which the
+    /// flat <see cref="XmpProperty"/> projection deliberately cannot express.
+    ///
+    /// <para><b>The returned list is a copy, but the nodes it holds are the packet's own live
+    /// <see cref="XmpNode"/> instances</b> — <see cref="XmpNode.Value"/>, every shape flag, and
+    /// <see cref="XmpNode.Children"/> are all publicly mutable. This accessor is read-only BY CONTRACT
+    /// ONLY: nothing stops a caller from mutating a returned node and corrupting the packet's state
+    /// behind its setters' backs. Treat every node reached from here as immutable.</para></summary>
+    internal IReadOnlyList<XmpNode> Nodes => _nodes.Values.ToList();
+
     // ── Setters ───────────────────────────────────────────────────────────────
 
     /// <summary>Sets or replaces a simple string property.</summary>
@@ -187,6 +198,87 @@ public sealed class XmpPacket
         _nodes[(namespaceUri, localName)] = node;
     }
 
+    // ── PDF/A extension schemas ───────────────────────────────────────────────
+
+    // The three AIIM namespaces of the extension-schema container (ISO 19005-2, 6.6.2.3.2). They are
+    // duplicated in PdfLibrary's XmpExtensionSchemas parser and XmpExtensionSchemaStructureRule; this
+    // assembly cannot reference those types, so the URIs are repeated verbatim rather than shared.
+    private const string ExtensionNs = "http://www.aiim.org/pdfa/ns/extension/";
+    private const string SchemaNs = "http://www.aiim.org/pdfa/ns/schema#";
+    private const string PropertyNs = "http://www.aiim.org/pdfa/ns/property#";
+
+    /// <summary>Declares properties of <paramref name="namespaceUri"/> in the packet's
+    /// <c>pdfaExtension:schemas</c> block, so PDF/A accepts properties the standard does not predefine.
+    ///
+    /// <para>MERGES rather than replaces: an existing schema item for the same namespace gains the new
+    /// properties, and other namespaces' schema items are untouched. Replacing the block wholesale
+    /// would destroy a producer's own declarations. An empty <paramref name="properties"/> list
+    /// declares nothing and leaves the packet untouched.</para>
+    ///
+    /// <para><b>Absence is repaired, presence is respected</b> — the one rule at every level. A schema
+    /// or property item that already exists keeps every field it has (a producer's own wording is its
+    /// own), but any field it LACKS is added from the arguments, because a prior declaration missing
+    /// <c>pdfaSchema:prefix</c> or <c>pdfaProperty:category</c> leaves clause 6.6.2.3.3 firing
+    /// forever and this method's whole promise is that its output satisfies both consumers.</para>
+    ///
+    /// <para>The one thing it cannot repair is a field that is present but WRONG — most importantly a
+    /// <c>pdfaProperty:valueType</c> the type container does not recognise, which the parser silently
+    /// refuses to register, leaving 6.6.2.3.1 open for that property with no error reported anywhere.
+    /// Validating the type name needs the container, which lives in an assembly this one must not
+    /// reference, so pass a type name the standard knows (e.g. "Text", "Date", "URI", "seq Text",
+    /// "Lang Alt") and treat a pre-existing mistyped declaration as a repair this method does not
+    /// make.</para>
+    ///
+    /// <para>Where a malformed block forces a choice, the PARSER's semantics win, because being
+    /// understood is the point: duplicate schema items for one namespace, and duplicate property items
+    /// for one name, resolve to the LAST (<c>XmpExtensionSchemas</c> registers them into a dictionary
+    /// in document order, so the last assignment stands). An existing <c>pdfaExtension:schemas</c>
+    /// property that is not array-shaped is not a container at all — neither consumer looks inside it —
+    /// and is REPLACED with a fresh array; that is the one case where this method does not merge.</para>
+    ///
+    /// <para>The block is emitted with every field both consumers need — the parser's namespaceURI /
+    /// property / name / valueType, and the structure rule's prefix / schema / category /
+    /// description.</para></summary>
+    /// <exception cref="ArgumentNullException">Any argument, or any member of any
+    /// <see cref="XmpExtensionProperty"/>, is null. Every element is validated before the packet is
+    /// touched, so a bad element cannot leave a half-written block behind.</exception>
+    public void DeclareExtensionSchema(string namespaceUri, string prefix, string schemaDescription,
+                                       IReadOnlyList<XmpExtensionProperty> properties)
+    {
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (prefix is null) throw new ArgumentNullException(nameof(prefix));
+        if (schemaDescription is null) throw new ArgumentNullException(nameof(schemaDescription));
+        if (properties is null) throw new ArgumentNullException(nameof(properties));
+
+        // Up-front, before a single node is touched: a null member on the third of four properties
+        // must not leave two already appended and the packet half-mutated.
+        foreach (XmpExtensionProperty p in properties)
+        {
+            RequireMember(p.Name, nameof(XmpExtensionProperty.Name), nameof(properties));
+            RequireMember(p.ValueType, nameof(XmpExtensionProperty.ValueType), nameof(properties));
+            RequireMember(p.Category, nameof(XmpExtensionProperty.Category), nameof(properties));
+            RequireMember(p.Description, nameof(XmpExtensionProperty.Description), nameof(properties));
+        }
+
+        // Declaring no properties is not a reason to plant a vacuous schema item in a packet that
+        // carried no extension block at all.
+        if (properties.Count == 0)
+            return;
+
+        XmpNode schemas = EnsureSchemasArray();
+        XmpNode schema = EnsureSchemaFor(schemas, namespaceUri, prefix, schemaDescription);
+        XmpNode propertyArray = EnsurePropertyArray(schema);
+
+        foreach (XmpExtensionProperty p in properties)
+        {
+            XmpNode? existing = FindPropertyNamed(propertyArray, p.Name);
+            if (existing is null)
+                propertyArray.Children.Add(PropertyItem(p));
+            else
+                TopUpProperty(existing, p);
+        }
+    }
+
     /// <summary>Removes a property. No-op if absent.</summary>
     public void Remove(string namespaceUri, string localName) =>
         _nodes.Remove((namespaceUri, localName));
@@ -239,7 +331,152 @@ public sealed class XmpPacket
 
         return new XmpNode(field.NamespaceUri, field.LocalName, field.Prefix) { IsSimple = true, Value = field.Value };
     }
+
+    // ── Extension-schema node building ─────────────────────────────────────────
+    //
+    // The container nests array → struct → array → struct, which SetStructArray (two levels) cannot
+    // express, so the nodes are built directly. Every node in the SchemaNs/PropertyNs namespaces
+    // carries the conventional prefix because XmpExtensionSchemaStructureRule reports any other
+    // prefix on those namespaces as non-conformant.
+
+    /// <summary>The packet's <c>pdfaExtension:schemas</c> array, created on first use. An existing
+    /// array is REUSED so a producer's own declarations survive.</summary>
+    private XmpNode EnsureSchemasArray()
+    {
+        if (_nodes.TryGetValue((ExtensionNs, "schemas"), out XmpNode? existing) && existing.IsArray)
+            return existing;
+
+        var schemas = new XmpNode(ExtensionNs, "schemas", "pdfaExtension")
+        {
+            IsArray = true,
+            IsArrayOrdered = false,
+        };
+        _nodes[(ExtensionNs, "schemas")] = schemas;
+        return schemas;
+    }
+
+    /// <summary>The schema item describing <paramref name="namespaceUri"/>, created and appended when
+    /// absent. An existing item is reused and any required description field it LACKS is added (never
+    /// overwritten — a producer's own wording is its own).
+    ///
+    /// <para>When several items declare the same namespace — a malformed block, but one a producer can
+    /// emit — the LAST is chosen, because <c>XmpExtensionSchemas.RegisterSchema</c> assigns
+    /// <c>_byNamespace[ns]</c> per item in document order and therefore keeps the last. Merging into
+    /// the first would append the property to an item the parser discards: the declaration would not
+    /// register, the 6.6.2.3.1 finding the call was meant to close would stay open, and nothing would
+    /// report an error.</para></summary>
+    private static XmpNode EnsureSchemaFor(XmpNode schemas, string namespaceUri, string prefix,
+                                           string schemaDescription)
+    {
+        XmpNode? match = null;
+        foreach (XmpNode item in schemas.Children)
+            if (item.IsStruct && HasFieldValue(item, SchemaNs, "namespaceURI", namespaceUri))
+                match = item; // last wins, matching the parser
+
+        if (match is not null)
+        {
+            AddMissingField(match, SchemaNs, "pdfaSchema", "prefix", prefix);
+            AddMissingField(match, SchemaNs, "pdfaSchema", "schema", schemaDescription);
+            return match;
+        }
+
+        // An array item carries no qualified name of its own — rdf:li supplies it.
+        var schema = new XmpNode(string.Empty, string.Empty, string.Empty) { IsStruct = true };
+        schema.Children.Add(SchemaField("namespaceURI", namespaceUri));
+        schema.Children.Add(SchemaField("prefix", prefix));
+        schema.Children.Add(SchemaField("schema", schemaDescription));
+        schemas.Children.Add(schema);
+        return schema;
+    }
+
+    /// <summary>The schema item's <c>pdfaSchema:property</c> array, created when absent.</summary>
+    private static XmpNode EnsurePropertyArray(XmpNode schema)
+    {
+        foreach (XmpNode child in schema.Children)
+            if (child.NamespaceUri == SchemaNs && child.LocalName == "property" && child.IsArray)
+                return child;
+
+        var array = new XmpNode(SchemaNs, "property", "pdfaSchema") { IsArray = true };
+        schema.Children.Add(array);
+        return array;
+    }
+
+    /// <summary>The property item declaring <paramref name="name"/>, or null. The LAST match wins, for
+    /// the same reason <see cref="EnsureSchemaFor"/> takes the last schema item: the parser fills a
+    /// <c>name → valueType</c> dictionary in document order, so a later duplicate is what it keeps.</summary>
+    private static XmpNode? FindPropertyNamed(XmpNode propertyArray, string name)
+    {
+        XmpNode? match = null;
+        foreach (XmpNode item in propertyArray.Children)
+            if (HasFieldValue(item, PropertyNs, "name", name))
+                match = item;
+        return match;
+    }
+
+    /// <summary>Adds to an already-declared property only the required fields it LACKS. A producer
+    /// that declared a name and valueType but no category/description left 6.6.2.3.3 firing on that
+    /// item; skipping it untouched (because the name matched) would have made the writer's repair
+    /// promise hold at the schema level and quietly not at the property level.</summary>
+    private static void TopUpProperty(XmpNode item, XmpExtensionProperty property)
+    {
+        AddMissingField(item, PropertyNs, "pdfaProperty", "valueType", property.ValueType);
+        AddMissingField(item, PropertyNs, "pdfaProperty", "category", property.Category);
+        AddMissingField(item, PropertyNs, "pdfaProperty", "description", property.Description);
+    }
+
+    private static XmpNode PropertyItem(XmpExtensionProperty property)
+    {
+        var item = new XmpNode(string.Empty, string.Empty, string.Empty) { IsStruct = true };
+        item.Children.Add(PropertyField("name", property.Name));
+        item.Children.Add(PropertyField("valueType", property.ValueType));
+        item.Children.Add(PropertyField("category", property.Category));
+        item.Children.Add(PropertyField("description", property.Description));
+        return item;
+    }
+
+    private static XmpNode SchemaField(string localName, string value) =>
+        new(SchemaNs, localName, "pdfaSchema") { IsSimple = true, Value = value };
+
+    private static XmpNode PropertyField(string localName, string value) =>
+        new(PropertyNs, localName, "pdfaProperty") { IsSimple = true, Value = value };
+
+    /// <summary>Adds a simple field only when the node has none of that name. ABSENCE is the test, not
+    /// emptiness: an empty-valued field is present, both consumers treat presence as satisfaction
+    /// ("a field that is present but empty is not missing"), and overwriting it would be editing a
+    /// producer's declaration rather than repairing it.</summary>
+    private static void AddMissingField(XmpNode node, string ns, string prefix, string localName, string value)
+    {
+        foreach (XmpNode child in node.Children)
+            if (child.NamespaceUri == ns && child.LocalName == localName)
+                return;
+        node.Children.Add(new XmpNode(ns, localName, prefix) { IsSimple = true, Value = value });
+    }
+
+    private static bool HasFieldValue(XmpNode node, string ns, string localName, string value)
+    {
+        foreach (XmpNode child in node.Children)
+            if (child.NamespaceUri == ns && child.LocalName == localName && child.Value == value)
+                return true;
+        return false;
+    }
+
+    // A default-constructed record struct has null members; they would serialize as empty fields that
+    // both consumers would accept while meaning nothing, so they are rejected at the boundary. The
+    // paramName is the LIST parameter the bad element arrived in — the member is not a parameter.
+    private static void RequireMember(string value, string memberName, string paramName)
+    {
+        if (value is null)
+            throw new ArgumentNullException(paramName,
+                $"{nameof(XmpExtensionProperty)}.{memberName} must not be null.");
+    }
 }
+
+/// <summary>One property of an authored PDF/A extension schema. All four members are mandatory:
+/// the parser needs Name and ValueType to register the property, and XmpExtensionSchemaStructureRule
+/// requires Category and Description to be present — emitting less would close one rule and open
+/// another. Category is conventionally "internal" (producer-private) or "external".</summary>
+public readonly record struct XmpExtensionProperty(
+    string Name, string ValueType, string Category, string Description);
 
 /// <summary>One field of an authored XMP struct. Fields carry their own namespace/prefix because a
 /// struct's fields routinely live in a different namespace from the property that holds them — an
