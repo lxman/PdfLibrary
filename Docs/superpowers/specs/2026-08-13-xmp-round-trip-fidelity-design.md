@@ -171,14 +171,43 @@ unchanged: still no throw, still an empty list when nothing parses.
 
 ## Slices
 
-Ordered by damage, so the highest-value fix lands first and each slice is independently shippable.
+> **RE-RANKED 2026-08-13 after a reachability probe. The ordering below is the corrected one; the
+> original is recorded underneath because the correction is the useful part.**
+>
+> A throwaway probe round-tripped every defect's documented fragment through the shipped code before
+> any fix was written. **All nine reproduce — none was speculative.** Three findings changed the plan:
+>
+> - **D2 does NOT destroy content.** The serializer works from the node, so a multi-item untagged
+>   `rdf:Alt` re-serializes with all three items intact. Only the PROJECTION collapses
+>   (`Kind=LangAlt, LangAlt.Count=1`). It is a consumer-side defect — dangerous because
+>   `XmpDomain.ComparableValue` reads that projection and can write back — but the document is fine.
+>   This spec ranked it top-tier on the assumption it destroyed content. It does not.
+> - **D5 destroys text**, which the audit under-stated: `rich <b>text</b>` returns as
+>   `<ns1:b>text</ns1:b>` — the word "rich" is gone, and the literal has become a struct.
+> - **D3 does more than truncate**: it drops item two AND silently re-emits `parseType="Collection"`
+>   as `parseType="Resource"`, changing the production on the way out.
+>
+> Evidence-based severity:
+>
+> | Tier | Defects |
+> |---|---|
+> | Destroys content on save | D1, D3, D5 |
+> | Loses content at parse | D8 (island collision), D9 (never found) |
+> | Corrupts structure, content survives | D4 |
+> | Changes form / emits a forbidden construct | D6, D7 |
+> | Projection only — document round-trips fine | D2 |
 
-1. **D1** — `xml:lang` on plain literals. Self-contained; no projection change.
-2. **D2** — Alt projection. The only slice that changes `XmpValueKind` for existing documents, so it
-   carries the app-side corpus gate and a review of every `XmpValueKind` switch in both repos.
-3. **D3–D5** — RawXml widening for the three unmodelled productions.
-4. **D6, D7, D9** — form and hygiene; small, low risk.
-5. **D8** — collision diagnostics.
+1. **D1** — `xml:lang` on plain literals. **DONE** (`9f6b43a`). Parser-only: the serializer's
+   `EmitShape` already emitted the attribute for any node carrying it and was waiting on the read side.
+2. **D3, D5** — the two remaining content-destroying defects. Both are `RawXml` widening.
+3. **D2** — Alt projection. Still the only slice that changes `XmpValueKind` for existing documents,
+   so it keeps the app-side corpus gate and the review of every `XmpValueKind` switch in both repos.
+   Demoted on damage, not on importance: it is the one defect a *fixer* can act on destructively.
+4. **D4** — typed-node struct form.
+5. **D6, D7, D9** — form and hygiene; small, low risk.
+6. **D8** — collision diagnostics.
+
+*Original ordering, superseded: D1 → D2 → D3–D5 → D6,D7,D9 → D8.*
 
 ## Testing
 
