@@ -249,4 +249,54 @@ public sealed class XmpRoundTripFidelityTests
         Assert.Contains("third", outXml);
         Assert.Contains("<rdf:Alt>", outXml);   // still an Alt, not silently downgraded to a Seq
     }
+
+    // ── D4: the RDF typed-node struct form ──────────────────────────────────────────────────────
+    //
+    // <ns:Prop><ns:Type>fields</ns:Type></ns:Prop> — Part 1 §7.9.2.5's "Typed Node form of a
+    // nodeElement", equivalent to <rdf:Description rdf:type="ns:Type">. The type name is an ASSERTION
+    // about the value, not a field of it.
+    //
+    // The mildest of the nine: no content is lost and the parse is idempotent. What is lost is the
+    // type assertion — the outer element silently GAINS rdf:parseType="Resource" on output, turning
+    // "this value is a typed node of type X" into "this is a struct with a field named X". Different
+    // RDF, same bytes-worth of text.
+    //
+    // Preserved rather than reinterpreted, deliberately. Reinterpreting means deciding that a
+    // property's single element child is a TYPE rather than a FIELD, and for real packets that is
+    // ambiguous: <xmp:Prop><xmp:Field>text</xmp:Field></xmp:Prop> must stay a struct with one field.
+    // Guessing wrong there would destroy a field name, which is worse than the assertion being lost —
+    // and no producer in the corpus emits typed nodes at all.
+
+    /// <summary>A typed-node struct is re-emitted as it was written, not rewritten into a struct
+    /// whose field is named after the type.</summary>
+    [Fact]
+    public void A_typed_node_struct_keeps_its_type_assertion()
+    {
+        string outXml = RoundTrip("""
+              <xmp:Thing><xmp:ThingType rdf:parseType="Resource">
+                <dc:title>a</dc:title>
+              </xmp:ThingType></xmp:Thing>
+        """);
+
+        Assert.Contains("ThingType", outXml);
+        Assert.Contains("a", outXml);
+        // The defect: the OUTER element gained parseType="Resource", asserting that ThingType is a
+        // field of Thing rather than Thing's type.
+        Assert.DoesNotContain("<xmp:Thing rdf:parseType=\"Resource\">", outXml);
+    }
+
+    /// <summary>A property whose single element child is a SIMPLE value is a struct with one field,
+    /// and must not be mistaken for a typed node.
+    ///
+    /// <para>The guard that constrains the D4 fix. Treating this child as a type name would destroy
+    /// the field name outright — a worse loss than the one D4 repairs. Passed before the fix as well
+    /// as after.</para></summary>
+    [Fact]
+    public void A_struct_with_one_simple_field_is_not_mistaken_for_a_typed_node()
+    {
+        string outXml = RoundTrip("""      <xmp:Thing><xmp:Field>text</xmp:Field></xmp:Thing>""");
+
+        Assert.Contains("Field", outXml);
+        Assert.Contains("text", outXml);
+    }
 }

@@ -273,6 +273,42 @@ internal static class XmpTreeParser
         if (parseType is not null && parseType != "Resource")
             node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
 
+        // The RDF TYPED-NODE form (Part 1 §7.9.2.5): <ns:Prop><ns:Type>fields</ns:Type></ns:Prop>,
+        // equivalent to <rdf:Description rdf:type="ns:Type">. The inner name is an ASSERTION about the
+        // value's type, not a field of it — and this model has nowhere to hang it, so without a capture
+        // the outer element silently GAINS rdf:parseType="Resource" on output, restating "this value is
+        // a typed node of type X" as "this is a struct with a field named X". No content is lost (the
+        // mildest of the nine defects, and idempotent), but the type assertion is.
+        //
+        // PRESERVED, NOT REINTERPRETED. Parsing it properly means deciding that a property's single
+        // element child names a TYPE rather than a FIELD, and in real packets that is ambiguous:
+        // <xmp:Prop><xmp:Field>text</xmp:Field></xmp:Prop> is a struct with one field, and guessing
+        // wrong there destroys the field name — a worse loss than the one being repaired. No producer
+        // in the measured corpus emits typed nodes at all, so there is no evidence to justify the
+        // riskier reading.
+        //
+        // Narrow by construction, and each clause is load-bearing:
+        //   parseType is null     — "Resource" is the fields form, already handled below.
+        //   exactly one child     — the grammar allows a resourcePropertyElt exactly one nodeElement;
+        //                           the existing tolerant multi-child reading is left alone.
+        //   child NOT in rdf:     — excludes <rdf:Bag>/<rdf:Seq>/<rdf:Alt> (arrays, handled below) and
+        //                           <rdf:Description> (the untyped struct form). Without this the
+        //                           array branch would never be reached for a single-array-child
+        //                           property and every array would be frozen as raw XML.
+        //   child is a nodeElement — it must itself carry fields (parseType="Resource" or element
+        //                           children). A child holding only text is a simple FIELD, not a type.
+        if (parseType is null)
+        {
+            List<XElement> elementChildren = el.Elements().ToList();
+            if (elementChildren.Count == 1
+                && elementChildren[0].Name.Namespace != Rdf
+                && (elementChildren[0].Attribute(Rdf + "parseType")?.Value == "Resource"
+                    || elementChildren[0].Elements().Any()))
+            {
+                node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
+            }
+        }
+
         XElement? container = el.Elements().FirstOrDefault(e =>
             e.Name.Namespace == Rdf && e.Name.LocalName is "Bag" or "Seq" or "Alt");
         if (container is not null)
