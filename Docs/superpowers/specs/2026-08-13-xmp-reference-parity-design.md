@@ -1,7 +1,20 @@
 # XMP: pinning veraPDF parity
 
 **Date:** 2026-08-13
-**Status:** design, not approved, not implemented
+**Status:** slice 1 IMPLEMENTED (fixture + `XmpParityTests` + regeneration README); slice 2
+(divergence documentation) not started
+
+**Slice 1 outcome:** the fixture is built by calling veraPDF's own
+`SchemasDefinitionCreator.getPredefinedSchemaDefinitionForPDFA_2_3(false)` and reading the assembled
+map, rather than reassembling `XMPConstants` — which sidesteps the `String[][]` trap entirely instead
+of documenting a way around it. 277 properties and 20 structured types matched on the first run.
+
+**The test earned its cost immediately: it found a real parity break.** veraPDF registers an `xpath`
+simple type and the engine did not. Unreachable through the tables (nothing is typed `xpath`), but
+`IsKnownType`'s one consumer is `XmpExtensionSchemas`' decision whether an extension-schema-declared
+property registers — so a document declaring a property as XPath registered in veraPDF and not here,
+leaving `XmpPropertyPredefinedRule` firing where the reference is silent. A false positive, the one
+thing the contract forbids. Fixed in the same change; see `XmpTypeContainer.RegisterBaseSimpleTypes`.
 **Scope:** make the engine's XMP conformance tables provably equal to veraPDF's, and make the places
 where they knowingly disagree with the XMP Specification legible — so nobody "fixes" them.
 

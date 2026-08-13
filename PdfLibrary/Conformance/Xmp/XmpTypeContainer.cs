@@ -20,17 +20,36 @@ internal sealed class XmpTypeContainer
 {
     private readonly Dictionary<string, Func<XmpNode, bool>> _validators;
 
+    // A registered structure's own data, kept ALONGSIDE the closure in _validators rather than
+    // replacing it. A validator is a Func, so once registered its field table is unrecoverable —
+    // which left the veraPDF parity fixture with nothing to compare against on the structured side.
+    // This records the same (childNamespaceUri, fields) the closure captured, and is read only by
+    // XmpParityTests. It never participates in validation; Validate/IsKnownType do not consult it.
+    private readonly Dictionary<string, (string ChildNamespaceUri, IReadOnlyDictionary<string, string> Fields)> _structures;
+
     private XmpTypeContainer(bool empty)
     {
         _validators = new Dictionary<string, Func<XmpNode, bool>>(StringComparer.Ordinal);
+        _structures = new Dictionary<string, (string, IReadOnlyDictionary<string, string>)>(StringComparer.Ordinal);
         if (!empty)
             RegisterBaseSimpleTypes();
     }
 
     /// <summary>Clones an existing container (copies the validator map; structured validators keep
     /// their original container reference, exactly as the reference does).</summary>
-    private XmpTypeContainer(XmpTypeContainer source) =>
+    private XmpTypeContainer(XmpTypeContainer source)
+    {
         _validators = new Dictionary<string, Func<XmpNode, bool>>(source._validators, StringComparer.Ordinal);
+        _structures = new Dictionary<string, (string, IReadOnlyDictionary<string, string>)>(source._structures, StringComparer.Ordinal);
+    }
+
+    /// <summary>Every structured type registered here, as (typeName, childNamespaceUri, fields).
+    /// Exists so the veraPDF parity fixture can be diffed against what the engine ACTUALLY
+    /// registered, rather than against a list of struct tables restated in the test — a restated
+    /// list would not notice a newly registered type, which is the drift the fixture exists to
+    /// catch.</summary>
+    internal IEnumerable<(string TypeName, string ChildNamespaceUri, IReadOnlyDictionary<string, string> Fields)> Structures =>
+        _structures.Select(kv => (kv.Key, kv.Value.ChildNamespaceUri, kv.Value.Fields));
 
     /// <summary>The predefined PDF/A-2/3 container (no closed-choice), built once.</summary>
     public static XmpTypeContainer Predefined23 { get; } = BuildPredefined23();
@@ -105,8 +124,15 @@ internal sealed class XmpTypeContainer
 
     /// <summary>Registers a custom structured value type; the validator resolves its field types
     /// against <c>this</c> container (so nested custom types are visible).</summary>
-    public void RegisterStruct(string typeName, string childNamespaceUri, IReadOnlyDictionary<string, string> fields) =>
+    public void RegisterStruct(string typeName, string childNamespaceUri, IReadOnlyDictionary<string, string> fields)
+    {
+        // Records into _structures as well, so that map stays "everything registered here" rather
+        // than "everything the predefined builder registered". The parity fixture only reads the
+        // predefined container, which never reaches this method, but an accessor that silently
+        // omitted extension-schema types would be a trap for its next caller.
         _validators[Simplify(typeName)] = MakeStructValidator(childNamespaceUri, fields, this);
+        _structures[Simplify(typeName)] = (childNamespaceUri, fields);
+    }
 
     // ── Construction of the predefined container ─────────────────────────────────────────────────
 
@@ -148,6 +174,22 @@ internal sealed class XmpTypeContainer
         _validators["uri"] = IsSimpleNode;
         _validators["url"] = IsSimpleNode;
 
+        // xpath: found MISSING by XmpParityTests on its first run (2026-08-13). No predefined property
+        // and no struct field is typed xpath, so this is unreachable through the tables — but
+        // IsKnownType has exactly one consumer, XmpExtensionSchemas' decision whether an
+        // extension-schema-declared property registers. Without this, a document declaring a property
+        // as XPath registered in veraPDF and NOT here, so XmpPropertyPredefinedRule kept firing for a
+        // property the reference considers declared: a FALSE POSITIVE, the one thing this engine's
+        // contract forbids.
+        //
+        // veraPDF's XPathTypeValidator is stricter than this — it requires a simple node and then
+        // actually compiles the value with XPathFactory, rejecting what will not compile. Accepting
+        // any simple node is deliberately MORE permissive, which can only produce a false NEGATIVE
+        // (accepting an ill-formed XPath the reference rejects). That is the safe direction under a
+        // no-false-positive contract, and it avoids betting parity on Java and .NET XPath dialects
+        // agreeing on every malformed expression. Tighten only with evidence that the laxity matters.
+        _validators["xpath"] = IsSimpleNode;
+
         // Simple types whose value is unconstrained accept any simple node; the four restrictive ones
         // additionally match their regex (whole-string, like the reference's Matcher.matches()).
         _validators["text"] = IsSimpleNode;
@@ -170,6 +212,7 @@ internal sealed class XmpTypeContainer
         for (int i = 1; i < structure.Length; i += 2)
             fields[structure[i]] = structure[i + 1];
         _validators[typeName] = MakeStructValidator(structure[0], fields, this);
+        _structures[typeName] = (structure[0], fields);
     }
 
     // No closed-choice mode: fold restricted fields ({name, baseType, regex, …}) in as their base type.
@@ -181,6 +224,7 @@ internal sealed class XmpTypeContainer
         for (int i = 0; i < restricted.Length; i += 3)
             fields[restricted[i]] = restricted[i + 1];
         _validators[typeName] = MakeStructValidator(structure[0], fields, this);
+        _structures[typeName] = (structure[0], fields);
     }
 
     private static Func<XmpNode, bool> MakeStructValidator(

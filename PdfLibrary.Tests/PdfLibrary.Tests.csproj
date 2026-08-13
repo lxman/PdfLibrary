@@ -58,6 +58,11 @@
         <None Update="Resources\PublicPixel.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
         <!-- Known-conformant PDF/A-2b reference doc from the veraPDF corpus (CC BY 4.0;
              see Resources/conformant-pdfa2b.LICENSE.txt) — the "clean document" fixture. -->
+        <!-- veraPDF's own PDF/A-2/3 predefined schema definition, dumped from greenfield-apps-1.28.1.
+             The oracle XmpParityTests pins the XMP conformance tables to; see the .README.md beside
+             it for the regeneration procedure. -->
+        <None Update="Resources\verapdf-xmp-parity-1.28.1.txt" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Resources\verapdf-xmp-parity-1.28.1.README.md" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Resources\conformant-pdfa2b.pdf" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Resources\conformant-pdfa2b.LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
         <!-- Official ZUGFeRD 2.5 / Factur-X example invoice (FeRD license; see

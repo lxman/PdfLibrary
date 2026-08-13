@@ -1,0 +1,322 @@
+# veraPDF predefined schema definition - PDF/A-2/3, closedChoice=false
+# Generated from SchemasDefinitionCreator.getPredefinedSchemaDefinitionForPDFA_2_3.
+# Canonical + sorted; regenerate rather than hand-edit.
+
+[properties] count=277
+http://ns.adobe.com/camera-raw-settings/1.0/	AutoBrightness	boolean
+http://ns.adobe.com/camera-raw-settings/1.0/	AutoContrast	boolean
+http://ns.adobe.com/camera-raw-settings/1.0/	AutoExposure	boolean
+http://ns.adobe.com/camera-raw-settings/1.0/	AutoShadows	boolean
+http://ns.adobe.com/camera-raw-settings/1.0/	BlueHue	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	BlueSaturation	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Brightness	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	CameraProfile	text
+http://ns.adobe.com/camera-raw-settings/1.0/	ChromaticAberrationB	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	ChromaticAberrationR	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	ColorNoiseReduction	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Contrast	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	CropAngle	real
+http://ns.adobe.com/camera-raw-settings/1.0/	CropBottom	real
+http://ns.adobe.com/camera-raw-settings/1.0/	CropHeight	real
+http://ns.adobe.com/camera-raw-settings/1.0/	CropLeft	real
+http://ns.adobe.com/camera-raw-settings/1.0/	CropRight	real
+http://ns.adobe.com/camera-raw-settings/1.0/	CropTop	real
+http://ns.adobe.com/camera-raw-settings/1.0/	CropUnits	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	CropWidth	real
+http://ns.adobe.com/camera-raw-settings/1.0/	Exposure	real
+http://ns.adobe.com/camera-raw-settings/1.0/	GreenHue	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	GreenSaturation	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	HasCrop	boolean
+http://ns.adobe.com/camera-raw-settings/1.0/	HasSettings	boolean
+http://ns.adobe.com/camera-raw-settings/1.0/	LuminanceSmoothing	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	RawFileName	text
+http://ns.adobe.com/camera-raw-settings/1.0/	RedHue	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	RedSaturation	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Saturation	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	ShadowTint	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Shadows	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Sharpness	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Temperature	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	Tint	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	ToneCurve	seq text
+http://ns.adobe.com/camera-raw-settings/1.0/	ToneCurveName	text
+http://ns.adobe.com/camera-raw-settings/1.0/	Version	text
+http://ns.adobe.com/camera-raw-settings/1.0/	VignetteAmount	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	VignetteMidpoint	integer
+http://ns.adobe.com/camera-raw-settings/1.0/	WhiteBalance	text
+http://ns.adobe.com/exif/1.0/	ApertureValue	rational
+http://ns.adobe.com/exif/1.0/	BrightnessValue	rational
+http://ns.adobe.com/exif/1.0/	CFAPattern	cfapattern
+http://ns.adobe.com/exif/1.0/	ColorSpace	integer
+http://ns.adobe.com/exif/1.0/	ComponentsConfiguration	seq integer
+http://ns.adobe.com/exif/1.0/	CompressedBitsPerPixel	rational
+http://ns.adobe.com/exif/1.0/	Contrast	integer
+http://ns.adobe.com/exif/1.0/	CustomRendered	integer
+http://ns.adobe.com/exif/1.0/	DateTimeDigitized	date
+http://ns.adobe.com/exif/1.0/	DateTimeOriginal	date
+http://ns.adobe.com/exif/1.0/	DeviceSettingDescription	devicesettings
+http://ns.adobe.com/exif/1.0/	DigitalZoomRatio	rational
+http://ns.adobe.com/exif/1.0/	ExifVersion	text
+http://ns.adobe.com/exif/1.0/	ExposureBiasValue	rational
+http://ns.adobe.com/exif/1.0/	ExposureIndex	rational
+http://ns.adobe.com/exif/1.0/	ExposureMode	integer
+http://ns.adobe.com/exif/1.0/	ExposureProgram	integer
+http://ns.adobe.com/exif/1.0/	ExposureTime	rational
+http://ns.adobe.com/exif/1.0/	FNumber	rational
+http://ns.adobe.com/exif/1.0/	FileSource	integer
+http://ns.adobe.com/exif/1.0/	Flash	flash
+http://ns.adobe.com/exif/1.0/	FlashEnergy	rational
+http://ns.adobe.com/exif/1.0/	FlashpixVersion	text
+http://ns.adobe.com/exif/1.0/	FocalLength	rational
+http://ns.adobe.com/exif/1.0/	FocalLengthIn35mmFilm	integer
+http://ns.adobe.com/exif/1.0/	FocalPlaneResolutionUnit	integer
+http://ns.adobe.com/exif/1.0/	FocalPlaneXResolution	rational
+http://ns.adobe.com/exif/1.0/	FocalPlaneYResolution	rational
+http://ns.adobe.com/exif/1.0/	GPSAltitude	rational
+http://ns.adobe.com/exif/1.0/	GPSAltitudeRef	integer
+http://ns.adobe.com/exif/1.0/	GPSAreaInformation	text
+http://ns.adobe.com/exif/1.0/	GPSDOP	rational
+http://ns.adobe.com/exif/1.0/	GPSDestBearing	rational
+http://ns.adobe.com/exif/1.0/	GPSDestBearingRef	text
+http://ns.adobe.com/exif/1.0/	GPSDestDistance	rational
+http://ns.adobe.com/exif/1.0/	GPSDestDistanceRef	text
+http://ns.adobe.com/exif/1.0/	GPSDestLatitude	gpscoordinate
+http://ns.adobe.com/exif/1.0/	GPSDestLongitude	gpscoordinate
+http://ns.adobe.com/exif/1.0/	GPSDifferential	integer
+http://ns.adobe.com/exif/1.0/	GPSImgDirection	rational
+http://ns.adobe.com/exif/1.0/	GPSImgDirectionRef	text
+http://ns.adobe.com/exif/1.0/	GPSLatitude	gpscoordinate
+http://ns.adobe.com/exif/1.0/	GPSLongitude	gpscoordinate
+http://ns.adobe.com/exif/1.0/	GPSMapDatum	text
+http://ns.adobe.com/exif/1.0/	GPSMeasureMode	text
+http://ns.adobe.com/exif/1.0/	GPSProcessingMethod	text
+http://ns.adobe.com/exif/1.0/	GPSSatellites	text
+http://ns.adobe.com/exif/1.0/	GPSSpeed	rational
+http://ns.adobe.com/exif/1.0/	GPSSpeedRef	text
+http://ns.adobe.com/exif/1.0/	GPSStatus	text
+http://ns.adobe.com/exif/1.0/	GPSTimeStamp	date
+http://ns.adobe.com/exif/1.0/	GPSTrack	rational
+http://ns.adobe.com/exif/1.0/	GPSTrackRef	text
+http://ns.adobe.com/exif/1.0/	GPSVersionID	text
+http://ns.adobe.com/exif/1.0/	GainControl	integer
+http://ns.adobe.com/exif/1.0/	ISOSpeedRatings	seq integer
+http://ns.adobe.com/exif/1.0/	ImageUniqueID	text
+http://ns.adobe.com/exif/1.0/	LightSource	integer
+http://ns.adobe.com/exif/1.0/	MaxApertureValue	rational
+http://ns.adobe.com/exif/1.0/	MeteringMode	integer
+http://ns.adobe.com/exif/1.0/	OECF	oecf/sfr
+http://ns.adobe.com/exif/1.0/	PixelXDimension	integer
+http://ns.adobe.com/exif/1.0/	PixelYDimension	integer
+http://ns.adobe.com/exif/1.0/	RelatedSoundFile	text
+http://ns.adobe.com/exif/1.0/	Saturation	integer
+http://ns.adobe.com/exif/1.0/	SceneCaptureType	integer
+http://ns.adobe.com/exif/1.0/	SceneType	integer
+http://ns.adobe.com/exif/1.0/	SensingMethod	integer
+http://ns.adobe.com/exif/1.0/	Sharpness	integer
+http://ns.adobe.com/exif/1.0/	ShutterSpeedValue	rational
+http://ns.adobe.com/exif/1.0/	SpatialFrequencyResponse	oecf/sfr
+http://ns.adobe.com/exif/1.0/	SpectralSensitivity	text
+http://ns.adobe.com/exif/1.0/	SubjectArea	seq integer
+http://ns.adobe.com/exif/1.0/	SubjectDistance	rational
+http://ns.adobe.com/exif/1.0/	SubjectDistanceRange	integer
+http://ns.adobe.com/exif/1.0/	SubjectLocation	seq integer
+http://ns.adobe.com/exif/1.0/	UserComment	lang alt
+http://ns.adobe.com/exif/1.0/	WhiteBalance	integer
+http://ns.adobe.com/exif/1.0/aux/	Lens	text
+http://ns.adobe.com/exif/1.0/aux/	SerialNumber	text
+http://ns.adobe.com/pdf/1.3/	Keywords	text
+http://ns.adobe.com/pdf/1.3/	PDFVersion	text
+http://ns.adobe.com/pdf/1.3/	Producer	agentname
+http://ns.adobe.com/photoshop/1.0/	AuthorsPosition	text
+http://ns.adobe.com/photoshop/1.0/	CaptionWriter	propername
+http://ns.adobe.com/photoshop/1.0/	Category	text
+http://ns.adobe.com/photoshop/1.0/	City	text
+http://ns.adobe.com/photoshop/1.0/	Country	text
+http://ns.adobe.com/photoshop/1.0/	Credit	text
+http://ns.adobe.com/photoshop/1.0/	DateCreated	date
+http://ns.adobe.com/photoshop/1.0/	Headline	text
+http://ns.adobe.com/photoshop/1.0/	Instructions	text
+http://ns.adobe.com/photoshop/1.0/	Source	text
+http://ns.adobe.com/photoshop/1.0/	State	text
+http://ns.adobe.com/photoshop/1.0/	SupplementalCategories	bag text
+http://ns.adobe.com/photoshop/1.0/	TransmissionReference	text
+http://ns.adobe.com/photoshop/1.0/	Urgency	integer
+http://ns.adobe.com/tiff/1.0/	Artist	propername
+http://ns.adobe.com/tiff/1.0/	BitsPerSample	seq integer
+http://ns.adobe.com/tiff/1.0/	Compression	integer
+http://ns.adobe.com/tiff/1.0/	Copyright	lang alt
+http://ns.adobe.com/tiff/1.0/	DateTime	date
+http://ns.adobe.com/tiff/1.0/	ImageDescription	lang alt
+http://ns.adobe.com/tiff/1.0/	ImageLength	integer
+http://ns.adobe.com/tiff/1.0/	ImageWidth	integer
+http://ns.adobe.com/tiff/1.0/	Make	propername
+http://ns.adobe.com/tiff/1.0/	Model	propername
+http://ns.adobe.com/tiff/1.0/	Orientation	integer
+http://ns.adobe.com/tiff/1.0/	PhotometricInterpretation	integer
+http://ns.adobe.com/tiff/1.0/	PlanarConfiguration	integer
+http://ns.adobe.com/tiff/1.0/	PrimaryChromaticities	seq rational
+http://ns.adobe.com/tiff/1.0/	ReferenceBlackWhite	seq rational
+http://ns.adobe.com/tiff/1.0/	ResolutionUnit	integer
+http://ns.adobe.com/tiff/1.0/	SamplesPerPixel	integer
+http://ns.adobe.com/tiff/1.0/	Software	agentname
+http://ns.adobe.com/tiff/1.0/	TransferFunction	seq integer
+http://ns.adobe.com/tiff/1.0/	WhitePoint	seq rational
+http://ns.adobe.com/tiff/1.0/	XResolution	rational
+http://ns.adobe.com/tiff/1.0/	YCbCrCoefficients	seq rational
+http://ns.adobe.com/tiff/1.0/	YCbCrPositioning	integer
+http://ns.adobe.com/tiff/1.0/	YCbCrSubSampling	seq integer
+http://ns.adobe.com/tiff/1.0/	YResolution	rational
+http://ns.adobe.com/xap/1.0/	Advisory	bag text
+http://ns.adobe.com/xap/1.0/	BaseURL	url
+http://ns.adobe.com/xap/1.0/	CreateDate	date
+http://ns.adobe.com/xap/1.0/	CreatorTool	agentname
+http://ns.adobe.com/xap/1.0/	Identifier	bag text
+http://ns.adobe.com/xap/1.0/	Label	text
+http://ns.adobe.com/xap/1.0/	MetadataDate	date
+http://ns.adobe.com/xap/1.0/	ModifyDate	date
+http://ns.adobe.com/xap/1.0/	Nickname	text
+http://ns.adobe.com/xap/1.0/	Rating	real
+http://ns.adobe.com/xap/1.0/	Thumbnails	alt thumbnail
+http://ns.adobe.com/xap/1.0/bj/	JobRef	bag job
+http://ns.adobe.com/xap/1.0/mm/	DerivedFrom	resourceref
+http://ns.adobe.com/xap/1.0/mm/	DocumentID	uri
+http://ns.adobe.com/xap/1.0/mm/	History	seq resourceevent
+http://ns.adobe.com/xap/1.0/mm/	InstanceID	uri
+http://ns.adobe.com/xap/1.0/mm/	LastURL	url
+http://ns.adobe.com/xap/1.0/mm/	ManageTo	uri
+http://ns.adobe.com/xap/1.0/mm/	ManageUI	uri
+http://ns.adobe.com/xap/1.0/mm/	ManagedFrom	resourceref
+http://ns.adobe.com/xap/1.0/mm/	Manager	agentname
+http://ns.adobe.com/xap/1.0/mm/	ManagerVariant	text
+http://ns.adobe.com/xap/1.0/mm/	RenditionClass	renditionclass
+http://ns.adobe.com/xap/1.0/mm/	RenditionOf	resourceref
+http://ns.adobe.com/xap/1.0/mm/	RenditionParams	text
+http://ns.adobe.com/xap/1.0/mm/	SaveID	integer
+http://ns.adobe.com/xap/1.0/mm/	VersionID	text
+http://ns.adobe.com/xap/1.0/mm/	Versions	seq version
+http://ns.adobe.com/xap/1.0/rights/	Certificate	url
+http://ns.adobe.com/xap/1.0/rights/	Marked	boolean
+http://ns.adobe.com/xap/1.0/rights/	Owner	bag propername
+http://ns.adobe.com/xap/1.0/rights/	UsageTerms	lang alt
+http://ns.adobe.com/xap/1.0/rights/	WebStatement	url
+http://ns.adobe.com/xap/1.0/t/pg/	Colorants	seq colorant
+http://ns.adobe.com/xap/1.0/t/pg/	Fonts	bag font
+http://ns.adobe.com/xap/1.0/t/pg/	MaxPageSize	dimensions
+http://ns.adobe.com/xap/1.0/t/pg/	NPages	integer
+http://ns.adobe.com/xap/1.0/t/pg/	PlateNames	seq text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	absPeakAudioFilePath	uri
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	album	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	altTapeName	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	altTimecode	timecode
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	artist	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	audioChannelType	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	audioCompressor	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	audioModDate	date
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	audioSampleRate	integer
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	audioSampleType	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	beatSpliceParams	beatsplicestretch
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	composer	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	contributedMedia	bag media
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	copyright	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	duration	time
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	engineer	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	fileDataRate	rational
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	genre	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	instrument	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	introTime	time
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	key	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	logComment	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	loop	boolean
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	markers	seq marker
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	metadataModDate	date
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	numberOfBeats	real
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	outCue	time
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	projectRef	projectlink
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	pullDown	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	relativePeakAudioFilePath	uri
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	relativeTimestamp	time
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	releaseDate	date
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	resampleParams	resamplestretch
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	scaleType	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	scene	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	shotDate	date
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	shotLocation	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	shotName	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	speakerPlacement	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	startTimecode	timecode
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	stretchMode	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	tapeName	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	tempo	real
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	timeScaleParams	timescalestretch
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	timeSignature	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	trackNumber	integer
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoAlphaMode	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoAlphaPremultipleColor	colorant
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoAlphaUnityIsTransparent	boolean
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoColorSpace	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoCompressor	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoFieldOrder	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoFrameRate	text
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoFrameSize	dimensions
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoModDate	date
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoPixelAspectRatio	rational
+http://ns.adobe.com/xmp/1.0/DynamicMedia/	videoPixelDepth	text
+http://purl.org/dc/elements/1.1/	contributor	bag propername
+http://purl.org/dc/elements/1.1/	coverage	text
+http://purl.org/dc/elements/1.1/	creator	seq propername
+http://purl.org/dc/elements/1.1/	date	seq date
+http://purl.org/dc/elements/1.1/	description	lang alt
+http://purl.org/dc/elements/1.1/	format	mimetype
+http://purl.org/dc/elements/1.1/	identifier	text
+http://purl.org/dc/elements/1.1/	language	bag locale
+http://purl.org/dc/elements/1.1/	publisher	bag propername
+http://purl.org/dc/elements/1.1/	relation	bag text
+http://purl.org/dc/elements/1.1/	rights	lang alt
+http://purl.org/dc/elements/1.1/	source	text
+http://purl.org/dc/elements/1.1/	subject	bag text
+http://purl.org/dc/elements/1.1/	title	lang alt
+http://purl.org/dc/elements/1.1/	type	bag text
+http://www.aiim.org/pdfa/ns/id/	amd	text
+http://www.aiim.org/pdfa/ns/id/	conformance	text
+http://www.aiim.org/pdfa/ns/id/	corr	text
+http://www.aiim.org/pdfa/ns/id/	part	integer
+
+[structured-types] count=20
+beatsplicestretch	http://ns.adobe.com/xmp/1.0/DynamicMedia/	riseInDecibel=real;riseInTimeDuration=time;useFileBeatsMarker=boolean
+cfapattern	http://ns.adobe.com/exif/1.0/	Columns=integer;Rows=integer;Values=seq integer
+colorant	http://ns.adobe.com/xap/1.0/g/	A=integer;B=integer;L=real;black=real;blue=integer;cyan=real;green=integer;magenta=real;mode=text;red=integer;swatchName=text;type=text;yellow=real
+devicesettings	http://ns.adobe.com/exif/1.0/	Columns=integer;Rows=integer;Settings=seq text
+dimensions	http://ns.adobe.com/xap/1.0/sType/Dimensions#	h=real;unit=text;w=real
+flash	http://ns.adobe.com/exif/1.0/	Fired=boolean;Function=boolean;Mode=text;RedEyeMode=boolean;Return=text
+font	http://ns.adobe.com/xap/1.0/sType/Font#	childFontFiles=seq text;composite=boolean;fontFace=text;fontFamily=text;fontFileName=text;fontName=text;fontType=text;versionString=text
+job	http://ns.adobe.com/xap/1.0/sType/Job#	id=text;name=text;url=url
+marker	http://ns.adobe.com/xmp/1.0/DynamicMedia/	comment=text;duration=any;location=uri;name=text;startTime=any;target=text;type=text
+media	http://ns.adobe.com/xmp/1.0/DynamicMedia/	duration=time;managed=boolean;path=uri;startTime=time;track=text;webStatement=uri
+oecf/sfr	http://ns.adobe.com/exif/1.0/	Columns=integer;Names=seq text;Rows=integer;Values=seq rational
+projectlink	http://ns.adobe.com/xmp/1.0/DynamicMedia/	path=uri;type=text
+resamplestretch	http://ns.adobe.com/xmp/1.0/DynamicMedia/	quality=text
+resourceevent	http://ns.adobe.com/xap/1.0/sType/ResourceEvent#	action=text;instanceID=uri;parameters=text;softwareAgent=agentname;when=date
+resourceref	http://ns.adobe.com/xap/1.0/sType/ResourceRef#	documentID=uri;instanceID=uri;manageTo=uri;manageUI=uri;manager=agentname;managerVariant=text;renditionClass=renditionclass;renditionParams=text;versionID=text
+thumbnail	http://ns.adobe.com/xap/1.0/g/img/	format=text;height=integer;image=text;width=integer
+time	http://ns.adobe.com/xmp/1.0/DynamicMedia/	scale=rational;value=integer
+timecode	http://ns.adobe.com/xmp/1.0/DynamicMedia/	timeFormat=text;timeValue=text
+timescalestretch	http://ns.adobe.com/xmp/1.0/DynamicMedia/	frameOverlappingPercentage=real;frameSize=real;quality=text
+version	http://ns.adobe.com/xap/1.0/sType/Version#	comments=text;event=resourceevent;modifier=propername;modifyDate=date;version=text
+
+[simple-types] count=16
+agentname	SimpleTypeValidator	regex=(?s)(^.*$)
+boolean	SimpleTypeValidator	regex=^True$|^False$
+date	DateTypeValidator	unconstrained
+gpscoordinate	SimpleTypeValidator	regex=^\d{1,3},\d{1,2}(,\d{1,2}|\.\d+)[NSEW]$
+integer	SimpleTypeValidator	regex=^[+-]?\d+$
+lang alt	LangAltValidator	unconstrained
+locale	SimpleTypeValidator	regex=(?s)(^.*$)
+mimetype	SimpleTypeValidator	regex=^[-\w+\.]+/[-\w+\.]+$
+propername	SimpleTypeValidator	regex=(?s)(^.*$)
+rational	SimpleTypeValidator	regex=(?s)(^.*$)
+real	SimpleTypeValidator	regex=^[+-]?\d+\.?\d*|[+-]?\d*\.?\d+$
+renditionclass	SimpleTypeValidator	regex=(?s)(^.*$)
+text	SimpleTypeValidator	regex=(?s)(^.*$)
+uri	URITypeValidator	unconstrained
+url	URLTypeValidator	unconstrained
+xpath	XPathTypeValidator	unconstrained

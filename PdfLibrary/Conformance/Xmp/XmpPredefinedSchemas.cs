@@ -174,4 +174,15 @@ internal static class XmpPredefinedSchemas
     /// <see cref="XmpTypeContainer"/> (see <c>XmpPropertyTypeRule</c>).</summary>
     public static string? TypeOf(string namespaceUri, string localName) =>
         Definitions.TryGetValue((namespaceUri, localName), out string? type) ? type : null;
+
+    /// <summary>Every predefined property, as (namespaceUri, localName, type).
+    ///
+    /// <para>Exists for the veraPDF parity fixture (<c>XmpParityTests</c>), which must diff this
+    /// table BOTH ways: a missing entry makes the engine raise a finding the reference does not
+    /// (a false positive, the thing the engine's no-false-positive contract forbids), and an extra
+    /// entry makes it silently accept a property the reference rejects. <see cref="IsPredefined"/>
+    /// and <see cref="TypeOf"/> can only answer the first direction, because they need a name to
+    /// ask about — which is exactly the name a drifted table would not have.</para></summary>
+    internal static IEnumerable<(string NamespaceUri, string LocalName, string Type)> All =>
+        Definitions.Select(kv => (kv.Key.Item1, kv.Key.Item2, kv.Value));
 }
