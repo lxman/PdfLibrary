@@ -47,6 +47,13 @@ public sealed class PdfAnnotationInfo
     /// <summary>The default-appearance string (<c>/DA</c>) for a FreeText annotation, or null.</summary>
     public string? DefaultAppearance { get; init; }
 
+    /// <summary>The annotation's <c>/F</c> flag bits, or null when the entry is absent or not a
+    /// number. Absent is NOT zero: PDF treats a missing <c>/F</c> as all-flags-clear, but the two are
+    /// distinct document states — ISO 19005-2 6.3.2 reports them through different sub-tests — and a
+    /// caller repairing one must be able to tell which it has. A non-numeric <c>/F</c> also reads as
+    /// null, matching the conformance rule, which treats such an entry as present-but-uncheckable.</summary>
+    public int? Flags { get; init; }
+
     /// <summary>For a Link annotation, the in-document destination it navigates to (resolved from
     /// <c>/Dest</c> or a GoTo <c>/A</c> action, page + position), or null if it has no internal
     /// destination (e.g. a web link, or a non-Link annotation).</summary>

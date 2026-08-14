@@ -122,6 +122,12 @@ public sealed partial class PdfPageCollection
                 InkPaths = ReadInkPaths(annot),
                 Quadding = Resolve(annot.Get(new PdfName("Q"))) is PdfInteger q ? (int)q.Value : null,
                 DefaultAppearance = Resolve(annot.Get(new PdfName("DA"))) is PdfString da ? da.GetText() : null,
+                Flags = Resolve(annot.Get(new PdfName("F"))) switch
+                {
+                    PdfInteger fi => (int)fi.Value,
+                    PdfReal fr => (int)fr.Value,
+                    _ => null,
+                },
                 // Link target (internal destination or web URI) — only meaningful for Link annotations.
                 LinkDestination = isLink ? DestinationResolution.Destination(_document, annot) : null,
                 LinkUri = isLink ? DestinationResolution.Uri(_document, annot) : null
