@@ -272,6 +272,17 @@ internal static class XmpTreeSerializer
             return;
         }
 
+        // Part 1 §7.5: a URI value's element "shall be empty" and the value "shall be provided as the
+        // value of an rdf:resource attribute". Only for values that ARRIVED in that form (XmpNode
+        // .IsUriValue) — this is round-trip fidelity, not a conversion. Re-forming every uri-typed
+        // property this way would rewrite documents that never used the attribute form, which is the
+        // mirror of the defect being fixed.
+        if (node.IsUriValue)
+        {
+            element.Add(new XAttribute(Rdf + "resource", Sanitize(node.Value ?? string.Empty)));
+            return;
+        }
+
         element.Value = Sanitize(node.Value ?? string.Empty);
     }
 }

@@ -54,6 +54,17 @@ internal sealed class XmpNode
     /// <summary>True when this array item carried an <c>xml:lang</c> qualifier.</summary>
     public bool HasXmlLang { get; set; }
 
+    /// <summary>True when this simple value was written in the <c>rdf:resource</c> URI-reference form
+    /// (<c>&lt;xmp:BaseURL rdf:resource="http://…"/&gt;</c>) rather than as element text.
+    ///
+    /// <para>Part 1 §7.5 requires that form for a URI value — the element "shall be empty" and the
+    /// value "shall be provided as the value of an rdf:resource attribute". The parser has always READ
+    /// it (otherwise the value would be lost outright: the element has no text), but until 2026-08-13
+    /// nothing carried the distinction, so the serializer re-emitted every value as element text and a
+    /// URI reference came back as a string literal. The URI itself survived; the RDF meaning did
+    /// not.</para></summary>
+    public bool IsUriValue { get; set; }
+
     /// <summary>The <c>xml:lang</c> qualifier value on this array item (e.g. <c>"x-default"</c> or
     /// <c>"en-US"</c>), or null when the item carried none. Backs the PDF/UA-1 clause 7.2 lang-alt
     /// natural-language check (veraPDF <c>XMPLangAlt.xDefault</c>).</summary>
@@ -364,6 +375,14 @@ internal static class XmpTreeParser
 
         node.IsSimple = true;
         node.Value = SimpleText(el);
+
+        // Records WHICH form the value was written in, so the serializer can write it back the same
+        // way (Part 1 §7.5). Same condition SimpleText uses to reach for the attribute, kept adjacent
+        // so the two cannot drift: an element with no text and an rdf:resource attribute IS the
+        // URI-reference form. An element carrying both text and the attribute is malformed; the text
+        // wins there, exactly as SimpleText already decided, and no flag is set.
+        if (string.IsNullOrEmpty(el.Value) && el.Attribute(Rdf + "resource") is not null)
+            node.IsUriValue = true;
     }
 
     private static void SetArray(XmpNode node, XElement container)

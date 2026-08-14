@@ -89,6 +89,16 @@ what the producer wrote.
   duplicated across islands disappears with no diagnostic.
 - **D9** `rdf:RDF` is not found when wrapped in outer XML that is not `x:xmpmeta` — consistent with
   the tolerant-parse contract, but a false-negative surface.
+  **DROPPED 2026-08-13, deliberately — not deferred, not forgotten.** Three reasons, in order of
+  weight. (1) The input is not a conformant XMP packet: Part 3 defines the packet as an `x:xmpmeta`
+  wrapper, and a bare `<outer><rdf:RDF>` is not one, so declining to parse it is arguably the correct
+  reading rather than a defect — which is why the audit classified it TOLERATED, not BUG. (2) The fix
+  can only ever ADD findings, because it makes the engine see properties it currently does not. That
+  is the false-positive direction, the one thing the engine's contract forbids, and it is the
+  direction no test can clear for us: the veraPDF parity snapshot cannot vouch for a document shape
+  the corpus does not contain, so a green snapshot would prove nothing here. (3) No real document is
+  known to do this — the reproduction was synthetic. Reopen only with a real document that fails, and
+  with veraPDF's own verdict on it.
 
 ## Design
 
@@ -203,9 +213,15 @@ unchanged: still no throw, still an empty list when nothing parses.
 3. **D2** — Alt projection. Still the only slice that changes `XmpValueKind` for existing documents,
    so it keeps the app-side corpus gate and the review of every `XmpValueKind` switch in both repos.
    Demoted on damage, not on importance: it is the one defect a *fixer* can act on destructively.
-4. **D4** — typed-node struct form.
-5. **D6, D7, D9** — form and hygiene; small, low risk.
-6. **D8** — collision diagnostics.
+4. **D4** — typed-node struct form. **DONE** (`a55c5db`). Preserved, not reinterpreted: deciding a
+   single element child names a TYPE rather than a FIELD is ambiguous in real packets, and guessing
+   wrong destroys a field name — a worse loss than the one being repaired.
+5. **D6** — `rdf:resource` URI form. **DONE**. Round-trip fidelity only: the attribute form is
+   restored for values that ARRIVED in it, never synthesised for uri-typed properties that did not.
+6. **D7** — `rdf:ID` laundering through `RawXml`.
+7. **D8** — collision diagnostics.
+
+*(**D9 dropped** — see its entry above. Not part of any remaining slice.)*
 
 *Original ordering, superseded: D1 → D2 → D3–D5 → D6,D7,D9 → D8.*
 

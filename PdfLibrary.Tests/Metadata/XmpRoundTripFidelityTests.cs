@@ -299,4 +299,50 @@ public sealed class XmpRoundTripFidelityTests
         Assert.Contains("Field", outXml);
         Assert.Contains("text", outXml);
     }
+
+    // ── D6: the rdf:resource URI-reference form ─────────────────────────────────────────────────
+    //
+    // Part 1 §7.5: a URI value's element "shall be empty" and the value "shall be provided as the
+    // value of an rdf:resource attribute". The parser read that form (it had to, or the value would
+    // have been lost outright) but nothing on the node carried the distinction, and the serializer
+    // always wrote element text — so a URI reference came back as a string literal.
+    //
+    // No information is destroyed: the URI string itself survives. What changes is the RDF meaning,
+    // and the output stops conforming to §7.5 for URI-typed properties. Ranked below the
+    // content-destroying defects for exactly that reason.
+
+    /// <summary>A property written in the <c>rdf:resource</c> form is re-emitted in that form.</summary>
+    [Fact]
+    public void An_rdf_resource_uri_value_keeps_its_attribute_form()
+    {
+        string outXml = RoundTrip("""      <xmp:BaseURL rdf:resource="http://www.adobe.com/"/>""");
+
+        Assert.Contains("rdf:resource=\"http://www.adobe.com/\"", outXml);
+        // §7.5: the element shall be EMPTY — the URI must not also appear as text content.
+        Assert.DoesNotContain(">http://www.adobe.com/<", outXml);
+    }
+
+    /// <summary>The value is still readable as a value, not only re-emitted as bytes — a consumer
+    /// asking for the property gets the URI.</summary>
+    [Fact]
+    public void An_rdf_resource_uri_value_is_still_projected_as_its_uri()
+    {
+        XmpProperty? p = Project("""      <xmp:BaseURL rdf:resource="http://www.adobe.com/"/>""",
+                                 XmpNs, "BaseURL");
+
+        Assert.NotNull(p);
+        Assert.Equal(XmpValueKind.Simple, p!.Kind);
+        Assert.Equal("http://www.adobe.com/", p.Value);
+    }
+
+    /// <summary>An ordinary text-valued property does NOT acquire the attribute form — the fix must
+    /// not turn every simple value into an rdf:resource. Passed before the fix as well as after.</summary>
+    [Fact]
+    public void An_ordinary_text_value_does_not_become_an_rdf_resource()
+    {
+        string outXml = RoundTrip("""      <xmp:CreatorTool>Some Tool</xmp:CreatorTool>""");
+
+        Assert.Contains(">Some Tool<", outXml);
+        Assert.DoesNotContain("rdf:resource", outXml);
+    }
 }
