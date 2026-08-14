@@ -264,7 +264,7 @@ public sealed class XmpStructFieldRemovalTests
         Finding[] after = TypeFindings(packet.Serialize());
 
         Assert.Contains("stEvt:changed", RoundTrip(packet));
-        Finding remaining = Assert.Single(after.Where(f => f.RuleId == "pdfa-xmp-property-type"));
+        Finding remaining = Assert.Single(after, f => f.RuleId == "pdfa-xmp-property-type");
         Assert.Contains("History", remaining.Message, StringComparison.OrdinalIgnoreCase);
     }
 

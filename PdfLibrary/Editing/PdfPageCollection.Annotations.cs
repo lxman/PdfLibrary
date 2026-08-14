@@ -122,6 +122,12 @@ public sealed partial class PdfPageCollection
                 InkPaths = ReadInkPaths(annot),
                 Quadding = Resolve(annot.Get(new PdfName("Q"))) is PdfInteger q ? (int)q.Value : null,
                 DefaultAppearance = Resolve(annot.Get(new PdfName("DA"))) is PdfString da ? da.GetText() : null,
+                Flags = Resolve(annot.Get(new PdfName("F"))) switch
+                {
+                    PdfInteger fi => (int)fi.Value,
+                    PdfReal fr => (int)fr.Value,
+                    _ => null,
+                },
                 // Link target (internal destination or web URI) — only meaningful for Link annotations.
                 LinkDestination = isLink ? DestinationResolution.Destination(_document, annot) : null,
                 LinkUri = isLink ? DestinationResolution.Uri(_document, annot) : null
@@ -147,6 +153,33 @@ public sealed partial class PdfPageCollection
                 continue;
             annots.RemoveAt(i);
             _document.RemoveObject(r.ObjectNumber);
+            return;
+        }
+    }
+
+    /// <summary>Writes the <c>/F</c> flag bits of the annotation with <paramref name="annotationId"/>
+    /// (its PDF object number, from <see cref="PdfAnnotationInfo.AnnotationId"/>) on the page at
+    /// <paramref name="index"/>. No-op when no annotation on that page has the id.
+    ///
+    /// <para>Writes exactly the value given, with no opinion about which bits are appropriate: a
+    /// caller repairing ISO 19005-2 6.3.2 must compute the target value itself, including preserving
+    /// bits it does not care about. That policy lives in the caller because it is a product decision
+    /// — clearing a hiding bit reveals content an author concealed — and the engine is not where such
+    /// a decision belongs.</para></summary>
+    public void SetAnnotationFlags(int index, int annotationId, int flags)
+    {
+        PdfDictionary page = PageAt(index);
+        if (Resolve(page.Get(new PdfName("Annots"))) is not PdfArray annots)
+            return;
+
+        foreach (PdfObject entry in annots)
+        {
+            if (entry is not PdfIndirectReference reference || reference.ObjectNumber != annotationId)
+                continue;
+            if (Resolve(entry) is not PdfDictionary annot)
+                continue;
+
+            annot[new PdfName("F")] = new PdfInteger(flags);
             return;
         }
     }
