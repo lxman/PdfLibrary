@@ -352,6 +352,69 @@ public sealed class XmpPacket
     public void Remove(string namespaceUri, string localName) =>
         _nodes.Remove((namespaceUri, localName));
 
+    /// <summary>Removes ONE named field from a struct-valued property — or from every item of an
+    /// array of structs — leaving every other field, item and property exactly as it was. Returns
+    /// whether anything was removed.
+    ///
+    /// <para><b>Why this exists as its own operation.</b> Every other setter here REPLACES a whole
+    /// property, which for a struct means losing every sibling field: the destruction the round-trip
+    /// program was built to stop, and the reason a fixer built on the flat <see cref="XmpProperty"/>
+    /// projection must refuse to touch structs at all. PDF/A-2 nonetheless validates structured types
+    /// as CLOSED against a 2005-era field list, so a single post-2005 field — <c>stRef:originalDocumentID</c>
+    /// or <c>stEvt:changed</c>, both legitimate current XMP that Adobe's own XMPCore and ExifTool
+    /// accept — invalidates its entire struct. Removing that one field is the only route to
+    /// conformance, so it needs to be possible WITHOUT the collateral damage.</para>
+    ///
+    /// <para>Deliberately narrow, and each limit is a decision:</para>
+    /// <list type="bullet">
+    /// <item>Matches on namespace AND local name. A struct's fields routinely live in a different
+    /// namespace from the property, and a same-named field elsewhere is a different field.</item>
+    /// <item>Removing the last field leaves an EMPTY struct rather than deleting the property. The
+    /// caller asked to remove a field; removing more than asked is the failure mode this whole area
+    /// guards against. A caller wanting the property gone can call <see cref="Remove"/>.</item>
+    /// <item>Refuses a node preserved as a verbatim snapshot (<see cref="XmpNode.RawXml"/>) and
+    /// reports false. The serializer emits the snapshot in place of the node, so editing children
+    /// would change the model while the packet still wrote the field back out — a silent lie. This
+    /// covers the whole subtree, because a snapshot on an ARRAY ITEM governs that item's output.</item>
+    /// <item>Absent property, absent field, or a non-struct property are ordinary "false" answers,
+    /// never throws: a fixer asks about documents it has not inspected field by field.</item>
+    /// </list></summary>
+    /// <exception cref="ArgumentNullException">Any argument is null.</exception>
+    public bool RemoveStructField(string namespaceUri, string localName,
+                                  string fieldNamespaceUri, string fieldLocalName)
+    {
+        if (namespaceUri is null) throw new ArgumentNullException(nameof(namespaceUri));
+        if (localName is null) throw new ArgumentNullException(nameof(localName));
+        if (fieldNamespaceUri is null) throw new ArgumentNullException(nameof(fieldNamespaceUri));
+        if (fieldLocalName is null) throw new ArgumentNullException(nameof(fieldLocalName));
+
+        if (!_nodes.TryGetValue((namespaceUri, localName), out XmpNode? property))
+            return false;
+
+        // A snapshot anywhere in the subtree means the bytes for that part come from the snapshot,
+        // not from these nodes. Checked before ANY mutation so a mixed property cannot end up half
+        // edited — the field removed from a modelled item and left standing in a captured one.
+        if (CarriesRawXml(property))
+            return false;
+
+        // The struct form, and the array-of-structs form (xmpMM:History is the one that matters).
+        // An array strips from EVERY item: a repair that fixed only the first entry would leave the
+        // property invalid and the finding open, having already destroyed data.
+        List<XmpNode> structs = property.IsArray
+            ? property.Children.Where(c => c.IsStruct).ToList()
+            : property.IsStruct ? [property] : [];
+
+        var removedAny = false;
+        foreach (XmpNode owner in structs)
+            removedAny |= owner.Children.RemoveAll(
+                f => f.NamespaceUri == fieldNamespaceUri && f.LocalName == fieldLocalName) > 0;
+
+        return removedAny;
+    }
+
+    private static bool CarriesRawXml(XmpNode node) =>
+        node.RawXml is not null || node.Children.Any(CarriesRawXml);
+
     // ── Serialize ─────────────────────────────────────────────────────────────
 
     /// <summary>
