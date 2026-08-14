@@ -157,6 +157,33 @@ public sealed partial class PdfPageCollection
         }
     }
 
+    /// <summary>Writes the <c>/F</c> flag bits of the annotation with <paramref name="annotationId"/>
+    /// (its PDF object number, from <see cref="PdfAnnotationInfo.AnnotationId"/>) on the page at
+    /// <paramref name="index"/>. No-op when no annotation on that page has the id.
+    ///
+    /// <para>Writes exactly the value given, with no opinion about which bits are appropriate: a
+    /// caller repairing ISO 19005-2 6.3.2 must compute the target value itself, including preserving
+    /// bits it does not care about. That policy lives in the caller because it is a product decision
+    /// — clearing a hiding bit reveals content an author concealed — and the engine is not where such
+    /// a decision belongs.</para></summary>
+    public void SetAnnotationFlags(int index, int annotationId, int flags)
+    {
+        PdfDictionary page = PageAt(index);
+        if (Resolve(page.Get(new PdfName("Annots"))) is not PdfArray annots)
+            return;
+
+        foreach (PdfObject entry in annots)
+        {
+            if (entry is not PdfIndirectReference reference || reference.ObjectNumber != annotationId)
+                continue;
+            if (Resolve(entry) is not PdfDictionary annot)
+                continue;
+
+            annot[new PdfName("F")] = new PdfInteger(flags);
+            return;
+        }
+    }
+
     private PdfColor? ReadColor(PdfDictionary annot, string key)
     {
         if (Resolve(annot.Get(new PdfName(key))) is not PdfArray { Count: >= 3 } a)

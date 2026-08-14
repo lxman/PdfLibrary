@@ -88,4 +88,43 @@ public sealed class AnnotationFlagsEditingTests
 
         Assert.Equal(0, annot.Flags);
     }
+
+    [Fact]
+    public void Writes_the_flags_value()
+    {
+        PdfDocumentEditor editor = EditorWithAnnotation(null);
+        int id = editor.Pages.GetAnnotations(0)[0].AnnotationId;
+
+        editor.Pages.SetAnnotationFlags(0, id, 4);
+
+        Assert.Equal(4, Assert.Single(editor.Pages.GetAnnotations(0)).Flags);
+    }
+
+    /// <summary>The write survives a save/reload — it edited the document, not a snapshot.</summary>
+    [Fact]
+    public void The_written_flags_survive_a_round_trip()
+    {
+        PdfDocumentEditor editor = EditorWithAnnotation(null);
+        int id = editor.Pages.GetAnnotations(0)[0].AnnotationId;
+        editor.Pages.SetAnnotationFlags(0, id, 4);
+
+        using var saved = new MemoryStream();
+        editor.Save(saved);
+        var reloaded = PdfDocumentEditor.Open(new MemoryStream(saved.ToArray()));
+
+        Assert.Equal(4, Assert.Single(reloaded.Pages.GetAnnotations(0)).Flags);
+    }
+
+    /// <summary>An unknown id changes nothing and does not throw. Callers ask about documents they
+    /// have not inspected annotation by annotation, so "nothing to do" must be an ordinary answer —
+    /// the same contract RemoveAnnotation already has.</summary>
+    [Fact]
+    public void An_unknown_annotation_id_is_a_no_op()
+    {
+        PdfDocumentEditor editor = EditorWithAnnotation(8);
+
+        editor.Pages.SetAnnotationFlags(0, 99999, 4);
+
+        Assert.Equal(8, Assert.Single(editor.Pages.GetAnnotations(0)).Flags);
+    }
 }
