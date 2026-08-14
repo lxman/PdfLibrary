@@ -72,7 +72,9 @@ internal sealed class XmpNode
 
     /// <summary>Set when the parser met a shape this model cannot express (e.g. <c>rdf:value</c> with
     /// qualifiers). The serializer prefers this and emits it verbatim, so an unfamiliar packet is
-    /// preserved rather than silently reshaped. Every OTHER facet on the node (<see cref="Value"/>,
+    /// preserved rather than silently reshaped. What the PARSER puts here is verbatim with one
+    /// deliberate exception — <c>rdf:ID</c> is stripped at any depth, because re-emitting it would
+    /// make us the writer of a construct XMP forbids; see <c>XmpTreeParser.Snapshot</c>. Every OTHER facet on the node (<see cref="Value"/>,
     /// <see cref="Children"/>, the shape flags) is still populated with this node's best-effort
     /// classification — the same classification the pre-fallback code would have produced — so every
     /// reader that is not the serializer (conformance rules, <c>XmpProperty.FromNode</c>, extension
@@ -274,15 +276,15 @@ internal static class XmpTreeParser
         //   parseType="Literal"    — mixed content lost its bare text nodes ("rich <b>text</b>" came
         //     back as "<b>text</b>") and the literal became a struct.
         //
-        // Capturing verbatim is ADDITIVE — classification below is deliberately left exactly as it
-        // was. That is what makes this change safe: RawXml governs only serialization, so the packet
+        // Capturing (verbatim but for the rdf:ID strip — see Snapshot) is ADDITIVE — classification
+        // below is deliberately left exactly as it was. That is what makes this change safe: RawXml governs only serialization, so the packet
         // now round-trips faithfully while every conformance rule keeps the verdict it reached before,
         // and the veraPDF parity snapshot cannot move. The classification is still wrong for these
         // shapes; it is wrong identically to before, which is the point. Modelling them properly is a
         // separate question that would carry real parity risk.
         string? parseType = el.Attribute(Rdf + "parseType")?.Value;
         if (parseType is not null && parseType != "Resource")
-            node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
+            node.RawXml = Snapshot(captureRoot);
 
         // The RDF TYPED-NODE form (Part 1 §7.9.2.5): <ns:Prop><ns:Type>fields</ns:Type></ns:Prop>,
         // equivalent to <rdf:Description rdf:type="ns:Type">. The inner name is an ASSERTION about the
@@ -316,7 +318,7 @@ internal static class XmpTreeParser
                 && (elementChildren[0].Attribute(Rdf + "parseType")?.Value == "Resource"
                     || elementChildren[0].Elements().Any()))
             {
-                node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
+                node.RawXml = Snapshot(captureRoot);
             }
         }
 
@@ -341,7 +343,7 @@ internal static class XmpTreeParser
             // non-rdf:/non-xml: sibling attribute, or an xml:lang qualifier) — is a shape this node
             // model has no field for: there is nowhere on XmpNode to hang the qualifiers without a
             // struct field silently eating them (the bug this whole slice exists to fix). That case
-            // ADDITIONALLY captures the property verbatim for the serializer, on top of — not instead
+            // ADDITIONALLY captures the property (see Snapshot) for the serializer, on top of — not instead
             // of — the normal classification below, so every other reader of the node (conformance
             // rules, XmpProperty.FromNode, extension-schema resolution) keeps seeing exactly what it
             // always saw. rdf:type and other rdf:*-namespaced siblings are deliberately not qualifiers
@@ -365,7 +367,7 @@ internal static class XmpTreeParser
                 }
 
                 if (hasQualifierElements || hasQualifierAttributes)
-                    node.RawXml = captureRoot.ToString(SaveOptions.DisableFormatting);
+                    node.RawXml = Snapshot(captureRoot);
                 return;
             }
 
@@ -445,6 +447,47 @@ internal static class XmpTreeParser
             if (IsPropertyAttribute(attr))
                 return true;
         return false;
+    }
+
+    // The verbatim snapshot the serializer re-emits for a shape this model cannot express — MINUS
+    // rdf:ID, at any depth.
+    //
+    // "Verbatim" is the means, not the goal: the goal is that what we write back says what the
+    // producer wrote. rdf:ID is the one place those diverge. Part 1 §C.2.5's RDF subset admits
+    // rdf:about, rdf:resource, rdf:parseType and rdf:value; rdf:ID (an RDF reification identifier)
+    // is not in it, so passing one through would make US the emitter of a construct XMP forbids, in
+    // a packet we produced — the serializer never constructs one itself. Dropping the identifier
+    // costs nothing this model can otherwise use: nothing in XMP refers to it.
+    //
+    // Everything else in the subtree survives untouched, including attributes that carry real
+    // meaning (rdf:resource, xml:lang) and qualifier attributes in producer namespaces. The strip is
+    // deliberately the narrowest possible.
+    //
+    // NOTE for readers of the comments at the three capture sites and on XmpNode.RawXml: they call
+    // the snapshot verbatim. This is the single documented exception to that, and the reason it
+    // lives in one helper rather than at each site is so it cannot ever be true at two of the three.
+    private static string Snapshot(XElement captureRoot)
+    {
+        string raw = captureRoot.ToString(SaveOptions.DisableFormatting);
+
+        // A packet with no rdf:ID anywhere in the subtree — every real document measured so far —
+        // takes the string the three capture sites always produced, byte for byte. The strip cannot
+        // regress what it does not touch.
+        if (!captureRoot.DescendantsAndSelf().Attributes(Rdf + "ID").Any())
+            return raw;
+
+        // Re-parse the SNAPSHOT rather than cloning the live element. Both avoid mutating a tree the
+        // classifier is still going to walk (capture is additive, never a replacement), but a cloned
+        // XElement is DETACHED: prefixes bound by an ancestor in the source document are no longer in
+        // scope, so ToString re-synthesizes them and `dc:source` comes back as `<source xmlns="…">`
+        // and `rdf:value` as `<value p2:… >`. The namespaces stay correct and it re-parses, but the
+        // packet stops looking like what the producer wrote — which is the whole point of the
+        // snapshot. `raw` is already self-contained (ToString on an ATTACHED element emits the
+        // in-scope declarations it needs), so parsing it back preserves every prefix.
+        XElement copy = XElement.Parse(raw);
+        foreach (XAttribute id in copy.DescendantsAndSelf().Attributes(Rdf + "ID").ToList())
+            id.Remove();
+        return copy.ToString(SaveOptions.DisableFormatting);
     }
 
     // An attribute that carries an actual XMP property/field value (not a namespace decl, not rdf:*,

@@ -345,4 +345,84 @@ public sealed class XmpRoundTripFidelityTests
         Assert.Contains(">Some Tool<", outXml);
         Assert.DoesNotContain("rdf:resource", outXml);
     }
+
+    // ── D7: rdf:ID laundered through a RawXml snapshot ──────────────────────────────────────────
+    //
+    // The serializer never CONSTRUCTS an rdf:ID — but the RawXml snapshot is emitted verbatim, so an
+    // rdf:ID the producer wrote inside a captured subtree is re-emitted by us. Part 1 §C.2.5 admits
+    // only rdf:about / rdf:resource / rdf:parseType / rdf:value on XMP's RDF subset; rdf:ID (an RDF
+    // reification identifier) is not in it. Passing it back through means WE emit a construct XMP
+    // forbids, in a packet we wrote.
+    //
+    // The fix strips rdf:ID on capture, at any depth of the snapshot. That deliberately makes RawXml
+    // not quite verbatim — the one documented exception. The alternative, re-emitting the forbidden
+    // construct, is worse: verbatim is a means to fidelity, not the goal.
+
+    /// <summary>An <c>rdf:ID</c> on the captured property element itself is not re-emitted.</summary>
+    [Fact]
+    public void An_rdf_ID_on_a_captured_property_is_not_re_emitted()
+    {
+        string outXml = RoundTrip("""
+              <dc:source rdf:ID="r7">
+                <rdf:value>the value</rdf:value>
+                <dc:rights>a qualifier</dc:rights>
+              </dc:source>
+        """);
+
+        Assert.DoesNotContain("rdf:ID", outXml);
+        // The capture itself must still be doing its job — the qualifier is why it exists.
+        Assert.Contains("a qualifier", outXml);
+        Assert.Contains("the value", outXml);
+    }
+
+    /// <summary>An <c>rdf:ID</c> nested inside the captured qualifier subtree is stripped too. The
+    /// snapshot is the whole property element, so a strip that only looked at the root would launder
+    /// every deeper one — and a qualifier subtree is exactly where the spec expected to find them.</summary>
+    [Fact]
+    public void An_rdf_ID_nested_in_a_captured_subtree_is_not_re_emitted()
+    {
+        string outXml = RoundTrip("""
+              <dc:source>
+                <rdf:value>the value</rdf:value>
+                <dc:rights rdf:ID="deep">a qualifier</dc:rights>
+              </dc:source>
+        """);
+
+        Assert.DoesNotContain("rdf:ID", outXml);
+        Assert.Contains("a qualifier", outXml);
+    }
+
+    /// <summary>An <c>rdf:ID</c> inside a <c>parseType</c> capture is stripped as well — the strip
+    /// belongs to the snapshot, not to one of the three capture sites.</summary>
+    [Fact]
+    public void An_rdf_ID_inside_a_forbidden_parseType_capture_is_not_re_emitted()
+    {
+        string outXml = RoundTrip("""
+              <dc:source rdf:parseType="Literal" rdf:ID="r7">rich <dc:rights>text</dc:rights></dc:source>
+        """);
+
+        Assert.DoesNotContain("rdf:ID", outXml);
+        Assert.Contains("rich ", outXml);
+        Assert.Contains("parseType=\"Literal\"", outXml);
+    }
+
+    /// <summary>The strip takes ONLY <c>rdf:ID</c>. Every other attribute in the snapshot — including
+    /// the <c>rdf:resource</c> and <c>xml:lang</c> that carry meaning, and a non-RDF attribute that is
+    /// a qualifier in its own right — survives. The over-reach guard: what makes it one is the
+    /// surviving neighbours, which a strip that took the whole attribute list would have eaten.</summary>
+    [Fact]
+    public void The_strip_takes_only_rdf_ID_and_leaves_the_rest_of_the_snapshot()
+    {
+        string outXml = RoundTrip("""
+              <dc:source xml:lang="en-us" rdf:ID="r7">
+                <rdf:value rdf:resource="http://example.com/v"/>
+                <dc:rights xml:lang="fr-fr">un qualificatif</dc:rights>
+              </dc:source>
+        """);
+
+        Assert.DoesNotContain("rdf:ID", outXml);
+        Assert.Contains("xml:lang=\"en-us\"", outXml);
+        Assert.Contains("xml:lang=\"fr-fr\"", outXml);
+        Assert.Contains("rdf:resource=\"http://example.com/v\"", outXml);
+    }
 }

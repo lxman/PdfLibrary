@@ -132,7 +132,8 @@ internal static class XmpTreeSerializer
 
     private static XElement Emit(XmpNode node)
     {
-        // A shape this node model cannot express was preserved verbatim at parse time; re-emit that
+        // A shape this node model cannot express was snapshotted at parse time (verbatim but for the
+        // rdf:ID strip XmpTreeParser.Snapshot documents); re-emit that
         // subtree unchanged rather than routing it through the normal name/shape machinery, which has
         // nowhere to put it. XElement.Parse re-declares whatever namespaces the fragment's own
         // elements/attributes use that were only in scope via an ancestor in the source document, so
