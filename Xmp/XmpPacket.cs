@@ -23,6 +23,13 @@ public sealed class XmpPacket
     private readonly Dictionary<(string ns, string local), XmpNode> _nodes =
         new(EqualityComparer<(string, string)>.Default);
 
+    // How many definitions of each key arrived, and which keys ever saw two that DISAGREED. Counting
+    // separately from the disagreement test keeps the reported number answerable: "three definitions
+    // arrived, at least two of which disagreed" — rather than a count of disagreement events, which
+    // would report 2 for a property defined three times as A, A, B.
+    private readonly Dictionary<(string ns, string local), int> _definitionCounts = [];
+    private readonly List<(string ns, string local)> _collidedKeys = [];
+
     private XmpPacket() { }
 
     // ── Factory ───────────────────────────────────────────────────────────────
@@ -44,10 +51,49 @@ public sealed class XmpPacket
         // allRdfIslands: a packet may carry several sibling rdf:RDF islands (the "DWC FX Generator"
         // shape used by the official ZUGFeRD 2.5 examples splits properties across two); every one
         // must be merged, which this type has always done.
+        //
+        // The merge is LAST-WINS and stays that way. It is lossy only when two definitions of one
+        // property disagree, and which of them should win has no defensible answer — the islands
+        // carry no precedence, Part 1 §7.4 does not contemplate the situation because it expects a
+        // single rdf:RDF, and picking one would silently change what every affected document saves
+        // as. So the loss is reported rather than resolved; see <see cref="Collisions"/>.
         foreach (XmpNode node in XmpTreeParser.Parse(xmpBytes, allRdfIslands: true))
-            pkt._nodes[(node.NamespaceUri, node.LocalName)] = node;
+        {
+            (string NamespaceUri, string LocalName) key = (node.NamespaceUri, node.LocalName);
+            if (pkt._nodes.TryGetValue(key, out XmpNode? previous))
+            {
+                pkt._definitionCounts[key] = pkt._definitionCounts.GetValueOrDefault(key, 1) + 1;
+                if (!SameDefinition(previous, node) && !pkt._collidedKeys.Contains(key))
+                    pkt._collidedKeys.Add(key);
+            }
+
+            pkt._nodes[key] = node;
+        }
 
         return pkt;
+    }
+
+    /// <summary>Whether two definitions of the same property say the same thing, compared over the
+    /// SERIALIZED node rather than over <see cref="XmpProperty"/>: the flat projection reports the
+    /// same "one" for a simple value and for a one-item bag containing it, and replacing one with the
+    /// other is a real loss. Serializing is expensive, which is why it happens only on a key that
+    /// already repeated — a handful of nodes in the documents that have any.
+    ///
+    /// <para>An unserializable node counts as DIFFERENT. It should not be reachable from a parse (a
+    /// name that came out of XML is a legal XML name), but the alternative is letting an exception
+    /// out of a method whose contract is that it never throws, and over-reporting a diagnostic is the
+    /// harmless direction.</para></summary>
+    private static bool SameDefinition(XmpNode first, XmpNode second)
+    {
+        try
+        {
+            return XmpTreeSerializer.Serialize([first]).AsSpan()
+                .SequenceEqual(XmpTreeSerializer.Serialize([second]));
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
     }
 
     // ── Generic access ────────────────────────────────────────────────────────
@@ -58,6 +104,29 @@ public sealed class XmpPacket
 
     /// <summary>All properties in the packet.</summary>
     public IEnumerable<XmpProperty> Properties => _nodes.Values.Select(XmpProperty.FromNode);
+
+    /// <summary>Properties this packet defined more than once, with definitions that disagreed —
+    /// one definition of each was discarded by the merge.
+    ///
+    /// <para>A DIAGNOSTIC, not a repair. The merge that produced the loss is deliberately unchanged
+    /// (see <see cref="Parse"/>); this only makes the loss visible to a caller that wants to warn
+    /// about it. Nothing in the conformance layer reads it, and nothing should start emitting a
+    /// finding from it without evidence: the engine's verdicts are held to veraPDF parity, and a new
+    /// finding class is the false-positive direction that contract forbids.</para>
+    ///
+    /// <para>Describes the PARSE, and only the parse. It is not recomputed when a setter replaces one
+    /// of the colliding properties, so a caller that reports it after editing is reporting what the
+    /// document arrived with — which is the useful reading, since the discarded definition is gone
+    /// either way.</para>
+    ///
+    /// <para>Covers a repeat across sibling <c>rdf:RDF</c> islands and a repeat within one island
+    /// alike. The multi-island case is the one that motivated this, but the parser hands over a flat
+    /// node stream carrying no island identity and the damage is the same in both, so the report does
+    /// not pretend to distinguish them.</para></summary>
+    public IReadOnlyList<XmpPropertyCollision> Collisions =>
+        _collidedKeys
+            .Select(k => new XmpPropertyCollision(k.ns, k.local, _definitionCounts[k]))
+            .ToList();
 
     /// <summary>The parsed top-level nodes. Internal because <see cref="XmpNode"/> is internal — the
     /// conformance classifier in PdfLibrary needs the real tree (shape facets and children), which the
@@ -470,6 +539,15 @@ public sealed class XmpPacket
                 $"{nameof(XmpExtensionProperty)}.{memberName} must not be null.");
     }
 }
+
+/// <summary>One property that arrived defined more than once, with definitions that disagreed. The
+/// packet kept the last and discarded the rest — see <see cref="XmpPacket.Collisions"/>.</summary>
+/// <param name="NamespaceUri">The property's XMP namespace URI.</param>
+/// <param name="LocalName">The property's local name.</param>
+/// <param name="Definitions">How many definitions of this property arrived in total (at least two),
+/// counting ones that agreed. A property is only listed at all when at least two of them DISAGREED:
+/// copies that restate the same thing lose nothing, so they are not a collision.</param>
+public readonly record struct XmpPropertyCollision(string NamespaceUri, string LocalName, int Definitions);
 
 /// <summary>One property of an authored PDF/A extension schema. All four members are mandatory:
 /// the parser needs Name and ValueType to register the property, and XmpExtensionSchemaStructureRule

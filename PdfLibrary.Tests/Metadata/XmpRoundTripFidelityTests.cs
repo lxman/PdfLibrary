@@ -425,4 +425,127 @@ public sealed class XmpRoundTripFidelityTests
         Assert.Contains("xml:lang=\"fr-fr\"", outXml);
         Assert.Contains("rdf:resource=\"http://example.com/v\"", outXml);
     }
+
+    // ── D8: a property defined twice loses one definition silently ──────────────────────────────
+    //
+    // Part 1 §7.4 wants ONE rdf:RDF, but real files disagree: the "DWC FX Generator" behind the
+    // official ZUGFeRD 2.5 examples splits its properties across two sibling islands, and
+    // XmpPacket has always merged them so those files read. The merge is last-wins, which is fine
+    // while the islands are disjoint and lossy the moment they are not — a property defined in
+    // both is resolved to one value and the other disappears with nothing said.
+    //
+    // This slice REPORTS, it does not resolve. Which island should win has no obvious answer, and
+    // a guess would change what saved documents contain — so the merge is untouched and the loss
+    // is merely no longer silent. Nothing here emits a conformance FINDING either: that would be
+    // new output against the veraPDF parity gate, which is the one direction the engine's contract
+    // forbids.
+
+    private static byte[] TwoIslands(string islandOne, string islandTwo) => Encoding.UTF8.GetBytes($"""
+        <x:xmpmeta xmlns:x="adobe:ns:meta/">
+          <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+        {islandOne}
+            </rdf:Description>
+          </rdf:RDF>
+          <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">
+        {islandTwo}
+            </rdf:Description>
+          </rdf:RDF>
+        </x:xmpmeta>
+        """);
+
+    /// <summary>A property carrying DIFFERENT values in two islands is reported.</summary>
+    [Fact]
+    public void A_property_defined_differently_in_two_islands_is_reported()
+    {
+        XmpPacket pkt = XmpPacket.Parse(TwoIslands(
+            """      <dc:source>island one</dc:source>""",
+            """      <dc:source>island two</dc:source>"""));
+
+        XmpPropertyCollision collision = Assert.Single(pkt.Collisions);
+        Assert.Equal(DcNs, collision.NamespaceUri);
+        Assert.Equal("source", collision.LocalName);
+        Assert.Equal(2, collision.Definitions);
+    }
+
+    /// <summary>Reporting does not RESOLVE: the merge stays last-wins, byte for byte what it was.
+    /// Which island should win is unanswered, and answering it by accident would change what saved
+    /// documents contain. Passed before the report existed as well as after — it is the guard on the
+    /// thing this slice must not touch.</summary>
+    [Fact]
+    public void Reporting_a_collision_does_not_change_which_value_wins()
+    {
+        XmpPacket pkt = XmpPacket.Parse(TwoIslands(
+            """      <dc:source>island one</dc:source>""",
+            """      <dc:source>island two</dc:source>"""));
+
+        Assert.Equal("island two", pkt.Get(DcNs, "source")!.Value);
+    }
+
+    /// <summary>The same property restated with the SAME value is not a collision — nothing was
+    /// lost, so there is nothing to report. Without this the ZUGFeRD-shaped files that motivated the
+    /// merge would report noise for agreeing with themselves.</summary>
+    [Fact]
+    public void The_same_value_in_two_islands_is_not_reported()
+    {
+        XmpPacket pkt = XmpPacket.Parse(TwoIslands(
+            """      <dc:source>same</dc:source>""",
+            """      <dc:source>same</dc:source>"""));
+
+        Assert.Empty(pkt.Collisions);
+    }
+
+    /// <summary>Disjoint islands — the real-world shape the merge exists for — report nothing.</summary>
+    [Fact]
+    public void Disjoint_islands_report_no_collision()
+    {
+        XmpPacket pkt = XmpPacket.Parse(TwoIslands(
+            """      <dc:source>one</dc:source>""",
+            """      <dc:rights>two</dc:rights>"""));
+
+        Assert.Empty(pkt.Collisions);
+        Assert.Equal("one", pkt.Get(DcNs, "source")!.Value);
+        Assert.Equal("two", pkt.Get(DcNs, "rights")!.Value);
+    }
+
+    /// <summary>Structure counts as a value: two definitions with the same TEXT but different shapes
+    /// still lose one, so the comparison is over the serialized node, not over the flat projection —
+    /// which reports "one" for both of these.</summary>
+    [Fact]
+    public void Two_definitions_differing_only_in_shape_are_reported()
+    {
+        XmpPacket pkt = XmpPacket.Parse(TwoIslands(
+            """      <dc:source>one</dc:source>""",
+            """      <dc:source><rdf:Bag><rdf:li>one</rdf:li></rdf:Bag></dc:source>"""));
+
+        Assert.Single(pkt.Collisions);
+    }
+
+    /// <summary>A duplicate WITHIN one island is reported too. The parser hands the packet a flat
+    /// node stream with no island tag, and the loss is identical either way — a definition
+    /// overwritten is a definition overwritten. Reporting only the cross-island case would mean
+    /// staying silent about the same damage for the sake of a distinction the reader cannot act
+    /// on.</summary>
+    [Fact]
+    public void A_duplicate_within_a_single_island_is_reported()
+    {
+        XmpPacket pkt = XmpPacket.Parse(Packet("""
+              <dc:source>first</dc:source>
+              <dc:source>second</dc:source>
+        """));
+
+        Assert.Single(pkt.Collisions);
+        Assert.Equal("second", pkt.Get(DcNs, "source")!.Value);
+    }
+
+    /// <summary>An ordinary single-island packet reports nothing — the empty case, pinned so the
+    /// report cannot start firing on every document.</summary>
+    [Fact]
+    public void An_ordinary_packet_reports_no_collisions()
+    {
+        XmpPacket pkt = XmpPacket.Parse(Packet("""      <dc:source>only</dc:source>"""));
+
+        Assert.Empty(pkt.Collisions);
+    }
 }
