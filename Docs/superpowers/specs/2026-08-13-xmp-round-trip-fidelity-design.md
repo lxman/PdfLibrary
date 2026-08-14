@@ -315,6 +315,24 @@ both us and veraPDF) to read the three shapes:
 | `<xmp:BaseURL rdf:resource="U"/>` | `U` | `U` | `U` |
 
 Agreement on every row, including the rule-ordering case that had only the spec text behind it.
+
+**And against Adobe's own XMPCore, 2026-08-14** — `tools/xmp-oracle`, added for exactly this class of
+question. Adobe agrees with the post-fix engine on rules 1, 2, 3 and 4, including rule 1 in attribute
+position. On the rule-ORDERING case the three implementations diverge, and the divergence is the
+useful part:
+
+| `<ex:Prop rdf:value="V" rdf:resource="U"/>` | Verdict |
+|---|---|
+| Adobe XMPCore 6.1.11 | **refuses the entire packet** ("Empty property element can't have both rdf:value and rdf:resource") |
+| ExifTool 12.76 | `V` — rule 1 |
+| This engine, after D10 | `V`, packet captured verbatim so neither attribute is lost |
+| This engine, before D10 | `U` — which nobody else agrees with |
+
+The old behaviour was wrong by every account; the new one is the most tolerant reading that still
+honours the stated rule order. **veraPDF runs this same Adobe code** (its XMP core is a repackaged
+fork — all 31 classes present), so it would refuse such a packet outright and report invalid metadata
+where we parse it. That is UNDER-reporting relative to veraPDF, the safe direction under the
+no-false-positive contract, and the tolerant-parse contract behaving as designed.
 Note the third row's difference in KIND, not value: ExifTool MODELS the qualifier and surfaces it as
 a sibling tag, where this engine captures the packet verbatim instead. Both preserve it; only one
 projects it. That is the documented "general qualifier modelling is out of scope" boundary, and
