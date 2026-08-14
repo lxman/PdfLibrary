@@ -218,10 +218,26 @@ unchanged: still no throw, still an empty list when nothing parses.
    wrong destroys a field name — a worse loss than the one being repaired.
 5. **D6** — `rdf:resource` URI form. **DONE**. Round-trip fidelity only: the attribute form is
    restored for values that ARRIVED in it, never synthesised for uri-typed properties that did not.
-6. **D7** — `rdf:ID` laundering through `RawXml`.
-7. **D8** — collision diagnostics.
+6. **D7** — `rdf:ID` laundering through `RawXml`. **DONE** (`e9b47e2`). The three capture sites now
+   share one `Snapshot` helper, so "verbatim except `rdf:ID`" cannot be true at two of them and false
+   at the third; with no `rdf:ID` present it returns the exact string those sites always produced. The
+   strip works from the snapshot STRING, not a clone of the live element — a clone is detached from
+   its ancestors' namespace scope, so every prefix bound above the capture root is re-synthesized and
+   `dc:source` comes back as `<source xmlns="…">`. The over-reach guard test caught that; reasoning
+   did not.
+7. **D8** — collision diagnostics. **DONE** (`ff4b9ec`). `XmpPacket.Collisions` (new public surface,
+   with `XmpPropertyCollision`) lists properties that arrived defined more than once with definitions
+   that disagreed. Merge semantics untouched and pinned by a guard test, per the ruling below.
+   Comparison is over the SERIALIZED node — the flat projection reports the same `"one"` for a simple
+   value and for a one-item bag holding it. Duplicates within ONE island are reported too: the parser
+   hands over a flat node stream with no island identity, and a definition overwritten is a definition
+   overwritten either way. No conformance finding is emitted from it, deliberately — that is the
+   false-positive direction the veraPDF parity contract forbids.
 
 *(**D9 dropped** — see its entry above. Not part of any remaining slice.)*
+
+**All nine defects are now resolved: eight fixed, D9 dropped with a recorded ruling.** The one
+Testing deliverable below still outstanding is the production-coverage test.
 
 *Original ordering, superseded: D1 → D2 → D3–D5 → D6,D7,D9 → D8.*
 
@@ -232,6 +248,9 @@ unchanged: still no throw, still an empty list when nothing parses.
 - **A production-coverage test** enumerating Part 1 Annex C's productions with the engine's handling
   of each, so a future reader can see at a glance what is modelled, what is captured verbatim, and
   what is rejected. This is the artifact whose absence let nine defects survive the first pass.
+  **STILL OUTSTANDING as of 2026-08-13, after all eight fixes landed** — the per-defect fixtures
+  cover the nine shapes that were FOUND, which is exactly the coverage that missed them the first
+  time. Not a slice of any defect; the last item of this program.
 - **veraPDF parity snapshot** — the gate above. Zero false positives, non-negotiable.
 - **local-708 XMP corpus gate** in `Pellucid.App.Tests` for slice 2.
 - Fixtures must be **sub-second and NOT `LocalOnly`** — a `LocalOnly` category silently drops out of
