@@ -248,13 +248,49 @@ Testing deliverable below still outstanding is the production-coverage test.
 - **A production-coverage test** enumerating Part 1 Annex C's productions with the engine's handling
   of each, so a future reader can see at a glance what is modelled, what is captured verbatim, and
   what is rejected. This is the artifact whose absence let nine defects survive the first pass.
-  **STILL OUTSTANDING as of 2026-08-13, after all eight fixes landed** — the per-defect fixtures
-  cover the nine shapes that were FOUND, which is exactly the coverage that missed them the first
-  time. Not a slice of any defect; the last item of this program.
+  **DONE** — `PdfLibrary.Tests/Metadata/XmpProductionCoverageTests.cs`, 33 rows over productions
+  7.2.4–7.2.34, each asserting the engine's ACTUAL handling (Modelled / Captured / Dropped) rather
+  than restating an intention. It found D10 on its first run; see the section above.
 - **veraPDF parity snapshot** — the gate above. Zero false positives, non-negotiable.
 - **local-708 XMP corpus gate** in `Pellucid.App.Tests` for slice 2.
 - Fixtures must be **sub-second and NOT `LocalOnly`** — a `LocalOnly` category silently drops out of
   CI (`ci.yml` filters `Category!=LocalOnly`), which has bitten this repo before.
+
+## D10 — found by the coverage test, OPEN
+
+**The coverage test paid for itself on its first run.** `XmpProductionCoverageTests` found a tenth
+defect the nine-defect audit missed, in Annex C's `emptyPropertyElt` mapping rules (C.2.12) — the one
+production whose rules the audit read as prose and never exercised.
+
+**An `rdf:value` ATTRIBUTE is only honoured when a qualifier attribute happens to sit beside it.**
+
+- `<ns:Prop rdf:value="v" ns:Qual="q"/>` → value `"v"`. Correct.
+- `<ns:Prop rdf:value="v"/>` → value **`""`**. The value is destroyed, and the emptiness is written
+  back on save.
+- `<ns:Prop rdf:value="v" rdf:resource="http://…"/>` → value `"http://…"`. Rules applied in the wrong
+  ORDER: C.2.12 says rule 1 (`rdf:value`) precedes rule 2 (`rdf:resource`), and is explicit that they
+  "be applied in the order shown".
+
+Cause: the attribute form of `rdf:value` is read only inside the struct branch, which is entered on
+struct CONTENT — an element child, or a property attribute that could be a field. `rdf:value` is
+rdf:-namespaced, so it is not itself struct content, and an element carrying nothing else never
+reaches the code that would read it. The shape that works and the shape that does not differ by an
+attribute with nothing to do with the value, which is exactly why reading the parser did not catch it.
+
+**Severity: destroys content, on an input the spec calls unusual.** C.2.12 calls concurrent
+`rdf:value`/`rdf:resource` "discouraged", and no document in the measured corpus uses the attribute
+form of `rdf:value` at all. That is a reason to schedule it deliberately, not a reason to leave it —
+D3 and D5 were also unreachable in the corpus and were still worth fixing, on the same principle:
+the packet should survive unchanged so a human can see what the producer wrote.
+
+Pinned as-is by two tests that assert the WRONG behaviour on purpose, so the fix has a test waiting
+and the defect cannot be lost. **When it is fixed, those tests fail — update them, do not delete
+them.** Both name D10 in their doc comments.
+
+Not fixed in this program: every other slice was scoped from an audit the user approved, and a
+value-changing fix carries the one risk this subsystem holds above correctness — it changes what
+conformance rules READ, which is the false-positive direction. It needs its own RED-first slice with
+the parity gate as its verdict, not a tail-end addition to the coverage work.
 
 ## Out of scope
 
