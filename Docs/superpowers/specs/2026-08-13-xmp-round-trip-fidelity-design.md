@@ -303,6 +303,23 @@ vouch for the changed path itself, because no document we hold reaches it. The j
 C.2.12's explicit rule ordering plus the reproduction in `XmpProductionCoverageTests`, not a failing
 document. That is the same standard D3 and D5 were fixed under.
 
+**Corroborated by a second implementation, 2026-08-14.** The gap above — no document we hold reaches
+the changed path — was closed by asking ExifTool 12.76 (its own XMP implementation, independent of
+both us and veraPDF) to read the three shapes:
+
+| Fixture | ExifTool | Engine, after the fix | Engine, before |
+|---|---|---|---|
+| `<dc:source rdf:value="V"/>` | `V` | `V` | *empty* |
+| `<dc:coverage rdf:value="V" rdf:resource="U"/>` | `V` | `V` | `U` |
+| `<dc:relation rdf:value="V" dc:type="Q"/>` | `V`, plus `Q` as its own tag | `V` (packet captured) | `V` |
+| `<xmp:BaseURL rdf:resource="U"/>` | `U` | `U` | `U` |
+
+Agreement on every row, including the rule-ordering case that had only the spec text behind it.
+Note the third row's difference in KIND, not value: ExifTool MODELS the qualifier and surfaces it as
+a sibling tag, where this engine captures the packet verbatim instead. Both preserve it; only one
+projects it. That is the documented "general qualifier modelling is out of scope" boundary, and
+ExifTool's behaviour is what modelling them would eventually look like.
+
 ## Out of scope
 
 - The conformance data tables — proven exact against veraPDF; see the parity spec.
