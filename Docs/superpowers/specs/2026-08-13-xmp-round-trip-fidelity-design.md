@@ -256,7 +256,7 @@ Testing deliverable below still outstanding is the production-coverage test.
 - Fixtures must be **sub-second and NOT `LocalOnly`** — a `LocalOnly` category silently drops out of
   CI (`ci.yml` filters `Category!=LocalOnly`), which has bitten this repo before.
 
-## D10 — found by the coverage test, OPEN
+## D10 — found by the coverage test, FIXED
 
 **The coverage test paid for itself on its first run.** `XmpProductionCoverageTests` found a tenth
 defect the nine-defect audit missed, in Annex C's `emptyPropertyElt` mapping rules (C.2.12) — the one
@@ -283,14 +283,25 @@ form of `rdf:value` at all. That is a reason to schedule it deliberately, not a 
 D3 and D5 were also unreachable in the corpus and were still worth fixing, on the same principle:
 the packet should survive unchanged so a human can see what the producer wrote.
 
-Pinned as-is by two tests that assert the WRONG behaviour on purpose, so the fix has a test waiting
-and the defect cannot be lost. **When it is fixed, those tests fail — update them, do not delete
-them.** Both name D10 in their doc comments.
+**Fixed 2026-08-13** in its own RED-first slice. Rule 1 is now applied in attribute position, ahead
+of the `rdf:resource` form (rule 2) and the empty-value form (rule 3) that the fall-through produced.
+The two pinning tests were flipped to assert the correct behaviour and failed before the fix, joined
+by a third for `rdf:value` + `xml:lang`.
 
-Not fixed in this program: every other slice was scoped from an audit the user approved, and a
-value-changing fix carries the one risk this subsystem holds above correctness — it changes what
-conformance rules READ, which is the false-positive direction. It needs its own RED-first slice with
-the parity gate as its verdict, not a tail-end addition to the coverage work.
+The `rdf:value` + `rdf:resource` case is CAPTURED, not merely re-ordered. Rule 1 makes every other
+attribute a qualifier and this model has nowhere to hang one, so modelling the value alone would
+repair the projection while quietly dropping the `rdf:resource` from the saved document. The snapshot
+keeps both and the projection answers rule 1 — the same treatment the element form of a qualified
+value already gets.
+
+**What the gates did and did not prove.** All green: engine suite 3365, `Category=Parity` zero skips,
+Pellucid.Core 500/0, and the 708-document real-world corpus gate (no finding added, no value lost).
+But a direct scan says the attribute form of `rdf:value` appears in **0 of 2,907** veraPDF corpus
+documents and **0 of 701** real-world ones — 4 and 3 respectively use the ELEMENT form, which took
+the struct branch and was always correct. So the gates prove the fix regressed nothing; they cannot
+vouch for the changed path itself, because no document we hold reaches it. The justification is
+C.2.12's explicit rule ordering plus the reproduction in `XmpProductionCoverageTests`, not a failing
+document. That is the same standard D3 and D5 were fixed under.
 
 ## Out of scope
 

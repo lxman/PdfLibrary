@@ -375,6 +375,44 @@ internal static class XmpTreeParser
             return;
         }
 
+        // C.2.12 mapping rule 1, in ATTRIBUTE position: "If there is an rdf:value attribute, then
+        // this is a simple property. All other attributes are qualifiers." The annex is explicit that
+        // its four rules "be applied in the order shown", so this precedes the rdf:resource form
+        // (rule 2) below and the empty-value form (rule 3) that SimpleText would otherwise produce.
+        //
+        // Until 2026-08-13 this was reachable ONLY through the struct branch above, which is entered
+        // on struct CONTENT — an element child, or a property attribute that could be a field.
+        // rdf:value is rdf:-namespaced, so it is not itself struct content: an element carrying
+        // nothing else never reached the code that reads it, and
+        //   <ns:Prop rdf:value="v"/>              came back EMPTY — the value destroyed on save;
+        //   <ns:Prop rdf:value="v" rdf:resource="u"/>  came back as the URI — the rules inverted.
+        // With any qualifier attribute present the branch WAS entered and the value found, so the
+        // working shape and the broken one differed by an attribute that has nothing to do with the
+        // value (defect D10, found by XmpProductionCoverageTests).
+        //
+        // Text beats the attribute, matching what SimpleText already decided for the rdf:resource
+        // form: an emptyPropertyElt is by definition empty, so an element carrying both is malformed
+        // and the visible content is the better guess at intent.
+        if (string.IsNullOrEmpty(el.Value) && el.Attribute(Rdf + "value") is { } valueAttr)
+        {
+            node.IsSimple = true;
+            node.Value = valueAttr.Value;
+
+            // Rule 1 makes every OTHER attribute a qualifier, and this model has nowhere to hang one.
+            // Modelling the value alone would repair the projection while quietly dropping the
+            // qualifier from the saved document — so the packet is captured, exactly as the element
+            // form of a qualified value is. In practice this is only rdf:resource: a qualifier in a
+            // producer namespace is struct content, so it took the branch above.
+            if (el.Attributes().Any(a => !a.IsNamespaceDeclaration
+                                         && a.Name != Rdf + "value"
+                                         && a.Name != Xml + "lang"))
+            {
+                node.RawXml = Snapshot(captureRoot);
+            }
+
+            return;
+        }
+
         node.IsSimple = true;
         node.Value = SimpleText(el);
 

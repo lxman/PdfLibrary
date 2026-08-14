@@ -339,52 +339,71 @@ public sealed class XmpProductionCoverageTests
         Assert.Equal("the value", node.Value);
     }
 
-    /// <summary><b>KNOWN DEFECT — D10, found 2026-08-13 by this file, unfixed.</b> Rule 1 again, with
-    /// no qualifier attribute beside the <c>rdf:value</c>: <b>the value is destroyed.</b> The property
-    /// survives with an EMPTY value, and re-serializing writes that emptiness back to the document.
+    /// <summary>Rule 1 with no qualifier attribute beside the <c>rdf:value</c> — the shape that WAS
+    /// defect D10 (found by this file 2026-08-13, fixed the same day). The value was destroyed: the
+    /// property survived with an empty value and re-serializing wrote that emptiness back.
     ///
-    /// <para>Cause: the attribute form of <c>rdf:value</c> is only consulted inside the struct branch,
-    /// which is entered on struct CONTENT — an element child, or a property attribute that could be a
-    /// field. <c>rdf:value</c> is rdf:-namespaced, so it is not itself struct content, and an element
-    /// carrying nothing else never reaches the branch that would read it. With one qualifier
-    /// attribute present (the row above) the branch is entered and the value is found, which is why
-    /// this went unnoticed: the shape that works and the shape that does not differ by an attribute
-    /// that has nothing to do with the value.</para>
-    ///
-    /// <para>This test pins the WRONG behaviour deliberately, so the defect is visible and the fix
-    /// has a test waiting. When rule 1 is implemented in attribute position, this fails — update it,
-    /// do not delete it.</para></summary>
+    /// <para>Cause: the attribute form of <c>rdf:value</c> was consulted only inside the struct
+    /// branch, which is entered on struct CONTENT — an element child, or a property attribute that
+    /// could be a field. <c>rdf:value</c> is rdf:-namespaced, so it is not itself struct content, and
+    /// an element carrying nothing else never reached the code that would read it. With one qualifier
+    /// attribute present (the row above) the branch WAS entered and the value was found — the working
+    /// shape and the broken one differed by an attribute with nothing to do with the value, which is
+    /// why reading the parser missed it twice.</para></summary>
     [Fact]
-    public void Production_7_2_21_emptyPropertyElt_rule1_loses_the_value_without_a_qualifier()
+    public void Production_7_2_21_emptyPropertyElt_rule1_without_a_qualifier()
     {
         XmpNode node = AssertHandling("""      <ns:Prop rdf:value="the value"/>""", "Prop", Handling.Modelled);
 
         Assert.True(node.IsSimple);
-        Assert.Equal(string.Empty, node.Value);   // SHOULD be "the value"
+        Assert.Equal("the value", node.Value);
 
+        // And it survives the save, in the canonical element form. Rule 1 says the value IS the
+        // property's value; which RDF alternate carried it in is not itself information, the same
+        // reading under which an attribute-form property on rdf:Description comes back as an element.
         string outXml = Encoding.UTF8.GetString(
             XmpPacket.Parse(Packet("""      <ns:Prop rdf:value="the value"/>""")).Serialize());
-        Assert.DoesNotContain("the value", outXml);
+        Assert.Contains(">the value<", outXml);
     }
 
-    /// <summary><b>KNOWN DEFECT — D10, second face, unfixed.</b> C.2.12 is explicit that its four
-    /// mapping rules "be applied in the order shown", so <c>rdf:value</c> (rule 1) outranks
-    /// <c>rdf:resource</c> (rule 2). This engine applies them in the opposite order: the URI becomes
-    /// the value and the <c>rdf:value</c> is dropped, so the property comes back as a URI reference
-    /// that says something the producer did not write.
-    ///
-    /// <para>Mitigating, and the reason this is recorded rather than rushed into a fix: C.2.12 itself
-    /// calls the concurrent use of <c>rdf:value</c> and <c>rdf:resource</c> "discouraged", so the
-    /// input is already unusual. No document in the measured corpus does it.</para></summary>
+    /// <summary>Rule 1 with an <c>xml:lang</c> beside it — still rule 1, and the language qualifier
+    /// rides along. <c>xml:lang</c> is not a competing mapping rule; C.2.12 lists it among the
+    /// attributes rule 3 ignores precisely because it is a qualifier in any position.</summary>
     [Fact]
-    public void Production_7_2_21_emptyPropertyElt_applies_rule2_before_rule1()
+    public void Production_7_2_21_emptyPropertyElt_rule1_with_xml_lang()
     {
         XmpNode node = AssertHandling(
-            """      <ns:Prop rdf:value="the value" rdf:resource="http://example.com/v"/>""",
-            "Prop", Handling.Modelled);
+            """      <ns:Prop rdf:value="the value" xml:lang="en-us"/>""", "Prop", Handling.Modelled);
 
-        Assert.True(node.IsUriValue);                          // rule 2 won
-        Assert.Equal("http://example.com/v", node.Value);      // SHOULD be "the value", per rule order
+        Assert.True(node.IsSimple);
+        Assert.Equal("the value", node.Value);
+        Assert.Equal("en-us", node.XmlLang);
+    }
+
+    /// <summary>Rule ORDER: C.2.12 requires its four rules "be applied in the order shown", so
+    /// <c>rdf:value</c> (rule 1) outranks <c>rdf:resource</c> (rule 2). The engine applied them
+    /// backwards — the URI became the value and the <c>rdf:value</c> was dropped, so the property
+    /// came back asserting something the producer did not write (D10, second face).
+    ///
+    /// <para>CAPTURED rather than merely re-ordered. Rule 1 makes every other attribute a qualifier,
+    /// and this model has nowhere to hang one — modelling the value alone would fix the projection
+    /// while quietly dropping the <c>rdf:resource</c> from the saved document. The snapshot keeps
+    /// both, and the projection answers rule 1. C.2.12 calls this combination "discouraged" and no
+    /// corpus document uses it, so preserving what was written beats interpreting it.</para></summary>
+    [Fact]
+    public void Production_7_2_21_emptyPropertyElt_applies_rule1_before_rule2()
+    {
+        const string body = """      <ns:Prop rdf:value="the value" rdf:resource="http://example.com/v"/>""";
+
+        XmpNode node = AssertHandling(body, "Prop", Handling.Captured);
+
+        Assert.True(node.IsSimple);
+        Assert.Equal("the value", node.Value);   // rule 1 wins
+        Assert.False(node.IsUriValue);           // the value is not the URI reference
+
+        string outXml = Encoding.UTF8.GetString(XmpPacket.Parse(Packet(body)).Serialize());
+        Assert.Contains("rdf:value=\"the value\"", outXml);
+        Assert.Contains("rdf:resource=\"http://example.com/v\"", outXml);
     }
 
     /// <summary>Rule 2: "If there is an rdf:resource attribute, then this is a simple property with a
