@@ -335,6 +335,68 @@ public sealed partial class PdfDocumentEditor
         return gid == 0 ? (ushort)0 : metrics.GetAdvanceWidth(gid);
     }
     /// <summary>
+    /// Writes <paramref name="font"/>'s <c>/FontDescriptor</c> <c>/CIDSet</c> as a bitmap identifying
+    /// exactly <paramref name="cids"/>: bit <c>i</c> (MSB-first within each byte) set ⇒ CID <c>i</c>
+    /// present, the encoding <c>FontSubsetCoverageRule</c> decodes.
+    ///
+    /// <para><paramref name="font"/> is the PROGRAM HOLDER — the descendant CIDFont for a composite
+    /// font, never the Type0 wrapper, because <c>/FontDescriptor</c> lives there.</para>
+    ///
+    /// <para>Writes exactly the set it is given, with no opinion about which CIDs belong: deciding
+    /// that is the planner's job, and it decides by enumerating the embedded program. No-op when the
+    /// font has no <c>/FontDescriptor</c> or no existing <c>/CIDSet</c> — this operation CORRECTS a
+    /// declaration, it never introduces one, because a subset font with no <c>/CIDSet</c> produces no
+    /// finding and giving it one would create an obligation the document never had.</para>
+    /// </summary>
+    public void SetCidSet(FontId font, IReadOnlySet<int> cids)
+    {
+        ArgumentNullException.ThrowIfNull(cids);
+
+        PdfDictionary holder = ResolveFontDictionary(font);
+        if (Resolve(holder.Get("FontDescriptor")) is not PdfDictionary descriptor) return;
+        if (Resolve(descriptor.Get("CIDSet")) is not PdfStream) return;
+
+        var max = -1;
+        foreach (int cid in cids)
+            if (cid > max) max = cid;
+
+        var bytes = new byte[max < 0 ? 0 : max / 8 + 1];
+        foreach (int cid in cids)
+        {
+            if (cid < 0) continue;
+            bytes[cid / 8] |= (byte)(0x80 >> (cid % 8));
+        }
+
+        PdfIndirectReference streamRef = _document.RegisterObject(new PdfStream(new PdfDictionary(), bytes));
+        descriptor.Set("CIDSet", streamRef);
+    }
+
+    /// <summary>
+    /// Writes <paramref name="font"/>'s <c>/FontDescriptor</c> <c>/CharSet</c> as the run of PDF name
+    /// tokens <c>FontSubsetCoverageRule</c> parses (<c>/a/b/c</c>).
+    ///
+    /// <para>Same contract as <see cref="SetCidSet"/>: corrects an existing declaration, never
+    /// introduces one, and writes exactly the names it is given.</para>
+    /// </summary>
+    public void SetCharSet(FontId font, IReadOnlySet<string> glyphNames)
+    {
+        ArgumentNullException.ThrowIfNull(glyphNames);
+
+        PdfDictionary holder = ResolveFontDictionary(font);
+        if (Resolve(holder.Get("FontDescriptor")) is not PdfDictionary descriptor) return;
+        if (Resolve(descriptor.Get("CharSet")) is not PdfString) return;
+
+        var builder = new System.Text.StringBuilder();
+        foreach (string name in glyphNames.OrderBy(n => n, StringComparer.Ordinal))
+            builder.Append('/').Append(name);
+
+        // PdfString's public constructor surface takes bytes, not a string (it stores
+        // PDFDocEncoding/Latin-1 bytes internally) — the names this writes are PDF name tokens, i.e.
+        // ASCII, so Latin-1 round-trips exactly through the .Value property the rule reads.
+        descriptor.Set("CharSet", new PdfString(System.Text.Encoding.Latin1.GetBytes(builder.ToString())));
+    }
+
+    /// <summary>
     /// Writes (or removes) a font's <c>/ToUnicode</c> CMap.
     ///
     /// <para>Target the LOGICAL font — a Type0 wrapper, not its descendant CIDFont. Viewers read
