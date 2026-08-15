@@ -74,7 +74,7 @@ internal sealed class FontSubsetCoverageRule : IConformanceRule
         // so a null/invalid program (or one whose glyph names cannot be enumerated) is skipped — FP-safe.
         if (PdfFont.Create(fontDict, context.Document)?.GetEmbeddedMetrics() is not { IsValid: true } metrics)
             yield break;
-        if (metrics.EnumerateProgramGlyphNames() is not { } programGlyphs)
+        if (SubsetProgramGlyphs.ProgramGlyphNames(metrics) is not { } programGlyphs)
             yield break;
 
         if (!GlyphNamesAgree(ParseNameSet(charSet.Value), programGlyphs))
@@ -117,7 +117,8 @@ internal sealed class FontSubsetCoverageRule : IConformanceRule
                 containsCid = cffCids.Contains;
                 break;
             case "CIDFontType2":
-                (programCids, containsCid) = BuildTrueTypeCidSet(context, cidDict, metrics);
+                (programCids, containsCid) = SubsetProgramGlyphs.ProgramCids(
+                    context.Document, cidDict, metrics);
                 if (programCids is null)
                     yield break;
                 break;
@@ -130,36 +131,6 @@ internal sealed class FontSubsetCoverageRule : IConformanceRule
             yield return Make(context, cidDict,
                 "The CID font's /CIDSet does not identify all glyphs present in the embedded subset program.");
         }
-    }
-
-    /// <summary>
-    /// The CIDs a CIDFontType2 TrueType program contains, and its containment predicate, matching veraPDF's
-    /// CIDFontType2Program: with an Identity CIDToGIDMap the CIDs are <c>[0, numberOfHMetrics)</c> and a CID
-    /// is contained iff it is non-zero and below the glyph count; with a custom CIDToGIDMap stream the CIDs
-    /// come from the mapping (each in-range CID whose GID is below the glyph count).
-    /// </summary>
-    private static (IReadOnlySet<int>? Cids, Func<int, bool> Contains) BuildTrueTypeCidSet(
-        ConformanceContext context, PdfDictionary cidDict, EmbeddedFontMetrics metrics)
-    {
-        int numGlyphs = metrics.NumGlyphs;
-        if (context.Resolve(cidDict.Get("CIDToGIDMap")) is PdfStream mapStream)
-        {
-            byte[] data = mapStream.GetDecodedData(context.Document.Decryptor);
-            int mappingSize = data.Length / 2;
-            int Gid(int cid) => cid >= 0 && cid < mappingSize ? (data[cid * 2] << 8) | data[cid * 2 + 1] : 0;
-            bool Contains(int cid) => cid >= 1 && cid < mappingSize && Gid(cid) < numGlyphs;
-            var cids = new HashSet<int>();
-            for (int cid = 0; cid < mappingSize; cid++)
-                if (Contains(cid))
-                    cids.Add(cid);
-            return (cids, Contains);
-        }
-
-        // Identity CIDToGIDMap (an explicit /Identity name or none): CID == GID.
-        var identity = new HashSet<int>();
-        for (int cid = 0; cid < metrics.NumberOfHMetrics; cid++)
-            identity.Add(cid);
-        return (identity, cid => cid != 0 && cid < numGlyphs);
     }
 
     // ── comparisons (replicating veraPDF's model exactly) ───────────────────────────────────────────────
