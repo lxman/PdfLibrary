@@ -18,13 +18,23 @@ public class BfoOracleTests(ITestOutputHelper output)
     /// <summary>Pass fixtures the current rule set still flags. Empty — no BFO conformant file is rejected.</summary>
     private static readonly IReadOnlySet<string> KnownPassFalsePositives = new HashSet<string>();
 
-    /// <summary>Detection floor — a ratchet. Raise as new rules catch more BFO fail fixtures.</summary>
+    /// <summary>Detection floor — a ratchet. Raise as new rules catch more BFO fail fixtures. A floor may
+    /// also legitimately FALL when a fix removes detections that were false positives — lower it
+    /// deliberately, name the fix in the remarks below, and verify veraPDF agrees the lost detections
+    /// were never real (first case: issues 24-26, 2026-08-15).</summary>
     /// <remarks>
     /// 2026-07-25 — ratcheted 10 → 14, the measured detection over the 24 PDF/A-2 fail fixtures, after the
     /// suite was checked out locally again. Stable across three consecutive runs. The 10 remaining misses
     /// are coverage gaps shared with the veraPDF corpus (chiefly the font-program clauses), not errors:
     /// the pass-fixture oracle reports zero false positives, so the rule set stays a strict subset here
     /// exactly as it is against veraPDF.
+    ///
+    /// Re-verified 2026-08-15 after the issues 24-26 false-positive fixes (indirect /W array elements,
+    /// StandardEncoding Annex D.2 names, zero-advance TrueType programs): the floor held at 14, unchanged
+    /// — no BFO fail fixture's verdict or detection depended on any of them. (The companion veraPDF
+    /// PDF_A-2b corpus did have 21 files cross fails→fixed as their spurious width findings disappeared
+    /// — see Pellucid.App.Tests/oi-corpus-baseline.txt, 2026-08-15 — but each remained non-conforming
+    /// for other reasons; no BFO-corpus file's verdict or detection depended on the fixed defects.)
     /// </remarks>
     private const int DetectionFloor = 14;
 

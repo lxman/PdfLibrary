@@ -123,14 +123,25 @@ internal class CidFont : PdfFont
             _defaultWidth = descriptor.MissingWidth;
     }
 
-    private static Dictionary<int, double> ParseWidthArray(PdfArray array)
+    /// <summary>
+    /// Any element of /W may be an indirect reference (ISO 32000-1 7.3.10 — any object may be
+    /// indirect), and a common Word/Acrobat output shape stores the inner width array that way.
+    /// Elements are therefore resolved before pattern-matching; anything still unreadable after
+    /// resolution breaks the parse and degrades to /DW — but not byte-identically to the pre-fix
+    /// behaviour: a format-1 entry whose element resolves to nothing now leaves that CID unmapped
+    /// (it used to be written as width 0), and an unresolvable format-2 width now abandons the rest
+    /// of the array (it used to write 0 for that range and keep parsing). Both changes replace a
+    /// silent wrong-width write with "fall through to /DW", which is the intended direction, but
+    /// callers should not assume the old exact shape.
+    /// </summary>
+    private Dictionary<int, double> ParseWidthArray(PdfArray array)
     {
         var widths = new Dictionary<int, double>();
         var i = 0;
 
         while (i < array.Count)
         {
-            if (array[i] is not PdfInteger startCid)
+            if (Resolve(array[i]) is not PdfInteger startCid)
                 break;
 
             int start = startCid.Value;
@@ -139,20 +150,30 @@ internal class CidFont : PdfFont
             if (i >= array.Count)
                 break;
 
+            PdfObject? second = Resolve(array[i]);
+
             // Format 1: start_cid [ w1 w2 ... wn ]
-            if (array[i] is PdfArray widthList)
+            if (second is PdfArray widthList)
             {
                 for (var j = 0; j < widthList.Count; j++)
                 {
-                    widths[start + j] = widthList[j].ToDouble();
+                    if (Resolve(widthList[j]) is not { } width)
+                        continue;
+                    widths[start + j] = width.ToDouble();
                 }
                 i++;
             }
             // Format 2: start_cid end_cid width
-            else if (array[i] is PdfInteger endCid && i + 1 < array.Count)
+            else if (second is PdfInteger endCid && i + 1 < array.Count)
             {
                 int end = endCid.Value;
-                var width = array[i + 1].ToDouble();
+                // CIDs are 16-bit (0..65535); clamp a malformed/absurd end so a corrupt array can't
+                // force a multi-billion-entry loop.
+                if (end > start + 65535)
+                    end = start + 65535;
+                if (Resolve(array[i + 1]) is not { } widthObj)
+                    break;
+                var width = widthObj.ToDouble();
 
                 for (int cid = start; cid <= end; cid++)
                 {
@@ -169,4 +190,9 @@ internal class CidFont : PdfFont
         return widths;
     }
 
+    /// <summary>Resolves an indirect reference through the owning document; null when it cannot.</summary>
+    private PdfObject? Resolve(PdfObject? obj) =>
+        obj is PdfIndirectReference reference
+            ? _document is null ? null : _document.ResolveReference(reference)
+            : obj;
 }
