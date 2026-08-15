@@ -552,6 +552,31 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "/CIDSet would be a guess.");
         }
 
+        // The enumeration and the predicate must agree, or the rule's CidsAgree is UNSATISFIABLE for
+        // this font: direction 1 demands every enumerated CID be declared, direction 2 rejects any
+        // declared CID the predicate refuses — so a declaration regenerated from programCids would
+        // still be faulted, and RegenerateDeclarationProposal's promise that applying it necessarily
+        // satisfies the rule would be false. Reachable only on the Identity CIDToGIDMap branch, whose
+        // set is [0, NumberOfHMetrics) read straight off `hhea` with no clamp, while the predicate is
+        // `cid != 0 && cid < NumGlyphs`: a malformed font declaring numberOfHMetrics > numGlyphs puts
+        // the two out of step. The custom-CIDToGIDMap and CID-keyed-CFF branches both derive their set
+        // FROM the predicate and are structurally immune. Not observed in 708 real documents.
+        //
+        // Declined, not repaired, and NOT fixed in SubsetProgramGlyphs: that enumeration must keep
+        // mirroring FontSubsetCoverageRule exactly (its whole reason for being shared), so the
+        // disagreement is detected here, where the repair decides what it can honestly promise. A
+        // program whose own tables contradict each other is a defective program, which is F-4's
+        // territory rather than a stale declaration. (Final whole-branch review, 2026-08-14,
+        // Important 2.)
+        if (programCids.Any(cid => cid != 0 && !containsCid(cid)))
+        {
+            return new DeclineProposal(holder, ruleId,
+                "The embedded font program's own tables disagree about how many glyphs it contains "
+                + "(its horizontal-metrics count exceeds its glyph count), so any /CIDSet Pellucid "
+                + "wrote from it would still fail the check. The font program itself needs "
+                + "rebuilding — correcting the declaration cannot fix it.");
+        }
+
         // Surplus = declared but absent from the program. CID 0 is excluded for the same reason the
         // rule's own comparison excludes it: .notdef is never part of the agreement.
         IReadOnlySet<int> declared =

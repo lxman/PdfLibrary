@@ -58,6 +58,30 @@ public sealed class SubsetDeclarationTests
     private static byte[] FontBytes() =>
         File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
 
+    /// <summary>The fixture font with its <c>hhea</c> <c>numberOfHMetrics</c> overwritten with a value
+    /// far beyond its real glyph count — a MALFORMED program whose own tables contradict each other.
+    /// <c>EmbeddedFontMetrics</c> reads that field straight off <c>hhea</c> with no clamp, so the
+    /// Identity branch of <c>SubsetProgramGlyphs.ProgramCids</c> enumerates <c>[0, numberOfHMetrics)</c>
+    /// while its containment predicate is <c>cid != 0 &amp;&amp; cid &lt; NumGlyphs</c> — the two out of
+    /// step. Patched here rather than vendored as a second binary: the ONE byte pair that matters is
+    /// visible in the code, and it cannot drift from the real fixture it is derived from.</summary>
+    private static byte[] FontBytesWithInflatedHMetrics()
+    {
+        byte[] bytes = FontBytes();
+        int numTables = (bytes[4] << 8) | bytes[5];
+        for (var i = 0; i < numTables; i++)
+        {
+            int record = 12 + (i * 16);
+            if (Encoding.ASCII.GetString(bytes, record, 4) != "hhea") continue;
+            int hhea = (bytes[record + 8] << 24) | (bytes[record + 9] << 16)
+                | (bytes[record + 10] << 8) | bytes[record + 11];
+            bytes[hhea + 34] = 0x7F; // numberOfHMetrics (uint16 at hhea+34) := 0x7FFF
+            bytes[hhea + 35] = 0xFF;
+            return bytes;
+        }
+        throw new InvalidOperationException("the fixture font has no hhea table to patch.");
+    }
+
     /// <summary>Builds a CIDFontType2 (PublicPixel) document, matching the shape of PreflightSlice27Tests'
     /// CidDoc, and returns the document, the descendant CIDFont dictionary, and its parsed metrics.
     /// <paramref name="customMap"/> null → an Identity CIDToGIDMap (no entry at all); non-null → a
@@ -65,7 +89,8 @@ public sealed class SubsetDeclarationTests
     /// which is what determines the font's <c>UsedCodes</c>; <paramref name="encoding"/> its
     /// <c>/Encoding</c> CMap name.</summary>
     private static (PdfDocument Doc, PdfDictionary CidDict, EmbeddedFontMetrics Metrics) TrueTypeCidFont(
-        byte[]? customMap, string content = "BT ET", string encoding = "Identity-H")
+        byte[]? customMap, string content = "BT ET", string encoding = "Identity-H",
+        byte[]? fontProgram = null)
     {
         var descriptor = new PdfDictionary
         {
@@ -103,7 +128,7 @@ public sealed class SubsetDeclarationTests
         var extra = new List<(int, PdfObject)>
         {
             (2, descriptor),
-            (3, new PdfStream(new PdfDictionary(), FontBytes())),
+            (3, new PdfStream(new PdfDictionary(), fontProgram ?? FontBytes())),
             (4, cidFont),
         };
         if (customMap is not null)
@@ -135,19 +160,46 @@ public sealed class SubsetDeclarationTests
     }
 
     /// <summary>A custom CIDToGIDMap enumerates the mapping, not the metric range — the two differ,
-    /// and picking the wrong one writes a declaration for glyphs the program does not have.</summary>
+    /// and picking the wrong one writes a declaration for glyphs the program does not have.
+    ///
+    /// <para>The EXCLUSIONS carry this test (final whole-branch review, 2026-08-14, deferred minor 1):
+    /// the original asserted only that CIDs 1 and 2 were present, which an off-by-one in <c>Gid()</c>
+    /// would satisfy just as happily — every GID in the old fixture was small enough to stay in range
+    /// however it was misread. So the map now carries a CID whose GID is OUT of range, which is the
+    /// only entry whose classification depends on <c>Gid()</c> reading the right byte pair.</para>
+    ///
+    /// <para>Note what is deliberately NOT asserted: CID 3, mapping to GID 0, IS enumerated. The
+    /// review expected it excluded, but the predicate is veraPDF's <c>CIDFontType2Program</c> — "each
+    /// in-range CID whose GID is below the glyph count" — and GID 0 is below the glyph count. The
+    /// enumeration must mirror <c>FontSubsetCoverageRule</c> exactly (that sharing is the whole
+    /// correctness guarantee), so pinning the opposite here would pin a divergence from the oracle
+    /// the rule replicates.</para></summary>
     [Fact]
     public void A_custom_cid_to_gid_map_enumerates_the_mapping()
     {
-        // CIDs 1 and 2 map to GIDs 1 and 2; CID 3 maps to GID 0 (absent).
-        byte[] map = [0, 0, 0, 1, 0, 2, 0, 0];
+        // CIDs 1 and 2 map to GIDs 1 and 2; CID 3 maps to GID 0; CID 4 maps to GID 0xFFFF, which is
+        // beyond any real glyph count and so is the one entry the mapping excludes.
+        byte[] map = [0, 0, 0, 1, 0, 2, 0, 0, 0xFF, 0xFF];
         (PdfDocument doc, PdfDictionary cidDict, EmbeddedFontMetrics metrics) = TrueTypeCidFont(map);
+        Assert.True(metrics.NumGlyphs < 0xFFFF, "fixture assumes GID 0xFFFF is out of range");
 
-        (IReadOnlySet<int>? cids, _) = SubsetProgramGlyphs.ProgramCids(doc, cidDict, metrics);
+        (IReadOnlySet<int>? cids, Func<int, bool> contains) =
+            SubsetProgramGlyphs.ProgramCids(doc, cidDict, metrics);
 
         Assert.NotNull(cids);
         Assert.Contains(1, cids!);
         Assert.Contains(2, cids!);
+        Assert.DoesNotContain(4, cids!);
+        Assert.DoesNotContain(0, cids!); // CID 0 is never part of the agreement
+
+        // The predicate is asserted alongside the set, not discarded: the rule's comparison is
+        // BIDIRECTIONAL and reads both, so a set that agreed while the predicate disagreed would
+        // still fault a declaration regenerated from that set.
+        Assert.True(contains(1));
+        Assert.True(contains(2));
+        Assert.False(contains(4));
+        Assert.False(contains(0));
+        Assert.All(cids!, cid => Assert.True(contains(cid)));
     }
 
     // ── Task 2 write-op fixtures ─────────────────────────────────────────────────────────────────────────
@@ -397,6 +449,39 @@ public sealed class SubsetDeclarationTests
         FontRemediationProposal proposed = PlanFor(NoDeclarationDocument());
 
         Assert.Empty(proposed.Fonts);
+    }
+
+    /// <summary>A program whose own tables disagree — <c>numberOfHMetrics</c> beyond <c>numGlyphs</c>,
+    /// so the Identity branch enumerates CIDs its own containment predicate rejects — is DECLINED, not
+    /// regenerated (final whole-branch review, 2026-08-14, Important 2).
+    ///
+    /// <para>Why a decline is the only honest answer: the rule's <c>CidsAgree</c> is bidirectional, so
+    /// for such a font it is UNSATISFIABLE — direction 1 demands the enumerated CIDs be declared and
+    /// direction 2 rejects any declared CID the predicate refuses. A regenerated /CIDSet would
+    /// therefore still be faulted, and <c>RegenerateDeclarationProposal</c>'s promise that applying it
+    /// necessarily satisfies the rule would be false. The disagreement is caught in the PLANNER, never
+    /// by "fixing" <c>SubsetProgramGlyphs</c>: that enumeration must keep mirroring
+    /// <c>FontSubsetCoverageRule</c> exactly.</para></summary>
+    [Fact]
+    public void A_program_whose_metrics_count_exceeds_its_glyph_count_is_declined()
+    {
+        (PdfDocument doc, PdfDictionary cidDict, EmbeddedFontMetrics metrics) =
+            TrueTypeCidFont(customMap: null, fontProgram: FontBytesWithInflatedHMetrics());
+
+        // Pins the fixture actually being malformed the way this test claims: without this, a font
+        // parser that silently clamped numberOfHMetrics would leave the test asserting a decline that
+        // came from some unrelated cause — or make it fail for the right reason but the wrong one.
+        Assert.True(metrics.NumberOfHMetrics > metrics.NumGlyphs,
+            $"fixture patch did not take: numberOfHMetrics {metrics.NumberOfHMetrics} vs "
+            + $"numGlyphs {metrics.NumGlyphs}");
+        (IReadOnlySet<int>? programCids, Func<int, bool> contains) =
+            SubsetProgramGlyphs.ProgramCids(doc, cidDict, metrics);
+        Assert.Contains(programCids!, cid => cid != 0 && !contains(cid));
+
+        AttachCidSet(doc, CidBitmap(1, 2));
+
+        var decline = Assert.IsType<DeclineProposal>(Assert.Single(PlanFor((doc, CidHolderObject)).Fonts));
+        Assert.Contains("disagree", decline.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     // ── the /CharSet half ────────────────────────────────────────────────────────────────────────────────
