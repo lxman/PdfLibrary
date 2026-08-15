@@ -57,7 +57,10 @@ public class CorpusOracleTests(ITestOutputHelper output)
             [ConformanceProfile.PdfA3b] = ["6.8"], // slice 8 embedded-file rule catches all 3b 6.8 fixtures
         };
 
-    /// <summary>Detection floor per profile — a ratchet. Raise these as new slices land.</summary>
+    /// <summary>Detection floor per profile — a ratchet. Raise these as new slices land. A floor may
+    /// also legitimately FALL when a fix removes detections that were false positives — lower it
+    /// deliberately, name the fix in the provenance list below, and verify veraPDF agrees the findings
+    /// were never real (first case: issues 24-26, 2026-08-15).</summary>
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> DetectionFloor =
         new Dictionary<ConformanceProfile, int>
         {
@@ -169,7 +172,14 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // (TD with no resolvable header) and 7.5-t02-fail-a (TD /Headers references an undefined id).
             // Now at the measured value: PdfUA1 detection is 155/155 — every machine-checkable UA-1 fail
             // fixture in the corpus. Because this floor is now also the ceiling, any regression at all
-            // trips it, which is exactly what full parity should mean.
+            // trips it, which is exactly what full parity should mean. The UA-1 floor is documented as
+            // floor==ceiling — treat any movement here with double care.
+            //
+            // Re-verified 2026-08-15 after the issues 24-26 false-positive fixes (indirect /W array
+            // elements, StandardEncoding Annex D.2 names, zero-advance TrueType programs): all four
+            // floors held at their pinned values (588 / 7 / 5 / 155), unchanged. The three defects fixed
+            // real-world documents outside these oracle corpora (see WidthFalsePositiveCorpusTests); no
+            // veraPDF-corpus fail fixture's detection depended on any of them.
             [ConformanceProfile.PdfUA1] = 155,
         };
 
@@ -229,7 +239,9 @@ public class CorpusOracleTests(ITestOutputHelper output)
 
             Assert.True(detected >= floor,
                 $"{profile} fail-fixture detection regressed: {detected} < floor {floor}. "
-                + "If a rule was intentionally removed, lower the floor; otherwise this is a regression.");
+                + "If a rule was intentionally removed, lower the floor; otherwise this is a regression. "
+                + "If a false-positive fix landed, verify the lost detections were ours alone (veraPDF "
+                + "never flagged them), then lower the floor with the reason recorded.");
         }
     }
 }

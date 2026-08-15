@@ -17,7 +17,10 @@ public class ParityReportTests(ITestOutputHelper output)
 {
     private const string Skip = "veraPDF corpus not present at ../veraPDF-corpus (Category=Parity)";
 
-    /// <summary>Whole-file verdict-agreement floor per profile — a ratchet; raise as coverage grows.</summary>
+    /// <summary>Whole-file verdict-agreement floor per profile — a ratchet; raise as coverage grows.
+    /// A floor may also legitimately FALL when a fix removes detections that were false positives —
+    /// lower it deliberately, name the fix in the inline comment, and verify veraPDF agrees the lost
+    /// detections were never real (first case: issues 24-26, 2026-08-15).</summary>
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
@@ -26,6 +29,10 @@ public class ParityReportTests(ITestOutputHelper output)
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 296,   // FULL machine-checkable UA-1 parity (296/296). +3 table-header (clause 7.5 t1/t2 → 2/2 full: in a regular table every TD must connect to a header via /Headers→TH /ID or an explicit-Scope TH heading its column/row — PDF/UA-1 has no default scope; UaTableHeaderRule), 0 FP. +3 media-clip (clause 7.18.6.2 t1/t2 → 2/2 full: a Rendition-action media clip data dictionary needs a /CT content-type string and a correct /Alt multi-language text array; UaMediaClipRule), 0 FP. +1 encryption /P (clause 7.16 → 1/1 full: an encrypted file's /Encrypt /P must set bit 512, the accessibility-extraction permission; UaEncryptionRule), 0 FP. +2 role-map (clause 7.1 t6/t7 → 7.1 clause 16/16 full: no circular /RoleMap, no remapped standard type; document-level UaRoleMapRule), 0 FP. +3 pdfuaid-prefix (clause 5 t3/t4/t5 → 5/5 full: part/amd/corr must use the "pdfuaid" prefix; read per-property via XmlReader since XLinq collapses multiple prefixes on one URI), 0 FP. +3 CMap WMode/UseCMap (7.21.3.3 t2/t3 → 4/4 full; font-program slice 3), 0 FP. +6 from embedded-file widened to UA-1 7.11 (non-empty /F,/UF; filespecs from the catalog name tree AND FileAttachment annotation /FS → 6/6). Ratchets to the current verified agreement (the earlier 253 lagged the 275 baseline: slice-21 annotation rules + the incremental-update obj-stream resolution fix)
         };
+    // Re-verified 2026-08-15 after the issues 24-26 false-positive fixes (indirect /W array elements,
+    // StandardEncoding Annex D.2 names, zero-advance TrueType programs): all four floors held at their
+    // pinned values (965 / 19 / 12 / 296), unchanged — none of the veraPDF-corpus agreement counts
+    // depended on the fixed defects.
 
     [Fact]
     public void Generate_parity_report()
