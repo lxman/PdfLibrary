@@ -54,6 +54,53 @@ internal static class SubsetProgramGlyphs
         return (identity, cid => cid != 0 && cid < numGlyphs);
     }
 
+    /// <summary>The CIDs a <c>/CIDSet</c> stream DECLARES: bit <c>i</c> (MSB-first within each byte)
+    /// set ⇒ CID <c>i</c> is declared present.
+    ///
+    /// <para>Shared with <c>FontSubsetCoverageRule</c> for the same reason the program enumerations
+    /// above are: F-3's repair must decide "is this declared entry surplus?" against exactly the
+    /// declaration the rule read, or it can decline a font the rule never faulted — or, worse,
+    /// rewrite one it did.</para></summary>
+    public static HashSet<int> DeclaredCids(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        var set = new HashSet<int>();
+        for (var i = 0; i < bytes.Length; i++)
+            for (var bit = 0; bit < 8; bit++)
+                if ((bytes[i] & (0x80 >> bit)) != 0)
+                    set.Add(i * 8 + bit);
+        return set;
+    }
+
+    /// <summary>The glyph names a <c>/CharSet</c> string DECLARES — a run of PDF name tokens (e.g.
+    /// <c>/slash/C/space</c>), matching veraPDF, which tokenises it as PDF name objects and collects
+    /// each. A name runs from a <c>/</c> to the next PDF whitespace or delimiter. Shared with
+    /// <c>FontSubsetCoverageRule</c> for the reason given on <see cref="DeclaredCids"/>.</summary>
+    public static HashSet<string> DeclaredGlyphNames(string charSet)
+    {
+        ArgumentNullException.ThrowIfNull(charSet);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var i = 0;
+        while (i < charSet.Length)
+        {
+            if (charSet[i] != '/')
+            {
+                i++;
+                continue;
+            }
+            int start = ++i;
+            while (i < charSet.Length && !IsNameDelimiter(charSet[i]))
+                i++;
+            if (i > start)
+                names.Add(charSet.Substring(start, i - start));
+        }
+        return names;
+    }
+
+    private static bool IsNameDelimiter(char c) =>
+        c is '/' or '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '%'
+        || c is ' ' or '\t' or '\r' or '\n' or '\f' or '\0';
+
     private static PdfObject? Resolve(PdfDocument document, PdfObject? obj) =>
         obj is PdfIndirectReference reference ? document.GetObject(reference.ObjectNumber) : obj;
 }

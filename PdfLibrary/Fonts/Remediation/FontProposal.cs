@@ -45,5 +45,22 @@ public sealed record EmbedProposal(
     string SourceDescription,
     byte[] Program, FontProgramFormat Format) : FontProposal(Font, RuleId);
 
+/// <summary>
+/// Rewrite <paramref name="Font"/>'s subset declaration to describe the glyphs its embedded program
+/// actually contains. <paramref name="Font"/> is the PROGRAM HOLDER (design §3.2), because
+/// <c>/FontDescriptor</c> lives there.
+///
+/// <para>Exactly one of <paramref name="GlyphNames"/> (a Type1 <c>/CharSet</c>) and
+/// <paramref name="Cids"/> (a CID <c>/CIDSet</c>) is non-null — a font has one kind of declaration or
+/// the other, never both.</para>
+///
+/// <para>Both sets are enumerated from the program by <c>SubsetProgramGlyphs</c>, the same code the
+/// rule compares against, so applying this proposal necessarily satisfies the rule.</para>
+/// </summary>
+public sealed record RegenerateDeclarationProposal(
+    FontId Font, string RuleId,
+    IReadOnlySet<string>? GlyphNames,
+    IReadOnlySet<int>? Cids) : FontProposal(Font, RuleId);
+
 /// <summary>Everything the planner proposes for one document.</summary>
 public sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);

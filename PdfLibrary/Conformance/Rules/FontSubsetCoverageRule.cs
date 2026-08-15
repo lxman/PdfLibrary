@@ -77,7 +77,7 @@ internal sealed class FontSubsetCoverageRule : IConformanceRule
         if (SubsetProgramGlyphs.ProgramGlyphNames(metrics) is not { } programGlyphs)
             yield break;
 
-        if (!GlyphNamesAgree(ParseNameSet(charSet.Value), programGlyphs))
+        if (!GlyphNamesAgree(SubsetProgramGlyphs.DeclaredGlyphNames(charSet.Value), programGlyphs))
         {
             yield return Make(context, fontDict,
                 "The Type1 font's /CharSet does not list all glyphs present in the embedded subset program.");
@@ -101,7 +101,8 @@ internal sealed class FontSubsetCoverageRule : IConformanceRule
         if (type0.GetEmbeddedMetrics() is not { IsValid: true } metrics)
             yield break; // containsFontFile == false → pass (FP-safe)
 
-        IReadOnlySet<int> cidSet = DecodeCidSet(cidSetStream.GetDecodedData(context.Document.Decryptor));
+        IReadOnlySet<int> cidSet =
+            SubsetProgramGlyphs.DeclaredCids(cidSetStream.GetDecodedData(context.Document.Decryptor));
 
         // The set of CIDs the program contains, and the "is CID i in the program" predicate — computed the
         // way veraPDF's font-program parser does, per descendant subtype.
@@ -170,49 +171,11 @@ internal sealed class FontSubsetCoverageRule : IConformanceRule
     }
 
     // ── parsing helpers ─────────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Parses a /CharSet string — a run of PDF name tokens (e.g. <c>/slash/C/space</c>) — into the set of
-    /// glyph names, matching veraPDF (which tokenises it as PDF name objects and collects each). A name runs
-    /// from a <c>/</c> to the next PDF whitespace or delimiter.
-    /// </summary>
-    private static HashSet<string> ParseNameSet(string charSet)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        int i = 0;
-        while (i < charSet.Length)
-        {
-            if (charSet[i] != '/')
-            {
-                i++;
-                continue;
-            }
-            int start = ++i;
-            while (i < charSet.Length && !IsNameDelimiter(charSet[i]))
-                i++;
-            if (i > start)
-                names.Add(charSet.Substring(start, i - start));
-        }
-        return names;
-    }
-
-    private static bool IsNameDelimiter(char c) =>
-        c is '/' or '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '%'
-        || c is ' ' or '\t' or '\r' or '\n' or '\f' or '\0';
-
-    /// <summary>
-    /// Decodes a /CIDSet stream into the set of CIDs it identifies: bit <c>i</c> (MSB-first within each byte)
-    /// set ⇒ CID <c>i</c> is present.
-    /// </summary>
-    private static HashSet<int> DecodeCidSet(byte[] bytes)
-    {
-        var set = new HashSet<int>();
-        for (int i = 0; i < bytes.Length; i++)
-            for (int bit = 0; bit < 8; bit++)
-                if ((bytes[i] & (0x80 >> bit)) != 0)
-                    set.Add(i * 8 + bit);
-        return set;
-    }
+    //
+    // The two DECLARATION decoders (/CharSet name tokens, /CIDSet bitmap) live on SubsetProgramGlyphs
+    // alongside the PROGRAM enumerations, and for the same reason: F-3's repair decides "is this declared
+    // entry surplus?" and must read the declaration exactly as this rule does, or it can decline a font
+    // the rule never faulted — or rewrite one it did.
 
     private static bool IsSubset(ConformanceContext context, PdfDictionary fontDict) =>
         context.ResolveName(fontDict.Get("BaseFont")) is { } baseFont && SubsetPrefix.IsMatch(baseFont);

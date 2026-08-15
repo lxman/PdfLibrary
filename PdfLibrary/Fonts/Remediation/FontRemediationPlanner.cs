@@ -23,7 +23,8 @@ namespace PdfLibrary.Fonts.Remediation;
 public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 {
     private static readonly HashSet<string> HandledRules =
-        new(StringComparer.Ordinal) { "pdfa2u-tounicode", "pdfa2u-tounicode-values", "font-embedded" };
+        new(StringComparer.Ordinal)
+        { "pdfa2u-tounicode", "pdfa2u-tounicode-values", "font-embedded", "font-subset-coverage" };
 
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
     {
@@ -76,9 +77,19 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             if (FontInventory.Find(inventory, objectNumber) is not { } entry) continue;
             if (!seen.Add((entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber, ruleId))) continue;
 
-            proposals.Add(ruleId == "font-embedded"
-                ? ProposeEmbed(document, entry, ruleId)
-                : ProposeToUnicode(document, entry, ruleId));
+            // Null means "this font has nothing to propose AND nothing to report" — only
+            // ProposeRegenerate produces it, for a font carrying no subset declaration at all (see its
+            // own doc comment). A DeclineProposal is a REPORT, surfaced to the user; emitting one for a
+            // font the rule is silent about would be noise about a document with nothing wrong with it.
+            FontProposal? proposal = ruleId switch
+            {
+                "font-embedded" => ProposeEmbed(document, entry, ruleId),
+                "font-subset-coverage" => ProposeRegenerate(document, entry, ruleId),
+                _ => ProposeToUnicode(document, entry, ruleId),
+            };
+
+            if (proposal is not null)
+                proposals.Add(proposal);
         }
 
         return new FontRemediationProposal(proposals);
@@ -417,6 +428,196 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
     private static PdfObject? Resolve(PdfDocument document, PdfObject? obj) =>
         obj is PdfIndirectReference reference ? document.GetObject(reference.ObjectNumber) : obj;
+
+    private static string? Name(PdfDocument document, PdfObject? obj) =>
+        (Resolve(document, obj) as PdfName)?.Value;
+
+    /// <summary>
+    /// Proposes rewriting a subset declaration to match the embedded program, or declines when the
+    /// mismatch indicates a truncated PROGRAM rather than a stale DECLARATION (design §5.4).
+    ///
+    /// <para>The distinguishing question is whether a surplus declared entry — one the program does
+    /// not contain — corresponds to a code the document actually uses. A stale entry for an unused
+    /// code is exactly what this repair exists to clean up. A surplus entry for a USED code means the
+    /// glyph renders .notdef today, and rewriting the declaration would make the document assert
+    /// conformance while that stays true. That is a font-program defect, so it defers to F-4.</para>
+    ///
+    /// <para>Only Identity CMaps are resolved code→CID here. Under any other CMap the planner cannot
+    /// cheaply prove which CID a used code selects, so any surplus entry at all is declined rather
+    /// than assumed stale — the conservative direction, because the cost of being wrong is asserting
+    /// false conformance.</para>
+    ///
+    /// <para>Returns NULL — neither a proposal nor a decline — for a font carrying no subset
+    /// declaration at all. The rule is silent on such a font, so there is nothing to correct and
+    /// nothing to report: a proposal would edit a document with nothing wrong with it and create a
+    /// conformance obligation it never had, and a decline would surface that non-problem to the user
+    /// through the hard-block channel.</para>
+    /// </summary>
+    private static FontProposal? ProposeRegenerate(
+        PdfDocument document, FontInventoryEntry entry, string ruleId)
+    {
+        // The declaration lives on /FontDescriptor, which lives on the PROGRAM HOLDER — the descendant
+        // CIDFont for a composite font, the font dictionary itself for a simple one.
+        FontId holder = entry.ProgramHolderId ?? entry.Id;
+
+        if (document.GetObject(holder.ObjectNumber) is not PdfDictionary holderDict)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so Pellucid cannot address its subset declaration to correct it.");
+        }
+
+        if (Resolve(document, holderDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "The font has no /FontDescriptor, so it carries no subset declaration to correct.");
+        }
+
+        // A font has one kind of declaration or the other, never both: /CIDSet belongs to a CID font's
+        // descriptor and /CharSet to a simple Type1's.
+        if (Resolve(document, descriptor.Get("CIDSet")) is PdfStream cidSetStream)
+            return ProposeRegenerateCidSet(document, entry, holder, ruleId, cidSetStream);
+
+        if (Resolve(document, descriptor.Get("CharSet")) is PdfString charSet)
+            return ProposeRegenerateCharSet(document, entry, holder, ruleId, charSet);
+
+        return null;
+    }
+
+    /// <summary>The <c>/CIDSet</c> half of <see cref="ProposeRegenerate"/>.</summary>
+    private static FontProposal? ProposeRegenerateCidSet(
+        PdfDocument document, FontInventoryEntry entry, FontId holder, string ruleId,
+        PdfStream cidSetStream)
+    {
+        // Read through the LOGICAL font (the Type0 wrapper), exactly as FontSubsetCoverageRule does:
+        // Type0Font is what knows how to reach the descendant CIDFont's program.
+        if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+            || PdfFont.Create(fontDict, document) is not Type0Font type0)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "This font's dictionary could not be read as a composite font, so Pellucid cannot "
+                + "tell which glyphs its embedded program contains.");
+        }
+
+        if (type0.DescendantCidFontDictionary is not { } cidDict)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "This composite font has no descendant CIDFont, so there is no font program to "
+                + "check its /CIDSet against.");
+        }
+
+        if (type0.GetEmbeddedMetrics() is not { IsValid: true } metrics)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "The embedded font program could not be parsed, so Pellucid cannot tell which "
+                + "glyphs it contains — correcting the /CIDSet would be a guess.");
+        }
+
+        // The rule enumerates a CID-keyed CFF (CIDFontType0) through its charset and a TrueType
+        // (CIDFontType2) through its CIDToGIDMap; SubsetProgramGlyphs.ProgramCids answers only the
+        // latter, and running it on a CFF would enumerate a metric range that program does not have.
+        // A CID-keyed CFF therefore declines rather than being enumerated wrongly.
+        if (Name(document, cidDict.Get("Subtype")) != "CIDFontType2")
+        {
+            return new DeclineProposal(holder, ruleId,
+                "This font's program is a CID-keyed CFF, whose glyph set Pellucid does not yet "
+                + "enumerate for this repair.");
+        }
+
+        (IReadOnlySet<int>? programCids, Func<int, bool> containsCid) =
+            SubsetProgramGlyphs.ProgramCids(document, cidDict, metrics);
+        if (programCids is null)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "The embedded font program's glyph set could not be enumerated, so correcting the "
+                + "/CIDSet would be a guess.");
+        }
+
+        // Surplus = declared but absent from the program. CID 0 is excluded for the same reason the
+        // rule's own comparison excludes it: .notdef is never part of the agreement.
+        IReadOnlySet<int> declared =
+            SubsetProgramGlyphs.DeclaredCids(cidSetStream.GetDecodedData(document.Decryptor));
+        List<int> surplus = declared.Where(cid => cid != 0 && !containsCid(cid)).ToList();
+
+        if (surplus.Count > 0)
+        {
+            if (Name(document, fontDict.Get("Encoding")) is not ("Identity-H" or "Identity-V"))
+            {
+                return new DeclineProposal(holder, ruleId,
+                    $"The declaration lists {surplus.Count} glyph(s) the embedded program does not "
+                    + "contain, and this font's encoding is not an Identity CMap, so Pellucid cannot "
+                    + "prove the document does not use them — correcting the declaration might "
+                    + "assert conformance the file does not have.");
+            }
+
+            // Under /Identity-H and /Identity-V a character code IS the CID (ISO 32000-1 9.7.5.2), so
+            // the codes the content streams draw are directly comparable with the declared CIDs.
+            var usedCids = new HashSet<int>(entry.UsedCodes);
+            int usedSurplus = surplus.Count(usedCids.Contains);
+            if (usedSurplus > 0)
+            {
+                return new DeclineProposal(holder, ruleId,
+                    $"The declaration lists {usedSurplus} glyph(s) the embedded program does not "
+                    + "contain, and the document uses them — the program itself is incomplete, so "
+                    + "correcting the declaration would assert conformance the file does not have.");
+            }
+        }
+
+        return new RegenerateDeclarationProposal(holder, ruleId, null, programCids);
+    }
+
+    /// <summary>The <c>/CharSet</c> half of <see cref="ProposeRegenerate"/>. A simple font maps code to
+    /// glyph name through its own /Encoding with no CMap in the way, so "is this surplus name used?" is
+    /// answered directly and there is no Identity-CMap caveat.</summary>
+    private static FontProposal? ProposeRegenerateCharSet(
+        PdfDocument document, FontInventoryEntry entry, FontId holder, string ruleId, PdfString charSet)
+    {
+        if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+            || PdfFont.Create(fontDict, document) is not { } font)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "This font's dictionary could not be read, so Pellucid cannot tell which glyphs its "
+                + "embedded program contains.");
+        }
+
+        if (font.GetEmbeddedMetrics() is not { IsValid: true } metrics)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "The embedded font program could not be parsed, so Pellucid cannot tell which "
+                + "glyphs it contains — correcting the /CharSet would be a guess.");
+        }
+
+        if (SubsetProgramGlyphs.ProgramGlyphNames(metrics) is not { } programNames)
+        {
+            return new DeclineProposal(holder, ruleId,
+                "The embedded font program's glyph names could not be enumerated, so correcting the "
+                + "/CharSet would be a guess.");
+        }
+
+        IReadOnlySet<string> declared = SubsetProgramGlyphs.DeclaredGlyphNames(charSet.Value);
+        List<string> surplus = declared
+            .Where(name => name != ".notdef" && !programNames.Contains(name))
+            .ToList();
+
+        if (surplus.Count > 0)
+        {
+            var usedNames = new HashSet<string>(StringComparer.Ordinal);
+            foreach (int code in entry.UsedCodes)
+                if (font.Encoding?.GetGlyphName(code) is { Length: > 0 } glyphName)
+                    usedNames.Add(glyphName);
+
+            int usedSurplus = surplus.Count(usedNames.Contains);
+            if (usedSurplus > 0)
+            {
+                return new DeclineProposal(holder, ruleId,
+                    $"The declaration lists {usedSurplus} glyph(s) the embedded program does not "
+                    + "contain, and the document uses them — the program itself is incomplete, so "
+                    + "correcting the declaration would assert conformance the file does not have.");
+            }
+        }
+
+        return new RegenerateDeclarationProposal(holder, ruleId, programNames, null);
+    }
 
     private static FontProposal ProposeToUnicode(
         PdfDocument document, FontInventoryEntry entry, string ruleId)

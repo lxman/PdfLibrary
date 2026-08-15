@@ -1,11 +1,13 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Fonts.Remediation;
 using PdfLibrary.Structure;
 using Xunit;
 
@@ -23,14 +25,14 @@ public sealed class SubsetDeclarationTests
     private static PdfIndirectReference Ref(int n) => new(n, 0);
 
     // ── document scaffold, copied from PreflightSlice27Tests' CidDoc (the rule's own fixture) ─────────────
-    private static PdfDocument DocWith(PdfDictionary font, params (int, PdfObject)[] extra)
+    private static PdfDocument DocWith(PdfDictionary font, string content, params (int, PdfObject)[] extra)
     {
         var doc = new PdfDocument();
         doc.AddObject(1, 0, font);
         foreach ((int num, PdfObject obj) in extra)
             doc.AddObject(num, 0, obj);
 
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT ET")));
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes(content)));
         doc.AddObject(22, 0, new PdfDictionary
         {
             [N("Type")] = N("Page"),
@@ -58,9 +60,11 @@ public sealed class SubsetDeclarationTests
     /// <summary>Builds a CIDFontType2 (PublicPixel) document, matching the shape of PreflightSlice27Tests'
     /// CidDoc, and returns the document, the descendant CIDFont dictionary, and its parsed metrics.
     /// <paramref name="customMap"/> null → an Identity CIDToGIDMap (no entry at all); non-null → a
-    /// CIDToGIDMap stream holding that mapping.</summary>
+    /// CIDToGIDMap stream holding that mapping. <paramref name="content"/> is the page's content stream,
+    /// which is what determines the font's <c>UsedCodes</c>; <paramref name="encoding"/> its
+    /// <c>/Encoding</c> CMap name.</summary>
     private static (PdfDocument Doc, PdfDictionary CidDict, EmbeddedFontMetrics Metrics) TrueTypeCidFont(
-        byte[]? customMap)
+        byte[]? customMap, string content = "BT ET", string encoding = "Identity-H")
     {
         var descriptor = new PdfDictionary
         {
@@ -91,7 +95,7 @@ public sealed class SubsetDeclarationTests
             [N("Type")] = N("Font"),
             [N("Subtype")] = N("Type0"),
             [N("BaseFont")] = N("ABCDEF+PublicPixel"),
-            [N("Encoding")] = N("Identity-H"),
+            [N("Encoding")] = N(encoding),
             [N("DescendantFonts")] = new PdfArray(Ref(4)),
         };
 
@@ -104,7 +108,7 @@ public sealed class SubsetDeclarationTests
         if (customMap is not null)
             extra.Add((6, new PdfStream(new PdfDictionary(), customMap)));
 
-        PdfDocument doc = DocWith(font, extra.ToArray());
+        PdfDocument doc = DocWith(font, content, extra.ToArray());
 
         var type0Font = (Type0Font)PdfFont.Create(font, doc)!;
         EmbeddedFontMetrics metrics = type0Font.GetEmbeddedMetrics()!;
@@ -184,7 +188,7 @@ public sealed class SubsetDeclarationTests
             [N("BaseFont")] = N("ABCDEF+Test"),
             [N("FontDescriptor")] = Ref(2),
         };
-        PdfDocument doc = DocWith(font, (2, descriptor));
+        PdfDocument doc = DocWith(font, "BT ET", (2, descriptor));
         return (doc.Edit(), new FontId(1));
     }
 
@@ -253,5 +257,144 @@ public sealed class SubsetDeclarationTests
         var reloaded = PdfDocumentEditor.Open(new MemoryStream(saved.ToArray()));
 
         Assert.Equal(new HashSet<int> { 3 }, DecodeCidSet(CidSetBytes(reloaded, holder)));
+    }
+
+    // ── Task 3 planning fixtures ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Runs the planner over one <c>font-subset-coverage</c> finding attributed to
+    /// <paramref name="fixture"/>'s object, using the tuple overload so no <c>PreflightResult</c> has to be
+    /// constructed. The provider is never consulted for this rule.</summary>
+    private static FontRemediationProposal PlanFor((PdfDocument Doc, int ObjectNumber) fixture) =>
+        new FontRemediationPlanner(SystemFontLocator.Default)
+            .Propose(fixture.Doc, new[] { ("font-subset-coverage", fixture.ObjectNumber) });
+
+    /// <summary>A CID above everything the program contains, so declaring it is unambiguously surplus:
+    /// <c>SubsetProgramGlyphs.ProgramCids</c>'s Identity predicate is <c>cid != 0 &amp;&amp; cid &lt; NumGlyphs</c>.</summary>
+    private static int SurplusCid(EmbeddedFontMetrics metrics) => metrics.NumGlyphs + 8;
+
+    /// <summary>Encodes CIDs as the /CIDSet bitmap the rule decodes: bit i set, MSB-first per byte.</summary>
+    private static byte[] CidBitmap(params int[] cids)
+    {
+        var bytes = new byte[cids.Max() / 8 + 1];
+        foreach (int cid in cids)
+            bytes[cid / 8] |= (byte)(0x80 >> (cid % 8));
+        return bytes;
+    }
+
+    /// <summary>Attaches a /CIDSet stream (object 7) carrying <paramref name="declared"/> to the descendant
+    /// CIDFont's descriptor (object 2).</summary>
+    private static void AttachCidSet(PdfDocument doc, byte[] declared)
+    {
+        doc.AddObject(7, 0, new PdfStream(new PdfDictionary(), declared));
+        ((PdfDictionary)doc.GetObject(2)!).Set(N("CIDSet"), Ref(7));
+    }
+
+    /// <summary>The descendant CIDFont's object number — where <c>FontSubsetCoverageRule</c> attributes a
+    /// CID finding, and the PROGRAM HOLDER a proposal must target.</summary>
+    private const int CidHolderObject = 4;
+
+    /// <summary>A /CIDSet declaring a CID the program does not contain, for a document that draws NO text —
+    /// so the surplus entry is unreachable and the declaration is merely stale.</summary>
+    private static (PdfDocument Doc, int ObjectNumber) StaleCidSetDocument()
+    {
+        (PdfDocument doc, PdfDictionary _, EmbeddedFontMetrics metrics) = TrueTypeCidFont(customMap: null);
+        AttachCidSet(doc, CidBitmap(1, 2, SurplusCid(metrics)));
+        return (doc, CidHolderObject);
+    }
+
+    /// <summary>The same surplus declaration, but the page DRAWS the surplus CID — under Identity-H the
+    /// two-byte character code is the CID, so the glyph renders .notdef today.</summary>
+    private static (PdfDocument Doc, int ObjectNumber) SurplusUsedCidDocument()
+    {
+        // Built twice: the surplus CID depends on the parsed program's glyph count, and the content stream
+        // that USES it has to be in place before FontInventory walks the page.
+        (PdfDocument _, PdfDictionary _, EmbeddedFontMetrics probe) = TrueTypeCidFont(customMap: null);
+        int surplus = SurplusCid(probe);
+
+        (PdfDocument doc, PdfDictionary _, EmbeddedFontMetrics _) =
+            TrueTypeCidFont(customMap: null, content: $"BT /F0 12 Tf <{surplus:X4}> Tj ET");
+        AttachCidSet(doc, CidBitmap(1, 2, surplus));
+        return (doc, CidHolderObject);
+    }
+
+    /// <summary>The same font with neither /CIDSet nor /CharSet on its descriptor.</summary>
+    private static (PdfDocument Doc, int ObjectNumber) NoDeclarationDocument()
+    {
+        (PdfDocument doc, PdfDictionary _, EmbeddedFontMetrics _) = TrueTypeCidFont(customMap: null);
+        return (doc, CidHolderObject);
+    }
+
+    // ── Task 3 tests ─────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A stale /CIDSet — one declaring CIDs the program does not have, for codes nothing
+    /// uses — regenerates to the program's own CIDs.</summary>
+    [Fact]
+    public void A_stale_cid_set_is_proposed_for_regeneration()
+    {
+        FontRemediationProposal proposed = PlanFor(StaleCidSetDocument());
+
+        var regenerate = Assert.IsType<RegenerateDeclarationProposal>(Assert.Single(proposed.Fonts));
+        Assert.NotNull(regenerate.Cids);
+        Assert.Null(regenerate.GlyphNames);
+    }
+
+    /// <summary>The regenerated CIDs are the PROGRAM's, targeted at the program holder — the descendant
+    /// CIDFont, where /FontDescriptor lives — so handing them to SetCidSet writes a declaration the rule
+    /// accepts.</summary>
+    [Fact]
+    public void The_regenerated_cids_are_the_programs_and_target_the_program_holder()
+    {
+        (PdfDocument doc, PdfDictionary cidDict, EmbeddedFontMetrics metrics) =
+            TrueTypeCidFont(customMap: null);
+        AttachCidSet(doc, CidBitmap(1, 2, SurplusCid(metrics)));
+
+        var regenerate = Assert.IsType<RegenerateDeclarationProposal>(
+            Assert.Single(PlanFor((doc, CidHolderObject)).Fonts));
+
+        (IReadOnlySet<int>? programCids, _) = SubsetProgramGlyphs.ProgramCids(doc, cidDict, metrics);
+        Assert.Equal(programCids, regenerate.Cids);
+        Assert.Equal(new FontId(CidHolderObject), regenerate.Font);
+    }
+
+    /// <summary>THE load-bearing refusal (spec §5.4). A declared CID the program does not contain,
+    /// whose code the document actually USES, is not a stale declaration — it is a truncated program
+    /// wearing a font-subset-coverage mask. Rewriting the declaration there would make the document
+    /// assert conformance while the glyph still renders .notdef. That case is F-4's, so the planner
+    /// declines rather than fixing it.</summary>
+    [Fact]
+    public void A_surplus_entry_for_a_used_code_is_declined()
+    {
+        FontRemediationProposal proposed = PlanFor(SurplusUsedCidDocument());
+
+        var decline = Assert.IsType<DeclineProposal>(Assert.Single(proposed.Fonts));
+        Assert.Contains("program", decline.Reason, StringComparison.OrdinalIgnoreCase);
+        // Pins WHICH decline: several reasons here mention "program", and a fixture whose used code
+        // silently failed to register would decline for an unrelated cause and still pass the line above.
+        Assert.Contains("the document uses them", decline.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>Under a non-Identity CMap the planner cannot cheaply prove which CID a used code selects,
+    /// so ANY surplus entry is declined rather than assumed stale — the conservative direction, because
+    /// the cost of being wrong is asserting conformance the file does not have.</summary>
+    [Fact]
+    public void A_surplus_entry_under_a_non_identity_cmap_is_declined()
+    {
+        (PdfDocument doc, PdfDictionary _, EmbeddedFontMetrics metrics) =
+            TrueTypeCidFont(customMap: null, encoding: "UniJIS-UCS2-H");
+        AttachCidSet(doc, CidBitmap(1, 2, SurplusCid(metrics)));
+
+        var decline = Assert.IsType<DeclineProposal>(Assert.Single(PlanFor((doc, CidHolderObject)).Fonts));
+        Assert.Contains("Identity", decline.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>A font with no declaration at all is never touched: the rule is silent on it, so a
+    /// proposal here would be editing a document with nothing wrong with it — and would create a
+    /// conformance obligation it never had.</summary>
+    [Fact]
+    public void A_font_with_no_declaration_is_not_proposed()
+    {
+        FontRemediationProposal proposed = PlanFor(NoDeclarationDocument());
+
+        Assert.Empty(proposed.Fonts);
     }
 }
