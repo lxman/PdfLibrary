@@ -1,3 +1,4 @@
+using CffTestFixtures;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -396,5 +397,84 @@ public sealed class SubsetDeclarationTests
         FontRemediationProposal proposed = PlanFor(NoDeclarationDocument());
 
         Assert.Empty(proposed.Fonts);
+    }
+
+    // ── the /CharSet half ────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>A glyph name the program does not contain. Reachable from code 65 through the font's
+    /// /Differences, so a page that draws 'A' USES it and one that draws nothing does not — the single
+    /// variable separating the two /CharSet fixtures below.</summary>
+    private const string SurplusGlyphName = "zzzsurplus";
+
+    /// <summary>The glyph names <c>MinimalCff.Build(charsetOperand: null, numGlyphs: 4)</c> contains:
+    /// .notdef plus SIDs 1..3 of the default ISOAdobe charset. Pinned independently by
+    /// <c>CffCharsetEnumerationTests.IsoAdobeCharset_GlyphNameEnumerationStillAnswers</c>.</summary>
+    private static readonly string[] ProgramNames = ["exclam", "quotedbl", "space", ".notdef"];
+
+    /// <summary>A subset Type1 font with a real Type1C (CFF) program, whose /CharSet declares the
+    /// program's own names PLUS <see cref="SurplusGlyphName"/>. <paramref name="content"/> decides
+    /// whether the surplus name is USED. Object 1 is the font — a simple font is its own program
+    /// holder, so it is both the finding's object and the proposal's target.</summary>
+    private static (PdfDocument Doc, int ObjectNumber) Type1CharSetDocument(string content)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+TestFont"),
+            [N("Flags")] = new PdfInteger(4),
+            [N("FontFile3")] = Ref(3),
+            [N("CharSet")] = new PdfString(
+                Encoding.Latin1.GetBytes($"/space/exclam/quotedbl/{SurplusGlyphName}")),
+        };
+
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type1"),
+            [N("BaseFont")] = N("ABCDEF+TestFont"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("Type")] = N("Encoding"),
+                [N("Differences")] = new PdfArray(new PdfInteger(65), N(SurplusGlyphName)),
+            },
+        };
+
+        var program = new PdfStream(
+            new PdfDictionary { [N("Subtype")] = N("Type1C") },
+            MinimalCff.Build(charsetOperand: null, numGlyphs: 4));
+
+        return (DocWith(font, content, (2, descriptor), (3, program)), 1);
+    }
+
+    /// <summary>A stale /CharSet — declaring a name the program lacks, for a code nothing draws —
+    /// regenerates to the PROGRAM's glyph names, with the surplus name dropped.</summary>
+    [Fact]
+    public void A_stale_char_set_regenerates_to_the_programs_glyph_names()
+    {
+        (PdfDocument doc, int objectNumber) = Type1CharSetDocument("BT ET");
+
+        var regenerate = Assert.IsType<RegenerateDeclarationProposal>(
+            Assert.Single(PlanFor((doc, objectNumber)).Fonts));
+
+        Assert.Null(regenerate.Cids);
+        Assert.NotNull(regenerate.GlyphNames);
+        Assert.Equal(
+            ProgramNames.OrderBy(n => n, StringComparer.Ordinal).ToArray(),
+            regenerate.GlyphNames!.OrderBy(n => n, StringComparer.Ordinal).ToArray());
+        Assert.Equal(new FontId(1), regenerate.Font);
+    }
+
+    /// <summary>The /CharSet mirror of <see cref="A_surplus_entry_for_a_used_code_is_declined"/>, and the
+    /// reason it must exist separately: the two halves carry independent copies of the load-bearing
+    /// refusal. Differs from the stale fixture in exactly one variable — the page draws code 65, which
+    /// /Differences maps to the surplus name.</summary>
+    [Fact]
+    public void A_surplus_char_set_name_for_a_used_code_is_declined()
+    {
+        (PdfDocument doc, int objectNumber) = Type1CharSetDocument("BT /F0 12 Tf (A) Tj ET");
+
+        var decline = Assert.IsType<DeclineProposal>(Assert.Single(PlanFor((doc, objectNumber)).Fonts));
+        Assert.Contains("the document uses them", decline.Reason, StringComparison.Ordinal);
     }
 }

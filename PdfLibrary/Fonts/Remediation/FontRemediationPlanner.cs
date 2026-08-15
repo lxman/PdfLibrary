@@ -513,20 +513,39 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "glyphs it contains — correcting the /CIDSet would be a guess.");
         }
 
-        // The rule enumerates a CID-keyed CFF (CIDFontType0) through its charset and a TrueType
-        // (CIDFontType2) through its CIDToGIDMap; SubsetProgramGlyphs.ProgramCids answers only the
-        // latter, and running it on a CFF would enumerate a metric range that program does not have.
-        // A CID-keyed CFF therefore declines rather than being enumerated wrongly.
-        if (Name(document, cidDict.Get("Subtype")) != "CIDFontType2")
+        // Mirrors FontSubsetCoverageRule.CheckCid's own dispatch, not just its enumerators: a CID-keyed
+        // CFF (CIDFontType0) is enumerated through its charset, whose entries ARE the CIDs, and a
+        // TrueType (CIDFontType2) through its CIDToGIDMap or metric range. Running one program's
+        // enumerator on the other would describe glyphs it does not have, so the subtype decides —
+        // and sharing the rule's dispatch is what keeps a regenerated declaration one the rule accepts.
+        string? subtype = Name(document, cidDict.Get("Subtype"));
+        IReadOnlySet<int>? programCids;
+        Func<int, bool>? containsCid;
+        switch (subtype)
         {
-            return new DeclineProposal(holder, ruleId,
-                "This font's program is a CID-keyed CFF, whose glyph set Pellucid does not yet "
-                + "enumerate for this repair.");
+            case "CIDFontType0":
+                // Null for anything that is not a CID-keyed CFF carrying a charset (a plain CFF, a
+                // predefined charset the parser does not materialise), which falls through to the
+                // shared "could not be enumerated" decline below rather than guessing.
+                programCids = metrics.EnumerateProgramCids();
+                containsCid = programCids is null ? null : programCids.Contains;
+                break;
+            case "CIDFontType2":
+                (programCids, containsCid) = SubsetProgramGlyphs.ProgramCids(document, cidDict, metrics);
+                break;
+            default:
+                // Says only what was observed. The guard is on the subtype, so it must not assert a
+                // fact about the PROGRAM — a descendant with a missing, malformed or unresolvable
+                // /Subtype reaches here too, and its program may be anything at all.
+                return new DeclineProposal(holder, ruleId,
+                    subtype is null
+                        ? "This composite font's descendant has no readable /Subtype, so Pellucid "
+                          + "cannot tell how to enumerate the glyphs its program contains."
+                        : $"This composite font's descendant is a /{subtype}, which is not a CID font "
+                          + "subtype Pellucid can enumerate glyphs for.");
         }
 
-        (IReadOnlySet<int>? programCids, Func<int, bool> containsCid) =
-            SubsetProgramGlyphs.ProgramCids(document, cidDict, metrics);
-        if (programCids is null)
+        if (programCids is null || containsCid is null)
         {
             return new DeclineProposal(holder, ruleId,
                 "The embedded font program's glyph set could not be enumerated, so correcting the "
@@ -601,9 +620,22 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         if (surplus.Count > 0)
         {
+            // The exact counterpart of the CID half's non-Identity-CMap decline: without an encoding
+            // there is no code→name mapping, so "no used names" would be a GUESS that every surplus
+            // name is unused — and the guess falls on the side of asserting conformance. Only reached
+            // when there IS a surplus: with none, there is nothing the encoding could be wrong about.
+            if (font.Encoding is not { } encoding)
+            {
+                return new DeclineProposal(holder, ruleId,
+                    $"The declaration lists {surplus.Count} glyph(s) the embedded program does not "
+                    + "contain, and this font's encoding could not be resolved, so Pellucid cannot "
+                    + "prove the document does not use them — correcting the declaration might "
+                    + "assert conformance the file does not have.");
+            }
+
             var usedNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (int code in entry.UsedCodes)
-                if (font.Encoding?.GetGlyphName(code) is { Length: > 0 } glyphName)
+                if (encoding.GetGlyphName(code) is { Length: > 0 } glyphName)
                     usedNames.Add(glyphName);
 
             int usedSurplus = surplus.Count(usedNames.Contains);
