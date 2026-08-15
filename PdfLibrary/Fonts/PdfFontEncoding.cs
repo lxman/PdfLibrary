@@ -214,12 +214,15 @@ internal class PdfFontEncoding
     }
 
     /// <summary>
-    /// Creates encoding from a dictionary with optional base encoding
+    /// Creates an encoding from an /Encoding dictionary. Per ISO 32000-1 §9.6.6.1 an explicit
+    /// /BaseEncoding name wins; otherwise <paramref name="baseEncoding"/> — the caller's statement
+    /// of the font's implicit base (TrueType passes WinAnsi, Symbol/ZapfDingbats Type1 passes
+    /// SymbolEncoding) — and StandardEncoding only when the caller stated nothing. The method takes
+    /// OWNERSHIP of <paramref name="baseEncoding"/> and mutates it (/Differences are applied into
+    /// it); callers must pass a fresh instance, which every current caller constructs inline.
     /// </summary>
     public static PdfFontEncoding FromDictionary(PdfDictionary dict, PdfFontEncoding? baseEncoding = null)
     {
-        // Per ISO 32000-1 §9.6.6.1: when BaseEncoding is present, use it.
-        // When absent, use StandardEncoding (the font's implicit built-in encoding).
         PdfFontEncoding encoding;
         if (dict.TryGetValue(new PdfName("BaseEncoding"), out PdfObject baseObj) && baseObj is PdfName basePdfName)
         {
@@ -227,7 +230,7 @@ internal class PdfFontEncoding
         }
         else
         {
-            encoding = GetStandardEncoding("StandardEncoding");
+            encoding = baseEncoding ?? GetStandardEncoding("StandardEncoding");
         }
 
         // Apply differences

@@ -164,4 +164,65 @@ public class PdfFontEncodingTests
         Assert.Equal("circumflex", encoding.GetGlyphName(0x88));
         Assert.Equal("tilde", encoding.GetGlyphName(0x98));
     }
+
+    // ── Issue 27: FromDictionary must honor its baseEncoding argument ─────────────────────────
+    // The parameter was dead: a /Differences-only dict always got StandardEncoding, discarding
+    // TrueTypeFont's WinAnsi intent and Type1Font's Symbol/ZapfDingbats gate. Zero corpus
+    // occurrences of the TrueType shape exist in local-708 (probe 2026-08-15: all 12 TrueType
+    // /Differences dicts carry explicit /BaseEncoding), so these synthetic gates are the net.
+    [Fact]
+    public void Dictionary_without_base_encoding_honors_the_callers_base()
+    {
+        PdfFontEncoding encoding = PdfFontEncoding.FromDictionary(
+            new PdfDictionary(), PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding"));
+        Assert.Equal("quotesingle", encoding.GetGlyphName(39));   // WinAnsi, not Standard's quoteright
+        Assert.Equal("quoteright", encoding.GetGlyphName(0x92));  // WinAnsi smart quote
+    }
+
+    [Fact]
+    public void Explicit_base_encoding_in_the_dictionary_beats_the_parameter()
+    {
+        var dict = new PdfDictionary { [new PdfName("BaseEncoding")] = new PdfName("SymbolEncoding") };
+        PdfFontEncoding encoding = PdfFontEncoding.FromDictionary(
+            dict, PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding"));
+        Assert.Equal("Alpha", encoding.GetGlyphName(65)); // Symbol won; parameter lost
+    }
+
+    [Fact]
+    public void True_type_differences_only_dictionary_resolves_through_win_ansi()
+    {
+        // The wiring, end to end: TrueTypeFont.LoadEncoding passes WinAnsi as the intended base
+        // for a /Differences-only dict (TrueTypeFont.cs:150-151); pre-fix it was discarded.
+        var font = PdfFont.Create(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("TrueType"),
+            [new PdfName("BaseFont")] = new PdfName("Test"),
+            [new PdfName("Encoding")] = new PdfDictionary
+            {
+                [new PdfName("Differences")] = new PdfArray(new PdfInteger(65), new PdfName("Alpha")),
+            },
+        });
+        Assert.NotNull(font);
+        Assert.Equal("Alpha", font!.Encoding!.GetGlyphName(65));       // the difference still wins
+        Assert.Equal("quotesingle", font.Encoding.GetGlyphName(39));   // WinAnsi base honored
+    }
+
+    [Fact]
+    public void Symbol_type1_differences_only_dictionary_resolves_through_symbol_encoding()
+    {
+        // Type1Font's name-based Symbol gate (Type1Font.cs:314-319) was also being discarded.
+        var font = PdfFont.Create(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("Type1"),
+            [new PdfName("BaseFont")] = new PdfName("Symbol"),
+            [new PdfName("Encoding")] = new PdfDictionary
+            {
+                [new PdfName("Differences")] = new PdfArray(new PdfInteger(32), new PdfName("space")),
+            },
+        });
+        Assert.NotNull(font);
+        Assert.Equal("suchthat", font!.Encoding!.GetGlyphName(39)); // SymbolEncoding 39, not quotes
+    }
 }
