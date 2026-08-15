@@ -263,15 +263,35 @@ internal class PdfFontEncoding
         // This is just a placeholder for custom encodings
     }
 
-    // Standard Encoding (PDF Reference Appendix D.1)
+    /// <summary>
+    /// The Annex D.2 StandardEncoding names for codes 32-126, in code order. Identical to ASCII
+    /// except 39 = quoteright (U+2019, not quotesingle) and 96 = quoteleft (U+2018, not grave) —
+    /// which is why this table exists instead of a SetUnicode(i, i) loop: deriving names from the
+    /// ASCII code points silently produced the WinAnsi identities at those two codes (issue 25).
+    /// </summary>
+    private static readonly string[] StandardEncodingAsciiNames =
+    [
+        "space", "exclam", "quotedbl", "numbersign", "dollar", "percent", "ampersand",
+        "quoteright", "parenleft", "parenright", "asterisk", "plus", "comma", "hyphen",
+        "period", "slash", "zero", "one", "two", "three", "four", "five", "six", "seven",
+        "eight", "nine", "colon", "semicolon", "less", "equal", "greater", "question", "at",
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q",
+        "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "bracketleft", "backslash",
+        "bracketright", "asciicircum", "underscore", "quoteleft", "a", "b", "c", "d", "e",
+        "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v",
+        "w", "x", "y", "z", "braceleft", "bar", "braceright", "asciitilde",
+    ];
+
+    // Standard Encoding (ISO 32000-2 Annex D.2)
     private static PdfFontEncoding CreateStandardEncoding()
     {
         var encoding = new PdfFontEncoding();
 
-        // ASCII printable characters (32-126) map to themselves
-        for (var i = 32; i <= 126; i++)
+        // Codes 32-126 by Annex D.2 NAME (SetCharacterName also derives the Unicode via the AGL,
+        // so 39 → U+2019 and 96 → U+2018 fall out of the names).
+        for (var i = 0; i < StandardEncodingAsciiNames.Length; i++)
         {
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            encoding.SetCharacterName(32 + i, StandardEncodingAsciiNames[i]);
         }
 
         // Common additional mappings
