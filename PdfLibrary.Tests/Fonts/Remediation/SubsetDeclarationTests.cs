@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Editing;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Structure;
@@ -142,5 +143,115 @@ public sealed class SubsetDeclarationTests
         Assert.NotNull(cids);
         Assert.Contains(1, cids!);
         Assert.Contains(2, cids!);
+    }
+
+    // ── Task 2 write-op fixtures ─────────────────────────────────────────────────────────────────────────
+
+    private static PdfObject? Resolve(PdfDocument doc, PdfObject? obj) =>
+        obj is PdfIndirectReference reference ? doc.GetObject(reference.ObjectNumber) : obj;
+
+    /// <summary>A CIDFontType2 document (Task 1's <see cref="TrueTypeCidFont"/>) whose descendant CIDFont
+    /// descriptor already carries a placeholder <c>/CIDSet</c> — required for <c>SetCidSet</c> to write,
+    /// since it corrects an existing declaration and never introduces one. Returns the editor and the
+    /// descendant CIDFont's id (object 4), the PROGRAM HOLDER.</summary>
+    private static (PdfDocumentEditor Editor, FontId Holder) CidFontEditor()
+    {
+        (PdfDocument doc, PdfDictionary _, EmbeddedFontMetrics _) = TrueTypeCidFont(customMap: null);
+
+        var descriptor = (PdfDictionary)doc.GetObject(2)!;
+        doc.AddObject(7, 0, new PdfStream(new PdfDictionary(), []));
+        descriptor.Set(N("CIDSet"), Ref(7));
+
+        return (doc.Edit(), new FontId(4));
+    }
+
+    /// <summary>A minimal Type1 font document whose descriptor already carries a placeholder
+    /// <c>/CharSet</c> — required for <c>SetCharSet</c> to write. Returns the editor and the font's id
+    /// (object 1); a Type1 font is its own program holder.</summary>
+    private static (PdfDocumentEditor Editor, FontId Holder) Type1FontEditor()
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+Test"),
+            [N("Flags")] = new PdfInteger(4),
+            [N("CharSet")] = new PdfString(Encoding.Latin1.GetBytes("/placeholder")),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type1"),
+            [N("BaseFont")] = N("ABCDEF+Test"),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        PdfDocument doc = DocWith(font, (2, descriptor));
+        return (doc.Edit(), new FontId(1));
+    }
+
+    private static byte[] CidSetBytes(PdfDocumentEditor editor, FontId holder)
+    {
+        var cidDict = (PdfDictionary)editor.Document.GetObject(holder.ObjectNumber)!;
+        var descriptor = (PdfDictionary)Resolve(editor.Document, cidDict.Get(N("FontDescriptor")))!;
+        var stream = (PdfStream)Resolve(editor.Document, descriptor.Get(N("CIDSet")))!;
+        return stream.GetDecodedData(editor.Document.Decryptor);
+    }
+
+    private static string CharSetValue(PdfDocumentEditor editor, FontId holder)
+    {
+        var fontDict = (PdfDictionary)editor.Document.GetObject(holder.ObjectNumber)!;
+        var descriptor = (PdfDictionary)Resolve(editor.Document, fontDict.Get(N("FontDescriptor")))!;
+        var charSet = (PdfString)Resolve(editor.Document, descriptor.Get(N("CharSet")))!;
+        return charSet.Value;
+    }
+
+    /// <summary>Copy of <c>FontSubsetCoverageRule.DecodeCidSet</c> (:207-215), deliberately duplicated so
+    /// the test decodes independently of the writer rather than sharing its assumptions.</summary>
+    private static HashSet<int> DecodeCidSet(byte[] bytes)
+    {
+        var set = new HashSet<int>();
+        for (int i = 0; i < bytes.Length; i++)
+            for (int bit = 0; bit < 8; bit++)
+                if ((bytes[i] & (0x80 >> bit)) != 0)
+                    set.Add(i * 8 + bit);
+        return set;
+    }
+
+    /// <summary>The written /CIDSet is a bitmap the rule can read back: bit i set ⇒ CID i present,
+    /// MSB-first within each byte. Asserted by decoding the bytes the same way the rule does.</summary>
+    [Fact]
+    public void Writing_a_cid_set_produces_the_bitmap_the_rule_decodes()
+    {
+        (PdfDocumentEditor editor, FontId holder) = CidFontEditor();
+
+        editor.SetCidSet(holder, new HashSet<int> { 1, 2, 9 });
+
+        Assert.Equal(new HashSet<int> { 1, 2, 9 }, DecodeCidSet(CidSetBytes(editor, holder)));
+    }
+
+    /// <summary>A /CharSet is written as a run of PDF name tokens, which is what the rule parses.</summary>
+    [Fact]
+    public void Writing_a_char_set_produces_parseable_name_tokens()
+    {
+        (PdfDocumentEditor editor, FontId holder) = Type1FontEditor();
+
+        editor.SetCharSet(holder, new HashSet<string> { "a", "b" });
+
+        string charSet = CharSetValue(editor, holder);
+        Assert.Contains("/a", charSet);
+        Assert.Contains("/b", charSet);
+    }
+
+    /// <summary>The write survives a save/reload — it edited the document, not a snapshot.</summary>
+    [Fact]
+    public void The_written_cid_set_survives_a_round_trip()
+    {
+        (PdfDocumentEditor editor, FontId holder) = CidFontEditor();
+        editor.SetCidSet(holder, new HashSet<int> { 3 });
+
+        using var saved = new MemoryStream();
+        editor.Save(saved);
+        var reloaded = PdfDocumentEditor.Open(new MemoryStream(saved.ToArray()));
+
+        Assert.Equal(new HashSet<int> { 3 }, DecodeCidSet(CidSetBytes(reloaded, holder)));
     }
 }
