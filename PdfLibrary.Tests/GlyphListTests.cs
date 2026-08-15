@@ -97,4 +97,21 @@ public class GlyphListTests
         string? unicode = GlyphList.GetUnicode("uniXYZW");
         Assert.Null(unicode);
     }
+
+    // Issue 28 prerequisite: the eight spacing-modifier accents were absent from the AGL table, so
+    // SetCharacterName could never derive their Unicode and DecodeCharacter fell to Latin-1.
+    [Theory]
+    [InlineData("circumflex", "ˆ")]
+    [InlineData("tilde", "˜")]
+    [InlineData("breve", "˘")]
+    [InlineData("dotaccent", "˙")]
+    [InlineData("ring", "˚")]
+    [InlineData("hungarumlaut", "˝")]
+    [InlineData("ogonek", "˛")]
+    [InlineData("caron", "ˇ")]
+    public void Spacing_accents_round_trip(string name, string unicode)
+    {
+        Assert.Equal(unicode, GlyphList.GetUnicode(name));
+        Assert.Equal(name, GlyphList.GetGlyphName(unicode));
+    }
 }
