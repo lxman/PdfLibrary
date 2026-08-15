@@ -177,9 +177,11 @@ public class CorpusOracleTests(ITestOutputHelper output)
             //
             // Re-verified 2026-08-15 after the issues 24-26 false-positive fixes (indirect /W array
             // elements, StandardEncoding Annex D.2 names, zero-advance TrueType programs): all four
-            // floors held at their pinned values (588 / 7 / 5 / 155), unchanged. The three defects fixed
-            // real-world documents outside these oracle corpora (see WidthFalsePositiveCorpusTests); no
-            // veraPDF-corpus fail fixture's detection depended on any of them.
+            // floors held at their pinned values (588 / 7 / 5 / 155), unchanged. 21 documents in this
+            // same PDF_A-2b checkout crossed fails→fixed once their spurious width findings disappeared
+            // (see Pellucid.App.Tests/oi-corpus-baseline.txt, 2026-08-15) — but no veraPDF-corpus file's
+            // verdict or fail-fixture detection depended on any of them; findings were removed on files
+            // that remain non-conforming for other reasons.
             [ConformanceProfile.PdfUA1] = 155,
         };
 

@@ -31,7 +31,10 @@ public class BfoOracleTests(ITestOutputHelper output)
     ///
     /// Re-verified 2026-08-15 after the issues 24-26 false-positive fixes (indirect /W array elements,
     /// StandardEncoding Annex D.2 names, zero-advance TrueType programs): the floor held at 14, unchanged
-    /// — no BFO fail fixture's detection depended on the fixed defects.
+    /// — no BFO fail fixture's verdict or detection depended on any of them. (The companion veraPDF
+    /// PDF_A-2b corpus did have 21 files cross fails→fixed as their spurious width findings disappeared
+    /// — see Pellucid.App.Tests/oi-corpus-baseline.txt, 2026-08-15 — but each remained non-conforming
+    /// for other reasons; no BFO-corpus file's verdict or detection depended on the fixed defects.)
     /// </remarks>
     private const int DetectionFloor = 14;
 

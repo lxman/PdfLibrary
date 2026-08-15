@@ -117,6 +117,15 @@ public class FontProgramZeroAdvanceTests
     }
 
     // ── the rule-level gate (spec gate 5) ─────────────────────────────────────────────────────
+    // Why code 10 reaches TrueTypeAdvance's raw-code fallback at all: this font has no /Encoding
+    // entry, so PdfFont defaults it to StandardEncoding (Task 2's behaviour), and StandardEncoding
+    // has no name at code 10 (it is a control code in every base encoding) — so GetGlyphName(10) is
+    // null and the Unicode/AGL path is skipped before it can even try. Separately, the fixture's cmap
+    // is a lone (1,0) Mac-Roman subtable: there is no (3,1) Windows-Unicode subtable for
+    // GetUnicodeAdvanceWidth to consult, so even a font whose encoding DID name code 10 would still
+    // fall through to the raw-code path here, keying strictly off the raw code via GetGlyphId. That
+    // makes this gate robust to future encoding-name changes — it is exercising the raw-code fallback
+    // itself, not merely the absence of a name for code 10.
     private static PdfDocument ZeroAdvanceDoc()
     {
         byte[] font = FontBytes();

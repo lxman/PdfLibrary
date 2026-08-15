@@ -127,7 +127,12 @@ internal class CidFont : PdfFont
     /// Any element of /W may be an indirect reference (ISO 32000-1 7.3.10 — any object may be
     /// indirect), and a common Word/Acrobat output shape stores the inner width array that way.
     /// Elements are therefore resolved before pattern-matching; anything still unreadable after
-    /// resolution breaks the parse and degrades to /DW, exactly as before.
+    /// resolution breaks the parse and degrades to /DW — but not byte-identically to the pre-fix
+    /// behaviour: a format-1 entry whose element resolves to nothing now leaves that CID unmapped
+    /// (it used to be written as width 0), and an unresolvable format-2 width now abandons the rest
+    /// of the array (it used to write 0 for that range and keep parsing). Both changes replace a
+    /// silent wrong-width write with "fall through to /DW", which is the intended direction, but
+    /// callers should not assume the old exact shape.
     /// </summary>
     private Dictionary<int, double> ParseWidthArray(PdfArray array)
     {
@@ -162,6 +167,10 @@ internal class CidFont : PdfFont
             else if (second is PdfInteger endCid && i + 1 < array.Count)
             {
                 int end = endCid.Value;
+                // CIDs are 16-bit (0..65535); clamp a malformed/absurd end so a corrupt array can't
+                // force a multi-billion-entry loop.
+                if (end > start + 65535)
+                    end = start + 65535;
                 if (Resolve(array[i + 1]) is not { } widthObj)
                     break;
                 var width = widthObj.ToDouble();
@@ -186,5 +195,4 @@ internal class CidFont : PdfFont
         obj is PdfIndirectReference reference
             ? _document is null ? null : _document.ResolveReference(reference)
             : obj;
-
 }

@@ -323,9 +323,14 @@ internal sealed class FontProgramRule : IConformanceRule
         ushort gid = metrics.GetGlyphId((ushort)code);
         if (gid == 0)
             return null;
-        // A zero advance from the raw-code fallback is a lookup artefact, not a measurement — a
-        // Mac-Roman subtable can hand back a real gid for a control code whose hmtx advance is 0
-        // (issue 26). Unmeasurable, same as gid 0; never a width to compare.
+        // A zero advance from the raw-code fallback is treated as a lookup artefact, not a
+        // measurement — a Mac-Roman subtable can hand back a real gid for a control code whose hmtx
+        // advance is 0 (issue 26). Unmeasurable, same as gid 0; never a width to compare. This also
+        // suppresses the case where the hmtx advance is genuinely 0 against a nonzero /Widths entry —
+        // a case veraPDF would flag — so it is a deliberate recall-for-precision trade, the same kind
+        // as the gid==0 guard above: we accept missing a real mismatch on that narrow slice rather than
+        // false-positiving on the far more common lookup-artefact case. The veraPDF corpus + parity
+        // oracles confirm no locked-clause regression from taking that trade.
         ushort advance = metrics.GetAdvanceWidth(gid);
         return advance == 0 ? null : Scale(metrics, advance);
     }
