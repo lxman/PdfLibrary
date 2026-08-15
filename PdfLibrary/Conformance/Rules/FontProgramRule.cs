@@ -321,7 +321,13 @@ internal sealed class FontProgramRule : IConformanceRule
         }
 
         ushort gid = metrics.GetGlyphId((ushort)code);
-        return gid == 0 ? null : Scale(metrics, metrics.GetAdvanceWidth(gid));
+        if (gid == 0)
+            return null;
+        // A zero advance from the raw-code fallback is a lookup artefact, not a measurement — a
+        // Mac-Roman subtable can hand back a real gid for a control code whose hmtx advance is 0
+        // (issue 26). Unmeasurable, same as gid 0; never a width to compare.
+        ushort advance = metrics.GetAdvanceWidth(gid);
+        return advance == 0 ? null : Scale(metrics, advance);
     }
 
     /// <summary>
