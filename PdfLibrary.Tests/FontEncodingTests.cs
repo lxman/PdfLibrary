@@ -80,9 +80,10 @@ public class FontEncodingTests
     {
         PdfFontEncoding encoding = PdfFontEncoding.GetStandardEncoding("StandardEncoding");
 
-        // Test character with no mapping falls back to Latin-1
-        string result = encoding.DecodeCharacter(200);
-        Assert.NotEmpty(result);
+        // Code 190 is unassigned in Annex D.2 (was: 200, which is dieresis and now resolves
+        // properly — issue 28), so it exercises the genuine Latin-1 fallback.
+        string result = encoding.DecodeCharacter(190);
+        Assert.Equal("¾", result); // Latin-1 190 = ¾
     }
 
     [Theory]

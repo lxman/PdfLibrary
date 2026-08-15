@@ -282,6 +282,23 @@ internal class PdfFontEncoding
         "w", "x", "y", "z", "braceleft", "bar", "braceright", "asciitilde",
     ];
 
+    /// <summary>
+    /// The Annex D.2 StandardEncoding names above 192, as (code, name) pairs — the band is sparse
+    /// (192, 201, 204, 209-224, … are unassigned), so unlike the contiguous ASCII table this one
+    /// carries its codes. Absent entries keep the Latin-1 extraction fallback, which is exactly the
+    /// defect this table fixes for the PRESENT entries: a StandardEncoding accent row previously
+    /// extracted Latin-1 letters and the substitute renderer drew them (issue 28).
+    /// </summary>
+    private static readonly (int Code, string Name)[] StandardEncodingUpperNames =
+    [
+        (193, "grave"), (194, "acute"), (195, "circumflex"), (196, "tilde"), (197, "macron"),
+        (198, "breve"), (199, "dotaccent"), (200, "dieresis"), (202, "ring"), (203, "cedilla"),
+        (205, "hungarumlaut"), (206, "ogonek"), (207, "caron"), (208, "emdash"),
+        (225, "AE"), (227, "ordfeminine"), (232, "Lslash"), (233, "Oslash"), (234, "OE"),
+        (235, "ordmasculine"), (241, "ae"), (245, "dotlessi"), (248, "lslash"), (249, "oslash"),
+        (250, "oe"), (251, "germandbls"),
+    ];
+
     // Standard Encoding (ISO 32000-2 Annex D.2)
     private static PdfFontEncoding CreateStandardEncoding()
     {
@@ -323,6 +340,12 @@ internal class PdfFontEncoding
         encoding.SetCharacterName(188, "ellipsis");
         encoding.SetCharacterName(189, "perthousand");
         encoding.SetCharacterName(191, "questiondown");
+
+        // Annex D.2's upper band (codes 193-208, 225-251 sparse) — accents and ligatures
+        foreach ((int code, string name) in StandardEncodingUpperNames)
+        {
+            encoding.SetCharacterName(code, name);
+        }
 
         return encoding;
     }
