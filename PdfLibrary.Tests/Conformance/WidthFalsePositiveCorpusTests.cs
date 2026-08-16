@@ -99,4 +99,54 @@ public class WidthFalsePositiveCorpusTests
         Assert.Equal(4, text.Count(c => c == '\u0027'));  // quotesingle — genuinely distinct glyph
         Assert.Equal(4, text.Count(c => c == '\u0060'));  // grave — genuinely distinct glyph
     }
+
+    [Fact]
+    public void Reproducer_page_extracts_spacing_accents()
+    {
+        // Issue 28: the Times specimen accent row (the line directly beneath the punctuation row
+        // asserted by Reproducer_page_extracts_curly_quotes, same four style variants) previously
+        // extracted as invisible C1 control characters, not visible Latin-1 letters. Root cause,
+        // measured 2026-08-15 by re-running this probe with ONLY the GlyphList commit (316a12b)
+        // applied and diffing the resulting codepoint stream against the full three-commit fix:
+        // the two streams are byte-identical. StandardEncoding's Annex D.2 upper-band fix (issue
+        // 28's second commit) has ZERO effect on this row — the row's codes are set via the
+        // font's /Differences array (SetCharacterName), which resolves through
+        // GlyphList.GetUnicode(charName) directly; it never reaches the StandardEncoding base
+        // table PdfFontEncoding.cs falls back to. Pre-fix, the eight new accent names
+        // (circumflex/tilde/breve/dotaccent/ring/hungarumlaut/ogonek/caron) had no GlyphList
+        // entry, so PdfFontEncoding.GetUnicode's final fallback ("character code as-is, Latin-1")
+        // fired on their /Differences code points — which land in the C1 control range
+        // (U+0093/0094/0096/0097/009A/009D/009E/009F), not on any visible letter. Counts pinned
+        // against pdftotext (WSL poppler) on page index 788, which matches exactly: all twelve
+        // accent codepoints occur 4 times each (one per Times style variant: Roman/Italic/Bold/
+        // BoldItalic).
+        string? corpus = Corpus();
+        Assert.SkipWhen(corpus is null, $"corpus not present at {DefaultCorpus} (LocalOnly)");
+
+        using var doc = PdfDocument.Load(File.OpenRead(
+            Path.Combine(corpus!, "Postscript Language Reference Manual.pdf")));
+        string text = doc.GetPage(788)!.ExtractText();
+
+        Assert.False(string.IsNullOrWhiteSpace(text), "extraction returned nothing — vacuous");
+        Assert.Equal(4, text.Count(c => c == '\u02C7'));  // caron
+        Assert.Equal(4, text.Count(c => c == '\u02D8'));  // breve
+        Assert.Equal(4, text.Count(c => c == '\u02DA'));  // ring
+        Assert.Equal(4, text.Count(c => c == '\u02C6'));  // circumflex
+        Assert.Equal(4, text.Count(c => c == '\u02DC'));  // small tilde
+        Assert.Equal(4, text.Count(c => c == '\u02D9'));  // dot above
+        Assert.Equal(4, text.Count(c => c == '\u02DD'));  // hungarumlaut
+        Assert.Equal(4, text.Count(c => c == '\u02DB'));  // ogonek
+        Assert.Equal(4, text.Count(c => c == '\u00A8'));  // dieresis
+        Assert.Equal(4, text.Count(c => c == '\u00B4'));  // acute
+        Assert.Equal(4, text.Count(c => c == '\u00AF'));  // macron
+        Assert.Equal(4, text.Count(c => c == '\u00B8'));  // cedilla
+        // C1 control leakage from the OLD defect must be gone: pre-fix, each style variant's
+        // accent row decoded four of its glyphs (circumflex/ring/tilde/breve) to these invisible
+        // control codepoints instead (measured via a full-page codepoint diff against the pre-fix
+        // files at 38a3f32, 2026-08-15).
+        Assert.DoesNotContain('\u009E', text);
+        Assert.DoesNotContain('\u0093', text);
+        Assert.DoesNotContain('\u009A', text);
+        Assert.DoesNotContain('\u0094', text);
+    }
 }
