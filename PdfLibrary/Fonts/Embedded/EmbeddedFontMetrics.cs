@@ -1052,17 +1052,30 @@ internal class EmbeddedFontMetrics
     /// <returns>Advance width in font units, or 0 if the code point is unmapped</returns>
     public ushort GetUnicodeAdvanceWidth(int unicode)
     {
-        if (unicode <= 0 || unicode > 0xFFFF)
-            return 0;
-
-        ushort glyphId = _cmapTable is not null
-            ? _cmapTable.GetGlyphId((ushort)unicode)
-            // No cmap (e.g. subset font): fall back to direct code->glyph mapping.
-            : unicode < NumGlyphs ? (ushort)unicode : (ushort)0;
-
+        ushort glyphId = GetGlyphIdByUnicode(unicode);
         return glyphId == 0
             ? (ushort)0
             : GetAdvanceWidth(glyphId);
+    }
+
+    /// <summary>
+    /// Resolves a BMP Unicode code point to its glyph id through the font's cmap — the gid-returning
+    /// half of <see cref="GetUnicodeAdvanceWidth"/>, exposed for the width-repair path (F-4a), which
+    /// must patch the SAME glyph the conformance rule's width comparison read. Mirrors that method
+    /// exactly: no cmap means the direct code-&gt;glyph fallback used for subset fonts; out-of-range or
+    /// unmapped returns 0.
+    /// </summary>
+    /// <param name="unicode">Unicode code point (BMP)</param>
+    /// <returns>Glyph ID, or 0 if the code point is unmapped or outside the BMP</returns>
+    public ushort GetGlyphIdByUnicode(int unicode)
+    {
+        if (unicode <= 0 || unicode > 0xFFFF)
+            return 0;
+
+        return _cmapTable is not null
+            ? _cmapTable.GetGlyphId((ushort)unicode)
+            // No cmap (e.g. subset font): fall back to direct code->glyph mapping.
+            : unicode < NumGlyphs ? (ushort)unicode : (ushort)0;
     }
 
     /// <summary>

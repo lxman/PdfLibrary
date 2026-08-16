@@ -22,94 +22,14 @@ public class FontProgramZeroAdvanceTests
     private static PdfName N(string s) => new(s);
     private static PdfIndirectReference Ref(int n) => new(n, 0);
 
-    // ── minimal-TrueType byte builders (big-endian, mirroring CmapSubtablePreferenceTests) ────
-    private static void U16(List<byte> b, int v) { b.Add((byte)(v >> 8)); b.Add((byte)v); }
-    private static void U32(List<byte> b, uint v)
-    { b.Add((byte)(v >> 24)); b.Add((byte)(v >> 16)); b.Add((byte)(v >> 8)); b.Add((byte)v); }
-
-    private static byte[] Head()
-    {
-        var b = new List<byte>();
-        U32(b, 0x00010000);            // version 1.0
-        U32(b, 0);                     // fontRevision
-        U32(b, 0);                     // checkSumAdjustment
-        U32(b, 0x5F0F3CF5);            // magicNumber
-        U16(b, 0);                     // flags
-        U16(b, 1000);                  // unitsPerEm
-        for (var i = 0; i < 16; i++) b.Add(0); // created + modified (2 × longdatetime)
-        U16(b, 0); U16(b, 0); U16(b, 0); U16(b, 0); // xMin yMin xMax yMax
-        U16(b, 0);                     // macStyle
-        U16(b, 8);                     // lowestRecPPEM
-        U16(b, 2);                     // fontDirectionHint
-        U16(b, 0);                     // indexToLocFormat
-        U16(b, 0);                     // glyphDataFormat
-        return b.ToArray();            // 54 bytes
-    }
-
-    private static byte[] Maxp(ushort numGlyphs)
-    {
-        var b = new List<byte>();
-        U32(b, 0x00010000);
-        U16(b, numGlyphs);
-        for (var i = 0; i < 13; i++) U16(b, 0); // maxPoints … maxComponentDepth
-        return b.ToArray();            // 32 bytes
-    }
-
-    private static byte[] Hhea(ushort numberOfHMetrics)
-    {
-        var b = new List<byte>();
-        U32(b, 0x00010000);
-        U16(b, 800);                   // ascender
-        U16(b, unchecked((ushort)-200)); // descender
-        U16(b, 0);                     // lineGap
-        U16(b, 500);                   // advanceWidthMax
-        for (var i = 0; i < 3; i++) U16(b, 0); // minLSB, minRSB, xMaxExtent
-        U16(b, 1); U16(b, 0); U16(b, 0);       // caretSlopeRise/Run, caretOffset
-        for (var i = 0; i < 4; i++) U16(b, 0); // reserved
-        U16(b, 0);                     // metricDataFormat
-        U16(b, numberOfHMetrics);
-        return b.ToArray();            // 36 bytes
-    }
-
-    /// <summary>hmtx: gid 0 advances 500; gid 1 advances 0 — the defect's trigger.</summary>
-    private static byte[] Hmtx()
-    {
-        var b = new List<byte>();
-        U16(b, 500); U16(b, 0);        // gid 0: advance 500, lsb 0
-        U16(b, 0); U16(b, 0);          // gid 1: advance 0, lsb 0
-        return b.ToArray();
-    }
-
-    /// <summary>A lone (1,0) Mac-Roman format-6 subtable mapping code 10 → gid 1.</summary>
-    private static byte[] CmapMacFormat6()
-    {
-        var b = new List<byte>();
-        U16(b, 0);                     // table version
-        U16(b, 1);                     // numTables
-        U16(b, 1); U16(b, 0);          // platform 1 (Macintosh), encoding 0 (Roman)
-        U32(b, 12);                    // subtable offset
-        U16(b, 6);                     // format 6
-        U16(b, 12);                    // length (5 × u16 header + 1 × u16 entry)
-        U16(b, 0);                     // language
-        U16(b, 10);                    // firstCode = 10 (LINE FEED)
-        U16(b, 1);                     // entryCount
-        U16(b, 1);                     // glyphIndexArray = [gid 1]
-        return b.ToArray();
-    }
-
-    private static byte[] FontBytes() => MinimalSfnt.Build(
-        ("head", Head()),
-        ("maxp", Maxp(2)),
-        ("hhea", Hhea(2)),
-        ("hmtx", Hmtx()),
-        ("cmap", CmapMacFormat6()),
-        ("glyf", new byte[4]));        // content unused; presence required for IsValid
+    // The minimal-TrueType byte builders live in ZeroAdvanceSfntFixture (promoted, F-4a Task 1),
+    // shared with ProgramWidthResolverTests so both exercise the exact same program shape.
 
     // ── fixture honesty: the program must actually reproduce the defect's preconditions ───────
     [Fact]
     public void Fixture_program_maps_code_10_to_a_real_gid_with_zero_advance()
     {
-        var metrics = new EmbeddedFontMetrics(FontBytes());
+        var metrics = new EmbeddedFontMetrics(ZeroAdvanceSfntFixture.FontBytes());
         Assert.True(metrics.IsValid);
         Assert.Equal(1, metrics.GetGlyphId(10));
         Assert.Equal(0, metrics.GetAdvanceWidth(1));
@@ -128,7 +48,7 @@ public class FontProgramZeroAdvanceTests
     // itself, not merely the absence of a name for code 10.
     private static PdfDocument ZeroAdvanceDoc()
     {
-        byte[] font = FontBytes();
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes();
         var doc = new PdfDocument();
         doc.AddObject(3, 0, new PdfStream(
             new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
