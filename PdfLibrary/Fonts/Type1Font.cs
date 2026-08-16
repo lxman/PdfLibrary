@@ -257,10 +257,17 @@ internal partial class Type1Font : PdfFont
 
     private void LoadEncoding()
     {
+        // ISO 32000-1 §9.6.6.2: a SYMBOLIC simple font's implicit base encoding is the font
+        // program's own built-in encoding, not StandardEncoding/Symbol/ZapfDingbats. Only used
+        // when /Encoding is absent, or is a dict with no /BaseEncoding — an explicit /Encoding
+        // NAME or /BaseEncoding is a producer override and always wins (untouched below).
+        bool symbolic = GetDescriptor()?.IsSymbolic == true;
+
         if (!_dictionary.TryGetValue(new PdfName("Encoding"), out PdfObject? obj))
         {
-            // Use standard encoding based on the font name
-            Encoding = GetStandardEncoding(BaseFont);
+            // Use the program's built-in encoding for a symbolic font with a usable program;
+            // otherwise fall back to the name-based standard encoding, exactly as before.
+            Encoding = (symbolic ? TryBuildBuiltInEncoding() : null) ?? GetStandardEncoding(BaseFont);
             PdfLogger.Log(LogCategory.Text, $"[TYPE1-ENCODING] No Encoding in dict, using standard for '{BaseFont}', Encoding={Encoding is not null}");
             return;
         }
@@ -273,10 +280,34 @@ internal partial class Type1Font : PdfFont
         {
             // Named encoding
             PdfName encodingName => PdfFontEncoding.GetStandardEncoding(encodingName.Value),
-            // Custom encoding dictionary
-            PdfDictionary encodingDict => PdfFontEncoding.FromDictionary(encodingDict, GetStandardEncoding(BaseFont)),
+            // Custom encoding dictionary: FromDictionary honors an explicit /BaseEncoding name
+            // in the dict over this parameter; only the no-/BaseEncoding arm sees it.
+            PdfDictionary encodingDict => PdfFontEncoding.FromDictionary(
+                encodingDict, (symbolic ? TryBuildBuiltInEncoding() : null) ?? GetStandardEncoding(BaseFont)),
             _ => Encoding
         };
+    }
+
+    /// <summary>ISO 32000-1 §9.6.6.2: a symbolic font's implicit base encoding is the program's
+    /// built-in encoding, not StandardEncoding. Names come from the program (Type1 builtin array /
+    /// CFF Encoding+charset); codes the program does not map stay unnamed. Null when there is no
+    /// parseable embedded program — callers fall back to the name-based default.</summary>
+    private PdfFontEncoding? TryBuildBuiltInEncoding()
+    {
+        EmbeddedFontMetrics? metrics = GetEmbeddedMetrics();
+        if (metrics is not { IsValid: true }) return null;
+        var encoding = new PdfFontEncoding("BuiltIn");
+        var any = false;
+        for (var code = 0; code <= 255; code++)
+        {
+            string? name = metrics.IsCffFont
+                ? metrics.GetCffGlyphNameByCharCode(code)
+                : metrics.GetType1GlyphNameByCharCode(code);
+            if (name is null) continue;
+            encoding.SetCharacterName(code, name);
+            any = true;
+        }
+        return any ? encoding : null;
     }
 
     private void LoadWidths()

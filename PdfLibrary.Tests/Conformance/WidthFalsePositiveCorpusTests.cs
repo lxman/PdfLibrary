@@ -19,9 +19,18 @@ public class WidthFalsePositiveCorpusTests
     private const string CorpusVariable = "PDFLIBRARY_LOCAL708_CORPUS";
     private const string DefaultCorpus = @"D:\PdfCorpora\real-world\local-708";
 
+    private const string CcMainCorpusVariable = "PDFLIBRARY_CCMAIN_CORPUS";
+    private const string CcMainDefaultCorpus = @"D:\PdfCorpora\real-world\cc-main-2021-31-sample";
+
     private static string? Corpus()
     {
         string root = Environment.GetEnvironmentVariable(CorpusVariable) ?? DefaultCorpus;
+        return Directory.Exists(root) ? root : null;
+    }
+
+    private static string? CcMainCorpus()
+    {
+        string root = Environment.GetEnvironmentVariable(CcMainCorpusVariable) ?? CcMainDefaultCorpus;
         return Directory.Exists(root) ? root : null;
     }
 
@@ -148,5 +157,33 @@ public class WidthFalsePositiveCorpusTests
         Assert.DoesNotContain('\u0093', text);
         Assert.DoesNotContain('\u009A', text);
         Assert.DoesNotContain('\u0094', text);
+    }
+
+    [Fact]
+    public void CcMain_symbolic_reproducer_reports_no_width_finding_but_keeps_its_glyph_present_finding()
+    {
+        // Task 8 (spec Amendment 2026-08-15): the document that PROVED issue 28's StandardEncoding
+        // band fill needed the ISO 32000-1 clause 9.6.6.2 symbolic-built-in-encoding fix. Two symbolic
+        // Type1C Cyrillic Times clones (TimeRoman / TimeRoman-Italic) have a format-1 built-in CFF
+        // encoding whose code 208 maps to a Cyrillic afiiNNNNN glyph; a /Differences-only /Encoding
+        // dict (no /BaseEncoding) previously fell to StandardEncoding, whose Annex D.2 band names
+        // 208 "emdash" - a real, unrelated glyph in the same charset - so the width rule compared
+        // the Cyrillic glyph's declared width against the Latin "emdash" advance (measured pre-fix:
+        // 424/410-unit divergences on the two fonts) and the renderer drew the wrong glyph.
+        //
+        // The 6.2.11.4.1 glyph-present finding on 'KPFPFP+CMSY7' is unrelated to this fix (a
+        // different, non-symbolic font) and is the anti-vacuity anchor: if the width sub-test
+        // silently died instead of correctly resolving, this would go to zero right along with the
+        // width findings, and the test would not be able to tell the difference. veraPDF corroborates
+        // it independently (measured 2026-08-15).
+        string? corpus = CcMainCorpus();
+        Assert.SkipWhen(corpus is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
+
+        PreflightResult result = Preflighter.Check(
+            Path.Combine(corpus!, "2000_2000078.pdf"), ConformanceProfile.PdfA2b);
+        Finding[] fontProgramFindings = result.Findings.Where(f => f.RuleId == "font-program").ToArray();
+
+        Assert.DoesNotContain(fontProgramFindings, f => ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Assert.Contains(fontProgramFindings, f => ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.4.1");
     }
 }
