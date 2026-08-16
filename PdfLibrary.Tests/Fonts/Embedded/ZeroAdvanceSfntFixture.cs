@@ -95,4 +95,30 @@ internal static class ZeroAdvanceSfntFixture
         ("hmtx", Hmtx(gid1Advance)),
         ("cmap", CmapMacFormat6()),
         ("glyf", new byte[4]));        // content unused; presence required for IsValid
+
+    /// <summary>hmtx for a font whose tail glyphs share gid 0's long metric (numberOfHMetrics=1):
+    /// gid 0 is the sole long metric (advance <paramref name="gid0Advance"/>, lsb 0); gids
+    /// 1..<paramref name="numGlyphs"/>-1 ride the tail as bare lsbs (all 0), inheriting gid 0's
+    /// advance per the shared-tail rule. Used by SfntAdvancePatcherTests' expansion case (F-4a
+    /// Task 2), which patches a gid past numberOfHMetrics and must promote it into a long metric.
+    /// </summary>
+    public static byte[] HmtxSharedTail(ushort numGlyphs, ushort gid0Advance)
+    {
+        var b = new List<byte>();
+        U16(b, gid0Advance); U16(b, 0);          // gid 0: the sole long metric
+        for (var gid = 1; gid < numGlyphs; gid++) U16(b, 0); // trailing lsb array, all zero
+        return b.ToArray();
+    }
+
+    /// <summary>A font with a shared hmtx tail: <paramref name="numGlyphs"/> glyphs, only
+    /// <paramref name="numberOfHMetrics"/> long metrics. Same cmap/glyf shape as
+    /// <see cref="FontBytes"/> so the fixture is otherwise unremarkable.</summary>
+    public static byte[] FontBytesSharedTail(
+        ushort numGlyphs, ushort numberOfHMetrics, ushort gid0Advance = 500) => MinimalSfnt.Build(
+        ("head", Head()),
+        ("maxp", Maxp(numGlyphs)),
+        ("hhea", Hhea(numberOfHMetrics)),
+        ("hmtx", HmtxSharedTail(numGlyphs, gid0Advance)),
+        ("cmap", CmapMacFormat6()),
+        ("glyf", new byte[4]));
 }
