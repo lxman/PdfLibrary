@@ -289,9 +289,17 @@ internal partial class Type1Font : PdfFont
     }
 
     /// <summary>ISO 32000-1 §9.6.6.2: a symbolic font's implicit base encoding is the program's
-    /// built-in encoding, not StandardEncoding. Names come from the program (Type1 builtin array /
-    /// CFF Encoding+charset); codes the program does not map stay unnamed. Null when there is no
-    /// parseable embedded program — callers fall back to the name-based default.</summary>
+    /// built-in encoding, not StandardEncoding. Names come from the program: for CFF, strictly the
+    /// program's own built-in Encoding+charset (a code it does not map stays unnamed here — see
+    /// <see cref="EmbeddedFontMetrics.GetCffGlyphNameByCharCode"/>); for classic Type1,
+    /// <see cref="EmbeddedFontMetrics.GetType1GlyphNameByCharCode"/> also lets a code the program's
+    /// own <c>/Encoding</c> array does not map fall back to Adobe's StandardEncoding name, filtered
+    /// by whether the program's CharStrings actually contain that glyph — a real behaviour of
+    /// <c>Type1FontParser.GetGlyphName</c>, not a gap this method introduces. Separately, a code left
+    /// genuinely unnamed here is not guaranteed to stay unnamed downstream:
+    /// <see cref="PdfFontEncoding.GetGlyphName"/> synthesizes plain ASCII names for 32-126 regardless
+    /// of what this method set. Null when there is no parseable embedded program — callers fall back
+    /// to the name-based default.</summary>
     private PdfFontEncoding? TryBuildBuiltInEncoding()
     {
         EmbeddedFontMetrics? metrics = GetEmbeddedMetrics();

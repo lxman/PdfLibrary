@@ -1196,11 +1196,14 @@ internal class EmbeddedFontMetrics
     /// The glyph NAME a character code resolves to through the CFF program's built-in Encoding and
     /// charset — the name-level counterpart of <see cref="GetGlyphIdByCffEncoding"/>, needed when a
     /// symbolic font's PDF base encoding IS the built-in encoding (ISO 32000-1 §9.6.6.2) and the
-    /// consumer keys by name. Null for non-CFF fonts, unmapped codes, or a gid without a charset name.
+    /// consumer keys by name. Null for non-CFF fonts, a CID-keyed CFF (charset entries are CIDs, not
+    /// SIDs — same guard as <see cref="EnumerateProgramGlyphNames"/>, since resolving a CID through
+    /// the standard-string/custom-string table would return a bogus name), unmapped codes, or a gid
+    /// without a charset name.
     /// </summary>
     public string? GetCffGlyphNameByCharCode(int charCode)
     {
-        if (!_isCffFont || _cffTable is null || charCode is < 0 or > 0xFF)
+        if (!_isCffFont || _cffTable is not { IsCid: false, CharSet: not null } || charCode is < 0 or > 0xFF)
             return null;
         ushort gid = GetGlyphIdByCffEncoding((ushort)charCode);
         if (gid == 0)

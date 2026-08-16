@@ -20,14 +20,21 @@ namespace PdfLibrary.Tests.Fonts.Embedded;
 /// REAL format-1 table instead of the format byte <c>0xFF</c> ("no encoding parsed") <c>MinimalType1CFont</c>
 /// writes — this fixture's whole point is exercising <c>GetGlyphIdByCffEncoding</c> /
 /// <c>GetCffGlyphNameByCharCode</c>, which only resolve through a parsed <c>Encoding0</c>/<c>Encoding1</c>.
-/// The parser reads the Encoding format byte and table positionally right after the Global Subr INDEX
-/// (<c>Type1Table.cs:210-216</c>) — it does NOT consult a Top DICT "Encoding" operator offset — so no
-/// Top DICT change is needed to point at it.</para>
+///
+/// <para><b>Parser-quirk note:</b> <c>Type1Table</c> (<c>Type1Table.cs:210-216</c>) reads the Encoding
+/// format byte and table POSITIONALLY, right after the Global Subr INDEX — it never consults the Top
+/// DICT's Encoding operator (op 16) to find the offset. Per Adobe TN #5176 (Top DICT Operator Entries,
+/// op 16 "Encoding"), omitting that operator formally declares Standard encoding (the operator's
+/// documented default), so a strict/operator-honoring CFF parser would NOT see this fixture's format-1
+/// table at all. To keep the fixture valid under either reading, the Top DICT below carries a real op
+/// 16 pointing at the same offset the encoding bytes are positionally written at — belt and braces,
+/// not required by the parser this repo ships, but required by the spec.</para>
 /// </summary>
 internal static class SymbolicCffFixtureFont
 {
     private static readonly byte[] FontNameBytes = Encoding.ASCII.GetBytes("SymbolicCffTest");
 
+    private const byte OpEncoding = 16;
     private const byte OpCharset = 15;
     private const byte OpCharStrings = 17;
     private const byte OpPrivate = 18;
@@ -58,7 +65,8 @@ internal static class SymbolicCffFixtureFont
         byte[] charsetTable = BuildCharsetTable([SidCustomGlyph, SidEmdash]); // GID1=custom, GID2=emdash
 
         int nameIndexSize = IndexSize([FontNameBytes], 1);
-        const int topDictLen = 6 + 6 + 11; // charset op + CharStrings op + Private (size+offset+op)
+        // Encoding op + charset op + CharStrings op + Private (size+offset+op)
+        const int topDictLen = 6 + 6 + 6 + 11;
         int stringIndexSize = IndexSize([customGlyphNameBytes], 1);
         int charStringsSize = IndexSize(charStrings, 2);
 
@@ -67,12 +75,18 @@ internal static class SymbolicCffFixtureFont
         byte[] encodingTable = [0x01, 0x01, code, 0x00];
 
         // Layout: header | name | topDict | string | globalSubr | encoding | charset | charStrings | private
-        int charsetOffset = 4 + nameIndexSize + IndexSize([new byte[topDictLen]], 1)
-            + stringIndexSize + 2 /* empty Global Subr INDEX */ + encodingTable.Length;
+        int encodingOffset = 4 + nameIndexSize + IndexSize([new byte[topDictLen]], 1)
+            + stringIndexSize + 2 /* empty Global Subr INDEX */;
+        int charsetOffset = encodingOffset + encodingTable.Length;
         int charStringsOffset = charsetOffset + charsetTable.Length;
         int privateOffset = charStringsOffset + charStringsSize;
 
         var top = new List<byte>();
+        // Op 16 (Encoding): per TN #5176 its absence formally declares Standard encoding, so this
+        // fixture's built-in Encoding must be pointed at explicitly to be spec-valid — Type1Table
+        // (this repo's parser) does not read it and finds the table positionally regardless (see the
+        // class doc comment), but a strict/operator-honoring CFF reader needs this to see it at all.
+        AppendNumberOp(top, encodingOffset, OpEncoding);
         AppendNumberOp(top, charsetOffset, OpCharset);
         AppendNumberOp(top, charStringsOffset, OpCharStrings);
         AppendInt32(top, PrivateDict.Length);
@@ -86,6 +100,7 @@ internal static class SymbolicCffFixtureFont
         AppendIndex(data, [top.ToArray()], offSize: 1);
         AppendIndex(data, [customGlyphNameBytes], offSize: 1); // String INDEX: SID 391 = customGlyphName
         data.AddRange([0x00, 0x00]); // empty Global Subr INDEX
+        Verify(encodingOffset == data.Count, "encoding offset differs from where the encoding bytes actually land");
         data.AddRange(encodingTable); // real format-1 built-in Encoding — the point of this fixture
         Verify(charsetOffset == data.Count, "charset offset differs from where the charset bytes actually land");
         data.AddRange(charsetTable);

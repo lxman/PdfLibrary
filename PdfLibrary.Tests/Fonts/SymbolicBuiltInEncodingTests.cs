@@ -1,3 +1,4 @@
+using System.IO;
 using System.Linq;
 using System.Text;
 using PdfLibrary.Conformance;
@@ -58,9 +59,18 @@ public class SymbolicBuiltInEncodingTests
     [Fact]
     public void GetCffGlyphNameByCharCode_OutOfRangeOrNonCff_ReturnsNull()
     {
-        var metrics = new EmbeddedFontMetrics(MinimalType1CFont.Build(600, 300));
-        Assert.Null(metrics.GetCffGlyphNameByCharCode(-1));
-        Assert.Null(metrics.GetCffGlyphNameByCharCode(256));
+        var cffMetrics = new EmbeddedFontMetrics(MinimalType1CFont.Build(600, 300));
+        Assert.Null(cffMetrics.GetCffGlyphNameByCharCode(-1));
+        Assert.Null(cffMetrics.GetCffGlyphNameByCharCode(256));
+
+        // The `!_isCffFont` guard itself: a real (non-CFF) TrueType program, same fixture
+        // PreflightSlice19Tests uses. In range, in-code, but the wrong font kind entirely.
+        byte[] trueTypeBytes = File.ReadAllBytes(
+            Path.Combine(AppContext.BaseDirectory, "Resources", "PublicPixel.ttf"));
+        var trueTypeMetrics = new EmbeddedFontMetrics(trueTypeBytes);
+        Assert.True(trueTypeMetrics.IsValid);
+        Assert.False(trueTypeMetrics.IsCffFont);
+        Assert.Null(trueTypeMetrics.GetCffGlyphNameByCharCode('A'));
     }
 
     // ── Step 2: fixture-honesty preconditions ─────────────────────────────────────────────────────
@@ -111,16 +121,18 @@ public class SymbolicBuiltInEncodingTests
     };
 
     /// <summary>
-    /// One-page document (object 10 = font) embedding <see cref="SymbolicCffFixtureFont"/>, showing
-    /// code 208 (<c>&lt;D0&gt;</c>). <paramref name="flags"/> controls the descriptor's symbolic bit
-    /// (6 = Serif|Symbolic, matching 52/56 descriptors in the CC-MAIN reproducer; 34 = Serif|Nonsymbolic
-    /// pins Tasks 2-3's unmoved behaviour). <paramref name="encoding"/> is the font dict's /Encoding
-    /// value (a dict, a NAME, or null for "absent entirely").
+    /// One-page document (object 10 = font) embedding <see cref="SymbolicCffFixtureFont"/> (or
+    /// <paramref name="cffBytesOverride"/>, when the test needs a different embedded program —
+    /// e.g. one with no built-in Encoding at all), showing code 208 (<c>&lt;D0&gt;</c>).
+    /// <paramref name="flags"/> controls the descriptor's symbolic bit (6 = Serif|Symbolic, matching
+    /// 52/56 descriptors in the CC-MAIN reproducer; 34 = Serif|Nonsymbolic pins Tasks 2-3's unmoved
+    /// behaviour). <paramref name="encoding"/> is the font dict's /Encoding value (a dict, a NAME, or
+    /// null for "absent entirely").
     /// </summary>
-    private static PdfDocument BuildDoc(int flags, PdfObject? encoding)
+    private static PdfDocument BuildDoc(int flags, PdfObject? encoding, byte[]? cffBytesOverride = null)
     {
         var doc = new PdfDocument();
-        doc.AddObject(12, 0, new PdfStream(new PdfDictionary(), CffBytes));
+        doc.AddObject(12, 0, new PdfStream(new PdfDictionary(), cffBytesOverride ?? CffBytes));
         doc.AddObject(11, 0, new PdfDictionary
         {
             [N("Type")] = N("FontDescriptor"),
@@ -205,9 +217,19 @@ public class SymbolicBuiltInEncodingTests
     public void Explicit_base_encoding_name_still_overrides_the_built_in()
     {
         // Same font, /Encoding = /WinAnsiEncoding NAME: producer override wins over symbolic base.
+        //
+        // `GetGlyphName(39) == "quotesingle"` alone would be VACUOUS here: WinAnsi 39 and
+        // StandardEncoding's ASCII-fallback both land on "quotesingle" via PdfFontEncoding's
+        // ASCII-name synthesis switch (32-126), so that assertion alone cannot distinguish "the
+        // override won" from "the built-in base silently applied to this arm too and 39 just
+        // happens to agree". Code 208 is the code that actually tells the two bases apart: WinAnsi
+        // 208 is 0xD0 = 'Ð' (LATIN CAPITAL LETTER ETH) -> AGL name "Eth"; the built-in fixture names
+        // 208 "afii10034"; StandardEncoding names it "emdash". Only WinAnsi produces "Eth", so this
+        // assertion can only pass if the NAME arm truly used WinAnsi, not the symbolic built-in base.
         using PdfDocument doc = BuildDoc(flags: 6, N("WinAnsiEncoding"));
         PdfFont font = FontFrom(doc);
         Assert.Equal("quotesingle", font.Encoding!.GetGlyphName(39));
+        Assert.Equal("Eth", font.Encoding.GetGlyphName(208));
     }
 
     [Fact]
@@ -217,5 +239,27 @@ public class SymbolicBuiltInEncodingTests
         using PdfDocument doc = BuildDoc(flags: 34, DifferencesOnlyEncoding());
         PdfFont font = FontFrom(doc);
         Assert.Equal("emdash", font.Encoding!.GetGlyphName(208));
+    }
+
+    [Fact]
+    public void Symbolic_cff_with_no_built_in_encoding_falls_back_to_standard_encoding()
+    {
+        // The `any == false` path in TryBuildBuiltInEncoding: a symbolic CFF program that PARSES
+        // (IsValid) but carries NO parseable built-in Encoding — format byte 0xFF, the convention
+        // MinimalType1CFont (and the shared CffTestFixtures.MinimalCff it mirrors) uses for "no
+        // Encoding parsed". GetGlyphIdByCffEncoding then returns 0 for every code, so
+        // TryBuildBuiltInEncoding's 0-255 loop never calls SetCharacterName, `any` stays false, and
+        // the method returns null — LoadEncoding's `?? GetStandardEncoding(BaseFont)` fallback must
+        // then govern, exactly as for a non-symbolic font or one with no embedded program at all.
+        // This is the widest-blast-radius branch of the fix: most symbolic CFF fonts in a corpus DO
+        // carry a built-in encoding (the CC-MAIN reproducer shape), but any that don't must not
+        // regress to a wiped-out encoding — pre-Task-8 accessor-level tests covered
+        // GetCffGlyphNameByCharCode returning null in isolation, not this document-level fallback.
+        byte[] noEncodingCff = MinimalType1CFont.Build(widthA: 600, widthZ: 300);
+        using PdfDocument doc = BuildDoc(flags: 6, DifferencesOnlyEncoding(), cffBytesOverride: noEncodingCff);
+        PdfFont font = FontFrom(doc);
+
+        Assert.Equal("emdash", font.Encoding!.GetGlyphName(208));   // StandardEncoding backfill, not left null
+        Assert.Equal("sterling", font.Encoding.GetGlyphName(127)); // /Differences still applies on top
     }
 }
