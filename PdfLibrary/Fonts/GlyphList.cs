@@ -72,6 +72,23 @@ public static class GlyphList
     /// existing forward entry and every existing first-name-wins reverse-map choice is preserved —
     /// this only ADDS names the hand table lacks (afii*, angle, aleph, universal, ...). A
     /// multi-codepoint AGL value (space-separated hex) joins to its full UTF-16 string.
+    ///
+    /// <para><b>Four deliberate hand-vs-AGL overrides</b> (found while auditing every hand-table name
+    /// against its AGL value — verified via <c>Resources/Agl/glyphlist.txt</c>, not memory): the hand
+    /// table's own value for these four names DIFFERS from what the canonical AGL says for the same
+    /// name, and — because this method only adds ABSENT names — the hand table's value keeps
+    /// winning, unchanged by Task 10:
+    /// <list type="bullet">
+    /// <item><c>Delta</c>: hand U+0394 (Greek capital delta, Δ) vs AGL U+2206 (∆ INCREMENT). AGL's
+    /// own name for Δ is <c>Deltagreek</c>.</item>
+    /// <item><c>Omega</c>: hand U+03A9 (Greek capital omega, Ω) vs AGL U+2126 (Ω OHM SIGN, a distinct
+    /// codepoint). AGL's own name for the Greek letter is <c>Omegagreek</c>.</item>
+    /// <item><c>mu</c>: hand U+03BC (Greek small mu, μ — the hand table's Basic-Latin/Greek sections
+    /// assign this key twice; the later, Greek-section assignment wins) vs AGL U+00B5 (µ MICRO SIGN,
+    /// under both <c>mu</c> and <c>mu1</c>).</item>
+    /// <item><c>rupiah</c>: hand U+20A8 (₨ RUPEE SIGN) vs AGL U+F6DD (a PUA/expert-set codepoint).</item>
+    /// </list>
+    /// </para>
     /// </summary>
     private static void AddAglSupplement(Dictionary<string, string> dict)
     {

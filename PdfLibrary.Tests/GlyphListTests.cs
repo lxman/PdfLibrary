@@ -142,22 +142,39 @@ public class GlyphListTests
     }
 
     // Stability pins: the hand table stays FIRST, so completing it from the AGL must not churn any
-    // existing forward entry or any existing first-name-wins reverse-map choice.
+    // existing first-name-wins reverse-map choice. Each pin sits on a REAL collision point — a
+    // codepoint the vendored AGL also names under a DIFFERENT name, verified by grepping
+    // glyphlist.txt — not a codepoint only the hand table's name reaches (U+0027/U+02C6/U+2019, the
+    // original three pins, each have exactly one AGL entry and so guard nothing: they would pass
+    // even if AddAglSupplement never ran).
     [Fact]
-    public void GetGlyphName_QuoteSingle_StableAfterAglCompletion()
+    public void GetGlyphName_Space_StableAfterAglCompletion()
     {
-        Assert.Equal("quotesingle", GlyphList.GetGlyphName("'"));
+        // glyphlist.txt: space;0020 AND spacehackarabic;0020 — the hand table already has "space",
+        // so AddAglSupplement adds only "spacehackarabic" (absent from the hand table), which would
+        // win a naive last-write-wins reverse map. First-name-wins must still pick "space".
+        Assert.Equal("space", GlyphList.GetGlyphName(" "));
     }
 
     [Fact]
-    public void GetGlyphName_Circumflex_StableAfterAglCompletion()
+    public void GetGlyphName_Delta_StableAfterAglCompletion()
     {
-        Assert.Equal("circumflex", GlyphList.GetGlyphName("ˆ"));
+        // glyphlist.txt: Delta;2206 (INCREMENT, not Greek capital delta) and Deltagreek;0394. The
+        // hand table's own ["Delta"] = U+0394 is a DELIBERATE override of the AGL's own "Delta"
+        // (see AddAglSupplement's doc comment) — it stays U+0394, and AddAglSupplement's ADDED
+        // "Deltagreek" (also U+0394, absent from the hand table) must not win the reverse map.
+        string delta = char.ConvertFromUtf32(0x0394);
+        Assert.Equal("Delta", GlyphList.GetGlyphName(delta));
     }
 
     [Fact]
-    public void GetUnicode_QuoteRight_StableAfterAglCompletion()
+    public void GetGlyphName_Omega_StableAfterAglCompletion()
     {
-        Assert.Equal("’", GlyphList.GetUnicode("quoteright"));
+        // glyphlist.txt: Omega;2126 (OHM SIGN, not Greek capital omega) and Omegagreek;03A9. The
+        // hand table's own ["Omega"] = U+03A9 is a DELIBERATE override of the AGL's own "Omega" (see
+        // AddAglSupplement's doc comment); AddAglSupplement's ADDED "Omegagreek" (also U+03A9,
+        // absent from the hand table) must not win the reverse map.
+        string omega = char.ConvertFromUtf32(0x03A9);
+        Assert.Equal("Omega", GlyphList.GetGlyphName(omega));
     }
 }

@@ -362,16 +362,26 @@ internal sealed class FontProgramRule : IConformanceRule
     /// <see cref="SimpleGlyphResolution.Unknown"/> whenever the standard code→glyph path is not reproducible
     /// here (symbolic TrueType — declared or carrying only a (3,0) Windows-Symbol cmap — with no trustworthy
     /// Unicode-capable cmap subtable, an encoding name with no Unicode, a supplementary-plane Unicode value
-    /// that a 16-bit cmap lookup would truncate, a predefined-charset CFF) so the caller emits nothing. Only
-    /// a confident glyph-0 result is <see cref="SimpleGlyphResolution.NotDef"/>.
+    /// that a 16-bit cmap lookup would truncate, a predefined-charset CFF, OR a code whose name was DERIVED
+    /// by <see cref="PdfFontEncoding.SetUnicode"/> rather than assigned by the document's own encoding data
+    /// — see <see cref="PdfFontEncoding.IsDerivedName"/>: a derived name is this engine's own reconstruction
+    /// for rendering purposes, not something the document or font program asserts, so treating a charset/CFF
+    /// miss against it as a confident absence is exactly the false-positive class Task 10's GlyphList
+    /// completion exposed (issues 27-28 follow-up review, 2026-08-16): more reverse-AGL entries meant more
+    /// codes that previously had NO name at all now carry a guessed one, which this resolver's CFF branch
+    /// then treated as authoritative) so the caller emits nothing. Only a confident glyph-0 result is
+    /// <see cref="SimpleGlyphResolution.NotDef"/>.
     /// </summary>
     private static SimpleGlyphResolution ResolveSimpleGlyph(
         PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType, bool symbolic)
     {
         string? glyphName = font.Encoding?.GetGlyphName(code);
+        bool derivedName = font.Encoding?.IsDerivedName(code) ?? false;
 
         if (isTrueType)
         {
+            if (derivedName)
+                return SimpleGlyphResolution.Unknown;
             // A symbolic font (PDF-declared /Flags bit 3, or a program carrying only a (3,0) Windows-Symbol
             // cmap keyed at 0xF000+code) has no reliable AGL-Unicode → cmap path: there is no 0xF000-offset
             // retry against a Symbol cmap anywhere in the lookup chain, so an AGL-derived Unicode value
@@ -398,8 +408,11 @@ internal sealed class FontProgramRule : IConformanceRule
         }
 
         // Simple CFF / Type1: code → name → charset GID. Gated (by the caller) on an embedded charset, so a
-        // name absent from the charset is a genuine miss, not the predefined-charset parser bug.
-        if (string.IsNullOrEmpty(glyphName))
+        // name absent from the charset is a genuine miss, not the predefined-charset parser bug. A DERIVED
+        // name is this engine's own reverse-AGL reconstruction (see the doc comment above), not something
+        // the document's /Encoding or the font's own built-in encoding actually asserts — a subset missing
+        // an entry for it says nothing about a genuine defect, so treat it the same as no name at all.
+        if (string.IsNullOrEmpty(glyphName) || derivedName)
             return SimpleGlyphResolution.Unknown;
         if (metrics.GetGlyphIdByName(glyphName) != 0)
             return SimpleGlyphResolution.Present;

@@ -119,7 +119,20 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // floors are therefore safe, and a floor that tracks reality is the point of a ratchet.
             // If a future run does prove flaky, reintroduce a margin WITH the evidence rather than
             // pre-emptively.
-            [ConformanceProfile.PdfA2b] = 588,
+            // -2 (588->586), Task 10 fix round (issues 27-28 follow-up review, 2026-08-16): UNLIKE the
+            // false-positive-removal case this doc comment describes, these 2 lost detections are a genuine
+            // recall regression, not a false positive being removed -- veraPDF agrees BOTH fixtures should
+            // fail. The derived-name provenance fix (PdfFontEncoding.IsDerivedName / FontProgramRule.
+            // ResolveSimpleGlyph) that closed a 7-new-FP corpus regression makes the glyph-present resolver
+            // skip (Unknown) every code whose name came from SetUnicode's reverse-AGL fallback -- every code
+            // in a WinAnsiEncoding-based font, not only the newly-AGL-resolvable subset -- so a WinAnsi-base,
+            // no-/Differences fixture whose missing glyph is an ordinary Latin letter is now missed too:
+            // "veraPDF test suite 6-2-11-4-1-t02-fail-a.pdf" and "...-fail-b.pdf" (root-caused via a
+            // git-stash A/B probe against the pre-fix resolver: measured detection 588 before this fix,
+            // 586 after -- exactly these two fixtures; see ParityReportTests' matching floor note and
+            // task-10-report.md's fix-round section for the full comparison). A deliberate FP-safety/recall
+            // trade-off, explicitly reviewed and accepted -- not a regression to chase.
+            [ConformanceProfile.PdfA2b] = 586,
             [ConformanceProfile.PdfA2u] = 7,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures — full)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:

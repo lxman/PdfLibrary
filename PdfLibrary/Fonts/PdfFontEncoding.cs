@@ -15,6 +15,17 @@ internal class PdfFontEncoding
     private readonly Dictionary<char, byte> _unicodeToCode = new();
     private readonly string _baseEncodingName;
 
+    /// <summary>
+    /// Codes whose <see cref="_codeToName"/> entry was DERIVED by <see cref="SetUnicode"/> from the
+    /// reverse Adobe Glyph List (rendering fallback below), rather than assigned by the document's
+    /// own encoding data (<see cref="SetCharacterName"/> — base-encoding tables, <c>/Differences</c>,
+    /// or a font program's built-in encoding). A derived name is this engine's own reconstruction,
+    /// not something the document (or its font program) actually asserts, so conformance rules that
+    /// need to know whether a code has an AUTHORITATIVE name (e.g. <c>FontProgramRule</c>'s
+    /// glyph-present check) must not treat it as one — see <see cref="IsDerivedName"/>.
+    /// </summary>
+    private readonly HashSet<int> _derivedNameCodes = new();
+
     // Static initializer to register code pages provider (for MacRoman encoding support)
     static PdfFontEncoding()
     {
@@ -57,6 +68,9 @@ internal class PdfFontEncoding
     public void SetCharacterName(int charCode, string charName)
     {
         _codeToName[charCode] = charName;
+        // An explicit assignment is authoritative — it always outranks a prior SetUnicode-derived
+        // guess for this code (e.g. /Differences applied on top of WinAnsi's reverse-AGL fallback).
+        _derivedNameCodes.Remove(charCode);
 
         // Also set Unicode if we can resolve it
         string? unicode = GlyphList.GetUnicode(charName);
@@ -80,7 +94,10 @@ internal class PdfFontEncoding
         {
             string? glyphName = GlyphList.GetGlyphName(unicode);
             if (glyphName is not null)
+            {
                 _codeToName[charCode] = glyphName;
+                _derivedNameCodes.Add(charCode);
+            }
         }
 
         // Also add to reverse mapping if single character
@@ -124,6 +141,15 @@ internal class PdfFontEncoding
     {
         return _unicodeToCode.ContainsKey(unicodeChar);
     }
+
+    /// <summary>
+    /// True when the name <see cref="GetGlyphName"/> would return for <paramref name="charCode"/>
+    /// was DERIVED by <see cref="SetUnicode"/> (a reverse-AGL rendering-fallback guess), not
+    /// assigned by the document's own encoding data. False for a code with no name at all, or one
+    /// name-assigned via <see cref="SetCharacterName"/> — the caller should treat those as
+    /// authoritative-or-absent, never as "derived."
+    /// </summary>
+    internal bool IsDerivedName(int charCode) => _derivedNameCodes.Contains(charCode);
 
     /// <summary>
     /// Gets the glyph name for a character code
