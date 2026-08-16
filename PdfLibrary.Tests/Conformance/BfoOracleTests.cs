@@ -21,7 +21,9 @@ public class BfoOracleTests(ITestOutputHelper output)
     /// <summary>Detection floor — a ratchet. Raise as new rules catch more BFO fail fixtures. A floor may
     /// also legitimately FALL when a fix removes detections that were false positives — lower it
     /// deliberately, name the fix in the remarks below, and verify veraPDF agrees the lost detections
-    /// were never real (first case: issues 24-26, 2026-08-15).</summary>
+    /// were never real (first case: issues 24-26, 2026-08-15) — or an accepted precision/recall trade,
+    /// with the lost detections enumerated and the reference's verdict recorded (first case: issues
+    /// 27-28 Task 10 fix round, 2026-08-16).</summary>
     /// <remarks>
     /// 2026-07-25 — ratcheted 10 → 14, the measured detection over the 24 PDF/A-2 fail fixtures, after the
     /// suite was checked out locally again. Stable across three consecutive runs. The 10 remaining misses

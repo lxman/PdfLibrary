@@ -60,7 +60,9 @@ public class CorpusOracleTests(ITestOutputHelper output)
     /// <summary>Detection floor per profile — a ratchet. Raise these as new slices land. A floor may
     /// also legitimately FALL when a fix removes detections that were false positives — lower it
     /// deliberately, name the fix in the provenance list below, and verify veraPDF agrees the findings
-    /// were never real (first case: issues 24-26, 2026-08-15).</summary>
+    /// were never real (first case: issues 24-26, 2026-08-15) — or an accepted precision/recall trade,
+    /// with the lost detections enumerated and the reference's verdict recorded (first case: issues
+    /// 27-28 Task 10 fix round, 2026-08-16).</summary>
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> DetectionFloor =
         new Dictionary<ConformanceProfile, int>
         {
@@ -119,7 +121,30 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // floors are therefore safe, and a floor that tracks reality is the point of a ratchet.
             // If a future run does prove flaky, reintroduce a margin WITH the evidence rather than
             // pre-emptively.
-            [ConformanceProfile.PdfA2b] = 588,
+            // -2 (588->586), Task 10 fix round (issues 27-28 follow-up review, 2026-08-16): UNLIKE the
+            // false-positive-removal case this doc comment describes, these 2 lost detections are a genuine
+            // recall regression, not a false positive being removed -- veraPDF agrees BOTH fixtures should
+            // fail. The derived-name provenance fix (PdfFontEncoding.IsDerivedName / FontProgramRule.
+            // ResolveSimpleGlyph) that closed a 7-new-FP CC-MAIN regression makes the CFF-branch
+            // glyph-present resolver skip (Unknown) every CFF code whose name came from SetUnicode's
+            // reverse-AGL fallback -- every code in a WinAnsi- or MacRoman-based CFF font (both
+            // factories are SetUnicode-only, never SetCharacterName), not only the
+            // newly-AGL-resolvable subset -- so a WinAnsi-base, no-/Differences CFF fixture whose missing
+            // glyph is an ordinary Latin letter is now missed too: "veraPDF test suite
+            // 6-2-11-4-1-t02-fail-a.pdf" and "...-fail-b.pdf" (root-caused via a git-stash A/B probe
+            // against the pre-fix resolver: measured detection 588 before this fix, 586 after -- exactly
+            // these two fixtures; both CFF, confirmed by direct inspection). Round 2 of this fix (same
+            // commit) removed the analogous TrueType-branch gate as unjustified -- provenance carries no
+            // information there, since the TrueType arm only ever uses a name as a courier for the
+            // encoding's own Unicode value -- which is why this floor did not move back up after that
+            // change: these 2 CFF detections stay withdrawn on purpose, matching ParityReportTests' own
+            // floor note. Full record: the tracked spec's Amendment 2
+            // (docs/superpowers/specs/2026-08-15-encoding-follow-ups-27-28-design.md, "complete the AGL
+            // table") states the completion mandate that exposed this; the mechanism itself is PdfLibrary
+            // commit 43ae761 (the GlyphList completion) plus this commit (the derived-name provenance fix)
+            // -- a deliberate FP-safety/recall trade-off, explicitly reviewed and accepted, not a
+            // regression to chase.
+            [ConformanceProfile.PdfA2b] = 586,
             [ConformanceProfile.PdfA2u] = 7,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures — full)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:

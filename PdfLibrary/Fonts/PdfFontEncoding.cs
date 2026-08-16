@@ -15,6 +15,17 @@ internal class PdfFontEncoding
     private readonly Dictionary<char, byte> _unicodeToCode = new();
     private readonly string _baseEncodingName;
 
+    /// <summary>
+    /// Codes whose <see cref="_codeToName"/> entry was DERIVED by <see cref="SetUnicode"/> from the
+    /// reverse Adobe Glyph List (rendering fallback below), rather than assigned by the document's
+    /// own encoding data (<see cref="SetCharacterName"/> — base-encoding tables, <c>/Differences</c>,
+    /// or a font program's built-in encoding). A derived name is this engine's own reconstruction,
+    /// not something the document (or its font program) actually asserts, so conformance rules that
+    /// need to know whether a code has an AUTHORITATIVE name (e.g. <c>FontProgramRule</c>'s
+    /// glyph-present check) must not treat it as one — see <see cref="IsDerivedName"/>.
+    /// </summary>
+    private readonly HashSet<int> _derivedNameCodes = new();
+
     // Static initializer to register code pages provider (for MacRoman encoding support)
     static PdfFontEncoding()
     {
@@ -57,6 +68,9 @@ internal class PdfFontEncoding
     public void SetCharacterName(int charCode, string charName)
     {
         _codeToName[charCode] = charName;
+        // An explicit assignment is authoritative — it always outranks a prior SetUnicode-derived
+        // guess for this code (e.g. /Differences applied on top of WinAnsi's reverse-AGL fallback).
+        _derivedNameCodes.Remove(charCode);
 
         // Also set Unicode if we can resolve it
         string? unicode = GlyphList.GetUnicode(charName);
@@ -80,7 +94,10 @@ internal class PdfFontEncoding
         {
             string? glyphName = GlyphList.GetGlyphName(unicode);
             if (glyphName is not null)
+            {
                 _codeToName[charCode] = glyphName;
+                _derivedNameCodes.Add(charCode);
+            }
         }
 
         // Also add to reverse mapping if single character
@@ -124,6 +141,24 @@ internal class PdfFontEncoding
     {
         return _unicodeToCode.ContainsKey(unicodeChar);
     }
+
+    /// <summary>
+    /// True when the name <see cref="GetGlyphName"/> would return for <paramref name="charCode"/>
+    /// was DERIVED by <see cref="SetUnicode"/> (a reverse-AGL rendering-fallback guess), not
+    /// assigned by the document's own encoding data. False for a code with no name at all, or one
+    /// name-assigned via <see cref="SetCharacterName"/> — the caller should treat those as
+    /// authoritative-or-absent, never as "derived."
+    ///
+    /// <para><b>A third name source this does NOT flag</b> (documented, not changed — pre-existing
+    /// behaviour): <see cref="GetGlyphName(int)"/> also hands back a hardcoded ASCII name (e.g. code
+    /// 65 → <c>"A"</c>) for any code 32-126 that is in neither <c>_codeToName</c> NOR was reached by
+    /// <see cref="SetUnicode"/> at all — a synthesis path with no <c>_derivedNameCodes</c> entry, so
+    /// <see cref="IsDerivedName"/> returns false for it even though the caller did not assign that
+    /// name either. A caller relying on this method to mean "authoritative" rather than merely "not
+    /// the SetUnicode fallback" should account for that gap.
+    /// </para>
+    /// </summary>
+    internal bool IsDerivedName(int charCode) => _derivedNameCodes.Contains(charCode);
 
     /// <summary>
     /// Gets the glyph name for a character code
@@ -214,12 +249,15 @@ internal class PdfFontEncoding
     }
 
     /// <summary>
-    /// Creates encoding from a dictionary with optional base encoding
+    /// Creates an encoding from an /Encoding dictionary. Per ISO 32000-1 §9.6.6.1 an explicit
+    /// /BaseEncoding name wins; otherwise <paramref name="baseEncoding"/> — the caller's statement
+    /// of the font's implicit base (TrueType passes WinAnsi, Symbol/ZapfDingbats Type1 passes
+    /// SymbolEncoding) — and StandardEncoding only when the caller stated nothing. The method takes
+    /// OWNERSHIP of <paramref name="baseEncoding"/> and mutates it (/Differences are applied into
+    /// it); callers must pass a fresh instance, which every current caller constructs inline.
     /// </summary>
     public static PdfFontEncoding FromDictionary(PdfDictionary dict, PdfFontEncoding? baseEncoding = null)
     {
-        // Per ISO 32000-1 §9.6.6.1: when BaseEncoding is present, use it.
-        // When absent, use StandardEncoding (the font's implicit built-in encoding).
         PdfFontEncoding encoding;
         if (dict.TryGetValue(new PdfName("BaseEncoding"), out PdfObject baseObj) && baseObj is PdfName basePdfName)
         {
@@ -227,7 +265,7 @@ internal class PdfFontEncoding
         }
         else
         {
-            encoding = GetStandardEncoding("StandardEncoding");
+            encoding = baseEncoding ?? GetStandardEncoding("StandardEncoding");
         }
 
         // Apply differences
@@ -282,6 +320,23 @@ internal class PdfFontEncoding
         "w", "x", "y", "z", "braceleft", "bar", "braceright", "asciitilde",
     ];
 
+    /// <summary>
+    /// The Annex D.2 StandardEncoding names above 192, as (code, name) pairs — the band is sparse
+    /// (192, 201, 204, 209-224, … are unassigned), so unlike the contiguous ASCII table this one
+    /// carries its codes. Absent entries keep the Latin-1 extraction fallback, which is exactly the
+    /// defect this table fixes for the PRESENT entries: a StandardEncoding accent row previously
+    /// extracted Latin-1 letters and the substitute renderer drew them (issue 28).
+    /// </summary>
+    private static readonly (int Code, string Name)[] StandardEncodingUpperNames =
+    [
+        (193, "grave"), (194, "acute"), (195, "circumflex"), (196, "tilde"), (197, "macron"),
+        (198, "breve"), (199, "dotaccent"), (200, "dieresis"), (202, "ring"), (203, "cedilla"),
+        (205, "hungarumlaut"), (206, "ogonek"), (207, "caron"), (208, "emdash"),
+        (225, "AE"), (227, "ordfeminine"), (232, "Lslash"), (233, "Oslash"), (234, "OE"),
+        (235, "ordmasculine"), (241, "ae"), (245, "dotlessi"), (248, "lslash"), (249, "oslash"),
+        (250, "oe"), (251, "germandbls"),
+    ];
+
     // Standard Encoding (ISO 32000-2 Annex D.2)
     private static PdfFontEncoding CreateStandardEncoding()
     {
@@ -323,6 +378,12 @@ internal class PdfFontEncoding
         encoding.SetCharacterName(188, "ellipsis");
         encoding.SetCharacterName(189, "perthousand");
         encoding.SetCharacterName(191, "questiondown");
+
+        // Annex D.2's upper band (codes 193-208, 225-251 sparse) — accents and ligatures
+        foreach ((int code, string name) in StandardEncodingUpperNames)
+        {
+            encoding.SetCharacterName(code, name);
+        }
 
         return encoding;
     }

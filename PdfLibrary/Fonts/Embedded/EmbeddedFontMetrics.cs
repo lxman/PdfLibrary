@@ -1193,6 +1193,41 @@ internal class EmbeddedFontMetrics
     }
 
     /// <summary>
+    /// The glyph NAME a character code resolves to through the CFF program's built-in Encoding and
+    /// charset — the name-level counterpart of <see cref="GetGlyphIdByCffEncoding"/>, needed when a
+    /// symbolic font's PDF base encoding IS the built-in encoding (ISO 32000-1 §9.6.6.2) and the
+    /// consumer keys by name. Null for non-CFF fonts, a CID-keyed CFF (charset entries are CIDs, not
+    /// SIDs — same guard as <see cref="EnumerateProgramGlyphNames"/>, since resolving a CID through
+    /// the standard-string/custom-string table would return a bogus name), unmapped codes, or a gid
+    /// without a charset name.
+    /// </summary>
+    public string? GetCffGlyphNameByCharCode(int charCode)
+    {
+        if (!_isCffFont || _cffTable is not { IsCid: false, CharSet: not null } || charCode is < 0 or > 0xFF)
+            return null;
+        ushort gid = GetGlyphIdByCffEncoding((ushort)charCode);
+        if (gid == 0)
+            return null;
+
+        // EnumerateCharsetValues walks the charset and yields the SID (non-CID CFF) for each GID >= 1,
+        // in GID order — the same table GetGlyphIdByName / EnumerateProgramGlyphNames read, just walked
+        // in the other direction. A plain linear scan is fine here: at most NumGlyphs-1 entries, and
+        // this is only called per character code, never in a hot per-glyph loop.
+        var currentGid = 1;
+        foreach (int sid in EnumerateCharsetValues())
+        {
+            if (currentGid == gid)
+            {
+                return sid <= StandardStrings.StandardStringsLimit
+                    ? StandardStrings.GetString(sid)
+                    : (sid - 391 is var i && i >= 0 && i < _cffTable.Strings.Count ? _cffTable.Strings[i] : null);
+            }
+            currentGid++;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Resolves a character code to a glyph name using the Type1 font program's
     /// built-in encoding. Returns null for non-Type1 fonts or unmapped codes.
     /// </summary>

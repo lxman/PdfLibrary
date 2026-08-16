@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace PdfLibrary.Fonts;
 
@@ -44,6 +45,13 @@ public static class GlyphList
                 if (_unicodeToGlyph is null)
                 {
                     var reverse = new Dictionary<string, string>();
+                    // "First name wins" here depends on Dictionary<TKey,TValue> enumerating
+                    // _glyphToUnicode in insertion order — undefined by the BCL contract, but
+                    // stable in practice for an add-only dictionary with no removals (which this
+                    // one is). If the runtime's enumeration order ever changes, the tripwire is
+                    // the stability pins: the space/Delta/Omega picks and the WinAnsi 0x88/0x98
+                    // ("circumflex"/"tilde" vs. the accent-only AGL duplicates) fact, all covered
+                    // by tests that assert a SPECIFIC name, not merely "a" name.
                     foreach (KeyValuePair<string, string> kvp in _glyphToUnicode)
                         if (!reverse.ContainsKey(kvp.Value)) reverse[kvp.Value] = kvp.Key;
                     _unicodeToGlyph = reverse;
@@ -59,8 +67,76 @@ public static class GlyphList
 
     private static Dictionary<string, string> InitializeGlyphList()
     {
+        Dictionary<string, string> hand = BuildHandTable();
+        AddAglSupplement(hand);
+        return hand;
+    }
+
+    /// <summary>
+    /// Adds every name from the vendored canonical Adobe Glyph List (Resources/Agl/glyphlist.txt;
+    /// see Resources/Agl/LICENSE.md for source, pinned commit, and SHA256) that is NOT already a
+    /// key in <paramref name="dict"/>. Runs AFTER the hand table is fully populated, so every
+    /// existing forward entry and every existing first-name-wins reverse-map choice is preserved —
+    /// this only ADDS names the hand table lacks (afii*, angle, aleph, universal, ...). A
+    /// multi-codepoint AGL value (space-separated hex) joins to its full UTF-16 string.
+    ///
+    /// <para><b>Four deliberate hand-vs-AGL overrides</b> (found while auditing every hand-table name
+    /// against its AGL value — verified via <c>Resources/Agl/glyphlist.txt</c>, not memory): the hand
+    /// table's own value for these four names DIFFERS from what the canonical AGL says for the same
+    /// name, and — because this method only adds ABSENT names — the hand table's value keeps
+    /// winning, unchanged by Task 10:
+    /// <list type="bullet">
+    /// <item><c>Delta</c>: hand U+0394 (Greek capital delta, Δ) vs AGL U+2206 (∆ INCREMENT). AGL's
+    /// own name for Δ is <c>Deltagreek</c>.</item>
+    /// <item><c>Omega</c>: hand U+03A9 (Greek capital omega, Ω) vs AGL U+2126 (Ω OHM SIGN, a distinct
+    /// codepoint). AGL's own name for the Greek letter is <c>Omegagreek</c>.</item>
+    /// <item><c>mu</c>: hand U+03BC (Greek small mu, μ — the hand table's Basic-Latin/Greek sections
+    /// assign this key twice; the later, Greek-section assignment wins) vs AGL U+00B5 (µ MICRO SIGN,
+    /// under both <c>mu</c> and <c>mu1</c>).</item>
+    /// <item><c>rupiah</c>: hand U+20A8 (₨ RUPEE SIGN) vs AGL U+F6DD (a PUA/expert-set codepoint).</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    private static void AddAglSupplement(Dictionary<string, string> dict)
+    {
+        using Stream? raw = typeof(GlyphList).Assembly
+            .GetManifestResourceStream("PdfLibrary.Resources.Agl.glyphlist.txt");
+        if (raw is null) return; // defensive: resource is always embedded; never expected to miss
+
+        using var reader = new StreamReader(raw);
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.Length == 0 || line[0] == '#') continue;
+
+            int semi = line.IndexOf(';');
+            if (semi < 0) continue;
+
+            string name = line[..semi];
+            if (dict.ContainsKey(name)) continue; // hand table wins; only add absent names
+
+            string[] hexCodes = line[(semi + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (hexCodes.Length == 0) continue;
+
+            var value = new StringBuilder();
+            var ok = true;
+            foreach (string hex in hexCodes)
+            {
+                if (!int.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int codePoint))
+                {
+                    ok = false;
+                    break;
+                }
+                value.Append(char.ConvertFromUtf32(codePoint));
+            }
+            if (ok) dict[name] = value.ToString();
+        }
+    }
+
+    private static Dictionary<string, string> BuildHandTable()
+    {
         // Adobe Glyph List - common glyph name to Unicode mappings
-        // This is a subset of the full AGL; full implementation would include all ~4000+ mappings
+        // Hand-built subset; completed at static init by AddAglSupplement from the vendored
+        // canonical AGL (names absent here only).
         return new Dictionary<string, string>
         {
             // Basic Latin
@@ -384,6 +460,15 @@ public static class GlyphList
             ["oe"] = "\u0153",
             ["Scaron"] = "\u0160",
             ["scaron"] = "\u0161",
+            // Issue 28: AGL spacing-modifier accents
+            ["circumflex"] = "\u02c6",
+            ["tilde"] = "\u02dc",
+            ["breve"] = "\u02d8",
+            ["dotaccent"] = "\u02d9",
+            ["ring"] = "\u02da",
+            ["hungarumlaut"] = "\u02dd",
+            ["ogonek"] = "\u02db",
+            ["caron"] = "\u02c7",
             ["Ydieresis"] = "\u0178",
             ["Zcaron"] = "\u017d",
             ["zcaron"] = "\u017e",

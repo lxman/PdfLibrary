@@ -1,2 +1,5 @@
 *.gz binary
 *.ttf binary
+# Vendored AGL data (Task 10, issues 27-28): redistributed unmodified; LICENSE.md pins its SHA256,
+# which must stay stable across platforms/checkouts — never let autocrlf touch it.
+PdfLibrary/Resources/Agl/glyphlist.txt -text eol=lf

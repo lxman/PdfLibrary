@@ -39,8 +39,13 @@ internal static class FontUnicodeMapping
         if (font is Type0Font type0)
             return !IsIdentityOrdering(context, type0);
 
-        // Simple font: a code with no PDF-level glyph name may still be mapped by the embedded font program's
-        // built-in encoding (which we do not read), so an empty/.notdef name is not treated as a failure.
+        // Simple font: a code with no PDF-level glyph name may still be mapped by the embedded font
+        // program's built-in encoding. For a symbolic Type1/CFF font this engine DOES read that
+        // encoding (Type1Font.LoadEncoding / EmbeddedFontMetrics.GetCffGlyphNameByCharCode /
+        // GetType1GlyphNameByCharCode, ISO 32000-1 9.6.6.2), so a null name here means the built-in
+        // encoding already had nothing to say either; other shapes (TrueType symbolic cmaps,
+        // non-symbolic gaps) still fall outside what this engine models, so an empty/.notdef name
+        // stays conservatively non-failing rather than a positive failure.
         string? glyphName = font.Encoding?.GetGlyphName(code);
         if (string.IsNullOrEmpty(glyphName) || glyphName == ".notdef")
             return true;
