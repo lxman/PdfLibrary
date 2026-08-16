@@ -62,5 +62,25 @@ public sealed record RegenerateDeclarationProposal(
     IReadOnlySet<string>? GlyphNames,
     IReadOnlySet<int>? Cids) : FontProposal(Font, RuleId);
 
+/// <summary>
+/// Patch <paramref name="Font"/>'s embedded program's hmtx advances to match its declared widths,
+/// for a <c>font-program</c> 6.2.11.5 finding. <paramref name="Font"/> is the PROGRAM HOLDER
+/// (design §3.2) — <c>entry.ProgramHolderId ?? entry.Id</c> — because <c>/FontFile2</c> lives there.
+///
+/// <para><paramref name="PatchedProgram"/> is the sfnt with only hmtx (and, on expansion, hhea and
+/// head's checksum) touched — every other table is byte-identical. <paramref name="GlyphsPatched"/>
+/// counts distinct glyph ids whose advance changed. <paramref name="WorstDiffBefore"/> is the worst
+/// declared-vs-program discrepancy (glyph-space units) observed across the used codes BEFORE the
+/// patch — the same figure the triggering 6.2.11.5 finding reports. <paramref name="LeavesOtherFindings"/>
+/// is true when this font also carries a font-program finding this proposal does not address (e.g. a
+/// .notdef glyph), so a caller applying this proposal must not report the font as fully remediated.</para>
+/// </summary>
+public sealed record PatchWidthsProposal(
+    FontId Font, string RuleId,
+    byte[] PatchedProgram,
+    int GlyphsPatched,
+    double WorstDiffBefore,
+    bool LeavesOtherFindings) : FontProposal(Font, RuleId);
+
 /// <summary>Everything the planner proposes for one document.</summary>
 public sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);
