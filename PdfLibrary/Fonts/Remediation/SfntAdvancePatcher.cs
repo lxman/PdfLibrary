@@ -38,7 +38,11 @@ internal static class SfntAdvancePatcher
             string tag = System.Text.Encoding.ASCII.GetString(program, entry, 4);
             uint offset = BinaryPrimitives.ReadUInt32BigEndian(program.AsSpan(entry + 8));
             uint length = BinaryPrimitives.ReadUInt32BigEndian(program.AsSpan(entry + 12));
-            if (offset + length > (uint)program.Length)
+            // Subtraction form deliberately avoids `offset + length`, which can wrap past
+            // uint.MaxValue for a corrupt directory entry (e.g. offset=0xFFFFFFF0, length=0x20
+            // sums to 0x10 and would pass an addition-based check) and then throw from the
+            // AsSpan cast below instead of failing cleanly.
+            if (offset > (uint)program.Length || length > (uint)program.Length - offset)
             { failReason = $"the '{tag}' table extends past the end of the program."; return null; }
             tables.Add((tag, program.AsSpan((int)offset, (int)length).ToArray()));
         }

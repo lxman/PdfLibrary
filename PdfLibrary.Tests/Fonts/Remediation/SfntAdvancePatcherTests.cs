@@ -142,6 +142,39 @@ public class SfntAdvancePatcherTests
         Assert.NotNull(reason);
     }
 
+    [Fact]
+    public void Corrupt_directory_entry_with_overflowing_offset_length_fails_rather_than_throws()
+    {
+        // A directory entry offset=0xFFFFFFF0, length=0x20 sums to 0x10 in uint arithmetic
+        // (wraps past uint.MaxValue) — an addition-based bounds check would pass it, and the
+        // cast to int inside program.AsSpan((int)offset, (int)length) would then go negative and
+        // throw ArgumentOutOfRangeException instead of Patch returning null + a reason. Hand-edit
+        // a valid fixture's first directory entry (offset at entry+8, length at entry+12) to pin
+        // the subtraction-based fix.
+        byte[] program = FontBytes();
+        const int entry = 12; // the first table's directory entry, right after the 12-byte header
+        WriteU32(program, entry + 8, 0xFFFFFFF0);  // offset
+        WriteU32(program, entry + 12, 0x20);       // length
+
+        byte[]? patched = null;
+        string? reason = null;
+        Exception? thrown = Record.Exception(() =>
+            patched = SfntAdvancePatcher.Patch(
+                program, new Dictionary<ushort, ushort> { [1] = 507 }, out reason));
+
+        Assert.Null(thrown);
+        Assert.Null(patched);
+        Assert.NotNull(reason);
+    }
+
+    private static void WriteU32(byte[] data, int offset, uint value)
+    {
+        data[offset] = (byte)(value >> 24);
+        data[offset + 1] = (byte)(value >> 16);
+        data[offset + 2] = (byte)(value >> 8);
+        data[offset + 3] = (byte)value;
+    }
+
     /// <summary>Minimal sfnt table-directory reader for the byte-identity assertion — reads only
     /// what the assertion needs (tag/offset/length), deliberately not reusing
     /// SfntAdvancePatcher's own directory parser so the test does not validate itself against its
