@@ -141,7 +141,7 @@ public class WidthFalsePositiveCorpusTests
         Assert.Equal(4, text.Count(c => c == '\u00AF'));  // macron
         Assert.Equal(4, text.Count(c => c == '\u00B8'));  // cedilla
         // C1 control leakage from the OLD defect must be gone: pre-fix, each style variant's
-        // accent row decoded four of its glyphs (circumflex/ring/tilde/breve) to these invisible
+        // accent row decoded four of its glyphs (circumflex/ring/tilde/ogonek) to these invisible
         // control codepoints instead (measured via a full-page codepoint diff against the pre-fix
         // files at 38a3f32, 2026-08-15).
         Assert.DoesNotContain('\u009E', text);
