@@ -44,8 +44,8 @@ public class FontProgramWidthRepairCorpusTests
         return Directory.Exists(root) ? root : null;
     }
 
-    private static (List<PatchWidthsProposal> Patches, List<DeclineProposal> Declines, PreflightResult Before)
-        ProposeFor(string path)
+    private static (List<PatchWidthsProposal> Patches, List<DeclineProposal> Declines, PreflightResult Before,
+        int TotalProposals) ProposeFor(string path)
     {
         PreflightResult before = Preflighter.Check(path, ConformanceProfile.PdfA2b);
         using PdfDocument doc = PdfDocument.Load(path);
@@ -54,7 +54,7 @@ public class FontProgramWidthRepairCorpusTests
             before.Findings.Where(f => f.RuleId == "font-program" && f.ObjectNumber is not null)
                 .Select(f => (f.RuleId, f.ObjectNumber!.Value)));
         return (proposed.Fonts.OfType<PatchWidthsProposal>().ToList(),
-                proposed.Fonts.OfType<DeclineProposal>().ToList(), before);
+                proposed.Fonts.OfType<DeclineProposal>().ToList(), before, proposed.Fonts.Count);
     }
 
     // ProposeFor and ApplyAndRecheck each load the document independently, but PatchWidthsProposal
@@ -90,7 +90,7 @@ public class FontProgramWidthRepairCorpusTests
         Assert.SkipWhen(root is null, $"corpus not present at {defaultPath} (LocalOnly)");
 
         string path = Path.Combine(root!, file);
-        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult before) =
+        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult before, int _) =
             ProposeFor(path);
 
         Assert.True(patches.Count > 0, $"{file}: expected at least one PatchWidthsProposal, got none " +
@@ -141,7 +141,7 @@ public class FontProgramWidthRepairCorpusTests
 
         const string file = "0000_0000522.pdf";
         string path = Path.Combine(root!, file);
-        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult before) =
+        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult before, int _) =
             ProposeFor(path);
 
         Assert.True(patches.Count > 0, $"{file}: expected at least one patch proposal (its CID2 fonts).");
@@ -170,6 +170,16 @@ public class FontProgramWidthRepairCorpusTests
             afterByRule.TryGetValue(ruleId, out int afterCount);
             Assert.True(beforeCount == afterCount,
                 $"{file}: rule '{ruleId}' moved from {beforeCount} to {afterCount} after a width patch.");
+        }
+        // Same new-ruleId guard the close-doc test has: without this, a width patch that introduced
+        // a brand-new RuleId not present before would slip through silently, since the loop above
+        // only walks beforeByRule's keys.
+        foreach ((string ruleId, int afterCount) in afterByRule)
+        {
+            if (ruleId == "font-program" || beforeByRule.ContainsKey(ruleId)) continue;
+            Assert.True(0 == afterCount,
+                $"{file}: rule '{ruleId}' appeared ({afterCount}) after a width patch that should only " +
+                "have touched font-program 6.2.11.5 findings.");
         }
     }
 
@@ -213,11 +223,14 @@ public class FontProgramWidthRepairCorpusTests
 
         const string file = "0000_0000024.pdf";
         string path = Path.Combine(root!, file);
-        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult _) =
+        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult _, int total) =
             ProposeFor(path);
 
         Assert.Empty(patches);
         Assert.True(declines.Count > 0, $"{file}: expected at least one DeclineProposal, got none.");
+        // Direct check that every proposal is one of the two kinds above — "patches empty" alone only
+        // proves nothing patched; it says nothing about a third proposal kind slipping through unseen.
+        Assert.Equal(total, patches.Count + declines.Count);
         Assert.True(declines.All(d => d.Reason.Contains("beyond the program's glyph count")),
             $"{file}: expected every decline to cite the glyph-count guard; got: " +
             string.Join(" | ", declines.Select(d => d.Reason)));
@@ -232,11 +245,14 @@ public class FontProgramWidthRepairCorpusTests
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
         string path = Path.Combine(root!, file);
-        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult _) =
+        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult _, int total) =
             ProposeFor(path);
 
         Assert.Empty(patches);
         Assert.True(declines.Count > 0, $"{file}: expected at least one DeclineProposal, got none.");
+        // Direct check that every proposal is one of the two kinds above — "patches empty" alone only
+        // proves nothing patched; it says nothing about a third proposal kind slipping through unseen.
+        Assert.Equal(total, patches.Count + declines.Count);
         Assert.True(declines.Any(d => d.Reason.Contains("charstrings")),
             $"{file}: expected at least one decline citing charstrings; got: " +
             string.Join(" | ", declines.Select(d => d.Reason)));
