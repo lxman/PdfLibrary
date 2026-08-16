@@ -148,6 +148,15 @@ internal class PdfFontEncoding
     /// assigned by the document's own encoding data. False for a code with no name at all, or one
     /// name-assigned via <see cref="SetCharacterName"/> — the caller should treat those as
     /// authoritative-or-absent, never as "derived."
+    ///
+    /// <para><b>A third name source this does NOT flag</b> (documented, not changed — pre-existing
+    /// behaviour): <see cref="GetGlyphName(int)"/> also hands back a hardcoded ASCII name (e.g. code
+    /// 65 → <c>"A"</c>) for any code 32-126 that is in neither <c>_codeToName</c> NOR was reached by
+    /// <see cref="SetUnicode"/> at all — a synthesis path with no <c>_derivedNameCodes</c> entry, so
+    /// <see cref="IsDerivedName"/> returns false for it even though the caller did not assign that
+    /// name either. A caller relying on this method to mean "authoritative" rather than merely "not
+    /// the SetUnicode fallback" should account for that gap.
+    /// </para>
     /// </summary>
     internal bool IsDerivedName(int charCode) => _derivedNameCodes.Contains(charCode);
 

@@ -362,15 +362,24 @@ internal sealed class FontProgramRule : IConformanceRule
     /// <see cref="SimpleGlyphResolution.Unknown"/> whenever the standard code→glyph path is not reproducible
     /// here (symbolic TrueType — declared or carrying only a (3,0) Windows-Symbol cmap — with no trustworthy
     /// Unicode-capable cmap subtable, an encoding name with no Unicode, a supplementary-plane Unicode value
-    /// that a 16-bit cmap lookup would truncate, a predefined-charset CFF, OR a code whose name was DERIVED
-    /// by <see cref="PdfFontEncoding.SetUnicode"/> rather than assigned by the document's own encoding data
-    /// — see <see cref="PdfFontEncoding.IsDerivedName"/>: a derived name is this engine's own reconstruction
-    /// for rendering purposes, not something the document or font program asserts, so treating a charset/CFF
-    /// miss against it as a confident absence is exactly the false-positive class Task 10's GlyphList
-    /// completion exposed (issues 27-28 follow-up review, 2026-08-16): more reverse-AGL entries meant more
-    /// codes that previously had NO name at all now carry a guessed one, which this resolver's CFF branch
-    /// then treated as authoritative) so the caller emits nothing. Only a confident glyph-0 result is
-    /// <see cref="SimpleGlyphResolution.NotDef"/>.
+    /// that a 16-bit cmap lookup would truncate, a predefined-charset CFF, OR — CFF/Type1 only — a code
+    /// whose name was DERIVED by <see cref="PdfFontEncoding.SetUnicode"/> rather than assigned by the
+    /// document's own encoding data (see <see cref="PdfFontEncoding.IsDerivedName"/>). That CFF-only scoping
+    /// is deliberate (issues 27-28 follow-up review round 2, 2026-08-16): the CFF branch looks a name up
+    /// BY NAME in the font's own charset, so a derived name — this engine's own reconstruction, never
+    /// something the document or font program asserts — genuinely cannot authorize a "confident absence"
+    /// there (Task 10's GlyphList completion exposed exactly this: more reverse-AGL entries meant more codes
+    /// that previously had NO name at all now carry a guessed one, which the CFF branch then treated as
+    /// authoritative). The TrueType branch below, by contrast, only ever uses the name as a courier for the
+    /// encoding's OWN Unicode value (<c>GlyphList.GetUnicode(glyphName)</c>) before keying the font's cmap
+    /// by that Unicode value directly — and a derived name's Unicode IS the encoding's own Annex-D value
+    /// (SetUnicode wrote it; GetGlyphName's reverse lookup is a lossless inversion of the same map), so
+    /// whether the name happened to arrive via SetCharacterName or SetUnicode carries no information for
+    /// this branch — gating on it would only suppress genuine TrueType detections for no analytical reason.
+    /// Confirmed by measurement, not just analysis: across both corpora the TrueType arm's provenance gate
+    /// cleared zero false positives and deleted the corpora's only TrueType glyph-present detection
+    /// (local-708's StudentLoan1098E.pdf, veraPDF-confirmed genuine) — so round 2 removed it. Only a
+    /// confident glyph-0 result is <see cref="SimpleGlyphResolution.NotDef"/>.
     /// </summary>
     private static SimpleGlyphResolution ResolveSimpleGlyph(
         PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType, bool symbolic)
@@ -380,8 +389,6 @@ internal sealed class FontProgramRule : IConformanceRule
 
         if (isTrueType)
         {
-            if (derivedName)
-                return SimpleGlyphResolution.Unknown;
             // A symbolic font (PDF-declared /Flags bit 3, or a program carrying only a (3,0) Windows-Symbol
             // cmap keyed at 0xF000+code) has no reliable AGL-Unicode → cmap path: there is no 0xF000-offset
             // retry against a Symbol cmap anywhere in the lookup chain, so an AGL-derived Unicode value
