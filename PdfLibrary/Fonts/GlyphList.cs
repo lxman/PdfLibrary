@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 
 namespace PdfLibrary.Fonts;
 
@@ -59,8 +60,59 @@ public static class GlyphList
 
     private static Dictionary<string, string> InitializeGlyphList()
     {
+        Dictionary<string, string> hand = BuildHandTable();
+        AddAglSupplement(hand);
+        return hand;
+    }
+
+    /// <summary>
+    /// Adds every name from the vendored canonical Adobe Glyph List (Resources/Agl/glyphlist.txt;
+    /// see Resources/Agl/LICENSE.md for source, pinned commit, and SHA256) that is NOT already a
+    /// key in <paramref name="dict"/>. Runs AFTER the hand table is fully populated, so every
+    /// existing forward entry and every existing first-name-wins reverse-map choice is preserved —
+    /// this only ADDS names the hand table lacks (afii*, angle, aleph, universal, ...). A
+    /// multi-codepoint AGL value (space-separated hex) joins to its full UTF-16 string.
+    /// </summary>
+    private static void AddAglSupplement(Dictionary<string, string> dict)
+    {
+        using Stream? raw = typeof(GlyphList).Assembly
+            .GetManifestResourceStream("PdfLibrary.Resources.Agl.glyphlist.txt");
+        if (raw is null) return; // defensive: resource is always embedded; never expected to miss
+
+        using var reader = new StreamReader(raw);
+        while (reader.ReadLine() is { } line)
+        {
+            if (line.Length == 0 || line[0] == '#') continue;
+
+            int semi = line.IndexOf(';');
+            if (semi < 0) continue;
+
+            string name = line[..semi];
+            if (dict.ContainsKey(name)) continue; // hand table wins; only add absent names
+
+            string[] hexCodes = line[(semi + 1)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (hexCodes.Length == 0) continue;
+
+            var value = new StringBuilder();
+            var ok = true;
+            foreach (string hex in hexCodes)
+            {
+                if (!int.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out int codePoint))
+                {
+                    ok = false;
+                    break;
+                }
+                value.Append(char.ConvertFromUtf32(codePoint));
+            }
+            if (ok) dict[name] = value.ToString();
+        }
+    }
+
+    private static Dictionary<string, string> BuildHandTable()
+    {
         // Adobe Glyph List - common glyph name to Unicode mappings
-        // This is a subset of the full AGL; full implementation would include all ~4000+ mappings
+        // Hand-built subset; completed at static init by AddAglSupplement from the vendored
+        // canonical AGL (names absent here only).
         return new Dictionary<string, string>
         {
             // Basic Latin

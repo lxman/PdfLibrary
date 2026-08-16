@@ -114,4 +114,50 @@ public class GlyphListTests
         Assert.Equal(unicode, GlyphList.GetUnicode(name));
         Assert.Equal(name, GlyphList.GetGlyphName(unicode));
     }
+
+    // Task 10 (spec Amendment 2): the hand-built table lacked most of the AGL, causing an
+    // unmapped-Unicode false positive on names outside the ~350-entry hand subset (afii*, angle,
+    // aleph, universal, ...). Expected values verified against the vendored glyphlist.txt itself
+    // (pinned commit 4036a9c, see Resources/Agl/LICENSE.md), not memory. Note: the AGL maps
+    // afii10034 to U+0420 CYRILLIC CAPITAL LETTER ER (Р), not U+0424 EF (Ф) as might be assumed.
+    [Theory]
+    [InlineData("afii10034", "Р")]  // Р - CYRILLIC CAPITAL LETTER ER
+    [InlineData("universal", "∀")]  // ∀
+    [InlineData("aleph", "ℵ")]      // ℵ
+    [InlineData("angle", "∠")]      // ∠
+    public void GetUnicode_AglSupplementNames_ReturnsCorrectUnicode(string glyphName, string expectedUnicode)
+    {
+        string? unicode = GlyphList.GetUnicode(glyphName);
+        Assert.Equal(expectedUnicode, unicode);
+    }
+
+    // Multi-codepoint AGL entry (Hebrew dalet + hataf patah combining mark) round-trips its full
+    // string value. Verified against glyphlist.txt: dalethatafpatah;05D3 05B2.
+    [Fact]
+    public void GetUnicode_MultiCodepointAglEntry_RoundTripsFullString()
+    {
+        string expected = char.ConvertFromUtf32(0x05D3) + char.ConvertFromUtf32(0x05B2);
+        Assert.Equal(expected, GlyphList.GetUnicode("dalethatafpatah"));
+        Assert.Equal("dalethatafpatah", GlyphList.GetGlyphName(expected));
+    }
+
+    // Stability pins: the hand table stays FIRST, so completing it from the AGL must not churn any
+    // existing forward entry or any existing first-name-wins reverse-map choice.
+    [Fact]
+    public void GetGlyphName_QuoteSingle_StableAfterAglCompletion()
+    {
+        Assert.Equal("quotesingle", GlyphList.GetGlyphName("'"));
+    }
+
+    [Fact]
+    public void GetGlyphName_Circumflex_StableAfterAglCompletion()
+    {
+        Assert.Equal("circumflex", GlyphList.GetGlyphName("ˆ"));
+    }
+
+    [Fact]
+    public void GetUnicode_QuoteRight_StableAfterAglCompletion()
+    {
+        Assert.Equal("’", GlyphList.GetUnicode("quoteright"));
+    }
 }

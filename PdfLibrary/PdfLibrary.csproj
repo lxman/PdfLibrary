@@ -111,6 +111,20 @@
     </ItemGroup>
 
     <ItemGroup>
+        <!-- Adobe Glyph List (issue 27-28 Task 10): the canonical glyphlist.txt from
+             github.com/adobe-type-tools/agl-aglfn, BSD-3-Clause (license + pinned-commit SHA256
+             recorded alongside), shipped verbatim, uncompressed. Parsed lazily by GlyphList
+             AFTER its hand-built entries, so only names absent from the hand table are added. -->
+        <EmbeddedResource Include="Resources\Agl\glyphlist.txt">
+            <LogicalName>PdfLibrary.Resources.Agl.glyphlist.txt</LogicalName>
+        </EmbeddedResource>
+        <EmbeddedResource Include="Resources\Agl\LICENSE.md">
+            <LogicalName>PdfLibrary.Resources.Agl.LICENSE.md</LogicalName>
+        </EmbeddedResource>
+        <None Include="Resources\Agl\LICENSE.md" Pack="true" PackagePath="licenses\" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Include="Microsoft.SourceLink.GitHub" Version="10.0.301" PrivateAssets="all" />
     </ItemGroup>
 
