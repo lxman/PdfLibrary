@@ -28,9 +28,11 @@ namespace PdfLibrary.Tests.Fonts;
 ///
 /// <para>Fix: <see cref="PdfFontEncoding"/> now tracks which codes' names were derived
 /// (<see cref="PdfFontEncoding.IsDerivedName"/>); <c>ResolveSimpleGlyph</c> returns
-/// <c>SimpleGlyphResolution.Unknown</c> for a derived-name code in both its CFF and TrueType
-/// branches, the same "skip rather than guess" contract the resolver already applies to symbolic
-/// TrueType, unmapped names, and predefined-charset CFF.</para>
+/// <c>SimpleGlyphResolution.Unknown</c> for a derived-name code in its CFF branch only, the same
+/// "skip rather than guess" contract the resolver already applies to unmapped names and
+/// predefined-charset CFF. Round 2 removed the analogous TrueType-branch gate — provenance carries
+/// no information there, since the TrueType arm only ever uses a name as a courier for the
+/// encoding's own Unicode value; see <see cref="TrueTypeDerivedNameTests"/> for that story.</para>
 /// </summary>
 public class DerivedNameProvenanceTests
 {

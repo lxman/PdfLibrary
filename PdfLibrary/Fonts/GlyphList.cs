@@ -45,6 +45,13 @@ public static class GlyphList
                 if (_unicodeToGlyph is null)
                 {
                     var reverse = new Dictionary<string, string>();
+                    // "First name wins" here depends on Dictionary<TKey,TValue> enumerating
+                    // _glyphToUnicode in insertion order — undefined by the BCL contract, but
+                    // stable in practice for an add-only dictionary with no removals (which this
+                    // one is). If the runtime's enumeration order ever changes, the tripwire is
+                    // the stability pins: the space/Delta/Omega picks and the WinAnsi 0x88/0x98
+                    // ("circumflex"/"tilde" vs. the accent-only AGL duplicates) fact, all covered
+                    // by tests that assert a SPECIFIC name, not merely "a" name.
                     foreach (KeyValuePair<string, string> kvp in _glyphToUnicode)
                         if (!reverse.ContainsKey(kvp.Value)) reverse[kvp.Value] = kvp.Key;
                     _unicodeToGlyph = reverse;

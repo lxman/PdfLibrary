@@ -127,7 +127,8 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // fail. The derived-name provenance fix (PdfFontEncoding.IsDerivedName / FontProgramRule.
             // ResolveSimpleGlyph) that closed a 7-new-FP CC-MAIN regression makes the CFF-branch
             // glyph-present resolver skip (Unknown) every CFF code whose name came from SetUnicode's
-            // reverse-AGL fallback -- every code in a WinAnsiEncoding-based CFF font, not only the
+            // reverse-AGL fallback -- every code in a WinAnsi- or MacRoman-based CFF font (both
+            // factories are SetUnicode-only, never SetCharacterName), not only the
             // newly-AGL-resolvable subset -- so a WinAnsi-base, no-/Differences CFF fixture whose missing
             // glyph is an ordinary Latin letter is now missed too: "veraPDF test suite
             // 6-2-11-4-1-t02-fail-a.pdf" and "...-fail-b.pdf" (root-caused via a git-stash A/B probe

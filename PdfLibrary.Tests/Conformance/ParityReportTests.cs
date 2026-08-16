@@ -30,8 +30,9 @@ public class ParityReportTests(ITestOutputHelper output)
             // follow-up review, 2026-08-16): the derived-name provenance fix (PdfFontEncoding.IsDerivedName /
             // FontProgramRule.ResolveSimpleGlyph) that closed the 7-new-FP corpus regression ALSO makes the
             // glyph-present resolver skip (Unknown) every code whose name came from SetUnicode's reverse-AGL
-            // fallback -- which is EVERY code in a WinAnsiEncoding-based font (CreateWinAnsiEncoding calls
-            // SetUnicode exclusively, never SetCharacterName), not only the newly-AGL-resolvable subset. Two
+            // fallback -- which is EVERY code in a WinAnsi- or MacRoman-based font (CreateWinAnsiEncoding and
+            // CreateMacRomanEncoding both call SetUnicode exclusively, never SetCharacterName), not only the
+            // newly-AGL-resolvable subset. Two
             // corpus fixtures built exactly that way (WinAnsi base, no /Differences override on the missing
             // code) lost their genuine 6.2.11.4.1 detection: "veraPDF test suite 6-2-11-4-1-t02-fail-a.pdf"
             // and "...-fail-b.pdf" (root-caused via a git-stash A/B probe against the pre-fix resolver: 21

@@ -242,6 +242,50 @@ public class SymbolicBuiltInEncodingTests
     }
 
     [Fact]
+    public void Symbolic_cff_no_encoding_key_resolves_through_built_in()
+    {
+        // The other /Encoding-ABSENT arm of LoadEncoding (Type1Font.cs:266-272): BuildDoc's
+        // `encoding: null` omits the /Encoding key from the font dict entirely (not merely an
+        // empty dict), so this exercises the `!_dictionary.TryGetValue(...)` branch directly —
+        // symbolic base is the font program's own built-in encoding, same as the
+        // Differences-only-dict tests above but with no dict at all in play.
+        using PdfDocument doc = BuildDoc(flags: 6, encoding: null);
+        PdfFont font = FontFrom(doc);
+
+        Assert.Equal("afii10034", font.Encoding!.GetGlyphName(208));
+    }
+
+    [Fact]
+    public void Non_symbolic_no_encoding_key_keeps_standard_encoding()
+    {
+        // Same absent-/Encoding-key arm, non-symbolic: falls through to
+        // GetStandardEncoding(BaseFont), exactly as Tasks 2-3 pinned for the dict-shaped case.
+        using PdfDocument doc = BuildDoc(flags: 34, encoding: null);
+        PdfFont font = FontFrom(doc);
+
+        Assert.Equal("emdash", font.Encoding!.GetGlyphName(208));
+    }
+
+    [Fact]
+    public void Explicit_base_encoding_dict_with_differences_overrides_built_in_and_layers_on_top()
+    {
+        // Composed corner: an /Encoding dict carrying BOTH an explicit /BaseEncoding name AND
+        // /Differences. FromDictionary must honor /BaseEncoding over the symbolic built-in base
+        // (same override rule as the bare-NAME case above) while still layering /Differences on
+        // top of that base, not on top of the built-in encoding it overrode.
+        var dict = new PdfDictionary
+        {
+            [N("BaseEncoding")] = N("WinAnsiEncoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger(127), new PdfName("sterling")),
+        };
+        using PdfDocument doc = BuildDoc(flags: 6, dict);
+        PdfFont font = FontFrom(doc);
+
+        Assert.Equal("Eth", font.Encoding!.GetGlyphName(208));       // WinAnsi wins over built-in
+        Assert.Equal("sterling", font.Encoding.GetGlyphName(127));   // /Differences still on top
+    }
+
+    [Fact]
     public void Symbolic_cff_with_no_built_in_encoding_falls_back_to_standard_encoding()
     {
         // The `any == false` path in TryBuildBuiltInEncoding: a symbolic CFF program that PARSES
