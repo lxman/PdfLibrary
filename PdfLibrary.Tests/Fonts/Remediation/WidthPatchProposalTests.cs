@@ -123,6 +123,45 @@ public sealed class WidthPatchProposalTests
         return doc;
     }
 
+    /// <summary><see cref="MismatchDoc"/>'s shape (code 10 → gid 1, /Widths [507] vs hmtx 450) plus a
+    /// second code (11) whose /Differences names it ".notdef" — a SIMPLE font carrying BOTH a
+    /// 6.2.11.5 (width) and a 6.2.11.8 (.notdef) finding on the same font object. Task-5-review
+    /// Important: the dispatch must not let the composite-only replace-arm swallow this font's width
+    /// patch just because it also has a notdef finding.</summary>
+    private static PdfDocument MismatchWithNotdefDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEE+ZeroAdvance"),
+            [N("Flags")] = new PdfInteger(32),     // non-symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEE+ZeroAdvance"),
+            [N("FirstChar")] = new PdfInteger(10),
+            [N("LastChar")] = new PdfInteger(11),
+            [N("Widths")] = new PdfArray(new PdfInteger(507), new PdfInteger(0)),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("BaseEncoding")] = N("WinAnsiEncoding"),
+                [N("Differences")] = new PdfArray(new PdfInteger(11), N(".notdef")),
+            },
+            [N("FontDescriptor")] = Ref(2),
+        });
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0A0B> Tj ET")));
+        AddSinglePageCatalog(doc, font: 1);
+        return doc;
+    }
+
     private static void AddSinglePageCatalog(PdfDocument doc, int font)
     {
         doc.AddObject(22, 0, new PdfDictionary
@@ -167,6 +206,18 @@ public sealed class WidthPatchProposalTests
     // 6.2.11.8 now dispatches to ProposeProgramReplace, not this decline path, and that test file
     // owns A_simple_font_notdef_finding_declines_naming_v1_scope against the shared
     // WidthPatchFixtures.NotdefOnlyDoc() fixture.
+
+    [Fact]
+    public void A_simple_font_with_width_and_notdef_findings_still_patches_widths_and_leaves_the_other_finding()
+    {
+        PdfDocument doc = MismatchWithNotdefDoc();
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
+        PatchWidthsProposal patch = Assert.IsType<PatchWidthsProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(1, patch.Font.ObjectNumber);
+        Assert.Equal(1, patch.GlyphsPatched);
+        Assert.Equal(57, patch.WorstDiffBefore, 0);    // |507 - 450|
+        Assert.True(patch.LeavesOtherFindings);        // the notdef finding this proposal cannot fix
+    }
 
     [Fact]
     public void Cff_kinds_decline_before_bytes_are_read()

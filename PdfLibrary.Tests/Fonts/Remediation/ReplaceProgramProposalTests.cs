@@ -131,13 +131,19 @@ public sealed class ReplaceProgramProposalTests
         return doc;
     }
 
-    /// <summary>A dead-CID Type0/CIDFontType0 (CID-keyed CFF descendant) fixture: CID 0 is ALWAYS
-    /// .notdef (<see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>'s own hardcoded rule), so this needs
-    /// no working charset to reproduce the 6.2.11.8 finding — <see cref="MinimalCff.BuildCid"/>'s
-    /// charset-less CID-keyed CFF is enough. /ToUnicode maps CID 0 → 'A'.</summary>
+    /// <summary>A dead-CID Type0/CIDFontType0 (CID-keyed CFF descendant) fixture, with a LIVE CID
+    /// drawn alongside the dead one (as the CID2 fixture does), so <c>RestoredCodeCount</c> can
+    /// discriminate 1 restored from 2. CID 0 is ALWAYS .notdef
+    /// (<see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>'s own hardcoded rule) regardless of the
+    /// charset, but proving the OTHER drawn CID (0x41) is genuinely NOT dead in the OLD program needs
+    /// a real charset entry for it — built the same way
+    /// <c>ResolveGlyphIdCid2OttoTests.DivergentCharsetCff</c> does (a non-CID
+    /// <see cref="MinimalCff.Build"/> whose charset entries <see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>
+    /// reads as CIDs regardless of the CFF's own CID-ness): gid 1 ↔ CID 0x41. /ToUnicode maps CID 0 →
+    /// 'A', CID 0x41 → 'B'.</summary>
     private static PdfDocument DeadCid0Doc()
     {
-        byte[] font = MinimalCff.BuildCid(numGlyphs: 2);
+        byte[] font = MinimalCff.Build(charsetOperand: null, numGlyphs: 2, customCharsetSids: [0x41]);
         var doc = new PdfDocument();
         doc.AddObject(3, 0, new PdfStream(
             new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
@@ -155,6 +161,7 @@ public sealed class ReplaceProgramProposalTests
             [N("BaseFont")] = N("ABCDEF+DeadCid0"),
             [N("FontDescriptor")] = Ref(2),
             [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
         };
         AddCidSystemInfo(descendant);
         doc.AddObject(4, 0, descendant);
@@ -167,12 +174,13 @@ public sealed class ReplaceProgramProposalTests
             [N("Encoding")] = N("Identity-H"),
             [N("DescendantFonts")] = new PdfArray(Ref(4)),
         };
-        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
+            BfCharBytes([(0x0000, "0041"), (0x0041, "0042")])));
         type0Dict[N("ToUnicode")] = Ref(5);
         doc.AddObject(1, 0, type0Dict);
 
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj ET")));
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000 0041> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font: 1);
         return doc;
     }
@@ -364,7 +372,13 @@ public sealed class ReplaceProgramProposalTests
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
-        Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
+        Assert.True(proposal.CidToGid.TryGetValue(0x0000, out ushort gid0) && gid0 != 0);
+        Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
+        // CID 0 is .notdef in the OLD (charset-bearing) program; CID 0x41 already has a real glyph
+        // there (gid 1, via the charset) — only the former is a restored code.
+        Assert.Equal(1, proposal.RestoredCodeCount);
     }
 
     [Fact]
@@ -379,6 +393,25 @@ public sealed class ReplaceProgramProposalTests
 
         DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
         Assert.Contains("shares this font's embedded program", decline.Reason);
+    }
+
+    [Fact]
+    public void A_cid_keyed_cff_substitute_declines_with_the_truetype_mechanism_not_table_124()
+    {
+        // Task-5-review Important: RunByteGates used to run the SIMPLE-font Table-124 gate
+        // (SimpleFontProgramSubtype.Resolve) against a COMPOSITE font's substitute here, so a
+        // genuinely CID-keyed CFF/OTF candidate produced a factually inverted decline ("...permits
+        // only for a composite (Type0) font, never for a simple one" about a font that IS composite).
+        // BuildReplacement now calls RunByteGates(simpleFont: false), which skips that gate — this
+        // candidate must reach the TrueType-mechanism decline instead.
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new StubFontProvider(MinimalCff.BuildCid(numGlyphs: 2));
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("not a TrueType program", decline.Reason);
+        Assert.DoesNotContain("Table 124", decline.Reason);
     }
 
     // ── manual path (AssessReplacementCandidate) ───────────────────────────────────────────────
@@ -399,5 +432,23 @@ public sealed class ReplaceProgramProposalTests
         Assert.NotNull(result.HardBlockReason);
         Assert.Null(result.Proposal);
         Assert.Empty(result.Warnings);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_declines_when_the_font_draws_no_characters()
+    {
+        // Task-5-review Important: an empty CidToGid (entry.UsedCodes empty — reachable only through
+        // the manual path, since Propose() never attributes a font-program finding to a font with no
+        // used codes) must not silently produce a proposal that maps EVERY CID to .notdef.
+        PdfDocument doc = DeadCid2Doc();
+        FontInventoryEntry baseEntry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+        FontInventoryEntry entry = baseEntry with { UsedCodes = [] };
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Contains("no characters", result.HardBlockReason);
+        Assert.Null(result.Proposal);
     }
 }

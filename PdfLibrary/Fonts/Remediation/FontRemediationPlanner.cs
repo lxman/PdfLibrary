@@ -31,6 +31,15 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             "font-program",
         };
 
+    /// <summary>Single source for the "a simple font's finding is a missing glyph" decline — used by
+    /// <see cref="ProposeWidthPatch"/>'s dispatch (a simple font's notdef-only finding), and again as a
+    /// defensive gate inside <see cref="ProposeProgramReplace"/> and <see cref="AssessReplacementCandidate"/>
+    /// for a non-composite entry reached directly rather than through the dispatch (v1 scope: replacing
+    /// a simple font's program is not something Pellucid does yet).</summary>
+    private const string SimpleFontMissingGlyphReason =
+        "This font's finding is a missing glyph, and replacing a simple font's program is not "
+        + "something Pellucid does yet.";
+
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -254,16 +263,26 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         bool hasWidth = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.5");
         bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
 
+        // Controller ruling: a composite font's .notdef finding routes to the whole-program-replace
+        // arm (the only remedy that can fix a missing glyph), but a SIMPLE font carrying BOTH a
+        // 6.2.11.8 (.notdef) and a 6.2.11.5 (width) finding must not lose its width patch to that
+        // routing — replacement is not something Pellucid does for a simple font's program at all
+        // (SimpleFontMissingGlyphReason below), so gating on hasNotdef alone would silently swallow a
+        // fix this planner CAN make. Composite is checked here, not inside ProposeProgramReplace,
+        // so this stays the single place that decides which arm a notdef finding reaches.
         bool hasNotdef = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.8");
-        if (hasNotdef)
+        bool composite = entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2;
+        if (hasNotdef && composite)
             return ProposeProgramReplace(document, entry, ruleId, mine);
         if (!hasWidth)
         {
             return Decline(entry, ruleId, mine.Count == 0
                 ? "The font-program finding could not be reproduced against this document's current "
                   + "state, so there is nothing Pellucid can safely correct."
-                : "This font renders a glyph absent from its embedded program — replacing a simple "
-                  + "font's program is not something Pellucid does yet.");
+                : hasNotdef
+                    ? SimpleFontMissingGlyphReason
+                    : "This font renders a glyph absent from its embedded program — replacing a simple "
+                      + "font's program is not something Pellucid does yet.");
         }
 
         switch (entry.Kind)
@@ -415,12 +434,12 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "object, so Pellucid cannot address its font program to correct it.");
         }
 
+        // Unreachable through Propose() as of this task's dispatch fix (composite is checked there
+        // before this method is ever called), but kept as a defensive gate — and the single-source
+        // constant — for a direct call (as the width-patch tests make against ProposeWidthPatch) or a
+        // future caller.
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
-        {
-            return Decline(entry, ruleId,
-                "This font's finding is a missing glyph, and replacing a simple font's program is "
-                + "not something Pellucid does yet.");
-        }
+            return Decline(entry, ruleId, SimpleFontMissingGlyphReason);
 
         // Controller ruling (tracker issue 38): see SharedHolderReason's doc comment. Recomputed from
         // the document rather than threaded through from Propose()'s own inventory read, so the same
@@ -497,12 +516,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         }
 
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
-        {
-            return new CandidateAssessment(null,
-                "This font's finding is a missing glyph, and replacing a simple font's program is "
-                + "not something Pellucid does yet.",
-                [], null);
-        }
+            return new CandidateAssessment(null, SimpleFontMissingGlyphReason, [], null);
 
         if (SharedHolderReason(entry, FontInventory.Read(document)) is { } sharedReason)
             return new CandidateAssessment(null, sharedReason, [], null);
@@ -559,7 +573,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         PdfDocument document, FontInventoryEntry entry, string ruleId, FontId holder,
         Type0Font type0, CidFont cid, byte[] bytes, int faceIndex, string? sourceDescription)
     {
-        ByteGateOutcome gates = RunByteGates(bytes, faceIndex, entry.FamilyName);
+        // simpleFont: false — this substitute will hold a CIDFont's /FontFile2, never a simple font's
+        // /FontFile or /FontFile3, so the Table-124-for-a-simple-font gate (and the PFB-segments gate,
+        // which only Type1 programs reach anyway) must not run here. See RunByteGates' doc comment.
+        ByteGateOutcome gates = RunByteGates(bytes, faceIndex, entry.FamilyName, simpleFont: false);
         if (gates.HardBlockReason is not null)
             return new ReplacementResult(Decline(entry, ruleId, gates.HardBlockReason), gates.Classified?.Format);
 
@@ -587,6 +604,20 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 $"'{resolvedFamily}' cannot honestly render {mapResult.Unresolvable.Count} of this "
                 + $"font's characters (first: CID {first}), so replacing the program would still leave "
                 + "missing glyphs — Pellucid makes no partial replacements."),
+                classified.Format);
+        }
+
+        // entry.UsedCodes empty (reachable only through AssessReplacementCandidate — Propose() never
+        // attributes a font-program finding to a font with no used codes) leaves CidToGid empty too:
+        // ToStreamBytes' "GID 0 for every CID not in the map" rule would then write EVERY CID to
+        // .notdef, silently regressing a font that draws nothing into one that (if it ever drew
+        // anything) would draw nothing but .notdef. Distinct from the Unresolvable case above — there
+        // is no partial coverage to report, because there is nothing to cover.
+        if (mapResult.CidToGid.Count == 0)
+        {
+            return new ReplacementResult(Decline(entry, ruleId,
+                "This font draws no characters Pellucid can resolve, so there is nothing a replacement "
+                + "program could restore."),
                 classified.Format);
         }
 
@@ -815,8 +846,21 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// <see cref="ProposeEmbed"/> so the automatic and manual paths cannot silently drift apart. Every
     /// reason string here is verbatim what <see cref="ProposeEmbed"/> produced before the extraction:
     /// its own tests pin them, and this refactor must not move them.
+    ///
+    /// <para><paramref name="simpleFont"/> (default true, matching every pre-existing caller's
+    /// behaviour unchanged) gates the PFB-segments and <see cref="SimpleFontProgramSubtype"/> checks:
+    /// both exist to predict a refusal <c>PdfDocumentEditor.EmbedProgram</c> makes for a SIMPLE font
+    /// dictionary specifically — <see cref="SimpleFontProgramSubtype"/>'s own doc comment states
+    /// "callers must not reach here for a Type0 wrapper or a CIDFont dictionary". <c>BuildReplacement</c>
+    /// (F-4b Task 5) calls here for a COMPOSITE font's substitute, where a CID-keyed CFF/OpenType
+    /// candidate is not a Table-124 violation at all — it is exactly what a CIDFontType0 descendant is
+    /// permitted to carry — so running that gate there would produce a factually inverted decline
+    /// ("...permits only for a composite font, never for a simple one" about a font that IS composite).
+    /// Classification and the fsType check still run either way: those are facts about the bytes
+    /// themselves, not about which kind of PDF font dictionary will hold them.</para>
     /// </summary>
-    private static ByteGateOutcome RunByteGates(byte[] bytes, int faceIndex, string familyName)
+    private static ByteGateOutcome RunByteGates(
+        byte[] bytes, int faceIndex, string familyName, bool simpleFont = true)
     {
         ClassifiedProgram? classified = FontProgramClassifier.Classify(bytes, faceIndex);
         if (classified is null)
@@ -844,47 +888,52 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "will not embed it.");
         }
 
-        // Calls the SAME validation PdfDocumentEditor.EmbedProgram runs (Type1PfbSegments.Split,
-        // shared rather than mirrored) so the two cannot diverge: a bare PFA with no PFB segment
-        // markers, a corrupt segment table, or a PFB with no binary segment all throw
-        // NotSupportedException there — declined here instead, so a proposal never reaches Save only
-        // to throw there. The split result itself is discarded; only whether it succeeds matters, since
-        // EmbedProgram (Task 5) re-splits the SAME bytes when the proposal is actually applied.
-        if (classified.Format == FontProgramFormat.Type1)
+        if (simpleFont)
         {
+            // Calls the SAME validation PdfDocumentEditor.EmbedProgram runs (Type1PfbSegments.Split,
+            // shared rather than mirrored) so the two cannot diverge: a bare PFA with no PFB segment
+            // markers, a corrupt segment table, or a PFB with no binary segment all throw
+            // NotSupportedException there — declined here instead, so a proposal never reaches Save
+            // only to throw there. The split result itself is discarded; only whether it succeeds
+            // matters, since EmbedProgram re-splits the SAME bytes when the proposal is actually
+            // applied.
+            if (classified.Format == FontProgramFormat.Type1)
+            {
+                try
+                {
+                    Type1PfbSegments.Split(classified.Program);
+                }
+                catch (NotSupportedException)
+                {
+                    return new ByteGateOutcome(classified, metrics, resolvedFamily,
+                        $"The Type 1 program found for '{familyName}' does not declare its segment "
+                        + "lengths, which are required to embed it.");
+                }
+            }
+
+            // Calls the SAME reconciliation PdfDocumentEditor.EmbedProgram runs
+            // (SimpleFontProgramSubtype.Resolve, shared rather than mirrored) for the SAME reason the
+            // Type1PfbSegments check above exists: the editor refuses a program ISO 32000-2 Table 124
+            // permits in no simple font dictionary (a CID-keyed CFF, an OpenType program whose shape
+            // cannot be read), and a proposal that survived to throw at Save time would be a crash
+            // where an honest decline belongs. Reachable only when simpleFont is true — everything
+            // reaching here on THAT path is a SIMPLE font (composites declined by the caller before
+            // RunByteGates is ever invoked), so the simple-font question is the right one to ask. The
+            // current subtype is passed as null deliberately: it only chooses between /Type1 and
+            // /MMType1 for a program this ACCEPTS, and never affects whether it throws, so the planner
+            // does not need to have resolved the dictionary to predict a refusal. The answer itself is
+            // discarded; only whether it succeeds matters, since EmbedProgram re-resolves it when the
+            // proposal is applied.
             try
             {
-                Type1PfbSegments.Split(classified.Program);
+                SimpleFontProgramSubtype.Resolve(classified.Format, classified.Program, currentSubtype: null);
             }
-            catch (NotSupportedException)
+            catch (NotSupportedException ex)
             {
                 return new ByteGateOutcome(classified, metrics, resolvedFamily,
-                    $"The Type 1 program found for '{familyName}' does not declare its segment "
-                    + "lengths, which are required to embed it.");
+                    $"The font program found for '{familyName}' cannot be embedded in this font: "
+                    + ex.Message);
             }
-        }
-
-        // Calls the SAME reconciliation PdfDocumentEditor.EmbedProgram runs
-        // (SimpleFontProgramSubtype.Resolve, shared rather than mirrored) for the SAME reason the
-        // Type1PfbSegments check above exists: the editor refuses a program ISO 32000-2 Table 124
-        // permits in no simple font dictionary (a CID-keyed CFF, an OpenType program whose shape
-        // cannot be read), and a proposal that survived to throw at Save time would be a crash where
-        // an honest decline belongs. Everything reaching here is a SIMPLE font — composites declined
-        // by the caller before RunByteGates is ever invoked — so the simple-font question is the right
-        // one to ask. The current subtype is passed as null deliberately: it only chooses between
-        // /Type1 and /MMType1 for a program this ACCEPTS, and never affects whether it throws, so the
-        // planner does not need to have resolved the dictionary to predict a refusal. The answer
-        // itself is discarded; only whether it succeeds matters, since EmbedProgram re-resolves it
-        // when the proposal is applied.
-        try
-        {
-            SimpleFontProgramSubtype.Resolve(classified.Format, classified.Program, currentSubtype: null);
-        }
-        catch (NotSupportedException ex)
-        {
-            return new ByteGateOutcome(classified, metrics, resolvedFamily,
-                $"The font program found for '{familyName}' cannot be embedded in this font: "
-                + ex.Message);
         }
 
         return new ByteGateOutcome(classified, metrics, resolvedFamily, null);
