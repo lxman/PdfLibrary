@@ -16,7 +16,7 @@ internal static class ZeroAdvanceSfntFixture
     private static void U32(List<byte> b, uint v)
     { b.Add((byte)(v >> 24)); b.Add((byte)(v >> 16)); b.Add((byte)(v >> 8)); b.Add((byte)v); }
 
-    public static byte[] Head()
+    public static byte[] Head(ushort macStyle = 0)
     {
         var b = new List<byte>();
         U32(b, 0x00010000);            // version 1.0
@@ -27,7 +27,7 @@ internal static class ZeroAdvanceSfntFixture
         U16(b, 1000);                  // unitsPerEm
         for (var i = 0; i < 16; i++) b.Add(0); // created + modified (2 × longdatetime)
         U16(b, 0); U16(b, 0); U16(b, 0); U16(b, 0); // xMin yMin xMax yMax
-        U16(b, 0);                     // macStyle
+        U16(b, macStyle);              // macStyle (bit 0 bold, bit 1 italic — issue 43's style pin)
         U16(b, 8);                     // lowestRecPPEM
         U16(b, 2);                     // fontDirectionHint
         U16(b, 0);                     // indexToLocFormat
@@ -88,8 +88,8 @@ internal static class ZeroAdvanceSfntFixture
         return b.ToArray();
     }
 
-    public static byte[] FontBytes(ushort gid1Advance = 0) => MinimalSfnt.Build(
-        ("head", Head()),
+    public static byte[] FontBytes(ushort gid1Advance = 0, ushort macStyle = 0) => MinimalSfnt.Build(
+        ("head", Head(macStyle)),
         ("maxp", Maxp(2)),
         ("hhea", Hhea(2)),
         ("hmtx", Hmtx(gid1Advance)),

@@ -473,7 +473,22 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         }
 
         FontId holder = entry.ProgramHolderId ?? entry.Id;
-        FontRequest request = BuildRequest(document, entry, holder);
+
+        // Controller ruling (tracker issue 43): the DECLARED style can lie. 0000_0000024.pdf points
+        // three descriptors (Regular / ",Bold" / ",Italic", italic flag + /ItalicAngle -11 and all)
+        // at ONE upright embedded program, and every reference renderer (poppler/MuPDF/Ghostscript,
+        // oracle-verified 2026-08-17) draws that program and ignores the declarations — so a
+        // replacement styled from the declaration visibly restyles the page in every viewer.
+        // When the program being replaced parses and carries a head table, its macStyle is the
+        // ground truth for what the reader was actually drawing, and the replacement's style follows
+        // it. A program with no head table (bare CFF descendant) states nothing, so the
+        // name/descriptor derivation in BuildRequest stays the only signal there.
+        (bool Bold, bool Italic)? programStyle =
+            type0.GetEmbeddedMetrics() is { IsValid: true, HasHeadTable: true } original
+                ? (original.IsBold, original.IsItalic)
+                : null;
+
+        FontRequest request = BuildRequest(document, entry, holder, programStyle);
         FontMatch? match = fonts.Resolve(request);
 
         ReplacementResult primary = match is null
@@ -512,6 +527,13 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         {
             (bool serif, bool mono, bool bold, bool italic) =
                 SubstituteFontResolver.Classify(request.BaseFont, type0.DescendantDescriptor);
+            // Issue 43 again: Classify reads style tokens off the NAME (",Italic") and the
+            // descriptor — the same declarations the program may contradict. Serif/mono stay with
+            // Classify (a program states nothing about family class), but bold/italic follow the
+            // program whenever it has spoken, or the synthetic name re-imports the lie the primary
+            // request just scrubbed.
+            if (programStyle is { } style)
+                (bold, italic) = style;
             string synthetic = SubstituteFontResolver.SyntheticStd14Name(serif, mono, bold, italic);
 
             if (!string.Equals(synthetic, request.BaseFont, StringComparison.OrdinalIgnoreCase))
@@ -1032,14 +1054,22 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
     /// <summary>
     /// The face to search for. <paramref name="entry"/>'s <c>FamilyName</c> (<c>/BaseFont</c> with any
-    /// subset tag stripped) is the search term; Bold/Italic are derived preferentially from that
-    /// name's own suffix convention (<c>-Bold</c>, <c>,Italic</c>, <c>BoldItalic</c> — a stronger
-    /// signal than a flags bit), falling back to the program holder's <c>/FontDescriptor</c> Italic
-    /// flag (bit 6, 0x40) and a non-zero <c>/ItalicAngle</c> when the name says nothing.
+    /// subset tag stripped) is the search term. Bold/Italic come from
+    /// <paramref name="programStyle"/> — the EMBEDDED program's own <c>head.macStyle</c> — whenever
+    /// the caller has one (tracker issue 43: declarations lie, and reference renderers draw the
+    /// program). Only when the program has stated nothing are they derived from the name's suffix
+    /// convention (<c>-Bold</c>, <c>,Italic</c>, <c>BoldItalic</c> — a stronger signal than a flags
+    /// bit), falling back to the program holder's <c>/FontDescriptor</c> Italic flag (bit 6, 0x40)
+    /// and a non-zero <c>/ItalicAngle</c> when the name says nothing.
     /// </summary>
-    private static FontRequest BuildRequest(PdfDocument document, FontInventoryEntry entry, FontId programHolder)
+    private static FontRequest BuildRequest(
+        PdfDocument document, FontInventoryEntry entry, FontId programHolder,
+        (bool Bold, bool Italic)? programStyle = null)
     {
         string name = entry.FamilyName;
+        if (programStyle is { } fromProgram)
+            return new FontRequest(name, fromProgram.Bold, fromProgram.Italic);
+
         string lower = name.ToLowerInvariant();
         bool bold = lower.Contains("bold");
         bool italic = lower.Contains("italic") || lower.Contains("oblique");

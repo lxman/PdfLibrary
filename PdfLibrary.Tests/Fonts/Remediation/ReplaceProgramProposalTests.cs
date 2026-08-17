@@ -77,8 +77,13 @@ public sealed class ReplaceProgramProposalTests
     private static PdfDocument DeadCid2Doc(
         IReadOnlyList<(int Code, string Hex)>? toUnicodeEntries = null,
         bool includeToUnicode = true,
-        string contentHex = "0000 0041") =>
-        ReplaceProgramFixtures.DeadCid2Doc(toUnicodeEntries, includeToUnicode, contentHex);
+        string contentHex = "0000 0041",
+        string baseFont = "ABCDEF+DeadFace",
+        int flags = 4,
+        int? italicAngle = null,
+        ushort macStyle = 0) =>
+        ReplaceProgramFixtures.DeadCid2Doc(
+            toUnicodeEntries, includeToUnicode, contentHex, baseFont, flags, italicAngle, macStyle);
 
     /// <summary>See <see cref="ReplaceProgramFixtures.DeadCid0Doc"/>.</summary>
     private static PdfDocument DeadCid0Doc() => ReplaceProgramFixtures.DeadCid0Doc();
@@ -499,6 +504,72 @@ public sealed class ReplaceProgramProposalTests
         Assert.Contains("no partial", decline.Reason);
     }
 
+    /// <summary>Answers every request with the same bytes (like <see cref="StubFontProvider"/>) but
+    /// RECORDS each <see cref="FontRequest"/> it sees, so a test can assert what style the planner
+    /// actually asked for — tracker issue 43's scenario turns on exactly that.</summary>
+    private sealed class RecordingFontProvider(byte[]? bytes) : ISystemFontProvider
+    {
+        public readonly List<FontRequest> Requests = [];
+
+        public FontMatch? Resolve(FontRequest request)
+        {
+            Requests.Add(request);
+            return bytes is null ? null : new FontMatch(bytes, 0);
+        }
+
+        public IReadOnlyCollection<string> GetAvailableFontFamilies() =>
+            throw new NotSupportedException("The planner does not call GetAvailableFontFamilies.");
+        public bool IsFontAvailable(string familyName) =>
+            throw new NotSupportedException("The planner does not call IsFontAvailable.");
+        public string? FindFirstAvailable(IEnumerable<string> candidates) =>
+            throw new NotSupportedException("The planner does not call FindFirstAvailable.");
+        public void RefreshCache() =>
+            throw new NotSupportedException("The planner does not call RefreshCache.");
+    }
+
+    [Fact]
+    public void A_faux_italic_declaration_defers_to_the_upright_embedded_program()
+    {
+        // Tracker issue 43: 0000_0000024.pdf declares three faces (Regular/Bold/Italic) that all
+        // share ONE upright embedded program — the ",Italic" name suffix, descriptor flag 0x40, and
+        // /ItalicAngle -11 are declarations the glyphs contradict. Every reference renderer
+        // (poppler/MuPDF/Ghostscript, oracle-verified 2026-08-17) draws the embedded program and
+        // ignores the declared style, so a replacement styled from the DECLARATION visibly restyles
+        // the page. When the program being replaced parses, its own head.macStyle (regular in this
+        // fixture) is the ground truth for the replacement's style — not the name, not the flags.
+        PdfDocument doc = DeadCid2Doc(
+            baseFont: "ABCDEF+DeadFace,Italic", flags: 4 | 0x40, italicAngle: -11);
+        var provider = new RecordingFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        FontRequest request = Assert.Single(provider.Requests);
+        Assert.False(request.Italic,
+            "the embedded program's head.macStyle is regular, so the replacement request must not "
+            + "ask for an italic face no matter what the name/descriptor declare");
+        Assert.False(request.Bold);
+    }
+
+    [Fact]
+    public void The_synthetic_retry_derives_its_name_from_the_program_style_not_the_declaration()
+    {
+        // The same style-lie, but through the issue-39 synthetic retry — the path that actually
+        // produced the italic pick on 0000_0000024.pdf: Classify reads the ",Italic" name token and
+        // derives "Helvetica-Oblique", which a bundled provider answers with an italic face. With an
+        // upright program the retry must ask for plain "Helvetica" instead; this provider answers
+        // ONLY that name, so the proposal closes exactly when the retry name is upright.
+        PdfDocument doc = DeadCid2Doc(
+            baseFont: "ABCDEF+DeadFace,Italic", flags: 4 | 0x40, italicAngle: -11);
+        var provider = new RawVsSyntheticFontProvider(
+            "DeadFace,Italic", null, "Helvetica", LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
+    }
+
     // ── manual path (AssessReplacementCandidate) ───────────────────────────────────────────────
 
     [Fact]
@@ -535,5 +606,25 @@ public sealed class ReplaceProgramProposalTests
         Assert.NotNull(result.HardBlockReason);
         Assert.Contains("no characters", result.HardBlockReason);
         Assert.Null(result.Proposal);
+    }
+
+    [Fact]
+    public void A_genuinely_italic_program_is_replaced_with_an_italic_face_even_when_nothing_declares_it()
+    {
+        // The inverse pin for issue 43's program-first rule: head.macStyle italic (bit 1) with a
+        // style-silent name and descriptor must yield an ITALIC replacement request. Under the old
+        // declaration-only derivation this request came out regular — the same fidelity loss as the
+        // faux-italic case, mirrored.
+        PdfDocument doc = DeadCid2Doc(macStyle: 0x2);
+        var provider = new RecordingFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        FontRequest request = Assert.Single(provider.Requests);
+        Assert.True(request.Italic,
+            "the embedded program's head.macStyle declares italic, and the program outranks the "
+            + "style-silent name/descriptor");
+        Assert.False(request.Bold);
     }
 }

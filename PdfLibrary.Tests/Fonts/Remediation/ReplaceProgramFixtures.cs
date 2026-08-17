@@ -67,30 +67,42 @@ internal static class ReplaceProgramFixtures
     /// finding; CID 0x41 → a live-by-the-rule glyph). /ToUnicode carries
     /// <paramref name="toUnicodeEntries"/> (default CID 0 → 'A', CID 0x41 → 'B') unless
     /// <paramref name="includeToUnicode"/> is false.
+    ///
+    /// <para><paramref name="baseFont"/>, <paramref name="flags"/> and <paramref name="italicAngle"/>
+    /// exist for the issue-43 style-lie shape: a DECLARATION claiming a style (",Italic" name suffix,
+    /// descriptor italic flag 0x40, non-zero /ItalicAngle) that the embedded program — whose
+    /// <c>head.macStyle</c> is always regular in this fixture — does not carry.</para>
     /// </summary>
     public static PdfDocument DeadCid2Doc(
         IReadOnlyList<(int Code, string Hex)>? toUnicodeEntries = null,
         bool includeToUnicode = true,
-        string contentHex = "0000 0041")
+        string contentHex = "0000 0041",
+        string baseFont = "ABCDEF+DeadFace",
+        int flags = 4, // symbolic
+        int? italicAngle = null,
+        ushort macStyle = 0)
     {
         IReadOnlyList<(int Code, string Hex)> entries = toUnicodeEntries ?? [(0x0000, "0041"), (0x0041, "0042")];
 
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450, macStyle: macStyle);
         var doc = new PdfDocument();
         doc.AddObject(3, 0, new PdfStream(
             new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
-        doc.AddObject(2, 0, new PdfDictionary
+        var descriptorDict = new PdfDictionary
         {
             [N("Type")] = N("FontDescriptor"),
-            [N("FontName")] = N("ABCDEF+DeadFace"),
-            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontName")] = N(baseFont),
+            [N("Flags")] = new PdfInteger(flags),
             [N("FontFile2")] = Ref(3),
-        });
+        };
+        if (italicAngle is { } angle)
+            descriptorDict[N("ItalicAngle")] = new PdfInteger(angle);
+        doc.AddObject(2, 0, descriptorDict);
         var descendant = new PdfDictionary
         {
             [N("Type")] = N("Font"),
             [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+DeadFace"),
+            [N("BaseFont")] = N(baseFont),
             [N("FontDescriptor")] = Ref(2),
             [N("CIDToGIDMap")] = N("Identity"),
             [N("DW")] = new PdfInteger(1000),
@@ -103,7 +115,7 @@ internal static class ReplaceProgramFixtures
         {
             [N("Type")] = N("Font"),
             [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+DeadFace"),
+            [N("BaseFont")] = N(baseFont),
             [N("Encoding")] = N("Identity-H"),
             [N("DescendantFonts")] = new PdfArray(Ref(4)),
         };

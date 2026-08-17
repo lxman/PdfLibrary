@@ -131,6 +131,13 @@ internal class EmbeddedFontMetrics
     /// </summary>
     public bool IsItalic => _headTable?.MacStyle.HasFlag(MacStyle.Italic) ?? false;
 
+    /// <summary>Whether <see cref="IsBold"/>/<see cref="IsItalic"/> are a statement by the program
+    /// (a parsed <c>head.macStyle</c>) rather than the property's structural-null default. A bare
+    /// CFF or Type 1 program has no <c>head</c> table, so its style is simply UNKNOWN here — a
+    /// caller choosing between the program's style and a declared one (tracker issue 43) must not
+    /// read that unknown as "regular".</summary>
+    public bool HasHeadTable => _headTable is not null;
+
     /// <summary>The parsed OS/2 table, or null when the program has none (bare CFF, Type 1).</summary>
     internal Os2Table? Os2 => _os2Table;
 
