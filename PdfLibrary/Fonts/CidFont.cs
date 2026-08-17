@@ -88,6 +88,21 @@ internal class CidFont : PdfFont
     /// </summary>
     internal PdfDictionary RawDictionary => _dictionary;
 
+    /// <summary>
+    /// True when this descendant's own <c>/Subtype</c> is <c>/CIDFontType0</c> — the CID-keyed CFF
+    /// descendant, where the CFF charset genuinely IS the CID→GID authority
+    /// (<c>CoreTextRenderer.ResolveGlyphId</c>'s <c>cidKeyedCff</c> discriminator, issue 36; mirrors
+    /// <c>FontProgramRule.CheckType0</c>'s identically-named field, read there via
+    /// <c>ConformanceContext.ResolveName</c>). False for CIDFontType2 — including a CIDFontType2
+    /// descendant whose <c>/FontFile2</c> happens to carry CFF outlines wrapped in an OpenType/OTTO
+    /// sfnt, where <c>/CIDToGIDMap</c> alone is the mapping authority and the OTTO's own charset is
+    /// not CID-keyed at all. The renderer has no <c>ConformanceContext</c>, so this resolves the
+    /// (possibly indirect — ISO 32000-1 7.3.10 permits any object indirect) <c>/Subtype</c> itself,
+    /// via this font's own <c>_document</c>.
+    /// </summary>
+    internal bool IsCidFontType0 =>
+        (Resolve(_dictionary.Get("Subtype")) as PdfName)?.Value == "CIDFontType0";
+
     public override double GetCharacterWidth(int charCode)
     {
         if (_widths is not null && _widths.TryGetValue(charCode, out double width))
