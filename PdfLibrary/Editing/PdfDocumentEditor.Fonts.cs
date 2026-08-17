@@ -444,6 +444,40 @@ public sealed partial class PdfDocumentEditor
     }
 
     /// <summary>
+    /// Replaces <paramref name="font"/>'s EXISTING <c>/FontFile2</c> program bytes — the F-4a width
+    /// patch's write. <paramref name="font"/> is the PROGRAM HOLDER (design §3.2). Deliberately does
+    /// NOT touch the descriptor's metric entries, <c>/Widths</c>/<c>/W</c>, or <c>/Subtype</c>: the
+    /// program differs from its predecessor only in advance widths, the declared widths are what
+    /// preserves layout (§5.1), and rewriting anything else would smuggle a second change into an
+    /// operation whose whole contract is "only the advances moved" — the contrast with
+    /// <see cref="EmbedProgram"/>'s six obligations is intentional and load-bearing.
+    /// </summary>
+    /// <exception cref="ArgumentException">No dictionary at <paramref name="font"/>.</exception>
+    /// <exception cref="InvalidOperationException">The font has no /FontDescriptor or no /FontFile2 —
+    /// the planner only proposes patches for fonts that have both; this is the backstop.</exception>
+    public void ReplaceProgramBytes(FontId font, byte[] program)
+    {
+        ArgumentNullException.ThrowIfNull(program);
+        if (program.Length == 0)
+            throw new ArgumentException("A font program cannot be empty.", nameof(program));
+
+        PdfDictionary fontDict = ResolveFontDictionary(font);
+        if (Resolve(fontDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
+            throw new InvalidOperationException(
+                $"Font object {font.ObjectNumber} has no /FontDescriptor; ReplaceProgramBytes only "
+                + "rewrites an existing embedded program.");
+        if (Resolve(descriptor.Get("FontFile2")) is not PdfStream)
+            throw new InvalidOperationException(
+                $"Font object {font.ObjectNumber} has no /FontFile2; ReplaceProgramBytes only "
+                + "rewrites an existing sfnt program.");
+
+        var streamDict = new PdfDictionary();
+        streamDict.Set("Length1", new PdfInteger(program.Length));
+        PdfIndirectReference streamRef = _document.RegisterObject(new PdfStream(streamDict, program));
+        descriptor.Set("FontFile2", streamRef);
+    }
+
+    /// <summary>
     /// True when <paramref name="font"/> names an object that exists and is a dictionary. Lets
     /// callers (Task 11's save stage) distinguish a font an earlier Organize stage already deleted
     /// (skip and report) from a malformed proposal (a bug that must surface) — both would otherwise

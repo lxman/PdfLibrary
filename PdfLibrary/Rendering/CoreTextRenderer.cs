@@ -214,7 +214,9 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
     }
 
     // === Verbatim port of TextRenderer.ResolveGlyphId (603-702) ===
-    private static ushort ResolveGlyphId(EmbeddedFontMetrics metrics, PdfFont font, ushort charCode,
+    // internal (not private): PdfLibrary.Tests exercises this directly (testability precedent:
+    // FontRemediationPlanner.ProposeEmbed is internal-for-testing the same way).
+    internal static ushort ResolveGlyphId(EmbeddedFontMetrics metrics, PdfFont font, ushort charCode,
         out string? resolvedGlyphName)
     {
         ushort glyphId;
@@ -274,8 +276,14 @@ internal sealed class CoreTextRenderer(IRenderTarget target, GlyphPathService gl
         {
             if (font is Type0Font { DescendantFont: CidFont cidFont })
             {
+                // Issue 36: the discriminator must be the DESCENDANT's /Subtype, not the program's
+                // flavour. CIDFontType0's CFF charset IS the CID->GID authority (MapCidToGid passes
+                // CIDs through untouched there); CIDFontType2's authority is /CIDToGIDMap ALONE,
+                // even when its /FontFile2 happens to carry CFF outlines in an OTTO wrapper — in
+                // that shape metrics.IsCffFont is true but the OTTO's charset is not CID-keyed, and
+                // re-mapping the already-correct gid through it scrambles every glyph.
                 int cidAfterMap = cidFont.MapCidToGid(charCode);
-                glyphId = metrics.IsCffFont
+                glyphId = metrics.IsCffFont && cidFont.IsCidFontType0
                     ? metrics.GetGlyphIdByCid((ushort)cidAfterMap)
                     : (ushort)cidAfterMap;
             }

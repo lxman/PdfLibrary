@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using PdfLibrary.Conformance;
+using PdfLibrary.Conformance.Rules;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts.Embedded;
@@ -24,7 +26,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 {
     private static readonly HashSet<string> HandledRules =
         new(StringComparer.Ordinal)
-        { "pdfa2u-tounicode", "pdfa2u-tounicode-values", "font-embedded", "font-subset-coverage" };
+        {
+            "pdfa2u-tounicode", "pdfa2u-tounicode-values", "font-embedded", "font-subset-coverage",
+            "font-program",
+        };
 
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
     {
@@ -57,6 +62,19 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         ArgumentNullException.ThrowIfNull(findings);
 
         IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(document);
+
+        // font-program findings carry three sub-clauses under ONE rule id, and the projected tuples
+        // have no clause — so the planner re-derives the sub-clause map by running the rule itself
+        // (the rule IS the oracle; a second hand-rolled predicate would drift). Lazy: only documents
+        // with a font-program finding pay for it. Always evaluated under PdfA2b — the A-2/UA-1
+        // sub-numbers are identical (FontProgramRule's own class doc), and FontInventory.Read already
+        // reads inventory under a PdfA2b context for the same reason.
+        var fontProgramFindings = new Lazy<ILookup<int, Finding>>(() =>
+            new FontProgramRule()
+                .Check(new ConformanceContext(document, ConformanceProfile.PdfA2b))
+                .Where(f => f.ObjectNumber is not null)
+                .ToLookup(f => f.ObjectNumber!.Value));
+
         var proposals = new List<FontProposal>();
         // Keyed on (Id.ObjectNumber, ProgramHolderId.ObjectNumber, RuleId) rather than just Id: FontId
         // is a single-field record struct (FontId(int ObjectNumber)), so keying on Id ALONE is really
@@ -85,6 +103,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             {
                 "font-embedded" => ProposeEmbed(document, entry, ruleId),
                 "font-subset-coverage" => ProposeRegenerate(document, entry, ruleId),
+                "font-program" => ProposeWidthPatch(document, entry, ruleId, fontProgramFindings.Value),
                 _ => ProposeToUnicode(document, entry, ruleId),
             };
 
@@ -206,6 +225,164 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             programHolder, ruleId,
             $"{resolvedFamily} ({style}) — from your system fonts",
             classified.Program, classified.Format);
+    }
+
+    /// <summary>
+    /// Proposes patching the embedded program's hmtx advances to the declared widths for a
+    /// font-program 6.2.11.5 finding, or explains why not (spec §2). Internal for the same
+    /// hand-built-entry testability reason as <see cref="ProposeEmbed"/>. Direction is always
+    /// program := declared: /Widths and /W position text in conforming viewers, so they are never
+    /// touched (§5.1 pin).
+    /// </summary>
+    internal FontProposal ProposeWidthPatch(
+        PdfDocument document, FontInventoryEntry entry, string ruleId, ILookup<int, Finding> ruleFindings)
+    {
+        if (!entry.IsAddressable)
+        {
+            return Decline(entry, ruleId,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so Pellucid cannot address its font program to correct it.");
+        }
+
+        FontId holder = entry.ProgramHolderId ?? entry.Id;
+
+        List<Finding> mine = ruleFindings[entry.Id.ObjectNumber]
+            .Concat(entry.ProgramHolderId is { } ph && ph.ObjectNumber != entry.Id.ObjectNumber
+                ? ruleFindings[ph.ObjectNumber]
+                : Enumerable.Empty<Finding>())
+            .ToList();
+        bool hasWidth = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.5");
+        bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
+
+        if (!hasWidth)
+        {
+            return Decline(entry, ruleId, mine.Count == 0
+                ? "The font-program finding could not be reproduced against this document's current "
+                  + "state, so there is nothing Pellucid can safely correct."
+                : "This font's finding is a missing glyph, not a width mismatch — replacing a font "
+                  + "program is not something Pellucid does yet.");
+        }
+
+        switch (entry.Kind)
+        {
+            case FontKind.Type3:
+                return Decline(entry, ruleId,
+                    "Type 3 font widths come from each glyph's own drawing procedure, which Pellucid "
+                    + "does not rewrite.");
+            case FontKind.Type0CidType0 or FontKind.Type1:
+                return Decline(entry, ruleId,
+                    "This font's program stores its advances in CFF charstrings, which Pellucid "
+                    + "cannot yet rewrite.");
+        }
+
+        if (document.GetObject(holder.ObjectNumber) is not PdfDictionary holderDict
+            || Resolve(document, holderDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
+        {
+            return Decline(entry, ruleId,
+                "The font has no /FontDescriptor, so there is no embedded program to correct.");
+        }
+        if (Resolve(document, descriptor.Get("FontFile2")) is not PdfStream fontFile2)
+        {
+            return Decline(entry, ruleId,
+                "The font's program is not carried as a /FontFile2 sfnt, so its advances cannot be "
+                + "patched in place.");
+        }
+
+        if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+            || PdfFont.Create(fontDict, document) is not { } pdfFont)
+        {
+            return Decline(entry, ruleId,
+                "This font's dictionary could not be read, so Pellucid cannot compare its widths.");
+        }
+        EmbeddedFontMetrics? metrics = pdfFont.GetEmbeddedMetrics();
+        if (metrics is null || !metrics.IsValid)
+        {
+            return Decline(entry, ruleId,
+                "The embedded font program could not be parsed, so correcting its advances would be "
+                + "a guess.");
+        }
+
+        IEnumerable<WidthComparison> tuples;
+        if (entry.Kind == FontKind.Type0CidType2)
+        {
+            if (pdfFont is not Type0Font type0 || type0.DescendantFont is not CidFont cid
+                || type0.EncodingName is not ("Identity-H" or "Identity-V"))
+            {
+                return Decline(entry, ruleId,
+                    "This composite font's encoding is not an Identity CMap, so Pellucid cannot "
+                    + "prove which glyph each character selects.");
+            }
+            tuples = ProgramWidthResolver.Composite(
+                cid, metrics, cidKeyedCff: false, entry.UsedCodes.Distinct());
+        }
+        else
+        {
+            if (Resolve(document, fontDict.Get("Widths")) is not PdfArray widths)
+            {
+                return Decline(entry, ruleId,
+                    "The font declares no /Widths array, so there is nothing to reconcile the "
+                    + "program against.");
+            }
+            tuples = ProgramWidthResolver.Simple(
+                pdfFont, metrics, widths, entry.UsedCodes.Distinct(), isTrueType: true);
+        }
+
+        int upm = metrics.UnitsPerEm <= 0 ? 1000 : metrics.UnitsPerEm;
+        var targetByGid = new Dictionary<ushort, double>();
+        double worst = 0;
+        foreach (WidthComparison w in tuples)
+        {
+            worst = Math.Max(worst, Math.Abs(w.Declared - w.Program));
+
+            if (w.Declared == 0 && w.Program > 0)
+            {
+                return Decline(entry, ruleId,
+                    "The document declares a zero width where the program has a real advance; "
+                    + "patching the program to zero would visibly change layout in renderers that "
+                    + "fall back to program advances, so Pellucid leaves it alone.");
+            }
+            if (targetByGid.TryGetValue(w.Gid, out double existing))
+            {
+                if (Math.Abs(existing - w.Declared) > FontProgramRule.WidthTolerance)
+                {
+                    return Decline(entry, ruleId,
+                        "Two character codes share one glyph but declare different widths, so no "
+                        + "single program advance can satisfy both.");
+                }
+                continue;
+            }
+            targetByGid[w.Gid] = w.Declared;
+        }
+
+        if (worst <= FontProgramRule.WidthTolerance)
+        {
+            return Decline(entry, ruleId,
+                "The width mismatch could not be reproduced over the character codes this document "
+                + "uses, so there is nothing Pellucid can safely correct.");
+        }
+
+        var advanceByGid = new Dictionary<ushort, ushort>();
+        foreach ((ushort gid, double declared) in targetByGid)
+        {
+            var fontUnits = (ushort)Math.Clamp(Math.Round(declared * upm / 1000.0), 0, ushort.MaxValue);
+            if (fontUnits != metrics.GetAdvanceWidth(gid))
+                advanceByGid[gid] = fontUnits;
+        }
+        if (advanceByGid.Count == 0)
+        {
+            return Decline(entry, ruleId,
+                "Every used glyph's program advance already matches its declared width after "
+                + "rounding, so there is nothing to patch.");
+        }
+
+        byte[] program = fontFile2.GetDecodedData(document.Decryptor);
+        byte[]? patched = SfntAdvancePatcher.Patch(program, advanceByGid, out string? failReason);
+        if (patched is null)
+        {
+            return Decline(entry, ruleId, $"The font program cannot be patched: {failReason}");
+        }
+
+        return new PatchWidthsProposal(holder, ruleId, patched, advanceByGid.Count, worst, hasOther);
     }
 
     /// <summary>
@@ -425,6 +602,18 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
     private static DeclineProposal Decline(FontInventoryEntry entry, string ruleId, string reason) =>
         new(entry.Id, ruleId, reason);
+
+    // Trailing dotted ISO clause, e.g. "6.2.11.5" out of "ISO 19005-2:2011, 6.2.11.5". Ported from
+    // PdfLibrary.Tests' ParitySnapshot.ClauseKey (same regex, same behavior) rather than referenced:
+    // that type lives in the TEST project and is internal there, so the main library cannot see it.
+    private static readonly Regex TrailingClause = new(@"(\d+(?:\.\d+)*)\s*$", RegexOptions.Compiled);
+
+    private static string? ClauseKey(string? findingClause)
+    {
+        if (string.IsNullOrWhiteSpace(findingClause)) return null;
+        Match m = TrailingClause.Match(findingClause);
+        return m.Success ? m.Groups[1].Value : null;
+    }
 
     private static PdfObject? Resolve(PdfDocument document, PdfObject? obj) =>
         obj is PdfIndirectReference reference ? document.GetObject(reference.ObjectNumber) : obj;

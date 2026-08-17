@@ -38,7 +38,7 @@ namespace PdfLibrary.Conformance.Rules;
 ///     (<c>/Widths</c> for simple, <c>/W</c>÷<c>/DW</c> for CID) must match the embedded program's advance
 ///     width. Implemented for simple TrueType fonts (advance from glyf/hmtx via the cmap), simple CFF / Type1C
 ///     fonts with an embedded charset (advance from the CFF CharString via a glyph-name→charset-GID lookup —
-///     see <see cref="SimpleCffAdvance"/>; predefined-charset CFF is excluded, see the note in
+///     see <see cref="ProgramWidthResolver"/>; predefined-charset CFF is excluded, see the note in
 ///     <see cref="CheckSimple"/>) and both Type0 descendant kinds — CIDFontType2 (glyf/hmtx) and
 ///     CIDFontType0 (CFF CharString: encoded width nominalWidthX+delta, else the FD's defaultWidthX), and
 ///     Type3 (the CharProc's <c>d0</c>/<c>d1</c> operator gives the glyph-space program width directly — see
@@ -68,7 +68,7 @@ internal sealed class FontProgramRule : IConformanceRule
     /// that gap with wide margin on both sides, keeping false positives at zero while still catching every
     /// fail file the rule's supported font types reach.
     /// </summary>
-    private const double WidthTolerance = 10.0;
+    internal const double WidthTolerance = 10.0;
 
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
@@ -128,23 +128,15 @@ internal sealed class FontProgramRule : IConformanceRule
                 notdefHit = true; // a shown code with no glyph in the subset renders as .notdef
         }
 
-        // metrics (6.2.11.5) IS render-mode-exempt — walks only visibleCodes (was: codes).
+        // metrics (6.2.11.5) IS render-mode-exempt — walks only visibleCodes (was: codes). Both
+        // descendant kinds are width-checked: CIDFontType2's advance comes from glyf/hmtx, and
+        // CIDFontType0's from the CFF CharString (encoded width = nominalWidthX + delta, else the FD's
+        // defaultWidthX — resolved per-FD in the CFF parser). CIDFontType0 was formerly excluded because
+        // a nominalWidthX/defaultWidthX confusion made omitted-width glyphs diverge by hundreds of units;
+        // with that fixed, a conformant CFF-keyed font round-trips well inside the tolerance.
         double worstDiff = 0;
-        foreach (int code in visibleCodes)
-        {
-            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code);
-            if (gid == 0)
-                continue; // .notdef has no meaningful width to compare
-
-            // Both descendant kinds are width-checked: CIDFontType2's advance comes from glyf/hmtx, and
-            // CIDFontType0's from the CFF CharString (encoded width = nominalWidthX + delta, else the FD's
-            // defaultWidthX — resolved per-FD in the CFF parser). CIDFontType0 was formerly excluded because
-            // a nominalWidthX/defaultWidthX confusion made omitted-width glyphs diverge by hundreds of units;
-            // with that fixed, a conformant CFF-keyed font round-trips well inside the tolerance.
-            double declared = cid.GetCharacterWidth(code);
-            double program = Scale(metrics, metrics.GetAdvanceWidth((ushort)gid));
-            worstDiff = Math.Max(worstDiff, Math.Abs(declared - program));
-        }
+        foreach (WidthComparison w in ProgramWidthResolver.Composite(cid, metrics, cidKeyedCff, visibleCodes))
+            worstDiff = Math.Max(worstDiff, Math.Abs(w.Declared - w.Program));
 
         if (notdefHit && notdefReported.Add(font.BaseFont))
             yield return Make(context, font, "8",
@@ -218,21 +210,8 @@ internal sealed class FontProgramRule : IConformanceRule
             yield break;
 
         double worstDiff = 0;
-        foreach (int code in visibleCodes)
-        {
-            int index = code - font.FirstChar;
-            if (index < 0 || index >= widths.Count)
-                continue; // no declared width for this code — cannot compare
-
-            double? program = isTrueType
-                ? TrueTypeAdvance(font, metrics, code)
-                : SimpleCffAdvance(font, metrics, code);
-            if (program is null)
-                continue; // glyph could not be resolved — skip rather than guess (FP-safe)
-
-            double declared = widths[index].ToDouble();
-            worstDiff = Math.Max(worstDiff, Math.Abs(declared - program.Value));
-        }
+        foreach (WidthComparison w in ProgramWidthResolver.Simple(font, metrics, widths, visibleCodes, isTrueType))
+            worstDiff = Math.Max(worstDiff, Math.Abs(w.Declared - w.Program));
 
         if (worstDiff > WidthTolerance && metricsReported.Add(font.BaseFont))
             yield return Make(context, font, "5",
@@ -300,59 +279,6 @@ internal sealed class FontProgramRule : IConformanceRule
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Resolves a simple TrueType code to its program advance width, preferring the encoding's Unicode
-    /// value (via the Adobe Glyph List) so the WinAnsi 0x80–0x9F remap band — where the raw code is not the
-    /// Unicode code point (euro, smart quotes, dashes …) — is looked up correctly, falling back to the raw
-    /// code. Returns null when neither path finds a glyph.
-    /// </summary>
-    private static double? TrueTypeAdvance(PdfFont font, EmbeddedFontMetrics metrics, int code)
-    {
-        string? glyphName = font.Encoding?.GetGlyphName(code);
-        string? unicode = glyphName is null ? null : GlyphList.GetUnicode(glyphName);
-        if (!string.IsNullOrEmpty(unicode))
-        {
-            // GetUnicodeAdvanceWidth resolves the glyph through the cmap and returns its advance width
-            // (in font units) directly — scale it, do NOT feed it back through GetAdvanceWidth.
-            ushort widthViaUnicode = metrics.GetUnicodeAdvanceWidth(char.ConvertToUtf32(unicode, 0));
-            if (widthViaUnicode > 0)
-                return Scale(metrics, widthViaUnicode);
-        }
-
-        ushort gid = metrics.GetGlyphId((ushort)code);
-        if (gid == 0)
-            return null;
-        // A zero advance from the raw-code fallback is treated as a lookup artefact, not a
-        // measurement — a Mac-Roman subtable can hand back a real gid for a control code whose hmtx
-        // advance is 0 (issue 26). Unmeasurable, same as gid 0; never a width to compare. This also
-        // suppresses the case where the hmtx advance is genuinely 0 against a nonzero /Widths entry —
-        // a case veraPDF would flag — so it is a deliberate recall-for-precision trade, the same kind
-        // as the gid==0 guard above: we accept missing a real mismatch on that narrow slice rather than
-        // false-positiving on the far more common lookup-artefact case. The veraPDF corpus + parity
-        // oracles confirm no locked-clause regression from taking that trade.
-        ushort advance = metrics.GetAdvanceWidth(gid);
-        return advance == 0 ? null : Scale(metrics, advance);
-    }
-
-    /// <summary>
-    /// Resolves a simple CFF (Type1C) code to its program advance width, the CFF way: code → glyph name (via the
-    /// PDF <c>/Encoding</c>, so a custom <c>/Differences</c> name is honoured) → GID (via the CFF charset, using
-    /// <see cref="EmbeddedFontMetrics.GetGlyphIdByName"/>) → CharString advance. Returns null when the code has no
-    /// glyph name, or the name is not in the charset (GID 0 / .notdef) — skipped rather than guessed, keeping the
-    /// check false-positive-safe. Deliberately avoids <see cref="EmbeddedFontMetrics.GetAdvanceWidthByName"/>,
-    /// which resolves only real Type1 programs and returns a hard-coded 500 for CFF — feeding that into the width
-    /// comparison would itself be the false positive.
-    /// </summary>
-    private static double? SimpleCffAdvance(PdfFont font, EmbeddedFontMetrics metrics, int code)
-    {
-        string? glyphName = font.Encoding?.GetGlyphName(code);
-        if (string.IsNullOrEmpty(glyphName))
-            return null;
-
-        ushort gid = metrics.GetGlyphIdByName(glyphName);
-        return gid == 0 ? null : Scale(metrics, metrics.GetAdvanceWidth(gid));
-    }
 
     /// <summary>Confidence-tagged resolution of a simple-font code to its program glyph.</summary>
     private enum SimpleGlyphResolution { Present, NotDef, Unknown }
@@ -433,13 +359,6 @@ internal sealed class FontProgramRule : IConformanceRule
         return metrics.GetGlyphIdByCffEncoding((ushort)code) == 0
             ? SimpleGlyphResolution.NotDef
             : SimpleGlyphResolution.Present;
-    }
-
-    /// <summary>Scales a program advance width from font units to PDF 1000-per-em glyph space.</summary>
-    private static double Scale(EmbeddedFontMetrics metrics, int advanceInFontUnits)
-    {
-        int upm = metrics.UnitsPerEm <= 0 ? 1000 : metrics.UnitsPerEm;
-        return advanceInFontUnits * 1000.0 / upm;
     }
 
     /// <summary>True when the font's /FontDescriptor /Flags bit 3 (symbolic) is set. Mirrors

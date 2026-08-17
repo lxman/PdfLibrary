@@ -1,8 +1,10 @@
 using System.Numerics;
 using PdfLibrary.Builder;
 using PdfLibrary.Content;
+using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 using PdfLibrary.Fonts;
+using PdfLibrary.Fonts.Embedded;
 using PdfLibrary.Rendering;
 using PdfLibrary.Structure;
 
@@ -10,6 +12,79 @@ namespace PdfLibrary.Tests.Rendering;
 
 public class CoreTextRendererTests
 {
+    // Issue 36 LocalOnly reproducer gate — corpus resolution copied verbatim from
+    // FontProgramWidthRepairCorpusTests' Corpus() (same repo discipline, each corpus test file
+    // keeps its own copy).
+    private const string Local708CorpusVariable = "PDFLIBRARY_LOCAL708_CORPUS";
+    private const string Local708DefaultCorpus = @"D:\PdfCorpora\real-world\local-708";
+
+    private static string? Local708Corpus()
+    {
+        string root = Environment.GetEnvironmentVariable(Local708CorpusVariable) ?? Local708DefaultCorpus;
+        return Directory.Exists(root) ? root : null;
+    }
+
+    /// <summary>
+    /// Issue 36 reality gate: on the REAL PowerBASIC document (whose CIDFontType2 body fonts embed
+    /// CFF outlines in an OTTO-flavoured /FontFile2 — poppler's own warning names this exact
+    /// mismatch), the fixed <see cref="CoreTextRenderer.ResolveGlyphId"/> must resolve every shown
+    /// code through /CIDToGIDMap alone, never the CFF charset. No pixel assertion: the render digest
+    /// has no baseline for this document (F-4a's frozen conformance floors never touched this path).
+    /// </summary>
+    [Fact]
+    [Trait("Category", "LocalOnly")]
+    public void PowerBasic_Cid2OttoFont_ResolvesUsedCodesViaCidToGidMap_NotTheCharset()
+    {
+        string? root = Local708Corpus();
+        Assert.SkipUnless(root is not null, $"corpus not present at {Local708DefaultCorpus} (LocalOnly)");
+
+        string path = Path.Combine(root!, "PowerBASIC Compiler for Windows v10.0.pdf");
+        using PdfDocument doc = PdfDocument.Load(path);
+        PdfPage? page = doc.GetPage(9); // page 10 (0-based) — a body page, per the tracker reproducer
+        Assert.NotNull(page);
+        PdfResources? resources = page!.GetResources();
+        Assert.NotNull(resources);
+
+        // Find a Type0 font whose descendant is CIDFontType2 with a CFF-flavoured (OTTO) program —
+        // issue 36's exact shape (metrics.IsCffFont true, descendant NOT CIDFontType0).
+        Type0Font? target = null;
+        EmbeddedFontMetrics? targetMetrics = null;
+        CidFont? targetCid = null;
+        foreach (string name in resources!.GetFontNames())
+        {
+            if (resources.GetFontObject(name) is not Type0Font t0) continue;
+            if (t0.DescendantFont is not CidFont cid || cid.IsCidFontType0) continue;
+            EmbeddedFontMetrics? metrics = t0.GetEmbeddedMetrics();
+            if (metrics is not { IsValid: true, IsCffFont: true }) continue;
+            target = t0;
+            targetMetrics = metrics;
+            targetCid = cid;
+            break;
+        }
+        Assert.True(target is not null,
+            "expected a CIDFontType2-with-OTTO-program font on PowerBASIC page 10 (issue 36 fixture)");
+
+        // Gather codes the page actually shows with this font (GlyphUsageCollector's Identity-H
+        // CIDFontType2 path records the raw 2-byte code as-is, without applying /CIDToGIDMap).
+        var collector = new GlyphUsageCollector(resources, doc);
+        foreach (PdfStream contentStream in page.GetContents())
+            collector.ProcessOperators(PdfContentParser.Parse(contentStream.GetDecodedData(doc.Decryptor)));
+
+        PdfStream? fontFile2 = target!.DescendantDescriptor?.GetFontFile2Stream();
+        Assert.NotNull(fontFile2);
+        Assert.True(collector.Result.TryGetValue(fontFile2!, out FontUsage? usage),
+            "no glyph usage collected for the issue-36 target font on page 10");
+
+        List<ushort> codes = usage!.Gids.Take(10).ToList();
+        Assert.NotEmpty(codes);
+
+        foreach (ushort code in codes)
+        {
+            ushort resolved = CoreTextRenderer.ResolveGlyphId(targetMetrics!, target, code, out _);
+            Assert.Equal(targetCid!.MapCidToGid(code), resolved);
+        }
+    }
+
     [Fact]
     public void Render_EmbeddedFontText_EmitsFillPathPerVisibleGlyph()
     {
