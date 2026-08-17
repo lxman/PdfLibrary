@@ -40,6 +40,38 @@ public sealed class ReplaceProgramProposalTests
     private static byte[] BfCharBytes(IReadOnlyList<(int Code, string Hex)> entries) =>
         ReplaceProgramFixtures.BfCharBytes(entries);
 
+    /// <summary>
+    /// Answers DIFFERENTLY depending on the requested <c>/BaseFont</c> — unlike
+    /// <see cref="StubFontProvider"/>, which returns the same bytes regardless of what the request
+    /// asks for (by design, to prove the planner reports what it actually got). Tracker issue 39's
+    /// scenario needs exactly this: a RAW family name resolving to one face, and the synthetic
+    /// Standard-14 fallback name <c>SubstituteFontResolver.Classify</c> +
+    /// <c>SyntheticStd14Name</c> derive for it resolving to a DIFFERENT one — the shape
+    /// <c>SystemFontLocator</c>'s own step-3 ladder produces on a real machine (a non-base-35
+    /// family resolving through a CFF system face, e.g. Nimbus) that
+    /// <see cref="BundledStandard14Provider"/> never gets to intercept, because it only recognises
+    /// a request whose ORIGINAL family is itself a base-35 alias.
+    /// </summary>
+    private sealed class RawVsSyntheticFontProvider(
+        string rawFamily, byte[]? rawBytes, string syntheticName, byte[]? syntheticBytes) : ISystemFontProvider
+    {
+        public FontMatch? Resolve(FontRequest request) => request.BaseFont switch
+        {
+            _ when request.BaseFont == rawFamily => rawBytes is null ? null : new FontMatch(rawBytes, 0),
+            _ when request.BaseFont == syntheticName => syntheticBytes is null ? null : new FontMatch(syntheticBytes, 0),
+            _ => null,
+        };
+
+        public IReadOnlyCollection<string> GetAvailableFontFamilies() =>
+            throw new NotSupportedException("The planner does not call GetAvailableFontFamilies.");
+        public bool IsFontAvailable(string familyName) =>
+            throw new NotSupportedException("The planner does not call IsFontAvailable.");
+        public string? FindFirstAvailable(IEnumerable<string> candidates) =>
+            throw new NotSupportedException("The planner does not call FindFirstAvailable.");
+        public void RefreshCache() =>
+            throw new NotSupportedException("The planner does not call RefreshCache.");
+    }
+
     /// <summary>See <see cref="ReplaceProgramFixtures.DeadCid2Doc"/> — shared with Task 6's apply
     /// tests so the two suites cannot silently diverge on the document shape the gate relies on.</summary>
     private static PdfDocument DeadCid2Doc(
@@ -290,6 +322,62 @@ public sealed class ReplaceProgramProposalTests
         DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
         Assert.Contains("not a TrueType program", decline.Reason);
         Assert.DoesNotContain("Table 124", decline.Reason);
+    }
+
+    [Fact]
+    public void A_cff_faced_raw_family_retries_the_synthetic_std14_name_and_closes()
+    {
+        // Tracker issue 39, fix round 1 (controller ruling, spec §3 step 1 "Liberation precedence"):
+        // this fixture's /BaseFont is "ABCDEF+DeadFace" -> FamilyName "DeadFace", which matches no
+        // serif/mono/bold/italic keyword, so Classify+SyntheticStd14Name derive "Helvetica" for it —
+        // exactly what SystemFontLocator's own step 3 would try. The raw name resolves to a CFF
+        // face (declines "not a TrueType program" on its own); the SAME synthetic name a real
+        // BundledStandard14Provider answers for "helvetica" resolves TrueType — the retry must find
+        // it and close, with SourceDescription naming what was ACTUALLY written (Liberation), not
+        // the raw family the document named.
+        PdfDocument doc = DeadCid2Doc();
+        byte[] cff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
+        var provider = new RawVsSyntheticFontProvider("DeadFace", cff, "Helvetica", LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
+        Assert.Contains("Liberation Sans", proposal.SourceDescription);
+    }
+
+    [Fact]
+    public void No_face_at_all_for_the_raw_family_also_retries_the_synthetic_std14_name_and_closes()
+    {
+        // The OTHER retry trigger (match is null, not just a wrong format): no face at all for the
+        // raw family, but the synthetic name resolves a usable TrueType face.
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new RawVsSyntheticFontProvider("DeadFace", null, "Helvetica", LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
+    }
+
+    [Fact]
+    public void A_coverage_gap_decline_does_not_retry_the_synthetic_name()
+    {
+        // Scope check: the retry fires ONLY when the primary attempt found no face at all, or one
+        // this operation cannot use (non-TrueType) — a genuine coverage gap is a fact about the
+        // substitute FOUND (already TrueType), not about which name was requested, so retrying
+        // could not fix it and must not be attempted. Proven by making the SYNTHETIC name resolve
+        // to a CFF face: if the retry incorrectly fired anyway, BuildReplacement would run against
+        // it and the decline reason would flip to "not a TrueType program" — the assertion below
+        // catches that regression, not just "the decline is still a decline".
+        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0000, "E000")], contentHex: "0000");
+        byte[] cff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
+        var provider = new RawVsSyntheticFontProvider("DeadFace", LiberationSansBytes(), "Helvetica", cff);
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("no partial", decline.Reason);
     }
 
     // ── manual path (AssessReplacementCandidate) ───────────────────────────────────────────────

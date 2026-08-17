@@ -266,16 +266,24 @@ public class FontProgramWidthRepairCorpusTests
             "reason; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
-    // F-4b Task 9 re-pin (2026-08-17): 0000_0000769.pdf's composite .notdef finding (object 1424,
-    // AGaramond-Semibold) now ALSO routes through the planner (FontRemediationPlanner.Propose ->
-    // ProposeProgramReplace, landed this program) and, measured against this machine's real font
-    // resolution (FontProgramReplaceCorpusTests.Mixed_document_declines_its_notdef_finding_for_a_
-    // different_reason_than_its_width_finding), itself DECLINES — 'AGaramond-Semibold' resolves here
-    // to a CFF-flavoured face, so the v1 "TrueType substitute only" gate declines it, for a reason
-    // distinct from (but the SAME record TYPE as) object 2032's charstring decline this test pins.
-    // Both proposals are DeclineProposal, so Assert.Empty(patches) and the total-count formula below
-    // already admit the new proposal kind without any assertion change — this comment documents the
-    // measured fact for a future reader, per the F-4b Task 9 brief's own "re-pin" instruction.
+    // F-4b Task 9 re-pin (2026-08-17, corrected in fix round 1 — the ORIGINAL version of this comment
+    // misattributed a decline reason measured on a DIFFERENT test's planner): 0000_0000769.pdf's
+    // composite .notdef finding (object 1424, AGaramond-Semibold) now ALSO routes through the
+    // planner (FontRemediationPlanner.Propose -> ProposeProgramReplace, landed this program) and
+    // itself DECLINES. THIS test's ProposeFor (above) constructs its planner with
+    // `new FontRemediationPlanner(new StubFontProvider(null))` — StubFontProvider(null) resolves
+    // NO face for ANY request — so object 1424's decline here is the plain "no font matching
+    // '...' is installed on this computer" branch (fonts.Resolve returns null before any format
+    // classification happens), NOT a "not a TrueType program" decline. The "not a TrueType
+    // program" reason for THIS SAME document's THIS SAME object is what
+    // FontProgramReplaceCorpusTests.Mixed_document_declines_its_notdef_finding_for_a_different_
+    // reason_than_its_width_finding measures instead, because THAT suite's ProposeFor uses a REAL
+    // font provider (EmbedProgramRoundTripTests.DeterministicFonts) against this machine's actual
+    // installed fonts — a different planner construction, a different (also legitimate) decline
+    // reason for the same finding. Both proposals here are DeclineProposal, so Assert.Empty(patches)
+    // and the total-count formula below already admit the new proposal kind without any assertion
+    // change — this comment documents the measured fact for a future reader, per the F-4b Task 9
+    // brief's own "re-pin" instruction.
     [Theory]
     [InlineData("0000_0000769.pdf")]
     [InlineData("0000_0000293.pdf")]

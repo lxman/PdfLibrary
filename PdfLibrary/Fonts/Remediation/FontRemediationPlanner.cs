@@ -475,16 +475,64 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         FontId holder = entry.ProgramHolderId ?? entry.Id;
         FontRequest request = BuildRequest(document, entry, holder);
         FontMatch? match = fonts.Resolve(request);
-        if (match is null)
+
+        ReplacementResult primary = match is null
+            ? new ReplacementResult(
+                Decline(entry, ruleId,
+                    $"No font matching '{entry.FamilyName}' is installed on this computer. Installing "
+                    + "it would let Pellucid replace the deficient program."),
+                null)
+            : BuildReplacement(
+                document, entry, ruleId, holder, type0, cid, match.Data, match.FaceIndex,
+                sourceDescription: null);
+
+        if (primary.Proposal is ReplaceProgramProposal)
+            return primary.Proposal;
+
+        // Controller ruling (tracker issue 39): SystemFontLocator's OWN ladder can resolve a
+        // non-base-35 family (e.g. 'AlArabiya', 'HelveticaNeue-Medium') through its internal
+        // synthetic Standard-14 fallback (step 3 of SystemFontLocator.Resolve) into a
+        // CFF-flavoured system face (Nimbus Sans/Roman on this machine, ranked ahead of Liberation
+        // by Base35Aliases) that BundledStandard14Provider never gets a chance to intercept —
+        // that provider only recognises a REQUEST whose ORIGINAL family is itself a base-35 alias,
+        // never a name synthesised deep inside the locator's own ladder after the provider has
+        // already been asked (and declined) once. Spec §3 step 1 mandates Liberation precedence,
+        // which this silently violated for every non-alias-named font. Retrying explicitly, with
+        // the SAME synthetic name SubstituteFontResolver.Load derives (Classify + SyntheticStd14Name
+        // — the identical two calls the locator's own fallback makes), gives the bundled provider
+        // the one chance it needs.
+        //
+        // Scoped to exactly one retry, and only when the primary attempt found NO face at all, or a
+        // face this operation cannot use (non-TrueType — Decision 2 above) — a genuine glyph
+        // coverage gap or any other decline is a fact about the SUBSTITUTE FOUND, not about which
+        // name was requested, so retrying there could not change the outcome and stays untouched.
+        // Strictly the REPLACEMENT path: F-2 embed resolution and render substitution
+        // (SubstituteFontResolver itself) are unaffected — see tracker issue 39 for those.
+        if (match is null || primary.Format is not FontProgramFormat.TrueType)
         {
-            return Decline(entry, ruleId,
-                $"No font matching '{entry.FamilyName}' is installed on this computer. Installing "
-                + "it would let Pellucid replace the deficient program.");
+            (bool serif, bool mono, bool bold, bool italic) =
+                SubstituteFontResolver.Classify(request.BaseFont, type0.DescendantDescriptor);
+            string synthetic = SubstituteFontResolver.SyntheticStd14Name(serif, mono, bold, italic);
+
+            if (!string.Equals(synthetic, request.BaseFont, StringComparison.OrdinalIgnoreCase))
+            {
+                FontMatch? retryMatch = fonts.Resolve(request with { BaseFont = synthetic });
+                if (retryMatch is not null)
+                {
+                    ReplacementResult retry = BuildReplacement(
+                        document, entry, ruleId, holder, type0, cid, retryMatch.Data, retryMatch.FaceIndex,
+                        sourceDescription: null);
+                    if (retry.Proposal is ReplaceProgramProposal)
+                        return retry.Proposal;
+                }
+            }
         }
 
-        return BuildReplacement(
-            document, entry, ruleId, holder, type0, cid, match.Data, match.FaceIndex,
-            sourceDescription: null).Proposal;
+        // Neither attempt produced a usable replacement — keep the PRIMARY decline: it names the
+        // font the document actually requested (or the fact that nothing matched it at all), which
+        // is more informative than a decline about the synthetic retry name the caller never asked
+        // for by that name.
+        return primary.Proposal;
     }
 
     /// <summary>
