@@ -137,14 +137,35 @@ public class FontProgramWidthRepairCorpusTests
     public void Mixed_document_patches_cid2_and_declines_cid0()
     {
         // Re-measured post-issue-35 (FontProgramRule now dedups per font OBJECT, not base-font
-        // name): 66 width findings before, 52 patch proposals / 14 charstring declines, 46
-        // remaining after applying every patch (2026-08-17). The pre-fix run would have
-        // undercounted here — sibling indirect objects sharing a /BaseFont previously collapsed
-        // onto one finding/proposal apiece — so a rise from whatever this test saw before issue
-        // 35 is the fix working as intended, not a regression. The assertions below stay
-        // relative (before/after, not hardcoded totals) specifically so they do not need
-        // re-pinning every time the corpus or the rule's detection surface shifts; this comment
-        // records the measured shape for the record.
+        // name), 2026-08-17: 66 width findings before (was ~4 patchable + 1 CID0 decline pre-fix
+        // — F-4a Task 8's "1 partial" bucket for this doc). Per-object dedup surfaces 52 of those
+        // 66 as proposable and 14 as CFF-charstring declines (52 + 14 = 66, reconciles). But the
+        // 52 proposals are NOT 52 independent physical patches: FontInventory groups them onto
+        // only 4 distinct program HOLDERS (4 physical /FontFile2 CIDFontType2 programs, each
+        // shared by many separate Type0 wrapper objects on different pages/text runs — 16, 16, 12,
+        // and 8 sibling findings per holder). FontRemediationPlanner proposes one
+        // PatchWidthsProposal PER LOGICAL FONT regardless of holder sharing (its `seen` dedup at
+        // line 90 is keyed by (Id, ProgramHolderId, RuleId), not by ProgramHolderId alone — by
+        // design, per that method's own doc comment, for an unrelated FontId(0)-collision reason).
+        // PdfDocumentEditor.ReplaceProgramBytes performs a full-stream REPLACE of the holder's
+        // /FontFile2 on every call (FontDescriptor.Set, not a merge) — so when ApplyAndRecheck
+        // applies all 52 proposals in sequence, every proposal after the first one FOR THE SAME
+        // HOLDER overwrites its predecessor's patched bytes wholesale. Only the last-applied
+        // proposal per holder actually survives; the other 51 - 4 = 48 are silently discarded.
+        // Measured result: 46 findings remain after applying all 52 patches — the 14 legitimate
+        // CFF/CID0 declines (never touched) plus 32 of the 52 patch-targeted findings whose own
+        // proposal was clobbered by a later sibling's proposal on the same shared holder (only 20
+        // of the 52 patch-targeted findings actually close: some incidentally, because the
+        // surviving per-holder patch happens to also fix the same glyphs a sibling finding needed).
+        // 14 + 32 = 46 reconciles; 66 - 46 = 20 genuinely closed. This is a real defect in the F-4a
+        // remediation pipeline (the planner does not merge multiple proposals that target one
+        // physical program holder before apply) — invisible before this task because the pre-fix
+        // by-base-font-name dedup almost always collapsed this doc's many sibling Type0 wrappers
+        // down to ~1 finding per holder, so the collision never arose. Out of scope for the
+        // Task 2 rule-level dedup fix (FontProgramRule.DedupKey) to correct; flagged for the
+        // planner/apply layer. The assertions below stay relative (before/after, not hardcoded
+        // totals) so they do not need re-pinning every time the corpus or detection surface
+        // shifts; this comment records the measured shape and the reconciled mechanism.
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
@@ -168,9 +189,11 @@ public class FontProgramWidthRepairCorpusTests
             f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
         Assert.True(afterWidthCount < beforeWidthCount,
             $"{file}: width findings did not drop (before {beforeWidthCount}, after {afterWidthCount}) " +
-            "— the CID0 font's finding should legitimately remain, but the CID2 fonts' should not.");
+            "— at minimum the CID0 font's finding should legitimately remain while some CID2 " +
+            "findings close; MOST remaining findings here are actually CID2 findings clobbered by " +
+            "a same-holder sibling's patch, not legitimate CID0 holdouts (see the comment above).");
         Assert.True(afterWidthCount > 0,
-            $"{file}: expected the CID0 font's width finding to legitimately remain, but all cleared.");
+            $"{file}: expected at least the CID0 font's width finding to legitimately remain, but all cleared.");
 
         Dictionary<string, int> afterByRule = CountByRule(after);
         foreach ((string ruleId, int beforeCount) in beforeByRule)
