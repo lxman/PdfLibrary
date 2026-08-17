@@ -50,6 +50,44 @@ internal static class WidthPatchFixtures
         return doc;
     }
 
+    /// <summary>A font whose only font-program finding is 6.2.11.8 (a shown code encoded to
+    /// ".notdef" via /Differences); no /Widths array, so 6.2.11.5 can never fire. Shared with F-4b
+    /// Task 5 (<c>ReplaceProgramProposalTests</c>'s simple-font-scope decline fact), which needs the
+    /// same simple-font notdef fixture <see cref="WidthPatchProposalTests"/> already established.
+    /// </summary>
+    public static PdfDocument NotdefOnlyDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEE+ZeroAdvance"),
+            [N("Flags")] = new PdfInteger(32),     // non-symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEE+ZeroAdvance"),
+            [N("FirstChar")] = new PdfInteger(65),
+            [N("LastChar")] = new PdfInteger(65),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("BaseEncoding")] = N("WinAnsiEncoding"),
+                [N("Differences")] = new PdfArray(new PdfInteger(65), N(".notdef")),
+            },
+            [N("FontDescriptor")] = Ref(2),
+        });
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <41> Tj ET")));
+        AddSinglePageCatalog(doc, font: 1);
+        return doc;
+    }
+
     public static void AddSinglePageCatalog(PdfDocument doc, int font)
     {
         doc.AddObject(22, 0, new PdfDictionary

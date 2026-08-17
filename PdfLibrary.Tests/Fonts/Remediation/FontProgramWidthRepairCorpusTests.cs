@@ -232,9 +232,12 @@ public class FontProgramWidthRepairCorpusTests
         // resolve to gid 0, so ProgramWidthResolver.Composite's own `gid == 0` skip removes them
         // from the width comparison (the spurious "far beyond the program's glyph count" width
         // patch/decline this test used to pin is gone), and FontProgramRule.CheckType0's `gid == 0`
-        // walk instead raises the honest 6.2.11.8 (.notdef) finding for both fonts. The planner has
-        // no remediation for a missing-glyph finding, so it still declines — but now for the true
-        // reason ("missing glyph, not a width mismatch"), not a corrupted-gid side effect.
+        // walk instead raises the honest 6.2.11.8 (.notdef) finding for both fonts.
+        //
+        // F-4b Task 5 re-pin: a 6.2.11.8 finding now dispatches to ProposeProgramReplace (whole-face
+        // swap), not the old "missing glyph, not a width mismatch" width-patch decline — this document
+        // still declines, since ProposeFor's StubFontProvider(null) never resolves a substitute for
+        // either AlArabiya font, but now for THAT reason ("no font matching '...' is installed").
         //
         // veraPDF oracle (`verapdf.bat --format json -f 2b 0000_0000024.pdf`, 2026-08-17): 4 failed
         // rules total — 6.6.4 (missing PDF/A Identification), 6.2.11.4.1 x2 checks (Helvetica-Bold
@@ -258,9 +261,9 @@ public class FontProgramWidthRepairCorpusTests
         // Direct check that every proposal is one of the two kinds above — "patches empty" alone only
         // proves nothing patched; it says nothing about a third proposal kind slipping through unseen.
         Assert.Equal(total, patches.Count + declines.Count);
-        Assert.True(declines.All(d => d.Reason.Contains("missing glyph, not a width mismatch")),
-            $"{file}: expected every decline to cite the missing-glyph (.notdef) reason, not a width " +
-            "mismatch; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
+        Assert.True(declines.All(d => d.Reason.Contains("is installed on this computer")),
+            $"{file}: expected every decline to cite the whole-program-replace no-substitute-installed " +
+            "reason; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
     [Theory]

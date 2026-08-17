@@ -1,0 +1,403 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using CffTestFixtures;
+using PdfLibrary.Conformance.Rules;
+using PdfLibrary.Core.Primitives;
+using PdfLibrary.Fonts;
+using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Fonts.Remediation;
+using PdfLibrary.Structure;
+using PdfLibrary.Tests.Fonts;
+using PdfLibrary.Tests.Fonts.Embedded;
+using Xunit;
+
+namespace PdfLibrary.Tests.Fonts.Remediation;
+
+/// <summary>
+/// F-4b Task 5: <see cref="ReplaceProgramProposal"/>, the planner's whole-face-swap arm
+/// (<see cref="FontRemediationPlanner.ProposeProgramReplace"/>, dispatched from
+/// <see cref="FontRemediationPlanner.ProposeWidthPatch"/> whenever a font-program finding's clause is
+/// 6.2.11.8), and its manual counterpart <see cref="FontRemediationPlanner.AssessReplacementCandidate"/>.
+///
+/// <para>Fixtures are Type0/CIDFontType2 (or Type0/CIDFontType0) documents assembled the
+/// <c>ResolveGlyphIdCid2OttoTests.BuildCid2OttoFont</c> way — hand-built objects, no
+/// <c>TestFixtures.Path(...)</c> helper. The shared CID2 fixture's program is
+/// <see cref="ZeroAdvanceSfntFixture"/>'s TrueType builder (2 glyphs only), an Identity
+/// /CIDToGIDMap, and a /ToUnicode CMap that turns the dead CID 0 into a real character —
+/// the mechanism spec §3 relies on for a dead code with no other honest source of truth.</para>
+/// </summary>
+public sealed class ReplaceProgramProposalTests
+{
+    private static PdfName N(string s) => new(s);
+    private static PdfIndirectReference Ref(int n) => new(n, 0);
+
+    private static FontRemediationPlanner Planner(ISystemFontProvider? provider = null) =>
+        new(provider ?? new StubFontProvider(null));
+
+    private static byte[] LiberationSansBytes() =>
+        File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "Resources", "Liberation", "LiberationSans-Regular.ttf"));
+
+    /// <summary>Same bfchar-block builder as <c>CidReplacementMapTests.BfChar</c>, but returning raw
+    /// stream bytes (rather than a parsed <see cref="ToUnicodeCMap"/>) so a fixture can attach it as a
+    /// <c>/ToUnicode</c> stream object.</summary>
+    private static byte[] BfCharBytes(IReadOnlyList<(int Code, string Hex)> entries)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("/CIDInit /ProcSet findresource begin");
+        sb.AppendLine("12 dict begin");
+        sb.AppendLine("begincmap");
+        sb.AppendLine($"{entries.Count} beginbfchar");
+        foreach ((int code, string hex) in entries)
+            sb.AppendLine($"<{code:X4}> <{hex}>");
+        sb.AppendLine("endbfchar");
+        sb.AppendLine("endcmap");
+        sb.AppendLine("CMapName currentdict /CMap defineresource pop");
+        sb.AppendLine("end");
+        sb.AppendLine("end");
+        return Encoding.ASCII.GetBytes(sb.ToString());
+    }
+
+    private static void AddCidSystemInfo(PdfDictionary descendant)
+    {
+        descendant[N("CIDSystemInfo")] = new PdfDictionary
+        {
+            [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+            [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+            [N("Supplement")] = new PdfInteger(0),
+        };
+    }
+
+    /// <summary>
+    /// The shared dead-CID Type0/CIDFontType2 fixture (spec brief): program =
+    /// <see cref="ZeroAdvanceSfntFixture.FontBytes"/> (2 glyphs), descendant /CIDToGIDMap /Identity,
+    /// /DW 1000, /W [65 [500]]; wrapper /Encoding /Identity-H, /BaseFont /ABCDEF+DeadFace. Content
+    /// shows <paramref name="contentHex"/> (default <c>0000 0041</c>: CID 0 → .notdef → the 6.2.11.8
+    /// finding; CID 0x41 → a live-by-the-rule glyph). /ToUnicode carries
+    /// <paramref name="toUnicodeEntries"/> (default CID 0 → 'A', CID 0x41 → 'B') unless
+    /// <paramref name="includeToUnicode"/> is false.
+    /// </summary>
+    private static PdfDocument DeadCid2Doc(
+        IReadOnlyList<(int Code, string Hex)>? toUnicodeEntries = null,
+        bool includeToUnicode = true,
+        string contentHex = "0000 0041")
+    {
+        IReadOnlyList<(int Code, string Hex)> entries = toUnicodeEntries ?? [(0x0000, "0041"), (0x0041, "0042")];
+
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+DeadFace"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+DeadFace"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = N("Identity"),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        AddCidSystemInfo(descendant);
+        doc.AddObject(4, 0, descendant);
+
+        var type0Dict = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+DeadFace"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+        };
+        if (includeToUnicode)
+        {
+            doc.AddObject(5, 0, new PdfStream(new PdfDictionary(), BfCharBytes(entries)));
+            type0Dict[N("ToUnicode")] = Ref(5);
+        }
+        doc.AddObject(1, 0, type0Dict);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{contentHex}> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font: 1);
+        return doc;
+    }
+
+    /// <summary>A dead-CID Type0/CIDFontType0 (CID-keyed CFF descendant) fixture: CID 0 is ALWAYS
+    /// .notdef (<see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>'s own hardcoded rule), so this needs
+    /// no working charset to reproduce the 6.2.11.8 finding — <see cref="MinimalCff.BuildCid"/>'s
+    /// charset-less CID-keyed CFF is enough. /ToUnicode maps CID 0 → 'A'.</summary>
+    private static PdfDocument DeadCid0Doc()
+    {
+        byte[] font = MinimalCff.BuildCid(numGlyphs: 2);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+DeadCid0"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile3")] = Ref(3),
+        });
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType0"),
+            [N("BaseFont")] = N("ABCDEF+DeadCid0"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("DW")] = new PdfInteger(1000),
+        };
+        AddCidSystemInfo(descendant);
+        doc.AddObject(4, 0, descendant);
+
+        var type0Dict = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+DeadCid0"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+        };
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
+        type0Dict[N("ToUnicode")] = Ref(5);
+        doc.AddObject(1, 0, type0Dict);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font: 1);
+        return doc;
+    }
+
+    /// <summary>Two Type0 wrappers (objects 1 and 7) sharing ONE descendant CIDFont (object 4) — the
+    /// <c>ProgramHolderId != Id</c> composite fixture where two logical fonts share a program holder,
+    /// making the controller's issue-38 guard reachable through <c>Propose</c> for real (previously
+    /// untested per program memory). Only wrapper 1 draws anything; wrapper 2 exists purely as a
+    /// sibling in the SAME page's font resources, which is all <c>FontInventory.Read</c> needs to see
+    /// it (a resource-presence walk, not a usage walk).</summary>
+    private static PdfDocument TwoWrappersSharedHolderDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+Shared"),
+            [N("Flags")] = new PdfInteger(4),
+            [N("FontFile2")] = Ref(3),
+        });
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+Shared"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = N("Identity"),
+            [N("DW")] = new PdfInteger(1000),
+        };
+        AddCidSystemInfo(descendant);
+        doc.AddObject(4, 0, descendant);
+
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
+
+        var wrapper1 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+Shared"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(6),
+        };
+        doc.AddObject(1, 0, wrapper1);
+
+        var wrapper2 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+Shared"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+        };
+        doc.AddObject(7, 0, wrapper2);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj ET")));
+        doc.AddObject(22, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = Ref(21),
+            [N("Contents")] = Ref(11),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("Font")] = new PdfDictionary { [N("F0")] = Ref(1), [N("F1")] = Ref(7) },
+            },
+        });
+        doc.AddObject(21, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(Ref(22)),
+            [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(20, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(21) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(20);
+        return doc;
+    }
+
+    // ── automatic path (Propose) ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void A_dead_cid_type0_font_gets_a_replacement_proposal()
+    {
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(4, proposal.Font.ObjectNumber);           // descendant holder
+        Assert.Equal(1, proposal.CompositeFont.ObjectNumber);  // Type0 wrapper
+        Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
+        Assert.True(proposal.CidToGid.TryGetValue(0x0000, out ushort gid0) && gid0 != 0);
+        Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
+        Assert.Equal(1, proposal.RestoredCodeCount); // only CID 0 was .notdef in the OLD program
+        Assert.DoesNotContain('+', proposal.NewBaseFont);
+        Assert.Contains("Liberation Sans", proposal.SourceDescription);
+        Assert.True(proposal.Descriptor.Ascent > 0);
+        Assert.NotEqual(0, proposal.DescriptorFlags & 32); // Nonsymbolic, always
+    }
+
+    [Fact]
+    public void The_replacement_program_is_advance_patched_to_the_declared_widths()
+    {
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+
+        var m = new EmbeddedFontMetrics(proposal.Program);
+        foreach ((int cid, ushort gid) in proposal.CidToGid)
+        {
+            double declared = cid == 0x41 ? 500 : 1000; // /W [65 [500]] else /DW 1000
+            double programWidth = ProgramWidthResolver.Scale(m, m.GetAdvanceWidth(gid));
+            Assert.True(Math.Abs(programWidth - declared) <= 0.5 + 1,
+                $"cid {cid:X4} gid {gid}: program {programWidth} vs declared {declared}");
+        }
+    }
+
+    [Fact]
+    public void A_font_without_tounicode_declines_naming_the_identity_gap()
+    {
+        PdfDocument doc = DeadCid2Doc(includeToUnicode: false);
+
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("ToUnicode", decline.Reason);
+    }
+
+    [Fact]
+    public void A_coverage_gap_declines_with_no_partial_fix()
+    {
+        // <E000> is Private Use Area — Liberation Sans has no glyph for it.
+        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0000, "E000")], contentHex: "0000");
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("no partial", decline.Reason);
+    }
+
+    [Fact]
+    public void An_embedding_restricted_substitute_declines_absolutely()
+    {
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new StubFontProvider(EmbedFixtures.RestrictedEmbeddingFont());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("licensed by its vendor", decline.Reason);
+    }
+
+    [Fact]
+    public void A_non_truetype_substitute_declines_naming_the_mechanism()
+    {
+        PdfDocument doc = DeadCid2Doc();
+        byte[] cff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
+        var provider = new StubFontProvider(cff);
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("TrueType", decline.Reason);
+    }
+
+    [Fact]
+    public void A_simple_font_notdef_finding_declines_naming_v1_scope()
+    {
+        PdfDocument doc = WidthPatchFixtures.NotdefOnlyDoc();
+
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("simple font", decline.Reason);
+    }
+
+    [Fact]
+    public void A_cid0_descendant_converts_to_cid2()
+    {
+        PdfDocument doc = DeadCid0Doc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+    }
+
+    [Fact]
+    public void Two_type0_wrappers_sharing_one_descendant_decline_the_shared_program_holder()
+    {
+        // Controller ruling, tracker issue 38: last-write-wins per PROGRAM HOLDER vs. one proposal per
+        // LOGICAL font — see FontRemediationPlanner.SharedHolderReason's doc comment.
+        PdfDocument doc = TwoWrappersSharedHolderDoc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("shares this font's embedded program", decline.Reason);
+    }
+
+    // ── manual path (AssessReplacementCandidate) ───────────────────────────────────────────────
+
+    [Fact]
+    public void AssessReplacementCandidate_hard_blocks_a_coverage_gap()
+    {
+        PdfDocument doc = DeadCid2Doc();
+        IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(doc);
+        FontInventoryEntry entry = FontInventory.Find(inventory, 1)!;
+
+        // Lacks any Unicode-cmap coverage of 'A'/'B' — its only mapped code is Mac-Roman code 10.
+        byte[] candidate = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", candidate, faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Empty(result.Warnings);
+    }
+}

@@ -82,5 +82,27 @@ public sealed record PatchWidthsProposal(
     double WorstDiffBefore,
     bool LeavesOtherFindings) : FontProposal(Font, RuleId);
 
+/// <summary>Replace <paramref name="Font"/>'s embedded program entirely with a substitute face —
+/// a WHOLE-FACE SWAP: every code of the font renders in the substitute afterward; only the dead
+/// codes gain glyphs, but letterforms change font-wide (spec §3). <paramref name="Font"/> is the
+/// PROGRAM HOLDER (descendant CIDFont); <paramref name="CompositeFont"/> is the Type0 wrapper —
+/// /BaseFont is rewritten on BOTH levels, and the editor must not have to reverse-map one from
+/// the other. <paramref name="Program"/> is the substitute sfnt ALREADY advance-patched to the
+/// declared /W + /DW widths (spec §3 step 8), so applying this proposal can never create a width
+/// finding. All fields are planner-resolved data; the editor applies mechanically.</summary>
+public sealed record ReplaceProgramProposal(
+    FontId Font,
+    FontId CompositeFont,
+    string RuleId,
+    string SourceDescription,
+    byte[] Program,
+    FontProgramFormat Format,
+    IReadOnlyDictionary<int, ushort> CidToGid,
+    int MaxCid,
+    int RestoredCodeCount,
+    string NewBaseFont,
+    FontDescriptorValues Descriptor,
+    int DescriptorFlags) : FontProposal(Font, RuleId);
+
 /// <summary>Everything the planner proposes for one document.</summary>
 public sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);

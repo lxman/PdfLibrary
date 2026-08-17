@@ -33,41 +33,6 @@ public sealed class WidthPatchProposalTests
 
     private static PdfDocument MismatchDoc() => WidthPatchFixtures.MismatchDoc();
 
-    /// <summary>A font whose only font-program finding is 6.2.11.8 (a shown code encoded to
-    /// ".notdef" via /Differences); no /Widths array, so 6.2.11.5 can never fire.</summary>
-    private static PdfDocument NotdefOnlyDoc()
-    {
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
-        var doc = new PdfDocument();
-        doc.AddObject(3, 0, new PdfStream(
-            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
-        doc.AddObject(2, 0, new PdfDictionary
-        {
-            [N("Type")] = N("FontDescriptor"),
-            [N("FontName")] = N("ABCDEE+ZeroAdvance"),
-            [N("Flags")] = new PdfInteger(32),     // non-symbolic
-            [N("FontFile2")] = Ref(3),
-        });
-        doc.AddObject(1, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("TrueType"),
-            [N("BaseFont")] = N("ABCDEE+ZeroAdvance"),
-            [N("FirstChar")] = new PdfInteger(65),
-            [N("LastChar")] = new PdfInteger(65),
-            [N("Encoding")] = new PdfDictionary
-            {
-                [N("BaseEncoding")] = N("WinAnsiEncoding"),
-                [N("Differences")] = new PdfArray(new PdfInteger(65), N(".notdef")),
-            },
-            [N("FontDescriptor")] = Ref(2),
-        });
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <41> Tj ET")));
-        AddSinglePageCatalog(doc, font: 1);
-        return doc;
-    }
-
     /// <summary>/Widths [0] against a real (nonzero) program advance on the one drawn code.</summary>
     private static PdfDocument DeclaredZeroDoc()
     {
@@ -198,15 +163,10 @@ public sealed class WidthPatchProposalTests
         Assert.Equal(507, metrics.GetAdvanceWidth(1)); // upm 1000: font units == glyph units
     }
 
-    [Fact]
-    public void A_notdef_only_finding_declines_naming_the_missing_glyph_gap()
-    {
-        PdfDocument doc = NotdefOnlyDoc();
-        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
-        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
-        Assert.Contains("missing glyph", decline.Reason);
-        Assert.Contains("not something Pellucid does yet", decline.Reason);
-    }
+    // The notdef-only simple-font decline fact moved to ReplaceProgramProposalTests (F-4b Task 5):
+    // 6.2.11.8 now dispatches to ProposeProgramReplace, not this decline path, and that test file
+    // owns A_simple_font_notdef_finding_declines_naming_v1_scope against the shared
+    // WidthPatchFixtures.NotdefOnlyDoc() fixture.
 
     [Fact]
     public void Cff_kinds_decline_before_bytes_are_read()

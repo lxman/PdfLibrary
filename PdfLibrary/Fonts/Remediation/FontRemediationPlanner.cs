@@ -254,13 +254,16 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         bool hasWidth = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.5");
         bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
 
+        bool hasNotdef = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.8");
+        if (hasNotdef)
+            return ProposeProgramReplace(document, entry, ruleId, mine);
         if (!hasWidth)
         {
             return Decline(entry, ruleId, mine.Count == 0
                 ? "The font-program finding could not be reproduced against this document's current "
                   + "state, so there is nothing Pellucid can safely correct."
-                : "This font's finding is a missing glyph, not a width mismatch — replacing a font "
-                  + "program is not something Pellucid does yet.");
+                : "This font renders a glyph absent from its embedded program — replacing a simple "
+                  + "font's program is not something Pellucid does yet.");
         }
 
         switch (entry.Kind)
@@ -386,6 +389,329 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         }
 
         return new PatchWidthsProposal(holder, ruleId, patched, advanceByGid.Count, worst, hasOther);
+    }
+
+    /// <summary>
+    /// Proposes replacing a Type0 composite font's whole embedded program for a font-program 6.2.11.8
+    /// (.notdef) finding — the ONLY arm that can fix a missing glyph, because the substitute's
+    /// /CIDToGIDMap has to be rewritten in step with the program rather than reused (spec §3). Gates
+    /// run in the order below; each decline is a fact about THIS font/document/machine, never policy
+    /// (§6.1, mirrors <see cref="ProposeEmbed"/> / <see cref="ProposeWidthPatch"/>). Internal for the
+    /// same hand-built-entry testability reason as those two.
+    ///
+    /// <para><paramref name="mine"/> is unused beyond the dispatch that already ran in
+    /// <see cref="ProposeWidthPatch"/> (which only calls here when <c>mine</c> contains a 6.2.11.8
+    /// finding, so it is never empty on that path) — kept in the signature, and typed to match
+    /// <see cref="ProposeWidthPatch"/>'s own local <c>mine</c> exactly, so a caller invoking this
+    /// directly still passes the same shape the dispatcher does.</para>
+    /// </summary>
+    internal FontProposal ProposeProgramReplace(
+        PdfDocument document, FontInventoryEntry entry, string ruleId, List<Finding> mine)
+    {
+        if (!entry.IsAddressable)
+        {
+            return Decline(entry, ruleId,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so Pellucid cannot address its font program to correct it.");
+        }
+
+        if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
+        {
+            return Decline(entry, ruleId,
+                "This font's finding is a missing glyph, and replacing a simple font's program is "
+                + "not something Pellucid does yet.");
+        }
+
+        // Controller ruling (tracker issue 38): see SharedHolderReason's doc comment. Recomputed from
+        // the document rather than threaded through from Propose()'s own inventory read, so the same
+        // guard reaches AssessReplacementCandidate (a PUBLIC method Tasks 6/7/8 compile against
+        // verbatim) without widening its signature. FontInventory.Read is a pure function of the
+        // document, so this necessarily agrees with whatever inventory Propose() built for this call.
+        if (SharedHolderReason(entry, FontInventory.Read(document)) is { } sharedReason)
+            return Decline(entry, ruleId, sharedReason);
+
+        if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+            || PdfFont.Create(fontDict, document) is not Type0Font type0
+            || type0.DescendantFont is not CidFont cid)
+        {
+            return Decline(entry, ruleId,
+                "This font's dictionary could not be read as a composite font, so Pellucid cannot "
+                + "correct its program.");
+        }
+
+        if (type0.EncodingName is not ("Identity-H" or "Identity-V"))
+        {
+            return Decline(entry, ruleId,
+                "This composite font's encoding is not an Identity CMap, so Pellucid cannot prove "
+                + "which glyph each character selects.");
+        }
+
+        if (type0.ToUnicode is null)
+        {
+            return Decline(entry, ruleId,
+                "This font declares no /ToUnicode mapping, which is the only honest source for what "
+                + "its characters mean — a replacement face cannot be chosen without it.");
+        }
+
+        FontId holder = entry.ProgramHolderId ?? entry.Id;
+        FontRequest request = BuildRequest(document, entry, holder);
+        FontMatch? match = fonts.Resolve(request);
+        if (match is null)
+        {
+            return Decline(entry, ruleId,
+                $"No font matching '{entry.FamilyName}' is installed on this computer. Installing "
+                + "it would let Pellucid replace the deficient program.");
+        }
+
+        return BuildReplacement(
+            document, entry, ruleId, holder, type0, cid, match.Data, match.FaceIndex,
+            sourceDescription: null).Proposal;
+    }
+
+    /// <summary>
+    /// Mirrors <see cref="AssessCandidate"/>'s shape for the whole-program-replacement path: the SAME
+    /// entry-shape gates <see cref="ProposeProgramReplace"/> runs 1–4 (unaddressable, non-composite
+    /// kind, a shared program holder, an unreadable/non-Identity composite, no /ToUnicode) become hard
+    /// blocks here instead of declines, then <paramref name="candidateBytes"/> runs through the SAME
+    /// <see cref="BuildReplacement"/> core the automatic path uses. Unlike <see cref="AssessCandidate"/>,
+    /// a coverage gap is a HARD BLOCK here, not a warning (design Decision 7): the embed path's warning
+    /// only ever adds .notdef glyphs the user can already see are missing, but a replacement CID whose
+    /// ToUnicode value the substitute cannot render has no honest fallback — the CIDToGIDMap entry would
+    /// point at a real but wrong glyph, or 0, either way silently.
+    /// </summary>
+    public CandidateAssessment AssessReplacementCandidate(
+        PdfDocument document, FontInventoryEntry entry, string ruleId,
+        byte[] candidateBytes, int faceIndex, string sourceDescription)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(candidateBytes);
+        ArgumentNullException.ThrowIfNull(sourceDescription);
+
+        if (!entry.IsAddressable)
+        {
+            return new CandidateAssessment(null,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so Pellucid cannot address its font program to correct it.",
+                [], null);
+        }
+
+        if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
+        {
+            return new CandidateAssessment(null,
+                "This font's finding is a missing glyph, and replacing a simple font's program is "
+                + "not something Pellucid does yet.",
+                [], null);
+        }
+
+        if (SharedHolderReason(entry, FontInventory.Read(document)) is { } sharedReason)
+            return new CandidateAssessment(null, sharedReason, [], null);
+
+        if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+            || PdfFont.Create(fontDict, document) is not Type0Font type0
+            || type0.DescendantFont is not CidFont cid)
+        {
+            return new CandidateAssessment(null,
+                "This font's dictionary could not be read as a composite font, so Pellucid cannot "
+                + "correct its program.",
+                [], null);
+        }
+
+        if (type0.EncodingName is not ("Identity-H" or "Identity-V"))
+        {
+            return new CandidateAssessment(null,
+                "This composite font's encoding is not an Identity CMap, so Pellucid cannot prove "
+                + "which glyph each character selects.",
+                [], null);
+        }
+
+        if (type0.ToUnicode is null)
+        {
+            return new CandidateAssessment(null,
+                "This font declares no /ToUnicode mapping, which is the only honest source for what "
+                + "its characters mean — a replacement face cannot be chosen without it.",
+                [], null);
+        }
+
+        FontId holder = entry.ProgramHolderId ?? entry.Id;
+        ReplacementResult result = BuildReplacement(
+            document, entry, ruleId, holder, type0, cid, candidateBytes, faceIndex, sourceDescription);
+
+        return result.Proposal switch
+        {
+            DeclineProposal decline => new CandidateAssessment(result.Format, decline.Reason, [], null),
+            ReplaceProgramProposal replace => new CandidateAssessment(result.Format, null, [], replace),
+            _ => throw new InvalidOperationException(
+                "BuildReplacement returned a proposal type neither Decline nor Replace produces."),
+        };
+    }
+
+    /// <summary>
+    /// The core shared by <see cref="ProposeProgramReplace"/> (automatic) and
+    /// <see cref="AssessReplacementCandidate"/> (manual): runs <paramref name="bytes"/> through the byte
+    /// gates, resolves every used CID against <paramref name="type0"/>'s /ToUnicode into the substitute
+    /// (spec §3 step 2), composes the substitute's advances to the declared widths (step 8), and returns
+    /// a ready-to-apply <see cref="ReplaceProgramProposal"/> or an honest <see cref="DeclineProposal"/>.
+    /// Returns the classified <see cref="FontProgramFormat"/> alongside the proposal — even on a decline
+    /// — so <see cref="AssessReplacementCandidate"/> can report it without re-running the gates.
+    /// </summary>
+    private ReplacementResult BuildReplacement(
+        PdfDocument document, FontInventoryEntry entry, string ruleId, FontId holder,
+        Type0Font type0, CidFont cid, byte[] bytes, int faceIndex, string? sourceDescription)
+    {
+        ByteGateOutcome gates = RunByteGates(bytes, faceIndex, entry.FamilyName);
+        if (gates.HardBlockReason is not null)
+            return new ReplacementResult(Decline(entry, ruleId, gates.HardBlockReason), gates.Classified?.Format);
+
+        EmbeddedFontMetrics metrics = gates.Metrics!;
+        string resolvedFamily = gates.ResolvedFamily!;
+        ClassifiedProgram classified = gates.Classified!;
+
+        // Decision 2: only a TrueType substitute can replace this font's program without rewriting CFF
+        // charstrings — CidToGid maps CODES to GLYPH IDS, and a CFF program's glyph selection is not
+        // addressable by a bare numeric id the way glyf/hmtx is.
+        if (classified.Format != FontProgramFormat.TrueType)
+        {
+            return new ReplacementResult(Decline(entry, ruleId,
+                $"The face found for '{entry.FamilyName}' is not a TrueType program, and only a "
+                + "TrueType program can replace this font's without rewriting CFF charstrings."),
+                classified.Format);
+        }
+
+        CidReplacementMapResult mapResult =
+            CidReplacementMap.Build(type0.ToUnicode!, entry.UsedCodes, metrics);
+        if (mapResult.Unresolvable.Count > 0)
+        {
+            int first = mapResult.Unresolvable[0];
+            return new ReplacementResult(Decline(entry, ruleId,
+                $"'{resolvedFamily}' cannot honestly render {mapResult.Unresolvable.Count} of this "
+                + $"font's characters (first: CID {first}), so replacing the program would still leave "
+                + "missing glyphs — Pellucid makes no partial replacements."),
+                classified.Format);
+        }
+
+        // Compose step (spec §3 step 8): pin the substitute's advances to the declared widths so
+        // applying this proposal can never create a NEW width finding. Declared widths (/W, /DW) are
+        // already 1000-per-em glyph space (PDF convention, independent of the substitute's own upm), so
+        // the same-gid conflict check below compares them directly — exactly as ProgramWidthResolver's
+        // callers do.
+        int upm = metrics.UnitsPerEm <= 0 ? 1000 : metrics.UnitsPerEm;
+        var targetByGid = new Dictionary<ushort, double>();
+        foreach ((int cidCode, ushort gid) in mapResult.CidToGid)
+        {
+            double declared = cid.GetCharacterWidth(cidCode);
+            if (targetByGid.TryGetValue(gid, out double existing))
+            {
+                if (Math.Abs(existing - declared) > FontProgramRule.WidthTolerance)
+                {
+                    return new ReplacementResult(Decline(entry, ruleId,
+                        "Two character codes share one glyph but declare different widths, so no "
+                        + "single program advance can satisfy both."),
+                        classified.Format);
+                }
+                continue;
+            }
+            targetByGid[gid] = declared;
+        }
+
+        // Declared-zero is PATCHED, not declined (Decision 5): the swap already changes appearance —
+        // every code renders in the substitute's letterforms — so pinning the advance to the declared
+        // width (even zero) is what keeps layout invariant in renderers that fall back to program
+        // advances. Unlike ProposeWidthPatch's in-place patch, there is no existing conforming layout
+        // to protect from a visible shift here.
+        var advanceByGid = new Dictionary<ushort, ushort>();
+        foreach ((ushort gid, double declared) in targetByGid)
+        {
+            var fontUnits = (ushort)Math.Clamp(Math.Round(declared * upm / 1000.0), 0, ushort.MaxValue);
+            if (fontUnits != metrics.GetAdvanceWidth(gid))
+                advanceByGid[gid] = fontUnits;
+        }
+
+        byte[] program = classified.Program;
+        if (advanceByGid.Count > 0)
+        {
+            byte[]? patched = SfntAdvancePatcher.Patch(classified.Program, advanceByGid, out string? failReason);
+            if (patched is null)
+            {
+                return new ReplacementResult(Decline(entry, ruleId,
+                    $"The substitute's program cannot be width-patched to this font's declared widths: "
+                    + failReason),
+                    classified.Format);
+            }
+            program = patched;
+        }
+
+        // RestoredCodeCount: how many distinct used CIDs currently resolve to .notdef in the OLD
+        // program — read via the rule's own expression, and via the OLD program's metrics (the wrapper
+        // still holds it at planning time; the descriptor is only rewritten when this proposal is
+        // applied). Not derived from mapResult.Unresolvable (empty here) or from targetByGid: this
+        // counts the CURRENT defect the replacement fixes, not anything about the substitute.
+        EmbeddedFontMetrics? oldMetrics = type0.GetEmbeddedMetrics();
+        if (oldMetrics is null || !oldMetrics.IsValid)
+        {
+            return new ReplacementResult(Decline(entry, ruleId,
+                "The font-program finding could not be reproduced against this document's current "
+                + "state, so there is nothing Pellucid can safely correct."),
+                classified.Format);
+        }
+        bool cidKeyed = entry.Kind == FontKind.Type0CidType0;
+        int restored = entry.UsedCodes.Distinct().Count(code =>
+            (cidKeyed ? oldMetrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code)) == 0);
+
+        FontDescriptorValues? descriptorValues = FontDescriptorMetrics.Compute(program, FontProgramFormat.TrueType);
+        if (descriptorValues is null)
+        {
+            return new ReplacementResult(Decline(entry, ruleId,
+                "The substitute program's metrics could not be read, so an honest /FontDescriptor "
+                + "cannot be written for it."),
+                classified.Format);
+        }
+
+        // head/post are untouched by SfntAdvancePatcher (only hmtx/hhea/head.checkSumAdjustment move),
+        // so reading flags and names off the PRE-patch `metrics` agrees with the post-patch `program`
+        // and avoids reparsing it.
+        int flags = FontDescriptorFlags.Compute(metrics);
+        string newBaseFont = metrics.PostScriptName ?? (metrics.FamilyName ?? resolvedFamily).Replace(" ", "");
+        string style = (metrics.IsBold, metrics.IsItalic) switch
+        {
+            (true, true) => "Bold Italic",
+            (true, false) => "Bold",
+            (false, true) => "Italic",
+            (false, false) => "Regular",
+        };
+        string source = sourceDescription ?? $"{resolvedFamily} ({style}) — from your system fonts";
+
+        var proposal = new ReplaceProgramProposal(
+            holder, entry.Id, ruleId, source, program, FontProgramFormat.TrueType,
+            mapResult.CidToGid, mapResult.MaxCid, restored, newBaseFont, descriptorValues, flags);
+        return new ReplacementResult(proposal, FontProgramFormat.TrueType);
+    }
+
+    /// <summary>Result of <see cref="BuildReplacement"/>: the proposal (a <see cref="ReplaceProgramProposal"/>
+    /// or a <see cref="DeclineProposal"/>) and the classified format whenever classification succeeded —
+    /// even on a decline — so <see cref="AssessReplacementCandidate"/> can report it without a second
+    /// byte-gate run.</summary>
+    private readonly record struct ReplacementResult(FontProposal Proposal, FontProgramFormat? Format);
+
+    /// <summary>
+    /// Controller ruling (tracker issue 38): a <c>ReplaceProgramProposal</c>-style editor write is
+    /// last-write-wins PER PROGRAM HOLDER, but the planner (and the manual replace path) emit a
+    /// proposal per LOGICAL font. If two inventory entries share one <c>ProgramHolderId</c>, two
+    /// proposals would each build their <c>CidToGid</c> map from only their OWN wrapper's used codes and
+    /// silently clobber each other's when applied — missing glyphs with no error anywhere. Compares
+    /// <c>ProgramHolderId.ObjectNumber</c> (both non-null) rather than <c>FontId</c> equality directly,
+    /// matching <see cref="FontInventory.Find"/>'s own object-number comparison.
+    /// </summary>
+    private static string? SharedHolderReason(
+        FontInventoryEntry entry, IReadOnlyList<FontInventoryEntry> inventory)
+    {
+        if (entry.ProgramHolderId is not { } holder) return null;
+        bool shared = inventory.Any(other =>
+            other.Id != entry.Id && other.ProgramHolderId?.ObjectNumber == holder.ObjectNumber);
+        return shared
+            ? "Another font in this document shares this font's embedded program, and replacing one "
+              + "program for two fonts in step is not something Pellucid does yet."
+            : null;
     }
 
     /// <summary>
