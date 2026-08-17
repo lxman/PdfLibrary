@@ -184,40 +184,35 @@ public class FontProgramWidthRepairCorpusTests
     }
 
     [Fact]
-    public void Cid2_document_declines_on_a_pre_existing_cidtogidmap_defect()
+    public void Cid2_document_with_explicit_gid0_map_reports_notdef_not_width()
     {
-        // 0000_0000024.pdf was pinned "composite CID2 close" from the 2026-08-16/15f scans, but
-        // diagnosis here (2026-08-16) shows it cannot close: BOTH fonts (obj 4 'AAAAAC+AlArabiya',
-        // obj 7 'AAAAAF+AlArabiya,Italic') decline entirely, not for a width-genuine reason but for
-        // "a patched glyph id lies beyond the program's glyph count" — SfntAdvancePatcher's own
-        // safety guard (deliberately tested: SfntAdvancePatcherTests
-        // .A_gid_at_or_beyond_numGlyphs_fails_rather_than_writes) correctly refusing to write an
-        // advance for a glyph id that does not exist in the embedded program (maxp.numGlyphs=949).
+        // 0000_0000024.pdf was pinned "composite CID2 close" from the 2026-08-16/15f scans, then
+        // re-pinned (2026-08-16) to "declines on the SfntAdvancePatcher glyph-count guard" once
+        // diagnosis found the real cause: PdfLibrary.Fonts.CidFont.LoadCidToGidMap only stored
+        // NON-ZERO entries, so CidFont.MapCidToGid could not tell "CID outside the map's range"
+        // (identity fallback, correct) from "CID the map explicitly sends to GID 0" (a legitimate
+        // .notdef declaration) — both fell through to `return cid;`, producing a bogus non-zero
+        // "identity" GID for the punctuation CIDs this document actually draws (8211/8216/8217/
+        // 8220/8221 — em-dash/curly-quote code points used directly as CIDs). Filed as issue 34.
         //
-        // Root cause, confirmed by direct inspection: both fonts carry a real (non-Identity)
-        // /CIDToGIDMap STREAM of 65536 entries — so it fully covers the used CIDs (which run up to
-        // 8221, well inside the stream's range) — but PdfLibrary.Fonts.CidFont.LoadCidToGidMap
-        // (pre-existing; last touched at `eb963f2`/`b1c9e90`, issue-24 work, well before this
-        // branch's Task 1 `b88349a`) only stores NON-ZERO entries in its lookup dictionary
-        // ("// Only store non-zero mappings"). CidFont.MapCidToGid then falls through to
-        // "// Default: assume identity mapping" (`return cid;`) whenever a CID is absent from that
-        // dictionary — which is true both for a CID truly outside the map's range AND for a CID the
-        // map explicitly assigns to GID 0 (a legitimate .notdef declaration). For the punctuation
-        // CIDs this document actually draws (8211/8216/8217/8220/8221 — em-dash/curly-quote code
-        // points used directly as CIDs), the map's real answer is GID 0, but MapCidToGid instead
-        // returns the CID itself (8217, 8221, ...) as a bogus "identity" GID — far beyond the
-        // program's real 949 glyphs. ProgramWidthResolver.Composite has its own `gid == 0` skip
-        // for exactly this "no meaningful width to compare" case, but it never gets the chance: the
-        // gid it receives is already wrong by the time it gets there.
+        // Issue 34 fixed (this task): MapCidToGid now returns the honest 0 for a CID inside the
+        // map stream's covered range with no stored entry. Both fonts' punctuation CIDs now
+        // resolve to gid 0, so ProgramWidthResolver.Composite's own `gid == 0` skip removes them
+        // from the width comparison (the spurious "far beyond the program's glyph count" width
+        // patch/decline this test used to pin is gone), and FontProgramRule.CheckType0's `gid == 0`
+        // walk instead raises the honest 6.2.11.8 (.notdef) finding for both fonts. The planner has
+        // no remediation for a missing-glyph finding, so it still declines — but now for the true
+        // reason ("missing glyph, not a width mismatch"), not a corrupted-gid side effect.
         //
-        // This is a genuine defect, but NOT in Tasks 1-4 code — CidFont.MapCidToGid predates F-4a
-        // entirely and Task 1 only extracted ProgramWidthResolver verbatim from FontProgramRule (no
-        // behavior change), so the same miscomputed gid would already have produced this document's
-        // ORIGINAL 6.2.11.5 finding before this branch existed. Filed as issue 34 in
-        // Pellucid/docs/ISSUE-TRACKER.md rather than fixed here (out of this task's scope, and the
-        // brief forbids engine changes beyond this test file). SfntAdvancePatcher's bounds check is
-        // exactly why this surfaces as an honest decline instead of a corrupted hmtx write — the
-        // safety net worked as designed.
+        // veraPDF oracle (`verapdf.bat --format json -f 2b 0000_0000024.pdf`, 2026-08-17): 4 failed
+        // rules total — 6.6.4 (missing PDF/A Identification), 6.2.11.4.1 x2 checks (Helvetica-Bold
+        // / Helvetica-Oblique NOT embedded — unrelated simple fonts, not the AlArabiya composites),
+        // and 6.2.4.3 x2 test numbers (DeviceGray/DeviceRGB without an OutputIntent). Neither
+        // 6.2.11.5 nor 6.2.11.8 appears in veraPDF's report for the AlArabiya composite fonts —
+        // veraPDF's own PDF/A-2b profile does not reach a composite-font glyph-existence check this
+        // deep for this document, so it is not an independent corroborating oracle for THIS specific
+        // finding; the fix is verified directly against the corrected CidFont.MapCidToGid behavior
+        // and CidToGidMapExplicitZeroTests instead.
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
@@ -231,9 +226,9 @@ public class FontProgramWidthRepairCorpusTests
         // Direct check that every proposal is one of the two kinds above — "patches empty" alone only
         // proves nothing patched; it says nothing about a third proposal kind slipping through unseen.
         Assert.Equal(total, patches.Count + declines.Count);
-        Assert.True(declines.All(d => d.Reason.Contains("beyond the program's glyph count")),
-            $"{file}: expected every decline to cite the glyph-count guard; got: " +
-            string.Join(" | ", declines.Select(d => d.Reason)));
+        Assert.True(declines.All(d => d.Reason.Contains("missing glyph, not a width mismatch")),
+            $"{file}: expected every decline to cite the missing-glyph (.notdef) reason, not a width " +
+            "mismatch; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
     [Theory]

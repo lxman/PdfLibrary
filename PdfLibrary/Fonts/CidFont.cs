@@ -14,6 +14,7 @@ internal class CidFont : PdfFont
     private Dictionary<int, double>? _widths;
     private Dictionary<int, int>? _cidToGidMap;
     private bool _isIdentityMapping;
+    private int _cidToGidMapCoveredCids;
 
     public CidFont(PdfDictionary dictionary, PdfDocument? document = null)
         : base(dictionary, document)
@@ -31,11 +32,17 @@ internal class CidFont : PdfFont
         if (_isIdentityMapping)
             return cid;
 
-        // Look up in the mapping table
-        if (_cidToGidMap is not null && _cidToGidMap.TryGetValue(cid, out int gid))
-            return gid;
+        if (_cidToGidMap is not null)
+        {
+            if (_cidToGidMap.TryGetValue(cid, out int gid))
+                return gid;
+            // Inside the stream's covered range but not stored: the stream explicitly spelled out
+            // GID 0 — a legitimate ".notdef, no glyph" answer, not a lookup miss (issue 34).
+            if (cid >= 0 && cid < _cidToGidMapCoveredCids)
+                return 0;
+        }
 
-        // Default: assume identity mapping
+        // Beyond the stream's declared coverage (or no parseable map): identity fallback.
         return cid;
     }
 
@@ -63,12 +70,15 @@ internal class CidFont : PdfFont
             {
                 byte[] data = stream.GetDecodedData(_document?.Decryptor);
                 _cidToGidMap = new Dictionary<int, int>();
+                _cidToGidMapCoveredCids = data.Length / 2;
 
                 // Each entry is 2 bytes (big-endian GID), indexed by CID
                 for (var cid = 0; cid < data.Length / 2; cid++)
                 {
                     int gid = (data[cid * 2] << 8) | data[cid * 2 + 1];
-                    if (gid != 0)  // Only store non-zero mappings
+                    if (gid != 0)  // Only store non-zero mappings (memory stays small); an absent
+                                   // entry inside _cidToGidMapCoveredCids is read back as an
+                                   // explicit 0 by MapCidToGid, not as "unmapped" (issue 34).
                         _cidToGidMap[cid] = gid;
                 }
 
