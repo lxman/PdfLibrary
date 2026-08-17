@@ -151,7 +151,7 @@ public class FontProgramWidthRepairCorpusTests
         // /FontFile2 on every call (FontDescriptor.Set, not a merge) — so when ApplyAndRecheck
         // applies all 52 proposals in sequence, every proposal after the first one FOR THE SAME
         // HOLDER overwrites its predecessor's patched bytes wholesale. Only the last-applied
-        // proposal per holder actually survives; the other 51 - 4 = 48 are silently discarded.
+        // proposal per holder actually survives; the other 52 - 4 = 48 are silently discarded.
         // Measured result: 46 findings remain after applying all 52 patches — the 14 legitimate
         // CFF/CID0 declines (never touched) plus 32 of the 52 patch-targeted findings whose own
         // proposal was clobbered by a later sibling's proposal on the same shared holder (only 20
@@ -266,24 +266,25 @@ public class FontProgramWidthRepairCorpusTests
             "reason; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
-    // F-4b Task 9 re-pin (2026-08-17, corrected in fix round 1 — the ORIGINAL version of this comment
-    // misattributed a decline reason measured on a DIFFERENT test's planner): 0000_0000769.pdf's
-    // composite .notdef finding (object 1424, AGaramond-Semibold) now ALSO routes through the
-    // planner (FontRemediationPlanner.Propose -> ProposeProgramReplace, landed this program) and
-    // itself DECLINES. THIS test's ProposeFor (above) constructs its planner with
-    // `new FontRemediationPlanner(new StubFontProvider(null))` — StubFontProvider(null) resolves
-    // NO face for ANY request — so object 1424's decline here is the plain "no font matching
+    // F-4b Task 9 re-pin (2026-08-17, corrected in the F-4b final whole-branch review — the PRIOR
+    // version of this comment named a since-renamed test and asserted a decline reason that no longer
+    // holds post-retry): 0000_0000769.pdf's composite .notdef finding (object 1424, AGaramond-Semibold)
+    // now ALSO routes through the planner (FontRemediationPlanner.Propose -> ProposeProgramReplace,
+    // landed this program) and itself DECLINES here. THIS test's ProposeFor (above) constructs its
+    // planner with `new FontRemediationPlanner(new StubFontProvider(null))` — StubFontProvider(null)
+    // resolves NO face for ANY request — so object 1424's decline here is the plain "no font matching
     // '...' is installed on this computer" branch (fonts.Resolve returns null before any format
-    // classification happens), NOT a "not a TrueType program" decline. The "not a TrueType
-    // program" reason for THIS SAME document's THIS SAME object is what
-    // FontProgramReplaceCorpusTests.Mixed_document_declines_its_notdef_finding_for_a_different_
-    // reason_than_its_width_finding measures instead, because THAT suite's ProposeFor uses a REAL
-    // font provider (EmbedProgramRoundTripTests.DeterministicFonts) against this machine's actual
-    // installed fonts — a different planner construction, a different (also legitimate) decline
-    // reason for the same finding. Both proposals here are DeclineProposal, so Assert.Empty(patches)
-    // and the total-count formula below already admit the new proposal kind without any assertion
-    // change — this comment documents the measured fact for a future reader, per the F-4b Task 9
-    // brief's own "re-pin" instruction.
+    // classification happens). This is NOT what happens for THIS SAME document's THIS SAME object under
+    // a REAL font provider: `FontProgramReplaceCorpusTests.Mixed_document_closes_its_notdef_finding_
+    // and_keeps_its_unrelated_width_decline` (renamed from the earlier "declines for a different
+    // reason" name once the fix-round-1 synthetic-retry mitigation landed) uses a REAL provider
+    // (EmbedProgramRoundTripTests.DeterministicFonts) against this machine's actual installed fonts,
+    // and measures object 1424 CLOSING post-retry (resolving to Liberation Serif Bold), not declining
+    // at all — a different planner construction produces a genuinely different outcome for the same
+    // finding, not just a different decline reason. Both proposals here (in THIS test) are still
+    // DeclineProposal, so Assert.Empty(patches) and the total-count formula below already admit the
+    // new proposal kind without any assertion change — this comment documents the measured fact for a
+    // future reader, per the F-4b Task 9 brief's own "re-pin" instruction.
     [Theory]
     [InlineData("0000_0000769.pdf")]
     [InlineData("0000_0000293.pdf")]

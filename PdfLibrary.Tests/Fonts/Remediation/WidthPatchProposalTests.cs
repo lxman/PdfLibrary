@@ -252,6 +252,47 @@ public sealed class WidthPatchProposalTests
         Assert.Contains("charstring", decline.Reason);
     }
 
+    // F-4b final review: pins the `!hasWidth && !hasNotdef && mine.Count > 0` dispatch branch's own
+    // decline sentence — a simple font whose only font-program finding is a 6.2.11.4.1 glyph-present
+    // clause (not 6.2.11.5 width, not 6.2.11.8 notdef) — which had no test of its own. Driven the same
+    // least-contortion way Cff_kinds_decline_before_bytes_are_read above does: ProposeWidthPatch called
+    // directly with a hand-built entry/finding, since the decline fires before anything is read from
+    // the document (only entry.IsAddressable and the finding-derived flags matter), so there is no
+    // need to fabricate a document whose real preflight run produces this exact, isolated clause.
+    [Fact]
+    public void A_glyph_present_finding_alone_declines_with_the_no_replacement_for_simple_fonts_reason()
+    {
+        var doc = new PdfDocument(); // no objects at all — nothing is read before the decline
+        var entry = new FontInventoryEntry(
+            Id: new FontId(1),
+            ProgramHolderId: null,
+            BaseFont: "TestTrueType",
+            SubsetTag: null,
+            FamilyName: "TestTrueType",
+            Kind: FontKind.TrueType,
+            IsEmbedded: true,
+            HasToUnicode: false,
+            HasWidths: true,
+            IsAddressable: true,
+            UsedCodes: [65],
+            PagesUsedOn: [0]);
+
+        var finding = new Finding
+        {
+            RuleId = "font-program",
+            Severity = FindingSeverity.Error,
+            Clause = "ISO 19005-2:2011, 6.2.11.4.1",
+            Message = "renders a glyph absent from its embedded program",
+            ObjectNumber = 1,
+        };
+        ILookup<int, Finding> ruleFindings = new[] { finding }.ToLookup(f => f.ObjectNumber!.Value);
+
+        FontProposal result = Planner().ProposeWidthPatch(doc, entry, "font-program", ruleFindings);
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(result);
+        Assert.Contains("renders a glyph absent from its embedded program", decline.Reason);
+        Assert.Contains("replacing a simple font's program is not something Pellucid does yet", decline.Reason);
+    }
+
     [Fact]
     public void A_declared_zero_width_against_a_nonzero_advance_declines()
     {

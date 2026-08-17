@@ -446,7 +446,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // guard reaches AssessReplacementCandidate (a PUBLIC method Tasks 6/7/8 compile against
         // verbatim) without widening its signature. FontInventory.Read is a pure function of the
         // document, so this necessarily agrees with whatever inventory Propose() built for this call.
-        if (SharedHolderReason(entry, FontInventory.Read(document)) is { } sharedReason)
+        if (SharedHolderReason(document, entry, FontInventory.Read(document)) is { } sharedReason)
             return Decline(entry, ruleId, sharedReason);
 
         if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
@@ -566,7 +566,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
             return new CandidateAssessment(null, SimpleFontMissingGlyphReason, [], null);
 
-        if (SharedHolderReason(entry, FontInventory.Read(document)) is { } sharedReason)
+        if (SharedHolderReason(document, entry, FontInventory.Read(document)) is { } sharedReason)
             return new CandidateAssessment(null, sharedReason, [], null);
 
         if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
@@ -780,16 +780,49 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// silently clobber each other's when applied — missing glyphs with no error anywhere. Compares
     /// <c>ProgramHolderId.ObjectNumber</c> (both non-null) rather than <c>FontId</c> equality directly,
     /// matching <see cref="FontInventory.Find"/>'s own object-number comparison.
+    ///
+    /// <para>The same failure mode reappears one level down: two DISTINCT program-holder objects (e.g.
+    /// two Type0 wrappers' own, separately-numbered descendant CIDFonts) can still point at the SAME
+    /// <c>/FontDescriptor</c> object. The editor write lands on the descriptor's <c>/FontFile2</c> or
+    /// <c>/FontFile3</c>, so two independently-built proposals would still clobber one program with the
+    /// other's, each descendant keeping its own (now-mismatched) CIDToGIDMap — wrong glyphs, no error.
+    /// So this also declines when two entries' program holders resolve to the same
+    /// <c>/FontDescriptor</c> object number. Descriptor-level identity is enough: two program holders
+    /// cannot share a <c>/FontFile2</c>/<c>/FontFile3</c> stream object without sharing the descriptor
+    /// that names it, since nothing else in this walk references the stream directly.</para>
     /// </summary>
     private static string? SharedHolderReason(
-        FontInventoryEntry entry, IReadOnlyList<FontInventoryEntry> inventory)
+        PdfDocument document, FontInventoryEntry entry, IReadOnlyList<FontInventoryEntry> inventory)
     {
         if (entry.ProgramHolderId is not { } holder) return null;
-        bool shared = inventory.Any(other =>
+
+        bool sharedHolder = inventory.Any(other =>
             other.Id != entry.Id && other.ProgramHolderId?.ObjectNumber == holder.ObjectNumber);
-        return shared
-            ? "Another font in this document shares this font's embedded program, and replacing one "
-              + "program for two fonts in step is not something Pellucid does yet."
+        if (sharedHolder) return SharedProgramReason;
+
+        if (DescriptorObjectNumber(document, holder) is not { } descriptorNumber) return null;
+
+        bool sharedDescriptor = inventory.Any(other =>
+            other.Id != entry.Id
+            && other.ProgramHolderId is { } otherHolder
+            && otherHolder.ObjectNumber != holder.ObjectNumber
+            && DescriptorObjectNumber(document, otherHolder) == descriptorNumber);
+
+        return sharedDescriptor ? SharedProgramReason : null;
+    }
+
+    private const string SharedProgramReason =
+        "Another font in this document shares this font's embedded program, and replacing one "
+        + "program for two fonts in step is not something Pellucid does yet.";
+
+    /// <summary>The program holder's <c>/FontDescriptor</c> object number, or null when the holder
+    /// dictionary cannot be read or the descriptor is not an indirect reference (a direct descriptor
+    /// dictionary cannot be shared by object identity, so there is nothing to collide on).</summary>
+    private static int? DescriptorObjectNumber(PdfDocument document, FontId holder)
+    {
+        if (document.GetObject(holder.ObjectNumber) is not PdfDictionary holderDict) return null;
+        return holderDict.Get("FontDescriptor") is PdfIndirectReference reference
+            ? reference.ObjectNumber
             : null;
     }
 

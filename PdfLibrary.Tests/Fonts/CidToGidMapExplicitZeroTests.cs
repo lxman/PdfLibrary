@@ -28,6 +28,12 @@ public class CidToGidMapExplicitZeroTests
     public void A_nonzero_entry_still_reports_its_gid()
         => Assert.Equal(5, FontWithMap().MapCidToGid(1));
 
+    // Pins a DIVERGENCE from ISO 32000-2 §9.7.6.3, not correct behaviour: the spec requires that "if a
+    // code does not have a corresponding GID in the CIDToGIDMap stream, the glyph for CID 0 shall be
+    // substituted", but MapCidToGid instead falls through to CID==GID identity for a CID beyond the
+    // map's covered length. Tracker issue 42 (Pellucid/docs/ISSUE-TRACKER.md) tracks fixing the reader
+    // to return 0 beyond coverage; this test stays as a pin on today's behaviour until that lands, not
+    // as an endorsement of it.
     [Fact]
     public void A_cid_beyond_the_maps_covered_range_keeps_the_identity_fallback()
         => Assert.Equal(7, FontWithMap().MapCidToGid(7));
