@@ -49,9 +49,9 @@ namespace PdfLibrary.Conformance.Rules;
 /// <para>
 /// PDF/X-4 is excluded (ISO 15930-7 carries no such font-program constraints — same reasoning as
 /// <see cref="FontDictionaryRule"/>). CMap WMode / usecmap (6.2.11.3.3 t02/t03) and subset CharSet/CIDSet
-/// (6.2.11.4.2) are out of scope for this rule. Every check is one finding per font (deduplicated by base
-/// name) and only ever under-reports: a font whose program will not parse, or whose glyph cannot be resolved,
-/// is skipped rather than guessed at.
+/// (6.2.11.4.2) are out of scope for this rule. Every check is one finding per font (deduplicated per font
+/// object; by base name only for direct dictionaries) and only ever under-reports: a font whose program will
+/// not parse, or whose glyph cannot be resolved, is skipped rather than guessed at.
 /// </para>
 /// </summary>
 internal sealed class FontProgramRule : IConformanceRule
@@ -138,12 +138,12 @@ internal sealed class FontProgramRule : IConformanceRule
         foreach (WidthComparison w in ProgramWidthResolver.Composite(cid, metrics, cidKeyedCff, visibleCodes))
             worstDiff = Math.Max(worstDiff, Math.Abs(w.Declared - w.Program));
 
-        if (notdefHit && notdefReported.Add(font.BaseFont))
+        if (notdefHit && notdefReported.Add(DedupKey(font)))
             yield return Make(context, font, "8",
                 $"The composite font {Name(font)} renders a character code that maps to the .notdef glyph "
                 + "(glyph 0), which is not present in the embedded font program.");
 
-        if (worstDiff > WidthTolerance && metricsReported.Add(font.BaseFont))
+        if (worstDiff > WidthTolerance && metricsReported.Add(DedupKey(font)))
             yield return Make(context, font, "5",
                 $"The composite font {Name(font)} declares a glyph width that differs from the embedded font "
                 + $"program's advance width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
@@ -181,7 +181,7 @@ internal sealed class FontProgramRule : IConformanceRule
         // .notdef (6.2.11.8 / 7.21.8): a shown code whose encoding glyph name is literally ".notdef" — the
         // veraPDF predicate is name == ".notdef". NOT render-mode-exempt (spec: "regardless of text rendering
         // mode"), so this walks ALL codes. Pure encoding lookup, no program parsing → FP-safe.
-        if (codes.Any(code => font.Encoding?.GetGlyphName(code) == ".notdef") && notdefReported.Add(font.BaseFont))
+        if (codes.Any(code => font.Encoding?.GetGlyphName(code) == ".notdef") && notdefReported.Add(DedupKey(font)))
             yield return Make(context, font, "8",
                 $"The {kind} font {Name(font)} shows a character code mapped to the .notdef glyph.");
 
@@ -199,7 +199,7 @@ internal sealed class FontProgramRule : IConformanceRule
                 break;
             }
         }
-        if (absentHit && presentReported.Add(font.BaseFont))
+        if (absentHit && presentReported.Add(DedupKey(font)))
             yield return Make(context, font, "4.1",
                 $"The {kind} font {Name(font)} renders a glyph that is not present in the embedded font "
                 + "program.");
@@ -213,7 +213,7 @@ internal sealed class FontProgramRule : IConformanceRule
         foreach (WidthComparison w in ProgramWidthResolver.Simple(font, metrics, widths, visibleCodes, isTrueType))
             worstDiff = Math.Max(worstDiff, Math.Abs(w.Declared - w.Program));
 
-        if (worstDiff > WidthTolerance && metricsReported.Add(font.BaseFont))
+        if (worstDiff > WidthTolerance && metricsReported.Add(DedupKey(font)))
             yield return Make(context, font, "5",
                 $"The {kind} font {Name(font)} declares a glyph width that differs "
                 + $"from the embedded font program's advance width by {worstDiff:F0} units "
@@ -246,7 +246,7 @@ internal sealed class FontProgramRule : IConformanceRule
             worstDiff = Math.Max(worstDiff, Math.Abs(declared - program.Value));
         }
 
-        if (worstDiff > WidthTolerance && metricsReported.Add(font.BaseFont))
+        if (worstDiff > WidthTolerance && metricsReported.Add(DedupKey(font)))
             yield return Make(context, font, "5",
                 $"The Type3 font {Name(font)} declares a glyph width that differs from the CharProc's "
                 + $"d0/d1 width by {worstDiff:F0} units (tolerance {WidthTolerance:F0}).");
@@ -369,6 +369,16 @@ internal sealed class FontProgramRule : IConformanceRule
         context.Resolve(font.FontDictionary.Get("FontDescriptor")) is PdfDictionary descriptor
         && context.Resolve(descriptor.Get("Flags")) is PdfInteger flags
         && (flags.LongValue & 4) != 0;
+
+    /// <summary>Dedup key: one finding per font OBJECT per sub-check. Keyed by object number for an
+    /// indirect dictionary (two sibling objects sharing a /BaseFont are distinct deficient programs —
+    /// issue 35); base-font name only for a direct dictionary, which has no object identity. Internal
+    /// (rather than private) so it can be pinned directly against a hand-built font — see
+    /// FontProgramRuleDedupTests's direct-dictionary fallback tests.</summary>
+    internal static string DedupKey(PdfFont font) =>
+        font.FontDictionary.IsIndirect
+            ? $"obj:{font.FontDictionary.ObjectNumber}"
+            : $"name:{font.BaseFont}";
 
     private static bool IsIdentity(string? encoding) => encoding is "Identity-H" or "Identity-V";
 

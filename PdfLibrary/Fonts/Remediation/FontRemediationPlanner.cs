@@ -312,6 +312,9 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     "This composite font's encoding is not an Identity CMap, so Pellucid cannot "
                     + "prove which glyph each character selects.");
             }
+            // cidKeyedCff is false BY GATING, not by nature: Type0CidType0 declined above, so only a
+            // CIDFontType2 descendant reaches this enumeration. If the kind gate ever admits CID0 here,
+            // this flag must become entry.Kind-derived (mirror FontProgramRule.CheckType0's discriminator).
             tuples = ProgramWidthResolver.Composite(
                 cid, metrics, cidKeyedCff: false, entry.UsedCodes.Distinct());
         }

@@ -136,6 +136,15 @@ public class FontProgramWidthRepairCorpusTests
     [Fact]
     public void Mixed_document_patches_cid2_and_declines_cid0()
     {
+        // Re-measured post-issue-35 (FontProgramRule now dedups per font OBJECT, not base-font
+        // name): 66 width findings before, 52 patch proposals / 14 charstring declines, 46
+        // remaining after applying every patch (2026-08-17). The pre-fix run would have
+        // undercounted here — sibling indirect objects sharing a /BaseFont previously collapsed
+        // onto one finding/proposal apiece — so a rise from whatever this test saw before issue
+        // 35 is the fix working as intended, not a regression. The assertions below stay
+        // relative (before/after, not hardcoded totals) specifically so they do not need
+        // re-pinning every time the corpus or the rule's detection surface shifts; this comment
+        // records the measured shape for the record.
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
@@ -251,5 +260,36 @@ public class FontProgramWidthRepairCorpusTests
         Assert.True(declines.Any(d => d.Reason.Contains("charstrings")),
             $"{file}: expected at least one decline citing charstrings; got: " +
             string.Join(" | ", declines.Select(d => d.Reason)));
+    }
+
+    [Fact]
+    public void Two_sibling_objects_each_get_their_own_patch_and_close()
+    {
+        // Issue 35's cc-main reproducer: F-4a Task 8 bucketed this document "unchanged" because
+        // the per-base-font-name dedup reported only ONE 6.2.11.5 finding for a pair of sibling
+        // font objects (holders 39 and 43) sharing a /BaseFont — so the planner only ever
+        // proposed one patch, and re-preflighting after applying it still saw the sibling's own
+        // (never-patched) finding. Post-fix (measured 2026-08-17): TWO findings, TWO
+        // PatchWidthsProposals, one per holder — applying both clears every 6.2.11.5 finding.
+        const string file = "2000_2000807.pdf";
+        string? root = CcMainCorpus();
+        Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
+
+        string path = Path.Combine(root!, file);
+        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult before, int total) =
+            ProposeFor(path);
+
+        int beforeWidthCount = before.Findings.Count(
+            f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Assert.Equal(2, beforeWidthCount);
+        Assert.Empty(declines);
+        Assert.Equal(2, total);
+        Assert.Equal(2, patches.Count);
+        Assert.Equal([39, 43], patches.Select(p => p.Font.ObjectNumber).OrderBy(n => n).ToArray());
+
+        PreflightResult after = ApplyAndRecheck(path, patches);
+        int afterWidthCount = after.Findings.Count(
+            f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Assert.Equal(0, afterWidthCount);
     }
 }
