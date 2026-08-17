@@ -136,6 +136,36 @@ public class FontProgramWidthRepairCorpusTests
     [Fact]
     public void Mixed_document_patches_cid2_and_declines_cid0()
     {
+        // Re-measured post-issue-35 (FontProgramRule now dedups per font OBJECT, not base-font
+        // name), 2026-08-17: 66 width findings before (was ~4 patchable + 1 CID0 decline pre-fix
+        // — F-4a Task 8's "1 partial" bucket for this doc). Per-object dedup surfaces 52 of those
+        // 66 as proposable and 14 as CFF-charstring declines (52 + 14 = 66, reconciles). But the
+        // 52 proposals are NOT 52 independent physical patches: FontInventory groups them onto
+        // only 4 distinct program HOLDERS (4 physical /FontFile2 CIDFontType2 programs, each
+        // shared by many separate Type0 wrapper objects on different pages/text runs — 16, 16, 12,
+        // and 8 sibling findings per holder). FontRemediationPlanner proposes one
+        // PatchWidthsProposal PER LOGICAL FONT regardless of holder sharing (its `seen` dedup at
+        // line 90 is keyed by (Id, ProgramHolderId, RuleId), not by ProgramHolderId alone — by
+        // design, per that method's own doc comment, for an unrelated FontId(0)-collision reason).
+        // PdfDocumentEditor.ReplaceProgramBytes performs a full-stream REPLACE of the holder's
+        // /FontFile2 on every call (FontDescriptor.Set, not a merge) — so when ApplyAndRecheck
+        // applies all 52 proposals in sequence, every proposal after the first one FOR THE SAME
+        // HOLDER overwrites its predecessor's patched bytes wholesale. Only the last-applied
+        // proposal per holder actually survives; the other 52 - 4 = 48 are silently discarded.
+        // Measured result: 46 findings remain after applying all 52 patches — the 14 legitimate
+        // CFF/CID0 declines (never touched) plus 32 of the 52 patch-targeted findings whose own
+        // proposal was clobbered by a later sibling's proposal on the same shared holder (only 20
+        // of the 52 patch-targeted findings actually close: some incidentally, because the
+        // surviving per-holder patch happens to also fix the same glyphs a sibling finding needed).
+        // 14 + 32 = 46 reconciles; 66 - 46 = 20 genuinely closed. This is a real defect in the F-4a
+        // remediation pipeline (the planner does not merge multiple proposals that target one
+        // physical program holder before apply) — invisible before this task because the pre-fix
+        // by-base-font-name dedup almost always collapsed this doc's many sibling Type0 wrappers
+        // down to ~1 finding per holder, so the collision never arose. Out of scope for the
+        // Task 2 rule-level dedup fix (FontProgramRule.DedupKey) to correct; flagged for the
+        // planner/apply layer. The assertions below stay relative (before/after, not hardcoded
+        // totals) so they do not need re-pinning every time the corpus or detection surface
+        // shifts; this comment records the measured shape and the reconciled mechanism.
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
@@ -159,9 +189,11 @@ public class FontProgramWidthRepairCorpusTests
             f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
         Assert.True(afterWidthCount < beforeWidthCount,
             $"{file}: width findings did not drop (before {beforeWidthCount}, after {afterWidthCount}) " +
-            "— the CID0 font's finding should legitimately remain, but the CID2 fonts' should not.");
+            "— at minimum the CID0 font's finding should legitimately remain while some CID2 " +
+            "findings close; MOST remaining findings here are actually CID2 findings clobbered by " +
+            "a same-holder sibling's patch, not legitimate CID0 holdouts (see the comment above).");
         Assert.True(afterWidthCount > 0,
-            $"{file}: expected the CID0 font's width finding to legitimately remain, but all cleared.");
+            $"{file}: expected at least the CID0 font's width finding to legitimately remain, but all cleared.");
 
         Dictionary<string, int> afterByRule = CountByRule(after);
         foreach ((string ruleId, int beforeCount) in beforeByRule)
@@ -184,40 +216,38 @@ public class FontProgramWidthRepairCorpusTests
     }
 
     [Fact]
-    public void Cid2_document_declines_on_a_pre_existing_cidtogidmap_defect()
+    public void Cid2_document_with_explicit_gid0_map_reports_notdef_not_width()
     {
-        // 0000_0000024.pdf was pinned "composite CID2 close" from the 2026-08-16/15f scans, but
-        // diagnosis here (2026-08-16) shows it cannot close: BOTH fonts (obj 4 'AAAAAC+AlArabiya',
-        // obj 7 'AAAAAF+AlArabiya,Italic') decline entirely, not for a width-genuine reason but for
-        // "a patched glyph id lies beyond the program's glyph count" — SfntAdvancePatcher's own
-        // safety guard (deliberately tested: SfntAdvancePatcherTests
-        // .A_gid_at_or_beyond_numGlyphs_fails_rather_than_writes) correctly refusing to write an
-        // advance for a glyph id that does not exist in the embedded program (maxp.numGlyphs=949).
+        // 0000_0000024.pdf was pinned "composite CID2 close" from the 2026-08-16/15f scans, then
+        // re-pinned (2026-08-16) to "declines on the SfntAdvancePatcher glyph-count guard" once
+        // diagnosis found the real cause: PdfLibrary.Fonts.CidFont.LoadCidToGidMap only stored
+        // NON-ZERO entries, so CidFont.MapCidToGid could not tell "CID outside the map's range"
+        // (identity fallback, correct) from "CID the map explicitly sends to GID 0" (a legitimate
+        // .notdef declaration) — both fell through to `return cid;`, producing a bogus non-zero
+        // "identity" GID for the punctuation CIDs this document actually draws (8211/8216/8217/
+        // 8220/8221 — em-dash/curly-quote code points used directly as CIDs). Filed as issue 34.
         //
-        // Root cause, confirmed by direct inspection: both fonts carry a real (non-Identity)
-        // /CIDToGIDMap STREAM of 65536 entries — so it fully covers the used CIDs (which run up to
-        // 8221, well inside the stream's range) — but PdfLibrary.Fonts.CidFont.LoadCidToGidMap
-        // (pre-existing; last touched at `eb963f2`/`b1c9e90`, issue-24 work, well before this
-        // branch's Task 1 `b88349a`) only stores NON-ZERO entries in its lookup dictionary
-        // ("// Only store non-zero mappings"). CidFont.MapCidToGid then falls through to
-        // "// Default: assume identity mapping" (`return cid;`) whenever a CID is absent from that
-        // dictionary — which is true both for a CID truly outside the map's range AND for a CID the
-        // map explicitly assigns to GID 0 (a legitimate .notdef declaration). For the punctuation
-        // CIDs this document actually draws (8211/8216/8217/8220/8221 — em-dash/curly-quote code
-        // points used directly as CIDs), the map's real answer is GID 0, but MapCidToGid instead
-        // returns the CID itself (8217, 8221, ...) as a bogus "identity" GID — far beyond the
-        // program's real 949 glyphs. ProgramWidthResolver.Composite has its own `gid == 0` skip
-        // for exactly this "no meaningful width to compare" case, but it never gets the chance: the
-        // gid it receives is already wrong by the time it gets there.
+        // Issue 34 fixed (this task): MapCidToGid now returns the honest 0 for a CID inside the
+        // map stream's covered range with no stored entry. Both fonts' punctuation CIDs now
+        // resolve to gid 0, so ProgramWidthResolver.Composite's own `gid == 0` skip removes them
+        // from the width comparison (the spurious "far beyond the program's glyph count" width
+        // patch/decline this test used to pin is gone), and FontProgramRule.CheckType0's `gid == 0`
+        // walk instead raises the honest 6.2.11.8 (.notdef) finding for both fonts.
         //
-        // This is a genuine defect, but NOT in Tasks 1-4 code — CidFont.MapCidToGid predates F-4a
-        // entirely and Task 1 only extracted ProgramWidthResolver verbatim from FontProgramRule (no
-        // behavior change), so the same miscomputed gid would already have produced this document's
-        // ORIGINAL 6.2.11.5 finding before this branch existed. Filed as issue 34 in
-        // Pellucid/docs/ISSUE-TRACKER.md rather than fixed here (out of this task's scope, and the
-        // brief forbids engine changes beyond this test file). SfntAdvancePatcher's bounds check is
-        // exactly why this surfaces as an honest decline instead of a corrupted hmtx write — the
-        // safety net worked as designed.
+        // F-4b Task 5 re-pin: a 6.2.11.8 finding now dispatches to ProposeProgramReplace (whole-face
+        // swap), not the old "missing glyph, not a width mismatch" width-patch decline — this document
+        // still declines, since ProposeFor's StubFontProvider(null) never resolves a substitute for
+        // either AlArabiya font, but now for THAT reason ("no font matching '...' is installed").
+        //
+        // veraPDF oracle (`verapdf.bat --format json -f 2b 0000_0000024.pdf`, 2026-08-17): 4 failed
+        // rules total — 6.6.4 (missing PDF/A Identification), 6.2.11.4.1 x2 checks (Helvetica-Bold
+        // / Helvetica-Oblique NOT embedded — unrelated simple fonts, not the AlArabiya composites),
+        // and 6.2.4.3 x2 test numbers (DeviceGray/DeviceRGB without an OutputIntent). Neither
+        // 6.2.11.5 nor 6.2.11.8 appears in veraPDF's report for the AlArabiya composite fonts —
+        // veraPDF's own PDF/A-2b profile does not reach a composite-font glyph-existence check this
+        // deep for this document, so it is not an independent corroborating oracle for THIS specific
+        // finding; the fix is verified directly against the corrected CidFont.MapCidToGid behavior
+        // and CidToGidMapExplicitZeroTests instead.
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
@@ -231,11 +261,30 @@ public class FontProgramWidthRepairCorpusTests
         // Direct check that every proposal is one of the two kinds above — "patches empty" alone only
         // proves nothing patched; it says nothing about a third proposal kind slipping through unseen.
         Assert.Equal(total, patches.Count + declines.Count);
-        Assert.True(declines.All(d => d.Reason.Contains("beyond the program's glyph count")),
-            $"{file}: expected every decline to cite the glyph-count guard; got: " +
-            string.Join(" | ", declines.Select(d => d.Reason)));
+        Assert.True(declines.All(d => d.Reason.Contains("is installed on this computer")),
+            $"{file}: expected every decline to cite the whole-program-replace no-substitute-installed " +
+            "reason; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
+    // F-4b Task 9 re-pin (2026-08-17, corrected in the F-4b final whole-branch review — the PRIOR
+    // version of this comment named a since-renamed test and asserted a decline reason that no longer
+    // holds post-retry): 0000_0000769.pdf's composite .notdef finding (object 1424, AGaramond-Semibold)
+    // now ALSO routes through the planner (FontRemediationPlanner.Propose -> ProposeProgramReplace,
+    // landed this program) and itself DECLINES here. THIS test's ProposeFor (above) constructs its
+    // planner with `new FontRemediationPlanner(new StubFontProvider(null))` — StubFontProvider(null)
+    // resolves NO face for ANY request — so object 1424's decline here is the plain "no font matching
+    // '...' is installed on this computer" branch (fonts.Resolve returns null before any format
+    // classification happens). This is NOT what happens for THIS SAME document's THIS SAME object under
+    // a REAL font provider: `FontProgramReplaceCorpusTests.Mixed_document_closes_its_notdef_finding_
+    // and_keeps_its_unrelated_width_decline` (renamed from the earlier "declines for a different
+    // reason" name once the fix-round-1 synthetic-retry mitigation landed) uses a REAL provider
+    // (EmbedProgramRoundTripTests.DeterministicFonts) against this machine's actual installed fonts,
+    // and measures object 1424 CLOSING post-retry (resolving to Liberation Serif Bold), not declining
+    // at all — a different planner construction produces a genuinely different outcome for the same
+    // finding, not just a different decline reason. Both proposals here (in THIS test) are still
+    // DeclineProposal, so Assert.Empty(patches) and the total-count formula below already admit the
+    // new proposal kind without any assertion change — this comment documents the measured fact for a
+    // future reader, per the F-4b Task 9 brief's own "re-pin" instruction.
     [Theory]
     [InlineData("0000_0000769.pdf")]
     [InlineData("0000_0000293.pdf")]
@@ -256,5 +305,36 @@ public class FontProgramWidthRepairCorpusTests
         Assert.True(declines.Any(d => d.Reason.Contains("charstrings")),
             $"{file}: expected at least one decline citing charstrings; got: " +
             string.Join(" | ", declines.Select(d => d.Reason)));
+    }
+
+    [Fact]
+    public void Two_sibling_objects_each_get_their_own_patch_and_close()
+    {
+        // Issue 35's cc-main reproducer: F-4a Task 8 bucketed this document "unchanged" because
+        // the per-base-font-name dedup reported only ONE 6.2.11.5 finding for a pair of sibling
+        // font objects (holders 39 and 43) sharing a /BaseFont — so the planner only ever
+        // proposed one patch, and re-preflighting after applying it still saw the sibling's own
+        // (never-patched) finding. Post-fix (measured 2026-08-17): TWO findings, TWO
+        // PatchWidthsProposals, one per holder — applying both clears every 6.2.11.5 finding.
+        const string file = "2000_2000807.pdf";
+        string? root = CcMainCorpus();
+        Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
+
+        string path = Path.Combine(root!, file);
+        (List<PatchWidthsProposal> patches, List<DeclineProposal> declines, PreflightResult before, int total) =
+            ProposeFor(path);
+
+        int beforeWidthCount = before.Findings.Count(
+            f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Assert.Equal(2, beforeWidthCount);
+        Assert.Empty(declines);
+        Assert.Equal(2, total);
+        Assert.Equal(2, patches.Count);
+        Assert.Equal([39, 43], patches.Select(p => p.Font.ObjectNumber).OrderBy(n => n).ToArray());
+
+        PreflightResult after = ApplyAndRecheck(path, patches);
+        int afterWidthCount = after.Findings.Count(
+            f => f.RuleId == "font-program" && ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Assert.Equal(0, afterWidthCount);
     }
 }

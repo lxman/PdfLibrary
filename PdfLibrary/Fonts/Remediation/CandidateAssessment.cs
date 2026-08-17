@@ -17,9 +17,13 @@ namespace PdfLibrary.Fonts.Remediation;
 /// is null whenever this is non-null.</param>
 /// <param name="Warnings">Selectable-with-consequence findings the user may accept anyway. Empty when
 /// <paramref name="HardBlockReason"/> is non-null.</param>
-/// <param name="Proposal">Ready to stage iff <paramref name="HardBlockReason"/> is null.</param>
+/// <param name="Proposal">Ready to stage iff <paramref name="HardBlockReason"/> is null. An
+/// <see cref="EmbedProposal"/> from <see cref="FontRemediationPlanner.AssessCandidate"/> (embed mode),
+/// or a <see cref="ReplaceProgramProposal"/> from
+/// <see cref="FontRemediationPlanner.AssessReplacementCandidate"/> (whole-program replacement mode).
+/// </param>
 public sealed record CandidateAssessment(
     FontProgramFormat? Format,
     string? HardBlockReason,
     IReadOnlyList<string> Warnings,
-    EmbedProposal? Proposal);
+    FontProposal? Proposal);

@@ -89,10 +89,11 @@ public class CandidateAssessmentTests
         Assert.Empty(result.Warnings);
         Assert.NotNull(result.Proposal);
         Assert.Equal(FontProgramFormat.TrueType, result.Format);
-        Assert.Equal(FontProgramFormat.TrueType, result.Proposal!.Format);
-        Assert.Same(candidate, result.Proposal.Program);
-        Assert.Equal("Liberation Sans (Regular)", result.Proposal.SourceDescription);
-        Assert.Equal(entry.ProgramHolderId ?? entry.Id, result.Proposal.Font);
+        var embed = Assert.IsType<EmbedProposal>(result.Proposal);
+        Assert.Equal(FontProgramFormat.TrueType, embed.Format);
+        Assert.Same(candidate, embed.Program);
+        Assert.Equal("Liberation Sans (Regular)", embed.SourceDescription);
+        Assert.Equal(entry.ProgramHolderId ?? entry.Id, embed.Font);
     }
 
     [Fact]

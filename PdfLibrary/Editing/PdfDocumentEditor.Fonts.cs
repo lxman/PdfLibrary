@@ -1,8 +1,10 @@
+using System.Text;
 using PdfLibrary.Conformance;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Embedded;
+using PdfLibrary.Fonts.Remediation;
 
 namespace PdfLibrary.Editing;
 
@@ -220,9 +222,23 @@ public sealed partial class PdfDocumentEditor
         }
     }
 
-    /// <summary>Obligation 3: writes the recomputed metric entries. Never called with a null
-    /// <see cref="FontDescriptorValues"/> — the caller checks first.</summary>
-    private static void ApplyMetrics(PdfDictionary descriptor, FontDescriptorValues values)
+    /// <summary>Obligation 3: writes the recomputed metric entries, including <c>/MissingWidth</c>
+    /// (meaningful on a simple font's descriptor, ISO 32000-2 §9.8.3). Never called with a null
+    /// <see cref="FontDescriptorValues"/> — the caller checks first. Delegates to
+    /// <see cref="WriteMetricEntries"/> so this and <see cref="ReplaceCompositeProgram"/> can never
+    /// disagree on how the six shared entries are written — <c>/MissingWidth</c> is the one entry that
+    /// differs between the two callers, not the primitives.</summary>
+    private static void ApplyMetrics(PdfDictionary descriptor, FontDescriptorValues values) =>
+        WriteMetricEntries(descriptor, values, includeMissingWidth: true);
+
+    /// <summary>The six <c>/FontBBox</c>/<c>/ItalicAngle</c>/<c>/Ascent</c>/<c>/Descent</c>/
+    /// <c>/CapHeight</c>/<c>/StemV</c> entries every <see cref="FontDescriptorValues"/> caller writes,
+    /// plus <c>/MissingWidth</c> when <paramref name="includeMissingWidth"/> is true.
+    /// <c>/MissingWidth</c> is meaningless on a CID font's descriptor — a CIDFont declares its
+    /// fallback width with <c>/DW</c> on the descendant dictionary, not <c>/MissingWidth</c> on the
+    /// descriptor (ISO 32000-2 §9.7.4.3) — so <see cref="ReplaceCompositeProgram"/> passes false.</summary>
+    private static void WriteMetricEntries(
+        PdfDictionary descriptor, FontDescriptorValues values, bool includeMissingWidth)
     {
         descriptor.Set("FontBBox", new PdfArray(
             new PdfInteger(values.FontBBox[0]),
@@ -234,7 +250,8 @@ public sealed partial class PdfDocumentEditor
         descriptor.Set("Descent", new PdfInteger(values.Descent));
         descriptor.Set("CapHeight", new PdfInteger(values.CapHeight));
         descriptor.Set("StemV", new PdfInteger(values.StemV));
-        descriptor.Set("MissingWidth", new PdfInteger(values.MissingWidth));
+        if (includeMissingWidth)
+            descriptor.Set("MissingWidth", new PdfInteger(values.MissingWidth));
     }
 
     /// <summary>Obligation 5, the absent-/Widths branch only — a present /Widths array is never
@@ -475,6 +492,100 @@ public sealed partial class PdfDocumentEditor
         streamDict.Set("Length1", new PdfInteger(program.Length));
         PdfIndirectReference streamRef = _document.RegisterObject(new PdfStream(streamDict, program));
         descriptor.Set("FontFile2", streamRef);
+    }
+
+    /// <summary>Applies a <see cref="ReplaceProgramProposal"/> — the F-4b whole-face swap. Purely
+    /// mechanical: every value written here was planner-resolved (spec §3); this method makes no
+    /// inferences. <c>/W</c>, <c>/DW</c>, <c>/ToUnicode</c> and <c>/Encoding</c> are deliberately
+    /// never touched — declared widths stay authoritative (the proposal's program is already patched
+    /// to them) and the <c>/ToUnicode</c> claims are exactly what the replacement realised (spec §3
+    /// steps 8-9).
+    ///
+    /// <para>ISO 32000-2 §9.7.4.2 expects CID 0 to map to <c>.notdef</c>, but
+    /// <paramref name="proposal"/>'s <see cref="ReplaceProgramProposal.CidToGid"/> may map a dead CID 0
+    /// to a REAL glyph when /ToUnicode resolves it (<c>CidReplacementMap.Build</c>, Task 4) — that is
+    /// this program's approved policy, a deliberate call and not an oversight: a document that shows
+    /// CID 0 and has a provable Unicode value for it is asking for that character to render, and
+    /// restoring it beats preserving the .notdef convention for a code the document actually draws.
+    /// </para>
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="proposal"/>'s program is empty or its
+    /// <see cref="ReplaceProgramProposal.Format"/> is not <see cref="FontProgramFormat.TrueType"/>
+    /// (<c>ParamName</c> <c>"proposal"</c> in both cases — this method only ever writes a TrueType
+    /// sfnt to <c>/FontFile2</c>, so a hand-built <see cref="ReplaceProgramProposal"/> carrying a CFF
+    /// or Type1 program would otherwise be written into <c>/FontFile2</c> under <c>/Subtype
+    /// /CIDFontType2</c> as if it were valid sfnt bytes — silent corruption no consumer can load; the
+    /// planner never proposes this shape, but the proposal's constructor is public), or its <c>Font</c>
+    /// or its <c>CompositeFont</c> names no dictionary (<c>ParamName</c> <c>"font"</c> either way —
+    /// the shared <see cref="ResolveFontDictionary"/> helper's own parameter name, not a proposal
+    /// field name; do not rely on it to tell which of the two failed).</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="proposal"/>'s <c>Font</c> has no
+    /// /FontDescriptor — the planner only proposes a replacement for an existing embedded composite
+    /// font; this is the backstop.</exception>
+    public void ReplaceCompositeProgram(ReplaceProgramProposal proposal)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        if (proposal.Program.Length == 0)
+            throw new ArgumentException("A font program cannot be empty.", nameof(proposal));
+        if (proposal.Format != FontProgramFormat.TrueType)
+            throw new ArgumentException(
+                $"ReplaceCompositeProgram only writes a TrueType sfnt to /FontFile2; proposal.Format "
+                + $"was {proposal.Format}. The planner never proposes this shape — a hand-built "
+                + "proposal must not reach this operation with a non-TrueType program.",
+                nameof(proposal));
+
+        PdfDictionary cidDict = ResolveFontDictionary(proposal.Font);
+        PdfDictionary wrapperDict = ResolveFontDictionary(proposal.CompositeFont);
+        if (Resolve(cidDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
+            throw new InvalidOperationException(
+                $"Font object {proposal.Font.ObjectNumber} has no /FontDescriptor; "
+                + "ReplaceCompositeProgram only rewrites an existing embedded composite font.");
+
+        // 1. Program: /FontFile2 <- substitute (Flate; /Length1 = DECODED length, the FontSubsetter
+        //    precedent: PdfLibrary/Optimization/FontSubsetter.cs:113-115 — a full Liberation face is
+        //    ~300 KB, compression is not optional). The departing program's other carriers removed:
+        //    the guard above already confirmed Format is TrueType, so /FontFile3 and /FontFile are
+        //    stale leftovers of whatever the OLD program was, never something this operation itself
+        //    writes.
+        var programStreamDict = new PdfDictionary();
+        var programStream = new PdfStream(programStreamDict, []);
+        programStream.SetEncodedData(proposal.Program, "FlateDecode");
+        programStreamDict.Set("Length1", new PdfInteger(proposal.Program.Length));
+        PdfIndirectReference programRef = _document.RegisterObject(programStream);
+        descriptor.Set("FontFile2", programRef);
+        descriptor.Remove(new PdfName("FontFile3"));
+        descriptor.Remove(new PdfName("FontFile"));
+
+        // 2. Descendant identity: CIDFontType2 + explicit CIDToGIDMap + Adobe-Identity-0 (required
+        //    once the GID map is custom; compatible with the untouched Identity-H CMap on the
+        //    wrapper — that CMap addresses CODES, not GIDs, so it needs no change here).
+        cidDict.Set("Subtype", new PdfName("CIDFontType2"));
+
+        var cidToGidStreamDict = new PdfDictionary();
+        var cidToGidStream = new PdfStream(cidToGidStreamDict, []);
+        cidToGidStream.SetEncodedData(
+            CidReplacementMap.ToStreamBytes(proposal.CidToGid, proposal.MaxCid), "FlateDecode");
+        PdfIndirectReference cidToGidRef = _document.RegisterObject(cidToGidStream);
+        cidDict.Set("CIDToGIDMap", cidToGidRef);
+
+        var cidSystemInfo = new PdfDictionary();
+        cidSystemInfo.Set("Registry", new PdfString(Encoding.ASCII.GetBytes("Adobe")));
+        cidSystemInfo.Set("Ordering", new PdfString(Encoding.ASCII.GetBytes("Identity")));
+        cidSystemInfo.Set("Supplement", new PdfInteger(0));
+        cidDict.Set("CIDSystemInfo", cidSystemInfo);
+
+        // 3. Names, both levels — stale metrics describing the departed program would be a quiet lie.
+        wrapperDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
+        cidDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
+        descriptor.Set("FontName", new PdfName(proposal.NewBaseFont));
+
+        // 4. Descriptor rebuilt from the substitute's own tables; stale /CIDSet dropped (a full embed
+        //    is not a subset — spec §3 step 7). No /MissingWidth: meaningless on a CID descriptor,
+        //    which declares its fallback width with /DW on the descendant, not /MissingWidth on the
+        //    descriptor (ISO 32000-2 §9.7.4.3) — see WriteMetricEntries.
+        descriptor.Set("Flags", new PdfInteger(proposal.DescriptorFlags));
+        WriteMetricEntries(descriptor, proposal.Descriptor, includeMissingWidth: false);
+        descriptor.Remove(new PdfName("CIDSet"));
     }
 
     /// <summary>
