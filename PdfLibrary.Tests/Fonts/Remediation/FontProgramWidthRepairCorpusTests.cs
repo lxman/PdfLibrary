@@ -266,6 +266,16 @@ public class FontProgramWidthRepairCorpusTests
             "reason; got: " + string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
+    // F-4b Task 9 re-pin (2026-08-17): 0000_0000769.pdf's composite .notdef finding (object 1424,
+    // AGaramond-Semibold) now ALSO routes through the planner (FontRemediationPlanner.Propose ->
+    // ProposeProgramReplace, landed this program) and, measured against this machine's real font
+    // resolution (FontProgramReplaceCorpusTests.Mixed_document_declines_its_notdef_finding_for_a_
+    // different_reason_than_its_width_finding), itself DECLINES — 'AGaramond-Semibold' resolves here
+    // to a CFF-flavoured face, so the v1 "TrueType substitute only" gate declines it, for a reason
+    // distinct from (but the SAME record TYPE as) object 2032's charstring decline this test pins.
+    // Both proposals are DeclineProposal, so Assert.Empty(patches) and the total-count formula below
+    // already admit the new proposal kind without any assertion change — this comment documents the
+    // measured fact for a future reader, per the F-4b Task 9 brief's own "re-pin" instruction.
     [Theory]
     [InlineData("0000_0000769.pdf")]
     [InlineData("0000_0000293.pdf")]
