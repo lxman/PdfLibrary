@@ -3,6 +3,7 @@ using PdfLibrary.Conformance;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
+using PdfLibrary.Fonts;
 using PdfLibrary.Fonts.Remediation;
 using PdfLibrary.Structure;
 using PdfLibrary.Tests.Fonts;
@@ -37,6 +38,15 @@ public sealed class ReplaceProgramApplyTests
     {
         PdfDocument doc = ReplaceProgramFixtures.DeadCid2Doc();
         ReplaceProgramProposal proposal = ProposeReplacement(doc);
+
+        // Captured BEFORE doc.Edit() — Edit() mutates the SAME in-memory objects, so reading
+        // "original" values afterward would compare the edited document against itself and pass
+        // even if ReplaceCompositeProgram touched /W or /ToUnicode.
+        var preEditDescendant = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.Font.ObjectNumber));
+        string? originalW = preEditDescendant.Get("W")?.ToPdfString();
+        var preEditWrapper = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.CompositeFont.ObjectNumber));
+        var preEditToUnicode = Assert.IsType<PdfStream>(Resolve(doc, preEditWrapper.Get("ToUnicode")));
+        byte[] originalToUnicodeBytes = preEditToUnicode.GetDecodedData(doc.Decryptor);
 
         using PdfDocumentEditor editor = doc.Edit();
         editor.ReplaceCompositeProgram(proposal);
@@ -90,16 +100,12 @@ public sealed class ReplaceProgramApplyTests
         var flags = Assert.IsType<PdfInteger>(Resolve(reloaded, descriptor.Get("Flags")));
         Assert.Equal(proposal.DescriptorFlags, flags.Value);
 
-        // /W and /ToUnicode byte-unchanged from the original document.
-        var originalDescendant = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.Font.ObjectNumber));
-        Assert.Equal(originalDescendant.Get("W")?.ToPdfString(), descendant.Get("W")?.ToPdfString());
+        // /W and /ToUnicode byte-unchanged from the PRE-EDIT document (captured above, before
+        // doc.Edit() mutated the original objects in place).
+        Assert.Equal(originalW, descendant.Get("W")?.ToPdfString());
 
-        var originalWrapper = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.CompositeFont.ObjectNumber));
-        var originalToUnicode = Assert.IsType<PdfStream>(Resolve(doc, originalWrapper.Get("ToUnicode")));
         var reloadedToUnicode = Assert.IsType<PdfStream>(Resolve(reloaded, wrapperDict.Get("ToUnicode")));
-        Assert.Equal(
-            originalToUnicode.GetDecodedData(doc.Decryptor),
-            reloadedToUnicode.GetDecodedData(reloaded.Decryptor));
+        Assert.Equal(originalToUnicodeBytes, reloadedToUnicode.GetDecodedData(reloaded.Decryptor));
     }
 
     [Fact]
@@ -109,9 +115,16 @@ public sealed class ReplaceProgramApplyTests
         // preflight BEFORE and AFTER, comparing the FULL rule-id sets — not just font-program — so
         // the CIDSystemInfo/descriptor rewrites this operation makes cannot quietly trip
         // FontDictionaryRule's 6.2.11.1 / 6.2.11.3.1 territory without the test noticing.
+        //
+        // BOTH checks run against SAVED BYTES, not one in-memory and one round-tripped: a rule that
+        // fires only on the hand-built in-memory form (e.g. something the save/load pass normalises)
+        // would otherwise inflate beforeRuleIds and could silently absorb a genuinely new finding.
         PdfDocument doc = ReplaceProgramFixtures.DeadCid2Doc();
+        var preEditMs = new MemoryStream();
+        doc.Save(preEditMs);
+        byte[] originalBytes = preEditMs.ToArray();
 
-        PreflightResult before = Preflighter.Check(doc, ConformanceProfile.PdfA2b);
+        PreflightResult before = Preflighter.Check(originalBytes, ConformanceProfile.PdfA2b);
         Assert.Contains(before.Findings, f => f.RuleId == "font-program" && f.Clause.Contains("6.2.11.8"));
         var beforeRuleIds = before.Findings.Select(f => f.RuleId).ToHashSet();
 
@@ -154,5 +167,23 @@ public sealed class ReplaceProgramApplyTests
 
         var subtype = Assert.IsType<PdfName>(Resolve(reloaded, descendant.Get("Subtype")));
         Assert.Equal("CIDFontType2", subtype.Value);
+    }
+
+    [Fact]
+    public void A_non_truetype_proposal_is_rejected_rather_than_written_as_sfnt()
+    {
+        // A hand-built ReplaceProgramProposal (its ctor is public) carrying a non-TrueType Format
+        // must be refused, not silently written into /FontFile2 as if it were valid sfnt bytes —
+        // ReplaceCompositeProgram only ever writes a TrueType program there. The planner itself
+        // never produces this shape (ReplaceProgramProposalTests covers that decline), so this
+        // exercises the editor's own backstop directly.
+        PdfDocument doc = ReplaceProgramFixtures.DeadCid2Doc();
+        ReplaceProgramProposal proposal = ProposeReplacement(doc);
+        ReplaceProgramProposal badProposal = proposal with { Format = FontProgramFormat.CidFontType0C };
+
+        using PdfDocumentEditor editor = doc.Edit();
+        ArgumentException ex = Assert.Throws<ArgumentException>(
+            () => editor.ReplaceCompositeProgram(badProposal));
+        Assert.Equal("proposal", ex.ParamName);
     }
 }

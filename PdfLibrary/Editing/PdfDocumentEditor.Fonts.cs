@@ -509,8 +509,16 @@ public sealed partial class PdfDocumentEditor
     /// restoring it beats preserving the .notdef convention for a code the document actually draws.
     /// </para>
     /// </summary>
-    /// <exception cref="ArgumentException"><paramref name="proposal"/>'s program is empty, or either
-    /// its <c>Font</c> or its <c>CompositeFont</c> names no dictionary.</exception>
+    /// <exception cref="ArgumentException"><paramref name="proposal"/>'s program is empty or its
+    /// <see cref="ReplaceProgramProposal.Format"/> is not <see cref="FontProgramFormat.TrueType"/>
+    /// (<c>ParamName</c> <c>"proposal"</c> in both cases — this method only ever writes a TrueType
+    /// sfnt to <c>/FontFile2</c>, so a hand-built <see cref="ReplaceProgramProposal"/> carrying a CFF
+    /// or Type1 program would otherwise be written into <c>/FontFile2</c> under <c>/Subtype
+    /// /CIDFontType2</c> as if it were valid sfnt bytes — silent corruption no consumer can load; the
+    /// planner never proposes this shape, but the proposal's constructor is public), or its <c>Font</c>
+    /// or its <c>CompositeFont</c> names no dictionary (<c>ParamName</c> <c>"font"</c> either way —
+    /// the shared <see cref="ResolveFontDictionary"/> helper's own parameter name, not a proposal
+    /// field name; do not rely on it to tell which of the two failed).</exception>
     /// <exception cref="InvalidOperationException"><paramref name="proposal"/>'s <c>Font</c> has no
     /// /FontDescriptor — the planner only proposes a replacement for an existing embedded composite
     /// font; this is the backstop.</exception>
@@ -519,6 +527,12 @@ public sealed partial class PdfDocumentEditor
         ArgumentNullException.ThrowIfNull(proposal);
         if (proposal.Program.Length == 0)
             throw new ArgumentException("A font program cannot be empty.", nameof(proposal));
+        if (proposal.Format != FontProgramFormat.TrueType)
+            throw new ArgumentException(
+                $"ReplaceCompositeProgram only writes a TrueType sfnt to /FontFile2; proposal.Format "
+                + $"was {proposal.Format}. The planner never proposes this shape — a hand-built "
+                + "proposal must not reach this operation with a non-TrueType program.",
+                nameof(proposal));
 
         PdfDictionary cidDict = ResolveFontDictionary(proposal.Font);
         PdfDictionary wrapperDict = ResolveFontDictionary(proposal.CompositeFont);
@@ -530,9 +544,9 @@ public sealed partial class PdfDocumentEditor
         // 1. Program: /FontFile2 <- substitute (Flate; /Length1 = DECODED length, the FontSubsetter
         //    precedent: PdfLibrary/Optimization/FontSubsetter.cs:113-115 — a full Liberation face is
         //    ~300 KB, compression is not optional). The departing program's other carriers removed:
-        //    the planner only proposes this shape for a TrueType substitute (Format is always
-        //    TrueType here), so /FontFile3 and /FontFile are stale leftovers of whatever the OLD
-        //    program was, never something this operation itself writes.
+        //    the guard above already confirmed Format is TrueType, so /FontFile3 and /FontFile are
+        //    stale leftovers of whatever the OLD program was, never something this operation itself
+        //    writes.
         var programStreamDict = new PdfDictionary();
         var programStream = new PdfStream(programStreamDict, []);
         programStream.SetEncodedData(proposal.Program, "FlateDecode");
