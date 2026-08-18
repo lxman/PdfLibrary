@@ -114,10 +114,16 @@ public sealed class MergedReplacementTests
     ///
     /// <para>Task 6 update: wrapper 1's own 6.2.11.5 width finding (declared 500 vs the shared
     /// program's actual 450) is no longer swallowed by the notdef group's now-conditional subsumption
-    /// skip — the group DECLINED, so it frees wrapper 1's width finding for the width arm. Wrapper 2
-    /// never entered <c>resolved</c> (its finding was never named in this call), so it does not join a
-    /// width-family merge; wrapper 1 gets its own singleton width patch alongside the group's 2
-    /// declines.</para>
+    /// skip — the group DECLINED, so it frees wrapper 1's width finding for the width arm.</para>
+    ///
+    /// <para>Task 8b update (review finding I3): wrapper 2 never entered <c>resolved</c> (its finding
+    /// was never named in this call), but it IS still same-kind (Type0CidType2) and addressable, so it
+    /// now joins the width-family group by inventory-scoped expansion — the same mechanism that
+    /// already pulled it into the NOTDEF group above. Its only drawn code (0x42) resolves to .notdef
+    /// and is skipped by <c>ProgramWidthResolver.Composite</c>, so it contributes no glyph of its own
+    /// to the union — the patched BYTES are unchanged from before this task — but it now correctly
+    /// shows up in <c>CoveredFonts</c> (row membership, Task 8): it genuinely shares the program this
+    /// patch rewrites, so Pellucid's per-row staging must treat it as covered too.</para>
     /// </summary>
     [Fact]
     public void A_gate_failing_findingless_sibling_blocks_the_whole_group()
@@ -131,7 +137,7 @@ public sealed class MergedReplacementTests
             Assert.Contains("cannot be included", p.Reason));
 
         PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
-        Assert.Equal(new HashSet<int> { 1 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+        Assert.Equal(new HashSet<int> { 1, 7 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
     }
 
     /// <summary>I5: merge-width-conflict at DESCRIPTOR level (distinct descendants). Wrapper 2's CID
@@ -169,8 +175,13 @@ public sealed class MergedReplacementTests
     /// 450, gid 1 — <c>FontProgramRule</c> attributes it to wrapper 1's own object, since wrapper 1
     /// itself draws the mismatched live code) is freed by the now-conditional subsumption skip. Wrapper
     /// 2 draws only its dead code (default wrapper2Codes [0x42]), which resolves to .notdef and is
-    /// skipped by <c>ProgramWidthResolver.Composite</c>, so wrapper 2 has no width finding of its own
-    /// to free — the freed patch is a SINGLETON covering only wrapper 1.</para>
+    /// skipped by <c>ProgramWidthResolver.Composite</c>, so wrapper 2 contributes no glyph of its own
+    /// to the union — the PATCHED BYTES are a singleton fix in substance.</para>
+    ///
+    /// <para>Task 8b update (review finding I3): wrapper 2 is nonetheless same-kind and addressable,
+    /// so it is now a real width-group MEMBER (inventory-scoped expansion) and appears in
+    /// <c>CoveredFonts</c> alongside wrapper 1 — row membership (Task 8), not "this glyph was
+    /// corrected." Both wrappers genuinely share the physical program this patch rewrites.</para>
     /// </summary>
     [Fact]
     public void A_coverage_gap_on_any_member_declines_the_whole_group()
@@ -185,7 +196,7 @@ public sealed class MergedReplacementTests
             Assert.Contains("cannot honestly render", p.Reason));
 
         PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
-        Assert.Equal(new HashSet<int> { 1 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+        Assert.Equal(new HashSet<int> { 1, 7 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
     }
 
     /// <summary>I5: every member draws CID 0 (and nothing else) — none can ever close (issue 40), so
@@ -221,8 +232,14 @@ public sealed class MergedReplacementTests
     /// <summary>Task 6 update: wrapper 1's own width finding (declared 500 vs the shared program's
     /// actual 450) is freed by the now-conditional subsumption skip once the notdef merge declines;
     /// wrapper 2 draws only the dead code (default wrapper2Codes [0x42], resolving to .notdef, skipped
-    /// by the width resolver), so it contributes nothing — a freed singleton patch alongside the
-    /// group's 2 declines.</summary>
+    /// by the width resolver), so it contributes no glyph of its own — the PATCHED BYTES are a
+    /// singleton fix in substance.
+    ///
+    /// <para>Task 8b update (review finding I3): wrapper 2 is same-kind and addressable, so inventory-
+    /// scoped expansion makes it a real width-group member and it now appears in <c>CoveredFonts</c>
+    /// too — row membership (Task 8): it shares the physical program being rewritten, even though it
+    /// contributed no width claim of its own.</para>
+    /// </summary>
     [Fact]
     public void Conflicting_tounicode_maps_decline_the_whole_group_per_member()
     {
@@ -236,7 +253,7 @@ public sealed class MergedReplacementTests
             Assert.Contains("different characters", p.Reason));
 
         PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
-        Assert.Equal(new HashSet<int> { 1 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+        Assert.Equal(new HashSet<int> { 1, 7 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
     }
 
     /// <summary>Task 6 update: FontProgramRule attributes each wrapper's own finding to ITS OWN
@@ -244,9 +261,14 @@ public sealed class MergedReplacementTests
     /// checked — never the shared descendant), scoped to codes THAT WRAPPER itself draws. Wrapper 1
     /// draws the live code (0x41) and gets its own 6.2.11.5 finding; wrapper 2 (default codes,
     /// dead-code-only) resolves 0x42 to .notdef, which <c>ProgramWidthResolver.Composite</c> skips, so
-    /// wrapper 2 never has a width finding of its own to free — the width-family arm never seeds it,
-    /// regardless of the notdef group's decline. Only wrapper 1's finding is freed, as a singleton
-    /// patch, alongside the group's 2 declines.</summary>
+    /// wrapper 2 never has a width finding of its own to free — only wrapper 1's finding is freed, and
+    /// the PATCHED BYTES are a singleton fix in substance.
+    ///
+    /// <para>Task 8b update (review finding I3): wrapper 2 is nonetheless same-kind, addressable, and
+    /// shares wrapper 1's holder, so inventory-scoped expansion makes it a real width-group member
+    /// regardless of the notdef group's decline — it now appears in <c>CoveredFonts</c> too (row
+    /// membership, Task 8), even though it contributed no glyph of its own to the patch.</para>
+    /// </summary>
     [Fact]
     public void A_sibling_without_tounicode_declines_the_whole_group()
     {
@@ -259,7 +281,7 @@ public sealed class MergedReplacementTests
             Assert.Contains("cannot be included", p.Reason));
 
         PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
-        Assert.Equal(new HashSet<int> { 1 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+        Assert.Equal(new HashSet<int> { 1, 7 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
     }
 
     /// <summary>

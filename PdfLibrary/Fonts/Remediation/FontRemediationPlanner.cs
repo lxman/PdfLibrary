@@ -181,15 +181,26 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // Task 6 (tracker issue 38): WIDTH-family grouping — kind-agnostic (a simple TrueType font and
         // a Type0CidType2 descendant can share one FontFile2/descriptor) and INDEPENDENT of the notdef
         // family above: a pair sharing a holder purely over a width mismatch never seeds a notdef
-        // group at all. Scoped to entries THIS CALL actually named a font-program finding for (no
-        // inventory-scoped expansion, unlike the notdef family): an in-place hmtx PATCH only ever
-        // touches glyph ids the union of CONSULTED siblings' own declared widths names, and the
-        // union's cross-member conflict check (BuildMergedWidthPatch) already catches two consulted
-        // siblings disagreeing about a shared glyph id — a sibling this call was never asked about
-        // contributes nothing to that union and is not at risk of an advance it never declared an
-        // opinion on. CFF-family entries (Type0CidType0, Type1, Type3) are excluded by the Kind check
-        // from becoming width-family MEMBERS — they always decline independently, on their own kind,
-        // via the ordinary per-entry switch below, exactly as before this task.
+        // group at all. SEEDED from entries THIS CALL actually named a font-program finding for — an
+        // in-place hmtx PATCH only ever touches glyph ids the union of MEMBERS' own declared widths
+        // names, and the union's cross-member conflict check (BuildMergedWidthPatch) already catches
+        // two members disagreeing about a shared glyph id. CFF-family entries (Type0CidType0, Type1,
+        // Type3) are excluded by the Kind check from becoming width-family MEMBERS — they always
+        // decline independently, on their own kind, via the ordinary per-entry switch below, exactly
+        // as before this task.
+        //
+        // Task 8b (review finding I3): membership no longer STAYS findings-scoped past the seed —
+        // the expansion pass right below pulls in every other same-kind, addressable inventory entry
+        // sharing the holder, mirroring the notdef family's own C1 fix. Two defects forced this: (a)
+        // production stages ONE finding per Propose() call (RemediationRunner.StageDomainZeroDecision,
+        // Pellucid), so a findings-scoped group could never exceed size 1 outside a test harness
+        // handing every finding to one call at once — Task 6's own 20/66-to-52/66 result was
+        // unreachable by a user clicking Fix; (b) a same-kind, addressable sibling with no finding of
+        // its own in THIS call was neither a blocked shape (blockedWidthKeys, below) nor a group
+        // member, so its own declared widths never joined the union a merged OR singleton patch
+        // writes — silently shifting that sibling's advances whenever it shares a glyph id with a
+        // member whose own declared value differs, with no error anywhere. This comment used to read
+        // "no inventory-scoped expansion, unlike the notdef family" — that was the gap.
         var widthMemberOfGroup = new Dictionary<(int ObjectNumber, int? ProgramHolderObjectNumber), long>();
         var widthGroupMembers = new Dictionary<long, List<FontInventoryEntry>>();
         foreach ((string ruleId, FontInventoryEntry entry) in resolved)
@@ -205,6 +216,36 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             if (!widthGroupMembers.TryGetValue(key, out List<FontInventoryEntry>? members))
                 widthGroupMembers[key] = members = [];
             members.Add(entry);
+        }
+
+        // Inventory-scoped expansion (Task 8b, review finding I3) — reuses ExpandHolderGroup (Task 7)
+        // rather than a third copy of its traversal. ExpandHolderGroup itself is kind-agnostic (shared
+        // verbatim with the notdef family above and the manual path), so it would happily add a
+        // Type1/Type3/non-addressable sibling to `scratch` too; only a same-kind
+        // (TrueType/Type0CidType2), addressable candidate is promoted into the REAL width group here.
+        // That filter is deliberate, not an oversight (interaction with I1, below): a blocked-shape
+        // sibling stays caught by `blockedWidthKeys`'s OWN full-inventory scan, unaffected by whatever
+        // this loop adds, which already produces that sibling's correct per-kind reason
+        // (BlockingSiblingReason) and declines the group WITHOUT reporting a decline for the blocker
+        // itself (the falsifying test — A_mixed_kind_sibling_sharing_the_descriptor_blocks_the_width_merge
+        // — pins exactly 2 declines, not 3, for its two width-family seeds). Admitting the blocker into
+        // `widthGroupMembers` too would let both mechanisms fire for the same sibling redundantly, and
+        // for a non-addressable candidate specifically, BuildMergedWidthPatch has no gate that produces
+        // ITS correct singleton reason (only BlockingSiblingReason does) — a bare admission risks a
+        // misleading decline reaching the user. A scratch COPY is expanded, not the live group list
+        // directly, precisely so this filter can run before anything touches `widthGroupMembers`.
+        foreach ((long key, List<FontInventoryEntry> members) in widthGroupMembers)
+        {
+            var scratch = new List<FontInventoryEntry>(members);
+            foreach (FontInventoryEntry candidate in ExpandHolderGroup(document, inventory, scratch, key))
+            {
+                if (candidate.Kind is not (FontKind.TrueType or FontKind.Type0CidType2)
+                    || !candidate.IsAddressable)
+                    continue;
+
+                members.Add(candidate);
+                widthMemberOfGroup[(candidate.Id.ObjectNumber, candidate.ProgramHolderId?.ObjectNumber)] = key;
+            }
         }
 
         // Review round 1, finding I1: excluding a CFF/Type1/Type3/Unknown-kind entry from width-family
@@ -226,6 +267,14 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // any finding of its own — same posture as the notdef family's own C1 fix, and for the same
         // reason (the risk is about what SHARES the bytes being rewritten, not about what this call was
         // told to fix).
+        //
+        // Task 8b: this scan is UNCHANGED by (and independent of) the inventory-scoped expansion just
+        // above it — it always re-derives its own blocker straight from `inventory`, never from
+        // `widthGroupMembers`'s membership, which is exactly why the expansion loop above deliberately
+        // does NOT promote a blocked-shape candidate into `widthGroupMembers`: doing so would not help
+        // this scan (it does not consult that dictionary's contents) and would only risk a second,
+        // redundant decline path for the same sibling. See the pass-2 dispatch below for the precedence
+        // between the two mechanisms.
         var blockedWidthKeys = new Dictionary<long, string>();
         foreach (long key in widthGroupMembers.Keys)
         {
@@ -327,6 +376,15 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 // I1: a mixed-kind or non-addressable sibling shares the SAME physical stream this
                 // holder's width patch would rewrite — decline the WHOLE width-family group (merged OR
                 // singleton; the risk is identical either way) rather than patch under it.
+                //
+                // Task 8b precedence: this check runs BEFORE `widthMembers.Count > 1` below, on
+                // purpose — a key can be blocked regardless of how many (same-kind, addressable)
+                // members the inventory-scoped expansion above found for it, so a blocked group must
+                // never reach BuildMergedWidthPatch. The two mechanisms do not actually overlap in
+                // practice: expansion only ever adds same-kind, addressable candidates to
+                // `widthMembers` (see the filter above), so the blocking sibling itself is never IN
+                // `widthMembers` here — `DeclineAll` below reports exactly the seeded/expanded
+                // width-eligible members, not the blocker.
                 if (blockedWidthKeys.TryGetValue(widthKey, out string? blockedReason))
                 {
                     if (!processedWidthGroups.Add(widthKey)) continue;
