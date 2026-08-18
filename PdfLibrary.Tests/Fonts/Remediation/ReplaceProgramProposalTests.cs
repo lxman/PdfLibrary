@@ -77,13 +77,14 @@ public sealed class ReplaceProgramProposalTests
     private static PdfDocument DeadCid2Doc(
         IReadOnlyList<(int Code, string Hex)>? toUnicodeEntries = null,
         bool includeToUnicode = true,
-        string contentHex = "0000 0041",
+        string contentHex = "0042 0041",
         string baseFont = "ABCDEF+DeadFace",
         int flags = 4,
         int? italicAngle = null,
-        ushort macStyle = 0) =>
+        ushort macStyle = 0,
+        ushort[]? cidToGid = null) =>
         ReplaceProgramFixtures.DeadCid2Doc(
-            toUnicodeEntries, includeToUnicode, contentHex, baseFont, flags, italicAngle, macStyle);
+            toUnicodeEntries, includeToUnicode, contentHex, baseFont, flags, italicAngle, macStyle, cidToGid);
 
     /// <summary>See <see cref="ReplaceProgramFixtures.DeadCid0Doc"/>.</summary>
     private static PdfDocument DeadCid0Doc() => ReplaceProgramFixtures.DeadCid0Doc();
@@ -102,9 +103,9 @@ public sealed class ReplaceProgramProposalTests
         Assert.Equal(4, proposal.Font.ObjectNumber);           // descendant holder
         Assert.Equal(1, proposal.CompositeFont.ObjectNumber);  // Type0 wrapper
         Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0000, out ushort gid0) && gid0 != 0);
+        Assert.True(proposal.CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
         Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
-        Assert.Equal(1, proposal.RestoredCodeCount); // only CID 0 was .notdef in the OLD program
+        Assert.Equal(1, proposal.RestoredCodeCount); // only CID 0x42 was .notdef in the OLD program
         Assert.DoesNotContain('+', proposal.NewBaseFont);
         Assert.Contains("Liberation Sans", proposal.SourceDescription);
         Assert.True(proposal.Descriptor.Ascent > 0);
@@ -144,8 +145,10 @@ public sealed class ReplaceProgramProposalTests
     [Fact]
     public void A_coverage_gap_declines_with_no_partial_fix()
     {
-        // <E000> is Private Use Area — Liberation Sans has no glyph for it.
-        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0000, "E000")], contentHex: "0000");
+        // <E000> is Private Use Area — Liberation Sans has no glyph for it. Uses the migrated dead
+        // code (0x42), not CID 0 — CID 0 alone would now hit the issue-40 cid0-only honesty decline
+        // before ever reaching the coverage-gap check, which is not what this test exercises.
+        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0042, "E000")], contentHex: "0042");
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
@@ -200,11 +203,48 @@ public sealed class ReplaceProgramProposalTests
 
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
         Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0000, out ushort gid0) && gid0 != 0);
+        Assert.True(proposal.CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
         Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
-        // CID 0 is .notdef in the OLD (charset-bearing) program; CID 0x41 already has a real glyph
-        // there (gid 1, via the charset) — only the former is a restored code.
+        // CID 0x42 is .notdef in the OLD (charset-bearing) program — absent from customCharsetSids;
+        // CID 0x41 already has a real glyph there (gid 1, via the charset) — only the former is a
+        // restored code.
         Assert.Equal(1, proposal.RestoredCodeCount);
+    }
+
+    // ── issue 40 honesty: a used CID 0 can never be fixed by a replacement ────────────────────────
+
+    [Fact]
+    public void A_cid0_only_font_declines_rather_than_proposing_a_fix_that_closes_nothing()
+    {
+        // CID 0 is the font's ONLY dead code (DeadCid2DocDrawingCidZero's default: /CIDToGIDMap
+        // /Identity, content "0000 0041" — CID 0x41 identity-maps to a nonzero "live" GID). Since
+        // FontProgramRule now flags a USED CID 0 regardless of what any replacement's map assigns
+        // it, proposing a swap here would close ZERO rule-visible findings — the false-fix shape
+        // the resave-harness convention exists to catch.
+        using PdfDocument doc = ReplaceProgramFixtures.DeadCid2DocDrawingCidZero(onlyCidZeroDead: true);
+        FontRemediationProposal result = Planner(new RecordingFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Contains("character code 0", decline.Reason);
+        Assert.Contains("no font-side fix can make that draw conformant", decline.Reason);
+    }
+
+    [Fact]
+    public void A_cid0_plus_other_dead_codes_still_proposes_though_it_cannot_close_everything()
+    {
+        // The mixed case: CID 0 (forever .notdef) drawn ALONGSIDE a genuinely different dead code
+        // (0x42, via an explicit map). The cid0-only honesty gate only declines when CID 0 is the
+        // SOLE dead code — this font still has 0x42 to close, so the planner still proposes here.
+        // Known one-task gap (per the controller brief): the proposal does not yet flag that it
+        // cannot fully close the finding set (CID 0's own notdef survives any replacement) — that
+        // flag is Task 3's LeavesOtherFindings record addition, not this task's.
+        using PdfDocument doc = ReplaceProgramFixtures.DeadCid2DocDrawingCidZero(onlyCidZeroDead: false);
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
     }
 
     [Fact]
@@ -311,8 +351,9 @@ public sealed class ReplaceProgramProposalTests
         // could not fix it and must not be attempted. Proven by making the SYNTHETIC name resolve
         // to a CFF face: if the retry incorrectly fired anyway, BuildReplacement would run against
         // it and the decline reason would flip to "not a TrueType program" — the assertion below
-        // catches that regression, not just "the decline is still a decline".
-        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0000, "E000")], contentHex: "0000");
+        // catches that regression, not just "the decline is still a decline". Uses the migrated
+        // dead code (0x42), not CID 0 — see A_coverage_gap_declines_with_no_partial_fix.
+        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0042, "E000")], contentHex: "0042");
         byte[] cff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
         var provider = new RawVsSyntheticFontProvider("DeadFace", LiberationSansBytes(), "Helvetica", cff);
 

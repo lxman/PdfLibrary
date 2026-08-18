@@ -40,6 +40,24 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         "This font's finding is a missing glyph, and replacing a simple font's program is not "
         + "something Pellucid does yet.";
 
+    /// <summary>Issue 40 honesty: the decline for a font whose ONLY dead code is CID 0 — see
+    /// <see cref="ProposeProgramReplace"/>'s cid0-only gate. Verbatim string is load-bearing: a
+    /// later sweep taxonomy keys on it.</summary>
+    private const string Cid0OnlyDeclineReason =
+        "This font draws character code 0, which ISO 32000 defines as .notdef regardless of what "
+        + "glyph the font maps it to — no font-side fix can make that draw conformant.";
+
+    /// <summary>The dead-code predicate <see cref="ProposeProgramReplace"/>'s cid0-only honesty gate
+    /// and <see cref="BuildReplacement"/>'s <c>RestoredCodeCount</c> both need — reading the OLD
+    /// program's CID→GID resolution the same way <see cref="Conformance.Rules.FontProgramRule.CheckType0"/>
+    /// does (CID-keyed CFF via the charset, CIDFontType2 via /CIDToGIDMap). Deliberately NOT the
+    /// rule's own <c>code == 0</c> addition (issue 40): a caller here already knows whether it is
+    /// asking about code 0 and handles that case separately (the honesty gate short-circuits before
+    /// reaching this predicate for the "is code 0 itself dead" question), so this stays the narrower
+    /// "does the map ITSELF resolve to .notdef" answer the two callers actually need.</summary>
+    private static bool MapsToNotdefGlyph(int code, bool cidKeyed, CidFont cid, EmbeddedFontMetrics metrics) =>
+        (cidKeyed ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code)) == 0;
+
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -472,6 +490,24 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "its characters mean — a replacement face cannot be chosen without it.");
         }
 
+        // Issue 40 honesty: a draw of CID 0 is .notdef no matter what a replacement maps it to (ISO
+        // 32000 §9.7.4.2 — FontProgramRule.CheckType0 now keys 6.2.11.8 on the CID itself, not just
+        // the resolved GID), so a swap can never close THAT specific defect. If CID 0 is the ONLY
+        // dead code this font draws, a proposal would close ZERO rule-visible findings — the
+        // false-fix shape the resave-harness convention exists to catch — so decline instead of
+        // proposing. A font drawing CID 0 ALONGSIDE another genuinely dead code still proposes here
+        // (it has something real to fix); flagging that such a proposal cannot fully close the
+        // finding set is Task 3's LeavesOtherFindings addition, not this gate's job.
+        if (entry.UsedCodes.Contains(0)
+            && type0.GetEmbeddedMetrics() is { IsValid: true } oldMetricsForHonesty)
+        {
+            bool cidKeyedForHonesty = entry.Kind == FontKind.Type0CidType0;
+            int otherDeadCodes = entry.UsedCodes.Distinct().Count(code =>
+                code != 0 && MapsToNotdefGlyph(code, cidKeyedForHonesty, cid, oldMetricsForHonesty));
+            if (otherDeadCodes == 0)
+                return Decline(entry, ruleId, Cid0OnlyDeclineReason);
+        }
+
         FontId holder = entry.ProgramHolderId ?? entry.Id;
 
         // Controller ruling (tracker issue 43): the DECLARED style can lie. 0000_0000024.pdf points
@@ -757,7 +793,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         }
         bool cidKeyed = entry.Kind == FontKind.Type0CidType0;
         int restored = entry.UsedCodes.Distinct().Count(code =>
-            (cidKeyed ? oldMetrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code)) == 0);
+            MapsToNotdefGlyph(code, cidKeyed, cid, oldMetrics));
 
         FontDescriptorValues? descriptorValues = FontDescriptorMetrics.Compute(program, FontProgramFormat.TrueType);
         if (descriptorValues is null)

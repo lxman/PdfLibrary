@@ -84,12 +84,21 @@ internal static class ReplaceProgramFixtures
 
     /// <summary>
     /// The shared dead-CID Type0/CIDFontType2 fixture (spec brief): program =
-    /// <see cref="ZeroAdvanceSfntFixture.FontBytes"/> (2 glyphs), descendant /CIDToGIDMap /Identity,
-    /// /DW 1000, /W [65 [500]]; wrapper /Encoding /Identity-H, /BaseFont /ABCDEF+DeadFace. Content
-    /// shows <paramref name="contentHex"/> (default <c>0000 0041</c>: CID 0 → .notdef → the 6.2.11.8
-    /// finding; CID 0x41 → a live-by-the-rule glyph). /ToUnicode carries
-    /// <paramref name="toUnicodeEntries"/> (default CID 0 → 'A', CID 0x41 → 'B') unless
-    /// <paramref name="includeToUnicode"/> is false.
+    /// <see cref="ZeroAdvanceSfntFixture.FontBytes"/> (2 glyphs), descendant /CIDToGIDMap an EXPLICIT
+    /// stream (gid 1 at CID 0x41, gid 0 — dead — at CID 0x42), /DW 1000, /W [65 [500]]; wrapper
+    /// /Encoding /Identity-H, /BaseFont /ABCDEF+DeadFace. Content shows <paramref name="contentHex"/>
+    /// (default <c>0042 0041</c>: CID 0x42 → .notdef → the 6.2.11.8 finding; CID 0x41 → a
+    /// live-by-the-rule glyph). /ToUnicode carries <paramref name="toUnicodeEntries"/> (default CID
+    /// 0x42 → 'B', CID 0x41 → 'A') unless <paramref name="includeToUnicode"/> is false.
+    ///
+    /// <para>Issue 40 migration: the dead code used to be CID 0 itself (<c>contentHex: "0000 0041"</c>,
+    /// <c>/CIDToGIDMap /Identity</c>) — retired because a USED CID 0 is now honestly declined by the
+    /// planner (it can never be fixed by any replacement, per ISO 32000 §9.7.4.2), which would flip
+    /// every ordinary replace test in this suite to a decline. <paramref name="cidToGid"/> overrides
+    /// the default live/dead map — used by <c>FontProgramRuleCidZeroTests</c> to construct the
+    /// pathological case an explicit map can produce that /Identity cannot: CID 0 mapped to a REAL,
+    /// non-zero glyph. See <see cref="DeadCid2DocDrawingCidZero"/> for the retired CID-0-as-dead-code
+    /// shape, kept only for the planner's cid0-only honesty tests.</para>
     ///
     /// <para><paramref name="baseFont"/>, <paramref name="flags"/> and <paramref name="italicAngle"/>
     /// exist for the issue-43 style-lie shape: a DECLARATION claiming a style (",Italic" name suffix,
@@ -99,13 +108,14 @@ internal static class ReplaceProgramFixtures
     public static PdfDocument DeadCid2Doc(
         IReadOnlyList<(int Code, string Hex)>? toUnicodeEntries = null,
         bool includeToUnicode = true,
-        string contentHex = "0000 0041",
+        string contentHex = "0042 0041",
         string baseFont = "ABCDEF+DeadFace",
         int flags = 4, // symbolic
         int? italicAngle = null,
-        ushort macStyle = 0)
+        ushort macStyle = 0,
+        ushort[]? cidToGid = null)
     {
-        IReadOnlyList<(int Code, string Hex)> entries = toUnicodeEntries ?? [(0x0000, "0041"), (0x0041, "0042")];
+        IReadOnlyList<(int Code, string Hex)> entries = toUnicodeEntries ?? [(0x0042, "0042"), (0x0041, "0041")];
 
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450, macStyle: macStyle);
         var doc = new PdfDocument();
@@ -121,13 +131,19 @@ internal static class ReplaceProgramFixtures
         if (italicAngle is { } angle)
             descriptorDict[N("ItalicAngle")] = new PdfInteger(angle);
         doc.AddObject(2, 0, descriptorDict);
+
+        byte[] cidToGidBytes = cidToGid is null
+            ? LiveDeadCidToGidBytes(liveCode: 0x41, deadCode: 0x42)
+            : CidToGidBytes(cidToGid);
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), cidToGidBytes));
+
         var descendant = new PdfDictionary
         {
             [N("Type")] = N("Font"),
             [N("Subtype")] = N("CIDFontType2"),
             [N("BaseFont")] = N(baseFont),
             [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
+            [N("CIDToGIDMap")] = Ref(6),
             [N("DW")] = new PdfInteger(1000),
             [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
         };
@@ -155,16 +171,95 @@ internal static class ReplaceProgramFixtures
         return doc;
     }
 
+    /// <summary>
+    /// Issue 40 honesty tests ONLY: reproduces the RETIRED <see cref="DeadCid2Doc"/> default shape —
+    /// <c>/CIDToGIDMap /Identity</c>, CID 0 as the dead code. <paramref name="onlyCidZeroDead"/> true
+    /// (default) draws <c>0000 0041</c>: CID 0 is dead (identity maps it to GID 0, the ONLY code that
+    /// can be under a bare Identity map), and CID 0x41 identity-maps to GID 0x41 — nonzero, so the
+    /// OLD dead-code predicate (<c>gid == 0</c>) already called it "live" (a pre-existing quirk: GID
+    /// 0x41 does not really exist in this 2-glyph program, but nothing here checks bounds) — so CID 0
+    /// is the font's ONLY actually-dead code and the planner must decline rather than propose a
+    /// replacement that can never close the finding. <paramref name="onlyCidZeroDead"/> false swaps in
+    /// an explicit map (<see cref="DeadCid2Doc"/>'s own live-0x41/dead-0x42 shape) and draws CID 0
+    /// alongside it (<c>0000 0042 0041</c>), so CID 0x42 is ALSO genuinely dead — the mixed case this
+    /// task's honesty gate leaves proposing (Task 3 adds the not-fully-closing flag).
+    /// </summary>
+    public static PdfDocument DeadCid2DocDrawingCidZero(bool onlyCidZeroDead = true)
+    {
+        const string baseFont = "ABCDEF+DeadFace";
+        string contentHex = onlyCidZeroDead ? "0000 0041" : "0000 0042 0041";
+        IReadOnlyList<(int Code, string Hex)> entries = onlyCidZeroDead
+            ? [(0x0000, "0041"), (0x0041, "0042")]
+            : [(0x0000, "0041"), (0x0042, "0042"), (0x0041, "0043")];
+
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N(baseFont),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N(baseFont),
+            [N("FontDescriptor")] = Ref(2),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        if (onlyCidZeroDead)
+        {
+            descendant[N("CIDToGIDMap")] = N("Identity");
+        }
+        else
+        {
+            doc.AddObject(6, 0, new PdfStream(new PdfDictionary(),
+                LiveDeadCidToGidBytes(liveCode: 0x41, deadCode: 0x42)));
+            descendant[N("CIDToGIDMap")] = Ref(6);
+        }
+        AddCidSystemInfo(descendant);
+        doc.AddObject(4, 0, descendant);
+
+        var type0Dict = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N(baseFont),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+        };
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(), BfCharBytes(entries)));
+        type0Dict[N("ToUnicode")] = Ref(5);
+        doc.AddObject(1, 0, type0Dict);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{contentHex}> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font: 1);
+        return doc;
+    }
+
     /// <summary>A dead-CID Type0/CIDFontType0 (CID-keyed CFF descendant) fixture, with a LIVE CID
     /// drawn alongside the dead one (as the CID2 fixture does), so <c>RestoredCodeCount</c> can
-    /// discriminate 1 restored from 2. CID 0 is ALWAYS .notdef
-    /// (<see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>'s own hardcoded rule) regardless of the
-    /// charset, but proving the OTHER drawn CID (0x41) is genuinely NOT dead in the OLD program needs
-    /// a real charset entry for it — built the same way
+    /// discriminate 1 restored from 2. The dead code is CID 0x42 — absent from
+    /// <c>customCharsetSids</c>, so <see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/> falls through
+    /// its charset walk and returns 0 (.notdef) for it — built the same way
     /// <c>ResolveGlyphIdCid2OttoTests.DivergentCharsetCff</c> does (a non-CID
     /// <see cref="MinimalCff.Build"/> whose charset entries <see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>
-    /// reads as CIDs regardless of the CFF's own CID-ness): gid 1 ↔ CID 0x41. /ToUnicode maps CID 0 →
-    /// 'A', CID 0x41 → 'B'.</summary>
+    /// reads as CIDs regardless of the CFF's own CID-ness): gid 1 ↔ CID 0x41 (present, live);
+    /// CID 0x42 has no charset entry (dead). /ToUnicode maps CID 0x42 → 'B', CID 0x41 → 'A'.
+    ///
+    /// <para>Issue 40 migration: the dead code used to be CID 0 itself (a redundant example — CID 0
+    /// is ALWAYS .notdef per <see cref="EmbeddedFontMetrics.GetGlyphIdByCid"/>'s own hardcoded rule,
+    /// regardless of the charset — so it never actually exercised this fixture's "absent from the
+    /// charset" mechanism). Retired for the same reason as <see cref="DeadCid2Doc"/>'s migration: a
+    /// used CID 0 now honestly declines rather than proposing.</para>
+    /// </summary>
     public static PdfDocument DeadCid0Doc()
     {
         byte[] font = MinimalCff.Build(charsetOperand: null, numGlyphs: 2, customCharsetSids: [0x41]);
@@ -199,12 +294,12 @@ internal static class ReplaceProgramFixtures
             [N("DescendantFonts")] = new PdfArray(Ref(4)),
         };
         doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
-            BfCharBytes([(0x0000, "0041"), (0x0041, "0042")])));
+            BfCharBytes([(0x0042, "0042"), (0x0041, "0041")])));
         type0Dict[N("ToUnicode")] = Ref(5);
         doc.AddObject(1, 0, type0Dict);
 
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000 0041> Tj ET")));
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0042 0041> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font: 1);
         return doc;
     }
