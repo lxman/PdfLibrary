@@ -514,6 +514,105 @@ public sealed class ReplaceProgramProposalTests
         Assert.Null(result.Proposal);
     }
 
+    // ── manual path merges (Task 7, tracker issue 38) ──────────────────────────────────────────
+
+    [Fact]
+    public void AssessReplacementCandidate_merges_a_shared_holder_group()
+    {
+        // Task 7: the manual path's own TEMPORARY guard (SharedHolderReason) is retired — assessing a
+        // candidate against ANY member of a shared-holder group now returns the SAME merged proposal
+        // the automatic path builds, naming a target per member.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper1Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 1);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        // Ruling 2: seedIds for the manual path is ONLY the picked entry — wrapper 1 (picked) closes;
+        // wrapper 7 (pulled in by holder expansion) was never asked to be fixed, so it does not.
+        Assert.True(wrapper1Target.ClosesFinding);
+        Assert.False(wrapper7Target.ClosesFinding);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_hard_blocks_a_merge_cid_conflict()
+    {
+        // The conflicting-ToUnicode fixture: wrapper 2 says 0x42 -> 'Z', wrapper 1 says 0x42 -> 'B' —
+        // two fonts sharing one descendant map the same character code to different glyphs, which no
+        // single replacement program can serve.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            wrapper2ToUnicode: [(0x0042, "005A")]);
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Contains("different characters", result.HardBlockReason);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_merge_does_not_gain_the_automatic_paths_group_wide_cid0_decline()
+    {
+        // Ruling 1 (controller brief, Task 7): the manual path routes through BuildMergedReplacement
+        // DIRECTLY, never ProposeMergedReplace, so it never runs the automatic path's group-wide
+        // Cid0OnlyDeclineReason gate. The picked entry (wrapper 7) draws ONLY CID 0 here — the exact
+        // shape that makes the AUTOMATIC path (ProposeMergedReplace) decline the whole group outright,
+        // since no seed would close — but the manual path still proposes, honestly reporting
+        // ClosesFinding: false for the picked entry's own target instead of refusing outright.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            wrapper2ToUnicode: [(0x00, "0043")], wrapper2Codes: [0x00]);
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 7)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper2Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        Assert.False(wrapper2Target.ClosesFinding, "wrapper 7 draws only CID 0, which never closes");
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_merge_uses_the_callers_source_description()
+    {
+        // sourceDescription is a manual-path-only parameter — the merged path must thread it through
+        // BuildMergedReplacement exactly as the singleton path already threads it through
+        // BuildReplacement, rather than silently falling back to "from your system fonts".
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0,
+            sourceDescription: "User-picked Test Face");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal("User-picked Test Face", proposal.SourceDescription);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_merge_blocks_when_a_sibling_is_not_composite()
+    {
+        // Task 4 round-2 ruling, mirrored for the manual path: a non-composite sibling sharing the
+        // picked entry's holder blocks the WHOLE assessment — writing a composite substitute over a
+        // shared program a simple font depends on would corrupt it. This is a real corruption hazard,
+        // not an over-decline.
+        PdfDocument doc = ReplaceProgramFixtures.SimpleFontSharingDescriptorWithCompositeSeedDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Contains("cannot be included in a merged replacement", result.HardBlockReason);
+    }
+
     [Fact]
     public void A_genuinely_italic_program_is_replaced_with_an_italic_face_even_when_nothing_declares_it()
     {
