@@ -88,192 +88,6 @@ public sealed class ReplaceProgramProposalTests
     /// <summary>See <see cref="ReplaceProgramFixtures.DeadCid0Doc"/>.</summary>
     private static PdfDocument DeadCid0Doc() => ReplaceProgramFixtures.DeadCid0Doc();
 
-    /// <summary>Local to <see cref="TwoWrappersSharedHolderDoc"/> only — the two shared-fixture
-    /// documents build their own <c>/CIDSystemInfo</c> internally now.</summary>
-    private static void AddCidSystemInfo(PdfDictionary descendant)
-    {
-        descendant[N("CIDSystemInfo")] = new PdfDictionary
-        {
-            [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
-            [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
-            [N("Supplement")] = new PdfInteger(0),
-        };
-    }
-
-    /// <summary>Two Type0 wrappers (objects 1 and 7) sharing ONE descendant CIDFont (object 4) — the
-    /// <c>ProgramHolderId != Id</c> composite fixture where two logical fonts share a program holder,
-    /// making the controller's issue-38 guard reachable through <c>Propose</c> for real (previously
-    /// untested per program memory). Only wrapper 1 draws anything; wrapper 2 exists purely as a
-    /// sibling in the SAME page's font resources, which is all <c>FontInventory.Read</c> needs to see
-    /// it (a resource-presence walk, not a usage walk).</summary>
-    private static PdfDocument TwoWrappersSharedHolderDoc()
-    {
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
-        var doc = new PdfDocument();
-        doc.AddObject(3, 0, new PdfStream(
-            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
-        doc.AddObject(2, 0, new PdfDictionary
-        {
-            [N("Type")] = N("FontDescriptor"),
-            [N("FontName")] = N("ABCDEF+Shared"),
-            [N("Flags")] = new PdfInteger(4),
-            [N("FontFile2")] = Ref(3),
-        });
-        var descendant = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
-            [N("DW")] = new PdfInteger(1000),
-        };
-        AddCidSystemInfo(descendant);
-        doc.AddObject(4, 0, descendant);
-
-        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
-
-        var wrapper1 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(4)),
-            [N("ToUnicode")] = Ref(6),
-        };
-        doc.AddObject(1, 0, wrapper1);
-
-        var wrapper2 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(4)),
-        };
-        doc.AddObject(7, 0, wrapper2);
-
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj ET")));
-        doc.AddObject(22, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Page"),
-            [N("Parent")] = Ref(21),
-            [N("Contents")] = Ref(11),
-            [N("Resources")] = new PdfDictionary
-            {
-                [N("Font")] = new PdfDictionary { [N("F0")] = Ref(1), [N("F1")] = Ref(7) },
-            },
-        });
-        doc.AddObject(21, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Pages"),
-            [N("Kids")] = new PdfArray(Ref(22)),
-            [N("Count")] = new PdfInteger(1),
-        });
-        doc.AddObject(20, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(21) });
-        doc.Trailer.Dictionary[N("Root")] = Ref(20);
-        return doc;
-    }
-
-    /// <summary>Two Type0 wrappers (objects 1 and 7), each with its OWN, separately-numbered descendant
-    /// CIDFont (objects 4 and 5) — so <c>ProgramHolderId</c> genuinely differs between the two logical
-    /// fonts, unlike <see cref="TwoWrappersSharedHolderDoc"/> — but both descendants point at the SAME
-    /// <c>/FontDescriptor</c> object (2), and so the same <c>/FontFile2</c> (3). This is the
-    /// descriptor-level sharing case <c>SharedHolderReason</c>'s object-number-only comparison used to
-    /// miss: two DISTINCT program holders sharing one descriptor still collide on the single
-    /// <c>/FontFile2</c> write. Unlike <see cref="TwoWrappersSharedHolderDoc"/>, BOTH wrappers draw the
-    /// dead CID 0 here (not just wrapper 1) — each needs its OWN genuine 6.2.11.8 finding from the real
-    /// <c>FontProgramRule</c> for <c>Propose</c>'s dispatch to route it into <c>ProposeProgramReplace</c>
-    /// at all, which is where the descriptor-collision guard lives.</summary>
-    private static PdfDocument TwoWrappersSharedDescriptorDoc()
-    {
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
-        var doc = new PdfDocument();
-        doc.AddObject(3, 0, new PdfStream(
-            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
-        doc.AddObject(2, 0, new PdfDictionary
-        {
-            [N("Type")] = N("FontDescriptor"),
-            [N("FontName")] = N("ABCDEF+Shared"),
-            [N("Flags")] = new PdfInteger(4),
-            [N("FontFile2")] = Ref(3),
-        });
-
-        var descendant1 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
-            [N("DW")] = new PdfInteger(1000),
-        };
-        AddCidSystemInfo(descendant1);
-        doc.AddObject(4, 0, descendant1);
-
-        var descendant2 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
-            [N("DW")] = new PdfInteger(1000),
-        };
-        AddCidSystemInfo(descendant2);
-        doc.AddObject(5, 0, descendant2);
-
-        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
-
-        var wrapper1 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(4)),
-            [N("ToUnicode")] = Ref(6),
-        };
-        doc.AddObject(1, 0, wrapper1);
-
-        var wrapper2 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(5)),
-            [N("ToUnicode")] = Ref(6),
-        };
-        doc.AddObject(7, 0, wrapper2);
-
-        // Both fonts draw the dead CID 0 — unlike TwoWrappersSharedHolderDoc, where only wrapper 1
-        // draws — so each gets its OWN genuine 6.2.11.8 finding from the real FontProgramRule.
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj /F1 12 Tf <0000> Tj ET")));
-        doc.AddObject(22, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Page"),
-            [N("Parent")] = Ref(21),
-            [N("Contents")] = Ref(11),
-            [N("Resources")] = new PdfDictionary
-            {
-                [N("Font")] = new PdfDictionary { [N("F0")] = Ref(1), [N("F1")] = Ref(7) },
-            },
-        });
-        doc.AddObject(21, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Pages"),
-            [N("Kids")] = new PdfArray(Ref(22)),
-            [N("Count")] = new PdfInteger(1),
-        });
-        doc.AddObject(20, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(21) });
-        doc.Trailer.Dictionary[N("Root")] = Ref(20);
-        return doc;
-    }
-
     // ── automatic path (Propose) ────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -397,8 +211,12 @@ public sealed class ReplaceProgramProposalTests
     public void Two_type0_wrappers_sharing_one_descendant_decline_the_shared_program_holder()
     {
         // Controller ruling, tracker issue 38: last-write-wins per PROGRAM HOLDER vs. one proposal per
-        // LOGICAL font — see FontRemediationPlanner.SharedHolderReason's doc comment.
-        PdfDocument doc = TwoWrappersSharedHolderDoc();
+        // LOGICAL font — see FontRemediationPlanner.SharedHolderReason's doc comment. Both wrappers
+        // draw in ReplaceProgramFixtures.SharedDescendantDoc (unlike the retired F-4b-era
+        // TwoWrappersSharedHolderDoc, where only wrapper 1 drew) — verified not to change this guard's
+        // outcome: SharedHolderReason fires on ProgramHolderId identity alone, before either wrapper's
+        // drawn content is examined.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
@@ -410,12 +228,12 @@ public sealed class ReplaceProgramProposalTests
     [Fact]
     public void Two_type0_wrappers_with_distinct_descendants_sharing_one_descriptor_both_decline()
     {
-        // Descriptor-level sharing case: unlike TwoWrappersSharedHolderDoc, the two logical fonts here
-        // have DISTINCT, separately-numbered ProgramHolderIds — the object-number-only comparison in
-        // the ORIGINAL SharedHolderReason would have missed this and let both through as independent
+        // Descriptor-level sharing case: unlike SharedDescendantDoc, the two logical fonts here have
+        // DISTINCT, separately-numbered ProgramHolderIds — the object-number-only comparison in the
+        // ORIGINAL SharedHolderReason would have missed this and let both through as independent
         // ReplaceProgramProposals, each with its own CidToGid map, targeting the same /FontDescriptor's
         // /FontFile2 — last write wins, the loser's CIDToGIDMap indexes the winner's face.
-        PdfDocument doc = TwoWrappersSharedDescriptorDoc();
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc();
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result =

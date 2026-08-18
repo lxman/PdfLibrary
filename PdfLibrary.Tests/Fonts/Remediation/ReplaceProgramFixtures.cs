@@ -59,6 +59,29 @@ internal static class ReplaceProgramFixtures
         };
     }
 
+    /// <summary>Explicit CIDToGIDMap stream bytes: big-endian ushort per CID, index = CID.</summary>
+    private static byte[] CidToGidBytes(params ushort[] gidByCid)
+    {
+        var b = new byte[gidByCid.Length * 2];
+        for (var i = 0; i < gidByCid.Length; i++)
+        {
+            b[i * 2] = (byte)(gidByCid[i] >> 8);
+            b[i * 2 + 1] = (byte)gidByCid[i];
+        }
+        return b;
+    }
+
+    /// <summary>An explicit /CIDToGIDMap covering codes 0..<paramref name="deadCode"/> with gid 1 at
+    /// <paramref name="liveCode"/> and gid 0 (.notdef) everywhere else, including
+    /// <paramref name="deadCode"/> itself — computed rather than hand-listed so the map's length always
+    /// matches its highest code.</summary>
+    private static byte[] LiveDeadCidToGidBytes(int liveCode, int deadCode)
+    {
+        var gidByCid = new ushort[Math.Max(liveCode, deadCode) + 1];
+        gidByCid[liveCode] = 1;
+        return CidToGidBytes(gidByCid);
+    }
+
     /// <summary>
     /// The shared dead-CID Type0/CIDFontType2 fixture (spec brief): program =
     /// <see cref="ZeroAdvanceSfntFixture.FontBytes"/> (2 glyphs), descendant /CIDToGIDMap /Identity,
@@ -183,6 +206,185 @@ internal static class ReplaceProgramFixtures
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
             Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000 0041> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font: 1);
+        return doc;
+    }
+
+    /// <summary>
+    /// Per-holder merge program, Task 1: two Type0 wrappers (objects 1 and 7) SHARING ONE descendant
+    /// CIDFont (object 4) whose descriptor (object 2) carries the program (object 3) — the
+    /// <c>ProgramHolderId != Id</c> composite fixture that reaches the controller's issue-38 guard
+    /// through <c>Propose</c>. Unlike the F-4b-era <c>TwoWrappersSharedHolderDoc</c> it promotes, BOTH
+    /// wrappers draw: wrapper 1 shows <c>&lt;0041 0042&gt;</c>, wrapper 2 shows <c>&lt;0042&gt;</c> — a
+    /// merge needs both wrappers to contribute used codes, or the union degenerates and the merge
+    /// tests prove nothing.
+    ///
+    /// <para>The descendant's <c>/CIDToGIDMap</c> is an explicit stream (never <c>/Identity</c>, never
+    /// dead-at-CID-0): 0x41 maps to gid 1 (live), 0x42 maps to gid 0 (dead) — the fixture rule later
+    /// merge tasks' dead-code assertions rely on. Wrapper 1's <c>/ToUnicode</c> maps 0x41→'A', 0x42→'B';
+    /// wrapper 2's defaults to the SAME 0x42→'B' mapping (consistent), overridable via
+    /// <paramref name="wrapper2ToUnicode"/> to a conflicting mapping (e.g. 0x42→'Z') for the conflict
+    /// tests a later task adds.</para>
+    /// </summary>
+    public static PdfDocument SharedDescendantDoc(
+        IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null)
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+SharedDescendant"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+
+        // Codes 0..0x42: gid 1 at the live code 0x41, gid 0 (.notdef) at the dead code 0x42. Never
+        // /Identity, never CID 0 — the fixture rule later merge tasks' dead-code assertions rely on.
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(),
+            LiveDeadCidToGidBytes(liveCode: 0x41, deadCode: 0x42)));
+
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescendant"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = Ref(6),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        AddCidSystemInfo(descendant);
+        doc.AddObject(4, 0, descendant);
+
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
+            BfCharBytes([(0x41, "0041"), (0x42, "0042")])));
+        var wrapper1 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescendant"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(5),
+        };
+        doc.AddObject(1, 0, wrapper1);
+
+        doc.AddObject(8, 0, new PdfStream(new PdfDictionary(),
+            BfCharBytes(wrapper2ToUnicode ?? [(0x42, "0042")])));
+        var wrapper2 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescendant"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(8),
+        };
+        doc.AddObject(7, 0, wrapper2);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <0042> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
+        return doc;
+    }
+
+    /// <summary>
+    /// Per-holder merge program, Task 1: two Type0 wrappers (objects 1 and 7), each with its OWN,
+    /// separately-numbered descendant CIDFont (objects 4 and 14) — so <c>ProgramHolderId</c> genuinely
+    /// differs between the two logical fonts — but both descendants' <c>/FontDescriptor</c> entries
+    /// resolve to the SAME descriptor object (2), and so the same <c>/FontFile2</c> (object 3): the
+    /// descriptor-level sharing case <c>FontRemediationPlanner.SharedHolderReason</c>'s
+    /// object-number-only comparison used to miss (tracker issue 38 follow-up). Promotes the F-4b-era
+    /// <c>TwoWrappersSharedDescriptorDoc</c>, unchanged in shape but with explicit (never
+    /// <c>/Identity</c>, never CID-0) <c>/CIDToGIDMap</c> streams so the dead codes match the fixture
+    /// rule the other shared fixture in this file follows.
+    ///
+    /// <para>Wrapper 1 draws <c>&lt;0041 0042&gt;</c> (descendant 4's map: 0x41→gid 1 live, 0x42→gid 0
+    /// dead; /ToUnicode 0x41→'A', 0x42→'B'). Wrapper 2 draws <c>&lt;0043 0044&gt;</c> (descendant 14's
+    /// map: 0x43→gid 1 live, 0x44→gid 0 dead; /ToUnicode 0x43→'C', 0x44→'D'). Both wrappers drawing
+    /// their own dead code means each gets its own genuine 6.2.11.8 finding from the real
+    /// <c>FontProgramRule</c>, which is what routes <c>Propose</c> into <c>ProposeProgramReplace</c> —
+    /// where the descriptor-collision guard lives — for both.</para>
+    /// </summary>
+    public static PdfDocument SharedDescriptorDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+SharedDescriptor"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+
+        // Descendant 1 (object 4): live code 0x41 -> gid 1, dead code 0x42 -> gid 0.
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(),
+            LiveDeadCidToGidBytes(liveCode: 0x41, deadCode: 0x42)));
+        var descendant1 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescriptor"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = Ref(6),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        AddCidSystemInfo(descendant1);
+        doc.AddObject(4, 0, descendant1);
+
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
+            BfCharBytes([(0x41, "0041"), (0x42, "0042")])));
+        var wrapper1 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescriptor"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(5),
+        };
+        doc.AddObject(1, 0, wrapper1);
+
+        // Descendant 2 (object 14): live code 0x43 -> gid 1, dead code 0x44 -> gid 0. Same shared
+        // program (object 3, via the shared descriptor object 2), so 0x43 also lands on gid 1 — the
+        // only non-.notdef glyph the 2-glyph program has.
+        doc.AddObject(16, 0, new PdfStream(new PdfDictionary(),
+            LiveDeadCidToGidBytes(liveCode: 0x43, deadCode: 0x44)));
+        var descendant2 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescriptor"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = Ref(16),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x43), new PdfArray(new PdfInteger(500))),
+        };
+        AddCidSystemInfo(descendant2);
+        doc.AddObject(14, 0, descendant2);
+
+        doc.AddObject(15, 0, new PdfStream(new PdfDictionary(),
+            BfCharBytes([(0x43, "0043"), (0x44, "0044")])));
+        var wrapper2 = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+SharedDescriptor"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(14)),
+            [N("ToUnicode")] = Ref(15),
+        };
+        doc.AddObject(7, 0, wrapper2);
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <0043 0044> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
         return doc;
     }
 }
