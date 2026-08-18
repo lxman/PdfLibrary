@@ -21,7 +21,7 @@ public sealed class ReplaceProgramFixturesShapeTests
         IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(doc);
         var composites = inventory.Where(e => e.ProgramHolderId is not null).ToList();
         Assert.Equal(2, composites.Count);
-        Assert.Equal(1, composites.Select(e => e.ProgramHolderId!.Value.ObjectNumber).Distinct().Count());
+        Assert.Single(composites.Select(e => e.ProgramHolderId!.Value.ObjectNumber).Distinct());
         Assert.All(composites, e => Assert.NotEmpty(e.UsedCodes));
     }
 
