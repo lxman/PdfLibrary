@@ -164,11 +164,9 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         // Inventory-scoped expansion (spec §4, 2026-08-18 clarification — Task 4 review finding C1): a
         // group seeded by a notdef finding is NOT limited to the fonts THIS CALL happened to name.
-        // Every OTHER inventory entry sharing the same holder key is pulled in too — the shared
-        // program is being rewritten (or the whole group declines) either way, and skipping a sibling
-        // here is exactly the silent-.notdef corruption the review caught: ToStreamBytes writes GID 0
-        // for every CID a target's map does not cover, so an uncovered sibling's fine text would
-        // render .notdef with no error anywhere. A sibling pulled in only by this expansion still
+        // ExpandHolderGroup (shared with AssessReplacementCandidate's manual path — Task 7 review; see
+        // its own doc comment for the full rationale and the dedup-key shape) pulls in every other
+        // inventory entry sharing the group's key. A sibling pulled in only by this expansion still
         // becomes a FULL target inside ProposeMergedReplace — its used codes join the coverage union,
         // its descendant gets a real map, and ITS OWN gates run too (a gate failure blocks the whole
         // group) — but it is not in `seedIdsByKey`, so it gets `ClosesFinding: false` and no
@@ -176,24 +174,8 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // reported as closed.
         foreach ((long key, List<FontInventoryEntry> members) in groupMembers)
         {
-            // Review round 2, finding 4: keyed on the SAME (ObjectNumber, ProgramHolderObjectNumber)
-            // tuple `seen`/`memberOfGroup` use, not `Id.ObjectNumber` alone — a bare ObjectNumber
-            // dedup would collide on FontInventory's FontId(0) direct-dictionary sentinel the same
-            // way `seen`'s own comment (above) explains, silently dropping a second, genuinely
-            // distinct direct-dictionary candidate that happens to share this group's key.
-            var memberIds = new HashSet<(int, int?)>(
-                members.Select(m => (m.Id.ObjectNumber, m.ProgramHolderId?.ObjectNumber)));
-            foreach (FontInventoryEntry candidate in inventory)
-            {
-                if (candidate.ProgramHolderId is not { } holder) continue;
-                (int, int?) candidateKey = (candidate.Id.ObjectNumber, holder.ObjectNumber);
-                if (memberIds.Contains(candidateKey)) continue;
-                if (HolderGroupKey(document, candidate) != key) continue;
-
-                members.Add(candidate);
-                memberIds.Add(candidateKey);
-                memberOfGroup[candidateKey] = key;
-            }
+            foreach (FontInventoryEntry candidate in ExpandHolderGroup(document, inventory, members, key))
+                memberOfGroup[(candidate.Id.ObjectNumber, candidate.ProgramHolderId?.ObjectNumber)] = key;
         }
 
         // Task 6 (tracker issue 38): WIDTH-family grouping — kind-agnostic (a simple TrueType font and
@@ -432,6 +414,55 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         return DescriptorObjectNumber(document, holder) is { } descriptorNumber
             ? (long)descriptorNumber | (1L << 32)
             : holder.ObjectNumber;
+    }
+
+    /// <summary>
+    /// Inventory-scoped expansion (spec §4, 2026-08-18 clarification — Task 4 review finding C1),
+    /// shared by <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s automatic
+    /// path (whose group may already hold several SEED members before this runs) and
+    /// <see cref="AssessReplacementCandidate"/>'s manual path (whose group is seeded by exactly one
+    /// picked entry) — extracted from a near-identical copy in each (Task 7 review): every OTHER
+    /// inventory entry sharing <paramref name="key"/> — the SAME <see cref="HolderGroupKey"/> already
+    /// computed for the seed(s) — joins <paramref name="members"/>, kind-agnostic. The shared program
+    /// is being rewritten (or the whole group declines) either way, and skipping a sibling here is
+    /// exactly the silent-.notdef corruption the review caught: ToStreamBytes writes GID 0 for every
+    /// CID a target's map does not cover, so an uncovered sibling's fine text would render .notdef
+    /// with no error anywhere.
+    ///
+    /// <para>Mutates <paramref name="members"/> in place and returns the SAME entries it added, in
+    /// inventory order, so a caller with per-entry bookkeeping beyond bare membership (e.g.
+    /// <c>Propose</c>'s own <c>memberOfGroup</c> map) can update it without re-deriving which entries
+    /// are new. Takes the group's already-built member LIST rather than a single seed entry: unlike
+    /// the manual path, <c>Propose</c>'s group can already hold more than one SEED before expansion
+    /// runs (two wrappers both carrying THIS call's own notdef finding, sharing one holder), so a
+    /// signature scoped to one seed would force restructuring that loop — out of scope for a pure
+    /// refactor.</para>
+    ///
+    /// <para>Dedup-keyed on <c>(ObjectNumber, ProgramHolderObjectNumber)</c> (review round 2, finding
+    /// 4), not <c>Id.ObjectNumber</c> alone — a bare ObjectNumber dedup would collide on
+    /// <see cref="FontInventory"/>'s <c>FontId(0)</c> direct-dictionary sentinel, silently dropping a
+    /// second, genuinely distinct direct-dictionary candidate that happens to share this group's
+    /// key.</para>
+    /// </summary>
+    private static List<FontInventoryEntry> ExpandHolderGroup(
+        PdfDocument document, IReadOnlyList<FontInventoryEntry> inventory,
+        List<FontInventoryEntry> members, long key)
+    {
+        var memberIds = new HashSet<(int, int?)>(
+            members.Select(m => (m.Id.ObjectNumber, m.ProgramHolderId?.ObjectNumber)));
+        var added = new List<FontInventoryEntry>();
+        foreach (FontInventoryEntry candidate in inventory)
+        {
+            if (candidate.ProgramHolderId is not { } holder) continue;
+            (int, int?) candidateKey = (candidate.Id.ObjectNumber, holder.ObjectNumber);
+            if (memberIds.Contains(candidateKey)) continue;
+            if (HolderGroupKey(document, candidate) != key) continue;
+
+            members.Add(candidate);
+            memberIds.Add(candidateKey);
+            added.Add(candidate);
+        }
+        return added;
     }
 
     /// <summary>The <c>font-program</c> findings attributable to <paramref name="entry"/> — its own
@@ -1182,45 +1213,19 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         PdfDocument document, IReadOnlyList<FontInventoryEntry> group, string ruleId,
         ILookup<int, Finding> ruleFindings, IReadOnlySet<int> seedIds)
     {
-        // Step 1: gate every sibling individually — the SAME shape gates ProposeProgramReplace runs
-        // 1–4 for a singleton, just fanned out to the whole group on the first failure.
+        // Step 1: gate every sibling individually via the shared ValidateSiblingShape validator (Task
+        // 7 review) — the SAME gates ProposeProgramReplace runs 1–4 for a singleton, just fanned out
+        // to the whole group: every failure wraps in MergeBlockedSibling, uniformly, on the first
+        // failure (DeclineAll — contrast AssessReplacementCandidate's manual path, which wraps only a
+        // non-picked member's failure).
         var siblings = new List<(FontInventoryEntry Entry, Type0Font Type0, CidFont Cid)>();
         foreach (FontInventoryEntry entry in group)
         {
-            if (!entry.IsAddressable)
-            {
-                return DeclineAll(group, ruleId, MergeBlockedSibling(
-                    "This font is written directly into the page's resources rather than as its own "
-                    + "object, so Pellucid cannot address its font program to correct it."));
-            }
+            SiblingShapeResult shape = ValidateSiblingShape(document, entry);
+            if (shape.Reason is { } reason)
+                return DeclineAll(group, ruleId, MergeBlockedSibling(reason));
 
-            if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
-                return DeclineAll(group, ruleId, MergeBlockedSibling(SimpleFontMissingGlyphReason));
-
-            if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
-                || PdfFont.Create(fontDict, document) is not Type0Font type0
-                || type0.DescendantFont is not CidFont cid)
-            {
-                return DeclineAll(group, ruleId, MergeBlockedSibling(
-                    "This font's dictionary could not be read as a composite font, so Pellucid cannot "
-                    + "correct its program."));
-            }
-
-            if (type0.EncodingName is not ("Identity-H" or "Identity-V"))
-            {
-                return DeclineAll(group, ruleId, MergeBlockedSibling(
-                    "This composite font's encoding is not an Identity CMap, so Pellucid cannot prove "
-                    + "which glyph each character selects."));
-            }
-
-            if (type0.ToUnicode is null)
-            {
-                return DeclineAll(group, ruleId, MergeBlockedSibling(
-                    "This font declares no /ToUnicode mapping, which is the only honest source for "
-                    + "what its characters mean — a replacement face cannot be chosen without it."));
-            }
-
-            siblings.Add((entry, type0, cid));
+            siblings.Add((entry, shape.Type0!, shape.Cid!));
         }
 
         // Task 3 amendment, narrowed by review finding C1: group-wide cid0-only gate, BEFORE substitute
@@ -1568,6 +1573,64 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         + $"({reason}), and replacing the shared program for only some of its fonts would corrupt the "
         + "others.";
 
+    /// <summary>Result of <see cref="ValidateSiblingShape"/>: either the parsed
+    /// (<see cref="Type0Font"/>, <see cref="CidFont"/>) pair, or the RAW (unwrapped) <c>Reason</c> a
+    /// shape gate failed — exactly the same reason text a singleton assessment of this entry alone
+    /// would report. Wrapping that reason for a group context (or not) is the CALLER's decision, not
+    /// this validator's: <see cref="ProposeMergedReplace"/>'s Step 1 wraps every failure uniformly
+    /// (<see cref="MergeBlockedSibling"/>, via <see cref="DeclineAll"/>), while
+    /// <see cref="AssessReplacementCandidate"/>'s manual-path group loop wraps only a non-picked
+    /// member's failure — two different policies over the SAME underlying fact, kept in the two
+    /// callers rather than flattened into this helper.</summary>
+    private readonly record struct SiblingShapeResult(Type0Font? Type0, CidFont? Cid, string? Reason);
+
+    /// <summary>
+    /// The per-sibling shape gate <see cref="ProposeMergedReplace"/>'s Step 1 and
+    /// <see cref="AssessReplacementCandidate"/>'s manual-path group loop both run over every group
+    /// member (extracted from a near-identical copy in each, including all five reason-string
+    /// literals — Task 7 review): unaddressable, non-composite kind, unreadable-as-composite,
+    /// non-Identity encoding, no <c>/ToUnicode</c>. Shared so these five strings — pinned verbatim by
+    /// Task 9's corpus-wide decline-reason sweep — exist in exactly one place; a caller that revises
+    /// one no longer needs a second, independently-maintained copy to follow.
+    /// </summary>
+    private static SiblingShapeResult ValidateSiblingShape(PdfDocument document, FontInventoryEntry entry)
+    {
+        if (!entry.IsAddressable)
+        {
+            return new SiblingShapeResult(null, null,
+                "This font is written directly into the page's resources rather than as its own "
+                + "object, so Pellucid cannot address its font program to correct it.");
+        }
+
+        if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
+            return new SiblingShapeResult(null, null, SimpleFontMissingGlyphReason);
+
+        if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+            || PdfFont.Create(fontDict, document) is not Type0Font type0
+            || type0.DescendantFont is not CidFont cid)
+        {
+            return new SiblingShapeResult(null, null,
+                "This font's dictionary could not be read as a composite font, so Pellucid cannot "
+                + "correct its program.");
+        }
+
+        if (type0.EncodingName is not ("Identity-H" or "Identity-V"))
+        {
+            return new SiblingShapeResult(null, null,
+                "This composite font's encoding is not an Identity CMap, so Pellucid cannot prove "
+                + "which glyph each character selects.");
+        }
+
+        if (type0.ToUnicode is null)
+        {
+            return new SiblingShapeResult(null, null,
+                "This font declares no /ToUnicode mapping, which is the only honest source for what "
+                + "its characters mean — a replacement face cannot be chosen without it.");
+        }
+
+        return new SiblingShapeResult(type0, cid, null);
+    }
+
     /// <summary>Review round 1, finding I1: the reason a width-family group is blocked by
     /// <paramref name="blocker"/> — a sibling sharing the SAME <see cref="HolderGroupKey"/> whose own
     /// Kind is outside the width-patchable set, or which is not addressable. Mirrors the SAME per-kind
@@ -1639,89 +1702,41 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             return new CandidateAssessment(null, SimpleFontMissingGlyphReason, [], null);
 
         // Task 7 (tracker issue 38): build the shared-holder group the SAME way Propose's inventory-
-        // scoped expansion does (spec §4) — the picked entry seeds it, every OTHER inventory entry
-        // sharing its HolderGroupKey joins, kind-agnostic. IsAddressable (just gated above) guarantees
-        // entry.ProgramHolderId is non-null (FontInventory.BuildEntry ties the two together — IsAddressable
-        // requires the program holder to be indirect, and only an indirect holder gets a ProgramHolderId
-        // at all), so the "no ProgramHolderId" branch below is defensive, not reachable through this
-        // call site.
+        // scoped expansion does (spec §4), via the shared ExpandHolderGroup helper (Task 7 review —
+        // see its own doc comment for the dedup-key rationale) — the picked entry seeds it, every
+        // OTHER inventory entry sharing its HolderGroupKey joins, kind-agnostic. IsAddressable (just
+        // gated above) guarantees entry.ProgramHolderId is non-null (FontInventory.BuildEntry ties the
+        // two together — IsAddressable requires the program holder to be indirect, and only an
+        // indirect holder gets a ProgramHolderId at all), so the "no ProgramHolderId" branch below is
+        // defensive, not reachable through this call site.
         IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(document);
         var group = new List<FontInventoryEntry> { entry };
-        // Same dedup-key shape Propose's own expansion uses (review round 2, finding 4): keyed on
-        // (ObjectNumber, ProgramHolderObjectNumber), not ObjectNumber alone — FontInventory's FontId(0)
-        // direct-dictionary sentinel would otherwise collide two distinct direct dictionaries.
-        var memberIds = new HashSet<(int ObjectNumber, int? ProgramHolderObjectNumber)>
-        {
-            (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber),
-        };
         if (entry.ProgramHolderId is not null)
-        {
-            long key = HolderGroupKey(document, entry);
-            foreach (FontInventoryEntry candidate in inventory)
-            {
-                if (candidate.ProgramHolderId is not { } candidateHolder) continue;
-                (int, int?) candidateKey = (candidate.Id.ObjectNumber, candidateHolder.ObjectNumber);
-                if (memberIds.Contains(candidateKey)) continue;
-                if (HolderGroupKey(document, candidate) != key) continue;
+            ExpandHolderGroup(document, inventory, group, HolderGroupKey(document, entry));
 
-                group.Add(candidate);
-                memberIds.Add(candidateKey);
-            }
-        }
-
-        // Step 1 (mirrors ProposeMergedReplace's own per-sibling shape gate): unaddressable, non-
-        // composite kind, unreadable-as-composite, non-Identity encoding, no /ToUnicode. A failure
-        // BLOCKS the whole assessment — a non-composite (or otherwise malformed) sibling sharing the
-        // holder is a real corruption hazard, not an over-decline (Task 4 round-2 ruling): writing the
-        // shared program would corrupt it. The picked entry's own failure reports DIRECTLY (it already
-        // passed the two gates above, so only the latter three checks can still fire for it here); any
-        // OTHER member's failure wraps in MergeBlockedSibling, naming it as a fact about a sibling.
+        // Step 1: the shared ValidateSiblingShape validator (Task 7 review) runs the SAME gates
+        // ProposeMergedReplace's own Step 1 runs — unaddressable, non-composite kind, unreadable-as-
+        // composite, non-Identity encoding, no /ToUnicode — over every group member. A failure BLOCKS
+        // the whole assessment — a non-composite (or otherwise malformed) sibling sharing the holder is
+        // a real corruption hazard, not an over-decline (Task 4 round-2 ruling): writing the shared
+        // program would corrupt it. Unlike ProposeMergedReplace's uniform MergeBlockedSibling wrap
+        // (DeclineAll), the picked entry's own failure reports DIRECTLY here (it already passed the two
+        // gates above, so only the latter three checks can still fire for it); any OTHER member's
+        // failure wraps in MergeBlockedSibling, naming it as a fact about a sibling.
         var seedIds = new HashSet<int> { entry.Id.ObjectNumber };
         var siblings = new List<(FontInventoryEntry Entry, Type0Font Type0, CidFont Cid)>();
         foreach (FontInventoryEntry member in group)
         {
-            bool isPicked = member.Id.ObjectNumber == entry.Id.ObjectNumber
-                && member.ProgramHolderId?.ObjectNumber == entry.ProgramHolderId?.ObjectNumber;
-            string Reason(string text) => isPicked ? text : MergeBlockedSibling(text);
-
-            if (!member.IsAddressable)
+            SiblingShapeResult shape = ValidateSiblingShape(document, member);
+            if (shape.Reason is { } reason)
             {
-                return new CandidateAssessment(null, Reason(
-                    "This font is written directly into the page's resources rather than as its own "
-                    + "object, so Pellucid cannot address its font program to correct it."),
-                    [], null);
+                bool isPicked = member.Id.ObjectNumber == entry.Id.ObjectNumber
+                    && member.ProgramHolderId?.ObjectNumber == entry.ProgramHolderId?.ObjectNumber;
+                return new CandidateAssessment(
+                    null, isPicked ? reason : MergeBlockedSibling(reason), [], null);
             }
 
-            if (member.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
-                return new CandidateAssessment(null, Reason(SimpleFontMissingGlyphReason), [], null);
-
-            if (document.GetObject(member.Id.ObjectNumber) is not PdfDictionary memberDict
-                || PdfFont.Create(memberDict, document) is not Type0Font memberType0
-                || memberType0.DescendantFont is not CidFont memberCid)
-            {
-                return new CandidateAssessment(null, Reason(
-                    "This font's dictionary could not be read as a composite font, so Pellucid cannot "
-                    + "correct its program."),
-                    [], null);
-            }
-
-            if (memberType0.EncodingName is not ("Identity-H" or "Identity-V"))
-            {
-                return new CandidateAssessment(null, Reason(
-                    "This composite font's encoding is not an Identity CMap, so Pellucid cannot prove "
-                    + "which glyph each character selects."),
-                    [], null);
-            }
-
-            if (memberType0.ToUnicode is null)
-            {
-                return new CandidateAssessment(null, Reason(
-                    "This font declares no /ToUnicode mapping, which is the only honest source for "
-                    + "what its characters mean — a replacement face cannot be chosen without it."),
-                    [], null);
-            }
-
-            siblings.Add((member, memberType0, memberCid));
+            siblings.Add((member, shape.Type0!, shape.Cid!));
         }
 
         if (siblings.Count == 1)
