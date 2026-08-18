@@ -203,6 +203,19 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // "no inventory-scoped expansion, unlike the notdef family" — that was the gap.
         var widthMemberOfGroup = new Dictionary<(int ObjectNumber, int? ProgramHolderObjectNumber), long>();
         var widthGroupMembers = new Dictionary<long, List<FontInventoryEntry>>();
+        // Task 8b review fix (Important 2): object numbers of entries that carry an ACTUAL 6.2.11.5
+        // finding THIS CALL — as opposed to an entry pulled into `widthGroupMembers` only by the
+        // expansion pass below. Mirrors the notdef family's own `seedIdsByKey`, but as a flat
+        // HashSet<int> rather than a per-key dictionary of tuple keys: every width-family seed is
+        // gated on `entry.IsAddressable` immediately below (unlike a notdef seed, which is NOT), so
+        // `entry.Id.ObjectNumber` can never be FontInventory's FontId(0) direct-dictionary sentinel
+        // here — a bare ObjectNumber is an unambiguous key for this set specifically. Two uses: (1)
+        // `BuildMergedWidthPatch`'s per-member-fact declines (below) must not assert a fact about an
+        // expansion-only member's OWN dictionary/program that is only actually true of the SEED that
+        // triggered it; (2) the pass-2 dispatch's width-family capture must not hijack an
+        // expansion-only member's OWN, unrelated font-program finding (a genuine 6.2.11.4.1, say) —
+        // see both sites' own comments.
+        var widthSeedIds = new HashSet<int>();
         foreach ((string ruleId, FontInventoryEntry entry) in resolved)
         {
             if (ruleId != "font-program") continue;
@@ -213,6 +226,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             long key = HolderGroupKey(document, entry);
             var idKey = (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber);
             widthMemberOfGroup[idKey] = key;
+            widthSeedIds.Add(entry.Id.ObjectNumber);
             if (!widthGroupMembers.TryGetValue(key, out List<FontInventoryEntry>? members))
                 widthGroupMembers[key] = members = [];
             members.Add(entry);
@@ -360,16 +374,49 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     // ProposeWidthPatchOnly's own `!hasWidth` branch would otherwise produce a WRONG
                     // decline text for a composite entry here (it names "a simple font" — see
                     // SimpleFontMissingGlyphReason — which is only correct for the singleton dispatch's
-                    // own non-composite callers). Only set the flag when widthMemberOfGroup confirms
-                    // hasWidth is true for this entry.
+                    // own non-composite callers).
+                    //
+                    // Task 8b review fix (Important 2): `widthMemberOfGroup` no longer implies "this
+                    // entry carries its own 6.2.11.5 finding" — inventory-scoped expansion (above) can
+                    // list an entry here purely because it shares a SIBLING's holder. Setting
+                    // `freedFromDeclinedGroup = true` for such an entry below is still safe, through a
+                    // non-obvious argument worth writing down: reaching this line already requires
+                    // `key`'s notdef GROUP to have `members.Count > 1` (line ~331), so at least one
+                    // OTHER entry shares this entry's HolderGroupKey. Every possible such sibling is
+                    // either (a) width-eligible (TrueType/Type0CidType2, addressable) — in which case
+                    // it was ALSO pulled into THIS entry's width group by the SAME expansion pass, so
+                    // `widthMembers.Count > 1` below is guaranteed — or (b) width-ineligible (wrong
+                    // kind or non-addressable) — in which case `blockedWidthKeys` (I1) unconditionally
+                    // catches it, since its scan predicate is the exact complement of width
+                    // eligibility. Either way this entry's own turn through the block below always hits
+                    // the BLOCKED or MERGED branch and `continue`s before ever reaching the switch's
+                    // `ProposeWidthPatchOnly` call — the `!hasWidth` branch this comment used to guard
+                    // against is unreachable from here, not merely avoided by the flag. (A
+                    // Type0CidType0 entry can never reach this line at all: it fails the width-family
+                    // Kind filter, so `widthMemberOfGroup` never contains it, and the check right below
+                    // continues past it first.)
                     if (!widthMemberOfGroup.ContainsKey(idKey)) continue;
                     freedFromDeclinedGroup = true;
                 }
             }
 
+            // Task 8b review fix (Important 2): gated on `widthSeedIds` (or `freedFromDeclinedGroup`,
+            // whose own safety is the non-obvious argument documented just above), not bare
+            // `widthMemberOfGroup` membership — an entry pulled into a group only by expansion can
+            // independently carry a DIFFERENT font-program finding this call (a genuine 6.2.11.4.1, or
+            // a 6.2.11.8 on a SIMPLE TrueType font, which never seeds a notdef group per the Kind gate
+            // above). Capturing such an entry here would route ITS OWN dispatch into the width-family
+            // branch below and, once some OTHER resolved seed has already `processedWidthGroups`-
+            // marked the same key, silently swallow its finding with NO proposal at all — see
+            // MergedWidthPatchTests.An_expansion_only_members_own_unrelated_finding_still_dispatches.
+            // This gate only excludes such an entry from TRIGGERING/being captured by the width
+            // dispatch; `widthMembers` (below, looked up from `widthGroupMembers[widthKey]`) still
+            // includes it as a merge participant whenever the group's own genuine seed reaches this
+            // block — its declared widths still join the union either way.
             if (ruleId == "font-program"
                 && entry.Kind is FontKind.TrueType or FontKind.Type0CidType2
-                && widthMemberOfGroup.TryGetValue(idKey, out long widthKey))
+                && widthMemberOfGroup.TryGetValue(idKey, out long widthKey)
+                && (freedFromDeclinedGroup || widthSeedIds.Contains(entry.Id.ObjectNumber)))
             {
                 List<FontInventoryEntry> widthMembers = widthGroupMembers[widthKey];
 
@@ -397,7 +444,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     if (!processedWidthGroups.Add(widthKey)) continue; // this holder's width group already emitted
                     proposals.AddRange(BuildMergedWidthPatch(
-                        document, widthMembers, ruleId, fontProgramFindings.Value));
+                        document, widthMembers, ruleId, fontProgramFindings.Value, widthSeedIds));
                     continue;
                 }
                 // singleton, unblocked — fall through unchanged to the ordinary dispatch below.
@@ -883,21 +930,32 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// enumeration the singleton core above uses), union with cross-member conflict detection, ONE
     /// <see cref="SfntAdvancePatcher.Patch"/> call.
     ///
-    /// <para>Every member here already carries its own genuine width finding (the seeding gate in
-    /// <c>Propose</c> requires it), so — unlike <see cref="BuildMergedReplacement"/>'s notdef-family
-    /// declines, which must distinguish a SEED from an inventory-expansion-only sibling to avoid
-    /// asserting a false fact about the latter — every decline reason below is equally true of every
-    /// member and is reported to all of them verbatim via <see cref="DeclineAll"/>; there is no
-    /// non-seed to wrap.</para>
+    /// <para>Task 8b review fix (Important 1): this doc comment used to say every member here already
+    /// carries its own genuine width finding, with "there is no non-seed to wrap." Task 8b's own
+    /// inventory-scoped expansion made that false — <paramref name="members"/> can now include an
+    /// expansion-only sibling with NO width finding of its own at all. A per-member SHAPE/PARSE fact
+    /// (missing /FontDescriptor, no /FontFile2, unreadable dictionary, unparseable metrics,
+    /// non-Identity composite encoding, no /Widths, a self-inconsistent zero-vs-real-advance or
+    /// two-codes-one-glyph declaration) is evaluated per entry as the loop below walks
+    /// <paramref name="members"/>, and is genuinely true only of WHICHEVER entry failed the check —
+    /// exactly the same shape <see cref="BuildMergedReplacement"/>'s notdef declines distinguish a SEED
+    /// from a non-seed for. Those sites now route through <see cref="DeclineGroupFact"/> keyed on
+    /// <paramref name="seedIds"/>: a SEED gets the raw reason (a genuine candidate for the fact being
+    /// about it specifically), a non-seed gets it wrapped in <see cref="MergeBlockedSibling"/> so its
+    /// row reads "a font sharing your program has this condition," not a lie about itself.
+    /// <see cref="DeclineAll"/> is kept ONLY for the genuinely GROUP-LEVEL facts below — the
+    /// cross-member width conflict, "nothing to correct," and "nothing to patch" — which are equally
+    /// true of every member by construction (they are computed FROM the union, not from any one
+    /// member's own shape).</para>
     ///
-    /// <para>A per-member shape/parse failure (missing /FontDescriptor, no /FontFile2, unreadable
-    /// dictionary, non-Identity composite encoding, no /Widths) declines the WHOLE group, matching the
-    /// notdef family's own "any failure blocks everyone" convention — simpler to reason about than a
-    /// partial merge, and this task's own test list does not need finer granularity.</para>
+    /// <para>A per-member shape/parse failure still declines the WHOLE group, matching the notdef
+    /// family's own "any failure blocks everyone" convention — simpler to reason about than a partial
+    /// merge, and this task's own test list does not need finer granularity. Only the REASON TEXT each
+    /// member receives changed (raw vs. wrapped), not which members get declined.</para>
     /// </summary>
     private static IReadOnlyList<FontProposal> BuildMergedWidthPatch(
         PdfDocument document, IReadOnlyList<FontInventoryEntry> members, string ruleId,
-        ILookup<int, Finding> ruleFindings)
+        ILookup<int, Finding> ruleFindings, IReadOnlySet<int> seedIds)
     {
         FontInventoryEntry first = members[0];
         FontId holder0 = first.ProgramHolderId ?? first.Id; // non-null: seeding required ProgramHolderId
@@ -914,42 +972,45 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
             // Unreachable through the width-family seeding gate (Kind is already TrueType or
             // Type0CidType2 there), kept as a defensive gate for a direct caller — mirrors the
-            // singleton core's own kind switch.
+            // singleton core's own kind switch. Per-member fact (Task 8b review fix, Important 1):
+            // DeclineGroupFact, not DeclineAll — see this method's own doc comment.
             if (entry.Kind is FontKind.Type3 or FontKind.Type0CidType0 or FontKind.Type1)
             {
-                return DeclineAll(members, ruleId, entry.Kind == FontKind.Type3
+                return DeclineGroupFact(members, ruleId, entry.Kind == FontKind.Type3
                     ? "Type 3 font widths come from each glyph's own drawing procedure, which Pellucid "
                       + "does not rewrite."
                     : "This font's program stores its advances in CFF charstrings, which Pellucid "
-                      + "cannot yet rewrite.");
+                      + "cannot yet rewrite.", seedIds);
             }
 
             if (document.GetObject(holder.ObjectNumber) is not PdfDictionary holderDict
                 || Resolve(document, holderDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
             {
-                return DeclineAll(members, ruleId,
-                    "The font has no /FontDescriptor, so there is no embedded program to correct.");
+                return DeclineGroupFact(members, ruleId,
+                    "The font has no /FontDescriptor, so there is no embedded program to correct.",
+                    seedIds);
             }
             if (Resolve(document, descriptor.Get("FontFile2")) is not PdfStream fontFile2)
             {
-                return DeclineAll(members, ruleId,
+                return DeclineGroupFact(members, ruleId,
                     "The font's program is not carried as a /FontFile2 sfnt, so its advances cannot be "
-                    + "patched in place.");
+                    + "patched in place.", seedIds);
             }
             sharedFontFile2 ??= fontFile2;
 
             if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
                 || PdfFont.Create(fontDict, document) is not { } pdfFont)
             {
-                return DeclineAll(members, ruleId,
-                    "This font's dictionary could not be read, so Pellucid cannot compare its widths.");
+                return DeclineGroupFact(members, ruleId,
+                    "This font's dictionary could not be read, so Pellucid cannot compare its widths.",
+                    seedIds);
             }
             EmbeddedFontMetrics? metrics = pdfFont.GetEmbeddedMetrics();
             if (metrics is null || !metrics.IsValid)
             {
-                return DeclineAll(members, ruleId,
+                return DeclineGroupFact(members, ruleId,
                     "The embedded font program could not be parsed, so correcting its advances would "
-                    + "be a guess.");
+                    + "be a guess.", seedIds);
             }
             sharedMetrics ??= metrics;
 
@@ -959,9 +1020,9 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 if (pdfFont is not Type0Font type0 || type0.DescendantFont is not CidFont cid
                     || type0.EncodingName is not ("Identity-H" or "Identity-V"))
                 {
-                    return DeclineAll(members, ruleId,
+                    return DeclineGroupFact(members, ruleId,
                         "This composite font's encoding is not an Identity CMap, so Pellucid cannot "
-                        + "prove which glyph each character selects.");
+                        + "prove which glyph each character selects.", seedIds);
                 }
                 tuples = ProgramWidthResolver.Composite(
                     cid, metrics, cidKeyedCff: false, entry.UsedCodes.Distinct());
@@ -970,9 +1031,9 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             {
                 if (Resolve(document, fontDict.Get("Widths")) is not PdfArray widths)
                 {
-                    return DeclineAll(members, ruleId,
+                    return DeclineGroupFact(members, ruleId,
                         "The font declares no /Widths array, so there is nothing to reconcile the "
-                        + "program against.");
+                        + "program against.", seedIds);
                 }
                 tuples = ProgramWidthResolver.Simple(
                     pdfFont, metrics, widths, entry.UsedCodes.Distinct(), isTrueType: true);
@@ -986,18 +1047,18 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
                 if (w.Declared == 0 && w.Program > 0)
                 {
-                    return DeclineAll(members, ruleId,
+                    return DeclineGroupFact(members, ruleId,
                         "The document declares a zero width where the program has a real advance; "
                         + "patching the program to zero would visibly change layout in renderers that "
-                        + "fall back to program advances, so Pellucid leaves it alone.");
+                        + "fall back to program advances, so Pellucid leaves it alone.", seedIds);
                 }
                 if (targetByGid.TryGetValue(w.Gid, out double existing))
                 {
                     if (Math.Abs(existing - w.Declared) > FontProgramRule.WidthTolerance)
                     {
-                        return DeclineAll(members, ruleId,
+                        return DeclineGroupFact(members, ruleId,
                             "Two character codes share one glyph but declare different widths, so no "
-                            + "single program advance can satisfy both.");
+                            + "single program advance can satisfy both.", seedIds);
                     }
                     continue;
                 }

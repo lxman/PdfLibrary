@@ -179,19 +179,24 @@ public sealed class MergedWidthPatchTests
     }
 
     /// <summary>
-    /// Task 8b (review finding I3), defect B pin — the CORRUPTION shape: a same-kind, addressable
-    /// sibling sharing the holder but carrying no finding IN THIS CALL must still have its OWN
-    /// declared widths honoured by the merge, not just the seed's. Uses
-    /// <see cref="TwoLiveGlyphsSharedDescendantDoc"/> — a program with TWO real glyphs, not one — so
-    /// wrapper 1 (gid 1) and wrapper 7 (gid 2) each have their own mismatch on a glyph the OTHER font
-    /// never touches: no possible cross-member conflict, and no coincidence can explain a passing
-    /// assertion. Pre-fix, the singleton patch built from wrapper 1's own used codes alone never
-    /// touches gid 2 at all — wrapper 7's declared width goes unhonoured with no error anywhere,
-    /// exactly the corruption Task 4's C1 finding closed for the notdef family. Asserted on the
-    /// PATCHED PROGRAM BYTES, not proposal metadata, per the brief.
+    /// Task 8b (review finding I3): a same-kind, addressable sibling sharing the holder, carrying a
+    /// GENUINE 6.2.11.5 finding of its own (it declares a real, non-tolerance mismatch — 650 vs the
+    /// program's 600), but simply never NAMED in this call, must still have its OWN declared widths
+    /// honoured by the merge, not just the seed's. (Review round 2, promoted item: this is NOT
+    /// defect B's purest shape — the sibling here has a genuine rule-level finding, just unnamed in
+    /// the call; a sibling that carries literally NO finding at all — its declared width matches the
+    /// program exactly — is <see cref="An_expansion_only_sibling_with_no_finding_at_all_still_declines_on_conflict"/>
+    /// below. Renamed from ...findingless... — misleading, since "findingless" describes the OTHER
+    /// test, not this one.) Uses <see cref="TwoLiveGlyphsSharedDescendantDoc"/> — a program with TWO
+    /// real glyphs, not one — so wrapper 1 (gid 1) and wrapper 7 (gid 2) each have their own mismatch
+    /// on a glyph the OTHER font never touches: no possible cross-member conflict, and no coincidence
+    /// can explain a passing assertion. Pre-fix, the singleton patch built from wrapper 1's own used
+    /// codes alone never touches gid 2 at all — wrapper 7's declared width goes unhonoured with no
+    /// error anywhere, exactly the corruption Task 4's C1 finding closed for the notdef family.
+    /// Asserted on the PATCHED PROGRAM BYTES, not proposal metadata, per the brief.
     /// </summary>
     [Fact]
-    public void A_single_finding_still_honours_a_findingless_siblings_own_declared_width()
+    public void A_single_finding_still_honours_an_unnamed_siblings_own_declared_width()
     {
         using PdfDocument doc = TwoLiveGlyphsSharedDescendantDoc();
         FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
@@ -201,7 +206,7 @@ public sealed class MergedWidthPatchTests
 
         var metrics = new EmbeddedFontMetrics(patch.PatchedProgram);
         Assert.Equal(500, metrics.GetAdvanceWidth(1)); // the seed's (wrapper 1) own glyph
-        Assert.Equal(650, metrics.GetAdvanceWidth(2)); // the findingless sibling's (wrapper 7) own glyph
+        Assert.Equal(650, metrics.GetAdvanceWidth(2)); // the unnamed sibling's (wrapper 7) own glyph
     }
 
     /// <summary>
@@ -223,6 +228,106 @@ public sealed class MergedWidthPatchTests
         Assert.Equal(2, result.Fonts.Count);
         Assert.All(result.Fonts, p => Assert.Contains(
             "different widths for the same glyph", Assert.IsType<DeclineProposal>(p).Reason));
+    }
+
+    /// <summary>
+    /// Task 8b review round 2, promoted item: defect B's PUREST shape — a same-kind, addressable
+    /// sibling that carries literally NO 6.2.11.5 finding at all (its declared width EQUALS the
+    /// shared program's actual advance for the glyph it shares with the seed), as opposed to
+    /// <see cref="A_single_finding_still_honours_an_unnamed_siblings_own_declared_width"/>'s sibling,
+    /// which has a genuine finding just never named in the call. Descendant 2 (wrapper 7) declares CID
+    /// 0x43 -&gt; gid 1 at EXACTLY 450 — <see cref="ZeroAdvanceSfntFixture"/>'s own gid-1 advance
+    /// (<see cref="ReplaceProgramFixtures.SharedDescriptorDoc"/>'s program) — so wrapper 7, checked
+    /// alone, would show no finding whatsoever. Wrapper 1 declares CID 0x41 -&gt; the SAME gid 1 at
+    /// 500 (mismatched, its own genuine finding). Pre-fix (findings-scoped width membership), calling
+    /// with only wrapper 1's finding would patch gid 1 to 500 from wrapper 1's declaration alone,
+    /// silently shifting wrapper 7's text — which, being genuinely correct at 450, had no error to
+    /// surface anywhere. Post-fix, inventory-scoped expansion makes wrapper 7 a real member; its own
+    /// (trivial, matching) target for gid 1 still gets computed and unioned, and the union conflict
+    /// check (500 vs 450) declines the WHOLE group — safely, instead of silently corrupting a font
+    /// that had nothing wrong with it.
+    /// </summary>
+    [Fact]
+    public void An_expansion_only_sibling_with_no_finding_at_all_still_declines_on_conflict()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc(
+            wrapper1Codes: [0x41], wrapper2Codes: [0x43], descendant2Width: 450);
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
+
+        Assert.Equal(2, result.Fonts.Count);
+        Assert.All(result.Fonts, p => Assert.Contains(
+            "different widths for the same glyph", Assert.IsType<DeclineProposal>(p).Reason));
+    }
+
+    /// <summary>
+    /// Task 8b review round 2, Important 2: an expansion-only width-group member's OWN, UNRELATED
+    /// font-program finding must still get its own dispatch, not be silently swallowed by the
+    /// width-family capture. Object 30 is a SIMPLE TrueType font sharing composite wrapper 1's
+    /// descriptor (so it is pulled into wrapper 1's width group by inventory-scoped expansion, kind
+    /// TrueType + addressable) — but object 30's OWN finding this call is 6.2.11.8 (a shown code
+    /// mapped to <c>.notdef</c> via <c>/Differences</c>), never 6.2.11.5: a SIMPLE font can never seed
+    /// a notdef GROUP (that gate requires a composite Kind), so before this fix object 30's finding
+    /// had nowhere else to go once the (unconditional, pre-fix) width-family capture claimed its
+    /// dispatch slot. Object 30's own drawn code resolves to gid 0 via the program's cmap (no entry
+    /// for code 65), so <c>ProgramWidthResolver.Simple</c> skips it entirely — it contributes NOTHING
+    /// to <c>BuildMergedWidthPatch</c>'s union and triggers no per-member gate, so the merge SUCCEEDS
+    /// (this is deliberate: a merge that instead declined for a shape reason would already produce
+    /// object 30 a decline, masking the swallow this test exists to catch). Pre-fix, object 30's own
+    /// 6.2.11.8 finding vanished with NO proposal at all whenever wrapper 1 (the width seed) reached
+    /// the merge first. Post-fix, object 30 falls through to its own ordinary dispatch and gets
+    /// <c>SimpleFontMissingGlyphReason</c>, alongside the merged patch it is still validly covered by.
+    /// </summary>
+    [Fact]
+    public void An_expansion_only_members_own_unrelated_finding_still_dispatches()
+    {
+        using PdfDocument doc = CompositeWidthSeedWithSimpleNotdefSiblingDoc();
+        FontRemediationProposal result = Planner()
+            .Propose(doc, [("font-program", 1), ("font-program", 30)]);
+
+        PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
+        Assert.Equal(new HashSet<int> { 1, 30 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+        var metrics = new EmbeddedFontMetrics(patch.PatchedProgram);
+        Assert.Equal(500, metrics.GetAdvanceWidth(1));
+
+        DeclineProposal decline = Assert.Single(result.Fonts.OfType<DeclineProposal>());
+        Assert.Equal(30, decline.Font.ObjectNumber);
+        Assert.Equal(
+            "This font's finding is a missing glyph, and replacing a simple font's program is not "
+            + "something Pellucid does yet.", decline.Reason);
+
+        Assert.Equal(2, result.Fonts.Count);
+    }
+
+    /// <summary>
+    /// Task 8b review round 2, Important 1: <c>BuildMergedWidthPatch</c>'s per-member shape gates
+    /// (here: no <c>/Widths</c> array) must route through <c>DeclineGroupFact</c>, not a uniform
+    /// <c>DeclineAll</c> — the SEED (wrapper 1, a genuine candidate for the fact being about it
+    /// specifically) gets the RAW reason; the expansion-only, non-seed sibling (object 30 — pulled in
+    /// purely because it shares wrapper 1's descriptor, never named in this call) gets it WRAPPED in
+    /// <c>MergeBlockedSibling</c>, so its row reads "a font sharing your program has this condition,"
+    /// not an unqualified claim about object 30's own dictionary (which, per its own missing
+    /// <c>/Widths</c>, the raw sentence would in fact be true of too — but the WRAPPING is what marks
+    /// it as a fact about the group's shared program, consistent with every other <c>DeclineGroupFact</c>
+    /// site in this codebase, not a claim that object 30 was independently assessed).
+    /// </summary>
+    [Fact]
+    public void A_per_member_shape_failure_wraps_the_reason_for_the_non_seed_only()
+    {
+        using PdfDocument doc = CompositeWidthSeedWithWidthlessSimpleSiblingDoc();
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
+
+        Assert.Equal(2, result.Fonts.OfType<DeclineProposal>().Count());
+        DeclineProposal seedDecline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 1);
+        DeclineProposal siblingDecline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 30);
+
+        const string rawReason =
+            "The font declares no /Widths array, so there is nothing to reconcile the program against.";
+        Assert.Equal(rawReason, seedDecline.Reason);
+        Assert.NotEqual(rawReason, siblingDecline.Reason);
+        Assert.Contains("cannot be included in a merged replacement", siblingDecline.Reason);
+        Assert.Contains(rawReason, siblingDecline.Reason);
     }
 
     private static PdfName N(string s) => new(s);
@@ -330,6 +435,170 @@ public sealed class MergedWidthPatchTests
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
             Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041> Tj /F1 12 Tf <0043> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
+        return doc;
+    }
+
+    /// <summary>Task 8b review round 2 (Important 2) fixture: a pure width-only composite seed
+    /// (wrapper 1, live code 0x41 only — no dead code, so it never seeds a notdef group) sharing its
+    /// descriptor with a SIMPLE TrueType font (object 30) whose own finding is 6.2.11.8, not 6.2.11.5
+    /// — a shown code (65, <c>/Differences</c> mapped to <c>.notdef</c>) rather than a declared-width
+    /// mismatch, following <see cref="WidthPatchFixtures.NotdefOnlyDoc"/>'s own shape. Object 30 DOES
+    /// carry a <c>/Widths</c> array (unlike <c>NotdefOnlyDoc</c>) so <c>BuildMergedWidthPatch</c>'s own
+    /// per-member shape gates all pass for it — the value is irrelevant because code 65 has no cmap
+    /// entry in <see cref="ZeroAdvanceSfntFixture.CmapMacFormat6"/> (which only maps code 10), so
+    /// <c>ProgramWidthResolver.Simple</c>'s glyph resolution returns null and the code is skipped
+    /// entirely: object 30 contributes NOTHING to the union and the merge succeeds cleanly, isolating
+    /// the swallowed-dispatch defect from any shape-gate decline.</summary>
+    private static PdfDocument CompositeWidthSeedWithSimpleNotdefSiblingDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+WidthSeedNotdefSibling"),
+            [N("Flags")] = new PdfInteger(32), // non-symbolic — matches NotdefOnlyDoc's own shape
+            [N("FontFile2")] = Ref(3),
+        });
+
+        // Live-only CIDToGIDMap (0x41 -> gid 1, big-endian ushort per CID, index = CID): wrapper 1
+        // draws no dead code, so it stays purely width-family — it must never also seed a notdef
+        // group, which would route it through the notdef branch instead and muddy what this test
+        // isolates.
+        var cidToGid = new byte[(0x41 + 1) * 2];
+        cidToGid[0x41 * 2 + 1] = 1;
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), cidToGid));
+
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+WidthSeedNotdefSibling"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = Ref(6),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        descendant[N("CIDSystemInfo")] = new PdfDictionary
+        {
+            [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+            [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+            [N("Supplement")] = new PdfInteger(0),
+        };
+        doc.AddObject(4, 0, descendant);
+
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
+            ReplaceProgramFixtures.BfCharBytes([(0x41, "0041")])));
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+WidthSeedNotdefSibling"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(5),
+        });
+
+        // Simple TrueType font (object 30): shares descriptor 2 (and so /FontFile2 3) directly, same
+        // idiom as ReplaceProgramFixtures.SimpleFontSharingDescriptorWithCompositeSeedDoc — but its
+        // own finding here is 6.2.11.8 (code 65 -> .notdef via /Differences), not a width mismatch.
+        doc.AddObject(30, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+WidthSeedNotdefSiblingSimple"),
+            [N("FirstChar")] = new PdfInteger(65),
+            [N("LastChar")] = new PdfInteger(65),
+            [N("Widths")] = new PdfArray(new PdfInteger(500)),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("BaseEncoding")] = N("WinAnsiEncoding"),
+                [N("Differences")] = new PdfArray(new PdfInteger(65), N(".notdef")),
+            },
+            [N("FontDescriptor")] = Ref(2),
+        });
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041> Tj /F1 12 Tf <41> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 30);
+        return doc;
+    }
+
+    /// <summary>Task 8b review round 2 (Important 1) fixture: the SAME pure width-only composite seed
+    /// shape as <see cref="CompositeWidthSeedWithSimpleNotdefSiblingDoc"/> (wrapper 1, live code 0x41
+    /// only), sharing its descriptor with a SIMPLE TrueType font (object 30) that carries NO
+    /// <c>/Widths</c> array at all — a per-member SHAPE failure <c>BuildMergedWidthPatch</c> catches
+    /// directly, rather than a resolvable-but-contributing-nothing code. Object 30 is referenced in
+    /// page resources but never drawn (FontInventory discovers a REFERENCED font regardless — the same
+    /// idiom <see cref="ReplaceProgramFixtures.SharedDescendantDoc"/>'s own
+    /// <c>includeType1BlockingSibling</c> uses), and its finding is never named in the call — it only
+    /// reaches the merge via inventory-scoped expansion, making it the non-seed this test's assertion
+    /// needs.</summary>
+    private static PdfDocument CompositeWidthSeedWithWidthlessSimpleSiblingDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+WidthSeedWidthlessSibling"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+
+        var cidToGid = new byte[(0x41 + 1) * 2];
+        cidToGid[0x41 * 2 + 1] = 1;
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), cidToGid));
+
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+WidthSeedWidthlessSibling"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = Ref(6),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        descendant[N("CIDSystemInfo")] = new PdfDictionary
+        {
+            [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+            [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+            [N("Supplement")] = new PdfInteger(0),
+        };
+        doc.AddObject(4, 0, descendant);
+
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
+            ReplaceProgramFixtures.BfCharBytes([(0x41, "0041")])));
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+WidthSeedWidthlessSibling"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(5),
+        });
+
+        // Simple TrueType font (object 30): shares descriptor 2 directly, no /Widths at all — the
+        // per-member shape failure BuildMergedWidthPatch's own "no /Widths array" gate catches.
+        doc.AddObject(30, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+WidthSeedWidthlessSiblingSimple"),
+            [N("FirstChar")] = new PdfInteger(65),
+            [N("LastChar")] = new PdfInteger(65),
+            [N("FontDescriptor")] = Ref(2),
+        });
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 30);
         return doc;
     }
 }
