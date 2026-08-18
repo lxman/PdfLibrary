@@ -428,7 +428,8 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             return Decline(entry, ruleId, $"The font program cannot be patched: {failReason}");
         }
 
-        return new PatchWidthsProposal(holder, ruleId, patched, advanceByGid.Count, worst, hasOther);
+        return new PatchWidthsProposal(
+            holder, ruleId, patched, advanceByGid.Count, worst, hasOther, CoveredFonts: [entry.Id]);
     }
 
     /// <summary>
@@ -824,9 +825,20 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         };
         string source = sourceDescription ?? $"{resolvedFamily} ({style}) — from your system fonts";
 
+        // ClosesFinding: true (Task 3 amendment). For the automatic path, ProposeProgramReplace's
+        // cid0 gate (above) already declined every font that draws CID 0 before construction ever
+        // gets here, so a singleton reaching this point through THAT caller closes its own 6.2.11.8
+        // finding. NOTE for Task 4 (which is expected to replace this hardcoded true with a real
+        // per-target computation): BuildReplacement is also reached by AssessReplacementCandidate
+        // (the manual path), which has NO equivalent cid0 gate — a user hand-picking a substitute for
+        // a font that draws CID 0 can reach here today and get ClosesFinding: true even though the
+        // finding can never actually close (issue 40). Pre-existing gap (Task 2 added the gate only
+        // to ProposeProgramReplace), not introduced by Task 3 and out of Task 3's zero-behavioural-
+        // movement scope to close — flagged here so Task 4's real computation covers both callers.
+        var target = new ReplaceTarget(holder, entry.Id, mapResult.CidToGid, mapResult.MaxCid, ClosesFinding: true);
         var proposal = new ReplaceProgramProposal(
-            holder, entry.Id, ruleId, source, program, FontProgramFormat.TrueType,
-            mapResult.CidToGid, mapResult.MaxCid, restored, newBaseFont, descriptorValues, flags);
+            [target], ruleId, source, program, FontProgramFormat.TrueType,
+            restored, newBaseFont, descriptorValues, flags);
         return new ReplacementResult(proposal, FontProgramFormat.TrueType);
     }
 

@@ -73,36 +73,73 @@ public sealed record RegenerateDeclarationProposal(
 /// declared-vs-program discrepancy (glyph-space units) observed across the used codes BEFORE the
 /// patch — the same figure the triggering 6.2.11.5 finding reports. <paramref name="LeavesOtherFindings"/>
 /// is true when this font also carries a font-program finding this proposal does not address (e.g. a
-/// .notdef glyph), so a caller applying this proposal must not report the font as fully remediated.</para>
+/// .notdef glyph), so a caller applying this proposal must not report the font as fully remediated.
+/// <paramref name="CoveredFonts"/> lists the sibling LOGICAL font ids that share this program holder's
+/// row (row membership, Task 8) — non-empty (the holder's own logical font is always at least one
+/// member).</para>
 /// </summary>
 public sealed record PatchWidthsProposal(
     FontId Font, string RuleId,
     byte[] PatchedProgram,
     int GlyphsPatched,
     double WorstDiffBefore,
-    bool LeavesOtherFindings) : FontProposal(Font, RuleId);
+    bool LeavesOtherFindings,
+    IReadOnlyList<FontId> CoveredFonts) : FontProposal(Font, RuleId)
+{
+    public IReadOnlyList<FontId> CoveredFonts { get; init; } = CoveredFonts.Count > 0
+        ? CoveredFonts
+        : throw new ArgumentException(
+            "A width-patch proposal must cover at least one logical font.", nameof(CoveredFonts));
+}
 
-/// <summary>Replace <paramref name="Font"/>'s embedded program entirely with a substitute face —
-/// a WHOLE-FACE SWAP: every code of the font renders in the substitute afterward; only the dead
-/// codes gain glyphs, but letterforms change font-wide (spec §3). <paramref name="Font"/> is the
-/// PROGRAM HOLDER (descendant CIDFont); <paramref name="CompositeFont"/> is the Type0 wrapper —
-/// /BaseFont is rewritten on BOTH levels, and the editor must not have to reverse-map one from
-/// the other. <paramref name="Program"/> is the substitute sfnt ALREADY advance-patched to the
-/// declared /W + /DW widths (spec §3 step 8), so applying this proposal can never create a width
-/// finding. All fields are planner-resolved data; the editor applies mechanically.</summary>
-public sealed record ReplaceProgramProposal(
+/// <summary>One wrapper's slice of a whole-face swap: the descendant that carries the program for
+/// THIS wrapper (<see cref="Font"/>, the PROGRAM HOLDER), the wrapper itself
+/// (<see cref="CompositeFont"/>), and the CIDToGIDMap resolved from THIS wrapper's own /ToUnicode.
+/// Direct sharing (N wrappers, one descendant) emits N targets naming the SAME <see cref="Font"/>
+/// with IDENTICAL maps — the planner's guarantee, the editor's assertion (Task 5).
+///
+/// <para><paramref name="ClosesFinding"/> is whether THIS member font's own 6.2.11.8 finding
+/// actually closes when the proposal applies — the rule emits at most one 6.2.11.8 finding per font
+/// (issue 40), and a font that draws CID 0 keeps that finding no matter what the replacement does,
+/// so a member drawing CID 0 closes nothing. In THIS task (singleton proposals only) the planner
+/// always constructs targets with <c>true</c>: <see cref="FontRemediationPlanner.ProposeProgramReplace"/>
+/// only reaches proposal construction after its CID-0 decline gate, so a singleton that proposes at
+/// all always closes its own finding. Task 4 is the one that wires <c>false</c> values, for group
+/// members that draw CID 0 while other members in the same group do not.</para>
+/// </summary>
+public sealed record ReplaceTarget(
     FontId Font,
     FontId CompositeFont,
+    IReadOnlyDictionary<int, ushort> CidToGid,
+    int MaxCid,
+    bool ClosesFinding);
+
+/// <summary>Replace a set of composite fonts' embedded programs entirely with one substitute face —
+/// a WHOLE-FACE SWAP: every code of each target font renders in the substitute afterward; only the
+/// dead codes gain glyphs, but letterforms change font-wide (spec §3). <paramref name="Targets"/>
+/// carries one entry per wrapper this proposal rewrites (§6 direct-sharing: N wrappers sharing one
+/// descendant emit N targets naming the SAME <see cref="ReplaceTarget.Font"/>); in this task every
+/// proposal is a singleton (exactly one target). <paramref name="Program"/> is the substitute sfnt
+/// ALREADY advance-patched to the declared /W + /DW widths (spec §3 step 8), so applying this
+/// proposal can never create a width finding. All fields are planner-resolved data; the editor
+/// applies mechanically.</summary>
+public sealed record ReplaceProgramProposal(
+    IReadOnlyList<ReplaceTarget> Targets,
     string RuleId,
     string SourceDescription,
     byte[] Program,
     FontProgramFormat Format,
-    IReadOnlyDictionary<int, ushort> CidToGid,
-    int MaxCid,
     int RestoredCodeCount,
     string NewBaseFont,
     FontDescriptorValues Descriptor,
-    int DescriptorFlags) : FontProposal(Font, RuleId);
+    int DescriptorFlags)
+    : FontProposal(Targets[0].Font, RuleId)
+{
+    public IReadOnlyList<ReplaceTarget> Targets { get; init; } = Targets.Count > 0
+        ? Targets
+        : throw new ArgumentException(
+            "A replace proposal must name at least one target.", nameof(Targets));
+}
 
 /// <summary>Everything the planner proposes for one document.</summary>
 public sealed record FontRemediationProposal(IReadOnlyList<FontProposal> Fonts);

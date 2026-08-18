@@ -131,11 +131,13 @@ public sealed class ReplaceProgramLayoutTests
 
             // font-program findings never carry a PageIndex (FontProgramRule.Make sets ObjectNumber
             // only) — FontInventory's own PagesUsedOn, keyed off the SAME logical-font object number
-            // ReplaceProgramProposal.CompositeFont names, is the real answer to "which page(s) use
-            // this font".
+            // ReplaceTarget.CompositeFont names, is the real answer to "which page(s) use this font".
+            // Every replacement here is a singleton (this task's world), but flattening over Targets
+            // rather than assuming Targets[0] keeps this correct once a proposal ever carries more.
             IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(doc);
             pageIndices = replacements
-                .SelectMany(r => inventory.Where(e => e.Id.ObjectNumber == r.CompositeFont.ObjectNumber))
+                .SelectMany(r => r.Targets)
+                .SelectMany(t => inventory.Where(e => e.Id.ObjectNumber == t.CompositeFont.ObjectNumber))
                 .SelectMany(e => e.PagesUsedOn)
                 .Distinct()
                 .OrderBy(p => p)

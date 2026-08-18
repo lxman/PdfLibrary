@@ -44,7 +44,7 @@ public sealed class ReplaceProgramApplyTests
         // even if ReplaceCompositeProgram touched /W or /ToUnicode.
         var preEditDescendant = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.Font.ObjectNumber));
         string? originalW = preEditDescendant.Get("W")?.ToPdfString();
-        var preEditWrapper = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.CompositeFont.ObjectNumber));
+        var preEditWrapper = Assert.IsType<PdfDictionary>(doc.GetObject(proposal.Targets[0].CompositeFont.ObjectNumber));
         var preEditToUnicode = Assert.IsType<PdfStream>(Resolve(doc, preEditWrapper.Get("ToUnicode")));
         byte[] originalToUnicodeBytes = preEditToUnicode.GetDecodedData(doc.Decryptor);
 
@@ -56,7 +56,7 @@ public sealed class ReplaceProgramApplyTests
         ms.Position = 0;
         using PdfDocument reloaded = PdfDocument.Load(ms);
 
-        var wrapperDict = Assert.IsType<PdfDictionary>(reloaded.GetObject(proposal.CompositeFont.ObjectNumber));
+        var wrapperDict = Assert.IsType<PdfDictionary>(reloaded.GetObject(proposal.Targets[0].CompositeFont.ObjectNumber));
         var descendant = Assert.IsType<PdfDictionary>(reloaded.GetObject(proposal.Font.ObjectNumber));
         var descriptor = Assert.IsType<PdfDictionary>(Resolve(reloaded, descendant.Get("FontDescriptor")));
 
@@ -66,7 +66,7 @@ public sealed class ReplaceProgramApplyTests
 
         // /CIDToGIDMap is a stream whose decoded bytes == CidReplacementMap.ToStreamBytes(...).
         var cidToGidStream = Assert.IsType<PdfStream>(Resolve(reloaded, descendant.Get("CIDToGIDMap")));
-        byte[] expectedCidToGid = CidReplacementMap.ToStreamBytes(proposal.CidToGid, proposal.MaxCid);
+        byte[] expectedCidToGid = CidReplacementMap.ToStreamBytes(proposal.Targets[0].CidToGid, proposal.Targets[0].MaxCid);
         Assert.Equal(expectedCidToGid, cidToGidStream.GetDecodedData(reloaded.Decryptor));
 
         // /CIDSystemInfo Registry "Adobe" / Ordering "Identity" / Supplement 0.

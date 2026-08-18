@@ -100,16 +100,35 @@ public sealed class ReplaceProgramProposalTests
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
-        Assert.Equal(4, proposal.Font.ObjectNumber);           // descendant holder
-        Assert.Equal(1, proposal.CompositeFont.ObjectNumber);  // Type0 wrapper
+        Assert.Single(proposal.Targets);
+        Assert.Equal(4, proposal.Font.ObjectNumber);                      // descendant holder
+        Assert.Equal(1, proposal.Targets[0].CompositeFont.ObjectNumber);  // Type0 wrapper
         Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
         Assert.Equal(1, proposal.RestoredCodeCount); // only CID 0x42 was .notdef in the OLD program
         Assert.DoesNotContain('+', proposal.NewBaseFont);
         Assert.Contains("Liberation Sans", proposal.SourceDescription);
         Assert.True(proposal.Descriptor.Ascent > 0);
         Assert.NotEqual(0, proposal.DescriptorFlags & 32); // Nonsymbolic, always
+    }
+
+    [Fact]
+    public void A_singleton_replacement_proposal_always_closes_its_own_target()
+    {
+        // Task 3 amendment (controller ruling, post-Task-2 review — spec §6): ClosesFinding is false
+        // only for a group member that draws CID 0 while a sibling does not, and ProposeProgramReplace
+        // declines every CID-0-drawing font BEFORE it ever reaches proposal construction (the gate
+        // above the holder resolution). In this task every proposal is a singleton, so the one target
+        // a singleton proposal ever constructs necessarily closes its own 6.2.11.8 finding.
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        ReplaceTarget target = Assert.Single(proposal.Targets);
+        Assert.True(target.ClosesFinding);
     }
 
     [Fact]
@@ -122,7 +141,7 @@ public sealed class ReplaceProgramProposalTests
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
 
         var m = new EmbeddedFontMetrics(proposal.Program);
-        foreach ((int cid, ushort gid) in proposal.CidToGid)
+        foreach ((int cid, ushort gid) in proposal.Targets[0].CidToGid)
         {
             double declared = cid == 0x41 ? 500 : 1000; // /W [65 [500]] else /DW 1000
             double programWidth = ProgramWidthResolver.Scale(m, m.GetAdvanceWidth(gid));
@@ -203,8 +222,8 @@ public sealed class ReplaceProgramProposalTests
 
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
         Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
         // CID 0x42 is .notdef in the OLD (charset-bearing) program — absent from customCharsetSids;
         // CID 0x41 already has a real glyph there (gid 1, via the charset) — only the former is a
         // restored code.
