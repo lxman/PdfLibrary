@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using PdfLibrary.Conformance;
 using PdfLibrary.Core;
@@ -570,23 +571,44 @@ public sealed partial class PdfDocumentEditor
         WriteMetricEntries(descriptor, proposal.Descriptor, includeMissingWidth: false);
         descriptor.Remove(new PdfName("CIDSet"));
 
-        foreach (ReplaceTarget target in proposal.Targets)
-        {
-            PdfDictionary cidDict = ResolveFontDictionary(target.Font);
-            PdfDictionary wrapperDict = ResolveFontDictionary(target.CompositeFont);
+        // 3 (descriptor half). Stale metrics describing the departed program would be a quiet lie —
+        // written once here (every target shares one holder/descriptor) rather than once per target.
+        descriptor.Set("FontName", new PdfName(proposal.NewBaseFont));
 
-            // 2. Descendant identity: CIDFontType2 + explicit CIDToGIDMap + Adobe-Identity-0
-            //    (required once the GID map is custom; compatible with the untouched Identity-H CMap
-            //    on the wrapper — that CMap addresses CODES, not GIDs, so it needs no change here).
-            //    THIS target's own map — direct sharing guarantees every target naming the same Font
-            //    carries an identical map (the planner's guarantee; Task 5 asserts it), but each
-            //    wrapper still gets its own /CIDToGIDMap stream object.
+        // 2. Descendant identity: CIDFontType2 + explicit CIDToGIDMap + Adobe-Identity-0 (required
+        //    once the GID map is custom; compatible with the untouched Identity-H CMap on the wrapper
+        //    — that CMap addresses CODES, not GIDs, so it needs no change here). Grouped by
+        //    Font.ObjectNumber (the descendant identity) and written exactly ONCE per DISTINCT
+        //    descendant: direct sharing (§6) means N targets can name the SAME descendant, and a
+        //    per-TARGET write here would call RegisterObject for the CIDToGIDMap stream once per
+        //    target sharing it, leaving every write but the last an ORPHANED object nothing
+        //    references — invisible from the descendant dictionary's own final state (last write
+        //    wins) but a real, wasted object in the saved file. Direct sharing guarantees every
+        //    target naming the same descendant carries an identical map (the planner's guarantee),
+        //    but this operation does not trust that blindly — proposal.ReplaceTarget's constructor is
+        //    public, so a hand-built proposal could violate it — hence the equality assertion below
+        //    rather than silently picking whichever target's map the grouping happens to see first.
+        foreach (IGrouping<int, ReplaceTarget> group in proposal.Targets.GroupBy(t => t.Font.ObjectNumber))
+        {
+            ReplaceTarget first = group.First();
+            foreach (ReplaceTarget other in group.Skip(1))
+            {
+                if (other.MaxCid != first.MaxCid || !CidToGidMapsEqual(first.CidToGid, other.CidToGid))
+                {
+                    throw new InvalidOperationException(
+                        $"Font object {first.Font.ObjectNumber} is named by multiple targets in this "
+                        + "proposal that carry unequal CIDToGIDMap data — targets sharing one "
+                        + "descendant must carry an identical map.");
+                }
+            }
+
+            PdfDictionary cidDict = ResolveFontDictionary(first.Font);
             cidDict.Set("Subtype", new PdfName("CIDFontType2"));
 
             var cidToGidStreamDict = new PdfDictionary();
             var cidToGidStream = new PdfStream(cidToGidStreamDict, []);
             cidToGidStream.SetEncodedData(
-                CidReplacementMap.ToStreamBytes(target.CidToGid, target.MaxCid), "FlateDecode");
+                CidReplacementMap.ToStreamBytes(first.CidToGid, first.MaxCid), "FlateDecode");
             PdfIndirectReference cidToGidRef = _document.RegisterObject(cidToGidStream);
             cidDict.Set("CIDToGIDMap", cidToGidRef);
 
@@ -596,14 +618,32 @@ public sealed partial class PdfDocumentEditor
             cidSystemInfo.Set("Supplement", new PdfInteger(0));
             cidDict.Set("CIDSystemInfo", cidSystemInfo);
 
-            // 3. Names, both levels — stale metrics describing the departed program would be a quiet
-            //    lie. descriptor.FontName is written again here on every iteration (same value each
-            //    time, since every target shares one holder/descriptor) rather than hoisted — matching
-            //    the original per-composite write grouping; idempotent, so byte-identical either way.
-            wrapperDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
             cidDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
-            descriptor.Set("FontName", new PdfName(proposal.NewBaseFont));
         }
+
+        // 3 (wrapper half). Every target's own wrapper renamed — unlike the descendant writes above,
+        // each target's CompositeFont is its own dictionary object (no sharing, so no orphan risk),
+        // so this loops every target rather than every distinct group.
+        foreach (ReplaceTarget target in proposal.Targets)
+        {
+            PdfDictionary wrapperDict = ResolveFontDictionary(target.CompositeFont);
+            wrapperDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
+        }
+    }
+
+    /// <summary>Value equality for two targets' <see cref="ReplaceTarget.CidToGid"/> maps — the
+    /// identical-map assertion <see cref="ReplaceCompositeProgram"/> makes for targets sharing one
+    /// descendant. <see cref="IReadOnlyDictionary{TKey,TValue}"/> has no structural equality of its
+    /// own, so this compares count plus every key/value pair explicitly.</summary>
+    private static bool CidToGidMapsEqual(
+        IReadOnlyDictionary<int, ushort> a, IReadOnlyDictionary<int, ushort> b)
+    {
+        if (a.Count != b.Count) return false;
+        foreach (KeyValuePair<int, ushort> pair in a)
+        {
+            if (!b.TryGetValue(pair.Key, out ushort value) || value != pair.Value) return false;
+        }
+        return true;
     }
 
     /// <summary>
