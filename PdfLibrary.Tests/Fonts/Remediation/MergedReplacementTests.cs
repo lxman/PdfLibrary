@@ -74,27 +74,37 @@ public sealed class MergedReplacementTests
     }
 
     /// <summary>
-    /// Review finding C1 (width subsumption): wrapper 2 draws ONLY the live code 0x41 — no notdef
-    /// finding — but the descendant's declared width for 0x41 (500) does not match the embedded
-    /// program's actual advance (450, <see cref="ZeroAdvanceSfntFixture"/>'s <c>gid1Advance</c>), so
-    /// wrapper 2 independently carries its OWN 6.2.11.5 (width) finding, passed alongside wrapper 1's
-    /// notdef finding. The merged replacement's advance patch already covers the declared widths for
-    /// every target (spec §4 step 4), so wrapper 2's width finding closes by construction — Propose()
-    /// must not ALSO emit a separate <see cref="PatchWidthsProposal"/> against the same program
-    /// stream (a last-write-wins corruption, not merely redundant).
+    /// Review round 2, finding 2: REBUILT on <see cref="ReplaceProgramFixtures.SharedDescriptorDoc"/>
+    /// (descriptor-level sharing), not <see cref="ReplaceProgramFixtures.SharedDescendantDoc"/> (direct
+    /// sharing) — the original version of this test shared ONE descendant (4) between both wrappers,
+    /// and <c>FontProgramFindingsFor</c> unions findings reported against the SHARED PROGRAM HOLDER
+    /// (the descendant, per <c>FontProgramRule</c>'s own reporting convention), so wrapper 2 ended up
+    /// seeing wrapper 1's OWN notdef finding too — a SECOND, ACCIDENTAL seed — and the test never
+    /// actually exercised the width arm or the subsumption skip at all.
+    ///
+    /// <para>Under descriptor-level sharing, wrapper 1 (descendant 4) and wrapper 7 (descendant 14)
+    /// have DISTINCT program holders, so their finding sets are genuinely independent: wrapper 1
+    /// seeds via descendant 4's real notdef finding (it draws dead code 0x42); wrapper 7 draws ONLY
+    /// the live code 0x43 on descendant 14 (dead-code-free — no notdef finding of its own) while
+    /// descendant 14 declares width 500 for 0x43 against the shared program's actual 450 advance — a
+    /// genuine, INDEPENDENT 6.2.11.5 finding. The merged replacement's advance patch already covers
+    /// every target's declared widths (spec §4 step 4), so wrapper 7's width finding closes by
+    /// construction — Propose() must not ALSO emit a separate <see cref="PatchWidthsProposal"/>
+    /// against the same program stream (a last-write-wins corruption, not merely redundant).</para>
     /// </summary>
     [Fact]
     public void A_width_only_sibling_is_subsumed_by_the_merge_not_independently_patched()
     {
-        using PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
-            wrapper2ToUnicode: [(0x41, "0041")], wrapper2Codes: [0x41]);
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc(wrapper2Codes: [0x43]);
         FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
             .Propose(doc, [("font-program", 1), ("font-program", 7)]);
 
         // A single ReplaceProgramProposal — asserting Single here IS asserting no separate
-        // PatchWidthsProposal was also emitted for wrapper 2's holder.
+        // PatchWidthsProposal was also emitted for wrapper 7's holder.
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
         Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        Assert.False(wrapper7Target.ClosesFinding); // non-seed: no notdef finding of its own
     }
 
     /// <summary>Review finding C1: wrapper 2 carries no finding in THIS call's input at all (only
@@ -224,5 +234,68 @@ public sealed class MergedReplacementTests
         ReplaceTarget wrapper2Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
         Assert.True(wrapper1Target.ClosesFinding, "wrapper 1 draws no CID 0, so its finding closes");
         Assert.False(wrapper2Target.ClosesFinding, "wrapper 2 draws CID 0, so its finding never closes");
+    }
+
+    /// <summary>
+    /// Review round 2, finding 1 (controller ruling): a non-composite entry sharing a group key
+    /// still BLOCKS the replace group (writing a composite substitute over a shared program a simple
+    /// font depends on would corrupt it) — Step 1's own gate declines the whole group on the simple
+    /// font's account, exactly as any other shape failure would. But that member must NOT be
+    /// swallowed by the pass-2 group-dispatch skip: its own, independently servable 6.2.11.5 width
+    /// finding still routes through the ordinary per-entry dispatch (the width arm), producing its
+    /// own <see cref="PatchWidthsProposal"/>. This is safe even though the group (which the simple
+    /// font is also a member of) declines: a DECLINED group writes nothing, so there is no
+    /// double-writer — only the width patch ever touches the shared program.
+    /// </summary>
+    [Fact]
+    public void A_simple_font_sharing_the_descriptor_declines_the_group_but_keeps_its_own_width_fix()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SimpleFontSharingDescriptorWithCompositeSeedDoc();
+        FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1), ("font-program", 30)]);
+
+        // The composite wrapper (object 1) declines — the group cannot proceed with a simple sibling
+        // sharing its program.
+        DeclineProposal wrapperDecline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 1);
+        Assert.Contains("cannot be included", wrapperDecline.Reason);
+
+        // The simple font (object 30) also gets a group decline (it is the member the gate actually
+        // fires on) — but that does not swallow its OWN, independently servable width fix.
+        PatchWidthsProposal simpleFontPatch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
+        Assert.Equal(30, simpleFontPatch.Font.ObjectNumber);
+        Assert.Equal(1, simpleFontPatch.GlyphsPatched);
+    }
+
+    /// <summary>
+    /// Review round 2, finding 3: a NON-SEED member (pulled in only by inventory-scoped expansion,
+    /// drawing no CID 0 itself) must not be told "This font draws character code 0" — that would be
+    /// factually FALSE about it. Its row wraps the group's actual reason in the merge-blocked-sibling
+    /// template instead, naming it as a fact about a SIBLING; the SEED (which genuinely draws only
+    /// CID 0) still gets the raw, accurate reason.
+    /// </summary>
+    [Fact]
+    public void A_non_seed_member_gets_the_wrapped_reason_not_the_raw_group_fact()
+    {
+        const string cid0OnlyDeclineReason =
+            "This font draws character code 0, which ISO 32000 defines as .notdef regardless of what "
+            + "glyph the font maps it to — no font-side fix can make that draw conformant.";
+
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            wrapper1Codes: [0x00],
+            wrapper2ToUnicode: [(0x41, "0041")], wrapper2Codes: [0x41]);
+        FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1)]); // only wrapper 1's (seed) finding
+
+        Assert.Equal(2, result.Fonts.Count);
+        DeclineProposal wrapper1Decline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 1);
+        DeclineProposal wrapper2Decline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 7);
+
+        Assert.Equal(cid0OnlyDeclineReason, wrapper1Decline.Reason); // raw: true about the seed itself
+        Assert.NotEqual(cid0OnlyDeclineReason, wrapper2Decline.Reason); // wrapped, not raw
+        Assert.Contains("cannot be included in a merged replacement", wrapper2Decline.Reason);
+        Assert.Contains(cid0OnlyDeclineReason, wrapper2Decline.Reason);
     }
 }

@@ -176,16 +176,23 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // reported as closed.
         foreach ((long key, List<FontInventoryEntry> members) in groupMembers)
         {
-            var memberIds = new HashSet<int>(members.Select(m => m.Id.ObjectNumber));
+            // Review round 2, finding 4: keyed on the SAME (ObjectNumber, ProgramHolderObjectNumber)
+            // tuple `seen`/`memberOfGroup` use, not `Id.ObjectNumber` alone — a bare ObjectNumber
+            // dedup would collide on FontInventory's FontId(0) direct-dictionary sentinel the same
+            // way `seen`'s own comment (above) explains, silently dropping a second, genuinely
+            // distinct direct-dictionary candidate that happens to share this group's key.
+            var memberIds = new HashSet<(int, int?)>(
+                members.Select(m => (m.Id.ObjectNumber, m.ProgramHolderId?.ObjectNumber)));
             foreach (FontInventoryEntry candidate in inventory)
             {
                 if (candidate.ProgramHolderId is not { } holder) continue;
-                if (memberIds.Contains(candidate.Id.ObjectNumber)) continue;
+                (int, int?) candidateKey = (candidate.Id.ObjectNumber, holder.ObjectNumber);
+                if (memberIds.Contains(candidateKey)) continue;
                 if (HolderGroupKey(document, candidate) != key) continue;
 
                 members.Add(candidate);
-                memberIds.Add(candidate.Id.ObjectNumber);
-                memberOfGroup[(candidate.Id.ObjectNumber, holder.ObjectNumber)] = key;
+                memberIds.Add(candidateKey);
+                memberOfGroup[candidateKey] = key;
             }
         }
 
@@ -200,10 +207,23 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // second seed would be — the merged replacement's advance patch already covers its declared
         // widths, so a second, independent PatchWidthsProposal against the SAME program stream would
         // be a last-write-wins corruption, not just redundant.
+        //
+        // Review round 2, finding 1 (controller ruling): the group-routing branch below is gated on
+        // `entry.Kind` being COMPOSITE, in addition to group membership. A non-composite entry (e.g. a
+        // simple font whose /FontDescriptor happens to collide with a composite seed's descriptor) can
+        // still be a group MEMBER via inventory-scoped expansion — Step 1 inside ProposeMergedReplace
+        // sees it and correctly declines the WHOLE group on its account (writing a composite substitute
+        // over a shared program a simple font depends on would corrupt it) — but that member must NOT
+        // be captured/skipped here: its OWN finding (e.g. a genuinely independent 6.2.11.5 width
+        // mismatch) still needs the ordinary per-entry dispatch below to run for it. This is safe even
+        // though the entry is also a member of a group that declines: a DECLINED group writes nothing,
+        // so there is no double-writer to corrupt — only ONE proposal (this entry's own) ever touches
+        // its program.
         var processedGroups = new HashSet<long>();
         foreach ((string ruleId, FontInventoryEntry entry) in resolved)
         {
             if (ruleId == "font-program"
+                && entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2
                 && memberOfGroup.TryGetValue(
                     (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber), out long key))
             {
@@ -825,7 +845,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // gate. Only SEED members are consulted: an inventory-expansion-only sibling has no notdef
         // finding to close regardless of what it draws, so it cannot rescue this gate either.
         if (!siblings.Any(s => seedIds.Contains(s.Entry.Id.ObjectNumber) && !s.Entry.UsedCodes.Contains(0)))
-            return DeclineAll(group, ruleId, Cid0OnlyDeclineReason);
+            return DeclineGroupFact(group, ruleId, Cid0OnlyDeclineReason, seedIds);
 
         // Step 2: resolve the substitute ONCE — program style from the shared program (issue 43's
         // own code path, read off the FIRST sibling since the program is shared), request from the
@@ -842,9 +862,9 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         FontMatch? match = fonts.Resolve(request);
 
         MergedResult primary = match is null
-            ? new MergedResult(DeclineAll(group, ruleId,
+            ? new MergedResult(DeclineGroupFact(group, ruleId,
                 $"No font matching '{first.FamilyName}' is installed on this computer. Installing it "
-                + "would let Pellucid replace the deficient program."), null)
+                + "would let Pellucid replace the deficient program.", seedIds), null)
             : BuildMergedReplacement(siblings, ruleId, match.Data, match.FaceIndex, seedIds);
 
         if (primary.Proposals is [ReplaceProgramProposal])
@@ -892,7 +912,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         ByteGateOutcome gates = RunByteGates(bytes, faceIndex, first.FamilyName, simpleFont: false);
         if (gates.HardBlockReason is not null)
-            return new MergedResult(DeclineAll(allEntries, ruleId, gates.HardBlockReason), gates.Classified?.Format);
+        {
+            return new MergedResult(
+                DeclineGroupFact(allEntries, ruleId, gates.HardBlockReason, seedIds), gates.Classified?.Format);
+        }
 
         EmbeddedFontMetrics metrics = gates.Metrics!;
         string resolvedFamily = gates.ResolvedFamily!;
@@ -900,9 +923,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         if (classified.Format != FontProgramFormat.TrueType)
         {
-            return new MergedResult(DeclineAll(allEntries, ruleId,
+            return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                 $"The face found for '{first.FamilyName}' is not a TrueType program, and only a "
-                + "TrueType program can replace this font's without rewriting CFF charstrings."),
+                + "TrueType program can replace this font's without rewriting CFF charstrings.",
+                seedIds),
                 classified.Format);
         }
 
@@ -915,10 +939,11 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             if (mapResult.Unresolvable.Count > 0)
             {
                 int firstUnresolvable = mapResult.Unresolvable[0];
-                return new MergedResult(DeclineAll(allEntries, ruleId,
+                return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                     $"'{resolvedFamily}' cannot honestly render {mapResult.Unresolvable.Count} of this "
                     + $"font's characters (first: CID {firstUnresolvable}), so replacing the program "
-                    + "would still leave missing glyphs — Pellucid makes no partial replacements."),
+                    + "would still leave missing glyphs — Pellucid makes no partial replacements.",
+                    seedIds),
                     classified.Format);
             }
 
@@ -930,9 +955,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             // unguarded, ToStreamBytes would write .notdef for every CID in that sibling's slice.
             if (mapResult.CidToGid.Count == 0)
             {
-                return new MergedResult(DeclineAll(allEntries, ruleId,
+                return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                     "This font draws no characters Pellucid can resolve, so there is nothing a "
-                    + "replacement program could restore."),
+                    + "replacement program could restore.",
+                    seedIds),
                     classified.Format);
             }
             perSibling.Add((entry, cid, mapResult));
@@ -982,10 +1008,11 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     {
                         if (existingGid != gid)
                         {
-                            return new MergedResult(DeclineAll(allEntries, ruleId,
+                            return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                                 $"Two fonts sharing this embedded program map character code {cidCode} "
                                 + "to different characters, so one replacement program cannot serve "
-                                + "both."),
+                                + "both.",
+                                seedIds),
                                 classified.Format);
                         }
                         continue;
@@ -1015,9 +1042,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     if (Math.Abs(existing - declared) > FontProgramRule.WidthTolerance)
                     {
-                        return new MergedResult(DeclineAll(allEntries, ruleId,
+                        return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                             "Two fonts sharing this embedded program declare different widths for the "
-                            + "same glyph, so one patched program cannot serve both."),
+                            + "same glyph, so one patched program cannot serve both.",
+                            seedIds),
                             classified.Format);
                     }
                     continue;
@@ -1041,9 +1069,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             byte[]? patched = SfntAdvancePatcher.Patch(classified.Program, advanceByGid, out string? failReason);
             if (patched is null)
             {
-                return new MergedResult(DeclineAll(allEntries, ruleId,
+                return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                     $"The substitute's program cannot be width-patched to this font's declared widths: "
-                    + failReason),
+                    + failReason,
+                    seedIds),
                     classified.Format);
             }
             program = patched;
@@ -1063,9 +1092,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             EmbeddedFontMetrics? oldMetrics = type0.GetEmbeddedMetrics();
             if (oldMetrics is null || !oldMetrics.IsValid)
             {
-                return new MergedResult(DeclineAll(allEntries, ruleId,
+                return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                     "The font-program finding could not be reproduced against this document's current "
-                    + "state, so there is nothing Pellucid can safely correct."),
+                    + "state, so there is nothing Pellucid can safely correct.",
+                    seedIds),
                     classified.Format);
             }
             bool cidKeyed = entry.Kind == FontKind.Type0CidType0;
@@ -1075,9 +1105,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         FontDescriptorValues? descriptorValues = FontDescriptorMetrics.Compute(program, FontProgramFormat.TrueType);
         if (descriptorValues is null)
         {
-            return new MergedResult(DeclineAll(allEntries, ruleId,
+            return new MergedResult(DeclineGroupFact(allEntries, ruleId,
                 "The substitute program's metrics could not be read, so an honest /FontDescriptor "
-                + "cannot be written for it."),
+                + "cannot be written for it.",
+                seedIds),
                 classified.Format);
         }
 
@@ -1106,10 +1137,39 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
     /// <summary>Declines every member of a group with the SAME reason text — one
     /// <see cref="DeclineProposal"/> per logical font, so every UI row for the group gets its own,
-    /// identical, explanation (spec §4).</summary>
+    /// identical, explanation (spec §4). Used ONLY by the Step 1 per-sibling shape-gate call sites,
+    /// which already wrap <paramref name="reason"/> in <see cref="MergeBlockedSibling"/> themselves
+    /// before calling here (the reason genuinely IS "another font's" for every member except the one
+    /// sibling that actually failed, and the brief's own spec text wants identical text for everyone
+    /// regardless). Every OTHER decline site uses <see cref="DeclineGroupFact"/> instead (review
+    /// round 2, finding 3) — see that method's doc comment for why the two must not be conflated.</summary>
     private static IReadOnlyList<FontProposal> DeclineAll(
         IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason) =>
         group.Select(entry => (FontProposal)Decline(entry, ruleId, reason)).ToList();
+
+    /// <summary>
+    /// Declines every member of a group over a GROUP-LEVEL fact (no substitute installed, a
+    /// non-TrueType face, a coverage gap, a CID/width conflict, an unparseable substitute, ...) —
+    /// every decline site in <see cref="ProposeMergedReplace"/>/<see cref="BuildMergedReplacement"/>
+    /// AFTER Step 1's per-sibling shape gate. Review round 2, finding 3: <paramref name="reason"/> is
+    /// often untrue as a statement about a NON-SEED (inventory-expansion-only) member specifically —
+    /// "this font draws character code 0" is false for a sibling that draws no CID 0 at all but
+    /// happens to share a holder with one that does; "no font matching '{first sibling's family}' is
+    /// installed" names a DIFFERENT font's family for every member but the first. A SEED member
+    /// (<paramref name="seedIds"/>) gets <paramref name="reason"/> verbatim — it is a genuine
+    /// candidate for the fact being about it specifically (the group's own seed(s) are always seeds).
+    /// A NON-SEED member gets it wrapped in <see cref="MergeBlockedSibling"/> instead, so its row
+    /// reads truthfully as "a font SHARING your program has this condition," not a claim about
+    /// itself. NOT used by Step 1's shape-gate declines (<see cref="DeclineAll"/>) — those already
+    /// wrap their reason once, uniformly for every member per the brief's own spec text; wrapping
+    /// again here would double the template.
+    /// </summary>
+    private static IReadOnlyList<FontProposal> DeclineGroupFact(
+        IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason, IReadOnlySet<int> seedIds) =>
+        group.Select(entry => (FontProposal)Decline(
+                entry, ruleId,
+                seedIds.Contains(entry.Id.ObjectNumber) ? reason : MergeBlockedSibling(reason)))
+            .ToList();
 
     /// <summary>Verbatim per the controller brief (spec §6) — a later sweep's taxonomy keys on this
     /// exact template. Wraps a failing sibling's own would-be SINGLETON decline reason (e.g. what

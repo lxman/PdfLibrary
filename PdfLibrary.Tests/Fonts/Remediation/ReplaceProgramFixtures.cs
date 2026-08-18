@@ -430,10 +430,17 @@ internal static class ReplaceProgramFixtures
     /// declared width for CID 0x43 (default 500, matching descendant 1's) — together these let a test
     /// make CID 0x43 resolve to the SAME substitute glyph as descendant 1's CID 0x41 (e.g. both →'A')
     /// while declaring a DIFFERENT width, the merge-width-conflict shape.</para>
+    ///
+    /// <para>Review round 2 addition, same idiom: <paramref name="wrapper2Codes"/> overrides which
+    /// codes wrapper 2's content stream draws (default <c>[0x43, 0x44]</c>, matching the original
+    /// shape). Drawing ONLY 0x43 (the live code) makes wrapper 2 genuinely dead-code-free on ITS OWN
+    /// descendant (14) — needed to build a width-only sibling that is NOT also, accidentally, a
+    /// second notdef seed.</para>
     /// </summary>
     public static PdfDocument SharedDescriptorDoc(
         IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
-        int descendant2Width = 500)
+        int descendant2Width = 500,
+        IReadOnlyList<int>? wrapper2Codes = null)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -507,9 +514,87 @@ internal static class ReplaceProgramFixtures
         };
         doc.AddObject(7, 0, wrapper2);
 
+        string wrapper2Hex = string.Concat((wrapper2Codes ?? [0x43, 0x44]).Select(c => $"{c:X4}"));
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <0043 0044> Tj ET")));
+            Encoding.ASCII.GetBytes(
+                $"BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
+        return doc;
+    }
+
+    /// <summary>
+    /// Review round 2 (Task 4 fix wave), finding 1, controller ruling: a SIMPLE TrueType font
+    /// (object 30) sharing the SAME <c>/FontDescriptor</c> (2) — and so the same <c>/FontFile2</c>
+    /// (3) — as a COMPOSITE notdef seed's descendant (object 4). A simple font can never be
+    /// notdef-SEED-eligible (<c>FontRemediationPlanner</c>'s seeding gate requires a composite
+    /// <c>Kind</c>), so it only ever reaches the merge group through inventory-scoped expansion,
+    /// once the composite wrapper (object 1) seeds one by drawing descendant 4's dead code (0x42).
+    /// Per the ruling, the simple font still BLOCKS that group (writing a composite substitute over
+    /// a shared program in step with a font Pellucid does not rewrite would corrupt it) but must not
+    /// lose its OWN, independently servable width fix: its declared <c>/Widths[0]</c> (507)
+    /// mismatches the shared embedded program's actual advance (450,
+    /// <see cref="ZeroAdvanceSfntFixture"/>'s <c>gid1Advance</c>) — the same shape
+    /// <see cref="WidthPatchFixtures.MismatchDoc"/> uses.
+    /// </summary>
+    public static PdfDocument SimpleFontSharingDescriptorWithCompositeSeedDoc()
+    {
+        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
+        var doc = new PdfDocument();
+        doc.AddObject(3, 0, new PdfStream(
+            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+SharedSimple"),
+            [N("Flags")] = new PdfInteger(4), // symbolic
+            [N("FontFile2")] = Ref(3),
+        });
+
+        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(),
+            LiveDeadCidToGidBytes(liveCode: 0x41, deadCode: 0x42)));
+        var descendant = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+SharedSimple"),
+            [N("FontDescriptor")] = Ref(2),
+            [N("CIDToGIDMap")] = Ref(6),
+            [N("DW")] = new PdfInteger(1000),
+            [N("W")] = new PdfArray(new PdfInteger(0x41), new PdfArray(new PdfInteger(500))),
+        };
+        AddCidSystemInfo(descendant);
+        doc.AddObject(4, 0, descendant);
+
+        doc.AddObject(5, 0, new PdfStream(new PdfDictionary(),
+            BfCharBytes([(0x41, "0041"), (0x42, "0042")])));
+        var wrapper = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+SharedSimple"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+            [N("ToUnicode")] = Ref(5),
+        };
+        doc.AddObject(1, 0, wrapper);
+
+        // Simple TrueType font (object 30): shares descriptor 2 (and so /FontFile2 3) directly —
+        // declared width 507 vs the program's actual advance 450 (WidthPatchFixtures.MismatchDoc's
+        // shape).
+        doc.AddObject(30, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+SharedSimpleWidths"),
+            [N("FirstChar")] = new PdfInteger(10),
+            [N("LastChar")] = new PdfInteger(10),
+            [N("Widths")] = new PdfArray(new PdfInteger(507)),
+            [N("FontDescriptor")] = Ref(2),
+        });
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <0A> Tj ET")));
+        WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 30);
         return doc;
     }
 }
