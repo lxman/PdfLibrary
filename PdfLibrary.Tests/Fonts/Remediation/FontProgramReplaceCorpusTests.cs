@@ -384,15 +384,13 @@ public class FontProgramReplaceCorpusTests
     /// Classify derives 'Times-Bold', BundledStandard14Provider intercepts it, and the retry wrote
     /// Liberation Serif Bold.
     ///
-    /// <para>Issue 40 (this task, 2026-08-17 re-measure) MOVED this: object 1424 draws CID 20 (live)
-    /// and CID 0 — CID 0 is the font's SOLE dead code (CID 20 already resolves in the OLD program),
-    /// so <c>FontProgramRule</c> now flags it regardless of what any replacement's map assigns, and
-    /// the planner's cid0-only honesty gate declines rather than proposing a fix that would close
-    /// zero rule-visible findings. Object 1424 is now MEASURED as a second decline, alongside object
-    /// 2032's untouched, unrelated CFF-charstring decline — both objects decline, zero replacements.
-    /// This doc's pre-existing <c>indirect-object-spacing</c> count is ZERO, so this run's own
-    /// <see cref="AssertRuleCountsHold"/> call proves absence-of-regression only, not that the
-    /// tolerance branch is exercised.</para>
+    /// <para>Issue 40 (this task, 2026-08-17 re-measure, gate simplified further per 2026-08-17
+    /// review) MOVED this: object 1424 draws CID 20 (live) and CID 0. The planner's cid0 honesty
+    /// gate declines whenever a font draws CID 0 at all — <c>FontProgramRule</c> flags it regardless
+    /// of what any replacement's map assigns, and CheckType0's single per-font finding would survive
+    /// any replacement unconditionally either way. Object 1424 is now MEASURED as a second decline,
+    /// alongside object 2032's untouched, unrelated CFF-charstring decline — both objects decline,
+    /// zero replacements, so there is nothing left to apply.</para>
     /// </summary>
     [Fact]
     public void Mixed_document_declines_both_its_notdef_and_its_unrelated_width_finding()

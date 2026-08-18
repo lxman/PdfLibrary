@@ -44,15 +44,23 @@ public sealed class FontProgramRuleCidZeroTests
     [Fact]
     public void An_unused_cid_zero_is_not_a_finding()
     {
-        // CID 0 exists in the descendant's coverage (implicitly, via the default explicit
-        // /CIDToGIDMap's covered range) but is never drawn — DeadCid2Doc's default content is
-        // "0042 0041" only. The predicate is about USED codes, not merely mapped ones.
-        using PdfDocument doc = ReplaceProgramFixtures.DeadCid2Doc();
+        // Review finding I-1: the default DeadCid2Doc() draws BOTH the live 0x41 AND the genuinely
+        // dead 0x42 — CheckType0 emits at most ONE 6.2.11.8 finding per font (a single OR'd
+        // notdefHit bool, not one per code), so Assert.Single(findings) against that default would
+        // pass whether or not the predicate wrongly counted the unused CID 0 too. Drawing ONLY the
+        // live code isolates the claim: CID 0 is present in the descendant's /CIDToGIDMap coverage
+        // (implicitly, via the default explicit map's covered range) but never drawn, and 0x41 is
+        // genuinely live — so a finding here could ONLY come from an unused CID 0 being wrongly
+        // counted. Toggle-checked (2026-08-17): temporarily forcing the walk to also treat CID 0 as
+        // notdef unconditionally made this test fail as expected; reverted before committing.
+        using PdfDocument doc = ReplaceProgramFixtures.DeadCid2Doc(
+            contentHex: "0041",
+            toUnicodeEntries: [(0x0041, "0041")]);
 
         Finding[] findings = new FontProgramRule()
             .Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b))
             .Where(f => Clause(f) == "6.2.11.8").ToArray();
 
-        Assert.Single(findings); // the 0x42 dead code — NOT a second finding for CID 0
+        Assert.Empty(findings);
     }
 }

@@ -213,6 +213,13 @@ public sealed class ReplaceProgramProposalTests
 
     // ── issue 40 honesty: a used CID 0 can never be fixed by a replacement ────────────────────────
 
+    /// <summary>Verbatim per the controller brief — a later sweep taxonomy keys on this exact
+    /// string. Pinning it with one full-string Assert.Equal (not fragment Contains checks) is what
+    /// actually proves the wording a later task depends on, not just that SOME substring survived.</summary>
+    private const string Cid0OnlyDeclineReason =
+        "This font draws character code 0, which ISO 32000 defines as .notdef regardless of what "
+        + "glyph the font maps it to — no font-side fix can make that draw conformant.";
+
     [Fact]
     public void A_cid0_only_font_declines_rather_than_proposing_a_fix_that_closes_nothing()
     {
@@ -226,25 +233,29 @@ public sealed class ReplaceProgramProposalTests
             .Propose(doc, [("font-program", 1)]);
 
         DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
-        Assert.Contains("character code 0", decline.Reason);
-        Assert.Contains("no font-side fix can make that draw conformant", decline.Reason);
+        Assert.Equal(Cid0OnlyDeclineReason, decline.Reason);
     }
 
     [Fact]
-    public void A_cid0_plus_other_dead_codes_still_proposes_though_it_cannot_close_everything()
+    public void A_cid0_plus_other_dead_codes_still_declines_because_the_finding_is_per_font()
     {
-        // The mixed case: CID 0 (forever .notdef) drawn ALONGSIDE a genuinely different dead code
-        // (0x42, via an explicit map). The cid0-only honesty gate only declines when CID 0 is the
-        // SOLE dead code — this font still has 0x42 to close, so the planner still proposes here.
-        // Known one-task gap (per the controller brief): the proposal does not yet flag that it
-        // cannot fully close the finding set (CID 0's own notdef survives any replacement) — that
-        // flag is Task 3's LeavesOtherFindings record addition, not this task's.
+        // Controller ruling (2026-08-17 review, supersedes this task's original "only when CID 0 is
+        // the SOLE dead code" gate shape): CID 0 (forever .notdef) drawn ALONGSIDE a genuinely
+        // different dead code (0x42, via an explicit map). FontProgramRule.CheckType0 emits at most
+        // ONE 6.2.11.8 finding PER FONT (a single OR'd notdefHit bool across every drawn code, not
+        // one finding per dead code) — so this font's single finding survives ANY replacement
+        // unconditionally, because CID 0 is still drawn (the content stream is untouched by a
+        // program swap) and still .notdef afterward regardless of the substitute's map. A proposal
+        // here would therefore close ZERO rule-visible findings on this font too — the same
+        // false-fix shape the cid0-only case catches — so the gate declines on CID 0's mere
+        // presence, with no other-dead-codes carve-out.
         using PdfDocument doc = ReplaceProgramFixtures.DeadCid2DocDrawingCidZero(onlyCidZeroDead: false);
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
-        Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(Cid0OnlyDeclineReason, decline.Reason);
     }
 
     [Fact]
