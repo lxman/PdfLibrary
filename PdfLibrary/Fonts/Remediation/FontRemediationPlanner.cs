@@ -121,13 +121,22 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         // Pass 1: resolve every distinct (ruleId, entry) pair this call was given, in input order,
         // AND — for font-program findings that are notdef/composite-eligible (the same condition
-        // ProposeWidthPatch itself gates on below) — group them by HolderGroupKey (issue 38). Grouping
-        // is scoped to what THIS CALL was given: a caller that passes only ONE of two sharing wrappers'
-        // findings gets the plain singleton path for it, unaware of the sibling — see
-        // ReplaceProgramProposalTests' promoted guard-era tests for that shape.
+        // ProposeWidthPatch itself gates on below) — seed a merge group keyed by HolderGroupKey
+        // (issue 38).
         var resolved = new List<(string RuleId, FontInventoryEntry Entry)>();
-        var memberOfGroup = new Dictionary<FontId, long>();
+        // Keyed the SAME shape `seen` uses (review finding I1), not FontId alone: FontId(0) is the
+        // overloaded direct-dictionary sentinel `seen`'s own comment above explains, so two distinct
+        // direct dictionaries could otherwise collide on Id==0 here too.
+        var memberOfGroup = new Dictionary<(int ObjectNumber, int? ProgramHolderObjectNumber), long>();
         var groupMembers = new Dictionary<long, List<FontInventoryEntry>>();
+        // SEED members — those carrying an ACTUAL notdef finding IN THIS CALL — as opposed to a
+        // sibling pulled in only by the inventory-scoped expansion below. Only a seed's own finding
+        // can be said to CLOSE by this operation (spec §4, "Group membership is INVENTORY-scoped, not
+        // findings-scoped", 2026-08-18 clarification, commit 16d7585 — Task 4 review finding C1): a
+        // caller that never asked about a sibling should not have Propose() silently claim credit for
+        // fixing something it was never told to fix, even where the shared-program rewrite this call
+        // DOES make necessarily touches that sibling too.
+        var seedIdsByKey = new Dictionary<long, HashSet<int>>();
 
         foreach ((string ruleId, int objectNumber) in findings)
         {
@@ -143,27 +152,68 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 && HasNotdefFinding(entry, fontProgramFindings.Value))
             {
                 long key = HolderGroupKey(document, entry);
-                memberOfGroup[entry.Id] = key;
+                memberOfGroup[(entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber)] = key;
                 if (!groupMembers.TryGetValue(key, out List<FontInventoryEntry>? members))
                     groupMembers[key] = members = [];
                 members.Add(entry);
+                if (!seedIdsByKey.TryGetValue(key, out HashSet<int>? seeds))
+                    seedIdsByKey[key] = seeds = [];
+                seeds.Add(entry.Id.ObjectNumber);
             }
         }
 
-        // Pass 2: dispatch. A multi-entry group is built ONCE (at the position of its FIRST member)
-        // by the merged builder; every other entry — including a notdef-eligible SINGLETON, whose own
-        // group has exactly one member — takes the EXISTING per-entry switch unchanged, so the
-        // degenerate (non-sharing) case is byte-identical to before this task.
+        // Inventory-scoped expansion (spec §4, 2026-08-18 clarification — Task 4 review finding C1): a
+        // group seeded by a notdef finding is NOT limited to the fonts THIS CALL happened to name.
+        // Every OTHER inventory entry sharing the same holder key is pulled in too — the shared
+        // program is being rewritten (or the whole group declines) either way, and skipping a sibling
+        // here is exactly the silent-.notdef corruption the review caught: ToStreamBytes writes GID 0
+        // for every CID a target's map does not cover, so an uncovered sibling's fine text would
+        // render .notdef with no error anywhere. A sibling pulled in only by this expansion still
+        // becomes a FULL target inside ProposeMergedReplace — its used codes join the coverage union,
+        // its descendant gets a real map, and ITS OWN gates run too (a gate failure blocks the whole
+        // group) — but it is not in `seedIdsByKey`, so it gets `ClosesFinding: false` and no
+        // RestoredCodeCount credit: nothing of its was asked to be fixed, so nothing of its is
+        // reported as closed.
+        foreach ((long key, List<FontInventoryEntry> members) in groupMembers)
+        {
+            var memberIds = new HashSet<int>(members.Select(m => m.Id.ObjectNumber));
+            foreach (FontInventoryEntry candidate in inventory)
+            {
+                if (candidate.ProgramHolderId is not { } holder) continue;
+                if (memberIds.Contains(candidate.Id.ObjectNumber)) continue;
+                if (HolderGroupKey(document, candidate) != key) continue;
+
+                members.Add(candidate);
+                memberIds.Add(candidate.Id.ObjectNumber);
+                memberOfGroup[(candidate.Id.ObjectNumber, holder.ObjectNumber)] = key;
+            }
+        }
+
+        // Pass 2: dispatch. A multi-entry group is built ONCE (at the position of its FIRST member in
+        // `resolved` — an expansion-only member never appears in `resolved` at all, since it carried
+        // no finding this call) by the merged builder; every other entry — including a notdef-eligible
+        // SINGLETON, whose own group has exactly one member (no sharing sibling anywhere in the
+        // inventory) — takes the EXISTING per-entry switch unchanged, so the degenerate (non-sharing)
+        // case is byte-identical to before this task. A width-family finding on a holder claimed by a
+        // multi-member group is SUBSUMED the same way: it reaches `resolved` (it carried its OWN
+        // finding), `memberOfGroup` routes it to the SAME group, and it is skipped here exactly like a
+        // second seed would be — the merged replacement's advance patch already covers its declared
+        // widths, so a second, independent PatchWidthsProposal against the SAME program stream would
+        // be a last-write-wins corruption, not just redundant.
         var processedGroups = new HashSet<long>();
         foreach ((string ruleId, FontInventoryEntry entry) in resolved)
         {
-            if (ruleId == "font-program" && memberOfGroup.TryGetValue(entry.Id, out long key))
+            if (ruleId == "font-program"
+                && memberOfGroup.TryGetValue(
+                    (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber), out long key))
             {
                 List<FontInventoryEntry> members = groupMembers[key];
                 if (members.Count > 1)
                 {
                     if (!processedGroups.Add(key)) continue; // this group's proposals already emitted
-                    proposals.AddRange(ProposeMergedReplace(document, members, ruleId, fontProgramFindings.Value));
+                    HashSet<int> seedIds = seedIdsByKey[key];
+                    proposals.AddRange(
+                        ProposeMergedReplace(document, members, ruleId, fontProgramFindings.Value, seedIds));
                     continue;
                 }
             }
@@ -190,15 +240,29 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// <summary>
     /// Groups a multi-entry notdef-family font-program share for <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>
     /// (spec §4, tracker issue 38): the resolved indirect <c>/FontDescriptor</c> object number when
-    /// <paramref name="entry"/>'s program holder has one, else the holder's own object number. Only
-    /// meaningful for an entry with a non-null <see cref="FontInventoryEntry.ProgramHolderId"/> — the
-    /// caller gates on that before calling this, so every entry reaching here is addressable (a
-    /// program holder is only non-null when both the font dictionary AND the holder are indirect).
+    /// <paramref name="entry"/>'s program holder has one, else the holder's own object number — the two
+    /// domains tagged into disjoint halves of the <c>long</c> (review finding I2) so a descriptor
+    /// object number can never collide with an UNRELATED holder's own object number even though both
+    /// are drawn from the same PDF object-number space. Only meaningful for an entry with a non-null
+    /// <see cref="FontInventoryEntry.ProgramHolderId"/> — every caller (the notdef-eligibility check in
+    /// <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s seeding pass, and its
+    /// inventory-scoped expansion pass) gates on that before calling this.
+    ///
+    /// <para>NOT a guarantee of <see cref="FontInventoryEntry.IsAddressable"/> (review finding I1,
+    /// correcting this doc comment's prior claim): a non-null <c>ProgramHolderId</c> only means the
+    /// PROGRAM HOLDER is indirect — the LOGICAL font dictionary itself may still be direct, in which
+    /// case the entry is groupable by key, but <see cref="ProposeMergedReplace"/>'s own per-sibling
+    /// shape gate (step 1, <c>IsAddressable</c>) declines it like any other shape failure.</para>
     /// </summary>
     private static long HolderGroupKey(PdfDocument document, FontInventoryEntry entry)
     {
         if (entry.ProgramHolderId is not { } holder) return entry.Id.ObjectNumber;
-        return DescriptorObjectNumber(document, holder) ?? holder.ObjectNumber;
+        // Tag the descriptor-number domain into the upper half of the long: object numbers in a real
+        // PDF are always far below 2^32, so this fallback (untagged holder-number) domain and the
+        // descriptor domain above can never produce the same key for two unrelated program holders.
+        return DescriptorObjectNumber(document, holder) is { } descriptorNumber
+            ? (long)descriptorNumber | (1L << 32)
+            : holder.ObjectNumber;
     }
 
     /// <summary>The <c>font-program</c> findings attributable to <paramref name="entry"/> — its own
@@ -695,13 +759,24 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// longer blocks construction — only that MEMBER's own <see cref="ReplaceTarget.ClosesFinding"/> is
     /// false. Checked right after the per-sibling shape gate, before ever resolving a substitute
     /// (mirroring <see cref="ProposeProgramReplace"/>'s own cid0 gate running before its own
-    /// <c>fonts.Resolve</c> call): if EVERY member draws CID 0, none would close, and the whole group
-    /// declines <see cref="Cid0OnlyDeclineReason"/> unconditionally — regardless of whether a substitute
-    /// is even available — exactly like the singleton gate.</para>
+    /// <c>fonts.Resolve</c> call): if no SEED member (<paramref name="seedIds"/> below) would close,
+    /// the whole group declines <see cref="Cid0OnlyDeclineReason"/> unconditionally — regardless of
+    /// whether a substitute is even available — exactly like the singleton gate. An inventory-
+    /// expansion-only member never counts either way here: it has no notdef finding to close, so it
+    /// can neither rescue nor sink this gate.</para>
+    ///
+    /// <para><paramref name="seedIds"/>: object numbers of members that carry an ACTUAL notdef finding
+    /// THIS CALL (spec §4, "Group membership is INVENTORY-scoped, not findings-scoped", 2026-08-18
+    /// clarification, commit 16d7585 — review finding C1). Every entry in <paramref name="group"/> NOT
+    /// in this set was pulled in purely by <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s
+    /// inventory-scoped expansion — it still becomes a full target (used codes join the coverage
+    /// union, its descendant gets a real map, its own shape gates still run), but gets
+    /// <c>ClosesFinding: false</c> and no <c>RestoredCodeCount</c> credit, in
+    /// <see cref="BuildMergedReplacement"/>.</para>
     /// </summary>
     private IReadOnlyList<FontProposal> ProposeMergedReplace(
         PdfDocument document, IReadOnlyList<FontInventoryEntry> group, string ruleId,
-        ILookup<int, Finding> ruleFindings)
+        ILookup<int, Finding> ruleFindings, IReadOnlySet<int> seedIds)
     {
         // Step 1: gate every sibling individually — the SAME shape gates ProposeProgramReplace runs
         // 1–4 for a singleton, just fanned out to the whole group on the first failure.
@@ -744,10 +819,12 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             siblings.Add((entry, type0, cid));
         }
 
-        // Task 3 amendment: group-wide cid0-only gate, BEFORE substitute resolution — a member drawing
-        // CID 0 never closes its own finding (ISO 32000 §9.7.4.2, issue 40), so if NONE of them would
-        // close, decline unconditionally, exactly like the singleton gate.
-        if (!siblings.Any(s => !s.Entry.UsedCodes.Contains(0)))
+        // Task 3 amendment, narrowed by review finding C1: group-wide cid0-only gate, BEFORE substitute
+        // resolution — a member drawing CID 0 never closes its own finding (ISO 32000 §9.7.4.2, issue
+        // 40), so if no SEED member would close, decline unconditionally, exactly like the singleton
+        // gate. Only SEED members are consulted: an inventory-expansion-only sibling has no notdef
+        // finding to close regardless of what it draws, so it cannot rescue this gate either.
+        if (!siblings.Any(s => seedIds.Contains(s.Entry.Id.ObjectNumber) && !s.Entry.UsedCodes.Contains(0)))
             return DeclineAll(group, ruleId, Cid0OnlyDeclineReason);
 
         // Step 2: resolve the substitute ONCE — program style from the shared program (issue 43's
@@ -768,7 +845,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             ? new MergedResult(DeclineAll(group, ruleId,
                 $"No font matching '{first.FamilyName}' is installed on this computer. Installing it "
                 + "would let Pellucid replace the deficient program."), null)
-            : BuildMergedReplacement(siblings, ruleId, match.Data, match.FaceIndex);
+            : BuildMergedReplacement(siblings, ruleId, match.Data, match.FaceIndex, seedIds);
 
         if (primary.Proposals is [ReplaceProgramProposal])
             return primary.Proposals;
@@ -786,7 +863,8 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 FontMatch? retryMatch = fonts.Resolve(request with { BaseFont = synthetic });
                 if (retryMatch is not null)
                 {
-                    MergedResult retry = BuildMergedReplacement(siblings, ruleId, retryMatch.Data, retryMatch.FaceIndex);
+                    MergedResult retry = BuildMergedReplacement(
+                        siblings, ruleId, retryMatch.Data, retryMatch.FaceIndex, seedIds);
                     if (retry.Proposals is [ReplaceProgramProposal])
                         return retry.Proposals;
                 }
@@ -802,10 +880,12 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// sharing), the advance patch (union of declared widths with width-conflict detection), restored-
     /// code count, and the descriptor. Mirrors <see cref="BuildReplacement"/>'s shape for N siblings
     /// instead of one. <see cref="MergedResult.Format"/> is set whenever classification succeeded, even
-    /// on a decline, so <see cref="ProposeMergedReplace"/>'s retry can decide without reclassifying.</summary>
+    /// on a decline, so <see cref="ProposeMergedReplace"/>'s retry can decide without reclassifying.
+    /// <paramref name="seedIds"/> is <see cref="ProposeMergedReplace"/>'s own parameter of the same
+    /// name, forwarded unchanged (review finding C1) — see that method's doc comment.</summary>
     private static MergedResult BuildMergedReplacement(
         List<(FontInventoryEntry Entry, Type0Font Type0, CidFont Cid)> siblings, string ruleId,
-        byte[] bytes, int faceIndex)
+        byte[] bytes, int faceIndex, IReadOnlySet<int> seedIds)
     {
         IReadOnlyList<FontInventoryEntry> allEntries = siblings.Select(s => s.Entry).ToList();
         FontInventoryEntry first = siblings[0].Entry;
@@ -841,6 +921,20 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     + "would still leave missing glyphs — Pellucid makes no partial replacements."),
                     classified.Format);
             }
+
+            // M1 (review finding), symmetric with BuildReplacement's own guard: an inventory-scoped
+            // expansion (C1) can pull in a sibling that is never actually drawn anywhere in the
+            // document — FontInventory still creates an entry for an unused font resource — whose
+            // UsedCodes is empty and therefore whose CidToGid is empty too (not a partial-coverage
+            // problem; Unresolvable is empty as well, since there is nothing to resolve). Left
+            // unguarded, ToStreamBytes would write .notdef for every CID in that sibling's slice.
+            if (mapResult.CidToGid.Count == 0)
+            {
+                return new MergedResult(DeclineAll(allEntries, ruleId,
+                    "This font draws no characters Pellucid can resolve, so there is nothing a "
+                    + "replacement program could restore."),
+                    classified.Format);
+            }
             perSibling.Add((entry, cid, mapResult));
         }
 
@@ -852,6 +946,13 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // descriptor) — a shape neither fixture exercises, but one a single group-wide boolean would
         // get wrong for the direct pair inside it. GroupBy preserves first-occurrence order, so
         // Targets keeps the group's input order.
+        // ClosesFinding (review finding C1): only a SEED member — one carrying an ACTUAL notdef
+        // finding this call — can ever close anything; an inventory-expansion-only sibling's finding
+        // is always false, whether or not it draws CID 0 (spec §4, "Group membership is
+        // INVENTORY-scoped, not findings-scoped", 2026-08-18 clarification).
+        bool Closes(FontInventoryEntry entry) =>
+            seedIds.Contains(entry.Id.ObjectNumber) && !entry.UsedCodes.Contains(0);
+
         var targets = new List<ReplaceTarget>();
         foreach (IGrouping<int, (FontInventoryEntry Entry, CidFont Cid, CidReplacementMapResult MapResult)> holderGroup
                  in perSibling.GroupBy(p => p.Entry.ProgramHolderId!.Value.ObjectNumber))
@@ -863,7 +964,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 (FontInventoryEntry entry, _, CidReplacementMapResult mapResult) = members[0];
                 targets.Add(new ReplaceTarget(
                     entry.ProgramHolderId!.Value, entry.Id, mapResult.CidToGid, mapResult.MaxCid,
-                    ClosesFinding: !entry.UsedCodes.Contains(0)));
+                    ClosesFinding: Closes(entry)));
                 continue;
             }
 
@@ -897,7 +998,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             foreach ((FontInventoryEntry entry, CidFont _, CidReplacementMapResult _) in members)
             {
                 targets.Add(new ReplaceTarget(
-                    sharedHolder, entry.Id, unionMap, maxCid, ClosesFinding: !entry.UsedCodes.Contains(0)));
+                    sharedHolder, entry.Id, unionMap, maxCid, ClosesFinding: Closes(entry)));
             }
         }
 
@@ -948,11 +1049,17 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             program = patched;
         }
 
-        // RestoredCodeCount (spec §4 step 5): sum over siblings of distinct used codes that resolve to
-        // .notdef in THEIR OWN old program — same predicate BuildReplacement uses for a singleton.
+        // RestoredCodeCount (spec §4 step 5): sum over SEED siblings of distinct used codes that
+        // resolve to .notdef in THEIR OWN old program — same predicate BuildReplacement uses for a
+        // singleton. An inventory-expansion-only sibling contributes nothing (review finding C1):
+        // nothing of its was asked to be fixed, so nothing of its counts as "restored" even where its
+        // own old program happens to draw some other .notdef code this call's finding set never named
+        // — its old-program metrics are not even read, since nothing here depends on them.
         var restored = 0;
         foreach ((FontInventoryEntry entry, Type0Font type0, CidFont cid) in siblings)
         {
+            if (!seedIds.Contains(entry.Id.ObjectNumber)) continue;
+
             EmbeddedFontMetrics? oldMetrics = type0.GetEmbeddedMetrics();
             if (oldMetrics is null || !oldMetrics.IsValid)
             {
@@ -1243,17 +1350,17 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         };
         string source = sourceDescription ?? $"{resolvedFamily} ({style}) — from your system fonts";
 
-        // ClosesFinding: true (Task 3 amendment). For the automatic path, ProposeProgramReplace's
-        // cid0 gate (above) already declined every font that draws CID 0 before construction ever
-        // gets here, so a singleton reaching this point through THAT caller closes its own 6.2.11.8
-        // finding. NOTE for Task 4 (which is expected to replace this hardcoded true with a real
-        // per-target computation): BuildReplacement is also reached by AssessReplacementCandidate
-        // (the manual path), which has NO equivalent cid0 gate — a user hand-picking a substitute for
-        // a font that draws CID 0 can reach here today and get ClosesFinding: true even though the
-        // finding can never actually close (issue 40). Pre-existing gap (Task 2 added the gate only
-        // to ProposeProgramReplace), not introduced by Task 3 and out of Task 3's zero-behavioural-
-        // movement scope to close — flagged here so Task 4's real computation covers both callers.
-        var target = new ReplaceTarget(holder, entry.Id, mapResult.CidToGid, mapResult.MaxCid, ClosesFinding: true);
+        // ClosesFinding (review finding I4, fixing Task 3's hardcoded `true`): a font that draws CID 0
+        // never closes its 6.2.11.8 finding (ISO 32000 §9.7.4.2, issue 40) — no font-side fix can
+        // change that. For the AUTOMATIC path (ProposeProgramReplace), the cid0 gate above already
+        // declined every such font before construction ever reaches here, so `!UsedCodes.Contains(0)`
+        // is always true there — byte-identical to the old hardcoded value. For the MANUAL path
+        // (AssessReplacementCandidate), which has no equivalent cid0 gate, this now correctly reports
+        // false for a user-picked substitute on a CID-0-drawing font instead of falsely claiming the
+        // finding closes.
+        var target = new ReplaceTarget(
+            holder, entry.Id, mapResult.CidToGid, mapResult.MaxCid,
+            ClosesFinding: !entry.UsedCodes.Contains(0));
         var proposal = new ReplaceProgramProposal(
             [target], ruleId, source, program, FontProgramFormat.TrueType,
             restored, newBaseFont, descriptorValues, flags);

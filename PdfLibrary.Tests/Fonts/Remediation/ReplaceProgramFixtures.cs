@@ -327,12 +327,16 @@ internal static class ReplaceProgramFixtures
     /// dictionary carries no <c>/ToUnicode</c> key) — the merge-blocked-sibling gate case, distinct
     /// from an EMPTY-but-present CMap. <paramref name="wrapper2Codes"/> overrides which codes wrapper
     /// 2's content stream draws (default <c>[0x42]</c>, matching the original shape) — used by the
-    /// ClosesFinding amendment test to have wrapper 2 draw CID 0 alongside its own dead code.</para>
+    /// ClosesFinding amendment test to have wrapper 2 draw CID 0 alongside its own dead code.
+    /// <paramref name="wrapper1Codes"/> (default <c>[0x41, 0x42]</c>, matching the original hardcoded
+    /// shape) is the same idiom for wrapper 1's own content — added for the all-members-draw-CID-0
+    /// group-decline case.</para>
     /// </summary>
     public static PdfDocument SharedDescendantDoc(
         IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
         bool wrapper2HasToUnicode = true,
-        IReadOnlyList<int>? wrapper2Codes = null)
+        IReadOnlyList<int>? wrapper2Codes = null,
+        IReadOnlyList<int>? wrapper1Codes = null)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -393,9 +397,11 @@ internal static class ReplaceProgramFixtures
         }
         doc.AddObject(7, 0, wrapper2);
 
+        string wrapper1Hex = string.Concat((wrapper1Codes ?? [0x41, 0x42]).Select(c => $"{c:X4}"));
         string wrapper2Hex = string.Concat((wrapper2Codes ?? [0x42]).Select(c => $"{c:X4}"));
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes($"BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
+            Encoding.ASCII.GetBytes(
+                $"BT /F0 12 Tf <{wrapper1Hex}> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
         return doc;
     }
@@ -417,8 +423,17 @@ internal static class ReplaceProgramFixtures
     /// their own dead code means each gets its own genuine 6.2.11.8 finding from the real
     /// <c>FontProgramRule</c>, which is what routes <c>Propose</c> into <c>ProposeProgramReplace</c> —
     /// where the descriptor-collision guard lives — for both.</para>
+    ///
+    /// <para>Task 4 review addition, following this fixture's own idiom:
+    /// <paramref name="wrapper2ToUnicode"/> overrides descendant 2's default <c>/ToUnicode</c> entries
+    /// (default 0x43→'C', 0x44→'D'), and <paramref name="descendant2Width"/> overrides descendant 2's
+    /// declared width for CID 0x43 (default 500, matching descendant 1's) — together these let a test
+    /// make CID 0x43 resolve to the SAME substitute glyph as descendant 1's CID 0x41 (e.g. both →'A')
+    /// while declaring a DIFFERENT width, the merge-width-conflict shape.</para>
     /// </summary>
-    public static PdfDocument SharedDescriptorDoc()
+    public static PdfDocument SharedDescriptorDoc(
+        IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
+        int descendant2Width = 500)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -474,13 +489,13 @@ internal static class ReplaceProgramFixtures
             [N("FontDescriptor")] = Ref(2),
             [N("CIDToGIDMap")] = Ref(16),
             [N("DW")] = new PdfInteger(1000),
-            [N("W")] = new PdfArray(new PdfInteger(0x43), new PdfArray(new PdfInteger(500))),
+            [N("W")] = new PdfArray(new PdfInteger(0x43), new PdfArray(new PdfInteger(descendant2Width))),
         };
         AddCidSystemInfo(descendant2);
         doc.AddObject(14, 0, descendant2);
 
         doc.AddObject(15, 0, new PdfStream(new PdfDictionary(),
-            BfCharBytes([(0x43, "0043"), (0x44, "0044")])));
+            BfCharBytes(wrapper2ToUnicode ?? [(0x43, "0043"), (0x44, "0044")])));
         var wrapper2 = new PdfDictionary
         {
             [N("Type")] = N("Font"),

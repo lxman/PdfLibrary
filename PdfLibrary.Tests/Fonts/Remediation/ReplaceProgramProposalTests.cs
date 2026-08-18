@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using CffTestFixtures;
 using PdfLibrary.Conformance.Rules;
@@ -278,25 +279,41 @@ public sealed class ReplaceProgramProposalTests
     }
 
     [Fact]
-    public void Two_type0_wrappers_sharing_one_descendant_merge_when_both_findings_are_proposed_together()
+    public void Two_type0_wrappers_sharing_one_descendant_merge_even_when_only_one_findings_is_proposed()
     {
-        // GUARD-ERA TEST, promoted (F-4b Task 4, controller ruling tracker issue 38): the last-write-
+        // GUARD-ERA TEST, promoted (F-4b Task 4, controller ruling tracker issue 38), then RE-PROMOTED
+        // (Task 4 review finding C1, spec §4 2026-08-18 clarification, commit 16d7585): the last-write-
         // wins-per-PROGRAM-HOLDER guard (FontRemediationPlanner.SharedHolderReason) that used to
         // decline this shape is DELETED — Propose() now groups font-program findings sharing one
-        // holder BEFORE dispatch and routes a multi-entry group to the merged builder instead. See
-        // MergedReplacementTests for the merged proposal's full shape assertions (Targets.Count,
-        // identical UNION map, ClosesFinding); this test keeps the ORIGINAL single-wrapper-finding
-        // call shape as a reminder that grouping only sees the findings THIS call was given — with
-        // only object 1's finding in the input, wrapper 7 never enters the group, so the SINGLETON
-        // path runs unchanged and proposes for object 1 alone.
+        // holder BEFORE dispatch and routes a multi-entry group to the merged builder instead.
+        //
+        // Group MEMBERSHIP is INVENTORY-scoped, not findings-scoped: even though only object 1's
+        // finding is in THIS call's input, wrapper 7 (which shares the SAME descendant, and — in this
+        // fixture's default shape — independently draws the shared dead code 0x42 too) is pulled in by
+        // Propose()'s inventory-scoped expansion regardless. Skipping it here is exactly the silent-
+        // .notdef corruption the review caught: the merged replacement rewrites the shared /FontFile2
+        // either way, and an uncovered sibling's CIDToGIDMap would then point at the DEPARTED
+        // program's glyph ids.
+        //
+        // What stays call-scoped is CLOSING credit: wrapper 7's own finding was never named in this
+        // call's `findings` argument, so it does not get credit for closing — ClosesFinding is false
+        // for its target even though it is a full, correctly-mapped target. See
+        // MergedReplacementTests for the merged proposal's full shape assertions (identical UNION map,
+        // findingless-sibling expansion, width subsumption).
         PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
-        Assert.Single(proposal.Targets);
-        Assert.Equal(1, proposal.Targets[0].CompositeFont.ObjectNumber);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper1Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 1);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        Assert.True(wrapper1Target.ClosesFinding, "wrapper 1's finding was named in this call");
+        Assert.False(wrapper7Target.ClosesFinding, "wrapper 7's finding was NOT named in this call");
+        // Direct sharing: both targets still carry the identical UNION map, exactly as when both
+        // findings are passed together.
+        Assert.Equal(wrapper1Target.CidToGid, wrapper7Target.CidToGid);
     }
 
     [Fact]
