@@ -143,8 +143,10 @@ public sealed class MergedReplacementTests
     /// independently seed the notdef group AND both carry their own 6.2.11.5 finding — the DECLINED
     /// group now frees both for the width-family arm too, and since the SAME 500-vs-700 disagreement
     /// (genuinely beyond WidthTolerance) applies there as well, the width-family merge ALSO declines
-    /// both, with the SAME (shared-constant) reason text as the notdef-merge's own width conflict — 4
-    /// declines total, not 2.</para>
+    /// both, with the SAME (shared-constant) reason text as the notdef-merge's own width conflict.
+    /// Review round 1, finding I2: that means each font would otherwise get TWO byte-identical
+    /// DeclineProposal rows (one per arm) — Propose() now dedups on (Font, RuleId, Reason) right
+    /// before returning, so this test measures 2 declines, not 4.</para>
     /// </summary>
     [Fact]
     public void A_merge_width_conflict_at_descriptor_level_declines_the_whole_group()
@@ -154,7 +156,7 @@ public sealed class MergedReplacementTests
         FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
             .Propose(doc, [("font-program", 1), ("font-program", 7)]);
 
-        Assert.Equal(4, result.Fonts.Count);
+        Assert.Equal(2, result.Fonts.Count);
         Assert.All(result.Fonts, p =>
             Assert.Contains("declare different widths", Assert.IsType<DeclineProposal>(p).Reason));
     }

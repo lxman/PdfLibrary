@@ -127,4 +127,27 @@ public sealed class MergedWidthPatchTests
         PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
         Assert.Equal(new HashSet<int> { 1, 7 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
     }
+
+    /// <summary>Review round 1, finding I1 — the falsifying shape: a <c>/Subtype /Type1</c> font
+    /// (object 40) sharing the SAME <c>/FontDescriptor</c> (and so the same <c>/FontFile2</c>) as two
+    /// TrueType-family width-only seeds. HolderGroupKey keys on the resolved descriptor object number,
+    /// never on which /FontFile* key the descriptor happens to carry, and FontKind is derived purely
+    /// from /Subtype — so a Type1 entry (excluded from width-family MEMBERSHIP by the kind gate) still
+    /// shares the EXACT stream a merged width patch would rewrite. Neither wrapper draws its own dead
+    /// code (both would otherwise merge successfully — see
+    /// <see cref="Two_wrappers_sharing_one_descendant_merge_into_one_width_patch"/>), so the blocking
+    /// sibling is the ONLY thing standing between this test and a successful merge: it must decline the
+    /// WHOLE group instead, and NO PatchWidthsProposal may be emitted for the holder.</summary>
+    [Fact]
+    public void A_mixed_kind_sibling_sharing_the_descriptor_blocks_the_width_merge()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            wrapper1Codes: [0x41], wrapper2Codes: [0x41], includeType1BlockingSibling: true);
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1), ("font-program", 7)]);
+
+        Assert.Empty(result.Fonts.OfType<PatchWidthsProposal>());
+        Assert.Equal(2, result.Fonts.Count);
+        Assert.All(result.Fonts, p => Assert.Contains(
+            "cannot be included", Assert.IsType<DeclineProposal>(p).Reason));
+    }
 }

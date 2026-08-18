@@ -331,12 +331,22 @@ internal static class ReplaceProgramFixtures
     /// <paramref name="wrapper1Codes"/> (default <c>[0x41, 0x42]</c>, matching the original hardcoded
     /// shape) is the same idiom for wrapper 1's own content — added for the all-members-draw-CID-0
     /// group-decline case.</para>
+    ///
+    /// <para>Task 6 review round 1, finding I1: <paramref name="includeType1BlockingSibling"/> adds a
+    /// THIRD font (object 40, <c>/Subtype /Type1</c>) sharing the SAME <c>/FontDescriptor</c> (2) — and
+    /// so the same <c>/FontFile2</c> (3) — as the two composite width-family candidates, referenced in
+    /// page resources (<c>/F2</c>) but never drawn: FontInventory.Read discovers a REFERENCED font
+    /// regardless of whether the content stream shows it, and the falsifying shape needs exactly that
+    /// (a blocking sibling with no finding of its own). Its own <c>Widths</c>/<c>FirstChar</c>/
+    /// <c>LastChar</c> are present but irrelevant — it exists purely to occupy the shared descriptor
+    /// with a non-width-patchable Kind.</para>
     /// </summary>
     public static PdfDocument SharedDescendantDoc(
         IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
         bool wrapper2HasToUnicode = true,
         IReadOnlyList<int>? wrapper2Codes = null,
-        IReadOnlyList<int>? wrapper1Codes = null)
+        IReadOnlyList<int>? wrapper1Codes = null,
+        bool includeType1BlockingSibling = false)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -402,6 +412,23 @@ internal static class ReplaceProgramFixtures
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
             Encoding.ASCII.GetBytes(
                 $"BT /F0 12 Tf <{wrapper1Hex}> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
+
+        if (includeType1BlockingSibling)
+        {
+            doc.AddObject(40, 0, new PdfDictionary
+            {
+                [N("Type")] = N("Font"),
+                [N("Subtype")] = N("Type1"),
+                [N("BaseFont")] = N("ABCDEF+BlockingType1"),
+                [N("FirstChar")] = new PdfInteger(65),
+                [N("LastChar")] = new PdfInteger(65),
+                [N("Widths")] = new PdfArray(new PdfInteger(500)),
+                [N("FontDescriptor")] = Ref(2),
+            });
+            WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7, font3: 40);
+            return doc;
+        }
+
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
         return doc;
     }

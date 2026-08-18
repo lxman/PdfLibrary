@@ -205,11 +205,9 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // union's cross-member conflict check (BuildMergedWidthPatch) already catches two consulted
         // siblings disagreeing about a shared glyph id — a sibling this call was never asked about
         // contributes nothing to that union and is not at risk of an advance it never declared an
-        // opinion on. CFF-family entries (Type0CidType0, Type1, Type3) are excluded by the Kind check:
-        // a shared-FontFile2 group is TrueType-family by construction (a CFF program lives in
-        // /FontFile3, never /FontFile2), so a CFF sibling never becomes a width-family MEMBER here —
-        // it always declines independently, on its own kind, via the ordinary per-entry switch below,
-        // exactly as before this task.
+        // opinion on. CFF-family entries (Type0CidType0, Type1, Type3) are excluded by the Kind check
+        // from becoming width-family MEMBERS — they always decline independently, on their own kind,
+        // via the ordinary per-entry switch below, exactly as before this task.
         var widthMemberOfGroup = new Dictionary<(int ObjectNumber, int? ProgramHolderObjectNumber), long>();
         var widthGroupMembers = new Dictionary<long, List<FontInventoryEntry>>();
         foreach ((string ruleId, FontInventoryEntry entry) in resolved)
@@ -225,6 +223,37 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             if (!widthGroupMembers.TryGetValue(key, out List<FontInventoryEntry>? members))
                 widthGroupMembers[key] = members = [];
             members.Add(entry);
+        }
+
+        // Review round 1, finding I1: excluding a CFF/Type1/Type3/Unknown-kind entry from width-family
+        // MEMBERSHIP (above) is NOT the same as that entry never sharing the physical stream a merged
+        // patch rewrites — HolderGroupKey keys on the resolved /FontDescriptor object number (or the
+        // holder's own object number), never on which /FontFile* key the descriptor happens to carry,
+        // and FontKind is derived purely from /Subtype (FontInventory.KindOf). A malformed-but-real
+        // /Subtype /Type1 (or /Type3, or an unrecognized subtype) font whose /FontDescriptor happens to
+        // be the SAME descriptor a TrueType/Type0CidType2 sibling's width patch targets shares the
+        // EXACT stream that patch rewrites; it declines independently ("CFF charstrings" or similar)
+        // while the sibling's patch shifts hmtx advances in the SAME bytes out from under it — the
+        // notdef family's own C1 corruption shape, recurring here because the width family's kind
+        // filter, unlike the notdef family's Kind check, has no inventory-scoped consultation of what
+        // ELSE shares the key. A non-addressable sibling (direct dictionary) poses the identical risk
+        // whenever its program holder is still indirect (ProgramHolderId non-null, IsAddressable false)
+        // — it too resolves to the SAME key without ever being a width-family candidate itself.
+        //
+        // Scanned against the FULL inventory (not just `resolved`): a blocking sibling need not carry
+        // any finding of its own — same posture as the notdef family's own C1 fix, and for the same
+        // reason (the risk is about what SHARES the bytes being rewritten, not about what this call was
+        // told to fix).
+        var blockedWidthKeys = new Dictionary<long, string>();
+        foreach (long key in widthGroupMembers.Keys)
+        {
+            FontInventoryEntry? blocker = inventory.FirstOrDefault(candidate =>
+                candidate.ProgramHolderId is not null
+                && HolderGroupKey(document, candidate) == key
+                && (candidate.Kind is not (FontKind.TrueType or FontKind.Type0CidType2)
+                    || !candidate.IsAddressable));
+            if (blocker is not null)
+                blockedWidthKeys[key] = BlockingSiblingReason(blocker);
         }
 
         // Pass 2: dispatch. A multi-entry group is built ONCE (at the position of its FIRST member in
@@ -309,13 +338,29 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
             if (ruleId == "font-program"
                 && entry.Kind is FontKind.TrueType or FontKind.Type0CidType2
-                && widthMemberOfGroup.TryGetValue(idKey, out long widthKey)
-                && widthGroupMembers[widthKey].Count > 1)
+                && widthMemberOfGroup.TryGetValue(idKey, out long widthKey))
             {
-                if (!processedWidthGroups.Add(widthKey)) continue; // this holder's width group already emitted
-                proposals.AddRange(BuildMergedWidthPatch(
-                    document, widthGroupMembers[widthKey], ruleId, fontProgramFindings.Value));
-                continue;
+                List<FontInventoryEntry> widthMembers = widthGroupMembers[widthKey];
+
+                // I1: a mixed-kind or non-addressable sibling shares the SAME physical stream this
+                // holder's width patch would rewrite — decline the WHOLE width-family group (merged OR
+                // singleton; the risk is identical either way) rather than patch under it.
+                if (blockedWidthKeys.TryGetValue(widthKey, out string? blockedReason))
+                {
+                    if (!processedWidthGroups.Add(widthKey)) continue;
+                    proposals.AddRange(
+                        DeclineAll(widthMembers, ruleId, MergeBlockedSibling(blockedReason)));
+                    continue;
+                }
+
+                if (widthMembers.Count > 1)
+                {
+                    if (!processedWidthGroups.Add(widthKey)) continue; // this holder's width group already emitted
+                    proposals.AddRange(BuildMergedWidthPatch(
+                        document, widthMembers, ruleId, fontProgramFindings.Value));
+                    continue;
+                }
+                // singleton, unblocked — fall through unchanged to the ordinary dispatch below.
             }
 
             // Null means "this font has nothing to propose AND nothing to report" — only
@@ -337,7 +382,28 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 proposals.Add(proposal);
         }
 
-        return new FontRemediationProposal(proposals);
+        // Review round 1, finding I2: a font can be independently declined by BOTH the notdef-family
+        // group (its own per-member decline) and the width-family arm freed from that same group,
+        // whose own decline can reuse the SAME shared-constant reason text (e.g. MergeWidthConflictReason
+        // when both arms hit the identical cross-sibling width disagreement) — two byte-identical
+        // DeclineProposal rows for one font/rule. FontsDomain renders every DeclineProposal as its own
+        // row, so the user would see the identical sentence twice and a ledger would double-count.
+        // Dedup EXACT (Font, RuleId, Reason) triples right before returning — distinct reason texts for
+        // genuinely distinct facts about the SAME font/rule are untouched; only a literal duplicate
+        // collapses. Non-decline proposals are never deduped here: two PatchWidthsProposals or
+        // ReplaceProgramProposals with identical fields would be a planner bug worth seeing, not noise
+        // to hide.
+        var seenDeclines = new HashSet<(int ObjectNumber, string RuleId, string Reason)>();
+        var deduped = new List<FontProposal>(proposals.Count);
+        foreach (FontProposal p in proposals)
+        {
+            if (p is DeclineProposal decline
+                && !seenDeclines.Add((decline.Font.ObjectNumber, decline.RuleId, decline.Reason)))
+                continue;
+            deduped.Add(p);
+        }
+
+        return new FontRemediationProposal(deduped);
     }
 
     /// <summary>
@@ -369,11 +435,21 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     }
 
     /// <summary>The <c>font-program</c> findings attributable to <paramref name="entry"/> — its own
-    /// object, plus its program holder's when that differs (a Type0 wrapper's 6.2.11.8/6.2.11.5
-    /// findings are reported against the DESCENDANT CIDFont FontProgramRule actually parsed, not the
-    /// wrapper). Shared by <see cref="ProposeWidthPatch"/>'s own dispatch and <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s
-    /// group-eligibility check (<see cref="HasNotdefFinding"/>) so the two cannot disagree about what
-    /// "this entry's findings" means.</summary>
+    /// object, plus its program holder's when that differs. Corrected (Task 6 review, finding M7): a
+    /// Type0 wrapper's 6.2.11.8/6.2.11.5 findings are actually reported against the WRAPPER's own
+    /// object number, never the descendant — <see cref="FontProgramRule.Make"/> reads
+    /// <c>font.FontDictionary</c>, where <c>font</c> is the <c>Type0Font</c> (the wrapper) passed into
+    /// <c>CheckType0</c>, so <c>ruleFindings[entry.ProgramHolderId.ObjectNumber]</c> is empty for a
+    /// Type0 entry in practice; the union below still concatenates it defensively (a direct or future
+    /// caller could attribute there), but every composite font's real findings arrive via
+    /// <c>ruleFindings[entry.Id.ObjectNumber]</c> alone, scoped to the codes THAT WRAPPER itself draws
+    /// — a sibling sharing the same descendant/program does NOT see a co-drawn code's finding unless it
+    /// draws that code too. This is the exact fact <see cref="HasWidthFinding"/>'s Task 6 width-family
+    /// seeding depends on: a sibling that only draws a dead code never gets its own 6.2.11.5 finding,
+    /// regardless of what another sibling sharing its holder draws. Shared by
+    /// <see cref="ProposeWidthPatch"/>'s own dispatch and <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s
+    /// group-eligibility checks (<see cref="HasNotdefFinding"/>, <see cref="HasWidthFinding"/>) so
+    /// none of the three can disagree about what "this entry's findings" means.</summary>
     private static List<Finding> FontProgramFindingsFor(FontInventoryEntry entry, ILookup<int, Finding> ruleFindings) =>
         ruleFindings[entry.Id.ObjectNumber]
             .Concat(entry.ProgramHolderId is { } ph && ph.ObjectNumber != entry.Id.ObjectNumber
@@ -1484,6 +1560,25 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         "Another font sharing this font's embedded program cannot be included in a merged replacement "
         + $"({reason}), and replacing the shared program for only some of its fonts would corrupt the "
         + "others.";
+
+    /// <summary>Review round 1, finding I1: the reason a width-family group is blocked by
+    /// <paramref name="blocker"/> — a sibling sharing the SAME <see cref="HolderGroupKey"/> whose own
+    /// Kind is outside the width-patchable set, or which is not addressable. Mirrors the SAME per-kind
+    /// text <see cref="ProposeWidthPatchOnly"/>'s own kind switch and unaddressable gate produce for
+    /// that sibling if it were assessed directly — a font declines with the SAME sentence about itself
+    /// whether it is the one being assessed or the one blocking a neighbor's merge.</summary>
+    private static string BlockingSiblingReason(FontInventoryEntry blocker) =>
+        !blocker.IsAddressable
+            ? "This font is written directly into the page's resources rather than as its own object, "
+              + "so Pellucid cannot address its font program to correct it."
+            : blocker.Kind switch
+            {
+                FontKind.Type3 => "Type 3 font widths come from each glyph's own drawing procedure, "
+                    + "which Pellucid does not rewrite.",
+                FontKind.Type0CidType0 or FontKind.Type1 => "This font's program stores its advances "
+                    + "in CFF charstrings, which Pellucid cannot yet rewrite.",
+                _ => "This font's program is not one Pellucid can patch in place.",
+            };
 
     /// <summary>
     /// Mirrors <see cref="AssessCandidate"/>'s shape for the whole-program-replacement path: the SAME

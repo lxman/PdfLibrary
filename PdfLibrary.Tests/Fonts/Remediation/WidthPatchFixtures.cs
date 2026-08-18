@@ -102,6 +102,18 @@ internal static class WidthPatchFixtures
         AddSinglePageCatalog(doc, new PdfDictionary { [N("F0")] = Ref(font1), [N("F1")] = Ref(font2) });
     }
 
+    /// <summary>Same idiom, THREE font resources (<c>/F0</c>-<c>/F2</c>) — for a fixture that needs a
+    /// third, undrawn font present purely so <c>FontInventory.Read</c> (which walks REFERENCED fonts,
+    /// not just drawn ones) discovers it, e.g. a blocking sibling that shares a holder key but is
+    /// never itself shown in the content stream.</summary>
+    public static void AddSinglePageCatalog(PdfDocument doc, int font1, int font2, int font3)
+    {
+        AddSinglePageCatalog(doc, new PdfDictionary
+        {
+            [N("F0")] = Ref(font1), [N("F1")] = Ref(font2), [N("F2")] = Ref(font3),
+        });
+    }
+
     private static void AddSinglePageCatalog(PdfDocument doc, PdfDictionary fontResources)
     {
         doc.AddObject(22, 0, new PdfDictionary
