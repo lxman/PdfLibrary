@@ -136,36 +136,26 @@ public class FontProgramWidthRepairCorpusTests
     [Fact]
     public void Mixed_document_patches_cid2_and_declines_cid0()
     {
-        // Re-measured post-issue-35 (FontProgramRule now dedups per font OBJECT, not base-font
-        // name), 2026-08-17: 66 width findings before (was ~4 patchable + 1 CID0 decline pre-fix
-        // — F-4a Task 8's "1 partial" bucket for this doc). Per-object dedup surfaces 52 of those
-        // 66 as proposable and 14 as CFF-charstring declines (52 + 14 = 66, reconciles). But the
-        // 52 proposals are NOT 52 independent physical patches: FontInventory groups them onto
-        // only 4 distinct program HOLDERS (4 physical /FontFile2 CIDFontType2 programs, each
-        // shared by many separate Type0 wrapper objects on different pages/text runs — 16, 16, 12,
-        // and 8 sibling findings per holder). FontRemediationPlanner proposes one
-        // PatchWidthsProposal PER LOGICAL FONT regardless of holder sharing (its `seen` dedup at
-        // line 90 is keyed by (Id, ProgramHolderId, RuleId), not by ProgramHolderId alone — by
-        // design, per that method's own doc comment, for an unrelated FontId(0)-collision reason).
-        // PdfDocumentEditor.ReplaceProgramBytes performs a full-stream REPLACE of the holder's
-        // /FontFile2 on every call (FontDescriptor.Set, not a merge) — so when ApplyAndRecheck
-        // applies all 52 proposals in sequence, every proposal after the first one FOR THE SAME
-        // HOLDER overwrites its predecessor's patched bytes wholesale. Only the last-applied
-        // proposal per holder actually survives; the other 52 - 4 = 48 are silently discarded.
-        // Measured result: 46 findings remain after applying all 52 patches — the 14 legitimate
-        // CFF/CID0 declines (never touched) plus 32 of the 52 patch-targeted findings whose own
-        // proposal was clobbered by a later sibling's proposal on the same shared holder (only 20
-        // of the 52 patch-targeted findings actually close: some incidentally, because the
-        // surviving per-holder patch happens to also fix the same glyphs a sibling finding needed).
-        // 14 + 32 = 46 reconciles; 66 - 46 = 20 genuinely closed. This is a real defect in the F-4a
-        // remediation pipeline (the planner does not merge multiple proposals that target one
-        // physical program holder before apply) — invisible before this task because the pre-fix
-        // by-base-font-name dedup almost always collapsed this doc's many sibling Type0 wrappers
-        // down to ~1 finding per holder, so the collision never arose. Out of scope for the
-        // Task 2 rule-level dedup fix (FontProgramRule.DedupKey) to correct; flagged for the
-        // planner/apply layer. The assertions below stay relative (before/after, not hardcoded
-        // totals) so they do not need re-pinning every time the corpus or detection surface
-        // shifts; this comment records the measured shape and the reconciled mechanism.
+        // Task 6 re-measure (2026-08-18, per-holder merged width patch, tracker issue 38): the
+        // 52-patchable/4-holder collapse this comment previously recorded (52 proposals onto 4
+        // physical /FontFile2 holders, PdfDocumentEditor.ReplaceProgramBytes doing a full-stream
+        // REPLACE per apply so only the LAST-applied proposal per holder survived — 48 of 52
+        // silently discarded, only 20/66 width findings genuinely closing) is FIXED: the planner
+        // now groups every width-patchable finding by HolderGroupKey and proposes exactly ONE
+        // PatchWidthsProposal per holder (the union of every sibling's declared widths, with
+        // cross-sibling conflict detection — see BuildMergedWidthPatch), so ApplyAndRecheck's
+        // per-proposal ReplaceProgramBytes call can no longer clobber a sibling's fix.
+        //
+        // Measured (dotnet test --filter ZZZ_Diagnostic_Measure, since removed): 66 width findings
+        // before; 4 PatchWidthsProposals (one per holder, matching the 4 physical programs),
+        // covering 52 distinct logical fonts between them (coveredFontsTotal=52); 14 DeclineProposals,
+        // all citing "charstrings" (the CID0/CFF-family font — untouched, as it always was). After
+        // applying the 4 merged patches: 14 width findings remain, exactly the 14 CFF/CID0 declines
+        // — every one of the 52 patchable findings now closes (66 - 14 = 52 closed, matching
+        // coveredFontsTotal exactly; zero clobbered). The floor assertion below pins "closed > 20"
+        // (the OLD, broken measurement) as the regression guard — the exact figure (52) is the
+        // measurement, not a hardcoded expectation, since a corpus/detection-surface shift could
+        // legitimately move it without reintroducing the last-write-wins bug this guards against.
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
 
@@ -190,10 +180,15 @@ public class FontProgramWidthRepairCorpusTests
         Assert.True(afterWidthCount < beforeWidthCount,
             $"{file}: width findings did not drop (before {beforeWidthCount}, after {afterWidthCount}) " +
             "— at minimum the CID0 font's finding should legitimately remain while some CID2 " +
-            "findings close; MOST remaining findings here are actually CID2 findings clobbered by " +
-            "a same-holder sibling's patch, not legitimate CID0 holdouts (see the comment above).");
+            "findings close.");
         Assert.True(afterWidthCount > 0,
             $"{file}: expected at least the CID0 font's width finding to legitimately remain, but all cleared.");
+
+        int closed = beforeWidthCount - afterWidthCount;
+        Assert.True(closed > 20,
+            $"{file}: expected the per-holder merge to close STRICTLY MORE than the pre-Task-6 " +
+            $"last-write-wins measurement of 20 (measured 52) — closed {closed} (before " +
+            $"{beforeWidthCount}, after {afterWidthCount}).");
 
         Dictionary<string, int> afterByRule = CountByRule(after);
         foreach ((string ruleId, int beforeCount) in beforeByRule)

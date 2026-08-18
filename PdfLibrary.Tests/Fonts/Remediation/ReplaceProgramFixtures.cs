@@ -436,11 +436,18 @@ internal static class ReplaceProgramFixtures
     /// shape). Drawing ONLY 0x43 (the live code) makes wrapper 2 genuinely dead-code-free on ITS OWN
     /// descendant (14) — needed to build a width-only sibling that is NOT also, accidentally, a
     /// second notdef seed.</para>
+    ///
+    /// <para>Task 6 addition, same idiom: <paramref name="wrapper1Codes"/> is wrapper 2's own sibling
+    /// override, applied to wrapper 1 (default <c>[0x41, 0x42]</c>, matching the original hardcoded
+    /// shape). Drawing ONLY 0x41 makes wrapper 1 ALSO dead-code-free on its own descendant (4) —
+    /// needed for a PURE width-only conflict between two descriptor-sharing composites, with neither
+    /// side ever seeding a notdef group.</para>
     /// </summary>
     public static PdfDocument SharedDescriptorDoc(
         IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
         int descendant2Width = 500,
-        IReadOnlyList<int>? wrapper2Codes = null)
+        IReadOnlyList<int>? wrapper2Codes = null,
+        IReadOnlyList<int>? wrapper1Codes = null)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -514,10 +521,11 @@ internal static class ReplaceProgramFixtures
         };
         doc.AddObject(7, 0, wrapper2);
 
+        string wrapper1Hex = string.Concat((wrapper1Codes ?? [0x41, 0x42]).Select(c => $"{c:X4}"));
         string wrapper2Hex = string.Concat((wrapper2Codes ?? [0x43, 0x44]).Select(c => $"{c:X4}"));
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
             Encoding.ASCII.GetBytes(
-                $"BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
+                $"BT /F0 12 Tf <{wrapper1Hex}> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
         return doc;
     }
@@ -535,8 +543,18 @@ internal static class ReplaceProgramFixtures
     /// mismatches the shared embedded program's actual advance (450,
     /// <see cref="ZeroAdvanceSfntFixture"/>'s <c>gid1Advance</c>) — the same shape
     /// <see cref="WidthPatchFixtures.MismatchDoc"/> uses.
+    ///
+    /// <para>Task 6 additions, following this fixture's own idiom: <paramref name="simpleFontWidth"/>
+    /// overrides the simple font's declared <c>/Widths[0]</c> (default 507, matching the original
+    /// conflicting-with-the-composite's-500 shape) — pass 500 to make it AGREE with descendant 4's own
+    /// declared width for the SAME shared glyph (gid 1), the cross-kind merge-success shape.
+    /// <paramref name="wrapper1Codes"/> overrides which codes the composite wrapper's content stream
+    /// draws (default <c>[0x41, 0x42]</c>, matching the original hardcoded shape, which seeds a notdef
+    /// finding via the dead code 0x42) — drawing ONLY 0x41 removes the notdef finding, isolating the
+    /// width-family merge mechanism from the "declined-replace-group-frees-width" Pass-2 routing.</para>
     /// </summary>
-    public static PdfDocument SimpleFontSharingDescriptorWithCompositeSeedDoc()
+    public static PdfDocument SimpleFontSharingDescriptorWithCompositeSeedDoc(
+        int simpleFontWidth = 507, IReadOnlyList<int>? wrapper1Codes = null)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -579,8 +597,8 @@ internal static class ReplaceProgramFixtures
         doc.AddObject(1, 0, wrapper);
 
         // Simple TrueType font (object 30): shares descriptor 2 (and so /FontFile2 3) directly —
-        // declared width 507 vs the program's actual advance 450 (WidthPatchFixtures.MismatchDoc's
-        // shape).
+        // declared width (simpleFontWidth) vs the program's actual advance 450
+        // (WidthPatchFixtures.MismatchDoc's shape).
         doc.AddObject(30, 0, new PdfDictionary
         {
             [N("Type")] = N("Font"),
@@ -588,12 +606,13 @@ internal static class ReplaceProgramFixtures
             [N("BaseFont")] = N("ABCDEF+SharedSimpleWidths"),
             [N("FirstChar")] = new PdfInteger(10),
             [N("LastChar")] = new PdfInteger(10),
-            [N("Widths")] = new PdfArray(new PdfInteger(507)),
+            [N("Widths")] = new PdfArray(new PdfInteger(simpleFontWidth)),
             [N("FontDescriptor")] = Ref(2),
         });
 
+        string wrapperHex = string.Concat((wrapper1Codes ?? [0x41, 0x42]).Select(c => $"{c:X4}"));
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <0A> Tj ET")));
+            Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{wrapperHex}> Tj /F1 12 Tf <0A> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 30);
         return doc;
     }

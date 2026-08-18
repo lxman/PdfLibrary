@@ -196,6 +196,37 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             }
         }
 
+        // Task 6 (tracker issue 38): WIDTH-family grouping — kind-agnostic (a simple TrueType font and
+        // a Type0CidType2 descendant can share one FontFile2/descriptor) and INDEPENDENT of the notdef
+        // family above: a pair sharing a holder purely over a width mismatch never seeds a notdef
+        // group at all. Scoped to entries THIS CALL actually named a font-program finding for (no
+        // inventory-scoped expansion, unlike the notdef family): an in-place hmtx PATCH only ever
+        // touches glyph ids the union of CONSULTED siblings' own declared widths names, and the
+        // union's cross-member conflict check (BuildMergedWidthPatch) already catches two consulted
+        // siblings disagreeing about a shared glyph id — a sibling this call was never asked about
+        // contributes nothing to that union and is not at risk of an advance it never declared an
+        // opinion on. CFF-family entries (Type0CidType0, Type1, Type3) are excluded by the Kind check:
+        // a shared-FontFile2 group is TrueType-family by construction (a CFF program lives in
+        // /FontFile3, never /FontFile2), so a CFF sibling never becomes a width-family MEMBER here —
+        // it always declines independently, on its own kind, via the ordinary per-entry switch below,
+        // exactly as before this task.
+        var widthMemberOfGroup = new Dictionary<(int ObjectNumber, int? ProgramHolderObjectNumber), long>();
+        var widthGroupMembers = new Dictionary<long, List<FontInventoryEntry>>();
+        foreach ((string ruleId, FontInventoryEntry entry) in resolved)
+        {
+            if (ruleId != "font-program") continue;
+            if (entry.Kind is not (FontKind.TrueType or FontKind.Type0CidType2)) continue;
+            if (!entry.IsAddressable || entry.ProgramHolderId is null) continue;
+            if (!HasWidthFinding(entry, fontProgramFindings.Value)) continue;
+
+            long key = HolderGroupKey(document, entry);
+            var idKey = (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber);
+            widthMemberOfGroup[idKey] = key;
+            if (!widthGroupMembers.TryGetValue(key, out List<FontInventoryEntry>? members))
+                widthGroupMembers[key] = members = [];
+            members.Add(entry);
+        }
+
         // Pass 2: dispatch. A multi-entry group is built ONCE (at the position of its FIRST member in
         // `resolved` — an expansion-only member never appears in `resolved` at all, since it carried
         // no finding this call) by the merged builder; every other entry — including a notdef-eligible
@@ -220,22 +251,71 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // so there is no double-writer to corrupt — only ONE proposal (this entry's own) ever touches
         // its program.
         var processedGroups = new HashSet<long>();
+        // Task 6: whether a given notdef group's ONE call to ProposeMergedReplace ended up PROPOSING
+        // (a single ReplaceProgramProposal) rather than declining (N DeclineProposals) — read by every
+        // member's own turn through this loop, not just the member that happened to trigger the call.
+        var groupProposedReplace = new Dictionary<long, bool>();
+        var processedWidthGroups = new HashSet<long>();
         foreach ((string ruleId, FontInventoryEntry entry) in resolved)
         {
+            var idKey = (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber);
+            var freedFromDeclinedGroup = false;
+
             if (ruleId == "font-program"
                 && entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2
-                && memberOfGroup.TryGetValue(
-                    (entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber), out long key))
+                && memberOfGroup.TryGetValue(idKey, out long key))
             {
                 List<FontInventoryEntry> members = groupMembers[key];
                 if (members.Count > 1)
                 {
-                    if (!processedGroups.Add(key)) continue; // this group's proposals already emitted
-                    HashSet<int> seedIds = seedIdsByKey[key];
-                    proposals.AddRange(
-                        ProposeMergedReplace(document, members, ruleId, fontProgramFindings.Value, seedIds));
-                    continue;
+                    if (processedGroups.Add(key))
+                    {
+                        HashSet<int> seedIds = seedIdsByKey[key];
+                        IReadOnlyList<FontProposal> groupProposals = ProposeMergedReplace(
+                            document, members, ruleId, fontProgramFindings.Value, seedIds);
+                        proposals.AddRange(groupProposals);
+                        groupProposedReplace[key] = groupProposals is [ReplaceProgramProposal];
+                    }
+
+                    // Ruling (proposed-only skip, 2026-08-17): the subsumption skip applies ONLY when
+                    // the group actually PROPOSED — its merged advance patch already unions every
+                    // member's declared widths (BuildMergedReplacement), so a member's own 6.2.11.5
+                    // finding is covered by construction and a second, independent width proposal
+                    // against the SAME program would be a last-write-wins corruption, not merely
+                    // redundant. A DECLINED group writes nothing at all, so it frees every member's
+                    // width finding for the width-family arm below instead — including a member that
+                    // ALSO carries its own notdef finding (the group's per-member decline already
+                    // speaks for that half; the width half is a genuinely separate, independently
+                    // fixable fact, exactly like a simple font's own "patches widths, leaves the other
+                    // finding" convention). This entry must NOT fall into the ordinary switch's
+                    // ProposeWidthPatch call below unconditionally, though: that method's own
+                    // hasNotdef&&composite gate would re-attempt a SINGLETON ProposeProgramReplace,
+                    // unguarded by the group's own shared-holder gates (deleted in Task 4) — exactly
+                    // the corruption shape Task 4's C1 fix exists to prevent. `freedFromDeclinedGroup`
+                    // routes such an entry to the width-only core directly instead.
+                    if (groupProposedReplace[key]) continue;
+
+                    // A member with no width finding of its own gets nothing further: the group's
+                    // per-member decline (emitted above, for every member) already speaks for it, and
+                    // ProposeWidthPatchOnly's own `!hasWidth` branch would otherwise produce a WRONG
+                    // decline text for a composite entry here (it names "a simple font" — see
+                    // SimpleFontMissingGlyphReason — which is only correct for the singleton dispatch's
+                    // own non-composite callers). Only set the flag when widthMemberOfGroup confirms
+                    // hasWidth is true for this entry.
+                    if (!widthMemberOfGroup.ContainsKey(idKey)) continue;
+                    freedFromDeclinedGroup = true;
                 }
+            }
+
+            if (ruleId == "font-program"
+                && entry.Kind is FontKind.TrueType or FontKind.Type0CidType2
+                && widthMemberOfGroup.TryGetValue(idKey, out long widthKey)
+                && widthGroupMembers[widthKey].Count > 1)
+            {
+                if (!processedWidthGroups.Add(widthKey)) continue; // this holder's width group already emitted
+                proposals.AddRange(BuildMergedWidthPatch(
+                    document, widthGroupMembers[widthKey], ruleId, fontProgramFindings.Value));
+                continue;
             }
 
             // Null means "this font has nothing to propose AND nothing to report" — only
@@ -246,7 +326,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             {
                 "font-embedded" => ProposeEmbed(document, entry, ruleId),
                 "font-subset-coverage" => ProposeRegenerate(document, entry, ruleId),
-                "font-program" => ProposeWidthPatch(document, entry, ruleId, fontProgramFindings.Value),
+                "font-program" => freedFromDeclinedGroup
+                    ? ProposeWidthPatchOnly(
+                        document, entry, ruleId, FontProgramFindingsFor(entry, fontProgramFindings.Value))
+                    : ProposeWidthPatch(document, entry, ruleId, fontProgramFindings.Value),
                 _ => ProposeToUnicode(document, entry, ruleId),
             };
 
@@ -304,6 +387,12 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// to decide whether an entry is eligible to join a merged group at all.</summary>
     private static bool HasNotdefFinding(FontInventoryEntry entry, ILookup<int, Finding> ruleFindings) =>
         FontProgramFindingsFor(entry, ruleFindings).Any(f => ClauseKey(f.Clause) == "6.2.11.8");
+
+    /// <summary>Whether <paramref name="entry"/> carries a 6.2.11.5 (declared-width) font-program
+    /// finding — Task 6's own analogue of <see cref="HasNotdefFinding"/>, used to seed the
+    /// WIDTH-family grouping in <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>.</summary>
+    private static bool HasWidthFinding(FontInventoryEntry entry, ILookup<int, Finding> ruleFindings) =>
+        FontProgramFindingsFor(entry, ruleFindings).Any(f => ClauseKey(f.Clause) == "6.2.11.5");
 
     /// <summary>
     /// Proposes embedding a font program for a <c>font-embedded</c> finding, or explains why it
@@ -435,11 +524,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 + "object, so Pellucid cannot address its font program to correct it.");
         }
 
-        FontId holder = entry.ProgramHolderId ?? entry.Id;
-
         List<Finding> mine = FontProgramFindingsFor(entry, ruleFindings);
-        bool hasWidth = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.5");
-        bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
 
         // Controller ruling: a composite font's .notdef finding routes to the whole-program-replace
         // arm (the only remedy that can fix a missing glyph), but a SIMPLE font carrying BOTH a
@@ -452,6 +537,31 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         bool composite = entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2;
         if (hasNotdef && composite)
             return ProposeProgramReplace(document, entry, ruleId, mine);
+
+        return ProposeWidthPatchOnly(document, entry, ruleId, mine);
+    }
+
+    /// <summary>
+    /// Task 6 (tracker issue 38): the width-only core <see cref="ProposeWidthPatch"/> extracted from,
+    /// once the notdef&amp;&amp;composite routing decision is already settled — reused directly by
+    /// <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s "declined-replace-
+    /// group-frees-width" path (a composite member whose notdef GROUP declined, which must NOT
+    /// re-enter <see cref="ProposeWidthPatch"/>'s own hasNotdef&amp;&amp;composite gate — that would
+    /// re-attempt a SINGLETON <see cref="ProposeProgramReplace"/>, unguarded by the group's own
+    /// shared-holder gates, exactly the corruption shape Task 4's C1 fix exists to prevent) — and by
+    /// the ordinary singleton dispatch for every other <c>font-program</c> entry, unchanged. Callers
+    /// that already know <paramref name="mine"/> is non-empty and width-carrying (Task 6's freed-width
+    /// callers) still pass through the same <c>!hasWidth</c> gate below; it simply never fires for
+    /// them.
+    /// </summary>
+    private FontProposal ProposeWidthPatchOnly(
+        PdfDocument document, FontInventoryEntry entry, string ruleId, List<Finding> mine)
+    {
+        FontId holder = entry.ProgramHolderId ?? entry.Id;
+        bool hasWidth = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.5");
+        bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
+        bool hasNotdef = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.8");
+
         if (!hasWidth)
         {
             return Decline(entry, ruleId, mine.Count == 0
@@ -587,6 +697,203 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         return new PatchWidthsProposal(
             holder, ruleId, patched, advanceByGid.Count, worst, hasOther, CoveredFonts: [entry.Id]);
+    }
+
+    /// <summary>Verbatim shared between <see cref="BuildMergedReplacement"/>'s own width-union conflict
+    /// (the SUBSTITUTE program's advances) and <see cref="BuildMergedWidthPatch"/>'s (the EXISTING
+    /// program's advances) — a later sweep's taxonomy keys on this exact text, so both call sites use
+    /// one source rather than two copies that could drift.</summary>
+    private const string MergeWidthConflictReason =
+        "Two fonts sharing this embedded program declare different widths for the "
+        + "same glyph, so one patched program cannot serve both.";
+
+    /// <summary>
+    /// Task 6 (tracker issue 38): the merged builder for a multi-entry WIDTH-family group — N logical
+    /// fonts (simple TrueType and/or Type0CidType2 composite, kind-agnostic where the program is
+    /// shared) sharing one embedded program via <see cref="HolderGroupKey"/>, each already known (by
+    /// <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s width-family seeding)
+    /// to carry its own 6.2.11.5 finding. Mirrors <see cref="BuildMergedReplacement"/>'s shape for N
+    /// siblings instead of one, but for an IN-PLACE hmtx patch of the EXISTING program rather than a
+    /// whole-face substitute: per-member target resolution (the SAME <see cref="ProgramWidthResolver"/>
+    /// enumeration the singleton core above uses), union with cross-member conflict detection, ONE
+    /// <see cref="SfntAdvancePatcher.Patch"/> call.
+    ///
+    /// <para>Every member here already carries its own genuine width finding (the seeding gate in
+    /// <c>Propose</c> requires it), so — unlike <see cref="BuildMergedReplacement"/>'s notdef-family
+    /// declines, which must distinguish a SEED from an inventory-expansion-only sibling to avoid
+    /// asserting a false fact about the latter — every decline reason below is equally true of every
+    /// member and is reported to all of them verbatim via <see cref="DeclineAll"/>; there is no
+    /// non-seed to wrap.</para>
+    ///
+    /// <para>A per-member shape/parse failure (missing /FontDescriptor, no /FontFile2, unreadable
+    /// dictionary, non-Identity composite encoding, no /Widths) declines the WHOLE group, matching the
+    /// notdef family's own "any failure blocks everyone" convention — simpler to reason about than a
+    /// partial merge, and this task's own test list does not need finer granularity.</para>
+    /// </summary>
+    private static IReadOnlyList<FontProposal> BuildMergedWidthPatch(
+        PdfDocument document, IReadOnlyList<FontInventoryEntry> members, string ruleId,
+        ILookup<int, Finding> ruleFindings)
+    {
+        FontInventoryEntry first = members[0];
+        FontId holder0 = first.ProgramHolderId ?? first.Id; // non-null: seeding required ProgramHolderId
+
+        var perMember = new List<(FontInventoryEntry Entry, bool HasOther, Dictionary<ushort, double> TargetByGid, double Worst)>();
+        EmbeddedFontMetrics? sharedMetrics = null;
+        PdfStream? sharedFontFile2 = null;
+
+        foreach (FontInventoryEntry entry in members)
+        {
+            FontId holder = entry.ProgramHolderId ?? entry.Id;
+            List<Finding> mine = FontProgramFindingsFor(entry, ruleFindings);
+            bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
+
+            // Unreachable through the width-family seeding gate (Kind is already TrueType or
+            // Type0CidType2 there), kept as a defensive gate for a direct caller — mirrors the
+            // singleton core's own kind switch.
+            if (entry.Kind is FontKind.Type3 or FontKind.Type0CidType0 or FontKind.Type1)
+            {
+                return DeclineAll(members, ruleId, entry.Kind == FontKind.Type3
+                    ? "Type 3 font widths come from each glyph's own drawing procedure, which Pellucid "
+                      + "does not rewrite."
+                    : "This font's program stores its advances in CFF charstrings, which Pellucid "
+                      + "cannot yet rewrite.");
+            }
+
+            if (document.GetObject(holder.ObjectNumber) is not PdfDictionary holderDict
+                || Resolve(document, holderDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
+            {
+                return DeclineAll(members, ruleId,
+                    "The font has no /FontDescriptor, so there is no embedded program to correct.");
+            }
+            if (Resolve(document, descriptor.Get("FontFile2")) is not PdfStream fontFile2)
+            {
+                return DeclineAll(members, ruleId,
+                    "The font's program is not carried as a /FontFile2 sfnt, so its advances cannot be "
+                    + "patched in place.");
+            }
+            sharedFontFile2 ??= fontFile2;
+
+            if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+                || PdfFont.Create(fontDict, document) is not { } pdfFont)
+            {
+                return DeclineAll(members, ruleId,
+                    "This font's dictionary could not be read, so Pellucid cannot compare its widths.");
+            }
+            EmbeddedFontMetrics? metrics = pdfFont.GetEmbeddedMetrics();
+            if (metrics is null || !metrics.IsValid)
+            {
+                return DeclineAll(members, ruleId,
+                    "The embedded font program could not be parsed, so correcting its advances would "
+                    + "be a guess.");
+            }
+            sharedMetrics ??= metrics;
+
+            IEnumerable<WidthComparison> tuples;
+            if (entry.Kind == FontKind.Type0CidType2)
+            {
+                if (pdfFont is not Type0Font type0 || type0.DescendantFont is not CidFont cid
+                    || type0.EncodingName is not ("Identity-H" or "Identity-V"))
+                {
+                    return DeclineAll(members, ruleId,
+                        "This composite font's encoding is not an Identity CMap, so Pellucid cannot "
+                        + "prove which glyph each character selects.");
+                }
+                tuples = ProgramWidthResolver.Composite(
+                    cid, metrics, cidKeyedCff: false, entry.UsedCodes.Distinct());
+            }
+            else
+            {
+                if (Resolve(document, fontDict.Get("Widths")) is not PdfArray widths)
+                {
+                    return DeclineAll(members, ruleId,
+                        "The font declares no /Widths array, so there is nothing to reconcile the "
+                        + "program against.");
+                }
+                tuples = ProgramWidthResolver.Simple(
+                    pdfFont, metrics, widths, entry.UsedCodes.Distinct(), isTrueType: true);
+            }
+
+            var targetByGid = new Dictionary<ushort, double>();
+            double memberWorst = 0;
+            foreach (WidthComparison w in tuples)
+            {
+                memberWorst = Math.Max(memberWorst, Math.Abs(w.Declared - w.Program));
+
+                if (w.Declared == 0 && w.Program > 0)
+                {
+                    return DeclineAll(members, ruleId,
+                        "The document declares a zero width where the program has a real advance; "
+                        + "patching the program to zero would visibly change layout in renderers that "
+                        + "fall back to program advances, so Pellucid leaves it alone.");
+                }
+                if (targetByGid.TryGetValue(w.Gid, out double existing))
+                {
+                    if (Math.Abs(existing - w.Declared) > FontProgramRule.WidthTolerance)
+                    {
+                        return DeclineAll(members, ruleId,
+                            "Two character codes share one glyph but declare different widths, so no "
+                            + "single program advance can satisfy both.");
+                    }
+                    continue;
+                }
+                targetByGid[w.Gid] = w.Declared;
+            }
+
+            perMember.Add((entry, hasOther, targetByGid, memberWorst));
+        }
+
+        // Union across members with cross-member conflict detection (spec-mirroring
+        // BuildMergedReplacement's own width union) — the reason text is load-bearing verbatim.
+        var unionTargetByGid = new Dictionary<ushort, double>();
+        foreach ((FontInventoryEntry _, bool _, Dictionary<ushort, double> targetByGid, double _) in perMember)
+        {
+            foreach ((ushort gid, double declared) in targetByGid)
+            {
+                if (unionTargetByGid.TryGetValue(gid, out double existing))
+                {
+                    if (Math.Abs(existing - declared) > FontProgramRule.WidthTolerance)
+                        return DeclineAll(members, ruleId, MergeWidthConflictReason);
+                    continue;
+                }
+                unionTargetByGid[gid] = declared;
+            }
+        }
+
+        double worst = perMember.Count > 0 ? perMember.Max(m => m.Worst) : 0;
+        if (worst <= FontProgramRule.WidthTolerance)
+        {
+            return DeclineAll(members, ruleId,
+                "The width mismatch could not be reproduced over the character codes this document "
+                + "uses, so there is nothing Pellucid can safely correct.");
+        }
+
+        int upm = sharedMetrics!.UnitsPerEm <= 0 ? 1000 : sharedMetrics.UnitsPerEm;
+        var advanceByGid = new Dictionary<ushort, ushort>();
+        foreach ((ushort gid, double declared) in unionTargetByGid)
+        {
+            var fontUnits = (ushort)Math.Clamp(Math.Round(declared * upm / 1000.0), 0, ushort.MaxValue);
+            if (fontUnits != sharedMetrics.GetAdvanceWidth(gid))
+                advanceByGid[gid] = fontUnits;
+        }
+        if (advanceByGid.Count == 0)
+        {
+            return DeclineAll(members, ruleId,
+                "Every used glyph's program advance already matches its declared width after "
+                + "rounding, so there is nothing to patch.");
+        }
+
+        byte[] program = sharedFontFile2!.GetDecodedData(document.Decryptor);
+        byte[]? patched = SfntAdvancePatcher.Patch(program, advanceByGid, out string? failReason);
+        if (patched is null)
+        {
+            return DeclineAll(members, ruleId, $"The font program cannot be patched: {failReason}");
+        }
+
+        bool leavesOther = perMember.Any(m => m.HasOther);
+        var proposal = new PatchWidthsProposal(
+            holder0, ruleId, patched, advanceByGid.Count, worst, leavesOther,
+            CoveredFonts: members.Select(m => m.Id).ToList());
+        return [proposal];
     }
 
     /// <summary>
@@ -1042,10 +1349,8 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     if (Math.Abs(existing - declared) > FontProgramRule.WidthTolerance)
                     {
-                        return new MergedResult(DeclineGroupFact(allEntries, ruleId,
-                            "Two fonts sharing this embedded program declare different widths for the "
-                            + "same glyph, so one patched program cannot serve both.",
-                            seedIds),
+                        return new MergedResult(DeclineGroupFact(
+                            allEntries, ruleId, MergeWidthConflictReason, seedIds),
                             classified.Format);
                     }
                     continue;
