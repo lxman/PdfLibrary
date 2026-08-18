@@ -119,11 +119,54 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // for this task.
         var seen = new HashSet<(int, int?, string)>();
 
+        // Pass 1: resolve every distinct (ruleId, entry) pair this call was given, in input order,
+        // AND — for font-program findings that are notdef/composite-eligible (the same condition
+        // ProposeWidthPatch itself gates on below) — group them by HolderGroupKey (issue 38). Grouping
+        // is scoped to what THIS CALL was given: a caller that passes only ONE of two sharing wrappers'
+        // findings gets the plain singleton path for it, unaware of the sibling — see
+        // ReplaceProgramProposalTests' promoted guard-era tests for that shape.
+        var resolved = new List<(string RuleId, FontInventoryEntry Entry)>();
+        var memberOfGroup = new Dictionary<FontId, long>();
+        var groupMembers = new Dictionary<long, List<FontInventoryEntry>>();
+
         foreach ((string ruleId, int objectNumber) in findings)
         {
             if (!HandledRules.Contains(ruleId)) continue;
             if (FontInventory.Find(inventory, objectNumber) is not { } entry) continue;
             if (!seen.Add((entry.Id.ObjectNumber, entry.ProgramHolderId?.ObjectNumber, ruleId))) continue;
+
+            resolved.Add((ruleId, entry));
+
+            if (ruleId == "font-program"
+                && entry.ProgramHolderId is not null
+                && entry.Kind is FontKind.Type0CidType0 or FontKind.Type0CidType2
+                && HasNotdefFinding(entry, fontProgramFindings.Value))
+            {
+                long key = HolderGroupKey(document, entry);
+                memberOfGroup[entry.Id] = key;
+                if (!groupMembers.TryGetValue(key, out List<FontInventoryEntry>? members))
+                    groupMembers[key] = members = [];
+                members.Add(entry);
+            }
+        }
+
+        // Pass 2: dispatch. A multi-entry group is built ONCE (at the position of its FIRST member)
+        // by the merged builder; every other entry — including a notdef-eligible SINGLETON, whose own
+        // group has exactly one member — takes the EXISTING per-entry switch unchanged, so the
+        // degenerate (non-sharing) case is byte-identical to before this task.
+        var processedGroups = new HashSet<long>();
+        foreach ((string ruleId, FontInventoryEntry entry) in resolved)
+        {
+            if (ruleId == "font-program" && memberOfGroup.TryGetValue(entry.Id, out long key))
+            {
+                List<FontInventoryEntry> members = groupMembers[key];
+                if (members.Count > 1)
+                {
+                    if (!processedGroups.Add(key)) continue; // this group's proposals already emitted
+                    proposals.AddRange(ProposeMergedReplace(document, members, ruleId, fontProgramFindings.Value));
+                    continue;
+                }
+            }
 
             // Null means "this font has nothing to propose AND nothing to report" — only
             // ProposeRegenerate produces it, for a font carrying no subset declaration at all (see its
@@ -143,6 +186,40 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         return new FontRemediationProposal(proposals);
     }
+
+    /// <summary>
+    /// Groups a multi-entry notdef-family font-program share for <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>
+    /// (spec §4, tracker issue 38): the resolved indirect <c>/FontDescriptor</c> object number when
+    /// <paramref name="entry"/>'s program holder has one, else the holder's own object number. Only
+    /// meaningful for an entry with a non-null <see cref="FontInventoryEntry.ProgramHolderId"/> — the
+    /// caller gates on that before calling this, so every entry reaching here is addressable (a
+    /// program holder is only non-null when both the font dictionary AND the holder are indirect).
+    /// </summary>
+    private static long HolderGroupKey(PdfDocument document, FontInventoryEntry entry)
+    {
+        if (entry.ProgramHolderId is not { } holder) return entry.Id.ObjectNumber;
+        return DescriptorObjectNumber(document, holder) ?? holder.ObjectNumber;
+    }
+
+    /// <summary>The <c>font-program</c> findings attributable to <paramref name="entry"/> — its own
+    /// object, plus its program holder's when that differs (a Type0 wrapper's 6.2.11.8/6.2.11.5
+    /// findings are reported against the DESCENDANT CIDFont FontProgramRule actually parsed, not the
+    /// wrapper). Shared by <see cref="ProposeWidthPatch"/>'s own dispatch and <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s
+    /// group-eligibility check (<see cref="HasNotdefFinding"/>) so the two cannot disagree about what
+    /// "this entry's findings" means.</summary>
+    private static List<Finding> FontProgramFindingsFor(FontInventoryEntry entry, ILookup<int, Finding> ruleFindings) =>
+        ruleFindings[entry.Id.ObjectNumber]
+            .Concat(entry.ProgramHolderId is { } ph && ph.ObjectNumber != entry.Id.ObjectNumber
+                ? ruleFindings[ph.ObjectNumber]
+                : Enumerable.Empty<Finding>())
+            .ToList();
+
+    /// <summary>Whether <paramref name="entry"/> carries a 6.2.11.8 (.notdef) font-program finding —
+    /// the SAME test <see cref="ProposeWidthPatch"/> uses to decide whether a composite font's finding
+    /// routes to <see cref="ProposeProgramReplace"/>, reused by <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>
+    /// to decide whether an entry is eligible to join a merged group at all.</summary>
+    private static bool HasNotdefFinding(FontInventoryEntry entry, ILookup<int, Finding> ruleFindings) =>
+        FontProgramFindingsFor(entry, ruleFindings).Any(f => ClauseKey(f.Clause) == "6.2.11.8");
 
     /// <summary>
     /// Proposes embedding a font program for a <c>font-embedded</c> finding, or explains why it
@@ -276,11 +353,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 
         FontId holder = entry.ProgramHolderId ?? entry.Id;
 
-        List<Finding> mine = ruleFindings[entry.Id.ObjectNumber]
-            .Concat(entry.ProgramHolderId is { } ph && ph.ObjectNumber != entry.Id.ObjectNumber
-                ? ruleFindings[ph.ObjectNumber]
-                : Enumerable.Empty<Finding>())
-            .ToList();
+        List<Finding> mine = FontProgramFindingsFor(entry, ruleFindings);
         bool hasWidth = mine.Any(f => ClauseKey(f.Clause) == "6.2.11.5");
         bool hasOther = mine.Any(f => ClauseKey(f.Clause) != "6.2.11.5");
 
@@ -463,14 +536,15 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
             return Decline(entry, ruleId, SimpleFontMissingGlyphReason);
 
-        // Controller ruling (tracker issue 38): see SharedHolderReason's doc comment. Recomputed from
-        // the document rather than threaded through from Propose()'s own inventory read, so the same
-        // guard reaches AssessReplacementCandidate (a PUBLIC method Tasks 6/7/8 compile against
-        // verbatim) without widening its signature. FontInventory.Read is a pure function of the
-        // document, so this necessarily agrees with whatever inventory Propose() built for this call.
-        if (SharedHolderReason(document, entry, FontInventory.Read(document)) is { } sharedReason)
-            return Decline(entry, ruleId, sharedReason);
-
+        // F-4b Task 4 (tracker issue 38): the guard that used to sit here — decline whenever another
+        // entry shares this entry's program holder or descriptor — is DELETED. Propose() now groups
+        // notdef-eligible font-program findings by holder BEFORE ever calling this method, and routes
+        // a multi-entry group to ProposeMergedReplace instead; a call that reaches HERE for a
+        // composite, notdef-finding entry is therefore already known to be a SINGLETON within the
+        // findings this call was given (see Propose's own doc comment on that scoping). The guard
+        // itself (SharedHolderReason) still exists as a TEMPORARY private helper for
+        // AssessReplacementCandidate's manual path, which Task 4 does not extend to groups — see that
+        // method's own call site, and Task 7 for its retirement.
         if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
             || PdfFont.Create(fontDict, document) is not Type0Font type0
             || type0.DescendantFont is not CidFont cid)
@@ -601,6 +675,345 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     }
 
     /// <summary>
+    /// F-4b Task 4 (spec §4, tracker issue 38): the merged builder for a multi-entry NOTDEF-family
+    /// group — N logical (Type0) fonts sharing one embedded program, either DIRECTLY (one descendant
+    /// CIDFont) or at DESCRIPTOR level (distinct descendants, one shared <c>/FontDescriptor</c>).
+    /// Replaces the deleted <c>SharedHolderReason</c> decline for the automatic path: instead of
+    /// refusing to touch any of them, this builds ONE <see cref="ReplaceProgramProposal"/> naming a
+    /// target per member.
+    ///
+    /// <para>Every decline this method can produce is reported to EVERY member (one
+    /// <see cref="DeclineProposal"/> each, identical reason text — <see cref="DeclineAll"/>): a
+    /// per-sibling SHAPE failure (unaddressable, non-composite, unreadable, non-Identity encoding, no
+    /// <c>/ToUnicode</c>) is wrapped in the <c>merge-blocked-sibling</c> template naming that sibling's
+    /// own would-be singleton reason (<see cref="MergeBlockedSibling"/>); every other failure (no
+    /// substitute installed, non-TrueType, a coverage gap, a CID or width conflict between siblings, or
+    /// the group-wide cid0-only case) is a fact about the GROUP as a whole and uses its own direct
+    /// reason text.</para>
+    ///
+    /// <para>Task 3 amendment (spec §6, controller ruling, commit 905bae1): a member drawing CID 0 no
+    /// longer blocks construction — only that MEMBER's own <see cref="ReplaceTarget.ClosesFinding"/> is
+    /// false. Checked right after the per-sibling shape gate, before ever resolving a substitute
+    /// (mirroring <see cref="ProposeProgramReplace"/>'s own cid0 gate running before its own
+    /// <c>fonts.Resolve</c> call): if EVERY member draws CID 0, none would close, and the whole group
+    /// declines <see cref="Cid0OnlyDeclineReason"/> unconditionally — regardless of whether a substitute
+    /// is even available — exactly like the singleton gate.</para>
+    /// </summary>
+    private IReadOnlyList<FontProposal> ProposeMergedReplace(
+        PdfDocument document, IReadOnlyList<FontInventoryEntry> group, string ruleId,
+        ILookup<int, Finding> ruleFindings)
+    {
+        // Step 1: gate every sibling individually — the SAME shape gates ProposeProgramReplace runs
+        // 1–4 for a singleton, just fanned out to the whole group on the first failure.
+        var siblings = new List<(FontInventoryEntry Entry, Type0Font Type0, CidFont Cid)>();
+        foreach (FontInventoryEntry entry in group)
+        {
+            if (!entry.IsAddressable)
+            {
+                return DeclineAll(group, ruleId, MergeBlockedSibling(
+                    "This font is written directly into the page's resources rather than as its own "
+                    + "object, so Pellucid cannot address its font program to correct it."));
+            }
+
+            if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
+                return DeclineAll(group, ruleId, MergeBlockedSibling(SimpleFontMissingGlyphReason));
+
+            if (document.GetObject(entry.Id.ObjectNumber) is not PdfDictionary fontDict
+                || PdfFont.Create(fontDict, document) is not Type0Font type0
+                || type0.DescendantFont is not CidFont cid)
+            {
+                return DeclineAll(group, ruleId, MergeBlockedSibling(
+                    "This font's dictionary could not be read as a composite font, so Pellucid cannot "
+                    + "correct its program."));
+            }
+
+            if (type0.EncodingName is not ("Identity-H" or "Identity-V"))
+            {
+                return DeclineAll(group, ruleId, MergeBlockedSibling(
+                    "This composite font's encoding is not an Identity CMap, so Pellucid cannot prove "
+                    + "which glyph each character selects."));
+            }
+
+            if (type0.ToUnicode is null)
+            {
+                return DeclineAll(group, ruleId, MergeBlockedSibling(
+                    "This font declares no /ToUnicode mapping, which is the only honest source for "
+                    + "what its characters mean — a replacement face cannot be chosen without it."));
+            }
+
+            siblings.Add((entry, type0, cid));
+        }
+
+        // Task 3 amendment: group-wide cid0-only gate, BEFORE substitute resolution — a member drawing
+        // CID 0 never closes its own finding (ISO 32000 §9.7.4.2, issue 40), so if NONE of them would
+        // close, decline unconditionally, exactly like the singleton gate.
+        if (!siblings.Any(s => !s.Entry.UsedCodes.Contains(0)))
+            return DeclineAll(group, ruleId, Cid0OnlyDeclineReason);
+
+        // Step 2: resolve the substitute ONCE — program style from the shared program (issue 43's
+        // own code path, read off the FIRST sibling since the program is shared), request from the
+        // FIRST sibling's FamilyName (their names may differ; the search term does not need to agree
+        // across siblings). The issue-39 synthetic retry runs exactly as ProposeProgramReplace's own.
+        FontInventoryEntry first = siblings[0].Entry;
+        FontId holder0 = first.ProgramHolderId!.Value; // non-null: IsAddressable gated above
+        (bool Bold, bool Italic)? programStyle =
+            siblings[0].Type0.GetEmbeddedMetrics() is { IsValid: true, HasHeadTable: true } original
+                ? (original.IsBold, original.IsItalic)
+                : null;
+
+        FontRequest request = BuildRequest(document, first, holder0, programStyle);
+        FontMatch? match = fonts.Resolve(request);
+
+        MergedResult primary = match is null
+            ? new MergedResult(DeclineAll(group, ruleId,
+                $"No font matching '{first.FamilyName}' is installed on this computer. Installing it "
+                + "would let Pellucid replace the deficient program."), null)
+            : BuildMergedReplacement(siblings, ruleId, match.Data, match.FaceIndex);
+
+        if (primary.Proposals is [ReplaceProgramProposal])
+            return primary.Proposals;
+
+        if (match is null || primary.Format is not FontProgramFormat.TrueType)
+        {
+            (bool serif, bool mono, bool bold, bool italic) =
+                SubstituteFontResolver.Classify(request.BaseFont, siblings[0].Type0.DescendantDescriptor);
+            if (programStyle is { } style)
+                (bold, italic) = style;
+            string synthetic = SubstituteFontResolver.SyntheticStd14Name(serif, mono, bold, italic);
+
+            if (!string.Equals(synthetic, request.BaseFont, StringComparison.OrdinalIgnoreCase))
+            {
+                FontMatch? retryMatch = fonts.Resolve(request with { BaseFont = synthetic });
+                if (retryMatch is not null)
+                {
+                    MergedResult retry = BuildMergedReplacement(siblings, ruleId, retryMatch.Data, retryMatch.FaceIndex);
+                    if (retry.Proposals is [ReplaceProgramProposal])
+                        return retry.Proposals;
+                }
+            }
+        }
+
+        return primary.Proposals;
+    }
+
+    /// <summary>The merged construction core (spec §4 steps 2–5) once a substitute's bytes have been
+    /// resolved: byte gates + TrueType check, per-sibling coverage (union, spec §3 step 2), per-target
+    /// CID maps (direct-sharing union with cid-conflict detection, or per-descriptor for descriptor
+    /// sharing), the advance patch (union of declared widths with width-conflict detection), restored-
+    /// code count, and the descriptor. Mirrors <see cref="BuildReplacement"/>'s shape for N siblings
+    /// instead of one. <see cref="MergedResult.Format"/> is set whenever classification succeeded, even
+    /// on a decline, so <see cref="ProposeMergedReplace"/>'s retry can decide without reclassifying.</summary>
+    private static MergedResult BuildMergedReplacement(
+        List<(FontInventoryEntry Entry, Type0Font Type0, CidFont Cid)> siblings, string ruleId,
+        byte[] bytes, int faceIndex)
+    {
+        IReadOnlyList<FontInventoryEntry> allEntries = siblings.Select(s => s.Entry).ToList();
+        FontInventoryEntry first = siblings[0].Entry;
+
+        ByteGateOutcome gates = RunByteGates(bytes, faceIndex, first.FamilyName, simpleFont: false);
+        if (gates.HardBlockReason is not null)
+            return new MergedResult(DeclineAll(allEntries, ruleId, gates.HardBlockReason), gates.Classified?.Format);
+
+        EmbeddedFontMetrics metrics = gates.Metrics!;
+        string resolvedFamily = gates.ResolvedFamily!;
+        ClassifiedProgram classified = gates.Classified!;
+
+        if (classified.Format != FontProgramFormat.TrueType)
+        {
+            return new MergedResult(DeclineAll(allEntries, ruleId,
+                $"The face found for '{first.FamilyName}' is not a TrueType program, and only a "
+                + "TrueType program can replace this font's without rewriting CFF charstrings."),
+                classified.Format);
+        }
+
+        // Coverage gate (spec §3 step 2): every sibling's used CIDs resolved through ITS OWN
+        // /ToUnicode into the substitute — the union of every sibling's coverage, all-or-nothing.
+        var perSibling = new List<(FontInventoryEntry Entry, CidFont Cid, CidReplacementMapResult MapResult)>();
+        foreach ((FontInventoryEntry entry, Type0Font type0, CidFont cid) in siblings)
+        {
+            CidReplacementMapResult mapResult = CidReplacementMap.Build(type0.ToUnicode!, entry.UsedCodes, metrics);
+            if (mapResult.Unresolvable.Count > 0)
+            {
+                int firstUnresolvable = mapResult.Unresolvable[0];
+                return new MergedResult(DeclineAll(allEntries, ruleId,
+                    $"'{resolvedFamily}' cannot honestly render {mapResult.Unresolvable.Count} of this "
+                    + $"font's characters (first: CID {firstUnresolvable}), so replacing the program "
+                    + "would still leave missing glyphs — Pellucid makes no partial replacements."),
+                    classified.Format);
+            }
+            perSibling.Add((entry, cid, mapResult));
+        }
+
+        // Direct vs descriptor sharing is decided PER PROGRAM HOLDER, not once for the whole group:
+        // grouping by ProgramHolderId.ObjectNumber handles the two-fixture cases this task tests
+        // (SharedDescendantDoc: one holder-group of 2 → direct/union; SharedDescriptorDoc: two
+        // holder-groups of 1 → descriptor/per-target) AND generalises correctly to a 3+-member group
+        // that mixes both (e.g. two siblings sharing a descendant directly, a third sharing only the
+        // descriptor) — a shape neither fixture exercises, but one a single group-wide boolean would
+        // get wrong for the direct pair inside it. GroupBy preserves first-occurrence order, so
+        // Targets keeps the group's input order.
+        var targets = new List<ReplaceTarget>();
+        foreach (IGrouping<int, (FontInventoryEntry Entry, CidFont Cid, CidReplacementMapResult MapResult)> holderGroup
+                 in perSibling.GroupBy(p => p.Entry.ProgramHolderId!.Value.ObjectNumber))
+        {
+            List<(FontInventoryEntry Entry, CidFont Cid, CidReplacementMapResult MapResult)> members = holderGroup.ToList();
+
+            if (members.Count == 1)
+            {
+                (FontInventoryEntry entry, _, CidReplacementMapResult mapResult) = members[0];
+                targets.Add(new ReplaceTarget(
+                    entry.ProgramHolderId!.Value, entry.Id, mapResult.CidToGid, mapResult.MaxCid,
+                    ClosesFinding: !entry.UsedCodes.Contains(0)));
+                continue;
+            }
+
+            // Direct sharing within THIS holder: union the members' maps into ONE; a CID present in
+            // two maps with a DIFFERENT gid is a genuine disagreement about what that character code
+            // means (spec §4 step 3).
+            var unionMap = new Dictionary<int, ushort>();
+            var maxCid = 0;
+            foreach ((FontInventoryEntry _, CidFont _, CidReplacementMapResult mapResult) in members)
+            {
+                maxCid = Math.Max(maxCid, mapResult.MaxCid);
+                foreach ((int cidCode, ushort gid) in mapResult.CidToGid)
+                {
+                    if (unionMap.TryGetValue(cidCode, out ushort existingGid))
+                    {
+                        if (existingGid != gid)
+                        {
+                            return new MergedResult(DeclineAll(allEntries, ruleId,
+                                $"Two fonts sharing this embedded program map character code {cidCode} "
+                                + "to different characters, so one replacement program cannot serve "
+                                + "both."),
+                                classified.Format);
+                        }
+                        continue;
+                    }
+                    unionMap[cidCode] = gid;
+                }
+            }
+
+            FontId sharedHolder = members[0].Entry.ProgramHolderId!.Value;
+            foreach ((FontInventoryEntry entry, CidFont _, CidReplacementMapResult _) in members)
+            {
+                targets.Add(new ReplaceTarget(
+                    sharedHolder, entry.Id, unionMap, maxCid, ClosesFinding: !entry.UsedCodes.Contains(0)));
+            }
+        }
+
+        // Advance patch (spec §4 step 4): union of every sibling's declared widths for the codes IT
+        // resolved; the same substitute GID reached by two siblings with different declared widths is
+        // a genuine conflict — one program advance cannot satisfy both.
+        var targetByGid = new Dictionary<ushort, double>();
+        foreach ((FontInventoryEntry _, CidFont cid, CidReplacementMapResult mapResult) in perSibling)
+        {
+            foreach ((int cidCode, ushort gid) in mapResult.CidToGid)
+            {
+                double declared = cid.GetCharacterWidth(cidCode);
+                if (targetByGid.TryGetValue(gid, out double existing))
+                {
+                    if (Math.Abs(existing - declared) > FontProgramRule.WidthTolerance)
+                    {
+                        return new MergedResult(DeclineAll(allEntries, ruleId,
+                            "Two fonts sharing this embedded program declare different widths for the "
+                            + "same glyph, so one patched program cannot serve both."),
+                            classified.Format);
+                    }
+                    continue;
+                }
+                targetByGid[gid] = declared;
+            }
+        }
+
+        int upm = metrics.UnitsPerEm <= 0 ? 1000 : metrics.UnitsPerEm;
+        var advanceByGid = new Dictionary<ushort, ushort>();
+        foreach ((ushort gid, double declared) in targetByGid)
+        {
+            var fontUnits = (ushort)Math.Clamp(Math.Round(declared * upm / 1000.0), 0, ushort.MaxValue);
+            if (fontUnits != metrics.GetAdvanceWidth(gid))
+                advanceByGid[gid] = fontUnits;
+        }
+
+        byte[] program = classified.Program;
+        if (advanceByGid.Count > 0)
+        {
+            byte[]? patched = SfntAdvancePatcher.Patch(classified.Program, advanceByGid, out string? failReason);
+            if (patched is null)
+            {
+                return new MergedResult(DeclineAll(allEntries, ruleId,
+                    $"The substitute's program cannot be width-patched to this font's declared widths: "
+                    + failReason),
+                    classified.Format);
+            }
+            program = patched;
+        }
+
+        // RestoredCodeCount (spec §4 step 5): sum over siblings of distinct used codes that resolve to
+        // .notdef in THEIR OWN old program — same predicate BuildReplacement uses for a singleton.
+        var restored = 0;
+        foreach ((FontInventoryEntry entry, Type0Font type0, CidFont cid) in siblings)
+        {
+            EmbeddedFontMetrics? oldMetrics = type0.GetEmbeddedMetrics();
+            if (oldMetrics is null || !oldMetrics.IsValid)
+            {
+                return new MergedResult(DeclineAll(allEntries, ruleId,
+                    "The font-program finding could not be reproduced against this document's current "
+                    + "state, so there is nothing Pellucid can safely correct."),
+                    classified.Format);
+            }
+            bool cidKeyed = entry.Kind == FontKind.Type0CidType0;
+            restored += entry.UsedCodes.Distinct().Count(code => MapsToNotdefGlyph(code, cidKeyed, cid, oldMetrics));
+        }
+
+        FontDescriptorValues? descriptorValues = FontDescriptorMetrics.Compute(program, FontProgramFormat.TrueType);
+        if (descriptorValues is null)
+        {
+            return new MergedResult(DeclineAll(allEntries, ruleId,
+                "The substitute program's metrics could not be read, so an honest /FontDescriptor "
+                + "cannot be written for it."),
+                classified.Format);
+        }
+
+        int flags = FontDescriptorFlags.Compute(metrics);
+        string newBaseFont = metrics.PostScriptName ?? (metrics.FamilyName ?? resolvedFamily).Replace(" ", "");
+        string style = (metrics.IsBold, metrics.IsItalic) switch
+        {
+            (true, true) => "Bold Italic",
+            (true, false) => "Bold",
+            (false, true) => "Italic",
+            (false, false) => "Regular",
+        };
+        string source = $"{resolvedFamily} ({style}) — from your system fonts";
+
+        var proposal = new ReplaceProgramProposal(
+            targets, ruleId, source, program, FontProgramFormat.TrueType,
+            restored, newBaseFont, descriptorValues, flags);
+        return new MergedResult([proposal], FontProgramFormat.TrueType);
+    }
+
+    /// <summary>Result of <see cref="BuildMergedReplacement"/>: either N <see cref="DeclineProposal"/>s
+    /// (one per group member, <see cref="DeclineAll"/>) or exactly one <see cref="ReplaceProgramProposal"/>,
+    /// and the classified format whenever classification succeeded — even on a decline — so
+    /// <see cref="ProposeMergedReplace"/>'s retry can decide without reclassifying.</summary>
+    private readonly record struct MergedResult(IReadOnlyList<FontProposal> Proposals, FontProgramFormat? Format);
+
+    /// <summary>Declines every member of a group with the SAME reason text — one
+    /// <see cref="DeclineProposal"/> per logical font, so every UI row for the group gets its own,
+    /// identical, explanation (spec §4).</summary>
+    private static IReadOnlyList<FontProposal> DeclineAll(
+        IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason) =>
+        group.Select(entry => (FontProposal)Decline(entry, ruleId, reason)).ToList();
+
+    /// <summary>Verbatim per the controller brief (spec §6) — a later sweep's taxonomy keys on this
+    /// exact template. Wraps a failing sibling's own would-be SINGLETON decline reason (e.g. what
+    /// <see cref="ProposeProgramReplace"/> would have said about it alone) for the whole group's
+    /// per-member decline.</summary>
+    private static string MergeBlockedSibling(string reason) =>
+        "Another font sharing this font's embedded program cannot be included in a merged replacement "
+        + $"({reason}), and replacing the shared program for only some of its fonts would corrupt the "
+        + "others.";
+
+    /// <summary>
     /// Mirrors <see cref="AssessCandidate"/>'s shape for the whole-program-replacement path: the SAME
     /// entry-shape gates <see cref="ProposeProgramReplace"/> runs 1–4 (unaddressable, non-composite
     /// kind, a shared program holder, an unreadable/non-Identity composite, no /ToUnicode) become hard
@@ -631,6 +1044,11 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
             return new CandidateAssessment(null, SimpleFontMissingGlyphReason, [], null);
 
+        // TEMPORARY (F-4b Task 4, tracker issue 38): the manual path does not know about merged
+        // groups — a user hand-picking a substitute for one of several fonts sharing a program still
+        // gets the old last-write-wins protection here, unlike the automatic path (Propose), which
+        // now merges instead of declining. Task 7 is expected to extend the manual path to groups too
+        // and retire this call.
         if (SharedHolderReason(document, entry, FontInventory.Read(document)) is { } sharedReason)
             return new CandidateAssessment(null, sharedReason, [], null);
 
@@ -866,6 +1284,12 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// <c>/FontDescriptor</c> object number. Descriptor-level identity is enough: two program holders
     /// cannot share a <c>/FontFile2</c>/<c>/FontFile3</c> stream object without sharing the descriptor
     /// that names it, since nothing else in this walk references the stream directly.</para>
+    ///
+    /// <para>F-4b Task 4: the automatic path (<see cref="ProposeProgramReplace"/>) no longer calls
+    /// this — <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/> groups the shape
+    /// this method detects and merges instead of declining. Kept ONLY for
+    /// <see cref="AssessReplacementCandidate"/>'s manual path, which has no merged-group equivalent yet
+    /// — see that call site, and Task 7 for retiring this method entirely.</para>
     /// </summary>
     private static string? SharedHolderReason(
         PdfDocument document, FontInventoryEntry entry, IReadOnlyList<FontInventoryEntry> inventory)

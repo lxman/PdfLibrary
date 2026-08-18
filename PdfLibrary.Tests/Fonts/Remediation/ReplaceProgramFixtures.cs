@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using CffTestFixtures;
 using PdfLibrary.Core.Primitives;
@@ -319,9 +320,19 @@ internal static class ReplaceProgramFixtures
     /// wrapper 2's defaults to the SAME 0x42→'B' mapping (consistent), overridable via
     /// <paramref name="wrapper2ToUnicode"/> to a conflicting mapping (e.g. 0x42→'Z') for the conflict
     /// tests a later task adds.</para>
+    ///
+    /// <para>Task 4 additions, following this fixture's own idiom (an optional parameter per
+    /// variant rather than a second fixture method): <paramref name="wrapper2HasToUnicode"/> false
+    /// omits wrapper 2's <c>/ToUnicode</c> entry entirely (object 8 is not written, and the wrapper
+    /// dictionary carries no <c>/ToUnicode</c> key) — the merge-blocked-sibling gate case, distinct
+    /// from an EMPTY-but-present CMap. <paramref name="wrapper2Codes"/> overrides which codes wrapper
+    /// 2's content stream draws (default <c>[0x42]</c>, matching the original shape) — used by the
+    /// ClosesFinding amendment test to have wrapper 2 draw CID 0 alongside its own dead code.</para>
     /// </summary>
     public static PdfDocument SharedDescendantDoc(
-        IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null)
+        IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
+        bool wrapper2HasToUnicode = true,
+        IReadOnlyList<int>? wrapper2Codes = null)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -366,8 +377,6 @@ internal static class ReplaceProgramFixtures
         };
         doc.AddObject(1, 0, wrapper1);
 
-        doc.AddObject(8, 0, new PdfStream(new PdfDictionary(),
-            BfCharBytes(wrapper2ToUnicode ?? [(0x42, "0042")])));
         var wrapper2 = new PdfDictionary
         {
             [N("Type")] = N("Font"),
@@ -375,12 +384,18 @@ internal static class ReplaceProgramFixtures
             [N("BaseFont")] = N("ABCDEF+SharedDescendant"),
             [N("Encoding")] = N("Identity-H"),
             [N("DescendantFonts")] = new PdfArray(Ref(4)),
-            [N("ToUnicode")] = Ref(8),
         };
+        if (wrapper2HasToUnicode)
+        {
+            doc.AddObject(8, 0, new PdfStream(new PdfDictionary(),
+                BfCharBytes(wrapper2ToUnicode ?? [(0x42, "0042")])));
+            wrapper2[N("ToUnicode")] = Ref(8);
+        }
         doc.AddObject(7, 0, wrapper2);
 
+        string wrapper2Hex = string.Concat((wrapper2Codes ?? [0x42]).Select(c => $"{c:X4}"));
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <0042> Tj ET")));
+            Encoding.ASCII.GetBytes($"BT /F0 12 Tf <0041 0042> Tj /F1 12 Tf <{wrapper2Hex}> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7);
         return doc;
     }

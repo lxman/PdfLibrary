@@ -278,43 +278,43 @@ public sealed class ReplaceProgramProposalTests
     }
 
     [Fact]
-    public void Two_type0_wrappers_sharing_one_descendant_decline_the_shared_program_holder()
+    public void Two_type0_wrappers_sharing_one_descendant_merge_when_both_findings_are_proposed_together()
     {
-        // Controller ruling, tracker issue 38: last-write-wins per PROGRAM HOLDER vs. one proposal per
-        // LOGICAL font — see FontRemediationPlanner.SharedHolderReason's doc comment. Both wrappers
-        // draw in ReplaceProgramFixtures.SharedDescendantDoc (unlike the retired F-4b-era
-        // TwoWrappersSharedHolderDoc, where only wrapper 1 drew) — verified not to change this guard's
-        // outcome: SharedHolderReason fires on ProgramHolderId identity alone, before either wrapper's
-        // drawn content is examined.
+        // GUARD-ERA TEST, promoted (F-4b Task 4, controller ruling tracker issue 38): the last-write-
+        // wins-per-PROGRAM-HOLDER guard (FontRemediationPlanner.SharedHolderReason) that used to
+        // decline this shape is DELETED — Propose() now groups font-program findings sharing one
+        // holder BEFORE dispatch and routes a multi-entry group to the merged builder instead. See
+        // MergedReplacementTests for the merged proposal's full shape assertions (Targets.Count,
+        // identical UNION map, ClosesFinding); this test keeps the ORIGINAL single-wrapper-finding
+        // call shape as a reminder that grouping only sees the findings THIS call was given — with
+        // only object 1's finding in the input, wrapper 7 never enters the group, so the SINGLETON
+        // path runs unchanged and proposes for object 1 alone.
         PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
-        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
-        Assert.Contains("shares this font's embedded program", decline.Reason);
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Single(proposal.Targets);
+        Assert.Equal(1, proposal.Targets[0].CompositeFont.ObjectNumber);
     }
 
     [Fact]
-    public void Two_type0_wrappers_with_distinct_descendants_sharing_one_descriptor_both_decline()
+    public void Two_type0_wrappers_with_distinct_descendants_sharing_one_descriptor_merge_together()
     {
-        // Descriptor-level sharing case: unlike SharedDescendantDoc, the two logical fonts here have
-        // DISTINCT, separately-numbered ProgramHolderIds — the object-number-only comparison in the
-        // ORIGINAL SharedHolderReason would have missed this and let both through as independent
-        // ReplaceProgramProposals, each with its own CidToGid map, targeting the same /FontDescriptor's
-        // /FontFile2 — last write wins, the loser's CIDToGIDMap indexes the winner's face.
+        // GUARD-ERA TEST, promoted (F-4b Task 4): descriptor-level sharing case — the two logical
+        // fonts have DISTINCT, separately-numbered ProgramHolderIds, but both descendants' /FontFile2
+        // resolves through the SAME /FontDescriptor. Both findings are in THIS call's input, so
+        // HolderGroupKey (descriptor object number) groups them and the merged builder runs instead
+        // of declining. See MergedReplacementTests for the per-target-map assertions.
         PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc();
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result =
             Planner(provider).Propose(doc, [("font-program", 1), ("font-program", 7)]);
 
-        Assert.Equal(2, result.Fonts.Count);
-        foreach (FontProposal proposal in result.Fonts)
-        {
-            DeclineProposal decline = Assert.IsType<DeclineProposal>(proposal);
-            Assert.Contains("shares this font's embedded program", decline.Reason);
-        }
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(2, proposal.Targets.Count);
     }
 
     [Fact]
