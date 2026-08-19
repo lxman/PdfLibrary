@@ -376,6 +376,32 @@ public sealed class MergedWidthPatchTests
         Assert.Contains(rawReason, siblingDecline.Reason);
     }
 
+    /// <summary>
+    /// Issue 44 fix-round (review): the width-family half of the fixture's ORIGINAL ("referenced but
+    /// never drawn") shape — restored via <paramref name="siblingDrawn"/><c>: false</c> so this suite
+    /// keeps a witness that the filter actually does something for the width family, not just the
+    /// automatic notdef path (<c>MergedReplacementTests.An_undrawn_sibling_is_excluded_from_the_group_instead_of_sinking_it</c>).
+    /// Pre-issue-44, object 30 (undrawn, no <c>/Widths</c>) still reached
+    /// <c>BuildMergedWidthPatch</c>'s per-member shape gate via inventory-scoped expansion and blocked
+    /// the WHOLE group — the exact shape
+    /// <see cref="A_per_member_shape_failure_wraps_the_reason_for_the_non_seed_only"/> used to pin (now
+    /// exercised with a DRAWN sibling instead, since that test's own purpose — the raw/wrapped decline
+    /// split — needs the sibling to actually reach the shape gate). Post-issue-44,
+    /// <c>ExpandHolderGroup</c> excludes object 30 before it ever becomes a width-family member at all,
+    /// so wrapper 1's own genuine width mismatch (declared 500 vs the shared program's actual 450)
+    /// patches successfully — covering ONLY the seed, since object 30 never joins the merge.
+    /// </summary>
+    [Fact]
+    public void An_undrawn_widthless_sibling_no_longer_blocks_the_merge()
+    {
+        using PdfDocument doc = CompositeWidthSeedWithWidthlessSimpleSiblingDoc(siblingDrawn: false);
+        FontRemediationProposal result = Planner().Propose(doc, [("font-program", 1)]);
+
+        Assert.Empty(result.Fonts.OfType<DeclineProposal>());
+        var patch = Assert.IsType<PatchWidthsProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(new HashSet<int> { 1 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+    }
+
     private static PdfName N(string s) => new(s);
     private static PdfIndirectReference Ref(int n) => new(n, 0);
 
@@ -576,13 +602,25 @@ public sealed class MergedWidthPatchTests
     /// shape as <see cref="CompositeWidthSeedWithSimpleNotdefSiblingDoc"/> (wrapper 1, live code 0x41
     /// only), sharing its descriptor with a SIMPLE TrueType font (object 30) that carries NO
     /// <c>/Widths</c> array at all — a per-member SHAPE failure <c>BuildMergedWidthPatch</c> catches
-    /// directly, rather than a resolvable-but-contributing-nothing code. Object 30 is referenced in
-    /// page resources but never drawn (FontInventory discovers a REFERENCED font regardless — the same
-    /// idiom <see cref="ReplaceProgramFixtures.SharedDescendantDoc"/>'s own
-    /// <c>includeType1BlockingSibling</c> uses), and its finding is never named in the call — it only
-    /// reaches the merge via inventory-scoped expansion, making it the non-seed this test's assertion
-    /// needs.</summary>
-    private static PdfDocument CompositeWidthSeedWithWidthlessSimpleSiblingDoc()
+    /// directly, rather than a resolvable-but-contributing-nothing code. Its finding is never named in
+    /// the call — it only reaches the merge via inventory-scoped expansion, making it the non-seed this
+    /// test's assertion needs.
+    ///
+    /// <para>Issue 44 update: <paramref name="siblingDrawn"/> (default <c>true</c>) draws object 30
+    /// (code 65 via <c>/F1</c>), unlike the original "referenced but never drawn" version of this
+    /// fixture. Pre-issue-44, an UNDRAWN sibling reached this same shape gate and (correctly, per THIS
+    /// class's own <see cref="A_per_member_shape_failure_wraps_the_reason_for_the_non_seed_only"/>)
+    /// blocked the whole group — but issue 44's fix excludes a zero-<c>UsedCodes</c> candidate from
+    /// <c>ExpandHolderGroup</c>'s result entirely, so an undrawn object 30 would no longer even become a
+    /// group MEMBER, and that test would stop exercising the wrap-reason mechanism it exists for.
+    /// Drawing it (the default) keeps that mechanism under test while conforming to the new (correct)
+    /// contract: only a font something actually shows can block a merge over its own shape.
+    /// <paramref name="siblingDrawn"/><c>: false</c> restores the ORIGINAL undrawn shape — object 30
+    /// referenced in <c>/Resources</c> but never shown — for
+    /// <see cref="An_undrawn_widthless_sibling_no_longer_blocks_the_merge"/>, which pins the OTHER half
+    /// of issue 44's own behaviour change: the width patch now succeeds, covering only the seed.</para>
+    /// </summary>
+    private static PdfDocument CompositeWidthSeedWithWidthlessSimpleSiblingDoc(bool siblingDrawn = true)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -631,7 +669,10 @@ public sealed class MergedWidthPatchTests
         });
 
         // Simple TrueType font (object 30): shares descriptor 2 directly, no /Widths at all — the
-        // per-member shape failure BuildMergedWidthPatch's own "no /Widths array" gate catches.
+        // per-member shape failure BuildMergedWidthPatch's own "no /Widths array" gate catches. Drawn
+        // by default (code 65 via /F1, issue 44) so it still passes ExpandHolderGroup's zero-UsedCodes
+        // filter and reaches that gate at all; siblingDrawn: false omits the /F1 Tf/Tj pair so object 30
+        // is referenced in /Resources but never shown, reproducing the fixture's original shape.
         doc.AddObject(30, 0, new PdfDictionary
         {
             [N("Type")] = N("Font"),
@@ -642,8 +683,10 @@ public sealed class MergedWidthPatchTests
             [N("FontDescriptor")] = Ref(2),
         });
 
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041> Tj ET")));
+        string content = siblingDrawn
+            ? "BT /F0 12 Tf <0041> Tj /F1 12 Tf <41> Tj ET"
+            : "BT /F0 12 Tf <0041> Tj ET";
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes(content)));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 30);
         return doc;
     }

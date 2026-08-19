@@ -538,6 +538,35 @@ public sealed class ReplaceProgramProposalTests
         Assert.False(wrapper7Target.ClosesFinding);
     }
 
+    /// <summary>
+    /// Tracker issue 48: the automatic path is tested under BOTH first-class sharing shapes —
+    /// <see cref="ReplaceProgramFixtures.SharedDescendantDoc"/> (direct sharing, one descendant) via
+    /// <see cref="AssessReplacementCandidate_merges_a_shared_holder_group"/> above, and
+    /// <see cref="ReplaceProgramFixtures.SharedDescriptorDoc"/> (descriptor-level sharing, two distinct
+    /// descendants sharing one <c>/FontDescriptor</c>) via <c>MergedReplacementTests</c> — but every
+    /// manual-path merge test in this file constructed its document via <c>SharedDescendantDoc</c> only,
+    /// leaving the manual path's behaviour under descriptor-level sharing untested. Mirrors
+    /// <see cref="AssessReplacementCandidate_merges_a_shared_holder_group"/> exactly, on
+    /// <c>SharedDescriptorDoc</c> instead — coverage only, no production code changed for this issue.
+    /// </summary>
+    [Fact]
+    public void AssessReplacementCandidate_merges_a_shared_descriptor_group()
+    {
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper1Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 1);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        // Same ruling as the direct-sharing case above: only the picked entry (wrapper 1) closes.
+        Assert.True(wrapper1Target.ClosesFinding);
+        Assert.False(wrapper7Target.ClosesFinding);
+    }
+
     [Fact]
     public void AssessReplacementCandidate_hard_blocks_a_merge_cid_conflict()
     {
@@ -611,6 +640,35 @@ public sealed class ReplaceProgramProposalTests
         Assert.NotNull(result.HardBlockReason);
         Assert.Null(result.Proposal);
         Assert.Contains("cannot be included in a merged replacement", result.HardBlockReason);
+    }
+
+    /// <summary>
+    /// Issue 44 fix-round (review, item 1): the manual path had the SAME exposure the automatic path's
+    /// <c>blockedNotdefKeys</c> closes, and it is worse here — there is no OTHER mechanism left to catch
+    /// it at all. <c>ExpandHolderGroup</c>'s zero-<c>UsedCodes</c> filter excludes the undrawn TrueType
+    /// blocker (object 41) from <c>group</c> before Step 1 (<c>ValidateSiblingShape</c>) ever sees it, so
+    /// <c>siblings.Count == 1</c> and control falls to <c>BuildReplacement</c>'s singleton path — which
+    /// has never had a shared-holder guard of its own (<c>SharedHolderReason</c> was retired in Task 7).
+    /// Unguarded, a manual pick here would silently write a whole-face composite substitute into the
+    /// <c>/FontFile2</c> the undrawn TrueType sibling depends on — the exact write the automatic path's
+    /// own blocker scan exists to prevent.
+    /// </summary>
+    [Fact]
+    public void AssessReplacementCandidate_blocks_when_an_undrawn_mixed_kind_sibling_shares_the_holder()
+    {
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            includeUndrawnTrueTypeBlockingSibling: true);
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Contains("cannot be included in a merged replacement", result.HardBlockReason);
+        Assert.Contains(
+            "This font's finding is a missing glyph, and replacing a simple font's program is not "
+            + "something Pellucid does yet.", result.HardBlockReason);
     }
 
     [Fact]

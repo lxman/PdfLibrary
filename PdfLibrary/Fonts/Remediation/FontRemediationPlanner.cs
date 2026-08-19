@@ -40,6 +40,18 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         "This font's finding is a missing glyph, and replacing a simple font's program is not "
         + "something Pellucid does yet.";
 
+    /// <summary>Single source for the "this font's own dictionary is a direct object, not indirect"
+    /// decline (issue 44 fix-round, review Minor 2) — used by <see cref="ValidateSiblingShape"/>'s own
+    /// IsAddressable gate, <see cref="BlockingSiblingReason"/>'s and
+    /// <see cref="ReplaceBlockingSiblingReason"/>'s IsAddressable branch, and
+    /// <see cref="AssessReplacementCandidate"/>'s manual-path blocker scan (issue 44 fix-round, review
+    /// item 1) — three previously independent verbatim copies that Task 9's decline taxonomy keys on
+    /// this exact text, the same hazard <see cref="SimpleFontMissingGlyphReason"/> was extracted to
+    /// avoid.</summary>
+    private const string NotAddressableForReplaceReason =
+        "This font is written directly into the page's resources rather than as its own object, "
+        + "so Pellucid cannot address its font program to correct it.";
+
     /// <summary>Issue 40 honesty: the decline for a font that draws CID 0 — see
     /// <see cref="ProposeProgramReplace"/>'s cid0 gate. Verbatim string is load-bearing: a later
     /// sweep taxonomy keys on it. The string still reads accurately even though (controller ruling,
@@ -180,6 +192,59 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             // Review fix (Important 2): canonicalize BEFORE ProposeMergedReplace ever sees this group —
             // see CanonicalizeGroupOrder's own doc comment for why.
             CanonicalizeGroupOrder(members);
+        }
+
+        // Issue 44 fix-round (review): mirrors `blockedWidthKeys` (I1, below) for the notdef/replace
+        // family — a full-INVENTORY scan, independent of `members`' post-expansion contents.
+        // ExpandHolderGroup's own zero-UsedCodes exclusion (issue 44) means a mixed-kind or
+        // non-addressable blocking sibling that happens to be UNDRAWN no longer reaches
+        // ProposeMergedReplace's Step 1 (ValidateSiblingShape) at all — it is filtered out of
+        // `members` before Step 1 ever sees it as a group member, so nothing declines the group over
+        // it. Worse, when that undrawn blocker was the group's only OTHER member, the group collapses
+        // to a bare singleton and falls through to the ordinary per-entry dispatch below
+        // (ProposeProgramReplace's own singleton path), which has no blocker check of its own at all —
+        // pre-issue-38, corrupting a shared program a genuinely-rendering simple/CFF sibling depends on
+        // was exactly the failure mode Step 1 exists to prevent. This scan restores TWO of
+        // ValidateSiblingShape's five gates (kind, addressability) unconditionally on draw status, the
+        // same way `blockedWidthKeys` already does for the width family: for every key with at least
+        // one notdef SEED, look across the full inventory (not just `members`) for a sibling sharing
+        // the key whose Kind is not composite, or which is not addressable.
+        //
+        // Deliberately NOT the other three (controller ruling, review item 2): unreadable-as-composite,
+        // non-Identity encoding, missing /ToUnicode. Those three are about whether a MAP CAN BE BUILT
+        // for that sibling; kind and addressability are about whether replacing the shared program is
+        // structurally wrong for it regardless of what its own map would look like. Extending this scan
+        // to the other three would need to resolve the dictionary per candidate (not the cheap,
+        // parse-free check this shallow guard stays), and the residual exposure they leave is entirely
+        // issue-51-conditional — it needs a falsely-empty UsedCodes (tracker issue 51) to be observable
+        // at all, since a genuinely-undrawn candidate failing one of those three gates was ALREADY
+        // correctly excluded from `members` and poses no risk (nothing ever reads its map). Recorded in
+        // issue 51, not widened into here. Also fixed by this same review round, mirroring this exact
+        // scan: AssessReplacementCandidate's manual path (see its own comment) — this scan alone does
+        // NOT protect the manual path, which builds its own group independently.
+        var blockedNotdefKeys = new Dictionary<long, string>();
+        foreach (long key in groupMembers.Keys)
+        {
+            // Review Minor 1: excludes the group's OWN seeds from matching as a "blocker" against
+            // themselves. Unlike the width family (whose seeding gate requires IsAddressable), a
+            // notdef seed is gated on Kind and a non-null ProgramHolderId only (the seeding loop
+            // above) — a seed's own LOGICAL dictionary could still be direct (IsAddressable false)
+            // while its program holder is indirect, which would otherwise make it match this scan's
+            // own `!candidate.IsAddressable` half, declining the group over a "sibling" that is
+            // really just the seed itself, wrapped as if it were a fact about someone else.
+            // Unreachable today (FontProgramRule never attributes a finding to a direct dictionary —
+            // FontProgramRule.cs's Make/CheckType0 stamp a null object number for one, and the
+            // seeding loop's own FontInventory.Find/HasNotdefFinding gate filters those out before a
+            // seed is ever added), but FontProgramFindingsFor deliberately supports attribution by
+            // program-holder object number, so this stays a live risk, not a theoretical one.
+            FontInventoryEntry? blocker = inventory.FirstOrDefault(candidate =>
+                candidate.ProgramHolderId is not null
+                && HolderGroupKey(document, candidate) == key
+                && !seedIdsByKey[key].Contains(candidate.Id.ObjectNumber)
+                && (candidate.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2)
+                    || !candidate.IsAddressable));
+            if (blocker is not null)
+                blockedNotdefKeys[key] = ReplaceBlockingSiblingReason(blocker);
         }
 
         // Task 6 (tracker issue 38): WIDTH-family grouping — kind-agnostic (a simple TrueType font and
@@ -356,7 +421,44 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 && memberOfGroup.TryGetValue(idKey, out long key))
             {
                 List<FontInventoryEntry> members = groupMembers[key];
-                if (members.Count > 1)
+
+                // Issue 44 fix-round (review): `blockedNotdefKeys` (built above, full-inventory scan)
+                // takes precedence over `members.Count > 1` — mirrors the width family's OWN
+                // `blockedWidthKeys` precedence exactly (its comment explains why: a blocked key must
+                // never reach the merge builder regardless of how many UsedCodes-non-empty members
+                // `members` happens to hold, including zero others). DeclineAll, not DeclineGroupFact:
+                // the blocker is never itself a member of `members`, so the "blocked" fact is equally
+                // true of every member here — none of them individually has the problem, matching
+                // ProposeMergedReplace's OWN Step 1 uniform-wrap convention for exactly this shape.
+                if (blockedNotdefKeys.TryGetValue(key, out string? blockedNotdefReason))
+                {
+                    if (processedGroups.Add(key))
+                    {
+                        proposals.AddRange(
+                            DeclineAll(members, ruleId, MergeBlockedSibling(blockedNotdefReason)));
+                    }
+
+                    // Frees this entry's width finding for the arm below, exactly like a genuinely
+                    // DECLINED ProposeMergedReplace group does (see the sibling branch's own comment) —
+                    // a blocked group also writes nothing. The "non-obvious argument" two paragraphs
+                    // below (guarding against ProposeWidthPatchOnly's `!hasWidth` branch mis-firing for
+                    // a composite entry) extends here without modification: reaching `freedFromDeclinedGroup
+                    // = true` still requires `widthMemberOfGroup.ContainsKey(idKey)` for THIS entry,
+                    // which can only be true if either (a) this entry itself seeded the width family
+                    // (`HasWidthFinding` true for it), in which case `ProposeWidthPatchOnly`'s `!hasWidth`
+                    // gate cannot fire regardless of `widthMembers.Count`, or (b) this entry was pulled
+                    // into some OTHER, genuinely-seeded width group by expansion, in which case that
+                    // group's real seed is a SEPARATE member, guaranteeing `widthMembers.Count > 1` and
+                    // routing through the MERGED (or blocked) branch, never the risky singleton
+                    // fallthrough. A blocked notdef key with NO drawn width-eligible sibling anywhere
+                    // (the scenario this branch exists for) never populates `widthMemberOfGroup` for
+                    // this entry's idKey at all — case (a) requires the entry's OWN finding, case (b)
+                    // requires a drawn sibling — so the `continue` right below fires first and
+                    // `freedFromDeclinedGroup` is never set.
+                    if (!widthMemberOfGroup.ContainsKey(idKey)) continue;
+                    freedFromDeclinedGroup = true;
+                }
+                else if (members.Count > 1)
                 {
                     if (processedGroups.Add(key))
                     {
@@ -564,6 +666,62 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// <see cref="FontInventory"/>'s <c>FontId(0)</c> direct-dictionary sentinel, silently dropping a
     /// second, genuinely distinct direct-dictionary candidate that happens to share this group's
     /// key.</para>
+    ///
+    /// <para>Tracker issue 44: a candidate whose <see cref="FontInventoryEntry.UsedCodes"/> is empty —
+    /// a font resource present in <c>/Resources</c> but never actually shown by any content-stream
+    /// operator on any page — is excluded here rather than joining <paramref name="members"/>.
+    /// <see cref="FontInventory"/> populates <c>UsedCodes</c> from
+    /// <c>ConformanceContext.EnsureUsedTextGlyphs</c>/<c>ToUnicodeUsageCollector</c>, which walks page
+    /// CONTENT STREAMS and Form XObjects invoked by <c>Do</c> from them, recursively — so an empty list
+    /// here means, precisely, no glyph from this font is drawn in any page content stream or Form
+    /// XObject reachable from one. <b>It does NOT mean the font draws nothing anywhere</b> — that is a
+    /// narrower, WEAKER guarantee than an earlier version of this comment claimed. Four paths render a
+    /// font <see cref="ReferencedFontWalker"/> discovers (so <see cref="FontInventory"/> still creates
+    /// an entry for it) that the usage walk above structurally cannot see, leaving <c>UsedCodes</c>
+    /// falsely empty: an annotation appearance stream (<c>/AP</c> — the usage walk only ever visits
+    /// <c>Pages</c>, never <c>annotations</c>), a tiling pattern (painted via <c>scn</c>/fill, never
+    /// invoked through <c>Do</c>, so <c>OnInvokeXObject</c> never sees it), a Type3 glyph's own CharProc
+    /// (executed per-glyph by the renderer, never parsed as page content), and an ExtGState <c>/Font</c>
+    /// entry (<c>PdfContentProcessor</c> never overrides <c>OnSetGraphicsState</c> to read it, so a font
+    /// set only that way is never named by <c>CurrentState.FontName</c>). This is a pre-existing,
+    /// document-wide gap between the discovery and usage walks (tracker issue 51) — not introduced or
+    /// widened here, but now something THREE mechanisms (this filter, <c>FontProgramRule</c> itself, and
+    /// every width/notdef proposal builder that reads <c>UsedCodes</c>) lean on as if it were ground
+    /// truth about what renders. For THIS filter specifically: excluding a false-empty candidate can, in
+    /// the rare case a font is drawn only through one of the four paths above, silently drop it from a
+    /// merge that would otherwise have covered it — a real (if narrow) regression risk, not merely a
+    /// missed optimization, left open pending issue 51.</para>
+    ///
+    /// <para>Left unfiltered, a genuinely-undrawn candidate still reaches
+    /// <c>BuildMergedReplacement</c>'s per-sibling coverage loop, where <c>CidReplacementMap.Build</c>
+    /// correctly produces an empty <c>CidToGid</c> for it and the M1 guard correctly refuses to let
+    /// <c>ToStreamBytes</c> write <c>.notdef</c> for every CID in its slice — but that refusal is scoped
+    /// to the WHOLE group via <c>DeclineGroupFact</c>, sinking every genuinely-drawn sibling sharing its
+    /// holder along with it. Filtering here, in the one place all three callers (the notdef family, the
+    /// width family, and the manual path) funnel through, means they exclude such a candidate
+    /// identically, by construction, rather than by three separately maintained call-site checks
+    /// agreeing. Byte-neutrality for the width family is airtight regardless of the walk gap above: both
+    /// <c>ProgramWidthResolver.Composite</c> and <c>.Simple</c> iterate only <c>entry.UsedCodes.Distinct()</c>
+    /// (see <c>BuildMergedWidthPatch</c>/<c>ProposeWidthPatchOnly</c>), so an excluded candidate — false-empty
+    /// or genuinely empty — contributes NOTHING to <c>targetByGid</c>, the cross-member union, or
+    /// <c>worst</c>; excluding it from a width merge can never change which bytes get patched. The
+    /// notdef/replace family has no equivalent byte-neutrality argument (a whole-face substitute is not
+    /// scoped to used codes the same way), which is exactly why <c>blockedNotdefKeys</c> below (issue 44
+    /// fix-round) exists as a separate, unconditional-on-draw-status guard for that family.</para>
+    ///
+    /// <para>This can only ever drop an EXPANSION candidate, never a seed: every caller adds its own
+    /// seed(s) to <paramref name="members"/> before calling this method, and this loop only evaluates
+    /// entries from <paramref name="inventory"/> that are not already in <paramref name="members"/>
+    /// (the <c>memberIds</c> dedup above) — a seed already present can never be re-examined, let alone
+    /// removed, by this filter. That is a structural guarantee, true regardless of any reasoning about
+    /// what a zero-<c>UsedCodes</c> font could or could not have seeded — and such reasoning would be
+    /// wrong to lean on anyway: it holds for <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>'s
+    /// two automatic seeding passes (both gate on an ACTUAL finding, which requires the walk to have
+    /// seen a drawn code), but not for <see cref="AssessReplacementCandidate"/>'s manual path, whose
+    /// "seed" is simply the user's pick — a zero-<c>UsedCodes</c> entry CAN be picked there (see
+    /// <c>BuildReplacement</c>'s own "reachable only through AssessReplacementCandidate" comment) and
+    /// still reaches this method as a pre-existing member of <paramref name="members"/>, never at risk
+    /// from this filter regardless.</para>
     /// </summary>
     private static List<FontInventoryEntry> ExpandHolderGroup(
         PdfDocument document, IReadOnlyList<FontInventoryEntry> inventory,
@@ -578,6 +736,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             (int, int?) candidateKey = (candidate.Id.ObjectNumber, holder.ObjectNumber);
             if (memberIds.Contains(candidateKey)) continue;
             if (HolderGroupKey(document, candidate) != key) continue;
+            if (candidate.UsedCodes.Count == 0) continue; // issue 44: never propose an undrawn sibling
 
             members.Add(candidate);
             memberIds.Add(candidateKey);
@@ -1543,11 +1702,25 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             }
 
             // M1 (review finding), symmetric with BuildReplacement's own guard: an inventory-scoped
-            // expansion (C1) can pull in a sibling that is never actually drawn anywhere in the
-            // document — FontInventory still creates an entry for an unused font resource — whose
-            // UsedCodes is empty and therefore whose CidToGid is empty too (not a partial-coverage
-            // problem; Unresolvable is empty as well, since there is nothing to resolve). Left
-            // unguarded, ToStreamBytes would write .notdef for every CID in that sibling's slice.
+            // expansion (C1) can pull in a sibling that is never actually drawn — FontInventory still
+            // creates an entry for an unused font resource — whose UsedCodes is empty and therefore
+            // whose CidToGid is empty too (not a partial-coverage problem; Unresolvable is empty as
+            // well, since there is nothing to resolve). Left unguarded, ToStreamBytes would write
+            // .notdef for every CID in that sibling's slice.
+            //
+            // Narrowed reachability (issue 44 fix-round, review): ExpandHolderGroup itself now excludes
+            // a zero-UsedCodes candidate from EVERY expansion (see its own doc comment), so an
+            // expansion-added sibling here is guaranteed non-empty UsedCodes and can never trip this
+            // guard anymore. The only entry ExpandHolderGroup's filter cannot touch is one already
+            // present in `group`/`members` BEFORE expansion runs — for ProposeMergedReplace's automatic
+            // path, that is a SEED, which (per FontProgramRule's own dependence on the same walk)
+            // cannot have empty UsedCodes and carry a genuine finding, so this guard is now practically
+            // unreachable from there. It stays reachable from ONE place: AssessReplacementCandidate's
+            // manual path, whose "seed" is the user's raw pick, not a finding — a zero-UsedCodes font
+            // CAN be picked (BuildReplacement's own singleton guard below handles that case alone; this
+            // one fires when the picked font ALSO shares its holder with at least one genuinely-drawn
+            // sibling, so `siblings.Count > 1` and this per-sibling loop actually reaches the pick's own
+            // empty map). Do not delete this as dead code — it is narrow, not unreachable.
             if (mapResult.CidToGid.Count == 0)
             {
                 return new MergedResult(DeclineGroupFact(allEntries, ruleId,
@@ -1820,9 +1993,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     {
         if (!entry.IsAddressable)
         {
-            return new SiblingShapeResult(null, null,
-                "This font is written directly into the page's resources rather than as its own "
-                + "object, so Pellucid cannot address its font program to correct it.");
+            return new SiblingShapeResult(null, null, NotAddressableForReplaceReason);
         }
 
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
@@ -1862,8 +2033,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// whether it is the one being assessed or the one blocking a neighbor's merge.</summary>
     private static string BlockingSiblingReason(FontInventoryEntry blocker) =>
         !blocker.IsAddressable
-            ? "This font is written directly into the page's resources rather than as its own object, "
-              + "so Pellucid cannot address its font program to correct it."
+            ? NotAddressableForReplaceReason
             : blocker.Kind switch
             {
                 FontKind.Type3 => "Type 3 font widths come from each glyph's own drawing procedure, "
@@ -1872,6 +2042,16 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     + "in CFF charstrings, which Pellucid cannot yet rewrite.",
                 _ => "This font's program is not one Pellucid can patch in place.",
             };
+
+    /// <summary>The notdef/replace-family analogue of <see cref="BlockingSiblingReason"/> (issue 44
+    /// fix-round), read by the <c>blockedNotdefKeys</c> full-inventory scan in
+    /// <see cref="Propose(PdfDocument, IEnumerable{ValueTuple{string, int}})"/>. Unlike the width
+    /// family's per-kind switch, the replace family's own <see cref="ValidateSiblingShape"/> makes NO
+    /// further distinction among non-composite kinds — every one of them fails the SAME "kind" check
+    /// with the SAME <see cref="SimpleFontMissingGlyphReason"/> sentence, so this mirrors that single
+    /// branch rather than inventing a parallel per-kind text.</summary>
+    private static string ReplaceBlockingSiblingReason(FontInventoryEntry blocker) =>
+        !blocker.IsAddressable ? NotAddressableForReplaceReason : SimpleFontMissingGlyphReason;
 
     /// <summary>
     /// Mirrors <see cref="AssessCandidate"/>'s shape for the whole-program-replacement path: the SAME
@@ -1936,7 +2116,32 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         var group = new List<FontInventoryEntry> { entry };
         if (entry.ProgramHolderId is not null)
         {
-            ExpandHolderGroup(document, inventory, group, HolderGroupKey(document, entry));
+            long key = HolderGroupKey(document, entry);
+
+            // Issue 44 fix-round (review, item 1): mirrors the automatic path's `blockedNotdefKeys`
+            // full-inventory scan (see its own doc comment for the two-gate rationale). Without this,
+            // ExpandHolderGroup's own zero-UsedCodes filter (called below) can silently exclude an
+            // undrawn mixed-kind or non-addressable sibling from `group` before Step 1 ever sees it —
+            // and, unlike the automatic path, this method has no OTHER mechanism left to catch it:
+            // `SharedHolderReason` was retired in Task 7, and `BuildReplacement`'s singleton fallback
+            // (reached whenever the filtered `group` collapses to just the picked entry) has never had
+            // a shared-holder guard of its own. Scanned BEFORE expansion, against the full inventory,
+            // so draw status cannot hide the blocker here either. No self-matching risk the automatic
+            // path's own scan has to guard against (review Minor 1): `entry` is already guaranteed
+            // composite (checked above) and addressable (checked above), so it can never match its own
+            // predicate — this scan needs no seed exclusion, unlike blockedNotdefKeys.
+            FontInventoryEntry? blocker = inventory.FirstOrDefault(candidate =>
+                candidate.ProgramHolderId is not null
+                && HolderGroupKey(document, candidate) == key
+                && (candidate.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2)
+                    || !candidate.IsAddressable));
+            if (blocker is not null)
+            {
+                return new CandidateAssessment(
+                    null, MergeBlockedSibling(ReplaceBlockingSiblingReason(blocker)), [], null);
+            }
+
+            ExpandHolderGroup(document, inventory, group, key);
             // Review fix (Important 2): same canonicalization the automatic path applies — see
             // CanonicalizeGroupOrder's own doc comment. The picked entry (`entry`) is no longer
             // guaranteed to land at group[0] after this; the picked-row lookup below (and the

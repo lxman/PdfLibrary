@@ -423,4 +423,107 @@ public sealed class MergedReplacementTests
         Assert.Contains("cannot be included in a merged replacement", wrapper2Decline.Reason);
         Assert.Contains(cid0OnlyDeclineReason, wrapper2Decline.Reason);
     }
+
+    /// <summary>
+    /// Tracker issue 44 (landing review of this program): inventory-scoped expansion
+    /// (<c>ExpandHolderGroup</c>) is kind-agnostic and unconditional — it pulls in ANY inventory entry
+    /// sharing the group's holder key, including a font resource that sits in <c>/Resources</c> but is
+    /// never actually shown by any content-stream operator. <c>FontInventory</c> still creates an entry
+    /// for such a resource, with <c>UsedCodes</c> empty. Pre-fix, that entry reaches
+    /// <c>BuildMergedReplacement</c>'s per-sibling loop, where <c>CidReplacementMap.Build</c> correctly
+    /// produces an empty <c>CidToGid</c> for it (nothing to resolve) and the M1 guard correctly refuses
+    /// to let <c>ToStreamBytes</c> write <c>.notdef</c> for every CID in its slice — but the refusal is
+    /// scoped to the WHOLE group via <c>DeclineGroupFact</c>, sinking wrappers 1 and 7 too, even though
+    /// neither of THEM has anything wrong with its own coverage.
+    ///
+    /// <para>Fix (issue 44): <c>ExpandHolderGroup</c> itself excludes a zero-<c>UsedCodes</c> candidate
+    /// before it ever joins <c>members</c>, so it never reaches the M1 guard at all — wrappers 1 and 7
+    /// still merge normally, and the undrawn sibling (object 9) is simply absent from the resulting
+    /// proposal's <c>Targets</c>. The filter lives in the shared helper, not at this call site, so the
+    /// width family and the manual path get the same exclusion by construction (see
+    /// <c>ExpandHolderGroup</c>'s own doc comment).</para>
+    /// </summary>
+    [Fact]
+    public void An_undrawn_sibling_is_excluded_from_the_group_instead_of_sinking_it()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(includeUndrawnType0Sibling: true);
+        FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1), ("font-program", 7)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(2, proposal.Targets.Count);
+        Assert.Equal(new HashSet<int> { 1, 7 },
+            proposal.Targets.Select(t => t.CompositeFont.ObjectNumber).ToHashSet());
+        Assert.DoesNotContain(proposal.Targets, t => t.CompositeFont.ObjectNumber == 9);
+        Assert.All(proposal.Targets, t => Assert.True(t.ClosesFinding));
+    }
+
+    /// <summary>
+    /// Issue 44 fix-round (review) — the real regression the reviewer caught: pre-issue-44, an UNDRAWN
+    /// simple TrueType font sharing the descriptor with a composite notdef group still reached
+    /// <c>ProposeMergedReplace</c>'s Step 1 as a group MEMBER (kind-agnostic expansion had no
+    /// draw-status filter), and <c>ValidateSiblingShape</c> correctly declined the WHOLE group over it
+    /// — the only thing standing between a whole-face composite substitute and a program a genuinely
+    /// rendering simple font depends on. Issue 44's own fix removed that protection as a side effect:
+    /// the undrawn blocker is now excluded from <c>ExpandHolderGroup</c>'s expansion before Step 1 ever
+    /// sees it, so (unguarded) the group would merge and write over the shared program regardless of
+    /// what the undrawn simple font needs.
+    ///
+    /// <para>Fixed by the SAME fix round: <c>blockedNotdefKeys</c>, a full-inventory scan mirroring
+    /// <c>blockedWidthKeys</c> (I1), independent of <c>ExpandHolderGroup</c>'s post-filter membership —
+    /// it finds the blocker directly from <c>inventory</c> regardless of draw status and declines the
+    /// whole REPLACE group over it. This restores TWO of <c>ValidateSiblingShape</c>'s five gates (kind,
+    /// addressability) unconditionally on draw status — NOT all five: the other three (readable as a
+    /// composite dictionary, Identity encoding, presence of <c>/ToUnicode</c>) still depend on the
+    /// blocker being a `members` entry Step 1 actually iterates, so a falsely-undrawn blocker failing
+    /// only one of THOSE three gates is not caught by this scan — a residual, issue-51-conditional gap
+    /// recorded there, deliberately not widened into here (controller ruling, review item 2: those three
+    /// gates are about whether a map can be BUILT for that sibling, not about whether replacing the
+    /// shared program is structurally wrong for it regardless).</para>
+    ///
+    /// <para>The WIDTH family, freed by the declined notdef group (same convention
+    /// <see cref="A_gate_failing_findingless_sibling_blocks_the_whole_group"/> and
+    /// <c>MergedWidthPatchTests.An_expansion_only_members_own_unrelated_finding_still_dispatches</c>
+    /// already pin), proceeds and PATCHES successfully here — object 41 (TrueType, addressable) is
+    /// width-ELIGIBLE by kind, so <c>blockedWidthKeys</c> does not catch it, and the fixture's baked-in
+    /// declared/program width mismatch (CID 0x41: declared 500 vs the shared program's actual 450) is a
+    /// genuine, independently fixable fact about wrapper 1/7's shared advance — untouched by whether the
+    /// undrawn font 41 ever draws anything. This is not a gap the notdef-family fix needs to close: the
+    /// width family's own byte-neutrality argument (<c>ExpandHolderGroup</c>'s own doc comment) already
+    /// covers it — patching hmtx advances can never be observed through a font that draws nothing,
+    /// blocked-key or not.</para>
+    /// </summary>
+    [Fact]
+    public void An_undrawn_mixed_kind_sibling_still_blocks_the_replace_merge()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            includeUndrawnTrueTypeBlockingSibling: true);
+        FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1), ("font-program", 7)]);
+
+        // The notdef/replace family: both seeds decline, wrapped uniformly (neither wrapper individually
+        // has the problem — the blocker, object 41, does). Object 41 itself never appears in result.Fonts
+        // at all — DeclineAll reports exactly the seeded/expanded members, matching blockedWidthKeys' own
+        // documented convention, never the blocker itself.
+        DeclineProposal wrapper1Decline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 1);
+        DeclineProposal wrapper7Decline =
+            Assert.Single(result.Fonts.OfType<DeclineProposal>(), p => p.Font.ObjectNumber == 7);
+        const string rawReason =
+            "This font's finding is a missing glyph, and replacing a simple font's program is not "
+            + "something Pellucid does yet.";
+        foreach (DeclineProposal d in new[] { wrapper1Decline, wrapper7Decline })
+        {
+            Assert.Contains("cannot be included in a merged replacement", d.Reason);
+            Assert.Contains(rawReason, d.Reason);
+        }
+        Assert.DoesNotContain(result.Fonts, p => p.Font.ObjectNumber == 41);
+
+        // The width family proceeds independently (see this test's own doc comment for why that is
+        // correct, not a gap): one merged patch, covering both wrapper 1 and 7, never object 41.
+        PatchWidthsProposal patch = Assert.Single(result.Fonts.OfType<PatchWidthsProposal>());
+        Assert.Equal(new HashSet<int> { 1, 7 }, patch.CoveredFonts.Select(f => f.ObjectNumber).ToHashSet());
+
+        Assert.Equal(3, result.Fonts.Count);
+    }
 }

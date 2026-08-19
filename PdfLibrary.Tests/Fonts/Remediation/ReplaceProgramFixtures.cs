@@ -340,13 +340,40 @@ internal static class ReplaceProgramFixtures
     /// (a blocking sibling with no finding of its own). Its own <c>Widths</c>/<c>FirstChar</c>/
     /// <c>LastChar</c> are present but irrelevant — it exists purely to occupy the shared descriptor
     /// with a non-width-patchable Kind.</para>
+    ///
+    /// <para>Tracker issue 44: <paramref name="includeUndrawnType0Sibling"/> adds a THIRD font (object
+    /// 9), same kind and same shared descendant (4) as wrappers 1/7, referenced in page resources
+    /// (<c>/F2</c>) but never drawn — the same "referenced, not drawn" idiom
+    /// <paramref name="includeType1BlockingSibling"/> uses, but same-KIND this time (so it passes
+    /// <c>ValidateSiblingShape</c> — it carries its own <c>/ToUnicode</c> (object 10), unlike the Type1
+    /// blocker, which fails shape validation outright) with an empty <c>UsedCodes</c> (so
+    /// <c>CidReplacementMap.Build</c> produces an empty <c>CidToGid</c> for it). Pre-fix this reaches
+    /// and sinks the WHOLE group via the M1 guard's <c>DeclineGroupFact</c>; post-fix (issue 44)
+    /// <c>ExpandHolderGroup</c> excludes it before it ever reaches that guard, so wrappers 1/7 still
+    /// merge normally.</para>
+    ///
+    /// <para>Issue 44 fix-round (review): <paramref name="includeUndrawnTrueTypeBlockingSibling"/> adds
+    /// a FOURTH font (object 41), a SIMPLE TrueType font — mixed KIND, unlike
+    /// <paramref name="includeUndrawnType0Sibling"/>'s same-kind sibling above — sharing the SAME
+    /// descriptor (2), referenced in page resources (<c>/F2</c>) but never drawn, same idiom as
+    /// <paramref name="includeType1BlockingSibling"/> but TrueType instead of Type1 (the reviewer's own
+    /// falsifying shape) and, critically, UNDRAWN where that one is also undrawn but happens to fail
+    /// shape validation for an unrelated reason (Type1 is never a valid replace-family sibling kind
+    /// either way). Before ExpandHolderGroup's zero-UsedCodes filter existed, this shape was caught by
+    /// <c>ProposeMergedReplace</c>'s own Step 1 (the sibling was a group MEMBER, so
+    /// <c>ValidateSiblingShape</c> saw it directly); after the filter, it is invisible to
+    /// <c>ExpandHolderGroup</c>'s expansion entirely, so protecting the group over it requires the
+    /// SEPARATE, full-inventory <c>blockedNotdefKeys</c> scan (mirroring <c>blockedWidthKeys</c>) added
+    /// in the same fix round.</para>
     /// </summary>
     public static PdfDocument SharedDescendantDoc(
         IReadOnlyList<(int Code, string Hex)>? wrapper2ToUnicode = null,
         bool wrapper2HasToUnicode = true,
         IReadOnlyList<int>? wrapper2Codes = null,
         IReadOnlyList<int>? wrapper1Codes = null,
-        bool includeType1BlockingSibling = false)
+        bool includeType1BlockingSibling = false,
+        bool includeUndrawnType0Sibling = false,
+        bool includeUndrawnTrueTypeBlockingSibling = false)
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
         var doc = new PdfDocument();
@@ -426,6 +453,49 @@ internal static class ReplaceProgramFixtures
                 [N("FontDescriptor")] = Ref(2),
             });
             WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7, font3: 40);
+            return doc;
+        }
+
+        if (includeUndrawnType0Sibling)
+        {
+            // /ToUnicode is present (unlike the Type1 blocker above, which fails shape validation
+            // entirely) so this sibling passes ValidateSiblingShape and reaches the coverage-resolution
+            // step — the point is to hit the M1 guard (empty UsedCodes -> empty CidToGid), not the
+            // earlier shape gate. Its content is irrelevant; nothing in the page's content stream ever
+            // draws object 9, so FontInventory reports UsedCodes: [] for it regardless.
+            doc.AddObject(10, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x41, "0041")])));
+            var wrapper3 = new PdfDictionary
+            {
+                [N("Type")] = N("Font"),
+                [N("Subtype")] = N("Type0"),
+                [N("BaseFont")] = N("ABCDEF+SharedDescendant"),
+                [N("Encoding")] = N("Identity-H"),
+                [N("DescendantFonts")] = new PdfArray(Ref(4)),
+                [N("ToUnicode")] = Ref(10),
+            };
+            doc.AddObject(9, 0, wrapper3);
+            WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7, font3: 9);
+            return doc;
+        }
+
+        if (includeUndrawnTrueTypeBlockingSibling)
+        {
+            // Mixed KIND (unlike includeUndrawnType0Sibling's same-kind sibling) and UNDRAWN (unlike
+            // SimpleFontSharingDescriptorWithCompositeSeedDoc's own TrueType blocker, which IS drawn) —
+            // the shape blockedNotdefKeys exists to catch: ExpandHolderGroup's zero-UsedCodes filter
+            // means this font never becomes a group MEMBER, so only the separate full-inventory scan
+            // can still see it.
+            doc.AddObject(41, 0, new PdfDictionary
+            {
+                [N("Type")] = N("Font"),
+                [N("Subtype")] = N("TrueType"),
+                [N("BaseFont")] = N("ABCDEF+BlockingTrueType"),
+                [N("FirstChar")] = new PdfInteger(65),
+                [N("LastChar")] = new PdfInteger(65),
+                [N("Widths")] = new PdfArray(new PdfInteger(500)),
+                [N("FontDescriptor")] = Ref(2),
+            });
+            WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 7, font3: 41);
             return doc;
         }
 
