@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using PdfLibrary.Conformance;
 using PdfLibrary.Core;
@@ -501,12 +502,12 @@ public sealed partial class PdfDocumentEditor
     /// to them) and the <c>/ToUnicode</c> claims are exactly what the replacement realised (spec §3
     /// steps 8-9).
     ///
-    /// <para>ISO 32000-2 §9.7.4.2 expects CID 0 to map to <c>.notdef</c>, but
-    /// <paramref name="proposal"/>'s <see cref="ReplaceProgramProposal.CidToGid"/> may map a dead CID 0
-    /// to a REAL glyph when /ToUnicode resolves it (<c>CidReplacementMap.Build</c>, Task 4) — that is
-    /// this program's approved policy, a deliberate call and not an oversight: a document that shows
-    /// CID 0 and has a provable Unicode value for it is asking for that character to render, and
-    /// restoring it beats preserving the .notdef convention for a code the document actually draws.
+    /// <para>ISO 32000-2 §9.7.4.2 expects CID 0 to map to <c>.notdef</c>, but a
+    /// <see cref="ReplaceTarget.CidToGid"/> may map a dead CID 0 to a REAL glyph when /ToUnicode
+    /// resolves it (<c>CidReplacementMap.Build</c>, Task 4) — that is this program's approved policy,
+    /// a deliberate call and not an oversight: a document that shows CID 0 and has a provable Unicode
+    /// value for it is asking for that character to render, and restoring it beats preserving the
+    /// .notdef convention for a code the document actually draws.
     /// </para>
     /// </summary>
     /// <exception cref="ArgumentException"><paramref name="proposal"/>'s program is empty or its
@@ -515,13 +516,14 @@ public sealed partial class PdfDocumentEditor
     /// sfnt to <c>/FontFile2</c>, so a hand-built <see cref="ReplaceProgramProposal"/> carrying a CFF
     /// or Type1 program would otherwise be written into <c>/FontFile2</c> under <c>/Subtype
     /// /CIDFontType2</c> as if it were valid sfnt bytes — silent corruption no consumer can load; the
-    /// planner never proposes this shape, but the proposal's constructor is public), or its <c>Font</c>
-    /// or its <c>CompositeFont</c> names no dictionary (<c>ParamName</c> <c>"font"</c> either way —
-    /// the shared <see cref="ResolveFontDictionary"/> helper's own parameter name, not a proposal
-    /// field name; do not rely on it to tell which of the two failed).</exception>
-    /// <exception cref="InvalidOperationException"><paramref name="proposal"/>'s <c>Font</c> has no
-    /// /FontDescriptor — the planner only proposes a replacement for an existing embedded composite
-    /// font; this is the backstop.</exception>
+    /// planner never proposes this shape, but the proposal's constructor is public), or any
+    /// <see cref="ReplaceTarget.Font"/> or <see cref="ReplaceTarget.CompositeFont"/> names no
+    /// dictionary (<c>ParamName</c> <c>"font"</c> either way — the shared
+    /// <see cref="ResolveFontDictionary"/> helper's own parameter name, not a proposal field name; do
+    /// not rely on it to tell which target or which of the two failed).</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="proposal"/>'s <c>Font</c> (the
+    /// shared program holder, <c>Targets[0].Font</c>) has no /FontDescriptor — the planner only
+    /// proposes a replacement for an existing embedded composite font; this is the backstop.</exception>
     public void ReplaceCompositeProgram(ReplaceProgramProposal proposal)
     {
         ArgumentNullException.ThrowIfNull(proposal);
@@ -534,9 +536,11 @@ public sealed partial class PdfDocumentEditor
                 + "proposal must not reach this operation with a non-TrueType program.",
                 nameof(proposal));
 
-        PdfDictionary cidDict = ResolveFontDictionary(proposal.Font);
-        PdfDictionary wrapperDict = ResolveFontDictionary(proposal.CompositeFont);
-        if (Resolve(cidDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
+        // proposal.Font is Targets[0].Font (the record's base-call), the shared program holder every
+        // target names in the direct-sharing case (§6) — resolved once here for the descriptor guard
+        // and the hoisted holder-level writes below.
+        PdfDictionary holderDict = ResolveFontDictionary(proposal.Font);
+        if (Resolve(holderDict.Get("FontDescriptor")) is not PdfDictionary descriptor)
             throw new InvalidOperationException(
                 $"Font object {proposal.Font.ObjectNumber} has no /FontDescriptor; "
                 + "ReplaceCompositeProgram only rewrites an existing embedded composite font.");
@@ -546,7 +550,9 @@ public sealed partial class PdfDocumentEditor
         //    ~300 KB, compression is not optional). The departing program's other carriers removed:
         //    the guard above already confirmed Format is TrueType, so /FontFile3 and /FontFile are
         //    stale leftovers of whatever the OLD program was, never something this operation itself
-        //    writes.
+        //    writes. Hoisted above the target loop: one substitute program and one /FontDescriptor
+        //    serve every target (direct sharing names the SAME holder), so this must write once
+        //    regardless of how many wrappers Targets carries.
         var programStreamDict = new PdfDictionary();
         var programStream = new PdfStream(programStreamDict, []);
         programStream.SetEncodedData(proposal.Program, "FlateDecode");
@@ -556,36 +562,88 @@ public sealed partial class PdfDocumentEditor
         descriptor.Remove(new PdfName("FontFile3"));
         descriptor.Remove(new PdfName("FontFile"));
 
-        // 2. Descendant identity: CIDFontType2 + explicit CIDToGIDMap + Adobe-Identity-0 (required
-        //    once the GID map is custom; compatible with the untouched Identity-H CMap on the
-        //    wrapper — that CMap addresses CODES, not GIDs, so it needs no change here).
-        cidDict.Set("Subtype", new PdfName("CIDFontType2"));
-
-        var cidToGidStreamDict = new PdfDictionary();
-        var cidToGidStream = new PdfStream(cidToGidStreamDict, []);
-        cidToGidStream.SetEncodedData(
-            CidReplacementMap.ToStreamBytes(proposal.CidToGid, proposal.MaxCid), "FlateDecode");
-        PdfIndirectReference cidToGidRef = _document.RegisterObject(cidToGidStream);
-        cidDict.Set("CIDToGIDMap", cidToGidRef);
-
-        var cidSystemInfo = new PdfDictionary();
-        cidSystemInfo.Set("Registry", new PdfString(Encoding.ASCII.GetBytes("Adobe")));
-        cidSystemInfo.Set("Ordering", new PdfString(Encoding.ASCII.GetBytes("Identity")));
-        cidSystemInfo.Set("Supplement", new PdfInteger(0));
-        cidDict.Set("CIDSystemInfo", cidSystemInfo);
-
-        // 3. Names, both levels — stale metrics describing the departed program would be a quiet lie.
-        wrapperDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
-        cidDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
-        descriptor.Set("FontName", new PdfName(proposal.NewBaseFont));
-
         // 4. Descriptor rebuilt from the substitute's own tables; stale /CIDSet dropped (a full embed
         //    is not a subset — spec §3 step 7). No /MissingWidth: meaningless on a CID descriptor,
         //    which declares its fallback width with /DW on the descendant, not /MissingWidth on the
-        //    descriptor (ISO 32000-2 §9.7.4.3) — see WriteMetricEntries.
+        //    descriptor (ISO 32000-2 §9.7.4.3) — see WriteMetricEntries. Also hoisted: one descriptor,
+        //    shared by every target.
         descriptor.Set("Flags", new PdfInteger(proposal.DescriptorFlags));
         WriteMetricEntries(descriptor, proposal.Descriptor, includeMissingWidth: false);
         descriptor.Remove(new PdfName("CIDSet"));
+
+        // 3 (descriptor half). Stale metrics describing the departed program would be a quiet lie —
+        // written once here (every target shares one holder/descriptor) rather than once per target.
+        descriptor.Set("FontName", new PdfName(proposal.NewBaseFont));
+
+        // 2. Descendant identity: CIDFontType2 + explicit CIDToGIDMap + Adobe-Identity-0 (required
+        //    once the GID map is custom; compatible with the untouched Identity-H CMap on the wrapper
+        //    — that CMap addresses CODES, not GIDs, so it needs no change here). Grouped by
+        //    Font.ObjectNumber (the descendant identity) and written exactly ONCE per DISTINCT
+        //    descendant: direct sharing (§6) means N targets can name the SAME descendant, and a
+        //    per-TARGET write here would call RegisterObject for the CIDToGIDMap stream once per
+        //    target sharing it, leaving every write but the last an ORPHANED object nothing
+        //    references — invisible from the descendant dictionary's own final state (last write
+        //    wins) but a real, wasted object in the saved file. Direct sharing guarantees every
+        //    target naming the same descendant carries an identical map (the planner's guarantee),
+        //    but this operation does not trust that blindly — proposal.ReplaceTarget's constructor is
+        //    public, so a hand-built proposal could violate it — hence the equality assertion below
+        //    rather than silently picking whichever target's map the grouping happens to see first.
+        foreach (IGrouping<int, ReplaceTarget> group in proposal.Targets.GroupBy(t => t.Font.ObjectNumber))
+        {
+            ReplaceTarget first = group.First();
+            foreach (ReplaceTarget other in group.Skip(1))
+            {
+                if (other.MaxCid != first.MaxCid || !CidToGidMapsEqual(first.CidToGid, other.CidToGid))
+                {
+                    throw new InvalidOperationException(
+                        $"Font object {first.Font.ObjectNumber} is named by multiple targets in this "
+                        + "proposal that carry unequal CIDToGIDMap data — targets sharing one "
+                        + "descendant must carry an identical map.");
+                }
+            }
+
+            PdfDictionary cidDict = ResolveFontDictionary(first.Font);
+            cidDict.Set("Subtype", new PdfName("CIDFontType2"));
+
+            var cidToGidStreamDict = new PdfDictionary();
+            var cidToGidStream = new PdfStream(cidToGidStreamDict, []);
+            cidToGidStream.SetEncodedData(
+                CidReplacementMap.ToStreamBytes(first.CidToGid, first.MaxCid), "FlateDecode");
+            PdfIndirectReference cidToGidRef = _document.RegisterObject(cidToGidStream);
+            cidDict.Set("CIDToGIDMap", cidToGidRef);
+
+            var cidSystemInfo = new PdfDictionary();
+            cidSystemInfo.Set("Registry", new PdfString(Encoding.ASCII.GetBytes("Adobe")));
+            cidSystemInfo.Set("Ordering", new PdfString(Encoding.ASCII.GetBytes("Identity")));
+            cidSystemInfo.Set("Supplement", new PdfInteger(0));
+            cidDict.Set("CIDSystemInfo", cidSystemInfo);
+
+            cidDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
+        }
+
+        // 3 (wrapper half). Every target's own wrapper renamed — unlike the descendant writes above,
+        // each target's CompositeFont is its own dictionary object (no sharing, so no orphan risk),
+        // so this loops every target rather than every distinct group.
+        foreach (ReplaceTarget target in proposal.Targets)
+        {
+            PdfDictionary wrapperDict = ResolveFontDictionary(target.CompositeFont);
+            wrapperDict.Set("BaseFont", new PdfName(proposal.NewBaseFont));
+        }
+    }
+
+    /// <summary>Value equality for two targets' <see cref="ReplaceTarget.CidToGid"/> maps — the
+    /// identical-map assertion <see cref="ReplaceCompositeProgram"/> makes for targets sharing one
+    /// descendant. <see cref="IReadOnlyDictionary{TKey,TValue}"/> has no structural equality of its
+    /// own, so this compares count plus every key/value pair explicitly.</summary>
+    private static bool CidToGidMapsEqual(
+        IReadOnlyDictionary<int, ushort> a, IReadOnlyDictionary<int, ushort> b)
+    {
+        if (a.Count != b.Count) return false;
+        foreach (KeyValuePair<int, ushort> pair in a)
+        {
+            if (!b.TryGetValue(pair.Key, out ushort value) || value != pair.Value) return false;
+        }
+        return true;
     }
 
     /// <summary>

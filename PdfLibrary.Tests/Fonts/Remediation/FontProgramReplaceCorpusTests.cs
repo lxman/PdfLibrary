@@ -175,21 +175,25 @@ public class FontProgramReplaceCorpusTests
     }
 
     /// <summary>
-    /// note §6 rows 1-3, 6 (post fix round 1): the two SCV CID0 docs, the issue-34 reproducer
-    /// (<c>0000_0000024.pdf</c>), and <c>6000_6000827.pdf</c> — all expected "Close" in §6, and NOW
-    /// MEASURED as genuinely, fully closing: every composite <c>.notdef</c> finding on each doc
-    /// becomes a <see cref="ReplaceProgramProposal"/> (zero declines), and applying all of them
-    /// clears 6.2.11.8 to zero. Before fix round 1's tracker-issue-39 retry, these all declined —
-    /// 'HelveticaNeue-Medium' (SCV's second font) and 'AlArabiya' (0000_0000024.pdf,
-    /// 6000_6000827.pdf) each resolved, on this machine's step-3 synthetic fallback, to a
-    /// CFF-flavoured Nimbus face that <see cref="Fonts.BundledStandard14Provider"/> never got to
-    /// intercept; the retry now gives it that chance and every <see cref="ReplaceProgramProposal.SourceDescription"/>
-    /// below confirms it actually wrote Liberation Sans/Serif, honestly naming what it wrote (not
-    /// the raw family the document named).
+    /// note §6 rows 3, 6 (post fix round 1): the issue-34 reproducer (<c>0000_0000024.pdf</c>) and
+    /// <c>6000_6000827.pdf</c> — expected "Close" in §6, and MEASURED as genuinely, fully closing:
+    /// every composite <c>.notdef</c> finding on each doc becomes a <see cref="ReplaceProgramProposal"/>
+    /// (zero declines), and applying all of them clears 6.2.11.8 to zero. Before fix round 1's
+    /// tracker-issue-39 retry, these all declined — 'AlArabiya' each resolved, on this machine's
+    /// step-3 synthetic fallback, to a CFF-flavoured Nimbus face that
+    /// <see cref="Fonts.BundledStandard14Provider"/> never got to intercept; the retry now gives it
+    /// that chance and every <see cref="ReplaceProgramProposal.SourceDescription"/> below confirms
+    /// it actually wrote Liberation Sans/Serif, honestly naming what it wrote (not the raw family
+    /// the document named).
+    ///
+    /// <para>note §6 rows 1-2 (the two SCV CID0 docs) MOVED to
+    /// <see cref="Cid0_only_documents_decline_entirely_under_the_issue_40_honesty_gate"/> — issue 40
+    /// (this task, 2026-08-17 re-measure): both SCV composite fonts draw CID 0 as their SOLE dead
+    /// code, and <c>FontProgramRule</c> now flags a USED CID 0 regardless of what any replacement's
+    /// map assigns it, so a "fix" here would close zero rule-visible findings. The planner's own
+    /// cid0-only honesty gate declines both rather than proposing that false fix.</para>
     /// </summary>
     [Theory]
-    [InlineData("local", "SCV~us~en~file=N0088673.pdf~gen~ref.pdf")]
-    [InlineData("local", "SCV~us~en~file=SCVTORQUEWRENCH.PDF~gen~ref.PDF")]
     [InlineData("ccmain", "0000_0000024.pdf")]
     [InlineData("ccmain", "6000_6000827.pdf")]
     public void Fully_closing_documents_lose_every_notdef_finding_without_raising_width(string corpus, string file)
@@ -223,6 +227,39 @@ public class FontProgramReplaceCorpusTests
             $"{afterWidth}) — the replacement program must already satisfy declared widths (spec §3).");
 
         AssertRuleCountsHold(file, beforeByRule, CountByRule(after));
+    }
+
+    /// <summary>
+    /// Issue 40 (this task, 2026-08-17 re-measure): note §6 rows 1-2, the two SCV docs — expected
+    /// "Close" in §6 and measured as such through fix round 1, but MEASURED HERE (post issue-40
+    /// predicate fix) as declining ENTIRELY: both composite fonts on each doc draw CID 0 as their
+    /// SOLE dead code (all their other used codes already resolve to a real glyph in the OLD
+    /// program). <c>FontProgramRule.CheckType0</c> now flags a used CID 0 regardless of what glyph
+    /// any replacement's map assigns it (ISO 32000 §9.7.4.2), so a replacement here would close ZERO
+    /// rule-visible findings — <c>FontRemediationPlanner.ProposeProgramReplace</c>'s cid0-only
+    /// honesty gate declines instead of proposing that false fix. Moved out of
+    /// <see cref="Fully_closing_documents_lose_every_notdef_finding_without_raising_width"/>, which
+    /// these two rows no longer satisfy (zero replacements, not "every finding closes").
+    /// </summary>
+    [Theory]
+    [InlineData("SCV~us~en~file=N0088673.pdf~gen~ref.pdf")]
+    [InlineData("SCV~us~en~file=SCVTORQUEWRENCH.PDF~gen~ref.PDF")]
+    public void Cid0_only_documents_decline_entirely_under_the_issue_40_honesty_gate(string file)
+    {
+        string? root = Corpus();
+        Assert.SkipWhen(root is null, $"corpus not present at {DefaultCorpus} (LocalOnly)");
+
+        string path = Path.Combine(root!, file);
+        (List<ReplaceProgramProposal> replacements, List<DeclineProposal> declines, List<PatchWidthsProposal> patches,
+            PreflightResult before, int total) = ProposeFor(path);
+
+        Assert.True(NotdefCount(before) > 0, $"{file}: expected at least one pre-existing .notdef finding.");
+        Assert.Empty(patches);
+        Assert.Empty(replacements);
+        Assert.Equal(total, declines.Count);
+        Assert.True(declines.All(d => d.Reason.Contains("character code 0")),
+            $"{file}: expected every decline to cite the issue-40 cid0-only reason; got: " +
+            string.Join(" | ", declines.Select(d => d.Reason)));
     }
 
     /// <summary>
@@ -342,19 +379,21 @@ public class FontProgramReplaceCorpusTests
     /// PRE-EXISTING charstring decline (unrelated to this task; the same finding
     /// <see cref="FontProgramWidthRepairCorpusTests.Cff_documents_decline_with_the_charstring_reason"/>
     /// pins), alongside object 1424's composite <c>.notdef</c> finding (CID0, family
-    /// 'AGaramond-Semibold'). MEASURED post fix-round-1: object 1424 now CLOSES — 'AGaramond'
-    /// matches the serif keyword and 'Semibold' matches the bold-substring check, so Classify derives
-    /// 'Times-Bold', BundledStandard14Provider intercepts it (the 'times' base-35 alias), and the
-    /// retry writes Liberation Serif Bold. (Before fix round 1, object 1424 declined "not a TrueType
-    /// program" — 'AGaramond-Semibold' resolved to a CFF Nimbus-family face via the same
-    /// tracker-issue-39 mechanism as the other docs above.) Object 2032's decline is untouched either
-    /// way — a CFF/CID0 width finding is out of the replace path's scope entirely. This doc's
-    /// pre-existing <c>indirect-object-spacing</c> count is ZERO (unlike the SCV docs), so this run's
-    /// own <see cref="AssertRuleCountsHold"/> call proves absence-of-regression only here, not that
-    /// the tolerance branch is exercised.
+    /// 'AGaramond-Semibold'). Post fix-round-1 (tracker issue 39), object 1424 used to CLOSE:
+    /// 'AGaramond' matches the serif keyword and 'Semibold' matches the bold-substring check, so
+    /// Classify derives 'Times-Bold', BundledStandard14Provider intercepts it, and the retry wrote
+    /// Liberation Serif Bold.
+    ///
+    /// <para>Issue 40 (this task, 2026-08-17 re-measure, gate simplified further per 2026-08-17
+    /// review) MOVED this: object 1424 draws CID 20 (live) and CID 0. The planner's cid0 honesty
+    /// gate declines whenever a font draws CID 0 at all — <c>FontProgramRule</c> flags it regardless
+    /// of what any replacement's map assigns, and CheckType0's single per-font finding would survive
+    /// any replacement unconditionally either way. Object 1424 is now MEASURED as a second decline,
+    /// alongside object 2032's untouched, unrelated CFF-charstring decline — both objects decline,
+    /// zero replacements, so there is nothing left to apply.</para>
     /// </summary>
     [Fact]
-    public void Mixed_document_closes_its_notdef_finding_and_keeps_its_unrelated_width_decline()
+    public void Mixed_document_declines_both_its_notdef_and_its_unrelated_width_finding()
     {
         string? root = CcMainCorpus();
         Assert.SkipWhen(root is null, $"corpus not present at {CcMainDefaultCorpus} (LocalOnly)");
@@ -365,30 +404,20 @@ public class FontProgramReplaceCorpusTests
             PreflightResult before, int total) = ProposeFor(path);
 
         Assert.Empty(patches);
-        Assert.Equal(total, replacements.Count + declines.Count);
+        Assert.Empty(replacements);
+        Assert.Equal(total, declines.Count);
 
-        // Font.ObjectNumber is the PROGRAM HOLDER (descendant CIDFont, object 1426) — CompositeFont
-        // is the Type0 wrapper (object 1424, the one note §6 names).
-        ReplaceProgramProposal notdefReplacement = Assert.Single(replacements);
-        Assert.Equal(1424, notdefReplacement.CompositeFont.ObjectNumber);
-        Assert.Contains("Liberation", notdefReplacement.SourceDescription);
+        DeclineProposal notdefDecline = Assert.Single(declines,
+            d => d.Reason.Contains("character code 0"));
+        Assert.Equal(1424, notdefDecline.Font.ObjectNumber);
 
         DeclineProposal widthDecline = Assert.Single(declines,
             d => d.Reason.Contains("stores its advances in CFF charstrings"));
         Assert.Equal(2032, widthDecline.Font.ObjectNumber);
 
-        int beforeWidth = WidthCount(before);
-        Dictionary<string, int> beforeByRule = CountByRule(before);
-
-        PreflightResult after = ApplyAndRecheck(path, replacements);
-
-        Assert.Equal(0, NotdefCount(after));
-
-        int afterWidth = WidthCount(after);
-        Assert.True(afterWidth <= beforeWidth,
-            $"{file}: width finding count ROSE after applying the measured replacement (before " +
-            $"{beforeWidth}, after {afterWidth}).");
-
-        AssertRuleCountsHold(file, beforeByRule, CountByRule(after));
+        // Nothing to apply — both findings decline (mirrors the shape of the coverage-gap and
+        // no-tounicode decline-only tests above): unlike the pre-issue-40 measurement, this doc no
+        // longer has a replacement to round-trip through ApplyAndRecheck.
+        Assert.True(NotdefCount(before) > 0, $"{file}: expected at least one pre-existing .notdef finding.");
     }
 }

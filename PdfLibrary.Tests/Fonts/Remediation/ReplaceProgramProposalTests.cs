@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using CffTestFixtures;
 using PdfLibrary.Conformance.Rules;
@@ -77,202 +78,17 @@ public sealed class ReplaceProgramProposalTests
     private static PdfDocument DeadCid2Doc(
         IReadOnlyList<(int Code, string Hex)>? toUnicodeEntries = null,
         bool includeToUnicode = true,
-        string contentHex = "0000 0041",
+        string contentHex = "0042 0041",
         string baseFont = "ABCDEF+DeadFace",
         int flags = 4,
         int? italicAngle = null,
-        ushort macStyle = 0) =>
+        ushort macStyle = 0,
+        ushort[]? cidToGid = null) =>
         ReplaceProgramFixtures.DeadCid2Doc(
-            toUnicodeEntries, includeToUnicode, contentHex, baseFont, flags, italicAngle, macStyle);
+            toUnicodeEntries, includeToUnicode, contentHex, baseFont, flags, italicAngle, macStyle, cidToGid);
 
     /// <summary>See <see cref="ReplaceProgramFixtures.DeadCid0Doc"/>.</summary>
     private static PdfDocument DeadCid0Doc() => ReplaceProgramFixtures.DeadCid0Doc();
-
-    /// <summary>Local to <see cref="TwoWrappersSharedHolderDoc"/> only — the two shared-fixture
-    /// documents build their own <c>/CIDSystemInfo</c> internally now.</summary>
-    private static void AddCidSystemInfo(PdfDictionary descendant)
-    {
-        descendant[N("CIDSystemInfo")] = new PdfDictionary
-        {
-            [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
-            [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
-            [N("Supplement")] = new PdfInteger(0),
-        };
-    }
-
-    /// <summary>Two Type0 wrappers (objects 1 and 7) sharing ONE descendant CIDFont (object 4) — the
-    /// <c>ProgramHolderId != Id</c> composite fixture where two logical fonts share a program holder,
-    /// making the controller's issue-38 guard reachable through <c>Propose</c> for real (previously
-    /// untested per program memory). Only wrapper 1 draws anything; wrapper 2 exists purely as a
-    /// sibling in the SAME page's font resources, which is all <c>FontInventory.Read</c> needs to see
-    /// it (a resource-presence walk, not a usage walk).</summary>
-    private static PdfDocument TwoWrappersSharedHolderDoc()
-    {
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
-        var doc = new PdfDocument();
-        doc.AddObject(3, 0, new PdfStream(
-            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
-        doc.AddObject(2, 0, new PdfDictionary
-        {
-            [N("Type")] = N("FontDescriptor"),
-            [N("FontName")] = N("ABCDEF+Shared"),
-            [N("Flags")] = new PdfInteger(4),
-            [N("FontFile2")] = Ref(3),
-        });
-        var descendant = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
-            [N("DW")] = new PdfInteger(1000),
-        };
-        AddCidSystemInfo(descendant);
-        doc.AddObject(4, 0, descendant);
-
-        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
-
-        var wrapper1 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(4)),
-            [N("ToUnicode")] = Ref(6),
-        };
-        doc.AddObject(1, 0, wrapper1);
-
-        var wrapper2 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(4)),
-        };
-        doc.AddObject(7, 0, wrapper2);
-
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj ET")));
-        doc.AddObject(22, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Page"),
-            [N("Parent")] = Ref(21),
-            [N("Contents")] = Ref(11),
-            [N("Resources")] = new PdfDictionary
-            {
-                [N("Font")] = new PdfDictionary { [N("F0")] = Ref(1), [N("F1")] = Ref(7) },
-            },
-        });
-        doc.AddObject(21, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Pages"),
-            [N("Kids")] = new PdfArray(Ref(22)),
-            [N("Count")] = new PdfInteger(1),
-        });
-        doc.AddObject(20, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(21) });
-        doc.Trailer.Dictionary[N("Root")] = Ref(20);
-        return doc;
-    }
-
-    /// <summary>Two Type0 wrappers (objects 1 and 7), each with its OWN, separately-numbered descendant
-    /// CIDFont (objects 4 and 5) — so <c>ProgramHolderId</c> genuinely differs between the two logical
-    /// fonts, unlike <see cref="TwoWrappersSharedHolderDoc"/> — but both descendants point at the SAME
-    /// <c>/FontDescriptor</c> object (2), and so the same <c>/FontFile2</c> (3). This is the
-    /// descriptor-level sharing case <c>SharedHolderReason</c>'s object-number-only comparison used to
-    /// miss: two DISTINCT program holders sharing one descriptor still collide on the single
-    /// <c>/FontFile2</c> write. Unlike <see cref="TwoWrappersSharedHolderDoc"/>, BOTH wrappers draw the
-    /// dead CID 0 here (not just wrapper 1) — each needs its OWN genuine 6.2.11.8 finding from the real
-    /// <c>FontProgramRule</c> for <c>Propose</c>'s dispatch to route it into <c>ProposeProgramReplace</c>
-    /// at all, which is where the descriptor-collision guard lives.</summary>
-    private static PdfDocument TwoWrappersSharedDescriptorDoc()
-    {
-        byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
-        var doc = new PdfDocument();
-        doc.AddObject(3, 0, new PdfStream(
-            new PdfDictionary { [N("Length1")] = new PdfInteger(font.Length) }, font));
-        doc.AddObject(2, 0, new PdfDictionary
-        {
-            [N("Type")] = N("FontDescriptor"),
-            [N("FontName")] = N("ABCDEF+Shared"),
-            [N("Flags")] = new PdfInteger(4),
-            [N("FontFile2")] = Ref(3),
-        });
-
-        var descendant1 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
-            [N("DW")] = new PdfInteger(1000),
-        };
-        AddCidSystemInfo(descendant1);
-        doc.AddObject(4, 0, descendant1);
-
-        var descendant2 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("CIDFontType2"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("FontDescriptor")] = Ref(2),
-            [N("CIDToGIDMap")] = N("Identity"),
-            [N("DW")] = new PdfInteger(1000),
-        };
-        AddCidSystemInfo(descendant2);
-        doc.AddObject(5, 0, descendant2);
-
-        doc.AddObject(6, 0, new PdfStream(new PdfDictionary(), BfCharBytes([(0x0000, "0041")])));
-
-        var wrapper1 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(4)),
-            [N("ToUnicode")] = Ref(6),
-        };
-        doc.AddObject(1, 0, wrapper1);
-
-        var wrapper2 = new PdfDictionary
-        {
-            [N("Type")] = N("Font"),
-            [N("Subtype")] = N("Type0"),
-            [N("BaseFont")] = N("ABCDEF+Shared"),
-            [N("Encoding")] = N("Identity-H"),
-            [N("DescendantFonts")] = new PdfArray(Ref(5)),
-            [N("ToUnicode")] = Ref(6),
-        };
-        doc.AddObject(7, 0, wrapper2);
-
-        // Both fonts draw the dead CID 0 — unlike TwoWrappersSharedHolderDoc, where only wrapper 1
-        // draws — so each gets its OWN genuine 6.2.11.8 finding from the real FontProgramRule.
-        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0000> Tj /F1 12 Tf <0000> Tj ET")));
-        doc.AddObject(22, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Page"),
-            [N("Parent")] = Ref(21),
-            [N("Contents")] = Ref(11),
-            [N("Resources")] = new PdfDictionary
-            {
-                [N("Font")] = new PdfDictionary { [N("F0")] = Ref(1), [N("F1")] = Ref(7) },
-            },
-        });
-        doc.AddObject(21, 0, new PdfDictionary
-        {
-            [N("Type")] = N("Pages"),
-            [N("Kids")] = new PdfArray(Ref(22)),
-            [N("Count")] = new PdfInteger(1),
-        });
-        doc.AddObject(20, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(21) });
-        doc.Trailer.Dictionary[N("Root")] = Ref(20);
-        return doc;
-    }
 
     // ── automatic path (Propose) ────────────────────────────────────────────────────────────────
 
@@ -285,16 +101,35 @@ public sealed class ReplaceProgramProposalTests
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
-        Assert.Equal(4, proposal.Font.ObjectNumber);           // descendant holder
-        Assert.Equal(1, proposal.CompositeFont.ObjectNumber);  // Type0 wrapper
+        Assert.Single(proposal.Targets);
+        Assert.Equal(4, proposal.Font.ObjectNumber);                      // descendant holder
+        Assert.Equal(1, proposal.Targets[0].CompositeFont.ObjectNumber);  // Type0 wrapper
         Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0000, out ushort gid0) && gid0 != 0);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
-        Assert.Equal(1, proposal.RestoredCodeCount); // only CID 0 was .notdef in the OLD program
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
+        Assert.Equal(1, proposal.RestoredCodeCount); // only CID 0x42 was .notdef in the OLD program
         Assert.DoesNotContain('+', proposal.NewBaseFont);
         Assert.Contains("Liberation Sans", proposal.SourceDescription);
         Assert.True(proposal.Descriptor.Ascent > 0);
         Assert.NotEqual(0, proposal.DescriptorFlags & 32); // Nonsymbolic, always
+    }
+
+    [Fact]
+    public void A_singleton_replacement_proposal_always_closes_its_own_target()
+    {
+        // Task 3 amendment (controller ruling, post-Task-2 review — spec §6): ClosesFinding is false
+        // only for a group member that draws CID 0 while a sibling does not, and ProposeProgramReplace
+        // declines every CID-0-drawing font BEFORE it ever reaches proposal construction (the gate
+        // above the holder resolution). In this task every proposal is a singleton, so the one target
+        // a singleton proposal ever constructs necessarily closes its own 6.2.11.8 finding.
+        PdfDocument doc = DeadCid2Doc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        ReplaceTarget target = Assert.Single(proposal.Targets);
+        Assert.True(target.ClosesFinding);
     }
 
     [Fact]
@@ -307,7 +142,7 @@ public sealed class ReplaceProgramProposalTests
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
 
         var m = new EmbeddedFontMetrics(proposal.Program);
-        foreach ((int cid, ushort gid) in proposal.CidToGid)
+        foreach ((int cid, ushort gid) in proposal.Targets[0].CidToGid)
         {
             double declared = cid == 0x41 ? 500 : 1000; // /W [65 [500]] else /DW 1000
             double programWidth = ProgramWidthResolver.Scale(m, m.GetAdvanceWidth(gid));
@@ -330,8 +165,10 @@ public sealed class ReplaceProgramProposalTests
     [Fact]
     public void A_coverage_gap_declines_with_no_partial_fix()
     {
-        // <E000> is Private Use Area — Liberation Sans has no glyph for it.
-        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0000, "E000")], contentHex: "0000");
+        // <E000> is Private Use Area — Liberation Sans has no glyph for it. Uses the migrated dead
+        // code (0x42), not CID 0 — CID 0 alone would now hit the issue-40 cid0-only honesty decline
+        // before ever reaching the coverage-gap check, which is not what this test exercises.
+        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0042, "E000")], contentHex: "0042");
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
@@ -386,47 +223,115 @@ public sealed class ReplaceProgramProposalTests
 
         var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
         Assert.Equal(FontProgramFormat.TrueType, proposal.Format);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0000, out ushort gid0) && gid0 != 0);
-        Assert.True(proposal.CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
-        // CID 0 is .notdef in the OLD (charset-bearing) program; CID 0x41 already has a real glyph
-        // there (gid 1, via the charset) — only the former is a restored code.
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0042, out ushort gid42) && gid42 != 0);
+        Assert.True(proposal.Targets[0].CidToGid.TryGetValue(0x0041, out ushort gid41) && gid41 != 0);
+        // CID 0x42 is .notdef in the OLD (charset-bearing) program — absent from customCharsetSids;
+        // CID 0x41 already has a real glyph there (gid 1, via the charset) — only the former is a
+        // restored code.
         Assert.Equal(1, proposal.RestoredCodeCount);
     }
 
+    // ── issue 40 honesty: a used CID 0 can never be fixed by a replacement ────────────────────────
+
+    /// <summary>Verbatim per the controller brief — a later sweep taxonomy keys on this exact
+    /// string. Pinning it with one full-string Assert.Equal (not fragment Contains checks) is what
+    /// actually proves the wording a later task depends on, not just that SOME substring survived.</summary>
+    private const string Cid0OnlyDeclineReason =
+        "This font draws character code 0, which ISO 32000 defines as .notdef regardless of what "
+        + "glyph the font maps it to — no font-side fix can make that draw conformant.";
+
     [Fact]
-    public void Two_type0_wrappers_sharing_one_descendant_decline_the_shared_program_holder()
+    public void A_cid0_only_font_declines_rather_than_proposing_a_fix_that_closes_nothing()
     {
-        // Controller ruling, tracker issue 38: last-write-wins per PROGRAM HOLDER vs. one proposal per
-        // LOGICAL font — see FontRemediationPlanner.SharedHolderReason's doc comment.
-        PdfDocument doc = TwoWrappersSharedHolderDoc();
+        // CID 0 is the font's ONLY dead code (DeadCid2DocDrawingCidZero's default: /CIDToGIDMap
+        // /Identity, content "0000 0041" — CID 0x41 identity-maps to a nonzero "live" GID). Since
+        // FontProgramRule now flags a USED CID 0 regardless of what any replacement's map assigns
+        // it, proposing a swap here would close ZERO rule-visible findings — the false-fix shape
+        // the resave-harness convention exists to catch.
+        using PdfDocument doc = ReplaceProgramFixtures.DeadCid2DocDrawingCidZero(onlyCidZeroDead: true);
+        FontRemediationProposal result = Planner(new RecordingFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1)]);
+
+        DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(Cid0OnlyDeclineReason, decline.Reason);
+    }
+
+    [Fact]
+    public void A_cid0_plus_other_dead_codes_still_declines_because_the_finding_is_per_font()
+    {
+        // Controller ruling (2026-08-17 review, supersedes this task's original "only when CID 0 is
+        // the SOLE dead code" gate shape): CID 0 (forever .notdef) drawn ALONGSIDE a genuinely
+        // different dead code (0x42, via an explicit map). FontProgramRule.CheckType0 emits at most
+        // ONE 6.2.11.8 finding PER FONT (a single OR'd notdefHit bool across every drawn code, not
+        // one finding per dead code) — so this font's single finding survives ANY replacement
+        // unconditionally, because CID 0 is still drawn (the content stream is untouched by a
+        // program swap) and still .notdef afterward regardless of the substitute's map. A proposal
+        // here would therefore close ZERO rule-visible findings on this font too — the same
+        // false-fix shape the cid0-only case catches — so the gate declines on CID 0's mere
+        // presence, with no other-dead-codes carve-out.
+        using PdfDocument doc = ReplaceProgramFixtures.DeadCid2DocDrawingCidZero(onlyCidZeroDead: false);
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
 
         DeclineProposal decline = Assert.IsType<DeclineProposal>(Assert.Single(result.Fonts));
-        Assert.Contains("shares this font's embedded program", decline.Reason);
+        Assert.Equal(Cid0OnlyDeclineReason, decline.Reason);
     }
 
     [Fact]
-    public void Two_type0_wrappers_with_distinct_descendants_sharing_one_descriptor_both_decline()
+    public void Two_type0_wrappers_sharing_one_descendant_merge_even_when_only_one_findings_is_proposed()
     {
-        // Descriptor-level sharing case: unlike TwoWrappersSharedHolderDoc, the two logical fonts here
-        // have DISTINCT, separately-numbered ProgramHolderIds — the object-number-only comparison in
-        // the ORIGINAL SharedHolderReason would have missed this and let both through as independent
-        // ReplaceProgramProposals, each with its own CidToGid map, targeting the same /FontDescriptor's
-        // /FontFile2 — last write wins, the loser's CIDToGIDMap indexes the winner's face.
-        PdfDocument doc = TwoWrappersSharedDescriptorDoc();
+        // GUARD-ERA TEST, promoted (F-4b Task 4, controller ruling tracker issue 38), then RE-PROMOTED
+        // (Task 4 review finding C1, spec §4 2026-08-18 clarification, commit 16d7585): the last-write-
+        // wins-per-PROGRAM-HOLDER guard (FontRemediationPlanner.SharedHolderReason) that used to
+        // decline this shape is DELETED — Propose() now groups font-program findings sharing one
+        // holder BEFORE dispatch and routes a multi-entry group to the merged builder instead.
+        //
+        // Group MEMBERSHIP is INVENTORY-scoped, not findings-scoped: even though only object 1's
+        // finding is in THIS call's input, wrapper 7 (which shares the SAME descendant, and — in this
+        // fixture's default shape — independently draws the shared dead code 0x42 too) is pulled in by
+        // Propose()'s inventory-scoped expansion regardless. Skipping it here is exactly the silent-
+        // .notdef corruption the review caught: the merged replacement rewrites the shared /FontFile2
+        // either way, and an uncovered sibling's CIDToGIDMap would then point at the DEPARTED
+        // program's glyph ids.
+        //
+        // What stays call-scoped is CLOSING credit: wrapper 7's own finding was never named in this
+        // call's `findings` argument, so it does not get credit for closing — ClosesFinding is false
+        // for its target even though it is a full, correctly-mapped target. See
+        // MergedReplacementTests for the merged proposal's full shape assertions (identical UNION map,
+        // findingless-sibling expansion, width subsumption).
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
+        var provider = new StubFontProvider(LiberationSansBytes());
+
+        FontRemediationProposal result = Planner(provider).Propose(doc, [("font-program", 1)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper1Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 1);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        Assert.True(wrapper1Target.ClosesFinding, "wrapper 1's finding was named in this call");
+        Assert.False(wrapper7Target.ClosesFinding, "wrapper 7's finding was NOT named in this call");
+        // Direct sharing: both targets still carry the identical UNION map, exactly as when both
+        // findings are passed together.
+        Assert.Equal(wrapper1Target.CidToGid, wrapper7Target.CidToGid);
+    }
+
+    [Fact]
+    public void Two_type0_wrappers_with_distinct_descendants_sharing_one_descriptor_merge_together()
+    {
+        // GUARD-ERA TEST, promoted (F-4b Task 4): descriptor-level sharing case — the two logical
+        // fonts have DISTINCT, separately-numbered ProgramHolderIds, but both descendants' /FontFile2
+        // resolves through the SAME /FontDescriptor. Both findings are in THIS call's input, so
+        // HolderGroupKey (descriptor object number) groups them and the merged builder runs instead
+        // of declining. See MergedReplacementTests for the per-target-map assertions.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc();
         var provider = new StubFontProvider(LiberationSansBytes());
 
         FontRemediationProposal result =
             Planner(provider).Propose(doc, [("font-program", 1), ("font-program", 7)]);
 
-        Assert.Equal(2, result.Fonts.Count);
-        foreach (FontProposal proposal in result.Fonts)
-        {
-            DeclineProposal decline = Assert.IsType<DeclineProposal>(proposal);
-            Assert.Contains("shares this font's embedded program", decline.Reason);
-        }
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(2, proposal.Targets.Count);
     }
 
     [Fact]
@@ -493,8 +398,9 @@ public sealed class ReplaceProgramProposalTests
         // could not fix it and must not be attempted. Proven by making the SYNTHETIC name resolve
         // to a CFF face: if the retry incorrectly fired anyway, BuildReplacement would run against
         // it and the decline reason would flip to "not a TrueType program" — the assertion below
-        // catches that regression, not just "the decline is still a decline".
-        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0000, "E000")], contentHex: "0000");
+        // catches that regression, not just "the decline is still a decline". Uses the migrated
+        // dead code (0x42), not CID 0 — see A_coverage_gap_declines_with_no_partial_fix.
+        PdfDocument doc = DeadCid2Doc(toUnicodeEntries: [(0x0042, "E000")], contentHex: "0042");
         byte[] cff = MinimalCff.Build(charsetOperand: null, numGlyphs: 4);
         var provider = new RawVsSyntheticFontProvider("DeadFace", LiberationSansBytes(), "Helvetica", cff);
 
@@ -608,6 +514,105 @@ public sealed class ReplaceProgramProposalTests
         Assert.Null(result.Proposal);
     }
 
+    // ── manual path merges (Task 7, tracker issue 38) ──────────────────────────────────────────
+
+    [Fact]
+    public void AssessReplacementCandidate_merges_a_shared_holder_group()
+    {
+        // Task 7: the manual path's own TEMPORARY guard (SharedHolderReason) is retired — assessing a
+        // candidate against ANY member of a shared-holder group now returns the SAME merged proposal
+        // the automatic path builds, naming a target per member.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper1Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 1);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        // Ruling 2: seedIds for the manual path is ONLY the picked entry — wrapper 1 (picked) closes;
+        // wrapper 7 (pulled in by holder expansion) was never asked to be fixed, so it does not.
+        Assert.True(wrapper1Target.ClosesFinding);
+        Assert.False(wrapper7Target.ClosesFinding);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_hard_blocks_a_merge_cid_conflict()
+    {
+        // The conflicting-ToUnicode fixture: wrapper 2 says 0x42 -> 'Z', wrapper 1 says 0x42 -> 'B' —
+        // two fonts sharing one descendant map the same character code to different glyphs, which no
+        // single replacement program can serve.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            wrapper2ToUnicode: [(0x0042, "005A")]);
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Contains("different characters", result.HardBlockReason);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_merge_does_not_gain_the_automatic_paths_group_wide_cid0_decline()
+    {
+        // Ruling 1 (controller brief, Task 7): the manual path routes through BuildMergedReplacement
+        // DIRECTLY, never ProposeMergedReplace, so it never runs the automatic path's group-wide
+        // Cid0OnlyDeclineReason gate. The picked entry (wrapper 7) draws ONLY CID 0 here — the exact
+        // shape that makes the AUTOMATIC path (ProposeMergedReplace) decline the whole group outright,
+        // since no seed would close — but the manual path still proposes, honestly reporting
+        // ClosesFinding: false for the picked entry's own target instead of refusing outright.
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            wrapper2ToUnicode: [(0x00, "0043")], wrapper2Codes: [0x00]);
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 7)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper2Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        Assert.False(wrapper2Target.ClosesFinding, "wrapper 7 draws only CID 0, which never closes");
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_merge_uses_the_callers_source_description()
+    {
+        // sourceDescription is a manual-path-only parameter — the merged path must thread it through
+        // BuildMergedReplacement exactly as the singleton path already threads it through
+        // BuildReplacement, rather than silently falling back to "from your system fonts".
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0,
+            sourceDescription: "User-picked Test Face");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal("User-picked Test Face", proposal.SourceDescription);
+    }
+
+    [Fact]
+    public void AssessReplacementCandidate_merge_blocks_when_a_sibling_is_not_composite()
+    {
+        // Task 4 round-2 ruling, mirrored for the manual path: a non-composite sibling sharing the
+        // picked entry's holder blocks the WHOLE assessment — writing a composite substitute over a
+        // shared program a simple font depends on would corrupt it. This is a real corruption hazard,
+        // not an over-decline.
+        PdfDocument doc = ReplaceProgramFixtures.SimpleFontSharingDescriptorWithCompositeSeedDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Contains("cannot be included in a merged replacement", result.HardBlockReason);
+    }
+
     [Fact]
     public void A_genuinely_italic_program_is_replaced_with_an_italic_face_even_when_nothing_declares_it()
     {
@@ -626,5 +631,32 @@ public sealed class ReplaceProgramProposalTests
             "the embedded program's head.macStyle declares italic, and the program outranks the "
             + "style-silent name/descriptor");
         Assert.False(request.Bold);
+    }
+
+    /// <summary>
+    /// Whole-branch review pre-flight ruling, settled empirically: the controller's pre-flight guess
+    /// was that an empty <c>Targets</c> list would throw <c>IndexOutOfRangeException</c> from the
+    /// record's base-constructor-call argument (<c>Targets[0].Font</c> in
+    /// <c>: FontProposal(Targets[0].Font, RuleId)</c>), reasoning that base-constructor-call arguments
+    /// are evaluated before the derived type's own field/auto-property initializers run — making the
+    /// explicit <c>ArgumentException</c> guard (<c>Targets.Count > 0 ? Targets : throw ...</c>)
+    /// unreachable. The reviewer's alternative — that C# runs a record's own auto-property initializers
+    /// BEFORE invoking the base constructor call, so the explicit guard fires first — is the one this
+    /// test proves correct: constructing with an empty list throws the EXPLICIT <c>ArgumentException</c>,
+    /// never reaching <c>Targets[0]</c> at all. The planner never constructs this shape itself (every
+    /// group/singleton path gates on at least one member before calling a builder), but a hand-built
+    /// proposal — the constructor is public — is now pinned to the guard's own message, not a raw
+    /// indexer exception.
+    /// </summary>
+    [Fact]
+    public void An_empty_Targets_list_throws_the_explicit_ArgumentException_guard()
+    {
+        var descriptor = new FontDescriptorValues([0, 0, 0, 0], 0, 0, 0, 0, 0, 0, "measured-I");
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new ReplaceProgramProposal(
+            Targets: [], RuleId: "font-program", SourceDescription: "Test", Program: [1],
+            Format: FontProgramFormat.TrueType, RestoredCodeCount: 0, NewBaseFont: "Test",
+            Descriptor: descriptor, DescriptorFlags: 0));
+        Assert.Equal("Targets", ex.ParamName);
     }
 }

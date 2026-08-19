@@ -144,6 +144,7 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // commit 43ae761 (the GlyphList completion) plus this commit (the derived-name provenance fix)
             // -- a deliberate FP-safety/recall trade-off, explicitly reviewed and accepted, not a
             // regression to chase.
+            // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
             [ConformanceProfile.PdfA2b] = 586,
             [ConformanceProfile.PdfA2u] = 7,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures — full)

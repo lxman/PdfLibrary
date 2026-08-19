@@ -26,6 +26,7 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
+            // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
             [ConformanceProfile.PdfA2b] = 963,   // -2 (965->963), Task 10 fix round (issues 27-28
             // follow-up review, 2026-08-16): the derived-name provenance fix (PdfFontEncoding.IsDerivedName /
             // FontProgramRule.ResolveSimpleGlyph) that closed the 7-new-FP corpus regression ALSO makes the

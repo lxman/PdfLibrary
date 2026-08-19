@@ -92,15 +92,22 @@ public sealed class ReplaceProgramLayoutTests
     }
 
     /// <summary>
-    /// note §6 rows 1, 3 (Task 9's measured "fully closing" set): one SCV CID0 doc and the
-    /// issue-34 cc-main reproducer. Same propose/apply composition
+    /// note §6 rows 1, 3 (Task 9's measured "fully closing" set) — recalibrated for issue 40
+    /// (2026-08-17, this task's own measurement): the local-708 SCV doc
+    /// (<c>SCV~us~en~file=N0088673.pdf~gen~ref.pdf</c>) previously fully replaced, but BOTH of its
+    /// composite fonts draw CID 0 as their ONLY dead code — under the new cid0-only honesty gate
+    /// (<c>FontRemediationPlanner.ProposeProgramReplace</c>) both now DECLINE (measured: zero
+    /// replacements), so this doc no longer has anything to apply and cannot exercise a layout-
+    /// invariance gate. Swapped for <c>6000_6000827.pdf</c> — measured unaffected (its dead code is
+    /// not CID 0), still fully replaces — so both Theory rows keep exercising a genuine
+    /// propose-apply-reload round trip. Same propose/apply composition
     /// <c>FontProgramReplaceCorpusTests.ProposeFor</c>/<c>ApplyAndRecheck</c> uses
     /// (<see cref="EmbedProgramRoundTripTests.DeterministicFonts"/>), against a temp copy — the
     /// corpus root is READ-ONLY, never opened for write.
     /// </summary>
     [Trait("Category", "LocalOnly")]
     [Theory]
-    [InlineData("local", "SCV~us~en~file=N0088673.pdf~gen~ref.pdf")]
+    [InlineData("ccmain", "6000_6000827.pdf")]
     [InlineData("ccmain", "0000_0000024.pdf")]
     public void A_replaced_corpus_document_keeps_its_text_geometry(string corpus, string file)
     {
@@ -124,11 +131,13 @@ public sealed class ReplaceProgramLayoutTests
 
             // font-program findings never carry a PageIndex (FontProgramRule.Make sets ObjectNumber
             // only) — FontInventory's own PagesUsedOn, keyed off the SAME logical-font object number
-            // ReplaceProgramProposal.CompositeFont names, is the real answer to "which page(s) use
-            // this font".
+            // ReplaceTarget.CompositeFont names, is the real answer to "which page(s) use this font".
+            // Every replacement here is a singleton (this task's world), but flattening over Targets
+            // rather than assuming Targets[0] keeps this correct once a proposal ever carries more.
             IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(doc);
             pageIndices = replacements
-                .SelectMany(r => inventory.Where(e => e.Id.ObjectNumber == r.CompositeFont.ObjectNumber))
+                .SelectMany(r => r.Targets)
+                .SelectMany(t => inventory.Where(e => e.Id.ObjectNumber == t.CompositeFont.ObjectNumber))
                 .SelectMany(e => e.PagesUsedOn)
                 .Distinct()
                 .OrderBy(p => p)

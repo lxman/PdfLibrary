@@ -124,8 +124,13 @@ internal sealed class FontProgramRule : IConformanceRule
         foreach (int code in codes)
         {
             int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code);
-            if (gid == 0)
-                notdefHit = true; // a shown code with no glyph in the subset renders as .notdef
+            // ISO 32000 §9.7.4.2: CID 0 IS .notdef, regardless of what glyph the map assigns — and
+            // under the Identity CMap gate above, code == CID. veraPDF keys 6.2.11.8 on the CID
+            // (tracker issue 40, probe-confirmed): an explicit /CIDToGIDMap CAN point CID 0 at a
+            // real, non-zero glyph, which the gid-only predicate accepted as fine. Keying only on
+            // the mapped GID made our verdict diverge exactly when a "fix" rewrote the map that way.
+            if (gid == 0 || code == 0)
+                notdefHit = true; // a shown code with no glyph in the subset, or CID 0, renders/is .notdef
         }
 
         // metrics (6.2.11.5) IS render-mode-exempt — walks only visibleCodes (was: codes). Both
@@ -140,8 +145,8 @@ internal sealed class FontProgramRule : IConformanceRule
 
         if (notdefHit && notdefReported.Add(DedupKey(font)))
             yield return Make(context, font, "8",
-                $"The composite font {Name(font)} renders a character code that maps to the .notdef glyph "
-                + "(glyph 0), which is not present in the embedded font program.");
+                $"The composite font {Name(font)} renders a character code that is, or maps to, the "
+                + ".notdef glyph (glyph 0).");
 
         if (worstDiff > WidthTolerance && metricsReported.Add(DedupKey(font)))
             yield return Make(context, font, "5",
