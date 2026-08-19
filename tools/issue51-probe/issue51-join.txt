@@ -1,0 +1,36 @@
+=== 0000_0000849.pdf ===
+inventory entries : 1204  (composite 937)
+empty UsedCodes   : 893 (composite 893)
+mixed holder groups: 0
+sample ids        : 8885->8885, 8878->8878, 8880->8880, 8894->8894, 8891->8891, 8896->8896
+
+=== Dynamic.pdf ===
+inventory entries : 5  (composite 5)
+empty UsedCodes   : 5 (composite 5)
+mixed holder groups: 0
+sample ids        : 122->125, 70->125, 80->125, 86->125, 91->125
+
+=== 0000_0000425.pdf ===
+inventory entries : 26  (composite 2)
+empty UsedCodes   : 3 (composite 2)
+mixed holder groups: 0
+sample ids        : 11503->11503, 11504->11504, 11505->11505, 11456->11456, 11459->11459, 11462->11462
+
+=== 6000_6000059.pdf ===
+inventory entries : 8  (composite 3)
+empty UsedCodes   : 2 (composite 1)
+mixed holder groups: 0
+sample ids        : 123->123, 126->126, 132->130, 135->135, 138->138, 144->142
+
+=== 6000_6000887.pdf ===
+inventory entries : 10  (composite 6)
+empty UsedCodes   : 2 (composite 2)
+mixed holder groups: 0
+sample ids        : 76->76, 77->90, 78->78, 79->99, 80->80, 81->108
+
+=== 2000_2000901.pdf ===
+inventory entries : 11  (composite 6)
+empty UsedCodes   : 1 (composite 1)
+mixed holder groups: 0
+sample ids        : 374->372, 376->372, 49->49, 62->40, 61->61, 59->59
+
