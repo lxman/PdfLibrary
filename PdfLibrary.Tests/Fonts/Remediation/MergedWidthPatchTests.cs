@@ -576,12 +576,19 @@ public sealed class MergedWidthPatchTests
     /// shape as <see cref="CompositeWidthSeedWithSimpleNotdefSiblingDoc"/> (wrapper 1, live code 0x41
     /// only), sharing its descriptor with a SIMPLE TrueType font (object 30) that carries NO
     /// <c>/Widths</c> array at all — a per-member SHAPE failure <c>BuildMergedWidthPatch</c> catches
-    /// directly, rather than a resolvable-but-contributing-nothing code. Object 30 is referenced in
-    /// page resources but never drawn (FontInventory discovers a REFERENCED font regardless — the same
-    /// idiom <see cref="ReplaceProgramFixtures.SharedDescendantDoc"/>'s own
-    /// <c>includeType1BlockingSibling</c> uses), and its finding is never named in the call — it only
-    /// reaches the merge via inventory-scoped expansion, making it the non-seed this test's assertion
-    /// needs.</summary>
+    /// directly, rather than a resolvable-but-contributing-nothing code. Its finding is never named in
+    /// the call — it only reaches the merge via inventory-scoped expansion, making it the non-seed this
+    /// test's assertion needs.
+    ///
+    /// <para>Issue 44 update: object 30 IS drawn (code 65 via <c>/F1</c>), unlike the original
+    /// "referenced but never drawn" version of this fixture. Pre-issue-44, an UNDRAWN sibling reached
+    /// this same shape gate and (correctly, per this test) blocked the whole group — but issue 44's fix
+    /// excludes a zero-<c>UsedCodes</c> candidate from <c>ExpandHolderGroup</c>'s result entirely, so an
+    /// undrawn object 30 would no longer even become a group MEMBER, and this test would stop exercising
+    /// the wrap-reason mechanism it exists for. Drawing it keeps the shape-failure/wrap-reason mechanism
+    /// under test while conforming to the new (correct) contract: only a font something actually shows
+    /// can block a merge over its own shape.</para>
+    /// </summary>
     private static PdfDocument CompositeWidthSeedWithWidthlessSimpleSiblingDoc()
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
@@ -631,7 +638,9 @@ public sealed class MergedWidthPatchTests
         });
 
         // Simple TrueType font (object 30): shares descriptor 2 directly, no /Widths at all — the
-        // per-member shape failure BuildMergedWidthPatch's own "no /Widths array" gate catches.
+        // per-member shape failure BuildMergedWidthPatch's own "no /Widths array" gate catches. Drawn
+        // (code 65 via /F1, issue 44) so it still passes ExpandHolderGroup's zero-UsedCodes filter and
+        // reaches that gate at all.
         doc.AddObject(30, 0, new PdfDictionary
         {
             [N("Type")] = N("Font"),
@@ -643,7 +652,7 @@ public sealed class MergedWidthPatchTests
         });
 
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
-            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041> Tj ET")));
+            Encoding.ASCII.GetBytes("BT /F0 12 Tf <0041> Tj /F1 12 Tf <41> Tj ET")));
         WidthPatchFixtures.AddSinglePageCatalog(doc, font1: 1, font2: 30);
         return doc;
     }

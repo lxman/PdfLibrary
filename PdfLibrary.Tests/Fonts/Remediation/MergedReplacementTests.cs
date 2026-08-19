@@ -423,4 +423,38 @@ public sealed class MergedReplacementTests
         Assert.Contains("cannot be included in a merged replacement", wrapper2Decline.Reason);
         Assert.Contains(cid0OnlyDeclineReason, wrapper2Decline.Reason);
     }
+
+    /// <summary>
+    /// Tracker issue 44 (landing review of this program): inventory-scoped expansion
+    /// (<c>ExpandHolderGroup</c>) is kind-agnostic and unconditional — it pulls in ANY inventory entry
+    /// sharing the group's holder key, including a font resource that sits in <c>/Resources</c> but is
+    /// never actually shown by any content-stream operator. <c>FontInventory</c> still creates an entry
+    /// for such a resource, with <c>UsedCodes</c> empty. Pre-fix, that entry reaches
+    /// <c>BuildMergedReplacement</c>'s per-sibling loop, where <c>CidReplacementMap.Build</c> correctly
+    /// produces an empty <c>CidToGid</c> for it (nothing to resolve) and the M1 guard correctly refuses
+    /// to let <c>ToStreamBytes</c> write <c>.notdef</c> for every CID in its slice — but the refusal is
+    /// scoped to the WHOLE group via <c>DeclineGroupFact</c>, sinking wrappers 1 and 7 too, even though
+    /// neither of THEM has anything wrong with its own coverage.
+    ///
+    /// <para>Fix (issue 44): <c>ExpandHolderGroup</c> itself excludes a zero-<c>UsedCodes</c> candidate
+    /// before it ever joins <c>members</c>, so it never reaches the M1 guard at all — wrappers 1 and 7
+    /// still merge normally, and the undrawn sibling (object 9) is simply absent from the resulting
+    /// proposal's <c>Targets</c>. The filter lives in the shared helper, not at this call site, so the
+    /// width family and the manual path get the same exclusion by construction (see
+    /// <c>ExpandHolderGroup</c>'s own doc comment).</para>
+    /// </summary>
+    [Fact]
+    public void An_undrawn_sibling_is_excluded_from_the_group_instead_of_sinking_it()
+    {
+        using PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(includeUndrawnType0Sibling: true);
+        FontRemediationProposal result = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(doc, [("font-program", 1), ("font-program", 7)]);
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(Assert.Single(result.Fonts));
+        Assert.Equal(2, proposal.Targets.Count);
+        Assert.Equal(new HashSet<int> { 1, 7 },
+            proposal.Targets.Select(t => t.CompositeFont.ObjectNumber).ToHashSet());
+        Assert.DoesNotContain(proposal.Targets, t => t.CompositeFont.ObjectNumber == 9);
+        Assert.All(proposal.Targets, t => Assert.True(t.ClosesFinding));
+    }
 }

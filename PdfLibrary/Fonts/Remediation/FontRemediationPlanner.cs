@@ -564,6 +564,32 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// <see cref="FontInventory"/>'s <c>FontId(0)</c> direct-dictionary sentinel, silently dropping a
     /// second, genuinely distinct direct-dictionary candidate that happens to share this group's
     /// key.</para>
+    ///
+    /// <para>Tracker issue 44: a candidate whose <see cref="FontInventoryEntry.UsedCodes"/> is empty —
+    /// a font resource present in <c>/Resources</c> but never actually shown by any content-stream
+    /// operator on any page — is excluded here rather than joining <paramref name="members"/>.
+    /// <see cref="FontInventory"/> populates <c>UsedCodes</c> from the same per-page content-stream
+    /// walk the conformance rules themselves read (<c>CollectUsage</c>'s own doc comment: a
+    /// resource-presence scan was deliberately rejected because it "misses a font only reachable
+    /// through a Form XObject, tiling pattern or annotation appearance"), so an empty list here means
+    /// no glyph from this font is drawn anywhere in the document — nothing of its could ever be
+    /// silently regressed to <c>.notdef</c> by a merge that simply leaves it out. Left unfiltered, such
+    /// a candidate still reaches <c>BuildMergedReplacement</c>'s per-sibling coverage loop, where
+    /// <c>CidReplacementMap.Build</c> correctly produces an empty <c>CidToGid</c> for it and the M1
+    /// guard correctly refuses to let <c>ToStreamBytes</c> write <c>.notdef</c> for every CID in its
+    /// slice — but that refusal is scoped to the WHOLE group via <c>DeclineGroupFact</c>, sinking every
+    /// genuinely-drawn sibling sharing its holder along with it. Filtering here, in the one place all
+    /// three callers (the notdef family, the width family, and the manual path) funnel through, means
+    /// they exclude such a candidate identically, by construction, rather than by three separately
+    /// maintained call-site checks agreeing.</para>
+    ///
+    /// <para>This can only ever drop an EXPANSION candidate, never a seed: every caller adds its own
+    /// seed(s) to <paramref name="members"/> before calling this method, and this loop only evaluates
+    /// entries from <paramref name="inventory"/> that are not already in <paramref name="members"/>
+    /// (the <c>memberIds</c> dedup above) — a seed already present can never be re-examined, let alone
+    /// removed, by this filter. That guarantee holds even independent of the reasoning that a
+    /// zero-<c>UsedCodes</c> font could never have seeded a group in the first place (nothing drawn
+    /// means no glyph can raise a <c>.notdef</c> or width finding to seed with).</para>
     /// </summary>
     private static List<FontInventoryEntry> ExpandHolderGroup(
         PdfDocument document, IReadOnlyList<FontInventoryEntry> inventory,
@@ -578,6 +604,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             (int, int?) candidateKey = (candidate.Id.ObjectNumber, holder.ObjectNumber);
             if (memberIds.Contains(candidateKey)) continue;
             if (HolderGroupKey(document, candidate) != key) continue;
+            if (candidate.UsedCodes.Count == 0) continue; // issue 44: never propose an undrawn sibling
 
             members.Add(candidate);
             memberIds.Add(candidateKey);

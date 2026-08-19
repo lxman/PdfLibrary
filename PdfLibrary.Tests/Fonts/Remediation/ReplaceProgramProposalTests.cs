@@ -538,6 +538,35 @@ public sealed class ReplaceProgramProposalTests
         Assert.False(wrapper7Target.ClosesFinding);
     }
 
+    /// <summary>
+    /// Tracker issue 48: the automatic path is tested under BOTH first-class sharing shapes —
+    /// <see cref="ReplaceProgramFixtures.SharedDescendantDoc"/> (direct sharing, one descendant) via
+    /// <see cref="AssessReplacementCandidate_merges_a_shared_holder_group"/> above, and
+    /// <see cref="ReplaceProgramFixtures.SharedDescriptorDoc"/> (descriptor-level sharing, two distinct
+    /// descendants sharing one <c>/FontDescriptor</c>) via <c>MergedReplacementTests</c> — but every
+    /// manual-path merge test in this file constructed its document via <c>SharedDescendantDoc</c> only,
+    /// leaving the manual path's behaviour under descriptor-level sharing untested. Mirrors
+    /// <see cref="AssessReplacementCandidate_merges_a_shared_holder_group"/> exactly, on
+    /// <c>SharedDescriptorDoc</c> instead — coverage only, no production code changed for this issue.
+    /// </summary>
+    [Fact]
+    public void AssessReplacementCandidate_merges_a_shared_descriptor_group()
+    {
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescriptorDoc();
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        var proposal = Assert.IsType<ReplaceProgramProposal>(result.Proposal);
+        Assert.Equal(2, proposal.Targets.Count);
+        ReplaceTarget wrapper1Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 1);
+        ReplaceTarget wrapper7Target = proposal.Targets.Single(t => t.CompositeFont.ObjectNumber == 7);
+        // Same ruling as the direct-sharing case above: only the picked entry (wrapper 1) closes.
+        Assert.True(wrapper1Target.ClosesFinding);
+        Assert.False(wrapper7Target.ClosesFinding);
+    }
+
     [Fact]
     public void AssessReplacementCandidate_hard_blocks_a_merge_cid_conflict()
     {
