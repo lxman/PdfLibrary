@@ -40,6 +40,18 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         "This font's finding is a missing glyph, and replacing a simple font's program is not "
         + "something Pellucid does yet.";
 
+    /// <summary>Single source for the "this font's own dictionary is a direct object, not indirect"
+    /// decline (issue 44 fix-round, review Minor 2) — used by <see cref="ValidateSiblingShape"/>'s own
+    /// IsAddressable gate, <see cref="BlockingSiblingReason"/>'s and
+    /// <see cref="ReplaceBlockingSiblingReason"/>'s IsAddressable branch, and
+    /// <see cref="AssessReplacementCandidate"/>'s manual-path blocker scan (issue 44 fix-round, review
+    /// item 1) — three previously independent verbatim copies that Task 9's decline taxonomy keys on
+    /// this exact text, the same hazard <see cref="SimpleFontMissingGlyphReason"/> was extracted to
+    /// avoid.</summary>
+    private const string NotAddressableForReplaceReason =
+        "This font is written directly into the page's resources rather than as its own object, "
+        + "so Pellucid cannot address its font program to correct it.";
+
     /// <summary>Issue 40 honesty: the decline for a font that draws CID 0 — see
     /// <see cref="ProposeProgramReplace"/>'s cid0 gate. Verbatim string is load-bearing: a later
     /// sweep taxonomy keys on it. The string still reads accurately even though (controller ruling,
@@ -192,20 +204,43 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         // to a bare singleton and falls through to the ordinary per-entry dispatch below
         // (ProposeProgramReplace's own singleton path), which has no blocker check of its own at all —
         // pre-issue-38, corrupting a shared program a genuinely-rendering simple/CFF sibling depends on
-        // was exactly the failure mode Step 1 exists to prevent. This scan restores that protection
-        // unconditionally on draw status, the same way `blockedWidthKeys` already does for the width
-        // family: for every key with at least one notdef SEED, look across the full inventory (not
-        // just `members`) for a sibling sharing the key whose Kind is not composite, or which is not
-        // addressable — the same two cheap, parse-free facts `blockedWidthKeys` checks, deliberately
-        // NOT the deeper ValidateSiblingShape checks (unreadable dictionary, non-Identity encoding,
-        // missing /ToUnicode), which need to resolve the dictionary and are unnecessary for this
-        // shallow, draw-status-independent guard.
+        // was exactly the failure mode Step 1 exists to prevent. This scan restores TWO of
+        // ValidateSiblingShape's five gates (kind, addressability) unconditionally on draw status, the
+        // same way `blockedWidthKeys` already does for the width family: for every key with at least
+        // one notdef SEED, look across the full inventory (not just `members`) for a sibling sharing
+        // the key whose Kind is not composite, or which is not addressable.
+        //
+        // Deliberately NOT the other three (controller ruling, review item 2): unreadable-as-composite,
+        // non-Identity encoding, missing /ToUnicode. Those three are about whether a MAP CAN BE BUILT
+        // for that sibling; kind and addressability are about whether replacing the shared program is
+        // structurally wrong for it regardless of what its own map would look like. Extending this scan
+        // to the other three would need to resolve the dictionary per candidate (not the cheap,
+        // parse-free check this shallow guard stays), and the residual exposure they leave is entirely
+        // issue-51-conditional — it needs a falsely-empty UsedCodes (tracker issue 51) to be observable
+        // at all, since a genuinely-undrawn candidate failing one of those three gates was ALREADY
+        // correctly excluded from `members` and poses no risk (nothing ever reads its map). Recorded in
+        // issue 51, not widened into here. Also fixed by this same review round, mirroring this exact
+        // scan: AssessReplacementCandidate's manual path (see its own comment) — this scan alone does
+        // NOT protect the manual path, which builds its own group independently.
         var blockedNotdefKeys = new Dictionary<long, string>();
         foreach (long key in groupMembers.Keys)
         {
+            // Review Minor 1: excludes the group's OWN seeds from matching as a "blocker" against
+            // themselves. Unlike the width family (whose seeding gate requires IsAddressable), a
+            // notdef seed is gated on Kind and a non-null ProgramHolderId only (the seeding loop
+            // above) — a seed's own LOGICAL dictionary could still be direct (IsAddressable false)
+            // while its program holder is indirect, which would otherwise make it match this scan's
+            // own `!candidate.IsAddressable` half, declining the group over a "sibling" that is
+            // really just the seed itself, wrapped as if it were a fact about someone else.
+            // Unreachable today (FontProgramRule never attributes a finding to a direct dictionary —
+            // FontProgramRule.cs's Make/CheckType0 stamp a null object number for one, and the
+            // seeding loop's own FontInventory.Find/HasNotdefFinding gate filters those out before a
+            // seed is ever added), but FontProgramFindingsFor deliberately supports attribution by
+            // program-holder object number, so this stays a live risk, not a theoretical one.
             FontInventoryEntry? blocker = inventory.FirstOrDefault(candidate =>
                 candidate.ProgramHolderId is not null
                 && HolderGroupKey(document, candidate) == key
+                && !seedIdsByKey[key].Contains(candidate.Id.ObjectNumber)
                 && (candidate.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2)
                     || !candidate.IsAddressable));
             if (blocker is not null)
@@ -1958,9 +1993,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     {
         if (!entry.IsAddressable)
         {
-            return new SiblingShapeResult(null, null,
-                "This font is written directly into the page's resources rather than as its own "
-                + "object, so Pellucid cannot address its font program to correct it.");
+            return new SiblingShapeResult(null, null, NotAddressableForReplaceReason);
         }
 
         if (entry.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2))
@@ -2000,8 +2033,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// whether it is the one being assessed or the one blocking a neighbor's merge.</summary>
     private static string BlockingSiblingReason(FontInventoryEntry blocker) =>
         !blocker.IsAddressable
-            ? "This font is written directly into the page's resources rather than as its own object, "
-              + "so Pellucid cannot address its font program to correct it."
+            ? NotAddressableForReplaceReason
             : blocker.Kind switch
             {
                 FontKind.Type3 => "Type 3 font widths come from each glyph's own drawing procedure, "
@@ -2019,10 +2051,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// with the SAME <see cref="SimpleFontMissingGlyphReason"/> sentence, so this mirrors that single
     /// branch rather than inventing a parallel per-kind text.</summary>
     private static string ReplaceBlockingSiblingReason(FontInventoryEntry blocker) =>
-        !blocker.IsAddressable
-            ? "This font is written directly into the page's resources rather than as its own object, "
-              + "so Pellucid cannot address its font program to correct it."
-            : SimpleFontMissingGlyphReason;
+        !blocker.IsAddressable ? NotAddressableForReplaceReason : SimpleFontMissingGlyphReason;
 
     /// <summary>
     /// Mirrors <see cref="AssessCandidate"/>'s shape for the whole-program-replacement path: the SAME
@@ -2087,7 +2116,32 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         var group = new List<FontInventoryEntry> { entry };
         if (entry.ProgramHolderId is not null)
         {
-            ExpandHolderGroup(document, inventory, group, HolderGroupKey(document, entry));
+            long key = HolderGroupKey(document, entry);
+
+            // Issue 44 fix-round (review, item 1): mirrors the automatic path's `blockedNotdefKeys`
+            // full-inventory scan (see its own doc comment for the two-gate rationale). Without this,
+            // ExpandHolderGroup's own zero-UsedCodes filter (called below) can silently exclude an
+            // undrawn mixed-kind or non-addressable sibling from `group` before Step 1 ever sees it —
+            // and, unlike the automatic path, this method has no OTHER mechanism left to catch it:
+            // `SharedHolderReason` was retired in Task 7, and `BuildReplacement`'s singleton fallback
+            // (reached whenever the filtered `group` collapses to just the picked entry) has never had
+            // a shared-holder guard of its own. Scanned BEFORE expansion, against the full inventory,
+            // so draw status cannot hide the blocker here either. No self-matching risk the automatic
+            // path's own scan has to guard against (review Minor 1): `entry` is already guaranteed
+            // composite (checked above) and addressable (checked above), so it can never match its own
+            // predicate — this scan needs no seed exclusion, unlike blockedNotdefKeys.
+            FontInventoryEntry? blocker = inventory.FirstOrDefault(candidate =>
+                candidate.ProgramHolderId is not null
+                && HolderGroupKey(document, candidate) == key
+                && (candidate.Kind is not (FontKind.Type0CidType0 or FontKind.Type0CidType2)
+                    || !candidate.IsAddressable));
+            if (blocker is not null)
+            {
+                return new CandidateAssessment(
+                    null, MergeBlockedSibling(ReplaceBlockingSiblingReason(blocker)), [], null);
+            }
+
+            ExpandHolderGroup(document, inventory, group, key);
             // Review fix (Important 2): same canonicalization the automatic path applies — see
             // CanonicalizeGroupOrder's own doc comment. The picked entry (`entry`) is no longer
             // guaranteed to land at group[0] after this; the picked-row lookup below (and the

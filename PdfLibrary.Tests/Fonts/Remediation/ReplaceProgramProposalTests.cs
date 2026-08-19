@@ -642,6 +642,35 @@ public sealed class ReplaceProgramProposalTests
         Assert.Contains("cannot be included in a merged replacement", result.HardBlockReason);
     }
 
+    /// <summary>
+    /// Issue 44 fix-round (review, item 1): the manual path had the SAME exposure the automatic path's
+    /// <c>blockedNotdefKeys</c> closes, and it is worse here — there is no OTHER mechanism left to catch
+    /// it at all. <c>ExpandHolderGroup</c>'s zero-<c>UsedCodes</c> filter excludes the undrawn TrueType
+    /// blocker (object 41) from <c>group</c> before Step 1 (<c>ValidateSiblingShape</c>) ever sees it, so
+    /// <c>siblings.Count == 1</c> and control falls to <c>BuildReplacement</c>'s singleton path — which
+    /// has never had a shared-holder guard of its own (<c>SharedHolderReason</c> was retired in Task 7).
+    /// Unguarded, a manual pick here would silently write a whole-face composite substitute into the
+    /// <c>/FontFile2</c> the undrawn TrueType sibling depends on — the exact write the automatic path's
+    /// own blocker scan exists to prevent.
+    /// </summary>
+    [Fact]
+    public void AssessReplacementCandidate_blocks_when_an_undrawn_mixed_kind_sibling_shares_the_holder()
+    {
+        PdfDocument doc = ReplaceProgramFixtures.SharedDescendantDoc(
+            includeUndrawnTrueTypeBlockingSibling: true);
+        FontInventoryEntry entry = FontInventory.Find(FontInventory.Read(doc), 1)!;
+
+        CandidateAssessment result = Planner().AssessReplacementCandidate(
+            doc, entry, "font-program", LiberationSansBytes(), faceIndex: 0, sourceDescription: "Test");
+
+        Assert.NotNull(result.HardBlockReason);
+        Assert.Null(result.Proposal);
+        Assert.Contains("cannot be included in a merged replacement", result.HardBlockReason);
+        Assert.Contains(
+            "This font's finding is a missing glyph, and replacing a simple font's program is not "
+            + "something Pellucid does yet.", result.HardBlockReason);
+    }
+
     [Fact]
     public void A_genuinely_italic_program_is_replaced_with_an_italic_face_even_when_nothing_declares_it()
     {

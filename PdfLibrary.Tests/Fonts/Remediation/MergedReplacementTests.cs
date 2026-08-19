@@ -472,7 +472,14 @@ public sealed class MergedReplacementTests
     /// <para>Fixed by the SAME fix round: <c>blockedNotdefKeys</c>, a full-inventory scan mirroring
     /// <c>blockedWidthKeys</c> (I1), independent of <c>ExpandHolderGroup</c>'s post-filter membership —
     /// it finds the blocker directly from <c>inventory</c> regardless of draw status and declines the
-    /// whole REPLACE group over it, exactly restoring the pre-issue-44 outcome for that family.</para>
+    /// whole REPLACE group over it. This restores TWO of <c>ValidateSiblingShape</c>'s five gates (kind,
+    /// addressability) unconditionally on draw status — NOT all five: the other three (readable as a
+    /// composite dictionary, Identity encoding, presence of <c>/ToUnicode</c>) still depend on the
+    /// blocker being a `members` entry Step 1 actually iterates, so a falsely-undrawn blocker failing
+    /// only one of THOSE three gates is not caught by this scan — a residual, issue-51-conditional gap
+    /// recorded there, deliberately not widened into here (controller ruling, review item 2: those three
+    /// gates are about whether a map can be BUILT for that sibling, not about whether replacing the
+    /// shared program is structurally wrong for it regardless).</para>
     ///
     /// <para>The WIDTH family, freed by the declined notdef group (same convention
     /// <see cref="A_gate_failing_findingless_sibling_blocks_the_whole_group"/> and
