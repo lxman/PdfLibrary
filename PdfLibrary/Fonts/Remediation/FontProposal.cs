@@ -101,11 +101,19 @@ public sealed record PatchWidthsProposal(
 /// <para><paramref name="ClosesFinding"/> is whether THIS member font's own 6.2.11.8 finding
 /// actually closes when the proposal applies — the rule emits at most one 6.2.11.8 finding per font
 /// (issue 40), and a font that draws CID 0 keeps that finding no matter what the replacement does,
-/// so a member drawing CID 0 closes nothing. In THIS task (singleton proposals only) the planner
-/// always constructs targets with <c>true</c>: <see cref="FontRemediationPlanner.ProposeProgramReplace"/>
-/// only reaches proposal construction after its CID-0 decline gate, so a singleton that proposes at
-/// all always closes its own finding. Task 4 is the one that wires <c>false</c> values, for group
-/// members that draw CID 0 while other members in the same group do not.</para>
+/// so a member drawing CID 0 closes nothing. Doc correction (whole-branch review, per-holder-merge
+/// program): this used to describe a task-scoped, now-historical state ("in THIS task, singleton
+/// proposals only... always true") — merged (multi-target) proposals are the normal shape today, not
+/// a later increment. <c>ClosesFinding</c> is <c>true</c> for a SEED member (one whose own finding
+/// THIS call was actually asked to fix — <see cref="FontRemediationPlanner"/>'s <c>seedIds</c>) that
+/// does not draw CID 0; it is <c>false</c> for a CID-0-drawing seed (its own finding survives no
+/// matter what) and for every member pulled in only by inventory-scoped expansion (nothing of theirs
+/// was asked to be fixed, so nothing of theirs is reported as closed — see <see cref="FontRemediationPlanner"/>'s
+/// own group-membership doc comment), regardless of what that expansion-only member draws. A
+/// singleton's one target is the degenerate case of this same rule: it is always a seed (a singleton
+/// group has no expansion-only members to speak of), so it is <c>true</c> whenever the proposal was
+/// constructed at all — <see cref="FontRemediationPlanner.ProposeProgramReplace"/> only reaches
+/// proposal construction after its own CID-0 decline gate.</para>
 /// </summary>
 public sealed record ReplaceTarget(
     FontId Font,
@@ -118,8 +126,12 @@ public sealed record ReplaceTarget(
 /// a WHOLE-FACE SWAP: every code of each target font renders in the substitute afterward; only the
 /// dead codes gain glyphs, but letterforms change font-wide (spec §3). <paramref name="Targets"/>
 /// carries one entry per wrapper this proposal rewrites (§6 direct-sharing: N wrappers sharing one
-/// descendant emit N targets naming the SAME <see cref="ReplaceTarget.Font"/>); in this task every
-/// proposal is a singleton (exactly one target). <paramref name="Program"/> is the substitute sfnt
+/// descendant emit N targets naming the SAME <see cref="ReplaceTarget.Font"/>). Doc correction
+/// (whole-branch review, per-holder-merge program): a singleton (exactly one target) is the
+/// DEGENERATE case, not the only shape — a proposal covering a shared program holder carries one
+/// target per font the holder covers (spec §4's merged construction, <c>ProposeMergedReplace</c> /
+/// <c>BuildMergedReplacement</c>), and byte-identical singleton output for a non-shared holder is the
+/// regression gate (spec §3/§8), not the whole story. <paramref name="Program"/> is the substitute sfnt
 /// ALREADY advance-patched to the declared /W + /DW widths (spec §3 step 8), so applying this
 /// proposal can never create a width finding. All fields are planner-resolved data; the editor
 /// applies mechanically.</summary>

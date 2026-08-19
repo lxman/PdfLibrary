@@ -632,4 +632,31 @@ public sealed class ReplaceProgramProposalTests
             + "style-silent name/descriptor");
         Assert.False(request.Bold);
     }
+
+    /// <summary>
+    /// Whole-branch review pre-flight ruling, settled empirically: the controller's pre-flight guess
+    /// was that an empty <c>Targets</c> list would throw <c>IndexOutOfRangeException</c> from the
+    /// record's base-constructor-call argument (<c>Targets[0].Font</c> in
+    /// <c>: FontProposal(Targets[0].Font, RuleId)</c>), reasoning that base-constructor-call arguments
+    /// are evaluated before the derived type's own field/auto-property initializers run — making the
+    /// explicit <c>ArgumentException</c> guard (<c>Targets.Count > 0 ? Targets : throw ...</c>)
+    /// unreachable. The reviewer's alternative — that C# runs a record's own auto-property initializers
+    /// BEFORE invoking the base constructor call, so the explicit guard fires first — is the one this
+    /// test proves correct: constructing with an empty list throws the EXPLICIT <c>ArgumentException</c>,
+    /// never reaching <c>Targets[0]</c> at all. The planner never constructs this shape itself (every
+    /// group/singleton path gates on at least one member before calling a builder), but a hand-built
+    /// proposal — the constructor is public — is now pinned to the guard's own message, not a raw
+    /// indexer exception.
+    /// </summary>
+    [Fact]
+    public void An_empty_Targets_list_throws_the_explicit_ArgumentException_guard()
+    {
+        var descriptor = new FontDescriptorValues([0, 0, 0, 0], 0, 0, 0, 0, 0, 0, "measured-I");
+
+        ArgumentException ex = Assert.Throws<ArgumentException>(() => new ReplaceProgramProposal(
+            Targets: [], RuleId: "font-program", SourceDescription: "Test", Program: [1],
+            Format: FontProgramFormat.TrueType, RestoredCodeCount: 0, NewBaseFont: "Test",
+            Descriptor: descriptor, DescriptorFlags: 0));
+        Assert.Equal("Targets", ex.ParamName);
+    }
 }

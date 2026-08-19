@@ -73,6 +73,48 @@ public sealed class MergedWidthPatchTests
             "different widths for the same glyph", Assert.IsType<DeclineProposal>(p).Reason));
     }
 
+    /// <summary>
+    /// Controller ruling, extending review fix Important 2 to its width-family analogue (same wave):
+    /// pins the actual defect. <see cref="FontRemediationPlanner.BuildMergedWidthPatch"/>'s <c>holder0</c>
+    /// (== <see cref="PatchWidthsProposal.Font"/>) is <c>members[0].ProgramHolderId</c>, and — before
+    /// <c>CanonicalizeGroupOrder</c> — member order followed SEED order exactly like the notdef family
+    /// did. Neither wrapper here draws its own dead code (both are PURE width-only seeds — descendant 1
+    /// declares CID 0x41 -> 500, descendant 2 declares CID 0x43 -> 500 too, the fixture's own default,
+    /// so both AGREE on the shared program's one non-.notdef glyph and no conflict fires), so two
+    /// SEPARATE calls — mirroring two separate "Fix this" clicks — each naming only ONE wrapper's own
+    /// 6.2.11.5 finding on <see cref="ReplaceProgramFixtures.SharedDescriptorDoc"/> (descriptor-level
+    /// sharing: distinct descendants 4 and 14, one shared descriptor/program) used to produce two
+    /// DIFFERENT <c>Font</c> identities for the SAME physical program — two plan entries instead of
+    /// one, each independently applied, last-write-wins, to the same descriptor.
+    /// </summary>
+    [Fact]
+    public void Descriptor_sharing_width_proposals_seeded_from_either_member_carry_the_same_font_identity()
+    {
+        using PdfDocument docSeededByWrapper1 = ReplaceProgramFixtures.SharedDescriptorDoc(
+            wrapper1Codes: [0x41], wrapper2Codes: [0x43]);
+        FontRemediationProposal resultFromWrapper1 = Planner()
+            .Propose(docSeededByWrapper1, [("font-program", 1)]); // only wrapper 1's own finding
+
+        using PdfDocument docSeededByWrapper2 = ReplaceProgramFixtures.SharedDescriptorDoc(
+            wrapper1Codes: [0x41], wrapper2Codes: [0x43]);
+        FontRemediationProposal resultFromWrapper2 = Planner()
+            .Propose(docSeededByWrapper2, [("font-program", 7)]); // only wrapper 2's own finding
+
+        var patchFromWrapper1 =
+            Assert.IsType<PatchWidthsProposal>(Assert.Single(resultFromWrapper1.Fonts));
+        var patchFromWrapper2 =
+            Assert.IsType<PatchWidthsProposal>(Assert.Single(resultFromWrapper2.Fonts));
+
+        // Both calls produce a 2-covered-font merge (inventory-scoped expansion pulls in the sibling
+        // either way) — the point under test is that BOTH resolve to the SAME Font identity regardless
+        // of which wrapper's click seeded the call, so FontRemediationPlan's (Font, RuleId) key
+        // collapses them to ONE plan entry instead of two.
+        Assert.Equal(2, patchFromWrapper1.CoveredFonts.Count);
+        Assert.Equal(2, patchFromWrapper2.CoveredFonts.Count);
+        Assert.Equal(patchFromWrapper1.Font, patchFromWrapper2.Font);
+        Assert.Equal(4, patchFromWrapper1.Font.ObjectNumber); // canonical: descendant 4 < descendant 14
+    }
+
     /// <summary>The "declined-replace-group-frees-width" shape combined with cross-kind merging: the
     /// composite wrapper (object 1) seeds a notdef group (it draws descendant 4's dead code 0x42); the
     /// simple TrueType font (object 30) sharing the same descriptor blocks that group from proposing
@@ -326,7 +368,11 @@ public sealed class MergedWidthPatchTests
             "The font declares no /Widths array, so there is nothing to reconcile the program against.";
         Assert.Equal(rawReason, seedDecline.Reason);
         Assert.NotEqual(rawReason, siblingDecline.Reason);
-        Assert.Contains("cannot be included in a merged replacement", siblingDecline.Reason);
+        // Review fix M-1: the width family wraps a non-seed's fact in wording naming what a width
+        // merge actually does (patching shared advances) rather than the replace family's "merged
+        // replacement" template — a width-patch decline must not describe a whole-face swap it never
+        // performs.
+        Assert.Contains("cannot be included in a merged width patch", siblingDecline.Reason);
         Assert.Contains(rawReason, siblingDecline.Reason);
     }
 

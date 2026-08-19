@@ -176,6 +176,10 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         {
             foreach (FontInventoryEntry candidate in ExpandHolderGroup(document, inventory, members, key))
                 memberOfGroup[(candidate.Id.ObjectNumber, candidate.ProgramHolderId?.ObjectNumber)] = key;
+
+            // Review fix (Important 2): canonicalize BEFORE ProposeMergedReplace ever sees this group —
+            // see CanonicalizeGroupOrder's own doc comment for why.
+            CanonicalizeGroupOrder(members);
         }
 
         // Task 6 (tracker issue 38): WIDTH-family grouping — kind-agnostic (a simple TrueType font and
@@ -260,6 +264,18 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 members.Add(candidate);
                 widthMemberOfGroup[(candidate.Id.ObjectNumber, candidate.ProgramHolderId?.ObjectNumber)] = key;
             }
+
+            // Controller ruling, extending review fix Important 2 to its width-family analogue: the
+            // IDENTICAL seed-order defect exists here — BuildMergedWidthPatch's `holder0` is
+            // `members[0].ProgramHolderId`, and under descriptor-level sharing (distinct descendants,
+            // one shared /FontDescriptor) two separately-seeded width findings used to yield two
+            // DIFFERENT PatchWidthsProposal.Font values for the SAME shared program, exactly like the
+            // replace family before this fix — two plan entries, both staged, both patching the same
+            // stream last-write-wins. Same helper, same guarantee (every member here has a non-null
+            // ProgramHolderId: seeds are gated on it at the seeding loop above, and ExpandHolderGroup's
+            // own filter guarantees it for every expansion-added candidate too), same no-op-on-<2-members
+            // safety.
+            CanonicalizeGroupOrder(members);
         }
 
         // Review round 1, finding I1: excluding a CFF/Type1/Type3/Unknown-kind entry from width-family
@@ -436,7 +452,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     if (!processedWidthGroups.Add(widthKey)) continue;
                     proposals.AddRange(
-                        DeclineAll(widthMembers, ruleId, MergeBlockedSibling(blockedReason)));
+                        DeclineAll(widthMembers, ruleId, MergeBlockedSibling(blockedReason, widthFamily: true)));
                     continue;
                 }
 
@@ -569,6 +585,70 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         }
         return added;
     }
+
+    /// <summary>
+    /// Whole-branch review fix, Important 2 (and its width-family analogue, applied by controller
+    /// ruling in the same wave): sorts a shared-holder group's members by
+    /// <c>(ProgramHolderId.ObjectNumber, Id.ObjectNumber)</c> ascending, so the group's FIRST member —
+    /// and therefore <see cref="ReplaceProgramProposal"/>'s <c>Targets[0].Font</c> identity
+    /// (<see cref="FontProposal.Font"/>, via the record's base-call), <see cref="ProposeMergedReplace"/>'s
+    /// <c>BuildRequest</c> source entry, AND <see cref="BuildMergedWidthPatch"/>'s <c>holder0</c>
+    /// (<c>PatchWidthsProposal.Font</c>, via its own <c>members[0]</c>) — is INDEPENDENT of which
+    /// sibling's finding (or which manual pick) happened to seed the call.
+    ///
+    /// <para>Without this, descriptor-level sharing (distinct descendants, one shared /FontDescriptor)
+    /// let two different callers produce two DIFFERENT <see cref="FontId"/>s for the SAME physical
+    /// program: clicking "Fix this" on wrapper A first put A's descendant at <c>group[0]</c>; a later,
+    /// separate click on wrapper B's own row put B's descendant at <c>group[0]</c> instead (each "Fix
+    /// this" stages exactly one finding per call — <c>RemediationRunner.StageDomainZeroDecision</c> —
+    /// so these really are two independent calls, not one call naming both). <c>FontRemediationPlan</c>
+    /// keys on <c>(proposal.Font.ObjectNumber, RuleId)</c>, so the two proposals landed as TWO plan
+    /// entries for one shared program instead of one, and <c>FontRemediationService.ApplyAndSave</c>
+    /// applied both — each calling <c>ReplaceCompositeProgram</c>, each doing
+    /// <c>descriptor.Set("FontFile2", …)</c> on the SAME descriptor, last-write-wins, with an orphaned
+    /// program stream and duplicate <c>/CIDToGIDMap</c> streams left behind. Where the siblings'
+    /// FamilyNames also differ, the two calls' own <c>BuildRequest</c> (built from whichever sibling
+    /// happened to be <c>group[0]</c>/<c>siblings[0]</c>) could resolve two DIFFERENT substitute faces
+    /// for the one program, so one staged row's confirmation text could name a face that never ends up
+    /// in the saved file.</para>
+    ///
+    /// <para>Called AFTER <see cref="ExpandHolderGroup"/> has finished appending every sibling, so it
+    /// sorts the WHOLE group — including a call whose group already held more than one SEED before
+    /// expansion ran — not just the newly-added members. Does not touch <c>seedIds</c>: seed membership
+    /// is tracked in a separate <c>HashSet&lt;int&gt;</c> keyed by object number, never by list
+    /// position, so canonicalizing <paramref name="group"/>'s order cannot change which members are
+    /// seeds or what they credit. Every member here is guaranteed a non-null
+    /// <see cref="FontInventoryEntry.ProgramHolderId"/> by construction: every caller only ever adds a
+    /// member after checking that (the notdef-family seeding gate, and <see cref="ExpandHolderGroup"/>'s
+    /// own filter), so <c>.Value</c> below never throws. A group of 0 or 1 members is a no-op —
+    /// <see cref="List{T}.Sort()"/> never invokes the comparer for fewer than two elements — matching
+    /// the degenerate (non-sharing) singleton case's byte-identical-to-today guarantee (spec §3).</para>
+    ///
+    /// <para>Applied at TWO call sites: the notdef-family group in <c>Propose</c> (after its own
+    /// <see cref="ExpandHolderGroup"/> call) and the manual path's group in
+    /// <see cref="AssessReplacementCandidate"/> (same). Also applied to the WIDTH-family group in
+    /// <c>Propose</c> (after ITS OWN expansion loop, which builds the real <c>widthGroupMembers</c>
+    /// list via a filtered `scratch` copy rather than mutating the live list through
+    /// <see cref="ExpandHolderGroup"/> directly — canonicalization is applied to the real list, after
+    /// that filtering, not to the scratch copy) — the identical seed-order defect existed there too:
+    /// <see cref="BuildMergedWidthPatch"/>'s <c>holder0</c> is <c>members[0].ProgramHolderId</c>, so
+    /// under descriptor-level sharing two separately-seeded width findings used to produce two
+    /// different <c>PatchWidthsProposal.Font</c> values for the SAME shared program — same two-plan-
+    /// entries, last-write-wins consequence as the replace family. First identified as out of the
+    /// initial fix's literal scope (which named <c>Targets[0].Font</c>/<c>BuildRequest</c>, both
+    /// replace-family-only) and flagged as a residual; the controller then ruled it in-scope for this
+    /// same wave rather than a second one, since it is the identical defect with the identical
+    /// consequence. There is no manual path for the width family to canonicalize —
+    /// <see cref="BuildMergedWidthPatch"/> has exactly one caller, <c>Propose</c>'s own pass-2
+    /// dispatch.</para>
+    /// </summary>
+    private static void CanonicalizeGroupOrder(List<FontInventoryEntry> group) =>
+        group.Sort((a, b) =>
+        {
+            int byHolder = a.ProgramHolderId!.Value.ObjectNumber
+                .CompareTo(b.ProgramHolderId!.Value.ObjectNumber);
+            return byHolder != 0 ? byHolder : a.Id.ObjectNumber.CompareTo(b.Id.ObjectNumber);
+        });
 
     /// <summary>The <c>font-program</c> findings attributable to <paramref name="entry"/> — its own
     /// object, plus its program holder's when that differs. Corrected (Task 6 review, finding M7): a
@@ -980,7 +1060,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     ? "Type 3 font widths come from each glyph's own drawing procedure, which Pellucid "
                       + "does not rewrite."
                     : "This font's program stores its advances in CFF charstrings, which Pellucid "
-                      + "cannot yet rewrite.", seedIds);
+                      + "cannot yet rewrite.", seedIds, widthFamily: true);
             }
 
             if (document.GetObject(holder.ObjectNumber) is not PdfDictionary holderDict
@@ -988,13 +1068,13 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             {
                 return DeclineGroupFact(members, ruleId,
                     "The font has no /FontDescriptor, so there is no embedded program to correct.",
-                    seedIds);
+                    seedIds, widthFamily: true);
             }
             if (Resolve(document, descriptor.Get("FontFile2")) is not PdfStream fontFile2)
             {
                 return DeclineGroupFact(members, ruleId,
                     "The font's program is not carried as a /FontFile2 sfnt, so its advances cannot be "
-                    + "patched in place.", seedIds);
+                    + "patched in place.", seedIds, widthFamily: true);
             }
             sharedFontFile2 ??= fontFile2;
 
@@ -1003,14 +1083,14 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
             {
                 return DeclineGroupFact(members, ruleId,
                     "This font's dictionary could not be read, so Pellucid cannot compare its widths.",
-                    seedIds);
+                    seedIds, widthFamily: true);
             }
             EmbeddedFontMetrics? metrics = pdfFont.GetEmbeddedMetrics();
             if (metrics is null || !metrics.IsValid)
             {
                 return DeclineGroupFact(members, ruleId,
                     "The embedded font program could not be parsed, so correcting its advances would "
-                    + "be a guess.", seedIds);
+                    + "be a guess.", seedIds, widthFamily: true);
             }
             sharedMetrics ??= metrics;
 
@@ -1022,7 +1102,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     return DeclineGroupFact(members, ruleId,
                         "This composite font's encoding is not an Identity CMap, so Pellucid cannot "
-                        + "prove which glyph each character selects.", seedIds);
+                        + "prove which glyph each character selects.", seedIds, widthFamily: true);
                 }
                 tuples = ProgramWidthResolver.Composite(
                     cid, metrics, cidKeyedCff: false, entry.UsedCodes.Distinct());
@@ -1033,7 +1113,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                 {
                     return DeclineGroupFact(members, ruleId,
                         "The font declares no /Widths array, so there is nothing to reconcile the "
-                        + "program against.", seedIds);
+                        + "program against.", seedIds, widthFamily: true);
                 }
                 tuples = ProgramWidthResolver.Simple(
                     pdfFont, metrics, widths, entry.UsedCodes.Distinct(), isTrueType: true);
@@ -1050,7 +1130,8 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     return DeclineGroupFact(members, ruleId,
                         "The document declares a zero width where the program has a real advance; "
                         + "patching the program to zero would visibly change layout in renderers that "
-                        + "fall back to program advances, so Pellucid leaves it alone.", seedIds);
+                        + "fall back to program advances, so Pellucid leaves it alone.", seedIds,
+                        widthFamily: true);
                 }
                 if (targetByGid.TryGetValue(w.Gid, out double existing))
                 {
@@ -1058,7 +1139,7 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
                     {
                         return DeclineGroupFact(members, ruleId,
                             "Two character codes share one glyph but declare different widths, so no "
-                            + "single program advance can satisfy both.", seedIds);
+                            + "single program advance can satisfy both.", seedIds, widthFamily: true);
                     }
                     continue;
                 }
@@ -1675,22 +1756,45 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// itself. NOT used by Step 1's shape-gate declines (<see cref="DeclineAll"/>) — those already
     /// wrap their reason once, uniformly for every member per the brief's own spec text; wrapping
     /// again here would double the template.
+    ///
+    /// <para><paramref name="widthFamily"/> (review fix, M-1): forwarded to <see cref="MergeBlockedSibling"/>
+    /// so a width-family caller (<see cref="BuildMergedWidthPatch"/>) gets wording that matches what it
+    /// actually does (patching shared advances in place) rather than the replace family's "merged
+    /// replacement" template, which used to be worded for a whole-face swap regardless of which family
+    /// routed a per-member fact through here. Defaults to <c>false</c> — every pre-existing (replace-
+    /// family) call site is unaffected; Task 9's decline taxonomy keys on ITS exact text, unchanged.</para>
     /// </summary>
     private static IReadOnlyList<FontProposal> DeclineGroupFact(
-        IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason, IReadOnlySet<int> seedIds) =>
+        IReadOnlyList<FontInventoryEntry> group, string ruleId, string reason, IReadOnlySet<int> seedIds,
+        bool widthFamily = false) =>
         group.Select(entry => (FontProposal)Decline(
                 entry, ruleId,
-                seedIds.Contains(entry.Id.ObjectNumber) ? reason : MergeBlockedSibling(reason)))
+                seedIds.Contains(entry.Id.ObjectNumber) ? reason : MergeBlockedSibling(reason, widthFamily)))
             .ToList();
 
     /// <summary>Verbatim per the controller brief (spec §6) — a later sweep's taxonomy keys on this
-    /// exact template. Wraps a failing sibling's own would-be SINGLETON decline reason (e.g. what
+    /// exact template, for the REPLACE family (<paramref name="widthFamily"/>: false, the default).
+    /// Wraps a failing sibling's own would-be SINGLETON decline reason (e.g. what
     /// <see cref="ProposeProgramReplace"/> would have said about it alone) for the whole group's
-    /// per-member decline.</summary>
-    private static string MergeBlockedSibling(string reason) =>
-        "Another font sharing this font's embedded program cannot be included in a merged replacement "
-        + $"({reason}), and replacing the shared program for only some of its fonts would corrupt the "
-        + "others.";
+    /// per-member decline.
+    ///
+    /// <para>Review fix (M-1): <see cref="BuildMergedWidthPatch"/> routes ITS OWN per-member facts
+    /// through this same helper (via <see cref="DeclineGroupFact"/>'s <c>widthFamily</c> parameter and
+    /// directly at its blocked-key path), but the width family patches shared advances in place — it
+    /// never replaces a program or writes a new face — so "cannot be included in a merged replacement"
+    /// and "replacing the shared program... would corrupt the others" describe an operation the width
+    /// family does not perform. <paramref name="widthFamily"/> true selects wording naming what
+    /// actually happens instead. The REPLACE family's template text is UNCHANGED — Task 9's sweep keys
+    /// on it verbatim.</para>
+    /// </summary>
+    private static string MergeBlockedSibling(string reason, bool widthFamily = false) =>
+        widthFamily
+            ? "Another font sharing this font's embedded program cannot be included in a merged width "
+              + $"patch ({reason}), and patching the shared program's advances for only some of its "
+              + "fonts would corrupt the others."
+            : "Another font sharing this font's embedded program cannot be included in a merged "
+              + $"replacement ({reason}), and replacing the shared program for only some of its fonts "
+              + "would corrupt the others.";
 
     /// <summary>Result of <see cref="ValidateSiblingShape"/>: either the parsed
     /// (<see cref="Type0Font"/>, <see cref="CidFont"/>) pair, or the RAW (unwrapped) <c>Reason</c> a
@@ -1831,7 +1935,15 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         IReadOnlyList<FontInventoryEntry> inventory = FontInventory.Read(document);
         var group = new List<FontInventoryEntry> { entry };
         if (entry.ProgramHolderId is not null)
+        {
             ExpandHolderGroup(document, inventory, group, HolderGroupKey(document, entry));
+            // Review fix (Important 2): same canonicalization the automatic path applies — see
+            // CanonicalizeGroupOrder's own doc comment. The picked entry (`entry`) is no longer
+            // guaranteed to land at group[0] after this; the picked-row lookup below (and the
+            // FirstOrDefault a few lines further down) is keyed by identity, not position, so neither
+            // is affected by the reorder.
+            CanonicalizeGroupOrder(group);
+        }
 
         // Step 1: the shared ValidateSiblingShape validator (Task 7 review) runs the SAME gates
         // ProposeMergedReplace's own Step 1 runs — unaddressable, non-composite kind, unreadable-as-
@@ -1884,10 +1996,21 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
         if (merged.Proposals is [ReplaceProgramProposal mergedReplace])
             return new CandidateAssessment(merged.Format, null, [], mergedReplace);
 
-        // Every row is a DeclineProposal here (BuildMergedReplacement's only two shapes). Prefer the
-        // row belonging to the PICKED entry, so the user reads the reason for the font they picked;
-        // fall back to the first row only if none matches (should not happen — the picked entry is
-        // always a group member).
+        // Every row is a DeclineProposal here (BuildMergedReplacement's only two shapes). Doc
+        // correction (whole-branch review, Important 2 follow-on): before CanonicalizeGroupOrder
+        // existed, `group` always started as `{ entry }` (see this method's own construction above)
+        // and only ever grew by appending, so the picked entry was ALWAYS `group[0]` — the FirstOrDefault
+        // search below was provably dead code, always resolving to `declines[0]`, and an earlier version
+        // of this comment wrongly explained that inertness as "reason texts are uniform across rows" (they
+        // are not — DeclineGroupFact gives a seed a different, unwrapped reason from a non-seed's wrapped
+        // one). Important 2's canonicalization changed the actual mechanics: `group` (and therefore
+        // `merged.Proposals`/`declines`, which preserve `siblings`/`group` order throughout
+        // BuildMergedReplacement) is now sorted by (ProgramHolderId.ObjectNumber, Id.ObjectNumber), so the
+        // picked entry can land at ANY position depending on its object numbers relative to its siblings'.
+        // The lookup below is therefore load-bearing now, not defensive: it is what still finds the
+        // picked entry's own (correctly unwrapped) row after the reorder. The `?? declines[0]` fallback
+        // stays defensive only — the picked entry is always a group member, so the search should never
+        // actually miss.
         IReadOnlyList<DeclineProposal> declines = merged.Proposals.Cast<DeclineProposal>().ToList();
         DeclineProposal pickedDecline =
             declines.FirstOrDefault(d => d.Font.ObjectNumber == entry.Id.ObjectNumber) ?? declines[0];

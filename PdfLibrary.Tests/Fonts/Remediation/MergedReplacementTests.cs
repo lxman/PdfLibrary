@@ -229,6 +229,46 @@ public sealed class MergedReplacementTests
         Assert.All(proposal.Targets, t => Assert.True(t.ClosesFinding));
     }
 
+    /// <summary>
+    /// Whole-branch review fix, Important 2 — pins the actual defect the fix closes. Before canonical
+    /// ordering, <c>Targets[0].Font</c> (== <see cref="FontProposal.Font"/>, via the record's base-call)
+    /// followed SEED order: <c>Propose</c>'s group started with whichever wrapper's finding THIS call
+    /// named, then <c>ExpandHolderGroup</c> appended the sibling. Two SEPARATE calls — mirroring two
+    /// separate "Fix this" clicks (<c>RemediationRunner.StageDomainZeroDecision</c> stages ONE finding
+    /// per call) — each naming only ONE wrapper's own notdef finding on <see cref="ReplaceProgramFixtures.SharedDescriptorDoc"/>
+    /// (descriptor-level sharing: distinct descendants 4 and 14, one shared descriptor/program) used to
+    /// produce two DIFFERENT <c>Font</c> identities for the SAME physical program — two entries in a
+    /// plan keyed by <c>(Font.ObjectNumber, RuleId)</c> instead of one, each independently applied,
+    /// last-write-wins, to the same descriptor. Canonicalizing group order by
+    /// <c>(ProgramHolderId.ObjectNumber, Id.ObjectNumber)</c> makes the identity depend only on the
+    /// group's MEMBERSHIP, never on which member seeded the call.
+    /// </summary>
+    [Fact]
+    public void Descriptor_sharing_proposals_seeded_from_either_member_carry_the_same_font_identity()
+    {
+        using PdfDocument docSeededByWrapper1 = ReplaceProgramFixtures.SharedDescriptorDoc();
+        FontRemediationProposal resultFromWrapper1 = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(docSeededByWrapper1, [("font-program", 1)]); // only wrapper 1's own finding
+
+        using PdfDocument docSeededByWrapper2 = ReplaceProgramFixtures.SharedDescriptorDoc();
+        FontRemediationProposal resultFromWrapper2 = Planner(new StubFontProvider(LiberationSansBytes()))
+            .Propose(docSeededByWrapper2, [("font-program", 7)]); // only wrapper 2's own finding
+
+        var proposalFromWrapper1 =
+            Assert.IsType<ReplaceProgramProposal>(Assert.Single(resultFromWrapper1.Fonts));
+        var proposalFromWrapper2 =
+            Assert.IsType<ReplaceProgramProposal>(Assert.Single(resultFromWrapper2.Fonts));
+
+        // Both calls produce a 2-target merge (inventory-scoped expansion pulls in the sibling either
+        // way) — the point under test is that BOTH resolve to the SAME Font identity regardless of
+        // which wrapper's click seeded the call, so FontRemediationPlan's (Font, RuleId) key collapses
+        // them to ONE plan entry instead of two.
+        Assert.Equal(2, proposalFromWrapper1.Targets.Count);
+        Assert.Equal(2, proposalFromWrapper2.Targets.Count);
+        Assert.Equal(proposalFromWrapper1.Font, proposalFromWrapper2.Font);
+        Assert.Equal(4, proposalFromWrapper1.Font.ObjectNumber); // canonical: descendant 4 < descendant 14
+    }
+
     /// <summary>Task 6 update: wrapper 1's own width finding (declared 500 vs the shared program's
     /// actual 450) is freed by the now-conditional subsumption skip once the notdef merge declines;
     /// wrapper 2 draws only the dead code (default wrapper2Codes [0x42], resolving to .notdef, skipped
