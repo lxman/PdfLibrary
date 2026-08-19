@@ -111,9 +111,78 @@ Of the files where veraPDF flags a clause, how many does PdfLibrary also flag on
 | 7.21.5 | 1 | 1 | 100% | ✅ full |
 | 7.21.8 | 1 | 1 | 100% | ✅ full |
 
-## Biggest parity gaps (highest-leverage work)
+## Verdict leverage — what actually moves a whole-file verdict
 
-Ranked by number of files PdfLibrary misses on a clause it does not fully cover.
+**Plan from this section, not from the clause-coverage ranking below.** A clause only moves a whole-file verdict when it is the ONLY clause PdfLibrary misses on some file. Where a miss is blocked by several clauses at once, every one of them must close before that file flips — so a frequently-missed clause can be worth zero on its own no matter how high it ranks by file count.
+
+### PDF/A-2b — 23 whole-file misses
+
+| Clause | Misses it blocks | Flips alone | Cheapest set that pays | That set flips |
+|---|--:|--:|---|--:|
+| 6.1.13 | 4 | 3 | — (alone) | 3 |
+| 6.2.2 | 3 | 3 | — (alone) | 3 |
+| 6.1.10 | 2 | 2 | — (alone) | 2 |
+| 6.1.4 | 2 | 2 | — (alone) | 2 |
+| 6.1.6 | 2 | 2 | — (alone) | 2 |
+| 6.6.2.1 | 2 | 2 | — (alone) | 2 |
+| 6.2.8 | 1 | 1 | — (alone) | 1 |
+| 6.3.3 | 1 | 1 | — (alone) | 1 |
+| 6.6.4 | 1 | 1 | — (alone) | 1 |
+| 6.2.11.5 | 5 | **0** | 6.2.11.4.1 + 6.2.11.5 | 2 |
+| 6.2.11.4.1 | 4 | **0** | 6.2.11.4.1 + 6.2.11.5 | 2 |
+| 6.2.11.8 | 4 | **0** | 6.2.11.5 + 6.2.11.8 | 2 |
+
+Each miss and the clauses standing between it and agreement:
+
+| File | Blocked by |
+|---|---|
+| veraPDF test suite 6-1-10-t01-fail-a.pdf | 6.1.10 |
+| veraPDF test suite 6-1-10-t01-fail-b.pdf | 6.1.10 |
+| veraPDF test suite 6-1-13-t01-fail-b.pdf | 6.1.13 |
+| veraPDF test suite 6-1-13-t01-fail-c.pdf | 6.1.13 |
+| veraPDF test suite 6-1-13-t08-fail-b.pdf | 6.1.13 |
+| veraPDF test suite 6-1-13-t10-fail-a.pdf | 6.1.13 + 6.2.11.4.1 + 6.2.11.8 |
+| veraPDF test suite 6-1-4-t01-fail-a.pdf | 6.1.4 |
+| veraPDF test suite 6-1-4-t01-fail-b.pdf | 6.1.4 |
+| veraPDF test suite 6-1-6-t01-fail-a.pdf | 6.1.6 |
+| veraPDF test suite 6-1-6-t02-fail-a.pdf | 6.1.6 |
+| veraPDF test suite 6-2-11-4-1-t02-fail-a.pdf | 6.2.11.4.1 + 6.2.11.5 |
+| veraPDF test suite 6-2-11-4-1-t02-fail-b.pdf | 6.2.11.4.1 + 6.2.11.5 |
+| veraPDF test suite 6-2-11-4-1-t02-fail-e.pdf | 6.2.11.4.1 + 6.2.11.5 + 6.2.11.8 |
+| veraPDF test suite 6-2-11-8-t01-fail-a.pdf | 6.2.11.5 + 6.2.11.8 |
+| veraPDF test suite 6-2-11-8-t01-fail-b.pdf | 6.2.11.5 + 6.2.11.8 |
+| veraPDF test suite 6-2-2-t04-fail-d.pdf | 6.2.2 |
+| veraPDF test suite 6-2-2-t04-fail-e.pdf | 6.2.2 |
+| veraPDF test suite 6-2-2-t04-fail-f.pdf | 6.2.2 |
+| veraPDF test suite 6-2-8-1-t02-fail-b.pdf | 6.2.8 |
+| veraPDF test suite 6-3-3-t02-fail-b.pdf | 6.3.3 |
+| veraPDF test suite 6-6-2-1-t01-fail-b.pdf | 6.6.2.1 |
+| veraPDF test suite 6-6-2-1-t01-fail-c.pdf | 6.6.2.1 |
+| veraPDF test suite 6-6-4-t01-fail-b.pdf | 6.6.4 |
+
+### PDF/A-2u — 1 whole-file miss
+
+| Clause | Misses it blocks | Flips alone | Cheapest set that pays | That set flips |
+|---|--:|--:|---|--:|
+| 6.2.11.7.2 | 1 | 1 | — (alone) | 1 |
+
+Each miss and the clauses standing between it and agreement:
+
+| File | Blocked by |
+|---|---|
+| veraPDF test suite 6-2-11-7-2-t01-fail-e.pdf | 6.2.11.7.2 |
+
+### PDF/A-3b — 0 whole-file misses
+
+PdfLibrary's verdict already agrees with veraPDF on every file of this profile, so **no clause work here can move a verdict** — however many files a clause gap still spans.
+
+### PDF/UA-1 — 0 whole-file misses
+
+PdfLibrary's verdict already agrees with veraPDF on every file of this profile, so **no clause work here can move a verdict** — however many files a clause gap still spans.
+
+## Biggest clause-coverage gaps
+
+Ranked by number of files PdfLibrary misses on a clause it does not fully cover. This measures detection coverage, **not** verdict movement — a clause high on this list may flip nothing at all (see the leverage section above before treating any of it as prioritised work).
 
 1. **PDF/UA-1 clause 7.2** — 29 of 60 files missed (PdfLibrary matches 31).
 2. **PDF/A-2b clause 6.2.11.5** — 6 of 13 files missed (PdfLibrary matches 7).

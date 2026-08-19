@@ -89,10 +89,23 @@ internal static class ParityReport
             sb.AppendLine();
         }
 
-        // ---- highest-leverage gaps ------------------------------------------------------------------
-        sb.AppendLine("## Biggest parity gaps (highest-leverage work)");
+        // ---- verdict leverage (the sole-cause ranking) ----------------------------------------------
+        sb.AppendLine("## Verdict leverage — what actually moves a whole-file verdict");
         sb.AppendLine();
-        sb.AppendLine("Ranked by number of files PdfLibrary misses on a clause it does not fully cover.");
+        sb.AppendLine("**Plan from this section, not from the clause-coverage ranking below.** A clause only moves "
+            + "a whole-file verdict when it is the ONLY clause PdfLibrary misses on some file. Where a miss is "
+            + "blocked by several clauses at once, every one of them must close before that file flips — so a "
+            + "frequently-missed clause can be worth zero on its own no matter how high it ranks by file count.");
+        sb.AppendLine();
+        foreach (ParityComparison.ProfileComparison pc in all)
+            sb.Append(RenderLeverage(ProfileLabel(pc.Profile), ParityLeverage.Analyse(pc.Files)));
+
+        // ---- clause-coverage gaps -------------------------------------------------------------------
+        sb.AppendLine("## Biggest clause-coverage gaps");
+        sb.AppendLine();
+        sb.AppendLine("Ranked by number of files PdfLibrary misses on a clause it does not fully cover. This measures "
+            + "detection coverage, **not** verdict movement — a clause high on this list may flip nothing at all "
+            + "(see the leverage section above before treating any of it as prioritised work).");
         sb.AppendLine();
         int rank = 1;
         foreach ((ConformanceProfile profile, string clause, int vera, int matched) in
@@ -101,6 +114,48 @@ internal static class ParityReport
             sb.AppendLine($"{rank++}. **{ProfileLabel(profile)} clause {clause}** — {vera - matched} of {vera} "
                 + $"files missed (PdfLibrary matches {matched}).");
         }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Renders one profile's verdict-leverage ranking: per clause, how many whole-file misses it blocks,
+    /// how many it closes ON ITS OWN, and — when that is none — the cheapest combination that buys
+    /// anything. Ordered by what a clause actually flips, so a frequently-missed clause with no verdict
+    /// leverage cannot present itself as the highest-value work.
+    /// </summary>
+    public static string RenderLeverage(string profileLabel, ParityLeverage.Analysis analysis)
+    {
+        var sb = new StringBuilder();
+        string miss = analysis.Misses.Count == 1 ? "miss" : "misses";
+        sb.AppendLine($"### {profileLabel} — {analysis.Misses.Count} whole-file {miss}");
+        sb.AppendLine();
+
+        if (analysis.Misses.Count == 0)
+        {
+            sb.AppendLine("PdfLibrary's verdict already agrees with veraPDF on every file of this profile, so "
+                + "**no clause work here can move a verdict** — however many files a clause gap still spans.");
+            sb.AppendLine();
+            return sb.ToString();
+        }
+
+        sb.AppendLine("| Clause | Misses it blocks | Flips alone | Cheapest set that pays | That set flips |");
+        sb.AppendLine("|---|--:|--:|---|--:|");
+        foreach (ParityLeverage.ClauseLeverage c in analysis.Clauses)
+        {
+            string set = c.MinimumPayingSet.Count == 1 ? "— (alone)" : string.Join(" + ", c.MinimumPayingSet);
+            string flips = c.FlipsAlone == 0 ? "**0**" : c.FlipsAlone.ToString();
+            sb.AppendLine($"| {c.Clause} | {c.AppearsInMisses} | {flips} | {set} | {c.MinimumPayingSetFlips} |");
+        }
+        sb.AppendLine();
+
+        sb.AppendLine("Each miss and the clauses standing between it and agreement:");
+        sb.AppendLine();
+        sb.AppendLine("| File | Blocked by |");
+        sb.AppendLine("|---|---|");
+        foreach (ParityLeverage.Miss m in analysis.Misses)
+            sb.AppendLine($"| {m.FileName} | {string.Join(" + ", m.MissedClauses)} |");
         sb.AppendLine();
 
         return sb.ToString();
