@@ -123,7 +123,10 @@ internal sealed class FontProgramRule : IConformanceRule
         bool notdefHit = false;
         foreach (int code in codes)
         {
-            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code);
+            // Strict (issue 42): a CID beyond the /CIDToGIDMap stream's coverage is .notdef per
+            // ISO 32000-2 §9.7.6.3, which veraPDF applies — the renderer deliberately answers
+            // identity for the same CID, so a conformance rule must not share its resolution.
+            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGidStrict(code);
             // ISO 32000 §9.7.4.2: CID 0 IS .notdef, regardless of what glyph the map assigns — and
             // under the Identity CMap gate above, code == CID. veraPDF keys 6.2.11.8 on the CID
             // (tracker issue 40, probe-confirmed): an explicit /CIDToGIDMap CAN point CID 0 at a

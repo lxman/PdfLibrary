@@ -55,7 +55,10 @@ internal static class ProgramWidthResolver
     {
         foreach (int code in codes)
         {
-            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code);
+            // Strict (issue 42): must agree with FontProgramRule's own .notdef resolution, or a CID
+            // beyond the map's coverage would be skipped as .notdef by one and width-compared by
+            // the other. The renderer's lenient answer is deliberately NOT used here.
+            int gid = cidKeyedCff ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGidStrict(code);
             if (gid == 0)
                 continue; // .notdef has no meaningful width to compare
 

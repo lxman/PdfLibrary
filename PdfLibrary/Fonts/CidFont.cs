@@ -24,9 +24,44 @@ internal class CidFont : PdfFont
     }
 
     /// <summary>
-    /// Maps a CID (Character ID) to a GID (Glyph ID) for the embedded font
+    /// Maps a CID (Character ID) to a GID (Glyph ID) for RENDERING — what to actually draw.
+    ///
+    /// <para>For a CID beyond a /CIDToGIDMap stream's covered range this returns the CID itself
+    /// (identity), which is a DELIBERATE divergence from ISO 32000-2 §9.7.6.3, not an oversight.
+    /// Use <see cref="MapCidToGidStrict"/> for the spec answer; the two differ only in that one
+    /// case and the difference is intentional (tracker issue 42).</para>
+    ///
+    /// <para><b>Why identity here.</b> Measured against all three reference renderers on
+    /// 2026-08-19 (fixture: a corpus document whose /CIDToGIDMap was rewritten to cover CID 0 only,
+    /// so every drawn CID falls beyond coverage). poppler and mutool render pixel-identically, both
+    /// drawing the identity glyph; Ghostscript draws the same glyphs and adds .notdef boxes only
+    /// where the resulting GID exceeds the subset font's glyph count — a separate concern, not this
+    /// mapping. No renderer in the field substitutes CID 0's glyph. Returning 0 here would blank
+    /// text that every other viewer displays, which is a worse answer for a viewer than following
+    /// a sentence the field ignores.</para>
     /// </summary>
-    public int MapCidToGid(int cid)
+    public int MapCidToGid(int cid) => MapCid(cid, strict: false);
+
+    /// <summary>
+    /// Maps a CID to a GID for CONFORMANCE — what a validator must consider referenced.
+    ///
+    /// <para>Identical to <see cref="MapCidToGid"/> except for a CID beyond a /CIDToGIDMap stream's
+    /// covered range, where this returns 0 (.notdef) per ISO 32000-2 §9.7.6.3: "if a (character)
+    /// code does not have a corresponding GID in the CIDtoGIDMap stream, the glyph for CID 0 shall
+    /// be substituted."</para>
+    ///
+    /// <para><b>Why strict here.</b> That sentence is ABSENT from ISO 32000-1's §9.7.6.3 — it is a
+    /// PDF 2.0 addition — but veraPDF 1.28.1 applies it regardless: on the fixture described above
+    /// it raises 6.2.11.8, 6.2.11.5, 6.2.11.4.1 and 6.2.11.4.2 which the untruncated original does
+    /// not. A conformance rule reading the lenient answer therefore UNDER-REPORTS against the
+    /// reference, which is the half of issue 42 that was real.</para>
+    ///
+    /// <para>Callers: <c>FontProgramRule</c>, <c>ProgramWidthResolver</c> and
+    /// <c>FontRemediationPlanner</c>'s CID-0 predicate. The renderer must NOT use this.</para>
+    /// </summary>
+    public int MapCidToGidStrict(int cid) => MapCid(cid, strict: true);
+
+    private int MapCid(int cid, bool strict)
     {
         // Identity mapping: CID = GID (most common for subset fonts)
         if (_isIdentityMapping)
@@ -40,9 +75,14 @@ internal class CidFont : PdfFont
             // GID 0 — a legitimate ".notdef, no glyph" answer, not a lookup miss (issue 34).
             if (cid >= 0 && cid < _cidToGidMapCoveredCids)
                 return 0;
+            // Beyond the covered range: the ONLY place the two resolutions differ (issue 42).
+            if (strict)
+                return 0;
         }
 
-        // Beyond the stream's declared coverage (or no parseable map): identity fallback.
+        // Identity: beyond a stream's coverage on the render path, or no parseable map at all.
+        // Note the second case is identity under BOTH resolutions — with no stream there is no
+        // coverage to fall outside of, so §9.7.6.3's own precondition is not met.
         return cid;
     }
 

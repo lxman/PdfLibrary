@@ -70,8 +70,13 @@ public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
     /// substitute's map assigns it — counting it as "restored" would overstate what the replacement
     /// achieves. (Not used by the cid0 honesty gate below, which short-circuits on CID 0's mere
     /// presence rather than asking this predicate anything.)</summary>
+    /// <remarks>Strict resolution (issue 42), matching <c>FontProgramRule</c>: this predicate exists to
+    /// mirror the RULE's verdict, so it must share the rule's CID→GID answer rather than the renderer's.
+    /// A CID beyond the /CIDToGIDMap stream's coverage is .notdef to a validator and an identity glyph
+    /// to a viewer; a planner that asked the viewer would claim it can restore a code the rule will
+    /// still report.</remarks>
     private static bool MapsToNotdefGlyph(int code, bool cidKeyed, CidFont cid, EmbeddedFontMetrics metrics) =>
-        (cidKeyed ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGid(code)) == 0;
+        (cidKeyed ? metrics.GetGlyphIdByCid((ushort)code) : cid.MapCidToGidStrict(code)) == 0;
 
     public FontRemediationProposal Propose(PdfDocument document, PreflightResult findings)
     {
