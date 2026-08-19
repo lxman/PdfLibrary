@@ -111,9 +111,17 @@ public sealed record PatchWidthsProposal(
 /// was asked to be fixed, so nothing of theirs is reported as closed — see <see cref="FontRemediationPlanner"/>'s
 /// own group-membership doc comment), regardless of what that expansion-only member draws. A
 /// singleton's one target is the degenerate case of this same rule: it is always a seed (a singleton
-/// group has no expansion-only members to speak of), so it is <c>true</c> whenever the proposal was
-/// constructed at all — <see cref="FontRemediationPlanner.ProposeProgramReplace"/> only reaches
-/// proposal construction after its own CID-0 decline gate.</para>
+/// group has no expansion-only members to speak of), so <c>ClosesFinding</c> still reduces to
+/// "does the seed draw CID 0" — but that is NOT unconditionally <c>true</c> for every singleton.
+/// On the AUTOMATIC path, <see cref="FontRemediationPlanner.ProposeProgramReplace"/> only reaches
+/// proposal construction after its own CID-0 decline gate, so every singleton it builds does have
+/// <c>ClosesFinding: true</c> there. But the MANUAL override path
+/// (<see cref="FontRemediationPlanner.AssessReplacementCandidate"/>, routed through
+/// <c>BuildReplacement</c> for a singleton pick) has no equivalent gate — a user can knowingly pick a
+/// substitute for a font that draws CID 0, and <c>BuildReplacement</c> reports that honestly
+/// (<c>ClosesFinding: !entry.UsedCodes.Contains(0)</c>) rather than refusing the pick outright. So a
+/// singleton's <c>ClosesFinding</c> can be <c>false</c> on the manual path — it is not true merely
+/// because a proposal was constructed at all.</para>
 /// </summary>
 public sealed record ReplaceTarget(
     FontId Font,
