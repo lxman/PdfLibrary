@@ -27,7 +27,19 @@ public class ParityReportTests(ITestOutputHelper output)
         new Dictionary<ConformanceProfile, int>
         {
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
-            [ConformanceProfile.PdfA2b] = 963,   // -2 (965->963), Task 10 fix round (issues 27-28
+            [ConformanceProfile.PdfA2b] = 966,   // +3 (963->966), InlineImageRule, 2026-08-19: the inline-image
+            // arm of two clauses the object-graph walks structurally cannot see, since an inline image lives in
+            // a content stream and is never an indirect object. 6.1.10 t1 (+2: "veraPDF test suite
+            // 6-1-10-t01-fail-a/b.pdf", /F /LZW and /F /LZWDecode) and 6.2.8 t3 (+1: "...6-2-8-1-t02-fail-b.pdf",
+            // /I true) -- the XObject arm of 6.2.8 t3 was already covered, which is why only fail-b moved. Both
+            // ported from the veraPDF 1.30.2 PDFA-2 profile rather than the clause text: 6.1.10 is a WHITELIST
+            // (ASCIIHexDecode/ASCII85Decode/FlateDecode/RunLengthDecode/CCITTFaxDecode/DCTDecode + the Table 93
+            // abbreviations), so an unknown filter name fails exactly as LZW does, and it applies element-wise
+            // to a filter array. 0 FP corpus-wide; "...6-2-8-1-t02-pass-b.pdf" (/I false /F /Fl) is the guard
+            // fixture and stays clean. Predicted exactly by the sole-cause analysis (see the report's verdict-
+            // leverage section) before the rule was written: these 3 were the only misses blocked solely by
+            // those two clauses.
+            // -2 (965->963), Task 10 fix round (issues 27-28
             // follow-up review, 2026-08-16): the derived-name provenance fix (PdfFontEncoding.IsDerivedName /
             // FontProgramRule.ResolveSimpleGlyph) that closed the 7-new-FP corpus regression ALSO makes the
             // glyph-present resolver skip (Unknown) every code whose name came from SetUnicode's reverse-AGL
