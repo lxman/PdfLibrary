@@ -64,6 +64,9 @@ public static class Preflighter
         new Rules.ProhibitedXObjectRule(),
         // Image restrictions (ISO 19005-2 6.2.8): no /Alternates, /OPI; /Interpolate false; /BitsPerComponent set.
         new Rules.ImageDictionaryRule(),
+        // Inline images in reached content: permitted /F filters (6.1.10) and /I false (6.2.8), the arm of
+        // those clauses the object-graph walks cannot see.
+        new Rules.InlineImageRule(),
         // JPEG2000 image constraints (ISO 19005-2 6.2.8.3): channels, colour-spec APPROX/METH/EnumCS, bit depth.
         new Rules.Jpeg2000Rule(),
         // Slice 7 — annotations, interactive forms, actions.
