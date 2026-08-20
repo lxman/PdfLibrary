@@ -27,7 +27,24 @@ public class ParityReportTests(ITestOutputHelper output)
         new Dictionary<ConformanceProfile, int>
         {
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
-            [ConformanceProfile.PdfA2b] = 966,   // +3 (963->966), InlineImageRule, 2026-08-19: the inline-image
+            [ConformanceProfile.PdfA2b] = 969,
+            // +3 (966->969), 2026-08-20: two clauses closed to FULL parity, both predicted exactly by the
+            // sole-cause analysis before either was written (each of these 3 files was blocked by its clause
+            // ALONE). 6.6.2.1 t2/t3 (+2: "veraPDF test suite 6-6-2-1-t01-fail-b/c.pdf") -- the XMP packet
+            // HEADER must carry neither bytes= nor encoding=; new XmpPacketHeaderRule. Note the corpus
+            // FILENAME says t01 for both: the file names the clause's test SECTION, not the rule veraPDF
+            // actually fires, which the snapshot records as tests 2 and 3 -- read verapdf-verdicts.json, not
+            // the filename. 6.3.3 t3 (+1: "...6-3-3-t02-fail-b.pdf") -- a Widget with /FT /Btn must hold /N as
+            // an appearance SUBDICTIONARY, not a stream; folded into the existing AnnotationAppearanceRule,
+            // whose doc comment had already reserved the slot. Both ported from the veraPDF 1.30.2 PDFA-2B
+            // profile expressions rather than the clause prose. 0 FP corpus-wide (the standing invariant).
+            //
+            // 6.6.2.1 t2/t3 got its OWN RuleId ("xmp-packet-header") rather than joining MetadataPresentRule's
+            // "metadata": that id is owned by Pellucid's MetadataDomain, whose repair SYNTHESIZES a replacement
+            // packet from the Info dictionary -- correct for "no /Metadata at all", destructive here, since it
+            // would discard a document's real XMP to strip one header attribute.
+            //
+            // Previously 966 (963->966), InlineImageRule, 2026-08-19: the inline-image
             // arm of two clauses the object-graph walks structurally cannot see, since an inline image lives in
             // a content stream and is never an indirect object. 6.1.10 t1 (+2: "veraPDF test suite
             // 6-1-10-t01-fail-a/b.pdf", /F /LZW and /F /LZWDecode) and 6.2.8 t3 (+1: "...6-2-8-1-t02-fail-b.pdf",
