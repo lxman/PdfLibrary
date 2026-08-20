@@ -258,6 +258,12 @@ another. Nothing consumes them yet."
 
 **There are six construction sites**, four in `PdfContentParser` and two in `PdfParser`. The corpus only exercises one of them (the content-stream operand stack). Missing one of the other five would ship green and silently under-report — this repo has hit that seam four separate times, which is why Step 1 enumerates all of them.
 
+> **Correction made during execution.** The Step 1 code below covers Site_1 through Site_5 only — it
+> omits Site 6, the post-decryption reconstruction, which is precisely the kind of gap this task's own
+> argument warns about. A `Site_6_object_parser_after_decryption` test was added in a fix round; it
+> drives a real RC4-40 encrypt/decrypt round trip so the `_decryptor is not null` branch is genuinely
+> entered. Anyone re-running this plan from scratch must write that seventh test too.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `PdfLibrary.Tests/Parsing/HexStringFactsPropagationTests.cs`:
@@ -492,7 +498,7 @@ Decryption changes the bytes, never how the string was written — the facts car
 - [ ] **Step 6: Run tests to verify they pass**
 
 Run: `dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --filter "FullyQualifiedName~HexStringFactsPropagationTests"`
-Expected: PASS, all nine tests.
+Expected: PASS, all eight tests.
 
 - [ ] **Step 7: Probe the seam guard**
 
@@ -1457,8 +1463,12 @@ Read the regenerated `PARITY-REPORT.md` and confirm every one of these:
 
 - [ ] **Step 5: Confirm the render baselines did not move**
 
-Run: `dotnet test PdfLibrary.Rendering.Skia.Tests/PdfLibrary.Rendering.Skia.Tests.csproj`
-Expected: PASS with no baseline diffs. This is the check that Task 4's "value semantics unchanged" claim was true in practice, not just in argument.
+Run: `dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --filter "FullyQualifiedName~Rendering"`
+Expected: PASS with no baseline diffs — `SpotPageByteIdentityTests` in particular. This is the check that Task 4's "value semantics unchanged" claim was true in practice, not just in argument.
+
+Note: the render and byte-identity tests live inside `PdfLibrary.Tests/Rendering/`. There is a
+`PdfLibrary.Rendering.Skia.Tests/` directory in the repo root, but it holds only stale `bin`/`obj`
+output and **no `.csproj`** — it is a build fossil, not a project. Do not try to run it.
 
 - [ ] **Step 6: Commit the engine work**
 
