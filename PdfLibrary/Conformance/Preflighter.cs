@@ -19,6 +19,9 @@ public static class Preflighter
         new Rules.PostEofDataRule(),
         // Indirect-object whitespace/EOL framing (ISO 19005-2/3 6.1.9): N G obj … endobj spacing.
         new Rules.IndirectObjectSpacingRule(),
+        // Cross-reference table framing (ISO 19005-2/3 6.1.4 t2): xref keyword and subsection header
+        // separated by exactly one EOL marker. Byte-level, same shape as the rule above.
+        new Rules.XrefTableSpacingRule(),
         // Slice 20 — file-structure rules: file header (6.1.2) + implementation limits (6.1.13).
         new Rules.FileHeaderRule(),
         new Rules.ImplementationLimitsRule(),

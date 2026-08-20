@@ -27,7 +27,20 @@ public class ParityReportTests(ITestOutputHelper output)
         new Dictionary<ConformanceProfile, int>
         {
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
-            [ConformanceProfile.PdfA2b] = 969,
+            [ConformanceProfile.PdfA2b] = 971,
+            // +2 (969->971), 2026-08-20: 6.1.4 t2 to FULL parity ("veraPDF test suite 6-1-4-t01-fail-a/b.pdf",
+            // both blocked by this clause alone). The xref keyword and the cross-reference subsection header
+            // must be separated by exactly ONE EOL marker; fail-a separates them with "SPACE LF" and fail-b
+            // with "LF LF". New XrefTableSpacingRule, byte-level, same shape as IndirectObjectSpacingRule
+            // (the parser normalises this whitespace away, so the source bytes are re-read).
+            //
+            // Two traps worth keeping: (1) BOTH fixtures embed the sentence "the xref keyword and the
+            // following cross reference subsection header" in their own document information, so a keyword
+            // scan reports a violation on a file whose table is fine -- a candidate only qualifies when the
+            // subsection-header grammar FOLLOWS it. (2) The identification must NOT require well-formed
+            // separation, or the malformed separator being detected makes the table invisible and the rule
+            // silently never fires.
+            //
             // +3 (966->969), 2026-08-20: two clauses closed to FULL parity, both predicted exactly by the
             // sole-cause analysis before either was written (each of these 3 files was blocked by its clause
             // ALONE). 6.6.2.1 t2/t3 (+2: "veraPDF test suite 6-6-2-1-t01-fail-b/c.pdf") -- the XMP packet
