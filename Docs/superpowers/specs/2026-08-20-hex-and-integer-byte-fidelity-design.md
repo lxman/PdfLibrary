@@ -152,24 +152,36 @@ reimplementing enough of the tokenizer to skip literal strings, comments, dictio
 binary stream payloads. A `<` inside compressed stream data would produce a false positive, against
 the invariant.
 
-### 4.2 Chosen: a side-channel on the lexer instance
+### 4.2 Chosen: a position-keyed side table on the lexer
 
-`ReadHexStringOrDictionaryStart` records what it already computed, on the lexer instance:
+`ReadHexStringOrDictionaryStart` records what it already computed, on the lexer instance, keyed by
+the token's `Position` (the byte offset of the opening `<`, unique per token within one lexer):
 
-- `LastHexNonWhitespaceCount` — `hexDigits.Length`, the count after whitespace removal
-- `LastHexHadNonHexDigit` — set when any collected character is outside `[0-9A-Fa-f]`
+- non-white-space count — `hexDigits.Length`, the count after whitespace removal
+- had-non-hex-digit — set when any collected character is outside `[0-9A-Fa-f]`
 
-The parser reads them immediately after `NextToken()` returns a `HexString`. Cost is zero for every
-other token; `PdfToken` is untouched. The lexer is already a stateful stream reader, so this adds no
-new *kind* of state — only two fields whose lifetime is one token.
+A parser retrieves them with `TryTakeHexFacts(token.Position, out …)`, which **removes** the entry as
+it reads. `PdfToken` is untouched, and the cost is zero for every other token.
 
-**Contract:** the values are defined only immediately after a `HexString` token is returned, and are
-overwritten by the next hex string read. This is narrow and must be stated in the doc comment,
-because it is the one way this design can be misused.
+**Why keyed by position rather than "the last hex string read".** A simple `LastHex…` pair would be
+read stale. `PdfParser` buffers tokens for lookahead (`_tokenBuffer`, `PeekToken`, `PushBackToken` at
+`Parsing/PdfParser.cs:93-121`), and `ParseIntegerOrReference` lexes a *further* token — `peek2` at
+`:160` — before pushing `genToken` back. So a hex token can be lexed well before the parser turns it
+into a `PdfString`.
 
-Note `LastHexHadNonHexDigit` must be computed from the **collected characters**, not inferred from
-`byte.TryParse` failing. `TryParse` operates on pairs, so a pair like `4!` fails as a unit; deriving
-the flag from it would be correct here but fragile. Test the character.
+Tracing the current code, `LastHex…` would in fact still be correct, because the buffer only lexes
+when it is empty and therefore never holds two hex strings at once. But that correctness is an
+emergent property of the buffering discipline that nothing states and no test pins — precisely the
+kind of undocumented invariant that breaks silently when someone deepens the lookahead later.
+Keying by position removes the reasoning entirely and costs one dictionary lookup.
+
+**Self-bounding.** Because retrieval removes the entry, the table holds only hex tokens that are
+in flight — two at most in practice. An abandoned parse can strand an entry until the lexer is
+collected, which is negligible. There is no unbounded growth with the document's hex-string count.
+
+Note the had-non-hex-digit flag must be computed from the **collected characters**, not inferred
+from `byte.TryParse` failing. `TryParse` operates on pairs, so a pair like `4!` fails as a unit;
+deriving the flag from it would be correct here but fragile. Test the character.
 
 ### 4.3 The facts land on `PdfString`
 
