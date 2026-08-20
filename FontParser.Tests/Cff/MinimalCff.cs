@@ -35,13 +35,15 @@ internal static class MinimalCff
     /// spec default); <paramref name="customCharsetSids"/> emits a real format-0 charset table and points
     /// the operator at it, overriding <paramref name="charsetOperand"/>.
     /// </summary>
-    public static byte[] Build(int? charsetOperand, int numGlyphs, ushort[]? customCharsetSids = null)
+    public static byte[] Build(int? charsetOperand, int numGlyphs, ushort[]? customCharsetSids = null,
+        List<byte[]>? customCharStrings = null)
     {
+        List<byte[]> glyphs = customCharStrings ?? EndCharGlyphs(numGlyphs);
         int nameIndexSize = IndexSize([FontNameBytes], 1);
         int topDictLen = (charsetOperand is null && customCharsetSids is null ? 0 : 6) // charset
                          + 6                                                          // CharStrings
                          + 11;                                                        // Private
-        int charStringsSize = IndexSize(EndCharGlyphs(numGlyphs), 2);
+        int charStringsSize = IndexSize(glyphs, 2);
         byte[] charsetTable = BuildCharsetTable(customCharsetSids);
 
         // Layout: header | name | topDict | string | globalSubr | pad | charset | charStrings | private
@@ -61,7 +63,7 @@ internal static class MinimalCff
         var data = new List<byte>();
         AppendPreamble(data, top);
         data.AddRange(charsetTable);
-        AppendIndex(data, EndCharGlyphs(numGlyphs), offSize: 2);
+        AppendIndex(data, glyphs, offSize: 2);
         data.AddRange(PrivateDict);
         Verify(charStringsOffset == data.Count - charStringsSize - PrivateDict.Length,
             "CharStrings landed somewhere other than the offset written into the Top DICT");
