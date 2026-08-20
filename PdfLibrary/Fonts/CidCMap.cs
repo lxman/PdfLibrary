@@ -49,6 +49,57 @@ public partial class CidCMap
         return cmap;
     }
 
+    /// <summary>
+    /// The largest CID this data DECLARES, or null when it declares none — the quantity ISO 19005-2
+    /// clause 6.1.13 test 10 bounds at 65535 (veraPDF object <c>CMapFile</c>, <c>maximalCID</c>).
+    ///
+    /// <para>A separate scan from <see cref="Parse"/> on purpose. Parse materialises every code in
+    /// every range into <c>_codeToCid</c> — tens of thousands of entries for a CJK CMap — and a
+    /// caller that needs only a maximum should not pay that. This reads the same operators, keeps
+    /// no map, and leaves Parse and the decode path it feeds untouched.</para>
+    ///
+    /// <para>Returns <see cref="long"/> because a range's top CID (<c>cidStart + (hi - lo)</c>) can
+    /// exceed <see cref="int"/>. Ranges wider than <see cref="MaxRangeSpan"/> are skipped, matching
+    /// Parse's notion of a legitimate 2-byte range — a deliberate under-report, since a wider
+    /// codespace is legal in ISO 32000 but this engine's CID handling assumes two bytes throughout.
+    /// Never throws: malformed input degrades to whatever was read first, like Parse.</para>
+    /// </summary>
+    internal static long? MaxDeclaredCid(byte[] data)
+    {
+        long? max = null;
+
+        try
+        {
+            string content = Encoding.ASCII.GetString(data);
+
+            foreach (string block in FindBlocks(content, "begincidchar", "endcidchar"))
+            foreach (Match match in CidCharRegex().Matches(block))
+            {
+                if (!long.TryParse(match.Groups[2].Value, out long cid)) continue;
+                max = max is null ? cid : Math.Max(max.Value, cid);
+            }
+
+            foreach (string block in FindBlocks(content, "begincidrange", "endcidrange"))
+            foreach (Match match in CidRangeRegex().Matches(block))
+            {
+                if (!int.TryParse(match.Groups[1].Value, NumberStyles.HexNumber, null, out int lo) ||
+                    !int.TryParse(match.Groups[2].Value, NumberStyles.HexNumber, null, out int hi) ||
+                    !long.TryParse(match.Groups[3].Value, out long cidStart))
+                    continue;
+                if (hi < lo || hi - lo > MaxRangeSpan) continue;
+
+                long top = cidStart + (hi - lo);
+                max = max is null ? top : Math.Max(max.Value, top);
+            }
+        }
+        catch
+        {
+            // Same posture as Parse: degrade to whatever was read before the fault, never throw.
+        }
+
+        return max;
+    }
+
     // cidchar entry: <code> cid   (cid decimal)
     [GeneratedRegex(@"<([0-9A-Fa-f]+)>\s+(\d+)")]
     private static partial Regex CidCharRegex();
