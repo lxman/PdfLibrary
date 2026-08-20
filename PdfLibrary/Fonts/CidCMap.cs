@@ -59,9 +59,11 @@ public partial class CidCMap
     /// no map, and leaves Parse and the decode path it feeds untouched.</para>
     ///
     /// <para>Returns <see cref="long"/> because a range's top CID (<c>cidStart + (hi - lo)</c>) can
-    /// exceed <see cref="int"/>. Ranges wider than <see cref="MaxRangeSpan"/> are skipped, matching
+    /// exceed <see cref="int"/>. RANGES wider than <see cref="MaxRangeSpan"/> are skipped, matching
     /// Parse's notion of a legitimate 2-byte range — a deliberate under-report, since a wider
     /// codespace is legal in ISO 32000 but this engine's CID handling assumes two bytes throughout.
+    /// The guard is deliberately asymmetric: a <c>cidchar</c> entry carries no span to be wide, so
+    /// its declared CID is always counted — a declared CID is a declared CID, whatever its code.
     /// Never throws: malformed input degrades to whatever was read first, like Parse.</para>
     /// </summary>
     internal static long? MaxDeclaredCid(byte[] data)

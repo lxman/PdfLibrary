@@ -8,7 +8,7 @@ namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
 /// PDF/A implementation limits (ISO 19005-2, 6.1.13; the referenced limits are ISO 32000-1 Annex C).
-/// Three tractable sub-checks:
+/// Six sub-checks in all. The first three share one object-graph walk:
 /// <list type="number">
 ///   <item><b>Page boundary sizes</b> — every page's effective MediaBox and CropBox
 ///     (<see cref="PdfPage.GetMediaBox"/> / <see cref="PdfPage.GetCropBox"/> resolve page-tree
