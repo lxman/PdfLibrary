@@ -110,28 +110,45 @@ public class AtomicFileWriterTests : IDisposable
     // external scanner (Defender, Search indexer) transiently holds the destination. The writer
     // must absorb a TRANSIENT hold by retrying the rename — this test holds the destination
     // open briefly on another thread and releases it well inside the retry budget.
+    // FLAKE FIX (tracker issue 55, 2026-08-20). This test used to race the very budget it was
+    // measuring, and lost about half the time under a full-suite run while passing 10/10 in
+    // isolation. Two independent causes, both fixed here — neither needed a production change:
+    //
+    //   1. The releaser ran on the THREAD POOL. Thread.Sleep(50) bounds how long the handle is
+    //      held only once the work item STARTS, and under the suite's parallel collections the
+    //      pool is saturated, so its start could slip past the whole ~150 ms default budget. Every
+    //      attempt then found the file held and the last UnauthorizedAccessException propagated.
+    //      A dedicated thread is scheduled by the OS, not the pool, so suite load cannot defer it.
+    //   2. The budget was the DEFAULT ~150 ms against a 50 ms hold — a 3x margin, which is not a
+    //      margin at all on a loaded machine. Write takes the budget as a parameter precisely so a
+    //      caller can choose one; 10 attempts is ~5.1 s, a 100x margin over the hold.
+    //
+    // What the test still proves is unchanged: the handle is held with FileShare.None BEFORE Write
+    // is called, so the first rename attempt necessarily fails and only the retry loop can save it.
+    // Delete that loop and this test fails — which is the property that makes it worth having, and
+    // is pinned from the other side by Write_DestinationHeldPastRetryBudget below.
     [Fact]
-    public async Task Write_DestinationTransientlyLocked_RetriesAndSucceeds()
+    public void Write_DestinationTransientlyLocked_RetriesAndSucceeds()
     {
         string dir = NewTempDir();
         string path = Path.Combine(dir, "locked.bin");
         File.WriteAllBytes(path, [1, 2, 3]);
 
-        // Hold the destination so the rename cannot replace it, release after ~50 ms —
-        // far inside the default retry budget, far beyond attempt #1.
-        // The `using` is belt-and-braces, and specifically covers the cancellation path: the
-        // releaser normally disposes the handle mid-test, but a cancelled run can stop that task
-        // ever starting, and a still-held handle would then block the temp-dir cleanup.
-        // FileStream.Dispose is idempotent, so the resulting double dispose is harmless.
+        // The `using` is belt-and-braces: the releaser normally disposes the handle mid-test, but a
+        // cancelled run can stop it ever getting there, and a still-held handle would then block the
+        // temp-dir cleanup. FileStream.Dispose is idempotent, so the double dispose is harmless.
         using var handle = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
-        Task releaser = Task.Run(() => { Thread.Sleep(50); handle.Dispose(); },
-            TestContext.Current.CancellationToken);
+        var releaser = new Thread(() => { Thread.Sleep(50); handle.Dispose(); }) { IsBackground = true };
+        releaser.Start();
 
         // Must run while the releaser still holds the file — this is the retry the test exists to
-        // pin, so the await deliberately comes AFTER the write, not before.
-        AtomicFileWriter.Write(path, stream => stream.Write([7, 8, 9]));
+        // pin, so the Join deliberately comes AFTER the write, not before.
+        // The generic overload, because only it forwards the retry budget; the Action<Stream> one
+        // takes the default. The payload is otherwise identical.
+        AtomicFileWriter.Write(path, stream => { stream.Write([7, 8, 9]); return true; },
+            maxMoveAttempts: 10);
 
-        await releaser;
+        releaser.Join();
         Assert.Equal(new byte[] { 7, 8, 9 }, File.ReadAllBytes(path));
         Assert.Empty(Directory.GetFiles(dir, "*.tmp"));
     }
