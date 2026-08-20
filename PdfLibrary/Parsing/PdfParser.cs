@@ -64,7 +64,7 @@ internal class PdfParser(PdfLexer lexer)
             PdfTokenType.Boolean => ParseBoolean(token),
             PdfTokenType.Integer => ParseIntegerOrReference(token),
             PdfTokenType.Real => new PdfReal(double.Parse(token.Value, NumberStyles.Float, CultureInfo.InvariantCulture)),
-            PdfTokenType.String => ParseString(token),
+            PdfTokenType.String or PdfTokenType.HexString => ParseString(token),
             PdfTokenType.Name => ParseName(token),
             PdfTokenType.ArrayStart => ParseArray(),
             PdfTokenType.DictionaryStart => ParseDictionaryOrStream(),
@@ -230,7 +230,15 @@ internal class PdfParser(PdfLexer lexer)
 
         // Simply return the string as-is - the PdfString constructor will use Latin-1
         // to convert back to the original bytes that the lexer parsed from hex.
-        PdfString pdfString = PdfString.FromByteLiteral(token.Value);
+        // How the source WROTE it, so a save can write it the same way (issue 57). Before this, every
+        // parsed string defaulted to Literal and a <…> string came back as octal escapes: /ID
+        // [<9020EE64…>] was re-serialized as [(\220 \356d\276…)] — legal, but a gratuitous rewrite of
+        // bytes the user never edited, and 4 characters per non-printable byte instead of 2.
+        PdfStringFormat format = token.Type == PdfTokenType.HexString
+            ? PdfStringFormat.Hexadecimal
+            : PdfStringFormat.Literal;
+
+        PdfString pdfString = PdfString.FromByteLiteral(token.Value, format);
 
         // If we're inside an indirect object and have a decryptor, decrypt the string
         // Per PDF spec ISO 32000-1 section 7.6.2: "All strings in the document are encrypted"
@@ -239,8 +247,10 @@ internal class PdfParser(PdfLexer lexer)
             byte[] encryptedBytes = pdfString.Bytes;
             byte[] decryptedBytes = _decryptor.Decrypt(encryptedBytes, _currentObjectNumber, _currentGenerationNumber);
 
-            // Create new PdfString with decrypted bytes
-            pdfString = new PdfString(decryptedBytes);
+            // Create new PdfString with decrypted bytes — carrying the ORIGINAL format forward.
+            // Decryption changes the bytes, never how the string was written; dropping the format
+            // here would re-lose it for exactly the encrypted documents (issue 57).
+            pdfString = new PdfString(decryptedBytes, format);
 
             PdfLogger.Log(LogCategory.PdfTool,
                 $"DECRYPT STRING: obj {_currentObjectNumber} gen {_currentGenerationNumber}, " +

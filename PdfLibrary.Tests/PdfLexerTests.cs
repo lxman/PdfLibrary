@@ -302,6 +302,11 @@ public class PdfLexerTests
     #endregion
 
     #region Hex String Tests
+    //
+    // Issue 57: the lexer reports a hex string as PdfTokenType.HexString, not .String. The DECODED
+    // value assertions below are unchanged and still carry the weight of these tests -- the type is
+    // now additionally checked because preserving it is what lets a save write <...> back as <...>
+    // instead of octal escapes. The literal-string region above still asserts .String.
 
     [Fact]
     public void Lexer_ParsesHexString()
@@ -309,7 +314,7 @@ public class PdfLexerTests
         PdfLexer lexer = CreateLexer("<48656C6C6F>");
         PdfToken token = lexer.NextToken();
 
-        Assert.Equal(PdfTokenType.String, token.Type);
+        Assert.Equal(PdfTokenType.HexString, token.Type);
         Assert.Equal("Hello", token.Value); // <48656C6C6F> = "Hello" in hex
     }
 
@@ -319,7 +324,7 @@ public class PdfLexerTests
         PdfLexer lexer = CreateLexer("<48 65 6C 6C 6F>");
         PdfToken token = lexer.NextToken();
 
-        Assert.Equal(PdfTokenType.String, token.Type);
+        Assert.Equal(PdfTokenType.HexString, token.Type);
         Assert.Equal("Hello", token.Value); // Whitespace is ignored in hex strings
     }
 
@@ -329,7 +334,7 @@ public class PdfLexerTests
         PdfLexer lexer = CreateLexer("<>");
         PdfToken token = lexer.NextToken();
 
-        Assert.Equal(PdfTokenType.String, token.Type);
+        Assert.Equal(PdfTokenType.HexString, token.Type);
         Assert.Equal("", token.Value);
     }
 
@@ -339,7 +344,7 @@ public class PdfLexerTests
         PdfLexer lexer = CreateLexer("<4A6b>");
         PdfToken token = lexer.NextToken();
 
-        Assert.Equal(PdfTokenType.String, token.Type);
+        Assert.Equal(PdfTokenType.HexString, token.Type);
         Assert.Equal("Jk", token.Value); // <4A6b> = "Jk" (0x4A='J', 0x6b='k')
     }
 
@@ -352,7 +357,7 @@ public class PdfLexerTests
         PdfLexer lexer = CreateLexer("<36322F0000008E827C>");
         PdfToken token = lexer.NextToken();
 
-        Assert.Equal(PdfTokenType.String, token.Type);
+        Assert.Equal(PdfTokenType.HexString, token.Type);
 
         // Convert the token value back to bytes using Latin-1 (same as PdfString does)
         byte[] actualBytes = Encoding.Latin1.GetBytes(token.Value);

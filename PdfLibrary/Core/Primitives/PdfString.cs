@@ -127,9 +127,14 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
     /// <summary>
     /// Creates a string from raw byte-literal text via Latin-1 (byte == char). For BYTE strings and
     /// ASCII tokens only (the /ID, PDF date strings, etc.) — never for human-facing text.
+    ///
+    /// <para><paramref name="format"/> is how the string is WRITTEN BACK, not how
+    /// <paramref name="value"/> is read — the bytes are Latin-1 either way. Callers parsing a document
+    /// pass the format the source used, so a <c>&lt;…&gt;</c> string is re-serialized as one
+    /// (issue 57); it defaults to Literal for the many callers synthesizing a fresh byte string.</para>
     /// </summary>
-    public static PdfString FromByteLiteral(string value) =>
-        new(Encoding.Latin1.GetBytes(value), PdfStringFormat.Literal);
+    public static PdfString FromByteLiteral(string value, PdfStringFormat format = PdfStringFormat.Literal) =>
+        new(Encoding.Latin1.GetBytes(value), format);
 
     public static implicit operator string(PdfString pdfString) => pdfString.Value;
 }

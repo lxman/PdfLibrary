@@ -22,6 +22,12 @@ internal class PdfContentParser
     private static double ParseReal(string s) =>
         double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 0.0;
 
+    /// <summary>How a string token was WRITTEN, so re-serializing preserves it (issue 57). The decoded
+    /// bytes are identical for both token types — the lexer has already turned <c>&lt;48656C6C6F&gt;</c>
+    /// into the same Latin-1 text a literal would produce.</summary>
+    private static PdfStringFormat FormatOf(PdfTokenType type) =>
+        type == PdfTokenType.HexString ? PdfStringFormat.Hexadecimal : PdfStringFormat.Literal;
+
     /// <summary>
     /// Parses a content stream and returns a list of operators
     /// </summary>
@@ -73,8 +79,12 @@ internal class PdfContentParser
                     operands.Push(new PdfReal(ParseReal(token.Value)));
                     break;
 
+                // Both arms, and the format preserved (issue 57): a content stream carries hex
+                // strings too (`<0041> Tj`), and without a HexString arm the lexer's new token type
+                // would fall through to the default and drop the operand entirely.
                 case PdfTokenType.String:
-                    operands.Push(PdfString.FromByteLiteral(token.Value));
+                case PdfTokenType.HexString:
+                    operands.Push(PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)));
                     break;
 
                 case PdfTokenType.Name:
@@ -327,7 +337,8 @@ internal class PdfContentParser
                     break;
 
                 case PdfTokenType.String:
-                    array.Add(PdfString.FromByteLiteral(token.Value));
+                case PdfTokenType.HexString:
+                    array.Add(PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)));
                     break;
 
                 case PdfTokenType.Name:
@@ -379,7 +390,8 @@ internal class PdfContentParser
                 {
                     PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
                     PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
-                    PdfTokenType.String => PdfString.FromByteLiteral(token.Value),
+                    PdfTokenType.String or PdfTokenType.HexString =>
+                        PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)),
                     PdfTokenType.Name => PdfName.Parse(token.Value),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,
@@ -438,7 +450,8 @@ internal class PdfContentParser
                 {
                     PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
                     PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
-                    PdfTokenType.String => PdfString.FromByteLiteral(token.Value),
+                    PdfTokenType.String or PdfTokenType.HexString =>
+                        PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,
                     PdfTokenType.ArrayStart => ParseArray(lexer),
