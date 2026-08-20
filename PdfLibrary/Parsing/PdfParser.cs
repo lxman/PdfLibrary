@@ -155,7 +155,13 @@ internal class PdfParser(PdfLexer lexer)
         var objectNumber = (int)longValue;
         PdfToken genToken = NextToken();
         if (!int.TryParse(genToken.Value, out int generationNumber))
+        {
+            // Not a generation number after all. Push it back rather than swallowing it: dropping the
+            // token loses a real object (an integer too large for Int32 is still an integer), which
+            // made ISO 19005-2 6.1.13 test 1 undetectable in the object graph.
+            PushBackToken(genToken);
             return new PdfInteger(objectNumber);
+        }
 
         PdfToken peek2 = PeekToken();
 
