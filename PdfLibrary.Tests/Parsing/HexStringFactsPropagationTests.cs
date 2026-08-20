@@ -5,6 +5,7 @@ using PdfLibrary.Content.Operators;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Parsing;
+using PdfLibrary.Security;
 using Xunit;
 
 namespace PdfLibrary.Tests.Parsing;
@@ -81,6 +82,59 @@ public class HexStringFactsPropagationTests
     public void Site_5_object_parser()
     {
         var parser = new PdfParser(new System.IO.MemoryStream(Encoding.ASCII.GetBytes("<48455>")));
+        AssertOdd(parser.ReadObject());
+    }
+
+    [Fact]
+    public void Site_6_object_parser_after_decryption()
+    {
+        // A real, WORKING RC4-40 (V=1, R=2) encrypt/decrypt pair — not a stand-in — because the
+        // reconstruction line under test (`pdfString = new PdfString(decryptedBytes, format,
+        // hexFacts);`) only runs inside PdfParser.ParseString's `_decryptor is not null &&
+        // _currentObjectNumber >= 0` branch. A PdfDecryptor that failed to authenticate would throw
+        // out of its constructor before this test ever reached that branch, which would make the
+        // test pass for the wrong reason (or not compile a meaningful scenario at all). PdfEncryptor
+        // and PdfDecryptor share the same V1-V4 algorithm, so an encrypt dictionary built from
+        // PdfEncryptor's own O/U/P output authenticates against PdfDecryptor with the same empty
+        // password.
+        byte[] documentId = Encoding.ASCII.GetBytes("0123456789ABCDEF");
+        var encryptor = new PdfEncryptor(
+            userPassword: "",
+            ownerPassword: "",
+            permissions: PdfPermissionFlags.All,
+            method: PdfEncryptionMethod.Rc4_40,
+            documentId: documentId);
+
+        var encryptDict = new PdfDictionary
+        {
+            [new PdfName("Filter")] = new PdfName("Standard"),
+            [new PdfName("V")] = new PdfInteger(encryptor.Version),
+            [new PdfName("R")] = new PdfInteger(encryptor.Revision),
+            [new PdfName("Length")] = new PdfInteger(encryptor.KeyLengthBits),
+            [new PdfName("O")] = new PdfString(encryptor.OValue),
+            [new PdfName("U")] = new PdfString(encryptor.UValue),
+            [new PdfName("P")] = new PdfInteger(encryptor.Permissions.RawValue)
+        };
+
+        var decryptor = new PdfDecryptor(encryptDict, documentId);
+        Assert.True(decryptor.IsDecrypted); // authentication genuinely succeeded, not skipped
+
+        // RC4 is a stream cipher, so a 3-byte plaintext encrypts to a 3-byte ciphertext. Hex-encoding
+        // those 3 bytes gives 6 digits; dropping the trailing one reproduces the same odd-count,
+        // all-hex-digit shape AssertOdd checks everywhere else in this file (NonWhitespaceCount=5,
+        // HasNonHexDigit=false) — as written in the source, BEFORE decryption ever runs. What the
+        // bytes decrypt TO is irrelevant to this test; only the facts about how they were WRITTEN
+        // must survive the reconstruction.
+        const int objectNumber = 7;
+        const int generationNumber = 0;
+        byte[] ciphertext = encryptor.Encrypt([0x48, 0x65, 0x00], objectNumber, generationNumber);
+        string oddHex = Convert.ToHexString(ciphertext)[..5];
+
+        byte[] objectSource = Encoding.ASCII.GetBytes(
+            $"{objectNumber} {generationNumber} obj <{oddHex}> endobj");
+        var parser = new PdfParser(new System.IO.MemoryStream(objectSource));
+        parser.SetDecryptor(decryptor);
+
         AssertOdd(parser.ReadObject());
     }
 
