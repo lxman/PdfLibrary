@@ -12,12 +12,44 @@ namespace PdfLibrary.Content;
 /// </summary>
 internal class PdfContentParser
 {
-    // Some producers emit malformed numeric operands in content streams (a bare "-" or ".", a
-    // doubled sign, an over-long integer, etc.). Conformant readers treat these as 0 rather than
-    // aborting the page, and PDF numbers always use '.' as the decimal separator — so parse
-    // leniently and with invariant culture instead of the throwing, culture-sensitive *.Parse.
-    private static int ParseInt(string s) =>
-        int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;
+    /// <summary>
+    /// Builds an integer operand, preserving the existing lenient behaviour EXACTLY — anything that
+    /// is not a valid Int32 still becomes 0 — while recording whether the source text was a
+    /// well-formed integer literal that simply did not fit (ISO 19005-2 6.1.13 test 1).
+    ///
+    /// <para>The distinction matters: the old <c>ParseInt</c> returned 0 both for an oversized
+    /// integer and for genuine garbage such as a bare "-" or a doubled sign. Marking garbage as
+    /// out-of-range would invent a conformance violation the reference validator does not report,
+    /// breaking the preflighter's zero-false-positive invariant.</para>
+    /// </summary>
+    private static PdfInteger MakeInteger(string s)
+    {
+        if (int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v))
+            return new PdfInteger(v);
+
+        // int.TryParse has already failed, so a successful long parse means the literal is
+        // well-formed but outside Int32. IsIntegerLiteral catches the rarer case of a literal too
+        // large for long as well, which is still an integer and still out of range.
+        bool outOfRange =
+            long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+            || IsIntegerLiteral(s);
+
+        return new PdfInteger(0, outOfRange);
+    }
+
+    /// <summary>An optional sign followed by at least one digit, and nothing else.</summary>
+    private static bool IsIntegerLiteral(string s)
+    {
+        int i = s.Length > 0 && s[0] is '+' or '-' ? 1 : 0;
+        if (i >= s.Length)
+            return false; // "", "-", "+"
+
+        for (; i < s.Length; i++)
+            if (s[i] is < '0' or > '9')
+                return false;
+
+        return true;
+    }
 
     private static double ParseReal(string s) =>
         double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out double v) ? v : 0.0;
@@ -29,24 +61,74 @@ internal class PdfContentParser
         type == PdfTokenType.HexString ? PdfStringFormat.Hexadecimal : PdfStringFormat.Literal;
 
     /// <summary>
+    /// Builds a string operand, carrying the clause 6.1.6 facts the lexer recorded for this token.
+    /// EVERY string construction in this parser goes through here — there are four (operand stack,
+    /// array, dictionary, inline image) and a site that bypassed it would stop reporting 6.1.6 for
+    /// that position alone, which no corpus fixture would catch.
+    /// </summary>
+    private static PdfString MakeString(PdfLexer lexer, PdfToken token)
+    {
+        HexStringFacts? facts =
+            token.Type == PdfTokenType.HexString
+            && lexer.TryTakeHexFacts(token.Position, out HexStringFacts f)
+                ? f
+                : null;
+
+        return PdfString.FromByteLiteral(token.Value, FormatOf(token.Type), facts);
+    }
+
+    /// <summary>
     /// Parses a content stream and returns a list of operators
     /// </summary>
-    public static List<PdfOperator> Parse(byte[]? contentData)
+    public static List<PdfOperator> Parse(byte[]? contentData) => Parse(contentData, out _);
+
+    /// <summary>
+    /// Parses a content stream and returns a list of operators, additionally reporting whether any
+    /// content-stream integer literal was well-formed but outside [int.MinValue, int.MaxValue]
+    /// (ISO 19005-2 clause 6.1.13 test 1). See the <see cref="Parse(Stream,out bool)"/> overload for
+    /// why this exists.
+    /// </summary>
+    public static List<PdfOperator> Parse(byte[]? contentData, out bool sawOutOfRangeInteger)
     {
         if (contentData is null || contentData.Length == 0)
+        {
+            sawOutOfRangeInteger = false;
             return [];
+        }
 
         using var stream = new MemoryStream(contentData);
-        return Parse(stream);
+        return Parse(stream, out sawOutOfRangeInteger);
     }
 
     /// <summary>
     /// Parses a content stream from a stream
     /// </summary>
-    public static List<PdfOperator> Parse(Stream stream)
+    public static List<PdfOperator> Parse(Stream stream) => Parse(stream, out _);
+
+    /// <summary>
+    /// Parses a content stream from a stream, additionally reporting whether any content-stream
+    /// integer literal was well-formed but outside [int.MinValue, int.MaxValue]
+    /// (ISO 19005-2 clause 6.1.13 test 1).
+    ///
+    /// <para>This exists because the fact is not reliably observable through the returned operators:
+    /// a typed operator like <c>Td</c> reconstructs its <c>Operands</c> from the parsed doubles as
+    /// brand-new <see cref="PdfReal"/> instances (see <c>MoveTextPositionOperator</c>), so the marked
+    /// <see cref="PdfInteger"/> — and its <see cref="PdfInteger.SourceOutOfInt32Range"/> — never
+    /// survives into the operator. This flag is set at the top-level operand-push site, before
+    /// <c>CreateOperator</c> can discard it.</para>
+    ///
+    /// <para>This rides the parser rather than a raw lexer/regex pass over the content bytes on
+    /// purpose: a naive scan for an oversized run of digits would also match ASCII digit runs
+    /// embedded in inline-image binary payloads (between <c>ID</c> and <c>EI</c>), inventing a
+    /// conformance violation out of image data and breaking the zero-false-positive invariant. The
+    /// parser already knows how to skip that data correctly (<see cref="ParseInlineImage"/>), so
+    /// riding it means this flag inherits that correctness for free.</para>
+    /// </summary>
+    public static List<PdfOperator> Parse(Stream stream, out bool sawOutOfRangeInteger)
     {
         var operators = new List<PdfOperator>();
         var operands = new Stack<PdfObject>();
+        var outOfRange = false;
 
         var lexer = new PdfLexer(stream);
 
@@ -72,8 +154,12 @@ internal class PdfContentParser
             switch (token.Type)
             {
                 case PdfTokenType.Integer:
-                    operands.Push(new PdfInteger(ParseInt(token.Value)));
+                {
+                    PdfInteger value = MakeInteger(token.Value);
+                    outOfRange |= value.SourceOutOfInt32Range;
+                    operands.Push(value);
                     break;
+                }
 
                 case PdfTokenType.Real:
                     operands.Push(new PdfReal(ParseReal(token.Value)));
@@ -84,7 +170,7 @@ internal class PdfContentParser
                 // would fall through to the default and drop the operand entirely.
                 case PdfTokenType.String:
                 case PdfTokenType.HexString:
-                    operands.Push(PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)));
+                    operands.Push(MakeString(lexer, token));
                     break;
 
                 case PdfTokenType.Name:
@@ -153,6 +239,7 @@ internal class PdfContentParser
             }
         }
 
+        sawOutOfRangeInteger = outOfRange;
         return operators;
     }
 
@@ -329,7 +416,7 @@ internal class PdfContentParser
             switch (token.Type)
             {
                 case PdfTokenType.Integer:
-                    array.Add(new PdfInteger(ParseInt(token.Value)));
+                    array.Add(MakeInteger(token.Value));
                     break;
 
                 case PdfTokenType.Real:
@@ -338,7 +425,7 @@ internal class PdfContentParser
 
                 case PdfTokenType.String:
                 case PdfTokenType.HexString:
-                    array.Add(PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)));
+                    array.Add(MakeString(lexer, token));
                     break;
 
                 case PdfTokenType.Name:
@@ -388,10 +475,10 @@ internal class PdfContentParser
                 // Parse the value for the current key
                 PdfObject? value = token.Type switch
                 {
-                    PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
+                    PdfTokenType.Integer => MakeInteger(token.Value),
                     PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
                     PdfTokenType.String or PdfTokenType.HexString =>
-                        PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)),
+                        MakeString(lexer, token),
                     PdfTokenType.Name => PdfName.Parse(token.Value),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,
@@ -448,10 +535,10 @@ internal class PdfContentParser
             {
                 PdfObject? value = token.Type switch
                 {
-                    PdfTokenType.Integer => new PdfInteger(ParseInt(token.Value)),
+                    PdfTokenType.Integer => MakeInteger(token.Value),
                     PdfTokenType.Real => new PdfReal(ParseReal(token.Value)),
                     PdfTokenType.String or PdfTokenType.HexString =>
-                        PdfString.FromByteLiteral(token.Value, FormatOf(token.Type)),
+                        MakeString(lexer, token),
                     PdfTokenType.Boolean => token.Value == "true" ? PdfBoolean.True : PdfBoolean.False,
                     PdfTokenType.Null => PdfNull.Instance,
                     PdfTokenType.ArrayStart => ParseArray(lexer),

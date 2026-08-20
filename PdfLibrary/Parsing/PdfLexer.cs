@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using PdfLibrary.Core.Primitives;
 
 namespace PdfLibrary.Parsing;
 
@@ -34,6 +35,22 @@ internal class PdfLexer(Stream stream)
         (byte)'[', (byte)']', (byte)'{', (byte)'}',
         (byte)'/', (byte)'%'
     ];
+
+    // Hex-string facts for ISO 19005-2 clause 6.1.6, keyed by the Position of the token they belong
+    // to. Keyed rather than "the last hex string read" because PdfParser buffers tokens for
+    // lookahead (PeekToken/PushBackToken, PdfParser.cs:93-121) and ParseIntegerOrReference lexes a
+    // FURTHER token before pushing one back — so a hex token can be lexed well before the parser
+    // turns it into a PdfString. TryTakeHexFacts REMOVES the entry, so this holds only the tokens
+    // currently in flight (two at most in practice) rather than growing with the document.
+    private readonly Dictionary<long, HexStringFacts> _hexFacts = [];
+
+    /// <summary>
+    /// Retrieves and REMOVES the facts recorded for the hexadecimal string token that starts at
+    /// <paramref name="position"/>. Returns false when no hex string was read at that position, or
+    /// when its facts have already been taken.
+    /// </summary>
+    internal bool TryTakeHexFacts(long position, out HexStringFacts facts) =>
+        _hexFacts.Remove(position, out facts);
 
     // Initialize _streamPosition to current stream position for absolute position tracking
 
@@ -214,6 +231,21 @@ internal class PdfLexer(Stream stream)
 
         // Convert hex digit pairs to bytes
         var hexString = hexDigits.ToString();
+
+        // ISO 19005-2 6.1.6: record what the rest of this method is about to normalise away — the
+        // non-white-space digit count (test 1 wants it even) and whether any character fell outside
+        // [0-9A-Fa-f] (test 2 forbids it). Tested per CHARACTER rather than by watching the
+        // byte.TryParse below fail: TryParse works on PAIRS, so "4!" fails as a unit and a flag
+        // derived from it would depend on where the pair boundaries happen to land.
+        var hasNonHexDigit = false;
+        foreach (char c in hexString)
+        {
+            if (Uri.IsHexDigit(c)) continue;
+            hasNonHexDigit = true;
+            break;
+        }
+
+        _hexFacts[position] = new HexStringFacts(hexString.Length, hasNonHexDigit);
 
         var bytes = new List<byte>();
 

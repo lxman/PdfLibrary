@@ -7,8 +7,8 @@ namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
 /// PDF/A implementation limits (ISO 19005-2, 6.1.13; the referenced limits are ISO 32000-1 Annex C).
-/// Three tractable sub-checks — the integer-range (needs content-stream operands) and CID &gt; 65535
-/// (needs an embedded-CMap parser) limits are out of scope for this slice:
+/// Three tractable sub-checks — the CID &gt; 65535 (needs an embedded-CMap parser) limit is out of
+/// scope for this slice:
 /// <list type="number">
 ///   <item><b>Page boundary sizes</b> — every page's effective MediaBox and CropBox
 ///     (<see cref="PdfPage.GetMediaBox"/> / <see cref="PdfPage.GetCropBox"/> resolve page-tree
@@ -24,9 +24,12 @@ namespace PdfLibrary.Conformance.Rules;
 /// A fourth sub-check covers the string limit inside <b>page content streams</b> — a string used as a
 /// content operator's operand (e.g. a huge <c>Tj</c> literal), which the object-graph walk never reaches.
 /// It parses page content only (form/pattern/annotation content is a safe under-report), so the rule stays
-/// a strict subset of the reference validator. The integer (test 1) and q/Q-nesting (test 8) content
-/// limits are out of scope — the content lexer normalises an out-of-range integer operand away, so they
-/// need byte-level content tokenisation, tracked separately.
+/// a strict subset of the reference validator.
+///
+/// A fifth sub-check covers the INTEGER range limit (test 1) on both paths. The object parser keeps an
+/// out-of-range value intact in <see cref="PdfInteger.LongValue"/>; the content parser clamps the operand
+/// to 0 and records <see cref="PdfInteger.SourceOutOfInt32Range"/> instead, so the value the renderer sees
+/// never moved. The q/Q-nesting (test 8) and CID (test 10) limits remain out of scope.
 /// </summary>
 internal sealed class ImplementationLimitsRule : IConformanceRule
 {
@@ -39,15 +42,40 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
     private const int MaxStringBytes = 32767;
     private const int MaxNameBytes = 127;
 
+    /// <summary>ISO 19005-2 6.1.13 test 1. Two parsers, two shapes of evidence: the object parser
+    /// keeps the true value in <see cref="PdfInteger.LongValue"/>, while the content parser clamps
+    /// the operand to 0 and records <see cref="PdfInteger.SourceOutOfInt32Range"/> instead.</summary>
+    private static bool IsOutOfRange(PdfInteger i) =>
+        i.SourceOutOfInt32Range || i.LongValue < int.MinValue || i.LongValue > int.MaxValue;
+
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
         foreach (Finding f in CheckPageBoxes(context))
             yield return f;
+
+        // The object walk and the content walk can each turn up an out-of-range integer in the same
+        // document. Either alone makes it non-conformant, so the second is noise.
+        var integerReported = false;
         foreach (Finding f in CheckStringsAndNames(context))
+        {
+            integerReported |= IsIntegerFinding(f);
             yield return f;
+        }
+
         foreach (Finding f in CheckContentStreamStrings(context))
             yield return f;
+
+        if (integerReported)
+            yield break;
+
+        foreach (Finding f in CheckContentStreamIntegers(context))
+            yield return f;
     }
+
+    /// <summary>Distinguishes this rule's integer findings from its box/string/name findings, which
+    /// share the rule id and clause.</summary>
+    private static bool IsIntegerFinding(Finding f) =>
+        f.Message.Contains("integer", StringComparison.OrdinalIgnoreCase);
 
     // ── Sub-check 1 — page boundary sizes ─────────────────────────────────────────────────────────────
     private IEnumerable<Finding> CheckPageBoxes(ConformanceContext context)
@@ -95,12 +123,12 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
         var findings = new List<Finding>();
         var seen = new HashSet<int>();          // indirect object numbers already visited (cycle guard)
         var stack = new Stack<PdfObject>();
-        bool stringReported = false, nameReported = false;
+        bool stringReported = false, nameReported = false, integerReported = false;
 
         if (context.Document.Trailer?.Dictionary is { } trailer)
             stack.Push(trailer);
 
-        while (stack.Count > 0 && !(stringReported && nameReported))
+        while (stack.Count > 0 && !(stringReported && nameReported && integerReported))
         {
             if (context.Resolve(stack.Pop()) is not { } current)
                 continue;
@@ -139,6 +167,11 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
                     findings.Add(StringFinding(context, str.Bytes.Length));
                     stringReported = true;
                     break;
+
+                case PdfInteger integer when !integerReported && IsOutOfRange(integer):
+                    findings.Add(IntegerFinding(context, integer.LongValue));
+                    integerReported = true;
+                    break;
             }
         }
 
@@ -170,6 +203,66 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
         }
     }
 
+    // ── Sub-check 5 — out-of-range integer operand in page content (6.1.13 test 1) ──────────────────
+    private IEnumerable<Finding> CheckContentStreamIntegers(ConformanceContext context)
+    {
+        IReadOnlyList<PdfPage> pages;
+        try { pages = context.Pages; }
+        catch { yield break; } // no navigable page tree — a different clause's concern
+
+        foreach (PdfPage page in pages)
+        {
+            // Top-level operands: the parser reports these, because a typed operator like Td has
+            // already rebuilt them as PdfReal by the time they reach op.Operands.
+            if (context.PageContentHasOutOfRangeInteger(page))
+            {
+                yield return IntegerFinding(context);
+                yield break; // one finding is enough to mark the document non-conformant
+            }
+
+            // Nested operands: a TJ array (and a BDC property dictionary) passes through
+            // CreateOperator intact, so integers inside one are still observable per-object.
+            // Shared per-document parse, so this costs no reparse.
+            foreach (PdfOperator op in context.PageContentOperators(page))
+                foreach (PdfObject operand in op.Operands)
+                    foreach (PdfInteger integer in IntegersIn(operand))
+                        if (IsOutOfRange(integer))
+                        {
+                            yield return IntegerFinding(context, integer.LongValue);
+                            yield break;
+                        }
+        }
+    }
+
+    /// <summary>An operand may be an integer, or an array or dictionary containing one — a
+    /// <c>TJ</c> array and a <c>BDC</c> property dictionary both carry numbers the top level does
+    /// not expose.
+    ///
+    /// <para>As in <see cref="HexStringFormatRule"/>, an inline image's parameter dictionary is not
+    /// reachable: <c>InlineImageOperator</c> passes an empty operand list to its base constructor.
+    /// A safe under-report.</para></summary>
+    private static IEnumerable<PdfInteger> IntegersIn(PdfObject operand)
+    {
+        switch (operand)
+        {
+            case PdfInteger i:
+                yield return i;
+                break;
+
+            case PdfArray array:
+                foreach (PdfObject item in array)
+                    foreach (PdfInteger i in IntegersIn(item))
+                        yield return i;
+                break;
+
+            case PdfDictionary dict:
+                foreach (KeyValuePair<PdfName, PdfObject> entry in dict)
+                    foreach (PdfInteger i in IntegersIn(entry.Value))
+                        yield return i;
+                break;
+        }
+    }
+
     private Finding StringFinding(ConformanceContext context, int length) => new()
     {
         RuleId = RuleId,
@@ -184,5 +277,26 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
         Severity = FindingSeverity.Error,
         Clause = ConformanceClauses.For(context.Target, "6.1.13"),
         Message = $"A name of {length} bytes exceeds the maximum permitted name length of 127 bytes.",
+    };
+
+    private Finding IntegerFinding(ConformanceContext context, long value) => new()
+    {
+        RuleId = RuleId,
+        Severity = FindingSeverity.Error,
+        Clause = ConformanceClauses.For(context.Target, "6.1.13"),
+        Message = $"The integer {value} is outside the permitted range "
+                + "-2147483648 to 2147483647.",
+    };
+
+    /// <summary>The content-stream arm's finding. It carries no value because the parser reports only
+    /// THAT an out-of-range literal occurred, not which one — the operand it belonged to has already
+    /// been rebuilt as a <see cref="PdfReal"/> by the time any rule sees it.</summary>
+    private Finding IntegerFinding(ConformanceContext context) => new()
+    {
+        RuleId = RuleId,
+        Severity = FindingSeverity.Error,
+        Clause = ConformanceClauses.For(context.Target, "6.1.13"),
+        Message = "A content stream contains an integer outside the permitted range "
+                + "-2147483648 to 2147483647.",
     };
 }

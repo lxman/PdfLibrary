@@ -155,7 +155,19 @@ internal class PdfParser(PdfLexer lexer)
         var objectNumber = (int)longValue;
         PdfToken genToken = NextToken();
         if (!int.TryParse(genToken.Value, out int generationNumber))
+        {
+            // Not a generation number after all. Push back only what can be re-parsed. A sign-only
+            // token ("-", "+") or one beyond long range would re-enter this method, fail
+            // long.TryParse at the top, and THROW PdfParseException — where before it merely
+            // vanished. Dropping it stays wrong, but it is the PRE-EXISTING wrong, and turning a
+            // previously-loadable malformed file into an unloadable one is a worse regression than
+            // the under-report it would fix. An out-of-Int32-but-within-long token (the case this
+            // change exists for, e.g. 2157483648) always re-parses cleanly, so it is unaffected.
+            if (long.TryParse(genToken.Value, out _))
+                PushBackToken(genToken);
+
             return new PdfInteger(objectNumber);
+        }
 
         PdfToken peek2 = PeekToken();
 
@@ -238,7 +250,16 @@ internal class PdfParser(PdfLexer lexer)
             ? PdfStringFormat.Hexadecimal
             : PdfStringFormat.Literal;
 
-        PdfString pdfString = PdfString.FromByteLiteral(token.Value, format);
+        // Clause 6.1.6: how the hex digits were written, which the lexer normalised away. Taken by
+        // token POSITION, because this parser buffers tokens for lookahead and may have lexed
+        // further before reaching here.
+        HexStringFacts? hexFacts =
+            token.Type == PdfTokenType.HexString
+            && _lexer.TryTakeHexFacts(token.Position, out HexStringFacts f)
+                ? f
+                : null;
+
+        PdfString pdfString = PdfString.FromByteLiteral(token.Value, format, hexFacts);
 
         // If we're inside an indirect object and have a decryptor, decrypt the string
         // Per PDF spec ISO 32000-1 section 7.6.2: "All strings in the document are encrypted"
@@ -250,7 +271,7 @@ internal class PdfParser(PdfLexer lexer)
             // Create new PdfString with decrypted bytes — carrying the ORIGINAL format forward.
             // Decryption changes the bytes, never how the string was written; dropping the format
             // here would re-lose it for exactly the encrypted documents (issue 57).
-            pdfString = new PdfString(decryptedBytes, format);
+            pdfString = new PdfString(decryptedBytes, format, hexFacts);
 
             PdfLogger.Log(LogCategory.PdfTool,
                 $"DECRYPT STRING: obj {_currentObjectNumber} gen {_currentGenerationNumber}, " +

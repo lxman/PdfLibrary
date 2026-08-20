@@ -157,6 +157,7 @@ internal sealed class ConformanceContext
             combined.Add((byte)'\n'); // one logical stream (ISO 32000-1, 7.8.2)
         }
 
+        var sawOutOfRangeInteger = false;
         IReadOnlyList<PdfOperator> operators;
         if (combined.Count == 0)
         {
@@ -164,10 +165,14 @@ internal sealed class ConformanceContext
         }
         else
         {
-            try { operators = PdfContentParser.Parse(combined.ToArray()); }
-            catch { operators = []; }
+            try { operators = PdfContentParser.Parse(combined.ToArray(), out sawOutOfRangeInteger); }
+            catch { operators = []; sawOutOfRangeInteger = false; }
         }
 
+        // Cached UNCONDITIONALLY, unlike the operator list below. It is one bool per page, and the
+        // operator cache deliberately stops growing past its budget — letting the flag share that fate
+        // would make the 6.1.13 check silently depend on how many pages preceded this one.
+        _pageOutOfRangeInteger[page] = sawOutOfRangeInteger;
 
         // Retention is bounded deliberately. Every content rule sweeps all pages independently, so a
         // useful cache must hold the whole document at once — and a long document's parsed operators
@@ -197,7 +202,32 @@ internal sealed class ConformanceContext
     private readonly Dictionary<PdfPage, IReadOnlyList<PdfOperator>> _pageOperators =
         new(ReferenceEqualityComparer.Instance);
 
+    private readonly Dictionary<PdfPage, bool> _pageOutOfRangeInteger =
+        new(ReferenceEqualityComparer.Instance);
+
     private int _cachedOperatorCount;
+
+    /// <summary>
+    /// Whether this page's content contained an integer literal outside Int32 (ISO 19005-2 6.1.13
+    /// test 1). Reported by the parser rather than read off the operands, because typed numeric
+    /// operators (<c>Td</c>, <c>Tm</c>, <c>cm</c>, …) rebuild their operands as <see cref="PdfReal"/>
+    /// via <c>ToDouble()</c> and discard the original marked integer.
+    ///
+    /// <para>Riding the parser also means an inline image's binary payload is skipped correctly; a
+    /// raw token scan of the same bytes would read a run of ASCII digits inside image data as a huge
+    /// integer and manufacture a false positive.</para>
+    /// </summary>
+    public bool PageContentHasOutOfRangeInteger(PdfPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        if (_pageOutOfRangeInteger.TryGetValue(page, out bool flag))
+            return flag;
+
+        PageContentOperators(page);   // populates the flag as a side effect of the parse
+        _pageOutOfRangeInteger.TryGetValue(page, out flag);
+        return flag;
+    }
 
     /// <summary>
     /// For each font dictionary actually drawn with — a character shown via a text-showing operator

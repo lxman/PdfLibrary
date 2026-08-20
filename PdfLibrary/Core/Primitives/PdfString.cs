@@ -6,11 +6,25 @@ namespace PdfLibrary.Core.Primitives;
 /// Represents a PDF string object (ISO 32000-1:2008 section 7.3.4)
 /// Strings can be literal (enclosed in parentheses) or hexadecimal (enclosed in angle brackets)
 /// </summary>
-internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfStringFormat.Literal)
+internal sealed class PdfString(
+    byte[] bytes,
+    PdfStringFormat format = PdfStringFormat.Literal,
+    HexStringFacts? hexFacts = null)
     : PdfObject
 {
     private readonly byte[] _bytes = bytes ?? throw new ArgumentNullException(nameof(bytes));
     private readonly PdfStringFormat _format = format;
+
+    /// <summary>
+    /// How this string was written between the angle brackets, when it was PARSED from a hexadecimal
+    /// source — the facts ISO 19005-2 clause 6.1.6 constrains. Null for a literal string and for any
+    /// string synthesised in memory, which has no written form to be wrong about.
+    ///
+    /// <para>Deliberately NOT part of <see cref="Equals(object?)"/> or
+    /// <see cref="GetHashCode"/>: two strings with the same bytes are the same string however they
+    /// were written, and folding this in would move dictionary keys and de-duplication.</para>
+    /// </summary>
+    public HexStringFacts? HexFacts { get; } = hexFacts;
 
     public override PdfObjectType Type => PdfObjectType.String;
 
@@ -133,8 +147,11 @@ internal sealed class PdfString(byte[] bytes, PdfStringFormat format = PdfString
     /// pass the format the source used, so a <c>&lt;…&gt;</c> string is re-serialized as one
     /// (issue 57); it defaults to Literal for the many callers synthesizing a fresh byte string.</para>
     /// </summary>
-    public static PdfString FromByteLiteral(string value, PdfStringFormat format = PdfStringFormat.Literal) =>
-        new(Encoding.Latin1.GetBytes(value), format);
+    public static PdfString FromByteLiteral(
+        string value,
+        PdfStringFormat format = PdfStringFormat.Literal,
+        HexStringFacts? hexFacts = null) =>
+        new(Encoding.Latin1.GetBytes(value), format, hexFacts);
 
     public static implicit operator string(PdfString pdfString) => pdfString.Value;
 }
