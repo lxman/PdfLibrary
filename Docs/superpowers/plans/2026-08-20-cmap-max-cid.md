@@ -285,9 +285,11 @@ public class ImplementationLimitsCidTests
 
     /// <summary>A one-page document with a Type0 font whose /Encoding is the given CMap — as a
     /// stream when <paramref name="cmapBody"/> is given, otherwise the predefined name Identity-H.
-    /// <paramref name="pageContent"/> lets a caller add an unrelated violation.</summary>
-    private static PdfDocument Doc(string? cmapBody, string pageContent = "BT ET")
+    /// <paramref name="extraCatalogEntry"/> hangs an extra object off the catalog so the
+    /// object-graph walk reaches it, which is how a caller adds an unrelated violation.</summary>
+    private static PdfDocument Doc(string? cmapBody, PdfObject? extraCatalogEntry = null)
     {
+        const string pageContent = "BT ET";
         var doc = new PdfDocument();
 
         var font = new PdfDictionary
@@ -327,7 +329,10 @@ public class ImplementationLimitsCidTests
         {
             [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
         });
-        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        var catalog = new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) };
+        if (extraCatalogEntry is not null)
+            catalog[N("Dest")] = extraCatalogEntry;
+        doc.AddObject(1, 0, catalog);
         doc.Trailer.Dictionary[N("Root")] = Ref(1);
         return doc;
     }
@@ -371,9 +376,16 @@ public class ImplementationLimitsCidTests
         // THE REGRESSION TEST for Check's scoping. Before this task, Check ended with a bare
         // `yield break` on the integer arm, which terminates the WHOLE iterator — so a document
         // carrying both violations would report the integer one and silently drop this one.
+        //
+        // The integer MUST live in the OBJECT GRAPH, not a content stream. `integerReported` is
+        // set only by CheckStringsAndNames (the object walk), so the bare `yield break` fires only
+        // when that arm reported. A content-stream integer leaves the flag false, the yield break
+        // never runs, and this test would pass with the bug still present — a test that cannot
+        // fail for the reason it exists.
+        PdfDocument doc = Doc(OverLimitCMap, new PdfArray(new PdfInteger(2157483648L)));
+
         Finding[] all = [.. new ImplementationLimitsRule()
-            .Check(new ConformanceContext(Doc(OverLimitCMap, "BT 0 2157483648 Td ET"),
-                                          ConformanceProfile.PdfA2b))];
+            .Check(new ConformanceContext(doc, ConformanceProfile.PdfA2b))];
 
         Assert.Contains(all, f => f.Message.Contains("integer", System.StringComparison.OrdinalIgnoreCase));
         Assert.Contains(all, f => f.Message.Contains("CID", System.StringComparison.Ordinal));
