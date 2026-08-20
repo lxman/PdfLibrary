@@ -121,8 +121,9 @@ public class CidCMapMaxCidTests
         // reversed — reverse it deliberately, not incidentally.
         Assert.Null(Max("1 begincidrange\n<000000> <ffffff> 1\nendcidrange"));
 
-        // ...and a wide range does not suppress a legitimate one beside it.
-        Assert.Equal(70000, Max(
+        // ...and a wide range does not suppress a legitimate one beside it. 70000 + 0xFF = 70255,
+        // the same start-plus-span arithmetic the first test in this file pins.
+        Assert.Equal(70255, Max(
             "2 begincidrange\n<000000> <ffffff> 1\n<0000> <00ff> 70000\nendcidrange"));
     }
 }
