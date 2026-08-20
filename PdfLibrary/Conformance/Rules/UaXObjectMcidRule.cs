@@ -83,15 +83,8 @@ internal sealed class UaXObjectMcidRule : IConformanceRule
         {
             // Concatenate the page's content streams so a Do split across a stream boundary still parses
             // (ISO 32000-1 7.8.2), matching the renderer and the other content collectors.
-            var combined = new List<byte>();
-            foreach (PdfStream content in page.GetContents())
-            {
-                combined.AddRange(content.GetDecodedData(context.Document.Decryptor));
-                combined.Add((byte)'\n');
-            }
-
             var counter = new ReferenceCounter(page.GetResources(), context.Document, counts, descended);
-            try { counter.ProcessOperators(PdfContentParser.Parse(combined.ToArray())); }
+            try { counter.ProcessOperators(context.PageContentOperators(page)); }
             catch (Exception) { /* unparseable page content — skip this page, not the whole rule */ }
         }
         return counts;

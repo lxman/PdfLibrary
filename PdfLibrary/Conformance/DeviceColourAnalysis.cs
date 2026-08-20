@@ -79,7 +79,7 @@ internal static class DeviceColourAnalysis
         // (page content only), a path-paint op fired before its fill/stroke colour was ever set counts the
         // implicit initial DeviceGray colour (ISO 32000-1, 8.6.3). q/Q is not modelled — colour-set state is
         // never un-set, which can only under-report (never a false positive).
-        void WalkOps(List<PdfOperator> ops, PdfResources? resources, int depth, bool trackImplicitGray)
+        void WalkOps(IReadOnlyList<PdfOperator> ops, PdfResources? resources, int depth, bool trackImplicitGray)
         {
             // DefaultGray/RGB/CMYK in this scope's /ColorSpace redirect the corresponding device space
             // (ISO 32000-1, 8.6.5.6), so device operators here do not count as device colour usage.
@@ -325,13 +325,7 @@ internal static class DeviceColourAnalysis
             // A page's content streams are one logical stream (ISO 32000-1, 7.8.2): concatenate them so an
             // operator — or the fill/stroke colour-set state the implicit-gray check tracks — spans a stream
             // boundary. Implicit-gray tracking is page-content only (a form inherits the caller's colour).
-            var combined = new List<byte>();
-            foreach (PdfStream content in page.GetContents())
-            {
-                combined.AddRange(content.GetDecodedData(context.Document.Decryptor));
-                combined.Add((byte)'\n');
-            }
-            try { WalkOps(PdfContentParser.Parse(combined.ToArray()), res, 0, trackImplicitGray: true); }
+            try { WalkOps(context.PageContentOperators(page), res, 0, trackImplicitGray: true); }
             catch (Exception) { /* unparseable page content: skip */ }
 
             WalkColourResources(res, 0);

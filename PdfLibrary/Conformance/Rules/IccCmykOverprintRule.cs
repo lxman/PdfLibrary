@@ -64,19 +64,11 @@ internal sealed class IccCmykOverprintRule : IConformanceRule
     {
         var resources = page.GetResources();
 
-        var combined = new List<byte>();
-        foreach (PdfStream content in page.GetContents())
-        {
-            try { combined.AddRange(content.GetDecodedData(context.Document.Decryptor)); }
-            catch { /* an undecodable content stream is a different clause's concern */ }
-            combined.Add((byte)'\n');
-        }
-        if (combined.Count == 0)
+        // Shared per-document parse; an empty list covers no content, undecodable streams and
+        // unparseable content alike -- all of which this rule already treated as "no violation".
+        IReadOnlyList<PdfOperator> operators = context.PageContentOperators(page);
+        if (operators.Count == 0)
             return false;
-
-        List<PdfOperator> operators;
-        try { operators = PdfContentParser.Parse(combined.ToArray()); }
-        catch { return false; } // unparseable content — never a false positive
 
         var gs = new GraphicsState();
         var stack = new Stack<GraphicsState>();

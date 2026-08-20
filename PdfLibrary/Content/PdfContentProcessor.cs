@@ -24,7 +24,7 @@ public abstract class PdfContentProcessor
     /// <summary>
     /// Processes a list of operators from a content stream
     /// </summary>
-    internal void ProcessOperators(List<PdfOperator> operators)
+    internal void ProcessOperators(IReadOnlyList<PdfOperator> operators)
     {
         foreach (PdfOperator op in operators)
         {

@@ -80,20 +80,9 @@ internal sealed class RenderingIntentRule : IConformanceRule
 
         foreach (PdfPage page in pages)
         {
-            List<PdfOperator> operators;
-            try
-            {
-                // Concatenate the page's content streams before parsing so an operator split across a stream
-                // boundary still parses (ISO 32000-1 7.8.2), matching the other content analyses.
-                var combined = new List<byte>();
-                foreach (PdfStream content in page.GetContents())
-                {
-                    combined.AddRange(content.GetDecodedData(context.Document.Decryptor));
-                    combined.Add((byte)'\n');
-                }
-                operators = PdfContentParser.Parse(combined.ToArray());
-            }
-            catch (Exception) { continue; } // unparseable content: skip this page (FP-safe)
+            // Shared per-document parse; empty covers no content, undecodable streams and
+            // unparseable content alike, each of which this rule already skipped (FP-safe).
+            IReadOnlyList<PdfOperator> operators = context.PageContentOperators(page);
 
             foreach (PdfOperator op in operators)
                 switch (op)
