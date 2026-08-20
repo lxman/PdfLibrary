@@ -651,7 +651,13 @@ internal enum PdfTokenType
     // Primitives
     Integer,            // 123, -17, +42
     Real,               // 3.14, -0.5, +1.0
-    String,             // (text) or <48656C6C6F>
+    String,             // (text) -- a LITERAL string
+    // <48656C6C6F> -- carries the same decoded bytes as String and differs only in how it was
+    // WRITTEN. Separate so the parser can preserve that on save (issue 57): every string used to
+    // come back as PdfStringFormat.Literal, so a hex string was re-serialized as octal escapes.
+    // Every consumer that switches on String must handle this too -- notably PdfContentParser, where
+    // two of the four sites are switch EXPRESSIONS whose `_ => null` would swallow it silently.
+    HexString,
     Name,               // /Name, /Type, /Lime#20Green
     Boolean,            // true, false
     Null,               // null

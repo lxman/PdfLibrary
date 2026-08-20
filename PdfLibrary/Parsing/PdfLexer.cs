@@ -236,7 +236,9 @@ internal class PdfLexer(Stream stream)
         byte[] byteArray = bytes.ToArray();
         string value = Encoding.Latin1.GetString(byteArray);
 
-        return new PdfToken(PdfTokenType.String, value, position);
+        // HexString, not String: the decoded BYTES are identical either way, but the caller needs to
+        // know how this was written so a save can write it the same way (issue 57).
+        return new PdfToken(PdfTokenType.HexString, value, position);
     }
 
     private PdfToken ReadDictionaryEnd()
