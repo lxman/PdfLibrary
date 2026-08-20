@@ -51,4 +51,23 @@ public class ParseIntegerOrReferenceOutOfRangeTests
         var second = Assert.IsType<PdfInteger>(array[1]);
         Assert.Equal(-2157483648L, second.LongValue);
     }
+
+    /// <summary>Fix-round-1 regression: a sign-only token ("-") in the same lookahead position is
+    /// NOT a well-formed integer — <c>long.TryParse</c> fails on it too — so pushing it back would
+    /// re-enter <see cref="PdfParser.ParseIntegerOrReference"/>, fail <c>long.TryParse</c> at the top,
+    /// and THROW <see cref="PdfParseException"/>. Before the fix in this file's target method existed
+    /// at all, a bare "-" here was silently dropped and the file still loaded (with the array one
+    /// element short). The fix must keep that pre-existing (wrong but non-fatal) behaviour rather
+    /// than newly throwing on a malformed real-world producer's file.</summary>
+    [Fact]
+    public void A_sign_only_token_between_integers_does_not_throw()
+    {
+        PdfArray array = ParseArray("[500 - 500]");
+
+        // The malformed "-" is dropped (pre-existing behaviour, unchanged) rather than becoming a
+        // third element or crashing the load.
+        Assert.Equal(2, array.Count);
+        Assert.Equal(500L, Assert.IsType<PdfInteger>(array[0]).LongValue);
+        Assert.Equal(500L, Assert.IsType<PdfInteger>(array[1]).LongValue);
+    }
 }

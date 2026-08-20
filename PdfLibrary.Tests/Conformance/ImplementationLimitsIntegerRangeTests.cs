@@ -99,4 +99,39 @@ public class ImplementationLimitsIntegerRangeTests
             "BT 0 2157483648 Td 0 2157483649 Td ET",
             new PdfArray(new PdfInteger(2157483650L)))));
     }
+
+    /// <summary>Fix-round-1 closes the hand-off gap that hid the swallowed-token bug: every test
+    /// above builds a <see cref="PdfInteger"/> in memory, so the rule was never exercised end to end
+    /// from parsed BYTES — precisely the seam <c>PdfParser.ParseIntegerOrReference</c>'s dropped
+    /// token hid behind. This parses a minimal real PDF byte sequence whose catalog carries a
+    /// fail-c-shaped <c>/Dest</c> array with an out-of-range integer, through <see
+    /// cref="PdfDocument.Load(Stream, bool)"/> — the real parser, not the in-memory builder — and
+    /// asserts the rule still finds it.</summary>
+    [Fact]
+    public void An_out_of_range_integer_parsed_from_real_bytes_is_flagged()
+    {
+        var sb = new StringBuilder();
+        sb.Append("%PDF-1.7\n");
+        var offsets = new int[4];
+        void Obj(int n, string body)
+        {
+            offsets[n - 1] = Encoding.Latin1.GetByteCount(sb.ToString());
+            sb.Append(n).Append(" 0 obj\n").Append(body).Append("\nendobj\n");
+        }
+        Obj(1, "<< /Type /Catalog /Pages 2 0 R /Dest [0 0 2157483648] >>");
+        Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+        Obj(3, "<< /Type /Page /Parent 2 0 R /Contents 4 0 R /MediaBox [0 0 612 792] "
+              + "/Resources << >> >>");
+        Obj(4, "<< /Length 5 >>\nstream\nBT ET\nendstream");
+        int xrefOffset = Encoding.Latin1.GetByteCount(sb.ToString());
+        sb.Append("xref\n0 5\n0000000000 65535 f \n");
+        foreach (int offset in offsets)
+            sb.Append(offset.ToString("D10")).Append(" 00000 n \n");
+        sb.Append("trailer\n<< /Size 5 /Root 1 0 R >>\nstartxref\n").Append(xrefOffset)
+          .Append("\n%%EOF");
+        byte[] bytes = Encoding.Latin1.GetBytes(sb.ToString());
+
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(bytes, writable: false));
+        Assert.Single(IntegerFindings(doc));
+    }
 }

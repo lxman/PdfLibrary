@@ -156,10 +156,16 @@ internal class PdfParser(PdfLexer lexer)
         PdfToken genToken = NextToken();
         if (!int.TryParse(genToken.Value, out int generationNumber))
         {
-            // Not a generation number after all. Push it back rather than swallowing it: dropping the
-            // token loses a real object (an integer too large for Int32 is still an integer), which
-            // made ISO 19005-2 6.1.13 test 1 undetectable in the object graph.
-            PushBackToken(genToken);
+            // Not a generation number after all. Push back only what can be re-parsed. A sign-only
+            // token ("-", "+") or one beyond long range would re-enter this method, fail
+            // long.TryParse at the top, and THROW PdfParseException — where before it merely
+            // vanished. Dropping it stays wrong, but it is the PRE-EXISTING wrong, and turning a
+            // previously-loadable malformed file into an unloadable one is a worse regression than
+            // the under-report it would fix. An out-of-Int32-but-within-long token (the case this
+            // change exists for, e.g. 2157483648) always re-parses cleanly, so it is unaffected.
+            if (long.TryParse(genToken.Value, out _))
+                PushBackToken(genToken);
+
             return new PdfInteger(objectNumber);
         }
 
