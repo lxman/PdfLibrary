@@ -11,8 +11,9 @@ namespace PdfLibrary.Tests.Conformance;
 /// Slice 7 of the preflight: annotations (6.3), interactive forms (6.4.1/6.4.2) and actions (6.5).
 /// Rule-level tests drive each rule over a hand-built document; the veraPDF corpus oracle
 /// (<see cref="CorpusOracleTests"/>) exercises them against the real fixture set end-to-end.
-/// The digital-signature rules (6.4.3) and the widget-button appearance sub-structure (6.3.3-t3/t4)
-/// are intentionally out of scope for this slice.
+/// The digital-signature rules (6.4.3) are intentionally out of scope for this slice. 6.3.3-t3 (a /Btn
+/// Widget's /N must be an appearance subdictionary) landed 2026-08-20 and is covered below; t4 — the
+/// converse, that every other annotation's /N shall be a stream — is still unimplemented.
 /// </summary>
 public class PreflightSlice7Tests
 {
@@ -168,6 +169,117 @@ public class PreflightSlice7Tests
         var ctx = Ctx(DocWith(new PdfArray(Annot("Text", a =>
             a[N("AP")] = new PdfDictionary { [N("N")] = Ref(50), [N("D")] = Ref(51) }))));
         Assert.Single(new AnnotationAppearanceRule().Check(ctx));
+    }
+
+    // ── 6.3.3-t3: a /Btn Widget's /N must be an appearance SUBDICTIONARY ──────
+    //
+    // veraPDF: AP != "N" || Subtype != "Widget" || FT != "Btn" || (N_type == "Dict" && containsAppearances).
+    // Corpus fixture "veraPDF test suite 6-3-3-t02-fail-b.pdf" is the stream case, and states its own
+    // expected message: "Widget annotation has FT key with a value of Btn, the value of the N key is an
+    // appearance stream". These pin the same behaviour without the corpus, which is a sibling checkout the
+    // Category=Parity tests SKIP when it is absent.
+
+    /// <summary>A Widget carrying its own /FT, with /N pointing at object 50 — which each test then
+    /// defines as a stream, a populated dictionary, or nothing at all.</summary>
+    private static PdfDictionary BtnWidget(string fieldType = "Btn", Action<PdfDictionary>? mutate = null) =>
+        Annot("Widget", a =>
+        {
+            a[N("FT")] = N(fieldType);
+            mutate?.Invoke(a);
+        });
+
+    [Fact]
+    public void Btn_widget_flags_an_appearance_stream_as_N()
+    {
+        var ctx = Ctx(DocWith(
+            new PdfArray(BtnWidget()),
+            (doc, _) => doc.AddObject(50, 0, new PdfStream(new PdfDictionary(), [1, 2, 3]))));
+
+        Finding f = Assert.Single(new AnnotationAppearanceRule().Check(ctx));
+        Assert.Equal("annotation-appearance", f.RuleId);
+        Assert.Contains("appearance stream", f.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Btn_widget_accepts_a_populated_appearance_subdictionary()
+    {
+        // The conforming shape: /N names one appearance per button state.
+        var ctx = Ctx(DocWith(new PdfArray(BtnWidget(mutate: a =>
+            a[N("AP")] = new PdfDictionary
+            {
+                [N("N")] = new PdfDictionary { [N("Off")] = Ref(50), [N("Yes")] = Ref(51) },
+            }))));
+
+        Assert.Empty(new AnnotationAppearanceRule().Check(ctx));
+    }
+
+    [Fact]
+    public void Btn_widget_flags_an_empty_appearance_subdictionary()
+    {
+        // veraPDF requires containsAppearances, not merely N_type == "Dict": a dictionary naming no
+        // states renders in no state, so it is a violation exactly as a stream is.
+        var ctx = Ctx(DocWith(new PdfArray(BtnWidget(mutate: a =>
+            a[N("AP")] = new PdfDictionary { [N("N")] = new PdfDictionary() }))));
+
+        Finding f = Assert.Single(new AnnotationAppearanceRule().Check(ctx));
+        Assert.Contains("empty dictionary", f.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Non_button_widget_may_hold_an_appearance_stream()
+    {
+        // The guard against over-firing: /FT /Tx is the ordinary text-field shape, and t3 must not
+        // touch it (t4 requires precisely the stream this test supplies).
+        var ctx = Ctx(DocWith(
+            new PdfArray(BtnWidget("Tx")),
+            (doc, _) => doc.AddObject(50, 0, new PdfStream(new PdfDictionary(), [1, 2, 3]))));
+
+        Assert.Empty(new AnnotationAppearanceRule().Check(ctx));
+    }
+
+    [Fact]
+    public void Non_widget_annotation_may_hold_an_appearance_stream()
+    {
+        var ctx = Ctx(DocWith(
+            new PdfArray(Annot("Text", a => a[N("FT")] = N("Btn"))),
+            (doc, _) => doc.AddObject(50, 0, new PdfStream(new PdfDictionary(), [1, 2, 3]))));
+
+        Assert.Empty(new AnnotationAppearanceRule().Check(ctx));
+    }
+
+    [Fact]
+    public void Btn_widget_inherits_FT_from_its_parent_field()
+    {
+        // The shape the corpus fixture does NOT have, and the reason the rule walks /Parent: a widget
+        // that is a KID of a separate field dictionary carries no /FT of its own. Checking only the
+        // annotation would silently exempt every document built this way.
+        var ctx = Ctx(DocWith(
+            new PdfArray(Annot("Widget", a => a[N("Parent")] = Ref(60))),
+            (doc, _) =>
+            {
+                doc.AddObject(50, 0, new PdfStream(new PdfDictionary(), [1, 2, 3]));
+                doc.AddObject(60, 0, new PdfDictionary { [N("FT")] = N("Btn") });
+            }));
+
+        Assert.Single(new AnnotationAppearanceRule().Check(ctx));
+    }
+
+    [Fact]
+    public void A_cyclic_parent_chain_terminates()
+    {
+        // Two field dictionaries naming each other as /Parent, neither carrying /FT. Without the
+        // cycle guard the walk never returns and the whole preflight hangs — a far worse failure than
+        // a missed finding, and one no corpus file would necessarily expose.
+        var ctx = Ctx(DocWith(
+            new PdfArray(Annot("Widget", a => a[N("Parent")] = Ref(60))),
+            (doc, _) =>
+            {
+                doc.AddObject(50, 0, new PdfStream(new PdfDictionary(), [1, 2, 3]));
+                doc.AddObject(60, 0, new PdfDictionary { [N("Parent")] = Ref(61) });
+                doc.AddObject(61, 0, new PdfDictionary { [N("Parent")] = Ref(60) });
+            }));
+
+        Assert.Empty(new AnnotationAppearanceRule().Check(ctx));
     }
 
     // ── 6.4.1 FormFieldActionsRule ───────────────────────────────────────────

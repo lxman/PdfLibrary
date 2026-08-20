@@ -31,6 +31,9 @@ public static class Preflighter
         // Stream /Length vs real length + stream/endstream EOL framing (ISO 19005-2/3 6.1.7.1 t1/t2).
         new Rules.StreamObjectRule(),
         new Rules.MetadataPresentRule(),
+        // XMP packet header must not carry bytes=/encoding= (ISO 19005-2 6.6.2.1 t2/t3). Separate
+        // from MetadataPresentRule on purpose — see that rule's own doc comment.
+        new Rules.XmpPacketHeaderRule(),
         new Rules.PdfaIdentificationRule(),
         // Slice 14 — XMP predefined-schema property validation (ISO 19005-2 6.6.2.3.1).
         new Rules.XmpPropertyPredefinedRule(),
