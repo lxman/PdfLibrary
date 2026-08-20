@@ -154,19 +154,11 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
 
         foreach (PdfPage page in pages)
         {
-            var combined = new List<byte>();
-            foreach (PdfStream content in page.GetContents())
-            {
-                try { combined.AddRange(content.GetDecodedData(context.Document.Decryptor)); }
-                catch { /* an undecodable content stream is a different clause's concern */ }
-                combined.Add((byte)'\n'); // one logical stream (ISO 32000-1, 7.8.2)
-            }
-            if (combined.Count == 0)
+            // Shared per-document parse; empty covers no content, undecodable streams and
+            // unparseable content alike, each of which this rule already skipped (FP-safe).
+            IReadOnlyList<PdfOperator> operators = context.PageContentOperators(page);
+            if (operators.Count == 0)
                 continue;
-
-            List<PdfOperator> operators;
-            try { operators = PdfContentParser.Parse(combined.ToArray()); }
-            catch { continue; } // unparseable content — never a false positive, just skip the page
 
             foreach (PdfOperator op in operators)
                 foreach (PdfObject operand in op.Operands)

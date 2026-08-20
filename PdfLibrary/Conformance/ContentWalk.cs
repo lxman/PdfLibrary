@@ -30,17 +30,10 @@ internal static class ContentWalk
 
         foreach (PdfPage page in context.Pages)
         {
-            var combined = new List<byte>();
-            foreach (PdfStream content in page.GetContents())
-            {
-                byte[] data;
-                try { data = content.GetDecodedData(context.Document.Decryptor); }
-                catch { continue; }
-                combined.AddRange(data);
-                combined.Add((byte)'\n');
-            }
-
-            foreach (PdfOperator op in Walk(context, combined.ToArray(), page.GetResources(), 0, activeForms))
+            // The page's own content comes from the shared per-document parse; only the forms this
+            // walk recurses into are parsed here (see ConformanceContext.PageContentOperators).
+            foreach (PdfOperator op in WalkOperators(
+                         context, context.PageContentOperators(page), page.GetResources(), 0, activeForms))
                 yield return op;
         }
     }
@@ -54,6 +47,17 @@ internal static class ContentWalk
         List<PdfOperator> ops;
         try { ops = PdfContentParser.Parse(content); }
         catch { yield break; }
+
+        foreach (PdfOperator op in WalkOperators(context, ops, resources, depth, activeForms))
+            yield return op;
+    }
+
+    private static IEnumerable<PdfOperator> WalkOperators(
+        ConformanceContext context, IReadOnlyList<PdfOperator> ops, PdfResources? resources, int depth,
+        HashSet<int> activeForms)
+    {
+        if (depth > MaxFormDepth)
+            yield break;
 
         foreach (PdfOperator op in ops)
         {
