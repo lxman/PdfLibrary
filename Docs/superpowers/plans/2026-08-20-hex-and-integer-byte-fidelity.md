@@ -1129,12 +1129,25 @@ distinction is what keeps the zero-false-positive invariant."
 ### Task 5: Extend `ImplementationLimitsRule` for 6.1.13 test 1
 
 **Files:**
+- Modify: `PdfLibrary/Conformance/ConformanceContext.cs` — `PageContentOperators`, plus a new cached flag and accessor
 - Modify: `PdfLibrary/Conformance/Rules/ImplementationLimitsRule.cs` — doc comment `:8-30`, `Check` `:42-50`, the object walk `:93-146`, plus a new content-stream sub-check
 - Test: `PdfLibrary.Tests/Conformance/ImplementationLimitsIntegerRangeTests.cs`
 
 **Interfaces:**
-- Consumes: `PdfInteger.SourceOutOfInt32Range` from Task 4.
-- Produces: additional `Finding`s on clause `6.1.13` from the existing rule id `"implementation-limits"`. No new rule id, no `Preflighter.cs` change.
+- Consumes: `PdfInteger.SourceOutOfInt32Range` and `PdfContentParser.Parse(byte[]?, out bool sawOutOfRangeInteger)` from Task 4.
+- Produces: `ConformanceContext.PageContentHasOutOfRangeInteger(PdfPage)`, and additional `Finding`s on clause `6.1.13` from the existing rule id `"implementation-limits"`. No new rule id, no `Preflighter.cs` change.
+
+> **Correction made during execution — read this before writing the content sub-check.** The original
+> plan had this sub-check walk `op.Operands` looking for a marked `PdfInteger`. That does not work.
+> `CreateOperator` builds typed operators from `operands[n].ToDouble()`, so `Td`, `TD`, `Tm`, `cm` and
+> every other typed numeric operator construct **fresh `PdfReal` operands and discard the marked
+> `PdfInteger`**. The corpus file this sub-check exists to catch, `6-1-13-t01-fail-b.pdf`, has its
+> violation in `0 2157483648 Td` — so the operand walk would have been blind to precisely the case it
+> targets. Task 4 therefore added an out-parameter on `PdfContentParser.Parse` that reports the fact
+> at the top-level operand push site, before `CreateOperator` can discard it.
+>
+> Integers nested inside **array and dictionary** operands are unaffected — a `TJ` array passes
+> through `CreateOperator` intact — so the `IntegersIn` recursion is still needed for those. Use both.
 
 Both corpus shapes were traced before writing this task. `6-1-13-t01-fail-b.pdf` puts `2157483648` as a **top-level `Td` operand** in an uncompressed content stream. `6-1-13-t01-fail-c.pdf` puts it inside `/Dest [8 0 R /XYZ 0 0 2157483648]` on outline item object 14, which **is** reachable from `/Root` (verified by tracing the reference graph), and the object walk already pushes array items.
 
@@ -1296,11 +1309,85 @@ Add the finding factory next to the others (after `NameFinding` at `:181-187`):
         Message = $"The integer {value} is outside the permitted range "
                 + "-2147483648 to 2147483647.",
     };
+
+    /// <summary>The content-stream arm's finding. It carries no value because the parser reports only
+    /// THAT an out-of-range literal occurred, not which one — the operand it belonged to has already
+    /// been rebuilt as a <see cref="PdfReal"/> by the time any rule sees it.</summary>
+    private Finding IntegerFinding(ConformanceContext context) => new()
+    {
+        RuleId = RuleId,
+        Severity = FindingSeverity.Error,
+        Clause = ConformanceClauses.For(context.Target, "6.1.13"),
+        Message = "A content stream contains an integer outside the permitted range "
+                + "-2147483648 to 2147483647.",
+    };
 ```
+
+- [ ] **Step 3b: Surface the parse-level flag on `ConformanceContext`**
+
+In `PdfLibrary/Conformance/ConformanceContext.cs`, inside `PageContentOperators`, replace the parse block:
+
+```csharp
+        var sawOutOfRangeInteger = false;
+        IReadOnlyList<PdfOperator> operators;
+        if (combined.Count == 0)
+        {
+            operators = [];
+        }
+        else
+        {
+            try { operators = PdfContentParser.Parse(combined.ToArray(), out sawOutOfRangeInteger); }
+            catch { operators = []; sawOutOfRangeInteger = false; }
+        }
+
+        // Cached UNCONDITIONALLY, unlike the operator list below. It is one bool per page, and the
+        // operator cache deliberately stops growing past its budget — letting the flag share that fate
+        // would make the 6.1.13 check silently depend on how many pages preceded this one.
+        _pageOutOfRangeInteger[page] = sawOutOfRangeInteger;
+```
+
+Add the backing dictionary next to `_pageOperators`:
+
+```csharp
+    private readonly Dictionary<PdfPage, bool> _pageOutOfRangeInteger =
+        new(ReferenceEqualityComparer.Instance);
+```
+
+And the accessor, next to `PageContentOperators`:
+
+```csharp
+    /// <summary>
+    /// Whether this page's content contained an integer literal outside Int32 (ISO 19005-2 6.1.13
+    /// test 1). Reported by the parser rather than read off the operands, because typed numeric
+    /// operators (<c>Td</c>, <c>Tm</c>, <c>cm</c>, …) rebuild their operands as <see cref="PdfReal"/>
+    /// via <c>ToDouble()</c> and discard the original marked integer.
+    ///
+    /// <para>Riding the parser also means an inline image's binary payload is skipped correctly; a
+    /// raw token scan of the same bytes would read a run of ASCII digits inside image data as a huge
+    /// integer and manufacture a false positive.</para>
+    /// </summary>
+    public bool PageContentHasOutOfRangeInteger(PdfPage page)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+
+        if (_pageOutOfRangeInteger.TryGetValue(page, out bool flag))
+            return flag;
+
+        PageContentOperators(page);   // populates the flag as a side effect of the parse
+        _pageOutOfRangeInteger.TryGetValue(page, out flag);
+        return flag;
+    }
+```
+
+The flag dictionary is a superset of the operator cache — both are written in the same pass, but the
+flag unconditionally — so a page missing from the flag dictionary is always missing from the operator
+cache too, and the call above therefore always performs a real parse rather than returning early.
 
 - [ ] **Step 4: Add the content-stream sub-check**
 
-Add a new method after `CheckContentStreamStrings` (`:149-171`):
+Add a new method after `CheckContentStreamStrings` (`:149-171`). Note it consults the parse-level flag
+**and** walks operands: the flag catches top-level integers (which typed operators discard), while the
+recursion catches integers nested in array and dictionary operands (which survive intact):
 
 ```csharp
     // ── Sub-check 5 — out-of-range integer operand in page content (6.1.13 test 1) ──────────────────
@@ -1312,15 +1399,24 @@ Add a new method after `CheckContentStreamStrings` (`:149-171`):
 
         foreach (PdfPage page in pages)
         {
-            // Shared per-document parse (already cached by PageContentOperators), so walking the
-            // operators a second time for integers costs no reparse.
+            // Top-level operands: the parser reports these, because a typed operator like Td has
+            // already rebuilt them as PdfReal by the time they reach op.Operands.
+            if (context.PageContentHasOutOfRangeInteger(page))
+            {
+                yield return IntegerFinding(context);
+                yield break; // one finding is enough to mark the document non-conformant
+            }
+
+            // Nested operands: a TJ array (and a BDC property dictionary) passes through
+            // CreateOperator intact, so integers inside one are still observable per-object.
+            // Shared per-document parse, so this costs no reparse.
             foreach (PdfOperator op in context.PageContentOperators(page))
                 foreach (PdfObject operand in op.Operands)
                     foreach (PdfInteger integer in IntegersIn(operand))
                         if (IsOutOfRange(integer))
                         {
                             yield return IntegerFinding(context, integer.LongValue);
-                            yield break; // one finding is enough to mark the document non-conformant
+                            yield break;
                         }
         }
     }
@@ -1355,14 +1451,44 @@ Add a new method after `CheckContentStreamStrings` (`:149-171`):
     }
 ```
 
-Wire it into `Check` (`:42-50`) by adding a fourth loop:
+Wire it into `Check` (`:42-50`). The two arms can each report an integer finding for the same
+document — the object walk and the content walk are independent — so `Check` must suppress the
+second. `ref` locals are not allowed in an iterator, so track it with a plain flag over the yielded
+findings:
 
 ```csharp
+    public IEnumerable<Finding> Check(ConformanceContext context)
+    {
+        foreach (Finding f in CheckPageBoxes(context))
+            yield return f;
+
+        // The object walk and the content walk can each turn up an out-of-range integer in the same
+        // document. Either alone makes it non-conformant, so the second is noise.
+        var integerReported = false;
+        foreach (Finding f in CheckStringsAndNames(context))
+        {
+            integerReported |= IsIntegerFinding(f);
+            yield return f;
+        }
+
+        foreach (Finding f in CheckContentStreamStrings(context))
+            yield return f;
+
+        if (integerReported)
+            yield break;
+
         foreach (Finding f in CheckContentStreamIntegers(context))
             yield return f;
+    }
+
+    /// <summary>Distinguishes this rule's integer findings from its box/string/name findings, which
+    /// share the rule id and clause.</summary>
+    private static bool IsIntegerFinding(Finding f) =>
+        f.Message.Contains("integer", StringComparison.OrdinalIgnoreCase);
 ```
 
-Note the content sub-check can report an integer finding that the object walk also reported. `At_most_one_integer_finding_is_reported` pins that this does not happen — if it fails, gate the content sub-check on the object walk not having reported one, by hoisting the flag as the string sub-checks would need too.
+`At_most_one_integer_finding_is_reported` is the test that pins this — its fixture deliberately
+carries an out-of-range integer in BOTH the object graph and the page content.
 
 - [ ] **Step 5: Update the doc comment**
 

@@ -222,6 +222,27 @@ needs its own test for each shape.
 
 Object-level detection needs no parser change: the rule reads `LongValue` directly.
 
+**Correction found during execution — the mark alone is not observable.** `CreateOperator` builds
+typed operators from `operands[n].ToDouble()`, so `MoveTextPositionOperator` (and `TD`, `Tm`, `cm`,
+`re` — every typed numeric operator) constructs **fresh `PdfReal` operands** and discards the marked
+`PdfInteger` entirely. `op.Operands` for a `Td` therefore never carries the mark. That is fatal on
+its own terms: the corpus file this half of the work exists to catch, `6-1-13-t01-fail-b.pdf`, has
+its violation in `0 2157483648 Td`.
+
+The mark still stands, and its classification is still the false-positive defence. What changes is
+the channel: `PdfContentParser.Parse` gains an out-parameter reporting whether the stream contained
+an out-of-range integer literal, observed at the **top-level operand push site** — before
+`CreateOperator` can discard it. Existing callers delegate through `out _` and are unaffected.
+
+Two alternatives were rejected. Changing typed operators to preserve raw operands touches every
+operator class and the rendering path. Having the rule re-tokenise raw content bytes with `PdfLexer`
+is *unsafe*: a run of ASCII digits inside an inline image's binary payload between `ID` and `EI`
+would lex as a huge integer and produce a false positive. Riding the parser keeps inline-image
+payloads correctly skipped, because the parser already handles them.
+
+Integers nested inside array and dictionary operands are unaffected — a `TJ` array passes through
+`CreateOperator` intact, so those remain observable per-object.
+
 ### 4.6 Closing the construction-site seam
 
 The facts must reach `PdfString`/`PdfInteger` at **every** construction site, not only the ones the
