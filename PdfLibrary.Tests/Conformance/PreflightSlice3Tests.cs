@@ -156,6 +156,60 @@ public class PreflightSlice3Tests
         Assert.Equal(FindingSeverity.Error, finding.Severity);
     }
 
+    // ── 6.6.4 t4-t7: the identification properties must use the "pdfaid" PREFIX ──
+    //
+    // Not merely the right namespace URI. XML normally treats a prefix as an interchangeable alias,
+    // so a document binding the correct URI to a different prefix conforms by every other measure —
+    // corpus fixture "veraPDF test suite 6-6-4-t01-fail-b.pdf" is exactly that, and the rule's own
+    // lookups (by URI) passed it silently before this landed.
+
+    /// <summary>The fail-b shape: correct namespace URI, bound to <paramref name="prefix"/>.</summary>
+    private static byte[] XmpWithPrefix(string prefix) => Encoding.UTF8.GetBytes(
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
+        + "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + $"<rdf:Description rdf:about=\"\" xmlns:{prefix}=\"http://www.aiim.org/pdfa/ns/id/\" "
+        + $"{prefix}:part=\"2\" {prefix}:conformance=\"B\"/></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+    [Fact]
+    public void PdfaId_accepts_the_pdfaid_prefix()
+    {
+        PdfDocument doc = DocWithXmp(XmpWithPrefix("pdfaid"));
+        Assert.Empty(new PdfaIdentificationRule().Check(Ctx(doc, ConformanceProfile.PdfA2b)));
+    }
+
+    [Fact]
+    public void PdfaId_flags_a_wrong_namespace_prefix()
+    {
+        // "pdfa", the fixture's prefix — right URI, wrong prefix. One finding per mis-prefixed
+        // property (part and conformance), matching veraPDF's separate t4 and t5.
+        PdfDocument doc = DocWithXmp(XmpWithPrefix("pdfa"));
+        Finding[] findings = [.. new PdfaIdentificationRule().Check(Ctx(doc, ConformanceProfile.PdfA2b))];
+
+        Assert.Equal(2, findings.Length);
+        Assert.All(findings, f => Assert.Equal("pdfa-id", f.RuleId));
+        Assert.All(findings, f => Assert.Contains("'pdfa'", f.Message, System.StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.Message.Contains("'part'", System.StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.Message.Contains("'conformance'", System.StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PdfaId_prefix_check_does_not_swallow_the_value_checks()
+    {
+        // A document can be wrong in both ways at once, and the prefix finding must not mask the
+        // value one — the prefix loop runs BEFORE the part/conformance guards, so an early return
+        // there would have hidden a genuine part mismatch.
+        byte[] xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?><x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
+            + "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfa=\"http://www.aiim.org/pdfa/ns/id/\" "
+            + "pdfa:part=\"9\" pdfa:conformance=\"B\"/></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        Finding[] findings = [.. new PdfaIdentificationRule().Check(Ctx(DocWithXmp(xmp), ConformanceProfile.PdfA2b))];
+
+        Assert.Equal(3, findings.Length);   // two prefixes + the part-is-9 mismatch
+        Assert.Contains(findings, f => f.Message.Contains("'9'", System.StringComparison.Ordinal));
+    }
+
     // ── sanity: the attribute-form parser reads pdfaid ───────────────────────
 
     [Fact]

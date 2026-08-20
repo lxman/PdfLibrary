@@ -14,6 +14,15 @@ internal sealed class PdfaIdentificationRule : IConformanceRule
     // The PDF/A identification namespace URI (ISO 19005-1, Annex). No shared constant exists yet.
     private const string PdfaIdNs = "http://www.aiim.org/pdfa/ns/id/";
 
+    private const string PdfaIdPrefix = "pdfaid";
+
+    /// <summary>The identification properties whose namespace prefix ISO 19005-2 6.6.4 constrains —
+    /// tests 4, 5, 6 and 7, one per name. <c>amd</c> and <c>corr</c> are optional and absent from every
+    /// corpus fixture, so only the first two are exercised end-to-end; they are handled here anyway
+    /// because they are the SAME check on two more names, and leaving them out would let a document
+    /// with a mis-prefixed amendment identifier pass us while failing veraPDF.</summary>
+    private static readonly string[] PrefixedProperties = ["part", "conformance", "amd", "corr"];
+
     public string RuleId => "pdfa-id";
 
     public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA;
@@ -30,6 +39,26 @@ internal sealed class PdfaIdentificationRule : IConformanceRule
 
         byte[] xmpBytes = metadata.GetDecodedData(context.Document.Decryptor);
         XmpPacket packet = XmpPacket.Parse(xmpBytes);
+
+        // 6.6.4 tests 4-7: every PDF/A-identification property must carry the namespace PREFIX
+        // "pdfaid" literally, not merely the right namespace URI. XML normally treats a prefix as an
+        // interchangeable alias for its URI, so this reads as a spec quirk — but ISO 19005-2 6.6.4
+        // mandates the prefix, veraPDF enforces it, and a document binding the same URI to "pdfa"
+        // conforms by every other measure while failing this one (corpus fixture
+        // "6-6-4-t01-fail-b.pdf" is exactly that). Checked BEFORE the value tests below, which look
+        // properties up by URI and would therefore pass such a file silently.
+        //
+        // A null/empty prefix is accepted, mirroring veraPDF's own `partPrefix == null || …` shape:
+        // a property carrying no prefix is a different (and unmandated) situation, not a wrong one.
+        foreach (string property in PrefixedProperties)
+        {
+            if (packet.Get(PdfaIdNs, property)?.Prefix is not { Length: > 0 } prefix) continue;
+            if (prefix == PdfaIdPrefix) continue;
+
+            yield return Error(context.Target,
+                $"The PDF/A identification property '{property}' uses the namespace prefix "
+                + $"'{prefix}', but ISO 19005 requires '{PdfaIdPrefix}'.");
+        }
 
         string? part = packet.Get(PdfaIdNs, "part")?.Value?.Trim();
         string? conformance = packet.Get(PdfaIdNs, "conformance")?.Value?.Trim();

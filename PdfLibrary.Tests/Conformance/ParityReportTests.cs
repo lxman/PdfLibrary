@@ -27,7 +27,16 @@ public class ParityReportTests(ITestOutputHelper output)
         new Dictionary<ConformanceProfile, int>
         {
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
-            [ConformanceProfile.PdfA2b] = 971,
+            [ConformanceProfile.PdfA2b] = 972,
+            // +1 (971->972), 2026-08-20: 6.6.4 t4/t5 to FULL parity ("veraPDF test suite 6-6-4-t01-fail-b.pdf",
+            // blocked by this clause alone) -- takes A-2b agreement past 99%. The pdfaid properties must carry
+            // the namespace PREFIX "pdfaid" literally, not merely the right namespace URI: the fixture binds
+            // the correct URI to "pdfa" and conforms by every other measure. XML normally treats a prefix as
+            // an interchangeable alias, so this reads as a spec quirk -- but ISO 19005-2 6.6.4 mandates it and
+            // veraPDF enforces it. Folded into the existing PdfaIdentificationRule, whose own lookups go by
+            // URI and therefore passed the file silently. t6/t7 (amd, corr) are the same check on two more
+            // names and are implemented too, though no corpus file exercises them.
+            //
             // +2 (969->971), 2026-08-20: 6.1.4 t2 to FULL parity ("veraPDF test suite 6-1-4-t01-fail-a/b.pdf",
             // both blocked by this clause alone). The xref keyword and the cross-reference subsection header
             // must be separated by exactly ONE EOL marker; fail-a separates them with "SPACE LF" and fail-b
