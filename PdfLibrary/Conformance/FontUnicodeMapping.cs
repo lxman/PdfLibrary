@@ -43,12 +43,25 @@ internal static class FontUnicodeMapping
         // program's built-in encoding. For a symbolic Type1/CFF font this engine DOES read that
         // encoding (Type1Font.LoadEncoding / EmbeddedFontMetrics.GetCffGlyphNameByCharCode /
         // GetType1GlyphNameByCharCode, ISO 32000-1 9.6.6.2), so a null name here means the built-in
-        // encoding already had nothing to say either; other shapes (TrueType symbolic cmaps,
-        // non-symbolic gaps) still fall outside what this engine models, so an empty/.notdef name
-        // stays conservatively non-failing rather than a positive failure.
+        // encoding already had nothing to say either — but that arm stays conservatively non-failing,
+        // because no fixture exercises it and tightening it would be an unmeasured precision trade.
+        //
+        // TrueType is different, and IS a positive failure. A TrueType program's cmap maps codes to
+        // GLYPHS, never to Unicode; a symbolic (3,0) table maps into the private use area, which is
+        // not a Unicode answer either. So for a simple TrueType font, no /ToUnicode entry plus no
+        // glyph name means no mechanism remains that could answer the question -- exhausted, not
+        // unexamined. veraPDF agrees (6.2.11.7.2 test 1, `toUnicode != null` on object Glyph): corpus
+        // fixture "veraPDF test suite 6-2-11-7-2-t01-fail-e.pdf", a symbolic subset Cambria drawing
+        // codes 1-4 with neither /Encoding nor /ToUnicode.
+        //
+        // Blast radius measured over both consuming profiles before the change (2026-08-19): A-2u 1
+        // file touched -- that fixture, which veraPDF fails -- and PDF/UA-1 ZERO files touched, so
+        // UaTextUnicodeRule's 296/296 is unaffected. FontRemediationPlanner.ProvableUnicode already
+        // returned null for this exact shape, so this closes a disagreement between the rule and the
+        // planner that has to fix it, rather than opening one.
         string? glyphName = font.Encoding?.GetGlyphName(code);
         if (string.IsNullOrEmpty(glyphName) || glyphName == ".notdef")
-            return true;
+            return font.FontType != PdfFontType.TrueType;
 
         // A real glyph name is positive evidence: it maps to Unicode iff it is an AGL or uXXXX name.
         if (GlyphList.GetUnicode(glyphName) is { } unicode && !unicode.Contains(ReplacementChar))
