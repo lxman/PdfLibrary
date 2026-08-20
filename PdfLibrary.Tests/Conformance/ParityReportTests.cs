@@ -71,7 +71,19 @@ public class ParityReportTests(ITestOutputHelper output)
             // 0FP -> d3c5e7c 20/22 1FP -> 43ae761 21/22 0FP -> stable to HEAD. This floor lagged at 19
             // only because PARITY-REPORT.md was not regenerated between 2026-07-11 and 2026-08-19 — the
             // A-2b and UA-1 floors were maintained in that window and were already at their ceilings.
-            [ConformanceProfile.PdfA2u] = 21,    // + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
+            [ConformanceProfile.PdfA2u] = 22,    // +1 (21->22), FULL PARITY, 2026-08-19: the last A-2u miss,
+            // "veraPDF test suite 6-2-11-7-2-t01-fail-e.pdf". HasReliableUnicode's simple-font arm gave every
+            // no-glyph-name code the benefit of the doubt; it now treats a simple TRUETYPE font that way as a
+            // positive failure, because a TrueType cmap maps codes to glyphs (a symbolic (3,0) table into the
+            // PUA) and never to Unicode -- so no /ToUnicode plus no glyph name means the mechanisms are
+            // exhausted, not unexamined. Type1/CFF keeps the benefit of the doubt: no fixture exercises it and
+            // tightening it would be an unmeasured precision trade (pinned by
+            // FontUnicodeMappingTests.HasReliableUnicode_StillGivesBenefitOfDoubtToASimpleType1CodeWithNoGlyphName).
+            // Blast radius measured across BOTH consumers of the shared helper before implementing: A-2u 1 file
+            // touched (this one), PDF/UA-1 ZERO -- UaTextUnicodeRule's 296/296 is untouched -- and 0 FP corpus
+            // wide. FontRemediationPlanner.ProvableUnicode already returned null for this shape, so the change
+            // closes a rule/planner disagreement rather than opening one.
+            // Previously 21: + 6.2.11.3.1 (embedded-CMap supplement) catches 6-2-11-7-2-t01-fail-f
             [ConformanceProfile.PdfA3b] = 12,
             [ConformanceProfile.PdfUA1] = 296,   // FULL machine-checkable UA-1 parity (296/296). +3 table-header (clause 7.5 t1/t2 → 2/2 full: in a regular table every TD must connect to a header via /Headers→TH /ID or an explicit-Scope TH heading its column/row — PDF/UA-1 has no default scope; UaTableHeaderRule), 0 FP. +3 media-clip (clause 7.18.6.2 t1/t2 → 2/2 full: a Rendition-action media clip data dictionary needs a /CT content-type string and a correct /Alt multi-language text array; UaMediaClipRule), 0 FP. +1 encryption /P (clause 7.16 → 1/1 full: an encrypted file's /Encrypt /P must set bit 512, the accessibility-extraction permission; UaEncryptionRule), 0 FP. +2 role-map (clause 7.1 t6/t7 → 7.1 clause 16/16 full: no circular /RoleMap, no remapped standard type; document-level UaRoleMapRule), 0 FP. +3 pdfuaid-prefix (clause 5 t3/t4/t5 → 5/5 full: part/amd/corr must use the "pdfuaid" prefix; read per-property via XmlReader since XLinq collapses multiple prefixes on one URI), 0 FP. +3 CMap WMode/UseCMap (7.21.3.3 t2/t3 → 4/4 full; font-program slice 3), 0 FP. +6 from embedded-file widened to UA-1 7.11 (non-empty /F,/UF; filespecs from the catalog name tree AND FileAttachment annotation /FS → 6/6). Ratchets to the current verified agreement (the earlier 253 lagged the 275 baseline: slice-21 annotation rules + the incremental-update obj-stream resolution fix)
         };

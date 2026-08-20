@@ -60,7 +60,74 @@ public class FontUnicodeMappingTests
         Assert.Equal("A", FontUnicodeMapping.UnicodeGlyphNameValue("u0041"));
     }
 
+    /// <summary>
+    /// A simple TrueType font with no /Encoding and no /ToUnicode — the shape of the corpus fixture
+    /// "veraPDF test suite 6-2-11-7-2-t01-fail-e.pdf" (symbolic subset Cambria, codes 1-4). There is no
+    /// PDF-level mechanism left to answer with: the embedded program's cmap maps codes to GLYPHS, and a
+    /// symbolic (3,0) table maps into the private use area, so it is not a Unicode answer either. This
+    /// is positive evidence of no mapping, not an unknown, and veraPDF fails the fixture on exactly it.
+    /// </summary>
+    [Fact]
+    public void HasReliableUnicode_IsFalseForASimpleTrueTypeCodeWithNoGlyphName()
+    {
+        Assert.False(FontUnicodeMapping.HasReliableUnicode(Ctx(), UnencodedFont("TrueType"), 0x01));
+    }
+
+    /// <summary>
+    /// The Type1/CFF arm deliberately keeps the benefit of the doubt. The engine DOES read a Type1/CFF
+    /// program's built-in encoding, so arguably a null name there is positive evidence too — but no
+    /// corpus fixture exercises it, and tightening it would be an unmeasured precision trade in a rule
+    /// whose whole point is to avoid false positives. Pinned so the TrueType change cannot quietly
+    /// generalise.
+    /// </summary>
+    [Fact]
+    public void HasReliableUnicode_StillGivesBenefitOfDoubtToASimpleType1CodeWithNoGlyphName()
+    {
+        Assert.True(FontUnicodeMapping.HasReliableUnicode(Ctx(), UnencodedFont("Type1"), 0x01));
+    }
+
+    /// <summary>The new TrueType arm must fire ONLY on the no-name path: a TrueType code the encoding
+    /// does name, and names with an AGL glyph, is mapped and must stay unflagged. This is the
+    /// over-firing guard — without it the arm could degenerate into "all TrueType fails".</summary>
+    [Fact]
+    public void HasReliableUnicode_IsTrueForATrueTypeCodeWhoseEncodingNamesAnAglGlyph()
+    {
+        Assert.True(FontUnicodeMapping.HasReliableUnicode(Ctx(), TrueTypeFontFor("A"), 0x41));
+    }
+
     private static ConformanceContext Ctx() => new(new PdfDocument(), ConformanceProfile.PdfA2u);
+
+    /// <summary>A simple font of <paramref name="subtype"/> with NO /Encoding entry at all, so the
+    /// encoding can produce no glyph name for a low code.</summary>
+    private static PdfFont UnencodedFont(string subtype)
+    {
+        var dict = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N(subtype),
+            [N("BaseFont")] = N("BAAAAA+Cambria"),
+            [N("FirstChar")] = new PdfInteger(0),
+            [N("LastChar")] = new PdfInteger(4),
+        };
+        return PdfFont.Create(dict)!;
+    }
+
+    /// <summary>A TrueType font whose /Differences names code 0x41 <paramref name="glyphName"/>.</summary>
+    private static PdfFont TrueTypeFontFor(string glyphName)
+    {
+        var dict = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("CustomTrueType"),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("BaseEncoding")] = N("WinAnsiEncoding"),
+                [N("Differences")] = new PdfArray(new PdfInteger(0x41), N(glyphName)),
+            },
+        };
+        return PdfFont.Create(dict)!;
+    }
 
     /// <summary>A direct (non-indirect, unregistered) Type1 font dictionary whose /Differences maps
     /// code 0x41 to <paramref name="glyphName"/>. Direct construction is sufficient here —

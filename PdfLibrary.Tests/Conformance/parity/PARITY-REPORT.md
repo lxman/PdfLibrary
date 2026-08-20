@@ -9,7 +9,7 @@ Across all **1316** files PdfLibrary produced **0 false positives** — it never
 | Profile | Files | Both pass | Both fail | PdfLibrary misses (gap) | PdfLibrary FP | Agreement |
 |---|--:|--:|--:|--:|--:|--:|
 | PDF/A-2b | 986 | 377 | 589 | 20 | 0 | 966/986 (98%) |
-| PDF/A-2u | 22 | 12 | 9 | 1 | 0 | 21/22 (95%) |
+| PDF/A-2u | 22 | 12 | 10 | 0 | 0 | 22/22 (100%) |
 | PDF/A-3b | 12 | 7 | 5 | 0 | 0 | 12/12 (100%) |
 | PDF/UA-1 | 296 | 141 | 155 | 0 | 0 | 296/296 (100%) |
 
@@ -62,11 +62,11 @@ Of the files where veraPDF flags a clause, how many does PdfLibrary also flag on
 | 6.4.2 | 2 | 2 | 100% | ✅ full |
 | 6.5.2 | 2 | 2 | 100% | ✅ full |
 
-### PDF/A-2u — 2/3 clauses at full parity
+### PDF/A-2u — 3/3 clauses at full parity
 
 | Clause | veraPDF flags | PdfLibrary matches | Coverage | |
 |---|--:|--:|--:|---|
-| 6.2.11.7.2 | 8 | 7 | 88% | ◐ partial |
+| 6.2.11.7.2 | 8 | 8 | 100% | ✅ full |
 | 6.2.11.3.1 | 1 | 1 | 100% | ✅ full |
 | 6.6.4 | 1 | 1 | 100% | ✅ full |
 
@@ -155,17 +155,9 @@ Each miss and the clauses standing between it and agreement:
 | veraPDF test suite 6-6-2-1-t01-fail-c.pdf | 6.6.2.1 |
 | veraPDF test suite 6-6-4-t01-fail-b.pdf | 6.6.4 |
 
-### PDF/A-2u — 1 whole-file miss
+### PDF/A-2u — 0 whole-file misses
 
-| Clause | Misses it blocks | Flips alone | Cheapest set that pays | That set flips |
-|---|--:|--:|---|--:|
-| 6.2.11.7.2 | 1 | 1 | — (alone) | 1 |
-
-Each miss and the clauses standing between it and agreement:
-
-| File | Blocked by |
-|---|---|
-| veraPDF test suite 6-2-11-7-2-t01-fail-e.pdf | 6.2.11.7.2 |
+PdfLibrary's verdict already agrees with veraPDF on every file of this profile, so **no clause work here can move a verdict** — however many files a clause gap still spans.
 
 ### PDF/A-3b — 0 whole-file misses
 
