@@ -1572,7 +1572,9 @@ Expected: PASS. Read the **SKIP count**, not just the PASS count — a skipped p
 Run (PowerShell):
 
 ```powershell
-$env:PARITY_REPORT = "PdfLibrary.Tests/Conformance/parity/PARITY-REPORT.md"
+# ABSOLUTE path required. dotnet test runs with its working directory set to the test OUTPUT
+# folder, not the repo root, so a relative path throws DirectoryNotFoundException.
+$env:PARITY_REPORT = "$PWD\PdfLibrary.Tests\Conformance\parity\PARITY-REPORT.md"
 dotnet test PdfLibrary.Tests/PdfLibrary.Tests.csproj --filter "FullyQualifiedName~ParityReportTests.Generate_parity_report"
 ```
 
