@@ -238,7 +238,16 @@ internal class PdfParser(PdfLexer lexer)
             ? PdfStringFormat.Hexadecimal
             : PdfStringFormat.Literal;
 
-        PdfString pdfString = PdfString.FromByteLiteral(token.Value, format);
+        // Clause 6.1.6: how the hex digits were written, which the lexer normalised away. Taken by
+        // token POSITION, because this parser buffers tokens for lookahead and may have lexed
+        // further before reaching here.
+        HexStringFacts? hexFacts =
+            token.Type == PdfTokenType.HexString
+            && _lexer.TryTakeHexFacts(token.Position, out HexStringFacts f)
+                ? f
+                : null;
+
+        PdfString pdfString = PdfString.FromByteLiteral(token.Value, format, hexFacts);
 
         // If we're inside an indirect object and have a decryptor, decrypt the string
         // Per PDF spec ISO 32000-1 section 7.6.2: "All strings in the document are encrypted"
@@ -250,7 +259,7 @@ internal class PdfParser(PdfLexer lexer)
             // Create new PdfString with decrypted bytes — carrying the ORIGINAL format forward.
             // Decryption changes the bytes, never how the string was written; dropping the format
             // here would re-lose it for exactly the encrypted documents (issue 57).
-            pdfString = new PdfString(decryptedBytes, format);
+            pdfString = new PdfString(decryptedBytes, format, hexFacts);
 
             PdfLogger.Log(LogCategory.PdfTool,
                 $"DECRYPT STRING: obj {_currentObjectNumber} gen {_currentGenerationNumber}, " +
