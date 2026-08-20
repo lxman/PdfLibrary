@@ -2,13 +2,13 @@ using PdfLibrary.Content;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
+using PdfLibrary.Fonts;
 
 namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
 /// PDF/A implementation limits (ISO 19005-2, 6.1.13; the referenced limits are ISO 32000-1 Annex C).
-/// Three tractable sub-checks — the CID &gt; 65535 (needs an embedded-CMap parser) limit is out of
-/// scope for this slice:
+/// Six sub-checks in all. The first three share one object-graph walk:
 /// <list type="number">
 ///   <item><b>Page boundary sizes</b> — every page's effective MediaBox and CropBox
 ///     (<see cref="PdfPage.GetMediaBox"/> / <see cref="PdfPage.GetCropBox"/> resolve page-tree
@@ -29,7 +29,14 @@ namespace PdfLibrary.Conformance.Rules;
 /// A fifth sub-check covers the INTEGER range limit (test 1) on both paths. The object parser keeps an
 /// out-of-range value intact in <see cref="PdfInteger.LongValue"/>; the content parser clamps the operand
 /// to 0 and records <see cref="PdfInteger.SourceOutOfInt32Range"/> instead, so the value the renderer sees
-/// never moved. The q/Q-nesting (test 8) and CID (test 10) limits remain out of scope.
+/// never moved.
+///
+/// A sixth sub-check covers the CID limit (test 10). veraPDF's object is <c>CMapFile</c> with
+/// <c>maximalCID</c>, so this is a property of what an embedded <c>/Encoding</c> CMap DECLARES,
+/// not a scan of CIDs used in content — <see cref="CidCMap.MaxDeclaredCid"/> answers it without
+/// materialising the code→CID map. Only embedded CMap STREAMS are examined: a predefined name
+/// carries no file to read, and Identity-H's maximum CID is exactly 65535 in any case. The
+/// q/Q-nesting (test 8) limit remains out of scope.
 /// </summary>
 internal sealed class ImplementationLimitsRule : IConformanceRule
 {
@@ -41,6 +48,7 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
     private const double MaxBoxSide = 14400.0;
     private const int MaxStringBytes = 32767;
     private const int MaxNameBytes = 127;
+    private const long MaxCid = 65535;
 
     /// <summary>ISO 19005-2 6.1.13 test 1. Two parsers, two shapes of evidence: the object parser
     /// keeps the true value in <see cref="PdfInteger.LongValue"/>, while the content parser clamps
@@ -65,10 +73,14 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
         foreach (Finding f in CheckContentStreamStrings(context))
             yield return f;
 
-        if (integerReported)
-            yield break;
+        // Scoped to the integer arm ONLY. This was a bare `yield break`, which ends the WHOLE
+        // iterator — so every sub-check below it was silently skipped on any document that also
+        // carried an out-of-range integer, a suppression that reads exactly like absence.
+        if (!integerReported)
+            foreach (Finding f in CheckContentStreamIntegers(context))
+                yield return f;
 
-        foreach (Finding f in CheckContentStreamIntegers(context))
+        foreach (Finding f in CheckCMapCids(context))
             yield return f;
     }
 
@@ -260,6 +272,47 @@ internal sealed class ImplementationLimitsRule : IConformanceRule
                     foreach (PdfInteger i in IntegersIn(entry.Value))
                         yield return i;
                 break;
+        }
+    }
+
+    // ── Sub-check 6 — a CID above 65535 in an embedded CMap (6.1.13 test 10) ────────────────────
+    private IEnumerable<Finding> CheckCMapCids(ConformanceContext context)
+    {
+        var seenCMaps = new HashSet<int>();
+
+        foreach (PdfDictionary font in context.ReferencedFonts)
+        {
+            // Only a Type0 font carries /Encoding. Its descendant CIDFont appears in
+            // ReferencedFonts as its own separate flat entry and has none, so this filter
+            // excludes it naturally.
+            if (context.ResolveName(font.Get("Subtype")) != "Type0")
+                continue;
+
+            // Direct dictionary navigation, NOT Type0Font's parsed CMap: that path is gated on
+            // CIDSystemInfo/Registry == "Adobe" plus a bundled Ordering, so a font failing either
+            // never has its CMap fetched at all. Same route FontDictionaryRule already uses.
+            if (context.Resolve(font.Get("Encoding")) is not PdfStream cmap)
+                continue; // a predefined CMap name has no embedded file to read
+
+            if (cmap.IsIndirect && !seenCMaps.Add(cmap.ObjectNumber))
+                continue; // several fonts can share one CMap; scan it once
+
+            byte[] data;
+            try { data = cmap.GetDecodedData(context.Document.Decryptor); }
+            catch { continue; } // an undecodable stream is a different clause's concern
+
+            if (CidCMap.MaxDeclaredCid(data) is not { } max || max <= MaxCid)
+                continue;
+
+            yield return new Finding
+            {
+                RuleId = RuleId,
+                Severity = FindingSeverity.Error,
+                Clause = ConformanceClauses.For(context.Target, "6.1.13"),
+                Message = $"A CMap declares CID {max}, exceeding the maximum permitted "
+                        + $"CID value of {MaxCid}.",
+            };
+            yield break; // one finding is enough to mark the document non-conformant
         }
     }
 
