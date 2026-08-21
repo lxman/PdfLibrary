@@ -40,7 +40,11 @@ public sealed class PdfEmbeddedFileSpec
     public bool AssociateWithDocument { get; init; }
 }
 
-/// <summary>One filespec <see cref="PdfDocumentEditor.RepairFileSpecNames"/> touched.</summary>
+/// <summary>One filespec <see cref="PdfDocumentEditor.RepairFileSpecNames"/> touched.
+/// <paramref name="Name"/> is the TEXT VALUE that was copied from the usable key into the missing one —
+/// not an identifier for the filespec, and in particular not the /EmbeddedFiles name-tree key
+/// <see cref="FileSpecNameRepairReport.Declined"/> reports (that one comes from
+/// <c>IdentifyFileSpec</c>). The two usually coincide, and are free not to.</summary>
 public sealed record FileSpecNameRepair(string Name, bool WroteF, bool WroteUf);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairFileSpecNames"/> did. <paramref name="Declined"/>
@@ -54,7 +58,9 @@ public sealed record FileSpecNameRepairReport(
 /// written. Deliberately NOT <see cref="FileSpecNameRepair"/> reused for the preview: that record's
 /// <c>WroteF</c>/<c>WroteUf</c> are past tense, accurate for a call that just wrote and wrong for one
 /// that did not (see <see cref="PdfDocumentEditor.PreviewFileSpecNameRepairs"/>'s own doc comment for
-/// the reasoning). Conditional tense here on purpose.</summary>
+/// the reasoning). Conditional tense here on purpose. <paramref name="Name"/> carries the same meaning
+/// it does on <see cref="FileSpecNameRepair"/>: the text value that WOULD be copied, not an identifier
+/// for the filespec.</summary>
 public sealed record FileSpecNameRepairCandidate(string Name, bool WouldWriteF, bool WouldWriteUf);
 
 /// <summary>What <see cref="PdfDocumentEditor.PreviewFileSpecNameRepairs"/> found, read-only.
