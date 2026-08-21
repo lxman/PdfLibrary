@@ -490,8 +490,27 @@ internal class PdfFontEncoding
     // MacExpertEncoding (for expert fonts)
     private static PdfFontEncoding CreateMacExpertEncoding()
     {
-        // MacExpertEncoding is similar to MacRomanEncoding but for expert fonts
-        return CreateMacRomanEncoding();
+        // MacExpertEncoding is similar to MacRomanEncoding but for expert fonts — this is only a
+        // placeholder: codes 32-126 below are WinAnsi's ordinary ASCII names ("A", "period", …), not
+        // the real ISO 32000-1 Annex D.4 expert-set names (fraction, small-caps letters, superiors,
+        // ornaments, …), which nobody has written yet. Delegating this band to CreateMacRomanEncoding
+        // (as this method used to do wholesale) would now be wrong: since B1 rebuilt
+        // CreateMacRomanEncoding to assign that band BY NAME via SetCharacterName, its names come back
+        // marked document-asserted (IsDerivedName == false) — correct for MacRoman, where they really
+        // are Annex D.2's names, but not here, where they are known-wrong stand-ins. An asserted name
+        // lets ResolveSimpleGlyph's CFF arm convict a font of a missing glyph with confidence; handing
+        // it a name nobody actually asserted would be a brand-new false-positive path on the
+        // zero-false-positive invariant, opened by accident rather than decided. So this band is
+        // rebuilt directly via the pre-B1 SetUnicode loop, restoring exactly this method's own
+        // pre-branch behaviour and keeping these names DERIVED until someone writes the real Annex
+        // D.4 table.
+        PdfFontEncoding encoding = CreateMacRomanEncoding();
+        for (var i = 32; i <= 126; i++)
+        {
+            encoding._codeToName.Remove(i); // undo MacRoman's SetCharacterName so SetUnicode re-derives
+            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+        }
+        return encoding;
     }
 
     // SymbolEncoding (Symbol font encoding)

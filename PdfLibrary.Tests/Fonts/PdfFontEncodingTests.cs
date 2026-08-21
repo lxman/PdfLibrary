@@ -316,4 +316,38 @@ public class PdfFontEncodingTests
             Assert.Equal(std.GetGlyphName(code), mac.GetGlyphName(code));
         }
     }
+
+    // ── I2 (whole-branch review): MacExpertEncoding was swept into the MacRoman provenance change
+    // by delegation, unnoticed. Its ASCII band ("A", "period", …) is NOT Annex D.4's real expert-set
+    // names — nobody has written that table — so those names must stay DERIVED, unlike MacRoman's
+    // genuinely-asserted ones, or ResolveSimpleGlyph's CFF arm gains a brand-new confident-absence
+    // path on a name nobody actually authorized.
+
+    [Fact]
+    public void MacExpert_ascii_names_stay_derived_not_document_asserted()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("MacExpertEncoding");
+
+        // Same placeholder names MacRoman would produce, but provenance must differ.
+        Assert.Equal("period", enc.GetGlyphName(46));
+        Assert.Equal("numbersign", enc.GetGlyphName(35));
+        Assert.True(enc.IsDerivedName(46));
+        Assert.True(enc.IsDerivedName(35));
+        Assert.Equal(".", enc.DecodeCharacter(46));
+        Assert.Equal("#", enc.DecodeCharacter(35));
+    }
+
+    [Fact]
+    public void MacExpert_and_MacRoman_agree_on_names_but_not_on_provenance()
+    {
+        PdfFontEncoding expert = PdfFontEncoding.GetStandardEncoding("MacExpertEncoding");
+        PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        for (var code = 32; code <= 126; code++)
+        {
+            Assert.Equal(mac.GetGlyphName(code), expert.GetGlyphName(code));
+            Assert.False(mac.IsDerivedName(code));
+            Assert.True(expert.IsDerivedName(code));
+        }
+    }
 }
