@@ -7,6 +7,7 @@ using PdfLibrary.Builder;
 using PdfLibrary.Conformance;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
+using PdfLibrary.Fonts;
 using PdfLibrary.Structure;
 using Xunit;
 
@@ -308,6 +309,108 @@ public class ResaveVerificationTests
         PreflightResult after = CheckBytes(saved);
 
         Assert.DoesNotContain(after.Findings, f => f.RuleId == "file-id");
+        AssertNoNewRuleIds(before, after);
+    }
+
+    // ── font-dictionary 6.2.11.3.2 — CIDToGIDMap (Task 2: SetCidToGidMapIdentity) ───────────────────────
+
+    private static string? ClauseKey(Finding f) => ParitySnapshot.ClauseKey(f.Clause);
+
+    /// <summary>Serializes a hand-built in-memory <see cref="PdfDocument"/> to real file bytes via a
+    /// plain (unmutated) editor Save — the "original" bytes a font-dictionary fixture needs, since no
+    /// <see cref="PdfDocumentBuilder"/> support exists for constructing a composite font.</summary>
+    private static byte[] SavedBytes(PdfDocument document)
+    {
+        using PdfDocumentEditor editor = document.Edit();
+        using var ms = new MemoryStream();
+        editor.Save(ms);
+        return ms.ToArray();
+    }
+
+    /// <summary>A Type0 font (object 20) over a CIDFontType2 descendant (object 21) with no
+    /// /CIDToGIDMap — a genuine 6.2.11.3.2 violation — reachable via a page's /Resources /Font so
+    /// <c>ConformanceContext.ReferencedFonts</c> (and hence <see cref="FontInventory"/>) sees it.
+    /// Mirrors <c>PdfDocumentEditorFontsTests.BuildType0Document</c>.</summary>
+    private static PdfDocument CidFontType2WithoutMapDocument()
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(22, 0, new PdfStream(new PdfDictionary { [N("Length1")] = new PdfInteger(0) }, []));
+        doc.AddObject(21, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("CIDFontX"),
+            [N("CIDSystemInfo")] = new PdfDictionary
+            {
+                [N("Registry")] = new PdfString(Encoding.ASCII.GetBytes("Adobe")),
+                [N("Ordering")] = new PdfString(Encoding.ASCII.GetBytes("Identity")),
+                [N("Supplement")] = new PdfInteger(0),
+            },
+            [N("FontDescriptor")] = new PdfDictionary
+            {
+                [N("Type")] = N("FontDescriptor"),
+                [N("FontName")] = N("CIDFontX"),
+                [N("FontFile2")] = new PdfIndirectReference(22, 0),
+            },
+            // deliberately no /CIDToGIDMap — the violation under test
+        });
+        doc.AddObject(20, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("CIDFontX"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(new PdfIndirectReference(21, 0)),
+        });
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT /F0 12 Tf <0001> Tj ET")));
+        var page = new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = new PdfIndirectReference(2, 0),
+            [N("MediaBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfInteger(612), new PdfInteger(792)),
+            [N("Contents")] = new PdfIndirectReference(11, 0),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("Font")] = new PdfDictionary { [N("F0")] = new PdfIndirectReference(20, 0) },
+            },
+        };
+        doc.AddObject(3, 0, page);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(new PdfIndirectReference(3, 0)),
+            [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = new PdfIndirectReference(2, 0) });
+        doc.Trailer.Dictionary[N("Root")] = new PdfIndirectReference(1, 0);
+        return doc;
+    }
+
+    /// <summary>
+    /// The 6.2.11.3.2 finding on a genuinely non-conformant CIDFontType2 (no /CIDToGIDMap) is cleared
+    /// once <see cref="PdfDocumentEditor.SetCidToGidMapIdentity"/> writes <c>/CIDToGIDMap /Identity</c>
+    /// onto the descendant before saving. Includes the discrimination check (re-checking the ORIGINAL,
+    /// unsaved bytes twice) proving the "before" assertion is not a fluke of a single run.
+    /// </summary>
+    [Fact]
+    public void CidToGidMap_finding_is_cleared_by_SetCidToGidMapIdentity_before_save()
+    {
+        byte[] original = SavedBytes(CidFontType2WithoutMapDocument());
+
+        PreflightResult before = CheckBytes(original);
+        PreflightResult beforeAgain = CheckBytes(original); // discrimination: same bytes, no save in between
+        Assert.Contains(before.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.3.2");
+        Assert.Contains(beforeAgain.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.3.2");
+
+        byte[] saved = LoadEditSave(original, editor =>
+        {
+            FontInventoryEntry entry = Assert.Single(
+                FontInventory.Read(editor.Document), e => e.Kind == FontKind.Type0CidType2);
+            Assert.True(editor.SetCidToGidMapIdentity(entry.ProgramHolderId!.Value));
+        });
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.3.2");
         AssertNoNewRuleIds(before, after);
     }
 }

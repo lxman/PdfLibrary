@@ -656,6 +656,25 @@ public sealed partial class PdfDocumentEditor
     /// </summary>
     public bool HasFont(FontId font) => TryResolveFontDictionary(font, out _);
 
+    /// <summary>Writes <c>/CIDToGIDMap /Identity</c> onto a CIDFontType2 dictionary that omits it
+    /// (ISO 19005-2 6.2.11.3.2). Semantically a no-op for rendering — <c>CidFont.LoadCidToGidMap</c>
+    /// sets the same identity-mapping state for an absent key and an explicit <c>/Identity</c> name
+    /// (CidFont.cs:89-96 vs :104-107). Returns false, writing nothing, when the object is not a
+    /// CIDFontType2 dictionary or already carries any <c>/CIDToGIDMap</c> value — including a
+    /// non-<c>Identity</c> name, which this method deliberately does not repair: that variant produced
+    /// 0 of 85 corpus findings, so overwriting it would be an invented, unmeasured fix.</summary>
+    public bool SetCidToGidMapIdentity(FontId cidFont)
+    {
+        if (!TryResolveFontDictionary(cidFont, out PdfDictionary? dictionary) || dictionary is null)
+            return false;
+        if (Resolve(dictionary.Get("Subtype")) is not PdfName { Value: "CIDFontType2" })
+            return false;
+        if (dictionary.Get("CIDToGIDMap") is not null)
+            return false;
+        dictionary.Set("CIDToGIDMap", new PdfName("Identity"));
+        return true;
+    }
+
     private PdfDictionary ResolveFontDictionary(FontId font)
     {
         if (!TryResolveFontDictionary(font, out PdfDictionary? dictionary))
