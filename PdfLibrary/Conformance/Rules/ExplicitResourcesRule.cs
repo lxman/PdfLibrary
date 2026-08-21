@@ -92,13 +92,15 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
     /// <summary>
     /// Findings for this stream and every stream it reaches. A form's DIRECT resources are its own
     /// /Resources; its fallback is the invoking scope's EFFECTIVE resources (direct, else inherited) —
-    /// what a consumer would actually resolve against. Cycle-guarded on the active Do path and
-    /// depth-capped, mirroring ContentWalk.
+    /// what a consumer would actually resolve against. Cycle-guarded on the active Do/Tf path — one
+    /// <paramref name="activeObjects"/> set shared by both, since PDF object numbers are unique across
+    /// all indirect objects in a document, a Form stream and a Type3 font dictionary can never collide —
+    /// and depth-capped, mirroring ContentWalk.
     /// </summary>
     private List<Finding> WalkStream(
         ConformanceContext context, IReadOnlyList<PdfOperator> ops,
         PdfResources? direct, PdfResources? inherited,
-        int pageIndex, PdfDictionary? owner, int depth, HashSet<int> activeForms)
+        int pageIndex, PdfDictionary? owner, int depth, HashSet<int> activeObjects)
     {
         var findings = new List<Finding>();
         if (depth > MaxDepth)
@@ -118,7 +120,7 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
                 continue;
             if (context.ResolveName(form.Dictionary.Get("Subtype")) != "Form")
                 continue;
-            if (form.IsIndirect && !activeForms.Add(form.ObjectNumber))
+            if (form.IsIndirect && !activeObjects.Add(form.ObjectNumber))
                 continue; // already on the active Do path — a cycle
 
             byte[] data;
@@ -135,12 +137,12 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
                 {
                     findings.AddRange(WalkStream(
                         context, formOps, ResourcesOf(context, form.Dictionary), effective,
-                        pageIndex, form.Dictionary, depth + 1, activeForms));
+                        pageIndex, form.Dictionary, depth + 1, activeObjects));
                 }
             }
 
             if (form.IsIndirect)
-                activeForms.Remove(form.ObjectNumber);
+                activeObjects.Remove(form.ObjectNumber);
         }
 
         foreach (PdfOperator op in ops)
@@ -148,7 +150,7 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             if (op.Name == "Tf" && NameOperand(op, 0) is { } fontName)
             {
                 foreach (Finding finding in WalkType3(
-                             context, effective, fontName, pageIndex, depth, activeForms))
+                             context, effective, fontName, pageIndex, depth, activeObjects))
                 {
                     findings.Add(finding);
                 }
@@ -163,10 +165,14 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
     /// /Resources (ISO 32000-1 9.6.5); absent that, a consumer falls back to the invoking scope's.
     /// Every charproc is walked, not only the glyphs shown — the font is reached, which is what
     /// veraPDF models, and the corpus fixture's unused glyph carries the same defect as its used ones.
+    /// Cycle-guarded on <paramref name="activeObjects"/> exactly like the form path: a charproc whose
+    /// content re-selects the same font via <c>Tf</c> is skipped rather than re-walked, since without
+    /// this guard every charproc walked at every recursion level makes the work exponential in depth,
+    /// not linear — <see cref="MaxDepth"/> alone would still terminate it, but not in useful time.
     /// </summary>
     private List<Finding> WalkType3(
         ConformanceContext context, PdfResources? effective, string fontName,
-        int pageIndex, int depth, HashSet<int> activeForms)
+        int pageIndex, int depth, HashSet<int> activeObjects)
     {
         var findings = new List<Finding>();
 
@@ -179,6 +185,9 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
         {
             return findings;
         }
+
+        if (font.IsIndirect && !activeObjects.Add(font.ObjectNumber))
+            return findings; // already on the active Tf path — a cycle
 
         PdfResources? direct = ResourcesOf(context, font);
 
@@ -198,8 +207,11 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             catch { continue; }
 
             findings.AddRange(WalkStream(
-                context, ops, direct, effective, pageIndex, font, depth + 1, activeForms));
+                context, ops, direct, effective, pageIndex, font, depth + 1, activeObjects));
         }
+
+        if (font.IsIndirect)
+            activeObjects.Remove(font.ObjectNumber);
 
         return findings;
     }

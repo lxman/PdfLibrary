@@ -1,5 +1,7 @@
+using System;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using PdfLibrary.Conformance;
 using PdfLibrary.Conformance.Rules;
 using PdfLibrary.Core.Primitives;
@@ -224,5 +226,88 @@ public class ExplicitResourcesRuleTests
             [N("ColorSpace")] = new PdfDictionary { [N("CS0")] = Ref(11) },
         };
         Assert.Empty(Findings(Type3Doc("1000 0 d0\n/CS0 cs\n0.5 sc\n0 0 750 750 re f\n", own)));
+    }
+
+    /// <summary>A Type3 font with no /Resources whose 3 charprocs each re-select the SAME font via
+    /// <c>Tf</c> (a self-reference). Without a cycle guard on the Type3 descent, each self-referencing
+    /// <c>Tf</c> would re-walk all 3 charprocs again at the next recursion depth, and so on to
+    /// <c>MaxDepth</c> -- ~3^24 walks, terminating only in the sense that it eventually would, not in
+    /// any useful time.</summary>
+    private static PdfDocument SelfReferencingType3Doc()
+    {
+        var doc = new PdfDocument();
+
+        var charProcs = new PdfDictionary();
+        for (var i = 0; i < 3; i++)
+        {
+            doc.AddObject(30 + i, 0, new PdfStream(new PdfDictionary(),
+                Ops("1000 0 d0\n/F1 12 Tf\n0 0 750 750 re f\n")));
+            charProcs[N($"g{i}")] = Ref(30 + i);
+        }
+        doc.AddObject(21, 0, charProcs);
+
+        doc.AddObject(22, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger(97), N("g0")),
+        });
+
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"), [N("Subtype")] = N("Type3"),
+            [N("FontBBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0),
+                                           new PdfInteger(750), new PdfInteger(750)),
+            [N("FontMatrix")] = new PdfArray(new PdfReal(0.001), new PdfReal(0), new PdfReal(0),
+                                             new PdfReal(0.001), new PdfReal(0), new PdfReal(0)),
+            [N("CharProcs")] = Ref(21), [N("Encoding")] = Ref(22),
+            [N("FirstChar")] = new PdfInteger(97), [N("LastChar")] = new PdfInteger(97),
+            [N("Widths")] = new PdfArray(new PdfInteger(1000)),
+        };
+        doc.AddObject(10, 0, font);
+
+        var pageResources = new PdfDictionary
+        {
+            [N("Font")] = new PdfDictionary { [N("F1")] = Ref(10) },
+        };
+
+        doc.AddObject(4, 0, new PdfStream(new PdfDictionary(), Ops("BT\n/F1 12 Tf\n(a) Tj\nET\n")));
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2),
+            [N("Contents")] = Ref(4), [N("Resources")] = pageResources,
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void A_type3_font_whose_charproc_self_references_via_Tf_terminates_and_is_flagged_once_per_charproc()
+    {
+        PdfDocument doc = SelfReferencingType3Doc();
+
+        // Run off-thread so a regression (the cycle guard removed or broken) fails fast via the join
+        // timeout rather than hanging the whole test host -- the same shape as
+        // CyclicFormTextExtractionTests.Gwg161_text_extraction_terminates_no_stack_overflow, which
+        // guards the analogous Form /Do cycle.
+        Finding[]? findings = null;
+        Exception? error = null;
+        var t = new Thread(() =>
+        {
+            try { findings = Findings(doc); }
+            catch (Exception e) { error = e; }
+        });
+        t.Start();
+        bool finished = t.Join(TimeSpan.FromSeconds(10));
+
+        Assert.True(finished, "Type3 self-reference via Tf did not terminate (missing cycle guard?)");
+        Assert.Null(error);
+        Assert.NotNull(findings);
+        Assert.Equal(3, findings!.Length);
+        Assert.All(findings, f => Assert.Contains("F1", f.Message));
     }
 }
