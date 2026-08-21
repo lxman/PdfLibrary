@@ -16,17 +16,22 @@ namespace PdfLibrary.Conformance.Rules;
 /// font program* (via <see cref="EmbeddedFontMetrics"/>) for the glyphs actually shown
 /// (<see cref="ConformanceContext.UsedTextGlyphs"/>), matching veraPDF's "used for rendering" scope:
 /// <list type="number">
-///   <item><b>.notdef glyph (6.2.11.8 / 7.21.8):</b> faithful to veraPDF's own predicate — a shown code
-///     whose glyph NAME is literally ".notdef" (encoding lookup only, no program parsing). NOT render-mode
-///     exempt ("regardless of text rendering mode"), so this walks every shown code, including RM3
-///     (invisible) text. Implemented for Type0 composite fonts with an Identity CMap, where the code equals
-///     the CID and the CID→GID map (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) resolves
-///     to glyph/CID 0; and for simple TrueType / simple CFF fonts via the PDF <c>/Encoding</c>'s
-///     <c>GetGlyphName</c>.</item>
+///   <item><b>.notdef glyph (6.2.11.8 / 7.21.8):</b> a shown code that references .notdef — veraPDF's own
+///     predicate (a glyph NAME literally ".notdef"), widened per ISO 32000-1 9.6.6 to also catch a code the
+///     effective encoding defines NO name for at all (see <see cref="IsNotdefReference"/>; the encoding-only
+///     half is still pure lookup, no program parsing, but the no-name half falls back to a program-side
+///     lookup for simple CFF, gated behind a symbolic-font exemption). NOT render-mode exempt ("regardless of
+///     text rendering mode"), so this walks every shown code, including RM3 (invisible) text. Implemented for
+///     Type0 composite fonts with an Identity CMap, where the code equals the CID and the CID→GID map
+///     (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) resolves to glyph/CID 0; and for
+///     simple TrueType / simple CFF fonts via the PDF <c>/Encoding</c>'s <c>GetGlyphName</c>.</item>
 ///   <item><b>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2):</b> a shown code whose (non-".notdef") glyph is
-///     confidently absent from the embedded font program — near-mutually-exclusive with the .notdef check
-///     above (a ".notdef"-named code is skipped here; it is already covered by 6.2.11.8). RM3-exempt per
-///     veraPDF, so this walks only visible codes. Implemented for simple TrueType and simple CFF fonts
+///     confidently absent from the embedded font program — mutually exclusive with the .notdef check
+///     above on two independent grounds, not one: a ".notdef"-named code is skipped here explicitly (it
+///     is already covered by 6.2.11.8), and a code with NO name at all is skipped implicitly, because
+///     <see cref="ResolveSimpleGlyph"/> returns <c>Unknown</c> for a null name on both its TrueType and
+///     CFF arms before any program lookup runs. RM3-exempt per veraPDF, so this walks only visible codes.
+///     Implemented for simple TrueType and simple CFF fonts
 ///     (with an embedded charset) via the tri-state <see cref="ResolveSimpleGlyph"/> resolver, which only
 ///     ever reports a confident absence and returns <c>Unknown</c> (skip, no finding) whenever the
 ///     code→glyph path is not reproducible here — symbolic TrueType (declared, or carrying only a (3,0)
@@ -94,8 +99,8 @@ internal sealed class FontProgramRule : IConformanceRule
                 continue; // not embedded, or the program will not parse — nothing to compare (FP-safe)
 
             foreach (Finding f in font is Type0Font type0
-                         ? CheckType0(context, type0, metrics, usage.Codes, usage.VisibleCodes, notdefReported,
-                             metricsReported)
+                         ? CheckType0(context, type0, metrics, usage.Codes, usage.VisibleCodes,
+                             usage.ShowedIncompleteCode, notdefReported, metricsReported)
                          : CheckSimple(context, font, metrics, usage.Codes, usage.VisibleCodes, metricsReported,
                              notdefReported, presentReported))
             {
@@ -107,8 +112,8 @@ internal sealed class FontProgramRule : IConformanceRule
     // ── Type0 composite fonts (.notdef + metrics) ─────────────────────────────────────────────────────
     private IEnumerable<Finding> CheckType0(
         ConformanceContext context, Type0Font font, EmbeddedFontMetrics metrics,
-        IReadOnlyCollection<int> codes, IReadOnlyCollection<int> visibleCodes, HashSet<string> notdefReported,
-        HashSet<string> metricsReported)
+        IReadOnlyCollection<int> codes, IReadOnlyCollection<int> visibleCodes, bool showedIncompleteCode,
+        HashSet<string> notdefReported, HashSet<string> metricsReported)
     {
         // Only an Identity CMap lets us treat the shown two-byte code as the CID directly; any other CMap
         // (predefined name or embedded stream) needs a CMap parser the engine lacks, so the font is skipped.
@@ -120,7 +125,10 @@ internal sealed class FontProgramRule : IConformanceRule
             yield break; // CIDFontType0 maps CID→GID through the CFF charset — need the CFF program
 
         // .notdef (6.2.11.8) is NOT render-mode-exempt — walks ALL codes.
-        bool notdefHit = false;
+        // An incomplete final code (an odd trailing byte under a two-byte CMap) cannot map to any
+        // glyph, so it is a .notdef reference — the same conclusion veraPDF reaches on
+        // 6-2-11-4-1-t02-fail-e, whose completed CIDs are all present in the program.
+        bool notdefHit = showedIncompleteCode;
         foreach (int code in codes)
         {
             // Strict (issue 42): a CID beyond the /CIDToGIDMap stream's coverage is .notdef per
@@ -186,10 +194,12 @@ internal sealed class FontProgramRule : IConformanceRule
         string kind = isTrueType ? "TrueType" : "CFF";
         bool symbolic = IsSymbolic(context, font);
 
-        // .notdef (6.2.11.8 / 7.21.8): a shown code whose encoding glyph name is literally ".notdef" — the
-        // veraPDF predicate is name == ".notdef". NOT render-mode-exempt (spec: "regardless of text rendering
-        // mode"), so this walks ALL codes. Pure encoding lookup, no program parsing → FP-safe.
-        if (codes.Any(code => font.Encoding?.GetGlyphName(code) == ".notdef") && notdefReported.Add(DedupKey(font)))
+        // .notdef (6.2.11.8 / 7.21.8): a shown code that references .notdef, either because its encoding
+        // glyph name is literally ".notdef", or because the effective encoding has NO entry for the code at
+        // all (ISO 32000-1 9.6.6) — see IsNotdefReference. NOT render-mode-exempt (spec: "regardless of text
+        // rendering mode"), so this walks ALL codes.
+        if (codes.Any(code => IsNotdefReference(font, metrics, code, isTrueType, symbolic))
+            && notdefReported.Add(DedupKey(font)))
             yield return Make(context, font, "8",
                 $"The {kind} font {Name(font)} shows a character code mapped to the .notdef glyph.");
 
@@ -201,6 +211,14 @@ internal sealed class FontProgramRule : IConformanceRule
         {
             if (font.Encoding?.GetGlyphName(code) == ".notdef")
                 continue;
+            // The literal-name skip above only covers a code named ".notdef"; a code with NO name at
+            // all (the other half of IsNotdefReference's predicate, checked separately above at the
+            // .notdef finding) is not skipped here explicitly, but still never fires: ResolveSimpleGlyph
+            // returns Unknown for a null glyphName on BOTH arms (isTrueType's unicode lookup and the
+            // CFF arm's derivedName/glyphName check each short-circuit to Unknown before reaching a
+            // program lookup), so this loop never sets absentHit for it. The two 6.2.11.8/6.2.11.4.1
+            // findings are therefore still mutually exclusive per code even though only one of the two
+            // "no name" cases is skipped explicitly.
             if (ResolveSimpleGlyph(font, metrics, code, isTrueType, symbolic) == SimpleGlyphResolution.NotDef)
             {
                 absentHit = true;
@@ -226,6 +244,55 @@ internal sealed class FontProgramRule : IConformanceRule
                 $"The {kind} font {Name(font)} declares a glyph width that differs "
                 + $"from the embedded font program's advance width by {worstDiff:F0} units "
                 + $"(tolerance {WidthTolerance:F0}).");
+    }
+
+    /// <summary>
+    /// True when a shown simple-font code references .notdef. Two ways that happens: the effective
+    /// encoding names it ".notdef" outright, or the encoding defines NO name for the code at all — ISO
+    /// 32000-1 9.6.6, a code outside the effective encoding renders .notdef. The corpus's two 6.2.11.8
+    /// fail fixtures are the second kind: both show &lt;00&gt; under WinAnsiEncoding, which leaves code 0
+    /// undefined.
+    ///
+    /// <para>The no-name case is gated first on symbolic, because "no name" is also what a symbolic font
+    /// looks like when it is driving its own built-in encoding — a symbolic font is exempt outright.</para>
+    ///
+    /// <para><b>The two program arms are deliberately asymmetric, not a workaround — this is the finding
+    /// from Task 7's Step 1 verification against corpus fixture 6-2-11-8-t01-fail-b.</b>
+    /// A simple CFF program carries a built-in <c>Encoding</c> that genuinely maps a raw character code to
+    /// a glyph, so probing it by raw code (<see cref="EmbeddedFontMetrics.GetGlyphIdByCffEncoding"/>) asks
+    /// a meaningful question — <see cref="ResolveSimpleGlyph"/> already relies on the same lookup as a
+    /// legitimate fallback, so a failed lookup here is a genuine .notdef. A nonsymbolic TrueType font has
+    /// no such thing: per ISO 32000-1 9.6.6.4 the real path is code → glyph NAME → Unicode → cmap, and with
+    /// no name there is no lookup to perform. <see cref="EmbeddedFontMetrics.GetGlyphId"/> does no
+    /// AGL/Unicode translation of its own — it hands the raw value straight to the cmap — and the cmap
+    /// walks every subtable including the low-priority Mac/Symbol/ISO fallback tier, where a subsetting
+    /// artifact can answer a non-.notdef glyph for a raw value that is not a real Unicode code point at
+    /// all. Measured on <c>DYOKPS+ArialMT</c> (fail-b): <c>GetGlyphId(0)</c> returns glyph 1, not 0, even
+    /// though code 0 carries no name and no rendering pipeline would ever look up Unicode U+0000 for it.
+    /// So the TrueType arm has NO program-side condition — nonsymbolic + no name is sufficient on its own —
+    /// and must not be "fixed" back to symmetry with the CFF arm; that raw-code TrueType probe is exactly
+    /// what produced the false negative this check exists to close.</para>
+    /// </summary>
+    private static bool IsNotdefReference(
+        PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType, bool symbolic)
+    {
+        string? glyphName = font.Encoding?.GetGlyphName(code);
+        if (glyphName == ".notdef")
+            return true;
+        if (glyphName is not null)
+            return false;
+
+        if (symbolic || metrics.HasSymbolCmapEncoding())
+            return false; // built-in encoding territory — a null name says nothing
+
+        // TrueType: no name means no code→Unicode lookup is even possible — nonsymbolic + no name is
+        // sufficient on its own (no program-side condition; see the asymmetry note above).
+        if (isTrueType)
+            return true;
+
+        // CFF: the program's own built-in Encoding genuinely maps a raw code to a glyph, so a raw-code
+        // probe is meaningful here — same lookup ResolveSimpleGlyph already relies on as a fallback.
+        return metrics.GetGlyphIdByCffEncoding((ushort)code) == 0;
     }
 
     // ── Type3 fonts — metrics only (glyphs are content streams; width from the d0/d1 operator) ─────────

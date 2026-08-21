@@ -16,10 +16,11 @@ namespace PdfLibrary.Tests.Conformance;
 /// width of 1000 is consistent and anything else is not), never a faked <see cref="Rules"/> metric:
 /// <list type="bullet">
 ///   <item>font metrics (6.2.11.5 / 7.21.5) — declared vs embedded advance width, TrueType + Type0;</item>
-///   <item>.notdef glyph (6.2.11.8 / 7.21.8) — a shown code mapping to glyph 0, for Type0 and (via the
-///     tri-state <c>ResolveSimpleGlyph</c> resolver) simple TrueType / embedded-charset CFF fonts;</item>
+///   <item>.notdef glyph (6.2.11.8 / 7.21.8) — a shown code mapping to glyph 0 for Type0, and for simple
+///     TrueType / embedded-charset CFF fonts a code whose encoding names it ".notdef" outright OR (via
+///     <c>IsNotdefReference</c>) whose encoding defines no name at all for a nonsymbolic font;</item>
 ///   <item>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2) — a shown simple-font code whose glyph is absent from
-///     the embedded program, emitted from the same resolution as .notdef;</item>
+///     the embedded program, via the separate tri-state <c>ResolveSimpleGlyph</c> resolver;</item>
 ///   <item>the resolver's FP-safe skips — a symbolic font (declared <c>/Flags</c> bit 3 or a Windows-Symbol
 ///     cmap) routes to <c>Unknown</c> (no finding) so an AGL-Unicode lookup gap is never a false .notdef.</item>
 /// </list>
@@ -275,6 +276,77 @@ public class PreflightSlice19Tests
         Finding f = Assert.Single(Run(Type0Doc(0x00, 0x00), ConformanceProfile.PdfUA1));
         Assert.Equal("7.21.8", Clause(f));
         Assert.Contains("ISO 14289-1", f.Clause);
+    }
+
+    /// <summary>Same Type0/CIDFontType2/Identity-H font as <see cref="Type0Doc"/>, but the shown
+    /// content-stream string is built directly from <paramref name="show"/> bytes rather than a fixed
+    /// two-byte code — so a helper can drive a byte length that is odd (an incomplete trailing code) or
+    /// an extra-long even length (several complete codes).</summary>
+    private static PdfDocument Type0DocShowingRawBytes(byte[] show)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(4),
+            [N("FontFile2")] = Ref(3),
+        };
+        var cidFont = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("CIDToGIDMap")] = N("Identity"),
+            [N("DW")] = new PdfInteger(ProgramWidth),
+            [N("CIDSystemInfo")] = new PdfDictionary
+            {
+                [N("Registry")] = new PdfString(Encoding.Latin1.GetBytes("Adobe")),
+                [N("Ordering")] = new PdfString(Encoding.Latin1.GetBytes("Identity")),
+                [N("Supplement")] = new PdfInteger(0),
+            },
+            [N("FontDescriptor")] = Ref(2),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+        };
+        return DocWith(font, show, (2, descriptor), (3, FontFile()), (4, cidFont));
+    }
+
+    /// <summary>Mirrors the corpus fixture <c>6-2-11-4-1-t02-fail-e</c>'s exact shape: a complete two-byte
+    /// code for a real glyph (CID 0x0041, 'A' — the same CID <see cref="Type0_consistent_width_passes"/>
+    /// confirms is present) followed by one trailing byte ('#', 0x23) that cannot complete a second
+    /// two-byte code under the Identity-H CMap, matching the fixture's trailing <c>(#)</c> string.</summary>
+    private static PdfDocument Type0DocWithOddLengthString() =>
+        Type0DocShowingRawBytes(Encoding.ASCII.GetBytes("<004123>"));
+
+    /// <summary>Guard for <see cref="Type0_incomplete_final_code_fails_notdef"/>: the same font/CMap
+    /// showing only complete two-byte codes (CID 0x0041 twice, both real glyphs) must stay silent on the
+    /// incomplete-code path — otherwise the detection test could pass for the wrong reason.</summary>
+    private static PdfDocument Type0DocWithEvenLengthString() =>
+        Type0DocShowingRawBytes(Encoding.ASCII.GetBytes("<00410041>"));
+
+    [Fact]
+    public void Type0_incomplete_final_code_fails_notdef()
+    {
+        // A one-byte string under a two-byte Identity-H CMap: the final code cannot be completed,
+        // so it cannot map to any glyph. The corpus fixture 6-2-11-4-1-t02-fail-e ends with (#)
+        // exactly this way; every CID it does complete is legitimately present in the program.
+        Finding f = Assert.Single(
+            Run(Type0DocWithOddLengthString()), x => Clause(x) == "6.2.11.8");
+        Assert.Contains(".notdef", f.Message);
+    }
+
+    [Fact]
+    public void Type0_even_length_string_is_not_flagged_as_incomplete()
+    {
+        // Guard the premise: the same font showing only complete codes must stay silent, or the
+        // test above would pass for the wrong reason.
+        Assert.DoesNotContain(Run(Type0DocWithEvenLengthString()), x => Clause(x) == "6.2.11.8");
     }
 
     // ── simple-font .notdef / glyph-present (slice 1) ─────────────────────────────────────────────────
@@ -629,6 +701,61 @@ public class PreflightSlice19Tests
         // symbolic: the AGL-Unicode → cmap path this rule relies on is not trustworthy for a symbolic font,
         // so ResolveSimpleGlyph must route to Unknown (skip) rather than a confident .notdef.
         Assert.Empty(Run(SymbolicTrueTypeDocShowingAbsentGlyph()));
+    }
+
+    // ── undefined code (no encoding entry at all) is .notdef — ISO 32000-1 9.6.6 ──────────────────────
+
+    /// <summary>A TrueType font whose <c>/Encoding</c> is a plain <c>/WinAnsiEncoding</c> NAME (no
+    /// <c>/Differences</c>), showing code 0 — a code WinAnsi leaves entirely undefined (no glyph name at
+    /// all, not even a real name that happens to be absent from the program). ISO 32000-1 9.6.6: a code
+    /// with no entry in the effective encoding renders .notdef. This is the exact shape of the corpus
+    /// fixtures <c>6-2-11-8-t01-fail-a/-b</c> (Type1C and TrueType respectively), both showing
+    /// <c>&lt;00&gt;</c> under WinAnsiEncoding.</summary>
+    private static PdfDocument TrueTypeDocShowingUndefinedCode(bool symbolic = false)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(symbolic ? 4 : 32),
+            [N("FontFile2")] = Ref(3),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("FirstChar")] = new PdfInteger(0),
+            [N("LastChar")] = new PdfInteger(0),
+            [N("Widths")] = new PdfArray(new PdfInteger(ProgramWidth)),
+            [N("Encoding")] = N("WinAnsiEncoding"),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        byte[] show = Encoding.ASCII.GetBytes("<00>");
+        return DocWith(font, show, (2, descriptor), (3, FontFile()));
+    }
+
+    [Fact]
+    public void Simple_truetype_undefined_code_fails_notdef()
+    {
+        // ISO 32000-1 9.6.6: a code with no entry in the effective encoding renders .notdef.
+        // The corpus fixtures 6-2-11-8-t01-fail-a/-b both show <00> under WinAnsiEncoding, which
+        // leaves code 0 undefined — the encoding yields NO name, so a `name == ".notdef"` test
+        // never fires.
+        Finding f = Assert.Single(
+            Run(TrueTypeDocShowingUndefinedCode()), x => Clause(x) == "6.2.11.8");
+        Assert.Contains(".notdef", f.Message);
+    }
+
+    [Fact]
+    public void Symbolic_font_undefined_code_is_not_flagged()
+    {
+        // A symbolic font drives its own built-in encoding and routinely has null names — exempt. This
+        // is now the ONLY test pinning the symbolic exemption on the TrueType arm: since the raw-code
+        // cmap probe was removed there (see IsNotdefReference), "nonsymbolic + no name" alone is
+        // sufficient to convict, so the symbolic gate is this arm's sole remaining false-positive guard.
+        Assert.DoesNotContain(Run(TrueTypeDocShowingUndefinedCode(symbolic: true)),
+            x => Clause(x) == "6.2.11.8");
     }
 
     // ── FP-safe skips ─────────────────────────────────────────────────────────────────────────────────

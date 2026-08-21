@@ -225,4 +225,129 @@ public class PdfFontEncodingTests
         Assert.NotNull(font);
         Assert.Equal("suchthat", font!.Encoding!.GetGlyphName(39)); // SymbolEncoding 39, not quotes
     }
+
+    // ── Task 6: WinAnsi ASCII names must be document-asserted, not derived ───────────────────
+    // CreateWinAnsiEncoding built codes 32-126 via SetUnicode, which marks every name DERIVED
+    // (a reverse-AGL reconstruction). FontProgramRule.ResolveSimpleGlyph refuses to call a glyph
+    // absent from the embedded font program when its name is derived, so this suppressed two
+    // genuine corpus detections (veraPDF 6-2-11-4-1-t02-fail-a/-b). A name from the Annex D.2
+    // WinAnsiEncoding table the document itself named via /Encoding is asserted BY the document.
+
+    [Fact]
+    public void WinAnsi_ascii_names_are_document_asserted_not_derived()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+
+        // period and numbersign are the two the corpus fixtures turn on.
+        Assert.Equal("period", enc.GetGlyphName(46));
+        Assert.Equal("numbersign", enc.GetGlyphName(35));
+        Assert.False(enc.IsDerivedName(46));
+        Assert.False(enc.IsDerivedName(35));
+        // The switch from SetUnicode to SetCharacterName must not drift the Unicode value itself.
+        Assert.Equal(".", enc.DecodeCharacter(46));
+        Assert.Equal("#", enc.DecodeCharacter(35));
+    }
+
+    [Fact]
+    public void WinAnsi_differs_from_standard_at_exactly_two_ascii_codes()
+    {
+        PdfFontEncoding win = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+        PdfFontEncoding std = PdfFontEncoding.GetStandardEncoding("StandardEncoding");
+
+        Assert.Equal("quotesingle", win.GetGlyphName(39));
+        Assert.Equal("quoteright", std.GetGlyphName(39));
+        Assert.Equal("grave", win.GetGlyphName(96));
+        Assert.Equal("quoteleft", std.GetGlyphName(96));
+
+        // Every other ASCII code agrees — this is what lets WinAnsi reuse the Standard table.
+        for (var code = 32; code <= 126; code++)
+        {
+            if (code is 39 or 96) continue;
+            Assert.Equal(std.GetGlyphName(code), win.GetGlyphName(code));
+        }
+    }
+
+    // ── Task 6 review follow-up: MacRoman reuses WinAnsiEncodingAsciiNames on the untested claim
+    // that MacRoman's ASCII names match WinAnsi's. No corpus fixture exercises MacRoman's ASCII
+    // range, so these tests — not a comment — are what stands behind that commit.
+
+    [Fact]
+    public void MacRoman_ascii_names_are_document_asserted_not_derived()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        Assert.Equal("period", enc.GetGlyphName(46));
+        Assert.Equal("numbersign", enc.GetGlyphName(35));
+        Assert.False(enc.IsDerivedName(46));
+        Assert.False(enc.IsDerivedName(35));
+        Assert.Equal(".", enc.DecodeCharacter(46));
+        Assert.Equal("#", enc.DecodeCharacter(35));
+    }
+
+    [Fact]
+    public void MacRoman_ascii_quote_codes_are_quotesingle_and_grave()
+    {
+        PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        Assert.Equal("quotesingle", mac.GetGlyphName(39));
+        Assert.Equal("grave", mac.GetGlyphName(96));
+    }
+
+    [Fact]
+    public void MacRoman_differs_from_standard_at_exactly_two_ascii_codes()
+    {
+        // Not a MacRoman-vs-WinAnsi comparison: CreateMacRomanEncoding reuses the identical
+        // WinAnsiEncodingAsciiNames backing array, so comparing against WinAnsi here would compare
+        // that accessor to itself and could never fail under the implementation it's meant to
+        // verify. StandardEncodingAsciiNames is the independently hand-written table, and
+        // WinAnsiEncodingAsciiNames (which MacRoman reuses) is a clone of it with two overrides —
+        // so this is what actually exercises that clone-plus-overrides derivation.
+        PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+        PdfFontEncoding std = PdfFontEncoding.GetStandardEncoding("StandardEncoding");
+
+        Assert.Equal("quotesingle", mac.GetGlyphName(39));
+        Assert.Equal("quoteright", std.GetGlyphName(39));
+        Assert.Equal("grave", mac.GetGlyphName(96));
+        Assert.Equal("quoteleft", std.GetGlyphName(96));
+
+        for (var code = 32; code <= 126; code++)
+        {
+            if (code is 39 or 96) continue;
+            Assert.Equal(std.GetGlyphName(code), mac.GetGlyphName(code));
+        }
+    }
+
+    // ── I2 (whole-branch review): MacExpertEncoding was swept into the MacRoman provenance change
+    // by delegation, unnoticed. Its ASCII band ("A", "period", …) is NOT Annex D.4's real expert-set
+    // names — nobody has written that table — so those names must stay DERIVED, unlike MacRoman's
+    // genuinely-asserted ones, or ResolveSimpleGlyph's CFF arm gains a brand-new confident-absence
+    // path on a name nobody actually authorized.
+
+    [Fact]
+    public void MacExpert_ascii_names_stay_derived_not_document_asserted()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("MacExpertEncoding");
+
+        // Same placeholder names MacRoman would produce, but provenance must differ.
+        Assert.Equal("period", enc.GetGlyphName(46));
+        Assert.Equal("numbersign", enc.GetGlyphName(35));
+        Assert.True(enc.IsDerivedName(46));
+        Assert.True(enc.IsDerivedName(35));
+        Assert.Equal(".", enc.DecodeCharacter(46));
+        Assert.Equal("#", enc.DecodeCharacter(35));
+    }
+
+    [Fact]
+    public void MacExpert_and_MacRoman_agree_on_names_but_not_on_provenance()
+    {
+        PdfFontEncoding expert = PdfFontEncoding.GetStandardEncoding("MacExpertEncoding");
+        PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        for (var code = 32; code <= 126; code++)
+        {
+            Assert.Equal(mac.GetGlyphName(code), expert.GetGlyphName(code));
+            Assert.False(mac.IsDerivedName(code));
+            Assert.True(expert.IsDerivedName(code));
+        }
+    }
 }

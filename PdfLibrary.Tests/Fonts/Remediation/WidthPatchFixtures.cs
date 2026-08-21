@@ -20,7 +20,17 @@ internal static class WidthPatchFixtures
     public static FontRemediationPlanner Planner() => new(new StubFontProvider(null));
 
     /// <summary>Same shape as FontProgramZeroAdvanceTests.ZeroAdvanceDoc / ProgramWidthResolverTests.Doc,
-    /// but with a nonzero (mismatched) gid-1 advance: /Widths [507] vs hmtx advance 450.</summary>
+    /// but with a nonzero (mismatched) gid-1 advance: /Widths [507] vs hmtx advance 450.
+    ///
+    /// <para>Carries an explicit <c>/Encoding</c> naming code 10 (added 2026-08-20, this branch):
+    /// without it, code 10 has no glyph name under the default encoding, and ISO 32000-1 9.6.6's
+    /// "undefined code renders .notdef" widening (<see cref="PdfLibrary.Conformance.Rules.FontProgramRule"/>)
+    /// now ALSO fires a genuine 6.2.11.8 finding alongside the intended width mismatch -- this
+    /// fixture's whole point is a font with EXACTLY one problem (the width), so an assigned name
+    /// restores that. Safe: the font's lone (1,0) Mac-Roman cmap subtable has no (3,1)
+    /// Windows-Unicode counterpart, so the width check's raw-code cmap fallback (see
+    /// FontProgramZeroAdvanceTests' header comment) is unchanged by naming the code -- only the
+    /// notdef widening's null-name gate is affected.</para></summary>
     public static PdfDocument MismatchDoc()
     {
         byte[] font = ZeroAdvanceSfntFixture.FontBytes(gid1Advance: 450);
@@ -42,6 +52,10 @@ internal static class WidthPatchFixtures
             [N("FirstChar")] = new PdfInteger(10),
             [N("LastChar")] = new PdfInteger(10),
             [N("Widths")] = new PdfArray(new PdfInteger(507)),
+            [N("Encoding")] = new PdfDictionary
+            {
+                [N("Differences")] = new PdfArray(new PdfInteger(10), N("A")),
+            },
             [N("FontDescriptor")] = Ref(2),
         });
         doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),

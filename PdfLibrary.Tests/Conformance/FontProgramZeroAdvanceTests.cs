@@ -101,10 +101,21 @@ public class FontProgramZeroAdvanceTests
     public void Zero_program_advance_produces_no_width_finding()
     {
         // Before the fix: a 6.2.11.5 finding, |507 - 0| = 507 units. After: the zero advance is
-        // unmeasurable (same treatment as gid 0) and the code is skipped — no finding at all.
+        // unmeasurable (same treatment as gid 0) and the code is skipped -- no WIDTH finding.
+        //
+        // Separately (this branch, 2026-08-20): code 10 carries no /Encoding entry at all, so ISO
+        // 32000-1 9.6.6's "undefined code renders .notdef" widening now ALSO fires a genuine
+        // 6.2.11.8 finding on this exact fixture -- unrelated to the zero-advance skip this test
+        // exists to pin, and expected rather than a regression: this fixture's own point (issue
+        // 26's header comment above) is reproducing "Visual Studio Icon Library - Common
+        // Elements.pdf"'s real undefined code 10, which the local-708 real-document scan
+        // independently confirmed picks up this exact new finding post-branch.
         Finding[] findings = new FontProgramRule()
             .Check(new ConformanceContext(ZeroAdvanceDoc(), ConformanceProfile.PdfA2b))
             .ToArray();
-        Assert.Empty(findings);
+        Assert.DoesNotContain(findings, f => ParitySnapshot.ClauseKey(f.Clause) == "6.2.11.5");
+        Finding f = Assert.Single(findings);
+        Assert.Equal("6.2.11.8", ParitySnapshot.ClauseKey(f.Clause));
+        Assert.Contains(".notdef", f.Message);
     }
 }

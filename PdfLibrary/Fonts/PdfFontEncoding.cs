@@ -321,6 +321,24 @@ internal class PdfFontEncoding
     ];
 
     /// <summary>
+    /// The Annex D.2 WinAnsiEncoding names for codes 32-126. Identical to StandardEncoding except
+    /// 39 = quotesingle (not quoteright) and 96 = grave (not quoteleft), so it is derived from that
+    /// table rather than restated. Assigning these BY NAME matters beyond correctness of the name
+    /// itself: SetUnicode marks a name DERIVED (a reverse-AGL reconstruction), and FontProgramRule
+    /// will not call a glyph absent on a derived name. A name from a base-encoding table the document
+    /// explicitly named is asserted by the document, not reconstructed by us.
+    /// </summary>
+    private static readonly string[] WinAnsiEncodingAsciiNames = BuildWinAnsiAsciiNames();
+
+    private static string[] BuildWinAnsiAsciiNames()
+    {
+        string[] names = (string[])StandardEncodingAsciiNames.Clone();
+        names[39 - 32] = "quotesingle";
+        names[96 - 32] = "grave";
+        return names;
+    }
+
+    /// <summary>
     /// The Annex D.2 StandardEncoding names above 192, as (code, name) pairs — the band is sparse
     /// (192, 201, 204, 209-224, … are unassigned), so unlike the contiguous ASCII table this one
     /// carries its codes. Absent entries keep the Latin-1 extraction fallback, which is exactly the
@@ -393,10 +411,12 @@ internal class PdfFontEncoding
     {
         var encoding = new PdfFontEncoding("WinAnsiEncoding");
 
-        // ASCII printable characters (32-126) map directly
-        for (var i = 32; i <= 126; i++)
+        // Codes 32-126 by Annex D.2 NAME, not by reverse-AGL from the code point — SetCharacterName
+        // also derives the Unicode via the AGL, so the mappings are unchanged, but the names are now
+        // marked document-asserted rather than derived.
+        for (var i = 0; i < WinAnsiEncodingAsciiNames.Length; i++)
         {
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            encoding.SetCharacterName(32 + i, WinAnsiEncodingAsciiNames[i]);
         }
 
         // Windows-1252 specific mappings (128-159)
@@ -442,10 +462,11 @@ internal class PdfFontEncoding
     {
         var encoding = new PdfFontEncoding("MacRomanEncoding");
 
-        // ASCII portion (32-126)
-        for (var i = 32; i <= 126; i++)
+        // ASCII portion (32-126) — by NAME, for the same provenance reason as WinAnsi above.
+        // MacRoman's ASCII names match WinAnsi's (quotesingle at 39, grave at 96).
+        for (var i = 0; i < WinAnsiEncodingAsciiNames.Length; i++)
         {
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            encoding.SetCharacterName(32 + i, WinAnsiEncodingAsciiNames[i]);
         }
 
         // MacRoman-specific mappings (128-255)
@@ -469,8 +490,27 @@ internal class PdfFontEncoding
     // MacExpertEncoding (for expert fonts)
     private static PdfFontEncoding CreateMacExpertEncoding()
     {
-        // MacExpertEncoding is similar to MacRomanEncoding but for expert fonts
-        return CreateMacRomanEncoding();
+        // MacExpertEncoding is similar to MacRomanEncoding but for expert fonts — this is only a
+        // placeholder: codes 32-126 below are WinAnsi's ordinary ASCII names ("A", "period", …), not
+        // the real ISO 32000-1 Annex D.4 expert-set names (fraction, small-caps letters, superiors,
+        // ornaments, …), which nobody has written yet. Delegating this band to CreateMacRomanEncoding
+        // (as this method used to do wholesale) would now be wrong: since B1 rebuilt
+        // CreateMacRomanEncoding to assign that band BY NAME via SetCharacterName, its names come back
+        // marked document-asserted (IsDerivedName == false) — correct for MacRoman, where they really
+        // are Annex D.2's names, but not here, where they are known-wrong stand-ins. An asserted name
+        // lets ResolveSimpleGlyph's CFF arm convict a font of a missing glyph with confidence; handing
+        // it a name nobody actually asserted would be a brand-new false-positive path on the
+        // zero-false-positive invariant, opened by accident rather than decided. So this band is
+        // rebuilt directly via the pre-B1 SetUnicode loop, restoring exactly this method's own
+        // pre-branch behaviour and keeping these names DERIVED until someone writes the real Annex
+        // D.4 table.
+        PdfFontEncoding encoding = CreateMacRomanEncoding();
+        for (var i = 32; i <= 126; i++)
+        {
+            encoding._codeToName.Remove(i); // undo MacRoman's SetCharacterName so SetUnicode re-derives
+            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+        }
+        return encoding;
     }
 
     // SymbolEncoding (Symbol font encoding)

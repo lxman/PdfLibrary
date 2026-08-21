@@ -28,6 +28,8 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
     // .notdef (6.2.11.8, "regardless of text rendering mode") or ToUnicode, which stay on the full set.
     private readonly Dictionary<PdfFont, HashSet<int>> _visibleResult = new(ReferenceEqualityComparer.Instance);
 
+    private readonly HashSet<PdfFont> _incompleteCode = new(ReferenceEqualityComparer.Instance);
+
     public ToUnicodeUsageCollector(PdfResources? resources, PdfDocument? document)
     {
         _resources = resources;
@@ -39,6 +41,10 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
 
     /// <summary>The subset of <see cref="Result"/> shown outside text rendering mode 3 (invisible).</summary>
     public IReadOnlyDictionary<PdfFont, HashSet<int>> VisibleResult => _visibleResult;
+
+    /// <summary>Fonts shown with a trailing byte that could not complete a multi-byte code — an
+    /// unmappable code, which for conformance is a .notdef reference (see FontProgramRule).</summary>
+    public IReadOnlySet<PdfFont> IncompleteCodeFonts => _incompleteCode;
 
     private protected override void OnShowText(PdfString text) => Accumulate(text.Bytes);
 
@@ -89,6 +95,9 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
             else
                 existing.UnionWith(codes);
         }
+
+        foreach (PdfFont font in nested.IncompleteCodeFonts)
+            _incompleteCode.Add(font);
     }
 
     private static bool IsFormXObject(PdfStream stream) =>
@@ -114,14 +123,18 @@ internal sealed class ToUnicodeUsageCollector : PdfContentProcessor
 
         if (font is Type0Font)
         {
-            // Two-byte big-endian codes (Identity-H/V and the common CID case); a trailing odd byte is
-            // not a complete code and is skipped rather than mistaken for a one-byte code.
+            // Two-byte big-endian codes (Identity-H/V and the common CID case).
             for (int i = 0; i + 1 < bytes.Length; i += 2)
             {
                 int code = (bytes[i] << 8) | bytes[i + 1];
                 codes.Add(code);
                 visibleCodes?.Add(code);
             }
+
+            // A trailing odd byte cannot complete a two-byte code. Do NOT invent a padded CID —
+            // record that an unmappable code was shown and let the conformance rule judge it.
+            if ((bytes.Length & 1) == 1)
+                _incompleteCode.Add(font);
         }
         else
         {

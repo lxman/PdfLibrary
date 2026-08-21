@@ -5,14 +5,18 @@ using System.Linq;
 namespace PdfLibrary.Tests.Conformance;
 
 /// <summary>
-/// Sole-cause analysis over the whole-file misses: which clauses actually move a VERDICT, as opposed
-/// to which clauses we most often fail to flag.
+/// Verdict leverage over the whole-file misses: how many verdicts each clause would move.
 ///
-/// The two are very different, and conflating them misdirects planning. A clause veraPDF flags on
-/// many files still moves nothing unless it is the ONLY clause we miss on some file — where a miss
-/// co-occurs with other missed clauses, every one of them must close before that file's verdict
-/// flips. Measured 2026-08-19, PDF/A-2b's three most frequently missed clauses (6.2.11.5, 6.2.11.4.1,
-/// 6.2.11.8 — the font cluster) each moved ZERO verdicts alone and only paid all three together.
+/// A miss is a VERDICT disagreement — veraPDF rejects the file and PdfLibrary conforms, which means
+/// PdfLibrary emitted no error finding at all. Flagging ANY ONE of that file's clauses therefore
+/// flips it. Clause coverage is a different and stricter measure: matching veraPDF on every clause
+/// it flags. Plan verdict work from this analysis and coverage work from the coverage table; do not
+/// read one as the other.
+///
+/// Corrected 2026-08-20. The previous model counted a clause as flipping a miss only when it was the
+/// SOLE missed clause, which reported zero leverage for the whole PDF/A-2b font cluster and read as
+/// "partial closure moves nothing". The corpus disproves it directly: 6-2-11-8-t01-fail-d is flagged
+/// by veraPDF on both 6.2.11.5 and 6.2.11.8, PdfLibrary flags only 6.2.11.8, and the file is not a miss.
 /// </summary>
 internal static class ParityLeverage
 {
@@ -21,8 +25,12 @@ internal static class ParityLeverage
 
     /// <summary>What closing one clause is worth, alone and in its cheapest paying combination.</summary>
     /// <param name="AppearsInMisses">Whole-file misses whose blocking set contains this clause.</param>
-    /// <param name="FlipsAlone">Misses this clause closes by itself — its true verdict leverage.</param>
-    /// <param name="MinimumPayingSet">Smallest blocking set containing it (itself, when it pays alone).</param>
+    /// <param name="FlipsAlone">Misses this clause closes by itself — equal to AppearsInMisses, since any one clause flips a miss.</param>
+    /// <param name="MinimumPayingSet">Always the clause itself. NOT rendered by <see cref="ParityReport"/>,
+    /// which prints only Clause/AppearsInMisses/FlipsAlone (dropped to 3 columns in the same task that
+    /// corrected this semantics) — this field and <see cref="MinimumPayingSetFlips"/> are read only by
+    /// <c>ParityLeverageTests</c>, which pins that both values collapse to the trivial single-clause
+    /// case. Kept rather than deleted so that pin stays meaningful.</param>
     /// <param name="MinimumPayingSetFlips">Misses that set closes once every clause in it is covered.</param>
     internal sealed record ClauseLeverage(
         string Clause,
@@ -48,23 +56,19 @@ internal static class ParityLeverage
             .OrderBy(m => m.FileName, StringComparer.Ordinal)
             .ToList();
 
-        List<IReadOnlyList<string>> blockingSets = misses.Select(m => m.MissedClauses).ToList();
-
         var clauses = new List<ClauseLeverage>();
         foreach (string clause in misses.SelectMany(m => m.MissedClauses).Distinct(StringComparer.Ordinal))
         {
             int appears = misses.Count(m => m.MissedClauses.Contains(clause, StringComparer.Ordinal));
-            int flipsAlone = misses.Count(m =>
-                m.MissedClauses.Count == 1 && StringComparer.Ordinal.Equals(m.MissedClauses[0], clause));
 
-            // The cheapest combination that buys anything: the smallest blocking set the clause sits in.
-            IReadOnlyList<string> minimum = blockingSets
-                .Where(s => s.Contains(clause, StringComparer.Ordinal))
-                .OrderBy(s => s.Count)
-                .ThenBy(s => string.Join(",", s), StringComparer.Ordinal)
-                .First();
-            var covered = minimum.ToHashSet(StringComparer.Ordinal);
-            int minimumFlips = misses.Count(m => m.MissedClauses.All(covered.Contains));
+            // A miss is !VeraCompliant && PdfLibraryConforms — PdfLibrary flagged NOTHING on that
+            // file. Flagging ANY ONE of its clauses makes the file non-conforming, so the verdict
+            // agrees. Every clause in a blocking set therefore flips every miss it appears in, and
+            // the cheapest paying set is always the clause itself. (This is verdict leverage; clause
+            // -level parity is a different, stricter goal measured by the coverage table.)
+            int flipsAlone = appears;
+            IReadOnlyList<string> minimum = [clause];
+            int minimumFlips = appears;
 
             clauses.Add(new ClauseLeverage(clause, appears, flipsAlone, minimum, minimumFlips));
         }

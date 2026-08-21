@@ -131,8 +131,10 @@ detections. The names WinAnsi produces are already correct — only the provenan
 
 #### The dropped trailing byte
 
-`GlyphUsageCollector.cs:239-245` walks Identity-H text two bytes at a time and documents dropping an
-odd trailing byte: *"shouldn't happen in valid PDFs"*. That is exactly backwards for a preflighter —
+`ToUnicodeUsageCollector.cs:115-127` — the collector that actually feeds `ConformanceContext.UsedTextGlyphs`
+(`ConformanceContext.cs:431`), **not** `GlyphUsageCollector`, which has the same shape at `:239-245` but
+feeds the subsetting path — walks Identity-H text two bytes at a time and skips an odd trailing byte as
+"not a complete code". That is exactly backwards for a preflighter —
 a string whose final code is incomplete cannot map to any glyph, which is the defect. We will not
 fabricate a padded CID; we will record that an unmappable code was shown.
 
@@ -165,14 +167,14 @@ The `/Parent`-chain walk reuses the shape already proven at
 inherits only one level and reads an *injected* `_parentNode`, so it is unsuitable here.
 
 **Categories tracked.** `Tf`→`/Font`, `Do`→`/XObject`, `cs`/`CS`→`/ColorSpace`,
-`scn`/`SCN` name operand→`/Pattern`, `sh`→`/Shading`, `gs`→`/ExtGState`, and an inline image's `/CS`
-named colour space.
+`scn`/`SCN` trailing name operand→`/Pattern`, `sh`→`/Shading`, `gs`→`/ExtGState`.
 
-Not resource references, and must not trigger: `rg`/`g`/`k`/`sc` and friends; the device names
-`DeviceGray`/`DeviceRGB`/`DeviceCMYK`/`Pattern` as operands of `cs`/`CS`; inline-image colour-space
-abbreviations `G`/`RGB`/`CMYK`/`I`.
+Not resource references, and must not trigger: `rg`/`g`/`k`/`sc` and friends, and the device names
+`DeviceGray`/`DeviceRGB`/`DeviceCMYK`/`Pattern` as operands of `cs`/`CS`.
 
-`/Properties` (`BDC`/`DP`) is **deferred** — no fixture needs it and it is pure FP surface.
+**Deferred** — `/Properties` (`BDC`/`DP`) and inline-image `/CS` named colour spaces. Neither is needed
+by any fixture, both are pure FP surface, and the inline-image path would mean planning against
+`InlineImageOperator`'s dictionary shape without having verified it.
 
 **Traversal.** Model on `DeviceColourAnalysis`, which already walks page → form → Type3 glyph with
 per-scope resources. Carry a `(direct, inherited)` pair down instead of a single dictionary. Depth cap
@@ -202,15 +204,31 @@ reference when **all** of the following hold.
 1. The effective encoding yields **no glyph name** for the code (`GetGlyphName(code) is null`).
 2. The font is **nonsymbolic** — neither `/Flags` bit 3 nor `HasSymbolCmapEncoding()`. A symbolic font
    legitimately drives its own built-in encoding and routinely has null names; it must be exempt.
-3. The **program itself offers no glyph** for that raw code through its own built-in encoding:
-   `GetGlyphIdByCffEncoding(code) == 0` on the CFF arm, `GetGlyphId((ushort)code) == 0` on the
-   TrueType arm.
+3. **CFF arm only** — the program itself offers no glyph for that raw code through its own built-in
+   encoding: `GetGlyphIdByCffEncoding(code) == 0`.
 
-Condition 3 is the load-bearing safety net and the two arms need *different* calls — the CFF helper is
-meaningless for a TrueType program and would pass trivially, which is the right answer for the wrong
-reason. The implementer must confirm empirically, per arm, that condition 3 evaluates to "no glyph"
-on the fixtures and to "has glyph" on a conformant control before relying on it. Closes
-`8-t01-fail-a` (CFF arm) and `8-t01-fail-b` (TrueType arm).
+**Corrected 2026-08-20, on measurement.** This condition originally applied to both arms, using
+`GetGlyphId((ushort)code) == 0` for TrueType. Task 7's mandatory verification step proved that wrong
+before any code was written: on `8-t01-fail-b` (`DYOKPS+ArialMT`) `GetGlyphId(0)` returns **1**.
+`EmbeddedFontMetrics.GetGlyphId` performs no AGL translation — it passes the raw value to
+`CmapTable.GetGlyphId`, which walks every subtable in platform-preference order and returns the first
+non-zero hit, including from the last-resort Mac/Symbol/ISO tier. A subsetting artifact in one of
+those fallback tables answers glyph 1 for raw value 0.
+
+The asymmetry between the arms is real and principled, not a workaround. A CFF program carries a
+built-in **encoding** that genuinely maps raw codes to glyphs, so probing it by raw code asks a
+meaningful question. A nonsymbolic TrueType font has no such thing: ISO 32000-1 §9.6.6.4 routes code →
+glyph **name** → Unicode → cmap, so with no name there is no lookup to perform and a raw-code cmap
+probe is a rendering heuristic answering a different question. `ResolveSimpleGlyph`'s existing TrueType
+branch already works this way — it converts the name to a Unicode value before consulting the cmap and
+never probes by raw code.
+
+So for a **nonsymbolic TrueType** font, conditions 1 and 2 alone are sufficient: an unnamed code has no
+standard mapping and is `.notdef`. Closes `8-t01-fail-a` (CFF arm) and `8-t01-fail-b` (TrueType arm).
+
+Because this removes the program-side net on the TrueType arm, the corpus-wide zero-false-positive
+assertion over all 1316 files is the sole empirical guard. If it trips, back the TrueType arm out
+rather than widening it.
 
 **B3 — incomplete final composite code.** When an Identity-H/V string has an odd byte count, record
 that the font showed an unmappable code and treat it as a `.notdef` reference (6.2.11.8). No CID is

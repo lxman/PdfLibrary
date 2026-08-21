@@ -89,13 +89,15 @@ internal static class ParityReport
             sb.AppendLine();
         }
 
-        // ---- verdict leverage (the sole-cause ranking) ----------------------------------------------
+        // ---- verdict leverage (misses each clause would flip) ---------------------------------------
         sb.AppendLine("## Verdict leverage — what actually moves a whole-file verdict");
         sb.AppendLine();
-        sb.AppendLine("**Plan from this section, not from the clause-coverage ranking below.** A clause only moves "
-            + "a whole-file verdict when it is the ONLY clause PdfLibrary misses on some file. Where a miss is "
-            + "blocked by several clauses at once, every one of them must close before that file flips — so a "
-            + "frequently-missed clause can be worth zero on its own no matter how high it ranks by file count.");
+        sb.AppendLine(
+            "**Plan verdict work from this section and coverage work from the table below.** A miss is a "
+            + "VERDICT disagreement: veraPDF rejects the file and PdfLibrary conforms, having flagged "
+            + "nothing. Closing ANY ONE of a miss's clauses flips it, so a clause's leverage is simply the "
+            + "number of misses it appears in. Matching veraPDF on every clause it flags is a separate, "
+            + "stricter goal — that is what the clause-coverage table measures.");
         sb.AppendLine();
         foreach (ParityComparison.ProfileComparison pc in all)
             sb.Append(RenderLeverage(ProfileLabel(pc.Profile), ParityLeverage.Analyse(pc.Files)));
@@ -120,10 +122,9 @@ internal static class ParityReport
     }
 
     /// <summary>
-    /// Renders one profile's verdict-leverage ranking: per clause, how many whole-file misses it blocks,
-    /// how many it closes ON ITS OWN, and — when that is none — the cheapest combination that buys
-    /// anything. Ordered by what a clause actually flips, so a frequently-missed clause with no verdict
-    /// leverage cannot present itself as the highest-value work.
+    /// Renders one profile's verdict-leverage ranking: per clause, how many whole-file misses it blocks
+    /// and how many it flips. Since a miss means PdfLibrary flagged nothing on that file, closing any one
+    /// clause flips it — so the two numbers are always equal, and ranking is simply by misses blocked.
     /// </summary>
     public static string RenderLeverage(string profileLabel, ParityLeverage.Analysis analysis)
     {
@@ -140,14 +141,10 @@ internal static class ParityReport
             return sb.ToString();
         }
 
-        sb.AppendLine("| Clause | Misses it blocks | Flips alone | Cheapest set that pays | That set flips |");
-        sb.AppendLine("|---|--:|--:|---|--:|");
+        sb.AppendLine("| Clause | Misses it blocks | Flips alone |");
+        sb.AppendLine("|---|--:|--:|");
         foreach (ParityLeverage.ClauseLeverage c in analysis.Clauses)
-        {
-            string set = c.MinimumPayingSet.Count == 1 ? "— (alone)" : string.Join(" + ", c.MinimumPayingSet);
-            string flips = c.FlipsAlone == 0 ? "**0**" : c.FlipsAlone.ToString();
-            sb.AppendLine($"| {c.Clause} | {c.AppearsInMisses} | {flips} | {set} | {c.MinimumPayingSetFlips} |");
-        }
+            sb.AppendLine($"| {c.Clause} | {c.AppearsInMisses} | {c.FlipsAlone} |");
         sb.AppendLine();
 
         sb.AppendLine("Each miss and the clauses standing between it and agreement:");

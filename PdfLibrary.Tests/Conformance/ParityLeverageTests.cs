@@ -5,13 +5,14 @@ using PdfLibrary.Conformance;
 namespace PdfLibrary.Tests.Conformance;
 
 /// <summary>
-/// Unit tests for the sole-cause analysis behind the report's verdict-leverage ranking. They use
+/// Unit tests for the verdict-leverage analysis behind the report's leverage ranking. They use
 /// synthetic <see cref="ParityComparison.FileComparison"/> values, so unlike the rest of the parity
 /// harness they need no corpus and run everywhere.
 ///
-/// The behaviour under test is the distinction that the older "biggest parity gaps" ranking blurred:
-/// a clause that veraPDF flags on many files still moves NO whole-file verdict unless it is the only
-/// clause we miss on some file.
+/// The behaviour under test: a miss means PdfLibrary flagged NOTHING on that file, so flagging ANY ONE
+/// of its clauses flips the verdict — co-occurrence with other missed clauses does not blunt a clause's
+/// leverage. This is a stricter goal than clause coverage (matching veraPDF on every clause it flags),
+/// which the report's separate coverage table measures.
 /// </summary>
 public class ParityLeverageTests
 {
@@ -24,21 +25,42 @@ public class ParityLeverageTests
         a.Clauses.Single(c => c.Clause == clause);
 
     [Fact]
-    public void A_clause_that_always_co_occurs_flips_no_verdict_alone()
+    public void Any_single_missed_clause_flips_a_miss()
     {
+        // A miss means PdfLibrary flagged NOTHING, so flagging any ONE of the file's clauses
+        // makes it non-conforming and the verdict agrees. Co-occurrence does not require
+        // closing every clause.
+        ParityLeverage.Analysis analysis = ParityLeverage.Analyse(
+        [
+            Miss("two-clause-miss.pdf", "6.2.11.5", "6.2.11.8"),
+        ]);
+
+        ParityLeverage.ClauseLeverage five = For(analysis, "6.2.11.5");
+        Assert.Equal(1, five.AppearsInMisses);
+        Assert.Equal(1, five.FlipsAlone);
+        Assert.Equal(["6.2.11.5"], five.MinimumPayingSet);
+        Assert.Equal(1, five.MinimumPayingSetFlips);
+    }
+
+    [Fact]
+    public void A_clause_that_always_co_occurs_still_flips_every_verdict_alone()
+    {
+        // Corrected 2026-08-20: co-occurrence used to zero out a clause's leverage. It doesn't --
+        // flagging either clause alone already flips both misses, since a miss means PdfLibrary
+        // flagged nothing at all.
         ParityLeverage.Analysis analysis = ParityLeverage.Analyse(
         [
             Miss("a.pdf", "6.2.11.4.1", "6.2.11.5"),
             Miss("b.pdf", "6.2.11.4.1", "6.2.11.5"),
         ]);
 
-        Assert.Equal(0, For(analysis, "6.2.11.5").FlipsAlone);
-        Assert.Equal(0, For(analysis, "6.2.11.4.1").FlipsAlone);
+        Assert.Equal(2, For(analysis, "6.2.11.5").FlipsAlone);
+        Assert.Equal(2, For(analysis, "6.2.11.4.1").FlipsAlone);
         Assert.Equal(2, For(analysis, "6.2.11.5").AppearsInMisses);
     }
 
     [Fact]
-    public void A_clause_that_is_the_only_miss_on_a_file_flips_that_file()
+    public void A_missed_clause_flips_every_file_it_appears_in()
     {
         ParityLeverage.Analysis analysis = ParityLeverage.Analyse(
         [
@@ -48,13 +70,16 @@ public class ParityLeverageTests
         ]);
 
         Assert.Equal(3, For(analysis, "6.1.13").AppearsInMisses);
-        Assert.Equal(2, For(analysis, "6.1.13").FlipsAlone);
-        Assert.Equal(0, For(analysis, "6.2.11.8").FlipsAlone);
+        Assert.Equal(3, For(analysis, "6.1.13").FlipsAlone);
+        Assert.Equal(1, For(analysis, "6.2.11.8").FlipsAlone);
     }
 
     [Fact]
-    public void A_co_occurring_clause_reports_the_smallest_set_that_pays_and_what_it_pays()
+    public void A_co_occurring_clause_reports_itself_as_the_paying_set()
     {
+        // Corrected 2026-08-20: the "cheapest paying set" used to grow with the other clauses a miss
+        // was blocked by. It doesn't -- it is always the clause itself, however many other clauses
+        // co-occur, because flagging just this one already flips the file.
         ParityLeverage.Analysis analysis = ParityLeverage.Analyse(
         [
             Miss("a.pdf", "6.2.11.4.1", "6.2.11.5"),
@@ -62,20 +87,20 @@ public class ParityLeverageTests
         ]);
 
         ParityLeverage.ClauseLeverage five = For(analysis, "6.2.11.5");
-        Assert.Equal(["6.2.11.4.1", "6.2.11.5"], five.MinimumPayingSet);
-        Assert.Equal(1, five.MinimumPayingSetFlips);
+        Assert.Equal(["6.2.11.5"], five.MinimumPayingSet);
+        Assert.Equal(2, five.MinimumPayingSetFlips);
 
-        // The three-clause set subsumes the two-clause one, so closing it pays for both files.
         ParityLeverage.ClauseLeverage eight = For(analysis, "6.2.11.8");
-        Assert.Equal(["6.2.11.4.1", "6.2.11.5", "6.2.11.8"], eight.MinimumPayingSet);
-        Assert.Equal(2, eight.MinimumPayingSetFlips);
+        Assert.Equal(["6.2.11.8"], eight.MinimumPayingSet);
+        Assert.Equal(1, eight.MinimumPayingSetFlips);
     }
 
     [Fact]
-    public void The_ranking_puts_a_clause_that_flips_a_verdict_above_a_more_frequent_one_that_flips_none()
+    public void The_ranking_puts_the_more_frequent_clause_first_now_that_every_clause_flips_alone()
     {
-        // 6.2.11.5 blocks three files but never alone; 6.6.4 blocks one and closes it. The old
-        // frequency-ranked "highest-leverage work" list inverted exactly this pair.
+        // Corrected 2026-08-20: since every clause flips every miss it appears in, there is no more
+        // "flips none" class to elevate above a frequent one. Ranking collapses to misses blocked --
+        // 6.2.11.5 (three files) correctly outranks 6.6.4 (one file).
         ParityLeverage.Analysis analysis = ParityLeverage.Analyse(
         [
             Miss("a.pdf", "6.2.11.4.1", "6.2.11.5"),
@@ -87,13 +112,14 @@ public class ParityLeverageTests
         string markdown = ParityReport.RenderLeverage("PDF/A-2b", analysis);
 
         Assert.True(
-            markdown.IndexOf("6.6.4", StringComparison.Ordinal)
-            < markdown.IndexOf("6.2.11.5", StringComparison.Ordinal),
-            "a clause that flips a verdict must rank above a more frequent one that flips none:\n" + markdown);
+            markdown.IndexOf("6.2.11.5", StringComparison.Ordinal)
+            < markdown.IndexOf("6.6.4", StringComparison.Ordinal),
+            "a clause blocking more misses must rank above one blocking fewer, now that every clause "
+            + "flips alone:\n" + markdown);
     }
 
     [Fact]
-    public void The_ranking_names_the_combination_a_zero_leverage_clause_needs_before_it_pays()
+    public void The_per_file_breakdown_names_every_blocking_clause()
     {
         ParityLeverage.Analysis analysis = ParityLeverage.Analyse(
         [
@@ -103,7 +129,8 @@ public class ParityLeverageTests
 
         string markdown = ParityReport.RenderLeverage("PDF/A-2b", analysis);
 
-        // Without the partner clause named, a reader cannot tell what closing 6.2.11.5 would buy.
+        // The per-file breakdown table (not the per-clause leverage table) still lists every clause
+        // blocking a given miss, so a reader can see the full blocking set for that file.
         Assert.Contains("6.2.11.4.1 + 6.2.11.5", markdown);
     }
 
