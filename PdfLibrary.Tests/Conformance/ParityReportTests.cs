@@ -27,7 +27,11 @@ public class ParityReportTests(ITestOutputHelper output)
         new Dictionary<ConformanceProfile, int>
         {
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
-            [ConformanceProfile.PdfA2b] = 972,
+            // +6 (972->978), 2026-08-20: catching up a ratchet the two prior landings left behind --
+            // byte fidelity (6.1.6 t1/t2 + 6.1.13 t1, +4) and CMap max-CID (6.1.13 t10, +2) both raised
+            // measured agreement without raising this floor, leaving those gains unprotected. No new
+            // detection here; this only locks in what already shipped.
+            [ConformanceProfile.PdfA2b] = 978,
             // +1 (971->972), 2026-08-20: 6.6.4 t4/t5 to FULL parity ("veraPDF test suite 6-6-4-t01-fail-b.pdf",
             // blocked by this clause alone) -- takes A-2b agreement past 99%. The pdfaid properties must carry
             // the namespace PREFIX "pdfaid" literally, not merely the right namespace URI: the fixture binds
