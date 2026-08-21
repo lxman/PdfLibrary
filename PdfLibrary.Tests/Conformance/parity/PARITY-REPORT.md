@@ -113,16 +113,16 @@ Of the files where veraPDF flags a clause, how many does PdfLibrary also flag on
 
 ## Verdict leverage — what actually moves a whole-file verdict
 
-**Plan from this section, not from the clause-coverage ranking below.** A clause only moves a whole-file verdict when it is the ONLY clause PdfLibrary misses on some file. Where a miss is blocked by several clauses at once, every one of them must close before that file flips — so a frequently-missed clause can be worth zero on its own no matter how high it ranks by file count.
+**Plan verdict work from this section and coverage work from the table below.** A miss is a VERDICT disagreement: veraPDF rejects the file and PdfLibrary conforms, having flagged nothing. Closing ANY ONE of a miss's clauses flips it, so a clause's leverage is simply the number of misses it appears in. Matching veraPDF on every clause it flags is a separate, stricter goal — that is what the clause-coverage table measures.
 
 ### PDF/A-2b — 8 whole-file misses
 
-| Clause | Misses it blocks | Flips alone | Cheapest set that pays | That set flips |
-|---|--:|--:|---|--:|
-| 6.2.2 | 3 | 3 | — (alone) | 3 |
-| 6.2.11.5 | 5 | **0** | 6.2.11.4.1 + 6.2.11.5 | 2 |
-| 6.2.11.4.1 | 3 | **0** | 6.2.11.4.1 + 6.2.11.5 | 2 |
-| 6.2.11.8 | 3 | **0** | 6.2.11.5 + 6.2.11.8 | 2 |
+| Clause | Misses it blocks | Flips alone |
+|---|--:|--:|
+| 6.2.11.5 | 5 | 5 |
+| 6.2.11.4.1 | 3 | 3 |
+| 6.2.11.8 | 3 | 3 |
+| 6.2.2 | 3 | 3 |
 
 Each miss and the clauses standing between it and agreement:
 
