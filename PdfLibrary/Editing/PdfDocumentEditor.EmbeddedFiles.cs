@@ -40,6 +40,15 @@ public sealed class PdfEmbeddedFileSpec
     public bool AssociateWithDocument { get; init; }
 }
 
+/// <summary>One filespec <see cref="PdfDocumentEditor.RepairFileSpecNames"/> touched.</summary>
+public sealed record FileSpecNameRepair(string Name, bool WroteF, bool WroteUf);
+
+/// <summary>What <see cref="PdfDocumentEditor.RepairFileSpecNames"/> did. <paramref name="Declined"/>
+/// names each filespec that could not be repaired because it carries no usable source key.</summary>
+public sealed record FileSpecNameRepairReport(
+    IReadOnlyList<FileSpecNameRepair> Repaired,
+    IReadOnlyList<string> Declined);
+
 public sealed partial class PdfDocumentEditor
 {
     /// <summary>
@@ -167,4 +176,96 @@ public sealed partial class PdfDocumentEditor
 
     private PdfObject? ResolveObject(PdfObject? obj) =>
         obj is PdfIndirectReference reference ? _document.ResolveReference(reference) : obj;
+
+    /// <summary>Fills in whichever of /F, /UF is missing on an embedded-file specification, copying the
+    /// one that is present (ISO 19005-2 6.8 / ISO 14289-1 7.11). Walks the same filespec set
+    /// EmbeddedFileSpecRule walks under the same switch: false = catalog /Names /EmbeddedFiles only
+    /// (PDF/A), true = also page /Annots[].FS (PDF/UA-1). Writes nothing for a filespec with both keys,
+    /// with no /EF, or with no non-empty source key to copy.</summary>
+    public FileSpecNameRepairReport RepairFileSpecNames(bool includeAnnotationSpecs)
+    {
+        var repaired = new List<FileSpecNameRepair>();
+        var declined = new List<string>();
+        // Shared across both arms so a filespec reachable from BOTH the name tree and an annotation
+        // (legal, if unusual) is repaired once, mirroring EmbeddedFileSpecRule.CollectFileSpecs's own
+        // single `seen` set (:113, shared across its two loops too).
+        var seen = new HashSet<int>();
+
+        PdfDictionary? catalog = _document.CatalogDictionary;
+        PdfDictionary? names = catalog is null ? null : ResolveObject(catalog.Get("Names")) as PdfDictionary;
+        foreach ((string? key, PdfObject value) in EnumerateEmbeddedFilesTree(names?.Get("EmbeddedFiles")))
+        {
+            if (ResolveObject(value) is not PdfDictionary spec) continue;
+            if (spec.IsIndirect && !seen.Add(spec.ObjectNumber)) continue;
+            RepairFileSpecName(spec, key, repaired, declined);
+        }
+
+        if (includeAnnotationSpecs)
+        {
+            foreach (PdfDictionary page in PageTreeOps.PageDicts(_document))
+            {
+                if (ResolveObject(page.Get("Annots")) is not PdfArray annots) continue;
+                foreach (PdfObject entry in annots)
+                {
+                    if (ResolveObject(entry) is not PdfDictionary annot) continue;
+                    if (ResolveObject(annot.Get("FS")) is not PdfDictionary spec) continue;
+                    if (spec.IsIndirect && !seen.Add(spec.ObjectNumber)) continue;
+                    RepairFileSpecName(spec, nameTreeKey: null, repaired, declined);
+                }
+            }
+        }
+
+        return new FileSpecNameRepairReport(repaired, declined);
+    }
+
+    /// <summary>One filespec's worth of <see cref="RepairFileSpecNames"/> — shared by the catalog and
+    /// annotation arms so they can never disagree on the predicate. Mirrors
+    /// <c>EmbeddedFileSpecRule.Check</c>'s own reading exactly (:41-57): a filespec with no /EF is not an
+    /// embedded-file spec at all (skipped, not declined); one that already carries both /F and /UF needs
+    /// no repair (skipped, not declined — satisfies the PDF/A presence-only test already); a source key is
+    /// usable only when it is present AND its text is non-empty, because copying an empty value would
+    /// still fail the PDF/UA-1 non-empty test (:138-139) even though the PDF/A presence test would call it
+    /// fixed.</summary>
+    private void RepairFileSpecName(
+        PdfDictionary spec, string? nameTreeKey, List<FileSpecNameRepair> repaired, List<string> declined)
+    {
+        var fKey = new PdfName("F");
+        var ufKey = new PdfName("UF");
+
+        if (ResolveObject(spec.Get("EF")) is not PdfDictionary) return; // not an embedded-file spec
+
+        bool fPresent = spec.ContainsKey(fKey);
+        bool ufPresent = spec.ContainsKey(ufKey);
+        if (fPresent && ufPresent) return; // nothing missing
+
+        if (!fPresent && !ufPresent)
+        {
+            declined.Add(IdentifyFileSpec(spec, nameTreeKey));
+            return;
+        }
+
+        PdfName sourceKey = fPresent ? fKey : ufKey;
+        PdfName targetKey = fPresent ? ufKey : fKey;
+
+        if (ResolveObject(spec.Get(sourceKey)) is not PdfString source || source.Value.Length == 0)
+        {
+            declined.Add(IdentifyFileSpec(spec, nameTreeKey));
+            return;
+        }
+
+        string text = source.GetText();
+        spec.Set(targetKey, PdfString.FromText(text));
+        repaired.Add(new FileSpecNameRepair(text, WroteF: !fPresent, WroteUf: !ufPresent));
+    }
+
+    /// <summary>A stable identifier for a filespec <see cref="RepairFileSpecName"/> could not repair —
+    /// consumed verbatim in user-facing warnings by the remediation layer above this method. Prefers the
+    /// name-tree key (catalog arm only — an annotation-reached filespec has none), falls back to /Desc,
+    /// then "(unnamed)".</summary>
+    private string IdentifyFileSpec(PdfDictionary spec, string? nameTreeKey)
+    {
+        if (!string.IsNullOrEmpty(nameTreeKey)) return nameTreeKey;
+        if (ResolveObject(spec.Get("Desc")) is PdfString desc && desc.Value.Length > 0) return desc.GetText();
+        return "(unnamed)";
+    }
 }

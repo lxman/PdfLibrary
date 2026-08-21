@@ -487,4 +487,68 @@ public class ResaveVerificationTests
         Assert.DoesNotContain(after.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.6");
         AssertNoNewRuleIds(before, after);
     }
+
+    // ── embedded-file 6.8 — /F present, /UF absent (Task 3: RepairFileSpecNames) ────────────────────
+
+    /// <summary>A catalog-registered filespec (object 40) with /EF and /F but no /UF — a genuine 6.8-t2
+    /// violation ("must contain both /F and /UF keys") — reachable via the catalog's
+    /// /Names /EmbeddedFiles name tree. Mirrors Task 1's measured corpus shape: 55/55 affected documents
+    /// carry /F non-empty and /UF absent.</summary>
+    private static PdfDocument FileSpecMissingUfDocument()
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(41, 0, new PdfStream(
+            new PdfDictionary { [N("Type")] = N("EmbeddedFile") }, Encoding.ASCII.GetBytes("data")));
+        doc.AddObject(40, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Filespec"),
+            [N("F")] = PdfString.FromText("report.txt"),
+            [N("EF")] = new PdfDictionary { [N("F")] = new PdfIndirectReference(41, 0) },
+            // deliberately no /UF — the violation under test
+        });
+
+        var namesArray = new PdfArray(PdfString.FromText("report.txt"), new PdfIndirectReference(40, 0));
+        var embeddedFilesLeaf = new PdfDictionary { [N("Names")] = namesArray };
+
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(),
+            [N("Count")] = new PdfInteger(0),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"),
+            [N("Pages")] = new PdfIndirectReference(2, 0),
+            [N("Names")] = new PdfDictionary { [N("EmbeddedFiles")] = embeddedFilesLeaf },
+        });
+        doc.Trailer.Dictionary[N("Root")] = new PdfIndirectReference(1, 0);
+        return doc;
+    }
+
+    /// <summary>
+    /// The 6.8 finding on a genuinely non-conformant filespec (/F present, /UF absent) is cleared once
+    /// <see cref="PdfDocumentEditor.RepairFileSpecNames"/> fills /UF from /F before saving. Includes the
+    /// same discrimination check as the font-dictionary facts above.
+    /// </summary>
+    [Fact]
+    public void EmbeddedFile_finding_is_cleared_by_RepairFileSpecNames_before_save()
+    {
+        byte[] original = SavedBytes(FileSpecMissingUfDocument());
+
+        PreflightResult before = CheckBytes(original);
+        PreflightResult beforeAgain = CheckBytes(original); // discrimination: same bytes, no save in between
+        Assert.Contains(before.Findings, f => f.RuleId == "embedded-file" && ClauseKey(f) == "6.8");
+        Assert.Contains(beforeAgain.Findings, f => f.RuleId == "embedded-file" && ClauseKey(f) == "6.8");
+
+        byte[] saved = LoadEditSave(original, editor =>
+        {
+            FileSpecNameRepairReport report = editor.RepairFileSpecNames(includeAnnotationSpecs: false);
+            Assert.Single(report.Repaired);
+        });
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "embedded-file" && ClauseKey(f) == "6.8");
+        AssertNoNewRuleIds(before, after);
+    }
 }
