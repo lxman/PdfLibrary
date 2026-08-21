@@ -462,10 +462,11 @@ internal class PdfFontEncoding
     {
         var encoding = new PdfFontEncoding("MacRomanEncoding");
 
-        // ASCII portion (32-126)
-        for (var i = 32; i <= 126; i++)
+        // ASCII portion (32-126) — by NAME, for the same provenance reason as WinAnsi above.
+        // MacRoman's ASCII names match WinAnsi's (quotesingle at 39, grave at 96).
+        for (var i = 0; i < WinAnsiEncodingAsciiNames.Length; i++)
         {
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            encoding.SetCharacterName(32 + i, WinAnsiEncodingAsciiNames[i]);
         }
 
         // MacRoman-specific mappings (128-255)
