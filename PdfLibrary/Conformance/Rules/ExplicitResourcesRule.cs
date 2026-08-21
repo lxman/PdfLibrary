@@ -43,6 +43,12 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
     public IEnumerable<Finding> Check(ConformanceContext context)
     {
         var pageIndex = 0;
+        // Shared across the WHOLE run (not per page): a Form invoked twice from one page, from two
+        // different pages, or a Type3 font re-selected by a second Tf anywhere, is the same offending
+        // owner object every time — one finding per owner, not one per invocation. Unlike
+        // activeObjects (cycle guard, added-then-removed per Do/Tf path), entries here are never
+        // removed.
+        var reportedOwners = new HashSet<int>();
         foreach (PdfPage page in context.Pages)
         {
             PdfResources? direct = ResourcesOf(context, page.Dictionary);
@@ -53,7 +59,8 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             catch { pageIndex++; continue; }
 
             foreach (Finding finding in WalkStream(
-                         context, ops, direct, inherited, pageIndex, page.Dictionary, 0, new HashSet<int>()))
+                         context, ops, direct, inherited, pageIndex, page.Dictionary, 0,
+                         new HashSet<int>(), reportedOwners))
             {
                 yield return finding;
             }
@@ -96,11 +103,16 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
     /// <paramref name="activeObjects"/> set shared by both, since PDF object numbers are unique across
     /// all indirect objects in a document, a Form stream and a Type3 font dictionary can never collide —
     /// and depth-capped, mirroring ContentWalk.
+    /// <paramref name="reportedOwners"/> is the separate, never-shrinking dedup set: unlike
+    /// <paramref name="activeObjects"/> it survives past the end of one Do/Tf path, so a form invoked
+    /// twice (sibling invocations, not a cycle) or a Type3 font re-selected later still yields at most
+    /// one finding for that owner.
     /// </summary>
     private List<Finding> WalkStream(
         ConformanceContext context, IReadOnlyList<PdfOperator> ops,
         PdfResources? direct, PdfResources? inherited,
-        int pageIndex, PdfDictionary? owner, int depth, HashSet<int> activeObjects)
+        int pageIndex, PdfDictionary? owner, int depth, HashSet<int> activeObjects,
+        HashSet<int> reportedOwners)
     {
         var findings = new List<Finding>();
         if (depth > MaxDepth)
@@ -108,7 +120,12 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
 
         List<string> offenders = Offenders(context, ops, direct, inherited);
         if (offenders.Count > 0)
-            findings.Add(Make(context, pageIndex, owner, offenders));
+        {
+            int? ownerObjectNumber = OwnerObjectNumber(context, owner);
+            // No identity to dedup on (a direct, non-indirect owner) — report every time, as before.
+            if (ownerObjectNumber is null || reportedOwners.Add(ownerObjectNumber.Value))
+                findings.Add(Make(context, pageIndex, owner, offenders));
+        }
 
         PdfResources? effective = direct ?? inherited;
 
@@ -137,7 +154,7 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
                 {
                     findings.AddRange(WalkStream(
                         context, formOps, ResourcesOf(context, form.Dictionary), effective,
-                        pageIndex, form.Dictionary, depth + 1, activeObjects));
+                        pageIndex, form.Dictionary, depth + 1, activeObjects, reportedOwners));
                 }
             }
 
@@ -150,7 +167,7 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             if (op.Name == "Tf" && NameOperand(op, 0) is { } fontName)
             {
                 foreach (Finding finding in WalkType3(
-                             context, effective, fontName, pageIndex, depth, activeObjects))
+                             context, effective, fontName, pageIndex, depth, activeObjects, reportedOwners))
                 {
                     findings.Add(finding);
                 }
@@ -172,7 +189,7 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
     /// </summary>
     private List<Finding> WalkType3(
         ConformanceContext context, PdfResources? effective, string fontName,
-        int pageIndex, int depth, HashSet<int> activeObjects)
+        int pageIndex, int depth, HashSet<int> activeObjects, HashSet<int> reportedOwners)
     {
         var findings = new List<Finding>();
 
@@ -207,7 +224,7 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             catch { continue; }
 
             findings.AddRange(WalkStream(
-                context, ops, direct, effective, pageIndex, font, depth + 1, activeObjects));
+                context, ops, direct, effective, pageIndex, font, depth + 1, activeObjects, reportedOwners));
         }
 
         if (font.IsIndirect)

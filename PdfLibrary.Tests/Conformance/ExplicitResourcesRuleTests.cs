@@ -286,7 +286,7 @@ public class ExplicitResourcesRuleTests
     }
 
     [Fact]
-    public void A_type3_font_whose_charproc_self_references_via_Tf_terminates_and_is_flagged_once_per_charproc()
+    public void A_type3_font_whose_charproc_self_references_via_Tf_terminates_and_is_flagged_once_total()
     {
         PdfDocument doc = SelfReferencingType3Doc();
 
@@ -307,7 +307,57 @@ public class ExplicitResourcesRuleTests
         Assert.True(finished, "Type3 self-reference via Tf did not terminate (missing cycle guard?)");
         Assert.Null(error);
         Assert.NotNull(findings);
-        Assert.Equal(3, findings!.Length);
-        Assert.All(findings, f => Assert.Contains("F1", f.Message));
+        // All 3 charprocs are walked and would each independently produce the SAME finding (same
+        // owner -- the Type3 FONT dictionary, object 10) were it not for the I4 per-owner dedup: one
+        // owner yields at most one finding per run, so this asserts 1, not 3.
+        Finding f = Assert.Single(findings!);
+        Assert.Contains("F1", f.Message);
+    }
+
+    /// <summary>A page invoking the SAME form twice (two separate <c>Do</c> operators, not a cycle —
+    /// each invocation completes before the next starts). Without the I4 per-owner dedup this produced
+    /// two identical findings for the one offending form; a real 2-document scan produced 10 findings
+    /// this way across 2 structurally identical documents.</summary>
+    private static PdfDocument FormInvokedTwiceDoc()
+    {
+        var doc = new PdfDocument();
+
+        var formDict = new PdfDictionary
+        {
+            [N("Type")] = N("XObject"), [N("Subtype")] = N("Form"),
+            [N("BBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0),
+                                       new PdfInteger(10), new PdfInteger(10)),
+        };
+        doc.AddObject(10, 0, new PdfStream(formDict, Ops("/CS0 cs\n0.5 sc\n")));
+
+        doc.AddObject(11, 0, new PdfArray(N("CalGray")));
+
+        var pageResources = new PdfDictionary
+        {
+            [N("XObject")] = new PdfDictionary { [N("X0")] = Ref(10) },
+            [N("ColorSpace")] = new PdfDictionary { [N("CS0")] = Ref(11) },
+        };
+
+        doc.AddObject(4, 0, new PdfStream(new PdfDictionary(), Ops("/X0 Do\n/X0 Do\n")));
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2),
+            [N("Contents")] = Ref(4), [N("Resources")] = pageResources,
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void A_form_invoked_twice_from_one_page_is_flagged_only_once()
+    {
+        Finding f = Assert.Single(Findings(FormInvokedTwiceDoc()));
+        Assert.Contains("CS0", f.Message);
+        Assert.Equal(10, f.ObjectNumber);
     }
 }
