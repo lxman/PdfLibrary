@@ -293,4 +293,135 @@ public class FileSpecNameRepairTests
         Assert.Equal(name, uf.GetText());
         Assert.StartsWith("<FEFF", uf.ToPdfString());
     }
+
+    // ── PreviewFileSpecNameRepairs (Task 5, 2026-08-21 font-dictionary and embedded-file remediation)
+    // ── the read-only twin RepairFileSpecNames must never disagree with, since EmbeddedFileDomain.Propose
+    // ── may only call the preview, never the write. Same fixtures as the write tests above, on purpose:
+    // ── the point is that the two methods answer identically for identical document state.
+
+    [Fact]
+    public void Preview_reports_it_would_fill_uf_from_f_and_writes_nothing()
+    {
+        using PdfDocumentEditor editor =
+            BuildCatalogFilespecDocument("report.txt", f: PdfString.FromText("report.txt"), uf: null).Edit();
+        string before = Dict(editor.Document, 10).ToPdfString();
+
+        FileSpecNameRepairPreview preview = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: false);
+
+        FileSpecNameRepairCandidate candidate = Assert.Single(preview.WouldRepair);
+        Assert.Equal("report.txt", candidate.Name);
+        Assert.False(candidate.WouldWriteF);
+        Assert.True(candidate.WouldWriteUf);
+        Assert.Empty(preview.Declined);
+        Assert.Null(Dict(editor.Document, 10).Get("UF"));
+        Assert.Equal(before, Dict(editor.Document, 10).ToPdfString());
+    }
+
+    [Fact]
+    public void Preview_reports_it_would_fill_f_from_uf()
+    {
+        using PdfDocumentEditor editor =
+            BuildCatalogFilespecDocument("report.txt", f: null, uf: PdfString.FromText("report.txt")).Edit();
+
+        FileSpecNameRepairPreview preview = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: false);
+
+        FileSpecNameRepairCandidate candidate = Assert.Single(preview.WouldRepair);
+        Assert.Equal("report.txt", candidate.Name);
+        Assert.True(candidate.WouldWriteF);
+        Assert.False(candidate.WouldWriteUf);
+        Assert.Empty(preview.Declined);
+        Assert.Null(Dict(editor.Document, 10).Get("F"));
+    }
+
+    [Fact]
+    public void Preview_declines_a_filespec_carrying_neither_key_and_writes_nothing()
+    {
+        using PdfDocumentEditor editor =
+            BuildCatalogFilespecDocument("orphan.txt", f: null, uf: null).Edit();
+
+        FileSpecNameRepairPreview preview = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: false);
+
+        Assert.Empty(preview.WouldRepair);
+        Assert.Equal("orphan.txt", Assert.Single(preview.Declined));
+        Assert.Null(Dict(editor.Document, 10).Get("F"));
+        Assert.Null(Dict(editor.Document, 10).Get("UF"));
+    }
+
+    [Fact]
+    public void Preview_reports_nothing_for_a_filespec_with_both_keys_already_usable()
+    {
+        using PdfDocumentEditor editor = BuildCatalogFilespecDocument(
+            "both.txt", f: PdfString.FromText("both.txt"), uf: PdfString.FromText("both.txt")).Edit();
+
+        FileSpecNameRepairPreview preview = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: false);
+
+        Assert.Empty(preview.WouldRepair);
+        Assert.Empty(preview.Declined);
+    }
+
+    [Fact]
+    public void Preview_includes_annotation_filespecs_only_when_asked()
+    {
+        using PdfDocumentEditor editor =
+            BuildAnnotationFilespecDocument(f: PdfString.FromText("attach.bin"), uf: null).Edit();
+
+        FileSpecNameRepairPreview withoutAnnotations = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: false);
+        Assert.Empty(withoutAnnotations.WouldRepair);
+        Assert.Empty(withoutAnnotations.Declined);
+
+        FileSpecNameRepairPreview withAnnotations = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: true);
+        FileSpecNameRepairCandidate candidate = Assert.Single(withAnnotations.WouldRepair);
+        Assert.Equal("attach.bin", candidate.Name);
+        Assert.True(candidate.WouldWriteUf);
+        Assert.Null(Dict(editor.Document, 10).Get("UF"));
+    }
+
+    /// <summary>The binding requirement: what the preview reports is EXACTLY what a subsequent repair
+    /// call does, for a document mixing a repairable filespec (object 10) and a declined one (object
+    /// 11) — proves the two methods share one walk and one predicate rather than merely happening to
+    /// agree on today's single-filespec fixtures above.</summary>
+    [Fact]
+    public void Preview_and_repair_agree_on_a_mixed_document()
+    {
+        var doc = new PdfDocument();
+
+        var repairable = new PdfDictionary { [N("Type")] = N("Filespec"), [N("EF")] = new PdfDictionary() };
+        repairable[N("F")] = PdfString.FromText("report.txt");
+        doc.AddObject(10, 0, repairable);
+
+        var declinedSpec = new PdfDictionary { [N("Type")] = N("Filespec"), [N("EF")] = new PdfDictionary() };
+        doc.AddObject(11, 0, declinedSpec);
+
+        var namesArray = new PdfArray();
+        namesArray.Add(PdfString.FromText("report.txt"));
+        namesArray.Add(Ref(10));
+        namesArray.Add(PdfString.FromText("orphan.txt"));
+        namesArray.Add(Ref(11));
+        var embeddedFilesLeaf = new PdfDictionary { [N("Names")] = namesArray };
+        var namesDict = new PdfDictionary { [N("EmbeddedFiles")] = embeddedFilesLeaf };
+
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(), [N("Count")] = new PdfInteger(0),
+        });
+        doc.AddObject(1, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2), [N("Names")] = namesDict,
+        });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+
+        using PdfDocumentEditor editor = doc.Edit();
+
+        FileSpecNameRepairPreview preview = editor.PreviewFileSpecNameRepairs(includeAnnotationSpecs: false);
+        FileSpecNameRepairCandidate previewed = Assert.Single(preview.WouldRepair);
+        Assert.Equal("orphan.txt", Assert.Single(preview.Declined));
+
+        FileSpecNameRepairReport report = editor.RepairFileSpecNames(includeAnnotationSpecs: false);
+        FileSpecNameRepair repaired = Assert.Single(report.Repaired);
+
+        Assert.Equal(previewed.Name, repaired.Name);
+        Assert.Equal(previewed.WouldWriteF, repaired.WroteF);
+        Assert.Equal(previewed.WouldWriteUf, repaired.WroteUf);
+        Assert.Equal(preview.Declined, report.Declined);
+    }
 }
