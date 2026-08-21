@@ -656,6 +656,15 @@ public sealed partial class PdfDocumentEditor
     /// </summary>
     public bool HasFont(FontId font) => TryResolveFontDictionary(font, out _);
 
+    /// <summary>True iff <see cref="SetCidToGidMapIdentity"/> would write and return true for this
+    /// object RIGHT NOW, without writing anything (2026-08-21 font-dictionary remediation, fix round
+    /// 1: a caller deciding whether to stage a repair needs this answer live — a value computed once
+    /// and cached goes stale exactly when the document is mutated between preflight and staging, which
+    /// is what a query built for that purpose must never do). Delegates to
+    /// <see cref="TryGetSettableCidFont"/>, the SAME gate <see cref="SetCidToGidMapIdentity"/> itself
+    /// uses, so the two cannot disagree by construction.</summary>
+    public bool CanSetCidToGidMapIdentity(FontId cidFont) => TryGetSettableCidFont(cidFont, out _);
+
     /// <summary>Writes <c>/CIDToGIDMap /Identity</c> onto a CIDFontType2 dictionary that omits it
     /// (ISO 19005-2 6.2.11.3.2). Semantically a no-op for rendering — <c>CidFont.LoadCidToGidMap</c>
     /// sets the same identity-mapping state for an absent key and an explicit <c>/Identity</c> name
@@ -665,15 +674,36 @@ public sealed partial class PdfDocumentEditor
     /// 0 of 85 corpus findings, so overwriting it would be an invented, unmeasured fix.</summary>
     public bool SetCidToGidMapIdentity(FontId cidFont)
     {
-        if (!TryResolveFontDictionary(cidFont, out PdfDictionary? dictionary) || dictionary is null)
-            return false;
-        if (Resolve(dictionary.Get("Subtype")) is not PdfName { Value: "CIDFontType2" })
-            return false;
-        if (dictionary.Get("CIDToGIDMap") is not null)
-            return false;
+        if (!TryGetSettableCidFont(cidFont, out PdfDictionary dictionary)) return false;
         dictionary.Set("CIDToGIDMap", new PdfName("Identity"));
         return true;
     }
+
+    /// <summary>The shared gate <see cref="CanSetCidToGidMapIdentity"/> and
+    /// <see cref="SetCidToGidMapIdentity"/> both call — factored so the read-only query and the write
+    /// can never drift apart (the exact failure mode fix round 1 exists to close: a caller that
+    /// trusted a separately-derived answer discovered it was stale only when the write silently
+    /// disagreed with it).</summary>
+    private bool TryGetSettableCidFont(FontId cidFont, out PdfDictionary dictionary)
+    {
+        if (TryResolveFontDictionary(cidFont, out PdfDictionary? resolved)
+            && resolved is not null
+            && Resolve(resolved.Get("Subtype")) is PdfName { Value: "CIDFontType2" }
+            && resolved.Get("CIDToGIDMap") is null)
+        {
+            dictionary = resolved;
+            return true;
+        }
+        dictionary = null!;
+        return false;
+    }
+
+    /// <summary>True iff <see cref="RemoveSymbolicEncoding"/> would write and return true for this
+    /// object RIGHT NOW, without writing anything (2026-08-21 font-dictionary remediation, fix round
+    /// 1 — same live-query contract as <see cref="CanSetCidToGidMapIdentity"/>). Delegates to
+    /// <see cref="TryGetRemovableSymbolicEncoding"/>, the SAME gate <see cref="RemoveSymbolicEncoding"/>
+    /// itself uses, so the two cannot disagree by construction.</summary>
+    public bool CanRemoveSymbolicEncoding(FontId font) => TryGetRemovableSymbolicEncoding(font, out _);
 
     /// <summary>Removes <c>/Encoding</c> from a symbolic TrueType font (ISO 19005-2 6.2.11.6). Guarded
     /// by <see cref="IsSymbolicTrueType"/>, which mirrors <c>FontDictionaryRule.SymbolicFlags</c>
@@ -684,14 +714,26 @@ public sealed partial class PdfDocumentEditor
     /// <c>/Encoding</c> to begin with.</summary>
     public bool RemoveSymbolicEncoding(FontId font)
     {
-        if (!TryResolveFontDictionary(font, out PdfDictionary? dictionary) || dictionary is null)
-            return false;
-        if (dictionary.Get("Encoding") is null)
-            return false;
-        if (!IsSymbolicTrueType(dictionary))
-            return false;
+        if (!TryGetRemovableSymbolicEncoding(font, out PdfDictionary dictionary)) return false;
         dictionary.Remove(new PdfName("Encoding"));
         return true;
+    }
+
+    /// <summary>The shared gate <see cref="CanRemoveSymbolicEncoding"/> and
+    /// <see cref="RemoveSymbolicEncoding"/> both call — same factoring rationale as
+    /// <see cref="TryGetSettableCidFont"/>.</summary>
+    private bool TryGetRemovableSymbolicEncoding(FontId font, out PdfDictionary dictionary)
+    {
+        if (TryResolveFontDictionary(font, out PdfDictionary? resolved)
+            && resolved is not null
+            && resolved.Get("Encoding") is not null
+            && IsSymbolicTrueType(resolved))
+        {
+            dictionary = resolved;
+            return true;
+        }
+        dictionary = null!;
+        return false;
     }
 
     /// <summary>The same Symbolic-bit test <c>FontDictionaryRule.SymbolicFlags</c> makes (Flags bit 3

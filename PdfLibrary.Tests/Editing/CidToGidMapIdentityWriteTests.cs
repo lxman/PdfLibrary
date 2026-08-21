@@ -71,6 +71,70 @@ public class CidToGidMapIdentityWriteTests
         Assert.Equal(firstState, Dict(editor.Document, 21).ToPdfString());
     }
 
+    // ── CanSetCidToGidMapIdentity (2026-08-21 font-dictionary remediation, fix round 1) ────────────────
+    // A caller (FontDictionaryDomain.Propose) needs a live, honest, NON-MUTATING answer to "would the
+    // write succeed right now" -- these pin that the query and the write share one gate and can never
+    // disagree, and that the query itself never touches the dictionary.
+
+    [Fact]
+    public void Query_agrees_with_the_write_for_a_settable_font()
+    {
+        using PdfDocumentEditor editor = BuildDocument("CIDFontType2", cidToGidMap: null).Edit();
+        string before = Dict(editor.Document, 21).ToPdfString();
+
+        bool can = editor.CanSetCidToGidMapIdentity(new FontId(21));
+
+        Assert.True(can);
+        Assert.Equal(before, Dict(editor.Document, 21).ToPdfString()); // the query wrote nothing
+
+        Assert.Equal(can, editor.SetCidToGidMapIdentity(new FontId(21)));
+    }
+
+    [Fact]
+    public void Query_agrees_with_the_write_for_a_font_that_already_carries_a_cidtogidmap()
+    {
+        using PdfDocumentEditor editor = BuildDocument("CIDFontType2", cidToGidMap: N("Identity")).Edit();
+        string before = Dict(editor.Document, 21).ToPdfString();
+
+        bool can = editor.CanSetCidToGidMapIdentity(new FontId(21));
+
+        Assert.False(can);
+        Assert.Equal(before, Dict(editor.Document, 21).ToPdfString());
+
+        Assert.Equal(can, editor.SetCidToGidMapIdentity(new FontId(21)));
+    }
+
+    [Fact]
+    public void Query_agrees_with_the_write_for_a_non_cidfonttype2()
+    {
+        using PdfDocumentEditor editor = BuildDocument("CIDFontType0", cidToGidMap: null).Edit();
+        string before = Dict(editor.Document, 21).ToPdfString();
+
+        bool can = editor.CanSetCidToGidMapIdentity(new FontId(21));
+
+        Assert.False(can);
+        Assert.Equal(before, Dict(editor.Document, 21).ToPdfString());
+
+        Assert.Equal(can, editor.SetCidToGidMapIdentity(new FontId(21)));
+    }
+
+    /// <summary>The query is idempotent by construction (it never writes), but this pins it directly
+    /// rather than trusting that fact: two calls in a row must agree with each other and leave the
+    /// dictionary exactly as they found it.</summary>
+    [Fact]
+    public void Query_is_repeatable_and_never_mutates()
+    {
+        using PdfDocumentEditor editor = BuildDocument("CIDFontType2", cidToGidMap: null).Edit();
+        string before = Dict(editor.Document, 21).ToPdfString();
+
+        bool first = editor.CanSetCidToGidMapIdentity(new FontId(21));
+        bool second = editor.CanSetCidToGidMapIdentity(new FontId(21));
+
+        Assert.True(first);
+        Assert.Equal(first, second);
+        Assert.Equal(before, Dict(editor.Document, 21).ToPdfString());
+    }
+
     private static PdfDictionary Dict(PdfDocument document, int objectNumber) =>
         (PdfDictionary)document.Objects[objectNumber];
 
