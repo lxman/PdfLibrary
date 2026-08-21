@@ -204,15 +204,31 @@ reference when **all** of the following hold.
 1. The effective encoding yields **no glyph name** for the code (`GetGlyphName(code) is null`).
 2. The font is **nonsymbolic** — neither `/Flags` bit 3 nor `HasSymbolCmapEncoding()`. A symbolic font
    legitimately drives its own built-in encoding and routinely has null names; it must be exempt.
-3. The **program itself offers no glyph** for that raw code through its own built-in encoding:
-   `GetGlyphIdByCffEncoding(code) == 0` on the CFF arm, `GetGlyphId((ushort)code) == 0` on the
-   TrueType arm.
+3. **CFF arm only** — the program itself offers no glyph for that raw code through its own built-in
+   encoding: `GetGlyphIdByCffEncoding(code) == 0`.
 
-Condition 3 is the load-bearing safety net and the two arms need *different* calls — the CFF helper is
-meaningless for a TrueType program and would pass trivially, which is the right answer for the wrong
-reason. The implementer must confirm empirically, per arm, that condition 3 evaluates to "no glyph"
-on the fixtures and to "has glyph" on a conformant control before relying on it. Closes
-`8-t01-fail-a` (CFF arm) and `8-t01-fail-b` (TrueType arm).
+**Corrected 2026-08-20, on measurement.** This condition originally applied to both arms, using
+`GetGlyphId((ushort)code) == 0` for TrueType. Task 7's mandatory verification step proved that wrong
+before any code was written: on `8-t01-fail-b` (`DYOKPS+ArialMT`) `GetGlyphId(0)` returns **1**.
+`EmbeddedFontMetrics.GetGlyphId` performs no AGL translation — it passes the raw value to
+`CmapTable.GetGlyphId`, which walks every subtable in platform-preference order and returns the first
+non-zero hit, including from the last-resort Mac/Symbol/ISO tier. A subsetting artifact in one of
+those fallback tables answers glyph 1 for raw value 0.
+
+The asymmetry between the arms is real and principled, not a workaround. A CFF program carries a
+built-in **encoding** that genuinely maps raw codes to glyphs, so probing it by raw code asks a
+meaningful question. A nonsymbolic TrueType font has no such thing: ISO 32000-1 §9.6.6.4 routes code →
+glyph **name** → Unicode → cmap, so with no name there is no lookup to perform and a raw-code cmap
+probe is a rendering heuristic answering a different question. `ResolveSimpleGlyph`'s existing TrueType
+branch already works this way — it converts the name to a Unicode value before consulting the cmap and
+never probes by raw code.
+
+So for a **nonsymbolic TrueType** font, conditions 1 and 2 alone are sufficient: an unnamed code has no
+standard mapping and is `.notdef`. Closes `8-t01-fail-a` (CFF arm) and `8-t01-fail-b` (TrueType arm).
+
+Because this removes the program-side net on the TrueType arm, the corpus-wide zero-false-positive
+assertion over all 1316 files is the sole empirical guard. If it trips, back the TrueType arm out
+rather than widening it.
 
 **B3 — incomplete final composite code.** When an Identity-H/V string has an odd byte count, record
 that the font showed an unmappable code and treat it as a `.notdef` reference (6.2.11.8). No CID is
