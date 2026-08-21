@@ -285,7 +285,7 @@ public class PdfFontEncodingTests
     }
 
     [Fact]
-    public void MacRoman_quote_codes_match_win_ansi_not_standard()
+    public void MacRoman_ascii_quote_codes_are_quotesingle_and_grave()
     {
         PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
 
@@ -294,14 +294,26 @@ public class PdfFontEncodingTests
     }
 
     [Fact]
-    public void MacRoman_agrees_with_win_ansi_on_every_ascii_name()
+    public void MacRoman_differs_from_standard_at_exactly_two_ascii_codes()
     {
+        // Not a MacRoman-vs-WinAnsi comparison: CreateMacRomanEncoding reuses the identical
+        // WinAnsiEncodingAsciiNames backing array, so comparing against WinAnsi here would compare
+        // that accessor to itself and could never fail under the implementation it's meant to
+        // verify. StandardEncodingAsciiNames is the independently hand-written table, and
+        // WinAnsiEncodingAsciiNames (which MacRoman reuses) is a clone of it with two overrides —
+        // so this is what actually exercises that clone-plus-overrides derivation.
         PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
-        PdfFontEncoding win = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+        PdfFontEncoding std = PdfFontEncoding.GetStandardEncoding("StandardEncoding");
+
+        Assert.Equal("quotesingle", mac.GetGlyphName(39));
+        Assert.Equal("quoteright", std.GetGlyphName(39));
+        Assert.Equal("grave", mac.GetGlyphName(96));
+        Assert.Equal("quoteleft", std.GetGlyphName(96));
 
         for (var code = 32; code <= 126; code++)
         {
-            Assert.Equal(win.GetGlyphName(code), mac.GetGlyphName(code));
+            if (code is 39 or 96) continue;
+            Assert.Equal(std.GetGlyphName(code), mac.GetGlyphName(code));
         }
     }
 }
