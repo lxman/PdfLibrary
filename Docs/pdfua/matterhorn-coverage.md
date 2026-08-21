@@ -5,9 +5,14 @@
 
 Status legend — PdfLibrary rule that implements the condition, or `—` (not yet), `n/a` (human-only).
 
-## PdfLibrary coverage — 64 of 87 machine-checkable conditions
+## PdfLibrary coverage — 70 of 87 machine-checkable conditions
 
 Populated 2026-07-10 by mapping each condition to the rule whose logic actually detects that failure (not merely a matching ISO clause label). Per checkpoint (covered / machine):
+
+> **Heading corrected 2026-08-21.** This read "64 of 87" from 2026-07-10 until the per-checkpoint
+> table below was re-summed: it totals **70**. The three "Progress 2026-07-19" notes each raised a
+> checkpoint's count in the table without anyone re-adding the column — 02 (+2), 26 (+2), 28 (+2).
+> The table is the data; this heading is derived from it. Re-sum it when you edit a row.
 
 | CP | Area | Covered | Rules |
 |---|---|--:|---|
