@@ -41,13 +41,18 @@ public class DerivedNameProvenanceTests
     private static PdfArray Rect(int x0, int y0, int x1, int y1) =>
         new(new PdfInteger(x0), new PdfInteger(y0), new PdfInteger(x1), new PdfInteger(y1));
 
-    // Probe code 65 ('A' under WinAnsiEncoding). The fixture's built-in CFF Encoding maps a DIFFERENT
-    // code (90) to its one custom glyph, and its charset holds only that custom glyph plus "emdash" —
-    // neither is "A" — so code 65 is unmapped by both the built-in encoding AND a by-name charset
-    // lookup: exactly the shape that, pre-fix, made a derived name look like a confident absence.
-    private const byte ProbeCode = 65; // 'A'
+    // Probe code 169 ('©' / "copyright" under WinAnsiEncoding). Moved off code 65 ('A') 2026-08-20
+    // (this branch): Task 6 assigns WinAnsi's ASCII band (32-126) BY NAME now, not by reverse-AGL,
+    // so 'A' is no longer a derived name and can't probe the derived-name premise any more --
+    // WinAnsiEncoding's Latin-1 Supplement band (160-255) is the part Task 6 left as SetUnicode-only
+    // (see PdfFontEncoding.CreateWinAnsiEncoding), so it is still reverse-AGL derived. The fixture's
+    // built-in CFF Encoding maps a DIFFERENT code (90) to its one custom glyph, and its charset holds
+    // only that custom glyph plus "emdash" — neither is "copyright" — so code 169 is unmapped by
+    // both the built-in encoding AND a by-name charset lookup: exactly the shape that, pre-fix, made
+    // a derived name look like a confident absence.
+    private const byte ProbeCode = 169; // '©' — reverse-AGL name "copyright"
     private const byte BuiltInMappedCode = 90; // unrelated to the probe code, deliberately
-    private const string CustomGlyphName = "afii10034"; // a real AGL name, not "A" or "emdash"
+    private const string CustomGlyphName = "afii10034"; // a real AGL name, not "copyright" or "emdash"
 
     private static byte[] CffBytes =>
         SymbolicCffFixtureFont.Build(BuiltInMappedCode, CustomGlyphName, customAdvance: 576, emdashAdvance: 1000);
@@ -119,7 +124,7 @@ public class DerivedNameProvenanceTests
         Assert.True(metrics.IsValid);
         Assert.True(metrics.IsCffFont);
         Assert.Equal((ushort)0, metrics.GetGlyphIdByCffEncoding(ProbeCode));
-        Assert.Equal((ushort)0, metrics.GetGlyphIdByName("A"));
+        Assert.Equal((ushort)0, metrics.GetGlyphIdByName("copyright"));
     }
 
     [Fact]
@@ -127,7 +132,7 @@ public class DerivedNameProvenanceTests
     {
         using PdfDocument doc = BuildDoc();
         PdfFont font = FontFrom(doc);
-        Assert.Equal("A", font.Encoding!.GetGlyphName(ProbeCode));
+        Assert.Equal("copyright", font.Encoding!.GetGlyphName(ProbeCode));
         Assert.True(font.Encoding.IsDerivedName(ProbeCode));
     }
 

@@ -26,12 +26,19 @@ public class ParityReportTests(ITestOutputHelper output)
     private static readonly IReadOnlyDictionary<ConformanceProfile, int> AgreementFloor =
         new Dictionary<ConformanceProfile, int>
         {
+            // +8 (978->986), 2026-08-20: PDF/A-2b reaches FULL verdict parity. 6.2.2 t2 via the new
+            // ExplicitResourcesRule (+3: t04-fail-d/-e/-f); the font cluster via three targeted fixes
+            // (+5) -- WinAnsi/MacRoman ASCII names assigned BY NAME so they are no longer marked
+            // reverse-AGL "derived" (t02-fail-a/-b), an undefined encoding code treated as .notdef
+            // (8-t01-fail-a/-b), and an incomplete final composite code treated as .notdef
+            // (t02-fail-e). All four profiles now agree on every file.
+            //
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
             // +6 (972->978), 2026-08-20: catching up a ratchet the two prior landings left behind --
             // byte fidelity (6.1.6 t1/t2 + 6.1.13 t1, +4) and CMap max-CID (6.1.13 t10, +2) both raised
             // measured agreement without raising this floor, leaving those gains unprotected. No new
             // detection here; this only locks in what already shipped.
-            [ConformanceProfile.PdfA2b] = 978,
+            [ConformanceProfile.PdfA2b] = 986,
             // +1 (971->972), 2026-08-20: 6.6.4 t4/t5 to FULL parity ("veraPDF test suite 6-6-4-t01-fail-b.pdf",
             // blocked by this clause alone) -- takes A-2b agreement past 99%. The pdfaid properties must carry
             // the namespace PREFIX "pdfaid" literally, not merely the right namespace URI: the fixture binds
