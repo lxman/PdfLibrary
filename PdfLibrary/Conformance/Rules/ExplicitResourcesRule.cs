@@ -1,7 +1,5 @@
 using System.Collections.Generic;
-using System.Linq;
 using PdfLibrary.Content;
-using PdfLibrary.Content.Operators;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 
