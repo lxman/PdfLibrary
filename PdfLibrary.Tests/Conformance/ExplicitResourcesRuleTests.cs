@@ -87,4 +87,67 @@ public class ExplicitResourcesRuleTests
         };
         Assert.Empty(Findings(Doc("/DeviceRGB cs\n", null, pagesRes)));
     }
+
+    /// <summary>A page whose own /Resources hold a form and a colour space; the form's /Resources are
+    /// supplied separately (null = the form has none, the fail-e shape).</summary>
+    private static PdfDocument FormDoc(string formContent, PdfDictionary? formResources)
+    {
+        var doc = new PdfDocument();
+
+        var formDict = new PdfDictionary
+        {
+            [N("Type")] = N("XObject"), [N("Subtype")] = N("Form"),
+            [N("BBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0),
+                                       new PdfInteger(10), new PdfInteger(10)),
+        };
+        if (formResources is not null) formDict[N("Resources")] = formResources;
+        doc.AddObject(10, 0, new PdfStream(formDict, Ops(formContent)));
+
+        doc.AddObject(11, 0, new PdfArray(N("CalGray")));
+
+        var pageResources = new PdfDictionary
+        {
+            [N("XObject")] = new PdfDictionary { [N("X0")] = Ref(10) },
+            [N("ColorSpace")] = new PdfDictionary { [N("CS0")] = Ref(11) },
+        };
+
+        doc.AddObject(4, 0, new PdfStream(new PdfDictionary(), Ops("/X0 Do\n")));
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2),
+            [N("Contents")] = Ref(4), [N("Resources")] = pageResources,
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void A_form_inheriting_a_colour_space_from_the_page_is_flagged()
+    {
+        Finding f = Assert.Single(Findings(FormDoc("/CS0 cs\n0.5 sc\n", formResources: null)));
+        Assert.Contains("CS0", f.Message);
+        Assert.Equal(10, f.ObjectNumber);
+    }
+
+    [Fact]
+    public void A_form_with_no_resources_using_only_device_colour_is_not_flagged()
+    {
+        // The fail-e / pass-b discriminator.
+        Assert.Empty(Findings(FormDoc("1 1 1 rg\n0 0 10 10 re f\n", formResources: null)));
+    }
+
+    [Fact]
+    public void A_form_carrying_its_own_colour_space_is_not_flagged()
+    {
+        var own = new PdfDictionary
+        {
+            [N("ColorSpace")] = new PdfDictionary { [N("CS0")] = Ref(11) },
+        };
+        Assert.Empty(Findings(FormDoc("/CS0 cs\n0.5 sc\n", own)));
+    }
 }

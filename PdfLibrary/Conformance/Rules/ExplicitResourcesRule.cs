@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using PdfLibrary.Content;
+using PdfLibrary.Content.Operators;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 
@@ -30,6 +31,9 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
 
     public ConformanceProfile AppliesToProfiles => ConformanceProfile.AllPdfA;
 
+    /// <summary>Recursion cap for <see cref="WalkStream"/>, mirroring <c>ContentWalk.MaxFormDepth</c>.</summary>
+    private const int MaxDepth = 24;
+
     /// <summary>Colour space names that name a device space rather than a /ColorSpace resource.</summary>
     private static readonly HashSet<string> DeviceColourSpaces =
         new(System.StringComparer.Ordinal) { "DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern" };
@@ -46,9 +50,11 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             try { ops = context.PageContentOperators(page); }
             catch { pageIndex++; continue; }
 
-            List<string> offenders = Offenders(context, ops, direct, inherited);
-            if (offenders.Count > 0)
-                yield return Make(context, pageIndex, page.Dictionary, offenders);
+            foreach (Finding finding in WalkStream(
+                         context, ops, direct, inherited, pageIndex, page.Dictionary, 0, new HashSet<int>()))
+            {
+                yield return finding;
+            }
 
             pageIndex++;
         }
@@ -79,6 +85,63 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
             node = context.Resolve(node.Get("Parent")) as PdfDictionary;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Findings for this stream and every stream it reaches. A form's DIRECT resources are its own
+    /// /Resources; its fallback is the invoking scope's EFFECTIVE resources (direct, else inherited) —
+    /// what a consumer would actually resolve against. Cycle-guarded on the active Do path and
+    /// depth-capped, mirroring ContentWalk.
+    /// </summary>
+    private List<Finding> WalkStream(
+        ConformanceContext context, IReadOnlyList<PdfOperator> ops,
+        PdfResources? direct, PdfResources? inherited,
+        int pageIndex, PdfDictionary? owner, int depth, HashSet<int> activeForms)
+    {
+        var findings = new List<Finding>();
+        if (depth > MaxDepth)
+            return findings;
+
+        List<string> offenders = Offenders(context, ops, direct, inherited);
+        if (offenders.Count > 0)
+            findings.Add(Make(context, pageIndex, owner, offenders));
+
+        PdfResources? effective = direct ?? inherited;
+
+        foreach (PdfOperator op in ops)
+        {
+            if (op is not InvokeXObjectOperator invoke)
+                continue;
+            if (effective?.GetXObject(invoke.XObjectName) is not { } form)
+                continue;
+            if (context.ResolveName(form.Dictionary.Get("Subtype")) != "Form")
+                continue;
+            if (form.IsIndirect && !activeForms.Add(form.ObjectNumber))
+                continue; // already on the active Do path — a cycle
+
+            byte[] data;
+            try { data = form.GetDecodedData(context.Document.Decryptor); }
+            catch { data = []; }
+
+            if (data.Length > 0)
+            {
+                List<PdfOperator>? formOps = null;
+                try { formOps = PdfContentParser.Parse(data); }
+                catch { /* unparseable form contributes nothing */ }
+
+                if (formOps is not null)
+                {
+                    findings.AddRange(WalkStream(
+                        context, formOps, ResourcesOf(context, form.Dictionary), effective,
+                        pageIndex, form.Dictionary, depth + 1, activeForms));
+                }
+            }
+
+            if (form.IsIndirect)
+                activeForms.Remove(form.ObjectNumber);
+        }
+
+        return findings;
     }
 
     /// <summary>Names referenced by these operators that are absent from <paramref name="direct"/>
@@ -152,6 +215,30 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
         Message = $"A content stream refers to resource(s) {string.Join(", ", names)} not defined in an "
                   + "explicitly associated Resources dictionary.",
         PageIndex = pageIndex,
-        ObjectNumber = owner is { IsIndirect: true } ? owner.ObjectNumber : null,
+        ObjectNumber = OwnerObjectNumber(context, owner),
     };
+
+    /// <summary>
+    /// The reportable object number for a scope's owner. A page's dictionary IS the indirect object —
+    /// <c>PdfDocument.AddObject</c> and the parser stamp IsIndirect/ObjectNumber directly onto it — so
+    /// <c>owner.IsIndirect</c> covers that case. A Form XObject's dictionary is embedded inside its
+    /// enclosing stream; indirect identity is stamped on the PdfStream wrapper, never on its nested
+    /// Dictionary, so a form's owning stream is recovered by reference-matching against
+    /// <see cref="ConformanceContext.Streams"/> — the same reason ImageDictionaryRule and
+    /// ProhibitedXObjectRule report a stream's own ObjectNumber rather than its Dictionary's.
+    /// </summary>
+    private static int? OwnerObjectNumber(ConformanceContext context, PdfDictionary? owner)
+    {
+        if (owner is null)
+            return null;
+        if (owner.IsIndirect)
+            return owner.ObjectNumber;
+
+        foreach (PdfStream stream in context.Streams)
+        {
+            if (ReferenceEquals(stream.Dictionary, owner))
+                return stream.IsIndirect ? stream.ObjectNumber : null;
+        }
+        return null;
+    }
 }
