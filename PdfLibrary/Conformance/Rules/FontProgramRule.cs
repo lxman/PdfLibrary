@@ -26,9 +26,12 @@ namespace PdfLibrary.Conformance.Rules;
 ///     (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) resolves to glyph/CID 0; and for
 ///     simple TrueType / simple CFF fonts via the PDF <c>/Encoding</c>'s <c>GetGlyphName</c>.</item>
 ///   <item><b>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2):</b> a shown code whose (non-".notdef") glyph is
-///     confidently absent from the embedded font program — near-mutually-exclusive with the .notdef check
-///     above (a ".notdef"-named code is skipped here; it is already covered by 6.2.11.8). RM3-exempt per
-///     veraPDF, so this walks only visible codes. Implemented for simple TrueType and simple CFF fonts
+///     confidently absent from the embedded font program — mutually exclusive with the .notdef check
+///     above on two independent grounds, not one: a ".notdef"-named code is skipped here explicitly (it
+///     is already covered by 6.2.11.8), and a code with NO name at all is skipped implicitly, because
+///     <see cref="ResolveSimpleGlyph"/> returns <c>Unknown</c> for a null name on both its TrueType and
+///     CFF arms before any program lookup runs. RM3-exempt per veraPDF, so this walks only visible codes.
+///     Implemented for simple TrueType and simple CFF fonts
 ///     (with an embedded charset) via the tri-state <see cref="ResolveSimpleGlyph"/> resolver, which only
 ///     ever reports a confident absence and returns <c>Unknown</c> (skip, no finding) whenever the
 ///     code→glyph path is not reproducible here — symbolic TrueType (declared, or carrying only a (3,0)
@@ -208,6 +211,14 @@ internal sealed class FontProgramRule : IConformanceRule
         {
             if (font.Encoding?.GetGlyphName(code) == ".notdef")
                 continue;
+            // The literal-name skip above only covers a code named ".notdef"; a code with NO name at
+            // all (the other half of IsNotdefReference's predicate, checked separately above at the
+            // .notdef finding) is not skipped here explicitly, but still never fires: ResolveSimpleGlyph
+            // returns Unknown for a null glyphName on BOTH arms (isTrueType's unicode lookup and the
+            // CFF arm's derivedName/glyphName check each short-circuit to Unknown before reaching a
+            // program lookup), so this loop never sets absentHit for it. The two 6.2.11.8/6.2.11.4.1
+            // findings are therefore still mutually exclusive per code even though only one of the two
+            // "no name" cases is skipped explicitly.
             if (ResolveSimpleGlyph(font, metrics, code, isTrueType, symbolic) == SimpleGlyphResolution.NotDef)
             {
                 absentHit = true;

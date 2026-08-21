@@ -26,7 +26,11 @@ internal static class ParityLeverage
     /// <summary>What closing one clause is worth, alone and in its cheapest paying combination.</summary>
     /// <param name="AppearsInMisses">Whole-file misses whose blocking set contains this clause.</param>
     /// <param name="FlipsAlone">Misses this clause closes by itself — equal to AppearsInMisses, since any one clause flips a miss.</param>
-    /// <param name="MinimumPayingSet">Always the clause itself; retained for report-format stability.</param>
+    /// <param name="MinimumPayingSet">Always the clause itself. NOT rendered by <see cref="ParityReport"/>,
+    /// which prints only Clause/AppearsInMisses/FlipsAlone (dropped to 3 columns in the same task that
+    /// corrected this semantics) — this field and <see cref="MinimumPayingSetFlips"/> are read only by
+    /// <c>ParityLeverageTests</c>, which pins that both values collapse to the trivial single-clause
+    /// case. Kept rather than deleted so that pin stays meaningful.</param>
     /// <param name="MinimumPayingSetFlips">Misses that set closes once every clause in it is covered.</param>
     internal sealed record ClauseLeverage(
         string Clause,
