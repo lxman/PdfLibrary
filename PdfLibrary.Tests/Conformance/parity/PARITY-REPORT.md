@@ -8,7 +8,7 @@ Across all **1316** files PdfLibrary produced **0 false positives** — it never
 
 | Profile | Files | Both pass | Both fail | PdfLibrary misses (gap) | PdfLibrary FP | Agreement |
 |---|--:|--:|--:|--:|--:|--:|
-| PDF/A-2b | 986 | 377 | 608 | 1 | 0 | 985/986 (100%) |
+| PDF/A-2b | 986 | 377 | 609 | 0 | 0 | 986/986 (100%) |
 | PDF/A-2u | 22 | 12 | 10 | 0 | 0 | 22/22 (100%) |
 | PDF/A-3b | 12 | 7 | 5 | 0 | 0 | 12/12 (100%) |
 | PDF/UA-1 | 296 | 141 | 155 | 0 | 0 | 296/296 (100%) |
@@ -33,7 +33,7 @@ Of the files where veraPDF flags a clause, how many does PdfLibrary also flag on
 | 6.2.11.5 | 13 | 7 | 54% | ◐ partial |
 | 6.2.11.4.1 | 11 | 8 | 73% | ◐ partial |
 | 6.1.2 | 9 | 8 | 89% | ◐ partial |
-| 6.2.11.8 | 8 | 6 | 75% | ◐ partial |
+| 6.2.11.8 | 8 | 7 | 88% | ◐ partial |
 | 6.1.7.1 | 7 | 7 | 100% | ✅ full |
 | 6.1.9 | 7 | 7 | 100% | ✅ full |
 | 6.2.4.4 | 7 | 7 | 100% | ✅ full |
@@ -115,19 +115,9 @@ Of the files where veraPDF flags a clause, how many does PdfLibrary also flag on
 
 **Plan verdict work from this section and coverage work from the table below.** A miss is a VERDICT disagreement: veraPDF rejects the file and PdfLibrary conforms, having flagged nothing. Closing ANY ONE of a miss's clauses flips it, so a clause's leverage is simply the number of misses it appears in. Matching veraPDF on every clause it flags is a separate, stricter goal — that is what the clause-coverage table measures.
 
-### PDF/A-2b — 1 whole-file miss
+### PDF/A-2b — 0 whole-file misses
 
-| Clause | Misses it blocks | Flips alone |
-|---|--:|--:|
-| 6.2.11.4.1 | 1 | 1 |
-| 6.2.11.5 | 1 | 1 |
-| 6.2.11.8 | 1 | 1 |
-
-Each miss and the clauses standing between it and agreement:
-
-| File | Blocked by |
-|---|---|
-| veraPDF test suite 6-2-11-4-1-t02-fail-e.pdf | 6.2.11.4.1 + 6.2.11.5 + 6.2.11.8 |
+PdfLibrary's verdict already agrees with veraPDF on every file of this profile, so **no clause work here can move a verdict** — however many files a clause gap still spans.
 
 ### PDF/A-2u — 0 whole-file misses
 
@@ -148,9 +138,9 @@ Ranked by number of files PdfLibrary misses on a clause it does not fully cover.
 1. **PDF/UA-1 clause 7.2** — 29 of 60 files missed (PdfLibrary matches 31).
 2. **PDF/A-2b clause 6.2.11.5** — 6 of 13 files missed (PdfLibrary matches 7).
 3. **PDF/A-2b clause 6.2.11.4.1** — 3 of 11 files missed (PdfLibrary matches 8).
-4. **PDF/A-2b clause 6.2.11.8** — 2 of 8 files missed (PdfLibrary matches 6).
-5. **PDF/UA-1 clause 7.7** — 2 of 2 files missed (PdfLibrary matches 0).
-6. **PDF/A-2b clause 6.1.2** — 1 of 9 files missed (PdfLibrary matches 8).
+4. **PDF/UA-1 clause 7.7** — 2 of 2 files missed (PdfLibrary matches 0).
+5. **PDF/A-2b clause 6.1.2** — 1 of 9 files missed (PdfLibrary matches 8).
+6. **PDF/A-2b clause 6.2.11.8** — 1 of 8 files missed (PdfLibrary matches 7).
 7. **PDF/A-2b clause 6.2.11.3.1** — 1 of 4 files missed (PdfLibrary matches 3).
 8. **PDF/UA-1 clause 7.21.3.1** — 1 of 4 files missed (PdfLibrary matches 3).
 9. **PDF/UA-1 clause 7.21.4.1** — 1 of 1 files missed (PdfLibrary matches 0).

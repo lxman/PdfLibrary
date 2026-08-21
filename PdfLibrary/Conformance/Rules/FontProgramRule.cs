@@ -96,8 +96,8 @@ internal sealed class FontProgramRule : IConformanceRule
                 continue; // not embedded, or the program will not parse — nothing to compare (FP-safe)
 
             foreach (Finding f in font is Type0Font type0
-                         ? CheckType0(context, type0, metrics, usage.Codes, usage.VisibleCodes, notdefReported,
-                             metricsReported)
+                         ? CheckType0(context, type0, metrics, usage.Codes, usage.VisibleCodes,
+                             usage.ShowedIncompleteCode, notdefReported, metricsReported)
                          : CheckSimple(context, font, metrics, usage.Codes, usage.VisibleCodes, metricsReported,
                              notdefReported, presentReported))
             {
@@ -109,8 +109,8 @@ internal sealed class FontProgramRule : IConformanceRule
     // ── Type0 composite fonts (.notdef + metrics) ─────────────────────────────────────────────────────
     private IEnumerable<Finding> CheckType0(
         ConformanceContext context, Type0Font font, EmbeddedFontMetrics metrics,
-        IReadOnlyCollection<int> codes, IReadOnlyCollection<int> visibleCodes, HashSet<string> notdefReported,
-        HashSet<string> metricsReported)
+        IReadOnlyCollection<int> codes, IReadOnlyCollection<int> visibleCodes, bool showedIncompleteCode,
+        HashSet<string> notdefReported, HashSet<string> metricsReported)
     {
         // Only an Identity CMap lets us treat the shown two-byte code as the CID directly; any other CMap
         // (predefined name or embedded stream) needs a CMap parser the engine lacks, so the font is skipped.
@@ -122,7 +122,10 @@ internal sealed class FontProgramRule : IConformanceRule
             yield break; // CIDFontType0 maps CID→GID through the CFF charset — need the CFF program
 
         // .notdef (6.2.11.8) is NOT render-mode-exempt — walks ALL codes.
-        bool notdefHit = false;
+        // An incomplete final code (an odd trailing byte under a two-byte CMap) cannot map to any
+        // glyph, so it is a .notdef reference — the same conclusion veraPDF reaches on
+        // 6-2-11-4-1-t02-fail-e, whose completed CIDs are all present in the program.
+        bool notdefHit = showedIncompleteCode;
         foreach (int code in codes)
         {
             // Strict (issue 42): a CID beyond the /CIDToGIDMap stream's coverage is .notdef per

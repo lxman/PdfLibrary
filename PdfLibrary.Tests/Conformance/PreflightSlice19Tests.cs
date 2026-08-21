@@ -278,6 +278,77 @@ public class PreflightSlice19Tests
         Assert.Contains("ISO 14289-1", f.Clause);
     }
 
+    /// <summary>Same Type0/CIDFontType2/Identity-H font as <see cref="Type0Doc"/>, but the shown
+    /// content-stream string is built directly from <paramref name="show"/> bytes rather than a fixed
+    /// two-byte code — so a helper can drive a byte length that is odd (an incomplete trailing code) or
+    /// an extra-long even length (several complete codes).</summary>
+    private static PdfDocument Type0DocShowingRawBytes(byte[] show)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(4),
+            [N("FontFile2")] = Ref(3),
+        };
+        var cidFont = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("CIDFontType2"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("CIDToGIDMap")] = N("Identity"),
+            [N("DW")] = new PdfInteger(ProgramWidth),
+            [N("CIDSystemInfo")] = new PdfDictionary
+            {
+                [N("Registry")] = new PdfString(Encoding.Latin1.GetBytes("Adobe")),
+                [N("Ordering")] = new PdfString(Encoding.Latin1.GetBytes("Identity")),
+                [N("Supplement")] = new PdfInteger(0),
+            },
+            [N("FontDescriptor")] = Ref(2),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("Type0"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("Encoding")] = N("Identity-H"),
+            [N("DescendantFonts")] = new PdfArray(Ref(4)),
+        };
+        return DocWith(font, show, (2, descriptor), (3, FontFile()), (4, cidFont));
+    }
+
+    /// <summary>Mirrors the corpus fixture <c>6-2-11-4-1-t02-fail-e</c>'s exact shape: a complete two-byte
+    /// code for a real glyph (CID 0x0041, 'A' — the same CID <see cref="Type0_consistent_width_passes"/>
+    /// confirms is present) followed by one trailing byte ('#', 0x23) that cannot complete a second
+    /// two-byte code under the Identity-H CMap, matching the fixture's trailing <c>(#)</c> string.</summary>
+    private static PdfDocument Type0DocWithOddLengthString() =>
+        Type0DocShowingRawBytes(Encoding.ASCII.GetBytes("<004123>"));
+
+    /// <summary>Guard for <see cref="Type0_incomplete_final_code_fails_notdef"/>: the same font/CMap
+    /// showing only complete two-byte codes (CID 0x0041 twice, both real glyphs) must stay silent on the
+    /// incomplete-code path — otherwise the detection test could pass for the wrong reason.</summary>
+    private static PdfDocument Type0DocWithEvenLengthString() =>
+        Type0DocShowingRawBytes(Encoding.ASCII.GetBytes("<00410041>"));
+
+    [Fact]
+    public void Type0_incomplete_final_code_fails_notdef()
+    {
+        // A one-byte string under a two-byte Identity-H CMap: the final code cannot be completed,
+        // so it cannot map to any glyph. The corpus fixture 6-2-11-4-1-t02-fail-e ends with (#)
+        // exactly this way; every CID it does complete is legitimately present in the program.
+        Finding f = Assert.Single(
+            Run(Type0DocWithOddLengthString()), x => Clause(x) == "6.2.11.8");
+        Assert.Contains(".notdef", f.Message);
+    }
+
+    [Fact]
+    public void Type0_even_length_string_is_not_flagged_as_incomplete()
+    {
+        // Guard the premise: the same font showing only complete codes must stay silent, or the
+        // test above would pass for the wrong reason.
+        Assert.DoesNotContain(Run(Type0DocWithEvenLengthString()), x => Clause(x) == "6.2.11.8");
+    }
+
     // ── simple-font .notdef / glyph-present (slice 1) ─────────────────────────────────────────────────
 
     // A WinAnsi code remapped via /Differences to a glyph whose Unicode PublicPixel lacks, so the

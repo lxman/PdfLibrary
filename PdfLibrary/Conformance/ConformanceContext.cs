@@ -26,10 +26,13 @@ internal enum OutputIntentColour { None, Gray, Rgb, Cmyk, Other }
 /// those codes shown outside text rendering mode 3 (invisible). veraPDF exempts render-mode-3 text from
 /// glyph-present (6.2.11.4.1 t2) and widths (6.2.11.5) — consumers of those clauses should use
 /// <see cref="VisibleCodes"/>; .notdef (6.2.11.8) and ToUnicode ("regardless of rendering mode") stay on
-/// <see cref="Codes"/>.
+/// <see cref="Codes"/>. <see cref="ShowedIncompleteCode"/> flags a font shown with a trailing byte that
+/// could not complete a two-byte Type0 code (see <see cref="ToUnicodeUsageCollector"/>) — an unmappable
+/// code, which is itself a .notdef reference (6.2.11.8).
 /// </summary>
 internal readonly record struct UsedFontCodes(
-    PdfFont Font, IReadOnlyCollection<int> Codes, IReadOnlyCollection<int> VisibleCodes);
+    PdfFont Font, IReadOnlyCollection<int> Codes, IReadOnlyCollection<int> VisibleCodes,
+    bool ShowedIncompleteCode);
 
 /// <summary>
 /// Per-run state handed to each <see cref="IConformanceRule"/>: the document under inspection, the
@@ -421,6 +424,7 @@ internal sealed class ConformanceContext
         var merged = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
         var mergedVisible = new Dictionary<PdfFont, HashSet<int>>(ReferenceEqualityComparer.Instance);
         var pagesByFont = new Dictionary<PdfDictionary, SortedSet<int>>(ReferenceEqualityComparer.Instance);
+        var incomplete = new HashSet<PdfFont>(ReferenceEqualityComparer.Instance);
 
         for (var i = 0; i < Pages.Count; i++)
         {
@@ -451,12 +455,16 @@ internal sealed class ConformanceContext
                     mergedVisible[font] = set = [];
                 set.UnionWith(codes);
             }
+
+            foreach (PdfFont font in collector.IncompleteCodeFonts)
+                incomplete.Add(font);
         }
 
         _usedTextGlyphs = merged.Select(kv => new UsedFontCodes(
             kv.Key,
             kv.Value,
-            mergedVisible.TryGetValue(kv.Key, out HashSet<int>? visible) ? visible : [])).ToList();
+            mergedVisible.TryGetValue(kv.Key, out HashSet<int>? visible) ? visible : [],
+            incomplete.Contains(kv.Key))).ToList();
 
         var pagesResult = new Dictionary<PdfDictionary, IReadOnlyList<int>>(ReferenceEqualityComparer.Instance);
         foreach (KeyValuePair<PdfDictionary, SortedSet<int>> kv in pagesByFont)
