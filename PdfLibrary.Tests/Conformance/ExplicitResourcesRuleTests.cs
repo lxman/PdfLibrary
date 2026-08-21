@@ -150,4 +150,79 @@ public class ExplicitResourcesRuleTests
         };
         Assert.Empty(Findings(FormDoc("/CS0 cs\n0.5 sc\n", own)));
     }
+
+    /// <summary>A page showing a Type3 glyph; the Type3 font's /Resources are supplied separately
+    /// (null = the font has none, the fail-d shape).</summary>
+    private static PdfDocument Type3Doc(string charProcContent, PdfDictionary? fontResources)
+    {
+        var doc = new PdfDocument();
+
+        doc.AddObject(20, 0, new PdfStream(new PdfDictionary(), Ops(charProcContent)));
+        doc.AddObject(21, 0, new PdfDictionary { [N("square")] = Ref(20) });
+        doc.AddObject(22, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Encoding"),
+            [N("Differences")] = new PdfArray(new PdfInteger(97), N("square")),
+        });
+
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"), [N("Subtype")] = N("Type3"),
+            [N("FontBBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0),
+                                           new PdfInteger(750), new PdfInteger(750)),
+            [N("FontMatrix")] = new PdfArray(new PdfReal(0.001), new PdfReal(0), new PdfReal(0),
+                                             new PdfReal(0.001), new PdfReal(0), new PdfReal(0)),
+            [N("CharProcs")] = Ref(21), [N("Encoding")] = Ref(22),
+            [N("FirstChar")] = new PdfInteger(97), [N("LastChar")] = new PdfInteger(97),
+            [N("Widths")] = new PdfArray(new PdfInteger(1000)),
+        };
+        if (fontResources is not null) font[N("Resources")] = fontResources;
+        doc.AddObject(10, 0, font);
+
+        doc.AddObject(11, 0, new PdfArray(N("CalGray")));
+
+        var pageResources = new PdfDictionary
+        {
+            [N("Font")] = new PdfDictionary { [N("F1")] = Ref(10) },
+            [N("ColorSpace")] = new PdfDictionary { [N("CS0")] = Ref(11) },
+        };
+
+        doc.AddObject(4, 0, new PdfStream(new PdfDictionary(), Ops("BT\n/F1 12 Tf\n(a) Tj\nET\n")));
+        doc.AddObject(3, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Page"), [N("Parent")] = Ref(2),
+            [N("Contents")] = Ref(4), [N("Resources")] = pageResources,
+        });
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+        return doc;
+    }
+
+    [Fact]
+    public void A_type3_glyph_inheriting_a_colour_space_from_the_page_is_flagged()
+    {
+        Finding f = Assert.Single(Findings(Type3Doc("1000 0 d0\n/CS0 cs\n0.5 sc\n0 0 750 750 re f\n", null)));
+        Assert.Contains("CS0", f.Message);
+    }
+
+    [Fact]
+    public void A_type3_glyph_using_only_device_colour_is_not_flagged()
+    {
+        // The fail-d / pass-a discriminator: pass-a's charprocs are d1 + re/f with no named resource.
+        Assert.Empty(Findings(Type3Doc("1000 0 0 0 750 750 d1\n0 0 750 750 re f\n", null)));
+    }
+
+    [Fact]
+    public void A_type3_font_carrying_its_own_colour_space_is_not_flagged()
+    {
+        var own = new PdfDictionary
+        {
+            [N("ColorSpace")] = new PdfDictionary { [N("CS0")] = Ref(11) },
+        };
+        Assert.Empty(Findings(Type3Doc("1000 0 d0\n/CS0 cs\n0.5 sc\n0 0 750 750 re f\n", own)));
+    }
 }

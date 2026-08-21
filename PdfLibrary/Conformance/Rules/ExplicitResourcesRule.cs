@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Linq;
 using PdfLibrary.Content;
 using PdfLibrary.Content.Operators;
+using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Document;
 
@@ -139,6 +141,64 @@ internal sealed class ExplicitResourcesRule : IConformanceRule
 
             if (form.IsIndirect)
                 activeForms.Remove(form.ObjectNumber);
+        }
+
+        foreach (PdfOperator op in ops)
+        {
+            if (op.Name == "Tf" && NameOperand(op, 0) is { } fontName)
+            {
+                foreach (Finding finding in WalkType3(
+                             context, effective, fontName, pageIndex, depth, activeForms))
+                {
+                    findings.Add(finding);
+                }
+            }
+        }
+
+        return findings;
+    }
+
+    /// <summary>
+    /// A Type3 glyph procedure's DIRECTLY associated resources are the Type3 FONT dictionary's
+    /// /Resources (ISO 32000-1 9.6.5); absent that, a consumer falls back to the invoking scope's.
+    /// Every charproc is walked, not only the glyphs shown — the font is reached, which is what
+    /// veraPDF models, and the corpus fixture's unused glyph carries the same defect as its used ones.
+    /// </summary>
+    private List<Finding> WalkType3(
+        ConformanceContext context, PdfResources? effective, string fontName,
+        int pageIndex, int depth, HashSet<int> activeForms)
+    {
+        var findings = new List<Finding>();
+
+        if (effective is null
+            || context.Resolve(effective.Dictionary.Get("Font")) is not PdfDictionary fonts
+            || !fonts.TryGetValue(new PdfName(fontName), out PdfObject? fontObj)
+            || context.Resolve(fontObj) is not PdfDictionary font
+            || context.ResolveName(font.Get("Subtype")) != "Type3"
+            || context.Resolve(font.Get("CharProcs")) is not PdfDictionary charProcs)
+        {
+            return findings;
+        }
+
+        PdfResources? direct = ResourcesOf(context, font);
+
+        foreach (PdfObject value in charProcs.Values.ToList())
+        {
+            if (context.Resolve(value) is not PdfStream proc)
+                continue;
+
+            byte[] data;
+            try { data = proc.GetDecodedData(context.Document.Decryptor); }
+            catch { continue; }
+            if (data.Length == 0)
+                continue;
+
+            List<PdfOperator> ops;
+            try { ops = PdfContentParser.Parse(data); }
+            catch { continue; }
+
+            findings.AddRange(WalkStream(
+                context, ops, direct, effective, pageIndex, font, depth + 1, activeForms));
         }
 
         return findings;

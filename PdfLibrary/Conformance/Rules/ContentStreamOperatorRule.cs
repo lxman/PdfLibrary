@@ -20,11 +20,16 @@ namespace PdfLibrary.Conformance.Rules;
 /// content it reaches. A stray operator in a Form that is present in the resources but never invoked is
 /// therefore not reported, preserving the 0-false-positive invariant.
 ///
-/// KNOWN LIMITATION (clause 6.2.2 test t04): the shared content lexer recovers from a malformed run-together
-/// operator by splitting it into valid operators (e.g. <c>ref</c> → <c>re</c> + <c>f</c>, <c>sc0</c> → <c>sc</c>
-/// + <c>0</c>), so such a stream never surfaces an undefined token here even though veraPDF tokenises it as one
+/// KNOWN LIMITATION: the shared content lexer recovers from a malformed run-together operator by splitting
+/// it into valid operators (e.g. <c>ref</c> → <c>re</c> + <c>f</c>, <c>sc0</c> → <c>sc</c> + <c>0</c>), so
+/// such a stream never surfaces an undefined token here even though veraPDF tokenises it as one
 /// <c>Op_Undefined</c>. Catching that needs spec-strict content tokenisation, a lexer change with rendering
 /// robustness trade-offs, tracked separately. It only ever under-reports (never a false positive).
+///
+/// <para>Naming caution: the corpus files named 6-2-2-t04-* are NOT operator fixtures — they are
+/// veraPDF's clause 6.2.2 test NUMBER 2 (explicitly associated /Resources) fixtures, handled by
+/// ExplicitResourcesRule. A corpus filename names its section, not the test number that fires;
+/// read verapdf-verdicts.json.</para>
 /// </summary>
 internal sealed class ContentStreamOperatorRule : IConformanceRule
 {
