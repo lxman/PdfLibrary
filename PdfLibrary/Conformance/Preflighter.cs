@@ -61,6 +61,8 @@ public static class Preflighter
         new Rules.DeviceColourRule(),
         // Content streams use only ISO 32000-1 operators (6.2.2).
         new Rules.ContentStreamOperatorRule(),
+        // A content stream references only resources in its DIRECTLY associated /Resources (6.2.2 test 2).
+        new Rules.ExplicitResourcesRule(),
         // Slice 31 — extended graphics state (ISO 19005-2 6.2.5): TR/HTP/TR2 + halftone type/name/transfer.
         new Rules.ExtGStateRule(),
         // Slice 32 — rendering intents (ISO 19005-2 6.2.6): ExtGState /RI, image /Intent, ri operator.
