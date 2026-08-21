@@ -243,6 +243,9 @@ public class PdfFontEncodingTests
         Assert.Equal("numbersign", enc.GetGlyphName(35));
         Assert.False(enc.IsDerivedName(46));
         Assert.False(enc.IsDerivedName(35));
+        // The switch from SetUnicode to SetCharacterName must not drift the Unicode value itself.
+        Assert.Equal(".", enc.DecodeCharacter(46));
+        Assert.Equal("#", enc.DecodeCharacter(35));
     }
 
     [Fact]
@@ -261,6 +264,44 @@ public class PdfFontEncodingTests
         {
             if (code is 39 or 96) continue;
             Assert.Equal(std.GetGlyphName(code), win.GetGlyphName(code));
+        }
+    }
+
+    // ── Task 6 review follow-up: MacRoman reuses WinAnsiEncodingAsciiNames on the untested claim
+    // that MacRoman's ASCII names match WinAnsi's. No corpus fixture exercises MacRoman's ASCII
+    // range, so these tests — not a comment — are what stands behind that commit.
+
+    [Fact]
+    public void MacRoman_ascii_names_are_document_asserted_not_derived()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        Assert.Equal("period", enc.GetGlyphName(46));
+        Assert.Equal("numbersign", enc.GetGlyphName(35));
+        Assert.False(enc.IsDerivedName(46));
+        Assert.False(enc.IsDerivedName(35));
+        Assert.Equal(".", enc.DecodeCharacter(46));
+        Assert.Equal("#", enc.DecodeCharacter(35));
+    }
+
+    [Fact]
+    public void MacRoman_quote_codes_match_win_ansi_not_standard()
+    {
+        PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+
+        Assert.Equal("quotesingle", mac.GetGlyphName(39));
+        Assert.Equal("grave", mac.GetGlyphName(96));
+    }
+
+    [Fact]
+    public void MacRoman_agrees_with_win_ansi_on_every_ascii_name()
+    {
+        PdfFontEncoding mac = PdfFontEncoding.GetStandardEncoding("MacRomanEncoding");
+        PdfFontEncoding win = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+
+        for (var code = 32; code <= 126; code++)
+        {
+            Assert.Equal(win.GetGlyphName(code), mac.GetGlyphName(code));
         }
     }
 }
