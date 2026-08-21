@@ -128,7 +128,8 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // ResolveSimpleGlyph) that closed a 7-new-FP CC-MAIN regression makes the CFF-branch
             // glyph-present resolver skip (Unknown) every CFF code whose name came from SetUnicode's
             // reverse-AGL fallback -- every code in a WinAnsi- or MacRoman-based CFF font (both
-            // factories are SetUnicode-only, never SetCharacterName), not only the
+            // factories WERE SetUnicode-only at the time, never SetCharacterName -- see the reversal
+            // note below; this is no longer true), not only the
             // newly-AGL-resolvable subset -- so a WinAnsi-base, no-/Differences CFF fixture whose missing
             // glyph is an ordinary Latin letter is now missed too: "veraPDF test suite
             // 6-2-11-4-1-t02-fail-a.pdf" and "...-fail-b.pdf" (root-caused via a git-stash A/B probe
@@ -137,15 +138,39 @@ public class CorpusOracleTests(ITestOutputHelper output)
             // commit) removed the analogous TrueType-branch gate as unjustified -- provenance carries no
             // information there, since the TrueType arm only ever uses a name as a courier for the
             // encoding's own Unicode value -- which is why this floor did not move back up after that
-            // change: these 2 CFF detections stay withdrawn on purpose, matching ParityReportTests' own
-            // floor note. Full record: the tracked spec's Amendment 2
+            // change AT THE TIME: these 2 CFF detections stayed withdrawn on purpose, matching
+            // ParityReportTests' own floor note of the same date -- see the reversal note below, both
+            // withdrawals were undone by this branch. Full record: the tracked spec's Amendment 2
             // (docs/superpowers/specs/2026-08-15-encoding-follow-ups-27-28-design.md, "complete the AGL
             // table") states the completion mandate that exposed this; the mechanism itself is PdfLibrary
             // commit 43ae761 (the GlyphList completion) plus this commit (the derived-name provenance fix)
             // -- a deliberate FP-safety/recall trade-off, explicitly reviewed and accepted, not a
             // regression to chase.
             // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
-            [ConformanceProfile.PdfA2b] = 586,
+            //
+            // REVERSED by branch feat/parity-622-and-font-glyph, 2026-08-20 (B1, "an Annex-D base
+            // encoding's ASCII names are document-asserted, not derived"): CreateWinAnsiEncoding and
+            // CreateMacRomanEncoding no longer call SetUnicode for codes 32-126 at all -- they now
+            // assign those names BY NAME via SetCharacterName from an explicit Annex D.2 table
+            // (PdfFontEncoding.cs:417-420, 467-470), so the two paragraphs above describe a PAST state,
+            // not the current one. IsDerivedName is now false for that band on both encodings, so
+            // ResolveSimpleGlyph's CFF arm again treats a missing glyph on those codes as document-
+            // asserted rather than Unknown, and 6-2-11-4-1-t02-fail-a/-b are DETECTED again, not
+            // withdrawn.
+            //
+            // +23 (586->609), same branch, 2026-08-21 (re-measured, not assumed -- see
+            // CorpusOracleTests.Detection_coverage_does_not_regress run locally with VERAPDF_CORPUS
+            // set): PDF/A-2b fail-fixture detection is now 609/609 -- full detection, matching the
+            // whole-file agreement floor's own 986/986 (ParityReportTests.AgreementFloor): with zero
+            // whole-file misses, there can be no undetected fail fixture left. AT LEAST 8 of the +23 are
+            // this branch's own closed misses (6-2-2-t04-fail-d/-e/-f via the new ExplicitResourcesRule,
+            // 6-2-11-4-1-t02-fail-a/-b/-e and 6-2-11-8-t01-fail-a/-b via the three targeted font fixes,
+            // including the B1 reversal immediately above). The remaining ~15 are pre-existing drift:
+            // like every prior "the floor had gone stale" entry in this file's own history (2026-07-25,
+            // slice 27, ...), this ratchet was never re-measured after several EARLIER slices' gains, so
+            // it undercounted reality well before this branch touched it. Floor is now the CEILING
+            // (609/609) -- any regression at all trips it, the same standing as the PdfUA1 floor below.
+            [ConformanceProfile.PdfA2b] = 609,
             [ConformanceProfile.PdfA2u] = 7,
             [ConformanceProfile.PdfA3b] = 5,   // slice 8: embedded files (all 3b fail fixtures — full)
             // Ratcheted to the current detection when the CP14 headings rule (ua-headings, clause 7.4) landed:

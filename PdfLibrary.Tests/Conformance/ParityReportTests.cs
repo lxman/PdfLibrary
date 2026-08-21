@@ -33,11 +33,12 @@ public class ParityReportTests(ITestOutputHelper output)
             // (8-t01-fail-a/-b), and an incomplete final composite code treated as .notdef
             // (t02-fail-e). All four profiles now agree on every file.
             //
-            // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
             // +6 (972->978), 2026-08-20: catching up a ratchet the two prior landings left behind --
             // byte fidelity (6.1.6 t1/t2 + 6.1.13 t1, +4) and CMap max-CID (6.1.13 t10, +2) both raised
             // measured agreement without raising this floor, leaving those gains unprotected. No new
             // detection here; this only locks in what already shipped.
+            //
+            // Re-measured unchanged under issue 40's CID-0 predicate, 2026-08-17.
             [ConformanceProfile.PdfA2b] = 986,
             // +1 (971->972), 2026-08-20: 6.6.4 t4/t5 to FULL parity ("veraPDF test suite 6-6-4-t01-fail-b.pdf",
             // blocked by this clause alone) -- takes A-2b agreement past 99%. The pdfaid properties must carry
@@ -94,7 +95,10 @@ public class ParityReportTests(ITestOutputHelper output)
             // FontProgramRule.ResolveSimpleGlyph) that closed the 7-new-FP corpus regression ALSO makes the
             // glyph-present resolver skip (Unknown) every code whose name came from SetUnicode's reverse-AGL
             // fallback -- which is EVERY code in a WinAnsi- or MacRoman-based font (CreateWinAnsiEncoding and
-            // CreateMacRomanEncoding both call SetUnicode exclusively, never SetCharacterName), not only the
+            // CreateMacRomanEncoding both called SetUnicode exclusively at the time, never SetCharacterName --
+            // REVERSED by branch feat/parity-622-and-font-glyph, 2026-08-20, B1: both now assign codes 32-126
+            // BY NAME via SetCharacterName from an explicit Annex D.2 table, so this is no longer true), not
+            // only the
             // newly-AGL-resolvable subset. Two
             // corpus fixtures built exactly that way (WinAnsi base, no /Differences override on the missing
             // code) lost their genuine 6.2.11.4.1 detection: "veraPDF test suite 6-2-11-4-1-t02-fail-a.pdf"
@@ -102,9 +106,13 @@ public class ParityReportTests(ITestOutputHelper output)
             // disagreements before, 23 after, and the only 2 new entries are these). Both are CFF fixtures --
             // round 2 of this fix (same commit) removed the analogous TrueType-branch gate as unjustified
             // (the TrueType arm only ever uses a name as a courier for the encoding's own Unicode value, so
-            // provenance carries no information there), which is why this floor did NOT move back up: these
-            // 2 CFF detections stay withdrawn on purpose. This is the SAME recall-regression class as
-            // CC-MAIN's 4000_4000080.pdf. Full record: the tracked spec's Amendment 2
+            // provenance carries no information there), which is why this floor did NOT move back up AT THE
+            // TIME: these 2 CFF detections stayed withdrawn on purpose. This was the SAME recall-regression
+            // class as CC-MAIN's 4000_4000080.pdf. REVERSED by this same branch, 2026-08-20 (see the +8 entry
+            // above): the B1 fix that makes CreateWinAnsiEncoding/CreateMacRomanEncoding assign names BY NAME
+            // means these 2 codes are document-asserted again, not derived, so 6-2-11-4-1-t02-fail-a/-b are
+            // DETECTED, not withdrawn -- do not read the sentence above as describing current behaviour.
+            // Full record: the tracked spec's Amendment 2
             // (docs/superpowers/specs/2026-08-15-encoding-follow-ups-27-28-design.md, "complete the AGL
             // table") states the completion mandate that exposed this; the mechanism itself is PdfLibrary
             // commit 43ae761 (the GlyphList completion) plus this commit (the derived-name provenance fix)
