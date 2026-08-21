@@ -675,6 +675,40 @@ public sealed partial class PdfDocumentEditor
         return true;
     }
 
+    /// <summary>Removes <c>/Encoding</c> from a symbolic TrueType font (ISO 19005-2 6.2.11.6). Guarded
+    /// by <see cref="IsSymbolicTrueType"/>, which mirrors <c>FontDictionaryRule.SymbolicFlags</c>
+    /// (FontDictionaryRule.cs:316-324) exactly — the /FontDescriptor /Flags bit 3 (value 4) test —
+    /// restricted to /Subtype /TrueType to match <c>FontDictionaryRule.Check</c>'s own dispatch
+    /// (FontDictionaryRule.cs:102-112), which only ever evaluates that predicate for a TrueType font.
+    /// Returns false, writing nothing, for a non-symbolic font, a non-TrueType font, or one with no
+    /// <c>/Encoding</c> to begin with.</summary>
+    public bool RemoveSymbolicEncoding(FontId font)
+    {
+        if (!TryResolveFontDictionary(font, out PdfDictionary? dictionary) || dictionary is null)
+            return false;
+        if (dictionary.Get("Encoding") is null)
+            return false;
+        if (!IsSymbolicTrueType(dictionary))
+            return false;
+        dictionary.Remove(new PdfName("Encoding"));
+        return true;
+    }
+
+    /// <summary>The same Symbolic-bit test <c>FontDictionaryRule.SymbolicFlags</c> makes (Flags bit 3
+    /// = 4), plus the /Subtype /TrueType restriction that rule's caller applies before ever reaching
+    /// that predicate. Kept in agreement with the rule deliberately: a guard that disagreed would either
+    /// refuse a font the rule flags, or strip /Encoding from one it does not.</summary>
+    private bool IsSymbolicTrueType(PdfDictionary dictionary)
+    {
+        if (Resolve(dictionary.Get("Subtype")) is not PdfName { Value: "TrueType" })
+            return false;
+        if (Resolve(dictionary.Get("FontDescriptor")) is not PdfDictionary descriptor)
+            return false;
+        if (Resolve(descriptor.Get("Flags")) is not PdfInteger flags)
+            return false;
+        return (flags.LongValue & 4) != 0;
+    }
+
     private PdfDictionary ResolveFontDictionary(FontId font)
     {
         if (!TryResolveFontDictionary(font, out PdfDictionary? dictionary))

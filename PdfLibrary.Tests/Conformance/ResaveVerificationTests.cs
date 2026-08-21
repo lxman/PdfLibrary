@@ -413,4 +413,78 @@ public class ResaveVerificationTests
         Assert.DoesNotContain(after.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.3.2");
         AssertNoNewRuleIds(before, after);
     }
+
+    // ── font-dictionary 6.2.11.6 — symbolic TrueType /Encoding (Task 2b: RemoveSymbolicEncoding) ───────
+
+    /// <summary>A symbolic TrueType font (object 31, /FontDescriptor /Flags 4) that also carries an
+    /// /Encoding — a genuine 6.2.11.6 violation — reachable via a page's /Resources /Font.</summary>
+    private static PdfDocument SymbolicTrueTypeWithEncodingDocument()
+    {
+        var doc = new PdfDocument();
+        doc.AddObject(31, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+TestFont"),
+            [N("Encoding")] = N("WinAnsiEncoding"), // the violation under test — a symbolic font must not carry this
+            [N("FirstChar")] = new PdfInteger(65),
+            [N("LastChar")] = new PdfInteger(65),
+            [N("Widths")] = new PdfArray(new PdfInteger(722)),
+            [N("FontDescriptor")] = new PdfDictionary
+            {
+                [N("Type")] = N("FontDescriptor"),
+                [N("FontName")] = N("ABCDEF+TestFont"),
+                [N("Flags")] = new PdfInteger(4), // Symbolic (bit 3)
+            },
+        });
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(), Encoding.ASCII.GetBytes("BT /F0 12 Tf (A) Tj ET")));
+        var page = new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = new PdfIndirectReference(2, 0),
+            [N("MediaBox")] = new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfInteger(612), new PdfInteger(792)),
+            [N("Contents")] = new PdfIndirectReference(11, 0),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("Font")] = new PdfDictionary { [N("F0")] = new PdfIndirectReference(31, 0) },
+            },
+        };
+        doc.AddObject(3, 0, page);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"),
+            [N("Kids")] = new PdfArray(new PdfIndirectReference(3, 0)),
+            [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = new PdfIndirectReference(2, 0) });
+        doc.Trailer.Dictionary[N("Root")] = new PdfIndirectReference(1, 0);
+        return doc;
+    }
+
+    /// <summary>
+    /// The 6.2.11.6 finding on a genuinely non-conformant symbolic TrueType font (carries /Encoding) is
+    /// cleared once <see cref="PdfDocumentEditor.RemoveSymbolicEncoding"/> removes it before saving.
+    /// Includes the same discrimination check as the 6.2.11.3.2 fact above.
+    /// </summary>
+    [Fact]
+    public void SymbolicEncoding_finding_is_cleared_by_RemoveSymbolicEncoding_before_save()
+    {
+        byte[] original = SavedBytes(SymbolicTrueTypeWithEncodingDocument());
+
+        PreflightResult before = CheckBytes(original);
+        PreflightResult beforeAgain = CheckBytes(original); // discrimination: same bytes, no save in between
+        Assert.Contains(before.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.6");
+        Assert.Contains(beforeAgain.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.6");
+
+        byte[] saved = LoadEditSave(original, editor =>
+        {
+            FontInventoryEntry entry = Assert.Single(
+                FontInventory.Read(editor.Document), e => e.Kind == FontKind.TrueType);
+            Assert.True(editor.RemoveSymbolicEncoding(entry.Id));
+        });
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "font-dictionary" && ClauseKey(f) == "6.2.11.6");
+        AssertNoNewRuleIds(before, after);
+    }
 }
