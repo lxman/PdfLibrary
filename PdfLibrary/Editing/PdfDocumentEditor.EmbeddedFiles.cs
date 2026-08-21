@@ -40,6 +40,39 @@ public sealed class PdfEmbeddedFileSpec
     public bool AssociateWithDocument { get; init; }
 }
 
+/// <summary>One filespec <see cref="PdfDocumentEditor.RepairFileSpecNames"/> touched.
+/// <paramref name="Name"/> is the TEXT VALUE that was copied from the usable key into the missing one —
+/// not an identifier for the filespec, and in particular not the /EmbeddedFiles name-tree key
+/// <see cref="FileSpecNameRepairReport.Declined"/> reports (that one comes from
+/// <c>IdentifyFileSpec</c>). The two usually coincide, and are free not to.</summary>
+public sealed record FileSpecNameRepair(string Name, bool WroteF, bool WroteUf);
+
+/// <summary>What <see cref="PdfDocumentEditor.RepairFileSpecNames"/> did. <paramref name="Declined"/>
+/// names each filespec that could not be repaired because it carries no usable source key.</summary>
+public sealed record FileSpecNameRepairReport(
+    IReadOnlyList<FileSpecNameRepair> Repaired,
+    IReadOnlyList<string> Declined);
+
+/// <summary>One filespec <see cref="PdfDocumentEditor.PreviewFileSpecNameRepairs"/> found repairable —
+/// same walk and predicate as <see cref="FileSpecNameRepair"/>, but PROSPECTIVE: nothing has been
+/// written. Deliberately NOT <see cref="FileSpecNameRepair"/> reused for the preview: that record's
+/// <c>WroteF</c>/<c>WroteUf</c> are past tense, accurate for a call that just wrote and wrong for one
+/// that did not (see <see cref="PdfDocumentEditor.PreviewFileSpecNameRepairs"/>'s own doc comment for
+/// the reasoning). Conditional tense here on purpose. <paramref name="Name"/> carries the same meaning
+/// it does on <see cref="FileSpecNameRepair"/>: the text value that WOULD be copied, not an identifier
+/// for the filespec.</summary>
+public sealed record FileSpecNameRepairCandidate(string Name, bool WouldWriteF, bool WouldWriteUf);
+
+/// <summary>What <see cref="PdfDocumentEditor.PreviewFileSpecNameRepairs"/> found, read-only.
+/// <paramref name="Declined"/> carries the exact same meaning as
+/// <see cref="FileSpecNameRepairReport.Declined"/> and keeps its name unchanged across both types — it
+/// was already a classification ("this filespec has no usable source key"), never an action taken, so
+/// unlike <c>Repaired</c>/<c>WouldRepair</c> it needs no tense change to read correctly in either
+/// context.</summary>
+public sealed record FileSpecNameRepairPreview(
+    IReadOnlyList<FileSpecNameRepairCandidate> WouldRepair,
+    IReadOnlyList<string> Declined);
+
 public sealed partial class PdfDocumentEditor
 {
     /// <summary>
@@ -167,4 +200,180 @@ public sealed partial class PdfDocumentEditor
 
     private PdfObject? ResolveObject(PdfObject? obj) =>
         obj is PdfIndirectReference reference ? _document.ResolveReference(reference) : obj;
+
+    /// <summary>Fills in whichever of /F, /UF is missing or empty on an embedded-file specification,
+    /// copying the one that is usable (ISO 19005-2 6.8 / ISO 14289-1 7.11). Walks the same filespec set
+    /// EmbeddedFileSpecRule walks under the same switch: false = catalog /Names /EmbeddedFiles only
+    /// (PDF/A), true = also page /Annots[].FS (PDF/UA-1). Writes nothing for a filespec with both keys
+    /// already usable, with no /EF, or with no usable (present and non-empty) source key to copy —
+    /// otherwise overwrites whichever key is missing or present-but-empty with the other's text.
+    ///
+    /// <para>Shares its walk (<see cref="EnumerateFileSpecs"/>) and its per-filespec predicate
+    /// (<see cref="ClassifyFileSpecName"/>) with the read-only <see cref="PreviewFileSpecNameRepairs"/>,
+    /// so the write and the preview can never disagree about what would happen to a given document — the
+    /// same factoring <c>TryGetSettableCidFont</c> gives <c>CanSetCidToGidMapIdentity</c>/
+    /// <c>SetCidToGidMapIdentity</c> (PdfDocumentEditor.Fonts.cs).</para></summary>
+    public FileSpecNameRepairReport RepairFileSpecNames(bool includeAnnotationSpecs)
+    {
+        var repaired = new List<FileSpecNameRepair>();
+        var declined = new List<string>();
+
+        foreach ((PdfDictionary spec, string? nameTreeKey) in EnumerateFileSpecs(includeAnnotationSpecs))
+        {
+            FileSpecNameOutcome outcome = ClassifyFileSpecName(spec, out bool writeF, out string? text);
+            switch (outcome)
+            {
+                case FileSpecNameOutcome.Declined:
+                    declined.Add(IdentifyFileSpec(spec, nameTreeKey));
+                    break;
+
+                case FileSpecNameOutcome.Repairable:
+                    PdfName targetKey = writeF ? new PdfName("F") : new PdfName("UF");
+                    spec.Set(targetKey, PdfString.FromText(text!));
+                    repaired.Add(new FileSpecNameRepair(text!, WroteF: writeF, WroteUf: !writeF));
+                    break;
+
+                // NotAFileSpec / NothingToDo: nothing to write, nothing to report.
+                default:
+                    break;
+            }
+        }
+
+        return new FileSpecNameRepairReport(repaired, declined);
+    }
+
+    /// <summary>Read-only preview of exactly what <see cref="RepairFileSpecNames"/> would do RIGHT NOW,
+    /// without writing anything — added for <c>EmbeddedFileDomain.Propose</c> (2026-08-21 font-dictionary
+    /// and embedded-file remediation, Task 5), which must never call the mutating repair just to learn
+    /// its answer. That was the exact defect a prior domain in this same program shipped and had to
+    /// redo: staging then undoing left the write already committed to the live session with nothing
+    /// tracking it, and a second call afterward hit the write's own idempotency guard and reported a
+    /// false refusal for a document that already had the fix. This preview and
+    /// <see cref="RepairFileSpecNames"/> share <see cref="EnumerateFileSpecs"/> and
+    /// <see cref="ClassifyFileSpecName"/>, so they cannot drift apart the way two independently
+    /// maintained copies could.
+    ///
+    /// <para><b>Naming.</b> <see cref="FileSpecNameRepair"/>'s <c>WroteF</c>/<c>WroteUf</c> are past
+    /// tense — correct for a method that just wrote, wrong for one that has not. Rather than reuse that
+    /// record here (which would report <c>WroteF: true</c> for a write that never happened),
+    /// <see cref="FileSpecNameRepairCandidate"/> uses the conditional <c>WouldWriteF</c>/
+    /// <c>WouldWriteUf</c>. <c>Declined</c> keeps its existing name on both reports: it was already a
+    /// classification ("this filespec has no usable source key to copy"), never an action taken, so it
+    /// reads correctly whether the caller repaired or only looked.</para></summary>
+    public FileSpecNameRepairPreview PreviewFileSpecNameRepairs(bool includeAnnotationSpecs)
+    {
+        var candidates = new List<FileSpecNameRepairCandidate>();
+        var declined = new List<string>();
+
+        foreach ((PdfDictionary spec, string? nameTreeKey) in EnumerateFileSpecs(includeAnnotationSpecs))
+        {
+            FileSpecNameOutcome outcome = ClassifyFileSpecName(spec, out bool writeF, out string? text);
+            switch (outcome)
+            {
+                case FileSpecNameOutcome.Declined:
+                    declined.Add(IdentifyFileSpec(spec, nameTreeKey));
+                    break;
+
+                case FileSpecNameOutcome.Repairable:
+                    candidates.Add(new FileSpecNameRepairCandidate(text!, WouldWriteF: writeF, WouldWriteUf: !writeF));
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        return new FileSpecNameRepairPreview(candidates, declined);
+    }
+
+    /// <summary>Yields every reachable file-spec dictionary once, alongside its name-tree key (null for
+    /// one reached only through an annotation) — the single walk <see cref="RepairFileSpecNames"/> and
+    /// <see cref="PreviewFileSpecNameRepairs"/> share, so a filespec neither can see is a filespec
+    /// neither reports. Mirrors <c>EmbeddedFileSpecRule.CollectFileSpecs</c> (:111-131): same two arms,
+    /// same <paramref name="includeAnnotationSpecs"/> switch, same shared `seen` set deduplicating a
+    /// filespec reachable from both the name tree and an annotation (legal, if unusual).</summary>
+    private IEnumerable<(PdfDictionary Spec, string? NameTreeKey)> EnumerateFileSpecs(bool includeAnnotationSpecs)
+    {
+        var seen = new HashSet<int>();
+
+        PdfDictionary? catalog = _document.CatalogDictionary;
+        PdfDictionary? names = catalog is null ? null : ResolveObject(catalog.Get("Names")) as PdfDictionary;
+        foreach ((string? key, PdfObject value) in EnumerateEmbeddedFilesTree(names?.Get("EmbeddedFiles")))
+        {
+            if (ResolveObject(value) is not PdfDictionary spec) continue;
+            if (spec.IsIndirect && !seen.Add(spec.ObjectNumber)) continue;
+            yield return (spec, key);
+        }
+
+        if (!includeAnnotationSpecs) yield break;
+
+        foreach (PdfDictionary page in PageTreeOps.PageDicts(_document))
+        {
+            if (ResolveObject(page.Get("Annots")) is not PdfArray annots) continue;
+            foreach (PdfObject entry in annots)
+            {
+                if (ResolveObject(entry) is not PdfDictionary annot) continue;
+                if (ResolveObject(annot.Get("FS")) is not PdfDictionary spec) continue;
+                if (spec.IsIndirect && !seen.Add(spec.ObjectNumber)) continue;
+                yield return (spec, null);
+            }
+        }
+    }
+
+    private enum FileSpecNameOutcome { NotAFileSpec, NothingToDo, Repairable, Declined }
+
+    /// <summary>The classification <see cref="RepairFileSpecNames"/> and
+    /// <see cref="PreviewFileSpecNameRepairs"/> both act on — the ONLY place the usable/repairable/decline
+    /// decision is made, so a write and a preview of the same document state can never disagree. Mirrors
+    /// <c>EmbeddedFileSpecRule.Check</c>'s own reading exactly (:41-57): a filespec with no /EF is not an
+    /// embedded-file spec at all (<see cref="FileSpecNameOutcome.NotAFileSpec"/>, not declined).
+    ///
+    /// <para>The decision is keyed on USABILITY, not presence: a key is usable only when it is present
+    /// AND its text is non-empty (the same reading <c>EmbeddedFileSpecRule.NonEmpty</c> makes at
+    /// :138-139). Presence alone is not enough — <c>/F ()</c> (present, empty) is exactly the shape that
+    /// satisfies the PDF/A presence-only test (:51) while still failing PDF/UA-1's non-empty test
+    /// (:49-50), so a presence-only "both keys, skip" branch would silently leave a real 7.11 violation
+    /// unrepaired AND unreported. Both usable → <see cref="FileSpecNameOutcome.NothingToDo"/>. Neither
+    /// usable → <see cref="FileSpecNameOutcome.Declined"/>. Exactly one usable →
+    /// <see cref="FileSpecNameOutcome.Repairable"/>, with <paramref name="writeF"/>/<paramref name="text"/>
+    /// naming which key a write would target and what it would copy — which may already exist as a
+    /// present-but-empty string; the caller overwrites that stale value rather than assuming the target
+    /// is absent.</para></summary>
+    private FileSpecNameOutcome ClassifyFileSpecName(PdfDictionary spec, out bool writeF, out string? text)
+    {
+        writeF = false;
+        text = null;
+
+        if (ResolveObject(spec.Get("EF")) is not PdfDictionary) return FileSpecNameOutcome.NotAFileSpec;
+
+        string? fText = UsableText(spec, new PdfName("F"));
+        string? ufText = UsableText(spec, new PdfName("UF"));
+        bool fUsable = fText is not null;
+        bool ufUsable = ufText is not null;
+
+        if (fUsable && ufUsable) return FileSpecNameOutcome.NothingToDo;
+        if (!fUsable && !ufUsable) return FileSpecNameOutcome.Declined;
+
+        writeF = !fUsable;
+        text = writeF ? ufText! : fText!;
+        return FileSpecNameOutcome.Repairable;
+    }
+
+    /// <summary>The decoded text of <paramref name="spec"/>'s <paramref name="key"/> entry, or null when
+    /// the key is absent, not a string, or a string with no content — the single usability test both the
+    /// "both usable" skip and the "exactly one usable" repair in <see cref="ClassifyFileSpecName"/> share,
+    /// so they cannot disagree on what counts as usable.</summary>
+    private string? UsableText(PdfDictionary spec, PdfName key) =>
+        ResolveObject(spec.Get(key)) is PdfString s && s.Value.Length > 0 ? s.GetText() : null;
+
+    /// <summary>A stable identifier for a filespec <see cref="ClassifyFileSpecName"/> classified as
+    /// <see cref="FileSpecNameOutcome.Declined"/> — consumed verbatim in user-facing warnings by the
+    /// remediation layer above this method. Prefers the name-tree key (catalog arm only — an
+    /// annotation-reached filespec has none), falls back to /Desc, then "(unnamed)".</summary>
+    private string IdentifyFileSpec(PdfDictionary spec, string? nameTreeKey)
+    {
+        if (!string.IsNullOrEmpty(nameTreeKey)) return nameTreeKey;
+        if (ResolveObject(spec.Get("Desc")) is PdfString desc && desc.Value.Length > 0) return desc.GetText();
+        return "(unnamed)";
+    }
 }
