@@ -186,10 +186,12 @@ internal sealed class FontProgramRule : IConformanceRule
         string kind = isTrueType ? "TrueType" : "CFF";
         bool symbolic = IsSymbolic(context, font);
 
-        // .notdef (6.2.11.8 / 7.21.8): a shown code whose encoding glyph name is literally ".notdef" — the
-        // veraPDF predicate is name == ".notdef". NOT render-mode-exempt (spec: "regardless of text rendering
-        // mode"), so this walks ALL codes. Pure encoding lookup, no program parsing → FP-safe.
-        if (codes.Any(code => font.Encoding?.GetGlyphName(code) == ".notdef") && notdefReported.Add(DedupKey(font)))
+        // .notdef (6.2.11.8 / 7.21.8): a shown code that references .notdef, either because its encoding
+        // glyph name is literally ".notdef", or because the effective encoding has NO entry for the code at
+        // all (ISO 32000-1 9.6.6) — see IsNotdefReference. NOT render-mode-exempt (spec: "regardless of text
+        // rendering mode"), so this walks ALL codes.
+        if (codes.Any(code => IsNotdefReference(font, metrics, code, isTrueType, symbolic))
+            && notdefReported.Add(DedupKey(font)))
             yield return Make(context, font, "8",
                 $"The {kind} font {Name(font)} shows a character code mapped to the .notdef glyph.");
 
@@ -226,6 +228,55 @@ internal sealed class FontProgramRule : IConformanceRule
                 $"The {kind} font {Name(font)} declares a glyph width that differs "
                 + $"from the embedded font program's advance width by {worstDiff:F0} units "
                 + $"(tolerance {WidthTolerance:F0}).");
+    }
+
+    /// <summary>
+    /// True when a shown simple-font code references .notdef. Two ways that happens: the effective
+    /// encoding names it ".notdef" outright, or the encoding defines NO name for the code at all — ISO
+    /// 32000-1 9.6.6, a code outside the effective encoding renders .notdef. The corpus's two 6.2.11.8
+    /// fail fixtures are the second kind: both show &lt;00&gt; under WinAnsiEncoding, which leaves code 0
+    /// undefined.
+    ///
+    /// <para>The no-name case is gated first on symbolic, because "no name" is also what a symbolic font
+    /// looks like when it is driving its own built-in encoding — a symbolic font is exempt outright.</para>
+    ///
+    /// <para><b>The two program arms are deliberately asymmetric, not a workaround — this is the finding
+    /// from Task 7's Step 1 verification, corpus fixture 6-2-11-8-t01-fail-b (see the task 7 report).</b>
+    /// A simple CFF program carries a built-in <c>Encoding</c> that genuinely maps a raw character code to
+    /// a glyph, so probing it by raw code (<see cref="EmbeddedFontMetrics.GetGlyphIdByCffEncoding"/>) asks
+    /// a meaningful question — <see cref="ResolveSimpleGlyph"/> already relies on the same lookup as a
+    /// legitimate fallback, so a failed lookup here is a genuine .notdef. A nonsymbolic TrueType font has
+    /// no such thing: per ISO 32000-1 9.6.6.4 the real path is code → glyph NAME → Unicode → cmap, and with
+    /// no name there is no lookup to perform. <see cref="EmbeddedFontMetrics.GetGlyphId"/> does no
+    /// AGL/Unicode translation of its own — it hands the raw value straight to the cmap — and the cmap
+    /// walks every subtable including the low-priority Mac/Symbol/ISO fallback tier, where a subsetting
+    /// artifact can answer a non-.notdef glyph for a raw value that is not a real Unicode code point at
+    /// all. Measured on <c>DYOKPS+ArialMT</c> (fail-b): <c>GetGlyphId(0)</c> returns glyph 1, not 0, even
+    /// though code 0 carries no name and no rendering pipeline would ever look up Unicode U+0000 for it.
+    /// So the TrueType arm has NO program-side condition — nonsymbolic + no name is sufficient on its own —
+    /// and must not be "fixed" back to symmetry with the CFF arm; that raw-code TrueType probe is exactly
+    /// what produced the false negative this check exists to close.</para>
+    /// </summary>
+    private static bool IsNotdefReference(
+        PdfFont font, EmbeddedFontMetrics metrics, int code, bool isTrueType, bool symbolic)
+    {
+        string? glyphName = font.Encoding?.GetGlyphName(code);
+        if (glyphName == ".notdef")
+            return true;
+        if (glyphName is not null)
+            return false;
+
+        if (symbolic || metrics.HasSymbolCmapEncoding())
+            return false; // built-in encoding territory — a null name says nothing
+
+        // TrueType: no name means no code→Unicode lookup is even possible — nonsymbolic + no name is
+        // sufficient on its own (no program-side condition; see the asymmetry note above).
+        if (isTrueType)
+            return true;
+
+        // CFF: the program's own built-in Encoding genuinely maps a raw code to a glyph, so a raw-code
+        // probe is meaningful here — same lookup ResolveSimpleGlyph already relies on as a fallback.
+        return metrics.GetGlyphIdByCffEncoding((ushort)code) == 0;
     }
 
     // ── Type3 fonts — metrics only (glyphs are content streams; width from the d0/d1 operator) ─────────

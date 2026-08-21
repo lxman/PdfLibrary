@@ -631,6 +631,61 @@ public class PreflightSlice19Tests
         Assert.Empty(Run(SymbolicTrueTypeDocShowingAbsentGlyph()));
     }
 
+    // ── undefined code (no encoding entry at all) is .notdef — ISO 32000-1 9.6.6 ──────────────────────
+
+    /// <summary>A TrueType font whose <c>/Encoding</c> is a plain <c>/WinAnsiEncoding</c> NAME (no
+    /// <c>/Differences</c>), showing code 0 — a code WinAnsi leaves entirely undefined (no glyph name at
+    /// all, not even a real name that happens to be absent from the program). ISO 32000-1 9.6.6: a code
+    /// with no entry in the effective encoding renders .notdef. This is the exact shape of the corpus
+    /// fixtures <c>6-2-11-8-t01-fail-a/-b</c> (Type1C and TrueType respectively), both showing
+    /// <c>&lt;00&gt;</c> under WinAnsiEncoding.</summary>
+    private static PdfDocument TrueTypeDocShowingUndefinedCode(bool symbolic = false)
+    {
+        var descriptor = new PdfDictionary
+        {
+            [N("Type")] = N("FontDescriptor"),
+            [N("FontName")] = N("ABCDEF+PublicPixel"),
+            [N("Flags")] = new PdfInteger(symbolic ? 4 : 32),
+            [N("FontFile2")] = Ref(3),
+        };
+        var font = new PdfDictionary
+        {
+            [N("Type")] = N("Font"),
+            [N("Subtype")] = N("TrueType"),
+            [N("BaseFont")] = N("ABCDEF+PublicPixel"),
+            [N("FirstChar")] = new PdfInteger(0),
+            [N("LastChar")] = new PdfInteger(0),
+            [N("Widths")] = new PdfArray(new PdfInteger(ProgramWidth)),
+            [N("Encoding")] = N("WinAnsiEncoding"),
+            [N("FontDescriptor")] = Ref(2),
+        };
+        byte[] show = Encoding.ASCII.GetBytes("<00>");
+        return DocWith(font, show, (2, descriptor), (3, FontFile()));
+    }
+
+    [Fact]
+    public void Simple_truetype_undefined_code_fails_notdef()
+    {
+        // ISO 32000-1 9.6.6: a code with no entry in the effective encoding renders .notdef.
+        // The corpus fixtures 6-2-11-8-t01-fail-a/-b both show <00> under WinAnsiEncoding, which
+        // leaves code 0 undefined — the encoding yields NO name, so a `name == ".notdef"` test
+        // never fires.
+        Finding f = Assert.Single(
+            Run(TrueTypeDocShowingUndefinedCode()), x => Clause(x) == "6.2.11.8");
+        Assert.Contains(".notdef", f.Message);
+    }
+
+    [Fact]
+    public void Symbolic_font_undefined_code_is_not_flagged()
+    {
+        // A symbolic font drives its own built-in encoding and routinely has null names — exempt. This
+        // is now the ONLY test pinning the symbolic exemption on the TrueType arm: since the raw-code
+        // cmap probe was removed there (see IsNotdefReference), "nonsymbolic + no name" alone is
+        // sufficient to convict, so the symbolic gate is this arm's sole remaining false-positive guard.
+        Assert.DoesNotContain(Run(TrueTypeDocShowingUndefinedCode(symbolic: true)),
+            x => Clause(x) == "6.2.11.8");
+    }
+
     // ── FP-safe skips ─────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
