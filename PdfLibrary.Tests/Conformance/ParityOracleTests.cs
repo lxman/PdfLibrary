@@ -30,15 +30,31 @@ public class ParityOracleTests(ITestOutputHelper output)
     /// Clauses where PdfLibrary currently matches veraPDF on EVERY file the reference flags — a ratchet.
     /// Seeded from the phase-2 measurement; raise it (never lower without justification) as rules land.
     /// A miss here means a regression against the reference on a clause we claim full parity for.
+    ///
+    /// <para>Widened 2026-08-21 to EVERY clause the regenerated PARITY-REPORT measures at 100%: A-2b
+    /// 21→35 (+6.1.4, 6.1.8, 6.1.10, 6.1.12, 6.2.4.4, 6.2.5, 6.2.6, 6.2.8, 6.2.9, 6.2.11.3.3,
+    /// 6.2.11.4.2, 6.3.3, 6.6.2.1, 6.6.4), A-2u 1→3 (+6.2.11.3.1, 6.2.11.7.2), UA-1 5→26. These were
+    /// all already at full parity — most for a long time — and were simply never ratcheted in, so the
+    /// list had drifted into a sample of what it claims to cover. That drift is the same class of
+    /// defect as the two stale FLOORS found on 2026-08-20/21 (AgreementFloor 972 vs 978,
+    /// DetectionFloor 586 vs 609): a ratchet nobody re-measures protects less than it appears to.</para>
+    ///
+    /// <para>The five clauses deliberately NOT here are the five the report still measures as partial:
+    /// A-2b 6.1.2 (8/9), 6.2.11.3.1 (3/4), 6.2.11.4.1 (8/11), 6.2.11.5 (7/13), 6.2.11.8 (7/8). Full
+    /// VERDICT parity (986/986) does not imply full CLAUSE parity — veraPDF flags 6.2.11.5 on several
+    /// files only as a consequence of a missing glyph, reading the .notdef advance as the program
+    /// width, which is not a defect we reproduce. Add a clause here only when the report measures it
+    /// at 100%, never on a projection.</para>
     /// </summary>
     private static readonly IReadOnlyDictionary<ConformanceProfile, string[]> ParityFullClauses =
         new Dictionary<ConformanceProfile, string[]>
         {
             [ConformanceProfile.PdfA2b] =
-                ["6.1.3", "6.1.6", "6.1.7.1", "6.1.9", "6.1.13", "6.2.2", "6.2.3", "6.2.4.2", "6.2.4.3", "6.2.8.3", "6.2.10", "6.2.11.3.2", "6.2.11.6", "6.3.1", "6.3.2", "6.4.1", "6.4.2", "6.5.1", "6.5.2", "6.6.2.3.1", "6.6.2.3.3"],
-            [ConformanceProfile.PdfA2u] = ["6.6.4"],
+                ["6.1.3", "6.1.4", "6.1.6", "6.1.7.1", "6.1.8", "6.1.9", "6.1.10", "6.1.12", "6.1.13", "6.2.2", "6.2.3", "6.2.4.2", "6.2.4.3", "6.2.4.4", "6.2.5", "6.2.6", "6.2.8", "6.2.8.3", "6.2.9", "6.2.10", "6.2.11.3.2", "6.2.11.3.3", "6.2.11.4.2", "6.2.11.6", "6.3.1", "6.3.2", "6.3.3", "6.4.1", "6.4.2", "6.5.1", "6.5.2", "6.6.2.1", "6.6.2.3.1", "6.6.2.3.3", "6.6.4"],
+            [ConformanceProfile.PdfA2u] = ["6.2.11.3.1", "6.2.11.7.2", "6.6.4"],
             [ConformanceProfile.PdfA3b] = ["6.8"],
-            [ConformanceProfile.PdfUA1] = ["7.3", "7.15", "7.21.3.2", "7.21.5", "7.21.8"],
+            [ConformanceProfile.PdfUA1] =
+                ["5", "7.1", "7.3", "7.4.2", "7.4.4", "7.5", "7.9", "7.10", "7.11", "7.15", "7.16", "7.18.1", "7.18.2", "7.18.3", "7.18.4", "7.18.5", "7.18.6.2", "7.18.8", "7.20", "7.21.3.2", "7.21.3.3", "7.21.4.2", "7.21.5", "7.21.6", "7.21.7", "7.21.8"],
         };
 
     [Fact]
