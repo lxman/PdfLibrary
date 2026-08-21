@@ -175,6 +175,61 @@ public class FileSpecNameRepairTests
         Assert.Empty(report.Declined);
     }
 
+    /// <summary>Review fix (round 1): both /F and /UF structurally PRESENT is not the same as both
+    /// USABLE. /F () is present-but-empty — still a genuine PDF/UA-1 7.11 violation
+    /// (<c>EmbeddedFileSpecRule.NonEmpty</c>) even though PDF/A's presence-only test (:51) would call it
+    /// fine. The repair must overwrite the empty /F with /UF's usable text, not take the
+    /// both-keys-present skip branch <see cref="Skips_a_filespec_with_both_keys"/> exercises.</summary>
+    [Fact]
+    public void Repairs_f_when_f_is_present_but_empty_and_uf_is_usable()
+    {
+        using PdfDocumentEditor editor = BuildCatalogFilespecDocument(
+            "partial.txt", f: PdfString.FromText(""), uf: PdfString.FromText("report.txt")).Edit();
+
+        FileSpecNameRepairReport report = editor.RepairFileSpecNames(includeAnnotationSpecs: false);
+
+        FileSpecNameRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal("report.txt", repair.Name);
+        Assert.True(repair.WroteF);
+        Assert.False(repair.WroteUf);
+        Assert.Empty(report.Declined);
+        Assert.Equal("report.txt", ((PdfString)Dict(editor.Document, 10).Get("F")!).GetText());
+    }
+
+    /// <summary>Mirror of <see cref="Repairs_f_when_f_is_present_but_empty_and_uf_is_usable"/> in the
+    /// other direction: /UF () present-but-empty, /F usable — the empty /UF must be overwritten.</summary>
+    [Fact]
+    public void Repairs_uf_when_uf_is_present_but_empty_and_f_is_usable()
+    {
+        using PdfDocumentEditor editor = BuildCatalogFilespecDocument(
+            "partial2.txt", f: PdfString.FromText("report.txt"), uf: PdfString.FromText("")).Edit();
+
+        FileSpecNameRepairReport report = editor.RepairFileSpecNames(includeAnnotationSpecs: false);
+
+        FileSpecNameRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal("report.txt", repair.Name);
+        Assert.False(repair.WroteF);
+        Assert.True(repair.WroteUf);
+        Assert.Empty(report.Declined);
+        Assert.Equal("report.txt", ((PdfString)Dict(editor.Document, 10).Get("UF")!).GetText());
+    }
+
+    /// <summary>Review fix (round 1) corollary: both keys PRESENT but BOTH empty means neither is
+    /// usable — this is the "neither usable" decline branch, not the "both usable" skip branch, even
+    /// though the old presence-only predicate would have taken the skip branch and silently done
+    /// nothing (no repair, no decline visibility either).</summary>
+    [Fact]
+    public void Declines_a_filespec_whose_two_present_keys_are_both_empty()
+    {
+        using PdfDocumentEditor editor = BuildCatalogFilespecDocument(
+            "bothempty.txt", f: PdfString.FromText(""), uf: PdfString.FromText("")).Edit();
+
+        FileSpecNameRepairReport report = editor.RepairFileSpecNames(includeAnnotationSpecs: false);
+
+        Assert.Empty(report.Repaired);
+        Assert.Equal("bothempty.txt", Assert.Single(report.Declined));
+    }
+
     [Fact]
     public void Skips_a_filespec_with_no_ef_entry()
     {

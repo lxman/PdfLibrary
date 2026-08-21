@@ -177,11 +177,12 @@ public sealed partial class PdfDocumentEditor
     private PdfObject? ResolveObject(PdfObject? obj) =>
         obj is PdfIndirectReference reference ? _document.ResolveReference(reference) : obj;
 
-    /// <summary>Fills in whichever of /F, /UF is missing on an embedded-file specification, copying the
-    /// one that is present (ISO 19005-2 6.8 / ISO 14289-1 7.11). Walks the same filespec set
+    /// <summary>Fills in whichever of /F, /UF is missing or empty on an embedded-file specification,
+    /// copying the one that is usable (ISO 19005-2 6.8 / ISO 14289-1 7.11). Walks the same filespec set
     /// EmbeddedFileSpecRule walks under the same switch: false = catalog /Names /EmbeddedFiles only
-    /// (PDF/A), true = also page /Annots[].FS (PDF/UA-1). Writes nothing for a filespec with both keys,
-    /// with no /EF, or with no non-empty source key to copy.</summary>
+    /// (PDF/A), true = also page /Annots[].FS (PDF/UA-1). Writes nothing for a filespec with both keys
+    /// already usable, with no /EF, or with no usable (present and non-empty) source key to copy —
+    /// otherwise overwrites whichever key is missing or present-but-empty with the other's text.</summary>
     public FileSpecNameRepairReport RepairFileSpecNames(bool includeAnnotationSpecs)
     {
         var repaired = new List<FileSpecNameRepair>();
@@ -221,11 +222,17 @@ public sealed partial class PdfDocumentEditor
     /// <summary>One filespec's worth of <see cref="RepairFileSpecNames"/> — shared by the catalog and
     /// annotation arms so they can never disagree on the predicate. Mirrors
     /// <c>EmbeddedFileSpecRule.Check</c>'s own reading exactly (:41-57): a filespec with no /EF is not an
-    /// embedded-file spec at all (skipped, not declined); one that already carries both /F and /UF needs
-    /// no repair (skipped, not declined — satisfies the PDF/A presence-only test already); a source key is
-    /// usable only when it is present AND its text is non-empty, because copying an empty value would
-    /// still fail the PDF/UA-1 non-empty test (:138-139) even though the PDF/A presence test would call it
-    /// fixed.</summary>
+    /// embedded-file spec at all (skipped, not declined).
+    ///
+    /// <para>The remaining decision is keyed on USABILITY, not presence: a key is usable only when it is
+    /// present AND its text is non-empty (the same reading <c>EmbeddedFileSpecRule.NonEmpty</c> makes at
+    /// :138-139). Presence alone is not enough — <c>/F ()</c> (present, empty) is exactly the shape that
+    /// satisfies the PDF/A presence-only test (:51) while still failing PDF/UA-1's non-empty test
+    /// (:49-50), so a presence-only "both keys, skip" branch would silently leave a real 7.11 violation
+    /// unrepaired AND unreported. Both usable → nothing to do (skip). Neither usable → decline. Exactly
+    /// one usable → write it into the OTHER key, which may already exist as a present-but-empty string;
+    /// this deliberately overwrites that stale value rather than assuming the target is absent.</para>
+    /// </summary>
     private void RepairFileSpecName(
         PdfDictionary spec, string? nameTreeKey, List<FileSpecNameRepair> repaired, List<string> declined)
     {
@@ -234,29 +241,34 @@ public sealed partial class PdfDocumentEditor
 
         if (ResolveObject(spec.Get("EF")) is not PdfDictionary) return; // not an embedded-file spec
 
-        bool fPresent = spec.ContainsKey(fKey);
-        bool ufPresent = spec.ContainsKey(ufKey);
-        if (fPresent && ufPresent) return; // nothing missing
+        string? fText = UsableText(spec, fKey);
+        string? ufText = UsableText(spec, ufKey);
+        bool fUsable = fText is not null;
+        bool ufUsable = ufText is not null;
 
-        if (!fPresent && !ufPresent)
+        if (fUsable && ufUsable) return; // both already usable — nothing to repair
+
+        if (!fUsable && !ufUsable)
         {
             declined.Add(IdentifyFileSpec(spec, nameTreeKey));
             return;
         }
 
-        PdfName sourceKey = fPresent ? fKey : ufKey;
-        PdfName targetKey = fPresent ? ufKey : fKey;
-
-        if (ResolveObject(spec.Get(sourceKey)) is not PdfString source || source.Value.Length == 0)
-        {
-            declined.Add(IdentifyFileSpec(spec, nameTreeKey));
-            return;
-        }
-
-        string text = source.GetText();
+        // Exactly one usable: copy it into the other key, overwriting whatever (if anything) is there —
+        // a present-but-empty sibling included.
+        bool writeF = !fUsable;
+        PdfName targetKey = writeF ? fKey : ufKey;
+        string text = writeF ? ufText! : fText!;
         spec.Set(targetKey, PdfString.FromText(text));
-        repaired.Add(new FileSpecNameRepair(text, WroteF: !fPresent, WroteUf: !ufPresent));
+        repaired.Add(new FileSpecNameRepair(text, WroteF: writeF, WroteUf: !writeF));
     }
+
+    /// <summary>The decoded text of <paramref name="spec"/>'s <paramref name="key"/> entry, or null when
+    /// the key is absent, not a string, or a string with no content — the single usability test both the
+    /// "both usable" skip and the "exactly one usable" repair in <see cref="RepairFileSpecName"/> share, so
+    /// they cannot disagree on what counts as usable.</summary>
+    private string? UsableText(PdfDictionary spec, PdfName key) =>
+        ResolveObject(spec.Get(key)) is PdfString s && s.Value.Length > 0 ? s.GetText() : null;
 
     /// <summary>A stable identifier for a filespec <see cref="RepairFileSpecName"/> could not repair —
     /// consumed verbatim in user-facing warnings by the remediation layer above this method. Prefers the
