@@ -131,8 +131,10 @@ detections. The names WinAnsi produces are already correct — only the provenan
 
 #### The dropped trailing byte
 
-`GlyphUsageCollector.cs:239-245` walks Identity-H text two bytes at a time and documents dropping an
-odd trailing byte: *"shouldn't happen in valid PDFs"*. That is exactly backwards for a preflighter —
+`ToUnicodeUsageCollector.cs:115-127` — the collector that actually feeds `ConformanceContext.UsedTextGlyphs`
+(`ConformanceContext.cs:431`), **not** `GlyphUsageCollector`, which has the same shape at `:239-245` but
+feeds the subsetting path — walks Identity-H text two bytes at a time and skips an odd trailing byte as
+"not a complete code". That is exactly backwards for a preflighter —
 a string whose final code is incomplete cannot map to any glyph, which is the defect. We will not
 fabricate a padded CID; we will record that an unmappable code was shown.
 
@@ -165,14 +167,14 @@ The `/Parent`-chain walk reuses the shape already proven at
 inherits only one level and reads an *injected* `_parentNode`, so it is unsuitable here.
 
 **Categories tracked.** `Tf`→`/Font`, `Do`→`/XObject`, `cs`/`CS`→`/ColorSpace`,
-`scn`/`SCN` name operand→`/Pattern`, `sh`→`/Shading`, `gs`→`/ExtGState`, and an inline image's `/CS`
-named colour space.
+`scn`/`SCN` trailing name operand→`/Pattern`, `sh`→`/Shading`, `gs`→`/ExtGState`.
 
-Not resource references, and must not trigger: `rg`/`g`/`k`/`sc` and friends; the device names
-`DeviceGray`/`DeviceRGB`/`DeviceCMYK`/`Pattern` as operands of `cs`/`CS`; inline-image colour-space
-abbreviations `G`/`RGB`/`CMYK`/`I`.
+Not resource references, and must not trigger: `rg`/`g`/`k`/`sc` and friends, and the device names
+`DeviceGray`/`DeviceRGB`/`DeviceCMYK`/`Pattern` as operands of `cs`/`CS`.
 
-`/Properties` (`BDC`/`DP`) is **deferred** — no fixture needs it and it is pure FP surface.
+**Deferred** — `/Properties` (`BDC`/`DP`) and inline-image `/CS` named colour spaces. Neither is needed
+by any fixture, both are pure FP surface, and the inline-image path would mean planning against
+`InlineImageOperator`'s dictionary shape without having verified it.
 
 **Traversal.** Model on `DeviceColourAnalysis`, which already walks page → form → Type3 glyph with
 per-scope resources. Carry a `(direct, inherited)` pair down instead of a single dictionary. Depth cap
