@@ -321,6 +321,24 @@ internal class PdfFontEncoding
     ];
 
     /// <summary>
+    /// The Annex D.2 WinAnsiEncoding names for codes 32-126. Identical to StandardEncoding except
+    /// 39 = quotesingle (not quoteright) and 96 = grave (not quoteleft), so it is derived from that
+    /// table rather than restated. Assigning these BY NAME matters beyond correctness of the name
+    /// itself: SetUnicode marks a name DERIVED (a reverse-AGL reconstruction), and FontProgramRule
+    /// will not call a glyph absent on a derived name. A name from a base-encoding table the document
+    /// explicitly named is asserted by the document, not reconstructed by us.
+    /// </summary>
+    private static readonly string[] WinAnsiEncodingAsciiNames = BuildWinAnsiAsciiNames();
+
+    private static string[] BuildWinAnsiAsciiNames()
+    {
+        string[] names = (string[])StandardEncodingAsciiNames.Clone();
+        names[39 - 32] = "quotesingle";
+        names[96 - 32] = "grave";
+        return names;
+    }
+
+    /// <summary>
     /// The Annex D.2 StandardEncoding names above 192, as (code, name) pairs — the band is sparse
     /// (192, 201, 204, 209-224, … are unassigned), so unlike the contiguous ASCII table this one
     /// carries its codes. Absent entries keep the Latin-1 extraction fallback, which is exactly the
@@ -393,10 +411,12 @@ internal class PdfFontEncoding
     {
         var encoding = new PdfFontEncoding("WinAnsiEncoding");
 
-        // ASCII printable characters (32-126) map directly
-        for (var i = 32; i <= 126; i++)
+        // Codes 32-126 by Annex D.2 NAME, not by reverse-AGL from the code point — SetCharacterName
+        // also derives the Unicode via the AGL, so the mappings are unchanged, but the names are now
+        // marked document-asserted rather than derived.
+        for (var i = 0; i < WinAnsiEncodingAsciiNames.Length; i++)
         {
-            encoding.SetUnicode(i, char.ConvertFromUtf32(i));
+            encoding.SetCharacterName(32 + i, WinAnsiEncodingAsciiNames[i]);
         }
 
         // Windows-1252 specific mappings (128-159)

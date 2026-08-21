@@ -225,4 +225,42 @@ public class PdfFontEncodingTests
         Assert.NotNull(font);
         Assert.Equal("suchthat", font!.Encoding!.GetGlyphName(39)); // SymbolEncoding 39, not quotes
     }
+
+    // ── Task 6: WinAnsi ASCII names must be document-asserted, not derived ───────────────────
+    // CreateWinAnsiEncoding built codes 32-126 via SetUnicode, which marks every name DERIVED
+    // (a reverse-AGL reconstruction). FontProgramRule.ResolveSimpleGlyph refuses to call a glyph
+    // absent from the embedded font program when its name is derived, so this suppressed two
+    // genuine corpus detections (veraPDF 6-2-11-4-1-t02-fail-a/-b). A name from the Annex D.2
+    // WinAnsiEncoding table the document itself named via /Encoding is asserted BY the document.
+
+    [Fact]
+    public void WinAnsi_ascii_names_are_document_asserted_not_derived()
+    {
+        PdfFontEncoding enc = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+
+        // period and numbersign are the two the corpus fixtures turn on.
+        Assert.Equal("period", enc.GetGlyphName(46));
+        Assert.Equal("numbersign", enc.GetGlyphName(35));
+        Assert.False(enc.IsDerivedName(46));
+        Assert.False(enc.IsDerivedName(35));
+    }
+
+    [Fact]
+    public void WinAnsi_differs_from_standard_at_exactly_two_ascii_codes()
+    {
+        PdfFontEncoding win = PdfFontEncoding.GetStandardEncoding("WinAnsiEncoding");
+        PdfFontEncoding std = PdfFontEncoding.GetStandardEncoding("StandardEncoding");
+
+        Assert.Equal("quotesingle", win.GetGlyphName(39));
+        Assert.Equal("quoteright", std.GetGlyphName(39));
+        Assert.Equal("grave", win.GetGlyphName(96));
+        Assert.Equal("quoteleft", std.GetGlyphName(96));
+
+        // Every other ASCII code agrees — this is what lets WinAnsi reuse the Standard table.
+        for (var code = 32; code <= 126; code++)
+        {
+            if (code is 39 or 96) continue;
+            Assert.Equal(std.GetGlyphName(code), win.GetGlyphName(code));
+        }
+    }
 }
