@@ -16,10 +16,11 @@ namespace PdfLibrary.Tests.Conformance;
 /// width of 1000 is consistent and anything else is not), never a faked <see cref="Rules"/> metric:
 /// <list type="bullet">
 ///   <item>font metrics (6.2.11.5 / 7.21.5) — declared vs embedded advance width, TrueType + Type0;</item>
-///   <item>.notdef glyph (6.2.11.8 / 7.21.8) — a shown code mapping to glyph 0, for Type0 and (via the
-///     tri-state <c>ResolveSimpleGlyph</c> resolver) simple TrueType / embedded-charset CFF fonts;</item>
+///   <item>.notdef glyph (6.2.11.8 / 7.21.8) — a shown code mapping to glyph 0 for Type0, and for simple
+///     TrueType / embedded-charset CFF fonts a code whose encoding names it ".notdef" outright OR (via
+///     <c>IsNotdefReference</c>) whose encoding defines no name at all for a nonsymbolic font;</item>
 ///   <item>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2) — a shown simple-font code whose glyph is absent from
-///     the embedded program, emitted from the same resolution as .notdef;</item>
+///     the embedded program, via the separate tri-state <c>ResolveSimpleGlyph</c> resolver;</item>
 ///   <item>the resolver's FP-safe skips — a symbolic font (declared <c>/Flags</c> bit 3 or a Windows-Symbol
 ///     cmap) routes to <c>Unknown</c> (no finding) so an AGL-Unicode lookup gap is never a false .notdef.</item>
 /// </list>

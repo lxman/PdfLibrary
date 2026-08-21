@@ -16,13 +16,15 @@ namespace PdfLibrary.Conformance.Rules;
 /// font program* (via <see cref="EmbeddedFontMetrics"/>) for the glyphs actually shown
 /// (<see cref="ConformanceContext.UsedTextGlyphs"/>), matching veraPDF's "used for rendering" scope:
 /// <list type="number">
-///   <item><b>.notdef glyph (6.2.11.8 / 7.21.8):</b> faithful to veraPDF's own predicate — a shown code
-///     whose glyph NAME is literally ".notdef" (encoding lookup only, no program parsing). NOT render-mode
-///     exempt ("regardless of text rendering mode"), so this walks every shown code, including RM3
-///     (invisible) text. Implemented for Type0 composite fonts with an Identity CMap, where the code equals
-///     the CID and the CID→GID map (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) resolves
-///     to glyph/CID 0; and for simple TrueType / simple CFF fonts via the PDF <c>/Encoding</c>'s
-///     <c>GetGlyphName</c>.</item>
+///   <item><b>.notdef glyph (6.2.11.8 / 7.21.8):</b> a shown code that references .notdef — veraPDF's own
+///     predicate (a glyph NAME literally ".notdef"), widened per ISO 32000-1 9.6.6 to also catch a code the
+///     effective encoding defines NO name for at all (see <see cref="IsNotdefReference"/>; the encoding-only
+///     half is still pure lookup, no program parsing, but the no-name half falls back to a program-side
+///     lookup for simple CFF, gated behind a symbolic-font exemption). NOT render-mode exempt ("regardless of
+///     text rendering mode"), so this walks every shown code, including RM3 (invisible) text. Implemented for
+///     Type0 composite fonts with an Identity CMap, where the code equals the CID and the CID→GID map
+///     (CIDToGIDMap for CIDFontType2, the CFF charset for CIDFontType0) resolves to glyph/CID 0; and for
+///     simple TrueType / simple CFF fonts via the PDF <c>/Encoding</c>'s <c>GetGlyphName</c>.</item>
 ///   <item><b>glyph-present (6.2.11.4.1 t2 / 7.21.4.1 t2):</b> a shown code whose (non-".notdef") glyph is
 ///     confidently absent from the embedded font program — near-mutually-exclusive with the .notdef check
 ///     above (a ".notdef"-named code is skipped here; it is already covered by 6.2.11.8). RM3-exempt per
@@ -241,7 +243,7 @@ internal sealed class FontProgramRule : IConformanceRule
     /// looks like when it is driving its own built-in encoding — a symbolic font is exempt outright.</para>
     ///
     /// <para><b>The two program arms are deliberately asymmetric, not a workaround — this is the finding
-    /// from Task 7's Step 1 verification, corpus fixture 6-2-11-8-t01-fail-b (see the task 7 report).</b>
+    /// from Task 7's Step 1 verification against corpus fixture 6-2-11-8-t01-fail-b.</b>
     /// A simple CFF program carries a built-in <c>Encoding</c> that genuinely maps a raw character code to
     /// a glyph, so probing it by raw code (<see cref="EmbeddedFontMetrics.GetGlyphIdByCffEncoding"/>) asks
     /// a meaningful question — <see cref="ResolveSimpleGlyph"/> already relies on the same lookup as a
