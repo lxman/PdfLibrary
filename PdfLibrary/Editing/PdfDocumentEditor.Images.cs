@@ -40,6 +40,16 @@ public sealed record ImageDictionaryRepairPreview(
     IReadOnlyList<ImageDictionaryRepairCandidate> Candidates,
     IReadOnlyList<ImageDictionaryRefusal> Refused);
 
+/// <summary>One image XObject <see cref="PdfDocumentEditor.RepairImageDictionaries"/> wrote to, and every
+/// repair kind it actually applied — past tense, unlike <see cref="ImageDictionaryRepairCandidate.WouldApply"/>.</summary>
+public sealed record ImageDictionaryRepair(
+    int ObjectNumber, IReadOnlyList<ImageDictionaryRepairKind> Applied);
+
+/// <summary>What <see cref="PdfDocumentEditor.RepairImageDictionaries"/> did.</summary>
+public sealed record ImageDictionaryRepairReport(
+    IReadOnlyList<ImageDictionaryRepair> Repaired,
+    IReadOnlyList<ImageDictionaryRefusal> Refused);
+
 public sealed partial class PdfDocumentEditor
 {
     private static readonly PdfName ImageSubtype = new("Image");
@@ -166,4 +176,54 @@ public sealed partial class PdfDocumentEditor
 
         return new ImageDictionaryRepairPreview(candidates, refusals);
     }
+
+    /// <summary>Applies the PDF/A 6.2.8 image-dictionary repairs <see cref="PreviewImageDictionaryRepairs"/>
+    /// would report, to the image XObjects named by <paramref name="objectNumbers"/> — or to every
+    /// offending image in the document when it is null (the batch/CLI case). Shares
+    /// <see cref="EnumerateImageXObjects"/> and <see cref="ClassifyImageDictionary"/> with
+    /// <see cref="PreviewImageDictionaryRepairs"/>, so the write and the preview can never disagree about
+    /// what would happen to a given image.
+    ///
+    /// <para><paramref name="objectNumbers"/> is load-bearing, not a convenience overload: Pellucid stages
+    /// image-dictionary fixes per object, so a caller that resolved <c>null</c> to "everything" at save
+    /// time would silently re-repair images the user never staged, or explicitly undid. <c>null</c> is
+    /// reserved for a whole-document batch run.</para></summary>
+    public ImageDictionaryRepairReport RepairImageDictionaries(IReadOnlySet<int>? objectNumbers = null)
+    {
+        var repaired = new List<ImageDictionaryRepair>();
+        var refusals = new List<ImageDictionaryRefusal>();
+
+        foreach (PdfStream image in EnumerateImageXObjects())
+        {
+            if (objectNumbers is not null && !objectNumbers.Contains(image.ObjectNumber)) continue;
+
+            var repairs = new List<ImageDictionaryRepairKind>();
+            ClassifyImageDictionary(image, repairs, refusals);
+            if (repairs.Count == 0) continue;
+
+            foreach (ImageDictionaryRepairKind kind in repairs)
+                switch (kind)
+                {
+                    case ImageDictionaryRepairKind.RemoveAlternates:
+                        image.Dictionary.Remove(new PdfName("Alternates"));
+                        break;
+                    case ImageDictionaryRepairKind.RemoveOpi:
+                        image.Dictionary.Remove(new PdfName("OPI"));
+                        break;
+                    case ImageDictionaryRepairKind.NeutralizeInterpolate:
+                        NeutralizeInterpolate(image.Dictionary);
+                        break;
+                }
+
+            repaired.Add(new ImageDictionaryRepair(image.ObjectNumber, repairs));
+        }
+
+        return new ImageDictionaryRepairReport(repaired, refusals);
+    }
+
+    /// <summary>Task 0's repair shape for a true /Interpolate: DELETE the key rather than set it false.
+    /// veraPDF 1.28.1 confirmed both deleting the key and setting it false clear rule 6.2.8-3 — i.e.
+    /// veraPDF's own model applies Table 89's default (false) to an absent key — so the two are equally
+    /// conformant and deletion wins as the cleaner form (no key left for a later writer to flip back).</summary>
+    private static void NeutralizeInterpolate(PdfDictionary dict) => dict.Remove(new PdfName("Interpolate"));
 }

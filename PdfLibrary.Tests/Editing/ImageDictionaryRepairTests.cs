@@ -71,6 +71,55 @@ public class ImageDictionaryRepairTests
         return ms.ToArray();
     }
 
+    /// <summary>Builds a one-page document with TWO distinct indirect image XObjects (objects 10 and 12),
+    /// both carrying <c>/Interpolate true</c>, both referenced from the page's /Resources /XObject
+    /// dictionary (so both survive save's orphan removal) and both drawn from content. Used by the write
+    /// tests (Task 2) to prove <see cref="PdfDocumentEditor.RepairImageDictionaries"/>'s object-number
+    /// filter touches only the named object and leaves the other a candidate.</summary>
+    private static byte[] DocWithTwoImagesBothInterpolating()
+    {
+        var doc = new PdfDocument();
+
+        PdfDictionary ImageDict() => new()
+        {
+            [N("Type")] = N("XObject"),
+            [N("Subtype")] = N("Image"),
+            [N("Width")] = new PdfInteger(1),
+            [N("Height")] = new PdfInteger(1),
+            [N("ColorSpace")] = N("DeviceGray"),
+            [N("BitsPerComponent")] = new PdfInteger(8),
+            [N("Interpolate")] = PdfBoolean.True,
+        };
+        doc.AddObject(10, 0, new PdfStream(ImageDict(), [0x00]));
+        doc.AddObject(12, 0, new PdfStream(ImageDict(), [0x00]));
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("q 1 0 0 1 0 0 cm /Im0 Do Q q 1 0 0 1 0 0 cm /Im1 Do Q")));
+
+        var page = new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = Ref(2),
+            [N("MediaBox")] = Rect(0, 0, 612, 792),
+            [N("Contents")] = Ref(11),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("XObject")] = new PdfDictionary { [N("Im0")] = Ref(10), [N("Im1")] = Ref(12) },
+            },
+        };
+        doc.AddObject(3, 0, page);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+
+        using var ms = new MemoryStream();
+        doc.Edit().Save(ms);
+        return ms.ToArray();
+    }
+
     [Fact]
     public void Preview_lists_interpolate_true_as_a_candidate()
     {
@@ -198,5 +247,135 @@ public class ImageDictionaryRepairTests
         Assert.Empty(preview.Refused);
         ImageDictionaryRepairCandidate candidate = Assert.Single(preview.Candidates);
         Assert.Contains(ImageDictionaryRepairKind.RemoveAlternates, candidate.WouldApply);
+    }
+
+    // ── RepairImageDictionaries (Task 2, 2026-08-21 image-dictionary remediation) — the write side, ──
+    // ── object-filtered, sharing EnumerateImageXObjects/ClassifyImageDictionary with the preview above.
+
+    /// <summary>Like <see cref="DocWithImageKeys"/>, but the image's /Alternates is an INDIRECT reference
+    /// to the array (object 21), and the array's one entry is itself an INDIRECT reference to the
+    /// alternate-image dictionary (object 20) — no /OC anywhere, so the repair should still apply. Pins
+    /// the indirect-resolution path inside <c>AlternatesSafeToRemove</c>
+    /// (<c>ResolveObject(imageDict.Get("Alternates"))</c> and <c>ResolveObject(alternates[i])</c>): Task
+    /// 1's own tests only ever built /Alternates with direct values, so that path was correct but
+    /// untested before this fixture (carry-forward from Task 1's review).</summary>
+    private static byte[] DocWithIndirectAlternatesNoOc()
+    {
+        var doc = new PdfDocument();
+
+        var altImageDict = new PdfDictionary
+        {
+            [N("Type")] = N("XObject"),
+            [N("Subtype")] = N("Image"),
+            [N("Width")] = new PdfInteger(1),
+            [N("Height")] = new PdfInteger(1),
+            [N("ColorSpace")] = N("DeviceGray"),
+            [N("BitsPerComponent")] = new PdfInteger(8),
+        };
+        doc.AddObject(20, 0, new PdfStream(altImageDict, [0x00]));
+        doc.AddObject(21, 0, new PdfArray(Ref(20)));
+
+        var imageDict = new PdfDictionary
+        {
+            [N("Type")] = N("XObject"),
+            [N("Subtype")] = N("Image"),
+            [N("Width")] = new PdfInteger(1),
+            [N("Height")] = new PdfInteger(1),
+            [N("ColorSpace")] = N("DeviceGray"),
+            [N("BitsPerComponent")] = new PdfInteger(8),
+            [N("Alternates")] = Ref(21),
+        };
+        doc.AddObject(10, 0, new PdfStream(imageDict, [0x00]));
+
+        doc.AddObject(11, 0, new PdfStream(new PdfDictionary(),
+            Encoding.ASCII.GetBytes("q 1 0 0 1 0 0 cm /Im0 Do Q")));
+
+        var page = new PdfDictionary
+        {
+            [N("Type")] = N("Page"),
+            [N("Parent")] = Ref(2),
+            [N("MediaBox")] = Rect(0, 0, 612, 792),
+            [N("Contents")] = Ref(11),
+            [N("Resources")] = new PdfDictionary
+            {
+                [N("XObject")] = new PdfDictionary { [N("Im0")] = Ref(10) },
+            },
+        };
+        doc.AddObject(3, 0, page);
+        doc.AddObject(2, 0, new PdfDictionary
+        {
+            [N("Type")] = N("Pages"), [N("Kids")] = new PdfArray(Ref(3)), [N("Count")] = new PdfInteger(1),
+        });
+        doc.AddObject(1, 0, new PdfDictionary { [N("Type")] = N("Catalog"), [N("Pages")] = Ref(2) });
+        doc.Trailer.Dictionary[N("Root")] = Ref(1);
+
+        using var ms = new MemoryStream();
+        doc.Edit().Save(ms);
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Repair_applies_only_to_the_named_objects()
+    {
+        byte[] pdf = DocWithTwoImagesBothInterpolating();
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        using PdfDocumentEditor editor = doc.Edit();
+
+        int first = editor.PreviewImageDictionaryRepairs().Candidates[0].ObjectNumber;
+        ImageDictionaryRepairReport report = editor.RepairImageDictionaries(new HashSet<int> { first });
+
+        Assert.Equal(first, Assert.Single(report.Repaired).ObjectNumber);
+        // the other image is untouched, so it is still a candidate
+        ImageDictionaryRepairCandidate left = Assert.Single(editor.PreviewImageDictionaryRepairs().Candidates);
+        Assert.NotEqual(first, left.ObjectNumber);
+    }
+
+    [Fact]
+    public void Repair_with_null_filter_repairs_every_image()
+    {
+        byte[] pdf = DocWithTwoImagesBothInterpolating();
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        using PdfDocumentEditor editor = doc.Edit();
+
+        Assert.Equal(2, editor.RepairImageDictionaries().Repaired.Count);
+        Assert.Empty(editor.PreviewImageDictionaryRepairs().Candidates);
+    }
+
+    [Fact]
+    public void Repair_refuses_Alternates_on_an_OC_guarded_image_but_still_fixes_its_Interpolate()
+    {
+        byte[] pdf = DocWithImageKeys(d =>
+        {
+            d[new PdfName("Alternates")] = new PdfArray();
+            d[new PdfName("OC")] = new PdfDictionary();
+            d[new PdfName("Interpolate")] = PdfBoolean.True;
+        });
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        using PdfDocumentEditor editor = doc.Edit();
+
+        ImageDictionaryRepairReport report = editor.RepairImageDictionaries();
+
+        ImageDictionaryRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(ImageDictionaryRepairKind.RemoveAlternates, refusal.Kind);
+        Assert.Contains("optional content", refusal.Reason, StringComparison.OrdinalIgnoreCase);
+        // the same image's Interpolate was still repaired — per-object partial repair, not per-object refusal
+        Assert.Equal(ImageDictionaryRepairKind.NeutralizeInterpolate,
+                     Assert.Single(Assert.Single(report.Repaired).Applied));
+    }
+
+    [Fact]
+    public void Repair_removes_Alternates_when_the_image_has_no_OC()
+    {
+        byte[] pdf = DocWithIndirectAlternatesNoOc();
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        using PdfDocumentEditor editor = doc.Edit();
+
+        Assert.Equal(ImageDictionaryRepairKind.RemoveAlternates,
+                     Assert.Single(Assert.Single(editor.RepairImageDictionaries().Repaired).Applied));
+        Assert.Empty(editor.RepairImageDictionaries().Refused);
     }
 }
