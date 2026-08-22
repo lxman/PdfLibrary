@@ -182,6 +182,82 @@ public class ImageDictionaryRepairTests
         Assert.Equal(2, candidate.WouldApply.Count);
     }
 
+    // ── /BitsPerComponent (ISO 19005-2/3 6.2.8) — REFUSAL-ONLY: conforming means re-encoding the ──
+    // ── image's sample data, which this editor never does. Fix-round-1 addition: an image whose ONLY
+    // ── 6.2.8 defect was a bad bit depth used to be neither a candidate NOR a refusal — silence a
+    // ── caller could not tell apart from "nothing wrong" (ImageDictionaryDomain's ClosesFinding read a
+    // ── partially-repaired mixed-defect image as fully closed because of exactly this silence).
+
+    [Fact]
+    public void Preview_refuses_an_out_of_range_bits_per_component_alone()
+    {
+        byte[] pdf = DocWithImageKeys(d => d[new PdfName("BitsPerComponent")] = new PdfInteger(3));
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        Assert.Empty(preview.Candidates);
+        ImageDictionaryRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(ImageDictionaryRepairKind.ReEncodeBitDepth, refusal.Kind);
+        Assert.Contains("BitsPerComponent", refusal.Reason, StringComparison.Ordinal);
+        Assert.Contains("re-encoding", refusal.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Preview_refuses_an_image_mask_with_bits_per_component_not_1()
+    {
+        byte[] pdf = DocWithImageKeys(d =>
+        {
+            d[new PdfName("ImageMask")] = PdfBoolean.True;
+            d[new PdfName("BitsPerComponent")] = new PdfInteger(4);
+        });
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        Assert.Empty(preview.Candidates);
+        ImageDictionaryRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(ImageDictionaryRepairKind.ReEncodeBitDepth, refusal.Kind);
+        Assert.Contains("mask", refusal.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Preview_does_not_refuse_a_legal_bits_per_component()
+    {
+        // DocWithImageKeys's default is already /BitsPerComponent 8 — legal, and no other key is set.
+        byte[] pdf = DocWithImageKeys(_ => { });
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        Assert.Empty(preview.Candidates);
+        Assert.Empty(preview.Refused);
+    }
+
+    /// <summary>The mixed case fix round 1 exists for: an /OPI entry (repairable) alongside a bad
+    /// /BitsPerComponent (refusal-only, silent before this fix) on the SAME object must produce BOTH a
+    /// repair candidate and a refusal — proving <see cref="PdfDocumentEditor.ClassifyImageDictionary"/>
+    /// evaluates every 6.2.8 defect independently rather than stopping at the first one found.</summary>
+    [Fact]
+    public void Preview_reports_both_a_repair_candidate_and_a_bit_depth_refusal_on_the_same_image()
+    {
+        byte[] pdf = DocWithImageKeys(d =>
+        {
+            d[new PdfName("OPI")] = new PdfDictionary();
+            d[new PdfName("BitsPerComponent")] = new PdfInteger(3);
+        });
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        ImageDictionaryRepairCandidate candidate = Assert.Single(preview.Candidates);
+        Assert.Equal(ImageDictionaryRepairKind.RemoveOpi, Assert.Single(candidate.WouldApply));
+
+        ImageDictionaryRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(candidate.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(ImageDictionaryRepairKind.ReEncodeBitDepth, refusal.Kind);
+    }
+
     // ── AlternatesSafeToRemove (ISO 32000-2 8.9.5.4 routes (a)-(c) /OC and (d) /DefaultForPrinting) ──
 
     [Fact]

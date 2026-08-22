@@ -21,6 +21,23 @@ public enum ImageDictionaryRepairKind
     /// effect, not the mechanism, so the preview and the eventual write agree on what happened without
     /// this type needing to change when Task 2 picks the mechanism.</summary>
     NeutralizeInterpolate,
+
+    /// <summary>An out-of-range /BitsPerComponent (not 1, 2, 4, 8, or 16 — or not exactly 1 for an
+    /// image mask; the same predicate <c>PdfLibrary.Conformance.Rules.ImageDictionaryRule</c> checks).
+    /// <b>NEVER produced as a repair</b> — <see cref="PdfDocumentEditor.ClassifyImageDictionary"/> only
+    /// ever emits this as an <see cref="ImageDictionaryRefusal"/> kind, never adds it to a
+    /// <see cref="ImageDictionaryRepairCandidate.WouldApply"/> list, and
+    /// <see cref="PdfDocumentEditor.RepairImageDictionaries"/> has no case for it in its repair switch.
+    /// Conforming would mean RE-ENCODING the image's sample data at a different bit depth — this editor
+    /// only ever edits dictionary keys, never re-samples pixel data, so this is refusal-only by design,
+    /// not a gap to be filled in later. Existing before this member was added, an image whose ONLY 6.2.8
+    /// defect was this one produced neither a candidate nor a refusal — silence a caller could not tell
+    /// apart from "nothing wrong" — which is exactly what this member exists to stop; see the
+    /// <c>image-dictionary</c> remediation program's Task 4 fix-round-1 finding for the mixed-defect case
+    /// this silence broke (<c>ImageDictionaryDomain.ClosesFinding</c> read a partially-repaired image as
+    /// fully closed when the unrepaired defect was a bad bit depth rather than an explicit
+    /// refusal).</summary>
+    ReEncodeBitDepth,
 }
 
 /// <summary>One image XObject <see cref="PdfDocumentEditor.PreviewImageDictionaryRepairs"/> found
@@ -132,6 +149,11 @@ public sealed partial class PdfDocumentEditor
         return true;
     }
 
+    /// <summary>Allowed /BitsPerComponent values for a non-mask image — the SAME array
+    /// <c>PdfLibrary.Conformance.Rules.ImageDictionaryRule</c> checks against, kept in step deliberately
+    /// (see <see cref="ClassifyImageDictionary"/>'s bit-depth branch).</summary>
+    private static readonly long[] AllowedBitsPerComponent = [1, 2, 4, 8, 16];
+
     /// <summary>The ONE predicate both the preview and the eventual write (Task 2) use, so they can
     /// never disagree about what would happen to a given image — the same factoring
     /// <c>EnumerateFileSpecs</c>/<c>ClassifyFileSpecName</c> gives
@@ -155,6 +177,32 @@ public sealed partial class PdfDocumentEditor
 
         if (ResolveObject(dict.Get("Interpolate")) is PdfBoolean { Value: true })
             repairs.Add(ImageDictionaryRepairKind.NeutralizeInterpolate);
+
+        // /BitsPerComponent out of range (ISO 19005-2/3 6.2.8): the SAME predicate
+        // ImageDictionaryRule.Check uses — an image mask requires exactly 1, everything else must be
+        // one of AllowedBitsPerComponent — so this editor's refusal set exactly mirrors the detector's
+        // violation set. Refusal-only, on purpose: conforming means re-encoding the image's sample data
+        // at a different bit depth, which is out of scope for a dictionary-key editor (see
+        // ImageDictionaryRepairKind.ReEncodeBitDepth's own doc comment for why this member exists at
+        // all — an image whose ONLY 6.2.8 defect was a bad bit depth used to be classified as neither
+        // repairable NOR refused, which read as "nothing wrong" to a caller that only checked those two
+        // lists).
+        if (ResolveObject(dict.Get("BitsPerComponent")) is PdfInteger bpc)
+        {
+            bool isMask = ResolveObject(dict.Get("ImageMask")) is PdfBoolean { Value: true };
+            long value = bpc.Value;
+            bool ok = isMask ? value == 1 : AllowedBitsPerComponent.Contains(value);
+            if (!ok)
+                refusals.Add(new ImageDictionaryRefusal(
+                    image.ObjectNumber, ImageDictionaryRepairKind.ReEncodeBitDepth,
+                    isMask
+                        ? $"This image's /BitsPerComponent ({value}) cannot be corrected by editing the "
+                          + "dictionary: an image mask requires exactly 1, and conforming would mean "
+                          + "re-encoding the image's sample data at a different bit depth."
+                        : $"This image's /BitsPerComponent ({value}) cannot be corrected by editing the "
+                          + "dictionary: it must be 1, 2, 4, 8, or 16, and conforming would mean "
+                          + "re-encoding the image's sample data at a different bit depth."));
+        }
     }
 
     /// <summary>Read-only preview of every PDF/A 6.2.8 image-dictionary defect this editor would repair
