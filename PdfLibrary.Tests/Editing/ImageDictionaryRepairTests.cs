@@ -9,9 +9,9 @@ namespace PdfLibrary.Tests.Editing;
 /// <summary>
 /// Tests for <see cref="PdfDocumentEditor.PreviewImageDictionaryRepairs"/> — the read-only preview of
 /// PDF/A clause 6.2.8 image-dictionary repairs (<c>PdfLibrary.Conformance.Rules.ImageDictionaryRule</c>).
-/// Only <c>/Interpolate</c> and <c>/OPI</c> are exercised here; <c>/Alternates</c>'s predicate
-/// (<c>AlternatesSafeToRemove</c>) is written now but tested in Task 2, which adds the write side and
-/// fixtures carrying <c>/Alternates</c>.
+/// Covers <c>/Interpolate</c>, <c>/OPI</c>, and <c>/Alternates</c> — including
+/// <c>AlternatesSafeToRemove</c>'s two refusal routes (ISO 32000-2 8.9.5.4's /OC route and its
+/// /DefaultForPrinting route) and its malformed-input handling.
 /// </summary>
 public class ImageDictionaryRepairTests
 {
@@ -131,5 +131,72 @@ public class ImageDictionaryRepairTests
         ImageDictionaryRepairCandidate candidate =
             Assert.Single(doc.Edit().PreviewImageDictionaryRepairs().Candidates);
         Assert.Equal(2, candidate.WouldApply.Count);
+    }
+
+    // ── AlternatesSafeToRemove (ISO 32000-2 8.9.5.4 routes (a)-(c) /OC and (d) /DefaultForPrinting) ──
+
+    [Fact]
+    public void Preview_allows_removing_alternates_with_no_OC_and_no_default_for_printing()
+    {
+        byte[] pdf = DocWithImageKeys(d =>
+            d[new PdfName("Alternates")] = new PdfArray(new PdfDictionary()));
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        ImageDictionaryRepairCandidate candidate = Assert.Single(preview.Candidates);
+        Assert.Contains(ImageDictionaryRepairKind.RemoveAlternates, candidate.WouldApply);
+        Assert.Empty(preview.Refused);
+    }
+
+    [Fact]
+    public void Preview_refuses_alternates_with_a_default_for_printing_entry_even_without_OC()
+    {
+        byte[] pdf = DocWithImageKeys(d =>
+            d[new PdfName("Alternates")] = new PdfArray(
+                new PdfDictionary { [new PdfName("DefaultForPrinting")] = PdfBoolean.True }));
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        Assert.Empty(preview.Candidates);
+        ImageDictionaryRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(ImageDictionaryRepairKind.RemoveAlternates, refusal.Kind);
+        Assert.Contains("printing", refusal.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Preview_refuses_alternates_when_the_image_carries_OC()
+    {
+        byte[] pdf = DocWithImageKeys(d =>
+        {
+            d[new PdfName("Alternates")] = new PdfArray(new PdfDictionary());
+            d[new PdfName("OC")] = new PdfDictionary();
+        });
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        Assert.Empty(preview.Candidates);
+        ImageDictionaryRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(ImageDictionaryRepairKind.RemoveAlternates, refusal.Kind);
+        Assert.Contains("optional content", refusal.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    // A malformed /Alternates (present but not an array) must not throw: AlternatesSafeToRemove cannot
+    // know what a non-array value means, so it degrades to the /OC-only check rather than guessing —
+    // see that method's doc comment. With no /OC present here, that means it is still treated as safe.
+    [Fact]
+    public void Preview_does_not_throw_on_a_malformed_non_array_alternates()
+    {
+        byte[] pdf = DocWithImageKeys(d => d[new PdfName("Alternates")] = new PdfInteger(42));
+        using var ms = new MemoryStream(pdf);
+        using PdfDocument doc = PdfDocument.Load(ms);
+
+        ImageDictionaryRepairPreview preview = doc.Edit().PreviewImageDictionaryRepairs();
+
+        Assert.Empty(preview.Refused);
+        ImageDictionaryRepairCandidate candidate = Assert.Single(preview.Candidates);
+        Assert.Contains(ImageDictionaryRepairKind.RemoveAlternates, candidate.WouldApply);
     }
 }

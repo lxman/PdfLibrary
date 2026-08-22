@@ -57,21 +57,69 @@ public sealed partial class PdfDocumentEditor
                 yield return stream;
     }
 
-    /// <summary>ISO 32000-2 8.9.5.4: when a base image carries /OC saying it is NOT visible, the first
-    /// eligible entry in /Alternates renders INSTEAD. Deleting the array on such an image would change
-    /// what is on the page, possibly from something to nothing.
+    /// <summary>Upper bound on how many /Alternates entries <see cref="AlternatesSafeToRemove"/>
+    /// inspects — real alternate-image arrays are always small (a handful of resolutions at most); this
+    /// only guards against a malformed or hostile document declaring an enormous array.</summary>
+    private const int MaxAlternatesEntriesChecked = 10_000;
+
+    /// <summary>ISO 32000-2 8.9.5.4 gives TWO routes by which /Alternates can override the base image
+    /// instead of merely supplementing it, and deleting the array is unsafe on either:
+    /// <list type="bullet">
+    /// <item>(a)-(c), the optional-content route: when the base image carries /OC saying it is NOT
+    /// visible, the first eligible entry in /Alternates renders INSTEAD.</item>
+    /// <item>(d), the printing route: even with NO /OC at all, "if the base image does not contain an OC
+    /// key and the PDF is being printed then the first entry in the Alternates array ... that has
+    /// DefaultForPrinting set to true shall be selected" — printing uses that alternate INSTEAD of the
+    /// base image.</item>
+    /// </list>
+    /// Deleting /Alternates on an image either route selects from would change what appears on screen or
+    /// in print, possibly from something to nothing (route a-c) or from a designated print master to a
+    /// lower-resolution proxy (route d).
     ///
-    /// <para>This refuses whenever /OC is present at all, rather than evaluating visibility under the
-    /// default configuration. That is deliberately more conservative than the spec's wording: measured
-    /// population of /Alternates in the 708-document corpus is ZERO, so a precise evaluator would buy
-    /// nothing today while taking a dependency on optional-content default-configuration semantics. If a
-    /// real document ever needs it, tighten this predicate — the refusal reason names the condition.</para></summary>
+    /// <para>Both checks are deliberately more conservative than the spec's precise wording, for the same
+    /// reason: measured population of /Alternates in the 708-document corpus is ZERO, so a precise
+    /// evaluator would buy nothing today while taking on real complexity — optional-content
+    /// default-configuration visibility semantics for route (a)-(c), and print-eligibility filtering
+    /// (e.g. resolution suitability) for route (d) — that no real document exists yet to validate against.
+    /// Route (a)-(c) refuses whenever /OC is present at all, without evaluating visibility under the
+    /// default configuration. Route (d) refuses whenever ANY /Alternates entry carries
+    /// /DefaultForPrinting true, without regard to whether printing would actually select that particular
+    /// entry. If a real document ever needs either loosened, tighten this predicate — each refusal reason
+    /// names the condition that triggered it.</para>
+    ///
+    /// <para>A malformed /Alternates (present but not an array, once resolved) is treated as contributing
+    /// no /DefaultForPrinting entries rather than thrown on or treated as an automatic refusal: this
+    /// method cannot know what a non-array value means, so it degrades to the /OC-only check rather than
+    /// guessing. That mirrors how the rest of this file's walks skip a node that doesn't resolve to the
+    /// expected type (e.g. <see cref="EnumerateEmbeddedFilesTree"/>) instead of throwing.</para></summary>
     private bool AlternatesSafeToRemove(PdfDictionary imageDict, out string? reason)
     {
-        if (imageDict.Get("OC") is null) { reason = null; return true; }
-        reason = "This image's alternates cannot be removed safely: the image is governed by optional "
-                 + "content, so a viewer may render one of the alternates in place of the image itself.";
-        return false;
+        if (imageDict.Get("OC") is not null)
+        {
+            reason = "This image's alternates cannot be removed safely: the image is governed by "
+                     + "optional content, so a viewer may render one of the alternates in place of the "
+                     + "image itself.";
+            return false;
+        }
+
+        if (ResolveObject(imageDict.Get("Alternates")) is PdfArray alternates)
+        {
+            int count = Math.Min(alternates.Count, MaxAlternatesEntriesChecked);
+            for (var i = 0; i < count; i++)
+            {
+                if (ResolveObject(alternates[i]) is PdfDictionary alt
+                    && ResolveObject(alt.Get("DefaultForPrinting")) is PdfBoolean { Value: true })
+                {
+                    reason = "This image's alternates cannot be removed safely: one of them is marked "
+                             + "/DefaultForPrinting true, so printing would select it in place of the "
+                             + "image itself.";
+                    return false;
+                }
+            }
+        }
+
+        reason = null;
+        return true;
     }
 
     /// <summary>The ONE predicate both the preview and the eventual write (Task 2) use, so they can
