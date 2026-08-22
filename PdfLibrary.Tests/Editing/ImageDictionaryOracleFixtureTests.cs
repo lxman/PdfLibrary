@@ -31,17 +31,21 @@ public class ImageDictionaryOracleFixtureTests
     }
 
     [Fact]
-    public void T01_fail_a_refuses_remove_alternates_due_to_oc()
+    public void T01_fail_a_refuses_remove_alternates_due_to_defaultforprinting()
     {
         using PdfDocument doc = PdfDocument.Load(Fixture("6-2-8-1-t01-fail-a"));
         using PdfDocumentEditor editor = doc.Edit();
 
         ImageDictionaryRepairPreview preview = editor.PreviewImageDictionaryRepairs();
 
-        // This fixture carries /OC (optional content), so the repair safely refuses
+        // This fixture carries one or more /Alternates entries with /DefaultForPrinting true.
+        // ISO 32000-2 §8.9.5.4 (route d): printing would select a designated print master instead of
+        // the base image, so deleting /Alternates is unsafe. The /OC route (a-c) is also exercised
+        // by AlternatesSafeToRemove but has no corpus-fixture coverage; only synthetic tests
+        // (ImageDictionaryRepairTests) exercise the /OC refusal.
         ImageDictionaryRefusal refusal = Assert.Single(preview.Refused);
         Assert.Equal(ImageDictionaryRepairKind.RemoveAlternates, refusal.Kind);
-        Assert.NotEmpty(refusal.Reason);
+        Assert.Contains("printing", refusal.Reason, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -77,7 +81,6 @@ public class ImageDictionaryOracleFixtureTests
     }
 
     [Theory]
-    [InlineData("6-2-8-1-t02-fail-b")]
     [InlineData("6-2-8-1-t03-fail-a")]
     public void Fail_fixtures_with_no_relevant_defects_offer_no_repair(string fixture)
     {
@@ -85,13 +88,21 @@ public class ImageDictionaryOracleFixtureTests
         Assert.Empty(doc.Edit().PreviewImageDictionaryRepairs().Candidates);
     }
 
+    // Note: t02-fail-b contains no image XObject at all, so Assert.Empty(...Candidates) passes
+    // trivially against any implementation and proves nothing about AlternatesSafeToRemove. Fixture
+    // is veraPDF's own test file and exists to test veraPDF's rule, not ours; we skip it to avoid
+    // committing a vacuous test.
+
     [Theory]
     [InlineData("6-2-8-1-t02-pass-a")]
-    [InlineData("6-2-8-1-t02-pass-b")]
     [InlineData("6-2-8-1-t03-pass-a")]
     public void Pass_fixtures_offer_no_repair(string fixture)
     {
         using PdfDocument doc = PdfDocument.Load(Fixture(fixture));
         Assert.Empty(doc.Edit().PreviewImageDictionaryRepairs().Candidates);
     }
+
+    // Note: t02-pass-b contains no image XObject at all, so Assert.Empty(...Candidates) passes
+    // trivially and proves nothing. Fixture is veraPDF's own test file; we skip it to avoid a
+    // vacuous test.
 }
