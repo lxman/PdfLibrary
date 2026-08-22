@@ -454,4 +454,28 @@ public class ImageDictionaryRepairTests
                      Assert.Single(Assert.Single(editor.RepairImageDictionaries().Repaired).Applied));
         Assert.Empty(editor.RepairImageDictionaries().Refused);
     }
+
+    /// <summary>Canary for <see cref="PdfDocumentEditor.RepairImageDictionaries"/>'s write switch, the
+    /// same shape as this codebase's 13-type <c>DrawCommand</c> canary (2026-08-04 B-3/B-4 walk guards).
+    /// The switch now has a throwing <c>default</c> arm (2026-08-21 whole-branch review, Minor 3), so a
+    /// new kind added to <see cref="ImageDictionaryRepairKind"/> AND to <c>ClassifyImageDictionary</c>'s
+    /// repair list can no longer be reported as <c>Applied</c> while writing nothing — but the throw
+    /// only fires when a document actually carries the new defect, which no test would have. This fact
+    /// fails the moment the enum grows, forcing whoever adds a member to decide, in the open, whether it
+    /// is repairable (add a write arm) or refusal-only (like
+    /// <see cref="ImageDictionaryRepairKind.ReEncodeBitDepth"/>, which never enters the repair list at
+    /// all, which is why the default arm is unreachable today).</summary>
+    [Fact]
+    public void The_repair_kinds_are_exactly_the_four_the_write_switch_accounts_for()
+    {
+        Assert.Equal(
+            new[]
+            {
+                ImageDictionaryRepairKind.RemoveAlternates,      // written: Dictionary.Remove("Alternates")
+                ImageDictionaryRepairKind.RemoveOpi,             // written: Dictionary.Remove("OPI")
+                ImageDictionaryRepairKind.NeutralizeInterpolate, // written: NeutralizeInterpolate
+                ImageDictionaryRepairKind.ReEncodeBitDepth,      // refusal-only: never classified as a repair
+            },
+            Enum.GetValues<ImageDictionaryRepairKind>());
+    }
 }

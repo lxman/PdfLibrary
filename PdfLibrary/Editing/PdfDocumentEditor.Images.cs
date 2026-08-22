@@ -261,6 +261,20 @@ public sealed partial class PdfDocumentEditor
                     case ImageDictionaryRepairKind.NeutralizeInterpolate:
                         NeutralizeInterpolate(image.Dictionary);
                         break;
+                    // Throw-on-unknown, the discipline this codebase already adopted at five
+                    // DrawCommand sites (2026-08-04 B-3/B-4 walk guards), for exactly the failure this
+                    // switch would otherwise have: `repaired` below records the CLASSIFIED list as
+                    // Applied, so a kind added to ImageDictionaryRepairKind and to
+                    // ClassifyImageDictionary's `repairs` list but NOT to this switch would be reported
+                    // as applied while writing nothing at all -- a silent false success in the report
+                    // both Pellucid's domain and `pellucid fix` read. Unreachable today
+                    // (ReEncodeBitDepth is refusal-only and never enters `repairs`), which is precisely
+                    // why nothing would notice it becoming reachable.
+                    default:
+                        throw new NotSupportedException(
+                            $"No write is implemented for image-dictionary repair kind '{kind}' on "
+                            + $"object {image.ObjectNumber}. ClassifyImageDictionary classified it as "
+                            + "repairable, so either add the write here or make the kind refusal-only.");
                 }
 
             repaired.Add(new ImageDictionaryRepair(image.ObjectNumber, repairs));
