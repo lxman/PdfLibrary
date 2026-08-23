@@ -210,5 +210,13 @@ internal sealed class PdfStream : PdfObject
         _data = filter.Encode(decodedData);
         Dictionary[PdfName.Filter] = new PdfName(filterName);
         Dictionary[PdfName.Length] = new PdfInteger(_data.Length);
+
+        // /DecodeParms describes the filter chain we just REPLACED, and this method always collapses
+        // /Filter to one name -- so a surviving parms array is positionally meaningless, and a
+        // surviving parms dictionary belongs to a filter that is no longer applied. Leaving it is not
+        // merely untidy: an LZWDecode /EarlyChange entry would be re-read as a FlateDecode predictor
+        // parameter on the next decode. Every caller passes freshly-encoded data, so removing it is
+        // correct for all of them (PdfOptimizer's re-deflate of existing streams included).
+        Dictionary.Remove(PdfName.DecodeParms);
     }
 }
