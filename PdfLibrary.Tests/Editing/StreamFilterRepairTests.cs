@@ -205,10 +205,17 @@ public class StreamFilterRepairTests
     // THE load-bearing test of this whole program. The justification for making this repair automatic
     // rather than a user choice is that it cannot change the rendered page -- so that claim is proven
     // here byte for byte, not asserted in prose.
+    //
+    // Random-but-seeded rather than long runs of a repeated character: a repetitive payload keeps the
+    // LZW dictionary far from the 511-entry code-width boundary (see the /EarlyChange note on
+    // Repair_does_not_leave_the_LZW_DecodeParms_behind below, where that boundary is exactly what made
+    // a mismatched decode parameter throw). A codec bug that only shows on high-entropy data is exactly
+    // what a run-length-friendly payload would hide.
     [Fact]
     public void Repair_is_lossless_the_decoded_bytes_are_unchanged()
     {
-        byte[] payload = System.Text.Encoding.ASCII.GetBytes(new string('A', 5000) + "|edge|" + new string('Z', 5000));
+        var payload = new byte[10001];
+        new Random(20260823).NextBytes(payload);
         (PdfDocumentEditor editor, int n) = OneStream("LZWDecode", payload);
 
         editor.RepairStreamFilters(new HashSet<int> { n });
@@ -267,8 +274,37 @@ public class StreamFilterRepairTests
         StreamFilterRepairReport report = editor.RepairStreamFilters(new HashSet<int> { stagedNumber });
 
         Assert.Equal(stagedNumber, Assert.Single(report.Applied).ObjectNumber);
+        Assert.Empty(report.Refused);
         Assert.Equal("LZWDecode",
             Assert.IsType<PdfName>(FindStream(editor, unstagedNumber).Dictionary.Get("Filter")).Value);
+    }
+
+    // The other half of the objectNumbers contract, uncovered until now: null means "every offending
+    // stream in the document," not "none." Repair_touches_only_the_object_numbers_it_was_given only
+    // proves the staged-set side; a regression that made null behave like an empty set would still pass
+    // every other test in this file. Two streams, not one -- a single-stream fixture cannot distinguish
+    // "converted everything" from "converted the one stream it happened to see."
+    [Fact]
+    public void Repair_with_no_staged_set_converts_every_offending_stream()
+    {
+        var doc = new PdfDocument();
+        var first = new PdfStream(new PdfDictionary(), []);
+        first.SetEncodedData("first"u8.ToArray(), "LZWDecode");
+        var second = new PdfStream(new PdfDictionary(), []);
+        second.SetEncodedData("second"u8.ToArray(), "LZWDecode");
+        int firstNumber = doc.RegisterObject(first).ObjectNumber;
+        int secondNumber = doc.RegisterObject(second).ObjectNumber;
+        var editor = new PdfDocumentEditor(doc);
+
+        StreamFilterRepairReport report = editor.RepairStreamFilters();
+
+        Assert.Equal(2, report.Applied.Count);
+        Assert.Contains(report.Applied, r => r.ObjectNumber == firstNumber);
+        Assert.Contains(report.Applied, r => r.ObjectNumber == secondNumber);
+        Assert.Equal("FlateDecode",
+            Assert.IsType<PdfName>(FindStream(editor, firstNumber).Dictionary.Get("Filter")).Value);
+        Assert.Equal("FlateDecode",
+            Assert.IsType<PdfName>(FindStream(editor, secondNumber).Dictionary.Get("Filter")).Value);
     }
 
     [Fact]
