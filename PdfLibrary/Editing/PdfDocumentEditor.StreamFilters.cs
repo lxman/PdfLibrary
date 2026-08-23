@@ -19,6 +19,14 @@ public sealed record StreamFilterRepairPreview(
     IReadOnlyList<StreamFilterRepairCandidate> Candidates,
     IReadOnlyList<StreamFilterRefusal> Refused);
 
+/// <summary>One stream converted from a chain containing /LZWDecode to a single /FlateDecode.</summary>
+public sealed record StreamFilterRepair(int ObjectNumber, IReadOnlyList<string> Before, string After);
+
+/// <summary>What <see cref="PdfDocumentEditor.RepairStreamFilters"/> actually did and declined to do.</summary>
+public sealed record StreamFilterRepairReport(
+    IReadOnlyList<StreamFilterRepair> Applied,
+    IReadOnlyList<StreamFilterRefusal> Refused);
+
 public sealed partial class PdfDocumentEditor
 {
     private const string LzwFilter = "LZWDecode";
@@ -187,5 +195,45 @@ public sealed partial class PdfDocumentEditor
                 candidates.Add(new StreamFilterRepairCandidate(stream.ObjectNumber, FilterChainOf(stream)));
 
         return new StreamFilterRepairPreview(candidates, refusals);
+    }
+
+    /// <summary>Converts every stream <see cref="PreviewStreamFilterRepairs"/> reports as a candidate,
+    /// restricted to the object numbers in <paramref name="objectNumbers"/> -- or every offending
+    /// stream in the document when it is null (the whole-document batch case only). Shares
+    /// <see cref="EnumerateAllStreams"/> and <see cref="ClassifyStreamFilters"/> with the preview, so
+    /// the write and the preview can never disagree.
+    ///
+    /// <para><paramref name="objectNumbers"/> is load-bearing, not a convenience overload: Pellucid
+    /// stages stream-filter fixes per object, so a caller that resolved <c>null</c> to "everything" at
+    /// save time would silently convert streams the user never staged, or explicitly undid.</para>
+    ///
+    /// <para>The conversion is lossless by construction: <see cref="PdfStream.GetDecodedData"/> yields
+    /// the fully-decoded bytes of the whole filter chain, and those exact bytes are re-encoded under
+    /// /FlateDecode -- both LZW and Flate being lossless, the decoded content cannot change. Proven in
+    /// <c>StreamFilterRepairTests.Repair_is_lossless_the_decoded_bytes_are_unchanged</c>.</para></summary>
+    public StreamFilterRepairReport RepairStreamFilters(IReadOnlySet<int>? objectNumbers = null)
+    {
+        var repaired = new List<StreamFilterRepair>();
+        var refusals = new List<StreamFilterRefusal>();
+
+        foreach (PdfStream stream in EnumerateAllStreams())
+        {
+            if (objectNumbers is not null && !objectNumbers.Contains(stream.ObjectNumber)) continue;
+            if (!ClassifyStreamFilters(stream, refusals)) continue;
+
+            // Capture the chain BEFORE the write -- SetEncodedData overwrites /Filter, so reading it
+            // afterwards would report "FlateDecode" as the thing we converted from.
+            IReadOnlyList<string> before = FilterChainOf(stream);
+
+            // Decode the whole chain, then re-encode as a single Flate stream. SetEncodedData rewrites
+            // /Filter and /Length and (since the 2026-08-23 fix) removes the now-meaningless
+            // /DecodeParms; nothing else about the stream's dictionary changes.
+            byte[] decoded = stream.GetDecodedData(_document.Decryptor);
+            stream.SetEncodedData(decoded, FlateFilter);
+
+            repaired.Add(new StreamFilterRepair(stream.ObjectNumber, before, FlateFilter));
+        }
+
+        return new StreamFilterRepairReport(repaired, refusals);
     }
 }
