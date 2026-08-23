@@ -45,9 +45,13 @@ public sealed partial class PdfDocumentEditor
                 yield return stream;
     }
 
-    /// <summary>The stream's /Filter as an ordered list of names. A single name yields one entry; an
-    /// array yields one per position (resolving indirect entries); a malformed entry is skipped, which
-    /// matches StreamFiltersRule's own "not this rule's concern" branch.</summary>
+    /// <summary>The stream's /Filter as an ordered list of names, for REPORTING only (the candidate
+    /// record's <see cref="StreamFilterRepairCandidate.FilterChain"/>). A single name yields one entry;
+    /// an array yields one per position (resolving indirect entries); a malformed entry is skipped,
+    /// which matches StreamFiltersRule's own "not this rule's concern" branch -- but skipping COMPACTS
+    /// the list, so a name's index here is no longer its true /Filter array position. Classification
+    /// must not index into /DecodeParms by a position taken from this list -- use
+    /// <see cref="FilterEntriesOf"/> instead, which keeps true positions.</summary>
     private IReadOnlyList<string> FilterChainOf(PdfStream stream)
     {
         PdfObject? filterObj = ResolveObject(stream.Dictionary.Get("Filter"));
@@ -61,6 +65,29 @@ public sealed partial class PdfDocumentEditor
             if (ResolveObject(array[i]) is PdfName name)
                 names.Add(name.Value);
         return names;
+    }
+
+    /// <summary>The stream's /Filter entries paired with their TRUE /Filter array position -- the same
+    /// positional walk <c>StreamFiltersRule.Check</c> uses (<c>count = filterObj is PdfArray arr ? arr.Count : 1</c>,
+    /// iterated by index). A single name is position 0. A malformed (non-<see cref="PdfName"/>) entry is
+    /// skipped from classification, matching the rule's "not this rule's concern" branch, but -- unlike
+    /// <see cref="FilterChainOf"/> -- the positions of the entries AFTER it are never renumbered, so
+    /// <see cref="DecodeParmsAt"/> stays aligned with the real /DecodeParms array. This is the walk
+    /// <see cref="ClassifyStreamFilters"/> must use.</summary>
+    private IEnumerable<(int Position, string Name)> FilterEntriesOf(PdfStream stream)
+    {
+        PdfObject? filterObj = ResolveObject(stream.Dictionary.Get("Filter"));
+        if (filterObj is null) yield break;
+
+        if (filterObj is not PdfArray array)
+        {
+            if (filterObj is PdfName single) yield return (0, single.Value);
+            yield break;
+        }
+
+        for (var i = 0; i < array.Count; i++)
+            if (ResolveObject(array[i]) is PdfName name)
+                yield return (i, name.Value);
     }
 
     /// <summary>The decode-parms entry aligned with filter position <paramref name="index"/> -- the
@@ -98,18 +125,17 @@ public sealed partial class PdfDocumentEditor
     /// "nothing wrong" to a caller checking only those two lists.</para></summary>
     private bool ClassifyStreamFilters(PdfStream stream, List<StreamFilterRefusal> refusals)
     {
-        IReadOnlyList<string> chain = FilterChainOf(stream);
-        if (chain.Count == 0) return false;
-
+        var sawAnyFilter = false;
         var disallowed = new List<string>();
-        for (var i = 0; i < chain.Count; i++)
+        foreach ((int position, string name) in FilterEntriesOf(stream))
         {
-            string name = chain[i];
+            sawAnyFilter = true;
             bool ok = PermittedFilters.Contains(name)
-                      || (name == "Crypt" && IsIdentityCrypt(DecodeParmsAt(stream, i)));
+                      || (name == "Crypt" && IsIdentityCrypt(DecodeParmsAt(stream, position)));
             if (!ok) disallowed.Add(name);
         }
 
+        if (!sawAnyFilter) return false;
         if (disallowed.Count == 0) return false;
 
         // Anything other than LZW cannot be fixed by re-encoding: a non-Identity /Crypt needs the

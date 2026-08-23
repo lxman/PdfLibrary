@@ -110,6 +110,34 @@ public class StreamFilterRepairTests
         Assert.Contains("Crypt", refusal.Reason, StringComparison.Ordinal);
     }
 
+    // Regression for the fix-round-1 Critical: FilterChainOf (a display-only helper) COMPACTS a
+    // /Filter array when it skips a malformed (non-name) entry, so a position taken from its output no
+    // longer matches the true /Filter array index. StreamFiltersRule.Check indexes /DecodeParms by the
+    // TRUE array position, never a compacted one. Here /Filter is [<malformed> /Crypt] -- /Crypt sits
+    // at true position 1, not 0 -- and /DecodeParms is an array whose slot 1 (aligned with /Crypt) is
+    // NOT Identity. A classifier that reads DecodeParms[0] (the compacted index) instead of
+    // DecodeParms[1] (the true index) sees an empty dictionary, misreads it as Identity, and reports
+    // neither a candidate nor a refusal -- exactly the "reads as nothing wrong" hole the brief named.
+    [Fact]
+    public void Preview_refuses_Crypt_when_DecodeParms_is_aligned_by_true_array_position()
+    {
+        var doc = new PdfDocument();
+        var stream = new PdfStream(new PdfDictionary(), "x"u8.ToArray());
+        stream.Dictionary[PdfName.Filter] = new PdfArray(new PdfInteger(0), new PdfName("Crypt"));
+        var slot0 = new PdfDictionary();                                                  // malformed entry's slot -- must never be read
+        var slot1 = new PdfDictionary { [new PdfName("Name")] = new PdfName("StdCF") };   // /Crypt's true slot -- NOT Identity
+        stream.Dictionary[PdfName.DecodeParms] = new PdfArray(slot0, slot1);
+        PdfIndirectReference streamRef = doc.RegisterObject(stream);
+        int n = streamRef.ObjectNumber;
+
+        StreamFilterRepairPreview preview = new PdfDocumentEditor(doc).PreviewStreamFilterRepairs();
+
+        Assert.Empty(preview.Candidates);
+        StreamFilterRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(n, refusal.ObjectNumber);
+        Assert.Contains("Crypt", refusal.Reason, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Preview_refuses_an_LZW_stream_whose_data_will_not_decode()
     {
