@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using PdfLibrary.Builder;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Structure;
@@ -111,5 +112,100 @@ public class PdfDocumentSerializerTests
         using PdfDocument doc = PdfDocument.Load(path, "");
         using var ms = new MemoryStream();
         Assert.Throws<NotSupportedException>(() => doc.Save(ms));
+    }
+
+    /// <summary>Issue 80. The body writer emits each object's real generation
+    /// (<c>PdfDocumentSerializer.Write</c> passes <c>kvp.Value.GenerationNumber</c>), but
+    /// <c>BuildXrefTable</c> hardcoded <c>00000</c> for every entry. Any object carrying a non-zero
+    /// generation — ordinary in an incrementally-updated file — therefore got an xref entry that
+    /// contradicted its own <c>N G obj</c> header. Pellucid's reader and pypdf both tolerate it;
+    /// PDFBox does not, so veraPDF reported the saved file as "not a valid PDF" / "appears to be an
+    /// encrypted PDF" and could not check it at all. Renumbering to generation 0 instead is NOT the
+    /// fix: live <c>N 1 R</c> references elsewhere in the document would stop resolving.</summary>
+    [Fact]
+    public void Save_WritesEachObjectsRealGenerationIntoTheXrefEntry()
+    {
+        byte[] original = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("Hello", 100, 700))
+            .ToByteArray();
+
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(original));
+        doc.MaterializeAllObjects();
+
+        // Give one real object generation 1, exactly as an incremental update would.
+        PdfIndirectReference added = doc.RegisterObject(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("StreamFiltersIssue80Probe")
+        });
+        int probe = added.ObjectNumber;
+        doc.Objects[probe].GenerationNumber = 1;
+
+        using var saved = new MemoryStream();
+        doc.Save(saved);
+        string text = Encoding.ASCII.GetString(saved.ToArray());
+
+        // The body says generation 1 ...
+        Assert.Contains($"\n{probe} 1 obj\n", text);
+
+        // ... so the xref entry for that object must say 00001, not 00000.
+        // Locate the table through startxref, the way a reader does — searching for "xref" would
+        // find the tail of "startxref" instead.
+        Match pointer = Regex.Match(text, @"startxref\s+(\d+)\s*%%EOF\s*$");
+        Assert.True(pointer.Success, "no startxref/%%EOF pointer in the saved file");
+        int xref = int.Parse(pointer.Groups[1].Value);
+        Assert.StartsWith("xref", text[xref..], StringComparison.Ordinal);
+
+        Match section = Regex.Match(text[xref..], @"^xref\s+(\d+)\s+(\d+)\s+");
+        Assert.True(section.Success, "malformed xref subsection header");
+        int start = int.Parse(section.Groups[1].Value);
+
+        MatchCollection entries = Regex.Matches(
+            text[(xref + section.Length)..], @"(\d{10}) (\d{5}) ([nf])");
+        int index = probe - start;
+        Assert.True(index >= 0 && index < entries.Count,
+            $"object {probe} is outside the xref subsection");
+
+        Assert.Equal("00001", entries[index].Groups[2].Value);
+    }
+
+    /// <summary>Issue 80's guard rail. A classic xref entry is exactly 20 bytes, so the generation
+    /// field must stay five digits no matter what the source document carried. 65535 is the legal
+    /// maximum (ISO 32000-1 7.5.4); a malformed larger value written straight through would emit six
+    /// digits and shift the byte position of every entry after it, corrupting the whole table. This
+    /// covers the clamp that prevents it — without this test that branch is unexercised.</summary>
+    [Fact]
+    public void Save_ClampsAnOutOfRangeGenerationSoXrefEntriesStayTwentyBytes()
+    {
+        byte[] original = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("Hello", 100, 700))
+            .ToByteArray();
+
+        using PdfDocument doc = PdfDocument.Load(new MemoryStream(original));
+        doc.MaterializeAllObjects();
+
+        PdfIndirectReference added = doc.RegisterObject(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("StreamFiltersIssue80Probe")
+        });
+        doc.Objects[added.ObjectNumber].GenerationNumber = 999_999; // malformed, beyond 65535
+
+        using var saved = new MemoryStream();
+        doc.Save(saved);
+        string text = Encoding.ASCII.GetString(saved.ToArray());
+
+        Match pointer = Regex.Match(text, @"startxref\s+(\d+)\s*%%EOF\s*$");
+        Assert.True(pointer.Success, "no startxref/%%EOF pointer in the saved file");
+        int xref = int.Parse(pointer.Groups[1].Value);
+        Match section = Regex.Match(text[xref..], @"^xref\s+(\d+)\s+(\d+)\s+");
+        Assert.True(section.Success, "malformed xref subsection header");
+
+        // Every entry is 20 bytes: 10-digit offset, space, 5-digit generation, space, flag, 2 EOL.
+        string body = text[(xref + section.Length)..];
+        int count = int.Parse(section.Groups[2].Value);
+        for (var i = 0; i < count; i++)
+        {
+            string entry = body.Substring(i * 20, 20);
+            Assert.Matches(@"^\d{10} \d{5} [nf] \n$", entry);
+        }
     }
 }
