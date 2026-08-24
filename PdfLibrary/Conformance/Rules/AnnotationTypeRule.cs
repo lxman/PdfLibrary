@@ -10,7 +10,11 @@ namespace PdfLibrary.Conformance.Rules;
 /// </summary>
 internal sealed class AnnotationTypeRule : IConformanceRule
 {
-    private static readonly HashSet<string> Allowed =
+    /// <summary>The 22 ISO 32000-1 annotation subtypes ISO 19005-2 6.3.1 permits — internal (not
+    /// private) so <c>PdfDocumentEditor.AnnotationTypes.cs</c>'s classifier can reuse this exact set
+    /// rather than carrying a second copy that could drift from it (both types live in the PdfLibrary
+    /// assembly, so <c>internal</c> is enough; no public surface is added).</summary>
+    internal static readonly HashSet<string> Allowed =
     [
         "Text", "Link", "FreeText", "Line", "Square", "Circle", "Polygon", "PolyLine",
         "Highlight", "Underline", "Squiggly", "StrikeOut", "Stamp", "Caret", "Ink", "Popup",
