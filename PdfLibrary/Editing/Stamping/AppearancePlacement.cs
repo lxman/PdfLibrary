@@ -11,6 +11,16 @@ namespace PdfLibrary.Editing.Stamping;
 internal static class AppearancePlacement
 {
     /// <summary>
+    /// Smallest transformed-box extent, in default user space points, that still yields a meaningful
+    /// scale factor. The transformed box is in user space (Matrix maps the appearance's coordinate
+    /// system into it), so an absolute tolerance in points is the right kind: a box narrower than a
+    /// nanopoint is not a box. Sized to sit well above float noise — subtracting two nearly-equal
+    /// coordinates at PDF's practical upper bound (~32767) loses about 3.6e-12 — while rejecting
+    /// nothing a real document could intend.
+    /// </summary>
+    private const double MinExtent = 1e-9;
+
+    /// <summary>
     /// Computes AA = Matrix × A per §12.5.5:
     /// <list type="number">
     /// <item>a) The appearance's bounding box (BBox) is transformed by Matrix to produce a
@@ -40,24 +50,17 @@ internal static class AppearancePlacement
     /// </param>
     /// <returns>
     /// The six-element [a b c d e f] matrix AA, or <see langword="null"/> when the transformed
-    /// appearance box has zero width or zero height. In that degenerate case the scale factor for
-    /// that dimension is mathematically undefined (division by zero) — there is no meaningful AA to
-    /// return. Degenerate input most often means a /BBox with a zero-length side, or a /Matrix that
-    /// collapses the box onto a line or a point (e.g. a zero scale term). Callers must treat a
+    /// appearance box is degenerate — narrower or shorter than <see cref="MinExtent"/> in either
+    /// dimension, or not a finite number at all. In those cases the scale factor for that dimension
+    /// is undefined or meaningless: dividing by an exactly-zero extent is undefined, dividing by a
+    /// near-zero one returns an absurdly blown-up matrix, and a NaN extent (which every ordered
+    /// comparison answers false for, so it cannot be screened by a zero test) poisons every term.
+    /// Degenerate input most often means a /BBox with a zero-length side, or a /Matrix that
+    /// collapses the box onto a line or a point (e.g. a zero or near-zero scale term). Callers must treat a
     /// <see langword="null"/> result as "this appearance cannot be placed" and must not substitute a
     /// fallback matrix — silently returning a garbage placement would bake a corrupted appearance
     /// onto the page instead of refusing the repair.
     /// </returns>
-    /// <summary>
-    /// Smallest transformed-box extent, in default user space points, that still yields a meaningful
-    /// scale factor. The transformed box is in user space (Matrix maps the appearance's coordinate
-    /// system into it), so an absolute tolerance in points is the right kind: a box narrower than a
-    /// nanopoint is not a box. Sized to sit well above float noise — subtracting two nearly-equal
-    /// coordinates at PDF's practical upper bound (~32767) loses about 3.6e-12 — while rejecting
-    /// nothing a real document could intend.
-    /// </summary>
-    private const double MinExtent = 1e-9;
-
     internal static double[]? ComputeAA(double[] bbox, double[] matrix, double[] rect)
     {
         ArgumentNullException.ThrowIfNull(bbox);
