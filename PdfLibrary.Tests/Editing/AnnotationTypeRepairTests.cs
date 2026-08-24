@@ -260,6 +260,197 @@ public sealed class AnnotationTypeRepairTests
         Assert.Empty(preview.Refused);
     }
 
+    // ---- A hiding /F refuses ---------------------------------------------------------------------
+
+    // ISO 32000-1 12.5.3, Table 165: Invisible (1) suppresses display of an annotation "if it does not
+    // belong to one of the standard annotation types and no annotation handler is available" -- the
+    // spec's own exception to the 12.5.5 NOTE 3 sentence this whole repair rests on; Hidden (2)
+    // suppresses display and print "regardless of its annotation type or whether an annotation handler
+    // is available"; NoView (0x20) suppresses on-screen display; ToggleNoView (0x100) inverts NoView
+    // for certain events, so the annotation is concealed for some of them either way. Baking the
+    // appearance of any of them into page content would REVEAL what the author concealed --
+    // permanently, automatically, and one save stage after AnnotationsDomain declined to do exactly
+    // that (Pellucid docs/REMEDIATION-CHOICES.md entry 5).
+    [Theory]
+    [InlineData(0x1, "Invisible")]
+    [InlineData(0x2, "Hidden")]
+    [InlineData(0x20, "NoView")]
+    [InlineData(0x100, "ToggleNoView")]
+    public void A_prohibited_annotation_whose_F_hides_it_is_refused_and_names_the_flag(
+        int flags, string flagName)
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        // Everything else about this annotation is perfectly flattenable: a resolvable Form XObject
+        // appearance with sound geometry. /F is the ONLY reason to refuse.
+        PdfIndirectReference formRef = doc.RegisterObject(MakeFormXObject());
+        PdfDictionary annot = MakeAnnotation("3D");
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        annot[new PdfName("F")] = new PdfInteger(flags);
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+        Assert.Empty(preview.Candidates);
+        AnnotationTypeRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(annotRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal("3D", refusal.Subtype);
+        Assert.Contains(flagName, refusal.Reason, StringComparison.Ordinal);
+        Assert.Contains("/F", refusal.Reason, StringComparison.Ordinal);
+    }
+
+    // A hiding bit refuses whatever ELSE /F carries -- it is a mask test, not an equality test. /F 70
+    // is Print (4) + Hidden (2) + ReadOnly (64): a printable, hidden annotation.
+    [Fact]
+    public void A_hiding_bit_alongside_Print_still_refuses()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference formRef = doc.RegisterObject(MakeFormXObject());
+        PdfDictionary annot = MakeAnnotation("3D");
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        annot[new PdfName("F")] = new PdfInteger(70);
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+        Assert.Empty(preview.Candidates);
+        Assert.Contains("Hidden", Assert.Single(preview.Refused).Reason, StringComparison.Ordinal);
+    }
+
+    // THE CONTROL, and it is the real corpus shape rather than an invented one: measured 2026-08-24
+    // with pikepdf over D:\PdfCorpora\real-world\local-708 and the 4,000-document web-crawl sample,
+    // every one of the 11 prohibited-subtype annotations in either corpus carries a NON-hiding /F --
+    // 10 of them /F 68 (Print + ReadOnly, the ten SCV documents this program exists for) and one
+    // /F 4 (Print). Not one carries a hiding bit. So this test is what proves the refusal above did
+    // not cost the program its ten documents.
+    [Theory]
+    [InlineData(68)] // Print + ReadOnly -- all ten local-708 documents
+    [InlineData(4)]  // Print -- the single web-crawl occurrence
+    public void A_prohibited_annotation_whose_F_does_not_hide_it_is_still_a_candidate(int flags)
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference formRef = doc.RegisterObject(MakeFormXObject());
+        PdfDictionary annot = MakeAnnotation("3D");
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        annot[new PdfName("F")] = new PdfInteger(flags);
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+        Assert.Equal(annotRef.ObjectNumber, Assert.Single(preview.Candidates).ObjectNumber);
+        Assert.Empty(preview.Refused);
+    }
+
+    // A /F that carries no number cannot be read for hiding bits, so it reads as an ABSENT /F --
+    // matching AnnotationFlagsRule's own read and veraPDF's. Deliberately not a refusal: a flag word
+    // that cannot be read cannot be said to conceal anything, and refusing on one would decline this
+    // repair over a malformation the annotation-flags rule owns.
+    [Fact]
+    public void A_non_numeric_F_reads_as_absent_and_leaves_the_annotation_a_candidate()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference formRef = doc.RegisterObject(MakeFormXObject());
+        PdfDictionary annot = MakeAnnotation("3D");
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        annot[new PdfName("F")] = new PdfName("Hidden"); // a NAME, not an integer -- malformed
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+        Assert.Single(preview.Candidates);
+        Assert.Empty(preview.Refused);
+    }
+
+    // /F 2.0 is a REAL, not an integer, but a producer that wrote it still meant Hidden. Same
+    // coercion AnnotationFlagsRule and PdfPageCollection.Annotations already make.
+    [Fact]
+    public void A_real_valued_F_is_read_for_its_integer_bits()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference formRef = doc.RegisterObject(MakeFormXObject());
+        PdfDictionary annot = MakeAnnotation("3D");
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        annot[new PdfName("F")] = new PdfReal(2.0);
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+        Assert.Empty(preview.Candidates);
+        Assert.Contains("Hidden", Assert.Single(preview.Refused).Reason, StringComparison.Ordinal);
+    }
+
+    // The refusal reaches the WRITE side too, because both share ClassifyAnnotationTypes -- and it
+    // reaches it as a refusal in the report, not as a silent skip. Nothing on the page is touched:
+    // no /Contents materialized, the annotation still in /Annots. This is the assertion that matters,
+    // since a hidden annotation reaching the bake step is precisely the permanent reveal.
+    [Fact]
+    public void Repair_refuses_a_staged_hidden_annotation_and_leaves_the_page_untouched()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+        PdfDictionary page = PageTreeOps.PageDicts(doc)[0];
+        page.Remove(new PdfName("Contents")); // so "nothing was touched" is easy to see
+
+        PdfIndirectReference formRef = doc.RegisterObject(MakeFormXObject());
+        PdfDictionary annot = MakeAnnotation("3D");
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        annot[new PdfName("F")] = new PdfInteger(2); // Hidden
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+
+        AnnotationTypeRepairReport report =
+            editor.RepairAnnotationTypes(new HashSet<int> { annotRef.ObjectNumber });
+
+        Assert.Empty(report.Applied);
+        AnnotationTypeRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(annotRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Contains("Hidden", refusal.Reason, StringComparison.Ordinal);
+
+        Assert.Null(page.Get("Contents"));
+        PdfArray? annots = page.Get("Annots") as PdfArray;
+        Assert.NotNull(annots);
+        Assert.Single(annots!);
+    }
+
+    // The premise behind the refusal, proven with the engine's own renderer rather than asserted from
+    // the spec: PdfRenderer honours Hidden and NoView and draws nothing for such an annotation. On the
+    // production page shape -- which has NO /Contents of its own, so the annotation IS the entire
+    // visible page -- a Hidden annotation therefore renders to a blank sheet while the same document
+    // with /F 4 renders its artwork. Baking the appearance would put that artwork on the page
+    // permanently. That is the reveal, and it is measurable, not theoretical.
+    [Fact]
+    public void A_hidden_annotation_contributes_nothing_to_the_rendered_page_today()
+    {
+        using PdfDocument hiddenDoc =
+            PdfDocument.Load(new MemoryStream(DocWithFlattenableAnnotationNoContents(flags: 2)));
+        using PdfDocument printableDoc =
+            PdfDocument.Load(new MemoryStream(DocWithFlattenableAnnotationNoContents(flags: 4)));
+
+        byte[] hiddenPixels = RenderPixels(hiddenDoc.GetPage(0)!);
+        byte[] printablePixels = RenderPixels(printableDoc.GetPage(0)!);
+
+        Assert.NotEqual(hiddenPixels, printablePixels);
+
+        // And the classifier's two answers line up with those two renders: the hidden one is refused,
+        // the printable one is the candidate this program flattens.
+        Assert.Empty(hiddenDoc.Edit().PreviewAnnotationTypeRepairs().Candidates);
+        Assert.Single(printableDoc.Edit().PreviewAnnotationTypeRepairs().Candidates);
+    }
+
     // "Not an indirect object" (the classification table's last row): AnnotationTypeRule.Check still
     // raises a Finding for a direct annotation dictionary (with ObjectNumber null), but this editor's
     // per-object candidate/refusal contract has no object number to key it on. It must be excluded
@@ -350,6 +541,150 @@ public sealed class AnnotationTypeRepairTests
         Assert.Equal(annotRef.ObjectNumber, Assert.Single(second.Candidates).ObjectNumber);
     }
 
+    // ---- Geometry refusals are reachable from the PREVIEW, not just the repair ------------------
+
+    // Every row of the spec's second (geometry) classification table, asserted against
+    // PreviewAnnotationTypeRepairs rather than RepairAnnotationTypes. These checks used to live on
+    // the write side alone, so the preview called each of these a candidate and the repair then
+    // refused it -- and Pellucid's AnnotationTypeDomain.CollectForSave discards the report
+    // RepairAnnotationTypes returns, so that refusal reached no surface at all: the desktop row said
+    // "fix applied", the file was rewritten, the finding survived the reload, and nothing explained
+    // it. `pellucid fix` produced no needsDecision row either.
+    /// <summary>One geometry shape the §12.5.5 placement cannot be computed for, and the word its
+    /// refusal must name. The three geometry entries are FACTORIES, not values: each case is built
+    /// twice (once per test below) into two different documents, and a PdfObject registered into one
+    /// document must never be handed to another.</summary>
+    private sealed record GeometryCase(
+        string Name, Func<PdfObject?> Rect, Func<PdfObject?> BBox, Func<PdfObject?> Matrix,
+        string Expect);
+
+    private static PdfArray Nums(params double[] values) =>
+        new(values.Select(v => (PdfObject)new PdfReal(v)).ToArray());
+
+    private static readonly GeometryCase[] DegenerateGeometryCases =
+    [
+        new("missing /Rect", () => null, () => Nums(0, 0, 100, 100), () => null, "/Rect"),
+        new("/Rect is not four numbers",
+            () => new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfName("oops"),
+                               new PdfInteger(100)),
+            () => Nums(0, 0, 100, 100), () => null, "/Rect"),
+        new("zero-area /Rect",
+            () => Nums(10, 10, 10, 50), () => Nums(0, 0, 100, 100), () => null, "degenerate"),
+        new("missing /BBox", () => Nums(0, 0, 100, 100), () => null, () => null, "/BBox"),
+        new("zero-width /BBox",
+            () => Nums(0, 0, 100, 100), () => Nums(10, 10, 10, 50), () => null, "degenerate"),
+        new("/Matrix present but too short",
+            () => Nums(0, 0, 100, 100), () => Nums(0, 0, 100, 100), () => Nums(1, 0), "/Matrix"),
+        // A non-finite /Matrix term. ReadNumberArray cannot tell a PdfReal holding NaN from a
+        // non-number object -- both mean "this array does not carry six usable numbers" -- so it lands
+        // on the malformed-/Matrix reason rather than on ComputeAA's own degeneracy screen. Either
+        // would be a correct refusal; this pins which one it actually is.
+        new("/Matrix carrying a non-finite term",
+            () => Nums(0, 0, 100, 100), () => Nums(0, 0, 100, 100),
+            () => Nums(double.NaN, 0, 0, 1, 0, 0), "/Matrix"),
+        // A well-formed /Matrix that COLLAPSES the transformed box onto a point: every term zero.
+        // ComputeAA's own null this time, not a read failure.
+        new("/Matrix collapsing the transformed box",
+            () => Nums(0, 0, 100, 100), () => Nums(0, 0, 100, 100), () => Nums(0, 0, 0, 0, 0, 0),
+            "degenerate"),
+    ];
+
+    /// <summary>Registers one <see cref="GeometryCase"/> as a prohibited-subtype annotation with a
+    /// resolvable Form XObject appearance on page 0 of <paramref name="doc"/> -- so the ONLY reason to
+    /// refuse it is its geometry -- and returns its object number.</summary>
+    private static int AddGeometryCase(PdfDocument doc, GeometryCase geometryCase)
+    {
+        PdfIndirectReference formRef = doc.RegisterObject(
+            MakeFormXObjectWithGeometry(geometryCase.BBox(), geometryCase.Matrix()));
+        var annot = new PdfDictionary { [new PdfName("Subtype")] = new PdfName("3D") };
+        if (geometryCase.Rect() is { } rect) annot[new PdfName("Rect")] = rect;
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+        return annotRef.ObjectNumber;
+    }
+
+    // One document per case rather than one [Theory] row per case: a PdfObject is not xUnit-
+    // serialisable theory data, and the case name is carried in every assertion message instead.
+    [Fact]
+    public void Preview_refuses_every_geometry_shape_the_repair_could_not_place()
+    {
+        foreach (GeometryCase geometryCase in DegenerateGeometryCases)
+        {
+            PdfDocumentEditor editor = NewEditor();
+            int objectNumber = AddGeometryCase(editor.Document, geometryCase);
+
+            AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+            Assert.True(preview.Candidates.Count == 0,
+                $"[{geometryCase.Name}] should not be a candidate, but preview reported "
+                + $"{preview.Candidates.Count}");
+            Assert.True(preview.Refused.Count == 1,
+                $"[{geometryCase.Name}] should be exactly one refusal, but preview reported "
+                + $"{preview.Refused.Count}");
+            AnnotationTypeRefusal refusal = preview.Refused[0];
+            Assert.True(refusal.ObjectNumber == objectNumber,
+                $"[{geometryCase.Name}] refusal named object {refusal.ObjectNumber}, expected "
+                + $"{objectNumber}");
+            Assert.Equal("3D", refusal.Subtype);
+            Assert.True(refusal.Reason.Contains(geometryCase.Expect, StringComparison.OrdinalIgnoreCase),
+                $"[{geometryCase.Name}] reason should mention '{geometryCase.Expect}' but was: "
+                + refusal.Reason);
+        }
+    }
+
+    // The invariant itself, on ONE document carrying every geometry shape at once plus a healthy
+    // candidate: everything the repair refuses, the preview already refused -- same object numbers,
+    // same reasons -- and everything the preview called a candidate, the repair applied. This is the
+    // assertion that would have caught the original defect; the per-row theory above only proves each
+    // refusal exists.
+    [Fact]
+    public void Preview_and_repair_agree_on_every_annotation_of_one_document()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        foreach (GeometryCase geometryCase in DegenerateGeometryCases)
+            AddGeometryCase(doc, geometryCase);
+
+        // Plus the shapes that refuse for non-geometry reasons, so the agreement is proven across
+        // every refusal path this classifier has rather than only the ones this fix moved.
+        PdfDictionary noAp = MakeAnnotation("Sound");
+        AddAnnotEntry(doc, 0, doc.RegisterObject(noAp));
+
+        PdfDictionary hidden = MakeAnnotation("3D");
+        hidden[new PdfName("AP")] = new PdfDictionary
+        {
+            [new PdfName("N")] = doc.RegisterObject(MakeFormXObject()),
+        };
+        hidden[new PdfName("F")] = new PdfInteger(2);
+        AddAnnotEntry(doc, 0, doc.RegisterObject(hidden));
+
+        PdfDictionary good = MakeAnnotation("3D");
+        good[new PdfName("AP")] = new PdfDictionary
+        {
+            [new PdfName("N")] = doc.RegisterObject(MakeFormXObject()),
+        };
+        PdfIndirectReference goodRef = doc.RegisterObject(good);
+        AddAnnotEntry(doc, 0, goodRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+        Assert.Equal(goodRef.ObjectNumber, Assert.Single(preview.Candidates).ObjectNumber);
+        Assert.Equal(10, preview.Refused.Count); // 8 geometry rows + no-/AP + hidden
+
+        // Stage EVERYTHING -- candidates and refusals alike, which is the worst case a caller could
+        // hand this method -- and the repair must reach the identical verdicts.
+        var everything = preview.Candidates.Select(c => c.ObjectNumber)
+            .Concat(preview.Refused.Select(f => f.ObjectNumber))
+            .ToHashSet();
+        AnnotationTypeRepairReport report = editor.RepairAnnotationTypes(everything);
+
+        Assert.Equal(goodRef.ObjectNumber, Assert.Single(report.Applied).ObjectNumber);
+        Assert.Equal(
+            preview.Refused.Select(f => (f.ObjectNumber, f.Subtype, f.Reason)).OrderBy(t => t.ObjectNumber),
+            report.Refused.Select(f => (f.ObjectNumber, f.Subtype, f.Reason)).OrderBy(t => t.ObjectNumber));
+    }
+
     // ---- Completeness: every shape AnnotationTypeRule.Check can raise lands somewhere ----------
 
     // AnnotationTypeRule.Check raises exactly two Finding shapes: "no /Subtype" and "subtype
@@ -396,6 +731,13 @@ public sealed class AnnotationTypeRepairTests
             };
             a[new PdfName("AS")] = new PdfName("On");
         });
+        // refusal: a perfectly bakeable appearance, but /F hides the annotation
+        AddCase(a =>
+        {
+            a[new PdfName("AP")] =
+                new PdfDictionary { [new PdfName("N")] = doc.RegisterObject(MakeFormXObject()) };
+            a[new PdfName("F")] = new PdfInteger(2);
+        });
 
         AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
 
@@ -406,7 +748,7 @@ public sealed class AnnotationTypeRepairTests
             Assert.Contains(n, accountedFor);
         Assert.Equal(expectedObjectNumbers.Count, accountedFor.Count); // no duplicates, nothing extra
         Assert.Single(preview.Candidates);
-        Assert.Equal(4, preview.Refused.Count);
+        Assert.Equal(5, preview.Refused.Count);
     }
 
     // ── Task 3: RepairAnnotationTypes (the write side) ───────────────────────────────────────────
@@ -449,8 +791,13 @@ public sealed class AnnotationTypeRepairTests
     /// comparison has actual content to prove unchanged, not a blank canvas either side), plus a
     /// /3DD stream referenced only from the annotation. Fixed object numbers, mirroring
     /// <c>ImageDictionaryRepairTests.DocWithImageKeys</c>'s convention: 1 catalog, 2 pages, 3 the
-    /// page, 10 the annotation, 20 the Form XObject, 30 the /3DD stream.</summary>
-    private static byte[] DocWithFlattenableAnnotationNoContents()
+    /// page, 10 the annotation, 20 the Form XObject, 30 the /3DD stream.
+    ///
+    /// <para><paramref name="flags"/> is the annotation's /F. It defaults to 4 (Print) -- the
+    /// non-hiding shape the corpus actually has (measured: /F 68 = Print + ReadOnly on all ten, /F 4
+    /// on the single web-crawl occurrence; neither carries a hiding bit). A caller passes a hiding
+    /// value to exercise the refusal branch against the same otherwise-identical document.</para></summary>
+    private static byte[] DocWithFlattenableAnnotationNoContents(int flags = 4)
     {
         var doc = new PdfDocument();
 
@@ -478,7 +825,7 @@ public sealed class AnnotationTypeRepairTests
             [new PdfName("Subtype")] = new PdfName("3D"),
             [new PdfName("Rect")] = new PdfArray(
                 new PdfInteger(0), new PdfInteger(0), new PdfInteger(200), new PdfInteger(150)),
-            [new PdfName("F")] = new PdfInteger(4), // Print -- not Hidden, not NoView
+            [new PdfName("F")] = new PdfInteger(flags),
             [new PdfName("AP")] = new PdfDictionary
             {
                 [new PdfName("N")] = new PdfIndirectReference(20, 0),
