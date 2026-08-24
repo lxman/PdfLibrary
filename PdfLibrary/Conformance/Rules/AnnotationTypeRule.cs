@@ -10,12 +10,25 @@ namespace PdfLibrary.Conformance.Rules;
 /// </summary>
 internal sealed class AnnotationTypeRule : IConformanceRule
 {
-    private static readonly HashSet<string> Allowed =
-    [
+    /// <summary>The 22 ISO 32000-1 annotation subtypes ISO 19005-2 6.3.1 permits — internal (not
+    /// private) so <c>PdfDocumentEditor.AnnotationTypes.cs</c>'s classifier can reuse this exact set
+    /// rather than carrying a second copy that could drift from it (both types live in the PdfLibrary
+    /// assembly, so <c>internal</c> is enough; no public surface is added).
+    ///
+    /// <para>Typed <see cref="IReadOnlySet{T}"/>, not <see cref="HashSet{T}"/>, and that is
+    /// load-bearing rather than cosmetic: this field is <b>static</b>, and <c>internal</c> here means
+    /// visible to five <c>InternalsVisibleTo</c> assemblies, three of them test projects. Exposed as a
+    /// mutable set, one stray <c>.Add</c> or <c>.Clear</c> in any of them would corrupt the
+    /// conformance oracle itself — <see cref="Check"/> reads this same instance — process-wide and
+    /// for every document, not merely the classifier the widening was for. The read-only type keeps
+    /// the single-source-of-truth benefit without handing out write access. Matches
+    /// <c>SpotColourInventory.ProcessColorants</c> and <c>LogicalStructure.StandardTypes</c>.</para></summary>
+    internal static readonly IReadOnlySet<string> Allowed = new HashSet<string>
+    {
         "Text", "Link", "FreeText", "Line", "Square", "Circle", "Polygon", "PolyLine",
         "Highlight", "Underline", "Squiggly", "StrikeOut", "Stamp", "Caret", "Ink", "Popup",
         "FileAttachment", "Widget", "PrinterMark", "TrapNet", "Watermark", "Redact",
-    ];
+    };
 
     public string RuleId => "annotation-type";
 

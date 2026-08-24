@@ -129,15 +129,22 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- SkiaSharp is the platform-specific rendering implementation - needs internal access -->
-        <InternalsVisibleTo Include="PdfLibrary.Rendering.SkiaSharp" />
-        <!-- WPF test project needs internal access to PdfImage/PdfStream for testing -->
+        <!-- Every grant below is a TEST or test-tooling assembly, and each is here because a build
+             with it removed fails. Audited 2026-08-24 by removing all five grants in a detached
+             worktree and building each consumer; the ONE that compiled clean without one was
+             deleted (Rendering.SkiaSharp — also the only PRODUCTION grant). Judge the probe by
+             whether the build SUCCEEDS, never by grepping for one error code. Prefer widening the
+             public surface: InternalsVisibleTo to production code means the public API does not say
+             what a real consumer needs. -->
+        <!-- Needs PdfDictionary, PdfInteger, PdfName, PdfStream. -->
         <InternalsVisibleTo Include="PdfLibrary.Rendering.Wpf.Tests" />
-        <!-- Test projects need internal access for thorough testing -->
+        <!-- Both need exactly two types: EmbeddedFontMetrics and PdfFontDescriptor. -->
         <InternalsVisibleTo Include="PdfLibrary.Tests" />
         <InternalsVisibleTo Include="PdfLibrary.Integration" />
-        <!-- G-14 Task 7: Pellucid's render-level pins call PdfImageToCmyk.StencilInkFromFill directly
-             (an internal SP-6d hook) to observe the process-only stencil ink Task 5 produces. -->
+        <!-- Needs the internal static PdfImageToCmyk.StencilInkFromFill (G-14 Task 7 render pins).
+             NOTE for anyone re-running the audit: removing this grant fails with CS0117 ("does not
+             contain a definition"), NOT CS0122 — an inaccessible STATIC member reads to the compiler
+             as an absent one. A probe that greps only for CS0122 will call this grant dead. It is not. -->
         <InternalsVisibleTo Include="Pellucid.Rendering.Avalonia.Tests" />
     </ItemGroup>
 
