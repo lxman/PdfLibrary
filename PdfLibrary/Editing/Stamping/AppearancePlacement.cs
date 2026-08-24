@@ -101,6 +101,19 @@ internal static class AppearancePlacement
         double ry0 = Math.Min(rect[1], rect[3]);
         double ry1 = Math.Max(rect[1], rect[3]);
 
+        // The TARGET rectangle needs the same degeneracy screen as the source box, and for a reason
+        // the source check does not cover. A zero-extent /Rect does not divide by zero — it makes the
+        // numerator zero, so sx (or sy) comes out a perfectly finite 0. Nothing is NaN, nothing is
+        // infinite, no guard above fires, and the method returns a valid-looking matrix whose scale
+        // collapses the appearance to a line. A caller acting on that would write a degenerate CTM
+        // into a content stream and then delete the annotation it came from, having been told the
+        // placement succeeded.
+        //
+        // Refusing is the honest answer: a zero-area /Rect gives the appearance nowhere to go, so
+        // there is no placement to compute. Same NaN-catching negated form as above.
+        if (!(rx1 - rx0 > MinExtent) || !(ry1 - ry0 > MinExtent))
+            return null;
+
         double sx = (rx1 - rx0) / transformedWidth;
         double sy = (ry1 - ry0) / transformedHeight;
         double ex = rx0 - sx * tx0;

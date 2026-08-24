@@ -232,6 +232,43 @@ public class AppearancePlacementTests
         Assert.Throws<ArgumentNullException>(() => AppearancePlacement.ComputeAA(ok4, ok6, null!));
     }
 
+    [Theory]
+    // zero-width /Rect, zero-height /Rect, and both — each with a perfectly healthy BBox/Matrix,
+    // so the source-box guard above cannot catch them.
+    [InlineData(50.0, 0.0, 50.0, 100.0)]
+    [InlineData(0.0, 50.0, 100.0, 50.0)]
+    [InlineData(10.0, 10.0, 10.0, 10.0)]
+    public void DegenerateRect_ReturnsNull_RatherThanAZeroScalePlacement(
+        double x0, double y0, double x1, double y1)
+    {
+        // Task 3's review gate, empirically demonstrated: a zero-extent /Rect does NOT divide by
+        // zero — it zeroes the NUMERATOR, so sx comes out a finite 0 and every guard above passes.
+        // The old code returned [0,0,0,1,50,0]: a valid-looking matrix that collapses the appearance
+        // to a line. Its caller then wrote that degenerate CTM into the page and deleted the
+        // annotation, reporting success.
+        double[] bbox = [0, 0, 100, 100];
+        double[] matrix = [1, 0, 0, 1, 0, 0];
+        double[] rect = [x0, y0, x1, y1];
+
+        Assert.Null(AppearancePlacement.ComputeAA(bbox, matrix, rect));
+    }
+
+    [Fact]
+    public void ARectJustAboveMinExtent_IsStillPlaced()
+    {
+        // The other side of the guard: it must refuse degeneracy without rejecting a legitimately
+        // tiny annotation. 1e-6pt is absurd but real; MinExtent is 1e-9.
+        double[] bbox = [0, 0, 100, 100];
+        double[] matrix = [1, 0, 0, 1, 0, 0];
+        double[] rect = [0, 0, 1e-6, 1e-6];
+
+        double[]? aa = AppearancePlacement.ComputeAA(bbox, matrix, rect);
+
+        Assert.NotNull(aa);
+        Assert.True(aa![0] > 0, "x-scale must be positive, not collapsed");
+        Assert.True(aa[3] > 0, "y-scale must be positive, not collapsed");
+    }
+
     private static void AssertBBoxTransformsOntoRect(double[] bbox, double[] aa, double[] rect)
     {
         (double x, double y) P(double x, double y) =>
