@@ -98,6 +98,32 @@ public sealed partial class PdfDocumentEditor
         return ResolveObject(stateDict.Get(state)) as PdfStream;
     }
 
+    /// <summary>The <c>/F</c> bits ISO 32000-1 §12.5.3 Table 165 defines as concealing an annotation
+    /// from a reader: Invisible (bit 1), Hidden (bit 2), NoView (bit 6), and ToggleNoView (bit 9,
+    /// which "invert[s] the interpretation of the NoView flag for certain events" — so the annotation
+    /// is concealed for some of them whichever way NoView itself is set). Spelled through
+    /// <see cref="PdfAnnotationFlags"/>, the assembly's public Table 165 transcription, rather than
+    /// re-declared as local masks that could drift from it.</summary>
+    private const PdfAnnotationFlags HidingFlags =
+        PdfAnnotationFlags.Invisible | PdfAnnotationFlags.Hidden
+        | PdfAnnotationFlags.NoView | PdfAnnotationFlags.ToggleNoView;
+
+    /// <summary>An annotation's <c>/F</c> flag word, or <see langword="null"/> when <c>/F</c> is absent
+    /// or does not carry a number. Mirrors <c>AnnotationFlagsRule</c>'s own read deliberately: a
+    /// <see cref="PdfReal"/> is taken for its integer value (a producer that wrote <c>/F 2.0</c> still
+    /// meant Hidden), and a non-numeric <c>/F</c> — a name, a string, an array — is malformed rather
+    /// than a value worth interpreting, so it reads the same as an absent one, which is also how
+    /// veraPDF treats it. Neither reads as "hidden": a flag word that cannot be read cannot be said to
+    /// conceal anything, and refusing on one would decline a repair over a defect this rule does not
+    /// own.</summary>
+    private PdfAnnotationFlags? ReadAnnotationFlags(PdfDictionary annot) =>
+        ResolveObject(annot.Get("F")) switch
+        {
+            PdfInteger i => (PdfAnnotationFlags)i.Value,
+            PdfReal r => (PdfAnnotationFlags)(int)r.Value,
+            _ => null,
+        };
+
     /// <summary>The ONE classifier <see cref="PreviewAnnotationTypeRepairs"/> uses, and the one Task
     /// 3's <c>RepairAnnotationTypes</c> will share, so preview and repair can never disagree about what
     /// would happen to a given annotation — the same factoring <see cref="ClassifyImageDictionary"/>
@@ -105,9 +131,14 @@ public sealed partial class PdfDocumentEditor
     /// <c>ImageDictionaryDomain</c> was corrected into having after a sibling domain learned its answer
     /// by calling the mutating write from <c>Propose</c>, graded Critical).
     ///
-    /// <para>Every branch below is exactly one row of the classification table in
-    /// <c>docs/superpowers/specs/2026-08-24-annotation-type-remediation-design.md</c> §6, except one:
-    /// that table also lists "owning page not found (orphaned annotation)" as a refusal. It is not
+    /// <para>Every branch below is one row of the classification table in
+    /// <c>docs/superpowers/specs/2026-08-24-annotation-type-remediation-design.md</c> §6, with two
+    /// exceptions. The first is an ADDITION the spec does not have: a hiding <c>/F</c> refuses (see
+    /// that branch's own comment). It was found by the pre-merge whole-branch review, after the spec
+    /// was written, in the same way §6's own geometry table was found by Task 3 — the spec reasoned
+    /// about which annotations have a bakeable appearance and never about which ones a reader is
+    /// meant to draw at all. The second is a row the spec HAS that this method cannot produce:
+    /// that table lists "owning page not found (orphaned annotation)" as a refusal. It is not
     /// produced here, and cannot be — <paramref name="pageIndex"/> comes from
     /// <see cref="EnumerateIndirectAnnotations"/>, which only ever yields an annotation together with
     /// the page whose own (already-resolved) <c>/Annots</c> array it was found in, so a page is known
@@ -136,6 +167,39 @@ public sealed partial class PdfDocumentEditor
 
         if (AnnotationTypeRule.Allowed.Contains(subtype))
             return; // a permitted subtype -- not this rule's business
+
+        // A hiding /F refuses BEFORE the appearance is even looked at, deliberately. What makes this
+        // whole repair safe is that a reader without support for the subtype is ALREADY REQUIRED to
+        // draw the /AP /N appearance (ISO 32000-1 12.5.5, NOTE 3), so baking it changes nothing a
+        // person sees. Table 165 is where that premise fails: Invisible is the spec's own documented
+        // exception to that very sentence, and Hidden and NoView suppress display outright,
+        // "regardless of its annotation type or whether an annotation handler is available". Bake one
+        // of those and the repair does not preserve the page -- it REVEALS, permanently and without
+        // asking, content the author concealed. Our own renderer already honours Hidden and NoView
+        // (PdfRenderer skips such an annotation), so on those two the reveal is not hypothetical: the
+        // page really does render differently afterwards.
+        //
+        // ToggleNoView is in the set for a reason of its own. It inverts NoView "for certain events",
+        // so the annotation is concealed for some of them whichever way NoView is set -- and a baked
+        // appearance has exactly one visibility state, which can only be "always shown". That is the
+        // revealing direction again, chosen automatically for an annotation whose author asked for
+        // something conditional.
+        //
+        // This is also the same answer AnnotationsDomain gives one save stage EARLIER: it owns
+        // annotation-flags, refuses to clear these four bits, and says why in Pellucid's
+        // docs/REMEDIATION-CHOICES.md entry 5 -- revealing a concealed annotation is a person's
+        // decision, not the tool's. Without this branch that decision was declined at
+        // SaveOrder.Annotations = 100 and then taken automatically at SaveOrder.AnnotationType = 110,
+        // ten points later, on the same annotation in the same save.
+        if (ReadAnnotationFlags(annot) is { } flags && (flags & HidingFlags) != 0)
+        {
+            refusals.Add(new AnnotationTypeRefusal(annot.ObjectNumber, subtype,
+                $"This '{subtype}' annotation's /F flags hide it from view ({flags & HidingFlags}, "
+                + $"/F 0x{(int)flags:X}). Baking its appearance into the page would make content the "
+                + "author concealed permanently visible, and that is a person's decision rather than "
+                + "Pellucid's, so Pellucid leaves it alone and the finding stays open."));
+            return;
+        }
 
         // Prohibited subtype past here. Resolve /AP /N to a Form XObject, handling the state-keyed
         // case FormFlattener.FlattenField also handles: /N may be a single stream, or a sub-dictionary
