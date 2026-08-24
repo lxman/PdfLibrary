@@ -48,8 +48,21 @@ internal static class AppearancePlacement
     /// fallback matrix — silently returning a garbage placement would bake a corrupted appearance
     /// onto the page instead of refusing the repair.
     /// </returns>
+    /// <summary>
+    /// Smallest transformed-box extent, in default user space points, that still yields a meaningful
+    /// scale factor. The transformed box is in user space (Matrix maps the appearance's coordinate
+    /// system into it), so an absolute tolerance in points is the right kind: a box narrower than a
+    /// nanopoint is not a box. Sized to sit well above float noise — subtracting two nearly-equal
+    /// coordinates at PDF's practical upper bound (~32767) loses about 3.6e-12 — while rejecting
+    /// nothing a real document could intend.
+    /// </summary>
+    private const double MinExtent = 1e-9;
+
     internal static double[]? ComputeAA(double[] bbox, double[] matrix, double[] rect)
     {
+        ArgumentNullException.ThrowIfNull(bbox);
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentNullException.ThrowIfNull(rect);
         if (bbox.Length < 4) throw new ArgumentException("bbox must have at least 4 elements.", nameof(bbox));
         if (matrix.Length < 6) throw new ArgumentException("matrix must have at least 6 elements.", nameof(matrix));
         if (rect.Length < 4) throw new ArgumentException("rect must have at least 4 elements.", nameof(rect));
@@ -68,7 +81,14 @@ internal static class AppearancePlacement
 
         double transformedWidth = tx1 - tx0;
         double transformedHeight = ty1 - ty0;
-        if (transformedWidth == 0 || transformedHeight == 0)
+
+        // Written as !(w > MinExtent) rather than (w <= MinExtent) deliberately: the negated form
+        // also catches NaN, which every ordered comparison answers false for. A /Matrix carrying a
+        // NaN (or an infinity, which subtracts to NaN) would otherwise pass an == 0 test, divide
+        // into a NaN scale factor, and return a matrix of NaNs as if it were a real placement.
+        // Both the near-zero and the not-a-number case mean the same thing to a caller — this
+        // appearance cannot be placed — so both take the refusal branch.
+        if (!(transformedWidth > MinExtent) || !(transformedHeight > MinExtent))
             return null;
 
         // b) Compute A: scale + translate the transformed appearance box onto Rect (Rect is not

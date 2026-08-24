@@ -172,6 +172,66 @@ public class AppearancePlacementTests
     /// This is the property AA is defined to guarantee, checked independently of ComputeAA's own
     /// internal arithmetic — it only relies on the PDF point-transform formula.
     /// </summary>
+    [Fact]
+    public void NearDegenerateTransformedBox_ReturnsNull_RatherThanABlownUpScale()
+    {
+        // Review finding (Task 1 gate): the degeneracy test was an exact `== 0`, so a transformed
+        // box that is merely NEAR zero — a /Matrix with a tiny but non-zero scale term — skipped the
+        // refusal and divided by it instead, producing an enormous scale factor rather than an
+        // honest "cannot be placed". 1e-12 is below MinExtent (1e-9) and above nothing: it is a real
+        // double, and `1e-12 == 0` is false.
+        double[] bbox = [0, 0, 100, 50];
+        double[] matrix = [1e-14, 0, 0, 1, 0, 0]; // collapses width to 100 * 1e-14 = 1e-12
+        double[] rect = [0, 0, 50, 100];
+
+        Assert.Null(AppearancePlacement.ComputeAA(bbox, matrix, rect));
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void NonFiniteMatrixTerm_ReturnsNull_NotAMatrixOfNaNs(double poison)
+    {
+        // An == 0 test answers false for NaN, so a malformed /Matrix used to flow straight through
+        // into the division and return six NaNs dressed up as a placement. Infinities subtract to
+        // NaN and take the same path. Both mean the same thing to a caller: unplaceable.
+        double[] bbox = [0, 0, 100, 50];
+        double[] matrix = [poison, 0, 0, 1, 0, 0];
+        double[] rect = [0, 0, 50, 100];
+
+        Assert.Null(AppearancePlacement.ComputeAA(bbox, matrix, rect));
+    }
+
+    [Fact]
+    public void NonNormalisedBBox_UpperRightBeforeLowerLeft_IsHandledTheSameAsNormalised()
+    {
+        // The review confirmed by hand that reversed-BBox input is already handled correctly (all
+        // four corners are derived, then min/max taken), but nothing tested it — and an untested
+        // correct path is one edit away from being an untested wrong one. The corpus cannot see
+        // this: every production BBox is [0 0 792 612].
+        double[] matrix = [1, 0, 0, 1, 0, 0];
+        double[] rect = [10, 20, 110, 70];
+
+        double[]? normalised = AppearancePlacement.ComputeAA([0, 0, 100, 50], matrix, rect);
+        double[]? reversed = AppearancePlacement.ComputeAA([100, 50, 0, 0], matrix, rect);
+
+        Assert.NotNull(normalised);
+        Assert.NotNull(reversed);
+        Assert.Equal(normalised!, reversed!);
+    }
+
+    [Fact]
+    public void NullArgument_ThrowsArgumentNullException_NotNullReference()
+    {
+        double[] ok4 = [0, 0, 100, 50];
+        double[] ok6 = [1, 0, 0, 1, 0, 0];
+
+        Assert.Throws<ArgumentNullException>(() => AppearancePlacement.ComputeAA(null!, ok6, ok4));
+        Assert.Throws<ArgumentNullException>(() => AppearancePlacement.ComputeAA(ok4, null!, ok4));
+        Assert.Throws<ArgumentNullException>(() => AppearancePlacement.ComputeAA(ok4, ok6, null!));
+    }
+
     private static void AssertBBoxTransformsOntoRect(double[] bbox, double[] aa, double[] rect)
     {
         (double x, double y) P(double x, double y) =>
