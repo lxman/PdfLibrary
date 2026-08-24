@@ -541,6 +541,150 @@ public sealed class AnnotationTypeRepairTests
         Assert.Equal(annotRef.ObjectNumber, Assert.Single(second.Candidates).ObjectNumber);
     }
 
+    // ---- Geometry refusals are reachable from the PREVIEW, not just the repair ------------------
+
+    // Every row of the spec's second (geometry) classification table, asserted against
+    // PreviewAnnotationTypeRepairs rather than RepairAnnotationTypes. These checks used to live on
+    // the write side alone, so the preview called each of these a candidate and the repair then
+    // refused it -- and Pellucid's AnnotationTypeDomain.CollectForSave discards the report
+    // RepairAnnotationTypes returns, so that refusal reached no surface at all: the desktop row said
+    // "fix applied", the file was rewritten, the finding survived the reload, and nothing explained
+    // it. `pellucid fix` produced no needsDecision row either.
+    /// <summary>One geometry shape the §12.5.5 placement cannot be computed for, and the word its
+    /// refusal must name. The three geometry entries are FACTORIES, not values: each case is built
+    /// twice (once per test below) into two different documents, and a PdfObject registered into one
+    /// document must never be handed to another.</summary>
+    private sealed record GeometryCase(
+        string Name, Func<PdfObject?> Rect, Func<PdfObject?> BBox, Func<PdfObject?> Matrix,
+        string Expect);
+
+    private static PdfArray Nums(params double[] values) =>
+        new(values.Select(v => (PdfObject)new PdfReal(v)).ToArray());
+
+    private static readonly GeometryCase[] DegenerateGeometryCases =
+    [
+        new("missing /Rect", () => null, () => Nums(0, 0, 100, 100), () => null, "/Rect"),
+        new("/Rect is not four numbers",
+            () => new PdfArray(new PdfInteger(0), new PdfInteger(0), new PdfName("oops"),
+                               new PdfInteger(100)),
+            () => Nums(0, 0, 100, 100), () => null, "/Rect"),
+        new("zero-area /Rect",
+            () => Nums(10, 10, 10, 50), () => Nums(0, 0, 100, 100), () => null, "degenerate"),
+        new("missing /BBox", () => Nums(0, 0, 100, 100), () => null, () => null, "/BBox"),
+        new("zero-width /BBox",
+            () => Nums(0, 0, 100, 100), () => Nums(10, 10, 10, 50), () => null, "degenerate"),
+        new("/Matrix present but too short",
+            () => Nums(0, 0, 100, 100), () => Nums(0, 0, 100, 100), () => Nums(1, 0), "/Matrix"),
+        // A non-finite /Matrix term. ReadNumberArray cannot tell a PdfReal holding NaN from a
+        // non-number object -- both mean "this array does not carry six usable numbers" -- so it lands
+        // on the malformed-/Matrix reason rather than on ComputeAA's own degeneracy screen. Either
+        // would be a correct refusal; this pins which one it actually is.
+        new("/Matrix carrying a non-finite term",
+            () => Nums(0, 0, 100, 100), () => Nums(0, 0, 100, 100),
+            () => Nums(double.NaN, 0, 0, 1, 0, 0), "/Matrix"),
+        // A well-formed /Matrix that COLLAPSES the transformed box onto a point: every term zero.
+        // ComputeAA's own null this time, not a read failure.
+        new("/Matrix collapsing the transformed box",
+            () => Nums(0, 0, 100, 100), () => Nums(0, 0, 100, 100), () => Nums(0, 0, 0, 0, 0, 0),
+            "degenerate"),
+    ];
+
+    /// <summary>Registers one <see cref="GeometryCase"/> as a prohibited-subtype annotation with a
+    /// resolvable Form XObject appearance on page 0 of <paramref name="doc"/> -- so the ONLY reason to
+    /// refuse it is its geometry -- and returns its object number.</summary>
+    private static int AddGeometryCase(PdfDocument doc, GeometryCase geometryCase)
+    {
+        PdfIndirectReference formRef = doc.RegisterObject(
+            MakeFormXObjectWithGeometry(geometryCase.BBox(), geometryCase.Matrix()));
+        var annot = new PdfDictionary { [new PdfName("Subtype")] = new PdfName("3D") };
+        if (geometryCase.Rect() is { } rect) annot[new PdfName("Rect")] = rect;
+        annot[new PdfName("AP")] = new PdfDictionary { [new PdfName("N")] = formRef };
+        PdfIndirectReference annotRef = doc.RegisterObject(annot);
+        AddAnnotEntry(doc, 0, annotRef);
+        return annotRef.ObjectNumber;
+    }
+
+    // One document per case rather than one [Theory] row per case: a PdfObject is not xUnit-
+    // serialisable theory data, and the case name is carried in every assertion message instead.
+    [Fact]
+    public void Preview_refuses_every_geometry_shape_the_repair_could_not_place()
+    {
+        foreach (GeometryCase geometryCase in DegenerateGeometryCases)
+        {
+            PdfDocumentEditor editor = NewEditor();
+            int objectNumber = AddGeometryCase(editor.Document, geometryCase);
+
+            AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+
+            Assert.True(preview.Candidates.Count == 0,
+                $"[{geometryCase.Name}] should not be a candidate, but preview reported "
+                + $"{preview.Candidates.Count}");
+            Assert.True(preview.Refused.Count == 1,
+                $"[{geometryCase.Name}] should be exactly one refusal, but preview reported "
+                + $"{preview.Refused.Count}");
+            AnnotationTypeRefusal refusal = preview.Refused[0];
+            Assert.True(refusal.ObjectNumber == objectNumber,
+                $"[{geometryCase.Name}] refusal named object {refusal.ObjectNumber}, expected "
+                + $"{objectNumber}");
+            Assert.Equal("3D", refusal.Subtype);
+            Assert.True(refusal.Reason.Contains(geometryCase.Expect, StringComparison.OrdinalIgnoreCase),
+                $"[{geometryCase.Name}] reason should mention '{geometryCase.Expect}' but was: "
+                + refusal.Reason);
+        }
+    }
+
+    // The invariant itself, on ONE document carrying every geometry shape at once plus a healthy
+    // candidate: everything the repair refuses, the preview already refused -- same object numbers,
+    // same reasons -- and everything the preview called a candidate, the repair applied. This is the
+    // assertion that would have caught the original defect; the per-row theory above only proves each
+    // refusal exists.
+    [Fact]
+    public void Preview_and_repair_agree_on_every_annotation_of_one_document()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        foreach (GeometryCase geometryCase in DegenerateGeometryCases)
+            AddGeometryCase(doc, geometryCase);
+
+        // Plus the shapes that refuse for non-geometry reasons, so the agreement is proven across
+        // every refusal path this classifier has rather than only the ones this fix moved.
+        PdfDictionary noAp = MakeAnnotation("Sound");
+        AddAnnotEntry(doc, 0, doc.RegisterObject(noAp));
+
+        PdfDictionary hidden = MakeAnnotation("3D");
+        hidden[new PdfName("AP")] = new PdfDictionary
+        {
+            [new PdfName("N")] = doc.RegisterObject(MakeFormXObject()),
+        };
+        hidden[new PdfName("F")] = new PdfInteger(2);
+        AddAnnotEntry(doc, 0, doc.RegisterObject(hidden));
+
+        PdfDictionary good = MakeAnnotation("3D");
+        good[new PdfName("AP")] = new PdfDictionary
+        {
+            [new PdfName("N")] = doc.RegisterObject(MakeFormXObject()),
+        };
+        PdfIndirectReference goodRef = doc.RegisterObject(good);
+        AddAnnotEntry(doc, 0, goodRef);
+
+        AnnotationTypeRepairPreview preview = editor.PreviewAnnotationTypeRepairs();
+        Assert.Equal(goodRef.ObjectNumber, Assert.Single(preview.Candidates).ObjectNumber);
+        Assert.Equal(10, preview.Refused.Count); // 8 geometry rows + no-/AP + hidden
+
+        // Stage EVERYTHING -- candidates and refusals alike, which is the worst case a caller could
+        // hand this method -- and the repair must reach the identical verdicts.
+        var everything = preview.Candidates.Select(c => c.ObjectNumber)
+            .Concat(preview.Refused.Select(f => f.ObjectNumber))
+            .ToHashSet();
+        AnnotationTypeRepairReport report = editor.RepairAnnotationTypes(everything);
+
+        Assert.Equal(goodRef.ObjectNumber, Assert.Single(report.Applied).ObjectNumber);
+        Assert.Equal(
+            preview.Refused.Select(f => (f.ObjectNumber, f.Subtype, f.Reason)).OrderBy(t => t.ObjectNumber),
+            report.Refused.Select(f => (f.ObjectNumber, f.Subtype, f.Reason)).OrderBy(t => t.ObjectNumber));
+    }
+
     // ---- Completeness: every shape AnnotationTypeRule.Check can raise lands somewhere ----------
 
     // AnnotationTypeRule.Check raises exactly two Finding shapes: "no /Subtype" and "subtype
