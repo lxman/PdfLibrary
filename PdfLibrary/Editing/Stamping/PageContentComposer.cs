@@ -83,6 +83,15 @@ internal static class PageContentComposer
         var resourcesName = new PdfName("Resources");
         PdfObject? resObj = page.Get(resourcesName);
 
+        // A /Resources reached via an indirect reference may be the exact same PdfDictionary
+        // instance a sibling page also resolves to: page-tree inheritance materializes the
+        // same indirect reference onto every page that doesn't declare its own /Resources
+        // (see PageTreeNormalizer.MaterializeInheritance), so all such pages resolve to one
+        // shared object-table entry. Mutating it in place would leak this page's resource
+        // registrations onto every sibling. A /Resources already held as a direct dictionary
+        // on the page is page-private already, so it is safe to mutate without copying.
+        bool resourcesMayBeShared = resObj is PdfIndirectReference;
+
         // Resolve indirect reference and promote it to a direct value on the page
         // so that callers can reliably read Resources directly from the page dictionary.
         if (resObj is PdfIndirectReference rr)
@@ -93,7 +102,10 @@ internal static class PageContentComposer
         PdfDictionary resources;
         if (resObj is PdfDictionary rd)
         {
-            resources = rd;
+            // Copy-on-write: only pay for a shallow copy when there's a real risk of sharing.
+            // The copy is shallow on purpose — entries (fonts, images, etc.) keep pointing at
+            // the same shared objects; only the container dictionary becomes page-private.
+            resources = resourcesMayBeShared ? new PdfDictionary(rd) : rd;
             // Ensure the page holds a direct reference to this dict (so tests can read it back directly)
             page[resourcesName] = resources;
         }
@@ -103,12 +115,27 @@ internal static class PageContentComposer
             page[resourcesName] = resources;
         }
 
-        PdfObject? subObj = resources.Get(new PdfName(key));
+        var subName = new PdfName(key);
+        PdfObject? subObj = resources.Get(subName);
+
+        // The sub-dictionary we're about to write into (e.g. /XObject, /ExtGState) needs the
+        // same page-private treatment. Two ways it can still be shared even here: (1) /Resources
+        // was just shallow-copied above, so the copy's entry for `key` still points at the exact
+        // same sub-dictionary instance the original (possibly shared) /Resources references; or
+        // (2) the sub-dictionary itself was reached through its own indirect reference, which
+        // carries the same multi-page-sharing risk /Resources does.
+        bool subMayBeShared = resourcesMayBeShared || subObj is PdfIndirectReference;
         if (subObj is PdfIndirectReference sr) subObj = doc.GetObject(sr.ObjectNumber);
-        if (subObj is PdfDictionary sd) return sd;
+        if (subObj is PdfDictionary sd)
+        {
+            if (!subMayBeShared) return sd;
+            var subCopy = new PdfDictionary(sd);
+            resources[subName] = subCopy;
+            return subCopy;
+        }
 
         var sub = new PdfDictionary();
-        resources[new PdfName(key)] = sub;
+        resources[subName] = sub;
         return sub;
     }
 
