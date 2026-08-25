@@ -340,6 +340,37 @@ public class OptionalContentRepairTests
     }
 
     [Fact]
+    public void Renaming_a_duplicate_under_PDF_UA_is_a_documented_residual()
+    {
+        // OptionalContentRule gates 6.9-t2 OFF for PDF/UA-1 (veraPDF's UA 7.10 has no uniqueness test),
+        // and ClassifyOptionalContent takes no profile -- so under a UA target the duplicate pair below
+        // is renamed as a side effect of the t1 repair the target DID ask for. That is the residual the
+        // classifier's doc comment names, pinned here rather than left to prose.
+        //
+        // It stays a residual because the profile is not available to thread: no Pellucid remediation
+        // domain receives one (neither IRemediationDomain.Propose nor SaveStageContribution.Apply
+        // carries a profile), so honouring the distinction is an interface change across every domain.
+        // Population is zero -- no corpus document has /Configs at all. If a profile ever does reach
+        // this classifier, THIS is the assertion to flip: /Configs[0] should keep "Shared" under UA.
+        var configs = new PdfArray(Config(("Name", PdfString.FromText("Shared"))), Config());
+        PdfDocument doc = WithOptionalContent(
+            indirect: false, Config(("Name", PdfString.FromText("Shared"))), configs);
+        using var editor = new PdfDocumentEditor(doc);
+
+        // The rule's own verdict is the point: UA sees ONE finding (t1 on /Configs[1]) where PDF/A-2b
+        // sees two, because the duplicate is legal under UA.
+        Assert.Single(RuleMessages(doc, ConformanceProfile.PdfUA1));
+        Assert.Equal(2, RuleMessages(doc).Length);
+
+        editor.RepairOptionalContent();
+
+        using PdfDocument saved = Reopen(editor);
+        Assert.Equal(
+            ["Shared", "Configuration 1", "Configuration 2"],
+            ConfigsOf(saved).Select(NameOf).ToArray());
+    }
+
+    [Fact]
     public void A_configuration_listed_twice_is_a_refusal()
     {
         // Closure: /D and /Configs[0] naming the SAME indirect object. The rule's walk yields it twice

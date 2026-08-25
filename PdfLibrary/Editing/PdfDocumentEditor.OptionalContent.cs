@@ -182,6 +182,21 @@ public sealed partial class PdfDocumentEditor
     /// <c>seenNames</c>); pass 2 synthesizes only for those. <c>/D</c> then gets <c>Default (2)</c> --
     /// uglier, and correct: the conforming configuration keeps its label.</para>
     ///
+    /// <para><b>Profile scope: this classifier is deliberately profile-BLIND, and that is a known
+    /// residual rather than an exact match to the rule.</b> <c>OptionalContentRule</c> gates 6.9-t2 off
+    /// for PDF/UA-1 (veraPDF's UA 7.10 has no uniqueness test), and nothing here takes a
+    /// <c>ConformanceProfile</c>, so under a PDF/UA-1 target a document whose UA-legal duplicate pair
+    /// sits alongside some OTHER repairable configuration has the duplicate renamed as a side effect of
+    /// the repair that target did ask for. Reachable -- the rule applies to
+    /// <c>AllPdfA | PdfUA1</c> -- but population zero: no corpus document has <c>/Configs</c> at all
+    /// (re-measured over all 708, 2026-08-24), so no document can carry a duplicate pair. It stays a
+    /// residual rather than a fix because the profile is not available to thread: no remediation domain
+    /// in Pellucid receives one, neither <c>IRemediationDomain.Propose</c> nor
+    /// <c>SaveStageContribution.Apply</c> carries one, so honouring the distinction means changing that
+    /// interface for every domain -- a program, not a guard. Pinned by
+    /// <c>OptionalContentRepairTests.Renaming_a_duplicate_under_PDF_UA_is_a_documented_residual</c>, so
+    /// the day a profile does arrive here there is a test to flip.</para>
+    ///
     /// <para><b>What the two repairs cost.</b> Writing <c>/Name</c> is a pure addition: it is the label
     /// a viewer shows for the configuration in its layers panel, and nothing renders differently.
     /// Deleting <c>/AS</c> is NOT: the auto-state array drives automatic visibility changes on
