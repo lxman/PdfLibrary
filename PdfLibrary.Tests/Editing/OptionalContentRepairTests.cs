@@ -579,4 +579,85 @@ public class OptionalContentCorpusShapeTests
         Assert.Equal("Default", (config.Get("Name") as PdfString)?.GetText());
         Assert.Null(config.Get("AS"));
     }
+
+    /// <summary>Pins the ONE claim in this program that was hand-measured and nothing asserted
+    /// (whole-branch review, 2026-08-24): that deleting <c>/AS</c> is a behavioural no-op ON THIS FILE.
+    ///
+    /// <para><c>/AS</c> is deleted UNCONDITIONALLY -- 6.9-t4 makes its presence the violation, and the
+    /// value is never inspected. That deletion is generally a real behavioural change: the auto-state
+    /// array drives automatic visibility changes on View/Print/Export (ISO 32000-1 8.11.4.4), so a
+    /// usage saying "hide me when printing" stops being honoured. The justification for doing it anyway
+    /// was a measurement of the single corpus document that has the key -- every state its machinery
+    /// would apply is already the base state -- and that measurement lived only in prose. Nothing could
+    /// see it change: if a future corpus document's <c>/AS</c> turned an OCG OFF on <c>/View</c>, a
+    /// viewer's display would differ and every test in this program would stay green, because
+    /// Pellucid's own renderer never reads <c>/AS</c> and so the render gate cannot see it either.</para>
+    ///
+    /// <para>What this asserts is the chain the "no-op" claim actually rests on, read off the artifact:
+    /// the configuration's <c>/BaseState</c> is <c>/ON</c> and it carries no <c>/OFF</c> override, and
+    /// every usage-application dictionary <c>/AS</c> names points at OCGs whose <c>/Usage</c> states for
+    /// the categories that entry applies to are <c>/ON</c> as well. Base state in, base state out --
+    /// so removing the machinery changes no OCG's visibility. It makes THIS corpus's claim checkable;
+    /// it does not make <c>/AS</c> deletion safe in general, and it fails loudly if the corpus
+    /// changes.</para></summary>
+    [Fact]
+    public void The_real_Transcript_AS_entries_only_ever_apply_the_configurations_own_base_state()
+    {
+        string? corpus = Corpus();
+        Assert.SkipWhen(corpus is null, $"corpus not present at {DefaultCorpus} (LocalOnly)");
+
+        using PdfDocument doc = PdfDocument.Load(
+            Path.Combine(corpus!, "Transcript_MICHAELJORDAN.pdf"), "");
+        doc.MaterializeAllObjects();
+
+        var ocp = (PdfDictionary)Res(doc, doc.CatalogDictionary?.Get("OCProperties"))!;
+        var config = (PdfDictionary)Res(doc, ocp.Get("D"))!;
+
+        // The base state every OCG starts at. /BaseState defaults to /ON when absent (ISO 32000-1
+        // Table 101), and /OFF would move individual OCGs off it -- neither applies here.
+        Assert.Equal("ON", (Res(doc, config.Get("BaseState")) as PdfName)?.Value);
+        Assert.Null(config.Get("OFF"));
+
+        // The state key each /Category value is satisfied by (ISO 32000-1 Table 103): a usage
+        // application for /View is decided by the OCG's /Usage /View /ViewState, and so on.
+        var stateKey = new Dictionary<string, (string Sub, string Key)>(StringComparer.Ordinal)
+        {
+            ["View"] = ("View", "ViewState"),
+            ["Print"] = ("Print", "PrintState"),
+            ["Export"] = ("Export", "ExportState"),
+        };
+
+        var autoStates = (PdfArray)Res(doc, config.Get("AS"))!;
+        Assert.Equal(2, autoStates.Count); // /Event /View and /Event /Print, measured
+
+        var applied = 0;
+        foreach (PdfObject entry in autoStates)
+        {
+            var usageApplication = (PdfDictionary)Res(doc, entry)!;
+            var categories = (PdfArray)Res(doc, usageApplication.Get("Category"))!;
+            var ocgs = (PdfArray)Res(doc, usageApplication.Get("OCGs"))!;
+            Assert.NotEmpty(categories);
+            Assert.NotEmpty(ocgs);
+
+            foreach (PdfObject categoryObj in categories)
+            {
+                string category = ((PdfName)Res(doc, categoryObj)!).Value;
+                (string sub, string key) = stateKey[category];
+
+                foreach (PdfObject ocgObj in ocgs)
+                {
+                    var ocg = (PdfDictionary)Res(doc, ocgObj)!;
+                    var usage = (PdfDictionary)Res(doc, ocg.Get("Usage"))!;
+                    var slot = (PdfDictionary)Res(doc, usage.Get(sub))!;
+
+                    // The whole claim, on the bytes: the state this entry would apply IS the base
+                    // state, so applying it and not applying it are the same thing.
+                    Assert.Equal("ON", (Res(doc, slot.Get(key)) as PdfName)?.Value);
+                    applied++;
+                }
+            }
+        }
+
+        Assert.Equal(4, applied); // 2 usage applications x 2 categories x 1 OCG -- nothing skipped
+    }
 }
