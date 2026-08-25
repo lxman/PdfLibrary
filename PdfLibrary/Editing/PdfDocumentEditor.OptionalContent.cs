@@ -61,6 +61,17 @@ public sealed partial class PdfDocumentEditor
     private readonly record struct OptionalContentEdit(
         PdfDictionary Config, string Path, PdfString? NameToWrite, bool DeleteAutoState);
 
+    /// <summary>One configuration as pass 1 of <see cref="ClassifyOptionalContent"/> found it: the live
+    /// dictionary, its path, the base name a synthesized <c>/Name</c> would start from, the <c>/Name</c>
+    /// it already carries (<see langword="null"/> when that <c>/Name</c> fails 6.9-t1) and whether the
+    /// rule would count it as a 6.9-t2 duplicate.
+    ///
+    /// <para>This exists so the classifier can reserve EVERY name the rule accepts before it
+    /// synthesizes any -- see <see cref="ClassifyOptionalContent"/> for why a single walk-order pass
+    /// silently renamed conforming configurations.</para></summary>
+    private readonly record struct OptionalContentNaming(
+        PdfDictionary Config, string Path, string BaseName, PdfString? Existing, bool IsDuplicate);
+
     private static readonly PdfName ConfigNameKey = new("Name");
     private static readonly PdfName AutoStateKey = new("AS");
 
@@ -122,7 +133,13 @@ public sealed partial class PdfDocumentEditor
     /// NO corpus document can catch a breach of it -- all eight have exactly one configuration and none
     /// has <c>/Configs</c> at all -- so a repair that stamped one literal name into several
     /// configurations would MANUFACTURE a t2 violation while every corpus gate stayed green. Reserving
-    /// as we go is what stops that; the synthetic <c>/Configs</c> tests are what prove it.</para></summary>
+    /// each name as it is handed out is what stops that; the synthetic <c>/Configs</c> tests are what
+    /// prove it.</para>
+    ///
+    /// <para><paramref name="reserved"/> must ALREADY hold every name that is staying put by the time
+    /// this is first called -- <see cref="ClassifyOptionalContent"/>'s pass 1 is what guarantees it.
+    /// Passing a set filled in step with the synthesis is what made a synthesized name collide with,
+    /// and then rename, a conforming configuration.</para></summary>
     private static PdfString UniqueName(string baseName, HashSet<string> reserved)
     {
         PdfString candidate = PdfString.FromText(baseName);
@@ -153,6 +170,18 @@ public sealed partial class PdfDocumentEditor
     /// candidate or a refusal rather than in neither, which is how a caller reading only those lists
     /// gets told "nothing wrong" about a document that is not.</para>
     ///
+    /// <para><b>Why it is two passes and not one.</b> Reserving names in walk order AS they are
+    /// synthesized only ever holds the names seen BEFORE the current configuration, and that silently
+    /// renames conforming configurations (whole-branch review, 2026-08-24). Concretely: a <c>/D</c>
+    /// carrying no <c>/Name</c> and a <c>/Configs[0]</c> legitimately named <c>Default</c> raises
+    /// exactly ONE finding (t1 on <c>/D</c>), but the one-pass form gave <c>/D</c> the name
+    /// <c>Default</c>, then read <c>/Configs[0]</c>'s own <c>Default</c> as a t2 duplicate and relabelled
+    /// a configuration the rule never flagged -- with nothing on any warning channel to say so. Pass 1
+    /// therefore reserves every name that passes t1 across the WHOLE walk and records which occurrences
+    /// the rule would call duplicates (first-wins, matching <c>OptionalContentRule</c>'s own
+    /// <c>seenNames</c>); pass 2 synthesizes only for those. <c>/D</c> then gets <c>Default (2)</c> --
+    /// uglier, and correct: the conforming configuration keeps its label.</para>
+    ///
     /// <para><b>What the two repairs cost.</b> Writing <c>/Name</c> is a pure addition: it is the label
     /// a viewer shows for the configuration in its layers panel, and nothing renders differently.
     /// Deleting <c>/AS</c> is NOT: the auto-state array drives automatic visibility changes on
@@ -164,13 +193,15 @@ public sealed partial class PdfDocumentEditor
     private void ClassifyOptionalContent(
         List<OptionalContentEdit> edits, List<OptionalContentRefusal> refusals)
     {
-        // Reserves the names the rule would accept, in the rule's own order, so a synthesized name can
-        // never collide with one that is staying put. Populated only from names that PASS t1 -- the
-        // rule's seenNames is populated in exactly that branch, so an empty or missing /Name reserves
-        // nothing there either.
+        var naming = new List<OptionalContentNaming>();
+
+        // Names the rule would ACCEPT, reserved across the whole walk before a single name is
+        // synthesized. Populated only from names that PASS t1 -- the rule's seenNames is populated in
+        // exactly that branch, so an empty or missing /Name reserves nothing there either.
         var reserved = new HashSet<string>(StringComparer.Ordinal);
         var seenConfigs = new HashSet<PdfDictionary>();
 
+        // PASS 1. Reserve, and record who the rule would call a duplicate. Nothing is synthesized here.
         foreach ((PdfDictionary config, string path, string baseName) in CollectOptionalContentConfigurations())
         {
             if (!seenConfigs.Add(config))
@@ -184,17 +215,26 @@ public sealed partial class PdfDocumentEditor
             }
 
             PdfString? existing = ValidName(config);
-            PdfString? nameToWrite = null;
 
-            if (existing is null)
-                // t1. The default configuration is named "Default" because that is what it is; an
-                // alternate gets its 1-based position in /Configs, which is stable across runs.
-                nameToWrite = UniqueName(baseName, reserved);
-            else if (!reserved.Add(NameKey(existing)))
-                // t2. First occurrence keeps the name (the rule flags the LATER one), so only this one
-                // is renamed -- renaming the other member of the pair would leave the finding open and
-                // relabel a configuration that was never at fault.
-                nameToWrite = UniqueName(baseName, reserved);
+            // Reserving and duplicate-detection are ONE operation, exactly as they are in the rule:
+            // the first occurrence of a name keeps it and every later one is the t2 the rule flags.
+            bool isDuplicate = existing is not null && !reserved.Add(NameKey(existing));
+            naming.Add(new OptionalContentNaming(config, path, baseName, existing, isDuplicate));
+        }
+
+        // PASS 2. Synthesize only where 6.9 needs it -- a /Name that fails t1, or one pass 1 recorded
+        // as a t2 duplicate. A conforming, unique name is never touched.
+        foreach ((PdfDictionary config, string path, string baseName, PdfString? existing, bool isDuplicate)
+                 in naming)
+        {
+            // t1 (absent, empty or not a string) and t2 (duplicated) are answered the same way: a
+            // synthesized name. The default configuration starts from "Default" because that is what it
+            // is; an alternate starts from its 1-based position in /Configs, which is stable across
+            // runs. On t2 the FIRST occurrence keeps the name -- the rule flags the later one, and
+            // renaming the other member of the pair would leave the finding open while relabelling a
+            // configuration that was never at fault.
+            PdfString? nameToWrite =
+                existing is null || isDuplicate ? UniqueName(baseName, reserved) : null;
 
             // t4. Presence is the violation; the value is never inspected.
             bool deleteAutoState = config.ContainsKey(AutoStateKey);

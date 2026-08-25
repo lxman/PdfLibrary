@@ -281,6 +281,11 @@ public class OptionalContentRepairTests
         // /Configs[1] would otherwise be given, since a synthesized name is derived from the 1-based
         // /Configs position. The suffix loop is what stops the repair inventing the very duplicate
         // 6.9-t2 forbids.
+        //
+        // This is the EARLIER direction only -- the conforming name is reached first. The later
+        // direction is the sibling test below, and the two are not the same check: the earlier one
+        // passed against a repair that reserved names in walk order as it synthesized them, and the
+        // later one did not.
         var configs = new PdfArray(Config(("Name", PdfString.FromText("Configuration 2"))), Config());
         PdfDocument doc = WithOptionalContent(
             indirect: false, Config(("Name", PdfString.FromText("Default"))), configs);
@@ -294,6 +299,43 @@ public class OptionalContentRepairTests
         Assert.Equal(
             ["Default", "Configuration 2", "Configuration 2 (2)"],
             ConfigsOf(saved).Select(NameOf).ToArray());
+        Assert.Empty(RuleMessages(saved));
+    }
+
+    [Fact]
+    public void A_synthesized_name_yields_to_a_CONFORMING_name_that_comes_LATER_in_the_walk()
+    {
+        // The missing direction, and the defect it hid (whole-branch review, 2026-08-24). /D carries no
+        // /Name and /Configs[0] is legitimately named "Default" -- valid, unique, and NOT flagged: the
+        // document raises exactly one finding, t1 on /D.
+        //
+        // Reserving names in walk order as they are synthesized only ever holds what was seen BEFORE
+        // the current configuration, so /D took "Default" for itself and /Configs[0]'s own "Default"
+        // then read as a t2 duplicate. The repair closed the one real finding AND silently relabelled a
+        // configuration that was never at fault, with nothing on any warning channel to say so. The
+        // two-pass reservation is what makes "Default (2)" the answer instead: uglier on /D, and the
+        // conforming configuration keeps the label its author gave it.
+        //
+        // Synthetic-only, and it cannot be otherwise: re-measured over all 708 corpus documents
+        // (2026-08-24), NONE has /OCProperties /Configs, so there is no real artifact of this shape to
+        // validate the fixture against. RuleMessages -- the REAL detector over the same document -- is
+        // the validation that is available, and it is what proves the fixture raises the one finding
+        // this test claims and not some other shape.
+        var configs = new PdfArray(Config(("Name", PdfString.FromText("Default"))));
+        PdfDocument doc = WithOptionalContent(indirect: false, Config(), configs);
+        using var editor = new PdfDocumentEditor(doc);
+
+        Assert.Single(RuleMessages(doc)); // t1 on /D -- /Configs[0]'s name is valid AND unique
+
+        OptionalContentRepairCandidate candidate =
+            Assert.Single(editor.PreviewOptionalContentRepairs().Candidates);
+        Assert.Equal("/D", candidate.Configuration);
+        Assert.Equal("Default (2)", candidate.NameToWrite);
+
+        editor.RepairOptionalContent();
+
+        using PdfDocument saved = Reopen(editor);
+        Assert.Equal(["Default (2)", "Default"], ConfigsOf(saved).Select(NameOf).ToArray());
         Assert.Empty(RuleMessages(saved));
     }
 
