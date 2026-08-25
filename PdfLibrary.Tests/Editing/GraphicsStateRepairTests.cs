@@ -418,6 +418,41 @@ public class GraphicsStateRepairTests
     }
 
     [Fact]
+    public void Two_ExtGStates_SHARING_one_halftone_are_both_reported_by_the_preview_AND_the_repair()
+    {
+        // The shape the agreement test above does NOT cover, and the disagreement it hid
+        // (whole-branch review, 2026-08-24): 32 and 45 reach the SAME halftone object rather than one
+        // each. When the repair classified and applied per ExtGState in a single pass, 32's deletion
+        // stripped HalftoneName out from under 45, so 45 planned nothing and produced no Applied row --
+        // while the preview, which writes nothing, saw the key from both and reported two candidates.
+        // Preview 2, applied 1, under a comment claiming the two could never disagree.
+        //
+        // No corpus witness: Faces.pdf's two offending ExtGStates (32 and 45, the numbers borrowed
+        // here) reach two DISTINCT halftones, 31 and 44 -- which is exactly why nothing caught this.
+        // RuleMessages is the validation available, and it also shows the other half of the story: the
+        // rule deduplicates by message, so this document raises ONE finding for TWO offenders.
+        PdfDictionary shared = Halftone1(("HalftoneName", PdfString.FromText("Default")));
+        PdfDictionary first = ExtGState(("HT", new PdfIndirectReference(31, 0)));
+        PdfDictionary second = ExtGState(("HT", new PdfIndirectReference(31, 0)));
+        PdfDocumentEditor editor = EditorOver((31, shared), (32, first), (45, second));
+
+        Assert.Single(RuleMessages(editor));
+
+        GraphicsStateRepairPreview preview = editor.PreviewGraphicsStateRepairs();
+        Assert.Equal([32, 45], preview.Candidates.Select(c => c.ObjectNumber).Order().ToArray());
+        Assert.All(preview.Candidates, c => Assert.Equal(["HalftoneName"], c.Keys));
+
+        GraphicsStateRepairReport report = editor.RepairGraphicsState();
+
+        // Both sides read the same pre-mutation state, so both name both ExtGStates.
+        Assert.Equal(
+            preview.Candidates.Select(c => (c.ObjectNumber, string.Join(',', c.Keys))).OrderBy(t => t.ObjectNumber),
+            report.Applied.Select(a => (a.ObjectNumber, string.Join(',', a.DeletedKeys))).OrderBy(t => t.ObjectNumber));
+        Assert.Null(shared.Get("HalftoneName"));
+        Assert.Empty(RuleMessages(editor));
+    }
+
+    [Fact]
     public void The_preview_writes_nothing()
     {
         // Propose calls this; Propose must never write. A sibling domain learning its answer from the

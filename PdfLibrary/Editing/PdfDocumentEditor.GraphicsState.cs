@@ -286,6 +286,13 @@ public sealed partial class PdfDocumentEditor
     /// applies the classifier's own <see cref="GraphicsStateDeletion"/> plan rather than re-deriving
     /// one, so the write and the preview cannot disagree.
     ///
+    /// <para><b>Sharing the classifier is necessary but was not sufficient</b> -- the ORDER matters
+    /// too. Every ExtGState is classified before ANY key is deleted, because two ExtGStates can reach
+    /// the SAME halftone through <c>/HT</c>: classifying and applying per ExtGState in one pass had the
+    /// first deletion strip <c>HalftoneName</c> out from under the second, which then planned nothing
+    /// and reported nothing while the (non-mutating) preview reported both. Hoisting the classification
+    /// is what makes "cannot disagree" a fact rather than a claim.</para>
+    ///
     /// <para><b><see langword="null"/> is the expected argument for this rule</b>, unlike
     /// <see cref="RepairStreamFilters"/> where it is the whole-document batch escape hatch.
     /// <c>ExtGStateRule</c> raises one finding per distinct MESSAGE per document rather than one per
@@ -302,17 +309,31 @@ public sealed partial class PdfDocumentEditor
     /// independent requirements, and closing one of them is not a claim about the others.</para></summary>
     public GraphicsStateRepairReport RepairGraphicsState(IReadOnlySet<int>? objectNumbers = null)
     {
-        var applied = new List<GraphicsStateRepair>();
         var refusals = new List<GraphicsStateRefusal>();
 
+        // CLASSIFY EVERYTHING FIRST, then apply. Classifying and applying per ExtGState in one pass
+        // made the preview and the repair disagree on a halftone SHARED by two ExtGStates (whole-branch
+        // review, 2026-08-24): the first ExtGState's deletion removed HalftoneName from the halftone,
+        // so the second reached an already-stripped dictionary, planned nothing, and produced no
+        // Applied row at all -- while the preview, which writes nothing, reported both as candidates.
+        // Preview 2, applied 1, over a class comment claiming the two "can never disagree". Hoisting
+        // the classification is what makes that claim true: both sides now read the same pre-mutation
+        // state, and re-deleting a key a sibling already removed is a no-op rather than a lost row.
+        // (No corpus witness -- Faces.pdf's two offending ExtGStates reach two DISTINCT halftones --
+        // so the shared shape is proven synthetically.)
+        var plans = new List<(PdfDictionary Gs, List<GraphicsStateDeletion> Deletions)>();
         foreach (PdfDictionary gs in CollectExtGStates())
         {
             if (objectNumbers is not null && !objectNumbers.Contains(gs.ObjectNumber)) continue;
 
             var deletions = new List<GraphicsStateDeletion>();
             ClassifyGraphicsState(gs, deletions, refusals);
-            if (deletions.Count == 0) continue;
+            if (deletions.Count > 0) plans.Add((gs, deletions));
+        }
 
+        var applied = new List<GraphicsStateRepair>(plans.Count);
+        foreach ((PdfDictionary gs, List<GraphicsStateDeletion> deletions) in plans)
+        {
             foreach (GraphicsStateDeletion deletion in deletions)
                 deletion.Owner.Remove(deletion.Key);
 
