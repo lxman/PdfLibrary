@@ -71,7 +71,11 @@ internal sealed class ExtGStateRule : IConformanceRule
 
     // The process colourants a Type 5 halftone component may name without carrying a TransferFunction. Per the
     // veraPDF profile (6.2.5-6) this is CMYK only — Gray and RGB are treated as non-primary and require one.
-    private static readonly HashSet<string> PrimaryColourants = new(StringComparer.Ordinal)
+    // internal rather than private so PdfDocumentEditor.GraphicsState.cs's repair classifier reads the SAME
+    // four names this detector does: two copies of a colourant list could drift apart, and the repair refusing
+    // on a different primary/non-primary split than the rule reported on is exactly how a preview and a repair
+    // start disagreeing. Same reuse AnnotationTypeRule.Allowed was widened for.
+    internal static readonly HashSet<string> PrimaryColourants = new(StringComparer.Ordinal)
     {
         "Cyan", "Magenta", "Yellow", "Black",
     };
