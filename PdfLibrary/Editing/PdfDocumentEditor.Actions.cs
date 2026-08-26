@@ -300,7 +300,7 @@ public sealed partial class PdfDocumentEditor
 
         // Runs before the loop, not inside it: whether a container is shared is a fact about the whole
         // document, never about the annotation currently in hand.
-        HashSet<PdfDictionary> sharedTriggers = SharedTriggerDictionaries();
+        Dictionary<PdfDictionary, List<TriggerHost>> sharedTriggers = SharedTriggerDictionaries();
 
         foreach ((PdfDictionary annot, int _) in EnumerateIndirectAnnotations())
         {
@@ -318,15 +318,65 @@ public sealed partial class PdfDocumentEditor
         return (candidates, refusals);
     }
 
-    /// <summary>Every <c>/AA</c> dictionary that more than one annotation reaches, by REFERENCE identity
-    /// on the resolved dictionary -- which is exact here, because
+    /// <summary>One dictionary that can carry an <c>/AA</c>, paired with how a refusal names it to the
+    /// user -- <c>"the catalog"</c>, <c>"page 2"</c>, <c>"Widget annotation 10"</c>,
+    /// <c>"outline item 41"</c>, <c>"field 30"</c>. The description exists so a shared-<c>/AA</c>
+    /// refusal can name the CO-HOST: "give each host its own /AA first" is not actionable advice if
+    /// acting on it means hunting the document by hand for whatever else points at the
+    /// dictionary.</summary>
+    private readonly record struct TriggerHost(PdfDictionary Host, string Description);
+
+    /// <summary>Every host that can carry an <c>/AA</c>, in one traversal: the catalog, every page,
+    /// every annotation entry on every page (direct as well as indirect), every outline item, and every
+    /// AcroForm field. Deliberately the SAME walks <see cref="ClassifyUnmeasuredHosts"/> uses --
+    /// <see cref="EnumerateOutlineItems"/> and <see cref="EnumerateAcroFormFields"/> are shared with it
+    /// rather than copied -- because a host one of them reaches and the other does not is precisely how
+    /// the sharing scan goes blind.
+    ///
+    /// <para>A host may legitimately appear twice here (an annotation listed on two pages; a merged
+    /// field+widget, which is both an annotation and an AcroForm field). Deduping is
+    /// <see cref="SharedTriggerDictionaries"/>'s job, not this method's -- see there for why it is
+    /// load-bearing.</para></summary>
+    private IEnumerable<TriggerHost> EnumerateTriggerHosts()
+    {
+        PdfDictionary? catalog = _document.CatalogDictionary;
+        if (catalog is not null)
+            yield return new TriggerHost(catalog, "the catalog");
+
+        var pageNumber = 0;
+        foreach (PdfPage page in _document.GetPages())
+        {
+            pageNumber++;
+            yield return new TriggerHost(page.Dictionary, $"page {pageNumber}");
+
+            if (page.GetAnnotations() is not { } annots)
+                continue;
+
+            foreach (PdfObject entry in annots)
+            {
+                if (ResolveObject(entry) is not PdfDictionary annot)
+                    continue;
+                string subtype = ResolveObject(annot.Get(SubtypeKey)) is PdfName { Value: { } sub } ? sub : "?";
+                yield return new TriggerHost(annot, $"{subtype} annotation {Describe(annot)}");
+            }
+        }
+
+        foreach (PdfDictionary item in EnumerateOutlineItems(catalog))
+            yield return new TriggerHost(item, $"outline item {Describe(item)}");
+
+        foreach (PdfDictionary field in EnumerateAcroFormFields(catalog))
+            yield return new TriggerHost(field, $"field {Describe(field)}");
+    }
+
+    /// <summary>Every <c>/AA</c> dictionary that more than one HOST reaches, mapped to the hosts that
+    /// reach it. Keyed by REFERENCE identity on the resolved dictionary, which is exact here because
     /// <c>PdfDocument.GetObject</c> caches, so two references to one object resolve to one instance.
     ///
-    /// <para>Two annotations may legally share an indirect <c>/AA</c>. Removing a trigger from it on
-    /// behalf of the widget a caller staged removes it from the widget it did not, leaving that second
-    /// annotation pointing at a container this repair emptied while the report said nothing about it --
-    /// the same hazard the program already closed for shared ACTION objects ("deleting an object would
-    /// affect hosts the caller never selected"), missed for the shared CONTAINER.</para>
+    /// <para>Two hosts may legally share an indirect <c>/AA</c>. Removing a trigger from it on behalf of
+    /// the widget a caller staged removes it from the host it did not, leaving that second host pointing
+    /// at a container this repair emptied while the report said nothing about it -- the same hazard the
+    /// program already closed for shared ACTION objects ("deleting an object would affect hosts the
+    /// caller never selected"), missed for the shared CONTAINER.</para>
     ///
     /// <para>Whether any corpus document actually has a shared <c>/AA</c> is <b>unmeasured</b>; the 67
     /// measured widget-<c>/AA</c> findings were never checked for it. So this deliberately refuses only
@@ -335,41 +385,108 @@ public sealed partial class PdfDocumentEditor
     /// Task 5's re-preflight of the saved bytes is where a corpus that does contain one would show
     /// up.</para>
     ///
-    /// <para><b>Every annotation entry counts, direct as well as indirect</b>, which is why this walks
-    /// the pages itself instead of taking <see cref="EnumerateIndirectAnnotations"/>'s output. A direct
-    /// annotation is only ever refused (<see cref="ClassifyDirectAnnotations"/>) -- so if the scan
-    /// skipped it, an <c>/AA</c> it shares with an indirect widget would read as unshared, the widget's
-    /// repair would strip the trigger, and the direct annotation's refusal would have told the caller it
-    /// was "left in place" moments before it was removed. A FALSE report is worse than a silent
-    /// one.</para>
+    /// <para><b>Every host counts, not merely every annotation.</b> The write always goes through the
+    /// annotation -- so the fact that a page, the catalog, an outline item or a pure AcroForm field is
+    /// itself only ever REFUSED does not protect it: an <c>/AA</c> a widget shares with one of them
+    /// would read as unshared, the widget's repair would strip the trigger, and the co-host's refusal
+    /// would have told the caller it was "left in place" moments before it was removed. That is why
+    /// <see cref="EnumerateTriggerHosts"/> reaches all five host kinds and not just <c>/Annots</c>, and
+    /// why direct annotations are included alongside indirect ones. A FALSE report is worse than a
+    /// silent one.</para>
     ///
-    /// <para>The annotation itself is deduped by reference first: one annotation listed on two pages is
-    /// one host, and counting its <c>/AA</c> twice would flag every such document as shared. This
-    /// deliberately does NOT consider an <c>/AA</c> shared with a non-annotation host (a pure field, a
-    /// page, the catalog) -- those hosts are refused wholesale so nothing repairs through them today,
-    /// and no such sharing has been measured; it is written here rather than left to be
-    /// rediscovered.</para></summary>
-    private HashSet<PdfDictionary> SharedTriggerDictionaries()
+    /// <para><b>The host dedup is load-bearing.</b> One annotation listed on two pages is one host, and
+    /// so is a merged field+widget reached once as an annotation and once through the AcroForm
+    /// <c>/Fields</c> tree -- the shape of every one of the 78 measured form-hosted actions. Counting
+    /// either twice would make its own <c>/AA</c> "shared with itself" and turn every such document's
+    /// repair into a refusal, which is a board-movement regression rather than a safety
+    /// measure.</para></summary>
+    private Dictionary<PdfDictionary, List<TriggerHost>> SharedTriggerDictionaries()
     {
-        var seenAnnotations = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
-        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
-        var shared = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var seenHosts = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var hostsByTriggers =
+            new Dictionary<PdfDictionary, List<TriggerHost>>(ReferenceEqualityComparer.Instance);
 
-        foreach (PdfPage page in _document.GetPages())
+        foreach (TriggerHost host in EnumerateTriggerHosts())
         {
-            if (page.GetAnnotations() is not { } annots)
+            if (!seenHosts.Add(host.Host))
+                continue;
+            if (ResolveObject(host.Host.Get(AdditionalActionsKey)) is not PdfDictionary triggers)
                 continue;
 
-            foreach (PdfObject entry in annots)
-            {
-                if (ResolveObject(entry) is not PdfDictionary annot || !seenAnnotations.Add(annot))
-                    continue;
-                if (ResolveObject(annot.Get(AdditionalActionsKey)) is PdfDictionary triggers && !seen.Add(triggers))
-                    shared.Add(triggers);
-            }
+            if (!hostsByTriggers.TryGetValue(triggers, out List<TriggerHost>? hosts))
+                hostsByTriggers[triggers] = hosts = [];
+            hosts.Add(host);
         }
 
+        var shared = new Dictionary<PdfDictionary, List<TriggerHost>>(ReferenceEqualityComparer.Instance);
+        foreach ((PdfDictionary triggers, List<TriggerHost> hosts) in hostsByTriggers)
+            if (hosts.Count > 1)
+                shared.Add(triggers, hosts);
+
         return shared;
+    }
+
+    /// <summary>Every outline item reachable from the catalog's <c>/Outlines</c>, walking the
+    /// <c>/First</c> + <c>/Next</c> tree. Mirrors <c>ActionTypeRule.EnqueueOutlineActions</c>
+    /// (<c>:117-136</c>): same cycle guard on object number, same two pushes (sibling then child),
+    /// reached through the catalog's own <c>/Outlines</c> key -- the access
+    /// <c>DestinationRepairer.RepairOutlines</c> (<c>:102</c>) uses. Shared by
+    /// <see cref="RefuseOutlineActions"/> and <see cref="EnumerateTriggerHosts"/> so the refusal walk
+    /// and the sharing scan cannot reach different sets of items.</summary>
+    private IEnumerable<PdfDictionary> EnumerateOutlineItems(PdfDictionary? catalog)
+    {
+        if (catalog is null || ResolveObject(catalog.Get(OutlinesKey)) is not PdfDictionary outlines)
+            yield break;
+
+        var visited = new HashSet<int>();
+        var stack = new Stack<PdfObject?>();
+        stack.Push(outlines.Get(OutlineFirstKey));
+
+        for (int budget = ActionWalkBudget; stack.Count > 0 && budget > 0; budget--)
+        {
+            if (ResolveObject(stack.Pop()) is not PdfDictionary item)
+                continue;
+            if (item.IsIndirect && !visited.Add(item.ObjectNumber))
+                continue;
+
+            yield return item;
+            stack.Push(item.Get(NextActionKey));    // sibling
+            stack.Push(item.Get(OutlineFirstKey));  // child
+        }
+    }
+
+    /// <summary>Every AcroForm field, merged field+widgets included. Mirrors
+    /// <c>ConformanceContext.CollectFormFields</c> (<c>:390-414</c>): a stack over the AcroForm
+    /// <c>/Fields</c> array following <c>/Kids</c>, cycle-guarded on object number. The <c>/Kids</c>
+    /// push happens BEFORE the yield, so a caller that skips a field still gets its children -- which is
+    /// what <see cref="RefusePureFieldActions"/> relies on when it skips a merged field+widget. Shared
+    /// with <see cref="EnumerateTriggerHosts"/> for the same reason
+    /// <see cref="EnumerateOutlineItems"/> is.</summary>
+    private IEnumerable<PdfDictionary> EnumerateAcroFormFields(PdfDictionary? catalog)
+    {
+        if (catalog is null
+            || ResolveObject(catalog.Get(AcroFormKey)) is not PdfDictionary acroForm
+            || ResolveObject(acroForm.Get(AcroFormFieldsKey)) is not PdfArray fields)
+        {
+            yield break;
+        }
+
+        var visited = new HashSet<int>();
+        var stack = new Stack<PdfObject>(fields);
+
+        for (int budget = ActionWalkBudget; stack.Count > 0 && budget > 0; budget--)
+        {
+            if (ResolveObject(stack.Pop()) is not PdfDictionary field)
+                continue;
+            if (field.IsIndirect && !visited.Add(field.ObjectNumber))
+                continue; // already visited -- guards against a cyclic /Kids graph
+
+            if (ResolveObject(field.Get(KidsKey)) is PdfArray kids)
+                foreach (PdfObject kid in kids)
+                    stack.Push(kid);
+
+            yield return field;
+        }
     }
 
     /// <summary>An annotation's own <c>/A</c> -- Link and Widget alike. Neither
@@ -406,22 +523,25 @@ public sealed partial class PdfDocumentEditor
     /// dictionary is being edited is the obvious bug in this shape, and the snapshot means a future
     /// edit here cannot introduce it.</para>
     ///
-    /// <para>A trigger inside an <c>/AA</c> that <paramref name="sharedTriggers"/> says two annotations
-    /// reach is REFUSED rather than repaired -- see <see cref="SharedTriggerDictionaries"/> for why, and
-    /// for why this is not solved by cloning the container on write. When a site is refusable for both
-    /// that reason and <see cref="EvaluateAction"/>'s own, the chain reason wins: it is the more specific
-    /// of the two, and the site is a refusal either way, which is all the invariant asks.</para></summary>
+    /// <para>A trigger inside an <c>/AA</c> that <paramref name="sharedTriggers"/> says a second HOST
+    /// also reaches is REFUSED rather than repaired -- see <see cref="SharedTriggerDictionaries"/> for
+    /// why, and for why this is not solved by cloning the container on write. When a site is refusable
+    /// for both that reason and <see cref="EvaluateAction"/>'s own, the chain reason wins: it is the more
+    /// specific of the two, and the site is a refusal either way, which is all the invariant
+    /// asks.</para></summary>
     private void ClassifyAnnotationTriggers(
         PdfDictionary annot,
         string subtype,
-        HashSet<PdfDictionary> sharedTriggers,
+        IReadOnlyDictionary<PdfDictionary, List<TriggerHost>> sharedTriggers,
         List<ProhibitedActionCandidate> candidates,
         List<ProhibitedActionRefusal> refusals)
     {
         if (ResolveObject(annot.Get(AdditionalActionsKey)) is not PdfDictionary triggers)
             return;
 
-        bool shared = sharedTriggers.Contains(triggers);
+        // Null unless a second host reaches this /AA, in which case it holds every host that does --
+        // this annotation among them, which SharedTriggerReason drops before naming the rest.
+        sharedTriggers.TryGetValue(triggers, out List<TriggerHost>? coHosts);
 
         foreach (PdfName triggerKey in triggers.Keys.ToList())
         {
@@ -435,17 +555,33 @@ public sealed partial class PdfDocumentEditor
             var site = new ProhibitedActionSite(annot.ObjectNumber, null, hostDescription, evaluation.Kind);
             if (evaluation.RefuseReason is { } reason)
                 refusals.Add(new ProhibitedActionRefusal(site, reason));
-            else if (shared)
+            else if (coHosts is not null)
                 refusals.Add(new ProhibitedActionRefusal(
-                    site,
-                    $"The prohibited action on {hostDescription} was left in place: that annotation's "
-                  + "/AA dictionary is shared between hosts, so removing the trigger would also alter an "
-                  + "annotation the caller did not select, with nothing in this report to say so. Remove "
-                  + "it by hand, or give each annotation its own /AA first."));
+                    site, SharedTriggerReason(hostDescription, annot, coHosts)));
             else
                 candidates.Add(new ProhibitedActionCandidate(site, action, Annotation: annot,
                                                              Triggers: triggers, TriggerKey: triggerKey));
         }
+    }
+
+    /// <summary>Why one shared-<c>/AA</c> trigger was left alone, NAMING the other hosts that reach the
+    /// same dictionary. Without them the advice ("give each host its own /AA first") sends the user
+    /// hunting the document by hand for whatever else points at it -- and since the co-host may be a
+    /// field, a page or the catalog rather than another annotation, there is no obvious place to look.
+    ///
+    /// <para><paramref name="annot"/> is dropped from the list because a host is never its own co-host.
+    /// The remainder is never empty: <see cref="SharedTriggerDictionaries"/> only records an
+    /// <c>/AA</c> once two DISTINCT hosts (deduped by reference) reach it.</para></summary>
+    private static string SharedTriggerReason(
+        string hostDescription, PdfDictionary annot, List<TriggerHost> coHosts)
+    {
+        string others = string.Join(
+            ", ", coHosts.Where(h => !ReferenceEquals(h.Host, annot)).Select(h => h.Description));
+
+        return $"The prohibited action on {hostDescription} was left in place: that annotation's /AA "
+             + $"dictionary is shared with {others}, so removing the trigger would also alter a host the "
+             + "caller did not select, with nothing in this report to say so. Remove it by hand, or give "
+             + "each host its own /AA first.";
     }
 
     /// <summary>The catalog's <c>/Names /JavaScript</c> name tree -- document-level scripts, which the
@@ -624,9 +760,21 @@ public sealed partial class PdfDocumentEditor
             RefuseTriggers(catalog.Get(AdditionalActionsKey), "catalog /AA", refusals);
         }
 
-        IReadOnlyList<PdfDictionary> pages = PageTreeOps.PageDicts(_document);
-        for (var i = 0; i < pages.Count; i++)
-            RefuseTriggers(pages[i].Get(AdditionalActionsKey), $"page {i + 1} /AA", refusals);
+        // _document.GetPages() and NOT PageTreeOps.PageDicts: the latter reads ONE level of the page-tree
+        // root's /Kids without recursing, so a page in a nested tree reached neither list while
+        // ActionTypeRule -- which goes through ConformanceContext.Pages, i.e. PdfPageTree.CollectPages --
+        // raised a finding for it, and every "page N" label was misnumbered whenever the tree was not
+        // flat. It also returns intermediate /Type /Pages nodes as though they were pages. This is the
+        // same accessor EnumerateIndirectAnnotations and EnumerateTriggerHosts already use, and it reads
+        // without writing -- PageTreeOps.Kids INSERTS an empty /Kids array when the key is absent and
+        // THROWS when there is no page-tree root at all, both of which broke
+        // PreviewProhibitedActionRepairs' promise to write nothing.
+        var pageNumber = 0;
+        foreach (PdfPage page in _document.GetPages())
+        {
+            pageNumber++;
+            RefuseTriggers(page.Dictionary.Get(AdditionalActionsKey), $"page {pageNumber} /AA", refusals);
+        }
 
         RefuseOutlineActions(catalog, refusals);
         RefusePureFieldActions(catalog, annotationObjectNumbers, refusals);
@@ -680,66 +828,30 @@ public sealed partial class PdfDocumentEditor
             RefuseUnmeasuredHost(triggers.Get(triggerKey), $"{hostDescription} /{triggerKey.Value}", refusals);
     }
 
-    /// <summary>Each outline item's <c>/A</c>, walking the <c>/First</c> + <c>/Next</c> tree. Mirrors
-    /// <c>ActionTypeRule.EnqueueOutlineActions</c> (<c>:117-136</c>): same cycle guard on object number,
-    /// same two pushes (sibling then child), reached through the catalog's own <c>/Outlines</c> key --
-    /// the access <c>DestinationRepairer.RepairOutlines</c> (<c>:102</c>) uses.</summary>
+    /// <summary>Each outline item's <c>/A</c>, over <see cref="EnumerateOutlineItems"/>'s walk.</summary>
     private void RefuseOutlineActions(PdfDictionary? catalog, List<ProhibitedActionRefusal> refusals)
     {
-        if (catalog is null || ResolveObject(catalog.Get(OutlinesKey)) is not PdfDictionary outlines)
-            return;
-
-        var visited = new HashSet<int>();
-        var stack = new Stack<PdfObject?>();
-        stack.Push(outlines.Get(OutlineFirstKey));
-
-        for (int budget = ActionWalkBudget; stack.Count > 0 && budget > 0; budget--)
-        {
-            if (ResolveObject(stack.Pop()) is not PdfDictionary item)
-                continue;
-            if (item.IsIndirect && !visited.Add(item.ObjectNumber))
-                continue;
-
+        foreach (PdfDictionary item in EnumerateOutlineItems(catalog))
             RefuseUnmeasuredHost(item.Get(ActionKey), $"outline item {Describe(item)} /A", refusals);
-            stack.Push(item.Get(NextActionKey));    // sibling
-            stack.Push(item.Get(OutlineFirstKey));  // child
-        }
     }
 
-    /// <summary>Each PURE AcroForm field's <c>/A</c> and <c>/AA</c> triggers. Mirrors
-    /// <c>ConformanceContext.CollectFormFields</c> (<c>:390-414</c>): a stack over the AcroForm
-    /// <c>/Fields</c> array following <c>/Kids</c>, cycle-guarded on object number.
+    /// <summary>Each PURE AcroForm field's <c>/A</c> and <c>/AA</c> triggers, over
+    /// <see cref="EnumerateAcroFormFields"/>'s walk.
     ///
     /// <para>A field is <b>pure</b> when it is not also an annotation, which is tested directly rather
     /// than guessed at through <c>/Subtype</c>: <paramref name="annotationObjectNumbers"/> holds every
     /// object number the annotation pass already saw, and every one of the 78 measured form-hosted
     /// prohibited actions is on a merged field+widget dictionary that pass already returned. A
     /// <i>direct</i> field dictionary has no object number to match, so it falls out as pure and is
-    /// refused -- which is the loud answer, and the right one for a shape nothing has measured.</para></summary>
+    /// refused -- which is the loud answer, and the right one for a shape nothing has measured.</para>
+    ///
+    /// <para>Skipping a merged field+widget here does NOT skip its <c>/Kids</c>: the enumerator pushes a
+    /// field's children before yielding the field itself.</para></summary>
     private void RefusePureFieldActions(
         PdfDictionary? catalog, HashSet<int> annotationObjectNumbers, List<ProhibitedActionRefusal> refusals)
     {
-        if (catalog is null
-            || ResolveObject(catalog.Get(AcroFormKey)) is not PdfDictionary acroForm
-            || ResolveObject(acroForm.Get(AcroFormFieldsKey)) is not PdfArray fields)
+        foreach (PdfDictionary field in EnumerateAcroFormFields(catalog))
         {
-            return;
-        }
-
-        var visited = new HashSet<int>();
-        var stack = new Stack<PdfObject>(fields);
-
-        for (int budget = ActionWalkBudget; stack.Count > 0 && budget > 0; budget--)
-        {
-            if (ResolveObject(stack.Pop()) is not PdfDictionary field)
-                continue;
-            if (field.IsIndirect && !visited.Add(field.ObjectNumber))
-                continue; // already visited -- guards against a cyclic /Kids graph
-
-            if (ResolveObject(field.Get(KidsKey)) is PdfArray kids)
-                foreach (PdfObject kid in kids)
-                    stack.Push(kid);
-
             if (field.IsIndirect && annotationObjectNumbers.Contains(field.ObjectNumber))
                 continue; // a merged field+widget -- the annotation pass owns it, and repaired it
 

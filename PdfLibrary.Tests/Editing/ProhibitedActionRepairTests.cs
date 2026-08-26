@@ -1161,4 +1161,210 @@ public sealed class ProhibitedActionRepairTests
         Assert.False(survived.HasE, "the removed /AA /E trigger must not come back through the writer");
         Assert.True(survived.HasX, "the permitted /AA /X trigger must survive the writer");
     }
+    // ---- Fix wave 2 (verification pass): the shared-/AA scan's blind spots, and the page-tree walk
+    //
+    // Both defects below let a shape the rule flags reach the WRONG list -- a widget's repair silently
+    // gutting a co-host's /AA while the report said it was left in place (major 1), and a page /AA in a
+    // nested page tree reaching neither list at all (major 2).
+
+    /// <summary>A two-page document with ONE indirect Widget listed in BOTH pages' <c>/Annots</c>, its
+    /// <c>/AA /E</c> prohibited. One annotation is one host however many pages list it: counting it
+    /// twice would call its own <c>/AA</c> "shared with itself" and turn every such document's repair
+    /// into a refusal.</summary>
+    private static PdfDocumentEditor NewEditorWithOneAnnotationOnTwoPages()
+    {
+        PdfDocumentBuilder builder = PdfDocumentBuilder.Create()
+            .AddPage(p => p.AddText("one", 72, 700, "Helvetica", 12))
+            .AddPage(p => p.AddText("two", 72, 700, "Helvetica", 12));
+        PdfDocumentEditor editor = PdfDocumentEditor.Open(new MemoryStream(builder.ToByteArray()));
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeAnnotation("Widget");
+        widget[AAKey] = new PdfDictionary { [new PdfName("E")] = MakeAction("JavaScript") };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+        AddAnnotEntry(doc, 1, widgetRef);   // the SAME annotation, listed on both pages
+
+        return editor;
+    }
+
+    /// <summary>An indirect Widget in page 0's <c>/Annots</c> plus a PURE AcroForm field (in no
+    /// <c>/Annots</c> at all) whose <c>/AA</c> is the SAME indirect dictionary as the widget's.</summary>
+    private static (PdfDocumentEditor Editor, PdfDictionary Widget, int FieldObjectNumber, PdfDictionary SharedAa)
+        NewEditorWithAaSharedBetweenWidgetAndPureField()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var sharedAa = new PdfDictionary { [new PdfName("E")] = MakeAction("JavaScript") };
+        PdfIndirectReference sharedAaRef = doc.RegisterObject(sharedAa);
+
+        PdfDictionary widget = MakeAnnotation("Widget");
+        widget[AAKey] = sharedAaRef;
+        AddAnnotEntry(doc, 0, doc.RegisterObject(widget));
+
+        PdfDictionary field = new()
+        {
+            [new PdfName("FT")] = new PdfName("Btn"),
+            [new PdfName("T")] = PdfString.FromText("parent"),
+            [AAKey] = sharedAaRef,
+        };
+        PdfIndirectReference fieldRef = doc.RegisterObject(field);
+        doc.CatalogDictionary![new PdfName("AcroForm")] =
+            new PdfDictionary { [new PdfName("Fields")] = new PdfArray(fieldRef) };
+
+        return (editor, widget, fieldRef.ObjectNumber, sharedAa);
+    }
+
+    /// <summary>Splices an intermediate <c>/Type /Pages</c> node between the page-tree root and the
+    /// document's single page, so the page sits TWO levels down: root <c>/Kids [ inter ]</c>, inter
+    /// <c>/Kids [ page ]</c>. <c>PdfPageTree.CollectPages</c> recurses into it, and so does the rule
+    /// through <c>ConformanceContext.Pages</c>; a one-level read of the root's <c>/Kids</c> hands back
+    /// the intermediate node instead and never reaches the page at all.</summary>
+    private static void NestThePageTree(PdfDocument doc)
+    {
+        PdfDictionary root = doc.PageTreeRootDictionary!;
+        var rootKids = (PdfArray)root.Get(new PdfName("Kids"))!;
+        PdfObject pageEntry = rootKids[0];
+
+        var intermediate = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Pages"),
+            [new PdfName("Kids")] = new PdfArray(pageEntry),
+            [new PdfName("Count")] = new PdfInteger(1),
+        };
+        root[new PdfName("Kids")] = new PdfArray(doc.RegisterObject(intermediate));
+    }
+
+    // ---- MAJOR 1: an /AA shared with a host the annotation-only scan could not see ---------------
+
+    [Fact]
+    public void Repair_refuses_an_AA_shared_between_a_widget_and_a_PURE_FIELD()
+    {
+        // The widget is repairable and the pure field is refused, so a scan that walks /Annots alone
+        // calls this /AA unshared, strips /E through the widget, and empties the very dictionary the
+        // field points at -- moments after telling the caller the field's trigger was "left in place".
+        // A false report is worse than a silent one.
+        (PdfDocumentEditor editor, PdfDictionary widget, int fieldObj, PdfDictionary sharedAa) =
+            NewEditorWithAaSharedBetweenWidgetAndPureField();
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        Assert.True(sharedAa.ContainsKey(new PdfName("E")),
+                    "the shared /AA /E trigger must survive -- the field still points at this dictionary");
+        Assert.True(widget.ContainsKey(AAKey), "the widget's /AA reference must survive a refusal");
+        Assert.Contains(report.Refused,
+                        r => r.Site.HostObjectNumber == widget.ObjectNumber
+                             && r.Reason.Contains("shared", StringComparison.Ordinal));
+        Assert.Contains(report.Refused, r => r.Site.HostDescription == $"field {fieldObj} /AA /E");
+    }
+
+    [Fact]
+    public void The_shared_AA_refusal_names_the_co_host()
+    {
+        // Without the co-host named, acting on "give each host its own /AA first" means hunting the
+        // document by hand for whatever else points at it.
+        (PdfDocumentEditor editor, PdfDictionary widget, int fieldObj, PdfDictionary _) =
+            NewEditorWithAaSharedBetweenWidgetAndPureField();
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        ProhibitedActionRefusal shared =
+            report.Refused.Single(r => r.Site.HostObjectNumber == widget.ObjectNumber);
+        Assert.Contains($"field {fieldObj}", shared.Reason, StringComparison.Ordinal);
+        Assert.DoesNotContain($"Widget annotation {widget.ObjectNumber}", shared.Reason,
+                              StringComparison.Ordinal);   // a host is never its own co-host
+    }
+
+    [Fact]
+    public void Repair_repairs_a_MERGED_field_and_widget_trigger_reached_by_both_walks()
+    {
+        // The over-fire control for the two tests above. Widening the sharing scan to the AcroForm
+        // /Fields tree makes a merged field+widget -- the shape of every one of the 78 measured
+        // form-hosted actions -- reachable TWICE, once as an annotation and once as a field. It is
+        // still ONE host and its /AA is not shared; counting it twice would refuse the whole measured
+        // form population.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeAnnotation("Widget");
+        widget[new PdfName("FT")] = new PdfName("Btn");
+        widget[AAKey] = new PdfDictionary { [new PdfName("E")] = MakeAction("JavaScript") };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+        doc.CatalogDictionary![new PdfName("AcroForm")] =
+            new PdfDictionary { [new PdfName("Fields")] = new PdfArray(widgetRef) };
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Equal("Widget /AA /E", Assert.Single(report.Repaired).Site.HostDescription);
+        Assert.Empty(report.Refused);
+        Assert.False(widget.ContainsKey(AAKey));
+    }
+
+    // ---- MINOR 1: the sharing scan's host dedup, which nothing tested ----------------------------
+
+    [Fact]
+    public void Repair_repairs_an_AA_on_an_annotation_listed_on_TWO_pages()
+    {
+        // Delete the sharing scan's host dedup and this goes red: the one widget is visited once per
+        // page, its /AA reads as shared with itself, and the repair becomes a refusal -- a board
+        // movement regression with nothing else to catch it.
+        PdfDocumentEditor editor = NewEditorWithOneAnnotationOnTwoPages();
+        PdfDocument doc = editor.Document;
+        var widget = (PdfDictionary)Resolve(
+            doc, ((PdfArray)doc.GetPages()[0].Dictionary.Get(AnnotsKey)!)[0]);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Equal("Widget /AA /E", Assert.Single(report.Repaired).Site.HostDescription);
+        Assert.Empty(report.Refused);
+        Assert.False(widget.ContainsKey(AAKey));
+    }
+
+    // ---- MAJOR 2: a page /AA two levels down the page tree ---------------------------------------
+
+    [Fact]
+    public void Repair_refuses_a_page_AA_in_a_NESTED_page_tree()
+    {
+        // A one-level read of the page-tree root's /Kids hands back the intermediate /Type /Pages node
+        // and never reaches the page, so this site landed in NEITHER list -- while the rule, which
+        // recurses through ConformanceContext.Pages, raises a finding for it.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary page = doc.GetPages()[0].Dictionary;
+        page[AAKey] = new PdfDictionary { [new PdfName("O")] = MakeAction("Launch") };
+        NestThePageTree(doc);
+
+        // The fixture is only worth anything if the page really is two levels down AND still reachable
+        // the way the rule reaches it.
+        var rootKids = (PdfArray)doc.PageTreeRootDictionary!.Get(new PdfName("Kids"))!;
+        var intermediate = (PdfDictionary)Resolve(doc, Assert.Single(rootKids));
+        Assert.Equal("Pages", ((PdfName)intermediate.Get(new PdfName("Type"))!).Value);
+        Assert.Same(page, Assert.Single(doc.GetPages()).Dictionary);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal("page 1 /AA /O", refusal.Site.HostDescription);   // numbered by page, not by kid
+        Assert.True(((PdfDictionary)page.Get(AAKey)!).ContainsKey(new PdfName("O")));
+    }
+
+    [Fact]
+    public void Preview_writes_nothing_to_a_page_tree_root_that_has_no_Kids()
+    {
+        // PreviewProhibitedActionRepairs documents itself as writing nothing. Reading the pages through
+        // PageTreeOps.Kids broke that: it INSERTS an empty /Kids array when the key is absent.
+        PdfDocumentEditor editor = NewEditorWithCatalogOpenAction("Launch");
+        PdfDictionary root = editor.Document.PageTreeRootDictionary!;
+        root.Remove(new PdfName("Kids"));
+
+        ProhibitedActionRepairPreview preview = editor.PreviewProhibitedActionRepairs();
+
+        Assert.Single(preview.Refused);   // the walk still ran -- this is not a vacuous pass
+        Assert.False(root.ContainsKey(new PdfName("Kids")), "the preview must not write to the document");
+    }
 }
