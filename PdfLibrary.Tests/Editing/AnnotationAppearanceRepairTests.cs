@@ -203,9 +203,47 @@ public sealed class AnnotationAppearanceRepairTests
         Assert.Empty(report.Repaired);
         AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
         Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Contains("/Zzz", refusal.Reason, StringComparison.Ordinal);
 
         var appearance = (PdfDictionary)widget.Get(ApKey)!;
         Assert.Equal(2, appearance.Count);
+        Assert.True(appearance.ContainsKey(new PdfName("Zzz")));
+    }
+
+    /// <summary>Task 1 review finding (fix round 1): the ORIGINAL classifier treated any appearance
+    /// with a /D or /R as fully repairable regardless of what ELSE was present, so {/N, /D, /Zzz}
+    /// stripped only /D and reported the object as Repaired while leaving a still-violating
+    /// {/N, /Zzz} behind -- a false "fixed" claim. The repair must only be offered when EVERY other
+    /// key besides /N is /D or /R; otherwise the whole dictionary is refused, matching how a lone
+    /// unrecognized key already refused (the sibling test above).</summary>
+    [Fact]
+    public void Repair_refuses_a_mix_of_D_and_an_unrecognized_key_rather_than_a_partial_strip()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference nRef = doc.RegisterObject(MakeAppearanceStream("N"));
+        PdfIndirectReference dRef = doc.RegisterObject(MakeAppearanceStream("D"));
+        PdfDictionary widget = MakeAnnotation();
+        widget[ApKey] = new PdfDictionary
+        {
+            [DKey] = dRef, [new PdfName("Zzz")] = PdfBoolean.True, [NKey] = nRef,
+        };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.StripRejectedKeys, refusal.Kind);
+        Assert.Contains("/Zzz", refusal.Reason, StringComparison.Ordinal);
+
+        // NOT partially stripped -- /D is still there too, exactly as the dictionary started
+        var appearance = (PdfDictionary)widget.Get(ApKey)!;
+        Assert.Equal(3, appearance.Count);
+        Assert.True(appearance.ContainsKey(DKey));
         Assert.True(appearance.ContainsKey(new PdfName("Zzz")));
     }
 

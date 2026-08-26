@@ -1,3 +1,4 @@
+using System.Linq;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 
@@ -42,7 +43,17 @@ public sealed record AnnotationAppearanceRepairPreview(
 
 /// <summary>One widget <see cref="PdfDocumentEditor.RepairAnnotationAppearances"/> wrote to, and
 /// every repair kind it actually applied -- past tense, unlike
-/// <see cref="AnnotationAppearanceRepairCandidate.WouldApply"/>.</summary>
+/// <see cref="AnnotationAppearanceRepairCandidate.WouldApply"/>.
+///
+/// <para><b>Invariant a consuming domain may rely on:</b> an object appearing here is FULLY
+/// 6.3.3-conformant when <see cref="PdfDocumentEditor.RepairAnnotationAppearances"/> returns --
+/// never partially fixed. <see cref="PdfDocumentEditor.ClassifyAnnotationAppearance"/> only ever
+/// adds <see cref="AnnotationAppearanceRepairKind.StripRejectedKeys"/> to a widget's repair list
+/// when every key besides <c>/N</c> is <c>/D</c> and/or <c>/R</c> -- so stripping them always
+/// leaves exactly <c>{/N}</c> behind. A widget with any OTHER stray key is a
+/// <see cref="AnnotationAppearanceRefusal"/> instead, never a partial entry here (task 1 review
+/// finding, fix round 1: the original classifier let a mixed <c>{/N, /D, /Zzz}</c> case through as
+/// "repaired" while <c>/Zzz</c> survived and the object was still 6.3.3-violating).</para></summary>
 public sealed record AnnotationAppearanceRepair(
     int ObjectNumber, IReadOnlyList<AnnotationAppearanceRepairKind> Applied);
 
@@ -50,7 +61,12 @@ public sealed record AnnotationAppearanceRepair(
 /// the ONE report shape for this whole remediation program (R1 and R2 together), so a later task's
 /// domain has exactly one report to map into save-refusal entries rather than two. R2 never appears
 /// in either list until a later task extends <see cref="PdfDocumentEditor.ClassifyAnnotationAppearance"/>
-/// to produce it.</summary>
+/// to produce it.
+///
+/// <para>A consuming domain may treat membership in <see cref="Repaired"/> as proof the object is
+/// now fully 6.3.3-conformant -- see the invariant documented on <see cref="AnnotationAppearanceRepair"/>.
+/// An object that is only partially fixable is always reported in <see cref="Refused"/>, never split
+/// across both lists.</para></summary>
 public sealed record AnnotationAppearanceRepairReport(
     IReadOnlyList<AnnotationAppearanceRepair> Repaired,
     IReadOnlyList<AnnotationAppearanceRefusal> Refused);
@@ -104,23 +120,38 @@ public sealed partial class PdfDocumentEditor
         // /N is present and the dictionary carries at least one other key -- 6.3.3-t2's actual
         // violation. Only /D and /R are ever deleted: ISO 32000-1 Table 168 names /N, /R, and /D as
         // the ENTIRE key vocabulary an appearance dictionary can carry, so those two ARE "the keys
-        // the rule rejects" here -- never a wildcard "everything that is not /N". A key this repair
-        // does not recognize is left alone and the finding stays open for that object rather than
-        // being guessed at (design doc §8, "Over-broad R1" -- degrade safely on unmeasured input).
+        // the rule rejects" here -- never a wildcard "everything that is not /N".
+        //
+        // The repair is offered ONLY when EVERY other key is /D or /R -- not merely when /D or /R is
+        // PRESENT. Fix round 1 (task 1 review): the original check was `hasDown || hasRollover`,
+        // which let a mixed case like {/N, /D, /Zzz} through as a candidate; the write side then
+        // stripped only /D and /R (the one key it knows how to delete), leaving a STILL-VIOLATING
+        // {/N, /Zzz} reported as Repaired -- a false "fixed" claim RepairAnnotationAppearances's own
+        // invariant forbids (see that method's doc comment). A key this repair does not recognize
+        // now refuses the WHOLE dictionary, leaving it byte-for-byte untouched and the finding open,
+        // rather than a partial strip (design doc §8, "Over-broad R1" -- degrade safely on
+        // unmeasured input).
         bool hasDown = appearance.ContainsKey(ApDownKey);
         bool hasRollover = appearance.ContainsKey(ApRolloverKey);
+        int recognizedKeyCount = 1 + (hasDown ? 1 : 0) + (hasRollover ? 1 : 0); // /N + /D? + /R?
 
-        if (hasDown || hasRollover)
+        if (recognizedKeyCount == appearance.Count)
         {
             repairs.Add(AnnotationAppearanceRepairKind.StripRejectedKeys);
             return;
         }
 
+        List<string> unrecognizedKeys = appearance.Keys
+            .Where(k => !k.Equals(ApNormalKey) && !k.Equals(ApDownKey) && !k.Equals(ApRolloverKey))
+            .Select(k => "/" + k.Value)
+            .ToList();
+
         refusals.Add(new AnnotationAppearanceRefusal(
             annot.ObjectNumber, AnnotationAppearanceRepairKind.StripRejectedKeys,
-            "This widget's /AP fails PDF/A clause 6.3.3 (it carries a key other than /N), but the "
-            + "extra key present is not /D or /R, so Pellucid does not recognize it as safe to delete "
-            + "and leaves the dictionary alone."));
+            "This widget's /AP fails PDF/A clause 6.3.3 (it carries a key other than /N), but it "
+            + "also carries " + string.Join(", ", unrecognizedKeys) + ", which Pellucid does not "
+            + "recognize as safe to delete (only /D and /R are), so it leaves the whole dictionary "
+            + "alone rather than strip part of it and report a still-violating /AP as repaired."));
     }
 
     /// <summary>Read-only preview of every PDF/A 6.3.3 annotation-appearance defect this editor
@@ -153,7 +184,13 @@ public sealed partial class PdfDocumentEditor
     /// <para>R1 is purely a dictionary-key removal -- no page, content stream, or object graph is
     /// touched, unlike <c>RepairAnnotationTypes</c> -- so an optional filter (like
     /// <c>RepairImageDictionaries</c>'s) is the right risk level here, not the mandatory staged set
-    /// <c>RepairAnnotationTypes</c> requires for its page-mutating flatten.</para></summary>
+    /// <c>RepairAnnotationTypes</c> requires for its page-mutating flatten.</para>
+    ///
+    /// <para><b>Invariant:</b> every object this method places in the returned report's
+    /// <see cref="AnnotationAppearanceRepairReport.Repaired"/> is FULLY 6.3.3-conformant once this
+    /// call returns -- never partially fixed. See <see cref="AnnotationAppearanceRepair"/>'s own doc
+    /// comment for why that always holds (it is enforced in <see cref="ClassifyAnnotationAppearance"/>,
+    /// not here -- this method only ever executes a repair that classifier already vetted).</para></summary>
     public AnnotationAppearanceRepairReport RepairAnnotationAppearances(IReadOnlySet<int>? objectNumbers = null)
     {
         var repaired = new List<AnnotationAppearanceRepair>();
