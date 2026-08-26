@@ -146,6 +146,30 @@ public sealed partial class PdfDocumentEditor
 
         if (recognizedKeyCount == appearance.Count)
         {
+            // Stripping /D and/or /R proves ONLY 6.3.3-t2 -- "the dictionary now contains exactly
+            // {/N}". It says nothing about what /N itself IS, and t3 (AnnotationAppearanceRule.cs
+            // :57-78) separately fires whenever the annotation is a Widget, its effective /FT is
+            // /Btn, and /N does not resolve to a non-empty PdfDictionary. A /Btn widget whose /N is a
+            // bare appearance stream would pass the t2 guard above, get reported as Repaired, and
+            // still violate 6.3.3-t3 -- falsifying the Repaired invariant this program's own doc
+            // comment asserts (AnnotationAppearanceRepair, :50-58: "an object appearing here is FULLY
+            // 6.3.3-conformant"). Final whole-branch review, I1: refuse rather than report a
+            // still-violating repair. Uses the same /Parent-walking EffectiveFieldType resolution
+            // ResolveEffectiveField already provides, for the same reason the rule resolves /FT up
+            // /Parent rather than reading the widget's own key alone.
+            if (ResolveEffectiveField(annot).Ft == "Btn"
+                && ResolveObject(appearance.Get(ApNormalKey)) is not PdfDictionary { Count: > 0 })
+            {
+                refusals.Add(new AnnotationAppearanceRefusal(
+                    annot.ObjectNumber, AnnotationAppearanceRepairKind.StripRejectedKeys,
+                    "This /Btn widget's /AP /N is an appearance stream, not a named-state "
+                    + "subdictionary, which PDF/A clause 6.3.3-t3 requires for a button. Stripping "
+                    + "/D and/or /R would leave the dictionary 6.3.3-t2-conformant but still "
+                    + "6.3.3-t3-violating, so Pellucid leaves it alone rather than report a "
+                    + "still-violating /AP as repaired."));
+                return;
+            }
+
             repairs.Add(AnnotationAppearanceRepairKind.StripRejectedKeys);
             return;
         }

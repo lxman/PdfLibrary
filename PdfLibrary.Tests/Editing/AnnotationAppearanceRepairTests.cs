@@ -284,6 +284,79 @@ public sealed class AnnotationAppearanceRepairTests
         Assert.True(appearance.ContainsKey(new PdfName("Zzz")));
     }
 
+    /// <summary>Final whole-branch review, I1: R1's guard (<c>recognizedKeyCount == appearance.Count</c>)
+    /// only proves 6.3.3-t2 -- "stripping leaves exactly {/N}" -- it never inspects what /N actually
+    /// is. <c>AnnotationAppearanceRule.cs:62-77</c> (t3) separately fires whenever the annotation is a
+    /// Widget, its effective /FT is /Btn, and /N does not resolve to a non-empty
+    /// <see cref="PdfDictionary"/>. So stripping /D from <c>{/N: &lt;bare stream&gt;, /D: &lt;stream&gt;}</c>
+    /// on a /Btn widget would leave <c>{/N: &lt;stream&gt;}</c> behind -- t2-conformant, but STILL a t3
+    /// violation -- which would falsify the <c>Repaired ⇒ fully 6.3.3-conformant</c> invariant this
+    /// file's own doc comment (<c>AnnotationAppearanceRepair</c>, <c>:50-58</c>) asserts. This must be a
+    /// refusal, not a repair.</summary>
+    [Fact]
+    public void Repair_refuses_a_Btn_widget_whose_N_is_a_bare_stream_rather_than_reporting_a_still_t3_violating_repair()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        // A bare appearance stream -- not a named-state subdictionary -- is exactly the shape 6.3.3-t3
+        // rejects for a /Btn widget's /N.
+        PdfIndirectReference nRef = doc.RegisterObject(MakeAppearanceStream("N"));
+        PdfIndirectReference dRef = doc.RegisterObject(MakeAppearanceStream("D"));
+
+        PdfDictionary widget = MakeAnnotation(); // Subtype Widget
+        widget[new PdfName("FT")] = new PdfName("Btn");
+        widget[ApKey] = new PdfDictionary { [DKey] = dRef, [NKey] = nRef };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.StripRejectedKeys, refusal.Kind);
+        Assert.Contains("/N", refusal.Reason, StringComparison.Ordinal);
+
+        // NOT stripped -- the dictionary is untouched, still {/D, /N}
+        var appearance = (PdfDictionary)widget.Get(ApKey)!;
+        Assert.Equal(2, appearance.Count);
+        Assert.True(appearance.ContainsKey(DKey));
+    }
+
+    /// <summary>The positive counterpart: a /Btn widget whose /N genuinely IS a populated named-state
+    /// subdictionary is still repaired -- the new t3 guard must not refuse every /Btn widget, only the
+    /// bare-stream shape.</summary>
+    [Fact]
+    public void Repair_still_strips_D_for_a_Btn_widget_whose_N_is_a_populated_state_dictionary()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference offRef = doc.RegisterObject(MakeAppearanceStream("Off"));
+        PdfIndirectReference yesRef = doc.RegisterObject(MakeAppearanceStream("Yes"));
+        var states = new PdfDictionary { [new PdfName("Off")] = offRef, [new PdfName("Yes")] = yesRef };
+        PdfIndirectReference nRef = doc.RegisterObject(states);
+        PdfIndirectReference dRef = doc.RegisterObject(MakeAppearanceStream("D"));
+
+        PdfDictionary widget = MakeAnnotation();
+        widget[new PdfName("FT")] = new PdfName("Btn");
+        widget[ApKey] = new PdfDictionary { [DKey] = dRef, [NKey] = nRef };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(widgetRef.ObjectNumber, repair.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.StripRejectedKeys, Assert.Single(repair.Applied));
+        Assert.Empty(report.Refused);
+
+        var appearance = (PdfDictionary)widget.Get(ApKey)!;
+        Assert.Single(appearance);
+        Assert.True(appearance.ContainsKey(NKey));
+    }
+
     [Fact]
     public void Repair_ignores_a_non_widget_annotation_with_the_same_shaped_defect()
     {
@@ -619,6 +692,16 @@ public sealed class AnnotationAppearanceRepairTests
         // a dictionary entry shall be equivalent to omitting the entry." The widget's OWN /V key is
         // present but resolves to PdfNull; the walk must not stop there (key presence alone is not
         // enough) -- it must keep looking up /Parent and find "Smith".
+        //
+        // Final whole-branch review, I3: this pins a DEFENSIVE in-memory invariant, not a shape a real
+        // parsed document can produce. PdfParser.cs:361 populates a dictionary via `dict[key] = value`,
+        // and PdfDictionary.Set (:68-73) does `if (value is null or PdfNull) _entries.Remove(key)` --
+        // so a parsed "/V null" is never actually stored; the walk never even sees a present-but-null
+        // key from parsing. The sibling test below (a dangling indirect reference) is the one that
+        // carries the real-document weight: a parsed "/V 12 0 R" pointing at an unregistered object IS
+        // stored as a present key, and only resolves to null later, on lookup. This test still earns
+        // its place as a defensive regression pin against a future in-memory construction path (a
+        // programmatic writer, not the parser) producing the same shape.
         PdfDocumentEditor editor = NewEditor();
         PdfDocument doc = editor.Document;
 
@@ -639,9 +722,12 @@ public sealed class AnnotationAppearanceRepairTests
         // NOT widget[VKey] = PdfNull.Instance -- PdfDictionary's indexer setter (Set()) treats
         // PdfNull the same as removing the key entirely, so that would silently produce "no /V key"
         // rather than "a /V key present and pointing at null", testing nothing. Add() bypasses that
-        // stripping and genuinely stores the entry, matching what a parsed "/V null" dictionary entry
-        // (or a parsed "0 0 R" -- PdfParser.cs:183-190 collapses that straight to PdfNull.Instance at
-        // parse time) looks like in memory.
+        // stripping and genuinely stores the entry -- a shape no real parse actually produces (see
+        // this test's own doc comment above). A parsed "0 0 R" (PdfParser.cs:176-184) also collapses
+        // straight to PdfNull.Instance at parse time -- as a VALUE handed to `dict[key] = value`,
+        // which Set() then strips right back out, same as a direct "/V null" -- so it is likewise
+        // never reachable through the parser. Only a dangling reference to a NON-zero, never-registered
+        // object number (the sibling test below) survives parsing as a present key.
         widget.Add(VKey, PdfNull.Instance);
         Assert.IsType<PdfNull>(widget.Get(VKey)); // fixture sanity: the key really is present
         PdfIndirectReference widgetRef = doc.RegisterObject(widget);
@@ -661,12 +747,17 @@ public sealed class AnnotationAppearanceRepairTests
     public void Repair_treats_an_indirect_V_that_resolves_to_nothing_as_omitted_and_inherits_Parent_V()
     {
         // The same ISO 32000-1 7.3.7 rule reached through an indirect reference rather than a direct
-        // null -- PdfParser.cs:183-190 shows a parsed "null" object survives as PdfNull.Instance
-        // whether written directly or via an indirect object, and a dangling reference to an object
-        // number that was never registered resolves to a genuine C# null through
-        // PdfDocument.GetObject. (A literal object number 0 -- the coordinator's "0 0 R" -- cannot be
-        // constructed via PdfIndirectReference, which requires a positive object number; an
-        // out-of-range, never-registered number stands in for the same "resolves to nothing" shape.)
+        // null -- and, unlike the sibling test above, THIS is the shape a real parsed document
+        // actually produces (final whole-branch review, I3): a "/V 12 0 R" pointing at an object
+        // number that is never registered (deleted, or simply absent from a malformed xref) parses
+        // to a genuine PdfIndirectReference -- not PdfNull -- so `dict[key] = value` stores it as a
+        // present, non-null key. It only resolves to a C# null LATER, on lookup, through
+        // PdfDocument.GetObject failing to find that object number. (A literal object number 0 --
+        // the coordinator's "0 0 R" -- collapses to PdfNull.Instance AT PARSE TIME instead, per
+        // PdfParser.cs:176-184, and so is the OTHER, parser-unreachable shape the sibling test above
+        // pins defensively; PdfIndirectReference also requires a positive object number, so it cannot
+        // be constructed directly either. An out-of-range, never-registered POSITIVE number, as used
+        // below, is what stands in for a genuine dangling reference.)
         PdfDocumentEditor editor = NewEditor();
         PdfDocument doc = editor.Document;
 
@@ -725,6 +816,35 @@ public sealed class AnnotationAppearanceRepairTests
         Assert.Equal(widgetRef.ObjectNumber, repair.ObjectNumber);
         Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
         Assert.True(((PdfDictionary)widget.Get(ApKey)!).ContainsKey(NKey));
+    }
+
+    /// <summary>Final whole-branch review, M2: exercises <see cref="PdfDocumentEditor.IsEffectivelyBlank"/>'s
+    /// <c>PdfString s => s.GetText().Length == 0</c> branch directly -- an empty string, not an absent
+    /// key or an inherited blank. This is the branch the spec's §2 correction turns on (design doc §5:
+    /// the 21 "value-bearing" widgets in `CACI CBP Form 78` turned out to inherit an EMPTY string, not
+    /// a real value) yet no test constructed one directly before this. A /Tx widget with an own
+    /// <c>/V ()</c> and no /AP must be repaired, not refused.</summary>
+    [Fact]
+    public void Repair_writes_a_blank_appearance_for_a_Tx_widget_whose_own_V_is_an_empty_string()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        widget[VKey] = PdfString.FromText(""); // own /V present, resolves to a real but EMPTY string
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(widgetRef.ObjectNumber, repair.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
+        Assert.Empty(report.Refused);
+
+        var appearance = Assert.IsType<PdfDictionary>(widget.Get(ApKey));
+        Assert.Single(appearance);
+        Assert.True(appearance.ContainsKey(NKey));
     }
 
     [Fact]
