@@ -237,13 +237,24 @@ public sealed class ProhibitedActionRepairTests
     [Fact]
     public void Preview_and_repair_agree_about_every_site()
     {
-        PdfDocumentEditor editor = NewEditorWithLinkAction("Launch");
+        // The fixture must carry all three outcomes at once. Against a one-candidate/zero-refusal
+        // document the assertions below reduce to 1 == 1 and 0 == 0, which agrees just as well with a
+        // preview and a repair that share nothing at all.
+        PdfDocumentEditor editor = NewEditorWithARepairARefusalAndAnUnmeasuredHost();
+
         ProhibitedActionRepairPreview preview = editor.PreviewProhibitedActionRepairs();
         ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
 
-        Assert.Equal(preview.Candidates.Count, report.Repaired.Count);
-        Assert.Equal(preview.Candidates[0].HostObjectNumber, report.Repaired[0].Site.HostObjectNumber);
-        Assert.Equal(preview.Refused.Count, report.Refused.Count);
+        Assert.Single(preview.Candidates);       // the repairable Link /A
+        Assert.Equal(2, preview.Refused.Count);  // the /Next chain + the catalog /OpenAction
+
+        Assert.Equal(preview.Candidates.Select(s => s.HostDescription),
+                     report.Repaired.Select(r => r.Site.HostDescription));
+        Assert.Equal(preview.Candidates.Select(s => s.HostObjectNumber),
+                     report.Repaired.Select(r => r.Site.HostObjectNumber));
+        Assert.Equal(preview.Refused.Select(r => r.Site.HostDescription),
+                     report.Refused.Select(r => r.Site.HostDescription));
+        Assert.Equal(preview.Refused.Select(r => r.Reason), report.Refused.Select(r => r.Reason));
     }
 
     // ---- Task 2 fixtures: /AA triggers, the /Names /JavaScript tree, the unmeasured hosts --------
@@ -759,5 +770,395 @@ public sealed class ProhibitedActionRepairTests
 
         Assert.Single(preview.Candidates);
         Assert.Contains(preview.Refused, r => r.Site.HostDescription == "catalog /OpenAction");
+    }
+
+    // ---- Fix wave (adversarial review): the shapes that reached NEITHER list, and the write hazards
+    //
+    // Every test below exists because the governing invariant was breakable: a site in Repaired must
+    // raise no action-type finding afterwards, and a shape the rule flags must reach Repaired or
+    // Refused -- never neither. Each defect gets a case that fails without its fix AND, where the fix
+    // could over-fire, a control that fails if it does.
+
+    /// <summary>A <c>/Names /JavaScript</c> tree whose single entry's KEY slot is not a
+    /// <c>PdfString</c>. <c>EnumerateNameTree</c> yields a null key for it, while the rule reads the
+    /// tree's VALUES only (<c>ConformanceContext.EnumerateNameTree</c>) and flags the action regardless
+    /// of what the key slot holds.</summary>
+    private static PdfDocumentEditor NewEditorWithUnreadableJavaScriptEntryName(string actionType)
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var pairs = new PdfArray(
+            new PdfName("NotAString"),                     // key slot: a NAME, not a string
+            doc.RegisterObject(MakeAction(actionType)));
+        doc.CatalogDictionary![NamesKey] =
+            new PdfDictionary { [JavaScriptKey] = new PdfDictionary { [NamesKey] = pairs } };
+
+        return editor;
+    }
+
+    /// <summary>A <c>/Names /JavaScript</c> tree holding <c>[ (X) &lt;permitted GoTo&gt; (X)
+    /// &lt;prohibited JavaScript&gt; ]</c> -- one entry name addressing two entries, malformed under
+    /// ISO 32000-1 7.9.6. A removal that matches by name alone deletes the FIRST pair, which is the
+    /// action PDF/A permits, and leaves the prohibited one standing.</summary>
+    private static PdfDocumentEditor NewEditorWithDuplicateJavaScriptEntryName()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var pairs = new PdfArray(
+            PdfString.FromText("X"), doc.RegisterObject(MakeAction("GoTo")),
+            PdfString.FromText("X"), doc.RegisterObject(MakeAction("JavaScript")));
+        doc.CatalogDictionary![NamesKey] =
+            new PdfDictionary { [JavaScriptKey] = new PdfDictionary { [NamesKey] = pairs } };
+
+        return editor;
+    }
+
+    /// <summary>Every <c>(entry name, /S type)</c> pair the saved document's <c>/Names /JavaScript</c>
+    /// leaf still holds, in array order -- so a test can prove WHICH entry survived, not merely how
+    /// many did.</summary>
+    private static List<(string? Name, string? ActionType)> SaveAndReloadJavaScriptEntries(
+        PdfDocumentEditor editor) =>
+        SaveAndReload(editor, d =>
+        {
+            var names = (PdfDictionary)ResolveOrNull(d, d.CatalogDictionary?.Get(NamesKey))!;
+            var leaf = (PdfDictionary)ResolveOrNull(d, names.Get(JavaScriptKey))!;
+            var pairs = (PdfArray)ResolveOrNull(d, leaf.Get(NamesKey))!;
+            var result = new List<(string? Name, string? ActionType)>();
+            for (var i = 0; i + 1 < pairs.Count; i += 2)
+            {
+                string? name = (ResolveOrNull(d, pairs[i]) as PdfString)?.GetText();
+                string? type = ResolveOrNull(d, pairs[i + 1]) is PdfDictionary action
+                    ? (ResolveOrNull(d, action.Get(SKey)) as PdfName)?.Value
+                    : null;
+                result.Add((name, type));
+            }
+
+            return result;
+        });
+
+    /// <summary>A page whose <c>/Annots</c> holds a DIRECT annotation dictionary -- one with no object
+    /// number, which <c>EnumerateIndirectAnnotations</c> skips by design and
+    /// <c>ConformanceContext.CollectAnnotations</c> does not.</summary>
+    private static PdfDocumentEditor NewEditorWithDirectAnnotationAction(string subtype, string actionType)
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDictionary annot = MakeAnnotation(subtype);
+        annot[AKey] = MakeAction(actionType);
+        AddAnnotEntry(editor.Document, 0, annot);   // NOT RegisterObject'd -- direct
+        return editor;
+    }
+
+    private static PdfDocumentEditor NewEditorWithDirectAnnotationTrigger(
+        string subtype, string trigger, string actionType)
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDictionary annot = MakeAnnotation(subtype);
+        annot[AAKey] = new PdfDictionary { [new PdfName(trigger)] = MakeAction(actionType) };
+        AddAnnotEntry(editor.Document, 0, annot);
+        return editor;
+    }
+
+    /// <summary>Two indirect Widgets whose <c>/AA</c> is the SAME indirect dictionary -- legal, and
+    /// distinct from the shared ACTION object the program already handles. Removing a trigger from it
+    /// on behalf of one widget removes it from the other too.</summary>
+    private static PdfDocumentEditor NewEditorWithSharedTriggerDictionary()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference sharedAA = doc.RegisterObject(
+            new PdfDictionary { [new PdfName("E")] = MakeAction("JavaScript") });
+        for (var i = 0; i < 2; i++)
+        {
+            PdfDictionary widget = MakeAnnotation("Widget");
+            widget[AAKey] = sharedAA;
+            AddAnnotEntry(doc, 0, doc.RegisterObject(widget));
+        }
+
+        return editor;
+    }
+
+    /// <summary>A Link whose <c>/A</c> is an action of <paramref name="headType"/> carrying the given
+    /// <c>/Next</c> value verbatim -- including <c>PdfNull.Instance</c>, which is a PRESENT /Next key
+    /// naming no chain at all.</summary>
+    private static PdfDocumentEditor NewEditorWithNextValue(string headType, PdfObject nextValue)
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDictionary head = MakeAction(headType);
+        head[NextKey] = nextValue;
+        AddAnnotEntry(editor.Document, 0, editor.Document.RegisterObject(MakeLink(head)));
+        return editor;
+    }
+
+    /// <summary>One document carrying all three outcomes at once: a repairable Link <c>/A</c>, a Link
+    /// whose <c>/A</c> chain must be refused, and a prohibited catalog <c>/OpenAction</c> (unmeasured
+    /// host). The preview/repair agreement test needs this so its refusal assertion is not
+    /// <c>0 == 0</c>.</summary>
+    private static PdfDocumentEditor NewEditorWithARepairARefusalAndAnUnmeasuredHost()
+    {
+        PdfDocumentEditor editor = NewEditorWithLinkAction("Launch");
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary launchWithPermittedNext = MakeAction("Launch");
+        launchWithPermittedNext[NextKey] = MakeAction("GoTo");
+        AddAnnotEntry(doc, 0, doc.RegisterObject(MakeLink(launchWithPermittedNext)));
+
+        doc.CatalogDictionary![new PdfName("OpenAction")] = MakeAction("Launch");
+        return editor;
+    }
+
+    // ---- MAJOR 1: an unreadable name-tree key ---------------------------------------------------
+
+    [Fact]
+    public void Repair_refuses_a_prohibited_script_whose_name_tree_key_is_unreadable()
+    {
+        PdfDocumentEditor editor = NewEditorWithUnreadableJavaScriptEntryName("JavaScript");
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Null(refusal.Site.HostObjectNumber);      // unfilterable, like the five unmeasured hosts:
+        Assert.Null(refusal.Site.JavaScriptEntryName);   // it genuinely has no address to stage
+        Assert.Contains("unreadable entry name", refusal.Site.HostDescription, StringComparison.Ordinal);
+        Assert.Equal([(null, "JavaScript")], SaveAndReloadJavaScriptEntries(editor));  // left in place
+    }
+
+    [Fact]
+    public void Repair_reports_nothing_for_a_PERMITTED_action_whose_name_tree_key_is_unreadable()
+    {
+        // Discrimination control for the test above: an unreadable key is not itself a finding, so a
+        // refusal here would be a false alarm -- and would pass the test above just as well.
+        PdfDocumentEditor editor = NewEditorWithUnreadableJavaScriptEntryName("GoTo");
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        Assert.Empty(report.Refused);
+    }
+
+    // ---- MAJOR 2: a DIRECT annotation ------------------------------------------------------------
+
+    [Fact]
+    public void Repair_refuses_a_prohibited_action_on_a_DIRECT_annotation()
+    {
+        // EnumerateIndirectAnnotations skips a direct annotation (deliberately -- it is shared with two
+        // other programs); CollectAnnotations does not, so the rule flags this and we said nothing.
+        PdfDocumentEditor editor = NewEditorWithDirectAnnotationAction("Link", "Launch");
+        PdfDictionary annot = SingleAnnotation(editor);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal("direct Link /A", refusal.Site.HostDescription);
+        Assert.Null(refusal.Site.HostObjectNumber);
+        Assert.Null(refusal.Site.JavaScriptEntryName);
+        Assert.True(annot.ContainsKey(AKey), "a refused direct annotation must keep its /A");
+    }
+
+    [Fact]
+    public void Repair_refuses_a_prohibited_trigger_on_a_DIRECT_annotation()
+    {
+        PdfDocumentEditor editor = NewEditorWithDirectAnnotationTrigger("Widget", "E", "JavaScript");
+        PdfDictionary annot = SingleAnnotation(editor);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal("direct Widget /AA /E", refusal.Site.HostDescription);
+        Assert.True(((PdfDictionary)annot.Get(AAKey)!).ContainsKey(new PdfName("E")));
+    }
+
+    [Fact]
+    public void Repair_reports_nothing_for_a_permitted_action_on_a_direct_annotation()
+    {
+        // Discrimination control: the refusal must key off the ACTION being prohibited, not off the
+        // host being direct -- otherwise every document with a direct annotation gets a false alarm.
+        PdfDocumentEditor editor = NewEditorWithDirectAnnotationAction("Link", "GoTo");
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        Assert.Empty(report.Refused);
+    }
+
+    // ---- MAJOR 3: a shared /AA dictionary --------------------------------------------------------
+
+    [Fact]
+    public void Repair_refuses_a_trigger_whose_AA_dictionary_is_shared_between_annotations()
+    {
+        PdfDocumentEditor editor = NewEditorWithSharedTriggerDictionary();
+        (PdfDictionary a, PdfDictionary b) = TwoAnnotations(editor);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        Assert.Equal(2, report.Refused.Count);          // one per host, each told why
+        Assert.All(report.Refused, r => Assert.Contains("shared", r.Reason, StringComparison.Ordinal));
+        Assert.True(SharedTriggers(editor, a).ContainsKey(new PdfName("E")));
+        Assert.True(SharedTriggers(editor, b).ContainsKey(new PdfName("E")));
+    }
+
+    /// <summary>An annotation's <c>/AA</c>, resolved -- the shared-container fixture makes it an
+    /// INDIRECT reference, which is the whole point of the shape and not castable directly.</summary>
+    private static PdfDictionary SharedTriggers(PdfDocumentEditor editor, PdfDictionary annot) =>
+        (PdfDictionary)Resolve(editor.Document, annot.Get(AAKey)!);
+
+    [Fact]
+    public void Repair_refuses_a_shared_AA_trigger_when_only_one_of_its_hosts_is_staged()
+    {
+        // The hazard in its original form: stage widget A only, and the write would strip the trigger
+        // from widget B as well -- while the report said nothing at all about B.
+        PdfDocumentEditor editor = NewEditorWithSharedTriggerDictionary();
+        (PdfDictionary a, PdfDictionary b) = TwoAnnotations(editor);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions(
+            hostObjectNumbers: new HashSet<int> { a.ObjectNumber },
+            javaScriptEntryNames: new HashSet<string>());
+
+        Assert.Empty(report.Repaired);
+        Assert.Single(report.Refused);                                      // only the staged host's
+        Assert.Equal(a.ObjectNumber, report.Refused[0].Site.HostObjectNumber);
+        Assert.True(SharedTriggers(editor, b).ContainsKey(new PdfName("E")),
+                    "an unstaged host's trigger must survive");
+    }
+
+    [Fact]
+    public void Repair_refuses_an_AA_shared_between_an_indirect_and_a_DIRECT_annotation()
+    {
+        // The seam between the two fixes: the direct annotation is only ever REFUSED, so if the shared
+        // scan looks at indirect annotations alone it calls this /AA unshared, repairs it for the
+        // indirect widget, and strips the trigger out from under the direct one -- whose refusal has
+        // just told the caller it was "left in place". A false report is worse than a silent one.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference sharedAA = doc.RegisterObject(
+            new PdfDictionary { [new PdfName("E")] = MakeAction("JavaScript") });
+
+        PdfDictionary indirectWidget = MakeAnnotation("Widget");
+        indirectWidget[AAKey] = sharedAA;
+        AddAnnotEntry(doc, 0, doc.RegisterObject(indirectWidget));
+
+        PdfDictionary directWidget = MakeAnnotation("Widget");
+        directWidget[AAKey] = sharedAA;
+        AddAnnotEntry(doc, 0, directWidget);
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        Assert.Equal(2, report.Refused.Count);   // the indirect host's, and the direct host's
+        Assert.True(SharedTriggers(editor, indirectWidget).ContainsKey(new PdfName("E")),
+                    "a refusal must leave the shared trigger in place");
+    }
+
+    // ---- MAJOR 4: a duplicated name-tree entry name ----------------------------------------------
+
+    [Fact]
+    public void Repair_refuses_a_duplicated_JavaScript_entry_name_and_keeps_the_permitted_twin()
+    {
+        // /Names [ (X) <GoTo> (X) <JavaScript> ]. Matching by name alone deletes the GoTo -- an action
+        // PDF/A PERMITS -- and reports the JavaScript entry, still standing, as Repaired.
+        PdfDocumentEditor editor = NewEditorWithDuplicateJavaScriptEntryName();
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Contains("'X'", refusal.Reason, StringComparison.Ordinal);
+        Assert.Null(refusal.Site.JavaScriptEntryName);   // a name addressing two entries is not an address
+        Assert.Equal([("X", "GoTo"), ("X", "JavaScript")], SaveAndReloadJavaScriptEntries(editor));
+    }
+
+    // ---- MINOR 5: the /Next refusal fired on key presence ----------------------------------------
+
+    [Fact]
+    public void Repair_removes_an_action_whose_Next_names_no_chain()
+    {
+        // A PRESENT /Next key naming nothing to protect -- here an empty chain array. Refusing it was a
+        // missed repair whose stated reason (protecting "chained actions that PDF/A permits") named
+        // nothing that exists.
+        //
+        // NOT written as /Next null, which is the shape that reads most naturally: PdfDictionary.Set
+        // drops a PdfNull value outright (ISO 32000-1 7.3.9 -- a null-valued entry is equivalent to an
+        // absent one), and the parser assigns through the same indexer, so /Next null can never reach a
+        // PdfDictionary in this engine at all. The rule cannot see it either, so the two still agree.
+        PdfDocumentEditor editor = NewEditorWithNextValue("Launch", new PdfArray());
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Single(report.Repaired);
+        Assert.Empty(report.Refused);
+        Assert.False(SingleAnnotation(editor).ContainsKey(AKey));
+    }
+
+    [Fact]
+    public void Repair_removes_an_action_whose_whole_Next_chain_is_prohibited()
+    {
+        // Launch -> Next -> JavaScript: nothing in the chain is worth protecting, and dropping /A makes
+        // the whole chain unreachable, which is exactly the outcome 6.5.1 wants.
+        PdfDocumentEditor editor = NewEditorWithNextValue("Launch", MakeAction("JavaScript"));
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Single(report.Repaired);
+        Assert.Empty(report.Refused);
+        Assert.False(SingleAnnotation(editor).ContainsKey(AKey));
+    }
+
+    [Fact]
+    public void The_Next_refusal_reason_names_the_permitted_action_it_protects()
+    {
+        // The don't-over-repair control paired with the two tests above (and green both before and
+        // after the fix, as a control should be): this shape stays refused BECAUSE the chain reaches a
+        // permitted GoTo. Without it, "refuse only a chain worth protecting" would be satisfied just as
+        // well by code that stopped refusing chains altogether.
+        PdfDocumentEditor editor = NewEditorWithChainedAction();
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Contains("/Next", refusal.Reason, StringComparison.Ordinal);
+        Assert.Contains("permits", refusal.Reason, StringComparison.Ordinal);
+    }
+
+    // ---- MINOR 8: the main repair path had no save-round-trip proof ------------------------------
+
+    [Fact]
+    public void The_Link_A_removal_survives_a_save_round_trip()
+    {
+        // Every /A and /AA assertion above reads the in-memory dictionary. This path carries all 1365
+        // measured findings, and this codebase has already shipped an unsavable fix once.
+        PdfDocumentEditor editor = NewEditorWithLinkAction("Launch");
+        editor.RepairProhibitedActions();
+
+        bool actionSurvived = SaveAndReload(editor, d =>
+            ResolveOrNull(d, ((PdfArray)PageTreeOps.PageDicts(d)[0].Get(AnnotsKey)!)[0])
+                is PdfDictionary link
+            && link.ContainsKey(AKey));
+
+        Assert.False(actionSurvived, "the removed /A must not come back through the writer");
+    }
+
+    [Fact]
+    public void The_AA_trigger_removal_survives_a_save_round_trip()
+    {
+        PdfDocumentEditor editor = NewEditorWithWidgetAA(prohibitedTrigger: "E", permittedTrigger: "X");
+        editor.RepairProhibitedActions();
+
+        (bool HasE, bool HasX) survived = SaveAndReload(editor, d =>
+        {
+            var widget = (PdfDictionary)ResolveOrNull(
+                d, ((PdfArray)PageTreeOps.PageDicts(d)[0].Get(AnnotsKey)!)[0])!;
+            var aa = (PdfDictionary)ResolveOrNull(d, widget.Get(AAKey))!;
+            return (aa.ContainsKey(new PdfName("E")), aa.ContainsKey(new PdfName("X")));
+        });
+
+        Assert.False(survived.HasE, "the removed /AA /E trigger must not come back through the writer");
+        Assert.True(survived.HasX, "the permitted /AA /X trigger must survive the writer");
     }
 }

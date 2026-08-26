@@ -1,6 +1,7 @@
 using System.Linq;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 
 namespace PdfLibrary.Editing;
 
@@ -112,9 +113,21 @@ public sealed partial class PdfDocumentEditor
     ///     named by <see cref="ProhibitedActionSite.JavaScriptEntryName"/> from the tree.</item>
     /// </list>
     /// The five unmeasured hosts never produce a candidate at all -- they only ever produce a refusal --
-    /// which is why this record has no shape for them.</summary>
+    /// which is why this record has no shape for them.
+    ///
+    /// <para><b>Exclusivity is not expressible in the type</b> -- all three payload members are
+    /// optional, so nothing here stops a future producer building, say, <see cref="Triggers"/> without
+    /// <see cref="TriggerKey"/>. <see cref="RepairProhibitedActions"/>'s write switch answers that with
+    /// a throw on any shape outside the three above, rather than letting it fall through to the wrong
+    /// write and be reported as <c>Repaired</c>.</para>
+    ///
+    /// <para><see cref="Action"/> is the resolved action dictionary this site was CLASSIFIED against,
+    /// carried on every shape. The name-tree write needs it: an entry name alone is not enough to find
+    /// the right pair when the tree is malformed, so the removal matches on name AND on reference
+    /// identity with this exact object.</para></summary>
     private sealed record ProhibitedActionCandidate(
         ProhibitedActionSite Site,
+        PdfDictionary Action,
         PdfDictionary? Annotation = null,
         PdfDictionary? Triggers = null,
         PdfName? TriggerKey = null);
@@ -145,33 +158,34 @@ public sealed partial class PdfDocumentEditor
             : ProhibitedActionKind.DisallowedNamed;
     }
 
-    /// <summary>A reason to refuse this site, or null to proceed. Refusing here -- rather than repairing
-    /// and hoping -- is what makes an entry in <see cref="ProhibitedActionRepairReport.Repaired"/> mean
-    /// the site raises no finding afterwards: <see cref="ClassifyProhibitedActions"/> consults this
-    /// (through <see cref="EvaluateAction"/>) BEFORE ever adding a site to its candidate list, never
-    /// after.</summary>
-    private string? RefuseReason(PdfDictionary action, string hostDescription)
-    {
-        if (action.ContainsKey(NextActionKey))
-            return $"The action on {hostDescription} carries a /Next chain; removing the reference would "
-                 + "also remove chained actions that PDF/A permits.";
-        return null;
-    }
-
-    /// <summary>True when any action reachable down <paramref name="head"/>'s <c>/Next</c> chain is
-    /// prohibited. The head itself is not examined -- the caller has already classified it.
+    /// <summary>What <paramref name="head"/>'s <c>/Next</c> chain actually contains -- BOTH facts from
+    /// ONE traversal, because both questions get asked about every chain and a second walker would be a
+    /// second chance to disagree with this one. The head itself is never examined; the caller has
+    /// already classified it.
     ///
     /// <para><c>/Next</c> is legally either a single action dictionary or an array of them, and both
     /// shapes are followed, exactly as <c>ActionTypeRule.CollectActions</c> does (<c>:98-103</c>): a
     /// chain the rule walks but this does not is a finding the repair reports as absent.</para>
     ///
+    /// <para>Unlike the rule's walk this one cannot stop early -- <c>CarriesPermitted</c> is only known
+    /// once the whole chain has been seen. The budget still bounds it.</para>
+    ///
     /// <para>Cycle-guarded on object number, which is the only cycle a real chain can form -- a direct
     /// dictionary cannot contain itself, so a loop must pass through an indirect reference. The budget
-    /// bounds the merely-enormous case the cycle guard cannot.</para></summary>
-    private bool ChainCarriesProhibitedAction(PdfDictionary head)
+    /// bounds the merely-enormous case the cycle guard cannot.</para>
+    ///
+    /// <para>The <c>ContainsKey</c> fast path is not just an optimisation: almost no action carries a
+    /// <c>/Next</c> at all (zero in the measured corpus), and this runs once per action on every host
+    /// walk, so the common case must not allocate a stack and a visited set to discover nothing.</para></summary>
+    private (bool CarriesProhibited, bool CarriesPermitted) InspectNextChain(PdfDictionary head)
     {
+        if (!head.ContainsKey(NextActionKey))
+            return (false, false);
+
         var visited = new HashSet<int>();
         var stack = new Stack<PdfObject?>();
+        var carriesProhibited = false;
+        var carriesPermitted = false;
         PushChain(head);
 
         for (int budget = ActionWalkBudget; stack.Count > 0 && budget > 0; budget--)
@@ -180,12 +194,14 @@ public sealed partial class PdfDocumentEditor
                 continue; // a destination array, a name or a null is not an action -- the rule skips it too
             if (action.IsIndirect && !visited.Add(action.ObjectNumber))
                 continue;
-            if (ClassifyAction(action) is not null)
-                return true;
+            if (ClassifyAction(action) is null)
+                carriesPermitted = true;
+            else
+                carriesProhibited = true;
             PushChain(action);
         }
 
-        return false;
+        return (carriesProhibited, carriesPermitted);
 
         void PushChain(PdfDictionary action)
         {
@@ -205,17 +221,34 @@ public sealed partial class PdfDocumentEditor
     /// report at this site, otherwise the kind plus a refusal reason (null reason = repairable).
     /// Factored out so a new host kind cannot accidentally get different semantics from the ones already
     /// here -- the failure mode being that a shape the rule flags reaches neither list, which is silence
-    /// indistinguishable from success.</summary>
+    /// indistinguishable from success.
+    ///
+    /// <para><b>A <c>/Next</c> chain is refused only when it holds something worth protecting.</b> The
+    /// original test was "is the <c>/Next</c> key present?", which was wrong in both directions: it
+    /// refused a chain whose every action is ITSELF prohibited -- where removing the host reference makes
+    /// the whole chain unreachable and cleans the document -- while telling the user we did it to protect
+    /// "chained actions that PDF/A permits" that were not there. A refusal reason that can be false is
+    /// worse than no reason. (Note for the shape that reads most naturally as the other half of that
+    /// defect, <c>/Next null</c>: it cannot occur. <c>PdfDictionary.Set</c> drops a
+    /// <c>PdfNull</c> value outright, per ISO 32000-1 7.3.9, and the parser assigns through the same
+    /// indexer -- so the key never reaches a dictionary, here or in the rule.)</para></summary>
     private (ProhibitedActionKind Kind, string? RefuseReason)? EvaluateAction(
         PdfDictionary action, string hostDescription)
     {
         ProhibitedActionKind? kind = ClassifyAction(action);
+        (bool chainCarriesProhibited, bool chainCarriesPermitted) = InspectNextChain(action);
+
         if (kind is not null)
-            return (kind.Value, RefuseReason(action, hostDescription));
+        {
+            return (kind.Value, chainCarriesPermitted
+                ? $"The action on {hostDescription} carries a /Next chain that reaches an action PDF/A "
+                + "permits; removing the reference would remove that permitted action too."
+                : null);
+        }
 
         // Head permitted, but the /Next chain can still hide an action the rule WILL flag. Reading the
         // head alone landed such a site in neither list.
-        if (ChainCarriesProhibitedAction(action))
+        if (chainCarriesProhibited)
             return (ProhibitedActionKind.OtherProhibited,
                     $"A permitted action on {hostDescription} carries a /Next chain containing an action "
                   + "PDF/A prohibits; removing the reference would also remove the permitted head.");
@@ -232,28 +265,32 @@ public sealed partial class PdfDocumentEditor
     ///
     /// <para>Four passes, in this order because the later ones depend on the first:
     /// <list type="number">
-    ///   <item>every annotation's <c>/A</c> and <c>/AA</c> triggers (<see cref="EnumerateIndirectAnnotations"/>)
-    ///     -- the whole measured population, and the only pass that produces repairs on a host;</item>
+    ///   <item>every INDIRECT annotation's <c>/A</c> and <c>/AA</c> triggers
+    ///     (<see cref="EnumerateIndirectAnnotations"/>) -- the whole measured population, and the only
+    ///     pass that produces repairs on a host;</item>
     ///   <item>the catalog's <c>/Names /JavaScript</c> name tree -- document-level scripts, addressed by
     ///     entry name because they have no object number of their own;</item>
+    ///   <item>the DIRECT annotations pass 1 skips (<see cref="ClassifyDirectAnnotations"/>) -- refused,
+    ///     never repaired, because they have no object number for a caller to stage;</item>
     ///   <item>the five hosts this repair refuses (catalog <c>/OpenAction</c>, catalog <c>/AA</c>, page
     ///     <c>/AA</c>, outline <c>/A</c>, a pure field dictionary), which is why pass 1 records the
     ///     object number of every annotation it saw: a field dictionary is "pure" precisely when it is
     ///     not one of them.</item>
     /// </list></para>
     ///
-    /// <para><b>Why the refused hosts are walked rather than merely declared.</b> Not one of them is
-    /// reachable from <see cref="EnumerateIndirectAnnotations"/>. A refusal that fires only when some
-    /// other walk happens to reach the host would never fire at all: the shape would pass in silence and
-    /// the report would say "nothing to refuse" about a document with a 6.5.1 defect we deliberately
-    /// chose not to repair. Refusing is supposed to make an unmeasured shape surface loudly, so the
-    /// classifier has to go and look.</para>
+    /// <para><b>Why passes 3 and 4 walk their hosts rather than merely declaring them.</b> Not one of
+    /// those hosts is reachable from <see cref="EnumerateIndirectAnnotations"/> -- a direct annotation
+    /// least of all, since that walk skips it on purpose. A refusal that fires only when some other walk
+    /// happens to reach the host would never fire at all: the shape would pass in silence and the report
+    /// would say "nothing to refuse" about a document with a 6.5.1 defect we deliberately chose not to
+    /// repair. Refusing is supposed to make an unrepairable shape surface loudly, so the classifier has
+    /// to go and look.</para>
     ///
-    /// <para>Candidates carry the resolved host dictionary alongside the public
+    /// <para>Candidates carry the resolved host dictionary and the resolved action alongside the public
     /// <see cref="ProhibitedActionSite"/> record -- never exposed on the record itself, which only ever
     /// carries the object number a caller can address -- so <see cref="RepairProhibitedActions"/> can
-    /// write directly to the same, already-resolved dictionary this method classified, with no second
-    /// annotation walk to re-locate it.</para></summary>
+    /// write directly to the same, already-resolved dictionaries this method classified, with no second
+    /// annotation walk to re-locate them.</para></summary>
     private (List<ProhibitedActionCandidate> Candidates, List<ProhibitedActionRefusal> Refused)
         ClassifyProhibitedActions()
     {
@@ -261,23 +298,82 @@ public sealed partial class PdfDocumentEditor
         var refusals = new List<ProhibitedActionRefusal>();
         var annotationObjectNumbers = new HashSet<int>();
 
+        // Runs before the loop, not inside it: whether a container is shared is a fact about the whole
+        // document, never about the annotation currently in hand.
+        HashSet<PdfDictionary> sharedTriggers = SharedTriggerDictionaries();
+
         foreach ((PdfDictionary annot, int _) in EnumerateIndirectAnnotations())
         {
             annotationObjectNumbers.Add(annot.ObjectNumber);
             string subtype = ResolveObject(annot.Get(SubtypeKey)) is PdfName { Value: { } sub } ? sub : "?";
 
             ClassifyAnnotationAction(annot, subtype, candidates, refusals);
-            ClassifyAnnotationTriggers(annot, subtype, candidates, refusals);
+            ClassifyAnnotationTriggers(annot, subtype, sharedTriggers, candidates, refusals);
         }
 
         ClassifyJavaScriptNameTree(candidates, refusals);
+        ClassifyDirectAnnotations(refusals);
         ClassifyUnmeasuredHosts(annotationObjectNumbers, refusals);
 
         return (candidates, refusals);
     }
 
+    /// <summary>Every <c>/AA</c> dictionary that more than one annotation reaches, by REFERENCE identity
+    /// on the resolved dictionary -- which is exact here, because
+    /// <c>PdfDocument.GetObject</c> caches, so two references to one object resolve to one instance.
+    ///
+    /// <para>Two annotations may legally share an indirect <c>/AA</c>. Removing a trigger from it on
+    /// behalf of the widget a caller staged removes it from the widget it did not, leaving that second
+    /// annotation pointing at a container this repair emptied while the report said nothing about it --
+    /// the same hazard the program already closed for shared ACTION objects ("deleting an object would
+    /// affect hosts the caller never selected"), missed for the shared CONTAINER.</para>
+    ///
+    /// <para>Whether any corpus document actually has a shared <c>/AA</c> is <b>unmeasured</b>; the 67
+    /// measured widget-<c>/AA</c> findings were never checked for it. So this deliberately refuses only
+    /// the shared ones and leaves the ordinary unshared case repairing exactly as before -- widget
+    /// <c>/AA</c> is 67 of 1365 findings across 4 documents and the board movement depends on them.
+    /// Task 5's re-preflight of the saved bytes is where a corpus that does contain one would show
+    /// up.</para>
+    ///
+    /// <para><b>Every annotation entry counts, direct as well as indirect</b>, which is why this walks
+    /// the pages itself instead of taking <see cref="EnumerateIndirectAnnotations"/>'s output. A direct
+    /// annotation is only ever refused (<see cref="ClassifyDirectAnnotations"/>) -- so if the scan
+    /// skipped it, an <c>/AA</c> it shares with an indirect widget would read as unshared, the widget's
+    /// repair would strip the trigger, and the direct annotation's refusal would have told the caller it
+    /// was "left in place" moments before it was removed. A FALSE report is worse than a silent
+    /// one.</para>
+    ///
+    /// <para>The annotation itself is deduped by reference first: one annotation listed on two pages is
+    /// one host, and counting its <c>/AA</c> twice would flag every such document as shared. This
+    /// deliberately does NOT consider an <c>/AA</c> shared with a non-annotation host (a pure field, a
+    /// page, the catalog) -- those hosts are refused wholesale so nothing repairs through them today,
+    /// and no such sharing has been measured; it is written here rather than left to be
+    /// rediscovered.</para></summary>
+    private HashSet<PdfDictionary> SharedTriggerDictionaries()
+    {
+        var seenAnnotations = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var shared = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+
+        foreach (PdfPage page in _document.GetPages())
+        {
+            if (page.GetAnnotations() is not { } annots)
+                continue;
+
+            foreach (PdfObject entry in annots)
+            {
+                if (ResolveObject(entry) is not PdfDictionary annot || !seenAnnotations.Add(annot))
+                    continue;
+                if (ResolveObject(annot.Get(AdditionalActionsKey)) is PdfDictionary triggers && !seen.Add(triggers))
+                    shared.Add(triggers);
+            }
+        }
+
+        return shared;
+    }
+
     /// <summary>An annotation's own <c>/A</c> -- Link and Widget alike. Neither
-    /// <see cref="ProhibitedActionKind"/> nor <see cref="RefuseReason"/> distinguishes subtype; only
+    /// <see cref="ProhibitedActionKind"/> nor <see cref="EvaluateAction"/> distinguishes subtype; only
     /// <see cref="ProhibitedActionSite.HostDescription"/> does, built from the annotation's own
     /// <c>/Subtype</c>.</summary>
     private void ClassifyAnnotationAction(
@@ -297,7 +393,7 @@ public sealed partial class PdfDocumentEditor
         if (evaluation.RefuseReason is { } reason)
             refusals.Add(new ProhibitedActionRefusal(site, reason));
         else
-            candidates.Add(new ProhibitedActionCandidate(site, Annotation: annot));
+            candidates.Add(new ProhibitedActionCandidate(site, action, Annotation: annot));
     }
 
     /// <summary>An annotation's <c>/AA</c> additional-actions dictionary, one site per trigger. Each
@@ -308,15 +404,24 @@ public sealed partial class PdfDocumentEditor
     /// <c>/AA</c> -- the write happens later, in <see cref="RepairProhibitedActions"/>, against this
     /// already-resolved dictionary -- but enumerating a dictionary's own <c>Keys</c> while the same
     /// dictionary is being edited is the obvious bug in this shape, and the snapshot means a future
-    /// edit here cannot introduce it.</para></summary>
+    /// edit here cannot introduce it.</para>
+    ///
+    /// <para>A trigger inside an <c>/AA</c> that <paramref name="sharedTriggers"/> says two annotations
+    /// reach is REFUSED rather than repaired -- see <see cref="SharedTriggerDictionaries"/> for why, and
+    /// for why this is not solved by cloning the container on write. When a site is refusable for both
+    /// that reason and <see cref="EvaluateAction"/>'s own, the chain reason wins: it is the more specific
+    /// of the two, and the site is a refusal either way, which is all the invariant asks.</para></summary>
     private void ClassifyAnnotationTriggers(
         PdfDictionary annot,
         string subtype,
+        HashSet<PdfDictionary> sharedTriggers,
         List<ProhibitedActionCandidate> candidates,
         List<ProhibitedActionRefusal> refusals)
     {
         if (ResolveObject(annot.Get(AdditionalActionsKey)) is not PdfDictionary triggers)
             return;
+
+        bool shared = sharedTriggers.Contains(triggers);
 
         foreach (PdfName triggerKey in triggers.Keys.ToList())
         {
@@ -330,38 +435,172 @@ public sealed partial class PdfDocumentEditor
             var site = new ProhibitedActionSite(annot.ObjectNumber, null, hostDescription, evaluation.Kind);
             if (evaluation.RefuseReason is { } reason)
                 refusals.Add(new ProhibitedActionRefusal(site, reason));
+            else if (shared)
+                refusals.Add(new ProhibitedActionRefusal(
+                    site,
+                    $"The prohibited action on {hostDescription} was left in place: that annotation's "
+                  + "/AA dictionary is shared between hosts, so removing the trigger would also alter an "
+                  + "annotation the caller did not select, with nothing in this report to say so. Remove "
+                  + "it by hand, or give each annotation its own /AA first."));
             else
-                candidates.Add(new ProhibitedActionCandidate(site, Annotation: annot, Triggers: triggers,
-                                                             TriggerKey: triggerKey));
+                candidates.Add(new ProhibitedActionCandidate(site, action, Annotation: annot,
+                                                             Triggers: triggers, TriggerKey: triggerKey));
         }
     }
 
     /// <summary>The catalog's <c>/Names /JavaScript</c> name tree -- document-level scripts, which the
     /// rule reaches through <c>EnqueueJavaScriptNames</c>. Sites are addressed by entry NAME: the tree's
     /// values are usually indirect actions, but the thing a caller stages and this repair removes is the
-    /// name/value pair, and two entries can legally share one action object.</summary>
+    /// name/value pair, and two entries can legally share one action object.
+    ///
+    /// <para><b>Two malformed shapes are refused rather than skipped, and both carry NEITHER address</b>
+    /// (see <see cref="IsSelected"/>) because neither has one a caller could stage:
+    /// <list type="bullet">
+    ///   <item><b>an unreadable entry name</b> -- <see cref="EnumerateNameTree"/> yields a null key when
+    ///     the pair's key slot is not a <c>PdfString</c>. Skipping it was silence:
+    ///     <c>ConformanceContext.EnumerateNameTree</c> yields VALUES only, so the rule flags the action
+    ///     whatever the key slot holds;</item>
+    ///   <item><b>a duplicated entry name</b> -- malformed under ISO 32000-1 7.9.6. A name that
+    ///     addresses two entries is not an address: a caller staging it cannot say which it meant, and
+    ///     removing the first pair whose key text matches could delete an action PDF/A PERMITS while
+    ///     leaving the prohibited one standing and reporting it as repaired.</item>
+    /// </list>
+    /// Both checks run AFTER <see cref="EvaluateAction"/>, never before: a malformed key on a PERMITTED
+    /// action raises no finding, so refusing it would be a false alarm the user cannot act on.</para></summary>
     private void ClassifyJavaScriptNameTree(
         List<ProhibitedActionCandidate> candidates, List<ProhibitedActionRefusal> refusals)
     {
         if (CatalogNamesDictionary() is not { } names)
             return;
 
-        foreach ((string? entryName, PdfObject value) in EnumerateNameTree(names.Get(JavaScriptTreeKey)))
+        PdfObject? tree = names.Get(JavaScriptTreeKey);
+        HashSet<string> duplicated = DuplicatedNameTreeEntryNames(tree);
+
+        foreach ((string? entryName, PdfObject value) in EnumerateNameTree(tree))
         {
-            if (entryName is null) continue;               // an unreadable key is not an address
             if (ResolveObject(value) is not PdfDictionary action) continue;
 
-            const string hostDescription = "Names/JavaScript";
+            bool isDuplicate = entryName is not null && duplicated.Contains(entryName);
+            string hostDescription = entryName is null
+                ? "Names/JavaScript (unreadable entry name)"
+                : isDuplicate
+                    ? $"Names/JavaScript (duplicate entry name '{entryName}')"
+                    : "Names/JavaScript";
+
             if (EvaluateAction(action, hostDescription) is not { } evaluation)
                 continue;
+
+            if (entryName is null)
+            {
+                refusals.Add(new ProhibitedActionRefusal(
+                    new ProhibitedActionSite(null, null, hostDescription, evaluation.Kind),
+                    "A prohibited document-level script was left in place: its /Names /JavaScript entry "
+                  + "key is not a string, so the entry has no name for a caller to stage and none this "
+                  + "repair could remove it by. Fix the key, or remove the entry by hand."));
+                continue;
+            }
+
+            if (isDuplicate)
+            {
+                refusals.Add(new ProhibitedActionRefusal(
+                    new ProhibitedActionSite(null, null, hostDescription, evaluation.Kind),
+                    $"The /Names /JavaScript entry name '{entryName}' occurs more than once in the tree, "
+                  + "which ISO 32000-1 7.9.6 does not permit. A name addressing two entries is not an "
+                  + "address: this repair cannot tell which one a caller staging it meant, and removing "
+                  + "by name could delete an action PDF/A permits. Left in place; de-duplicate the "
+                  + "tree."));
+                continue;
+            }
 
             var site = new ProhibitedActionSite(null, entryName, hostDescription, evaluation.Kind);
             if (evaluation.RefuseReason is { } reason)
                 refusals.Add(new ProhibitedActionRefusal(site, reason));
             else
-                candidates.Add(new ProhibitedActionCandidate(site));
+                candidates.Add(new ProhibitedActionCandidate(site, action));
         }
     }
+
+    /// <summary>Every entry name that occurs more than once anywhere in <paramref name="tree"/>.
+    /// Counts EVERY entry -- including ones whose value is not an action and ones whose action PDF/A
+    /// permits -- because what is ambiguous is the NAME, and a permitted twin is exactly the entry a
+    /// name-matching removal would destroy.</summary>
+    private HashSet<string> DuplicatedNameTreeEntryNames(PdfObject? tree)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var duplicated = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach ((string? entryName, PdfObject _) in EnumerateNameTree(tree))
+            if (entryName is not null && !seen.Add(entryName))
+                duplicated.Add(entryName);
+
+        return duplicated;
+    }
+
+    /// <summary>The annotations <see cref="EnumerateIndirectAnnotations"/> drops: a page <c>/Annots</c>
+    /// entry that resolves to a DIRECT dictionary. That walk skips them deliberately (its own doc
+    /// comment says so, and two other remediation programs share it), but
+    /// <c>ConformanceContext.CollectAnnotations</c> does NOT -- it only dedups indirect ones -- so
+    /// <c>ActionTypeRule</c> flags a direct Link whose <c>/A</c> is a Launch and, until this pass
+    /// existed, we reported it in neither list. The pure-field walk does not catch it either: a plain
+    /// Link is not in the AcroForm <c>/Fields</c> tree.
+    ///
+    /// <para>Refused, never repaired, with BOTH addresses null so the refusal is unfilterable
+    /// (see <see cref="IsSelected"/>): there is no object number for a caller to stage, which is the
+    /// same reason the five unmeasured hosts report themselves that way. <c>"direct"</c> in the
+    /// description carries the whole identity, because there is no number to name.</para>
+    ///
+    /// <para><b>Do not "fix" this shape by hard-blocking on a null <c>ObjectNumber</c> anywhere.</b> For
+    /// this rule a Finding's <c>ObjectNumber</c> is the ACTION's, not the host's, and 444 of the 1365
+    /// measured findings have none because their actions are direct dictionaries inline in an INDIRECT
+    /// annotation -- those are repairable, and they are this program's single largest lever. "Null
+    /// object number" and "unaddressable host" are different facts here, and only this walk can tell
+    /// them apart, which is why the refusal has to be raised here rather than in the layer above.</para>
+    ///
+    /// <para>Deduped by reference: one direct dictionary listed on two pages is one host, and the rule
+    /// dedups the action it reaches the same way (<c>CollectActions</c>' <c>directSeen</c>).</para></summary>
+    private void ClassifyDirectAnnotations(List<ProhibitedActionRefusal> refusals)
+    {
+        var seen = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+
+        foreach (PdfPage page in _document.GetPages())
+        {
+            if (page.GetAnnotations() is not { } annots)
+                continue;
+
+            foreach (PdfObject entry in annots)
+            {
+                if (ResolveObject(entry) is not PdfDictionary annot)
+                    continue;   // does not resolve to a dictionary -- the rule skips it too
+                if (annot.IsIndirect)
+                    continue;   // the indirect walk owns it, and repairs it
+                if (!seen.Add(annot))
+                    continue;
+
+                string subtype = ResolveObject(annot.Get(SubtypeKey)) is PdfName { Value: { } sub } ? sub : "?";
+                RefuseDirectAnnotationHost(annot.Get(ActionKey), $"direct {subtype} /A", refusals);
+
+                if (ResolveObject(annot.Get(AdditionalActionsKey)) is not PdfDictionary triggers)
+                    continue;
+                foreach (PdfName triggerKey in triggers.Keys.ToList())
+                {
+                    RefuseDirectAnnotationHost(
+                        triggers.Get(triggerKey), $"direct {subtype} /AA /{triggerKey.Value}", refusals);
+                }
+            }
+        }
+    }
+
+    /// <summary>Records the refusal for one direct-annotation site, or nothing at all when the value is
+    /// not an action dictionary or the action it names is permitted -- a direct host is not itself a
+    /// finding, so a refusal for a permitted action on one would be a false alarm.</summary>
+    private void RefuseDirectAnnotationHost(
+        PdfObject? actionValue, string hostDescription, List<ProhibitedActionRefusal> refusals) =>
+        RefuseAddresslessSite(
+            actionValue, hostDescription, refusals,
+            $"The prohibited action on {hostDescription} was left in place. Its host annotation is a "
+          + "direct dictionary in a page's /Annots array, so it has no object number for a caller to "
+          + "stage and this repair has no address to write against; remove it by hand, or make the "
+          + "annotation an indirect object first.");
 
     /// <summary>Walks the five hosts this repair refuses and records a refusal at each one that actually
     /// carries a prohibited action. See <see cref="ClassifyProhibitedActions"/> for why they are walked
@@ -396,22 +635,36 @@ public sealed partial class PdfDocumentEditor
     /// <summary>Records a refusal for one unmeasured host, or nothing at all when the value is not an
     /// action dictionary or the action it names is permitted.</summary>
     private void RefuseUnmeasuredHost(
-        PdfObject? actionValue, string hostDescription, List<ProhibitedActionRefusal> refusals)
+        PdfObject? actionValue, string hostDescription, List<ProhibitedActionRefusal> refusals) =>
+        RefuseAddresslessSite(
+            actionValue, hostDescription, refusals,
+            $"The prohibited action on {hostDescription} was left in place. That host carries no "
+          + "prohibited action anywhere in the measured corpus, so this repair has no tested behaviour "
+          + "for it and reports it rather than guessing; remove it by hand, or raise it so the host can "
+          + "be measured and handled.");
+
+    /// <summary>The shared core of every refusal whose site carries NEITHER address: resolve, evaluate,
+    /// and record only when the action is actually prohibited.
+    ///
+    /// <para><c>HostObjectNumber</c> and <c>JavaScriptEntryName</c> are both null on purpose: an
+    /// unaddressable site is one a caller's staged set cannot filter away (see <see cref="IsSelected"/>),
+    /// and this refusal is the caller's only signal that a shape this repair will not touch is present
+    /// in its document.</para>
+    ///
+    /// <para><paramref name="reason"/> is built by the caller before the prohibited-action test, so it
+    /// is composed for hosts that turn out permitted too. These walks are the catalog, the page list,
+    /// the outline tree and the field tree -- small enough that the interpolation is not worth an
+    /// indirection to defer.</para></summary>
+    private void RefuseAddresslessSite(
+        PdfObject? actionValue, string hostDescription, List<ProhibitedActionRefusal> refusals, string reason)
     {
         if (ResolveObject(actionValue) is not PdfDictionary action)
             return;
         if (EvaluateAction(action, hostDescription) is not { } evaluation)
             return;
 
-        // HostObjectNumber and JavaScriptEntryName are BOTH null on purpose: an unaddressable site is
-        // one a caller's staged set cannot filter away (see IsSelected), and this refusal is the
-        // caller's only signal that a shape nobody measured is present in its document.
         refusals.Add(new ProhibitedActionRefusal(
-            new ProhibitedActionSite(null, null, hostDescription, evaluation.Kind),
-            $"The prohibited action on {hostDescription} was left in place. That host carries no "
-          + "prohibited action anywhere in the measured corpus, so this repair has no tested behaviour "
-          + "for it and reports it rather than guessing; remove it by hand, or raise it so the host can "
-          + "be measured and handled."));
+            new ProhibitedActionSite(null, null, hostDescription, evaluation.Kind), reason));
     }
 
     /// <summary>Every trigger in an unmeasured host's <c>/AA</c> dictionary, described as
@@ -517,8 +770,19 @@ public sealed partial class PdfDocumentEditor
     ///
     /// <para>Matches on <c>GetText()</c>, which is how <see cref="EnumerateNameTree"/> produced the name
     /// this repair is removing. Matching on anything else would let a site be reported under one
-    /// spelling and looked up under another.</para></summary>
-    private bool RemoveFromNameTree(PdfObject? node, string name, HashSet<int> visited)
+    /// spelling and looked up under another.</para>
+    ///
+    /// <para><b>And on identity</b>: the pair's VALUE must resolve to the very
+    /// <paramref name="action"/> dictionary the classifier judged, which is exact because
+    /// <c>PdfDocument.GetObject</c> caches, so two references to one object resolve to one instance.
+    /// The name alone was enough to delete the WRONG pair in a tree with a duplicated key, which is
+    /// malformed but not impossible. <see cref="ClassifyJavaScriptNameTree"/> now refuses a duplicated
+    /// name outright, so on today's code paths this second lock never turns -- it is kept because it
+    /// costs one comparison and because "the write removes exactly what the classifier chose" should be
+    /// a property of this method, not a consequence of a check somewhere else. It is deliberately NOT an
+    /// index carried from classification: indices shift when an earlier pair in the same array is
+    /// removed in the same batch.</para></summary>
+    private bool RemoveFromNameTree(PdfObject? node, string name, PdfDictionary action, HashSet<int> visited)
     {
         if (ResolveObject(node) is not PdfDictionary dictionary)
             return false;
@@ -530,7 +794,8 @@ public sealed partial class PdfDocumentEditor
             for (var i = 0; i + 1 < pairs.Count; i += 2)
             {
                 if (ResolveObject(pairs[i]) is not PdfString key
-                    || !string.Equals(key.GetText(), name, StringComparison.Ordinal))
+                    || !string.Equals(key.GetText(), name, StringComparison.Ordinal)
+                    || !ReferenceEquals(ResolveObject(pairs[i + 1]), action))
                 {
                     continue;
                 }
@@ -543,7 +808,7 @@ public sealed partial class PdfDocumentEditor
 
         if (ResolveObject(dictionary.Get(KidsKey)) is PdfArray kids)
             foreach (PdfObject kid in kids)
-                if (RemoveFromNameTree(kid, name, visited))
+                if (RemoveFromNameTree(kid, name, action, visited))
                     return true;
 
         return false;
@@ -627,27 +892,49 @@ public sealed partial class PdfDocumentEditor
             if (!IsSelected(candidate.Site, hostObjectNumbers, javaScriptEntryNames))
                 continue;
 
-            if (candidate.Triggers is { } triggers && candidate.TriggerKey is { } triggerKey)
+            // Each case matches ONE of ProhibitedActionCandidate's three shapes exhaustively -- every
+            // payload member named in every case, so a shape outside them cannot fall through to a
+            // neighbour's write. That is what the default arm is for: the record makes all three members
+            // optional, so a future producer building (say) Triggers with a null TriggerKey would
+            // otherwise have removed the host's /A instead and been reported as Repaired. Throw-on-
+            // unknown is the discipline this codebase already adopted at the AnnotationAppearances write
+            // switch (:404-416) and at five DrawCommand walk sites before it.
+            switch (candidate)
             {
-                triggers.Remove(triggerKey);
-                if (triggers.Count == 0)
-                    candidate.Annotation!.Remove(AdditionalActionsKey);
-            }
-            else if (candidate.Annotation is { } annotation)
-            {
-                annotation.Remove(ActionKey);
-            }
-            else
-            {
-                if (!RemoveFromNameTree(
-                        CatalogNamesDictionary()?.Get(JavaScriptTreeKey),
-                        candidate.Site.JavaScriptEntryName!,
-                        []))
-                {
-                    continue; // never found -- report nothing rather than a repair that did not happen
-                }
+                case { Annotation: { } annotation, Triggers: { } triggers, TriggerKey: { } triggerKey }:
+                    triggers.Remove(triggerKey);
+                    if (triggers.Count == 0)
+                        annotation.Remove(AdditionalActionsKey);
+                    break;
 
-                removedAnyJavaScriptEntry = true;
+                case { Annotation: { } annotation, Triggers: null, TriggerKey: null }:
+                    annotation.Remove(ActionKey);
+                    break;
+
+                case { Annotation: null, Triggers: null, TriggerKey: null,
+                       Site.JavaScriptEntryName: { } entryName }:
+                    if (!RemoveFromNameTree(
+                            CatalogNamesDictionary()?.Get(JavaScriptTreeKey),
+                            entryName,
+                            candidate.Action,
+                            []))
+                    {
+                        continue; // never found -- report nothing rather than a repair that did not happen
+                    }
+
+                    removedAnyJavaScriptEntry = true;
+                    break;
+
+                default:
+                    throw new NotSupportedException(
+                        "No write is implemented for a prohibited-action candidate of this shape "
+                      + $"({candidate.Site.HostDescription}): Annotation="
+                      + $"{(candidate.Annotation is null ? "null" : "set")}, Triggers="
+                      + $"{(candidate.Triggers is null ? "null" : "set")}, TriggerKey="
+                      + $"{candidate.TriggerKey?.Value ?? "null"}, JavaScriptEntryName="
+                      + $"{candidate.Site.JavaScriptEntryName ?? "null"}. ClassifyProhibitedActions "
+                      + "produced it as repairable, so either add the write here or make the shape "
+                      + "refusal-only.");
             }
 
             repaired.Add(new ProhibitedActionRepair(candidate.Site, ActionsRemoved: 1));
