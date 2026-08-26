@@ -9,11 +9,13 @@ using Xunit;
 namespace PdfLibrary.Tests.Editing;
 
 /// <summary>Tests for <see cref="PdfDocumentEditor.RepairAnnotationAppearances"/> and
-/// <see cref="PdfDocumentEditor.PreviewAnnotationAppearanceRepairs"/> -- R1 of the PDF/A clause 6.3.3
-/// annotation-appearance remediation program (<c>PdfLibrary.Conformance.Rules.AnnotationAppearanceRule</c>,
-/// 6.3.3-t2, <c>:48-55</c>): a widget's <c>/AP</c> dictionary that already validly contains <c>/N</c>
-/// loses the keys the rule rejects (<c>/D</c>, <c>/R</c>) and nothing else. R2 (a later task, writing a
-/// blank appearance for a value-less <c>/Tx</c>/<c>/Ch</c> widget) is out of scope here.</summary>
+/// <see cref="PdfDocumentEditor.PreviewAnnotationAppearanceRepairs"/> -- both repairs of the PDF/A
+/// clause 6.3.3 annotation-appearance remediation program
+/// (<c>PdfLibrary.Conformance.Rules.AnnotationAppearanceRule</c>). R1 (6.3.3-t2, <c>:48-55</c>): a
+/// widget's <c>/AP</c> dictionary that already validly contains <c>/N</c> loses the keys the rule
+/// rejects (<c>/D</c>, <c>/R</c>) and nothing else. R2 (6.3.3-t1, <c>:37-46</c>, "WriteBlankAppearance"
+/// region below): a value-less <c>/Tx</c>/<c>/Ch</c> widget with no <c>/AP</c> at all gains a blank
+/// single-key <c>/AP /N</c>.</summary>
 public sealed class AnnotationAppearanceRepairTests
 {
     // ---- Fixture builders (mirrors AnnotationTypeRepairTests' convention) ----------------------
@@ -386,5 +388,304 @@ public sealed class AnnotationAppearanceRepairTests
 
         Assert.Empty(preview.Candidates);
         Assert.Empty(preview.Refused);
+    }
+
+    // ---- WriteBlankAppearance (R2): blank appearance for a valueless /Tx or /Ch widget -----------
+
+    private static readonly PdfName FtKey = new("FT");
+    private static readonly PdfName VKey = new("V");
+    private static readonly PdfName ParentKey = new("Parent");
+    private static readonly PdfName FfKey = new("Ff");
+    private static readonly PdfName OptKey = new("Opt");
+    private const int ComboFlag = 1 << 17; // /Ff bit 18 (Table 230) -- 1-based, so bit 18 is 1<<17
+
+    /// <summary>A /Tx or /Ch widget with a /Rect and its own /FT but no /AP and no /V -- the shape
+    /// FormFieldTree.WalkField builds when a field has no /Kids (the field dict doubles as its own
+    /// widget), and R2's most common target: everything the repair needs lives on one dict.</summary>
+    private static PdfDictionary MakeBlankFieldWidget(string ft, int ff = 0) => new()
+    {
+        [new PdfName("Subtype")] = new PdfName("Widget"),
+        [new PdfName("Rect")] = new PdfArray(
+            new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(20)),
+        [FtKey] = new PdfName(ft),
+        [FfKey] = new PdfInteger(ff),
+    };
+
+    [Fact]
+    public void Repair_writes_a_blank_appearance_for_a_valueless_Tx_widget()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(widgetRef.ObjectNumber, repair.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
+        Assert.Empty(report.Refused);
+
+        var appearance = Assert.IsType<PdfDictionary>(widget.Get(ApKey));
+        Assert.Single(appearance);
+        var nRef = Assert.IsType<PdfIndirectReference>(appearance.Get(NKey));
+        var stream = Assert.IsType<PdfStream>(doc.GetObject(nRef.ObjectNumber));
+        string content = Encoding.ASCII.GetString(stream.Data);
+        Assert.Contains("() Tj", content, StringComparison.Ordinal); // the shown text is the empty string
+    }
+
+    [Fact]
+    public void Repair_writes_a_blank_appearance_for_a_valueless_Ch_combo_widget()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Ch", ComboFlag);
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
+        Assert.Empty(report.Refused);
+
+        var appearance = Assert.IsType<PdfDictionary>(widget.Get(ApKey));
+        Assert.Single(appearance);
+        Assert.True(appearance.ContainsKey(NKey));
+    }
+
+    [Fact]
+    public void Repair_writes_a_blank_appearance_for_a_valueless_Ch_list_widget_with_options()
+    {
+        // A list box (not combo) draws its full option list regardless of selection. The design doc's
+        // measured blank-/Ch population is zero, but the write path must not silently no-op for the
+        // shape that DOES occur in real documents: a real list box with real options.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Ch"); // Ff=0 -> list box, not combo
+        widget[OptKey] = new PdfArray(PdfString.FromText("Alpha"), PdfString.FromText("Beta"));
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
+
+        var appearance = Assert.IsType<PdfDictionary>(widget.Get(ApKey));
+        Assert.Single(appearance);
+        Assert.True(appearance.ContainsKey(NKey));
+    }
+
+    [Fact]
+    public void Repair_treats_a_widget_whose_V_is_inherited_from_Parent_as_value_bearing_not_blank()
+    {
+        // The sharpest correctness risk in the whole program (design doc §8): the widget carries NO
+        // own /V at all, so reading only its own dict would (wrongly) treat it as blank. Its /Parent
+        // field carries the real value, and /V MUST be resolved up /Parent exactly as
+        // AnnotationAppearanceRule.EffectiveFieldType (:96-108) resolves /FT, or this repair would
+        // silently overwrite a real value with an empty box -- the one way this program could
+        // visibly falsify a document.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var fieldDict = new PdfDictionary
+        {
+            [FtKey] = new PdfName("Tx"),
+            [VKey] = PdfString.FromText("Smith"),
+        };
+        PdfIndirectReference fieldRef = doc.RegisterObject(fieldDict);
+
+        PdfDictionary widget = new()
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("Rect")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(20)),
+            [ParentKey] = fieldRef,
+            // deliberately no own /FT and no own /V -- both must be resolved via /Parent
+        };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Null(widget.Get(ApKey)); // not written -- a blank appearance would have erased "Smith"
+    }
+
+    [Fact]
+    public void Repair_treats_an_inherited_blank_V_from_Parent_as_blank()
+    {
+        // The positive counterpart: the field carries no /V at all (a genuinely blank field), and the
+        // widget must still be repaired even though /FT and /V both live only on /Parent.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var fieldDict = new PdfDictionary { [FtKey] = new PdfName("Tx") }; // no /V at all
+        PdfIndirectReference fieldRef = doc.RegisterObject(fieldDict);
+
+        PdfDictionary widget = new()
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("Rect")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(20)),
+            [ParentKey] = fieldRef,
+        };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(widgetRef.ObjectNumber, repair.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
+        Assert.True(((PdfDictionary)widget.Get(ApKey)!).ContainsKey(NKey));
+    }
+
+    [Fact]
+    public void Repair_refuses_a_Tx_widget_whose_own_V_is_non_empty()
+    {
+        // The deferred value-bearing case (design doc §3 "Out"): out of scope, and must be REFUSED --
+        // never silently skipped.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        widget[VKey] = PdfString.FromText("already filled in");
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Null(widget.Get(ApKey));
+    }
+
+    [Fact]
+    public void Repair_leaves_a_Tx_widget_with_existing_AP_N_untouched()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfIndirectReference nRef = doc.RegisterObject(MakeAppearanceStream("N"));
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        var appearance = new PdfDictionary { [NKey] = nRef };
+        widget[ApKey] = appearance;
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        Assert.Empty(report.Refused);
+        Assert.Same(appearance, widget.Get(ApKey));
+    }
+
+    [Fact]
+    public void Repair_scopes_WriteBlankAppearance_to_only_the_named_widget_not_a_sibling_of_the_same_field()
+    {
+        // Two widgets (e.g. the same field shown on two pages) share one field dict. Repairing only
+        // widgetA must not touch widgetB -- FieldAppearanceGenerator.Regenerate would happily write
+        // to every widget under a field built by FormFieldTree, so R2's field VIEW must scope
+        // WidgetDicts to just the requested object, not delegate to the full multi-widget field.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var fieldDict = new PdfDictionary { [FtKey] = new PdfName("Tx") };
+        PdfIndirectReference fieldRef = doc.RegisterObject(fieldDict);
+
+        PdfDictionary MakeKid() => new()
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("Rect")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(20)),
+            [ParentKey] = fieldRef,
+        };
+
+        PdfDictionary widgetA = MakeKid();
+        PdfIndirectReference widgetARef = doc.RegisterObject(widgetA);
+        AddAnnotEntry(doc, 0, widgetARef);
+
+        PdfDictionary widgetB = MakeKid();
+        PdfIndirectReference widgetBRef = doc.RegisterObject(widgetB);
+        AddAnnotEntry(doc, 0, widgetBRef);
+
+        AnnotationAppearanceRepairReport report =
+            editor.RepairAnnotationAppearances(new HashSet<int> { widgetARef.ObjectNumber });
+
+        Assert.Equal(widgetARef.ObjectNumber, Assert.Single(report.Repaired).ObjectNumber);
+        Assert.True(((PdfDictionary)widgetA.Get(ApKey)!).ContainsKey(NKey));
+        Assert.Null(widgetB.Get(ApKey)); // untouched -- was not in the requested set
+    }
+
+    [Fact]
+    public void Repair_throws_rather_than_silently_reporting_a_widget_it_could_not_actually_write()
+    {
+        // Classification only checks /FT and /V, not /Rect -- a widget with no /Rect at all is not
+        // in the measured population, but FieldAppearanceGenerator silently skips writing anything
+        // for one rather than crashing. WriteBlankAppearance must not swallow that mismatch as a
+        // false "Repaired".
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var widget = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [FtKey] = new PdfName("Tx"),
+            // no /Rect at all
+        };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        Assert.Throws<InvalidOperationException>(() => editor.RepairAnnotationAppearances());
+    }
+
+    [Fact]
+    public void Preview_lists_a_valueless_Tx_widget_as_a_WriteBlankAppearance_candidate_and_writes_nothing()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairPreview preview = editor.PreviewAnnotationAppearanceRepairs();
+        editor.PreviewAnnotationAppearanceRepairs(); // twice: no idempotency guard should trip
+
+        AnnotationAppearanceRepairCandidate candidate = Assert.Single(preview.Candidates);
+        Assert.Equal(widgetRef.ObjectNumber, candidate.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(candidate.WouldApply));
+        Assert.Empty(preview.Refused);
+        Assert.Null(widget.Get(ApKey)); // nothing was written
+    }
+
+    [Fact]
+    public void Preview_reports_the_same_refusal_the_write_side_would_for_a_value_bearing_widget()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        widget[VKey] = PdfString.FromText("already filled in");
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairPreview preview = editor.PreviewAnnotationAppearanceRepairs();
+
+        Assert.Empty(preview.Candidates);
+        AnnotationAppearanceRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
     }
 }
