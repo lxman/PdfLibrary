@@ -712,10 +712,29 @@ internal static class FieldAppearanceGenerator
 
     /// <summary>Reads <paramref name="widget"/>'s /Rect into four corner coordinates. Bumped from
     /// private to internal (task 2 review, Critical 3 fix) so
-    /// <c>PdfDocumentEditor.WriteBlankAppearance</c> can reuse the exact same geometry parse for its
-    /// own bounding box rather than duplicating it -- "reuse what computes the box" without pulling
-    /// in this class's typesetting/font/resource machinery, which a blank appearance must not
-    /// reference at all.</summary>
+    /// <c>PdfDocumentEditor.WriteBlankAppearance</c> can reuse this geometry parse for its own
+    /// bounding box rather than duplicating it -- "reuse what computes the box" without pulling in
+    /// this class's typesetting/font/resource machinery, which a blank appearance must not reference
+    /// at all.
+    ///
+    /// <para><b>Not an exact match for <c>AnnotationAppearanceRule.RectSize</c> (final whole-branch
+    /// review, M3) -- two divergences, both harmless in the app today:</b></para>
+    /// <list type="bullet">
+    ///   <item>This reads <c>rect[i]</c> directly, without resolving an indirect element -- an
+    ///     indirect coordinate falls through <see cref="ToDouble"/>'s default arm and yields
+    ///     <c>0.0</c>. <c>RectSize</c> (<c>AnnotationAppearanceRule.cs:117-120</c>) resolves each
+    ///     element first, so it sees the real value.</item>
+    ///   <item><c>RectSize</c>'s caller exempts a genuinely zero-sized <c>/Rect</c> from 6.3.3-t1
+    ///     entirely (<c>AnnotationAppearanceRule.cs:41</c>) -- no appearance is required at all, blank
+    ///     or otherwise. <c>ClassifyBlankAppearance</c> has no equivalent check, so it offers
+    ///     <see cref="AnnotationAppearanceRepairKind.WriteBlankAppearance"/> even for a widget whose
+    ///     <c>/Rect</c> is exempt.</item>
+    /// </list>
+    /// <para>Unreachable through the app: <c>Propose</c> walks the rule's own findings (which already
+    /// excludes an exempt <c>/Rect</c>), and <c>CollectForSave</c> always passes a staged object-number
+    /// set, never <c>null</c> -- so a call that would hit either divergence only exists through a
+    /// direct engine caller invoking <c>RepairAnnotationAppearances(null)</c> against a widget with an
+    /// indirect or zero-sized <c>/Rect</c>.</para></summary>
     internal static bool TryGetRect(
         PdfDocument doc,
         PdfDictionary widget,
