@@ -710,7 +710,13 @@ internal static class FieldAppearanceGenerator
         return Math.Max(4.0, s);
     }
 
-    private static bool TryGetRect(
+    /// <summary>Reads <paramref name="widget"/>'s /Rect into four corner coordinates. Bumped from
+    /// private to internal (task 2 review, Critical 3 fix) so
+    /// <c>PdfDocumentEditor.WriteBlankAppearance</c> can reuse the exact same geometry parse for its
+    /// own bounding box rather than duplicating it -- "reuse what computes the box" without pulling
+    /// in this class's typesetting/font/resource machinery, which a blank appearance must not
+    /// reference at all.</summary>
+    internal static bool TryGetRect(
         PdfDocument doc,
         PdfDictionary widget,
         out double x0, out double y0, out double x1, out double y1)

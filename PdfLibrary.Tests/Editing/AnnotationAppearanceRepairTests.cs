@@ -15,7 +15,8 @@ namespace PdfLibrary.Tests.Editing;
 /// widget's <c>/AP</c> dictionary that already validly contains <c>/N</c> loses the keys the rule
 /// rejects (<c>/D</c>, <c>/R</c>) and nothing else. R2 (6.3.3-t1, <c>:37-46</c>, "WriteBlankAppearance"
 /// region below): a value-less <c>/Tx</c>/<c>/Ch</c> widget with no <c>/AP</c> at all gains a blank
-/// single-key <c>/AP /N</c>.</summary>
+/// single-key <c>/AP /N</c> whose appearance stream is genuinely empty -- no font, no /Resources, no
+/// document-level side effect (task 2 review, Criticals 3/4).</summary>
 public sealed class AnnotationAppearanceRepairTests
 {
     // ---- Fixture builders (mirrors AnnotationTypeRepairTests' convention) ----------------------
@@ -26,6 +27,40 @@ public sealed class AnnotationAppearanceRepairTests
             .AddPage(p => p.AddText("x", 72, 700, "Helvetica", 12));
         byte[] bytes = builder.ToByteArray();
         return PdfDocumentEditor.Open(new MemoryStream(bytes));
+    }
+
+    /// <summary>An AcroForm-bearing document whose /AcroForm /DR /Font holds a single NON-embedded
+    /// standard-14 font (no /FontDescriptor) and whose /NeedAppearances starts true -- mirroring the
+    /// 10 real corpus documents task 2 review Critical 3 measured. The plain <see cref="NewEditor"/>
+    /// fixture has no /AcroForm at all, so a document-level side effect on /DR or /NeedAppearances is
+    /// unreachable against it -- Criticals 3 and 4 were invisible to every test that used it (review
+    /// Important 6).</summary>
+    private static (PdfDocumentEditor Editor, PdfDocument Doc, PdfDictionary AcroForm, PdfDictionary Dr)
+        NewEditorWithAcroForm()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var nonEmbeddedFont = new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Font"),
+            [new PdfName("Subtype")] = new PdfName("Type1"),
+            [new PdfName("BaseFont")] = new PdfName("Helvetica"),
+            // deliberately no /FontDescriptor -- not embedded, exactly the shape ReferencedFontWalker
+            // + FontEmbeddingRule would flag if a new /AP ever referenced it.
+        };
+        var fontDict = new PdfDictionary { [new PdfName("Helv")] = nonEmbeddedFont };
+        var dr = new PdfDictionary { [new PdfName("Font")] = fontDict };
+        var acroForm = new PdfDictionary
+        {
+            [new PdfName("DR")] = dr,
+            [new PdfName("NeedAppearances")] = PdfBoolean.True,
+        };
+
+        PdfDictionary catalog = doc.CatalogDictionary!;
+        catalog[new PdfName("AcroForm")] = acroForm;
+
+        return (editor, doc, acroForm, dr);
     }
 
     private static void AddAnnotEntry(PdfDocument doc, int pageIndex, PdfObject entry)
@@ -432,8 +467,15 @@ public sealed class AnnotationAppearanceRepairTests
         Assert.Single(appearance);
         var nRef = Assert.IsType<PdfIndirectReference>(appearance.Get(NKey));
         var stream = Assert.IsType<PdfStream>(doc.GetObject(nRef.ObjectNumber));
-        string content = Encoding.ASCII.GetString(stream.Data);
-        Assert.Contains("() Tj", content, StringComparison.Ordinal); // the shown text is the empty string
+
+        // A blank appearance draws no text: genuinely empty content (review Critical 3/4 fix), no
+        // dangling font-setting operator, and no /Resources at all -- there is nothing to resource.
+        Assert.Empty(stream.Data);
+        Assert.False(stream.Dictionary.ContainsKey(new PdfName("Resources")));
+
+        // R2's write is confined to the widget's own /AP -- it does not set /F (the Print flag is
+        // the annotation-flags domain's key to own, not this repair's; review Important 5).
+        Assert.Null(widget.Get(new PdfName("F")));
     }
 
     [Fact]
@@ -458,11 +500,12 @@ public sealed class AnnotationAppearanceRepairTests
     }
 
     [Fact]
-    public void Repair_writes_a_blank_appearance_for_a_valueless_Ch_list_widget_with_options()
+    public void Repair_writes_a_blank_appearance_for_a_Ch_list_widget_with_options()
     {
-        // A list box (not combo) draws its full option list regardless of selection. The design doc's
-        // measured blank-/Ch population is zero, but the write path must not silently no-op for the
-        // shape that DOES occur in real documents: a real list box with real options.
+        // A /Ch widget with real /Opt entries still gets the same blank appearance -- R2's write
+        // does not read /Opt at all (see WriteBlankAppearance's doc comment), so this and the
+        // no-Opt sibling test below exercise the same code path; both are kept because "a /Ch
+        // widget gets repaired" is worth pinning regardless of /Opt shape.
         PdfDocumentEditor editor = NewEditor();
         PdfDocument doc = editor.Document;
 
@@ -479,6 +522,28 @@ public sealed class AnnotationAppearanceRepairTests
         var appearance = Assert.IsType<PdfDictionary>(widget.Get(ApKey));
         Assert.Single(appearance);
         Assert.True(appearance.ContainsKey(NKey));
+    }
+
+    [Fact]
+    public void Repair_writes_a_blank_appearance_for_a_Ch_list_widget_with_no_own_Opt()
+    {
+        // Task 2 review Critical 2's second crash trigger no longer exists: the original
+        // implementation reused FieldAppearanceGenerator.RegenerateListField, which silently wrote
+        // nothing for zero options, so ClassifyBlankAppearance's throw-on-no-write guard fired for
+        // the ordinary shape of a list box authored with no /Opt. R2's write no longer depends on
+        // /Opt (or combo/list shape) at all, so this is now just an ordinary repair, not a crash.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        PdfDictionary widget = MakeBlankFieldWidget("Ch"); // Ff=0 -> list box, no /Opt at all
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        AnnotationAppearanceRepair repair = Assert.Single(report.Repaired);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, Assert.Single(repair.Applied));
+        Assert.True(((PdfDictionary)widget.Get(ApKey)!).ContainsKey(NKey));
     }
 
     [Fact]
@@ -517,7 +582,120 @@ public sealed class AnnotationAppearanceRepairTests
         AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
         Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
         Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/V", refusal.Reason, StringComparison.Ordinal);
         Assert.Null(widget.Get(ApKey)); // not written -- a blank appearance would have erased "Smith"
+    }
+
+    [Fact]
+    public void Repair_treats_inherited_V_as_value_bearing_even_when_the_widget_has_its_own_FT()
+    {
+        // Isolates the /V walk from the /FT walk (task 2 review Minor finding): the widget carries
+        // its own /FT, so /FT resolution never touches /Parent here, while /V still lives only on
+        // /Parent. The refusal must still fire on the /V walk alone.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var fieldDict = new PdfDictionary { [VKey] = PdfString.FromText("Smith") }; // no /FT here
+        PdfIndirectReference fieldRef = doc.RegisterObject(fieldDict);
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx"); // widget carries its OWN /FT /Tx
+        widget[ParentKey] = fieldRef; // /V lives only on Parent
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/V", refusal.Reason, StringComparison.Ordinal);
+        Assert.Null(widget.Get(ApKey));
+    }
+
+    [Fact]
+    public void Repair_treats_a_direct_null_V_on_the_widget_as_omitted_and_inherits_Parent_V()
+    {
+        // Task 2 review Critical 1: ISO 32000-1 7.3.7 -- "specifying the null object as the value of
+        // a dictionary entry shall be equivalent to omitting the entry." The widget's OWN /V key is
+        // present but resolves to PdfNull; the walk must not stop there (key presence alone is not
+        // enough) -- it must keep looking up /Parent and find "Smith".
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var fieldDict = new PdfDictionary
+        {
+            [FtKey] = new PdfName("Tx"),
+            [VKey] = PdfString.FromText("Smith"),
+        };
+        PdfIndirectReference fieldRef = doc.RegisterObject(fieldDict);
+
+        PdfDictionary widget = new()
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("Rect")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(20)),
+            [ParentKey] = fieldRef,
+        };
+        // NOT widget[VKey] = PdfNull.Instance -- PdfDictionary's indexer setter (Set()) treats
+        // PdfNull the same as removing the key entirely, so that would silently produce "no /V key"
+        // rather than "a /V key present and pointing at null", testing nothing. Add() bypasses that
+        // stripping and genuinely stores the entry, matching what a parsed "/V null" dictionary entry
+        // (or a parsed "0 0 R" -- PdfParser.cs:183-190 collapses that straight to PdfNull.Instance at
+        // parse time) looks like in memory.
+        widget.Add(VKey, PdfNull.Instance);
+        Assert.IsType<PdfNull>(widget.Get(VKey)); // fixture sanity: the key really is present
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/V", refusal.Reason, StringComparison.Ordinal);
+        Assert.Null(widget.Get(ApKey)); // not written -- would have erased "Smith"
+    }
+
+    [Fact]
+    public void Repair_treats_an_indirect_V_that_resolves_to_nothing_as_omitted_and_inherits_Parent_V()
+    {
+        // The same ISO 32000-1 7.3.7 rule reached through an indirect reference rather than a direct
+        // null -- PdfParser.cs:183-190 shows a parsed "null" object survives as PdfNull.Instance
+        // whether written directly or via an indirect object, and a dangling reference to an object
+        // number that was never registered resolves to a genuine C# null through
+        // PdfDocument.GetObject. (A literal object number 0 -- the coordinator's "0 0 R" -- cannot be
+        // constructed via PdfIndirectReference, which requires a positive object number; an
+        // out-of-range, never-registered number stands in for the same "resolves to nothing" shape.)
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var fieldDict = new PdfDictionary
+        {
+            [FtKey] = new PdfName("Tx"),
+            [VKey] = PdfString.FromText("Smith"),
+        };
+        PdfIndirectReference fieldRef = doc.RegisterObject(fieldDict);
+
+        PdfDictionary widget = new()
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [new PdfName("Rect")] = new PdfArray(
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(20)),
+            [ParentKey] = fieldRef,
+            [VKey] = new PdfIndirectReference(9999, 0), // never registered -- resolves to null
+        };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/V", refusal.Reason, StringComparison.Ordinal);
+        Assert.Null(widget.Get(ApKey));
     }
 
     [Fact]
@@ -568,6 +746,7 @@ public sealed class AnnotationAppearanceRepairTests
         AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
         Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
         Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/V", refusal.Reason, StringComparison.Ordinal);
         Assert.Null(widget.Get(ApKey));
     }
 
@@ -595,9 +774,8 @@ public sealed class AnnotationAppearanceRepairTests
     public void Repair_scopes_WriteBlankAppearance_to_only_the_named_widget_not_a_sibling_of_the_same_field()
     {
         // Two widgets (e.g. the same field shown on two pages) share one field dict. Repairing only
-        // widgetA must not touch widgetB -- FieldAppearanceGenerator.Regenerate would happily write
-        // to every widget under a field built by FormFieldTree, so R2's field VIEW must scope
-        // WidgetDicts to just the requested object, not delegate to the full multi-widget field.
+        // widgetA must not touch widgetB -- WriteBlankAppearance touches only the one annotation it
+        // is called with, never a sibling widget of the same field.
         PdfDocumentEditor editor = NewEditor();
         PdfDocument doc = editor.Document;
 
@@ -629,12 +807,15 @@ public sealed class AnnotationAppearanceRepairTests
     }
 
     [Fact]
-    public void Repair_throws_rather_than_silently_reporting_a_widget_it_could_not_actually_write()
+    public void Repair_refuses_a_widget_with_no_Rect_rather_than_crashing_mid_document()
     {
-        // Classification only checks /FT and /V, not /Rect -- a widget with no /Rect at all is not
-        // in the measured population, but FieldAppearanceGenerator silently skips writing anything
-        // for one rather than crashing. WriteBlankAppearance must not swallow that mismatch as a
-        // false "Repaired".
+        // Task 2 review Critical 2: AnnotationAppearanceRule.cs:39-41 says a missing/malformed /Rect
+        // is explicitly NOT treated as zero-sized, so the appearance stays required -- this widget IS
+        // a genuine 6.3.3-t1 finding, just one this repair cannot safely build a bounding box for.
+        // Classification must catch this BEFORE the write; the original implementation let
+        // WriteBlankAppearance throw mid-RepairAnnotationAppearances instead, which would abort the
+        // whole document's repair with any earlier widgets already mutated and no report returned at
+        // all -- an exception is neither Repaired nor Refused, violating the Global Constraint.
         PdfDocumentEditor editor = NewEditor();
         PdfDocument doc = editor.Document;
 
@@ -647,7 +828,99 @@ public sealed class AnnotationAppearanceRepairTests
         PdfIndirectReference widgetRef = doc.RegisterObject(widget);
         AddAnnotEntry(doc, 0, widgetRef);
 
-        Assert.Throws<InvalidOperationException>(() => editor.RepairAnnotationAppearances());
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/Rect", refusal.Reason, StringComparison.Ordinal);
+        Assert.Null(widget.Get(ApKey));
+    }
+
+    [Fact]
+    public void Repair_refuses_a_widget_with_a_malformed_Rect_rather_than_crashing()
+    {
+        // The other half of Critical 2's first trigger: /Rect is present but not a usable 4-element
+        // array.
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+
+        var widget = new PdfDictionary
+        {
+            [new PdfName("Subtype")] = new PdfName("Widget"),
+            [FtKey] = new PdfName("Tx"),
+            [new PdfName("Rect")] = new PdfArray(new PdfInteger(0), new PdfInteger(0)), // only 2 elements
+        };
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Empty(report.Repaired);
+        AnnotationAppearanceRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Null(widget.Get(ApKey));
+    }
+
+    [Fact]
+    public void Repair_does_not_write_a_font_or_touch_AcroForm_DR_for_a_blank_appearance()
+    {
+        // Task 2 review Critical 3: the original implementation reused
+        // FieldAppearanceGenerator.Regenerate wholesale, which resolved (and, absent a usable /DR
+        // entry, synthesized) a font and wrote it into /AcroForm /DR /Font -- ReferencedFontWalker
+        // then sees that font from the widget's own /AP, and FontEmbeddingRule raises a NEW
+        // 6.2.11.4.1 finding on a document this repair is supposed to be improving. A blank
+        // appearance draws no text, so it must carry no font resource and /DR must be untouched.
+        (PdfDocumentEditor editor, PdfDocument doc, PdfDictionary acroForm, PdfDictionary dr) =
+            NewEditorWithAcroForm();
+
+        PdfDictionary widget = MakeBlankFieldWidget("Tx");
+        PdfIndirectReference widgetRef = doc.RegisterObject(widget);
+        AddAnnotEntry(doc, 0, widgetRef);
+
+        editor.RepairAnnotationAppearances();
+
+        // /AcroForm /DR is the SAME dictionary instance afterward -- not merely equal in content, but
+        // never even re-fetched-and-rewritten.
+        Assert.Same(dr, acroForm.Get(new PdfName("DR")));
+        var fontDict = (PdfDictionary)dr.Get(new PdfName("Font"))!;
+        Assert.Single(fontDict); // still only the one pre-existing (non-embedded) font -- none added
+
+        var appearance = (PdfDictionary)widget.Get(ApKey)!;
+        var nRef = (PdfIndirectReference)appearance.Get(NKey)!;
+        var stream = (PdfStream)doc.GetObject(nRef.ObjectNumber)!;
+        Assert.False(stream.Dictionary.ContainsKey(new PdfName("Resources")));
+    }
+
+    [Fact]
+    public void Repair_does_not_flip_NeedAppearances_leaving_a_refused_sibling_widget_renderable()
+    {
+        // Task 2 review Critical 4: FieldAppearanceGenerator.Regenerate calls
+        // SetNeedAppearancesFalse(doc), a document-level mutation from a call scoped to one object
+        // number. A refused widget (no /AP) in the same AcroForm relies on /NeedAppearances staying
+        // true so a viewer keeps synthesizing its appearance on the fly; flipping it false would
+        // erase that widget's real value by a side channel -- the exact harm the refusal exists to
+        // prevent.
+        (PdfDocumentEditor editor, PdfDocument doc, PdfDictionary acroForm, PdfDictionary _) =
+            NewEditorWithAcroForm();
+
+        PdfDictionary blankWidget = MakeBlankFieldWidget("Tx");
+        PdfIndirectReference blankRef = doc.RegisterObject(blankWidget);
+        AddAnnotEntry(doc, 0, blankRef);
+
+        PdfDictionary valueWidget = MakeBlankFieldWidget("Tx");
+        valueWidget[VKey] = PdfString.FromText("already filled in");
+        PdfIndirectReference valueRef = doc.RegisterObject(valueWidget);
+        AddAnnotEntry(doc, 0, valueRef);
+
+        AnnotationAppearanceRepairReport report = editor.RepairAnnotationAppearances();
+
+        Assert.Single(report.Repaired);
+        Assert.Single(report.Refused);
+        // Same singleton reference as the fixture set -- the key was never even re-assigned.
+        Assert.Same(PdfBoolean.True, acroForm.Get(new PdfName("NeedAppearances")));
+        Assert.Null(valueWidget.Get(ApKey)); // the refused widget still has no /AP of its own
     }
 
     [Fact]
@@ -687,5 +960,6 @@ public sealed class AnnotationAppearanceRepairTests
         AnnotationAppearanceRefusal refusal = Assert.Single(preview.Refused);
         Assert.Equal(widgetRef.ObjectNumber, refusal.ObjectNumber);
         Assert.Equal(AnnotationAppearanceRepairKind.WriteBlankAppearance, refusal.Kind);
+        Assert.Contains("/V", refusal.Reason, StringComparison.Ordinal);
     }
 }

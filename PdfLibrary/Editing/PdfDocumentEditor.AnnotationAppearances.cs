@@ -171,7 +171,11 @@ public sealed partial class PdfDocumentEditor
     /// covered for completeness even though it has zero corpus findings). Any other effective
     /// <c>/FT</c> (a <c>/Btn</c> missing <c>/AP</c>, an unknown or absent field type) is left alone
     /// with no candidate or refusal, the same way a non-<c>/Widget</c> annotation is left alone in
-    /// <see cref="ClassifyAnnotationAppearance"/> above.
+    /// <see cref="ClassifyAnnotationAppearance"/> above. <b>This silence does not mean 6.3.3-t1 has
+    /// no finding for that widget</b> -- the rule still raises one; it means only that THIS repair
+    /// does not attempt to fix it, and a consuming domain must not read "absent from every
+    /// candidate/repaired/refused list" as "nothing wrong here" for a widget outside R2's scope
+    /// (task 2 review, Minor finding).
     ///
     /// <para>The effective <c>/FT</c> and <c>/V</c> are resolved by walking <c>/Parent</c> in
     /// <see cref="ResolveEffectiveField"/>, exactly as
@@ -181,11 +185,21 @@ public sealed partial class PdfDocumentEditor
     /// would misclassify a filled child -- one whose value lives on its <c>/Parent</c> field -- as
     /// blank and overwrite a real value with an empty box. See
     /// <c>Repair_treats_a_widget_whose_V_is_inherited_from_Parent_as_value_bearing_not_blank</c>
-    /// (<c>AnnotationAppearanceRepairTests.cs</c>) for the dedicated regression test.</para></summary>
+    /// (<c>AnnotationAppearanceRepairTests.cs</c>) for the dedicated regression test.</para>
+    ///
+    /// <para>Also refuses when <c>/Rect</c> does not resolve to a usable 4-element array (task 2
+    /// review, Critical 2): <c>AnnotationAppearanceRule.cs:39-41</c> treats a missing or malformed
+    /// <c>/Rect</c> as NOT zero-sized, so the appearance stays required -- this IS still a genuine
+    /// finding -- but <see cref="WriteBlankAppearance"/> cannot build a bounding box without one.
+    /// Catching this here, before the write, is the fix: the original implementation only discovered
+    /// an unusable <c>/Rect</c> after calling the writer, throwing mid-<see cref="RepairAnnotationAppearances"/>
+    /// and aborting the whole document's repair with earlier widgets already mutated and no report
+    /// returned at all -- an exception is neither <c>Repaired</c> nor <c>Refused</c>, which the
+    /// Global Constraint forbids.</para></summary>
     private void ClassifyBlankAppearance(
         PdfDictionary annot, List<AnnotationAppearanceRepairKind> repairs, List<AnnotationAppearanceRefusal> refusals)
     {
-        (string? ft, int _, PdfObject? effectiveValue) = ResolveEffectiveField(annot);
+        (string? ft, PdfObject? effectiveValue) = ResolveEffectiveField(annot);
 
         if (ft is not "Tx" and not "Ch")
             return; // out of R2's measured scope -- see the method doc above
@@ -205,23 +219,42 @@ public sealed partial class PdfDocumentEditor
             return;
         }
 
+        if (!FieldAppearanceGenerator.TryGetRect(_document, annot, out _, out _, out _, out _))
+        {
+            refusals.Add(new AnnotationAppearanceRefusal(
+                annot.ObjectNumber, AnnotationAppearanceRepairKind.WriteBlankAppearance,
+                $"This /{ft} widget has no /AP, which PDF/A clause 6.3.3 requires, but its /Rect is "
+                + "missing or not a usable 4-element array, so Pellucid cannot compute the bounding "
+                + "box a blank appearance needs and leaves it unrepaired rather than guess at one."));
+            return;
+        }
+
         repairs.Add(AnnotationAppearanceRepairKind.WriteBlankAppearance);
     }
 
-    /// <summary>Resolves the effective <c>/FT</c>, <c>/Ff</c>, and <c>/V</c> for <paramref name="annot"/>
-    /// in one pass up its <c>/Parent</c> chain: own value wins at every node, falling back to the
-    /// nearest ancestor's only when the node itself lacks the key -- ISO 32000-1 7.7.3.4's
+    /// <summary>Resolves the effective <c>/FT</c> and <c>/V</c> for <paramref name="annot"/> in one
+    /// pass up its <c>/Parent</c> chain: own value wins at every node, falling back to the nearest
+    /// ancestor's only when the node itself lacks a usable value -- ISO 32000-1 7.7.3.4's
     /// field-inheritance rule, the same precedence
     /// <c>PdfLibrary.Conformance.Rules.AnnotationAppearanceRule.EffectiveFieldType</c> applies to
-    /// <c>/FT</c> alone and <c>FormFieldTree.MergeInherited</c> applies to all three. Cycle-guarded
-    /// on <c>/Parent</c> the same way the rule's own walk is. <c>/V</c> is resolved by key PRESENCE
-    /// (<see cref="PdfDictionary.TryGetValue"/>), not by whether the value is non-null -- a node that
-    /// carries <c>/V</c> pointing at <see cref="PdfNull"/> still "has" the key and stops the walk
-    /// there, exactly as <c>FormFieldTree.MergeInherited</c> treats it.</summary>
-    private (string? Ft, int Ff, PdfObject? V) ResolveEffectiveField(PdfDictionary annot)
+    /// <c>/FT</c> alone. Cycle-guarded on <c>/Parent</c> the same way the rule's own walk is.
+    ///
+    /// <para><c>/V</c> is resolved by key PRESENCE (<see cref="PdfDictionary.TryGetValue"/>) AND a
+    /// non-null resolved value -- ISO 32000-1 7.3.7: "specifying the null object as the value of a
+    /// dictionary entry shall be equivalent to omitting the entry." So a node whose own <c>/V</c>
+    /// resolves to <see cref="PdfNull"/> (a literal <c>null</c>, or a dangling/unresolvable indirect
+    /// reference) does NOT stop the walk -- it is treated exactly as if the node had no <c>/V</c> key
+    /// at all, and the walk continues up <c>/Parent</c> for a real value (task 2 review, Critical 1:
+    /// the original check stopped on key presence alone, so a widget carrying an explicit
+    /// <c>/V null</c> whose <c>/Parent</c> carried a real value was misclassified as blank and would
+    /// have overwritten that value with an empty box -- matching <c>FormFieldTree.MergeInherited</c>'s
+    /// OWN precedence here would have been wrong; ISO 7.3.7 governs, not that method). An EMPTY
+    /// string, by contrast, is a real, non-null value and still wins at its own node --
+    /// <see cref="IsEffectivelyBlank"/> is what decides an empty string counts as blank for repair
+    /// purposes, not this walk.</para></summary>
+    private (string? Ft, PdfObject? V) ResolveEffectiveField(PdfDictionary annot)
     {
         string? ft = null;
-        int? ff = null;
         PdfObject? v = null;
         var vFound = false;
 
@@ -230,15 +263,20 @@ public sealed partial class PdfDocumentEditor
         {
             if (ft is null && ResolveObject(node.Get("FT")) is PdfName ftName)
                 ft = ftName.Value;
-            if (ff is null && ResolveObject(node.Get("Ff")) is PdfInteger ffInt)
-                ff = (int)ffInt.Value;
+
             if (!vFound && node.TryGetValue(new PdfName("V"), out PdfObject vRaw))
             {
-                v = ResolveObject(vRaw);
-                vFound = true;
+                PdfObject? resolvedV = ResolveObject(vRaw);
+                if (resolvedV is not (null or PdfNull))
+                {
+                    v = resolvedV;
+                    vFound = true;
+                }
+                // else: this node's /V resolves to null -- ISO 32000-1 7.3.7 treats that as omitted,
+                // so keep walking up /Parent rather than stopping here.
             }
 
-            if (ft is not null && ff is not null && vFound)
+            if (ft is not null && vFound)
                 break;
 
             if (node.IsIndirect && !seen.Add(node.ObjectNumber))
@@ -246,7 +284,7 @@ public sealed partial class PdfDocumentEditor
             node = ResolveObject(node.Get("Parent")) as PdfDictionary;
         }
 
-        return (ft, ff ?? 0, v);
+        return (ft, v);
     }
 
     /// <summary>True when a resolved <c>/V</c> carries no real value: absent, <see cref="PdfNull"/>,
@@ -289,11 +327,18 @@ public sealed partial class PdfDocumentEditor
     /// <see cref="PreviewAnnotationAppearanceRepairs"/>, so the write and the preview can never
     /// disagree about what would happen to a given widget.
     ///
-    /// <para>R1 is a dictionary-key removal; R2 (<see cref="WriteBlankAppearance"/>) registers a new
-    /// appearance-stream object but never touches a page or another annotation's own dictionary. Both
-    /// stop short of the object-graph rewrite <c>RepairAnnotationTypes</c>'s page-mutating flatten
-    /// does, so an optional filter (like <c>RepairImageDictionaries</c>'s) is the right risk level
-    /// here, not that method's mandatory staged set.</para>
+    /// <para>R1 is a dictionary-key removal. R2 (<see cref="WriteBlankAppearance"/>) writes exactly
+    /// ONE key -- <c>/AP</c> -- on the repaired widget, plus registers the one new (genuinely empty)
+    /// stream object that key points at. It does NOT set <c>/F</c> (the Print flag belongs to the
+    /// <c>annotation-flags</c> domain, not this repair -- task 2 review, Important finding), does NOT
+    /// touch <c>/AcroForm /NeedAppearances</c>, and does NOT touch <c>/AcroForm /DR</c> (task 2
+    /// review, Criticals 3 and 4: the first implementation reused
+    /// <c>FieldAppearanceGenerator.Regenerate</c> wholesale, whose font-resolution and
+    /// need-appearances side effects leaked past the one widget a call was scoped to -- see
+    /// <see cref="WriteBlankAppearance"/>'s own doc comment for the full story). Both R1 and R2 stop
+    /// short of the object-graph rewrite <c>RepairAnnotationTypes</c>'s page-mutating flatten does, so
+    /// an optional filter (like <c>RepairImageDictionaries</c>'s) is the right risk level here, not
+    /// that method's mandatory staged set.</para>
     ///
     /// <para><b>Invariant:</b> every object this method places in the returned report's
     /// <see cref="AnnotationAppearanceRepairReport.Repaired"/> is FULLY 6.3.3-conformant once this
@@ -352,124 +397,72 @@ public sealed partial class PdfDocumentEditor
         return new AnnotationAppearanceRepairReport(repaired, refusals);
     }
 
-    /// <summary>Writes R2's blank normal appearance for <paramref name="annot"/>, reusing
-    /// <see cref="FieldAppearanceGenerator.Regenerate"/> -- the same writer a <c>FormFieldTree</c>-
-    /// built field uses -- rather than a second appearance-stream writer (design doc §5: its blank
-    /// case, <c>string value = field.Value ?? string.Empty</c>, is already natural, and every writer
-    /// path assigns <c>/AP</c> a fresh single-key <c>{N: …}</c> dict, so the output is t2-clean by
-    /// construction).
+    /// <summary>Writes R2's blank normal appearance for <paramref name="annot"/>. A blank appearance
+    /// draws no text, so unlike a filled field's appearance it needs no font, no <c>/Resources</c>,
+    /// and no document-level mutation at all -- reusing <see cref="FieldAppearanceGenerator.Regenerate"/>
+    /// wholesale (the original implementation) pulled in exactly those, and both turned out to be
+    /// real defects (task 2 review):
+    /// <list type="bullet">
+    ///   <item><b>Critical 3.</b> <c>AppearanceFontResolver</c> resolves (or, absent a usable
+    ///     <c>/AcroForm /DR</c> entry, synthesizes) a font and writes it into <c>/AcroForm /DR /Font</c>
+    ///     -- a document-level mutation from a call scoped to one widget. <c>ReferencedFontWalker</c>
+    ///     then sees that font from the widget's own new <c>/AP</c>, and <c>FontEmbeddingRule</c> raises
+    ///     a NEW 6.2.11.4.1 finding (the synthesized font has no <c>/FontDescriptor</c>) on a document
+    ///     this repair is supposed to be improving -- measured on 10 of the 16 corpus documents,
+    ///     including 4 of the 7 sole-cause ones.</item>
+    ///   <item><b>Critical 4.</b> <c>Regenerate</c> also calls <c>SetNeedAppearancesFalse(doc)</c>, a
+    ///     second document-level mutation from that same one-widget-scoped call. If a refused,
+    ///     still-<c>/AP</c>-less widget shares the same <c>/AcroForm</c>, flipping the flag false tells
+    ///     the viewer to stop synthesizing appearances -- silently erasing that OTHER widget's real
+    ///     value by a side channel, the exact harm its refusal exists to prevent.</item>
+    /// </list>
     ///
-    /// <para>The <see cref="PdfFormField"/> view built here scopes <c>WidgetDicts</c> to ONLY
-    /// <paramref name="annot"/> -- never every widget a full <c>FormFieldTree</c> read would attach
-    /// to the owning field -- because <see cref="RepairAnnotationAppearances"/> may be called with an
-    /// <c>objectNumbers</c> filter that excludes a sibling widget of the same field (two widgets can
-    /// share one field dict, e.g. the same field shown on two pages); <c>Regenerate</c> must never
-    /// write to a widget the caller did not name.</para>
+    /// <para>So this reuses only <see cref="FieldAppearanceGenerator.TryGetRect"/> -- "what computes
+    /// the box" -- to build a Form XObject whose content is genuinely empty (zero bytes: no
+    /// <c>/Tx BMC</c> wrapper, no <c>Tf</c> operator, no <c>/Resources</c> at all), the same
+    /// empty-stream shape <see cref="FieldAppearanceGenerator.EnsureButtonAppearance"/> already uses
+    /// for a checkbox's off-state. <b>Contract: this method writes exactly one key --
+    /// <paramref name="annot"/>'s own <c>/AP</c> -- plus registers the one new stream object it points
+    /// at. Nothing else, on this widget or any other object: no <c>/F</c>, no <c>/AcroForm</c> key of
+    /// any kind.</b></para>
     ///
-    /// <para>Verifies afterward that a single-key <c>/AP /N</c> actually landed.
-    /// <see cref="ClassifyBlankAppearance"/> vets <c>/FT</c> and the effective <c>/V</c> but not
-    /// <c>/Rect</c>; <c>FieldAppearanceGenerator</c> silently writes nothing for a malformed or
-    /// non-positive-area <c>/Rect</c> (each writer path's own rect-parsing / <c>w &lt;= 0 || h &lt;= 0</c>
-    /// guard) -- not in the measured population, since the rule itself exempts a genuinely
-    /// zero-sized annotation from needing <c>/AP</c> at all. Throwing here rather than reporting a
-    /// false <see cref="AnnotationAppearanceRepair"/> follows the same discipline as the re-resolve
-    /// check in the <c>StripRejectedKeys</c> case above: an invariant violation is a bug to surface
-    /// loudly, never a silent partial fix.</para></summary>
+    /// <para><see cref="ClassifyBlankAppearance"/> already verified <c>TryGetRect</c> succeeds on this
+    /// same, unmutated-in-between annotation, so the re-check below can never actually fail; it is a
+    /// backstop against classify/write disagreement (task 2 review, Critical 2's fix), the same
+    /// discipline as the re-resolve check in the <c>StripRejectedKeys</c> case in
+    /// <see cref="RepairAnnotationAppearances"/>.</para></summary>
     private void WriteBlankAppearance(PdfDictionary annot)
     {
-        (string? ft, int ff, PdfObject? _) = ResolveEffectiveField(annot);
-
-        PdfFormField field = ft switch
-        {
-            "Tx" => BuildBlankTextFieldView(annot, ff),
-            "Ch" => BuildBlankChoiceFieldView(annot, ff),
-            _ => throw new InvalidOperationException(
-                $"ClassifyBlankAppearance classified object {annot.ObjectNumber} for "
-                + $"WriteBlankAppearance with effective /FT '{ft ?? "(none)"}', but only /Tx and /Ch "
-                + "are ever classified for this repair. This is a bug: the two must never disagree."),
-        };
-
-        FieldAppearanceGenerator.Regenerate(_document, field);
-
-        if (ResolveObject(annot.Get("AP")) is not PdfDictionary appearance
-            || appearance.Count != 1 || !appearance.ContainsKey(ApNormalKey))
+        if (!FieldAppearanceGenerator.TryGetRect(
+                _document, annot, out double x0, out double y0, out double x1, out double y1))
             throw new InvalidOperationException(
-                $"WriteBlankAppearance asked FieldAppearanceGenerator to regenerate object "
-                + $"{annot.ObjectNumber}'s appearance, but no single-key /AP /N resulted -- most "
-                + "likely a malformed or non-positive-area /Rect FieldAppearanceGenerator silently "
-                + "skips. This widget should never have been classified for this repair.");
-    }
+                $"ClassifyBlankAppearance classified object {annot.ObjectNumber} for "
+                + "WriteBlankAppearance (a resolvable, well-formed /Rect), but WriteBlankAppearance "
+                + "could not re-derive it moments later on the same, unmutated-in-between annotation. "
+                + "This is a bug: the two must never disagree.");
 
-    /// <summary>Builds a <see cref="PdfTextField"/> view of <paramref name="annot"/> scoped to just
-    /// this one widget, with its value forced blank (this repair's entire point) via
-    /// <see cref="PdfTextField.SetValueInternal"/> -- never the public <c>Value</c> setter, which
-    /// would write <c>/V</c> onto the widget and immediately re-invoke
-    /// <see cref="FieldAppearanceGenerator.Regenerate"/> itself.</summary>
-    private PdfTextField BuildBlankTextFieldView(PdfDictionary annot, int ff)
-    {
-        var field = new PdfTextField
+        double w = Math.Abs(x1 - x0);
+        double h = Math.Abs(y1 - y0);
+
+        var xobjDict = new PdfDictionary
         {
-            IsComb = FieldFlags.Has(ff, FieldFlags.Comb),
-            IsPassword = FieldFlags.Has(ff, FieldFlags.Password),
-            Dict = annot,
-            Doc = _document,
-            WidgetDicts = new[] { annot },
+            [new PdfName("Type")] = new PdfName("XObject"),
+            [new PdfName("Subtype")] = new PdfName("Form"),
+            [new PdfName("BBox")] = new PdfArray
+            {
+                new PdfReal(0), new PdfReal(0), new PdfReal(w), new PdfReal(h)
+            },
+            [new PdfName("Matrix")] = new PdfArray
+            {
+                new PdfInteger(1), new PdfInteger(0),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(0)
+            },
+            // deliberately no /Resources -- a genuinely empty content stream references nothing.
         };
-        field.SetMaxLengthInternal(
-            ResolveObject(annot.Get("MaxLen")) is PdfInteger maxLenInt ? (int)maxLenInt.Value : null);
-        field.SetIsMultilineInternal(FieldFlags.Has(ff, FieldFlags.Multiline));
-        field.SetQuaddingInternal(ResolveObject(annot.Get("Q")) is PdfInteger qInt ? (int)qInt.Value : 0);
-        field.SetValueInternal(null);
-        return field;
+        var xobjStream = new PdfStream(xobjDict, Array.Empty<byte>());
+        PdfIndirectReference apRef = _document.RegisterObject(xobjStream);
+
+        annot[new PdfName("AP")] = new PdfDictionary { [ApNormalKey] = apRef };
     }
-
-    /// <summary>Builds a <see cref="PdfChoiceField"/> view of <paramref name="annot"/> scoped to just
-    /// this one widget, with no selection (this repair's entire point) via the internal setters --
-    /// never <c>SelectedValues</c>/<c>SelectedIndices</c>, which would write <c>/V</c>/<c>/I</c> onto
-    /// the widget and re-invoke <see cref="FieldAppearanceGenerator.Regenerate"/> itself.</summary>
-    private PdfChoiceField BuildBlankChoiceFieldView(PdfDictionary annot, int ff)
-    {
-        var field = new PdfChoiceField
-        {
-            IsCombo = FieldFlags.Has(ff, FieldFlags.Combo),
-            IsMultiSelect = FieldFlags.Has(ff, FieldFlags.MultiSelect),
-            Dict = annot,
-            Doc = _document,
-            WidgetDicts = new[] { annot },
-        };
-        field.SetOptionsInternal(ReadOptions(annot));
-        field.SetSelectedValuesInternal(Array.Empty<string>());
-        field.SetSelectedIndicesInternal(Array.Empty<int>());
-        return field;
-    }
-
-    /// <summary>Reads <paramref name="annot"/>'s own <c>/Opt</c> (export/display pairs, or bare
-    /// strings where export == display) the same way <c>FormFieldTree</c> does. Not walked up
-    /// <c>/Parent</c> -- unlike <c>/FT</c>/<c>/Ff</c>/<c>/V</c> -- because a blank field's content is
-    /// identical whether or not its list rows are populated with the true inherited options; this
-    /// only matters for a real list box's row count, which the corpus's zero blank-<c>/Ch</c>
-    /// findings never exercise (design doc §2), so own-dict-only is the proportionate scope.</summary>
-    private List<(string Export, string Display)> ReadOptions(PdfDictionary annot)
-    {
-        var options = new List<(string, string)>();
-        if (ResolveObject(annot.Get("Opt")) is not PdfArray optArr)
-            return options;
-
-        foreach (PdfObject item in optArr)
-        {
-            PdfObject? resolved = ResolveObject(item) ?? item;
-            if (resolved is PdfArray { Count: >= 2 } pair)
-                options.Add((StringFromPdf(ResolveObject(pair[0])), StringFromPdf(ResolveObject(pair[1]))));
-            else
-                options.Add((StringFromPdf(resolved), StringFromPdf(resolved)));
-        }
-        return options;
-    }
-
-    private static string StringFromPdf(PdfObject? obj) => obj switch
-    {
-        PdfString s => s.GetText(),
-        PdfName n => n.Value,
-        _ => string.Empty,
-    };
 }
