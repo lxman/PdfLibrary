@@ -50,6 +50,8 @@ internal static class TransparencyAnalysis
         var blend = new HashSet<OutputIntentColour>();
         var resourceSeen = new HashSet<int>(); // resource dictionaries already walked (cycle guard)
         var streamSeen = new HashSet<int>();    // XObject / pattern streams already walked
+        var resourceInstances = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        var streamInstances = new HashSet<PdfStream>(ReferenceEqualityComparer.Instance);
 
         // Classifies a transparency group's /CS to its device family and records it as a reachable
         // blending space. Only a real transparency group (/S /Transparency) with a device (Gray/RGB/CMYK)
@@ -74,6 +76,11 @@ internal static class TransparencyAnalysis
         void WalkResources(PdfResources? resources)
         {
             if (resources is null)
+                return;
+            // Direct resource dictionaries have no object number. This matters after an inherited
+            // page dictionary is materialized onto a Form XObject: that dictionary commonly contains
+            // the form itself, so object-number-only guarding cannot break the resulting graph cycle.
+            if (!resourceInstances.Add(resources.Dictionary))
                 return;
             if (resources.Dictionary.IsIndirect && !resourceSeen.Add(resources.Dictionary.ObjectNumber))
                 return;
@@ -114,6 +121,8 @@ internal static class TransparencyAnalysis
         {
             if (context.Resolve(xobjectObj) is not PdfStream stream)
                 return;
+            if (!streamInstances.Add(stream))
+                return;
             string? subtype = context.ResolveName(stream.Dictionary.Get("Subtype"));
             if (subtype == "Image")
             {
@@ -146,6 +155,8 @@ internal static class TransparencyAnalysis
         void WalkStreamResources(PdfObject? streamObj)
         {
             if (context.Resolve(streamObj) is not PdfStream stream)
+                return;
+            if (!streamInstances.Add(stream))
                 return;
             if (stream.IsIndirect && !streamSeen.Add(stream.ObjectNumber))
                 return;

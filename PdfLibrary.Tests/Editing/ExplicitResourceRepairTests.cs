@@ -173,6 +173,8 @@ public class ExplicitResourceRepairTests
         ExplicitResourceRepairReport report = editor.RepairExplicitResources(new HashSet<int> { 10 });
         Assert.Single(report.Applied);
         Assert.Empty(Findings(document));
+        Assert.Empty(new TransparencyColourRule()
+            .Check(new ConformanceContext(document, ConformanceProfile.PdfA2b)));
 
         using var output = new MemoryStream();
         editor.Save(output);
