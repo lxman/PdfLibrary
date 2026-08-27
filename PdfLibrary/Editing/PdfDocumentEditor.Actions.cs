@@ -14,7 +14,8 @@ namespace PdfLibrary.Editing;
 public enum ProhibitedActionKind { Launch, JavaScript, DisallowedNamed, NoActionType, OtherProhibited }
 
 /// <summary>One place PDF/A clause 6.5.1 requires removal: either an annotation host, addressed by
-/// <see cref="HostObjectNumber"/> (Link/Widget <c>/A</c> and Widget <c>/AA</c> triggers -- every host
+/// <see cref="HostObjectNumber"/> (Link/Widget <c>/A</c> and <c>/AA</c> triggers on every annotation
+/// subtype -- every host
 /// annotation in the measured population is indirect, so this is never null for a host site), or a
 /// <c>/Names /JavaScript</c> name-tree entry, addressed by <see cref="JavaScriptEntryName"/> (these
 /// carry no object number of their own).
@@ -98,7 +99,21 @@ public sealed partial class PdfDocumentEditor
     /// <summary>Bounds every unbounded walk in this file (name tree, <c>/Next</c> chain, outline tree,
     /// AcroForm <c>/Fields</c> tree) the way <see cref="EnumerateNameTree"/> already bounds its own: a
     /// cycle guard cannot help against a document that is merely enormous rather than cyclic.</summary>
-    private const int ActionWalkBudget = 100_000;
+    private const int DefaultActionWalkBudget = 100_000;
+
+    private int _actionWalkBudget = DefaultActionWalkBudget;
+
+    /// <summary>The per-walk safety limit used by prohibited-action classification. Internal so tests
+    /// can force the otherwise corpus-unreachable exhaustion branches without adding 100,001 PDF
+    /// objects; production keeps the established <see cref="DefaultActionWalkBudget"/>. A non-positive
+    /// value would turn every non-empty walk into an artificial refusal, so it is rejected at the seam.</summary>
+    internal int ActionWalkBudget
+    {
+        get => _actionWalkBudget;
+        set => _actionWalkBudget = value > 0
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(value), "The action walk budget must be positive.");
+    }
 
     /// <summary>One repairable site plus everything <see cref="RepairProhibitedActions"/> needs to
     /// perform the removal, so the write side never walks the document a second time to re-locate what
@@ -177,10 +192,10 @@ public sealed partial class PdfDocumentEditor
     /// <para>The <c>ContainsKey</c> fast path is not just an optimisation: almost no action carries a
     /// <c>/Next</c> at all (zero in the measured corpus), and this runs once per action on every host
     /// walk, so the common case must not allocate a stack and a visited set to discover nothing.</para></summary>
-    private (bool CarriesProhibited, bool CarriesPermitted) InspectNextChain(PdfDictionary head)
+    private (bool CarriesProhibited, bool CarriesPermitted, bool Exhausted) InspectNextChain(PdfDictionary head)
     {
         if (!head.ContainsKey(NextActionKey))
-            return (false, false);
+            return (false, false, false);
 
         var visited = new HashSet<int>();
         var stack = new Stack<PdfObject?>();
@@ -201,7 +216,7 @@ public sealed partial class PdfDocumentEditor
             PushChain(action);
         }
 
-        return (carriesProhibited, carriesPermitted);
+        return (carriesProhibited, carriesPermitted, stack.Count > 0);
 
         void PushChain(PdfDictionary action)
         {
@@ -236,7 +251,21 @@ public sealed partial class PdfDocumentEditor
         PdfDictionary action, string hostDescription)
     {
         ProhibitedActionKind? kind = ClassifyAction(action);
-        (bool chainCarriesProhibited, bool chainCarriesPermitted) = InspectNextChain(action);
+        (bool chainCarriesProhibited, bool chainCarriesPermitted, bool chainWalkExhausted) =
+            InspectNextChain(action);
+
+        // Final whole-branch review, 2026-08-26: exhaustion used to look exactly like a complete
+        // all-prohibited chain. A prohibited head was then removed even though an unseen permitted
+        // action could sit just beyond the limit; a permitted head with an unseen prohibited tail
+        // reached neither report list while ActionTypeRule kept walking. Preserve the host reference
+        // and make the incomplete classification explicit instead.
+        if (chainWalkExhausted)
+        {
+            return (kind ?? ProhibitedActionKind.OtherProhibited,
+                $"Inspection of the /Next chain on {hostDescription} reached the {ActionWalkBudget}-node "
+              + "safety limit. The host reference was left in place because the uninspected tail may "
+              + "contain permitted actions that removal would discard; inspect or shorten the chain first.");
+        }
 
         if (kind is not null)
         {
@@ -300,7 +329,7 @@ public sealed partial class PdfDocumentEditor
 
         // Runs before the loop, not inside it: whether a container is shared is a fact about the whole
         // document, never about the annotation currently in hand.
-        Dictionary<PdfDictionary, List<TriggerHost>> sharedTriggers = SharedTriggerDictionaries();
+        Dictionary<PdfDictionary, List<TriggerHost>> sharedTriggers = SharedTriggerDictionaries(refusals);
 
         foreach ((PdfDictionary annot, int _) in EnumerateIndirectAnnotations())
         {
@@ -337,7 +366,7 @@ public sealed partial class PdfDocumentEditor
     /// field+widget, which is both an annotation and an AcroForm field). Deduping is
     /// <see cref="SharedTriggerDictionaries"/>'s job, not this method's -- see there for why it is
     /// load-bearing.</para></summary>
-    private IEnumerable<TriggerHost> EnumerateTriggerHosts()
+    private IEnumerable<TriggerHost> EnumerateTriggerHosts(List<ProhibitedActionRefusal> refusals)
     {
         PdfDictionary? catalog = _document.CatalogDictionary;
         if (catalog is not null)
@@ -361,10 +390,10 @@ public sealed partial class PdfDocumentEditor
             }
         }
 
-        foreach (PdfDictionary item in EnumerateOutlineItems(catalog))
+        foreach (PdfDictionary item in EnumerateOutlineItems(catalog, refusals))
             yield return new TriggerHost(item, $"outline item {Describe(item)}");
 
-        foreach (PdfDictionary field in EnumerateAcroFormFields(catalog))
+        foreach (PdfDictionary field in EnumerateAcroFormFields(catalog, refusals))
             yield return new TriggerHost(field, $"field {Describe(field)}");
     }
 
@@ -400,13 +429,14 @@ public sealed partial class PdfDocumentEditor
     /// either twice would make its own <c>/AA</c> "shared with itself" and turn every such document's
     /// repair into a refusal, which is a board-movement regression rather than a safety
     /// measure.</para></summary>
-    private Dictionary<PdfDictionary, List<TriggerHost>> SharedTriggerDictionaries()
+    private Dictionary<PdfDictionary, List<TriggerHost>> SharedTriggerDictionaries(
+        List<ProhibitedActionRefusal> refusals)
     {
         var seenHosts = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
         var hostsByTriggers =
             new Dictionary<PdfDictionary, List<TriggerHost>>(ReferenceEqualityComparer.Instance);
 
-        foreach (TriggerHost host in EnumerateTriggerHosts())
+        foreach (TriggerHost host in EnumerateTriggerHosts(refusals))
         {
             if (!seenHosts.Add(host.Host))
                 continue;
@@ -433,7 +463,8 @@ public sealed partial class PdfDocumentEditor
     /// <c>DestinationRepairer.RepairOutlines</c> (<c>:102</c>) uses. Shared by
     /// <see cref="RefuseOutlineActions"/> and <see cref="EnumerateTriggerHosts"/> so the refusal walk
     /// and the sharing scan cannot reach different sets of items.</summary>
-    private IEnumerable<PdfDictionary> EnumerateOutlineItems(PdfDictionary? catalog)
+    private IEnumerable<PdfDictionary> EnumerateOutlineItems(
+        PdfDictionary? catalog, List<ProhibitedActionRefusal> refusals)
     {
         if (catalog is null || ResolveObject(catalog.Get(OutlinesKey)) is not PdfDictionary outlines)
             yield break;
@@ -453,6 +484,9 @@ public sealed partial class PdfDocumentEditor
             stack.Push(item.Get(NextActionKey));    // sibling
             stack.Push(item.Get(OutlineFirstKey));  // child
         }
+
+        if (stack.Count > 0)
+            AddWalkBudgetRefusal("outline tree traversal", refusals);
     }
 
     /// <summary>Every AcroForm field, merged field+widgets included. Mirrors
@@ -462,7 +496,8 @@ public sealed partial class PdfDocumentEditor
     /// what <see cref="RefusePureFieldActions"/> relies on when it skips a merged field+widget. Shared
     /// with <see cref="EnumerateTriggerHosts"/> for the same reason
     /// <see cref="EnumerateOutlineItems"/> is.</summary>
-    private IEnumerable<PdfDictionary> EnumerateAcroFormFields(PdfDictionary? catalog)
+    private IEnumerable<PdfDictionary> EnumerateAcroFormFields(
+        PdfDictionary? catalog, List<ProhibitedActionRefusal> refusals)
     {
         if (catalog is null
             || ResolveObject(catalog.Get(AcroFormKey)) is not PdfDictionary acroForm
@@ -487,6 +522,32 @@ public sealed partial class PdfDocumentEditor
 
             yield return field;
         }
+
+        if (stack.Count > 0)
+            AddWalkBudgetRefusal("AcroForm /Fields tree traversal", refusals);
+    }
+
+    /// <summary>Adds one unfilterable refusal when an outline or field walk cannot certify its unseen
+    /// tail. The classifier intentionally walks each tree once for shared-<c>/AA</c> discovery and once
+    /// for unmeasured-host refusals; exact-message deduplication prevents those two consumers from
+    /// reporting the same exhaustion twice. Before the 2026-08-26 final review both walkers stopped
+    /// silently, so rule findings beyond 100,000 nodes were absent from both outcome lists.</summary>
+    private void AddWalkBudgetRefusal(
+        string hostDescription, List<ProhibitedActionRefusal> refusals)
+    {
+        string reason = $"Inspection of the {hostDescription} reached the {ActionWalkBudget}-node safety "
+                      + "limit. The uninspected tail was left unchanged and may contain prohibited "
+                      + "actions; inspect or shorten the tree before retrying.";
+        if (refusals.Any(refusal => refusal.Site.HostDescription == hostDescription
+                                   && refusal.Reason == reason))
+        {
+            return;
+        }
+
+        refusals.Add(new ProhibitedActionRefusal(
+            new ProhibitedActionSite(
+                null, null, hostDescription, ProhibitedActionKind.OtherProhibited),
+            reason));
     }
 
     /// <summary>An annotation's own <c>/A</c> -- Link and Widget alike. Neither
@@ -831,7 +892,7 @@ public sealed partial class PdfDocumentEditor
     /// <summary>Each outline item's <c>/A</c>, over <see cref="EnumerateOutlineItems"/>'s walk.</summary>
     private void RefuseOutlineActions(PdfDictionary? catalog, List<ProhibitedActionRefusal> refusals)
     {
-        foreach (PdfDictionary item in EnumerateOutlineItems(catalog))
+        foreach (PdfDictionary item in EnumerateOutlineItems(catalog, refusals))
             RefuseUnmeasuredHost(item.Get(ActionKey), $"outline item {Describe(item)} /A", refusals);
     }
 
@@ -850,7 +911,7 @@ public sealed partial class PdfDocumentEditor
     private void RefusePureFieldActions(
         PdfDictionary? catalog, HashSet<int> annotationObjectNumbers, List<ProhibitedActionRefusal> refusals)
     {
-        foreach (PdfDictionary field in EnumerateAcroFormFields(catalog))
+        foreach (PdfDictionary field in EnumerateAcroFormFields(catalog, refusals))
         {
             if (field.IsIndirect && annotationObjectNumbers.Contains(field.ObjectNumber))
                 continue; // a merged field+widget -- the annotation pass owns it, and repaired it

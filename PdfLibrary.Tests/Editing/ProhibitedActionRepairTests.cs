@@ -1,4 +1,5 @@
 using PdfLibrary.Builder;
+using PdfLibrary.Conformance;
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
 using PdfLibrary.Editing;
@@ -200,7 +201,7 @@ public sealed class ProhibitedActionRepairTests
     }
 
     [Fact]
-    public void Repair_refuses_a_disallowed_Named_action_nothing_and_drops_it()
+    public void Repair_removes_a_disallowed_Named_action_and_drops_it()
     {
         // /S /Named with /N /GoBack -- prohibited by test 2, and the single largest real population.
         PdfDocumentEditor editor = NewEditorWithNamedAction("GoBack");
@@ -1124,6 +1125,115 @@ public sealed class ProhibitedActionRepairTests
         ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
         Assert.Contains("/Next", refusal.Reason, StringComparison.Ordinal);
         Assert.Contains("permits", refusal.Reason, StringComparison.Ordinal);
+    }
+
+    // ---- Final whole-branch review: traversal-budget exhaustion must be reachable and loud -------
+
+    /// <summary>The old bounded walker treated exhaustion as a complete chain. With a prohibited head
+    /// and another prohibited node inside the budget, it removed /A even though a permitted GoTo sat
+    /// just beyond the cutoff. The internal budget seam makes that latent 100,000-node shape testable.</summary>
+    [Fact]
+    public void Next_chain_budget_exhaustion_refuses_the_host_instead_of_removing_an_unseen_permitted_action()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDictionary head = MakeAction("Launch");
+        PdfDictionary first = MakeAction("JavaScript");
+        first[NextKey] = MakeAction("GoTo");
+        head[NextKey] = first;
+        AddAnnotEntry(editor.Document, 0, editor.Document.RegisterObject(MakeLink(head)));
+        editor.ActionWalkBudget = 1;
+        Assert.Contains(Preflighter.Check(editor.Document, ConformanceProfile.PdfA2b).Findings,
+            finding => finding.RuleId == "action-type");
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Contains("safety limit", refusal.Reason, StringComparison.Ordinal);
+        Assert.Contains("permitted actions", refusal.Reason, StringComparison.Ordinal);
+        Assert.True(SingleAnnotation(editor).ContainsKey(AKey));
+    }
+
+    /// <summary>An outline action beyond the test-sized budget is still a live ActionTypeRule finding.
+    /// The repair cannot enumerate that site's address, so it returns one unfilterable traversal refusal
+    /// rather than an empty report that is indistinguishable from a clean document.</summary>
+    [Fact]
+    public void Outline_budget_exhaustion_returns_an_explicit_unfilterable_refusal()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+        PdfDictionary second = new()
+        {
+            [new PdfName("Title")] = PdfString.FromText("Second"),
+            [AKey] = MakeAction("Launch"),
+        };
+        PdfIndirectReference secondRef = doc.RegisterObject(second);
+        PdfDictionary first = new()
+        {
+            [new PdfName("Title")] = PdfString.FromText("First"),
+            [NextKey] = secondRef,
+        };
+        PdfIndirectReference firstRef = doc.RegisterObject(first);
+        doc.CatalogDictionary![new PdfName("Outlines")] = doc.RegisterObject(new PdfDictionary
+        {
+            [new PdfName("Type")] = new PdfName("Outlines"),
+            [new PdfName("First")] = firstRef,
+            [new PdfName("Last")] = secondRef,
+            [new PdfName("Count")] = new PdfInteger(2),
+        });
+        // First item plus its null /First child consume both iterations; the second item stays queued.
+        editor.ActionWalkBudget = 2;
+        Assert.Contains(Preflighter.Check(doc, ConformanceProfile.PdfA2b).Findings,
+            finding => finding.RuleId == "action-type");
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal("outline tree traversal", refusal.Site.HostDescription);
+        Assert.Null(refusal.Site.HostObjectNumber);
+        Assert.Null(refusal.Site.JavaScriptEntryName);
+        Assert.Contains("safety limit", refusal.Reason, StringComparison.Ordinal);
+        Assert.True(second.ContainsKey(AKey));
+    }
+
+    /// <summary>The field-tree counterpart to the outline test. The child action is beyond a one-node
+    /// budget and therefore unseen by the repair walk, while the unbounded conformance walk proves the
+    /// violation exists; the explicit refusal closes the former absent-from-both-lists hole.</summary>
+    [Fact]
+    public void Field_budget_exhaustion_returns_an_explicit_unfilterable_refusal()
+    {
+        PdfDocumentEditor editor = NewEditor();
+        PdfDocument doc = editor.Document;
+        PdfDictionary child = new()
+        {
+            [new PdfName("FT")] = new PdfName("Btn"),
+            [new PdfName("T")] = PdfString.FromText("Child"),
+            [AKey] = MakeAction("JavaScript"),
+        };
+        PdfIndirectReference childRef = doc.RegisterObject(child);
+        PdfDictionary parent = new()
+        {
+            [new PdfName("FT")] = new PdfName("Btn"),
+            [new PdfName("T")] = PdfString.FromText("Parent"),
+            [new PdfName("Kids")] = new PdfArray(childRef),
+        };
+        PdfIndirectReference parentRef = doc.RegisterObject(parent);
+        doc.CatalogDictionary![new PdfName("AcroForm")] =
+            new PdfDictionary { [new PdfName("Fields")] = new PdfArray(parentRef) };
+        editor.ActionWalkBudget = 1;
+        Assert.Contains(Preflighter.Check(doc, ConformanceProfile.PdfA2b).Findings,
+            finding => finding.RuleId == "action-type");
+
+        ProhibitedActionRepairReport report = editor.RepairProhibitedActions();
+
+        Assert.Empty(report.Repaired);
+        ProhibitedActionRefusal refusal = Assert.Single(report.Refused);
+        Assert.Equal("AcroForm /Fields tree traversal", refusal.Site.HostDescription);
+        Assert.Null(refusal.Site.HostObjectNumber);
+        Assert.Null(refusal.Site.JavaScriptEntryName);
+        Assert.Contains("safety limit", refusal.Reason, StringComparison.Ordinal);
+        Assert.True(child.ContainsKey(AKey));
     }
 
     // ---- MINOR 8: the main repair path had no save-round-trip proof ------------------------------
