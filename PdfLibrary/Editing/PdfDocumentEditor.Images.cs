@@ -118,7 +118,7 @@ public sealed partial class PdfDocumentEditor
     /// no /DefaultForPrinting entries rather than thrown on or treated as an automatic refusal: this
     /// method cannot know what a non-array value means, so it degrades to the /OC-only check rather than
     /// guessing. That mirrors how the rest of this file's walks skip a node that doesn't resolve to the
-    /// expected type (e.g. <see cref="EnumerateEmbeddedFilesTree"/>) instead of throwing.</para></summary>
+    /// expected type (e.g. <see cref="EnumerateNameTree"/>) instead of throwing.</para></summary>
     private bool AlternatesSafeToRemove(PdfDictionary imageDict, out string? reason)
     {
         if (imageDict.Get("OC") is not null)

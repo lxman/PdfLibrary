@@ -133,7 +133,7 @@ public sealed partial class PdfDocumentEditor
         var replacedSpecs = new HashSet<int>();
         var entries = new List<(string Key, PdfObject Value)>();
         PdfDictionary? names = ResolveObject(catalog.Get("Names")) as PdfDictionary;
-        foreach ((string? key, PdfObject value) in EnumerateEmbeddedFilesTree(names?.Get("EmbeddedFiles")))
+        foreach ((string? key, PdfObject value) in EnumerateNameTree(names?.Get("EmbeddedFiles")))
         {
             if (key is null) continue;
             if (string.Equals(key, spec.Name, StringComparison.Ordinal))
@@ -175,10 +175,17 @@ public sealed partial class PdfDocumentEditor
             catalog.Remove(new PdfName("AF"));
     }
 
-    /// <summary>Iterative name-tree walk (key, value) — deliberately mirrors the guarded walk in
+    /// <summary>Iterative name-tree walk (key, value) over ANY name tree — the caller supplies the root
+    /// node, and nothing here is specific to one tree. Deliberately mirrors the guarded walk in
     /// Document.EmbeddedFileReader (internal to a different concern; not reused so the read path
-    /// stays untangled from editing).</summary>
-    private IEnumerable<(string? Key, PdfObject Value)> EnumerateEmbeddedFilesTree(PdfObject? rootNode)
+    /// stays untangled from editing).
+    ///
+    /// <para>Two callers on two different trees: this file reads the catalog's /Names /EmbeddedFiles
+    /// tree, and <c>PdfDocumentEditor.Actions.cs</c> reads /Names /JavaScript for the PDF/A clause 6.5.1
+    /// prohibited-action repair. The old name said "embedded files" and was the only thing about this
+    /// walk that ever was — keep it tree-agnostic: a third tree should be a third caller, never a third
+    /// copy of this walk.</para></summary>
+    private IEnumerable<(string? Key, PdfObject Value)> EnumerateNameTree(PdfObject? rootNode)
     {
         var visited = new HashSet<int>();
         var stack = new Stack<PdfObject?>();
@@ -298,7 +305,7 @@ public sealed partial class PdfDocumentEditor
 
         PdfDictionary? catalog = _document.CatalogDictionary;
         PdfDictionary? names = catalog is null ? null : ResolveObject(catalog.Get("Names")) as PdfDictionary;
-        foreach ((string? key, PdfObject value) in EnumerateEmbeddedFilesTree(names?.Get("EmbeddedFiles")))
+        foreach ((string? key, PdfObject value) in EnumerateNameTree(names?.Get("EmbeddedFiles")))
         {
             if (ResolveObject(value) is not PdfDictionary spec) continue;
             if (spec.IsIndirect && !seen.Add(spec.ObjectNumber)) continue;
