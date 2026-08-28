@@ -45,7 +45,8 @@ public class FormConfigurationRepairTests
         bool duplicateWidgetOnSecondPage = false,
         bool docMdp = false,
         bool ur3 = false,
-        bool malformedXfaArray = false)
+        bool malformedXfaArray = false,
+        bool mergedTerminalWidgets = false)
     {
         specs ??= [new FieldSpec("form[0].page[0].name[0]")];
         var document = new PdfDocument();
@@ -75,6 +76,13 @@ public class FormConfigurationRepairTests
                 [N("Subtype")] = N("Widget"),
                 [N("Parent")] = Ref(fieldNumber),
             };
+            if (mergedTerminalWidgets)
+            {
+                widget[N("FT")] = field.Get("FT")!;
+                widget[N("T")] = field.Get("T")!;
+                field.Remove(N("FT"));
+                field.Remove(N("T"));
+            }
             if (!spec.MissingRect)
                 widget[N("Rect")] = new PdfArray(
                     new PdfInteger(0), new PdfInteger(0), new PdfInteger(20), new PdfInteger(10));
@@ -199,6 +207,54 @@ public class FormConfigurationRepairTests
     }
 
     [Fact]
+    public void Static_xfa_accepts_terminal_fields_merged_into_widget_kids()
+    {
+        using Fixture fixture = Build(dynamicRender: "forbidden", mergedTerminalWidgets: true);
+        var editor = new PdfDocumentEditor(fixture.Document);
+
+        FormConfigurationRepairPreview preview = editor.PreviewFormConfigurationRepair();
+
+        Assert.NotNull(preview.Candidate);
+        Assert.True(preview.Candidate.RemovesXfa);
+        Assert.Equal(1, preview.Candidate.PreservedFieldCount);
+        Assert.Empty(preview.Refused);
+    }
+
+    [Fact]
+    public void Xfa_only_shell_is_refused_for_having_no_AcroForm_fields_before_packet_interpretation()
+    {
+        using Fixture fixture = Build(
+            [],
+            dynamicRender: "required",
+            templateXml: "<template xmlns='http://www.xfa.org/schema/xfa-template/3.3/'>"
+                       + "<field name='xfaOnly'/></template>");
+
+        FormConfigurationRepairPreview preview =
+            new PdfDocumentEditor(fixture.Document).PreviewFormConfigurationRepair();
+
+        Assert.Null(preview.Candidate);
+        FormConfigurationRefusal refusal = Assert.Single(preview.Refused);
+        Assert.Contains("no terminal fields", refusal.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Dynamic_xfa_only_shell_reports_NeedsRendering_and_zero_AcroForm_fields_separately()
+    {
+        using Fixture fixture = Build(
+            [],
+            dynamicRender: "required",
+            needsRendering: true);
+
+        FormConfigurationRepairPreview preview =
+            new PdfDocumentEditor(fixture.Document).PreviewFormConfigurationRepair();
+
+        Assert.Null(preview.Candidate);
+        Assert.Collection(preview.Refused,
+            refusal => Assert.Contains("/NeedsRendering true", refusal.Reason, StringComparison.Ordinal),
+            refusal => Assert.Contains("no terminal fields", refusal.Reason, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void NeedAppearances_with_missing_current_appearance_is_refused()
     {
         using Fixture fixture = Build(
@@ -237,6 +293,46 @@ public class FormConfigurationRepairTests
 
         Assert.NotNull(new PdfDocumentEditor(safe.Document).PreviewFormConfigurationRepair().Candidate);
         Assert.Null(new PdfDocumentEditor(unsafeFixture.Document).PreviewFormConfigurationRepair().Candidate);
+    }
+
+    [Fact]
+    public void Static_xfa_allows_an_unselected_button_without_an_explicit_Off_stream()
+    {
+        using Fixture fixture = Build(
+            [new FieldSpec("button[0]", Type: "Btn", Value: "Off", Appearance: AppearanceKind.ButtonStates)],
+            dynamicRender: "forbidden",
+            templateXml: "<template xmlns='http://www.xfa.org/schema/xfa-template/3.3/'>"
+                       + "<field name='button'/></template>");
+        PdfDictionary normal = (PdfDictionary)((PdfDictionary)fixture.Widgets[0].Get("AP")!).Get("N")!;
+        PdfObject off = normal.Get("Off")!;
+        normal.Remove(N("Off"));
+        normal[N("Yes")] = off;
+
+        FormConfigurationRepairPreview preview =
+            new PdfDocumentEditor(fixture.Document).PreviewFormConfigurationRepair();
+
+        Assert.NotNull(preview.Candidate);
+        Assert.True(preview.Candidate.RemovesXfa);
+        Assert.Empty(preview.Refused);
+    }
+
+    [Fact]
+    public void NeedAppearances_still_requires_an_explicit_Off_stream_for_an_unselected_button()
+    {
+        using Fixture fixture = Build(
+            [new FieldSpec("button[0]", Type: "Btn", Value: "Off", Appearance: AppearanceKind.ButtonStates)],
+            needAppearances: true);
+        PdfDictionary normal = (PdfDictionary)((PdfDictionary)fixture.Widgets[0].Get("AP")!).Get("N")!;
+        PdfObject off = normal.Get("Off")!;
+        normal.Remove(N("Off"));
+        normal[N("Yes")] = off;
+
+        FormConfigurationRepairPreview preview =
+            new PdfDocumentEditor(fixture.Document).PreviewFormConfigurationRepair();
+
+        Assert.Null(preview.Candidate);
+        Assert.Contains(preview.Refused,
+            refusal => refusal.Reason.Contains("button", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

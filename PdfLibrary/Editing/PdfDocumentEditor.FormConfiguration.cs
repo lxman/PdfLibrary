@@ -159,7 +159,12 @@ public sealed partial class PdfDocumentEditor
 
         bool removeXfa = false;
         int xfaPacketCount = 0;
-        if (hasXfa && !needsRendering)
+        if (hasXfa && needsRendering && inventory.Terminals.Count == 0)
+        {
+            refusals.Add(new FormConfigurationRefusal(
+                "The /XFA entry was left in place because the XFA template or AcroForm has no terminal fields to preserve."));
+        }
+        else if (hasXfa && !needsRendering)
         {
             if (TryClassifyStaticXfa(
                     context, acroForm, inventory, out xfaPacketCount, out string? reason))
@@ -270,7 +275,11 @@ public sealed partial class PdfDocumentEditor
                         failure = "an AcroForm field /Kids entry does not resolve to a dictionary.";
                         return false;
                     }
-                    if (context.ResolveName(kid.Get("Subtype")) == "Widget")
+                    bool widgetOnly = context.ResolveName(kid.Get("Subtype")) == "Widget"
+                                      && !kid.ContainsKey(new PdfName("T"))
+                                      && !kid.ContainsKey(new PdfName("FT"))
+                                      && !kid.ContainsKey(new PdfName("Kids"));
+                    if (widgetOnly)
                         widgets.Add(kid);
                     else
                         childFields.Add(kidRaw);
@@ -418,7 +427,8 @@ public sealed partial class PdfDocumentEditor
 
                 case "Btn":
                     if (normal is not PdfDictionary states
-                        || !TryValidateButtonState(context, widget, field.EffectiveValue, states))
+                        || !TryValidateButtonState(
+                            context, widget, field.EffectiveValue, states, requireAllAppearances))
                     {
                         reason = "a button Widget lacks a normal appearance state for its current value/state.";
                         return false;
@@ -458,15 +468,27 @@ public sealed partial class PdfDocumentEditor
         ConformanceContext context,
         PdfDictionary widget,
         PdfObject? effectiveValue,
-        PdfDictionary states)
+        PdfDictionary states,
+        bool requireAllAppearances)
     {
         string? appearanceState = context.ResolveName(widget.Get("AS"));
         string? valueState = context.ResolveName(effectiveValue);
-        if (appearanceState is null && valueState is null)
-            appearanceState = "Off";
-        if (appearanceState is not null && !HasUsableButtonState(context, states, appearanceState))
-            return false;
-        return valueState is null || HasUsableButtonState(context, states, valueState);
+        if (appearanceState is not null)
+        {
+            if (appearanceState != "Off")
+                return HasUsableButtonState(context, states, appearanceState);
+
+            // Static XFAF documents commonly omit an explicit /Off stream: the fixed PDF page already
+            // carries the empty control chrome and an unselected Widget intentionally draws no mark.
+            // That is safe for XFA removal, which requires only CURRENT non-empty appearances. It is
+            // not enough to remove /NeedAppearances, whose stronger contract requires every current
+            // Widget state to resolve to a stream.
+            return !requireAllAppearances || HasUsableButtonState(context, states, "Off");
+        }
+
+        if (valueState is not null && valueState != "Off")
+            return HasUsableButtonState(context, states, valueState);
+        return !requireAllAppearances || HasUsableButtonState(context, states, "Off");
     }
 
     private static bool HasUsableButtonState(
@@ -483,6 +505,11 @@ public sealed partial class PdfDocumentEditor
     {
         packetCount = 0;
         reason = null;
+        if (inventory.Terminals.Count == 0)
+        {
+            reason = "the XFA template or AcroForm has no terminal fields to preserve.";
+            return false;
+        }
         if (!TryReadXfaPackets(context, acroForm.Get(FormConfigurationXfaKey), out List<XfaPacket> packets, out reason))
             return false;
         packetCount = packets.Count;
@@ -519,7 +546,7 @@ public sealed partial class PdfDocumentEditor
 
         if (!TryGenerateSomPaths(template.Root, out IReadOnlyList<string> templateNames, out reason))
             return false;
-        if (templateNames.Count == 0 || inventory.Terminals.Count == 0)
+        if (templateNames.Count == 0)
         {
             reason = "the XFA template or AcroForm has no terminal fields to preserve.";
             return false;
