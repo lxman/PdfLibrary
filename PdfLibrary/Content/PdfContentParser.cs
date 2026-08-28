@@ -506,6 +506,9 @@ internal class PdfContentParser
         // Parse the dictionary part (until we see ID)
         var parameters = new PdfDictionary();
         PdfName? currentKey = null;
+        var interpolateKeyCount = 0;
+        long? interpolateValueOffset = null;
+        var interpolateValueLength = 0;
 
         while (true)
         {
@@ -524,10 +527,17 @@ internal class PdfContentParser
                 if (currentKey is null)
                 {
                     currentKey = PdfName.Parse(token.Value);
+                    if (currentKey.Value is "I" or "Interpolate")
+                        interpolateKeyCount++;
                 }
                 else
                 {
                     parameters[currentKey] = PdfName.Parse(token.Value);
+                    if (currentKey.Value is "I" or "Interpolate")
+                    {
+                        interpolateValueOffset = token.Position;
+                        interpolateValueLength = token.Value.Length;
+                    }
                     currentKey = null;
                 }
             }
@@ -548,6 +558,11 @@ internal class PdfContentParser
 
                 if (value is null) continue;
                 parameters[currentKey] = value;
+                if (currentKey.Value is "I" or "Interpolate")
+                {
+                    interpolateValueOffset = token.Position;
+                    interpolateValueLength = token.Value.Length;
+                }
                 currentKey = null;
             }
         }
@@ -613,7 +628,12 @@ internal class PdfContentParser
                         lexer.SyncPositionFromStream();
 
                         PdfLogger.Log(LogCategory.Images, $"[PARSER] Inline image parsed: {parameters.Count} params, {imageData.Count} bytes");
-                        return new InlineImageOperator(parameters, imageData.ToArray());
+                        return new InlineImageOperator(
+                            parameters,
+                            imageData.ToArray(),
+                            interpolateKeyCount,
+                            interpolateKeyCount == 1 ? interpolateValueOffset : null,
+                            interpolateKeyCount == 1 ? interpolateValueLength : 0);
                     }
                 }
             }

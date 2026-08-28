@@ -132,7 +132,7 @@ public sealed partial class PdfDocumentEditor
               + "than owned by the independently addressable colour-space array.");
 
         var context = new ConformanceContext(_document, ConformanceProfile.PdfA2b);
-        if (HasNameUtf8SignatureProtection(context))
+        if (HasSignatureProtection(context))
             return Refuse(
                 "The invalid colourant name was left unchanged because the document carries a signed "
               + "signature or DocMDP permission. Pellucid performs a full rewrite and does not claim to "
@@ -240,7 +240,7 @@ public sealed partial class PdfDocumentEditor
         return count;
     }
 
-    private static bool HasNameUtf8SignatureProtection(ConformanceContext context)
+    private static bool HasSignatureProtection(ConformanceContext context)
     {
         if (context.Resolve(context.Catalog?.Dictionary.Get(NameUtf8Perms)) is PdfDictionary permissions
             && permissions.ContainsKey(NameUtf8DocMdp))

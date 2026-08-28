@@ -6,7 +6,12 @@ namespace PdfLibrary.Content.Operators;
 /// <summary>
 /// BI...ID...EI - Inline image
 /// </summary>
-internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) : PdfOperator("BI", [])
+internal class InlineImageOperator(
+    PdfDictionary parameters,
+    byte[] imageData,
+    int interpolateKeyCount = 0,
+    long? interpolateValueOffset = null,
+    int interpolateValueLength = 0) : PdfOperator("BI", [])
 {
     /// <summary>
     /// Image parameters (dictionary between BI and ID)
@@ -17,6 +22,17 @@ internal class InlineImageOperator(PdfDictionary parameters, byte[] imageData) :
     /// Raw image data (between ID and EI)
     /// </summary>
     public byte[] ImageData { get; } = imageData;
+
+    /// <summary>Number of source dictionary keys spelled /I or /Interpolate. Kept separately from
+    /// <see cref="Parameters"/>, whose dictionary semantics necessarily collapse duplicate keys.</summary>
+    internal int InterpolateKeyCount { get; } = interpolateKeyCount;
+
+    /// <summary>Byte offset of the sole /I or /Interpolate value token in the decoded content stream.
+    /// Null unless the source contained exactly one alias and its value was a scalar token.</summary>
+    internal long? InterpolateValueOffset { get; } = interpolateValueOffset;
+
+    /// <summary>Source byte length of the token at <see cref="InterpolateValueOffset"/>.</summary>
+    internal int InterpolateValueLength { get; } = interpolateValueLength;
 
     /// <summary>
     /// Image width (W or Width)
