@@ -292,6 +292,81 @@ public class ResaveVerificationTests
         AssertNoNewRuleIds(before, after);
     }
 
+    // ── rendering-intent: custom output-device semantics survive a plain save ───────────────────
+
+    /// <summary>
+    /// The rule reaches the four ISO 32000-1 rendering-intent sites: ExtGState <c>/RI</c>, image-XObject
+    /// <c>/Intent</c>, the page-content <c>ri</c> operator, and inline-image <c>/Intent</c>. A conforming
+    /// reader falls back to RelativeColorimetric when it does not recognize a name, but the same clause
+    /// explicitly permits an output device to support additional intents. Consequently a converter cannot
+    /// replace a custom name with RelativeColorimetric (or remove it and rely on the default) without
+    /// potentially changing colour conversion on the device that understands the extension. A plain full
+    /// rewrite preserves each exact name and therefore preserves the finding as well.
+    /// </summary>
+    [Theory]
+    [InlineData("extgstate")]
+    [InlineData("image-xobject")]
+    [InlineData("page-ri")]
+    [InlineData("inline-image")]
+    public void RenderingIntent_custom_name_at_each_live_site_survives_a_plain_save(string shape)
+    {
+        const string customIntent = "VendorIntent";
+        string pageContent = shape switch
+        {
+            "page-ri" => $"/{customIntent} ri",
+            "inline-image" => $"BI /W 1 /H 1 /BPC 8 /CS /DeviceGray /Intent /{customIntent} ID x EI",
+            _ => "q Q",
+        };
+        string expectedSavedFragment = shape switch
+        {
+            "extgstate" => $"/RI /{customIntent}",
+            "image-xobject" or "inline-image" => $"/Intent /{customIntent}",
+            "page-ri" => $"/{customIntent} ri",
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        string pageResources = shape switch
+        {
+            "extgstate" => "<< /ExtGState << /GS0 5 0 R >> >>",
+            "image-xobject" => "<< /XObject << /Im0 5 0 R >> >>",
+            _ => "<< >>",
+        };
+
+        byte[] pageBytes = L(pageContent);
+        byte[] pageStream =
+        [
+            .. L($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n"),
+            .. pageBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+
+        var pdf = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       + $"/Resources {pageResources} /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, pageStream);
+
+        if (shape == "extgstate")
+            pdf.Obj(5, 0, $"5 0 obj\n<< /Type /ExtGState /RI /{customIntent} >>\nendobj\n");
+        else if (shape == "image-xobject")
+            pdf.Obj(5, 0, $"5 0 obj\n<< /Type /XObject /Subtype /Image /Width 1 /Height 1 "
+                          + $"/ColorSpace /DeviceGray /BitsPerComponent 8 /Intent /{customIntent} "
+                          + "/Length 1 >>\nstream\nx\nendstream\nendobj\n");
+
+        byte[] original = pdf.Build();
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(before.Findings, f => f.RuleId == "rendering-intent");
+        Assert.Contains(customIntent, beforeFinding.Message, StringComparison.Ordinal);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "rendering-intent");
+        Assert.Contains(customIntent, afterFinding.Message, StringComparison.Ordinal);
+        Assert.Contains(expectedSavedFragment, Encoding.Latin1.GetString(saved), StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
     // ── content-stream-operator: extension semantics survive a plain save ────────────────────────
 
     /// <summary>
