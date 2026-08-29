@@ -292,6 +292,125 @@ public class ResaveVerificationTests
         AssertNoNewRuleIds(before, after);
     }
 
+    // ── prohibited-xobject: external/replacement semantics survive when reachable ───────────────
+
+    /// <summary>
+    /// Clause 6.2.9 has five live detector shapes. Each reachable witness is invoked from page content,
+    /// and each carries a distinct proxy marker in its own stream. A full rewrite preserves the Form or
+    /// PostScript stream, the prohibited entry, and the finding. Removing an entry is not a neutral
+    /// dictionary cleanup: <c>/OPI</c> and <c>/Ref</c> identify external high-resolution/imported content;
+    /// <c>/PS</c>, <c>/Subtype2 /PS</c>, and <c>/Subtype /PS</c> carry or select PostScript output that a
+    /// normal PDF display may replace with the proxy. Closing any reachable shape therefore requires the
+    /// source workflow to resolve or flatten its intended output.
+    /// </summary>
+    [Theory]
+    [InlineData("form-opi", "/OPI", "highres.tif")]
+    [InlineData("form-ps", "/PS 6 0 R", "% replacement PostScript")]
+    [InlineData("form-subtype2-ps", "/Subtype2 /PS", "proxy-form-subtype2-ps")]
+    [InlineData("form-ref", "/Ref", "external.pdf")]
+    [InlineData("postscript-xobject", "/Subtype /PS", "proxy-postscript-xobject")]
+    public void ProhibitedXObject_each_reachable_shape_survives_a_plain_save(
+        string shape, string expectedSavedFragment, string expectedReplacementFragment)
+    {
+        byte[] original = ProhibitedXObjectPdf(shape, reachable: true);
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(before.Findings, f => f.RuleId == "prohibited-xobject");
+        Assert.Equal(5, beforeFinding.ObjectNumber);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "prohibited-xobject");
+        Assert.Equal(5, afterFinding.ObjectNumber);
+        string savedText = Encoding.Latin1.GetString(saved);
+        Assert.Contains(expectedSavedFragment, savedText, StringComparison.Ordinal);
+        Assert.Contains(expectedReplacementFragment, savedText, StringComparison.Ordinal);
+        Assert.Contains($"proxy-{shape}", savedText, StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    /// <summary>
+    /// The detector intentionally scans the complete indirect-object table, so an unreferenced prohibited
+    /// XObject is reported on the source bytes. The full-rewrite serializer's orphan collection removes
+    /// that object, making a plain save close only this unreachable case. This does not justify deleting a
+    /// page-reachable XObject or its replacement metadata; the sibling matrix above proves all five live
+    /// shapes survive when a page can invoke them.
+    /// </summary>
+    [Theory]
+    [InlineData("form-opi")]
+    [InlineData("form-ps")]
+    [InlineData("form-subtype2-ps")]
+    [InlineData("form-ref")]
+    [InlineData("postscript-xobject")]
+    public void ProhibitedXObject_each_orphan_shape_is_collected_by_a_plain_save(string shape)
+    {
+        byte[] original = ProhibitedXObjectPdf(shape, reachable: false);
+        PreflightResult before = CheckBytes(original);
+        Assert.Single(before.Findings, f => f.RuleId == "prohibited-xobject");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "prohibited-xobject");
+        Assert.DoesNotContain($"proxy-{shape}", Encoding.Latin1.GetString(saved), StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    private static byte[] ProhibitedXObjectPdf(string shape, bool reachable)
+    {
+        string pageContent = reachable ? "/XO Do" : "q Q";
+        byte[] pageBytes = L(pageContent);
+        byte[] pageStream =
+        [
+            .. L($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n"),
+            .. pageBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+
+        string proxyContent = $"% proxy-{shape}\n0 0 10 10 re f";
+        byte[] proxyBytes = L(proxyContent);
+        string xobjectDictionary = shape switch
+        {
+            "form-opi" => "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << >> "
+                          + "/OPI << /2.0 << /Type /OPI /Version (2.0) /F (highres.tif) >> >>",
+            "form-ps" => "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << >> /PS 6 0 R",
+            "form-subtype2-ps" =>
+                "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << >> /Subtype2 /PS",
+            "form-ref" => "/Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << >> "
+                          + "/Ref << /F (external.pdf) /Page 0 >>",
+            "postscript-xobject" => "/Type /XObject /Subtype /PS",
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        byte[] xobjectStream =
+        [
+            .. L($"5 0 obj\n<< {xobjectDictionary} /Length {proxyBytes.Length} >>\nstream\n"),
+            .. proxyBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+
+        string resources = reachable ? "<< /XObject << /XO 5 0 R >> >>" : "<< >>";
+        var pdf = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       + $"/Resources {resources} /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, pageStream)
+            .Obj(5, 0, xobjectStream);
+
+        if (shape == "form-ps")
+        {
+            byte[] psBytes = L("% replacement PostScript");
+            pdf.Obj(6, 0,
+            [
+                .. L($"6 0 obj\n<< /Length {psBytes.Length} >>\nstream\n"),
+                .. psBytes,
+                .. L("\nendstream\nendobj\n")
+            ]);
+        }
+
+        return pdf.Build();
+    }
+
     // ── rendering-intent: custom output-device semantics survive a plain save ───────────────────
 
     /// <summary>
