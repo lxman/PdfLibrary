@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using PdfLibrary.Builder;
@@ -22,13 +23,15 @@ namespace PdfLibrary.Tests.Conformance;
 /// (<see cref="PdfDocumentSerializer"/> is a deterministic full rewrite: fresh header, offsets, xref and
 /// trailer, no time/GUID in the write path — see PdfDocumentSerializer.cs).
 ///
-/// Four of the five candidate rules PASS this gate (post-eof, file-header, indirect-object-spacing,
-/// stream-object): each is a structural byproduct of always writing a fresh, correctly-framed file, so a
-/// plain resave clears the violation with no extra work. file-id is the documented NEGATIVE: the
+/// Five of the six original candidate rules PASS this gate (post-eof, file-header, indirect-object-spacing,
+/// stream-object, xref-spacing): each is a structural byproduct of always writing a fresh, correctly-framed
+/// file, so a plain resave clears the violation with no extra work. file-id is the documented NEGATIVE: the
 /// serializer only propagates an existing <c>Trailer.Id</c> (PdfDocumentSerializer.cs:70) — it never mints
 /// one — so a document with no /ID keeps failing after a plain save; the finding only clears once the
 /// caller sets <c>Trailer.Id</c> itself before saving. Both outcomes are equally valid deliverables of this
-/// harness: it exists to tell the two classes of rule apart, not to force every rule to pass.
+/// harness: it exists to tell the two classes of rule apart, not to force every rule to pass. Later coverage
+/// audits also use it to prove that rules with semantic or content-bearing violations survive a plain save
+/// and therefore need an explicit non-save disposition.
 /// </summary>
 public class ResaveVerificationTests
 {
@@ -92,7 +95,7 @@ public class ResaveVerificationTests
 
         public Pdf Obj(int num, int gen, string rawText) => Obj(num, gen, L(rawText));
 
-        public byte[] Build()
+        public byte[] Build(string xrefSeparator = "\r\n")
         {
             long xrefPos = _buf.Count;
             int size = _xref.Max(e => e.num) + 1;
@@ -101,7 +104,7 @@ public class ResaveVerificationTests
             foreach ((int num, int gen, long off) in _xref) slots[num] = (off, gen, 'n');
 
             var sb = new StringBuilder();
-            sb.Append("xref\r\n0 ").Append(size).Append("\r\n");
+            sb.Append("xref").Append(xrefSeparator).Append("0 ").Append(size).Append("\r\n");
             for (int i = 0; i < size; i++)
                 sb.Append(slots[i].off.ToString("D10")).Append(' ')
                   .Append(slots[i].gen.ToString("D5")).Append(' ').Append(slots[i].t).Append("\r\n");
@@ -256,6 +259,395 @@ public class ResaveVerificationTests
     }
 
     // ── file-id: the proven negative ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The two branches represented by veraPDF's 6-1-4-t01-fail-a/b fixtures are both structural
+    /// serialization defects: one has <c>SPACE LF</c> between <c>xref</c> and its subsection header,
+    /// the other has <c>LF LF</c>. The loader tolerates both, while the full-rewrite serializer always
+    /// writes <c>xref LF</c>. This saved-byte witness is parameterized over both source forms so the
+    /// classification cannot rest on only one half of the evidence.
+    /// </summary>
+    [Theory]
+    [InlineData(" \n", "SPACE LF")]
+    [InlineData("\n\n", "LF LF")]
+    public void XrefSpacing_finding_is_cleared_by_a_plain_save(
+        string malformedSeparator, string expectedDescription)
+    {
+        byte[] original = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n")
+            .Build(malformedSeparator);
+
+        PreflightResult before = CheckBytes(original);
+        Finding finding = Assert.Single(before.Findings, f => f.RuleId == "xref-spacing");
+        Assert.Equal(FindingSeverity.Error, finding.Severity);
+        Assert.Contains(expectedDescription, finding.Message, StringComparison.Ordinal);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "xref-spacing");
+        Assert.Contains("xref\n0 ", Encoding.Latin1.GetString(saved), StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    // ── hex-string-format: mixed save behavior, therefore not FixedBySaving ─────────────────────────────────────
+
+    /// <summary>
+    /// Hexadecimal strings in the reachable object graph are serialized from their decoded bytes, so
+    /// both malformed written forms become valid hex strings on save. This is only half of the rule's
+    /// traversal surface; the content-stream witness below proves why the rule cannot be classified
+    /// FixedBySaving as a whole.
+    /// </summary>
+    [Theory]
+    [InlineData("48455")]
+    [InlineData("484!")]
+    public void HexStringFormat_in_the_object_graph_is_cleared_by_a_plain_save(string malformedDigits)
+    {
+        byte[] original = new Pdf()
+            .Obj(1, 0, $"1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Junk <{malformedDigits}> >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n")
+            .Build();
+
+        PreflightResult before = CheckBytes(original);
+        Assert.Contains(before.Findings, f => f.RuleId == "hex-string-format");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "hex-string-format");
+        AssertNoNewRuleIds(before, after);
+    }
+
+    /// <summary>
+    /// Page-content streams are not tokenized and reserialized by a full document save. Both the odd
+    /// nibble count and non-hex-character forms therefore survive byte-for-byte. This is the decisive
+    /// negative for classification: a plain save cannot honestly promise to close the rule.
+    /// </summary>
+    [Theory]
+    [InlineData("48455")]
+    [InlineData("484!")]
+    public void HexStringFormat_in_page_content_survives_a_plain_save(string malformedDigits)
+    {
+        byte[] content = L($"BT <{malformedDigits}> Tj ET");
+        byte[] streamObject =
+        [
+            .. L($"4 0 obj\n<< /Length {content.Length} >>\nstream\n"),
+            .. content,
+            .. L("\nendstream\nendobj\n")
+        ];
+        byte[] original = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, streamObject)
+            .Build();
+
+        PreflightResult before = CheckBytes(original);
+        Assert.Contains(before.Findings, f => f.RuleId == "hex-string-format");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.Contains(after.Findings, f => f.RuleId == "hex-string-format");
+        Assert.Contains($"<{malformedDigits}>", Encoding.Latin1.GetString(saved), StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    // ── file-id: the proven negative ────────────────────────────────────────────────────────────────────────────────────────────
+
+    // ── implementation-limits: semantic/content constraints survive a plain save ─────────────────────
+
+    /// <summary>
+    /// Page boundary dimensions are semantic page geometry, not source framing. A full rewrite preserves
+    /// the effective box and therefore cannot be advertised as repairing this violation.
+    /// </summary>
+    [Fact]
+    public void ImplementationLimits_page_boundary_violation_survives_a_plain_save()
+    {
+        byte[] original = MinimalPagePdf("", mediaBox: "[0 0 2 2]");
+
+        AssertImplementationLimitSurvives(original, "MediaBox");
+    }
+
+    /// <summary>
+    /// The reachable-object arm has three independent payload constraints. The serializer preserves every
+    /// value rather than truncating, renaming, or clamping it, because any of those transformations could
+    /// change document meaning.
+    /// </summary>
+    [Theory]
+    [InlineData("string")]
+    [InlineData("name")]
+    [InlineData("integer")]
+    public void ImplementationLimits_reachable_object_violation_survives_a_plain_save(string shape)
+    {
+        string extra = shape switch
+        {
+            "string" => $"/Junk ({new string('X', 32768)})",
+            "name" => $"/Junk /{new string('N', 128)}",
+            "integer" => "/Junk 2157483648",
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        byte[] original = MinimalPagePdf(extra);
+
+        AssertImplementationLimitSurvives(original, shape);
+    }
+
+    /// <summary>
+    /// Page content is retained as a content stream by a document save. Both live content-stream branches
+    /// consequently remain non-conformant until an author-aware operation changes the operands.
+    /// </summary>
+    [Theory]
+    [InlineData("string")]
+    [InlineData("integer")]
+    public void ImplementationLimits_page_content_violation_survives_a_plain_save(string shape)
+    {
+        string content = shape switch
+        {
+            "string" => $"BT ({new string('X', 32768)}) Tj ET",
+            "integer" => "BT 0 2157483648 Td ET",
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        byte[] original = MinimalPagePdf("", content);
+
+        AssertImplementationLimitSurvives(original, shape);
+    }
+
+    /// <summary>
+    /// The CID branch is encoded in a font's embedded CMap. Save preserves that mapping; silently
+    /// renumbering CIDs would require coordinated changes to the font and every affected text operand.
+    /// </summary>
+    [Fact]
+    public void ImplementationLimits_CMap_CID_violation_survives_a_plain_save()
+    {
+        const string cmap = "/CIDInit /ProcSet findresource begin\n1 begincidrange\n"
+                          + "<3f00> <3fff> 65536\nendcidrange\nend";
+        byte[] cmapObject =
+        [
+            .. L($"6 0 obj\n<< /Length {L(cmap).Length} /Type /CMap >>\nstream\n"),
+            .. L(cmap),
+            .. L("\nendstream\nendobj\n")
+        ];
+        byte[] original = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                     + "/Contents 4 0 R /Resources << /Font << /F0 5 0 R >> >> >>\nendobj\n")
+            .Obj(4, 0, "4 0 obj\n<< /Length 5 >>\nstream\nBT ET\nendstream\nendobj\n")
+            .Obj(5, 0, "5 0 obj\n<< /Type /Font /Subtype /Type0 /BaseFont /Test "
+                     + "/Encoding 6 0 R /DescendantFonts [7 0 R] >>\nendobj\n")
+            .Obj(6, 0, cmapObject)
+            .Obj(7, 0, "7 0 obj\n<< /Type /Font /Subtype /CIDFontType0 /BaseFont /Test >>\nendobj\n")
+            .Build();
+
+        AssertImplementationLimitSurvives(original, "CID");
+    }
+
+    private static byte[] MinimalPagePdf(
+        string catalogExtra,
+        string? content = null,
+        string mediaBox = "[0 0 612 792]")
+    {
+        var pdf = new Pdf()
+            .Obj(1, 0, $"1 0 obj\n<< /Type /Catalog /Pages 2 0 R {catalogExtra} >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        if (content is null)
+            return pdf
+                .Obj(3, 0, $"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox {mediaBox} >>\nendobj\n")
+                .Build();
+
+        byte[] contentBytes = L(content);
+        byte[] streamObject =
+        [
+            .. L($"4 0 obj\n<< /Length {contentBytes.Length} >>\nstream\n"),
+            .. contentBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+        return pdf
+            .Obj(3, 0, $"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox {mediaBox} /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, streamObject)
+            .Build();
+    }
+
+    private static void AssertImplementationLimitSurvives(byte[] original, string messageFragment)
+    {
+        PreflightResult before = CheckBytes(original);
+        Assert.Contains(before.Findings,
+            f => f.RuleId == "implementation-limits"
+              && f.Message.Contains(messageFragment, StringComparison.OrdinalIgnoreCase));
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.Contains(after.Findings,
+            f => f.RuleId == "implementation-limits"
+              && f.Message.Contains(messageFragment, StringComparison.OrdinalIgnoreCase));
+        AssertNoNewRuleIds(before, after);
+    }
+
+    // ── stream-external-file: embedded payload versus orphan keys ───────────────────────────────────
+
+    /// <summary>
+    /// A real /F file specification without /EF is not a structural spelling defect. PDF readers ignore
+    /// the bytes physically between stream/endstream while /F is present, and a plain save preserves both
+    /// the selector and those ignored bytes. Removing /F would silently substitute the placeholder for an
+    /// unavailable host-file payload, so the targeted repair must refuse it as well.
+    /// </summary>
+    [Fact]
+    public void StreamExternalFile_external_path_survives_save_and_is_refused()
+    {
+        byte[] original = ExternalFilePagePdf("/F (external-content.bin)", L("IGNORED"));
+        PreflightResult before = CheckBytes(original);
+        Finding finding = Assert.Single(before.Findings, f => f.RuleId == "stream-external-file");
+        Assert.Contains("/F", finding.Message, StringComparison.Ordinal);
+
+        byte[] plainSaved = LoadEditSave(original);
+        PreflightResult afterPlainSave = CheckBytes(plainSaved);
+        Assert.Contains(afterPlainSave.Findings, f => f.RuleId == "stream-external-file");
+        Assert.Contains("IGNORED", Encoding.Latin1.GetString(plainSaved), StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, afterPlainSave);
+
+        byte[] repairAttempt = LoadEditSave(original, editor =>
+        {
+            StreamExternalFileRepairReport report = editor.RepairStreamExternalFiles();
+            Assert.Empty(report.Applied);
+            Assert.Contains("host path", Assert.Single(report.Refused).Reason, StringComparison.OrdinalIgnoreCase);
+        });
+        Assert.Contains(CheckBytes(repairAttempt).Findings, f => f.RuleId == "stream-external-file");
+    }
+
+    /// <summary>
+    /// Without /F, /FFilter and /FDecodeParms do not act on the in-object bytes. A plain save preserves
+    /// each forbidden key, proving this is not FixedBySaving; the narrow repair removes the orphan key
+    /// and preserves the exact stream bytes.
+    /// </summary>
+    [Theory]
+    [InlineData("/FFilter /FlateDecode", "/FFilter")]
+    [InlineData("/FDecodeParms << /Predictor 1 >>", "/FDecodeParms")]
+    public void StreamExternalFile_orphan_external_key_is_safely_removed(
+        string dictionaryEntry, string expectedKey)
+    {
+        byte[] content = L("BT ET");
+        byte[] original = ExternalFilePagePdf(dictionaryEntry, content);
+        PreflightResult before = CheckBytes(original);
+        Finding finding = Assert.Single(before.Findings, f => f.RuleId == "stream-external-file");
+        Assert.Contains(expectedKey, finding.Message, StringComparison.Ordinal);
+
+        byte[] plainSaved = LoadEditSave(original);
+        Assert.Contains(CheckBytes(plainSaved).Findings, f => f.RuleId == "stream-external-file");
+
+        byte[] repaired = LoadEditSave(original, editor =>
+        {
+            StreamExternalFileRepairReport report = editor.RepairStreamExternalFiles();
+            StreamExternalFileRepair applied = Assert.Single(report.Applied);
+            Assert.Contains(expectedKey, applied.RemovedKeys);
+            Assert.Null(applied.EmbeddedFileObjectNumber);
+            Assert.Empty(report.Refused);
+        });
+        PreflightResult after = CheckBytes(repaired);
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "stream-external-file");
+        AssertNoNewRuleIds(before, after);
+
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(repaired));
+        var stream = Assert.IsType<PdfStream>(document.GetObject(4));
+        Assert.Equal(content, stream.Data);
+    }
+
+    /// <summary>
+    /// /F can be closed without ambient file access when its indirect /Filespec maps every represented
+    /// name to one embedded-file stream. The embedded stream contains the external file bytes; those
+    /// bytes are copied into the target, and /FFilter plus /FDecodeParms are moved to their internal
+    /// equivalents. The decoded target content is therefore identical to the intended external payload.
+    /// </summary>
+    [Fact]
+    public void StreamExternalFile_embedded_payload_is_internalized_with_external_filter()
+    {
+        byte[] decodedContent = L("BT ET");
+        byte[] externalFileBytes = Zlib(decodedContent);
+        byte[] targetObject =
+        [
+            .. L("4 0 obj\n<< /Length 7 /F 5 0 R /FFilter /FlateDecode "
+               + "/FDecodeParms << /Predictor 1 >> >>\nstream\n"),
+            .. L("IGNORED"),
+            .. L("\nendstream\nendobj\n")
+        ];
+        byte[] embeddedObject =
+        [
+            .. L($"6 0 obj\n<< /Type /EmbeddedFile /Length {externalFileBytes.Length} >>\nstream\n"),
+            .. externalFileBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+        byte[] original = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, targetObject)
+            .Obj(5, 0, "5 0 obj\n<< /Type /Filespec /F (payload.bin) /EF << /F 6 0 R >> >>\nendobj\n")
+            .Obj(6, 0, embeddedObject)
+            .Build();
+
+        PreflightResult before = CheckBytes(original);
+        Assert.Contains(before.Findings, f => f.RuleId == "stream-external-file");
+
+        byte[] repaired = LoadEditSave(original, editor =>
+        {
+            StreamExternalFileRepairPreview preview = editor.PreviewStreamExternalFileRepairs();
+            StreamExternalFileRepairCandidate candidate = Assert.Single(preview.Candidates);
+            Assert.Equal(4, candidate.ObjectNumber);
+            Assert.Equal(6, candidate.EmbeddedFileObjectNumber);
+            Assert.Empty(preview.Refused);
+
+            StreamExternalFileRepairReport report = editor.RepairStreamExternalFiles(new HashSet<int> { 4 });
+            Assert.Single(report.Applied);
+            Assert.Empty(report.Refused);
+        });
+
+        PreflightResult after = CheckBytes(repaired);
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "stream-external-file");
+        AssertNoNewRuleIds(before, after);
+
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(repaired));
+        var stream = Assert.IsType<PdfStream>(document.GetObject(4));
+        Assert.False(stream.Dictionary.ContainsKey(N("F")));
+        Assert.False(stream.Dictionary.ContainsKey(N("FFilter")));
+        Assert.False(stream.Dictionary.ContainsKey(N("FDecodeParms")));
+        Assert.Equal("FlateDecode", Assert.IsType<PdfName>(stream.Dictionary.Get("Filter")).Value);
+        Assert.IsType<PdfDictionary>(stream.Dictionary.Get("DecodeParms"));
+        Assert.Equal(externalFileBytes, stream.Data);
+        Assert.Equal(decodedContent, stream.GetDecodedData());
+        using PdfDocumentEditor secondPass = document.Edit();
+        Assert.Empty(secondPass.PreviewStreamExternalFileRepairs().Candidates);
+        Assert.Empty(secondPass.PreviewStreamExternalFileRepairs().Refused);
+    }
+
+    private static byte[] ExternalFilePagePdf(string dictionaryEntry, byte[] content)
+    {
+        byte[] streamObject =
+        [
+            .. L($"4 0 obj\n<< /Length {content.Length} {dictionaryEntry} >>\nstream\n"),
+            .. content,
+            .. L("\nendstream\nendobj\n")
+        ];
+        return new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, streamObject)
+            .Build();
+    }
+
+    private static byte[] Zlib(byte[] bytes)
+    {
+        using var output = new MemoryStream();
+        using (var zlib = new ZLibStream(output, CompressionLevel.SmallestSize, leaveOpen: true))
+            zlib.Write(bytes);
+        return output.ToArray();
+    }
+
+    // ── file-id: the proven negative ────────────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
     /// Builds a genuinely-failing, loadable fixture with no /ID: <see cref="PdfDocumentBuilder"/> actually

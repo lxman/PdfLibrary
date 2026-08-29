@@ -38,6 +38,19 @@ public readonly record struct XmpPropertyVerdict(
     string? ExpectedType, bool TypeConforms,
     bool IsStruct = false, bool IsArray = false, bool IsLangAlt = false, bool CarriesRawXml = false);
 
+/// <summary>One extension-schema structure defect that Pellucid deliberately does not reconstruct.
+/// The missing fields named here carry namespace, type, property, or audience semantics; filling them
+/// merely to satisfy clause 6.6.2.3.3 would assert author intent that is not present in the packet.</summary>
+public readonly record struct XmpExtensionSchemaStructureRefusal(
+    string Level, string FieldName, string Reason);
+
+/// <summary>Preview or apply result for the deliberately narrow extension-schema structure repair.
+/// <see cref="AppliedCount"/> counts detector findings closed by conventional-prefix normalization
+/// or by adding an empty human-readable description. <see cref="Refused"/> contains every
+/// identity/type/category field that remains absent.</summary>
+public sealed record XmpExtensionSchemaStructureRepairReport(
+    int AppliedCount, IReadOnlyList<XmpExtensionSchemaStructureRefusal> Refused);
+
 /// <summary>Public read-only view of what the XMP conformance rules conclude about a packet's
 /// properties. Exists so a remediation fixer can identify offending properties structurally instead
 /// of regex-parsing a <c>Finding</c>'s free-text message — the same reason
@@ -69,6 +82,12 @@ public readonly record struct XmpPropertyVerdict(
 /// </summary>
 public static class XmpConformance
 {
+    private const string ExtensionNs = "http://www.aiim.org/pdfa/ns/extension/";
+    private const string SchemaNs = "http://www.aiim.org/pdfa/ns/schema#";
+    private const string PropertyNs = "http://www.aiim.org/pdfa/ns/property#";
+    private const string TypeNs = "http://www.aiim.org/pdfa/ns/type#";
+    private const string FieldNs = "http://www.aiim.org/pdfa/ns/field#";
+
     // Same set as XmpPropertyPredefinedRule.StructuralNamespaces, copied verbatim so the two cannot
     // drift: RDF/XML plumbing plus the PDF/A extension-schema description namespaces (the standard's
     // own container, not stray user properties).
@@ -137,6 +156,147 @@ public static class XmpConformance
 
         return verdicts;
     }
+
+    /// <summary>Classifies the repairable and refused clause 6.6.2.3.3 branches without changing the
+    /// packet. This mirrors <c>XmpExtensionSchemaStructureRule</c>'s exact walk; it does not parse finding
+    /// messages and does not treat an empty value as missing.</summary>
+    public static XmpExtensionSchemaStructureRepairReport PreviewExtensionSchemaStructureRepairs(
+        XmpPacket packet) => RepairExtensionSchemaStructureCore(packet, apply: false);
+
+    /// <summary>Normalizes only conventional description-namespace prefixes and adds only absent
+    /// human-readable description fields (as empty strings). Namespace URIs, declared prefixes,
+    /// property/type/field names, value types, and property category are never invented.</summary>
+    public static XmpExtensionSchemaStructureRepairReport RepairExtensionSchemaStructure(
+        XmpPacket packet) => RepairExtensionSchemaStructureCore(packet, apply: true);
+
+    private static XmpExtensionSchemaStructureRepairReport RepairExtensionSchemaStructureCore(
+        XmpPacket packet, bool apply)
+    {
+        if (packet is null) throw new ArgumentNullException(nameof(packet));
+
+        var applied = 0;
+        var refused = new List<XmpExtensionSchemaStructureRefusal>();
+        foreach (XmpNode schemas in packet.Nodes)
+        {
+            if (schemas.NamespaceUri != ExtensionNs || schemas.LocalName != "schemas" || !schemas.IsArray)
+                continue;
+
+            foreach (XmpNode schema in schemas.Children)
+            {
+                RepairLevel(schema, "schema", SchemaNs, "pdfaSchema",
+                    ["namespaceURI", "prefix", "schema"], ["schema"], schemas.RawXml is not null,
+                    apply, ref applied, refused);
+
+                if (FindField(schema, SchemaNs, "property") is { IsArray: true } propertyBag)
+                    foreach (XmpNode property in propertyBag.Children)
+                        RepairLevel(property, "property", PropertyNs, "pdfaProperty",
+                            ["name", "valueType", "category", "description"], ["description"],
+                            schemas.RawXml is not null || schema.RawXml is not null || propertyBag.RawXml is not null,
+                            apply, ref applied, refused);
+
+                if (FindField(schema, SchemaNs, "valueType") is { IsArray: true } valueTypeBag)
+                    foreach (XmpNode valueType in valueTypeBag.Children)
+                    {
+                        bool typeBlocked = schemas.RawXml is not null || schema.RawXml is not null
+                                           || valueTypeBag.RawXml is not null;
+                        RepairLevel(valueType, "value type", TypeNs, "pdfaType",
+                            ["type", "namespaceURI", "prefix", "description"], ["description"],
+                            typeBlocked, apply, ref applied, refused);
+
+                        if (FindField(valueType, TypeNs, "field") is { IsArray: true } fieldBag)
+                            foreach (XmpNode field in fieldBag.Children)
+                                RepairLevel(field, "field", FieldNs, "pdfaField",
+                                    ["name", "valueType", "description"], ["description"],
+                                    typeBlocked || valueType.RawXml is not null || fieldBag.RawXml is not null,
+                                    apply, ref applied, refused);
+                    }
+            }
+        }
+
+        return new XmpExtensionSchemaStructureRepairReport(applied, refused);
+    }
+
+    private static void RepairLevel(
+        XmpNode item, string level, string namespaceUri, string expectedPrefix,
+        IReadOnlyList<string> requiredFields, IReadOnlyList<string> descriptiveFields,
+        bool ancestorIsVerbatim, bool apply, ref int applied,
+        List<XmpExtensionSchemaStructureRefusal> refused)
+    {
+        bool itemIsVerbatim = ancestorIsVerbatim || item.RawXml is not null;
+        List<XmpNode> wrongPrefix =
+            [.. item.Children.Where(child => child.NamespaceUri == namespaceUri
+                                             && child.Prefix != expectedPrefix)];
+        if (wrongPrefix.Count > 0)
+        {
+            if (itemIsVerbatim || wrongPrefix.Any(child => child.RawXml is not null))
+            {
+                refused.Add(new XmpExtensionSchemaStructureRefusal(
+                    level, "namespace prefix",
+                    "The affected RDF item is preserved verbatim, so changing its parsed prefix would not change the saved bytes."));
+            }
+            else
+            {
+                applied++;
+                if (apply)
+                    foreach (XmpNode child in wrongPrefix)
+                        child.Prefix = expectedPrefix;
+            }
+        }
+
+        foreach (string required in requiredFields)
+        {
+            if (HasField(item, namespaceUri, required)) continue;
+
+            if (descriptiveFields.Contains(required) && !itemIsVerbatim)
+            {
+                applied++;
+                if (apply)
+                    item.Children.Add(new XmpNode(namespaceUri, required, expectedPrefix)
+                    {
+                        IsSimple = true,
+                        Value = string.Empty,
+                    });
+                continue;
+            }
+
+            string reason = itemIsVerbatim
+                ? "The affected RDF item is preserved verbatim, so a model edit would not change the saved bytes."
+                : SemanticRefusalReason(level, required);
+            refused.Add(new XmpExtensionSchemaStructureRefusal(level, required, reason));
+        }
+    }
+
+    private static string SemanticRefusalReason(string level, string fieldName) =>
+        (level, fieldName) switch
+        {
+            ("schema", "namespaceURI") =>
+                "The missing namespace URI is the schema's identity and cannot be reconstructed safely.",
+            ("schema", "prefix") =>
+                "The missing declared prefix cannot be chosen without asserting the producer's namespace convention.",
+            ("property", "name") =>
+                "The missing property name cannot be matched safely to packet data.",
+            ("property", "valueType") =>
+                "The missing value type is an author declaration, not a serialization detail.",
+            ("property", "category") =>
+                "The missing internal/external category is an author-facing usage decision.",
+            ("value type", "type") =>
+                "The missing custom type name is part of the schema's type identity.",
+            ("value type", "namespaceURI") =>
+                "The missing custom type namespace is part of the schema's type identity.",
+            ("value type", "prefix") =>
+                "The missing custom type prefix cannot be chosen without asserting the producer's namespace convention.",
+            ("field", "name") =>
+                "The missing field name cannot be reconstructed from the remaining declaration.",
+            ("field", "valueType") =>
+                "The missing field value type is an author declaration, not a serialization detail.",
+            _ => "The missing field carries schema semantics Pellucid will not invent.",
+        };
+
+    private static bool HasField(XmpNode node, string namespaceUri, string localName) =>
+        node.Children.Any(child => child.NamespaceUri == namespaceUri && child.LocalName == localName);
+
+    private static XmpNode? FindField(XmpNode node, string namespaceUri, string localName) =>
+        node.Children.FirstOrDefault(child => child.NamespaceUri == namespaceUri && child.LocalName == localName);
 
     /// <summary>Whether <paramref name="node"/> or any descendant carries an unmodelled-shape snapshot.
     ///

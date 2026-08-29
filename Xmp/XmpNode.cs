@@ -35,7 +35,7 @@ internal sealed class XmpNode
     public string LocalName { get; }
 
     /// <summary>The namespace prefix as serialized (for diagnostics only).</summary>
-    public string Prefix { get; }
+    public string Prefix { get; set; }
 
     /// <summary>The scalar text value when <see cref="IsSimple"/>; otherwise null.</summary>
     public string? Value { get; set; }
