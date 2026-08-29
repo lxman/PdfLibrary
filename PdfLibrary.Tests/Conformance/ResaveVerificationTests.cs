@@ -292,6 +292,79 @@ public class ResaveVerificationTests
         AssertNoNewRuleIds(before, after);
     }
 
+    // ── content-stream-operator: extension semantics survive a plain save ────────────────────────
+
+    /// <summary>
+    /// The rule has one predicate (an operator name outside ISO 32000-1's defined set), reached through
+    /// three materially different content shapes: a page stream, an invoked Form XObject, and an unknown
+    /// operator inside BX/EX. A full rewrite preserves every stream byte instead of interpreting an
+    /// extension operator or guessing which preceding operands belong to it. In particular, BX/EX tells a
+    /// conforming processor that it may ignore an unknown operator; it does not authorize a converter to
+    /// delete vendor-extension data from the saved document.
+    /// </summary>
+    [Theory]
+    [InlineData("page")]
+    [InlineData("invoked-form")]
+    [InlineData("bx-ex")]
+    public void ContentStreamOperator_reachable_shape_survives_a_plain_save(string shape)
+    {
+        const string undefinedOperator = "VendorPaint";
+        string pageContent = shape switch
+        {
+            "page" => $"1 /VendorData {undefinedOperator}",
+            "invoked-form" => "/Fm0 Do",
+            "bx-ex" => $"BX 1 /VendorData {undefinedOperator} EX",
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        string? formContent = shape == "invoked-form"
+            ? $"1 /VendorData {undefinedOperator}"
+            : null;
+
+        byte[] pageBytes = L(pageContent);
+        byte[] pageStream =
+        [
+            .. L($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n"),
+            .. pageBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+        string pageResources = formContent is null
+            ? "<< >>"
+            : "<< /XObject << /Fm0 5 0 R >> >>";
+
+        var pdf = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, $"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       + $"/Resources {pageResources} /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, pageStream);
+
+        if (formContent is not null)
+        {
+            byte[] formBytes = L(formContent);
+            byte[] formStream =
+            [
+                .. L($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] "
+                     + $"/Resources << >> /Length {formBytes.Length} >>\nstream\n"),
+                .. formBytes,
+                .. L("\nendstream\nendobj\n")
+            ];
+            pdf.Obj(5, 0, formStream);
+        }
+
+        byte[] original = pdf.Build();
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(before.Findings, f => f.RuleId == "content-stream-operator");
+        Assert.Contains(undefinedOperator, beforeFinding.Message, StringComparison.Ordinal);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "content-stream-operator");
+        Assert.Contains(undefinedOperator, afterFinding.Message, StringComparison.Ordinal);
+        Assert.Contains(formContent ?? pageContent, Encoding.Latin1.GetString(saved), StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
     // ── hex-string-format: mixed save behavior, therefore not FixedBySaving ─────────────────────────────────────
 
     /// <summary>
