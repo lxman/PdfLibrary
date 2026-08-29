@@ -367,6 +367,75 @@ public class ResaveVerificationTests
         AssertNoNewRuleIds(before, after);
     }
 
+    // ── ICCBased-CMYK overprint: paint and shared graphics-state semantics survive a plain save ──
+
+    /// <summary>
+    /// veraPDF's three PDF/A-2b 6.2.4.2 test-2 failures use the same ICCBased-CMYK <c>B</c> paint with
+    /// stroke-only, fill-only, or both overprint flags enabled while <c>/OPM 1</c>. A plain rewrite keeps
+    /// the ExtGState and content bytes, so it cannot close the finding. Each witness deliberately follows
+    /// the ICCBased paint with a matching DeviceCMYK paint under the same live ExtGState: changing the
+    /// shared <c>/OPM</c> to 0 can make zero-valued process components knock out the backdrop, while
+    /// disabling <c>/OP</c> or <c>/op</c> changes the matching paint from overprint to knockout. Neither is
+    /// a semantics-preserving document-wide repair.
+    /// </summary>
+    [Theory]
+    [InlineData(true, false, "0 1 0 0 K 30 30 m 40 40 l S", "stroke-only")]
+    [InlineData(false, true, "0 1 0 0 k 30 30 m 40 40 l f", "fill-only")]
+    [InlineData(true, true, "0 1 0 0 K 0 1 0 0 k 30 30 m 40 40 l B", "stroke-and-fill")]
+    public void IccCmykOverprint_each_verapdf_fail_shape_and_shared_state_survives_a_plain_save(
+        bool strokeOverprint, bool fillOverprint, string laterDevicePaint, string expectedShape)
+    {
+        string content = "/GS0 gs /CS0 CS /CS0 cs "
+                         + "0.1875 0.765625 0.6765625 0 sc "
+                         + "0.1875 0.765625 0.6765625 0.1 SC "
+                         + "10 10 m 20 20 l B "
+                         + laterDevicePaint;
+        byte[] contentBytes = L(content);
+        byte[] contentStream =
+        [
+            .. L($"4 0 obj\n<< /Length {contentBytes.Length} >>\nstream\n"),
+            .. contentBytes,
+            .. L("\nendstream\nendobj\n")
+        ];
+        byte[] profileStream = L("5 0 obj\n<< /N 4 /Length 1 >>\nstream\nx\nendstream\nendobj\n");
+        string extGState = "6 0 obj\n<< /Type /ExtGState "
+                           + $"/OP {strokeOverprint.ToString().ToLowerInvariant()} "
+                           + $"/op {fillOverprint.ToString().ToLowerInvariant()} /OPM 1 >>\nendobj\n";
+
+        byte[] original = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       + "/Resources << /ColorSpace << /CS0 [/ICCBased 5 0 R] >> "
+                       + "/ExtGState << /GS0 6 0 R >> >> /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, contentStream)
+            .Obj(5, 0, profileStream)
+            .Obj(6, 0, extGState)
+            .Build();
+
+        PreflightResult before = CheckBytes(original);
+        Finding[] beforeMatches = [.. before.Findings.Where(f => f.RuleId == "icc-cmyk-overprint")];
+        Assert.True(beforeMatches.Length == 1,
+            $"Expected exactly one icc-cmyk-overprint finding for the {expectedShape} oracle shape.");
+        Finding beforeFinding = beforeMatches[0];
+        Assert.Contains("OPM", beforeFinding.Message, StringComparison.Ordinal);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding[] afterMatches = [.. after.Findings.Where(f => f.RuleId == "icc-cmyk-overprint")];
+        Assert.True(afterMatches.Length == 1,
+            $"Expected the {expectedShape} oracle shape to survive an unmodified full rewrite.");
+        Finding afterFinding = afterMatches[0];
+        Assert.Contains("OPM", afterFinding.Message, StringComparison.Ordinal);
+        string savedText = Encoding.Latin1.GetString(saved);
+        Assert.Contains($"/OP {strokeOverprint.ToString().ToLowerInvariant()}", savedText, StringComparison.Ordinal);
+        Assert.Contains($"/op {fillOverprint.ToString().ToLowerInvariant()}", savedText, StringComparison.Ordinal);
+        Assert.Contains("/OPM 1", savedText, StringComparison.Ordinal);
+        Assert.Contains(content, savedText, StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
     // ── content-stream-operator: extension semantics survive a plain save ────────────────────────
 
     /// <summary>
