@@ -292,6 +292,200 @@ public class ResaveVerificationTests
         AssertNoNewRuleIds(before, after);
     }
 
+    // ── jpeg2000: non-conforming JP2 headers survive when reachable ─────────────────────────────
+
+    /// <summary>
+    /// Clause 6.2.8.3 has five detector branches, with its bit-depth branch accepting either an
+    /// out-of-range uniform depth or a <c>bpcc</c> box that signals per-component depths. A plain full
+    /// rewrite treats the JPXDecode payload as opaque encoded stream data: every reachable witness keeps
+    /// the exact JP2 bytes, object number, and finding. Consequently none of these failures is fixed by
+    /// ordinary serialization.
+    /// </summary>
+    [Theory]
+    [InlineData("component-count")]
+    [InlineData("multiple-colr")]
+    [InlineData("colr-method")]
+    [InlineData("ciejab")]
+    [InlineData("bit-depth-range")]
+    [InlineData("bit-depth-nonuniform")]
+    public void Jpeg2000_each_reachable_failure_survives_a_plain_save(string shape)
+    {
+        byte[] payload = Jpeg2000Payload(shape);
+        byte[] original = Jpeg2000Pdf(payload, reachable: true, withColorSpace: false);
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(before.Findings, f => f.RuleId == "jpeg2000");
+        Assert.Equal(5, beforeFinding.ObjectNumber);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "jpeg2000");
+        Assert.Equal(5, afterFinding.ObjectNumber);
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(saved));
+        var image = Assert.IsType<PdfStream>(document.GetObject(5));
+        Assert.Equal(payload, image.Data);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    /// <summary>
+    /// The detector walks the complete indirect stream table, so it reports an unreferenced JPXDecode
+    /// image on the source bytes. Full-rewrite orphan collection removes that image and therefore closes
+    /// only the unreachable case. This is deliberately separate from the reachable matrix above: orphan
+    /// collection is not authority to replace or re-encode an image a page can paint.
+    /// </summary>
+    [Theory]
+    [InlineData("component-count")]
+    [InlineData("multiple-colr")]
+    [InlineData("colr-method")]
+    [InlineData("ciejab")]
+    [InlineData("bit-depth-range")]
+    [InlineData("bit-depth-nonuniform")]
+    public void Jpeg2000_each_orphan_failure_is_collected_by_a_plain_save(string shape)
+    {
+        byte[] original = Jpeg2000Pdf(
+            Jpeg2000Payload(shape), reachable: false, withColorSpace: false);
+        PreflightResult before = CheckBytes(original);
+        Assert.Single(before.Findings, f => f.RuleId == "jpeg2000");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "jpeg2000");
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(saved));
+        Assert.Null(document.GetObject(5));
+        AssertNoNewRuleIds(before, after);
+    }
+
+    /// <summary>
+    /// An explicit image <c>/ColorSpace</c> overrides only JP2 internal-colour-specification tests 2–4.
+    /// Those source bytes are conformant before and after a save; the payload remains byte-identical.
+    /// </summary>
+    [Theory]
+    [InlineData("multiple-colr")]
+    [InlineData("colr-method")]
+    [InlineData("ciejab")]
+    public void Jpeg2000_explicit_colorspace_escapes_only_internal_colour_failures(string shape)
+    {
+        byte[] payload = Jpeg2000Payload(shape);
+        byte[] original = Jpeg2000Pdf(payload, reachable: true, withColorSpace: true);
+        PreflightResult before = CheckBytes(original);
+        Assert.DoesNotContain(before.Findings, f => f.RuleId == "jpeg2000");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, f => f.RuleId == "jpeg2000");
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(saved));
+        var image = Assert.IsType<PdfStream>(document.GetObject(5));
+        Assert.Equal(payload, image.Data);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    /// <summary>
+    /// Component count and both bit-depth violations describe the image samples themselves. An explicit
+    /// PDF <c>/ColorSpace</c> cannot excuse them, and a full rewrite preserves their exact payloads.
+    /// </summary>
+    [Theory]
+    [InlineData("component-count")]
+    [InlineData("bit-depth-range")]
+    [InlineData("bit-depth-nonuniform")]
+    public void Jpeg2000_explicit_colorspace_does_not_escape_sample_failures(string shape)
+    {
+        byte[] payload = Jpeg2000Payload(shape);
+        byte[] original = Jpeg2000Pdf(payload, reachable: true, withColorSpace: true);
+        PreflightResult before = CheckBytes(original);
+        Assert.Single(before.Findings, f => f.RuleId == "jpeg2000");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "jpeg2000");
+        Assert.Equal(5, afterFinding.ObjectNumber);
+        using PdfDocument document = PdfDocument.Load(new MemoryStream(saved));
+        var image = Assert.IsType<PdfStream>(document.GetObject(5));
+        Assert.Equal(payload, image.Data);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    private static byte[] Jpeg2000Payload(string shape)
+    {
+        const int bpc8 = 7; // JP2 BPC encodes bit depth minus one.
+        byte[] ihdr = shape switch
+        {
+            "component-count" => Jpeg2000Box("ihdr",
+                [.. Jpeg2000U32(64), .. Jpeg2000U32(64), .. Jpeg2000U16(5), bpc8, 7, 0, 0]),
+            "bit-depth-range" => Jpeg2000Box("ihdr",
+                [.. Jpeg2000U32(64), .. Jpeg2000U32(64), .. Jpeg2000U16(3), 40, 7, 0, 0]),
+            "bit-depth-nonuniform" => Jpeg2000Box("ihdr",
+                [.. Jpeg2000U32(64), .. Jpeg2000U32(64), .. Jpeg2000U16(3), 0xFF, 7, 0, 0]),
+            _ => Jpeg2000Box("ihdr",
+                [.. Jpeg2000U32(64), .. Jpeg2000U32(64), .. Jpeg2000U16(3), bpc8, 7, 0, 0]),
+        };
+        byte[] validColr = Jpeg2000Colr(meth: 1, approx: 0, enumCs: 16);
+        byte[][] children = shape switch
+        {
+            "multiple-colr" => [ihdr, validColr, validColr],
+            "colr-method" => [ihdr, Jpeg2000Colr(meth: 4, approx: 0)],
+            "ciejab" => [ihdr, Jpeg2000Colr(meth: 1, approx: 0, enumCs: 19)],
+            "bit-depth-nonuniform" => [ihdr, validColr, Jpeg2000Box("bpcc", [7, 15, 7])],
+            "component-count" or "bit-depth-range" => [ihdr, validColr],
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+
+        byte[] signature = Jpeg2000Box("jP  ", [0x0D, 0x0A, 0x87, 0x0A]);
+        byte[] header = Jpeg2000Box("jp2h", children.SelectMany(x => x).ToArray());
+        return [.. signature, .. header];
+    }
+
+    private static byte[] Jpeg2000Pdf(byte[] payload, bool reachable, bool withColorSpace)
+    {
+        byte[] content = L(reachable ? "/Im0 Do" : "q Q");
+        byte[] contentStream =
+        [
+            .. L($"4 0 obj\n<< /Length {content.Length} >>\nstream\n"),
+            .. content,
+            .. L("\nendstream\nendobj\n")
+        ];
+        string resources = reachable ? "<< /XObject << /Im0 5 0 R >> >>" : "<< >>";
+        string colorSpace = withColorSpace ? " /ColorSpace /DeviceRGB" : "";
+        byte[] imageStream =
+        [
+            .. L("5 0 obj\n<< /Type /XObject /Subtype /Image /Width 64 /Height 64 "
+               + $"/Filter /JPXDecode{colorSpace} /Length {payload.Length} >>\nstream\n"),
+            .. payload,
+            .. L("\nendstream\nendobj\n")
+        ];
+
+        return new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                       + $"/Resources {resources} /Contents 4 0 R >>\nendobj\n")
+            .Obj(4, 0, contentStream)
+            .Obj(5, 0, imageStream)
+            .Build();
+    }
+
+    private static byte[] Jpeg2000Box(string type, byte[] payload)
+    {
+        int length = 8 + payload.Length;
+        return
+        [
+            (byte)(length >> 24), (byte)(length >> 16), (byte)(length >> 8), (byte)length,
+            .. type.Select(c => (byte)c),
+            .. payload,
+        ];
+    }
+
+    private static byte[] Jpeg2000Colr(int meth, int approx, int enumCs = 16) =>
+        meth == 1
+            ? Jpeg2000Box("colr", [(byte)meth, 0, (byte)approx, .. Jpeg2000U32(enumCs)])
+            : Jpeg2000Box("colr", [(byte)meth, 0, (byte)approx, 1, 2, 3, 4]);
+
+    private static byte[] Jpeg2000U16(int value) => [(byte)(value >> 8), (byte)value];
+    private static byte[] Jpeg2000U32(int value) =>
+        [(byte)(value >> 24), (byte)(value >> 16), (byte)(value >> 8), (byte)value];
+
     // ── prohibited-xobject: external/replacement semantics survive when reachable ───────────────
 
     /// <summary>
