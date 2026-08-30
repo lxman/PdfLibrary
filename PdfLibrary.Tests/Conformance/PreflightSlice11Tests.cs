@@ -283,6 +283,37 @@ public class PreflightSlice11Tests
         Assert.Empty(new PdfxSeparationConsistencyRule().Check(Ctx(doc)));
     }
 
+    [Fact] // the predicate compares alternate device family, not alternate-space object equality
+    public void Same_colorant_with_structurally_different_same_family_alternates_passes()
+    {
+        var doc = Doc((d, _, _) =>
+        {
+            var indexedCmyk = new PdfArray(
+                N("Indexed"), N("DeviceCMYK"), new PdfInteger(1),
+                new PdfString([0, 0, 0, 0, 255, 255, 255, 255]));
+            d.AddObject(50, 0, new PdfArray(N("Separation"), N("Spot"), N("DeviceCMYK"), TintFn()));
+            d.AddObject(51, 0, new PdfArray(N("Separation"), N("Spot"), indexedCmyk, TintFn()));
+        });
+        Assert.Empty(new PdfxSeparationConsistencyRule().Check(Ctx(doc)));
+    }
+
+    [Fact] // ICCBased and Lab both classify as device-independent (the None family)
+    public void Same_colorant_with_distinct_device_independent_alternates_passes()
+    {
+        var doc = Doc((d, _, _) =>
+        {
+            d.AddObject(60, 0, new PdfStream(new PdfDictionary { [N("N")] = new PdfInteger(4) }, []));
+            var iccBased = new PdfArray(N("ICCBased"), Ref(60));
+            var lab = new PdfArray(N("Lab"), new PdfDictionary
+            {
+                [N("WhitePoint")] = new PdfArray(new PdfInteger(1), new PdfInteger(1), new PdfInteger(1)),
+            });
+            d.AddObject(50, 0, new PdfArray(N("Separation"), N("Spot"), iccBased, TintFn()));
+            d.AddObject(51, 0, new PdfArray(N("Separation"), N("Spot"), lab, TintFn()));
+        });
+        Assert.Empty(new PdfxSeparationConsistencyRule().Check(Ctx(doc)));
+    }
+
     [Fact] // /None and /All are universal colorants and exempt from consistency
     public void All_colorant_with_different_definitions_is_not_flagged()
     {

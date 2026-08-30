@@ -764,6 +764,120 @@ public class ResaveVerificationTests
         return pdf.Build();
     }
 
+    // ── Separation consistency: competing plate definitions survive a plain save ───────────────
+
+    /// <summary>
+    /// The detector compares same-name Separation definitions by resolved device family and canonicalized
+    /// tint-function content, not by direct/indirect representation or object identity. These witnesses put
+    /// both competing definitions in live page resources and cover direct arrays, indirect arrays, a mixed
+    /// direct/indirect pair, and a shared indirect definition with two resource aliases. A full rewrite keeps
+    /// both definitions, every function value, and every indirect identity, so it cannot choose which plate
+    /// definition should replace the other without changing one of the document's existing colour mappings.
+    /// </summary>
+    [Theory]
+    [InlineData("direct-tint")]
+    [InlineData("indirect-tint")]
+    [InlineData("mixed-tint")]
+    [InlineData("shared-alternate")]
+    public void SeparationConsistency_live_competing_definitions_survive_a_plain_save(string shape)
+    {
+        byte[] original = SeparationConsistencyPdf(shape, contentEqual: false);
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(
+            before.Findings, finding => finding.RuleId == "pdfx-separation-consistency");
+        Assert.Contains("SpotPlate", beforeFinding.Message, StringComparison.Ordinal);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(
+            after.Findings, finding => finding.RuleId == "pdfx-separation-consistency");
+        Assert.Contains("SpotPlate", afterFinding.Message, StringComparison.Ordinal);
+        string savedText = Encoding.Latin1.GetString(saved);
+        Assert.Contains("/SpotPlate", savedText, StringComparison.Ordinal);
+        if (shape == "shared-alternate")
+        {
+            Assert.Contains("/SpotA 5 0 R", savedText, StringComparison.Ordinal);
+            Assert.Contains("/SpotAlias 5 0 R", savedText, StringComparison.Ordinal);
+            Assert.Contains("/SpotB 6 0 R", savedText, StringComparison.Ordinal);
+            Assert.Contains("5 0 obj", savedText, StringComparison.Ordinal);
+            Assert.Contains("6 0 obj", savedText, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("/C1 [0 1 0 0]", savedText, StringComparison.Ordinal);
+            Assert.Contains("/C1 [0 0 1 0]", savedText, StringComparison.Ordinal);
+        }
+        AssertNoNewRuleIds(before, after);
+    }
+
+    /// <summary>
+    /// Content-equal duplicate definitions are the control: one direct Separation and one indirect Separation
+    /// have distinct representation and identity but the same alternate family and function mapping. They do
+    /// not trigger before or after save, and the indirect object remains the object referenced by the page.
+    /// </summary>
+    [Fact]
+    public void SeparationConsistency_content_equal_direct_and_indirect_duplicates_remain_equivalent_after_save()
+    {
+        byte[] original = SeparationConsistencyPdf("mixed-tint", contentEqual: true);
+        PreflightResult before = CheckBytes(original);
+        Assert.DoesNotContain(before.Findings, finding => finding.RuleId == "pdfx-separation-consistency");
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Assert.DoesNotContain(after.Findings, finding => finding.RuleId == "pdfx-separation-consistency");
+        string savedText = Encoding.Latin1.GetString(saved);
+        Assert.Contains("/SpotB 5 0 R", savedText, StringComparison.Ordinal);
+        Assert.Contains("5 0 obj", savedText, StringComparison.Ordinal);
+        Assert.Equal(2, savedText.Split("/C1 [0 1 0 0]", StringSplitOptions.None).Length - 1);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    private static byte[] SeparationConsistencyPdf(string shape, bool contentEqual)
+    {
+        const string tintA =
+            "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 1 0 0] /N 1 >>";
+        string tintB = contentEqual
+            ? tintA
+            : "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 1 0] /N 1 >>";
+        string directA = $"[/Separation /SpotPlate /DeviceCMYK {tintA}]";
+        string directB = $"[/Separation /SpotPlate /DeviceCMYK {tintB}]";
+        string resources = shape switch
+        {
+            "direct-tint" => $"<< /ColorSpace << /SpotA {directA} /SpotB {directB} >> >>",
+            "indirect-tint" => "<< /ColorSpace << /SpotA 5 0 R /SpotB 6 0 R >> >>",
+            "mixed-tint" => $"<< /ColorSpace << /SpotA {directA} /SpotB 5 0 R >> >>",
+            "shared-alternate" =>
+                "<< /ColorSpace << /SpotA 5 0 R /SpotAlias 5 0 R /SpotB 6 0 R >> >>",
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+
+        var pdf = new Pdf()
+            .Obj(1, 0, "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                       + $"/Resources {resources} >>\nendobj\n");
+
+        if (shape == "indirect-tint")
+        {
+            pdf.Obj(5, 0, $"5 0 obj\n{directA}\nendobj\n")
+                .Obj(6, 0, $"6 0 obj\n{directB}\nendobj\n");
+        }
+        else if (shape == "mixed-tint")
+        {
+            pdf.Obj(5, 0, $"5 0 obj\n{directB}\nendobj\n");
+        }
+        else if (shape == "shared-alternate")
+        {
+            pdf.Obj(5, 0, $"5 0 obj\n{directA}\nendobj\n")
+                .Obj(6, 0,
+                    $"6 0 obj\n[/Separation /SpotPlate /DeviceRGB {tintA}]\nendobj\n");
+        }
+
+        return pdf.Build();
+    }
+
     // ── rendering-intent: custom output-device semantics survive a plain save ───────────────────
 
     /// <summary>

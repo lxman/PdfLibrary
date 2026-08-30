@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using PdfLibrary.Conformance;
@@ -94,5 +95,34 @@ public class PreflightSlice33Tests(ITestOutputHelper output)
 
         Assert.True(preview.Candidates.Count + preview.Refused.Count > 0,
             "Every detected missing spot colorant must enter an explicit repair or refusal branch.");
+    }
+
+    [Theory]
+    [InlineData("6-2-4-4-t03-fail-a")]
+    [InlineData("6-2-4-4-t03-fail-b")]
+    [InlineData("6-2-4-4-t03-fail-c")]
+    [InlineData("6-2-4-4-t03-fail-d")]
+    public void Separation_consistency_fixture_survives_a_plain_full_rewrite(string needle)
+    {
+        string? path = CorpusFixture(ConformanceProfile.PdfA2b, needle);
+        Assert.SkipUnless(path is not null, "veraPDF corpus not present at ../veraPDF-corpus");
+
+        Finding[] before = SpotColour(path!, ConformanceProfile.PdfA2b)
+            .Where(finding => finding.RuleId == "pdfx-separation-consistency")
+            .ToArray();
+        Assert.NotEmpty(before);
+
+        using PdfDocument document = PdfDocument.Load(path!);
+        using var saved = new MemoryStream();
+        new PdfDocumentEditor(document).Save(saved);
+        Finding[] after = Preflighter.Check(saved.ToArray(), ConformanceProfile.PdfA2b).Findings
+            .Where(finding => finding.RuleId == "pdfx-separation-consistency")
+            .ToArray();
+
+        Dump($"{needle} after save", after);
+        Assert.Equal(before.Length, after.Length);
+        Assert.Equal(
+            before.Select(finding => finding.Message).Order(StringComparer.Ordinal),
+            after.Select(finding => finding.Message).Order(StringComparer.Ordinal));
     }
 }
