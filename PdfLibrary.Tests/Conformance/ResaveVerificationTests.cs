@@ -190,6 +190,94 @@ public class ResaveVerificationTests
         return pdf.Build();
     }
 
+    // ── alternate-presentations: slideshow and sub-page behavior survive when reachable ──
+
+    /// <summary>
+    /// Clause 6.10 prohibits two host entries with distinct presentation semantics. A catalog name
+    /// dictionary's <c>/AlternatePresentations</c> name tree can select an embedded slideshow and its
+    /// resource graph; a page's <c>/PresSteps</c> navigation node runs forward/backward actions and
+    /// advances through <c>/Next</c>/<c>/Prev</c> nodes. These witnesses cover direct and indirect host
+    /// values at both sites and prove that an ordinary full rewrite preserves the complete behavior.
+    /// Removal is therefore an explicit presentation-loss choice, not structural normalization.
+    /// </summary>
+    [Theory]
+    [InlineData("names", false)]
+    [InlineData("names", true)]
+    [InlineData("page", false)]
+    [InlineData("page", true)]
+    public void AlternatePresentations_direct_and_indirect_structures_survive_a_plain_save(
+        string site, bool indirectStructure)
+    {
+        byte[] original = AlternatePresentationsPdf(site, indirectStructure);
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(before.Findings, f => f.RuleId == "alternate-presentations");
+        Assert.Null(beforeFinding.ObjectNumber);
+        Assert.Equal(site == "page" ? 0 : null, beforeFinding.PageIndex);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "alternate-presentations");
+        Assert.Null(afterFinding.ObjectNumber);
+        Assert.Equal(beforeFinding.PageIndex, afterFinding.PageIndex);
+        string savedText = Encoding.Latin1.GetString(saved);
+        if (site == "names")
+        {
+            Assert.Contains("/AlternatePresentations", savedText, StringComparison.Ordinal);
+            Assert.Contains("/Type /SlideShow", savedText, StringComparison.Ordinal);
+            Assert.Contains("alternate-slide-resource", savedText, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains("/PresSteps", savedText, StringComparison.Ordinal);
+            Assert.Contains("/Next", savedText, StringComparison.Ordinal);
+            Assert.Contains("/Prev", savedText, StringComparison.Ordinal);
+            Assert.Contains("forward-step", savedText, StringComparison.Ordinal);
+            Assert.Contains("backward-step", savedText, StringComparison.Ordinal);
+        }
+        AssertNoNewRuleIds(before, after);
+    }
+
+    private static byte[] AlternatePresentationsPdf(string site, bool indirectStructure)
+    {
+        string catalogNames = site == "names"
+            ? indirectStructure
+                ? " /Names 4 0 R"
+                : " /Names << /AlternatePresentations << /Names [(Deck) 5 0 R] >> >>"
+            : "";
+        string pageSteps = site == "page"
+            ? indirectStructure
+                ? " /PresSteps 6 0 R"
+                : " /PresSteps << /NA << /S /JavaScript /JS (forward-step) >> /Next 6 0 R "
+                  + "/Prev << /PA << /S /JavaScript /JS (backward-step) >> >> >>"
+            : "";
+
+        var pdf = new Pdf()
+            .Obj(1, 0, $"1 0 obj\n<< /Type /Catalog /Pages 2 0 R{catalogNames} >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, $"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100]{pageSteps} >>\nendobj\n");
+
+        if (site == "names")
+        {
+            if (indirectStructure)
+                pdf.Obj(4, 0, "4 0 obj\n<< /AlternatePresentations 9 0 R >>\nendobj\n")
+                    .Obj(9, 0, "9 0 obj\n<< /Names [(Deck) 5 0 R] >>\nendobj\n");
+            pdf.Obj(5, 0,
+                "5 0 obj\n<< /Type /SlideShow /Subtype /Embedded "
+              + "/Resources << /Names [(slide) 7 0 R] >> /StartResource (slide) >>\nendobj\n")
+                .Obj(7, 0, "7 0 obj\n<< /Type /VendorResource /Marker (alternate-slide-resource) >>\nendobj\n");
+        }
+        else
+        {
+            pdf.Obj(6, 0,
+                "6 0 obj\n<< /NA << /S /JavaScript /JS (forward-step) >> "
+              + "/Next << /NA << /S /JavaScript /JS (next-step) >> >> "
+              + "/Prev << /PA << /S /JavaScript /JS (backward-step) >> >> >>\nendobj\n");
+        }
+
+        return pdf.Build();
+    }
+
     // ── post-eof ─────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
