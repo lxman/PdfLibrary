@@ -1,6 +1,8 @@
 using System.IO;
 using System.Linq;
 using PdfLibrary.Conformance;
+using PdfLibrary.Editing;
+using PdfLibrary.Structure;
 
 namespace PdfLibrary.Tests.Conformance;
 
@@ -70,5 +72,27 @@ public class PreflightSlice33Tests(ITestOutputHelper output)
         Dump(needle, findings);
 
         Assert.Empty(findings);
+    }
+
+    [Theory]
+    [InlineData("6-2-4-4-t02-fail-a")]
+    [InlineData("6-2-4-4-t02-fail-b")]
+    [InlineData("6-2-4-4-t02-fail-c")]
+    public void Device_n_colorants_fixture_has_an_intentional_repair_or_refusal(string needle)
+    {
+        string? path = CorpusFixture(ConformanceProfile.PdfA2b, needle);
+        Assert.SkipUnless(path is not null, "veraPDF corpus not present at ../veraPDF-corpus");
+
+        using PdfDocument document = PdfDocument.Load(path!);
+        NChannelColorantsRepairPreview preview =
+            new PdfDocumentEditor(document).PreviewNChannelColorantsRepair();
+        output.WriteLine($"{needle}: {preview.Candidates.Count} candidate(s), {preview.Refused.Count} refusal(s)");
+        foreach (NChannelColorantRepairCandidate candidate in preview.Candidates)
+            output.WriteLine($"  repair {candidate.Colorant} -> {candidate.SeparationObjectNumber}");
+        foreach (NChannelColorantRepairRefusal refusal in preview.Refused)
+            output.WriteLine($"  refuse {refusal.Colorant}: {refusal.Reason}");
+
+        Assert.True(preview.Candidates.Count + preview.Refused.Count > 0,
+            "Every detected missing spot colorant must enter an explicit repair or refusal branch.");
     }
 }

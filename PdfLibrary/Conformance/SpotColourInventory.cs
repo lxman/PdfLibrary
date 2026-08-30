@@ -8,12 +8,17 @@ using PdfLibrary.Core.Primitives;
 namespace PdfLibrary.Conformance;
 
 /// <summary>A Separation colour space definition: <c>[/Separation name alternate tintTransform]</c>.</summary>
-internal readonly record struct SeparationDef(string Colorant, PdfObject? Alternate, PdfObject? TintTransform);
+internal readonly record struct SeparationDef(
+    string Colorant, PdfObject? Alternate, PdfObject? TintTransform, PdfArray Source);
 
 /// <summary>A DeviceN colour space definition: <c>[/DeviceN [names] alternate tintTransform attributes?]</c>.
 /// <paramref name="Attributes"/> is the optional 4th element (carries /Subtype /NChannel and /Colorants).</summary>
 internal readonly record struct DeviceNDef(
-    IReadOnlyList<string> Colorants, PdfObject? Alternate, PdfObject? TintTransform, PdfDictionary? Attributes);
+    IReadOnlyList<string> Colorants,
+    PdfObject? Alternate,
+    PdfObject? TintTransform,
+    PdfDictionary? Attributes,
+    PdfArray Source);
 
 /// <summary>
 /// Inventories every Separation and DeviceN colour-space definition in a document by object-scanning all
@@ -51,12 +56,14 @@ internal static class SpotColourInventory
                 {
                     case "Separation" when array.Count >= 4:
                         separations.Add(new SeparationDef(
-                            (context.Resolve(array[1]) as PdfName)?.Value ?? string.Empty, array[2], array[3]));
+                            (context.Resolve(array[1]) as PdfName)?.Value ?? string.Empty,
+                            array[2], array[3], array));
                         break;
                     case "DeviceN" when array.Count >= 4:
                         deviceNs.Add(new DeviceNDef(
                             ReadNames(context, array[1]), array[2], array[3],
-                            array.Count >= 5 ? context.Resolve(array[4]) as PdfDictionary : null));
+                            array.Count >= 5 ? context.Resolve(array[4]) as PdfDictionary : null,
+                            array));
                         break;
                 }
                 foreach (PdfObject element in array)
