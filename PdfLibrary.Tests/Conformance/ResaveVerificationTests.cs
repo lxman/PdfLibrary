@@ -119,6 +119,77 @@ public class ResaveVerificationTests
 
     private static byte[] L(string s) => Encoding.Latin1.GetBytes(s);
 
+    // ── additional-actions: catalog/page behavior survives when reachable ───────────────────────
+
+    /// <summary>
+    /// Clause 6.5.2 prohibits the catalog and page host keys, not particular action types. These four
+    /// witnesses prove a plain full rewrite preserves direct and indirect action dictionaries at both
+    /// sites, including every standard trigger name and a mixed direct/indirect <c>/Next</c> chain.
+    /// Removing the host key therefore disables real document/page event behavior; it is not structural
+    /// normalization and requires an explicit behavior-loss choice.
+    /// </summary>
+    [Theory]
+    [InlineData("catalog", false)]
+    [InlineData("catalog", true)]
+    [InlineData("page", false)]
+    [InlineData("page", true)]
+    public void AdditionalActions_direct_and_indirect_actions_survive_a_plain_save(
+        string site, bool indirectAction)
+    {
+        byte[] original = AdditionalActionsPdf(site, indirectAction);
+        PreflightResult before = CheckBytes(original);
+        Finding beforeFinding = Assert.Single(before.Findings, f => f.RuleId == "additional-actions");
+        Assert.Null(beforeFinding.ObjectNumber);
+        Assert.Equal(site == "page" ? 0 : null, beforeFinding.PageIndex);
+
+        byte[] saved = LoadEditSave(original);
+        PreflightResult after = CheckBytes(saved);
+
+        Finding afterFinding = Assert.Single(after.Findings, f => f.RuleId == "additional-actions");
+        Assert.Null(afterFinding.ObjectNumber);
+        Assert.Equal(beforeFinding.PageIndex, afterFinding.PageIndex);
+        string savedText = Encoding.Latin1.GetString(saved);
+        Assert.Contains("/Next", savedText, StringComparison.Ordinal);
+        Assert.Contains($"{site}-head", savedText, StringComparison.Ordinal);
+        Assert.Contains($"{site}-next-indirect", savedText, StringComparison.Ordinal);
+        Assert.Contains($"{site}-next-direct", savedText, StringComparison.Ordinal);
+        if (site == "catalog")
+            foreach (string trigger in new[] { "WC", "WS", "DS", "WP", "DP" })
+                Assert.Contains($"/{trigger}", savedText, StringComparison.Ordinal);
+        else
+            foreach (string trigger in new[] { "O", "C" })
+                Assert.Contains($"/{trigger}", savedText, StringComparison.Ordinal);
+        AssertNoNewRuleIds(before, after);
+    }
+
+    private static byte[] AdditionalActionsPdf(string site, bool indirectAction)
+    {
+        string head = indirectAction
+            ? "5 0 R"
+            : $"<< /S /URI /URI ({site}-head) /Next [6 0 R "
+              + $"<< /S /URI /URI ({site}-next-direct) >>] >>";
+        string catalogActions = site == "catalog"
+            ? $" /AA << /WC {head} /WS << /S /URI /URI (catalog-will-save) >> "
+              + "/DS << /S /URI /URI (catalog-did-save) >> "
+              + "/WP << /S /URI /URI (catalog-will-print) >> "
+              + "/DP << /S /URI /URI (catalog-did-print) >> >>"
+            : "";
+        string pageActions = site == "page"
+            ? $" /AA << /O {head} /C << /S /URI /URI (page-close) >> >>"
+            : "";
+
+        var pdf = new Pdf()
+            .Obj(1, 0, $"1 0 obj\n<< /Type /Catalog /Pages 2 0 R{catalogActions} >>\nendobj\n")
+            .Obj(2, 0, "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+            .Obj(3, 0, $"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100]{pageActions} >>\nendobj\n")
+            .Obj(6, 0, $"6 0 obj\n<< /S /URI /URI ({site}-next-indirect) >>\nendobj\n");
+        if (indirectAction)
+            pdf.Obj(5, 0,
+                $"5 0 obj\n<< /S /URI /URI ({site}-head) /Next [6 0 R "
+              + $"<< /S /URI /URI ({site}-next-direct) >>] >>\nendobj\n");
+        return pdf.Build();
+    }
+
     // ── post-eof ─────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
