@@ -1,39 +1,38 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Editing;
 
-/// <summary>Read and splice helpers over a (flattened) page tree.</summary>
+/// <summary>Read and splice helpers over a page tree.</summary>
 internal static class PageTreeOps
 {
+    /// <summary>Reads the root /Kids array without changing the document.</summary>
     internal static PdfArray Kids(PdfDocument doc)
     {
-        PdfDictionary root = doc.PageTreeRootDictionary
-            ?? throw new InvalidOperationException("Document has no page tree root.");
-        if (root.TryGetValue(new PdfName("Kids"), out PdfObject obj) && obj is PdfArray kids)
+        PdfDictionary? root = doc.PageTreeRootDictionary;
+        if (root is not null
+            && root.TryGetValue(new PdfName("Kids"), out PdfObject obj)
+            && obj is PdfArray kids)
             return kids;
-        var empty = new PdfArray();
-        root[new PdfName("Kids")] = empty;
-        return empty;
+        return new PdfArray();
     }
 
     internal static IReadOnlyList<PdfDictionary> PageDicts(PdfDocument doc)
     {
-        var result = new List<PdfDictionary>();
-        foreach (PdfObject kid in Kids(doc))
-        {
-            PdfObject? resolved = kid is PdfIndirectReference r ? doc.GetObject(r.ObjectNumber) : kid;
-            if (resolved is PdfDictionary d) result.Add(d);
-        }
-        return result;
+        PdfDictionary? root = doc.PageTreeRootDictionary;
+        return root is null
+            ? []
+            : [.. PdfPageTreeWalker.Collect(root, doc).Select(leaf => leaf.Dictionary)];
     }
 
     internal static void Move(PdfDocument doc, int from, int to)
     {
-        PdfArray kids = Kids(doc);
-        if (from < 0 || from >= kids.Count) throw new ArgumentOutOfRangeException(nameof(from));
-        if (to < 0 || to >= kids.Count) throw new ArgumentOutOfRangeException(nameof(to));
+        int count = PageDicts(doc).Count;
+        if (from < 0 || from >= count) throw new ArgumentOutOfRangeException(nameof(from));
+        if (to < 0 || to >= count) throw new ArgumentOutOfRangeException(nameof(to));
+        PdfArray kids = WritableKids(doc);
         PdfObject item = kids[from];
         kids.RemoveAt(from);
         kids.Insert(to, item);
@@ -41,8 +40,9 @@ internal static class PageTreeOps
 
     internal static PdfDictionary RemoveAt(PdfDocument doc, int index)
     {
-        PdfArray kids = Kids(doc);
-        if (index < 0 || index >= kids.Count) throw new ArgumentOutOfRangeException(nameof(index));
+        int count = PageDicts(doc).Count;
+        if (index < 0 || index >= count) throw new ArgumentOutOfRangeException(nameof(index));
+        PdfArray kids = WritableKids(doc);
         PdfObject kid = kids[index];
         PdfDictionary pageDict = (kid is PdfIndirectReference r ? doc.GetObject(r.ObjectNumber) : kid) as PdfDictionary
             ?? throw new InvalidOperationException("Page kid is not a dictionary.");
@@ -60,8 +60,9 @@ internal static class PageTreeOps
 
     internal static void InsertPageRef(PdfDocument doc, PdfIndirectReference pageRef, int at)
     {
-        PdfArray kids = Kids(doc);
-        if (at < 0 || at > kids.Count) throw new ArgumentOutOfRangeException(nameof(at));
+        int count = PageDicts(doc).Count;
+        if (at < 0 || at > count) throw new ArgumentOutOfRangeException(nameof(at));
+        PdfArray kids = WritableKids(doc);
         kids.Insert(at, pageRef);
         if (doc.GetObject(pageRef.ObjectNumber) is PdfDictionary page)
             page[new PdfName("Parent")] = RootRef(doc);
@@ -84,5 +85,18 @@ internal static class PageTreeOps
             return newRef;
         }
         throw new InvalidOperationException("Catalog /Pages is neither a reference nor a dictionary.");
+    }
+
+    private static PdfArray WritableKids(PdfDocument doc)
+    {
+        PageTreeNormalizer.Normalize(doc);
+        PdfDictionary root = doc.PageTreeRootDictionary
+            ?? throw new InvalidOperationException("Document has no page tree root.");
+        if (root.Get("Kids") is PdfArray kids)
+            return kids;
+
+        var created = new PdfArray();
+        root[new PdfName("Kids")] = created;
+        return created;
     }
 }

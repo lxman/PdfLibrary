@@ -1,5 +1,6 @@
 using PdfLibrary.Core;
 using PdfLibrary.Core.Primitives;
+using PdfLibrary.Document;
 using PdfLibrary.Structure;
 
 namespace PdfLibrary.Editing;
@@ -18,47 +19,25 @@ internal static class PageTreeNormalizer
         PdfDictionary? root = doc.PageTreeRootDictionary;
         if (root is null) return;
 
-        var pages = new List<(PdfDictionary dict, PdfIndirectReference reference)>();
-        Collect(doc, root, pages);
+        IReadOnlyList<PdfPageTreeLeaf> pages = PdfPageTreeWalker.Collect(root, doc);
 
-        foreach ((PdfDictionary dict, _) in pages)
-            MaterializeInheritance(doc, dict);
+        foreach (PdfPageTreeLeaf page in pages)
+            MaterializeInheritance(doc, page.Dictionary);
 
         PdfIndirectReference rootRef = PageTreeOps.RootRef(doc);
         var kids = new PdfArray();
-        foreach ((PdfDictionary dict, PdfIndirectReference reference) in pages)
+        foreach (PdfPageTreeLeaf page in pages)
         {
+            PdfDictionary dict = page.Dictionary;
+            PdfIndirectReference reference = page.Reference
+                ?? (dict.IsIndirect
+                    ? new PdfIndirectReference(dict.ObjectNumber, dict.GenerationNumber)
+                    : doc.RegisterObject(dict));
             dict[new PdfName("Parent")] = rootRef;
             kids.Add(reference);
         }
         root[new PdfName("Kids")] = kids;
         root[new PdfName("Count")] = new PdfInteger(pages.Count);
-    }
-
-    private static void Collect(PdfDocument doc, PdfDictionary node, List<(PdfDictionary, PdfIndirectReference)> acc)
-    {
-        if (!node.TryGetValue(new PdfName("Kids"), out PdfObject kidsObj) || kidsObj is not PdfArray kids) return;
-        foreach (PdfObject kid in kids)
-        {
-            PdfDictionary? dict;
-            PdfIndirectReference reference;
-            if (kid is PdfIndirectReference r)
-            {
-                dict = doc.GetObject(r.ObjectNumber) as PdfDictionary;
-                reference = r;
-            }
-            else if (kid is PdfDictionary direct)
-            {
-                dict = direct;
-                reference = doc.RegisterObject(direct); // promote a direct leaf to indirect
-            }
-            else continue;
-            if (dict is null) continue;
-
-            string type = dict.TryGetValue(PdfName.TypeName, out PdfObject t) && t is PdfName n ? n.Value : "";
-            if (type == "Pages") Collect(doc, dict, acc);
-            else acc.Add((dict, reference));
-        }
     }
 
     private static void MaterializeInheritance(PdfDocument doc, PdfDictionary page)

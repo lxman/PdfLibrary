@@ -56,8 +56,11 @@ internal class PdfPageTree
         if (_cachedPages is not null)
             return _cachedPages;
 
-        _cachedPages = [];
-        CollectPages(_dictionary, _cachedPages);
+        _cachedPages =
+        [
+            .. PdfPageTreeWalker.Collect(_dictionary, _document)
+                .Select(leaf => new PdfPage(leaf.Dictionary, _document, leaf.Parent))
+        ];
         return _cachedPages;
     }
 
@@ -71,48 +74,6 @@ internal class PdfPageTree
             return null;
 
         return pages[index];
-    }
-
-    /// <summary>
-    /// Recursively collects all pages from the page tree
-    /// </summary>
-    private void CollectPages(PdfDictionary node, List<PdfPage> pages)
-    {
-        // Get the Kids array
-        if (!node.TryGetValue(new PdfName("Kids"), out PdfObject kidsObj))
-            return;
-
-        if (kidsObj is not PdfArray kidsArray)
-            return;
-
-        foreach (PdfObject kid in kidsArray)
-        {
-            PdfObject? kidObj = kid;
-
-            // Resolve indirect reference
-            if (kidObj is PdfIndirectReference reference && _document is not null)
-            {
-                kidObj = _document.ResolveReference(reference);
-            }
-
-            if (kidObj is not PdfDictionary kidDict)
-                continue;
-
-            // Check if this is a page or a page tree node
-            if (!kidDict.TryGetValue(PdfName.TypeName, out PdfObject typeObj) || typeObj is not PdfName typeName)
-                continue;
-
-            if (typeName.Value == "Pages")
-            {
-                // Intermediate node - recurse
-                CollectPages(kidDict, pages);
-            }
-            else if (typeName.Value == "Page")
-            {
-                // Leaf node - add page
-                pages.Add(new PdfPage(kidDict, _document, node));
-            }
-        }
     }
 
     /// <summary>
