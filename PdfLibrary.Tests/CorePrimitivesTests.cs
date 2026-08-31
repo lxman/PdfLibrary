@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using PdfLibrary.Core.Primitives;
 
@@ -218,6 +219,66 @@ public class CorePrimitivesTests
         string result = real.ToPdfString();
         Assert.Contains(".", result);
         Assert.StartsWith("123456789", result);
+    }
+
+    [Fact]
+    public void PdfReal_ToPdfString_PreservesHigherPrecisionValue()
+    {
+        const double value = 0.1179932;
+
+        string result = new PdfReal(value).ToPdfString();
+
+        Assert.Equal("0.1179932", result);
+        Assert.Equal(
+            BitConverter.DoubleToInt64Bits(value),
+            BitConverter.DoubleToInt64Bits(double.Parse(result, NumberStyles.Float, CultureInfo.InvariantCulture)));
+    }
+
+    [Fact]
+    public void PdfReal_ToPdfString_RoundTripsEveryFiniteMagnitudeWithoutExponentNotation()
+    {
+        double[] values =
+        [
+            0.0,
+            -0.0,
+            double.Epsilon,
+            -double.Epsilon,
+            double.MaxValue,
+            double.MinValue,
+            double.MaxValue / 2,
+            -double.MaxValue / 2,
+            1e-7,
+            -1e-7,
+            1e20,
+            -1e20,
+            Math.PI,
+            -Math.E,
+            0.1179932,
+        ];
+
+        foreach (double value in values)
+        {
+            string result = new PdfReal(value).ToPdfString();
+
+            Assert.Contains('.', result);
+            Assert.DoesNotContain('E', result);
+            Assert.DoesNotContain('e', result);
+            Assert.Equal(
+                BitConverter.DoubleToInt64Bits(value),
+                BitConverter.DoubleToInt64Bits(double.Parse(result, NumberStyles.Float, CultureInfo.InvariantCulture)));
+        }
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void PdfReal_ToPdfString_RejectsNonFiniteValues(double value)
+    {
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(
+            () => new PdfReal(value).ToPdfString());
+
+        Assert.Contains("finite", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

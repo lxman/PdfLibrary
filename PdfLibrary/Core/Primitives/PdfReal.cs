@@ -14,15 +14,41 @@ internal sealed class PdfReal(double value) : PdfObject
 
     public override string ToPdfString()
     {
-        // PDF spec requires decimal point representation
-        // Use invariant culture to ensure proper decimal formatting
-        var result = Value.ToString("0.######", CultureInfo.InvariantCulture);
+        if (!double.IsFinite(Value))
+            throw new InvalidOperationException("A PDF real number must have a finite value.");
 
-        // Ensure there's a decimal point if it's a whole number
-        if (!result.Contains('.'))
-            result += ".0";
+        // "R" gives the shortest decimal text that parses back to the same binary double, but it
+        // may use exponent notation, which ISO 32000-1 section 7.3.3 forbids PDF writers to emit.
+        // Expand that notation instead of limiting the number of fractional places: a full rewrite
+        // must not silently move matrices, coordinates, colours, or any other real-valued operand.
+        string shortest = Value.ToString("R", CultureInfo.InvariantCulture);
+        int exponentMarker = shortest.IndexOf('E');
+        if (exponentMarker < 0)
+            exponentMarker = shortest.IndexOf('e');
+        if (exponentMarker < 0)
+            return shortest.Contains('.') ? shortest : shortest + ".0";
 
-        return result;
+        int exponent = int.Parse(
+            shortest.AsSpan(exponentMarker + 1),
+            NumberStyles.AllowLeadingSign,
+            CultureInfo.InvariantCulture);
+
+        bool negative = shortest[0] == '-';
+        int mantissaStart = negative ? 1 : 0;
+        string mantissa = shortest[mantissaStart..exponentMarker];
+        int point = mantissa.IndexOf('.');
+        int integerDigits = point < 0 ? mantissa.Length : point;
+        string digits = point < 0 ? mantissa : mantissa.Remove(point, 1);
+        int decimalPosition = integerDigits + exponent;
+        string sign = negative ? "-" : string.Empty;
+
+        if (decimalPosition <= 0)
+            return sign + "0." + new string('0', -decimalPosition) + digits;
+
+        if (decimalPosition >= digits.Length)
+            return sign + digits + new string('0', decimalPosition - digits.Length) + ".0";
+
+        return sign + digits.Insert(decimalPosition, ".");
     }
 
     public override bool Equals(object? obj) => obj is PdfReal other && Math.Abs(other.Value - Value) < double.Epsilon;
