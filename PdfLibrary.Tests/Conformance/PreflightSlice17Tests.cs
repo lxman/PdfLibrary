@@ -10,8 +10,9 @@ namespace PdfLibrary.Tests.Conformance;
 /// <summary>
 /// Slice 17 — XMP extension-schema container structure (ISO 19005-2, 6.6.2.3.3,
 /// <see cref="XmpExtensionSchemaStructureRule"/>). Each <c>pdfaExtension:schemas</c> entry and its nested
-/// property / value-type / field descriptions must carry the mandatory fields and the conventional
-/// namespace prefix. These CI-safe synthetic packets pin every required-field and wrong-prefix branch plus
+/// property / value-type / field descriptions must carry the mandatory fields, the prescribed RDF
+/// container kind, and the conventional namespace prefix. These CI-safe synthetic packets pin every
+/// required-field, container-kind, and wrong-prefix branch plus
 /// the zero-false-positive pass cases (optional property/valueType/field, a fully valid schema); the
 /// corpus-driven parity harness measures real detection.
 /// </summary>
@@ -100,6 +101,43 @@ public class PreflightSlice17Tests
     public void Value_type_without_the_optional_field_array_passes() =>
         Assert.Empty(Findings(Schemas(SchemaRequired + ValueTypeBag(TypeAll))));
 
+    [Theory]
+    [InlineData("schemas")]
+    [InlineData("property")]
+    [InlineData("valueType")]
+    [InlineData("field")]
+    public void Each_extension_array_rejects_the_wrong_RDF_container_kind(string target)
+    {
+        string packet = Schemas(SchemaRequired + PropertyBag(PropAll)
+            + ValueTypeBag(TypeAll + FieldBag(FieldAll)));
+        packet = target switch
+        {
+            "schemas" => packet.Replace(
+                "<pdfaExtension:schemas><rdf:Bag>", "<pdfaExtension:schemas><rdf:Seq>", StringComparison.Ordinal)
+                .Replace("</rdf:Bag></pdfaExtension:schemas>", "</rdf:Seq></pdfaExtension:schemas>", StringComparison.Ordinal),
+            "property" => ReplaceContainer(packet, "pdfaSchema:property", "Seq", "Bag"),
+            "valueType" => ReplaceContainer(packet, "pdfaSchema:valueType", "Seq", "Bag"),
+            "field" => ReplaceContainer(packet, "pdfaType:field", "Seq", "Bag"),
+            _ => throw new ArgumentOutOfRangeException(nameof(target)),
+        };
+
+        Finding finding = Assert.Single(Findings(packet), f => f.Message.Contains(
+            target == "schemas" ? "rdf:Bag" : "RDF type Seq", StringComparison.Ordinal));
+        Assert.Equal("ISO 19005-2:2011, 6.6.2.3.3", finding.Clause);
+    }
+
+    [Fact]
+    public void Extension_container_rejects_a_nonstandard_namespace_prefix()
+    {
+        string packet = Schemas(SchemaRequired)
+            .Replace("xmlns:pdfaExtension=", "xmlns:wrongExtension=", StringComparison.Ordinal)
+            .Replace("pdfaExtension:schemas", "wrongExtension:schemas", StringComparison.Ordinal);
+
+        Finding finding = Assert.Single(Findings(packet),
+            f => f.Message.Contains("pdfaExtension", StringComparison.Ordinal));
+        Assert.Equal("ISO 19005-2:2011, 6.6.2.3.3", finding.Clause);
+    }
+
     // ── schema level ──────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -177,4 +215,8 @@ public class PreflightSlice17Tests
     [Fact]
     public void Rule_targets_all_pdfa_profiles_only() =>
         Assert.Equal(ConformanceProfile.AllPdfA, new XmpExtensionSchemaStructureRule().AppliesToProfiles);
+
+    private static string ReplaceContainer(string packet, string property, string from, string to) =>
+        packet.Replace($"<{property}><rdf:{from}>", $"<{property}><rdf:{to}>", StringComparison.Ordinal)
+            .Replace($"</rdf:{from}></{property}>", $"</rdf:{to}></{property}>", StringComparison.Ordinal);
 }

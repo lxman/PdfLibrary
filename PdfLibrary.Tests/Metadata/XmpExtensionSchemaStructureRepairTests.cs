@@ -11,18 +11,25 @@ using Xunit;
 namespace PdfLibrary.Tests.Metadata;
 
 /// <summary>Saved-byte witnesses for every branch in the clause 6.6.2.3.3 detector. A plain full
-/// rewrite preserves all 18 malformed forms. The narrow repair closes conventional-prefix failures
-/// and absent human-readable descriptions, while identity/type/category gaps remain explicit refusals.</summary>
+/// rewrite preserves all malformed forms. The narrow repair closes conventional-prefix failures,
+/// wrong RDF container kinds, and absent human-readable descriptions, while identity/type/category
+/// gaps remain explicit refusals.</summary>
 public class XmpExtensionSchemaStructureRepairTests
 {
     private const string RuleId = "pdfa-xmp-extension-schema-structure";
 
     public static IEnumerable<object[]> Cases()
     {
+        yield return ["container", "namespace prefix", true, BuildPacket("container", null, wrongPrefix: true)];
         yield return ["schema", "namespace prefix", true, BuildPacket("schema", null, wrongPrefix: true)];
         yield return ["property", "namespace prefix", true, BuildPacket("property", null, wrongPrefix: true)];
         yield return ["value type", "namespace prefix", true, BuildPacket("value type", null, wrongPrefix: true)];
         yield return ["field", "namespace prefix", true, BuildPacket("field", null, wrongPrefix: true)];
+
+        yield return ["container", "schemas", true, BuildPacket("container", null, wrongContainer: "schemas")];
+        yield return ["schema", "property", true, BuildPacket("schema", null, wrongContainer: "property")];
+        yield return ["schema", "valueType", true, BuildPacket("schema", null, wrongContainer: "valueType")];
+        yield return ["value type", "field", true, BuildPacket("value type", null, wrongContainer: "field")];
 
         yield return ["schema", "namespaceURI", false, BuildPacket("schema", "namespaceURI")];
         yield return ["schema", "prefix", false, BuildPacket("schema", "prefix")];
@@ -164,7 +171,8 @@ public class XmpExtensionSchemaStructureRepairTests
         _ => null,
     };
 
-    private static string BuildPacket(string level, string? missingField, bool wrongPrefix = false)
+    private static string BuildPacket(
+        string level, string? missingField, bool wrongPrefix = false, string? wrongContainer = null)
     {
         const string schemaNs = "http://www.aiim.org/pdfa/ns/schema#";
         const string propertyNs = "http://www.aiim.org/pdfa/ns/property#";
@@ -213,38 +221,56 @@ public class XmpExtensionSchemaStructureRepairTests
             }
         }
 
+        string extensionBinding = NamespaceBinding(
+            "container", level, wrongPrefix, "http://www.aiim.org/pdfa/ns/extension/");
         string schemaBinding = NamespaceBinding("schema", level, wrongPrefix, schemaNs);
         string propertyBinding = NamespaceBinding("property", level, wrongPrefix, propertyNs);
         string typeBinding = NamespaceBinding("value type", level, wrongPrefix, typeNs);
         string fieldBinding = NamespaceBinding("field", level, wrongPrefix, fieldNs);
+        string extensionElementPrefix = ElementPrefix("container", level, wrongPrefix);
         string schemaElementPrefix = ElementPrefix("schema", level, wrongPrefix);
         string typeElementPrefix = ElementPrefix("value type", level, wrongPrefix);
-        return $"""
+        string packet = $"""
             <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
             <x:xmpmeta xmlns:x="adobe:ns:meta/">
              <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
               <rdf:Description rdf:about=""
-                xmlns:pdfaExtension="http://www.aiim.org/pdfa/ns/extension/"
-                {schemaBinding} {propertyBinding} {typeBinding} {fieldBinding}>
-               <pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType="Resource">
+                {extensionBinding} {schemaBinding} {propertyBinding} {typeBinding} {fieldBinding}>
+               <{extensionElementPrefix}:schemas><rdf:Bag><rdf:li rdf:parseType="Resource">
                 {schema}
                 <{schemaElementPrefix}:property><rdf:Seq><rdf:li rdf:parseType="Resource">{property}</rdf:li></rdf:Seq></{schemaElementPrefix}:property>
                 <{schemaElementPrefix}:valueType><rdf:Seq><rdf:li rdf:parseType="Resource">{valueType}
                  <{typeElementPrefix}:field><rdf:Seq><rdf:li rdf:parseType="Resource">{field}</rdf:li></rdf:Seq></{typeElementPrefix}:field>
                 </rdf:li></rdf:Seq></{schemaElementPrefix}:valueType>
-               </rdf:li></rdf:Bag></pdfaExtension:schemas>
+               </rdf:li></rdf:Bag></{extensionElementPrefix}:schemas>
               </rdf:Description>
              </rdf:RDF>
             </x:xmpmeta>
             <?xpacket end="w"?>
             """;
+
+        return wrongContainer switch
+        {
+            "schemas" => packet.Replace(
+                "<pdfaExtension:schemas><rdf:Bag>", "<pdfaExtension:schemas><rdf:Seq>", StringComparison.Ordinal)
+                .Replace("</rdf:Bag></pdfaExtension:schemas>", "</rdf:Seq></pdfaExtension:schemas>", StringComparison.Ordinal),
+            "property" => ReplaceContainer(packet, "pdfaSchema:property", "Seq", "Bag"),
+            "valueType" => ReplaceContainer(packet, "pdfaSchema:valueType", "Seq", "Bag"),
+            "field" => ReplaceContainer(packet, "pdfaType:field", "Seq", "Bag"),
+            _ => packet,
+        };
     }
+
+    private static string ReplaceContainer(string packet, string property, string from, string to) =>
+        packet.Replace($"<{property}><rdf:{from}>", $"<{property}><rdf:{to}>", StringComparison.Ordinal)
+            .Replace($"</rdf:{from}></{property}>", $"</rdf:{to}></{property}>", StringComparison.Ordinal);
 
     private static string Field(string prefix, string name, string value) =>
         $"<{prefix}:{name}>{value}</{prefix}:{name}>";
 
     private static string PrefixFor(string level) => level switch
     {
+        "container" => "pdfaExtension",
         "schema" => "pdfaSchema",
         "property" => "pdfaProperty",
         "value type" => "pdfaType",

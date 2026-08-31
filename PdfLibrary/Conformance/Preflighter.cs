@@ -86,6 +86,8 @@ public static class Preflighter
         new Rules.AnnotationAppearanceRule(),
         new Rules.FormFieldActionsRule(),
         new Rules.FormConfigRule(),
+        // Digital signatures must cover the physical source from byte zero through EOF (6.4.3 t1).
+        new Rules.SignatureByteRangeRule(),
         new Rules.ActionTypeRule(),
         new Rules.AdditionalActionsRule(),
         // Slice 8 — embedded files, optional content, alternate presentations, document requirements.

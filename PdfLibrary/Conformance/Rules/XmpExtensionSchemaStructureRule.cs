@@ -5,8 +5,9 @@ namespace PdfLibrary.Conformance.Rules;
 
 /// <summary>
 /// PDF/A requires a well-formed extension-schema container: every <c>pdfaExtension:schemas</c> entry, and
-/// each of its nested property / value-type / field descriptions, must carry the mandatory fields and use
-/// the standard namespace prefix (ISO 19005-2, 6.6.2.3.3). This validates the container's <em>structure</em>
+/// each of its nested property / value-type / field descriptions, must carry the mandatory fields, use
+/// the prescribed RDF container kind, and use the standard namespace prefix (ISO 19005-2, 6.6.2.3.3).
+/// This validates the container's <em>structure</em>
 /// — complementing 6.6.2.3.1, which validates that packet properties are predefined or extension-declared.
 ///
 /// <para>The required/optional split is exactly veraPDF's: a schema requires namespaceURI, prefix and schema
@@ -31,7 +32,17 @@ internal sealed class XmpExtensionSchemaStructureRule : IConformanceRule
     {
         foreach (XmpNode node in context.XmpTree)
         {
-            if (node.NamespaceUri != ExtensionNs || node.LocalName != "schemas" || !node.IsArray)
+            if (node.NamespaceUri != ExtensionNs || node.LocalName != "schemas")
+                continue;
+
+            if (!IsBag(node))
+                yield return Error(context,
+                    "The PDF/A extension-schema container must be an rdf:Bag.");
+            if (node.Prefix != "pdfaExtension")
+                yield return Error(context,
+                    "The PDF/A extension-schema container must use the 'pdfaExtension' prefix.");
+
+            if (!node.IsArray)
                 continue;
             foreach (XmpNode schema in node.Children)
                 foreach (Finding finding in ValidateSchema(context, schema))
@@ -48,15 +59,27 @@ internal sealed class XmpExtensionSchemaStructureRule : IConformanceRule
             if (!HasField(schema, SchemaNs, required))
                 yield return Error(context, $"A PDF/A extension schema is missing the required pdfaSchema:{required} entry.");
 
-        if (FindField(schema, SchemaNs, "property") is { IsArray: true } propertyBag)
-            foreach (XmpNode property in propertyBag.Children)
-                foreach (Finding finding in ValidateProperty(context, property))
-                    yield return finding;
+        if (FindField(schema, SchemaNs, "property") is { } propertyArray)
+        {
+            if (!IsSeq(propertyArray))
+                yield return Error(context,
+                    "The pdfaSchema:property entry must have RDF type Seq Property.");
+            if (propertyArray.IsArray)
+                foreach (XmpNode property in propertyArray.Children)
+                    foreach (Finding finding in ValidateProperty(context, property))
+                        yield return finding;
+        }
 
-        if (FindField(schema, SchemaNs, "valueType") is { IsArray: true } valueTypeBag)
-            foreach (XmpNode valueType in valueTypeBag.Children)
-                foreach (Finding finding in ValidateValueType(context, valueType))
-                    yield return finding;
+        if (FindField(schema, SchemaNs, "valueType") is { } valueTypeArray)
+        {
+            if (!IsSeq(valueTypeArray))
+                yield return Error(context,
+                    "The pdfaSchema:valueType entry must have RDF type Seq ValueType.");
+            if (valueTypeArray.IsArray)
+                foreach (XmpNode valueType in valueTypeArray.Children)
+                    foreach (Finding finding in ValidateValueType(context, valueType))
+                        yield return finding;
+        }
     }
 
     private IEnumerable<Finding> ValidateProperty(ConformanceContext context, XmpNode property)
@@ -78,10 +101,16 @@ internal sealed class XmpExtensionSchemaStructureRule : IConformanceRule
             if (!HasField(valueType, TypeNs, required))
                 yield return Error(context, $"A PDF/A extension schema value type is missing the required pdfaType:{required} entry.");
 
-        if (FindField(valueType, TypeNs, "field") is { IsArray: true } fieldBag)
-            foreach (XmpNode field in fieldBag.Children)
-                foreach (Finding finding in ValidateField(context, field))
-                    yield return finding;
+        if (FindField(valueType, TypeNs, "field") is { } fieldArray)
+        {
+            if (!IsSeq(fieldArray))
+                yield return Error(context,
+                    "The pdfaType:field entry must have RDF type Seq Field.");
+            if (fieldArray.IsArray)
+                foreach (XmpNode field in fieldArray.Children)
+                    foreach (Finding finding in ValidateField(context, field))
+                        yield return finding;
+        }
     }
 
     private IEnumerable<Finding> ValidateField(ConformanceContext context, XmpNode field)
@@ -114,6 +143,12 @@ internal sealed class XmpExtensionSchemaStructureRule : IConformanceRule
                 return child;
         return null;
     }
+
+    private static bool IsBag(XmpNode node) =>
+        node.IsArray && !node.IsArrayOrdered && !node.IsArrayAlternate;
+
+    private static bool IsSeq(XmpNode node) =>
+        node.IsArray && node.IsArrayOrdered && !node.IsArrayAlternate;
 
     // The description fields of a level all share one namespace binding; any field in that namespace
     // carrying a prefix other than the conventional one means the container used the wrong prefix.

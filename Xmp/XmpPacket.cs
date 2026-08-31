@@ -528,7 +528,14 @@ public sealed class XmpPacket
             if (child.NamespaceUri == SchemaNs && child.LocalName == "property" && child.IsArray)
                 return child;
 
-        var array = new XmpNode(SchemaNs, "property", "pdfaSchema") { IsArray = true };
+        // ISO 19005-2 6.6.2.3.3 test 5 requires Seq Property. This used to leave
+        // IsArrayOrdered false, which serialised as rdf:Bag and made every extension declaration
+        // written by Pellucid fail veraPDF even though all four property fields were present.
+        var array = new XmpNode(SchemaNs, "property", "pdfaSchema")
+        {
+            IsArray = true,
+            IsArrayOrdered = true,
+        };
         schema.Children.Add(array);
         return array;
     }

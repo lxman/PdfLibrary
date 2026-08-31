@@ -163,9 +163,9 @@ public static class XmpConformance
     public static XmpExtensionSchemaStructureRepairReport PreviewExtensionSchemaStructureRepairs(
         XmpPacket packet) => RepairExtensionSchemaStructureCore(packet, apply: false);
 
-    /// <summary>Normalizes only conventional description-namespace prefixes and adds only absent
-    /// human-readable description fields (as empty strings). Namespace URIs, declared prefixes,
-    /// property/type/field names, value types, and property category are never invented.</summary>
+    /// <summary>Normalizes conventional description-namespace prefixes and the prescribed RDF array
+    /// kinds, and adds only absent human-readable description fields (as empty strings). Namespace URIs,
+    /// declared prefixes, property/type/field names, value types, and property category are never invented.</summary>
     public static XmpExtensionSchemaStructureRepairReport RepairExtensionSchemaStructure(
         XmpPacket packet) => RepairExtensionSchemaStructureCore(packet, apply: true);
 
@@ -178,7 +178,14 @@ public static class XmpConformance
         var refused = new List<XmpExtensionSchemaStructureRefusal>();
         foreach (XmpNode schemas in packet.Nodes)
         {
-            if (schemas.NamespaceUri != ExtensionNs || schemas.LocalName != "schemas" || !schemas.IsArray)
+            if (schemas.NamespaceUri != ExtensionNs || schemas.LocalName != "schemas")
+                continue;
+
+            RepairPrefix(schemas, "container", "namespace prefix", "pdfaExtension",
+                ancestorIsVerbatim: false, apply, ref applied, refused);
+            RepairArrayKind(schemas, "container", "schemas", shouldBeOrdered: false,
+                ancestorIsVerbatim: false, apply, ref applied, refused);
+            if (!schemas.IsArray)
                 continue;
 
             foreach (XmpNode schema in schemas.Children)
@@ -187,33 +194,103 @@ public static class XmpConformance
                     ["namespaceURI", "prefix", "schema"], ["schema"], schemas.RawXml is not null,
                     apply, ref applied, refused);
 
-                if (FindField(schema, SchemaNs, "property") is { IsArray: true } propertyBag)
-                    foreach (XmpNode property in propertyBag.Children)
-                        RepairLevel(property, "property", PropertyNs, "pdfaProperty",
-                            ["name", "valueType", "category", "description"], ["description"],
-                            schemas.RawXml is not null || schema.RawXml is not null || propertyBag.RawXml is not null,
-                            apply, ref applied, refused);
+                if (FindField(schema, SchemaNs, "property") is { } propertyArray)
+                {
+                    bool propertyBlocked = schemas.RawXml is not null || schema.RawXml is not null;
+                    RepairArrayKind(propertyArray, "schema", "property", shouldBeOrdered: true,
+                        propertyBlocked, apply, ref applied, refused);
+                    if (propertyArray.IsArray)
+                        foreach (XmpNode property in propertyArray.Children)
+                            RepairLevel(property, "property", PropertyNs, "pdfaProperty",
+                                ["name", "valueType", "category", "description"], ["description"],
+                                propertyBlocked || propertyArray.RawXml is not null,
+                                apply, ref applied, refused);
+                }
 
-                if (FindField(schema, SchemaNs, "valueType") is { IsArray: true } valueTypeBag)
-                    foreach (XmpNode valueType in valueTypeBag.Children)
-                    {
-                        bool typeBlocked = schemas.RawXml is not null || schema.RawXml is not null
-                                           || valueTypeBag.RawXml is not null;
-                        RepairLevel(valueType, "value type", TypeNs, "pdfaType",
-                            ["type", "namespaceURI", "prefix", "description"], ["description"],
-                            typeBlocked, apply, ref applied, refused);
+                if (FindField(schema, SchemaNs, "valueType") is { } valueTypeArray)
+                {
+                    bool valueTypeBlocked = schemas.RawXml is not null || schema.RawXml is not null;
+                    RepairArrayKind(valueTypeArray, "schema", "valueType", shouldBeOrdered: true,
+                        valueTypeBlocked, apply, ref applied, refused);
+                    if (valueTypeArray.IsArray)
+                        foreach (XmpNode valueType in valueTypeArray.Children)
+                        {
+                            bool typeBlocked = schemas.RawXml is not null || schema.RawXml is not null
+                                               || valueTypeArray.RawXml is not null;
+                            RepairLevel(valueType, "value type", TypeNs, "pdfaType",
+                                ["type", "namespaceURI", "prefix", "description"], ["description"],
+                                typeBlocked, apply, ref applied, refused);
 
-                        if (FindField(valueType, TypeNs, "field") is { IsArray: true } fieldBag)
-                            foreach (XmpNode field in fieldBag.Children)
-                                RepairLevel(field, "field", FieldNs, "pdfaField",
-                                    ["name", "valueType", "description"], ["description"],
-                                    typeBlocked || valueType.RawXml is not null || fieldBag.RawXml is not null,
-                                    apply, ref applied, refused);
-                    }
+                            if (FindField(valueType, TypeNs, "field") is { } fieldArray)
+                            {
+                                bool fieldBlocked = typeBlocked || valueType.RawXml is not null;
+                                RepairArrayKind(fieldArray, "value type", "field", shouldBeOrdered: true,
+                                    fieldBlocked, apply, ref applied, refused);
+                                if (fieldArray.IsArray)
+                                    foreach (XmpNode field in fieldArray.Children)
+                                        RepairLevel(field, "field", FieldNs, "pdfaField",
+                                            ["name", "valueType", "description"], ["description"],
+                                            fieldBlocked || fieldArray.RawXml is not null,
+                                            apply, ref applied, refused);
+                            }
+                        }
+                }
             }
         }
 
         return new XmpExtensionSchemaStructureRepairReport(applied, refused);
+    }
+
+    private static void RepairArrayKind(
+        XmpNode node, string level, string fieldName, bool shouldBeOrdered,
+        bool ancestorIsVerbatim, bool apply, ref int applied,
+        List<XmpExtensionSchemaStructureRefusal> refused)
+    {
+        bool hasExpectedKind = node.IsArray
+            && node.IsArrayOrdered == shouldBeOrdered
+            && !node.IsArrayAlternate;
+        if (hasExpectedKind)
+            return;
+
+        bool isVerbatim = ancestorIsVerbatim || node.RawXml is not null;
+        if (!node.IsArray || isVerbatim)
+        {
+            refused.Add(new XmpExtensionSchemaStructureRefusal(
+                level, fieldName,
+                !node.IsArray
+                    ? $"The {fieldName} value is not an RDF array, so changing its type would require replacing authored data."
+                    : "The affected RDF array is preserved verbatim, so changing its parsed container kind would not change the saved bytes."));
+            return;
+        }
+
+        applied++;
+        if (!apply)
+            return;
+
+        node.IsArrayOrdered = shouldBeOrdered;
+        node.IsArrayAlternate = false;
+        node.IsArrayAltText = false;
+    }
+
+    private static void RepairPrefix(
+        XmpNode node, string level, string fieldName, string expectedPrefix,
+        bool ancestorIsVerbatim, bool apply, ref int applied,
+        List<XmpExtensionSchemaStructureRefusal> refused)
+    {
+        if (node.Prefix == expectedPrefix)
+            return;
+
+        if (ancestorIsVerbatim || node.RawXml is not null)
+        {
+            refused.Add(new XmpExtensionSchemaStructureRefusal(
+                level, fieldName,
+                "The affected RDF item is preserved verbatim, so changing its parsed prefix would not change the saved bytes."));
+            return;
+        }
+
+        applied++;
+        if (apply)
+            node.Prefix = expectedPrefix;
     }
 
     private static void RepairLevel(

@@ -55,6 +55,9 @@ public class XmpExtensionSchemaWriterTests
         Assert.Contains("pdfaProperty:valueType", text);
         Assert.Contains("pdfaProperty:category", text);
         Assert.Contains("pdfaProperty:description", text);
+        Assert.Contains("<pdfaSchema:property>", text);
+        Assert.Equal(1, CountOccurrences(text, "<rdf:Seq>"));
+        Assert.Equal(1, CountOccurrences(text, "<rdf:Bag>"));
     }
 
     [Fact]
