@@ -28,6 +28,13 @@ public sealed class PermissionsRepairTests
         Assert.True(preview.HasDocMdp);
         Assert.True(preview.HasUsageRights);
 
+        DocumentProofPreview proof = editor.PreviewDocumentProof();
+        Assert.Equal(1, proof.SignedSignatureValueCount);
+        Assert.Equal(2, proof.SignatureByteRangeCount);
+        Assert.True(proof.HasDocMdp);
+        Assert.True(proof.HasUsageRights);
+        Assert.True(proof.HasSignatureOrCertification);
+
         PermissionsRepairReport report = editor.RepairPermissions();
         Assert.True(report.Repaired);
         Assert.Equal(1, report.RemovedDigestKeyCount);
@@ -91,6 +98,23 @@ public sealed class PermissionsRepairTests
         Assert.True(editor.RepairPermissions().Repaired);
         Assert.Null(catalog.Get("Perms"));
         Assert.Empty(Findings(document));
+    }
+
+    [Fact]
+    public void Document_proof_is_classified_without_a_permissions_repair_candidate()
+    {
+        using PdfDocument document = SignedDocument(includeForbiddenPermissionsKey: false, includeDigest: false);
+        ((PdfDictionary)document.Objects[1]).Remove(N("Perms"));
+        var editor = new PdfDocumentEditor(document);
+
+        Assert.False(editor.PreviewPermissionsRepair().IsCandidate);
+        DocumentProofPreview proof = editor.PreviewDocumentProof();
+        Assert.Equal(1, proof.SignedSignatureValueCount);
+        Assert.Equal(2, proof.SignatureByteRangeCount);
+        Assert.False(proof.HasDocMdp);
+        Assert.False(proof.HasUsageRights);
+        Assert.True(proof.HasSignedSignature);
+        Assert.True(proof.HasSignatureOrCertification);
     }
 
     private static Finding[] Findings(PdfDocument document) =>

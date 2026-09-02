@@ -146,7 +146,7 @@ internal static class FormFlattener
         return !FormFieldTree.Read(doc).Any(f => f.Widgets.Any(w => w.PageIndex >= 0));
     }
 
-    private static bool HasXfa(PdfDocument doc)
+    internal static bool HasXfa(PdfDocument doc)
     {
         if (doc.CatalogDictionary is not { } catalog) return false;
         if (Resolve(doc, catalog.Get(new PdfName("AcroForm"))) is not PdfDictionary acro) return false;

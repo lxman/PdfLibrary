@@ -38,6 +38,7 @@ public class XfaFlattenGateTests
     {
         using PdfDocument doc = BuildDynamicXfaShell();
         PdfDocumentEditor editor = doc.Edit();
+        Assert.True(editor.Forms.HasXfa);
         Assert.True(editor.Forms.IsDynamicXfa);
     }
 
@@ -60,6 +61,7 @@ public class XfaFlattenGateTests
         if (!File.Exists(W2Path)) return;
         using PdfDocument doc = PdfDocument.Load(W2Path);
         Assert.True(HasXfa(doc));                         // fixture really is an XFA form
+        Assert.True(doc.Edit().Forms.HasXfa);             // public output-safety fact
         Assert.False(doc.Edit().Forms.IsDynamicXfa);      // but it has a bakeable AcroForm
     }
 

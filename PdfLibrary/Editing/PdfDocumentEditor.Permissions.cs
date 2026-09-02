@@ -29,6 +29,21 @@ public sealed record PermissionsRepairReport(
     bool RemovedDocMdp,
     bool RemovedUsageRights);
 
+/// <summary>
+/// Source-wide signature, certification, and usage-rights facts. These facts are independent of
+/// whether the document violates the PDF/A permissions rule: any byte-changing full rewrite can
+/// invalidate byte-addressed proof even when no permissions remediation is available or staged.
+/// </summary>
+public sealed record DocumentProofPreview(
+    int SignedSignatureValueCount,
+    int SignatureByteRangeCount,
+    bool HasDocMdp,
+    bool HasUsageRights)
+{
+    public bool HasSignedSignature => SignedSignatureValueCount > 0 || SignatureByteRangeCount > 0;
+    public bool HasSignatureOrCertification => HasSignedSignature || HasDocMdp || HasUsageRights;
+}
+
 public sealed partial class PdfDocumentEditor
 {
     private static readonly PdfName PermissionsCatalogKey = new("Perms");
@@ -72,6 +87,45 @@ public sealed partial class PdfDocumentEditor
         bool HasUsageRights)
     {
         public bool IsCandidate => ForbiddenPermissionsKeys.Count > 0 || ForbiddenDigestEntries.Count > 0;
+    }
+
+    /// <summary>
+    /// Classifies byte-addressed signature values/ranges and catalog permissions without mutating
+    /// the document. Unlike <see cref="PreviewPermissionsRepair"/>, this is not gated on a rule
+    /// violation or even on the presence of a catalog <c>/Perms</c> dictionary.
+    /// </summary>
+    public DocumentProofPreview PreviewDocumentProof()
+    {
+        _document.MaterializeAllObjects();
+        var context = new ConformanceContext(_document, ConformanceProfile.PdfA2b);
+        PdfDictionary? permissions = context.Resolve(
+            _document.CatalogDictionary?.Get(PermissionsCatalogKey)) as PdfDictionary;
+        bool hasDocMdp = permissions?.ContainsKey(PermissionsDocMdpKey) is true;
+        bool hasUsageRights = permissions?.ContainsKey(PermissionsUr3Key) is true;
+
+        HashSet<PdfDictionary> allDictionaries = CollectPermissionsDictionaries(context);
+        var signatureFieldsAndWidgets = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        foreach (PdfDictionary dictionary in allDictionaries)
+            if (IsSignatureFieldOrWidget(context, dictionary))
+                signatureFieldsAndWidgets.Add(dictionary);
+
+        var signatureDictionaries = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+        foreach (PdfDictionary dictionary in allDictionaries)
+            if (context.ResolveName(dictionary.Get(PermissionsTypeKey)) == PermissionsSigType.Value)
+                signatureDictionaries.Add(dictionary);
+        foreach (PdfDictionary field in signatureFieldsAndWidgets)
+            if (context.Resolve(field.Get(PermissionsFieldValueKey)) is PdfDictionary signature)
+                signatureDictionaries.Add(signature);
+        if (permissions is not null)
+            foreach (PdfName key in new[] { PermissionsDocMdpKey, PermissionsUr3Key })
+                if (context.Resolve(permissions.Get(key)) is PdfDictionary signature)
+                    signatureDictionaries.Add(signature);
+
+        int signedValues = signatureFieldsAndWidgets.Count(dictionary =>
+            context.Resolve(dictionary.Get(PermissionsFieldValueKey)) is not null and not PdfNull);
+        int byteRanges = signatureDictionaries.Count(dictionary =>
+            context.Resolve(dictionary.Get("ByteRange")) is not null and not PdfNull);
+        return new DocumentProofPreview(signedValues, byteRanges, hasDocMdp, hasUsageRights);
     }
 
     /// <summary>

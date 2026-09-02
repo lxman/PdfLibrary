@@ -57,6 +57,13 @@ public sealed partial class PdfFormFields : IReadOnlyCollection<PdfFormField>
     public bool IsDynamicXfa => FormFlattener.IsDynamicXfa(_document);
 
     /// <summary>
+    /// True when the AcroForm carries an XFA entry. When <see cref="IsDynamicXfa"/> is false,
+    /// this identifies a hybrid form whose AcroForm fields can be flattened but whose XFA packet
+    /// will be removed with the form dictionary.
+    /// </summary>
+    public bool HasXfa => FormFlattener.HasXfa(_document);
+
+    /// <summary>
     /// Flattens all fields: bakes each field's normal appearance into the page content and
     /// removes all form interactivity (/AcroForm — including any /XFA — is dropped when no fields
     /// remain).
