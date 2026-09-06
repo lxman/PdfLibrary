@@ -1,0 +1,93 @@
+#nullable enable
+const PdfLibrary.Metadata.XmpSchemas.Dc = "http://purl.org/dc/elements/1.1/" -> string!
+const PdfLibrary.Metadata.XmpSchemas.DcPrefix = "dc" -> string!
+const PdfLibrary.Metadata.XmpSchemas.Pdf = "http://ns.adobe.com/pdf/1.3/" -> string!
+const PdfLibrary.Metadata.XmpSchemas.PdfPrefix = "pdf" -> string!
+const PdfLibrary.Metadata.XmpSchemas.Rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#" -> string!
+const PdfLibrary.Metadata.XmpSchemas.RdfPrefix = "rdf" -> string!
+const PdfLibrary.Metadata.XmpSchemas.X = "adobe:ns:meta/" -> string!
+const PdfLibrary.Metadata.XmpSchemas.Xmp = "http://ns.adobe.com/xap/1.0/" -> string!
+const PdfLibrary.Metadata.XmpSchemas.XmpPrefix = "xmp" -> string!
+const PdfLibrary.Metadata.XmpSchemas.XPrefix = "x" -> string!
+override PdfLibrary.Metadata.XmpExtensionProperty.GetHashCode() -> int
+override PdfLibrary.Metadata.XmpField.GetHashCode() -> int
+override PdfLibrary.Metadata.XmpPropertyCollision.GetHashCode() -> int
+PdfLibrary.Metadata.XmpExtensionProperty
+PdfLibrary.Metadata.XmpExtensionProperty.Category.get -> string!
+PdfLibrary.Metadata.XmpExtensionProperty.Category.init -> void
+PdfLibrary.Metadata.XmpExtensionProperty.Deconstruct(out string! Name, out string! ValueType, out string! Category, out string! Description) -> void
+PdfLibrary.Metadata.XmpExtensionProperty.Description.get -> string!
+PdfLibrary.Metadata.XmpExtensionProperty.Description.init -> void
+PdfLibrary.Metadata.XmpExtensionProperty.Equals(PdfLibrary.Metadata.XmpExtensionProperty other) -> bool
+PdfLibrary.Metadata.XmpExtensionProperty.Name.get -> string!
+PdfLibrary.Metadata.XmpExtensionProperty.Name.init -> void
+PdfLibrary.Metadata.XmpExtensionProperty.ValueType.get -> string!
+PdfLibrary.Metadata.XmpExtensionProperty.ValueType.init -> void
+PdfLibrary.Metadata.XmpExtensionProperty.XmpExtensionProperty() -> void
+PdfLibrary.Metadata.XmpExtensionProperty.XmpExtensionProperty(string! Name, string! ValueType, string! Category, string! Description) -> void
+PdfLibrary.Metadata.XmpField
+PdfLibrary.Metadata.XmpField.Deconstruct(out string! NamespaceUri, out string! Prefix, out string! LocalName, out string! Value) -> void
+PdfLibrary.Metadata.XmpField.Equals(PdfLibrary.Metadata.XmpField other) -> bool
+PdfLibrary.Metadata.XmpField.LocalName.get -> string!
+PdfLibrary.Metadata.XmpField.LocalName.init -> void
+PdfLibrary.Metadata.XmpField.NamespaceUri.get -> string!
+PdfLibrary.Metadata.XmpField.NamespaceUri.init -> void
+PdfLibrary.Metadata.XmpField.Prefix.get -> string!
+PdfLibrary.Metadata.XmpField.Prefix.init -> void
+PdfLibrary.Metadata.XmpField.Value.get -> string!
+PdfLibrary.Metadata.XmpField.Value.init -> void
+PdfLibrary.Metadata.XmpField.XmpField() -> void
+PdfLibrary.Metadata.XmpField.XmpField(string! NamespaceUri, string! Prefix, string! LocalName, string! Value) -> void
+PdfLibrary.Metadata.XmpPacket
+PdfLibrary.Metadata.XmpPacket.Collisions.get -> System.Collections.Generic.IReadOnlyList<PdfLibrary.Metadata.XmpPropertyCollision>!
+PdfLibrary.Metadata.XmpPacket.DeclareExtensionSchema(string! namespaceUri, string! prefix, string! schemaDescription, System.Collections.Generic.IReadOnlyList<PdfLibrary.Metadata.XmpExtensionProperty>! properties) -> void
+PdfLibrary.Metadata.XmpPacket.Get(string! namespaceUri, string! localName) -> PdfLibrary.Metadata.XmpProperty?
+PdfLibrary.Metadata.XmpPacket.Properties.get -> System.Collections.Generic.IEnumerable<PdfLibrary.Metadata.XmpProperty!>!
+PdfLibrary.Metadata.XmpPacket.Remove(string! namespaceUri, string! localName) -> void
+PdfLibrary.Metadata.XmpPacket.RemoveStructField(string! namespaceUri, string! localName, string! fieldNamespaceUri, string! fieldLocalName) -> bool
+PdfLibrary.Metadata.XmpPacket.Serialize() -> byte[]!
+PdfLibrary.Metadata.XmpPacket.SetArray(string! namespaceUri, string! prefix, string! localName, System.Collections.Generic.IEnumerable<string!>! items, bool ordered) -> void
+PdfLibrary.Metadata.XmpPacket.SetLangAlt(string! namespaceUri, string! prefix, string! localName, string! text, string! lang = "x-default") -> void
+PdfLibrary.Metadata.XmpPacket.SetSimple(string! namespaceUri, string! prefix, string! localName, string! value) -> void
+PdfLibrary.Metadata.XmpPacket.SetStruct(string! namespaceUri, string! prefix, string! localName, System.Collections.Generic.IReadOnlyList<PdfLibrary.Metadata.XmpField>! fields) -> void
+PdfLibrary.Metadata.XmpPacket.SetStructArray(string! namespaceUri, string! prefix, string! localName, System.Collections.Generic.IReadOnlyList<System.Collections.Generic.IReadOnlyList<PdfLibrary.Metadata.XmpField>!>! items, bool ordered) -> void
+PdfLibrary.Metadata.XmpProperty
+PdfLibrary.Metadata.XmpProperty.IsAlternate.get -> bool
+PdfLibrary.Metadata.XmpProperty.Items.get -> System.Collections.Generic.IReadOnlyList<string!>!
+PdfLibrary.Metadata.XmpProperty.Kind.get -> PdfLibrary.Metadata.XmpValueKind
+PdfLibrary.Metadata.XmpProperty.LangAlt.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+PdfLibrary.Metadata.XmpProperty.LocalName.get -> string!
+PdfLibrary.Metadata.XmpProperty.NamespaceUri.get -> string!
+PdfLibrary.Metadata.XmpProperty.Ordered.get -> bool
+PdfLibrary.Metadata.XmpProperty.Prefix.get -> string!
+PdfLibrary.Metadata.XmpProperty.Value.get -> string?
+PdfLibrary.Metadata.XmpPropertyCollision
+PdfLibrary.Metadata.XmpPropertyCollision.Deconstruct(out string! NamespaceUri, out string! LocalName, out int Definitions) -> void
+PdfLibrary.Metadata.XmpPropertyCollision.Definitions.get -> int
+PdfLibrary.Metadata.XmpPropertyCollision.Definitions.init -> void
+PdfLibrary.Metadata.XmpPropertyCollision.Equals(PdfLibrary.Metadata.XmpPropertyCollision other) -> bool
+PdfLibrary.Metadata.XmpPropertyCollision.LocalName.get -> string!
+PdfLibrary.Metadata.XmpPropertyCollision.LocalName.init -> void
+PdfLibrary.Metadata.XmpPropertyCollision.NamespaceUri.get -> string!
+PdfLibrary.Metadata.XmpPropertyCollision.NamespaceUri.init -> void
+PdfLibrary.Metadata.XmpPropertyCollision.XmpPropertyCollision() -> void
+PdfLibrary.Metadata.XmpPropertyCollision.XmpPropertyCollision(string! NamespaceUri, string! LocalName, int Definitions) -> void
+PdfLibrary.Metadata.XmpSchemas
+PdfLibrary.Metadata.XmpValueKind
+PdfLibrary.Metadata.XmpValueKind.Array = 1 -> PdfLibrary.Metadata.XmpValueKind
+PdfLibrary.Metadata.XmpValueKind.LangAlt = 2 -> PdfLibrary.Metadata.XmpValueKind
+PdfLibrary.Metadata.XmpValueKind.Simple = 0 -> PdfLibrary.Metadata.XmpValueKind
+static PdfLibrary.Metadata.XmpExtensionProperty.operator !=(PdfLibrary.Metadata.XmpExtensionProperty left, PdfLibrary.Metadata.XmpExtensionProperty right) -> bool
+static PdfLibrary.Metadata.XmpExtensionProperty.operator ==(PdfLibrary.Metadata.XmpExtensionProperty left, PdfLibrary.Metadata.XmpExtensionProperty right) -> bool
+static PdfLibrary.Metadata.XmpField.operator !=(PdfLibrary.Metadata.XmpField left, PdfLibrary.Metadata.XmpField right) -> bool
+static PdfLibrary.Metadata.XmpField.operator ==(PdfLibrary.Metadata.XmpField left, PdfLibrary.Metadata.XmpField right) -> bool
+static PdfLibrary.Metadata.XmpPacket.CreateEmpty() -> PdfLibrary.Metadata.XmpPacket!
+static PdfLibrary.Metadata.XmpPacket.Parse(byte[]! xmpBytes) -> PdfLibrary.Metadata.XmpPacket!
+static PdfLibrary.Metadata.XmpPropertyCollision.operator !=(PdfLibrary.Metadata.XmpPropertyCollision left, PdfLibrary.Metadata.XmpPropertyCollision right) -> bool
+static PdfLibrary.Metadata.XmpPropertyCollision.operator ==(PdfLibrary.Metadata.XmpPropertyCollision left, PdfLibrary.Metadata.XmpPropertyCollision right) -> bool
+~override PdfLibrary.Metadata.XmpExtensionProperty.Equals(object obj) -> bool
+~override PdfLibrary.Metadata.XmpExtensionProperty.ToString() -> string
+~override PdfLibrary.Metadata.XmpField.Equals(object obj) -> bool
+~override PdfLibrary.Metadata.XmpField.ToString() -> string
+~override PdfLibrary.Metadata.XmpPropertyCollision.Equals(object obj) -> bool
+~override PdfLibrary.Metadata.XmpPropertyCollision.ToString() -> string
