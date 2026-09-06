@@ -4,6 +4,9 @@ _2026-09-06. Measured against PdfLibrary master `b73f6c3` (2026-09-02), 441 comm
 Produces `Lxman.PdfLibrary` 2.6.0 and `Lxman.PdfLibrary.Rendering.Wpf` 2.6.0. This is the last
 release before the compliance extraction; the release after that one is 3.0.0._
 
+_Reviewed 2026-09-06: D3, D9 and D13 approved as written. D7 overridden: symbol packages keep
+shipping. The text below reflects the reviewed state._
+
 ## 1. Why this release exists
 
 Two things changed since the last time a release was considered.
@@ -32,8 +35,7 @@ leaves the engine's documented API exactly "2.5.2 plus what we chose to add".
 Goals:
 
 1. A 2.6.0 that a 2.5.x consumer can upgrade to with no source or binary change on their side.
-2. No repair or remediation API in the documented public surface, in the shipped XML docs, or in
-   published symbols.
+2. No repair or remediation API in the documented public surface or in the shipped XML docs.
 3. The public API becomes an explicit, enforced artifact so the next 1,411 members cannot leak by
    accident.
 4. CHANGELOG, README, and package release notes accurate for everything public since 2.5.2.
@@ -121,8 +123,8 @@ Nothing in the engine repo outside `PdfLibrary` and `PdfLibrary.Tests` uses any 
 
 ## 4. Decisions
 
-Each decision names the alternative it rejects. Any of them can be overridden at spec review; the
-design does not depend on a particular answer to D7 or D8.
+Each decision names the alternative it rejects. D7 was overridden at review; nothing else in the
+design depended on it.
 
 **D1. The version is 2.6.0.** Nothing in the 2.5.2 surface is removed once 3.3 is fixed; the release
 is additive. 3.0.0 is reserved for the extraction.
@@ -177,12 +179,13 @@ so the gap is theoretical. This also drops the 86 rule entries that 2.5.x has be
 Rejected alternatives: not shipping XML docs at all (kills IntelliSense for the real API); an
 allowlist by regex (drifts).
 
-**D7. No symbol packages for 2.6.0.** `IncludeSymbols` goes to false in both shipped csproj and the
-two `.snupkg` push lines leave `publish-nuget.yml`. A portable PDB carries local names and exact
-sequence points for the hidden code; with it, decompiled repair logic reads as source minus
-comments. SourceLink stays configured (it is inert without a PDB) so re-enabling symbols after the
-extraction, when the DLL holds nothing to protect, is one property. Cost: the 2.5.0 consumer loses
-step-into debugging on upgrade. Override by leaving `IncludeSymbols` alone.
+**D7. Symbol packages keep shipping.** Reviewed decision, 2026-09-06: the PDB stays available.
+`IncludeSymbols`, `SymbolPackageFormat`, SourceLink and the two `.snupkg` push lines in
+`publish-nuget.yml` are untouched. The trade accepted with it: a portable PDB carries local names
+and sequence points for the hidden code, so a decompiler with the PDB reads the repair logic as
+source minus comments. The comments, which hold the clause reasoning, are in the source and the
+filtered-out XML docs only. The original proposal (drop symbols until the extraction empties the
+DLL) was rejected because consumers stepping into library code is a deliberate feature.
 
 **D8. `ImageCommand` gets its 2.5.2 shapes back.** An explicit nine-parameter constructor and a
 nine-target `Deconstruct`, both delegating to the ten-parameter primary. Verified by the API diff in
@@ -302,11 +305,8 @@ be reviewed.
 
 ### 5.5 Symbols
 
-`IncludeSymbols` false and `SymbolPackageFormat` removed in `PdfLibrary.csproj` and
-`PdfLibrary.Rendering.Wpf.csproj`. `PublishRepositoryUrl`, `EmbedUntrackedSources`,
-`ContinuousIntegrationBuild` and the SourceLink package reference stay. `publish-nuget.yml` loses
-its two `.snupkg` push lines. The nupkg already excludes `.pdb` by default; a workflow step asserts
-no `.pdb` inside either package.
+No change. Both csproj keep `IncludeSymbols` true with the `snupkg` format, SourceLink stays, and
+the workflow keeps pushing both symbol packages (D7).
 
 ### 5.6 Public API files
 
@@ -329,8 +329,8 @@ A that a consumer can observe. Required entries, in the order a reader needs the
   36), and the page-tree/transparency cycle guards.
 - *Changed*: preflight detection now reaches full veraPDF verdict parity on the four profiles
   (986/986 on the PDF/A-2b corpus, 22/22 on 2u), listing the clauses that moved to full; the
-  `XmpProperty` projection note already present; package size 3.0 → 5.4 MB and why; symbol packages
-  no longer published (D7); eager charstring work removed from font scans (perf).
+  `XmpProperty` projection note already present; package size 3.0 → 5.4 MB and why; eager
+  charstring work removed from font scans (perf).
 - *Added*: every Appendix C item, grouped as in D3, with one sentence each.
 - *Notice*: the existing forwarder-removal-at-3.0.0 paragraph, unchanged.
 
@@ -340,19 +340,18 @@ release".
 
 **README.** A "Font substitution and inventory" recipe under More recipes covering
 `SystemFontLocator.Resolve`, `EnumerateFaces` and `FontInventory`; the Supported PDF features table
-gains CID-to-Unicode extraction via bundled Adobe CMaps; the Known limitations section notes that
-symbol packages are not published from 2.6.0. Nothing about repairs.
+gains CID-to-Unicode extraction via bundled Adobe CMaps. Nothing about repairs.
 
-**Releasing.md.** Adds the D10 API-surface step, the XML and pdb assertions, and the D11/D12 Pellucid
-sequencing. Notes that `IncludeSymbols` is deliberately off and where to turn it back on.
+**Releasing.md.** Adds the D10 API-surface step, the XML assertion, and the D11/D12 Pellucid
+sequencing.
 
 **Version.** `<Version>2.6.0</Version>` in `PdfLibrary.csproj` and `PdfLibrary.Rendering.Wpf.csproj`.
 `PdfLibrary.Rendering.SkiaSharp` untouched, per Releasing.md.
 
 ### 5.8 Workflows
 
-`publish-nuget.yml`: remove the two snupkg pushes; add, after pack, the XML-content and no-pdb
-assertions from 5.4 and 5.5. `ci.yml`: no change. The analyzer runs inside the normal build on both.
+`publish-nuget.yml`: add, after pack, the XML-content assertion from 5.4. `ci.yml`: no change. The
+analyzer runs inside the normal build on both.
 
 ### 5.9 Pellucid
 
@@ -377,7 +376,7 @@ same names.
 | Public API files (D9) | Build is clean with RS0016/RS0017 as errors; `Shipped` contains no Appendix B name |
 | `PdfLibrary.Tests`, CI filter | 0 failed (4,194 on master today; count may rise with the two new tests) |
 | Full engine CI on the release branch | build-linux, build-windows, parity all green |
-| Release pack dry-run, both packages | `PdfLibrary.xml` and `PdfLibrary.Xmp.xml` contain no `Conformance.Rules.`, `Fonts.Remediation.`, `Repair`, `Refusal`, `Proposal`; no `.pdb` in either nupkg; `PdfLibrary.Xmp.dll` present |
+| Release pack dry-run, both packages | `PdfLibrary.xml` and `PdfLibrary.Xmp.xml` contain no `Conformance.Rules.`, `Fonts.Remediation.`, `Repair`, `Refusal`, `Proposal`; `PdfLibrary.Xmp.dll` present; both `.snupkg` produced |
 | `ImageCommand` compat test | constructs and deconstructs through the nine-parameter shapes |
 | Paperwork | CHANGELOG covers every line of Appendix A that is consumer-visible; README recipes compile as written; both `PackageReleaseNotes` say 2.6.0 |
 
@@ -393,7 +392,7 @@ same names.
 
 | Check | Passes when |
 |---|---|
-| nuget.org | 2.6.0 listed for both packages, no symbols tab |
+| nuget.org | 2.6.0 listed for both packages, symbols accepted for both |
 | Pellucid canary with `LxmanPdfLibraryVersion` 2.6.0 | package-path job green |
 | Memory | `pdflibrary-release-readiness-2026-09` updated with the tag SHA and date |
 
@@ -403,7 +402,7 @@ On the engine, branch `release/2.6.0` from master.
 
 1. 5.1 and 5.2 (visibility, `ImageCommand`), with the compat test. Build clean.
 2. 5.3 grants and the csproj comment.
-3. 5.4 XML filter with its unit test; 5.5 symbols; 5.8 workflow edits.
+3. 5.4 XML filter with its unit test; 5.8 workflow edit.
 4. 5.6 analyzer and the generated API files; `tools/api-surface/`; run the diff and fix anything it
    names.
 5. 5.7 paperwork: CHANGELOG, README, release notes, version, Releasing.md.
