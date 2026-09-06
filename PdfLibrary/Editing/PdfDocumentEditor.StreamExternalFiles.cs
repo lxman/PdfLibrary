@@ -6,28 +6,28 @@ namespace PdfLibrary.Editing;
 
 /// <summary>One external-file stream whose payload is already embedded in the document and can be
 /// internalized without consulting the host file system or a network resource.</summary>
-public sealed record StreamExternalFileRepairCandidate(
+internal sealed record StreamExternalFileRepairCandidate(
     int ObjectNumber,
     int? EmbeddedFileObjectNumber,
     IReadOnlyList<string> RemovedKeys);
 
 /// <summary>One stream-external-file finding outside the deliberately narrow repair boundary.</summary>
-public sealed record StreamExternalFileRefusal(int ObjectNumber, string Reason);
+internal sealed record StreamExternalFileRefusal(int ObjectNumber, string Reason);
 
 /// <summary>Read-only classification of every stream carrying /F, /FFilter, or /FDecodeParms.</summary>
-public sealed record StreamExternalFileRepairPreview(
+internal sealed record StreamExternalFileRepairPreview(
     IReadOnlyList<StreamExternalFileRepairCandidate> Candidates,
     IReadOnlyList<StreamExternalFileRefusal> Refused);
 
 /// <summary>One stream whose external-file keys were removed. A null embedded-file object means the
 /// removed keys were orphan /FFilter and/or /FDecodeParms entries and no payload bytes changed.</summary>
-public sealed record StreamExternalFileRepair(
+internal sealed record StreamExternalFileRepair(
     int ObjectNumber,
     int? EmbeddedFileObjectNumber,
     IReadOnlyList<string> RemovedKeys);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairStreamExternalFiles"/> applied and refused.</summary>
-public sealed record StreamExternalFileRepairReport(
+internal sealed record StreamExternalFileRepairReport(
     IReadOnlyList<StreamExternalFileRepair> Applied,
     IReadOnlyList<StreamExternalFileRefusal> Refused);
 
@@ -65,7 +65,7 @@ public sealed partial class PdfDocumentEditor
     /// /DecodeParms. A path, URL, platform-dependent mapping, undecodable embedded stream, signature, or
     /// DocMDP condition refuses rather than causing ambient file/network access or guessing a payload.</para>
     /// </summary>
-    public StreamExternalFileRepairPreview PreviewStreamExternalFileRepairs()
+    internal StreamExternalFileRepairPreview PreviewStreamExternalFileRepairs()
     {
         var candidates = new List<StreamExternalFileRepairCandidate>();
         var refused = new List<StreamExternalFileRefusal>();
@@ -90,7 +90,7 @@ public sealed partial class PdfDocumentEditor
 
     /// <summary>Applies the same current-document classification used by the preview, restricted to the
     /// supplied object numbers. The write never reads an external path or URL.</summary>
-    public StreamExternalFileRepairReport RepairStreamExternalFiles(IReadOnlySet<int>? objectNumbers = null)
+    internal StreamExternalFileRepairReport RepairStreamExternalFiles(IReadOnlySet<int>? objectNumbers = null)
     {
         var applied = new List<StreamExternalFileRepair>();
         var refused = new List<StreamExternalFileRefusal>();

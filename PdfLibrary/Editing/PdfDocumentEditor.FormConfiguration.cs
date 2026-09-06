@@ -8,7 +8,7 @@ using PdfLibrary.Core.Primitives;
 namespace PdfLibrary.Editing;
 
 /// <summary>The document-level form configuration entries that can be removed without inventing content.</summary>
-public sealed record FormConfigurationRepairCandidate(
+internal sealed record FormConfigurationRepairCandidate(
     bool RemovesNeedAppearances,
     bool RemovesXfa,
     int XfaPacketCount,
@@ -16,15 +16,15 @@ public sealed record FormConfigurationRepairCandidate(
     bool InvalidatesUsageRightsSignature);
 
 /// <summary>A form configuration condition the editor cannot prove safe to remove.</summary>
-public sealed record FormConfigurationRefusal(string Reason);
+internal sealed record FormConfigurationRefusal(string Reason);
 
 /// <summary>Read-only result of classifying the current document-level form configuration.</summary>
-public sealed record FormConfigurationRepairPreview(
+internal sealed record FormConfigurationRepairPreview(
     FormConfigurationRepairCandidate? Candidate,
     IReadOnlyList<FormConfigurationRefusal> Refused);
 
 /// <summary>The exact form configuration entries removed by one repair.</summary>
-public sealed record FormConfigurationRepair(
+internal sealed record FormConfigurationRepair(
     bool RemovedNeedAppearances,
     bool RemovedXfa,
     int RemovedXfaPacketCount,
@@ -32,7 +32,7 @@ public sealed record FormConfigurationRepair(
     bool InvalidatedUsageRightsSignature);
 
 /// <summary>What the current-document reclassification changed and refused.</summary>
-public sealed record FormConfigurationRepairReport(
+internal sealed record FormConfigurationRepairReport(
     FormConfigurationRepair? Repaired,
     IReadOnlyList<FormConfigurationRefusal> Refused);
 
@@ -68,7 +68,7 @@ public sealed partial class PdfDocumentEditor
     /// Preview and write deliberately share the same classifier; the write never trusts a stale preview.
     /// Raw XFA XML, field names, and field values are not exposed in the result.
     /// </summary>
-    public FormConfigurationRepairPreview PreviewFormConfigurationRepair()
+    internal FormConfigurationRepairPreview PreviewFormConfigurationRepair()
     {
         FormConfigurationClassification classification = ClassifyFormConfigurationRepair();
         return new FormConfigurationRepairPreview(classification.Candidate, classification.Refused);
@@ -79,7 +79,7 @@ public sealed partial class PdfDocumentEditor
     /// <c>/XFA</c> entries. It never clears <c>/NeedsRendering</c>, edits fields or Widgets, or deletes
     /// signature permission dictionaries.
     /// </summary>
-    public FormConfigurationRepairReport RepairFormConfiguration()
+    internal FormConfigurationRepairReport RepairFormConfiguration()
     {
         FormConfigurationClassification classification = ClassifyFormConfigurationRepair();
         FormConfigurationRepairCandidate? candidate = classification.Candidate;

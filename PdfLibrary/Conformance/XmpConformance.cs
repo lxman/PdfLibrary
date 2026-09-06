@@ -41,14 +41,14 @@ public readonly record struct XmpPropertyVerdict(
 /// <summary>One extension-schema structure defect that Pellucid deliberately does not reconstruct.
 /// The missing fields named here carry namespace, type, property, or audience semantics; filling them
 /// merely to satisfy clause 6.6.2.3.3 would assert author intent that is not present in the packet.</summary>
-public readonly record struct XmpExtensionSchemaStructureRefusal(
+internal readonly record struct XmpExtensionSchemaStructureRefusal(
     string Level, string FieldName, string Reason);
 
 /// <summary>Preview or apply result for the deliberately narrow extension-schema structure repair.
 /// <see cref="AppliedCount"/> counts detector findings closed by conventional-prefix normalization
 /// or by adding an empty human-readable description. <see cref="Refused"/> contains every
 /// identity/type/category field that remains absent.</summary>
-public sealed record XmpExtensionSchemaStructureRepairReport(
+internal sealed record XmpExtensionSchemaStructureRepairReport(
     int AppliedCount, IReadOnlyList<XmpExtensionSchemaStructureRefusal> Refused);
 
 /// <summary>Public read-only view of what the XMP conformance rules conclude about a packet's
@@ -160,13 +160,13 @@ public static class XmpConformance
     /// <summary>Classifies the repairable and refused clause 6.6.2.3.3 branches without changing the
     /// packet. This mirrors <c>XmpExtensionSchemaStructureRule</c>'s exact walk; it does not parse finding
     /// messages and does not treat an empty value as missing.</summary>
-    public static XmpExtensionSchemaStructureRepairReport PreviewExtensionSchemaStructureRepairs(
+    internal static XmpExtensionSchemaStructureRepairReport PreviewExtensionSchemaStructureRepairs(
         XmpPacket packet) => RepairExtensionSchemaStructureCore(packet, apply: false);
 
     /// <summary>Normalizes conventional description-namespace prefixes and the prescribed RDF array
     /// kinds, and adds only absent human-readable description fields (as empty strings). Namespace URIs,
     /// declared prefixes, property/type/field names, value types, and property category are never invented.</summary>
-    public static XmpExtensionSchemaStructureRepairReport RepairExtensionSchemaStructure(
+    internal static XmpExtensionSchemaStructureRepairReport RepairExtensionSchemaStructure(
         XmpPacket packet) => RepairExtensionSchemaStructureCore(packet, apply: true);
 
     private static XmpExtensionSchemaStructureRepairReport RepairExtensionSchemaStructureCore(

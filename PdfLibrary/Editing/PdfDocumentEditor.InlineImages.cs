@@ -8,24 +8,24 @@ namespace PdfLibrary.Editing;
 
 /// <summary>One indirect page-content stream whose inline-image interpolation flags can be changed
 /// from true to false without re-emitting any content operators.</summary>
-public sealed record InlineImageRepairCandidate(
+internal sealed record InlineImageRepairCandidate(
     int ObjectNumber,
     IReadOnlyList<int> PageNumbers,
     int ImageCount);
 
 /// <summary>An inline-image defect that the deliberately narrow repair cannot safely rewrite.</summary>
-public sealed record InlineImageRepairRefusal(int? ObjectNumber, string Reason);
+internal sealed record InlineImageRepairRefusal(int? ObjectNumber, string Reason);
 
 /// <summary>Read-only classification of the document's reachable inline-image defects.</summary>
-public sealed record InlineImageRepairPreview(
+internal sealed record InlineImageRepairPreview(
     IReadOnlyList<InlineImageRepairCandidate> Candidates,
     IReadOnlyList<InlineImageRepairRefusal> Refused);
 
 /// <summary>One content stream changed by <see cref="PdfDocumentEditor.RepairInlineImages"/>.</summary>
-public sealed record InlineImageRepair(int ObjectNumber, int ImageCount);
+internal sealed record InlineImageRepair(int ObjectNumber, int ImageCount);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairInlineImages"/> changed and declined.</summary>
-public sealed record InlineImageRepairReport(
+internal sealed record InlineImageRepairReport(
     IReadOnlyList<InlineImageRepair> Applied,
     IReadOnlyList<InlineImageRepairRefusal> Refused);
 
@@ -193,7 +193,7 @@ public sealed partial class PdfDocumentEditor
 
     /// <summary>Reports every safely patchable /I true stream and every unsupported reachable defect,
     /// without mutating the document.</summary>
-    public InlineImageRepairPreview PreviewInlineImageRepairs()
+    internal InlineImageRepairPreview PreviewInlineImageRepairs()
     {
         InlineImageClassification classification = ClassifyInlineImages();
         return new InlineImageRepairPreview(
@@ -205,7 +205,7 @@ public sealed partial class PdfDocumentEditor
     /// <summary>Changes only the source bytes of exact interpolation Boolean tokens from
     /// <c>true</c> to <c>false</c>, re-encoding the otherwise byte-identical decoded stream with
     /// /FlateDecode. Classification is repeated against the live graph at write time.</summary>
-    public InlineImageRepairReport RepairInlineImages(IReadOnlySet<int>? objectNumbers = null)
+    internal InlineImageRepairReport RepairInlineImages(IReadOnlySet<int>? objectNumbers = null)
     {
         InlineImageClassification classification = ClassifyInlineImages();
         var applied = new List<InlineImageRepair>();

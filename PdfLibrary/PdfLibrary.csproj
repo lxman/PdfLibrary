@@ -129,23 +129,38 @@
     </ItemGroup>
 
     <ItemGroup>
-        <!-- Every grant below is a TEST or test-tooling assembly, and each is here because a build
-             with it removed fails. Audited 2026-08-24 by removing all five grants in a detached
-             worktree and building each consumer; the ONE that compiled clean without one was
-             deleted (Rendering.SkiaSharp — also the only PRODUCTION grant). Judge the probe by
-             whether the build SUCCEEDS, never by grepping for one error code. Prefer widening the
-             public surface: InternalsVisibleTo to production code means the public API does not say
-             what a real consumer needs. -->
+        <!-- InternalsVisibleTo has two rules in this repo.
+
+             TEST grants: each exists because a build with it removed fails. Audited 2026-08-24 by
+             removing every grant in a detached worktree and building each consumer; the one that
+             compiled without a grant was deleted. Judge a probe by whether the build SUCCEEDS, never
+             by grepping for one error code: an inaccessible STATIC member reads to the compiler as
+             an absent one (CS0117, not CS0122).
+
+             PRODUCTION grants: the PDF/A repair machinery (PdfDocumentEditor.Preview*/Repair*, the
+             Fonts.Remediation planner, the editor's font-program mutations, XmpConformance's two
+             structure repairs) is internal on purpose. Pellucid needs it; the library must not
+             publish it (Docs/superpowers/specs/2026-09-06-release-2-6-0-design.md, D2 and D5). These
+             grants are the bridge until that code moves into the Pellucid repo, at which point they
+             are removed. Widening the public surface is NOT the preferred fix for a CS0122 from a
+             Pellucid assembly; one more grant is. -->
+
+        <!-- Test grants. -->
         <!-- Needs PdfDictionary, PdfInteger, PdfName, PdfStream. -->
         <InternalsVisibleTo Include="PdfLibrary.Rendering.Wpf.Tests" />
         <!-- Both need exactly two types: EmbeddedFontMetrics and PdfFontDescriptor. -->
         <InternalsVisibleTo Include="PdfLibrary.Tests" />
         <InternalsVisibleTo Include="PdfLibrary.Integration" />
-        <!-- Needs the internal static PdfImageToCmyk.StencilInkFromFill (G-14 Task 7 render pins).
-             NOTE for anyone re-running the audit: removing this grant fails with CS0117 ("does not
-             contain a definition"), NOT CS0122 — an inaccessible STATIC member reads to the compiler
-             as an absent one. A probe that greps only for CS0122 will call this grant dead. It is not. -->
+        <!-- Needs the internal static PdfImageToCmyk.StencilInkFromFill (G-14 Task 7 render pins). -->
         <InternalsVisibleTo Include="Pellucid.Rendering.Avalonia.Tests" />
+
+        <!-- Production grants (2.6.0): the repair surface. -->
+        <InternalsVisibleTo Include="Pellucid.Core" />
+        <InternalsVisibleTo Include="Pellucid.App" />
+        <InternalsVisibleTo Include="Pellucid.Remediation" />
+        <InternalsVisibleTo Include="Pellucid.Core.Tests" />
+        <InternalsVisibleTo Include="Pellucid.App.Tests" />
+        <InternalsVisibleTo Include="Pellucid.Remediation.Tests" />
     </ItemGroup>
 
     <ItemGroup>

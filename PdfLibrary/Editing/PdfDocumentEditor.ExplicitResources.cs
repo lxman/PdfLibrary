@@ -8,7 +8,7 @@ using PdfLibrary.Document;
 namespace PdfLibrary.Editing;
 
 /// <summary>The kind of content-stream owner whose omitted /Resources entry can be materialized.</summary>
-public enum ExplicitResourceOwnerKind
+internal enum ExplicitResourceOwnerKind
 {
     Page,
     FormXObject,
@@ -16,21 +16,21 @@ public enum ExplicitResourceOwnerKind
 }
 
 /// <summary>One safely repairable owner of an inherited-resource conformance finding.</summary>
-public sealed record ExplicitResourceRepairCandidate(int ObjectNumber, ExplicitResourceOwnerKind OwnerKind);
+internal sealed record ExplicitResourceRepairCandidate(int ObjectNumber, ExplicitResourceOwnerKind OwnerKind);
 
 /// <summary>One owner the editor deliberately declines to change.</summary>
-public sealed record ExplicitResourceRefusal(int ObjectNumber, string Reason);
+internal sealed record ExplicitResourceRefusal(int ObjectNumber, string Reason);
 
 /// <summary>Read-only classification of explicit-resource repairs in the current document graph.</summary>
-public sealed record ExplicitResourceRepairPreview(
+internal sealed record ExplicitResourceRepairPreview(
     IReadOnlyList<ExplicitResourceRepairCandidate> Candidates,
     IReadOnlyList<ExplicitResourceRefusal> Refused);
 
 /// <summary>One owner on which the effective /Resources value was materialized as-is.</summary>
-public sealed record ExplicitResourceRepair(int ObjectNumber, ExplicitResourceOwnerKind OwnerKind);
+internal sealed record ExplicitResourceRepair(int ObjectNumber, ExplicitResourceOwnerKind OwnerKind);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairExplicitResources"/> applied and refused.</summary>
-public sealed record ExplicitResourceRepairReport(
+internal sealed record ExplicitResourceRepairReport(
     IReadOnlyList<ExplicitResourceRepair> Applied,
     IReadOnlyList<ExplicitResourceRefusal> Refused);
 
@@ -46,7 +46,7 @@ public sealed partial class PdfDocumentEditor
     /// no direct /Resources entry and resolves every offending invocation through the same effective
     /// resource dictionary. Existing dictionaries are never merged or replaced.
     /// </summary>
-    public ExplicitResourceRepairPreview PreviewExplicitResourceRepairs()
+    internal ExplicitResourceRepairPreview PreviewExplicitResourceRepairs()
     {
         IReadOnlyList<ExplicitResourceClassification> classified = ClassifyExplicitResourceRepairs();
         return new ExplicitResourceRepairPreview(
@@ -60,7 +60,7 @@ public sealed partial class PdfDocumentEditor
     /// Materializes each selected owner's already-effective /Resources value. <paramref name="objectNumbers"/>
     /// null means every safe candidate; a non-null set is an exact staged selection.
     /// </summary>
-    public ExplicitResourceRepairReport RepairExplicitResources(ISet<int>? objectNumbers = null)
+    internal ExplicitResourceRepairReport RepairExplicitResources(ISet<int>? objectNumbers = null)
     {
         IReadOnlyList<ExplicitResourceClassification> classified = ClassifyExplicitResourceRepairs();
         var applied = new List<ExplicitResourceRepair>();

@@ -22,7 +22,7 @@ namespace PdfLibrary.Fonts.Remediation;
 /// resolve fonts would decline every embed and look exactly like "no system fonts installed" — a
 /// caller must choose a real provider explicitly.</para>
 /// </summary>
-public sealed class FontRemediationPlanner(ISystemFontProvider fonts)
+internal sealed class FontRemediationPlanner(ISystemFontProvider fonts)
 {
     private static readonly HashSet<string> HandledRules =
         new(StringComparer.Ordinal)

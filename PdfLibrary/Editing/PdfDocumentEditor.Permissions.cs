@@ -9,7 +9,7 @@ namespace PdfLibrary.Editing;
 /// Pellucid performs a full rewrite: repairing any forbidden permissions/signature-reference entry
 /// necessarily discards the document's signature and usage-rights proof as one coherent operation.
 /// </summary>
-public sealed record PermissionsRepairPreview(
+internal sealed record PermissionsRepairPreview(
     bool IsCandidate,
     int ForbiddenPermissionsKeyCount,
     int ForbiddenDigestKeyCount,
@@ -19,7 +19,7 @@ public sealed record PermissionsRepairPreview(
     bool HasUsageRights);
 
 /// <summary>What the permissions repair removed while producing an unsigned derivative.</summary>
-public sealed record PermissionsRepairReport(
+internal sealed record PermissionsRepairReport(
     bool Repaired,
     int RemovedPermissionsKeyCount,
     int RemovedDigestKeyCount,
@@ -133,7 +133,7 @@ public sealed partial class PdfDocumentEditor
     /// includes every signature value and appearance that the full rewrite would invalidate, so a
     /// caller can obtain explicit consent for an unsigned derivative before staging the repair.
     /// </summary>
-    public PermissionsRepairPreview PreviewPermissionsRepair()
+    internal PermissionsRepairPreview PreviewPermissionsRepair()
     {
         PermissionsClassification? classified = ClassifyPermissionsRepair();
         if (classified is null)
@@ -155,7 +155,7 @@ public sealed partial class PdfDocumentEditor
     /// appearances, scrubs byte-addressed signature proof dictionaries, and removes every prohibited
     /// legacy digest entry. If the live document is no longer a candidate, nothing is changed.
     /// </summary>
-    public PermissionsRepairReport RepairPermissions()
+    internal PermissionsRepairReport RepairPermissions()
     {
         PermissionsClassification? classified = ClassifyPermissionsRepair();
         if (classified is null || !classified.IsCandidate)

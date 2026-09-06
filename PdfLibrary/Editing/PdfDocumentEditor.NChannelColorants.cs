@@ -6,7 +6,7 @@ using PdfLibrary.Optimization;
 namespace PdfLibrary.Editing;
 
 /// <summary>One missing DeviceN spot-colorant fallback that can reuse an existing Separation object.</summary>
-public sealed record NChannelColorantRepairCandidate(
+internal sealed record NChannelColorantRepairCandidate(
     int? DeviceNObjectNumber,
     int? AttributesObjectNumber,
     string Colorant,
@@ -15,19 +15,19 @@ public sealed record NChannelColorantRepairCandidate(
     bool CreatesColorantsDictionary);
 
 /// <summary>One missing DeviceN spot-colorant fallback deliberately left unchanged.</summary>
-public sealed record NChannelColorantRepairRefusal(
+internal sealed record NChannelColorantRepairRefusal(
     int? DeviceNObjectNumber,
     int? AttributesObjectNumber,
     string Colorant,
     string Reason);
 
 /// <summary>Read-only classification of all missing DeviceN spot-colorant fallback definitions.</summary>
-public sealed record NChannelColorantsRepairPreview(
+internal sealed record NChannelColorantsRepairPreview(
     IReadOnlyList<NChannelColorantRepairCandidate> Candidates,
     IReadOnlyList<NChannelColorantRepairRefusal> Refused);
 
 /// <summary>One DeviceN <c>/Colorants</c> entry linked to an existing indirect Separation object.</summary>
-public sealed record NChannelColorantRepair(
+internal sealed record NChannelColorantRepair(
     int? DeviceNObjectNumber,
     int? AttributesObjectNumber,
     string Colorant,
@@ -36,7 +36,7 @@ public sealed record NChannelColorantRepair(
     bool CreatedColorantsDictionary);
 
 /// <summary>What the DeviceN colorants repair changed or refused.</summary>
-public sealed record NChannelColorantsRepairReport(
+internal sealed record NChannelColorantsRepairReport(
     IReadOnlyList<NChannelColorantRepair> Repaired,
     IReadOnlyList<NChannelColorantRepairRefusal> Refused);
 
@@ -61,7 +61,7 @@ public sealed partial class PdfDocumentEditor
     /// The repair links that object; it never derives an individual tint transform from the DeviceN's
     /// combined transform, clones a direct value, replaces malformed data, or chooses among definitions.
     /// </summary>
-    public NChannelColorantsRepairPreview PreviewNChannelColorantsRepair(bool nChannelOnly = false)
+    internal NChannelColorantsRepairPreview PreviewNChannelColorantsRepair(bool nChannelOnly = false)
     {
         NChannelColorantsClassification classified = ClassifyNChannelColorantsRepair(nChannelOnly);
         return new NChannelColorantsRepairPreview(
@@ -73,7 +73,7 @@ public sealed partial class PdfDocumentEditor
     /// Separation definition. Missing container dictionaries may be created, but existing values are never
     /// replaced. Signed and DocMDP-protected documents are left unchanged.
     /// </summary>
-    public NChannelColorantsRepairReport RepairNChannelColorants(bool nChannelOnly = false)
+    internal NChannelColorantsRepairReport RepairNChannelColorants(bool nChannelOnly = false)
     {
         NChannelColorantsClassification classified = ClassifyNChannelColorantsRepair(nChannelOnly);
         var repaired = new List<NChannelColorantRepair>();

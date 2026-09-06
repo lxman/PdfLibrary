@@ -11,7 +11,7 @@ namespace PdfLibrary.Editing;
 /// JavaScript broken out as their own kinds -- the two largest measured populations after Named -- with
 /// every other rejected type folded into <see cref="OtherProhibited"/>), and test 2 rejects a Named
 /// action whose <c>/N</c> is not NextPage/PrevPage/FirstPage/LastPage.</summary>
-public enum ProhibitedActionKind { Launch, JavaScript, DisallowedNamed, NoActionType, OtherProhibited }
+internal enum ProhibitedActionKind { Launch, JavaScript, DisallowedNamed, NoActionType, OtherProhibited }
 
 /// <summary>One place PDF/A clause 6.5.1 requires removal: either an annotation host, addressed by
 /// <see cref="HostObjectNumber"/> (Link/Widget <c>/A</c> and <c>/AA</c> triggers on every annotation
@@ -30,7 +30,7 @@ public enum ProhibitedActionKind { Launch, JavaScript, DisallowedNamed, NoAction
 ///
 /// <para><see cref="HostDescription"/> is the human-readable label a caller can surface verbatim (e.g.
 /// <c>"Link /A"</c>, <c>"Widget /AA /E"</c>, <c>"Names/JavaScript"</c>).</para></summary>
-public sealed record ProhibitedActionSite(
+internal sealed record ProhibitedActionSite(
     int? HostObjectNumber,
     string? JavaScriptEntryName,
     string HostDescription,
@@ -40,16 +40,16 @@ public sealed record ProhibitedActionSite(
 /// reference at. <see cref="ActionsRemoved"/> counts the reference removals this repair performed at
 /// this site -- never the action objects themselves, which are never deleted here (the writer's
 /// reachability walk collects any that become orphaned).</summary>
-public sealed record ProhibitedActionRepair(ProhibitedActionSite Site, int ActionsRemoved);
+internal sealed record ProhibitedActionRepair(ProhibitedActionSite Site, int ActionsRemoved);
 
 /// <summary>One site <see cref="PdfDocumentEditor.PreviewProhibitedActionRepairs"/> or
 /// <see cref="PdfDocumentEditor.RepairProhibitedActions"/> found a 6.5.1 defect on but declined to
 /// repair, with the reason a caller can surface verbatim.</summary>
-public sealed record ProhibitedActionRefusal(ProhibitedActionSite Site, string Reason);
+internal sealed record ProhibitedActionRefusal(ProhibitedActionSite Site, string Reason);
 
 /// <summary>What <see cref="PdfDocumentEditor.PreviewProhibitedActionRepairs"/> found, read-only:
 /// nothing has been written to the document.</summary>
-public sealed record ProhibitedActionRepairPreview(
+internal sealed record ProhibitedActionRepairPreview(
     IReadOnlyList<ProhibitedActionSite> Candidates, IReadOnlyList<ProhibitedActionRefusal> Refused);
 
 /// <summary>What <see cref="PdfDocumentEditor.RepairProhibitedActions"/> did and declined to do.
@@ -67,7 +67,7 @@ public sealed record ProhibitedActionRepairPreview(
 /// (<c>"Widget /AA /X"</c>) and a <see cref="Refused"/> entry (<c>"Widget /AA /E"</c>) that share an
 /// object number but are different sites, each fully resolved. No single site is ever split across both
 /// lists.</para></summary>
-public sealed record ProhibitedActionRepairReport(
+internal sealed record ProhibitedActionRepairReport(
     IReadOnlyList<ProhibitedActionRepair> Repaired,
     IReadOnlyList<ProhibitedActionRefusal> Refused);
 
@@ -1017,7 +1017,7 @@ public sealed partial class PdfDocumentEditor
     /// <summary>Read-only preview of every PDF/A 6.5.1 prohibited-action defect this editor would repair
     /// right now, without writing anything. Calling it twice returns the same answer; there is no
     /// idempotency guard to trip because nothing here is ever written.</summary>
-    public ProhibitedActionRepairPreview PreviewProhibitedActionRepairs()
+    internal ProhibitedActionRepairPreview PreviewProhibitedActionRepairs()
     {
         (List<ProhibitedActionCandidate> candidates, List<ProhibitedActionRefusal> refused) =
             ClassifyProhibitedActions();
@@ -1051,7 +1051,7 @@ public sealed partial class PdfDocumentEditor
     /// <see cref="ProhibitedActionRepairReport.Refused"/> -- the same "only tell me about what I asked
     /// for" semantics <c>RepairAnnotationAppearances</c>'s <c>objectNumbers</c> filter already uses. The
     /// five unmeasured-host refusals are the deliberate exception; see <see cref="IsSelected"/>.</para></summary>
-    public ProhibitedActionRepairReport RepairProhibitedActions(
+    internal ProhibitedActionRepairReport RepairProhibitedActions(
         IReadOnlySet<int>? hostObjectNumbers = null, IReadOnlySet<string>? javaScriptEntryNames = null)
     {
         (List<ProhibitedActionCandidate> candidates, List<ProhibitedActionRefusal> refused) =

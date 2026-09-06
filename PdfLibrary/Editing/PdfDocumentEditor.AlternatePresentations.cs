@@ -6,17 +6,17 @@ using PdfLibrary.Document;
 namespace PdfLibrary.Editing;
 
 /// <summary>The two PDF/A clause 6.10 hosts that can activate alternate presentation behavior.</summary>
-public enum AlternatePresentationsOwnerKind { NameDictionary, Page }
+internal enum AlternatePresentationsOwnerKind { NameDictionary, Page }
 
 /// <summary>One host entry that can be removed with explicit presentation-loss consent.</summary>
-public sealed record AlternatePresentationsRepairCandidate(
+internal sealed record AlternatePresentationsRepairCandidate(
     AlternatePresentationsOwnerKind OwnerKind,
     int? ObjectNumber,
     int? PageIndex,
     int? StructureObjectNumber);
 
 /// <summary>One host entry deliberately left in place.</summary>
-public sealed record AlternatePresentationsRepairRefusal(
+internal sealed record AlternatePresentationsRepairRefusal(
     AlternatePresentationsOwnerKind OwnerKind,
     int? ObjectNumber,
     int? PageIndex,
@@ -24,19 +24,19 @@ public sealed record AlternatePresentationsRepairRefusal(
     string Reason);
 
 /// <summary>Read-only classification of every alternate-presentations host entry.</summary>
-public sealed record AlternatePresentationsRepairPreview(
+internal sealed record AlternatePresentationsRepairPreview(
     IReadOnlyList<AlternatePresentationsRepairCandidate> Candidates,
     IReadOnlyList<AlternatePresentationsRepairRefusal> Refused);
 
 /// <summary>One name-dictionary or page host key removed by the repair.</summary>
-public sealed record AlternatePresentationsRepair(
+internal sealed record AlternatePresentationsRepair(
     AlternatePresentationsOwnerKind OwnerKind,
     int? ObjectNumber,
     int? PageIndex,
     int? StructureObjectNumber);
 
 /// <summary>What a document-scoped alternate-presentations repair changed and refused.</summary>
-public sealed record AlternatePresentationsRepairReport(
+internal sealed record AlternatePresentationsRepairReport(
     IReadOnlyList<AlternatePresentationsRepair> Repaired,
     IReadOnlyList<AlternatePresentationsRepairRefusal> Refused);
 
@@ -60,7 +60,7 @@ public sealed partial class PdfDocumentEditor
     /// detaching it never mutates a direct or indirect slideshow name tree, navigation-node graph, action,
     /// transition, optional-content group, or other object that another host may share.
     /// </summary>
-    public AlternatePresentationsRepairPreview PreviewAlternatePresentationsRepair()
+    internal AlternatePresentationsRepairPreview PreviewAlternatePresentationsRepair()
     {
         AlternatePresentationsClassification classified = ClassifyAlternatePresentationsRepair();
         return new AlternatePresentationsRepairPreview(
@@ -73,7 +73,7 @@ public sealed partial class PdfDocumentEditor
     /// host and partial removal leaves the same rule open. Signed and DocMDP-protected documents refuse
     /// because Pellucid performs a full rewrite rather than a signature-preserving append.
     /// </summary>
-    public AlternatePresentationsRepairReport RepairAlternatePresentations()
+    internal AlternatePresentationsRepairReport RepairAlternatePresentations()
     {
         AlternatePresentationsClassification classified = ClassifyAlternatePresentationsRepair();
         var repaired = new List<AlternatePresentationsRepair>();
