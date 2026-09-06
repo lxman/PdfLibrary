@@ -11,13 +11,13 @@ public class DocFilterProbe
     public DocFilterProbe(int value) => Value = value;
     public void Visible(string text) { _ = text; }
     internal void Hidden() { }
-    public class Inner { public int X; }
-    internal class Secret { public int Y; }
+    public class Inner { public int X = 1; }
+    internal class Secret { public int Y = 2; }
 }
 
 internal class DocFilterSecret
 {
-    public int Exposed;
+    public int Exposed = 3;
 }
 
 public class DocFilterTests
