@@ -11,6 +11,13 @@ public class DocFilterProbe
     public DocFilterProbe(int value) => Value = value;
     public void Visible(string text) { _ = text; }
     internal void Hidden() { }
+    public int this[int index] => index;
+    public event EventHandler? Changed;
+    // Named HiddenEvent, not Hidden: the internal void Hidden() method above already owns that
+    // identifier, and C# does not allow a method and an event to share a name on the same type
+    // (CS0102). This still probes an internal event's E: doc-id, which is the point of the case.
+    internal event EventHandler? HiddenEvent;
+    public void Raise() { Changed?.Invoke(this, EventArgs.Empty); HiddenEvent?.Invoke(this, EventArgs.Empty); }
     public class Inner { public int X = 1; }
     internal class Secret { public int Y = 2; }
 }
@@ -41,6 +48,9 @@ public class DocFilterTests
     [InlineData("F:PdfLibrary.Tests.Build.DocFilterProbe.Secret.Y", false)]
     [InlineData("T:PdfLibrary.Tests.Build.DocFilterSecret", false)]
     [InlineData("F:PdfLibrary.Tests.Build.DocFilterSecret.Exposed", false)]
+    [InlineData("P:PdfLibrary.Tests.Build.DocFilterProbe.Item(System.Int32)", true)]
+    [InlineData("E:PdfLibrary.Tests.Build.DocFilterProbe.Changed", true)]
+    [InlineData("E:PdfLibrary.Tests.Build.DocFilterProbe.HiddenEvent", false)]
     public void IsPublic_resolves_doc_ids_against_the_assembly(string docId, bool expected)
     {
         Assert.Equal(expected, DocFilter.IsPublic(docId, Surface()));
