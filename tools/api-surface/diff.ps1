@@ -1,5 +1,5 @@
 param(
-    [string]$OldDll = "$env:USERPROFILE\.nuget\packages\lxman.pdflibrary\2.5.2\lib\net8.0\PdfLibrary.dll",
+    [string]$OldDll = "$HOME\.nuget\packages\lxman.pdflibrary\2.5.2\lib\net8.0\PdfLibrary.dll",
     [string]$NewDll = "$PSScriptRoot\..\..\PdfLibrary\bin\Release\net8.0\PdfLibrary.dll",
     [string]$OutDir = "$PSScriptRoot\out"
 )

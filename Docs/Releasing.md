@@ -34,10 +34,17 @@ Run these on the release branch before creating the GitHub release. All four mus
    the CHANGELOG's Added section. RS0016/RS0017 (PublicApiAnalyzers) are build errors, so the
    checked-in `PublicAPI.Shipped.txt` must already match; if `PublicAPI.Unshipped.txt` has content,
    move it to Shipped as part of the release commit.
+
+   RS0016/RS0017 also fire inside Pellucid's build, because Pellucid compiles `PdfLibrary.csproj` by
+   project reference. An engine public-API addition made while working in Pellucid surfaces there as
+   a build error; that is the analyzer working as intended — add the symbol to
+   `PublicAPI.Unshipped.txt` deliberately, or make it internal.
 2. **Shipped XML docs.** `dotnet pack -c Release` runs `StripNonPublicDocs`; unzip the nupkg and
-   confirm `lib/net10.0/PdfLibrary.xml` and `PdfLibrary.Xmp.xml` contain no `<member name=` under
-   `Conformance.Rules.`, `Fonts.Remediation.`, or any `Repair`/`Refusal`/`Proposal` name. The
-   publish workflow asserts the same and fails the release if it is wrong.
+   confirm `lib/net8.0/PdfLibrary.xml`, `lib/net9.0/PdfLibrary.xml`, and `lib/net10.0/PdfLibrary.xml`
+   (and each TFM's `PdfLibrary.Xmp.xml`) contain no `<member name=` under `Conformance.Rules.`,
+   `Fonts.Remediation.`, `Repair`, `Refusal`, `Proposal`, or `ConformanceContext`. The publish
+   workflow asserts the same across all three TFMs and fails the publish job, so nothing is pushed;
+   the GitHub release and tag already exist at that point and must be deleted or re-driven.
 3. **Versions.** `<Version>` in `PdfLibrary/PdfLibrary.csproj` and
    `PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj` equal the tag. The workflow rewrites
    them from the tag anyway; keeping them in sync is what makes a local pack match CI.
@@ -66,7 +73,8 @@ When you publish the release, the GitHub Action will automatically:
 4. Build the solution in Release mode
 5. Run tests
 6. Create NuGet packages
-7. Push packages to NuGet.org
+7. Assert the packed XML docs describe only the public surface (fails the publish job on a leak)
+8. Push packages to NuGet.org
 
 ### 4. Verify the Release
 
