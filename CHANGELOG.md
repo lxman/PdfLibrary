@@ -4,9 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## [2.6.0] - 2026-09-06
 
 ### Fixed
+- **Saves write every xref entry with the object's real generation number** (issue 80). Every entry
+  was written with generation 0 even when the object header said `N G obj` with G > 0. Our own reader
+  and pypdf tolerated it; veraPDF and PDFBox did not. Affects any document that carried a
+  non-zero-generation object through a save.
+- **Strings written as hex in the source are written as hex on save** (issue 57), so byte-level
+  conformance checks (PDF/A 6.1.6) see the same form after a round-trip.
+- **Real-number operands keep their written precision on save** instead of being re-formatted
+  through a double, which could change low-order digits.
+- **Page-tree traversal is bounded**: a `/Kids` cycle no longer recurses without limit.
+- **Transparency-group resource cycles are guarded** during rendering and content walks.
+- Atomic-file-write retry no longer races its own budget on a transiently locked destination (issue 55).
+- CID-to-GID mapping is split by consumer (issue 42): rendering keeps the identity mapping the font
+  program requires; conformance uses the strict map.
 - **XMP: structured properties are no longer destroyed on save.** Setting any document property
   (`PdfDocumentEditor.Metadata.Title` and friends) re-serialized the XMP packet through a model with
   no struct representation, flattening `xmpMM:History`, `xmpMM:DerivedFrom`, `xmpTPg:Fonts` and
@@ -31,6 +44,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   it only preserves an `rdf:value`-plus-qualifiers shape, not any unfamiliar XMP in general; see
   `Docs/Architecture.md` for what it does and does not cover (e.g. `rdf:type` on a struct is still
   dropped).
+- **Preflight reaches full verdict parity with veraPDF** on every profile with a committed snapshot:
+  986/986 whole-file agreement on the PDF/A-2b corpus, 22/22 on PDF/A-2u, with zero false positives
+  across all 1,316 corpus files. The clause-by-clause table is
+  `PdfLibrary.Tests/Conformance/parity/PARITY-REPORT.md`; clauses at full parity — PDF/A-2b (35/40):
+  6.6.2.3.1, 6.2.4.3, 6.2.10, 6.3.3, 6.3.2, 6.6.2.3.3, 6.1.13, 6.5.1, 6.3.1, 6.1.7.1, 6.1.9, 6.2.4.4,
+  6.4.1, 6.2.2, 6.2.5, 6.6.4, 6.2.11.3.3, 6.2.11.6, 6.2.3, 6.2.8.3, 6.2.9, 6.1.12, 6.1.3, 6.2.6, 6.2.8,
+  6.2.11.3.2, 6.2.4.2, 6.6.2.1, 6.1.10, 6.1.4, 6.1.6, 6.1.8, 6.2.11.4.2, 6.4.2, 6.5.2; PDF/A-2u (3/3):
+  6.2.11.7.2, 6.2.11.3.1, 6.6.4.
+- Font scans no longer parse every charstring eagerly; a conformance scan of a font-heavy document
+  is roughly half the time it was.
+- The core package is 5.4 MB, up from 3.0 MB: bundled Adobe CID-to-Unicode CMaps, Standard-14 AFM
+  metrics, and the CMYK soft-proof profile.
 
 ### Added
 - `XmpPacket.SetStruct` / `SetStructArray` and `XmpField`, for authoring nested XMP structs and
@@ -41,6 +66,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   property or struct-field *name* — only ever caller-supplied, via `SetSimple`/`SetArray`/
   `SetStruct`/`SetStructArray` — throws `ArgumentException` instead, since there is nothing to
   repair it into. Callers authoring structs with dynamic field names should validate them first.
+- **System font substitution.** `SystemFontLocator.Resolve(FontRequest)` returns a `FontMatch`
+  (bytes plus the face index inside a `.ttc`); `EnumerateFaces()` lists what the locator can see as
+  `SystemFontFace` records (family, PostScript name, bold/italic, source path, face index);
+  `SystemFontLocator.Default` scans the platform font directories. `ISystemFontProvider` gained
+  both members with default implementations, so existing implementers keep compiling.
+  `BundledStandard14Provider` wraps any provider with the Standard-14 AFM metrics.
+- **Font inventory.** `FontInventory.Read(PdfDocument)` lists every font in a document as a
+  `FontInventoryEntry` (kind, embedding, program holder, used codes); `FontInventory.Find` locates
+  one by object number. `FontProgramClassifier`, `ClassifiedProgram`, `FontProgramFormat`,
+  `FontDescriptorValues`, `FontDescriptorMetrics`, `FontId`, `FontKind` support it.
+- **CID-to-Unicode for text extraction**: `CidCMap` and `AdobeCidToUnicode` (bundled Adobe UCS2
+  tables for Japan1, Korea1, GB1, CNS1), `ToUnicodeCodespace`, and `ToUnicodeCMapWriter` for
+  authoring a ToUnicode CMap.
+- Metadata: `PdfMetadata.Language` and `PdfMetadata.Trapped` (`PdfTrapped`), synced to XMP.
+- Editing: `PdfDocumentEditor.SetFileId`, `ConsolidateOutputIntents`, `ReplaceOutputIntentProfile`,
+  `PdfPageCollection.SetAnnotationFlags`, `PdfFormFields.HasXfa`, `PdfAnnotationInfo.Flags`, and
+  `PdfDocumentEditor.Document`.
+- `PdfDocumentEditor.PreviewDocumentProof()` classifies signature byte ranges and catalog
+  permissions without mutating (`DocumentProofPreview`).
+- Conformance reads: `ConformanceClaim.Read` (the declared PDF/A profile, with an unreadable-XMP
+  flag), `OutputIntentProfileValidator.Validate`, `XmpConformance.ClassifyProperties` and
+  `ModernEquivalentOf` (`XmpPropertyVerdict`, `XmpModernEquivalent`), and
+  `Preflighter.Check(document, profile, sourceBytes)` for byte-level rules.
+- Render SPI: `ImageCommand.ProofCmyk`, `PdfGraphicsState.ResolvedFillProofCmyk` /
+  `ResolvedStrokeProofCmyk`, `DeviceCmykConverter.Naive`, and
+  `RecordingRenderTarget.Record(page, scale, fontProvider)`. The nine-parameter `ImageCommand`
+  constructor and `Deconstruct` from 2.5.2 are kept.
 
 ## [2.5.2] - 2026-07-29
 

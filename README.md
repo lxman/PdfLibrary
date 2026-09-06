@@ -256,6 +256,31 @@ edit.Save("output.pdf");
 ```
 </details>
 
+<details>
+<summary><strong>Resolve substitute fonts and inventory a document's fonts</strong></summary>
+
+```csharp
+using PdfLibrary.Fonts;
+using PdfLibrary.Structure;
+
+// System font substitution: what the renderer falls back to when a font is not embedded.
+SystemFontLocator fonts = SystemFontLocator.Default;               // scans the platform font directories
+FontMatch? match = fonts.Resolve(new FontRequest("Helvetica-Bold", Bold: true, Italic: false));
+if (match is not null)
+    Console.WriteLine($"{match.Data.Length} bytes, face {match.FaceIndex}");
+foreach (SystemFontFace face in fonts.EnumerateFaces().Take(5))
+    Console.WriteLine($"{face.Family} / {face.PostScriptName}");
+
+// Font inventory: every font dictionary in the document, embedded or not.
+using var doc = PdfDocument.Load("input.pdf");
+foreach (FontInventoryEntry entry in FontInventory.Read(doc))
+    Console.WriteLine($"{entry.BaseFont}: {entry.Kind}");
+```
+
+`ISystemFontProvider.Resolve` and `EnumerateFaces` have default implementations, so a custom provider
+written against an earlier release keeps compiling.
+</details>
+
 See the [Complete Guide](Docs/Guide.md) for the full API surface.
 
 ## Feature tour
@@ -368,6 +393,7 @@ PDF stream filters in `PdfLibrary/Filters/` are thin adapters: each maps PDF fil
 - Type0 (CID fonts)
 - Type3
 - Embedded and system fonts
+- CID-to-Unicode text extraction for Adobe-Japan1, Korea1, GB1 and CNS1 CID-keyed fonts (bundled UCS2 CMaps)
 
 ### Images
 - DCTDecode (JPEG)

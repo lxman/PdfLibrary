@@ -24,14 +24,29 @@ This document describes how to release new versions of PdfLibrary to NuGet.
 
 ## Release Process
 
-### 1. Update Version Numbers (Optional)
+### 1. Pre-release gates (required)
 
-The version numbers in the csproj files are automatically updated by the GitHub Action based on the git tag. However, you may want to keep them in sync for local development:
+Run these on the release branch before creating the GitHub release. All four must pass.
 
-- `PdfLibrary/PdfLibrary.csproj` — Update `<Version>` element
-- `PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj` — Update `<Version>` element
+1. **Public API surface.** `pwsh tools/api-surface/diff.ps1` compares the previous published package
+   (from the NuGet cache) with `bin/Release/net8.0/PdfLibrary.dll`. Accepted removals in 2.x: the
+   XMP types forwarded to `PdfLibrary.Xmp.dll`, and nothing else. Every ADDED entry must appear in
+   the CHANGELOG's Added section. RS0016/RS0017 (PublicApiAnalyzers) are build errors, so the
+   checked-in `PublicAPI.Shipped.txt` must already match; if `PublicAPI.Unshipped.txt` has content,
+   move it to Shipped as part of the release commit.
+2. **Shipped XML docs.** `dotnet pack -c Release` runs `StripNonPublicDocs`; unzip the nupkg and
+   confirm `lib/net10.0/PdfLibrary.xml` and `PdfLibrary.Xmp.xml` contain no `<member name=` under
+   `Conformance.Rules.`, `Fonts.Remediation.`, or any `Repair`/`Refusal`/`Proposal` name. The
+   publish workflow asserts the same and fails the release if it is wrong.
+3. **Versions.** `<Version>` in `PdfLibrary/PdfLibrary.csproj` and
+   `PdfLibrary.Rendering.Wpf/PdfLibrary.Rendering.Wpf.csproj` equal the tag. The workflow rewrites
+   them from the tag anyway; keeping them in sync is what makes a local pack match CI.
+4. **Pellucid pin.** `ci/dependencies.json` in the Pellucid repo points at the exact commit that
+   will be tagged, and Pellucid CI is green on it, before the tag exists. After publishing, bump
+   `LxmanPdfLibraryVersion` in Pellucid's `Directory.Build.props` and confirm the package-path
+   canary job goes green; that is the last acceptance check.
 
-**Important**: Both published packages must have the same version number. `PdfLibrary.Rendering.SkiaSharp` is **not published** — do not bump its version as part of a release.
+`PdfLibrary.Rendering.SkiaSharp` is **not published** — do not bump its version.
 
 ### 2. Create a GitHub Release
 
@@ -99,3 +114,8 @@ For pre-releases:
 ### Package not appearing on NuGet
 - Wait 15-30 minutes for indexing
 - Check the NuGet.org website directly (search may lag behind)
+
+### The publish workflow fails on "documents N non-public members"
+`StripNonPublicDocs` did not run or `tools/DocFilter` failed. Build Release locally, run
+`dotnet pack -c Release --no-build`, and read the `DocFilter:` lines; the tool exits 1 on a missing
+file and 2 on bad arguments.
