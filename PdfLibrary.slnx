@@ -53,6 +53,9 @@
     <Project Path="ImageLibrary/PixelResampler/PixelResampler.csproj" />
     <Project Path="ImageLibrary/PixelResampler.Tests/PixelResampler.Tests.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/DocFilter/DocFilter.csproj" />
+  </Folder>
   <Folder Name="/Utilities/">
     <Project Path="PdfLibrary.Utilities/ImageUtility/ImageUtility.csproj" />
   </Folder>

@@ -42,6 +42,7 @@
         <ProjectReference Include="..\FontParser\FontParser.csproj" />
         <ProjectReference Include="..\ImageLibrary\JpegCodec\JpegCodec.csproj" />
         <ProjectReference Include="..\ICCSharp\ICCSharp.csproj" />
+        <ProjectReference Include="..\tools\DocFilter\DocFilter.csproj" />
     </ItemGroup>
 
     <ItemGroup>
