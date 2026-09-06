@@ -20,6 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Atomic-file-write retry no longer races its own budget on a transiently locked destination (issue 55).
 - CID-to-GID mapping is split by consumer (issue 42): rendering keeps the identity mapping the font
   program requires; conformance uses the strict map.
+- **Glyph selection for a CIDFontType2 descendant whose embedded program is a CFF-outline (OTTO)
+  sfnt** (issue 36): the charset lookup is keyed on the descendant's own `/Subtype` rather than the
+  program's outline flavour, which previously scrambled every glyph in such a font.
 - **XMP: structured properties are no longer destroyed on save.** Setting any document property
   (`PdfDocumentEditor.Metadata.Title` and friends) re-serialized the XMP packet through a model with
   no struct representation, flattening `xmpMM:History`, `xmpMM:DerivedFrom`, `xmpTPg:Fonts` and
